@@ -10,6 +10,17 @@ Licensed under AGPL-3.0.
 - Live console path: `https://www.suezcanal.xyz/seacommons/`
 - Repository: `https://github.com/suezcanalxyz/seacommons`
 
+## Repository Layout
+
+```text
+apps/
+  api/        FastAPI backend, drift engine, forensic and integrations
+  web/        React/Vite operational console
+deploy/       Docker, Render and hosting manifests
+docs/         Methodology, governance and deployment notes
+scripts/      Local developer entrypoints
+```
+
 ## Quickstart
 
 Install and run the full stack in 3 commands:
@@ -21,7 +32,7 @@ sudo apt-get install gcc g++ libcurl4-openssl-dev libgeos-dev
 git clone https://github.com/suezcanalxyz/seacommons.git
 cd seacommons
 cp .env.example .env
-docker compose up -d
+docker compose -f deploy/docker-compose.yml up -d
 ```
 
 The Common Operational Picture (COP) will be available at `http://localhost:3000`.
@@ -34,7 +45,7 @@ The current repository is most reliable in low-cost pilot mode with an independe
 Recommended startup:
 
 ```powershell
-docker compose -f docker-compose.pilot.yml up --build
+docker compose -f deploy/docker-compose.pilot.yml up --build
 ```
 
 Pilot URLs:
@@ -61,7 +72,25 @@ For a hosted public demo, do not rely on same-origin API guessing.
 
 `DEMO_PUBLIC_MODE` keeps the API lightweight and allows SAR cases to use the Gaussian fallback when a hosted demo does not have a full OpenDrift runtime available.
 
-A starter Render blueprint is included in [render.yaml](./render.yaml). Render still needs this folder in a Git repository or a published image source before it can deploy the stack.
+A starter Render blueprint is included in [deploy/render.yaml](./deploy/render.yaml). Render still needs this folder in a Git repository or a published image source before it can deploy the stack.
+
+For a zero-cost live demo, the recommended path is:
+
+- frontend on Cloudflare Pages
+- backend on Oracle Cloud Always Free
+
+See [docs/DEPLOY_CLOUDFLARE_ORACLE.md](./docs/DEPLOY_CLOUDFLARE_ORACLE.md).
+
+## Local Dev Without Docker
+
+```bash
+bash scripts/run_dev.sh all
+```
+
+This starts:
+
+- API from `apps/api`
+- console from `apps/web`
 
 ## OpenDrift Runtime
 

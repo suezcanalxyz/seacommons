@@ -1,5 +1,5 @@
 # SuezCanal pilot startup
-$ROOT = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ROOT = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $ROOT
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
@@ -7,4 +7,4 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-docker compose -f docker-compose.pilot.yml up --build
+docker compose -f deploy/docker-compose.pilot.yml up --build

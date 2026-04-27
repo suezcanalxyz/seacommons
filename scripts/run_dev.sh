@@ -5,7 +5,9 @@
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+API_DIR="${ROOT}/apps/api"
+WEB_DIR="${ROOT}/apps/web"
 
 # ── Colour output ──────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GRN='\033[0;32m'; YLW='\033[0;33m'; BLU='\033[0;34m'; NC='\033[0m'
@@ -26,13 +28,14 @@ export MOCK="${MOCK:-true}"
 export DATABASE_URL="${DATABASE_URL:-sqlite+aiosqlite:///./suezcanal.db}"
 export REDIS_URL="${REDIS_URL:-}"
 export LOG_LEVEL="${LOG_LEVEL:-info}"
+export DEMO_PUBLIC_MODE="${DEMO_PUBLIC_MODE:-true}"
 
 # ── Backend: FastAPI via uvicorn ───────────────────────────────────────────────
 start_backend() {
   info "Starting backend on http://localhost:8000 (MOCK=${MOCK})"
-  cd "${ROOT}"
+  cd "${API_DIR}"
   if ! command -v uvicorn &>/dev/null; then
-    error "uvicorn not found. Run: pip install -e '.[dev]'"
+    error "uvicorn not found. Run: pip install -r apps/api/requirements-api.txt"
     exit 1
   fi
   uvicorn core.api.main:app \
@@ -46,7 +49,7 @@ start_backend() {
 # ── Frontend: Vite dev server ──────────────────────────────────────────────────
 start_frontend() {
   info "Starting Seacommons dashboard on http://localhost:5173"
-  cd "${ROOT}"
+  cd "${WEB_DIR}"
   if ! command -v npm &>/dev/null; then
     error "npm not found. Install Node.js >= 20"
     exit 1

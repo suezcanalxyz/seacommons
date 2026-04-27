@@ -123,7 +123,6 @@ It is suitable for:
 - technical explanation
 - investor / partner walkthroughs
 - operational concept demonstrations
-- scenario playback
 
 ## Status
 

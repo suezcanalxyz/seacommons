@@ -7,7 +7,7 @@ Run the API-first pilot with durable alert, drift, and forensic persistence.
 ## Recommended start
 
 ```powershell
-docker compose -f docker-compose.pilot.yml up --build
+docker compose -f deploy/docker-compose.pilot.yml up --build
 ```
 
 ## Required env

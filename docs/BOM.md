@@ -66,7 +66,7 @@
 1. Flash Raspberry Pi OS Lite (64-bit, no desktop).
 2. Run `edge/firmware/firstboot.sh` to install all dependencies.
 3. Set env vars in `/etc/suezcanal.env` (see `.env.example`).
-4. Deploy via `docker-compose -f edge/docker-compose.ship.yml up -d`.
+4. Deploy via `docker compose -f deploy/docker-compose.ship.yml up -d`.
 5. Verify: `suezcanal sensors status` — all sensors should show MOCK or LIVE.
 
 Power budget: ~15W average draw at full operation. 12V/3A supply recommended.

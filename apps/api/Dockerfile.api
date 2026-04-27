@@ -6,12 +6,12 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
-COPY requirements-api.txt ./
+COPY apps/api/requirements-api.txt ./
 RUN pip install --no-cache-dir -r requirements-api.txt
 
-COPY core ./core
-COPY connect ./connect
-COPY edge ./edge
+COPY apps/api/core ./core
+COPY apps/api/connect ./connect
+COPY apps/api/edge ./edge
 COPY README.md ./README.md
 
 EXPOSE 8000

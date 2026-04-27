@@ -1,0 +1,44 @@
+version: "3.9"
+name: suezcanal-ship
+
+services:
+  core:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile.api
+    command: uvicorn core.api.main:app --host 0.0.0.0 --port 8000
+    environment:
+      - MOCK=false
+      - INFRASOUND_ENABLED=${INFRASOUND_ENABLED:-false}
+      - SEISMIC_ENABLED=${SEISMIC_ENABLED:-false}
+      - TID_ENABLED=${TID_ENABLED:-false}
+      - ADSB_ENABLED=${ADSB_ENABLED:-false}
+      - AISSTREAM_KEY=${AISSTREAM_KEY:-}
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - ../.env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  satellite-sync:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile.api
+    command: python -c "import time, os; from edge.sync.satellite import SatelliteSync; from datetime import datetime, timezone, timedelta; sync = SatelliteSync();\
+ while True: sync.push_events(datetime.now(timezone.utc) - timedelta(hours=1)); sync.pull_config(); time.sleep(int(os.environ.get('TID_POLL_INTERVAL_S', '300')))"
+    env_file:
+      - ../.env
+    depends_on:
+      - core
+    restart: unless-stopped
+    profiles:
+      - satellite

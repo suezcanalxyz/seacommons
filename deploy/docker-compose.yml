@@ -1,8 +1,8 @@
 services:
   api:
     build:
-      context: .
-      dockerfile: Dockerfile.api
+      context: ..
+      dockerfile: apps/api/Dockerfile.api
     ports:
       - "8000:8000"
     environment:
@@ -23,8 +23,8 @@ services:
 
   dashboard:
     build:
-      context: .
-      dockerfile: Dockerfile.frontend
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
     ports:
       - "3000:3000"
     depends_on:
