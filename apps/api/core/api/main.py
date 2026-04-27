@@ -12,10 +12,14 @@ except Exception:  # pragma: no cover - optional during bootstrap
     def load_dotenv(*_args, **_kwargs):
         return False
 
-# Load .env before anything reads config
-_env = Path(__file__).parents[2] / ".env"
-if _env.exists():
-    load_dotenv(_env)
+# Load .env — check apps/api/ first, then repo root (local dev)
+for _env in [
+    Path(__file__).parents[2] / ".env",   # apps/api/.env  (Docker / explicit copy)
+    Path(__file__).parents[4] / ".env",   # repo root       (local dev)
+]:
+    if _env.exists():
+        load_dotenv(_env)
+        break
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
