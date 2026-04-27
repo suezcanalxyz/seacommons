@@ -5,7 +5,8 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const repoRoot = path.resolve(__dirname, '../..');
-  const env = loadEnv(mode, repoRoot, '');
+  // loadEnv from repo root for local dev; Docker passes vars as real env vars
+  const env = { ...loadEnv(mode, repoRoot, ''), ...process.env };
   const publicBase = env.VITE_PUBLIC_BASE || '/seacommons/';
   return {
     base: publicBase,
