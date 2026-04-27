@@ -4,6 +4,11 @@ dist/
 coverage/
 .DS_Store
 *.log
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite
+*.sqlite3
 .claude/
 .codex-runlogs/
 .pytest_cache/
