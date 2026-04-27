@@ -4,6 +4,12 @@ Open-source maritime rescue and awareness platform bridging real-time distress s
 
 Licensed under AGPL-3.0.
 
+## Links
+
+- Project page: `https://www.suezcanal.xyz/tools/seacommons/`
+- Live console path: `https://www.suezcanal.xyz/seacommons/`
+- Repository: `https://github.com/suezcanalxyz/seacommons`
+
 ## Quickstart
 
 Install and run the full stack in 3 commands:
@@ -12,8 +18,8 @@ Install and run the full stack in 3 commands:
 # Install system dependencies (required for TID module)
 sudo apt-get install gcc g++ libcurl4-openssl-dev libgeos-dev
 
-git clone https://github.com/suezcanal/suezcanal.git
-cd suezcanal
+git clone https://github.com/suezcanalxyz/seacommons.git
+cd seacommons
 cp .env.example .env
 docker compose up -d
 ```

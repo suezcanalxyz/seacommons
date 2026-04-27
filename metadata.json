@@ -1,5 +1,7 @@
 {
-  "name": "SuezCanal.xyz",
-  "description": "Open-source maritime rescue and awareness platform bridging real-time distress signals, Lagrangian trajectory modelling, and forensic documentation.",
+  "name": "SeaCommons",
+  "description": "Operational maritime SAR and forensic drift platform for distress intake, live drift simulation, and evidentiary documentation.",
+  "homepage": "https://www.suezcanal.xyz/tools/seacommons/",
+  "repository": "https://github.com/suezcanalxyz/seacommons",
   "requestFramePermissions": []
 }

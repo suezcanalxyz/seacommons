@@ -2,6 +2,15 @@
   "name": "seacommons-console",
   "private": true,
   "version": "0.0.0",
+  "description": "Operational maritime SAR and forensic drift console for SeaCommons.",
+  "homepage": "https://www.suezcanal.xyz/tools/seacommons/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/suezcanalxyz/seacommons.git"
+  },
+  "bugs": {
+    "url": "https://github.com/suezcanalxyz/seacommons/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "bash run_dev.sh",
