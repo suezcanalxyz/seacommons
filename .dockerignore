@@ -1,0 +1,14 @@
+.git
+.venv312
+.pytest_cache
+.codex-runlogs
+.claude
+.vscode
+.tmp
+node_modules
+dist
+build
+coverage
+*.log
+core/data/*.db
+core/db/data/*.jsonl

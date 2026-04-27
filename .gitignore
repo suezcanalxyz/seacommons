@@ -1,0 +1,12 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.claude/
+.codex-runlogs/
+.pytest_cache/
+.tmp/
+.env*
+!.env.example

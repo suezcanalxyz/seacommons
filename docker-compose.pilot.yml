@@ -1,0 +1,55 @@
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./core/data/suezcanal_pilot.db}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - MOCK=${MOCK:-false}
+      - SUEZCANAL_SIGNING_KEY=${SUEZCANAL_SIGNING_KEY:-}
+      - AISSTREAM_KEY=${AISSTREAM_KEY:-}
+      - CMEMS_USERNAME=${CMEMS_USERNAME:-}
+      - CMEMS_PASSWORD=${CMEMS_PASSWORD:-}
+      - WITNESS_ENDPOINTS=${WITNESS_ENDPOINTS:-}
+      - TIMEZERO_ENABLED=${TIMEZERO_ENABLED:-false}
+      - TIMEZERO_HOST=${TIMEZERO_HOST:-localhost}
+      - TIMEZERO_PORT=${TIMEZERO_PORT:-4371}
+      - TIMEZERO_API_KEY=${TIMEZERO_API_KEY:-}
+      - TIMEZERO_EXPORT_DIR=${TIMEZERO_EXPORT_DIR:-}
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=suez
+      - POSTGRES_PASSWORD=canal
+      - POSTGRES_DB=suezcanal
+    ports:
+      - "5432:5432"
+    volumes:
+      - pilot_postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  pilot_postgres_data:

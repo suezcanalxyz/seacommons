@@ -1,0 +1,19 @@
+version: "3.9"
+name: suezcanal-connect
+
+services:
+  nmea-bridge:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: python connect/nmea_bridge.py
+    environment:
+      - NMEA_PORT=${NMEA_PORT:-/dev/ttyUSB0}
+      - NMEA_BAUD=${NMEA_BAUD:-38400}
+      - NMEA_TCP_PORT=10110
+      - MOCK=${MOCK:-false}
+    devices:
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    ports:
+      - "10110:10110"
+    restart: unless-stopped
