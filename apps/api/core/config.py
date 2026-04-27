@@ -1,11 +1,49 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
-from typing import Any
+import json
+from typing import Any, Tuple, Type
 from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from pydantic.fields import FieldInfo
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
+from pydantic_settings.sources import EnvSettingsSource
+
+
+class _SafeEnvSource(EnvSettingsSource):
+    """Treats empty strings as absent for complex (list/dict) fields.
+
+    pydantic-settings v2 calls json.loads on every non-None value for
+    complex-typed fields, so passing WITNESS_ENDPOINTS="" from Docker
+    raises a SettingsError before our field_validators ever run.
+    """
+
+    def prepare_field_value(
+        self, field_name: str, field: FieldInfo, value: Any, value_is_complex: bool
+    ) -> Any:
+        # _field_is_complex is the authoritative check; value_is_complex arg may be False
+        # even for list[str] fields, so we must use _field_is_complex here.
+        is_complex, _ = self._field_is_complex(field)
+        if (is_complex or value_is_complex) and isinstance(value, str) and not value.strip():
+            return None
+        return super().prepare_field_value(field_name, field, value, value_is_complex)
 
 
 class SuezCanalConfig(BaseSettings):
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: Type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> Tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            _SafeEnvSource(settings_cls),
+            dotenv_settings,
+            file_secret_settings,
+        )
     REDIS_URL: str = "redis://localhost:6379/0"
     DATABASE_URL: str = "postgresql://suez:canal@localhost:5432/suezcanal"
     WITNESS_ENDPOINTS: list[str] = []
@@ -59,7 +97,18 @@ class SuezCanalConfig(BaseSettings):
     @classmethod
     def _split_csv(cls, v: Any) -> list[str]:
         if isinstance(v, str):
-            return [x.strip() for x in v.split(",") if x.strip()]
+            stripped = v.strip()
+            if not stripped:
+                return []
+            if stripped.startswith("["):
+                import json
+                try:
+                    parsed = json.loads(stripped)
+                    if isinstance(parsed, list):
+                        return [str(x) for x in parsed if str(x).strip()]
+                except json.JSONDecodeError:
+                    pass
+            return [x.strip() for x in stripped.split(",") if x.strip()]
         return v
 
     model_config = {
