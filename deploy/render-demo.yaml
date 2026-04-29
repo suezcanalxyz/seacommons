@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: seacommons-api-demo
+    runtime: python
+    plan: free
+    rootDir: apps/api
+    buildCommand: pip install -r requirements-api.txt
+    startCommand: uvicorn core.api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: DATABASE_URL
+        value: sqlite:///./core/data/seacommons_demo.db
+      - key: MOCK
+        value: false
+      - key: DEMO_PUBLIC_MODE
+        value: true
+      - key: SUEZCANAL_AUTH
+        value: false
+      - key: REDIS_URL
+        value: redis://localhost:6379/0
+      - key: CMEMS_USERNAME
+        sync: false
+      - key: CMEMS_PASSWORD
+        sync: false
+      - key: AISSTREAM_KEY
+        sync: false
+      - key: SUEZCANAL_SIGNING_KEY
+        sync: false
+
+  - type: static_site
+    name: seacommons-demo
+    rootDir: apps/web
+    buildCommand: npm ci && npm run build
+    publishPath: dist
+    envVars:
+      - key: VITE_API_BASE
+        value: https://seacommons-api-demo.onrender.com
+      - key: VITE_PUBLIC_BASE
+        value: /
+      - key: VITE_MAPTILER_KEY
+        value: 6jaqasGIOmmn1nyMIvPo
