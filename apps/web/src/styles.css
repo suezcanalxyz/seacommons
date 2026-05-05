@@ -546,6 +546,65 @@ a { color: #9be5d7; text-decoration: none; }
 .cred-missing { background: rgba(255,200,100,0.06); }
 .cred-missing span:first-child { color: #ffc864; }
 
+/* ── Cone panel ── */
+.cone-panel {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 292px;
+  z-index: 35;
+  background: rgba(3, 10, 14, 0.96);
+  border: 1px solid rgba(255, 224, 109, 0.22);
+  backdrop-filter: blur(20px);
+  border-radius: 4px;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.3);
+}
+
+.cone-panel-header {
+  padding: 11px 12px 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  position: sticky;
+  top: 0;
+  background: rgba(3, 10, 14, 0.99);
+  z-index: 1;
+}
+
+.cone-close-btn {
+  background: none;
+  border: none;
+  color: #9cb5b0;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0;
+  min-width: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.cone-close-btn:hover { color: #e9f1ef; }
+
+.cone-section {
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.cone-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  padding: 2px 0;
+}
+
+.cone-row span   { color: #9cb5b0; }
+.cone-row strong { color: #e9f1ef; text-align: right; }
+
 /* ── Mobile ── */
 @media (max-width: 680px) {
   .sidebar { width: 100vw; }
@@ -553,4 +612,5 @@ a { color: #9be5d7; text-decoration: none; }
   .sidebar-toggle.panel-open { left: calc(100vw + 8px); }
   .case-log-panel { width: 100%; }
   .map-overlay { width: calc(100% - 16px); }
+  .cone-panel { left: 8px; right: 8px; width: auto; }
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
+import ConePanel from './components/ConePanel.jsx';
 
 function guessApiBase() {
   const envBase = import.meta.env.VITE_API_BASE;
@@ -160,6 +161,8 @@ function App() {
   const [error, setError] = useState('');
   const [caseStatus, setCaseStatus] = useState('idle');
   const [caseLog, setCaseLog] = useState([]);
+  const [selectedCone, setSelectedCone] = useState(null);
+  const [caseEventId, setCaseEventId] = useState(null);
   const [form, setForm] = useState({
     lat: '35.889',
     lon: '14.519',
@@ -396,6 +399,24 @@ function App() {
           setSidebarOpen(true);
         });
 
+        // Drift cone click
+        map.on('mouseenter', 'sar-case-cone', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'sar-case-cone', () => {
+          map.getCanvas().style.cursor = (activePanelRef.current === 'demo' || demoModeRef.current) ? 'crosshair' : '';
+        });
+        map.on('click', 'sar-case-cone', (event) => {
+          const feature = event.features?.[0];
+          if (feature) setSelectedCone(feature);
+        });
+        map.on('mouseenter', 'sar-case-points', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'sar-case-points', () => {
+          map.getCanvas().style.cursor = (activePanelRef.current === 'demo' || demoModeRef.current) ? 'crosshair' : '';
+        });
+        map.on('click', 'sar-case-points', (event) => {
+          const feature = event.features?.[0];
+          if (feature) setSelectedCone(feature);
+        });
+
         map.on('mousemove', (event) => {
           if (activePanelRef.current !== 'demo' && !demoModeRef.current) return;
           setCursorHint({ visible: true, x: event.point.x, y: event.point.y });
@@ -407,6 +428,7 @@ function App() {
         map.on('click', (event) => {
           const hitLayers = event.features?.map((f) => f.layer?.id).filter(Boolean) || [];
           if (hitLayers.includes('vessels-layer') || hitLayers.includes('proximity-vessels-layer')) return;
+          if (hitLayers.includes('sar-case-cone') || hitLayers.includes('sar-case-points')) return;
 
           const nextLat = event.lngLat.lat.toFixed(5);
           const nextLon = event.lngLat.lng.toFixed(5);
@@ -584,6 +606,7 @@ function App() {
       });
 
       setCaseStatus(`computing ${created.event_id.slice(0, 8)}`);
+      setCaseEventId(created.event_id);
       pushCaseLog(`Alert queued ${created.event_id.slice(0, 8)}`);
 
       for (let i = 0; i < 120; i += 1) {
@@ -697,6 +720,13 @@ function App() {
             </ul>
           </div>
         ) : null}
+
+        <ConePanel
+          cone={selectedCone}
+          eventId={caseEventId}
+          caseStatus={caseStatus}
+          onClose={() => setSelectedCone(null)}
+        />
       </section>
 
       <button
