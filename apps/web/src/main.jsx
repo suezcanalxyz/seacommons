@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
-import ConePanel from './components/ConePanel.jsx';
+import MapFloatingPanel from './components/ConePanel.jsx';
 
 function guessApiBase() {
   const envBase = import.meta.env.VITE_API_BASE;
@@ -161,8 +161,10 @@ function App() {
   const [error, setError] = useState('');
   const [caseStatus, setCaseStatus] = useState('idle');
   const [caseLog, setCaseLog] = useState([]);
-  const [selectedCone, setSelectedCone] = useState(null);
+  const [mapPanel, setMapPanel] = useState(null);
   const [caseEventId, setCaseEventId] = useState(null);
+  const caseEventIdRef = useRef(null);
+  const caseStatusRef = useRef('idle');
   const [form, setForm] = useState({
     lat: '35.889',
     lon: '14.519',
@@ -227,6 +229,14 @@ function App() {
   useEffect(() => {
     activePanelRef.current = activePanel;
   }, [activePanel]);
+
+  useEffect(() => {
+    caseEventIdRef.current = caseEventId;
+  }, [caseEventId]);
+
+  useEffect(() => {
+    caseStatusRef.current = caseStatus;
+  }, [caseStatus]);
 
   useEffect(() => {
     window.localStorage.setItem('seacommons_tz_host', localSettings.timezeroHost);
@@ -406,7 +416,10 @@ function App() {
         });
         map.on('click', 'sar-case-cone', (event) => {
           const feature = event.features?.[0];
-          if (feature) setSelectedCone(feature);
+          if (feature) {
+            setMapPanel({ type: 'cone', feature, eventId: caseEventIdRef.current, caseStatus: caseStatusRef.current });
+            event.originalEvent?.stopPropagation?.();
+          }
         });
         map.on('mouseenter', 'sar-case-points', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'sar-case-points', () => {
@@ -414,7 +427,10 @@ function App() {
         });
         map.on('click', 'sar-case-points', (event) => {
           const feature = event.features?.[0];
-          if (feature) setSelectedCone(feature);
+          if (feature) {
+            setMapPanel({ type: 'cone', feature, eventId: caseEventIdRef.current, caseStatus: caseStatusRef.current });
+            event.originalEvent?.stopPropagation?.();
+          }
         });
 
         map.on('mousemove', (event) => {
@@ -426,20 +442,20 @@ function App() {
         });
 
         map.on('click', (event) => {
-          const hitLayers = event.features?.map((f) => f.layer?.id).filter(Boolean) || [];
-          if (hitLayers.includes('vessels-layer') || hitLayers.includes('proximity-vessels-layer')) return;
-          if (hitLayers.includes('sar-case-cone') || hitLayers.includes('sar-case-points')) return;
-
           const nextLat = event.lngLat.lat.toFixed(5);
           const nextLon = event.lngLat.lng.toFixed(5);
           setForm((cur) => ({ ...cur, lat: nextLat, lon: nextLon }));
-
           setDemoMode(false);
           setCursorHint({ visible: false, x: 0, y: 0 });
-          setActivePanel('sim');
-          setSidebarOpen(true);
-          loadNearestVessels(nextLat, nextLon).catch(() => {});
-          loadWeatherFor(nextLat, nextLon).catch(() => {});
+
+          setMapPanel({ type: 'location', lat: nextLat, lon: nextLon, vessels: [], weather: null });
+
+          loadNearestVessels(nextLat, nextLon)
+            .then((vs) => setMapPanel((cur) => cur?.type === 'location' ? { ...cur, vessels: vs } : cur))
+            .catch(() => {});
+          loadWeatherFor(nextLat, nextLon)
+            .then((wx) => setMapPanel((cur) => cur?.type === 'location' ? { ...cur, weather: wx } : cur))
+            .catch(() => {});
         });
 
         map.getSource('weather-points')?.setData(weatherGrid);
@@ -715,11 +731,15 @@ function App() {
           </div>
         ) : null}
 
-        <ConePanel
-          cone={selectedCone}
-          eventId={caseEventId}
-          caseStatus={caseStatus}
-          onClose={() => setSelectedCone(null)}
+        <MapFloatingPanel
+          panel={mapPanel}
+          onClose={() => setMapPanel(null)}
+          onComputeDrift={() => {
+            if (mapPanel?.type === 'location') {
+              setMapPanel(null);
+              runSarCaseAt(mapPanel.lat, mapPanel.lon);
+            }
+          }}
         />
       </section>
 
