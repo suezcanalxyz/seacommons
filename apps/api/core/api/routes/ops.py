@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import asyncio
+
 from fastapi import APIRouter
 
 from core.config import config
@@ -17,6 +19,11 @@ router = APIRouter()
 _integration_store = IntegrationEventStore()
 @router.get("/api/v1/ops/summary")
 async def ops_summary():
+    loop = asyncio.get_event_loop()
+    try:
+        _tz_status = await asyncio.wait_for(loop.run_in_executor(None, timezero_health), timeout=2.0)
+    except Exception:
+        _tz_status = {"enabled": False, "reachable": None, "host": "—", "port": 4371}
     recent_raw_events = _integration_store.recent(limit=50)
     vessel_stats = registry.stats()
     alerts = list_alerts()
@@ -52,7 +59,7 @@ async def ops_summary():
             "redis_configured": bool(config.REDIS_URL),
             "aisstream_live": bool(config.AISSTREAM_KEY) and not config.MOCK,
             "cmems_live": bool(config.CMEMS_USERNAME and config.CMEMS_PASSWORD) and not config.MOCK,
-            "timezero": timezero_health(),
+            "timezero": _tz_status,
         },
         "signals": {
             "recent_event_count": len(recent_raw_events),
