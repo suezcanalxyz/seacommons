@@ -349,7 +349,12 @@ function App() {
         map.addLayer({
           id: 'sar-case-line', type: 'line', source: 'sar-case',
           filter: ['==', '$type', 'LineString'],
-          paint: { 'line-color': '#ffe066', 'line-width': 3, 'line-opacity': 0.95 },
+          paint: {
+            'line-color': '#ff3b3b',
+            'line-width': 2.5,
+            'line-opacity': 0.92,
+            'line-dasharray': [6, 4],
+          },
         });
         map.addLayer({
           id: 'sar-case-points', type: 'circle', source: 'sar-case',

@@ -95,6 +95,46 @@ class CacheManager:
             print(f"[cache] live wind fetch failed for {lat},{lon}: {exc}")
             return self.get_wind(lat, lon)
 
+    def get_wind_forecast_series(self, lat: float, lon: float, hours: int = 48) -> list[dict[str, Any]]:
+        """Fetch Open-Meteo hourly wind forecast, returns list of per-hour dicts."""
+        forecast_days = max(2, (hours // 24) + 1)
+        try:
+            url = (
+                f"https://api.open-meteo.com/v1/forecast"
+                f"?latitude={lat:.3f}&longitude={lon:.3f}"
+                f"&hourly=wind_speed_10m,wind_direction_10m"
+                f"&wind_speed_unit=ms&forecast_days={forecast_days}"
+            )
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                data = json.loads(resp.read())
+            hourly = data.get("hourly", {})
+            speeds = hourly.get("wind_speed_10m", [])
+            dirs   = hourly.get("wind_direction_10m", [])
+            series = []
+            for h in range(min(hours, len(speeds))):
+                ws  = float(speeds[h]) if h < len(speeds) else 5.0
+                wd  = float(dirs[h])   if h < len(dirs)   else 270.0
+                rad = math.radians(wd)
+                series.append({
+                    "h": h,
+                    "wind_speed_ms": min(max(ws, 0.5), 30.0),
+                    "wind_dir_deg":  wd,
+                    "wind_x": ws * math.sin(rad),
+                    "wind_y": ws * math.cos(rad),
+                })
+            if series:
+                return series
+        except Exception as exc:
+            print(f"[cache] forecast series failed for {lat},{lon}: {exc}")
+        # Fallback: repeat current wind
+        w = self.get_wind_live(lat, lon)
+        ws  = float(w["wind_speed_ms"])
+        wd  = float(w["wind_dir_deg"])
+        rad = math.radians(wd)
+        return [{"h": h, "wind_speed_ms": ws, "wind_dir_deg": wd,
+                 "wind_x": ws * math.sin(rad), "wind_y": ws * math.cos(rad)}
+                for h in range(hours)]
+
     def get_ocean_currents(self, lat: float, lon: float, time_utc: Optional[str] = None) -> dict[str, Any]:
         # Cache keyed on 0.1° grid cell — CMEMS open_dataset is expensive (~25s)
         cache_key = f"currents_{round(lat, 1):.1f}_{round(lon, 1):.1f}".replace("-", "m")

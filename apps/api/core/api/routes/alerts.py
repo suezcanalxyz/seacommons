@@ -21,6 +21,8 @@ class MaritimeEvent(BaseModel):
     timestamp: datetime
     persons: Optional[int] = None
     vessel_type: Optional[str] = None
+    risk_level: Optional[str] = None
+    scenario_type: Optional[str] = None
     domain: str = "ocean_sar"
 
 
@@ -40,6 +42,10 @@ def _process_drift(event_id: str, event: MaritimeEvent) -> None:
             alert_config["vessel_type"] = event.vessel_type
         if event.persons is not None:
             alert_config["persons"] = event.persons
+        if event.risk_level:
+            alert_config["risk_level"] = event.risk_level
+        if event.scenario_type:
+            alert_config["scenario_type"] = event.scenario_type
         result = engine.compute(
             lat=event.lat,
             lon=event.lon,

@@ -10,6 +10,7 @@ from typing import Any
 
 from opendrift.models.leeway import Leeway
 from opendrift.readers import reader_constant
+from opendrift.readers.basereader import BaseReader
 
 
 def _parse_time(value: str) -> datetime:
@@ -129,6 +130,27 @@ def _hours_to_index(hours: int, output_hours: list[int]) -> int:
     return best_idx
 
 
+class _ForecastReader(reader_constant.Reader):
+    """Extends reader_constant to return hourly-varying wind from a forecast series."""
+
+    def __init__(self, series: list[dict], start_time: datetime, base_env: dict) -> None:
+        super().__init__(base_env)
+        self._series = series
+        self._t0 = start_time
+
+    def get_variables(self, requested_variables, time=None, x=None, y=None, z=None,  # type: ignore[override]
+                      indrealization=None):
+        if time is not None and self._series:
+            elapsed_h = (time - self._t0).total_seconds() / 3600.0
+            idx = max(0, min(int(elapsed_h), len(self._series) - 1))
+            s = self._series[idx]
+            # reader_constant stores values in self.data dict
+            if "x_wind" in self.data:
+                self.data["x_wind"]  = float(s.get("wind_x", self.data["x_wind"]))
+                self.data["y_wind"]  = float(s.get("wind_y", self.data["y_wind"]))
+        return super().get_variables(requested_variables, time, x, y, z)
+
+
 def run(payload: dict[str, Any]) -> dict[str, Any]:
     start_time = _parse_time(payload["time_utc"])
     duration_h = int(payload.get("duration_h", 24))
@@ -143,17 +165,18 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
     simulation.set_config("general:time_step_minutes", max(1, time_step_seconds // 60))
     simulation.set_config("general:time_step_output_minutes", max(1, output_seconds // 60))
 
-    simulation.add_reader(
-        reader_constant.Reader(
-            {
-                "x_wind": float(env["x_wind"]),
-                "y_wind": float(env["y_wind"]),
-                "x_sea_water_velocity": float(env["x_sea_water_velocity"]),
-                "y_sea_water_velocity": float(env["y_sea_water_velocity"]),
-                "land_binary_mask": int(env.get("land_binary_mask", 0)),
-            }
-        )
-    )
+    wind_series = payload.get("wind_series")
+    base_env = {
+        "x_wind": float(env["x_wind"]),
+        "y_wind": float(env["y_wind"]),
+        "x_sea_water_velocity": float(env["x_sea_water_velocity"]),
+        "y_sea_water_velocity": float(env["y_sea_water_velocity"]),
+        "land_binary_mask": int(env.get("land_binary_mask", 0)),
+    }
+    if wind_series and len(wind_series) >= 2:
+        simulation.add_reader(_ForecastReader(wind_series, start_time, base_env))
+    else:
+        simulation.add_reader(reader_constant.Reader(base_env))
 
     simulation.seed_elements(
         lon=float(payload["lon"]),
