@@ -141,7 +141,7 @@ function buildProximityGeojson(vessels, distressLat, distressLon) {
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activePanel, setActivePanel] = useState('demo');
+  const [activePanel, setActivePanel] = useState('sim');
   const [apiBase, setApiBase] = useState(guessApiBase);
   const [localSettings, setLocalSettings] = useState(loadLocalSettings);
   const [summary, setSummary] = useState(null);
@@ -174,7 +174,7 @@ function App() {
   const mapNodeRef = useRef(null);
   const mapRef = useRef(null);
   const demoModeRef = useRef(false);
-  const activePanelRef = useRef('demo');
+  const activePanelRef = useRef('sim');
 
   const selectedLat = Number(form.lat);
   const selectedLon = Number(form.lon);
@@ -237,7 +237,7 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    map.getCanvas().style.cursor = (activePanel === 'demo' || demoMode) ? 'crosshair' : '';
+    map.getCanvas().style.cursor = (activePanel === 'sim' || demoMode) ? 'crosshair' : '';
   }, [activePanel, demoMode, mapReady]);
 
   // ── Map init ────────────────────────────────────────────────────────────────
@@ -376,7 +376,7 @@ function App() {
         // vessel click
         map.on('mouseenter', 'vessels-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'vessels-layer', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'demo' || demoModeRef.current) ? 'crosshair' : '';
+          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || demoModeRef.current) ? 'crosshair' : '';
         });
         map.on('click', 'vessels-layer', (event) => {
           const feature = event.features?.[0];
@@ -389,7 +389,7 @@ function App() {
         // proximity vessel click — same behaviour
         map.on('mouseenter', 'proximity-vessels-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'proximity-vessels-layer', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'demo' || demoModeRef.current) ? 'crosshair' : '';
+          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || demoModeRef.current) ? 'crosshair' : '';
         });
         map.on('click', 'proximity-vessels-layer', (event) => {
           const feature = event.features?.[0];
@@ -402,7 +402,7 @@ function App() {
         // Drift cone click
         map.on('mouseenter', 'sar-case-cone', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'sar-case-cone', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'demo' || demoModeRef.current) ? 'crosshair' : '';
+          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || demoModeRef.current) ? 'crosshair' : '';
         });
         map.on('click', 'sar-case-cone', (event) => {
           const feature = event.features?.[0];
@@ -410,7 +410,7 @@ function App() {
         });
         map.on('mouseenter', 'sar-case-points', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'sar-case-points', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'demo' || demoModeRef.current) ? 'crosshair' : '';
+          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || demoModeRef.current) ? 'crosshair' : '';
         });
         map.on('click', 'sar-case-points', (event) => {
           const feature = event.features?.[0];
@@ -418,7 +418,7 @@ function App() {
         });
 
         map.on('mousemove', (event) => {
-          if (activePanelRef.current !== 'demo' && !demoModeRef.current) return;
+          if (activePanelRef.current !== 'sim' && !demoModeRef.current) return;
           setCursorHint({ visible: true, x: event.point.x, y: event.point.y });
         });
         map.on('mouseleave', () => {
@@ -434,18 +434,12 @@ function App() {
           const nextLon = event.lngLat.lng.toFixed(5);
           setForm((cur) => ({ ...cur, lat: nextLat, lon: nextLon }));
 
-          if (activePanelRef.current === 'demo' || demoModeRef.current) {
-            setDemoMode(false);
-            setCursorHint({ visible: false, x: 0, y: 0 });
-            setActivePanel('demo');
-            setSidebarOpen(true);
-            loadNearestVessels(nextLat, nextLon).catch(() => {});
-            return;
-          }
-
-          loadWeatherFor(nextLat, nextLon).catch((err) => {
-            setError(err.message || 'Weather fetch failed');
-          });
+          setDemoMode(false);
+          setCursorHint({ visible: false, x: 0, y: 0 });
+          setActivePanel('sim');
+          setSidebarOpen(true);
+          loadNearestVessels(nextLat, nextLon).catch(() => {});
+          loadWeatherFor(nextLat, nextLon).catch(() => {});
         });
 
         map.getSource('weather-points')?.setData(weatherGrid);
@@ -661,7 +655,7 @@ function App() {
     });
   }
 
-  const isOnDemo = activePanel === 'demo' || demoMode;
+  const isOnSim = activePanel === 'sim' || demoMode;
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -681,7 +675,7 @@ function App() {
         {error  ? <div className={`map-banner error ${sidebarOpen ? 'sidebar-open' : ''}`}>{error}</div> : null}
         {loading ? <div className={`map-banner ${sidebarOpen ? 'sidebar-open' : ''}`}>Connecting to backend…</div> : null}
 
-        {isOnDemo && cursorHint.visible ? (
+        {isOnSim && cursorHint.visible ? (
           <div className="map-cursor-hint" style={{ left: cursorHint.x + 18, top: cursorHint.y + 22 }}>
             Click to set distress origin
           </div>
@@ -691,7 +685,7 @@ function App() {
           <div className="overlay-card">
             <span className="overlay-label">Selected point</span>
             <strong>{selectedLat.toFixed(5)}, {selectedLon.toFixed(5)}</strong>
-            <span>{isOnDemo ? 'Click map to set coordinates.' : 'Click map for weather conditions.'}</span>
+            <span>{isOnSim ? 'Click map to set coordinates.' : 'Click map for weather conditions.'}</span>
           </div>
         </div>
 
@@ -742,7 +736,7 @@ function App() {
           <p className="sidebar-kicker">SeaCommons / SAR pilot</p>
           <h2>Operational dashboard</h2>
           <div className="sidebar-tabs sidebar-tabs--4">
-            <button className={activePanel === 'demo'     ? 'is-active' : ''} onClick={() => setActivePanel('demo')}>Demo</button>
+            <button className={activePanel === 'sim'     ? 'is-active' : ''} onClick={() => setActivePanel('sim')}>Sim</button>
             <button className={activePanel === 'live'     ? 'is-active' : ''} onClick={() => setActivePanel('live')}>Live</button>
             <button className={activePanel === 'layers'   ? 'is-active' : ''} onClick={() => setActivePanel('layers')}>Layers</button>
             <button className={activePanel === 'settings' ? 'is-active' : ''} onClick={() => setActivePanel('settings')}>Config</button>
@@ -798,7 +792,7 @@ function App() {
           ) : null}
 
           {/* ── DEMO TAB ── */}
-          {activePanel === 'demo' ? (
+          {activePanel === 'sim' ? (
             <div className="panel-stack">
               <section className="panel-block">
                 <p className="section-kicker">SAR simulation</p>
