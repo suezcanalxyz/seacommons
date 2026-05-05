@@ -164,9 +164,11 @@ function App() {
   const [caseLog, setCaseLog] = useState([]);
   const [mapPanel, setMapPanel] = useState(null);
   const [showScenario, setShowScenario] = useState(false);
+  const [scenarioType, setScenarioType] = useState('distress');
   const [caseEventId, setCaseEventId] = useState(null);
   const caseEventIdRef = useRef(null);
   const caseStatusRef = useRef('idle');
+  const simParamsRef = useRef({});
   const [form, setForm] = useState({
     lat: '35.889',
     lon: '14.519',
@@ -419,7 +421,7 @@ function App() {
         map.on('click', 'sar-case-cone', (event) => {
           const feature = event.features?.[0];
           if (feature) {
-            setMapPanel({ type: 'cone', feature, eventId: caseEventIdRef.current, caseStatus: caseStatusRef.current });
+            setMapPanel({ type: 'cone', feature, eventId: caseEventIdRef.current, caseStatus: caseStatusRef.current, simParams: simParamsRef.current });
             event.originalEvent?.stopPropagation?.();
           }
         });
@@ -430,7 +432,7 @@ function App() {
         map.on('click', 'sar-case-points', (event) => {
           const feature = event.features?.[0];
           if (feature) {
-            setMapPanel({ type: 'cone', feature, eventId: caseEventIdRef.current, caseStatus: caseStatusRef.current });
+            setMapPanel({ type: 'cone', feature, eventId: caseEventIdRef.current, caseStatus: caseStatusRef.current, simParams: simParamsRef.current });
             event.originalEvent?.stopPropagation?.();
           }
         });
@@ -444,6 +446,11 @@ function App() {
         });
 
         map.on('click', (event) => {
+          const hit = map.queryRenderedFeatures(event.point, {
+            layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'proximity-vessels-layer'],
+          });
+          if (hit.length > 0) return;
+
           const nextLat = event.lngLat.lat.toFixed(5);
           const nextLon = event.lngLat.lng.toFixed(5);
           setForm((cur) => ({ ...cur, lat: nextLat, lon: nextLon }));
@@ -580,11 +587,15 @@ function App() {
     }
   }
 
-  async function runSarCaseAt(lat, lon) {
+  async function runSarCaseAt(lat, lon, overrides = {}) {
     const persons = form.persons;
     const vesselType = form.vessel_type;
+    const riskLevel = form.risk_level;
+    const activeSType = overrides.scenarioType || scenarioType;
+    simParamsRef.current = { scenarioType: activeSType, vesselType, persons, riskLevel, lat, lon };
     setCaseStatus('starting…');
     setCaseGeojson({ type: 'FeatureCollection', features: [] });
+    setMapPanel(null);
     setError('');
 
     let nearby = nearestVessels;
@@ -592,7 +603,7 @@ function App() {
       try { nearby = await loadNearestVessels(lat, lon); } catch { nearby = []; }
     }
 
-    pushCaseLog(`SAR case created @ ${Number(lat).toFixed(4)}, ${Number(lon).toFixed(4)}`);
+    pushCaseLog(`${activeSType.replace('_', ' ')} @ ${Number(lat).toFixed(4)}, ${Number(lon).toFixed(4)}`);
     if (nearby.length) {
       pushCaseLog(`Nearest: ${nearby.map((v) => `${v.ship_name} (${v.distance_nm.toFixed(1)} nm)`).join(', ')}`);
     }
@@ -607,6 +618,8 @@ function App() {
           timestamp: new Date().toISOString(),
           persons: Number(persons || 0),
           vessel_type: vesselType,
+          risk_level: riskLevel,
+          scenario_type: activeSType,
           domain: 'ocean_sar',
         }),
       });
@@ -646,7 +659,7 @@ function App() {
 
   async function runSarCase(event) {
     if (event?.preventDefault) event.preventDefault();
-    await runSarCaseAt(form.lat, form.lon);
+    await runSarCaseAt(form.lat, form.lon, { scenarioType });
   }
 
   function updateSetting(key, value) {
@@ -743,9 +756,10 @@ function App() {
             lon={form.lon}
             form={form}
             onFormChange={setField}
-            onConfirm={() => {
+            onConfirm={({ scenarioType: sType }) => {
+              setScenarioType(sType);
               setShowScenario(false);
-              runSarCaseAt(form.lat, form.lon);
+              runSarCaseAt(form.lat, form.lon, { scenarioType: sType });
             }}
             onClose={() => setShowScenario(false)}
           />

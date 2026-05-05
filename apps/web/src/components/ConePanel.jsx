@@ -76,7 +76,9 @@ function LocationView({ panel, onComputeDrift }) {
 function ConeView({ panel }) {
   const props = panel.feature?.properties || {};
   const label = HORIZON[props.type] || props.type || 'Drift zone';
-  const extra = Object.entries(props).filter(([k]) => k !== 'type');
+  const SKIP = new Set(['type']);
+  const extra = Object.entries(props).filter(([k]) => !SKIP.has(k));
+  const sim = panel.simParams || {};
 
   return (
     <>
@@ -99,8 +101,49 @@ function ConeView({ panel }) {
         )}
       </div>
 
+      {(sim.scenarioType || sim.vesselType || sim.persons || sim.riskLevel) && (
+        <div className="cone-section">
+          <div style={{ fontSize: 9, color: '#87cabc', textTransform: 'uppercase', letterSpacing: '0.13em', marginBottom: 5 }}>
+            Simulation parameters
+          </div>
+          {sim.scenarioType && (
+            <div className="cone-row">
+              <span>Emergency</span>
+              <strong>{sim.scenarioType.replace(/_/g, ' ')}</strong>
+            </div>
+          )}
+          {sim.vesselType && (
+            <div className="cone-row">
+              <span>Vessel</span>
+              <strong>{sim.vesselType.replace(/_/g, ' ')}</strong>
+            </div>
+          )}
+          {sim.persons && (
+            <div className="cone-row">
+              <span>Persons</span>
+              <strong>{sim.persons}</strong>
+            </div>
+          )}
+          {sim.riskLevel && (
+            <div className="cone-row">
+              <span>Risk</span>
+              <strong>{sim.riskLevel}</strong>
+            </div>
+          )}
+          {sim.lat && (
+            <div className="cone-row">
+              <span>Origin</span>
+              <strong>{Number(sim.lat).toFixed(4)}, {Number(sim.lon).toFixed(4)}</strong>
+            </div>
+          )}
+        </div>
+      )}
+
       {extra.length > 0 && (
         <div className="cone-section" style={{ borderBottom: 'none' }}>
+          <div style={{ fontSize: 9, color: '#87cabc', textTransform: 'uppercase', letterSpacing: '0.13em', marginBottom: 5 }}>
+            Geometry properties
+          </div>
           {extra.map(([k, v]) => (
             <div className="cone-row" key={k}>
               <span>{k.replace(/_/g, ' ')}</span>
