@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 import MapFloatingPanel from './components/ConePanel.jsx';
+import ScenarioModal from './components/ScenarioModal.jsx';
 
 function guessApiBase() {
   const envBase = import.meta.env.VITE_API_BASE;
@@ -162,6 +163,7 @@ function App() {
   const [caseStatus, setCaseStatus] = useState('idle');
   const [caseLog, setCaseLog] = useState([]);
   const [mapPanel, setMapPanel] = useState(null);
+  const [showScenario, setShowScenario] = useState(false);
   const [caseEventId, setCaseEventId] = useState(null);
   const caseEventIdRef = useRef(null);
   const caseStatusRef = useRef('idle');
@@ -448,14 +450,8 @@ function App() {
           setDemoMode(false);
           setCursorHint({ visible: false, x: 0, y: 0 });
 
-          setMapPanel({ type: 'location', lat: nextLat, lon: nextLon, vessels: [], weather: null });
-
-          loadNearestVessels(nextLat, nextLon)
-            .then((vs) => setMapPanel((cur) => cur?.type === 'location' ? { ...cur, vessels: vs } : cur))
-            .catch(() => {});
-          loadWeatherFor(nextLat, nextLon)
-            .then((wx) => setMapPanel((cur) => cur?.type === 'location' ? { ...cur, weather: wx } : cur))
-            .catch(() => {});
+          setShowScenario(true);
+          loadNearestVessels(nextLat, nextLon).catch(() => {});
         });
 
         map.getSource('weather-points')?.setData(weatherGrid);
@@ -731,16 +727,29 @@ function App() {
           </div>
         ) : null}
 
-        <MapFloatingPanel
-          panel={mapPanel}
-          onClose={() => setMapPanel(null)}
-          onComputeDrift={() => {
-            if (mapPanel?.type === 'location') {
-              setMapPanel(null);
-              runSarCaseAt(mapPanel.lat, mapPanel.lon);
-            }
-          }}
-        />
+        {/* Cone detail panel — right side, appears when clicking a drift cone */}
+        {mapPanel?.type === 'cone' && (
+          <MapFloatingPanel
+            panel={mapPanel}
+            onClose={() => setMapPanel(null)}
+            onComputeDrift={null}
+          />
+        )}
+
+        {/* Scenario modal — center, appears when clicking empty map */}
+        {showScenario && (
+          <ScenarioModal
+            lat={form.lat}
+            lon={form.lon}
+            form={form}
+            onFormChange={setField}
+            onConfirm={() => {
+              setShowScenario(false);
+              runSarCaseAt(form.lat, form.lon);
+            }}
+            onClose={() => setShowScenario(false)}
+          />
+        )}
       </section>
 
       <button
