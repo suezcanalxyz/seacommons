@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -12,7 +13,10 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, WebSocket
 from pydantic import BaseModel
 
+from core.config import config
+
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class MaritimeEvent(BaseModel):
@@ -26,7 +30,10 @@ class MaritimeEvent(BaseModel):
     domain: str = "ocean_sar"
 
 
-active_ws: list[WebSocket] = []
+# (websocket, asyncio_loop) — stored as tuples so background threads can
+# safely schedule sends via asyncio.run_coroutine_threadsafe()
+active_ws: list[tuple[WebSocket, asyncio.AbstractEventLoop]] = []
+_ws_lock = threading.Lock()
 
 
 def _process_drift(event_id: str, event: MaritimeEvent) -> None:
@@ -50,7 +57,7 @@ def _process_drift(event_id: str, event: MaritimeEvent) -> None:
             lat=event.lat,
             lon=event.lon,
             time_utc=event.timestamp,
-            duration_h=48,
+            duration_h=config.ALERT_DRIFT_DURATION_H,
             domain=event.domain,
             config=alert_config,
         )
@@ -97,12 +104,34 @@ def _process_drift(event_id: str, event: MaritimeEvent) -> None:
         )
 
     update_alert_status(event_id, status)
-    payload = {"event_id": event_id, "status": status}
-    for ws in list(active_ws):
+    _broadcast_ws({"event_id": event_id, "status": status})
+
+
+def _broadcast_ws(payload: dict) -> None:
+    """Thread-safe broadcast to all connected alert WebSocket clients."""
+    text = json.dumps(payload)
+    dead: list[tuple] = []
+    with _ws_lock:
+        clients = list(active_ws)
+    for ws, loop in clients:
         try:
-            asyncio.run(ws.send_text(json.dumps(payload)))
+            asyncio.run_coroutine_threadsafe(_ws_send(ws, text), loop)
         except Exception:
-            active_ws.remove(ws)
+            dead.append((ws, loop))
+    if dead:
+        with _ws_lock:
+            for item in dead:
+                try:
+                    active_ws.remove(item)
+                except ValueError:
+                    pass
+
+
+async def _ws_send(ws: WebSocket, text: str) -> None:
+    try:
+        await ws.send_text(text)
+    except Exception:
+        pass
 
 
 @router.post("/api/v1/alert")
@@ -117,7 +146,7 @@ async def create_alert(event: MaritimeEvent, bg: BackgroundTasks):
         lat=event.lat,
         lon=event.lon,
         domain=event.domain,
-        duration_h=48,
+        duration_h=config.ALERT_DRIFT_DURATION_H,
         started_at=event.timestamp,
     )
     bg.add_task(_process_drift, event_id, event)
@@ -180,10 +209,19 @@ async def list_alerts_geojson():
 @router.websocket("/ws/events")
 async def ws_events(websocket: WebSocket):
     await websocket.accept()
-    active_ws.append(websocket)
+    loop = asyncio.get_event_loop()
+    entry = (websocket, loop)
+    with _ws_lock:
+        active_ws.append(entry)
     try:
         while True:
-            await websocket.receive_text()
+            await asyncio.sleep(30)
+            await websocket.send_text('{"type":"ping"}')
     except Exception:
-        if websocket in active_ws:
-            active_ws.remove(websocket)
+        pass
+    finally:
+        with _ws_lock:
+            try:
+                active_ws.remove(entry)
+            except ValueError:
+                pass

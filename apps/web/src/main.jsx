@@ -721,32 +721,48 @@ function App() {
         }),
       });
 
-      setCaseStatus(`computing ${created.event_id.slice(0, 8)}`);
+      setCaseStatus(`queued ${created.event_id.slice(0, 8)}`);
       setCaseEventId(created.event_id);
       pushCaseLog(`Alert queued ${created.event_id.slice(0, 8)}`);
 
-      for (let i = 0; i < 120; i += 1) {
-        const status = await fetchJson(apiBase, `/api/v1/alert/${created.event_id}`);
-        if (status.status === 'failed') {
-          throw new Error(status.drift_result?.metadata?.error || 'Simulation failed');
+      let consecutiveErrors = 0;
+      for (let i = 0; i < 180; i += 1) {
+        try {
+          const status = await fetchJson(apiBase, `/api/v1/alert/${created.event_id}`);
+          consecutiveErrors = 0;
+          if (status.status === 'failed') {
+            throw new Error(status.drift_result?.metadata?.error || 'Simulation failed');
+          }
+          if (status.status === 'completed') {
+            const geojson = await fetchJson(apiBase, `/api/v1/alert/${created.event_id}/geojson`);
+            setCaseGeojson(geojson);
+            setCaseStatus('completed');
+            pushCaseLog(`Drift ready ${created.event_id.slice(0, 8)}`);
+            mapRef.current?.flyTo({
+              center: [Number(lon), Number(lat)],
+              zoom: 8.4,
+              essential: true,
+              duration: 900,
+            });
+            return;
+          }
+          // Show computing status once computation starts (vs queued)
+          if (status.status === 'processing' && caseStatusRef.current.startsWith('queued')) {
+            setCaseStatus(`computing ${created.event_id.slice(0, 8)}`);
+            pushCaseLog('Drift computing…');
+          }
+        } catch (pollErr) {
+          consecutiveErrors += 1;
+          // Transient network error — back off, don't fail immediately
+          if (consecutiveErrors >= 5) throw pollErr;
+          pushCaseLog(`Poll retry ${consecutiveErrors}/5…`);
         }
-        if (status.status === 'completed') {
-          const geojson = await fetchJson(apiBase, `/api/v1/alert/${created.event_id}/geojson`);
-          setCaseGeojson(geojson);
-          setCaseStatus('completed');
-          pushCaseLog(`Drift ready ${created.event_id.slice(0, 8)}`);
-          mapRef.current?.flyTo({
-            center: [Number(lon), Number(lat)],
-            zoom: 8.4,
-            essential: true,
-            duration: 900,
-          });
-          return;
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        // Adaptive polling: faster at start, slower as time passes
+        const delay = i < 20 ? 2000 : i < 60 ? 3000 : 5000;
+        await new Promise((resolve) => window.setTimeout(resolve, delay));
       }
       setCaseStatus('timeout');
-      pushCaseLog('SAR case: timeout');
+      pushCaseLog('SAR case: timeout — server may still be computing');
     } catch (err) {
       setCaseStatus('error');
       setError(err.message || 'SAR case failed');
