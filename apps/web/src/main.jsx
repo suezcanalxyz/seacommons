@@ -246,21 +246,66 @@ function App() {
     caseStatusRef.current = caseStatus;
   }, [caseStatus]);
 
-  // ── Intel WebSocket ──────────────────────────────────────────────────────────
+  // ── Intel feed: WebSocket with REST polling fallback ─────────────────────────
+  // Vercel's HTTP rewrite proxy strips WebSocket upgrade headers, so WS only
+  // works when the API is served from the same origin or via a real WS proxy.
+  // After 3 failed WS attempts we fall back to polling /api/v1/intel every 30s.
   useEffect(() => {
     const wsBase = apiBase.replace(/^http/, 'ws');
-    let ws;
-    let reconnectTimer;
+    let ws = null;
+    let reconnectTimer = null;
+    let pollTimer = null;
+    let failCount = 0;
+    let alive = true;
+    const MAX_WS_FAILS = 3;
+
+    async function pollIntel() {
+      if (!alive) return;
+      try {
+        const data = await fetchJson(apiBase, '/api/v1/intel?limit=200');
+        if (alive && data.features) {
+          setIntelEvents(data.features);
+          setIntelConnected(true);
+        }
+      } catch { /* ignore */ }
+      if (alive) pollTimer = window.setTimeout(pollIntel, 30000);
+    }
+
+    function startPolling() {
+      setIntelConnected(false);
+      pollIntel();
+    }
 
     function connect() {
+      if (!alive) return;
       ws = new WebSocket(`${wsBase}/ws/intel`);
       intelWsRef.current = ws;
-      ws.onopen = () => setIntelConnected(true);
-      ws.onclose = () => {
-        setIntelConnected(false);
-        reconnectTimer = window.setTimeout(connect, 5000);
+
+      const openTimer = window.setTimeout(() => {
+        // If socket hasn't opened in 4s, count as failure
+        if (ws.readyState !== WebSocket.OPEN) {
+          ws.close();
+        }
+      }, 4000);
+
+      ws.onopen = () => {
+        window.clearTimeout(openTimer);
+        failCount = 0;
+        setIntelConnected(true);
       };
-      ws.onerror = () => ws.close();
+      ws.onclose = () => {
+        window.clearTimeout(openTimer);
+        setIntelConnected(false);
+        if (!alive) return;
+        failCount += 1;
+        if (failCount >= MAX_WS_FAILS) {
+          // Switch permanently to REST polling
+          startPolling();
+        } else {
+          reconnectTimer = window.setTimeout(connect, 5000);
+        }
+      };
+      ws.onerror = () => { window.clearTimeout(openTimer); ws.close(); };
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
@@ -270,13 +315,15 @@ function App() {
           } else if (msg.type === 'Feature') {
             setIntelEvents((prev) => [msg, ...prev].slice(0, 300));
           }
-        } catch { /* ignore parse errors */ }
+        } catch { /* ignore */ }
       };
     }
 
     connect();
     return () => {
+      alive = false;
       window.clearTimeout(reconnectTimer);
+      window.clearTimeout(pollTimer);
       ws?.close();
     };
   }, [apiBase]);
