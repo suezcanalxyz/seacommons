@@ -156,7 +156,7 @@ function App() {
   const [selectedVessel, setSelectedVessel] = useState(null);
   const [nearestVessels, setNearestVessels] = useState([]);
   const [mapReady, setMapReady] = useState(false);
-  const [demoMode, setDemoMode] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
   const [cursorHint, setCursorHint] = useState({ visible: false, x: 0, y: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -166,9 +166,13 @@ function App() {
   const [showScenario, setShowScenario] = useState(false);
   const [scenarioType, setScenarioType] = useState('distress');
   const [caseEventId, setCaseEventId] = useState(null);
+  const [intelEvents, setIntelEvents] = useState([]);
+  const [intelConnected, setIntelConnected] = useState(false);
+  const [intelFilter, setIntelFilter] = useState('all');
   const caseEventIdRef = useRef(null);
   const caseStatusRef = useRef('idle');
   const simParamsRef = useRef({});
+  const intelWsRef = useRef(null);
   const [form, setForm] = useState({
     lat: '35.889',
     lon: '14.519',
@@ -179,7 +183,7 @@ function App() {
 
   const mapNodeRef = useRef(null);
   const mapRef = useRef(null);
-  const demoModeRef = useRef(false);
+  const selectionModeRef = useRef(false);
   const activePanelRef = useRef('sim');
 
   const selectedLat = Number(form.lat);
@@ -227,8 +231,8 @@ function App() {
   }, [apiBase]);
 
   useEffect(() => {
-    demoModeRef.current = demoMode;
-  }, [demoMode]);
+    selectionModeRef.current = selectionMode;
+  }, [selectionMode]);
 
   useEffect(() => {
     activePanelRef.current = activePanel;
@@ -242,6 +246,41 @@ function App() {
     caseStatusRef.current = caseStatus;
   }, [caseStatus]);
 
+  // ── Intel WebSocket ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    const wsBase = apiBase.replace(/^http/, 'ws');
+    let ws;
+    let reconnectTimer;
+
+    function connect() {
+      ws = new WebSocket(`${wsBase}/ws/intel`);
+      intelWsRef.current = ws;
+      ws.onopen = () => setIntelConnected(true);
+      ws.onclose = () => {
+        setIntelConnected(false);
+        reconnectTimer = window.setTimeout(connect, 5000);
+      };
+      ws.onerror = () => ws.close();
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'ping') return;
+          if (msg.type === 'snapshot') {
+            setIntelEvents(msg.features || []);
+          } else if (msg.type === 'Feature') {
+            setIntelEvents((prev) => [msg, ...prev].slice(0, 300));
+          }
+        } catch { /* ignore parse errors */ }
+      };
+    }
+
+    connect();
+    return () => {
+      window.clearTimeout(reconnectTimer);
+      ws?.close();
+    };
+  }, [apiBase]);
+
   useEffect(() => {
     window.localStorage.setItem('seacommons_tz_host', localSettings.timezeroHost);
     window.localStorage.setItem('seacommons_tz_port', localSettings.timezeroPort);
@@ -251,8 +290,8 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    map.getCanvas().style.cursor = (activePanel === 'sim' || demoMode) ? 'crosshair' : '';
-  }, [activePanel, demoMode, mapReady]);
+    map.getCanvas().style.cursor = (activePanel === 'sim' || selectionMode) ? 'crosshair' : '';
+  }, [activePanel, selectionMode, mapReady]);
 
   // ── Map init ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -274,7 +313,6 @@ function App() {
       });
 
       liveMap = map;
-      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
       let weatherTimer = null;
       map.on('moveend', () => {
@@ -293,6 +331,7 @@ function App() {
         map.addSource('sar-case',          { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('proximity-lines',   { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('proximity-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('intel-events',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
         // weather vectors
         map.addLayer({
@@ -392,10 +431,52 @@ function App() {
           },
         });
 
+        // Intel event circles
+        map.addLayer({
+          id: 'intel-events-halo', type: 'circle', source: 'intel-events',
+          paint: {
+            'circle-radius': 14,
+            'circle-color': ['match', ['get', 'severity'],
+              'critical', 'rgba(255,59,59,0.18)',
+              'high',     'rgba(255,123,84,0.15)',
+              'medium',   'rgba(255,224,109,0.12)',
+                          'rgba(139,240,197,0.1)'],
+            'circle-blur': 0.8,
+          },
+        });
+        map.addLayer({
+          id: 'intel-events-layer', type: 'circle', source: 'intel-events',
+          paint: {
+            'circle-radius': 5,
+            'circle-color': ['match', ['get', 'severity'],
+              'critical', '#ff3b3b',
+              'high',     '#ff7b54',
+              'medium',   '#ffe07d',
+                          '#8bf0c5'],
+            'circle-opacity': 0.9,
+            'circle-stroke-width': 1.2,
+            'circle-stroke-color': '#04131a',
+          },
+        });
+
+        map.on('mouseenter', 'intel-events-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'intel-events-layer', () => {
+          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+        });
+        map.on('click', 'intel-events-layer', (event) => {
+          const feature = event.features?.[0];
+          if (!feature) return;
+          const [lon, lat] = feature.geometry.coordinates;
+          map.flyTo({ center: [lon, lat], zoom: 9, duration: 800 });
+          setActivePanel('intel');
+          setSidebarOpen(true);
+          event.originalEvent?.stopPropagation?.();
+        });
+
         // vessel click
         map.on('mouseenter', 'vessels-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'vessels-layer', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || demoModeRef.current) ? 'crosshair' : '';
+          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
         });
         map.on('click', 'vessels-layer', (event) => {
           const feature = event.features?.[0];
@@ -408,7 +489,7 @@ function App() {
         // proximity vessel click — same behaviour
         map.on('mouseenter', 'proximity-vessels-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'proximity-vessels-layer', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || demoModeRef.current) ? 'crosshair' : '';
+          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
         });
         map.on('click', 'proximity-vessels-layer', (event) => {
           const feature = event.features?.[0];
@@ -421,7 +502,7 @@ function App() {
         // Drift cone click
         map.on('mouseenter', 'sar-case-cone', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'sar-case-cone', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || demoModeRef.current) ? 'crosshair' : '';
+          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
         });
         map.on('click', 'sar-case-cone', (event) => {
           const feature = event.features?.[0];
@@ -432,7 +513,7 @@ function App() {
         });
         map.on('mouseenter', 'sar-case-points', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'sar-case-points', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || demoModeRef.current) ? 'crosshair' : '';
+          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
         });
         map.on('click', 'sar-case-points', (event) => {
           const feature = event.features?.[0];
@@ -443,7 +524,7 @@ function App() {
         });
 
         map.on('mousemove', (event) => {
-          if (activePanelRef.current !== 'sim' && !demoModeRef.current) return;
+          if (activePanelRef.current !== 'sim' && !selectionModeRef.current) return;
           setCursorHint({ visible: true, x: event.point.x, y: event.point.y });
         });
         map.on('mouseleave', () => {
@@ -452,18 +533,21 @@ function App() {
 
         map.on('click', (event) => {
           const hit = map.queryRenderedFeatures(event.point, {
-            layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'proximity-vessels-layer'],
+            layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'proximity-vessels-layer', 'intel-events-layer'],
           });
           if (hit.length > 0) return;
 
           const nextLat = event.lngLat.lat.toFixed(5);
           const nextLon = event.lngLat.lng.toFixed(5);
           setForm((cur) => ({ ...cur, lat: nextLat, lon: nextLon }));
-          setDemoMode(false);
+          setSelectionMode(false);
           setCursorHint({ visible: false, x: 0, y: 0 });
-
-          setShowScenario(true);
-          loadNearestVessels(nextLat, nextLon).catch(() => {});
+          if (activePanelRef.current === 'sim' || selectionModeRef.current) {
+            setShowScenario(true);
+            loadNearestVessels(nextLat, nextLon).catch(() => {});
+            return;
+          }
+          loadWeatherFor(nextLat, nextLon).catch((err) => setError(err.message || 'Weather unavailable'));
         });
 
         map.getSource('weather-points')?.setData(weatherGrid);
@@ -520,6 +604,14 @@ function App() {
     map.getSource('proximity-lines')?.setData(lfc);
   }, [nearestVessels, selectedLat, selectedLon, mapReady]);
 
+  // Intel events map layer
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
+    const features = intelEvents.filter((f) => f.geometry?.coordinates);
+    map.getSource('intel-events')?.setData({ type: 'FeatureCollection', features });
+  }, [intelEvents, mapReady]);
+
   // ── Initial data load + polling ──────────────────────────────────────────────
   useEffect(() => {
     let alive = true;
@@ -574,8 +666,8 @@ function App() {
   const serviceRows = useMemo(() => {
     if (!summary) return [];
     return [
-      { name: 'AISStream', state: summary.backend.aisstream_live ? 'live' : 'mock',     detail: summary.backend.aisstream_live ? 'live feed' : 'fallback vessel set' },
-      { name: 'CMEMS',     state: summary.backend.cmems_live ? 'ready' : 'optional',    detail: summary.backend.cmems_live ? 'live currents' : 'free weather + fallback' },
+      { name: 'AISStream', state: summary.backend.aisstream_connected ? 'live' : 'degraded', detail: summary.backend.aisstream_connected ? `live feed (${summary.backend.aisstream_messages} msgs)` : 'feed unavailable' },
+      { name: 'CMEMS',     state: summary.backend.cmems_configured ? 'ready' : 'degraded', detail: summary.backend.cmems_configured ? 'live currents configured' : 'credentials missing' },
       { name: 'Redis',     state: summary.backend.redis_configured ? 'ok' : 'off',      detail: summary.backend.redis_configured ? 'cache active' : 'not configured' },
       { name: 'Database',  state: summary.backend.database,                             detail: summary.backend.database === 'postgres' ? 'persistent' : 'local' },
       { name: 'TimeZero',  state: timezero ? (timezero.enabled ? (timezero.reachable ? 'reachable' : 'off') : 'disabled') : 'pending', detail: timezero ? `${timezero.host}:${timezero.port}` : 'pending' },
@@ -685,7 +777,23 @@ function App() {
     });
   }
 
-  const isOnSim = activePanel === 'sim' || demoMode;
+  const intelStats = useMemo(() => {
+    const by_type = {};
+    const by_sev = {};
+    for (const f of intelEvents) {
+      const p = f.properties || {};
+      if (p.type) by_type[p.type] = (by_type[p.type] || 0) + 1;
+      if (p.severity) by_sev[p.severity] = (by_sev[p.severity] || 0) + 1;
+    }
+    return { total: intelEvents.length, by_type, by_sev };
+  }, [intelEvents]);
+
+  const intelEventsFiltered = useMemo(() => {
+    if (intelFilter === 'all') return intelEvents;
+    return intelEvents.filter((f) => f.properties?.severity === intelFilter);
+  }, [intelEvents, intelFilter]);
+
+  const isOnSim = activePanel === 'sim' || selectionMode;
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -715,12 +823,12 @@ function App() {
           <div className="overlay-card">
             <span className="overlay-label">Selected point</span>
             <strong>{selectedLat.toFixed(5)}, {selectedLon.toFixed(5)}</strong>
-            <span>{isOnSim ? 'Click map to set coordinates.' : 'Click map for weather conditions.'}</span>
+            <span>{isOnSim ? 'Click map to set coordinates.' : 'Click map for point forecast.'}</span>
           </div>
         </div>
 
         {selectedVessel ? (
-          <div className={`map-overlay ${sidebarOpen ? 'sidebar-open' : ''}`} style={{ top: 16, bottom: 'auto' }}>
+          <div className={`map-overlay-vessel ${sidebarOpen ? 'sidebar-open' : ''}`}>
             <div className="overlay-card">
               <span className="overlay-label">Selected vessel</span>
               <strong>{selectedVessel.ship_name || selectedVessel.name || selectedVessel.mmsi}</strong>
@@ -783,10 +891,11 @@ function App() {
         <header className="sidebar-header">
           <p className="sidebar-kicker">SeaCommons / SAR pilot</p>
           <h2>Operational dashboard</h2>
-          <div className="sidebar-tabs sidebar-tabs--4">
+          <div className="sidebar-tabs sidebar-tabs--5">
             <button className={activePanel === 'sim'     ? 'is-active' : ''} onClick={() => setActivePanel('sim')}>Sim</button>
             <button className={activePanel === 'live'     ? 'is-active' : ''} onClick={() => setActivePanel('live')}>Live</button>
-            <button className={activePanel === 'layers'   ? 'is-active' : ''} onClick={() => setActivePanel('layers')}>Layers</button>
+            <button className={activePanel === 'data'     ? 'is-active' : ''} onClick={() => setActivePanel('data')}>Data</button>
+            <button className={activePanel === 'intel'    ? 'is-active' : ''} onClick={() => setActivePanel('intel')}>Intel</button>
             <button className={activePanel === 'settings' ? 'is-active' : ''} onClick={() => setActivePanel('settings')}>Config</button>
           </div>
         </header>
@@ -818,7 +927,7 @@ function App() {
                   </div>
                 ) : null}
                 <div className="action-row">
-                  <button onClick={loadWeather}>Load local weather</button>
+                  <button onClick={loadWeather}>Load point forecast</button>
                   <button onClick={() => loadWeatherGridForMap(mapRef.current).catch((err) => setError(err.message || 'Weather grid unavailable'))}>Refresh overlay</button>
                 </div>
               </section>
@@ -834,6 +943,67 @@ function App() {
                       <span>{item.status || item.event_type}</span>
                     </li>
                   ))}
+                </ul>
+              </section>
+            </div>
+          ) : null}
+
+          {/* ── INTEL TAB ── */}
+          {activePanel === 'intel' ? (
+            <div className="panel-stack">
+              <section className="panel-block">
+                <p className="section-kicker">Maritime Intelligence</p>
+                <h3>
+                  Live feed{' '}
+                  <span className={intelConnected ? 'intel-connected' : 'intel-offline'}>
+                    {intelConnected ? '●' : '○'}
+                  </span>
+                  {intelEvents.length > 0 && <span style={{ color: '#9cb5b0', fontWeight: 400, marginLeft: 6 }}>{intelEvents.length}</span>}
+                </h3>
+                <div className="intel-filter-row">
+                  {['all', 'critical', 'high', 'medium', 'low'].map((f) => (
+                    <button
+                      key={f}
+                      className={`intel-filter-btn ${intelFilter === f ? 'is-active' : ''}`}
+                      onClick={() => setIntelFilter(f)}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel-block" style={{ padding: 0 }}>
+                <ul className="intel-list">
+                  {intelEventsFiltered.length === 0 ? (
+                    <li className="intel-empty">
+                      {intelConnected ? `No events${intelFilter !== 'all' ? ` (${intelFilter})` : ''} yet` : 'Connecting to intel feed…'}
+                    </li>
+                  ) : intelEventsFiltered.map((feat) => {
+                    const p = feat.properties || {};
+                    const coords = feat.geometry?.coordinates;
+                    const ts = p.timestamp_utc ? new Date(p.timestamp_utc) : null;
+                    return (
+                      <li
+                        key={p.id || p.title}
+                        className="intel-event"
+                        onClick={() => {
+                          if (coords) {
+                            mapRef.current?.flyTo({ center: coords, zoom: 9, duration: 800 });
+                          }
+                        }}
+                      >
+                        <div className="intel-event-header">
+                          <span className={`intel-sev intel-sev--${p.severity || 'low'}`}>{p.severity || 'low'}</span>
+                          {ts && (
+                            <time>{ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</time>
+                          )}
+                        </div>
+                        <strong className="intel-title">{p.title}</strong>
+                        <span className="intel-source">{p.source} · {(p.type || '').replace(/_/g, ' ')}</span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             </div>
@@ -880,13 +1050,13 @@ function App() {
 
                   <div className="action-row">
                     <button type="submit">Compute drift</button>
-                    <button type="button" onClick={() => setDemoMode((v) => !v)}>
-                      {demoMode ? 'Cancel selection' : 'Pick from map'}
+                    <button type="button" onClick={() => setSelectionMode((v) => !v)}>
+                      {selectionMode ? 'Cancel selection' : 'Pick from map'}
                     </button>
                   </div>
                 </form>
 
-                {demoMode ? (
+                {selectionMode ? (
                   <div className="demo-note">
                     Selection mode active — click the map to set coordinates.
                   </div>
@@ -925,64 +1095,76 @@ function App() {
             </div>
           ) : null}
 
-          {/* ── LAYERS TAB ── */}
-          {activePanel === 'layers' ? (
+          {/* ── DATA TAB ── */}
+          {activePanel === 'data' ? (
             <div className="panel-stack">
               <section className="panel-block">
-                <p className="section-kicker">Overview</p>
-                <h3>How SeaCommons integrates</h3>
-                <p className="panel-copy">Three deployment modes: browser dashboard, REST API, autonomous edge node.</p>
-              </section>
-
-              <section className="panel-block">
-                <div className="layer-badge layer-badge--live">Watch</div>
-                <h3>Operational dashboard</h3>
-                <p className="panel-copy">Satellite map by default, native vector weather overlay, clickable AIS vessels. No external Windy iframe — weather drawn from free Open-Meteo API.</p>
-              </section>
-
-              <section className="panel-block">
-                <div className="layer-badge layer-badge--api">API</div>
-                <h3>REST + WebSocket</h3>
-                <p className="panel-copy">Endpoints for drift, weather, vessels, alerts and forensic packets.</p>
-                <div className="layer-endpoints">
-                  <code>POST /api/v1/alert</code>
-                  <code>GET  /api/v1/vessels/nearest</code>
-                  <code>GET  /api/v1/weather/grid</code>
-                  <code>WS   /ws/events</code>
+                <p className="section-kicker">Intel feed</p>
+                <h3>Event summary</h3>
+                <div className="info-grid">
+                  <div className="info-box">
+                    <strong>{intelStats.total}</strong>
+                    <span>total events</span>
+                  </div>
+                  <div className="info-box">
+                    <strong>{intelStats.by_sev['critical'] || 0}</strong>
+                    <span style={{ color: '#ff7070' }}>critical</span>
+                  </div>
+                  <div className="info-box">
+                    <strong>{intelStats.by_sev['high'] || 0}</strong>
+                    <span style={{ color: '#ff9c7a' }}>high</span>
+                  </div>
+                  <div className="info-box">
+                    <strong>{intelStats.by_sev['medium'] || 0}</strong>
+                    <span style={{ color: '#ffe07d' }}>medium</span>
+                  </div>
                 </div>
               </section>
 
               <section className="panel-block">
-                <div className="layer-badge layer-badge--edge">Edge</div>
-                <h3>Autonomous shipboard node</h3>
-                <p className="panel-copy">Raspberry Pi 5 + physical sensors + satellite sync. Same backend as the pilot, reduced for robust and open deployment.</p>
-                <div className="layer-endpoints">
-                  <code>bash apps/api/edge/firmware/firstboot.sh</code>
-                  <code>docker compose -f deploy/docker-compose.ship.yml up</code>
-                </div>
-              </section>
-
-              <section className="panel-block">
-                <p className="section-kicker">Credentials</p>
-                <h3>Configuration status</h3>
-                <ul className="cred-list">
-                  <li className={MAPTILER_KEY ? 'cred-ok' : 'cred-missing'}>
-                    <span>{MAPTILER_KEY ? '✓' : '✕'} MapTiler</span>
-                    <span>{MAPTILER_KEY ? 'satellite active' : 'OSM fallback'}</span>
-                  </li>
-                  <li className={OWM_KEY ? 'cred-ok' : 'cred-missing'}>
-                    <span>{OWM_KEY ? '✓' : '!'} OpenWeatherMap</span>
-                    <span>{OWM_KEY ? 'key available' : 'not required in base pilot'}</span>
-                  </li>
-                  <li className="cred-ok">
-                    <span>✓ Open-Meteo</span>
-                    <span>free weather active</span>
-                  </li>
-                  <li className="cred-ok">
-                    <span>✓ Weather grid</span>
-                    <span>native vector overlay</span>
-                  </li>
+                <p className="section-kicker">By source</p>
+                <h3>Channel breakdown</h3>
+                <ul className="signal-list" style={{ marginTop: 6 }}>
+                  {Object.entries(intelStats.by_type).sort((a, b) => b[1] - a[1]).map(([type, count]) => (
+                    <li key={type}>
+                      <strong>{type.replace(/_/g, ' ')}</strong>
+                      <span>{count} events</span>
+                    </li>
+                  ))}
+                  {Object.keys(intelStats.by_type).length === 0 && (
+                    <li><strong>No data yet</strong><span>Intel feed starting up</span></li>
+                  )}
                 </ul>
+              </section>
+
+              <section className="panel-block">
+                <p className="section-kicker">AIS traffic</p>
+                <h3>Vessel registry</h3>
+                <div className="info-grid">
+                  <div className="info-box">
+                    <strong>{summary?.traffic?.registry?.total_vessels ?? '—'}</strong>
+                    <span>known vessels</span>
+                  </div>
+                  <div className="info-box">
+                    <strong>{summary?.traffic?.registry?.active_30m ?? '—'}</strong>
+                    <span>active 30m</span>
+                  </div>
+                </div>
+              </section>
+
+              <section className="panel-block">
+                <p className="section-kicker">SAR operations</p>
+                <h3>Alert log</h3>
+                <div className="info-grid">
+                  <div className="info-box">
+                    <strong>{summary?.sar?.open_alerts ?? '—'}</strong>
+                    <span>open alerts</span>
+                  </div>
+                  <div className="info-box">
+                    <strong>{summary?.sar?.forensic_packets ?? '—'}</strong>
+                    <span>forensic packets</span>
+                  </div>
+                </div>
               </section>
             </div>
           ) : null}
@@ -992,17 +1174,41 @@ function App() {
             <div className="panel-stack">
               <section className="panel-block">
                 <p className="section-kicker">Connectivity</p>
-                <h3>Services &amp; TimeZero</h3>
+                <h3>API endpoint</h3>
                 <label className="field-block">
                   API base
                   <input value={apiBase} onChange={(e) => setApiBase(e.target.value)} placeholder="http://127.0.0.1:8000" />
                 </label>
-                <label className="field-block" style={{ marginTop: 7 }}>
-                  TimeZero host
+                <div className="action-row" style={{ marginTop: 8 }}>
+                  <a
+                    href={`${apiBase}/docs`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="action-row button"
+                    style={{ padding: '6px 11px', borderRadius: 3, background: 'linear-gradient(135deg,#83f4df,#70a2ff)', color: '#061015', fontWeight: 700, fontSize: 11, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                  >
+                    API docs (Swagger)
+                  </a>
+                  <a
+                    href={`${apiBase}/redoc`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ padding: '6px 11px', borderRadius: 3, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#dfeae7', fontWeight: 600, fontSize: 11, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                  >
+                    ReDoc
+                  </a>
+                </div>
+              </section>
+
+              <section className="panel-block">
+                <p className="section-kicker">TimeZero bridge</p>
+                <h3>Chart plotter</h3>
+                <label className="field-block">
+                  Host
                   <input value={localSettings.timezeroHost} onChange={(e) => updateSetting('timezeroHost', e.target.value)} />
                 </label>
                 <label className="field-block" style={{ marginTop: 7 }}>
-                  TimeZero port
+                  Port
                   <input value={localSettings.timezeroPort} onChange={(e) => updateSetting('timezeroPort', e.target.value)} />
                 </label>
               </section>
@@ -1019,7 +1225,7 @@ function App() {
                       </div>
                       <Pill
                         label={service.state}
-                        tone={['reachable', 'live', 'ready', 'ok'].includes(service.state) ? 'ok' : service.state === 'mock' ? 'info' : 'default'}
+                        tone={['reachable', 'live', 'ready', 'ok'].includes(service.state) ? 'ok' : service.state === 'degraded' ? 'warn' : 'default'}
                       />
                     </li>
                   ))}

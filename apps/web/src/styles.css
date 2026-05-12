@@ -186,6 +186,10 @@ a { color: #9be5d7; text-decoration: none; }
   grid-template-columns: repeat(4, 1fr);
 }
 
+.sidebar-tabs--5 {
+  grid-template-columns: repeat(5, 1fr);
+}
+
 .sidebar-tabs button {
   border: 1px solid rgba(255, 255, 255, 0.08);
   cursor: pointer;
@@ -443,7 +447,7 @@ a { color: #9be5d7; text-decoration: none; }
 /* ── Map banners ── */
 .map-banner {
   position: absolute;
-  top: 8px;
+  top: 40px;
   left: 8px;
   z-index: 20;
   padding: 5px 9px;
@@ -470,6 +474,17 @@ a { color: #9be5d7; text-decoration: none; }
 }
 
 .map-overlay.sidebar-open { left: 298px; }
+
+/* ── Top-left selected vessel overlay (distinct from bottom-left point overlay) ── */
+.map-overlay-vessel {
+  position: absolute;
+  left: 8px;
+  top: 44px;
+  z-index: 16;
+  width: 220px;
+}
+
+.map-overlay-vessel.sidebar-open { left: 298px; }
 
 .overlay-card {
   padding: 6px 9px;
@@ -680,6 +695,97 @@ a { color: #9be5d7; text-decoration: none; }
 .cone-row span   { color: #9cb5b0; }
 .cone-row strong { color: #e9f1ef; text-align: right; }
 
+/* ── Intel panel ── */
+.intel-filter-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.intel-filter-btn {
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #9cb5b0;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.intel-filter-btn.is-active {
+  background: rgba(131, 244, 223, 0.12);
+  border-color: rgba(131, 244, 223, 0.4);
+  color: #83f4df;
+}
+
+.intel-connected { color: #8bf0c5; }
+.intel-offline    { color: #9cb5b0; }
+
+.intel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.intel-event {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.intel-event:hover { background: rgba(255, 255, 255, 0.04); }
+
+.intel-event-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 3px;
+}
+
+.intel-event-header time { color: #7a9a94; font-size: 10px; }
+
+.intel-sev {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+.intel-sev--critical { background: rgba(255,59,59,0.2);   color: #ff7070; }
+.intel-sev--high     { background: rgba(255,123,84,0.2);  color: #ff9c7a; }
+.intel-sev--medium   { background: rgba(255,224,109,0.2); color: #ffe07d; }
+.intel-sev--low      { background: rgba(139,240,197,0.2); color: #8bf0c5; }
+
+.intel-title {
+  display: block;
+  font-size: 11px;
+  color: #dfeae7;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.intel-source {
+  display: block;
+  font-size: 10px;
+  color: #7a9a94;
+}
+
+.intel-empty {
+  padding: 12px 10px;
+  color: #7a9a94;
+  font-size: 11px;
+  text-align: center;
+}
+
 /* ── Mobile ── */
 @media (max-width: 680px) {
   .sidebar { width: 100vw; }
@@ -687,6 +793,7 @@ a { color: #9be5d7; text-decoration: none; }
   .sidebar-toggle.panel-open { left: calc(100vw + 8px); }
   .case-log-panel { width: calc(100% - 24px); left: 12px; transform: none; }
   .map-overlay { width: calc(100% - 16px); }
+  .map-overlay-vessel { width: calc(100% - 16px); }
   .cone-panel { left: 8px; right: 8px; width: auto; }
   .scenario-types { grid-template-columns: repeat(4, 1fr); }
 }

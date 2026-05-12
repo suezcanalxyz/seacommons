@@ -78,6 +78,24 @@ class AlertEvent(Base):
     created_at    = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class IntelEventDB(Base):
+    """Lightweight log of intel events from all scraping channels."""
+    __tablename__ = "intel_events"
+    id            = Column(String(16),  primary_key=True)
+    timestamp_utc = Column(String(32),  nullable=False, index=True)
+    type          = Column(String(32),  nullable=False, index=True)
+    severity      = Column(String(16),  nullable=False, index=True)
+    lat           = Column(Float)
+    lon           = Column(Float)
+    title         = Column(String(256), nullable=False)
+    text          = Column(Text,        default="")
+    url           = Column(String(512), default="")
+    source        = Column(String(64),  nullable=False)
+    linked_mmsi   = Column(String(16),  default="")
+    meta          = Column(JSON,        default=dict)
+    created_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+
+
 def create_all(database_url: str) -> None:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
