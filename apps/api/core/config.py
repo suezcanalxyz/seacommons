@@ -82,8 +82,19 @@ class SuezCanalConfig(BaseSettings):
     ACLED_KEY: str = ""
     MADRIGAL_URL: str = "https://madrigal.haystack.mit.edu"
     EMSC_WS: str = "wss://www.seismicportal.eu/standing_order/websocket"
-    MOCK: bool = False
-    DEMO_PUBLIC_MODE: bool = False
+    RUNTIME_PROFILE: str = "operational"
+    EXTERNAL_DATA_TIMEOUT_S: float = 12.0
+    ALERT_DRIFT_DURATION_H: int = 24
+    MOCK: bool = False  # deprecated compatibility flag; operational runtime ignores it
+    DEMO_PUBLIC_MODE: bool = False  # deprecated compatibility flag; operational runtime ignores it
+
+    # ── Intel layer (Twitter/X + news + AIS spike detection) ─────────────────
+    INTEL_ENABLED: bool = True
+    # Official Twitter API v2 Bearer token (free tier — 500K reads/month)
+    TWITTER_BEARER_TOKEN: str = ""
+    # twscrape accounts JSON — e.g. '[{"username":"u","password":"p"}]'
+    # Used when TWITTER_BEARER_TOKEN is absent. Requires: pip install twscrape
+    TWITTER_ACCOUNTS: str = ""
 
     # TimeZero Professional bridge
     TIMEZERO_ENABLED: bool = False
@@ -122,6 +133,6 @@ config = SuezCanalConfig()
 
 if __name__ == "__main__":
     print("SuezCanalConfig loaded OK")
-    print(f"  MOCK={config.MOCK}")
-    print(f"  AISSTREAM_KEY={'SET' if config.AISSTREAM_KEY else 'NOT SET (mock fallback)'}")
+    print(f"  RUNTIME_PROFILE={config.RUNTIME_PROFILE}")
+    print(f"  AISSTREAM_KEY={'SET' if config.AISSTREAM_KEY else 'NOT SET'}")
     print(f"  TID_ENABLED={config.TID_ENABLED}")

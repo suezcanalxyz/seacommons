@@ -12,10 +12,10 @@ except Exception:  # pragma: no cover - optional during bootstrap
     def load_dotenv(*_args, **_kwargs):
         return False
 
-# Load .env — check apps/api/ first, then repo root (local dev)
+# Load .env — prefer repo root first so local/dev/prod use one canonical runtime profile
 for _env in [
-    Path(__file__).parents[2] / ".env",   # apps/api/.env  (Docker / explicit copy)
     Path(__file__).parents[4] / ".env",   # repo root       (local dev)
+    Path(__file__).parents[2] / ".env",   # apps/api/.env   (legacy fallback)
 ]:
     if _env.exists():
         load_dotenv(_env)
@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import config
 from core.api.routes import alerts, drift, anomaly, forensic, integrations, ops, vessels
-from core.api.routes import ingest, probability, weather
+from core.api.routes import ingest, probability, weather, zones, intel
 from core.db.session import init_database
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
@@ -36,24 +36,25 @@ logger = logging.getLogger("seacommons.api")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(
-        "Seacommons API starting up (MOCK=%s, DEMO_PUBLIC_MODE=%s)",
-        config.MOCK,
-        config.DEMO_PUBLIC_MODE,
+        "Seacommons API starting up (RUNTIME_PROFILE=%s)",
+        config.RUNTIME_PROFILE,
     )
     init_database()
+    try:
+        from core.drift.opendrift_pool import prewarm
+        prewarm()
+    except Exception as exc:
+        logger.warning("OpenDrift prewarm failed to start: %s", exc)
     _start_background_sensors()
+    _start_intel_engine()
     yield
     logger.info("Seacommons API shutting down")
 
 
 def _start_background_sensors():
     """Start enabled sensor background threads."""
-    if config.DEMO_PUBLIC_MODE:
-        logger.info("Public demo mode enabled: skipping background sensor startup")
-        return
-
     try:
-        if config.TID_ENABLED or config.MOCK:
+        if config.TID_ENABLED:
             from core.sensors.ionospheric import IonosphericMonitor
             mon = IonosphericMonitor()
             mon.start()
@@ -62,21 +63,21 @@ def _start_background_sensors():
         logger.warning("IonosphericMonitor failed to start: %s", exc)
 
     try:
-        if config.INFRASOUND_ENABLED or config.MOCK:
+        if config.INFRASOUND_ENABLED:
             from core.sensors.infrasound import InfrasoundDetector
             InfrasoundDetector().start()
     except Exception as exc:
         logger.warning("InfrasoundDetector failed to start: %s", exc)
 
     try:
-        if config.SEISMIC_ENABLED or config.MOCK:
+        if config.SEISMIC_ENABLED:
             from core.sensors.seismic import SeismicDetector
             SeismicDetector().start()
     except Exception as exc:
         logger.warning("SeismicDetector failed to start: %s", exc)
 
     try:
-        if config.ADSB_ENABLED or config.MOCK:
+        if config.ADSB_ENABLED:
             from core.sensors.adsb import ADSBReceiver
             ADSBReceiver().start()
     except Exception as exc:
@@ -92,14 +93,32 @@ def _start_background_sensors():
     except Exception as exc:
         logger.warning("CorrelationEngine failed to start: %s", exc)
 
-    # Start AISStream real-time AIS feed
-    if config.AISSTREAM_KEY and not config.MOCK:
+    # Start AISStream real-time AIS feed (BarentsWatch already started above)
+    if config.AISSTREAM_KEY:
         try:
             from core.vessels import aisstream
             aisstream.start(config.AISSTREAM_KEY)
-            logger.info("AISStream client started with key %s...", config.AISSTREAM_KEY[:8])
+            logger.info("AISStream client started")
         except Exception as exc:
             logger.warning("AISStream failed to start: %s", exc)
+    else:
+        logger.warning("AISStream key missing: live vessel feed disabled")
+
+
+def _start_intel_engine() -> None:
+    """Start maritime intelligence monitors (Twitter, news, AIS spikes)."""
+    if not config.INTEL_ENABLED:
+        logger.info("Intel engine disabled (INTEL_ENABLED=false)")
+        return
+    try:
+        from core.intel.engine import intel_engine
+        intel_engine.start(
+            twitter_bearer=config.TWITTER_BEARER_TOKEN,
+            twscrape_accounts=config.TWITTER_ACCOUNTS,
+        )
+        logger.info("Intel engine started")
+    except Exception as exc:
+        logger.warning("Intel engine failed to start: %s", exc)
 
 
 app = FastAPI(
@@ -127,18 +146,19 @@ app.include_router(vessels.router)
 app.include_router(ingest.router)
 app.include_router(probability.router)
 app.include_router(weather.router)
+app.include_router(zones.router)
+app.include_router(intel.router)
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "mock": config.MOCK, "demo_public_mode": config.DEMO_PUBLIC_MODE}
+    return {"status": "ok", "runtime_profile": config.RUNTIME_PROFILE}
 
 
 @app.get("/api/v1/config")
 async def get_config():
     return {
-        "mock": config.MOCK,
-        "demo_public_mode": config.DEMO_PUBLIC_MODE,
+        "runtime_profile": config.RUNTIME_PROFILE,
         "sensors": {
             "infrasound": config.INFRASOUND_ENABLED,
             "seismic": config.SEISMIC_ENABLED,
