@@ -900,8 +900,9 @@ function App() {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !map.isStyleLoaded()) return;
-    map.getSource('sar-case')?.setData(caseGeojson);
+    if (!map || !mapReady) return;
+    const src = map.getSource('sar-case');
+    if (src) src.setData(caseGeojson);
   }, [caseGeojson, mapReady]);
 
   // Proximity overlay: update whenever nearest vessels or distress point changes
@@ -1029,7 +1030,9 @@ function App() {
     const activeSType = overrides.scenarioType || scenarioType;
     simParamsRef.current = { scenarioType: activeSType, vesselType, persons, riskLevel, lat, lon };
     setCaseStatus('starting…');
-    setCaseGeojson({ type: 'FeatureCollection', features: [] });
+    const emptyGeo = { type: 'FeatureCollection', features: [] };
+    setCaseGeojson(emptyGeo);
+    mapRef.current?.getSource('sar-case')?.setData(emptyGeo);
     setMapPanel(null);
     setError('');
 
@@ -1074,6 +1077,8 @@ function App() {
           if (status.status === 'completed') {
             const geojson = await fetchJson(apiBase, `/api/v1/alert/${created.event_id}/geojson`);
             setCaseGeojson(geojson);
+            // also set directly — avoids React effect timing gaps on subsequent runs
+            mapRef.current?.getSource('sar-case')?.setData(geojson);
             setCaseStatus('completed');
             pushCaseLog(`Drift ready ${created.event_id.slice(0, 8)}`);
             // Extract trajectory coords for zone analysis
