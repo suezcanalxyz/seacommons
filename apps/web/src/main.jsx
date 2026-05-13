@@ -145,9 +145,8 @@ function createVesselArrowImage(size = 48) {
   canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, size, size);
-  ctx.fillStyle = 'rgba(255,255,255,1)';
+  ctx.fillStyle = '#ffffff';
   const cx = size / 2;
-  // Arrow pointing up (north): pointed tip, slight notch at tail
   ctx.beginPath();
   ctx.moveTo(cx, 3);
   ctx.lineTo(size - 6, size - 4);
@@ -155,7 +154,8 @@ function createVesselArrowImage(size = 48) {
   ctx.lineTo(6, size - 4);
   ctx.closePath();
   ctx.fill();
-  return ctx.getImageData(0, 0, size, size);
+  const idata = ctx.getImageData(0, 0, size, size);
+  return { width: size, height: size, data: new Uint8Array(idata.data.buffer) };
 }
 
 function App() {
@@ -630,22 +630,33 @@ function App() {
           },
         });
 
-        // AIS vessels — triangle arrows, class A blue / class B teal
+        // AIS vessels — moving: triangle arrow; stationary: dot
+        const _movingFilter  = ['>', ['coalesce', ['get', 'speed'], 0], 0.3];
+        const _stationFilter = ['<=', ['coalesce', ['get', 'speed'], 0], 0.3];
+        map.addLayer({
+          id: 'vessels-stationary', type: 'circle', source: 'vessels',
+          filter: _stationFilter,
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 3, 10, 5, 14, 7],
+            'circle-color': ['match', ['get', 'ais_class'], 'A', '#4a9ebb', '#75f5e2'],
+            'circle-opacity': 0.75,
+            'circle-stroke-width': 0.8,
+            'circle-stroke-color': '#021318',
+          },
+        });
         map.addLayer({
           id: 'vessels-layer', type: 'symbol', source: 'vessels',
+          filter: _movingFilter,
           layout: {
             'icon-image': 'vessel-arrow',
-            'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.28, 10, 0.48, 14, 0.62],
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.30, 10, 0.50, 14, 0.65],
             'icon-rotate': ['coalesce', ['get', 'course'], 0],
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
           },
           paint: {
-            'icon-color': ['match', ['get', 'ais_class'],
-              'A', '#4a9ebb',
-              'B', '#75f5e2',
-                   '#8ff5e2'],
+            'icon-color': ['match', ['get', 'ais_class'], 'A', '#4a9ebb', '#75f5e2'],
             'icon-opacity': 0.96,
             'icon-halo-color': '#021318',
             'icon-halo-width': 1.2,
@@ -654,10 +665,22 @@ function App() {
 
         // NGO / coastguard vessels — bright teal, on top of commercial
         map.addLayer({
+          id: 'vessels-ngo-stationary', type: 'circle', source: 'vessels-ngo',
+          filter: _stationFilter,
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 4, 10, 6, 14, 8],
+            'circle-color': '#00e8c8',
+            'circle-opacity': 0.85,
+            'circle-stroke-width': 1.2,
+            'circle-stroke-color': '#021318',
+          },
+        });
+        map.addLayer({
           id: 'vessels-ngo', type: 'symbol', source: 'vessels-ngo',
+          filter: _movingFilter,
           layout: {
             'icon-image': 'vessel-arrow',
-            'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.34, 10, 0.56, 14, 0.70],
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.36, 10, 0.58, 14, 0.72],
             'icon-rotate': ['coalesce', ['get', 'course'], 0],
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
@@ -685,9 +708,11 @@ function App() {
           },
         });
 
-        // Intel event circles (near top — real-world incidents)
+        // Intel event circles — exclude routine AIS loiter alerts from map
+        const _noAisFilter = ['!=', ['get', 'type'], 'ais_spike'];
         map.addLayer({
           id: 'intel-events-halo', type: 'circle', source: 'intel-events',
+          filter: _noAisFilter,
           paint: {
             'circle-radius': 14,
             'circle-color': ['match', ['get', 'severity'],
@@ -700,6 +725,7 @@ function App() {
         });
         map.addLayer({
           id: 'intel-events-layer', type: 'circle', source: 'intel-events',
+          filter: _noAisFilter,
           paint: {
             'circle-radius': 5,
             'circle-color': ['match', ['get', 'severity'],
@@ -742,7 +768,7 @@ function App() {
         });
 
         // vessel click (commercial + NGO share same handler)
-        for (const lyr of ['vessels-layer', 'vessels-ngo', 'proximity-vessels-layer']) {
+        for (const lyr of ['vessels-layer', 'vessels-stationary', 'vessels-ngo', 'vessels-ngo-stationary', 'proximity-vessels-layer']) {
           map.on('mouseenter', lyr, () => { map.getCanvas().style.cursor = 'pointer'; });
           map.on('mouseleave', lyr, () => {
             map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
@@ -791,7 +817,7 @@ function App() {
 
         map.on('click', (event) => {
           const hit = map.queryRenderedFeatures(event.point, {
-            layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'vessels-ngo', 'proximity-vessels-layer', 'intel-events-layer'],
+            layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'vessels-stationary', 'vessels-ngo', 'vessels-ngo-stationary', 'proximity-vessels-layer', 'intel-events-layer'],
           });
           if (hit.length > 0) return;
 
@@ -1131,10 +1157,13 @@ function App() {
     return { total: intelEvents.length, by_type, by_sev };
   }, [intelEvents]);
 
+  const [showAisAlerts, setShowAisAlerts] = useState(false);
+
   const intelEventsFiltered = useMemo(() => {
-    if (intelFilter === 'all') return intelEvents;
-    return intelEvents.filter((f) => f.properties?.severity === intelFilter);
-  }, [intelEvents, intelFilter]);
+    let events = showAisAlerts ? intelEvents : intelEvents.filter((f) => f.properties?.type !== 'ais_spike');
+    if (intelFilter === 'all') return events;
+    return events.filter((f) => f.properties?.severity === intelFilter);
+  }, [intelEvents, intelFilter, showAisAlerts]);
 
   const isOnSim = activePanel === 'sim' || selectionMode;
 
@@ -1336,6 +1365,11 @@ function App() {
                         onClick={() => setIntelFilter(f)}
                       >{f}</button>
                     ))}
+                    <button
+                      className={`intel-filter-btn ${showAisAlerts ? 'is-active' : ''}`}
+                      onClick={() => setShowAisAlerts((v) => !v)}
+                      title="Toggle AIS loitering alerts"
+                    >AIS</button>
                   </div>
                 </div>
               </section>
