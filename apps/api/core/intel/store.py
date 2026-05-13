@@ -29,9 +29,11 @@ DEDUP_WINDOW = 2000  # max unique hashes kept in memory
 @dataclass
 class IntelEvent:
     id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
-    timestamp_utc: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    timestamp_utc: str = field(default="")
+
+    def __post_init__(self):
+        if not self.timestamp_utc:
+            self.timestamp_utc = datetime.now(timezone.utc).isoformat()
     # Event classification
     type: str = ""        # twitter | news | iom_incident | ais_spike | ngo_activity
     severity: str = ""   # critical | high | medium | low

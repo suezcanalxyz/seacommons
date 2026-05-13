@@ -167,6 +167,7 @@ function App() {
   const [scenarioType, setScenarioType] = useState('distress');
   const [caseEventId, setCaseEventId] = useState(null);
   const [intelEvents, setIntelEvents] = useState([]);
+  const [intelDrifts, setIntelDrifts] = useState({ type: 'FeatureCollection', features: [] });
   const [intelConnected, setIntelConnected] = useState(false);
   const [intelMode, setIntelMode] = useState('offline'); // 'ws' | 'poll' | 'offline'
   const [intelFilter, setIntelFilter] = useState('all');
@@ -312,6 +313,23 @@ function App() {
             setIntelEvents(msg.features || []);
           } else if (msg.type === 'Feature') {
             setIntelEvents((prev) => [msg, ...prev].slice(0, 300));
+          } else if (msg.type === 'event_update' && msg.drift?.trajectory) {
+            // Auto-drift completed — append to intel-drifts layer immediately
+            setIntelDrifts((prev) => {
+              const keep = prev.features.filter(f => f.properties?.intel_event_id !== msg.id);
+              const d = msg.drift;
+              const newFeats = [d.trajectory, d.cone_24h].filter(Boolean).map(f => ({
+                ...f,
+                properties: { ...f.properties, intel_event_id: msg.id,
+                  intel_title: d.title, intel_severity: d.severity, intel_source: d.source, auto_drift: true },
+              }));
+              if (d.impact_point?.features) {
+                d.impact_point.features.forEach(f => newFeats.push({
+                  ...f, properties: { ...f.properties, intel_event_id: msg.id, auto_drift: true },
+                }));
+              }
+              return { type: 'FeatureCollection', features: [...keep, ...newFeats] };
+            });
           }
         } catch { /* ignore */ }
       };
@@ -324,6 +342,20 @@ function App() {
       window.clearTimeout(pollTimer);
       ws?.close();
     };
+  }, [apiBase]);
+
+  // ── Intel drift traces polling ───────────────────────────────────────────────
+  useEffect(() => {
+    let alive = true;
+    async function loadDrifts() {
+      try {
+        const data = await fetchJson(apiBase, '/api/v1/intel/drifts');
+        if (alive && data.features) setIntelDrifts(data);
+      } catch { /* ignore */ }
+      if (alive) window.setTimeout(loadDrifts, 120_000); // re-poll every 2 min
+    }
+    loadDrifts();
+    return () => { alive = false; };
   }, [apiBase]);
 
   useEffect(() => {
@@ -377,6 +409,7 @@ function App() {
         map.addSource('proximity-lines',   { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('proximity-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-events',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('intel-drifts',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
         // weather vectors
         map.addLayer({
@@ -476,6 +509,46 @@ function App() {
           },
         });
 
+        // Intel auto-drift traces (background, below event dots)
+        map.addLayer({
+          id: 'intel-drift-cone', type: 'fill', source: 'intel-drifts',
+          filter: ['==', '$type', 'Polygon'],
+          paint: {
+            'fill-color': ['match', ['get', 'intel_severity'],
+              'critical', 'rgba(255,59,59,0.08)',
+              'high',     'rgba(255,123,84,0.07)',
+                          'rgba(139,240,197,0.05)'],
+            'fill-outline-color': ['match', ['get', 'intel_severity'],
+              'critical', 'rgba(255,59,59,0.3)',
+              'high',     'rgba(255,123,84,0.25)',
+                          'rgba(139,240,197,0.2)'],
+          },
+        });
+        map.addLayer({
+          id: 'intel-drift-line', type: 'line', source: 'intel-drifts',
+          filter: ['==', '$type', 'LineString'],
+          paint: {
+            'line-color': ['match', ['get', 'intel_severity'],
+              'critical', 'rgba(255,59,59,0.6)',
+              'high',     'rgba(255,123,84,0.55)',
+                          'rgba(139,240,197,0.45)'],
+            'line-width': 1.5,
+            'line-dasharray': [3, 3],
+          },
+        });
+        map.addLayer({
+          id: 'intel-drift-point', type: 'circle', source: 'intel-drifts',
+          filter: ['==', '$type', 'Point'],
+          paint: {
+            'circle-radius': 4,
+            'circle-color': ['match', ['get', 'intel_severity'],
+              'critical', '#ff3b3b', 'high', '#ff7b54', '#8bf0c5'],
+            'circle-opacity': 0.75,
+            'circle-stroke-width': 1,
+            'circle-stroke-color': '#04131a',
+          },
+        });
+
         // Intel event circles
         map.addLayer({
           id: 'intel-events-halo', type: 'circle', source: 'intel-events',
@@ -513,9 +586,13 @@ function App() {
           if (!feature) return;
           const [lon, lat] = feature.geometry.coordinates;
           map.flyTo({ center: [lon, lat], zoom: 9, duration: 800 });
-          setActivePanel('intel');
+          setActivePanel('osint');
           setSidebarOpen(true);
           event.originalEvent?.stopPropagation?.();
+        });
+        map.on('mouseenter', 'intel-drift-line', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'intel-drift-line', () => {
+          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
         });
 
         // vessel click
@@ -656,6 +733,13 @@ function App() {
     const features = intelEvents.filter((f) => f.geometry?.coordinates);
     map.getSource('intel-events')?.setData({ type: 'FeatureCollection', features });
   }, [intelEvents, mapReady]);
+
+  // Intel drift traces map layer
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
+    map.getSource('intel-drifts')?.setData(intelDrifts);
+  }, [intelDrifts, mapReady]);
 
   // ── Initial data load + polling ──────────────────────────────────────────────
   useEffect(() => {

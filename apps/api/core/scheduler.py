@@ -87,9 +87,20 @@ def _compute_drift_for_event(event) -> None:
             domain="ocean_sar", result=result,
         )
         event.metadata["drift_status"] = "completed"
+        event.metadata["drift_job_id"] = job_id
+        # Broadcast drift result as a map-ready GeoJSON payload to all WS clients
         intel_store.broadcast_event_update(event.id, {
             "drift_job_id": job_id,
             "drift_status": "completed",
+            "drift": {
+                "trajectory": result.trajectory,
+                "cone_24h": result.cone_24h,
+                "impact_point": result.impact_point,
+                "origin": {"lat": event.lat, "lon": event.lon},
+                "title": event.title[:80],
+                "severity": event.severity,
+                "source": event.source,
+            },
         })
         logger.info("Scheduled drift completed: event=%s job=%s", event.id, job_id)
 

@@ -15,6 +15,7 @@ Runs in a background daemon thread; events pushed to IntelStore.
 """
 from __future__ import annotations
 
+import email.utils
 import hashlib
 import json
 import logging
@@ -179,6 +180,7 @@ class NewsMonitor:
 
             severity = "critical" if (dead + missing) > 5 else "high" if (dead + missing) > 0 else "medium"
 
+            incident_date_raw = str(inc.get("incident_date", ""))
             event = IntelEvent(
                 type="iom_incident",
                 severity=severity,
@@ -188,12 +190,13 @@ class NewsMonitor:
                 text=text,
                 url=f"https://missingmigrants.iom.int/incident/{iid}",
                 source="IOM Missing Migrants",
+                timestamp_utc=_parse_date(incident_date_raw),
                 metadata={
                     "incident_id": iid,
                     "dead": dead,
                     "missing": missing,
                     "survivors": survivors,
-                    "incident_date": str(inc.get("incident_date", "")),
+                    "incident_date": incident_date_raw,
                     "location": location_text,
                     "cause": str(inc.get("cause_of_death", "")),
                 },
@@ -245,6 +248,7 @@ class NewsMonitor:
         coords = extract_coords(text_clean)
         severity = classify_severity(text_clean) if is_distress(text_clean) else "low"
 
+        pub_date_raw = item.get("pub_date", "")
         event = IntelEvent(
             type="news",
             severity=severity,
@@ -254,7 +258,8 @@ class NewsMonitor:
             text=text_clean[:600],
             url=item.get("link", ""),
             source=source,
-            metadata={"pub_date": item.get("pub_date", "")},
+            timestamp_utc=_parse_date(pub_date_raw),
+            metadata={"pub_date": pub_date_raw},
         )
         return intel_store.add(event, dedup_key=dedup)
 
@@ -305,6 +310,9 @@ class NewsMonitor:
             coords = extract_coords(text_raw)
             severity = classify_severity(text_raw)
 
+            # Try to extract date from the text (Alarm Phone uses DD/MM/YYYY or Month DD)
+            date_match = re.search(r'\b(\d{1,2}[./]\d{1,2}[./]\d{2,4}|\w+ \d{1,2},? \d{4})\b', text_raw)
+            ts = _parse_date(date_match.group(1) if date_match else "")
             event = IntelEvent(
                 type="news",
                 severity=severity,
@@ -314,6 +322,7 @@ class NewsMonitor:
                 text=text_raw[:600],
                 url="https://alarmphone.org/en/calls/",
                 source="Alarm Phone",
+                timestamp_utc=ts,
                 metadata={"scrape_source": "alarmphone.org"},
             )
             if intel_store.add(event, dedup_key=dedup):
@@ -324,6 +333,34 @@ class NewsMonitor:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _parse_date(raw: str) -> str:
+    """
+    Parse any common date string to ISO-8601 UTC.
+    Accepts: RFC 2822 (RSS pubDate), ISO 8601, date-only strings.
+    Falls back to now() if unparseable.
+    """
+    if not raw:
+        return datetime.now(timezone.utc).isoformat()
+    raw = raw.strip()
+    # RFC 2822: "Wed, 13 May 2026 12:28:33 +0000"
+    try:
+        dt = email.utils.parsedate_to_datetime(raw)
+        return dt.astimezone(timezone.utc).isoformat()
+    except Exception:
+        pass
+    # ISO 8601 / date-only
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            dt = datetime.strptime(raw[:len(fmt) + 4], fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc).isoformat()
+        except Exception:
+            continue
+    return datetime.now(timezone.utc).isoformat()
+
 
 def _med_relevant(text: str) -> bool:
     tl = text.lower()

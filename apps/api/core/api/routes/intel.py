@@ -177,6 +177,49 @@ class ImageExtractRequest(BaseModel):
     url: str
 
 
+@router.get("/api/v1/intel/drifts")
+async def get_intel_drifts():
+    """
+    All drift results linked to intel events.
+    Returns GeoJSON FeatureCollection with trajectory + cone per event.
+    Used by the frontend map layer for persistent auto-drift traces.
+    """
+    from core.db.store import get_drift
+    from core.intel.store import intel_store
+
+    features = []
+    for event in intel_store.events(limit=500):
+        job_id = event.metadata.get("drift_job_id")
+        if not job_id or event.metadata.get("drift_status") != "completed":
+            continue
+        drift = get_drift(job_id)
+        if not drift or drift.get("status") != "completed":
+            continue
+        for f in [drift.get("trajectory"), drift.get("cone_24h")]:
+            if f:
+                feat = dict(f)
+                props = dict(feat.get("properties") or {})
+                props.update({
+                    "intel_event_id": event.id,
+                    "intel_title": event.title[:80],
+                    "intel_source": event.source,
+                    "intel_severity": event.severity,
+                    "auto_drift": True,
+                })
+                feat["properties"] = props
+                features.append(feat)
+        if drift.get("impact_point"):
+            for f in drift["impact_point"].get("features", []):
+                feat = dict(f)
+                props = dict(feat.get("properties") or {})
+                props["intel_event_id"] = event.id
+                props["auto_drift"] = True
+                feat["properties"] = props
+                features.append(feat)
+
+    return {"type": "FeatureCollection", "features": features}
+
+
 @router.post("/api/v1/intel/extract-image")
 async def extract_image_coords(body: ImageExtractRequest):
     """
