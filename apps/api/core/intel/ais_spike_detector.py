@@ -164,7 +164,7 @@ class AISSpikeDetector:
         for feat in features:
             props = feat.get("properties") or {}
             coords = (feat.get("geometry") or {}).get("coordinates", [None, None])
-            if not coords or coords[0] is None:
+            if not coords or coords[0] is None or coords[1] is None:
                 continue
             v: dict[str, Any] = {
                 "mmsi":        str(props.get("mmsi", "")),
@@ -212,7 +212,7 @@ class AISSpikeDetector:
 
                 # Track loiter start
                 if v["speed"] <= STOP_THRESHOLD_KN and not _in_port(v["lat"], v["lon"]):
-                    if "loiter_start" not in prev:
+                    if not prev.get("loiter_start"):
                         prev["loiter_start"] = now_mono
                     elif now_mono - prev["loiter_start"] >= LOITER_MIN_S:
                         hotspot = _in_hotspot(v["lat"], v["lon"])
