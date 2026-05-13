@@ -168,6 +168,7 @@ function App() {
   const [caseEventId, setCaseEventId] = useState(null);
   const [intelEvents, setIntelEvents] = useState([]);
   const [intelConnected, setIntelConnected] = useState(false);
+  const [intelMode, setIntelMode] = useState('offline'); // 'ws' | 'poll' | 'offline'
   const [intelFilter, setIntelFilter] = useState('all');
   const caseEventIdRef = useRef(null);
   const caseStatusRef = useRef('idle');
@@ -266,13 +267,14 @@ function App() {
         if (alive && data.features) {
           setIntelEvents(data.features);
           setIntelConnected(true);
+          setIntelMode('poll');
         }
-      } catch { /* ignore */ }
+      } catch { /* ignore — keep last data, retry in 30s */ }
       if (alive) pollTimer = window.setTimeout(pollIntel, 30000);
     }
 
     function startPolling() {
-      setIntelConnected(false);
+      // Don't reset connected state — keep showing data while switching to poll mode
       pollIntel();
     }
 
@@ -282,24 +284,20 @@ function App() {
       intelWsRef.current = ws;
 
       const openTimer = window.setTimeout(() => {
-        // If socket hasn't opened in 4s, count as failure
-        if (ws.readyState !== WebSocket.OPEN) {
-          ws.close();
-        }
+        if (ws.readyState !== WebSocket.OPEN) ws.close();
       }, 4000);
 
       ws.onopen = () => {
         window.clearTimeout(openTimer);
         failCount = 0;
         setIntelConnected(true);
+        setIntelMode('ws');
       };
       ws.onclose = () => {
         window.clearTimeout(openTimer);
-        setIntelConnected(false);
         if (!alive) return;
         failCount += 1;
         if (failCount >= MAX_WS_FAILS) {
-          // Switch permanently to REST polling
           startPolling();
         } else {
           reconnectTimer = window.setTimeout(connect, 5000);
@@ -1064,9 +1062,11 @@ function App() {
                 <div className="osint-feed-header">
                   <span className="osint-feed-title">
                     Intel feed{' '}
-                    <span className={intelConnected ? 'intel-connected' : 'intel-offline'}>
-                      {intelConnected ? '●' : '○'}
-                    </span>
+                    <span
+                      className={intelMode === 'ws' ? 'intel-connected' : intelMode === 'poll' ? 'intel-connected-poll' : 'intel-offline'}
+                      title={intelMode === 'ws' ? 'Live WebSocket' : intelMode === 'poll' ? 'Polling every 30s' : 'Connecting…'}
+                    >●</span>
+                    {intelMode === 'poll' && <span style={{ fontSize: 9, color: '#7a9a94', marginLeft: 3 }}>poll</span>}
                   </span>
                   <div className="intel-filter-row">
                     {['all', 'critical', 'high', 'medium', 'low'].map((f) => (
@@ -1084,7 +1084,7 @@ function App() {
                 <ul className="intel-list">
                   {intelEventsFiltered.length === 0 ? (
                     <li className="intel-empty">
-                      {intelConnected ? `No events${intelFilter !== 'all' ? ` (${intelFilter})` : ''} yet` : 'Connecting…'}
+                      {intelMode !== 'offline' ? `No events${intelFilter !== 'all' ? ` (${intelFilter})` : ''} yet` : 'Connecting to intel feed…'}
                     </li>
                   ) : intelEventsFiltered.map((feat) => {
                     const p = feat.properties || {};
@@ -1101,11 +1101,16 @@ function App() {
                       >
                         <div className="intel-event-header">
                           <span className={`intel-sev intel-sev--${p.severity || 'low'}`}>{p.severity || 'low'}</span>
-                          {ts && <time>{ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</time>}
+                          {ts && (
+                            <time title={ts.toISOString()}>
+                              {ts.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}{' '}
+                              {ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                            </time>
+                          )}
                           {canDrift && (
                             <button
                               className="intel-drift-btn"
-                              title="Run SAR drift from this position"
+                              title={`Run SAR drift from ${coords[1].toFixed(3)}, ${coords[0].toFixed(3)}`}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setForm((cur) => ({ ...cur, lat: String(coords[1].toFixed(5)), lon: String(coords[0].toFixed(5)) }));
@@ -1116,9 +1121,23 @@ function App() {
                           )}
                         </div>
                         <strong className="intel-title">{p.title}</strong>
-                        <span className="intel-source">{p.source} · {(p.type || '').replace(/_/g, ' ')}</span>
+                        <span className="intel-source">
+                          <span>{p.source}</span>
+                          <span style={{ opacity: 0.5 }}>·</span>
+                          <span>{(p.type || '').replace(/_/g, ' ')}</span>
+                          {p.url && (
+                            <a
+                              className="intel-source-link"
+                              href={p.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              title="Open original source"
+                            >↗ source</a>
+                          )}
+                        </span>
                         {p.text && (
-                          <p className="intel-text">{p.text.slice(0, 120)}{p.text.length > 120 ? '…' : ''}</p>
+                          <p className="intel-text">{p.text.slice(0, 180)}{p.text.length > 180 ? '…' : ''}</p>
                         )}
                       </li>
                     );

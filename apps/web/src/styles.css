@@ -768,16 +768,29 @@ a { color: #9be5d7; text-decoration: none; }
   font-size: 11px;
   color: #dfeae7;
   margin-bottom: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .intel-source {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
   font-size: 10px;
   color: #7a9a94;
 }
+
+.intel-source-link {
+  color: #83f4df;
+  text-decoration: none;
+  font-size: 10px;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+.intel-source-link:hover { opacity: 1; text-decoration: underline; }
 
 .intel-empty {
   padding: 12px 10px;
@@ -787,11 +800,26 @@ a { color: #9be5d7; text-decoration: none; }
 }
 
 .intel-text {
-  margin: 2px 0 0;
+  margin: 3px 0 0;
   font-size: 10px;
   color: #7a9a94;
-  line-height: 1.3;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
+
+/* Prevent any horizontal overflow inside event cards */
+.intel-list,
+.intel-event {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+/* Connected dot variants */
+.intel-connected      { color: #8bf0c5; }
+.intel-connected-poll { color: #7a9a94; }
+.intel-offline        { color: #4a6a64; }
 
 .intel-drift-btn {
   margin-left: auto;
