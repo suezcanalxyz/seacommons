@@ -738,6 +738,7 @@ function App() {
       { name: 'CMEMS',     state: summary.backend.cmems_configured ? 'ready' : 'degraded', detail: summary.backend.cmems_configured ? 'live currents configured' : 'credentials missing' },
       { name: 'Redis',     state: summary.backend.redis_configured ? 'ok' : 'off',      detail: summary.backend.redis_configured ? 'cache active' : 'not configured' },
       { name: 'Database',  state: summary.backend.database,                             detail: summary.backend.database === 'postgres' ? 'persistent' : 'local' },
+      { name: 'Scheduler', state: summary.scheduler?.running ? 'live' : 'off',          detail: summary.scheduler?.running ? `${summary.scheduler.jobs?.length || 0} jobs active` : 'not running' },
       { name: 'TimeZero',  state: timezero ? (timezero.enabled ? (timezero.reachable ? 'reachable' : 'off') : 'disabled') : 'pending', detail: timezero ? `${timezero.host}:${timezero.port}` : 'pending' },
     ];
   }, [summary, timezero]);

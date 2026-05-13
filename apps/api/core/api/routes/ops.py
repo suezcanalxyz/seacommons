@@ -50,6 +50,12 @@ async def ops_summary():
             }
         )
 
+    try:
+        from core.scheduler import status as scheduler_status
+        sched = scheduler_status()
+    except Exception:
+        sched = {"running": False, "jobs": []}
+
     return {
         "product": {
             "name": "Seacommons",
@@ -79,6 +85,7 @@ async def ops_summary():
             "completed_alerts": sum(1 for alert in alerts if alert.get("status") == "completed"),
             "forensic_packets": len(forensic_packets),
         },
+        "scheduler": sched,
         "cost_profile": {
             "frontend": "static_vite",
             "backend": "fastapi_polling",

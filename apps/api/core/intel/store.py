@@ -110,7 +110,22 @@ class IntelStore:
 
         self._fire_broadcast(event)
         self._persist(event)
+        # Auto-queue drift for high/critical events with known coordinates
+        if event.severity in ("critical", "high") and event.lat is not None and event.lon is not None:
+            self._queue_auto_drift(event)
         return True
+
+    def _queue_auto_drift(self, event: IntelEvent) -> None:
+        """Enqueue drift computation for a geolocated high-priority event."""
+        import threading
+        threading.Thread(target=self._run_auto_drift, args=(event,), daemon=True).start()
+
+    def _run_auto_drift(self, event: IntelEvent) -> None:
+        try:
+            from core.scheduler import _compute_drift_for_event
+            _compute_drift_for_event(event)
+        except Exception as exc:
+            logger.warning("Auto-drift failed for event %s: %s", event.id, exc)
 
     def _persist(self, event: IntelEvent) -> None:
         """Write event to DB in a background thread — never blocks the caller."""

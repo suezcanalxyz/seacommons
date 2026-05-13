@@ -20,3 +20,4 @@ xarray>=2025.0.0
 opendrift>=1.14.9
 anthropic>=0.40
 Pillow>=10.0
+apscheduler>=3.10

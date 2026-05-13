@@ -47,8 +47,14 @@ async def lifespan(app: FastAPI):
         logger.warning("OpenDrift prewarm failed to start: %s", exc)
     _start_background_sensors()
     _start_intel_engine()
+    _start_scheduler()
     yield
     logger.info("Seacommons API shutting down")
+    try:
+        from core.scheduler import stop as scheduler_stop
+        scheduler_stop()
+    except Exception:
+        pass
 
 
 def _start_background_sensors():
@@ -103,6 +109,15 @@ def _start_background_sensors():
             logger.warning("AISStream failed to start: %s", exc)
     else:
         logger.warning("AISStream key missing: live vessel feed disabled")
+
+
+def _start_scheduler() -> None:
+    """Start APScheduler: drift-pending, news refresh, IOM incidents, forensic scan."""
+    try:
+        from core.scheduler import start as scheduler_start
+        scheduler_start()
+    except Exception as exc:
+        logger.warning("Scheduler failed to start: %s", exc)
 
 
 def _start_intel_engine() -> None:
