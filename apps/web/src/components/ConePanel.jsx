@@ -1,59 +1,121 @@
 import React from 'react';
 
 const HORIZON = {
-  cone_6h:  '6h drift zone',
-  cone_12h: '12h drift zone',
-  cone_18h: '18h drift zone',
-  cone_24h: '24h drift zone',
+  cone_6h:  '6 h drift zone',
+  cone_12h: '12 h drift zone',
+  cone_18h: '18 h drift zone',
+  cone_24h: '24 h drift zone',
 };
 
-function fmtVal(v) {
-  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(4);
-  if (v == null) return '—';
-  return String(v);
+const OBLIGATION_COLOR = {
+  critical: '#ff3b3b',
+  high:     '#ff7b54',
+  medium:   '#ffe07d',
+  low:      '#8bf0c5',
+};
+
+const RISK_COLOR = {
+  critical: '#ff3b3b',
+  high:     '#f97316',
+  medium:   '#ffe07d',
+  low:      '#8bf0c5',
+};
+
+function SectionLabel({ children }) {
+  return (
+    <div style={{
+      fontSize: 9, color: '#87cabc', textTransform: 'uppercase',
+      letterSpacing: '0.13em', marginBottom: 5,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function Row({ label, value, color, mono }) {
+  return (
+    <div className="cone-row">
+      <span>{label}</span>
+      <strong style={color ? { color } : mono ? { fontFamily: 'monospace', fontSize: 10 } : {}}>
+        {value ?? '—'}
+      </strong>
+    </div>
+  );
+}
+
+function ZoneBadge({ zone }) {
+  const col = OBLIGATION_COLOR[zone.obligation_level] || '#8bf0c5';
+  return (
+    <div style={{
+      padding: '4px 8px', marginBottom: 4, borderRadius: 3,
+      background: `${col}18`, border: `1px solid ${col}44`,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: col }}>{zone.name}</span>
+        <span style={{
+          fontSize: 9, background: `${col}30`, color: col,
+          padding: '1px 5px', borderRadius: 2,
+        }}>{zone.zone_type.replace(/_/g, ' ')}</span>
+      </div>
+      <div style={{ fontSize: 10, color: '#87cabc', marginTop: 2 }}>
+        {zone.mrcc}
+        {zone.mrcc_tel ? <span style={{ opacity: 0.7 }}> · {zone.mrcc_tel}</span> : null}
+      </div>
+      {zone.warning && (
+        <div style={{ fontSize: 9, color: '#ff3b3b', marginTop: 3, fontWeight: 600 }}>
+          ⚠ {zone.warning}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SurvivalBar({ pct, color }) {
+  return (
+    <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, margin: '4px 0 6px' }}>
+      <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: color, borderRadius: 2, transition: 'width 0.4s' }} />
+    </div>
+  );
+}
+
+function LegalNote({ note, idx }) {
+  return (
+    <div style={{
+      fontSize: 10, color: '#a0c4bb', lineHeight: 1.45,
+      padding: '3px 0 3px 10px',
+      borderLeft: '2px solid rgba(139,240,197,0.2)',
+      marginBottom: 3,
+    }}>
+      {note}
+    </div>
+  );
 }
 
 function LocationView({ panel, onComputeDrift }) {
   return (
     <>
       <div className="cone-section">
-        <div className="cone-row">
-          <span>Lat</span>
-          <strong>{panel.lat}</strong>
-        </div>
-        <div className="cone-row">
-          <span>Lon</span>
-          <strong>{panel.lon}</strong>
-        </div>
+        <Row label="Lat" value={panel.lat} mono />
+        <Row label="Lon" value={panel.lon} mono />
       </div>
 
       {panel.vessels && panel.vessels.length > 0 && (
         <div className="cone-section">
-          <div style={{ fontSize: 9, color: '#87cabc', textTransform: 'uppercase', letterSpacing: '0.13em', marginBottom: 5 }}>
-            Nearest vessels
-          </div>
+          <SectionLabel>Nearest vessels</SectionLabel>
           {panel.vessels.slice(0, 3).map((v, i) => (
-            <div className="cone-row" key={v.mmsi || i}>
-              <span>{v.ship_name || v.mmsi || '—'}</span>
-              <strong>{v.distance_nm ? v.distance_nm.toFixed(1) + ' nm' : '—'}</strong>
-            </div>
+            <Row key={v.mmsi || i}
+              label={v.ship_name || v.mmsi || '—'}
+              value={v.distance_nm ? v.distance_nm.toFixed(1) + ' nm' : '—'}
+            />
           ))}
         </div>
       )}
 
       {panel.weather && (
         <div className="cone-section">
-          <div style={{ fontSize: 9, color: '#87cabc', textTransform: 'uppercase', letterSpacing: '0.13em', marginBottom: 5 }}>
-            Conditions
-          </div>
-          <div className="cone-row">
-            <span>Wind</span>
-            <strong>{panel.weather.wind?.speed_ms} m/s {panel.weather.wind?.direction_label}</strong>
-          </div>
-          <div className="cone-row">
-            <span>Waves</span>
-            <strong>{panel.weather.waves?.significant_height_m} m</strong>
-          </div>
+          <SectionLabel>Conditions</SectionLabel>
+          <Row label="Wind" value={`${panel.weather.wind?.speed_ms} m/s ${panel.weather.wind?.direction_label}`} />
+          <Row label="Waves" value={`${panel.weather.waves?.significant_height_m} m`} />
         </div>
       )}
 
@@ -76,80 +138,106 @@ function LocationView({ panel, onComputeDrift }) {
 function ConeView({ panel }) {
   const props = panel.feature?.properties || {};
   const label = HORIZON[props.type] || props.type || 'Drift zone';
-  const SKIP = new Set(['type']);
-  const extra = Object.entries(props).filter(([k]) => !SKIP.has(k));
   const sim = panel.simParams || {};
+  const law = panel.legalAnalysis;
+
+  const survivalPct = law
+    ? Math.min(100, (law.survival.estimated_survival_hours / (law.duration_h || 24)) * 100)
+    : null;
+  const survivalColor = law ? (RISK_COLOR[law.survival.risk_level] || '#8bf0c5') : '#8bf0c5';
 
   return (
     <>
+      {/* ── Drift horizon & status ── */}
       <div className="cone-section">
-        <div className="cone-row">
-          <span>Horizon</span>
-          <strong>{label}</strong>
-        </div>
-        {panel.eventId && (
-          <div className="cone-row">
-            <span>Event</span>
-            <strong>{panel.eventId.slice(0, 12)}…</strong>
-          </div>
-        )}
-        {panel.caseStatus && (
-          <div className="cone-row">
-            <span>Status</span>
-            <strong>{panel.caseStatus}</strong>
-          </div>
-        )}
+        <Row label="Horizon" value={label} />
+        {panel.eventId && <Row label="Event" value={panel.eventId.slice(0, 12) + '…'} />}
+        {panel.caseStatus && <Row label="Status" value={panel.caseStatus} />}
+        {law?.drift_nm != null && <Row label="Drift distance" value={`${law.drift_nm} nm`} />}
       </div>
 
-      {(sim.scenarioType || sim.vesselType || sim.persons || sim.riskLevel) && (
+      {/* ── Simulation parameters ── */}
+      {(sim.scenarioType || sim.vesselType || sim.persons) && (
         <div className="cone-section">
-          <div style={{ fontSize: 9, color: '#87cabc', textTransform: 'uppercase', letterSpacing: '0.13em', marginBottom: 5 }}>
-            Simulation parameters
-          </div>
-          {sim.scenarioType && (
-            <div className="cone-row">
-              <span>Emergency</span>
-              <strong>{sim.scenarioType.replace(/_/g, ' ')}</strong>
-            </div>
+          <SectionLabel>Simulation</SectionLabel>
+          {sim.scenarioType && <Row label="Emergency" value={sim.scenarioType.replace(/_/g, ' ')} />}
+          {sim.vesselType  && <Row label="Vessel"    value={sim.vesselType.replace(/_/g, ' ')} />}
+          {sim.persons     && <Row label="Persons"   value={sim.persons} />}
+          {sim.riskLevel   && <Row label="Risk"      value={sim.riskLevel} />}
+          {sim.lat && <Row label="Origin" value={`${Number(sim.lat).toFixed(4)}, ${Number(sim.lon).toFixed(4)}`} mono />}
+        </div>
+      )}
+
+      {/* ── Survival estimate ── */}
+      {law?.survival && (
+        <div className="cone-section">
+          <SectionLabel>Survival estimate</SectionLabel>
+          <Row
+            label="Risk level"
+            value={law.survival.risk_level.toUpperCase()}
+            color={RISK_COLOR[law.survival.risk_level]}
+          />
+          <Row label="Est. survival window" value={`${law.survival.estimated_survival_hours} h`} />
+          {survivalPct !== null && (
+            <SurvivalBar pct={survivalPct} color={survivalColor} />
           )}
-          {sim.vesselType && (
-            <div className="cone-row">
-              <span>Vessel</span>
-              <strong>{sim.vesselType.replace(/_/g, ' ')}</strong>
-            </div>
-          )}
-          {sim.persons && (
-            <div className="cone-row">
-              <span>Persons</span>
-              <strong>{sim.persons}</strong>
-            </div>
-          )}
-          {sim.riskLevel && (
-            <div className="cone-row">
-              <span>Risk</span>
-              <strong>{sim.riskLevel}</strong>
-            </div>
-          )}
-          {sim.lat && (
-            <div className="cone-row">
-              <span>Origin</span>
-              <strong>{Number(sim.lat).toFixed(4)}, {Number(sim.lon).toFixed(4)}</strong>
+          <Row label="Sea state" value={`Bf ${law.survival.beaufort} — ${law.survival.sea_state}`} />
+          <Row label="Wave height" value={`${law.survival.wave_height_m} m`} />
+          <Row label="Capsizing risk" value={`${law.survival.capsizing_risk_pct}%`}
+            color={law.survival.capsizing_risk_pct > 60 ? '#ff3b3b' : undefined} />
+          {law.warnings?.length > 0 && (
+            <div style={{ marginTop: 4 }}>
+              {law.warnings.map((w, i) => (
+                <div key={i} style={{ fontSize: 9, color: '#ff3b3b', fontWeight: 700, marginBottom: 2 }}>
+                  ⚠ {w}
+                </div>
+              ))}
             </div>
           )}
         </div>
       )}
 
-      {extra.length > 0 && (
-        <div className="cone-section" style={{ borderBottom: 'none' }}>
-          <div style={{ fontSize: 9, color: '#87cabc', textTransform: 'uppercase', letterSpacing: '0.13em', marginBottom: 5 }}>
-            Geometry properties
+      {/* ── SAR zones ── */}
+      {law?.origin_zones?.length > 0 && (
+        <div className="cone-section">
+          <SectionLabel>SAR zones (origin)</SectionLabel>
+          {law.origin_zones.map((z) => <ZoneBadge key={z.id} zone={z} />)}
+        </div>
+      )}
+
+      {/* ── Trajectory zones (if different from origin) ── */}
+      {law?.trajectory_zones?.length > 0 && (() => {
+        const originIds = new Set((law.origin_zones || []).map(z => z.id));
+        const extra = law.trajectory_zones.filter(z => !originIds.has(z.id));
+        return extra.length > 0 ? (
+          <div className="cone-section">
+            <SectionLabel>Zones entered during drift</SectionLabel>
+            {extra.map((z) => <ZoneBadge key={z.id} zone={z} />)}
           </div>
-          {extra.map(([k, v]) => (
-            <div className="cone-row" key={k}>
-              <span>{k.replace(/_/g, ' ')}</span>
-              <strong>{fmtVal(v)}</strong>
+        ) : null;
+      })()}
+
+      {/* ── MRCC contacts ── */}
+      {law?.all_contacts?.length > 0 && (
+        <div className="cone-section">
+          <SectionLabel>MRCC contacts</SectionLabel>
+          {law.all_contacts.map((c, i) => (
+            <div key={i} className="cone-row" style={{ alignItems: 'flex-start' }}>
+              <span style={{ flex: 1 }}>{c.name}</span>
+              <strong style={{ fontFamily: 'monospace', fontSize: 10, color: '#8bf0c5' }}>{c.tel}</strong>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── Legal framework ── */}
+      {law?.legal_notes?.length > 0 && (
+        <div className="cone-section" style={{ borderBottom: 'none' }}>
+          <SectionLabel>Legal framework</SectionLabel>
+          {law.legal_notes.map((note, i) => <LegalNote key={i} note={note} idx={i} />)}
+          <div style={{ fontSize: 9, color: '#4a6a64', marginTop: 6 }}>
+            Sources: SOLAS V/33, UNCLOS Art. 98, IAMSAR Manual, IMO SAR Convention 1979
+          </div>
         </div>
       )}
     </>

@@ -167,8 +167,17 @@ _RE_DECIMAL_NS = re.compile(
 _RE_DECIMAL_PAIR = re.compile(
     r"(?<!\d)([+-]?(?:3[0-9]|4[0-4])\.\d{2,5})[,\s/]+([+-]?(?:[0-3]?\d|1[0-7]\d)\.\d{2,5})(?!\d)"
 )
+_MIN = "[\x27‘’′]"  # ascii apostrophe, left/right curly quote, prime
+_DEG = r"[°º]"
 _RE_DMS = re.compile(
-    r"(\d{1,2})[°º](\d{1,2})['’]?\s*[Nn][,\s]+(\d{1,3})[°º](\d{1,2})['’]?\s*[Ee]"
+    r"(\d{1,2})" + _DEG + r"(\d{1,2})" + _MIN + r"?\s*[Nn][,\s]+"
+    r"(\d{1,3})" + _DEG + r"(\d{1,2})" + _MIN + r"?\s*[Ee]"
+)
+# Alarm Phone / map format: "N 34° 30’ ..."  or  "N 34°30’" etc.
+_RE_DMS_PREFIX = re.compile(
+    r"[Nn]\s*(\d{1,2})\s*" + _DEG + r"\s*(\d{1,2})\s*" + _MIN
+    + r"[^EeWw]{0,25}"
+    + r"[Ee]\s*(\d{1,3})\s*" + _DEG + r"\s*(\d{1,2})\s*" + _MIN
 )
 _RE_POSITION_LABEL = re.compile(
     r"(?:position|pos|coord|gps|location)[:\s]+([^\n]{5,60})", re.I
@@ -198,8 +207,16 @@ def extract_coords(text: str) -> Optional[tuple[float, float]]:
         if _valid(lat, lon):
             return lat, lon
 
-    # 3. DMS  e.g. "35°30'N 12°15'E"
+    # 3a. DMS  e.g. "35°30'N 12°15'E"
     m = _RE_DMS.search(text)
+    if m:
+        lat = int(m.group(1)) + int(m.group(2)) / 60.0
+        lon = int(m.group(3)) + int(m.group(4)) / 60.0
+        if _valid(lat, lon):
+            return lat, lon
+
+    # 3b. DMS prefix form  e.g. "N 34° 30' ... E 013° 15'"
+    m = _RE_DMS_PREFIX.search(text)
     if m:
         lat = int(m.group(1)) + int(m.group(2)) / 60.0
         lon = int(m.group(3)) + int(m.group(4)) / 60.0

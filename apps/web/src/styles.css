@@ -267,9 +267,18 @@ a { color: #9be5d7; text-decoration: none; }
   padding: 5px 7px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.05);
+  background: #0e2229;
   color: #f1faf8;
   font-size: 12px;
+}
+
+.demo-form input::placeholder,
+.field-block input::placeholder { color: rgba(255,255,255,0.3); }
+
+.field-block select option,
+.demo-form select option {
+  background: #0e2229;
+  color: #f1faf8;
 }
 
 .action-row {
@@ -740,6 +749,12 @@ a { color: #9be5d7; text-decoration: none; }
 
 .intel-event:hover { background: rgba(255, 255, 255, 0.04); }
 
+.intel-event--distress {
+  border-left: 2px solid rgba(255, 59, 59, 0.55);
+  background: rgba(255, 59, 59, 0.04);
+}
+.intel-event--distress:hover { background: rgba(255, 59, 59, 0.09); }
+
 .intel-event-header {
   display: flex;
   justify-content: space-between;
@@ -823,18 +838,23 @@ a { color: #9be5d7; text-decoration: none; }
 
 .intel-drift-btn {
   margin-left: auto;
-  padding: 1px 7px;
+  padding: 2px 8px;
   font-size: 10px;
-  font-weight: 700;
-  background: rgba(131,244,223,0.12);
-  border: 1px solid rgba(131,244,223,0.3);
-  color: #83f4df;
+  font-weight: 600;
   border-radius: 3px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
-.intel-drift-btn:hover { background: rgba(131,244,223,0.22); }
+.intel-drift-btn--ready {
+  background: rgba(0,232,200,0.13);
+  border: 1px solid rgba(0,232,200,0.35);
+  color: #00e8c8;
+}
+.intel-drift-btn--ready:hover {
+  background: rgba(0,232,200,0.24);
+  border-color: rgba(0,232,200,0.6);
+}
 
 /* ── OSINT tab ── */
 .osint-stats-row {

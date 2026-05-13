@@ -140,6 +140,24 @@ function buildProximityGeojson(vessels, distressLat, distressLon) {
   };
 }
 
+function createVesselArrowImage(size = 48) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = 'rgba(255,255,255,1)';
+  const cx = size / 2;
+  // Arrow pointing up (north): pointed tip, slight notch at tail
+  ctx.beginPath();
+  ctx.moveTo(cx, 3);
+  ctx.lineTo(size - 6, size - 4);
+  ctx.lineTo(cx, size - 11);
+  ctx.lineTo(6, size - 4);
+  ctx.closePath();
+  ctx.fill();
+  return ctx.getImageData(0, 0, size, size);
+}
+
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activePanel, setActivePanel] = useState('sim');
@@ -147,6 +165,8 @@ function App() {
   const [localSettings, setLocalSettings] = useState(loadLocalSettings);
   const [summary, setSummary] = useState(null);
   const [vessels, setVessels] = useState({ type: 'FeatureCollection', features: [] });
+  const [ngoVessels, setNgoVessels] = useState({ type: 'FeatureCollection', features: [] });
+  const [platforms, setPlatforms] = useState({ type: 'FeatureCollection', features: [] });
   const [alerts, setAlerts] = useState({ type: 'FeatureCollection', features: [] });
   const [caseGeojson, setCaseGeojson] = useState({ type: 'FeatureCollection', features: [] });
   const [weather, setWeather] = useState(null);
@@ -249,34 +269,74 @@ function App() {
   }, [caseStatus]);
 
   // ── Intel feed: WebSocket with REST polling fallback ─────────────────────────
-  // Vercel's HTTP rewrite proxy strips WebSocket upgrade headers, so WS only
-  // works when the API is served from the same origin or via a real WS proxy.
-  // After 3 failed WS attempts we fall back to polling /api/v1/intel every 30s.
   useEffect(() => {
     const wsBase = apiBase.replace(/^http/, 'ws');
     let ws = null;
     let reconnectTimer = null;
     let pollTimer = null;
     let failCount = 0;
+    let polling = false;   // guard: only one poll loop at a time
     let alive = true;
     const MAX_WS_FAILS = 3;
 
-    async function pollIntel() {
-      if (!alive) return;
+    function handleWsMessage(e) {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'ping') return;
+        if (msg.type === 'snapshot') {
+          setIntelEvents(msg.features || []);
+        } else if (msg.type === 'Feature') {
+          setIntelEvents((prev) => [msg, ...prev].slice(0, 300));
+          const mp = msg.properties || {};
+          if (mp.type === 'distress' && ['critical', 'high'].includes(mp.severity)) {
+            setActivePanel('osint');
+            setSidebarOpen(true);
+          }
+        } else if (msg.type === 'event_update' && msg.drift?.trajectory) {
+          setIntelDrifts((prev) => {
+            const keep = prev.features.filter(f => f.properties?.intel_event_id !== msg.id);
+            const d = msg.drift;
+            const newFeats = [d.trajectory, d.cone_24h].filter(Boolean).map(f => ({
+              ...f,
+              properties: { ...f.properties, intel_event_id: msg.id,
+                intel_title: d.title, intel_severity: d.severity, intel_source: d.source, auto_drift: true },
+            }));
+            if (d.impact_point?.features) {
+              d.impact_point.features.forEach(f => newFeats.push({
+                ...f, properties: { ...f.properties, intel_event_id: msg.id, auto_drift: true },
+              }));
+            }
+            return { type: 'FeatureCollection', features: [...keep, ...newFeats] };
+          });
+        }
+      } catch { /* ignore malformed */ }
+    }
+
+    async function pollOnce() {
       try {
         const data = await fetchJson(apiBase, '/api/v1/intel?limit=200');
-        if (alive && data.features) {
+        if (!alive) return;
+        if (data.features) {
           setIntelEvents(data.features);
           setIntelConnected(true);
           setIntelMode('poll');
         }
-      } catch { /* ignore — keep last data, retry in 30s */ }
-      if (alive) pollTimer = window.setTimeout(pollIntel, 30000);
+      } catch {
+        if (!alive) return;
+        setIntelConnected(false);
+        setIntelMode('offline');
+      }
     }
 
-    function startPolling() {
-      // Don't reset connected state — keep showing data while switching to poll mode
-      pollIntel();
+    async function pollLoop() {
+      if (!alive || polling) return;
+      polling = true;
+      while (alive) {
+        await pollOnce();
+        if (!alive) break;
+        await new Promise((res) => { pollTimer = window.setTimeout(res, 30000); });
+      }
+      polling = false;
     }
 
     function connect() {
@@ -285,8 +345,8 @@ function App() {
       intelWsRef.current = ws;
 
       const openTimer = window.setTimeout(() => {
-        if (ws.readyState !== WebSocket.OPEN) ws.close();
-      }, 4000);
+        if (ws && ws.readyState !== WebSocket.OPEN) ws.close();
+      }, 5000);
 
       ws.onopen = () => {
         window.clearTimeout(openTimer);
@@ -299,40 +359,15 @@ function App() {
         if (!alive) return;
         failCount += 1;
         if (failCount >= MAX_WS_FAILS) {
-          startPolling();
+          // Give up on WS — switch to polling permanently
+          setIntelMode('poll');
+          pollLoop();
         } else {
           reconnectTimer = window.setTimeout(connect, 5000);
         }
       };
-      ws.onerror = () => { window.clearTimeout(openTimer); ws.close(); };
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          if (msg.type === 'ping') return;
-          if (msg.type === 'snapshot') {
-            setIntelEvents(msg.features || []);
-          } else if (msg.type === 'Feature') {
-            setIntelEvents((prev) => [msg, ...prev].slice(0, 300));
-          } else if (msg.type === 'event_update' && msg.drift?.trajectory) {
-            // Auto-drift completed — append to intel-drifts layer immediately
-            setIntelDrifts((prev) => {
-              const keep = prev.features.filter(f => f.properties?.intel_event_id !== msg.id);
-              const d = msg.drift;
-              const newFeats = [d.trajectory, d.cone_24h].filter(Boolean).map(f => ({
-                ...f,
-                properties: { ...f.properties, intel_event_id: msg.id,
-                  intel_title: d.title, intel_severity: d.severity, intel_source: d.source, auto_drift: true },
-              }));
-              if (d.impact_point?.features) {
-                d.impact_point.features.forEach(f => newFeats.push({
-                  ...f, properties: { ...f.properties, intel_event_id: msg.id, auto_drift: true },
-                }));
-              }
-              return { type: 'FeatureCollection', features: [...keep, ...newFeats] };
-            });
-          }
-        } catch { /* ignore */ }
-      };
+      ws.onerror = () => { window.clearTimeout(openTimer); ws?.close(); };
+      ws.onmessage = handleWsMessage;
     }
 
     connect();
@@ -352,9 +387,32 @@ function App() {
         const data = await fetchJson(apiBase, '/api/v1/intel/drifts');
         if (alive && data.features) setIntelDrifts(data);
       } catch { /* ignore */ }
-      if (alive) window.setTimeout(loadDrifts, 120_000); // re-poll every 2 min
+      if (alive) window.setTimeout(loadDrifts, 120_000);
     }
     loadDrifts();
+    return () => { alive = false; };
+  }, [apiBase]);
+
+  useEffect(() => {
+    fetchJson(apiBase, '/api/v1/zones/platforms')
+      .then(d => { if (d.features) setPlatforms(d); })
+      .catch(() => {});
+  }, [apiBase]);
+
+  useEffect(() => {
+    let alive = true;
+    async function loadNgoVessels() {
+      try {
+        const data = await fetchJson(apiBase, '/api/v1/intel/ngo');
+        if (alive && data.features) {
+          // Only keep positioned vessels (geometry != null)
+          const positioned = { ...data, features: data.features.filter((f) => f.geometry?.coordinates) };
+          setNgoVessels(positioned);
+        }
+      } catch { /* ignore */ }
+      if (alive) window.setTimeout(loadNgoVessels, 120_000);
+    }
+    loadNgoVessels();
     return () => { alive = false; };
   }, [apiBase]);
 
@@ -400,10 +458,15 @@ function App() {
       });
 
       map.on('load', () => {
+        // Register vessel arrow SDF icon
+        map.addImage('vessel-arrow', createVesselArrowImage(48), { sdf: true });
+
         // sources
         map.addSource('weather-points',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('weather-vectors',   { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('vessels',           { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('vessels-ngo',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('platforms',         { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('alerts',            { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('sar-case',          { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('proximity-lines',   { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -430,25 +493,84 @@ function App() {
           },
         });
 
-        // AIS vessels
+        // ── Layer z-order (bottom → top) ─────────────────────────────────────
+        // weather → platforms → intel-drift (bg) → alerts → sar-case
+        // → proximity → vessels → NGO → intel-drift-points → intel-events → sar-impact
+
+        // Oil/gas platforms — static infrastructure, rendered just above weather
         map.addLayer({
-          id: 'vessels-halo', type: 'circle', source: 'vessels',
-          paint: { 'circle-radius': 8, 'circle-color': 'rgba(117,255,229,0.16)', 'circle-blur': 0.6 },
+          id: 'platforms-halo', type: 'circle', source: 'platforms',
+          paint: {
+            'circle-radius': 7,
+            'circle-color': ['match', ['get', 'platform_type'],
+              'oil', 'rgba(251,146,60,0.20)',
+                     'rgba(250,204,21,0.18)'],
+            'circle-blur': 0.5,
+          },
         });
         map.addLayer({
-          id: 'vessels-layer', type: 'circle', source: 'vessels',
+          id: 'platforms-layer', type: 'circle', source: 'platforms',
           paint: {
-            'circle-radius': 5, 'circle-color': '#8ff5e2', 'circle-opacity': 0.96,
-            'circle-stroke-width': 1.2, 'circle-stroke-color': '#021318',
+            'circle-radius': 4,
+            'circle-color': ['match', ['get', 'platform_type'],
+              'oil', '#fb923c',
+                     '#fbbf24'],
+            'circle-opacity': 0.88,
+            'circle-stroke-width': 1.5,
+            'circle-stroke-color': '#0d1f26',
           },
         });
 
-        // SAR drift result
+        // Intel auto-drift background cones & lines (faintest, furthest back)
+        map.addLayer({
+          id: 'intel-drift-cone', type: 'fill', source: 'intel-drifts',
+          filter: ['==', '$type', 'Polygon'],
+          paint: {
+            'fill-color': ['match', ['get', 'intel_severity'],
+              'critical', 'rgba(255,59,59,0.08)',
+              'high',     'rgba(255,123,84,0.07)',
+                          'rgba(139,240,197,0.05)'],
+            'fill-outline-color': ['match', ['get', 'intel_severity'],
+              'critical', 'rgba(255,59,59,0.28)',
+              'high',     'rgba(255,123,84,0.22)',
+                          'rgba(139,240,197,0.18)'],
+          },
+        });
+        map.addLayer({
+          id: 'intel-drift-line', type: 'line', source: 'intel-drifts',
+          filter: ['==', '$type', 'LineString'],
+          paint: {
+            'line-color': ['match', ['get', 'intel_severity'],
+              'critical', 'rgba(255,59,59,0.55)',
+              'high',     'rgba(255,123,84,0.50)',
+                          'rgba(139,240,197,0.40)'],
+            'line-width': 1.5,
+            'line-dasharray': [3, 3],
+          },
+        });
+
+        // Historical SAR drift cones & trajectories
+        map.addLayer({
+          id: 'alerts-cone', type: 'fill', source: 'alerts',
+          filter: ['==', '$type', 'Polygon'],
+          paint: {
+            'fill-color': ['match', ['get', 'type'],
+              'cone_6h',  'rgba(255,180,60,0.22)',
+              'cone_12h', 'rgba(255,120,40,0.17)',
+                          'rgba(255,60,30,0.13)'],
+            'fill-outline-color': ['match', ['get', 'type'],
+              'cone_6h',  'rgba(255,180,60,0.55)',
+              'cone_12h', 'rgba(255,120,40,0.45)',
+                          'rgba(255,60,30,0.38)'],
+          },
+        });
         map.addLayer({
           id: 'alerts-layer', type: 'line', source: 'alerts',
           filter: ['==', '$type', 'LineString'],
           paint: { 'line-color': '#ff7b54', 'line-width': 2.5, 'line-opacity': 0.9 },
         });
+
+        // Active SAR case cone & trajectory
         map.addLayer({
           id: 'sar-case-cone', type: 'fill', source: 'sar-case',
           filter: ['==', '$type', 'Polygon'],
@@ -473,14 +595,6 @@ function App() {
             'line-dasharray': [6, 4],
           },
         });
-        map.addLayer({
-          id: 'sar-case-points', type: 'circle', source: 'sar-case',
-          filter: ['==', '$type', 'Point'],
-          paint: {
-            'circle-radius': 5, 'circle-color': '#fff4bf',
-            'circle-stroke-width': 1.5, 'circle-stroke-color': '#ff7b54',
-          },
-        });
 
         // Proximity: dashed lines from distress to nearest vessels
         map.addLayer({
@@ -493,49 +607,71 @@ function App() {
           },
         });
 
-        // Proximity: highlighted vessel circles (orange, larger)
+        // Proximity: highlighted vessel triangles (orange glow + arrow)
         map.addLayer({
           id: 'proximity-vessels-halo', type: 'circle', source: 'proximity-vessels',
-          paint: { 'circle-radius': 12, 'circle-color': 'rgba(249,115,22,0.18)', 'circle-blur': 0.7 },
+          paint: { 'circle-radius': 14, 'circle-color': 'rgba(249,115,22,0.20)', 'circle-blur': 0.8 },
         });
         map.addLayer({
-          id: 'proximity-vessels-layer', type: 'circle', source: 'proximity-vessels',
+          id: 'proximity-vessels-layer', type: 'symbol', source: 'proximity-vessels',
+          layout: {
+            'icon-image': 'vessel-arrow',
+            'icon-size': 0.56,
+            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
           paint: {
-            'circle-radius': 7,
-            'circle-color': '#fb923c',
-            'circle-opacity': 0.97,
-            'circle-stroke-width': 2,
-            'circle-stroke-color': '#431407',
+            'icon-color': '#f97316',
+            'icon-opacity': 1.0,
+            'icon-halo-color': '#431407',
+            'icon-halo-width': 2.0,
           },
         });
 
-        // Intel auto-drift traces (background, below event dots)
+        // AIS vessels — triangle arrows, class A blue / class B teal
         map.addLayer({
-          id: 'intel-drift-cone', type: 'fill', source: 'intel-drifts',
-          filter: ['==', '$type', 'Polygon'],
+          id: 'vessels-layer', type: 'symbol', source: 'vessels',
+          layout: {
+            'icon-image': 'vessel-arrow',
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.28, 10, 0.48, 14, 0.62],
+            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
           paint: {
-            'fill-color': ['match', ['get', 'intel_severity'],
-              'critical', 'rgba(255,59,59,0.08)',
-              'high',     'rgba(255,123,84,0.07)',
-                          'rgba(139,240,197,0.05)'],
-            'fill-outline-color': ['match', ['get', 'intel_severity'],
-              'critical', 'rgba(255,59,59,0.3)',
-              'high',     'rgba(255,123,84,0.25)',
-                          'rgba(139,240,197,0.2)'],
+            'icon-color': ['match', ['get', 'ais_class'],
+              'A', '#4a9ebb',
+              'B', '#75f5e2',
+                   '#8ff5e2'],
+            'icon-opacity': 0.96,
+            'icon-halo-color': '#021318',
+            'icon-halo-width': 1.2,
           },
         });
+
+        // NGO / coastguard vessels — bright teal, on top of commercial
         map.addLayer({
-          id: 'intel-drift-line', type: 'line', source: 'intel-drifts',
-          filter: ['==', '$type', 'LineString'],
+          id: 'vessels-ngo', type: 'symbol', source: 'vessels-ngo',
+          layout: {
+            'icon-image': 'vessel-arrow',
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.34, 10, 0.56, 14, 0.70],
+            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
           paint: {
-            'line-color': ['match', ['get', 'intel_severity'],
-              'critical', 'rgba(255,59,59,0.6)',
-              'high',     'rgba(255,123,84,0.55)',
-                          'rgba(139,240,197,0.45)'],
-            'line-width': 1.5,
-            'line-dasharray': [3, 3],
+            'icon-color': '#00e8c8',
+            'icon-opacity': 1.0,
+            'icon-halo-color': '#021318',
+            'icon-halo-width': 1.8,
           },
         });
+
+        // Intel auto-drift impact points (above vessels)
         map.addLayer({
           id: 'intel-drift-point', type: 'circle', source: 'intel-drifts',
           filter: ['==', '$type', 'Point'],
@@ -543,13 +679,13 @@ function App() {
             'circle-radius': 4,
             'circle-color': ['match', ['get', 'intel_severity'],
               'critical', '#ff3b3b', 'high', '#ff7b54', '#8bf0c5'],
-            'circle-opacity': 0.75,
+            'circle-opacity': 0.78,
             'circle-stroke-width': 1,
             'circle-stroke-color': '#04131a',
           },
         });
 
-        // Intel event circles
+        // Intel event circles (near top — real-world incidents)
         map.addLayer({
           id: 'intel-events-halo', type: 'circle', source: 'intel-events',
           paint: {
@@ -577,6 +713,16 @@ function App() {
           },
         });
 
+        // Active SAR impact point — topmost layer
+        map.addLayer({
+          id: 'sar-case-points', type: 'circle', source: 'sar-case',
+          filter: ['==', '$type', 'Point'],
+          paint: {
+            'circle-radius': 6, 'circle-color': '#fff4bf',
+            'circle-stroke-width': 1.8, 'circle-stroke-color': '#ff7b54',
+          },
+        });
+
         map.on('mouseenter', 'intel-events-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'intel-events-layer', () => {
           map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
@@ -595,31 +741,21 @@ function App() {
           map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
         });
 
-        // vessel click
-        map.on('mouseenter', 'vessels-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mouseleave', 'vessels-layer', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
-        });
-        map.on('click', 'vessels-layer', (event) => {
-          const feature = event.features?.[0];
-          if (!feature) return;
-          const [lon, lat] = feature.geometry.coordinates;
-          setSelectedVessel({ ...feature.properties, lon, lat });
-          setSidebarOpen(true);
-        });
-
-        // proximity vessel click — same behaviour
-        map.on('mouseenter', 'proximity-vessels-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mouseleave', 'proximity-vessels-layer', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
-        });
-        map.on('click', 'proximity-vessels-layer', (event) => {
-          const feature = event.features?.[0];
-          if (!feature) return;
-          const [lon, lat] = feature.geometry.coordinates;
-          setSelectedVessel({ ...feature.properties, lon, lat });
-          setSidebarOpen(true);
-        });
+        // vessel click (commercial + NGO share same handler)
+        for (const lyr of ['vessels-layer', 'vessels-ngo', 'proximity-vessels-layer']) {
+          map.on('mouseenter', lyr, () => { map.getCanvas().style.cursor = 'pointer'; });
+          map.on('mouseleave', lyr, () => {
+            map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+          });
+          map.on('click', lyr, (event) => {
+            const feature = event.features?.[0];
+            if (!feature) return;
+            const [lon, lat] = feature.geometry.coordinates;
+            setSelectedVessel({ ...feature.properties, lon, lat });
+            setSidebarOpen(true);
+            event.originalEvent?.stopPropagation?.();
+          });
+        }
 
         // Drift cone click
         map.on('mouseenter', 'sar-case-cone', () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -655,7 +791,7 @@ function App() {
 
         map.on('click', (event) => {
           const hit = map.queryRenderedFeatures(event.point, {
-            layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'proximity-vessels-layer', 'intel-events-layer'],
+            layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'vessels-ngo', 'proximity-vessels-layer', 'intel-events-layer'],
           });
           if (hit.length > 0) return;
 
@@ -675,7 +811,20 @@ function App() {
         map.getSource('weather-points')?.setData(weatherGrid);
         map.getSource('weather-vectors')?.setData(weatherVectors);
         map.getSource('vessels')?.setData(vessels);
+        map.getSource('vessels-ngo')?.setData(ngoVessels);
+        map.getSource('platforms')?.setData(platforms);
         map.getSource('alerts')?.setData(alerts);
+
+        // Platform hover tooltip
+        map.on('mouseenter', 'platforms-layer', (e) => {
+          map.getCanvas().style.cursor = 'pointer';
+          const p = e.features?.[0]?.properties || {};
+          map.getCanvas().title = `${p.name} — ${p.operator} (${p.platform_type})`;
+        });
+        map.on('mouseleave', 'platforms-layer', () => {
+          map.getCanvas().style.cursor = '';
+          map.getCanvas().title = '';
+        });
         map.getSource('sar-case')?.setData(caseGeojson);
         setMapReady(true);
         loadWeatherGridForMap(map).catch(() => {});
@@ -704,6 +853,18 @@ function App() {
     if (!map || !mapReady || !map.isStyleLoaded()) return;
     map.getSource('vessels')?.setData(vessels);
   }, [vessels, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
+    map.getSource('vessels-ngo')?.setData(ngoVessels);
+  }, [ngoVessels, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
+    map.getSource('platforms')?.setData(platforms);
+  }, [platforms, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -889,11 +1050,26 @@ function App() {
             setCaseGeojson(geojson);
             setCaseStatus('completed');
             pushCaseLog(`Drift ready ${created.event_id.slice(0, 8)}`);
+            // Extract trajectory coords for zone analysis
+            const trajFeature = geojson.features?.find(f => f.geometry?.type === 'LineString');
+            const trajCoords = trajFeature?.geometry?.coordinates;
+            const trajParam = trajCoords ? encodeURIComponent(JSON.stringify(trajCoords)) : '';
+            const waveH = weather?.waves?.significant_height_m ?? '';
+            const windMs = weather?.wind?.speed_ms ?? '';
+            const analysisUrl = `/api/v1/zones/classify?lat=${lat}&lon=${lon}`
+              + `&vessel_type=${encodeURIComponent(vesselType)}&persons=${persons}`
+              + `&duration_h=24${trajParam ? `&traj=${trajParam}` : ''}`
+              + `${waveH !== '' ? `&weather_wave=${waveH}` : ''}`
+              + `${windMs !== '' ? `&weather_wind=${windMs}` : ''}`;
+            fetchJson(apiBase, analysisUrl)
+              .then(law => setMapPanel(prev => prev ? { ...prev, legalAnalysis: law } : prev))
+              .catch(() => {});
+            setMapPanel({ type: 'cone', feature: geojson.features?.[0] || null,
+              eventId: created.event_id, caseStatus: 'completed',
+              simParams: simParamsRef.current, legalAnalysis: null });
             mapRef.current?.flyTo({
               center: [Number(lon), Number(lat)],
-              zoom: 8.4,
-              essential: true,
-              duration: 900,
+              zoom: 8.4, essential: true, duration: 900,
             });
             return;
           }
@@ -1174,11 +1350,17 @@ function App() {
                     const p = feat.properties || {};
                     const coords = feat.geometry?.coordinates;
                     const ts = p.timestamp_utc ? new Date(p.timestamp_utc) : null;
-                    const canDrift = coords && coords[0] != null && coords[1] != null;
+                    const hasDrift = p.drift_status === 'completed';
+                    const driftFeat = hasDrift
+                      ? intelDrifts.features.find(
+                          (f) => f.properties?.intel_event_id === p.id && f.geometry?.type === 'LineString'
+                        )
+                      : null;
+                    const isDistress = p.type === 'distress';
                     return (
                       <li
                         key={p.id || p.title}
-                        className="intel-event"
+                        className={`intel-event${isDistress ? ' intel-event--distress' : ''}`}
                         onClick={() => {
                           if (coords) mapRef.current?.flyTo({ center: coords, zoom: 9, duration: 800 });
                         }}
@@ -1191,17 +1373,19 @@ function App() {
                               {ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                             </time>
                           )}
-                          {canDrift && (
+                          {hasDrift && (
                             <button
-                              className="intel-drift-btn"
-                              title={`Run SAR drift from ${coords[1].toFixed(3)}, ${coords[0].toFixed(3)}`}
+                              className="intel-drift-btn intel-drift-btn--ready"
+                              title="See drift on map"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setForm((cur) => ({ ...cur, lat: String(coords[1].toFixed(5)), lon: String(coords[0].toFixed(5)) }));
-                                setActivePanel('sim');
-                                runSarCaseAt(coords[1], coords[0], { scenarioType });
+                                const target = driftFeat
+                                  ? driftFeat.geometry.coordinates[Math.floor(driftFeat.geometry.coordinates.length / 2)]
+                                  : coords;
+                                if (target) mapRef.current?.flyTo({ center: target, zoom: 8, duration: 900 });
+                                setSidebarOpen(false);
                               }}
-                            >⟳ Drift</button>
+                            >See on map</button>
                           )}
                         </div>
                         <strong className="intel-title">{p.title}</strong>

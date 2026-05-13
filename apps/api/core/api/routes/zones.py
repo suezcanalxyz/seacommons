@@ -2,14 +2,63 @@
 """
 Maritime operational zones — SAR regions, chokepoints, and hotspot polygons.
 
-GET /api/v1/zones         — GeoJSON FeatureCollection of SAR zones
-GET /api/v1/chokepoints   — vessel counts at strategic straits
+GET /api/v1/zones              — GeoJSON FeatureCollection of SAR zones
+GET /api/v1/zones/classify     — Classify a point + trajectory (legal/SAR analysis)
+GET /api/v1/zones/platforms    — Mediterranean oil/gas platforms GeoJSON
+GET /api/v1/chokepoints        — vessel counts at strategic straits
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
+
+router = APIRouter()
+
+# ── Mediterranean oil/gas platforms (public data, EMODnet / OGA / OSM) ────────
+# Format: [lon, lat, name, country, operator, type]
+_OIL_PLATFORMS = [
+    # Italy (Adriatic and Sicilian Channel)
+    [12.8833, 44.4333, "Cervia", "Italy", "ENI", "gas"],
+    [12.9667, 44.2500, "Barbara", "Italy", "ENI", "gas"],
+    [13.1000, 43.9167, "Porto Corsini", "Italy", "ENI", "gas"],
+    [13.5833, 44.1667, "Naomi", "Italy", "ENI", "gas"],
+    [13.7667, 44.0333, "Pandora", "Italy", "ENI", "gas"],
+    [14.2000, 43.4167, "Annamaria", "Italy", "ENI", "gas"],
+    [15.5000, 42.0000, "Vega", "Italy", "ENI", "oil"],
+    [12.5667, 37.8167, "Perla", "Italy", "ENI", "gas"],
+    [13.0000, 37.5000, "Argo", "Italy", "ENI", "oil"],
+    # Libya
+    [13.2833, 32.8833, "Bouri", "Libya", "NOC/ENI", "oil"],
+    [12.9167, 33.0500, "Bouri NW", "Libya", "NOC", "oil"],
+    # Tunisia
+    [9.4500, 37.5500, "Ashtart", "Tunisia", "ETAP", "oil"],
+    [11.0000, 35.5000, "Miskar", "Tunisia", "BG Group", "gas"],
+    [9.8333, 36.9167, "Cercina", "Tunisia", "ETAP", "oil"],
+    # Egypt (western Med / offshore)
+    [28.6667, 31.5667, "Zohr", "Egypt", "ENI", "gas"],
+    [28.0000, 31.0000, "Nooros", "Egypt", "ENI", "gas"],
+    # Greece
+    [26.5167, 38.3333, "Prinos", "Greece", "Energean", "oil"],
+    [26.4000, 38.4000, "Prinos North", "Greece", "Energean", "oil"],
+    [23.5833, 38.0833, "Epsilon", "Greece", "Energean", "oil"],
+    # Cyprus (EEZ)
+    [33.5833, 34.2500, "Aphrodite", "Cyprus", "Noble/Shell", "gas"],
+    [33.0000, 34.0833, "Calypso", "Cyprus", "ENI", "gas"],
+    # Spain (Mediterranean)
+    [0.9167, 40.5167, "Amposta", "Spain", "Repsol", "oil"],
+    [1.5000, 40.5000, "Casablanca", "Spain", "Repsol", "oil"],
+    # Algeria
+    [8.5667, 37.3167, "Skikda offshore", "Algeria", "Sonatrach", "gas"],
+    # Croatia (Adriatic)
+    [15.1667, 45.1667, "Ivana", "Croatia", "INA", "gas"],
+    [14.9167, 45.0833, "Annamaria A", "Croatia", "INA", "gas"],
+    # Israel / Lebanon
+    [33.8667, 31.6667, "Leviathan", "Israel", "Chevron", "gas"],
+    [34.6667, 32.4167, "Tamar", "Israel", "Chevron", "gas"],
+    [34.6000, 32.6167, "Dalit", "Israel", "Delek", "gas"],
+]
 
 router = APIRouter()
 
@@ -135,4 +184,77 @@ async def get_chokepoints():
     return {
         "chokepoints": counts,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/api/v1/zones/classify")
+async def classify_zone(
+    lat: float = Query(..., description="Origin latitude"),
+    lon: float = Query(..., description="Origin longitude"),
+    vessel_type: str = Query("rubber_boat"),
+    persons: int = Query(30, ge=1),
+    duration_h: float = Query(24.0, ge=1),
+    traj: Optional[str] = Query(None, description="Trajectory as JSON array [[lon,lat],...]"),
+    weather_wave: Optional[float] = Query(None),
+    weather_wind: Optional[float] = Query(None),
+):
+    """
+    Classify SAR zones, compute legal framework, survival estimate for a drift origin.
+    If `traj` is provided (JSON-encoded list of [lon,lat] pairs), the full trajectory
+    is analysed for multi-zone intersection.
+    """
+    import json
+    from core.zones.classifier import drift_analysis
+
+    traj_coords: Optional[list] = None
+    if traj:
+        try:
+            traj_coords = json.loads(traj)
+        except Exception:
+            traj_coords = None
+
+    weather = {}
+    if weather_wave is not None:
+        weather["waves"] = {"significant_height_m": weather_wave}
+    if weather_wind is not None:
+        weather["wind"] = {"speed_ms": weather_wind}
+
+    return drift_analysis(
+        lat=lat, lon=lon,
+        trajectory_coords=traj_coords,
+        vessel_type=vessel_type,
+        persons=persons,
+        duration_h=duration_h,
+        weather=weather or None,
+    )
+
+
+@router.get("/api/v1/zones/platforms")
+async def get_platforms():
+    """
+    Mediterranean oil and gas platform positions as GeoJSON.
+    Source: EMODnet, OGA, OpenStreetMap (public data).
+    """
+    features = []
+    for p in _OIL_PLATFORMS:
+        lon, lat, name, country, operator, ptype = p
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lon, lat]},
+            "properties": {
+                "name": name,
+                "country": country,
+                "operator": operator,
+                "platform_type": ptype,
+                "icon": "platform",
+            },
+        })
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "meta": {
+            "count": len(features),
+            "note": "Approximate positions — verify with official navigation charts.",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        },
     }

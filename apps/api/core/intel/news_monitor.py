@@ -49,6 +49,26 @@ _MED_FILTER_KW = frozenset([
 ])
 
 # ── RSS feed definitions ───────────────────────────────────────────────────────
+
+# Nitter instances provide Twitter accounts as public RSS without API keys.
+# We try each in order; the first that responds is used.
+_NITTER_INSTANCES = [
+    "https://nitter.net",
+    "https://nitter.privacydev.net",
+    "https://nitter.poast.org",
+    "https://nitter.1d4.us",
+]
+
+# High-value distress-focused Twitter accounts to monitor via Nitter RSS
+_TWITTER_ACCOUNTS = [
+    {"handle": "alarmphone",     "label": "Alarm Phone",      "filter": False},
+    {"handle": "alarm_phone",    "label": "Alarm Phone",      "filter": False},
+    {"handle": "SOSMedIntl",     "label": "SOS Méditerranée", "filter": False},
+    {"handle": "SeaWatchItaly",  "label": "Sea Watch",        "filter": False},
+    {"handle": "MSF_Sea",        "label": "MSF Sea",          "filter": False},
+    {"handle": "WatchTheMed",    "label": "Watch The Med",    "filter": False},
+]
+
 RSS_FEEDS = [
     {
         "url": "https://www.unhcr.org/rss/news.rss",
@@ -97,8 +117,11 @@ class NewsMonitor:
         self._iom_last_ids: set[str] = set()
         self._rss_last_guids: set[str] = set()
         self._alarmphone_seen: set[str] = set()
+        self._twitter_seen: set[str] = set()
         self._iom_next_poll: float = 0.0
         self._rss_next_poll: float = 0.0
+        self._twitter_next_poll: float = 0.0
+        self._nitter_base: Optional[str] = None  # cached working instance
 
     def start(self) -> None:
         if self._running:
@@ -126,6 +149,9 @@ class NewsMonitor:
                     self._poll_rss_all()
                     self._poll_alarmphone()
                     self._rss_next_poll = now + _POLL_INTERVAL_S
+                if now >= self._twitter_next_poll:
+                    self._poll_twitter_accounts()
+                    self._twitter_next_poll = now + _POLL_INTERVAL_S
             except Exception as exc:
                 logger.warning("NewsMonitor error: %s", exc)
             time.sleep(30)
@@ -241,16 +267,132 @@ class NewsMonitor:
 
         text = f"{item.get('title', '')} {item.get('description', '')}"
         text_clean = re.sub(r"<[^>]+>", " ", text).strip()
+        text_clean = re.sub(r"\s+", " ", text_clean)
 
         if apply_filter and not _med_relevant(text_clean):
             return False
 
+        distress = is_distress(text_clean)
         coords = extract_coords(text_clean)
-        severity = classify_severity(text_clean) if is_distress(text_clean) else "low"
+        severity = classify_severity(text_clean) if distress else "low"
+        event_type = "distress" if distress and severity in ("critical", "high") else "news"
+
+        # Use the most specific URL available.
+        # Prefer item <link> if it looks like an article URL (not just a homepage).
+        # Fall back to guid if it looks like a URL, then empty string.
+        item_link = item.get("link", "").strip()
+        item_guid = item.get("guid", "").strip()
+        url = _best_url(item_link, item_guid)
 
         pub_date_raw = item.get("pub_date", "")
         event = IntelEvent(
-            type="news",
+            type=event_type,
+            severity=severity,
+            lat=coords[0] if coords else None,
+            lon=coords[1] if coords else None,
+            title=item.get("title", "")[:200],
+            text=text_clean[:600],
+            url=url,
+            source=source,
+            timestamp_utc=_parse_date(pub_date_raw),
+            metadata={"pub_date": pub_date_raw},
+        )
+        return intel_store.add(event, dedup_key=dedup)
+
+    # ── Twitter / Nitter RSS ──────────────────────────────────────────────────
+
+    def _get_nitter_base(self) -> Optional[str]:
+        """
+        Find a working Nitter instance. Tries instances in order and caches
+        the first one that responds with HTTP 200. Re-validates if cached
+        instance stops working.
+        """
+        for base in _NITTER_INSTANCES:
+            try:
+                req = urllib.request.Request(f"{base}/alarmphone/rss", headers=_HEADERS)
+                with urllib.request.urlopen(req, timeout=8) as r:
+                    if r.status == 200:
+                        return base
+            except Exception:
+                continue
+        return None
+
+    def _poll_twitter_accounts(self) -> None:
+        """
+        Poll key distress-focused Twitter accounts via Nitter RSS.
+        For each tweet that looks like a distress signal:
+          1. Extract coords from tweet text
+          2. Extract coords from embedded map/image (Vision fallback)
+          3. Ingest as IntelEvent type="twitter"
+        """
+        if not self._nitter_base:
+            self._nitter_base = self._get_nitter_base()
+        if not self._nitter_base:
+            logger.debug("No working Nitter instance found; Twitter polling skipped")
+            return
+
+        new = 0
+        for acct in _TWITTER_ACCOUNTS:
+            try:
+                url = f"{self._nitter_base}/{acct['handle']}/rss"
+                req = urllib.request.Request(url, headers=_HEADERS)
+                with urllib.request.urlopen(req, timeout=12) as r:
+                    xml = r.read().decode("utf-8", errors="replace")
+                items = _parse_rss(xml)
+                for item in items:
+                    if self._ingest_twitter_item(item, acct["label"], acct["filter"]):
+                        new += 1
+            except Exception as exc:
+                logger.debug("Nitter @%s failed: %s — resetting instance", acct["handle"], exc)
+                self._nitter_base = None  # force re-discover on next cycle
+                break
+
+        if new:
+            logger.info("Twitter/Nitter: +%d new distress signals", new)
+
+    def _ingest_twitter_item(self, item: dict[str, Any], source: str, apply_filter: bool) -> bool:
+        """
+        Parse a tweet RSS item. Extracts coords from text first, then falls
+        back to Vision extraction on any embedded image URL found in the description.
+        """
+        guid = item.get("guid") or item.get("link") or item.get("title", "")
+        dedup = hashlib.sha1(f"twitter:{source}:{guid}".encode()).hexdigest()[:16]
+        if dedup in self._twitter_seen:
+            return False
+        self._twitter_seen.add(dedup)
+        if len(self._twitter_seen) > 2000:
+            self._twitter_seen = set(list(self._twitter_seen)[1000:])
+
+        raw_desc = item.get("description", "")
+        text_clean = re.sub(r"<[^>]+>", " ", f"{item.get('title', '')} {raw_desc}").strip()
+        text_clean = re.sub(r"\s+", " ", text_clean)
+
+        if apply_filter and not _med_relevant(text_clean):
+            return False
+        if not is_distress(text_clean) and not _med_relevant(text_clean):
+            return False
+
+        coords = extract_coords(text_clean)
+        severity = classify_severity(text_clean)
+        event_type = "distress" if severity in ("critical", "high") else "twitter"
+
+        # If no coords from text, try Vision extraction on embedded images
+        if coords is None:
+            img_urls = _extract_img_urls(raw_desc)
+            for img_url in img_urls[:2]:  # try at most 2 images
+                vision_result = _vision_extract_sync(img_url)
+                if vision_result:
+                    coords = (vision_result["lat"], vision_result["lon"])
+                    logger.info("Twitter Vision coords from %s: %s → %s", source, img_url, coords)
+                    break
+
+        item_link = item.get("link", "").strip()
+        item_guid = item.get("guid", "").strip()
+        url = _best_url(item_link, item_guid)
+
+        pub_date_raw = item.get("pub_date", "")
+        event = IntelEvent(
+            type=event_type,
             severity=severity,
             lat=coords[0] if coords else None,
             lon=coords[1] if coords else None,
@@ -259,7 +401,11 @@ class NewsMonitor:
             url=item.get("link", ""),
             source=source,
             timestamp_utc=_parse_date(pub_date_raw),
-            metadata={"pub_date": pub_date_raw},
+            metadata={
+                "pub_date": pub_date_raw,
+                "platform": "twitter",
+                "via": "nitter",
+            },
         )
         return intel_store.add(event, dedup_key=dedup)
 
@@ -313,14 +459,19 @@ class NewsMonitor:
             # Try to extract date from the text (Alarm Phone uses DD/MM/YYYY or Month DD)
             date_match = re.search(r'\b(\d{1,2}[./]\d{1,2}[./]\d{2,4}|\w+ \d{1,2},? \d{4})\b', text_raw)
             ts = _parse_date(date_match.group(1) if date_match else "")
+            # Try to extract a direct call-report URL from HTML links in the entry
+            call_url = "https://alarmphone.org/en/calls/"
+            url_match = re.search(r'href="(https://alarmphone\.org/en/calls/[^"]+)"', entry)
+            if url_match:
+                call_url = url_match.group(1)
             event = IntelEvent(
-                type="news",
+                type="distress",
                 severity=severity,
                 lat=coords[0] if coords else None,
                 lon=coords[1] if coords else None,
                 title=f"Alarm Phone: {text_raw[:80]}…",
                 text=text_raw[:600],
-                url="https://alarmphone.org/en/calls/",
+                url=call_url,
                 source="Alarm Phone",
                 timestamp_utc=ts,
                 metadata={"scrape_source": "alarmphone.org"},
@@ -403,3 +554,48 @@ def _xml_tag(xml: str, tag: str) -> str:
 def _xml_attr(xml: str, tag: str, attr: str) -> str:
     m = re.search(rf'<{tag}[^>]*{attr}="([^"]+)"', xml)
     return m.group(1).strip() if m else ""
+
+
+def _best_url(link: str, guid: str) -> str:
+    """
+    Return the most specific URL for an RSS item.
+    Rejects generic homepage links (no path or just '/').
+    Falls back to guid if it looks like a real article URL, else empty string.
+    """
+    def _is_article_url(u: str) -> bool:
+        if not u or not u.startswith("http"):
+            return False
+        # Strip scheme and host — if path is empty or just '/', it's a homepage
+        try:
+            path = u.split("://", 1)[1].split("/", 1)[1] if "/" in u.split("://", 1)[1] else ""
+        except IndexError:
+            return False
+        return len(path.strip("/")) > 3  # at least 3 chars of actual path
+
+    if _is_article_url(link):
+        return link
+    if _is_article_url(guid):
+        return guid
+    return link  # return whatever we have, even if it's a homepage
+
+
+def _extract_img_urls(html: str) -> list[str]:
+    """
+    Extract image URLs from RSS description HTML.
+    Nitter embeds tweet images as <img src="..."> inside the description CDATA.
+    """
+    return re.findall(r'<img[^>]+src="([^"]+)"', html)
+
+
+def _vision_extract_sync(img_url: str) -> Optional[dict[str, Any]]:
+    """
+    Synchronous wrapper around the async Vision extractor.
+    Safe to call from background threads.  Returns None on any error.
+    """
+    try:
+        import asyncio
+        from core.intel.vision import extract_from_url
+        return asyncio.run(extract_from_url(img_url))
+    except Exception as exc:
+        logger.debug("Vision extract failed for %s: %s", img_url, exc)
+        return None
