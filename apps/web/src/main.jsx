@@ -975,11 +975,12 @@ function App() {
         <header className="sidebar-header">
           <p className="sidebar-kicker">SeaCommons / SAR pilot</p>
           <h2>Operational dashboard</h2>
-          <div className="sidebar-tabs sidebar-tabs--5">
-            <button className={activePanel === 'sim'     ? 'is-active' : ''} onClick={() => setActivePanel('sim')}>Sim</button>
+          <div className="sidebar-tabs sidebar-tabs--4">
+            <button className={activePanel === 'sim'      ? 'is-active' : ''} onClick={() => setActivePanel('sim')}>Sim</button>
             <button className={activePanel === 'live'     ? 'is-active' : ''} onClick={() => setActivePanel('live')}>Live</button>
-            <button className={activePanel === 'data'     ? 'is-active' : ''} onClick={() => setActivePanel('data')}>Data</button>
-            <button className={activePanel === 'intel'    ? 'is-active' : ''} onClick={() => setActivePanel('intel')}>Intel</button>
+            <button className={activePanel === 'osint'    ? 'is-active' : ''} onClick={() => setActivePanel('osint')}>
+              OSINT{intelEvents.length > 0 && <span className="tab-badge">{intelEvents.length}</span>}
+            </button>
             <button className={activePanel === 'settings' ? 'is-active' : ''} onClick={() => setActivePanel('settings')}>Config</button>
           </div>
         </header>
@@ -1032,28 +1033,49 @@ function App() {
             </div>
           ) : null}
 
-          {/* ── INTEL TAB ── */}
-          {activePanel === 'intel' ? (
+          {/* ── OSINT TAB (unified Data + Intel) ── */}
+          {activePanel === 'osint' ? (
             <div className="panel-stack">
+              {/* Stats row */}
               <section className="panel-block">
-                <p className="section-kicker">Maritime Intelligence</p>
-                <h3>
-                  Live feed{' '}
-                  <span className={intelConnected ? 'intel-connected' : 'intel-offline'}>
-                    {intelConnected ? '●' : '○'}
+                <p className="section-kicker">Open Source Intelligence</p>
+                <div className="osint-stats-row">
+                  <div className="osint-stat">
+                    <strong>{intelStats.total}</strong><span>events</span>
+                  </div>
+                  <div className="osint-stat osint-stat--critical">
+                    <strong>{intelStats.by_sev['critical'] || 0}</strong><span>critical</span>
+                  </div>
+                  <div className="osint-stat osint-stat--high">
+                    <strong>{intelStats.by_sev['high'] || 0}</strong><span>high</span>
+                  </div>
+                  <div className="osint-stat">
+                    <strong>{summary?.traffic?.registry?.active_30m ?? '—'}</strong><span>AIS live</span>
+                  </div>
+                  <div className="osint-stat">
+                    <strong>{summary?.sar?.open_alerts ?? '—'}</strong><span>alerts</span>
+                  </div>
+                </div>
+              </section>
+
+              {/* Filter + feed */}
+              <section className="panel-block" style={{ paddingBottom: 0 }}>
+                <div className="osint-feed-header">
+                  <span className="osint-feed-title">
+                    Intel feed{' '}
+                    <span className={intelConnected ? 'intel-connected' : 'intel-offline'}>
+                      {intelConnected ? '●' : '○'}
+                    </span>
                   </span>
-                  {intelEvents.length > 0 && <span style={{ color: '#9cb5b0', fontWeight: 400, marginLeft: 6 }}>{intelEvents.length}</span>}
-                </h3>
-                <div className="intel-filter-row">
-                  {['all', 'critical', 'high', 'medium', 'low'].map((f) => (
-                    <button
-                      key={f}
-                      className={`intel-filter-btn ${intelFilter === f ? 'is-active' : ''}`}
-                      onClick={() => setIntelFilter(f)}
-                    >
-                      {f}
-                    </button>
-                  ))}
+                  <div className="intel-filter-row">
+                    {['all', 'critical', 'high', 'medium', 'low'].map((f) => (
+                      <button
+                        key={f}
+                        className={`intel-filter-btn ${intelFilter === f ? 'is-active' : ''}`}
+                        onClick={() => setIntelFilter(f)}
+                      >{f}</button>
+                    ))}
+                  </div>
                 </div>
               </section>
 
@@ -1061,35 +1083,62 @@ function App() {
                 <ul className="intel-list">
                   {intelEventsFiltered.length === 0 ? (
                     <li className="intel-empty">
-                      {intelConnected ? `No events${intelFilter !== 'all' ? ` (${intelFilter})` : ''} yet` : 'Connecting to intel feed…'}
+                      {intelConnected ? `No events${intelFilter !== 'all' ? ` (${intelFilter})` : ''} yet` : 'Connecting…'}
                     </li>
                   ) : intelEventsFiltered.map((feat) => {
                     const p = feat.properties || {};
                     const coords = feat.geometry?.coordinates;
                     const ts = p.timestamp_utc ? new Date(p.timestamp_utc) : null;
+                    const canDrift = coords && coords[0] != null && coords[1] != null;
                     return (
                       <li
                         key={p.id || p.title}
                         className="intel-event"
                         onClick={() => {
-                          if (coords) {
-                            mapRef.current?.flyTo({ center: coords, zoom: 9, duration: 800 });
-                          }
+                          if (coords) mapRef.current?.flyTo({ center: coords, zoom: 9, duration: 800 });
                         }}
                       >
                         <div className="intel-event-header">
                           <span className={`intel-sev intel-sev--${p.severity || 'low'}`}>{p.severity || 'low'}</span>
-                          {ts && (
-                            <time>{ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</time>
+                          {ts && <time>{ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</time>}
+                          {canDrift && (
+                            <button
+                              className="intel-drift-btn"
+                              title="Run SAR drift from this position"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setForm((cur) => ({ ...cur, lat: String(coords[1].toFixed(5)), lon: String(coords[0].toFixed(5)) }));
+                                setActivePanel('sim');
+                                runSarCaseAt(coords[1], coords[0], { scenarioType });
+                              }}
+                            >⟳ Drift</button>
                           )}
                         </div>
                         <strong className="intel-title">{p.title}</strong>
                         <span className="intel-source">{p.source} · {(p.type || '').replace(/_/g, ' ')}</span>
+                        {p.text && (
+                          <p className="intel-text">{p.text.slice(0, 120)}{p.text.length > 120 ? '…' : ''}</p>
+                        )}
                       </li>
                     );
                   })}
                 </ul>
               </section>
+
+              {/* Channel breakdown */}
+              {Object.keys(intelStats.by_type).length > 0 && (
+                <section className="panel-block">
+                  <p className="section-kicker">By channel</p>
+                  <ul className="signal-list" style={{ marginTop: 4 }}>
+                    {Object.entries(intelStats.by_type).sort((a, b) => b[1] - a[1]).map(([type, count]) => (
+                      <li key={type}>
+                        <strong>{type.replace(/_/g, ' ')}</strong>
+                        <span>{count}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
             </div>
           ) : null}
 
@@ -1179,79 +1228,6 @@ function App() {
             </div>
           ) : null}
 
-          {/* ── DATA TAB ── */}
-          {activePanel === 'data' ? (
-            <div className="panel-stack">
-              <section className="panel-block">
-                <p className="section-kicker">Intel feed</p>
-                <h3>Event summary</h3>
-                <div className="info-grid">
-                  <div className="info-box">
-                    <strong>{intelStats.total}</strong>
-                    <span>total events</span>
-                  </div>
-                  <div className="info-box">
-                    <strong>{intelStats.by_sev['critical'] || 0}</strong>
-                    <span style={{ color: '#ff7070' }}>critical</span>
-                  </div>
-                  <div className="info-box">
-                    <strong>{intelStats.by_sev['high'] || 0}</strong>
-                    <span style={{ color: '#ff9c7a' }}>high</span>
-                  </div>
-                  <div className="info-box">
-                    <strong>{intelStats.by_sev['medium'] || 0}</strong>
-                    <span style={{ color: '#ffe07d' }}>medium</span>
-                  </div>
-                </div>
-              </section>
-
-              <section className="panel-block">
-                <p className="section-kicker">By source</p>
-                <h3>Channel breakdown</h3>
-                <ul className="signal-list" style={{ marginTop: 6 }}>
-                  {Object.entries(intelStats.by_type).sort((a, b) => b[1] - a[1]).map(([type, count]) => (
-                    <li key={type}>
-                      <strong>{type.replace(/_/g, ' ')}</strong>
-                      <span>{count} events</span>
-                    </li>
-                  ))}
-                  {Object.keys(intelStats.by_type).length === 0 && (
-                    <li><strong>No data yet</strong><span>Intel feed starting up</span></li>
-                  )}
-                </ul>
-              </section>
-
-              <section className="panel-block">
-                <p className="section-kicker">AIS traffic</p>
-                <h3>Vessel registry</h3>
-                <div className="info-grid">
-                  <div className="info-box">
-                    <strong>{summary?.traffic?.registry?.total_vessels ?? '—'}</strong>
-                    <span>known vessels</span>
-                  </div>
-                  <div className="info-box">
-                    <strong>{summary?.traffic?.registry?.active_30m ?? '—'}</strong>
-                    <span>active 30m</span>
-                  </div>
-                </div>
-              </section>
-
-              <section className="panel-block">
-                <p className="section-kicker">SAR operations</p>
-                <h3>Alert log</h3>
-                <div className="info-grid">
-                  <div className="info-box">
-                    <strong>{summary?.sar?.open_alerts ?? '—'}</strong>
-                    <span>open alerts</span>
-                  </div>
-                  <div className="info-box">
-                    <strong>{summary?.sar?.forensic_packets ?? '—'}</strong>
-                    <span>forensic packets</span>
-                  </div>
-                </div>
-              </section>
-            </div>
-          ) : null}
 
           {/* ── CONFIG TAB ── */}
           {activePanel === 'settings' ? (

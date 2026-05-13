@@ -199,6 +199,17 @@ class IntelStore:
         with self._lock:
             self._ws_clients = {(w, l) for w, l in self._ws_clients if w is not ws}
 
+    def broadcast_event_update(self, event_id: str, update: dict) -> None:
+        """Push a lightweight update packet to all WS clients (e.g. drift completed)."""
+        payload = json.dumps({"type": "event_update", "id": event_id, **update})
+        with self._lock:
+            clients = list(self._ws_clients)
+        for ws, loop in clients:
+            try:
+                asyncio.run_coroutine_threadsafe(_ws_send(ws, payload), loop)
+            except Exception:
+                pass
+
     def _fire_broadcast(self, event: IntelEvent) -> None:
         """
         Non-blocking: schedule coroutine in each registered loop.

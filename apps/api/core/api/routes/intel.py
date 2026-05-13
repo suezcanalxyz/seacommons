@@ -6,6 +6,8 @@ GET  /api/v1/intel                   All events GeoJSON (filterable)
 GET  /api/v1/intel/stats             Event counts by type/severity
 GET  /api/v1/intel/ngo               NGO/coastguard vessel positions (GeoJSON)
 GET  /api/v1/intel/ais-spikes        AIS anomaly events only
+POST /api/v1/intel/extract-image     Extract GPS coords from an image URL
+POST /api/v1/intel/auto-drift        Trigger SAR drift from a geolocated event
 WS   /ws/intel                       Real-time event stream (JSON per event)
 """
 from __future__ import annotations
@@ -14,7 +16,8 @@ import asyncio
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 
 from core.intel.ngo_registry import NGO_VESSELS, get_ngo_info, is_ngo
 from core.intel.store import intel_store
@@ -166,6 +169,89 @@ async def get_iom_incidents(limit: int = Query(50, ge=1, le=200)):
         "features": features,
         "meta": {"count": len(features)},
     }
+
+
+# ── Image coordinate extraction ───────────────────────────────────────────────
+
+class ImageExtractRequest(BaseModel):
+    url: str
+
+
+@router.post("/api/v1/intel/extract-image")
+async def extract_image_coords(body: ImageExtractRequest):
+    """
+    Fetch an image URL and extract GPS coordinates.
+    Pipeline: EXIF metadata → Claude Vision (claude-haiku-4-5).
+    Returns {lat, lon, method, confidence} or 404 if nothing found.
+    """
+    from core.intel.vision import extract_from_url
+
+    result = await extract_from_url(body.url)
+    if result is None:
+        raise HTTPException(status_code=404, detail="No coordinates found in image")
+    return result
+
+
+# ── Auto-drift from intel event ────────────────────────────────────────────────
+
+class AutoDriftRequest(BaseModel):
+    intel_event_id: str
+    lat: float
+    lon: float
+    persons: Optional[int] = None
+    vessel_type: Optional[str] = "rubber_boat"
+
+
+def _run_intel_drift(event_id: str, lat: float, lon: float,
+                     persons: Optional[int], vessel_type: Optional[str]) -> None:
+    """Background: compute drift from an intel event's position."""
+    import uuid
+    from datetime import datetime, timezone
+
+    from core.db.store import complete_drift_job, create_drift_job, fail_drift_job
+    from core.drift.engine import DriftEngine
+
+    job_id = str(uuid.uuid4())
+    time_utc = datetime.now(timezone.utc)
+    create_drift_job(
+        job_id,
+        event_id=f"intel:{event_id}",
+        lat=lat, lon=lon, domain="ocean_sar",
+        duration_h=24,
+        started_at=time_utc,
+    )
+    try:
+        engine = DriftEngine()
+        cfg = {}
+        if vessel_type:
+            cfg["vessel_type"] = vessel_type
+        if persons is not None:
+            cfg["persons"] = persons
+        result = engine.compute(
+            lat=lat, lon=lon, time_utc=time_utc,
+            duration_h=24, domain="ocean_sar", config=cfg,
+        )
+        complete_drift_job(
+            job_id, event_id=f"intel:{event_id}",
+            lat=lat, lon=lon, domain="ocean_sar", result=result,
+        )
+        intel_store.broadcast_event_update(event_id, {"drift_job_id": job_id, "drift_status": "completed"})
+        logger.info("Auto-drift completed for intel event %s → job %s", event_id, job_id)
+    except Exception as exc:
+        fail_drift_job(job_id, event_id=f"intel:{event_id}",
+                       lat=lat, lon=lon, domain="ocean_sar", error_message=str(exc))
+        logger.warning("Auto-drift failed for intel event %s: %s", event_id, exc)
+
+
+@router.post("/api/v1/intel/auto-drift")
+async def intel_auto_drift(body: AutoDriftRequest, bg: BackgroundTasks):
+    """
+    Trigger a SAR drift simulation from an intel event's known position.
+    The drift runs in the background; result stored in drift_jobs table.
+    """
+    bg.add_task(_run_intel_drift, body.intel_event_id, body.lat, body.lon,
+                body.persons, body.vessel_type)
+    return {"status": "queued", "intel_event_id": body.intel_event_id}
 
 
 # ── WebSocket real-time stream ─────────────────────────────────────────────────

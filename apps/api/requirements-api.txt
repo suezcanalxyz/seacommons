@@ -18,3 +18,5 @@ requests>=2.31
 copernicusmarine>=2.3.0
 xarray>=2025.0.0
 opendrift>=1.14.9
+anthropic>=0.40
+Pillow>=10.0
