@@ -11,10 +11,8 @@ services:
         value: 3.12.3
       - key: DATABASE_URL
         value: sqlite:///./core/data/suezcanal_demo.db
-      - key: MOCK
-        value: true
-      - key: DEMO_PUBLIC_MODE
-        value: true
+      - key: RUNTIME_PROFILE
+        value: operational
       - key: SUEZCANAL_AUTH
         value: false
       - key: REDIS_URL

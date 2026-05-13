@@ -188,8 +188,8 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
     )
     simulation.run(
         duration=timedelta(hours=duration_h),
-        time_step=time_step_seconds,
-        time_step_output=output_seconds,
+        time_step=timedelta(seconds=time_step_seconds),
+        time_step_output=timedelta(seconds=output_seconds),
     )
 
     result = simulation.result

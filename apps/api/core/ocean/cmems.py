@@ -22,6 +22,52 @@ def fetch_ocean_point(lat: float, lon: float) -> dict[str, Any] | None:
     return results[0] if results else None
 
 
+def fetch_current_point(lat: float, lon: float) -> dict[str, Any] | None:
+    if not cmems_enabled():
+        return None
+
+    try:
+        copernicusmarine = _load_copernicusmarine()
+    except Exception as exc:
+        logger.warning("CMEMS unavailable: %s", exc)
+        return None
+
+    norm_lon = _normalize_lon(lon)
+    pad = 0.12
+    start = (datetime.now(timezone.utc) - timedelta(hours=18)).isoformat()
+    end = (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat()
+
+    try:
+        current_ds = copernicusmarine.open_dataset(
+            dataset_id=config.CMEMS_CURRENT_DATASET,
+            username=config.CMEMS_USERNAME,
+            password=config.CMEMS_PASSWORD,
+            variables=["uo", "vo"],
+            minimum_longitude=norm_lon - pad,
+            maximum_longitude=norm_lon + pad,
+            minimum_latitude=lat - pad,
+            maximum_latitude=lat + pad,
+            minimum_depth=0.0,
+            maximum_depth=1.0,
+            start_datetime=start,
+            end_datetime=end,
+            coordinates_selection_method="nearest",
+        )
+        u = _sample_value(current_ds, "uo", lat, norm_lon)
+        v = _sample_value(current_ds, "vo", lat, norm_lon)
+    except Exception as exc:
+        logger.warning("CMEMS current fetch failed for %.3f,%.3f: %s", lat, lon, exc)
+        return None
+
+    current_speed = math.hypot(u, v)
+    current_dir = (math.degrees(math.atan2(u, v)) + 360.0) % 360.0
+    return {
+        "current_speed_ms": round(current_speed, 3),
+        "current_dir_deg": round(current_dir, 1),
+        "source": "cmems-current",
+    }
+
+
 def fetch_ocean_batch(points: list[tuple[float, float]]) -> list[dict[str, Any] | None]:
     if not points or not cmems_enabled():
         return [None for _ in points]
@@ -130,7 +176,10 @@ def _sample_value(ds, variable: str, lat: float, lon: float) -> float:
     lat_name = _coord_name(da, "latitude", "lat")
     lon_name = _coord_name(da, "longitude", "lon")
     selected = da.sel({lat_name: lat, lon_name: lon}, method="nearest")
-    return float(selected.values)
+    value = float(selected.values)
+    if not math.isfinite(value):
+        raise ValueError(f"Non-finite CMEMS value for {variable}")
+    return value
 
 
 def _coord_name(ds, *names: str) -> str:

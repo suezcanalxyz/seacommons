@@ -40,7 +40,7 @@ This guide prepares SeaCommons for a **live demo with real data** using **free h
 4. Add environment variables:
    - `VITE_API_BASE`: `https://seacommons-api-demo.onrender.com`
    - `VITE_PUBLIC_BASE`: `/`
-   - `VITE_MAPTILER_KEY`: `6jaqasGIOmmn1nyMIvPo`
+   - `VITE_MAPTILER_KEY`: `<set-locally>`
 5. Deploy (2-3 minutes)
 
 **Result**: `https://seacommons-demo.vercel.app`

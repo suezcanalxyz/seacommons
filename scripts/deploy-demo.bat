@@ -64,7 +64,7 @@ echo       - Output Directory: dist
 echo    5. Add Environment Variables:
 echo       - VITE_API_BASE: https://seacommons-api-demo.onrender.com
 echo       - VITE_PUBLIC_BASE: /
-echo       - VITE_MAPTILER_KEY: 6jaqasGIOmmn1nyMIvPo
+echo       - VITE_MAPTILER_KEY: ^<set-locally^>
 echo    6. Click "Deploy"
 echo.
 echo ⏳ Expected URL: https://seacommons-demo.vercel.app

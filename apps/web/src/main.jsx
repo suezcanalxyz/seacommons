@@ -662,17 +662,38 @@ function App() {
   // ── Initial data load + polling ──────────────────────────────────────────────
   useEffect(() => {
     let alive = true;
+    let lastVesselTs = null; // ISO timestamp of last full vessel fetch
+    let vesselSnapshot = null; // latest full GeoJSON snapshot
+
+    async function fetchVessels() {
+      // First call: full load. Subsequent: incremental diff only (much smaller payload).
+      const url = lastVesselTs ? `/api/v1/vessels?since=${encodeURIComponent(lastVesselTs)}` : '/api/v1/vessels';
+      const data = await fetchJson(apiBase, url);
+      if (!data?.features) return;
+      lastVesselTs = new Date().toISOString();
+      if (!vesselSnapshot || !lastVesselTs) {
+        vesselSnapshot = data;
+      } else {
+        // Merge incremental updates into snapshot
+        const updated = new Map(data.features.map((f) => [f.properties?.mmsi, f]));
+        const merged = vesselSnapshot.features.map((f) => updated.get(f.properties?.mmsi) || f);
+        data.features.forEach((f) => { if (!vesselSnapshot.features.some((e) => e.properties?.mmsi === f.properties?.mmsi)) merged.push(f); });
+        vesselSnapshot = { type: 'FeatureCollection', features: merged };
+      }
+      return vesselSnapshot;
+    }
+
     async function loadAll() {
       try {
         const [summaryPayload, vesselsPayload, alertsPayload] = await Promise.all([
           fetchJson(apiBase, '/api/v1/ops/summary'),
-          fetchJson(apiBase, '/api/v1/vessels'),
+          fetchVessels(),
           fetchJson(apiBase, '/api/v1/alerts/geojson'),
         ]);
         if (!alive) return;
         setSummary(summaryPayload);
         setTimezero(summaryPayload.backend.timezero || null);
-        setVessels(vesselsPayload);
+        if (vesselsPayload) setVessels(vesselsPayload);
         setAlerts(alertsPayload);
         setError('');
       } catch (err) {

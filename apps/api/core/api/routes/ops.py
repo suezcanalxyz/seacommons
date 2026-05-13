@@ -12,6 +12,7 @@ from core.config import config
 from core.db.store import list_alerts, list_forensic_packets
 from core.integrations.store import IntegrationEventStore
 from core.integrations.timezero import timezero_health
+from core.vessels.aisstream import get_client
 from core.vessels.registry import registry
 
 router = APIRouter()
@@ -28,6 +29,9 @@ async def ops_summary():
     vessel_stats = registry.stats()
     alerts = list_alerts()
     forensic_packets = list_forensic_packets()
+    ais_client = get_client()
+    ais_connected = bool(ais_client.connected) if ais_client else False
+    ais_messages = int(ais_client.messages_received) if ais_client else 0
 
     recent_events = []
     for event in recent_raw_events[:12]:
@@ -49,16 +53,18 @@ async def ops_summary():
     return {
         "product": {
             "name": "Seacommons",
-            "mode": "pilot",
+            "mode": config.RUNTIME_PROFILE,
             "role": "operational_sar",
         },
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "backend": {
-            "mock": config.MOCK,
+            "runtime_profile": config.RUNTIME_PROFILE,
             "database": "sqlite" if config.DATABASE_URL.startswith("sqlite") else "postgres",
             "redis_configured": bool(config.REDIS_URL),
-            "aisstream_live": bool(config.AISSTREAM_KEY) and not config.MOCK,
-            "cmems_live": bool(config.CMEMS_USERNAME and config.CMEMS_PASSWORD) and not config.MOCK,
+            "aisstream_configured": bool(config.AISSTREAM_KEY),
+            "aisstream_connected": ais_connected,
+            "aisstream_messages": ais_messages,
+            "cmems_configured": bool(config.CMEMS_USERNAME and config.CMEMS_PASSWORD),
             "timezero": _tz_status,
         },
         "signals": {

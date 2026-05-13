@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Local cache for ocean currents, wind, tiles, and RINEX data."""
 from __future__ import annotations
+import concurrent.futures
 import json
 import math
 import time
@@ -8,7 +9,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Optional
 
-from core.ocean.cmems import fetch_ocean_point
+from core.config import config
+from core.ocean.cmems import fetch_current_point
 
 CACHE_DIR = Path.home() / ".suezcanal" / "cache"
 CACHE_TTL_S = 48 * 3600
@@ -74,7 +76,7 @@ class CacheManager:
                     }
             except Exception:
                 pass
-        return {"wind_speed_ms": 5.0, "wind_dir_deg": 270.0, "source": "fallback"}
+        raise RuntimeError("No real wind cache available")
 
     def get_wind_live(self, lat: float, lon: float) -> dict[str, Any]:
         """Fetch current wind directly from Open-Meteo for this exact position."""
@@ -126,37 +128,72 @@ class CacheManager:
                 return series
         except Exception as exc:
             print(f"[cache] forecast series failed for {lat},{lon}: {exc}")
-        # Fallback: repeat current wind
-        w = self.get_wind_live(lat, lon)
-        ws  = float(w["wind_speed_ms"])
-        wd  = float(w["wind_dir_deg"])
-        rad = math.radians(wd)
-        return [{"h": h, "wind_speed_ms": ws, "wind_dir_deg": wd,
-                 "wind_x": ws * math.sin(rad), "wind_y": ws * math.cos(rad)}
-                for h in range(hours)]
+        return self._wind_series_from_cache(hours=hours)
+
+    def _wind_series_from_cache(self, hours: int) -> list[dict[str, Any]]:
+        p = self._path("wind_cache.json")
+        if not p.exists():
+            raise RuntimeError("No real wind forecast cache available")
+        cached = json.loads(p.read_text())
+        hourly = cached.get("data", {}).get("hourly", {})
+        speeds = hourly.get("wind_speed_10m", [])
+        dirs = hourly.get("wind_direction_10m", [])
+        series = []
+        for h in range(min(hours, len(speeds))):
+            ws = float(speeds[h])
+            wd = float(dirs[h])
+            rad = math.radians(wd)
+            series.append({
+                "h": h,
+                "wind_speed_ms": min(max(ws, 0.5), 30.0),
+                "wind_dir_deg": wd,
+                "wind_x": ws * math.sin(rad),
+                "wind_y": ws * math.cos(rad),
+                "source": "open-meteo-cache",
+            })
+        if not series:
+            raise RuntimeError("Wind cache present but unusable")
+        return series
 
     def get_ocean_currents(self, lat: float, lon: float, time_utc: Optional[str] = None) -> dict[str, Any]:
         # Cache keyed on 0.1° grid cell — CMEMS open_dataset is expensive (~25s)
         cache_key = f"currents_{round(lat, 1):.1f}_{round(lon, 1):.1f}".replace("-", "m")
         cache_path = self._path(f"{cache_key}.json")
         ttl = 2 * 3600  # 2 hours
+        stale_cache: dict[str, Any] | None = None
         if cache_path.exists() and (time.time() - cache_path.stat().st_mtime) < ttl:
             try:
                 return json.loads(cache_path.read_text())
             except Exception:
                 pass
+        elif cache_path.exists():
+            try:
+                stale_cache = json.loads(cache_path.read_text())
+            except Exception:
+                stale_cache = None
 
-        ocean = fetch_ocean_point(lat, lon)
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(fetch_current_point, lat, lon)
+                ocean = future.result(timeout=config.EXTERNAL_DATA_TIMEOUT_S)
+        except concurrent.futures.TimeoutError as exc:
+            if stale_cache:
+                stale_cache["source"] = f'{stale_cache.get("source", "cmems-cache")}-stale'
+                return stale_cache
+            raise RuntimeError("Timed out while fetching real ocean current data") from exc
         if ocean:
             speed = float(ocean.get("current_speed_ms", 0.0))
             direction = math.radians(float(ocean.get("current_dir_deg", 0.0)))
             result = {
                 "u_ms": round(speed * math.sin(direction), 4),
                 "v_ms": round(speed * math.cos(direction), 4),
-                "source": ocean.get("source", "cmems"),
+                "source": ocean.get("source", "cmems-current"),
             }
         else:
-            result = {"u_ms": 0.1, "v_ms": 0.05, "source": "fallback"}
+            if stale_cache:
+                stale_cache["source"] = f'{stale_cache.get("source", "cmems-cache")}-stale'
+                return stale_cache
+            raise RuntimeError("Real ocean current data unavailable")
 
         try:
             cache_path.write_text(json.dumps(result))

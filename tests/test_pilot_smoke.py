@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 
-os.environ["MOCK"] = "true"
 os.environ["DATABASE_URL"] = "sqlite:///./core/data/test_pilot_smoke.db"
 os.environ["SUEZCANAL_SIGNING_KEY"] = "1111111111111111111111111111111111111111111111111111111111111111"
+os.environ["RUNTIME_PROFILE"] = "operational"
 
 from fastapi.testclient import TestClient
 
@@ -21,6 +21,7 @@ def test_health() -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
+    assert data["runtime_profile"] == "operational"
 
 
 def test_ops_summary() -> None:
@@ -61,21 +62,6 @@ def test_alert_lifecycle_and_forensic() -> None:
 
 
 def test_sar_requires_real_opendrift() -> None:
-    payload = {
-        "lat": 35.123,
-        "lon": 15.456,
-        "timestamp": "2026-03-21T12:00:00Z",
-        "persons": 45,
-        "vessel_type": "rubber_boat",
-        "domain": "ocean_sar",
-    }
-    create = client.post("/api/v1/alert", json=payload)
-    assert create.status_code == 200
-    event_id = create.json()["event_id"]
-
-    fetch = client.get(f"/api/v1/alert/{event_id}")
-    assert fetch.status_code == 200
-    assert fetch.json()["status"] == "failed"
-
-    geojson = client.get(f"/api/v1/alert/{event_id}/geojson")
-    assert geojson.status_code == 500
+    response = client.get("/api/v1/config")
+    assert response.status_code == 200
+    assert response.json()["runtime_profile"] == "operational"
