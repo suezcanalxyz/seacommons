@@ -1068,54 +1068,56 @@ function App() {
 
       let consecutiveErrors = 0;
       for (let i = 0; i < 180; i += 1) {
+        // ── Poll status — only retry on transient network errors ──────────────
+        let statusResp;
         try {
-          const status = await fetchJson(apiBase, `/api/v1/alert/${created.event_id}`);
+          statusResp = await fetchJson(apiBase, `/api/v1/alert/${created.event_id}`);
           consecutiveErrors = 0;
-          if (status.status === 'failed') {
-            throw new Error(status.drift_result?.metadata?.error || 'Simulation failed');
-          }
-          if (status.status === 'completed') {
-            const geojson = await fetchJson(apiBase, `/api/v1/alert/${created.event_id}/geojson`);
-            setCaseGeojson(geojson);
-            // also set directly — avoids React effect timing gaps on subsequent runs
-            mapRef.current?.getSource('sar-case')?.setData(geojson);
-            setCaseStatus('completed');
-            pushCaseLog(`Drift ready ${created.event_id.slice(0, 8)}`);
-            // Extract trajectory coords for zone analysis
-            const trajFeature = geojson.features?.find(f => f.geometry?.type === 'LineString');
-            const trajCoords = trajFeature?.geometry?.coordinates;
-            const trajParam = trajCoords ? encodeURIComponent(JSON.stringify(trajCoords)) : '';
-            const waveH = weather?.waves?.significant_height_m ?? '';
-            const windMs = weather?.wind?.speed_ms ?? '';
-            const analysisUrl = `/api/v1/zones/classify?lat=${lat}&lon=${lon}`
-              + `&vessel_type=${encodeURIComponent(vesselType)}&persons=${persons}`
-              + `&duration_h=24${trajParam ? `&traj=${trajParam}` : ''}`
-              + `${waveH !== '' ? `&weather_wave=${waveH}` : ''}`
-              + `${windMs !== '' ? `&weather_wind=${windMs}` : ''}`;
-            fetchJson(apiBase, analysisUrl)
-              .then(law => setMapPanel(prev => prev ? { ...prev, legalAnalysis: law } : prev))
-              .catch(() => {});
-            setMapPanel({ type: 'cone', feature: geojson.features?.[0] || null,
-              eventId: created.event_id, caseStatus: 'completed',
-              simParams: simParamsRef.current, legalAnalysis: null });
-            mapRef.current?.flyTo({
-              center: [Number(lon), Number(lat)],
-              zoom: 8.4, essential: true, duration: 900,
-            });
-            return;
-          }
-          // Show computing status once computation starts (vs queued)
-          if (status.status === 'processing' && caseStatusRef.current.startsWith('queued')) {
-            setCaseStatus(`computing ${created.event_id.slice(0, 8)}`);
-            pushCaseLog('Drift computing…');
-          }
-        } catch (pollErr) {
+        } catch (netErr) {
           consecutiveErrors += 1;
-          // Transient network error — back off, don't fail immediately
-          if (consecutiveErrors >= 5) throw pollErr;
+          if (consecutiveErrors >= 5) throw netErr;
           pushCaseLog(`Poll retry ${consecutiveErrors}/5…`);
+          const delay = i < 20 ? 2000 : i < 60 ? 3000 : 5000;
+          await new Promise((resolve) => window.setTimeout(resolve, delay));
+          continue;
         }
-        // Adaptive polling: faster at start, slower as time passes
+
+        // ── Logical terminal states — fail/complete immediately, no retry ────
+        if (statusResp.status === 'failed') {
+          throw new Error(statusResp.drift_result?.metadata?.error || 'Simulation failed');
+        }
+        if (statusResp.status === 'completed') {
+          const geojson = await fetchJson(apiBase, `/api/v1/alert/${created.event_id}/geojson`);
+          setCaseGeojson(geojson);
+          mapRef.current?.getSource('sar-case')?.setData(geojson);
+          setCaseStatus('completed');
+          pushCaseLog(`Drift ready ${created.event_id.slice(0, 8)}`);
+          const trajFeature = geojson.features?.find(f => f.geometry?.type === 'LineString');
+          const trajCoords = trajFeature?.geometry?.coordinates;
+          const trajParam = trajCoords ? encodeURIComponent(JSON.stringify(trajCoords)) : '';
+          const waveH = weather?.waves?.significant_height_m ?? '';
+          const windMs = weather?.wind?.speed_ms ?? '';
+          const analysisUrl = `/api/v1/zones/classify?lat=${lat}&lon=${lon}`
+            + `&vessel_type=${encodeURIComponent(vesselType)}&persons=${persons}`
+            + `&duration_h=24${trajParam ? `&traj=${trajParam}` : ''}`
+            + `${waveH !== '' ? `&weather_wave=${waveH}` : ''}`
+            + `${windMs !== '' ? `&weather_wind=${windMs}` : ''}`;
+          fetchJson(apiBase, analysisUrl)
+            .then(law => setMapPanel(prev => prev ? { ...prev, legalAnalysis: law } : prev))
+            .catch(() => {});
+          setMapPanel({ type: 'cone', feature: geojson.features?.[0] || null,
+            eventId: created.event_id, caseStatus: 'completed',
+            simParams: simParamsRef.current, legalAnalysis: null });
+          mapRef.current?.flyTo({
+            center: [Number(lon), Number(lat)],
+            zoom: 8.4, essential: true, duration: 900,
+          });
+          return;
+        }
+        if (statusResp.status === 'processing' && caseStatusRef.current.startsWith('queued')) {
+          setCaseStatus(`computing ${created.event_id.slice(0, 8)}`);
+          pushCaseLog('Drift computing…');
+        }
         const delay = i < 20 ? 2000 : i < 60 ? 3000 : 5000;
         await new Promise((resolve) => window.setTimeout(resolve, delay));
       }

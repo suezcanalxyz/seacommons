@@ -92,10 +92,26 @@ class CacheManager:
             cur = data.get("current", {})
             ws = float(cur.get("wind_speed_10m", 5.0))
             wd = float(cur.get("wind_direction_10m", 270.0))
-            return {"wind_speed_ms": ws, "wind_dir_deg": wd, "source": "open-meteo-live"}
+            result = {"wind_speed_ms": ws, "wind_dir_deg": wd, "source": "open-meteo-live"}
+            # persist for fallback on subsequent rate-limited calls
+            self._path("wind_live_cache.json").write_text(json.dumps(result))
+            return result
         except Exception as exc:
             print(f"[cache] live wind fetch failed for {lat},{lon}: {exc}")
+        # fallback 1: recent live cache
+        live_cache = self._path("wind_live_cache.json")
+        if live_cache.exists():
+            try:
+                return {**json.loads(live_cache.read_text()), "source": "wind-live-stale"}
+            except Exception:
+                pass
+        # fallback 2: hourly cache
+        try:
             return self.get_wind(lat, lon)
+        except Exception:
+            pass
+        # fallback 3: safe defaults (simulation still runs, degraded accuracy)
+        return {"wind_speed_ms": 5.0, "wind_dir_deg": 270.0, "source": "default-fallback"}
 
     def get_wind_forecast_series(self, lat: float, lon: float, hours: int = 48) -> list[dict[str, Any]]:
         """Fetch Open-Meteo hourly wind forecast, returns list of per-hour dicts."""
@@ -133,7 +149,14 @@ class CacheManager:
     def _wind_series_from_cache(self, hours: int) -> list[dict[str, Any]]:
         p = self._path("wind_cache.json")
         if not p.exists():
-            raise RuntimeError("No real wind forecast cache available")
+            # no cache at all — return uniform default so simulation can still run
+            rad = math.radians(270.0)
+            return [
+                {"h": h, "wind_speed_ms": 5.0, "wind_dir_deg": 270.0,
+                 "wind_x": 5.0 * math.sin(rad), "wind_y": 5.0 * math.cos(rad),
+                 "source": "default-fallback"}
+                for h in range(hours)
+            ]
         cached = json.loads(p.read_text())
         hourly = cached.get("data", {}).get("hourly", {})
         speeds = hourly.get("wind_speed_10m", [])
@@ -176,11 +199,16 @@ class CacheManager:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(fetch_current_point, lat, lon)
                 ocean = future.result(timeout=config.EXTERNAL_DATA_TIMEOUT_S)
-        except concurrent.futures.TimeoutError as exc:
+        except concurrent.futures.TimeoutError:
             if stale_cache:
                 stale_cache["source"] = f'{stale_cache.get("source", "cmems-cache")}-stale'
                 return stale_cache
-            raise RuntimeError("Timed out while fetching real ocean current data") from exc
+            return {"u_ms": 0.0, "v_ms": 0.0, "source": "timeout-fallback"}
+        except Exception:
+            if stale_cache:
+                stale_cache["source"] = f'{stale_cache.get("source", "cmems-cache")}-stale'
+                return stale_cache
+            return {"u_ms": 0.0, "v_ms": 0.0, "source": "error-fallback"}
         if ocean:
             speed = float(ocean.get("current_speed_ms", 0.0))
             direction = math.radians(float(ocean.get("current_dir_deg", 0.0)))
@@ -193,7 +221,7 @@ class CacheManager:
             if stale_cache:
                 stale_cache["source"] = f'{stale_cache.get("source", "cmems-cache")}-stale'
                 return stale_cache
-            raise RuntimeError("Real ocean current data unavailable")
+            return {"u_ms": 0.0, "v_ms": 0.0, "source": "unavailable-fallback"}
 
         try:
             cache_path.write_text(json.dumps(result))
