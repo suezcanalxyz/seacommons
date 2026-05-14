@@ -212,9 +212,9 @@ function App() {
   const simParamsRef = useRef({});
   const intelWsRef = useRef(null);
   const [form, setForm] = useState({
-    lat: '35.889',
-    lon: '14.519',
-    persons: '37',
+    lat: '',
+    lon: '',
+    persons: '1',
     vessel_type: 'rubber_boat',
     risk_level: 'high',
   });
@@ -224,8 +224,8 @@ function App() {
   const selectionModeRef = useRef(false);
   const activePanelRef = useRef('sim');
 
-  const selectedLat = Number(form.lat);
-  const selectedLon = Number(form.lon);
+  const selectedLat = parseFloat(form.lat);
+  const selectedLon = parseFloat(form.lon);
 
   function pushCaseLog(message) {
     setCaseLog((cur) => [
@@ -1242,7 +1242,7 @@ function App() {
         <div className={`map-overlay ${sidebarOpen ? 'sidebar-open' : ''}`}>
           <div className="overlay-card">
             <span className="overlay-label">Selected point</span>
-            <strong>{selectedLat.toFixed(5)}, {selectedLon.toFixed(5)}</strong>
+            <strong>{Number.isFinite(selectedLat) ? `${selectedLat.toFixed(5)}, ${selectedLon.toFixed(5)}` : '—'}</strong>
             <span>{isOnSim ? 'Click map to set coordinates.' : 'Click map for point forecast.'}</span>
           </div>
         </div>

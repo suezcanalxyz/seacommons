@@ -302,9 +302,9 @@ def start() -> None:
 
         scheduler = BackgroundScheduler(timezone="UTC")
 
-        scheduler.add_job(_job_drift_pending,  IntervalTrigger(minutes=15),
-                          id="drift_pending",  replace_existing=True,
-                          max_instances=1, misfire_grace_time=120)
+        # Auto-drift disabled — triggered manually via the UI button instead.
+        # The 1 GB VM cannot sustain background CMEMS drift jobs without swap exhaustion.
+        # scheduler.add_job(_job_drift_pending, ...)
 
         scheduler.add_job(_job_refresh_news,   IntervalTrigger(minutes=30),
                           id="refresh_news",   replace_existing=True,
