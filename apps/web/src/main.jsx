@@ -27,9 +27,12 @@ function apiUrl(base, path) {
   return `${base.replace(/\/$/, '')}${path}`;
 }
 
-async function fetchJson(base, path, options, timeoutMs = 10000) {
+async function fetchJson(base, path, options, timeoutMs = 12000) {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  const timer = window.setTimeout(
+    () => controller.abort(new DOMException(`Request timeout: ${path}`, 'TimeoutError')),
+    timeoutMs,
+  );
   try {
     const response = await fetch(apiUrl(base, path), { signal: controller.signal, ...options });
     if (!response.ok) {
@@ -382,14 +385,14 @@ function App() {
 
     // Start REST polling immediately — data on first load regardless of WS
     pollLoop();
-    // Attempt WS upgrade only when apiBase is a direct backend URL (dev / LAN).
-    // On Vercel (frontend ≠ backend origin) WS cannot be proxied — skip to avoid
-    // ROUTER_EXTERNAL_TARGET_ERROR and browser mixed-content errors.
+    // Only try WebSocket for a direct backend (localhost, LAN IP, raw public IP).
+    // When apiBase === window.location.origin the frontend is served via a CDN
+    // rewrite (e.g. Vercel) which cannot proxy WebSocket upgrades — skip to avoid
+    // the WS failed console error on every page load.
     const apiHost = apiBase.replace(/^https?:\/\//, '').split('/')[0];
-    const isSameOrigin = apiHost === window.location.host;
     const isDirectBackend = /^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(apiHost)
       || /^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(apiHost);
-    if (isSameOrigin || isDirectBackend) tryWs();
+    if (isDirectBackend) tryWs();
 
     return () => {
       alive = false;
