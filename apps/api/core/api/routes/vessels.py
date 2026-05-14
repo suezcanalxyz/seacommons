@@ -12,7 +12,10 @@ from __future__ import annotations
 import math
 from typing import Optional
 
+import asyncio
+
 from fastapi import APIRouter, Query
+from fastapi.responses import Response
 
 router = APIRouter()
 
@@ -27,15 +30,29 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * radius_km * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-async def _registry_geojson(since: Optional[str] = None) -> dict:
-    from core.vessels.registry import registry
-
-    return registry.get_geojson(since=since)
-
-
 @router.get("/api/v1/vessels")
 async def vessel_registry(since: Optional[str] = Query(default=None)):
-    return await _registry_geojson(since=since)
+    from core.vessels.registry import registry
+
+    # Serve pre-serialized JSON bytes on cache hit — bypasses FastAPI's slow
+    # jsonable_encoder which was taking 13+ s on a 3.5 MB / 9k-feature response.
+    if not since:
+        cached = registry.get_geojson_json()
+        if cached is not None:
+            return Response(content=cached, media_type="application/json")
+
+    # Cache miss or incremental request — run in executor so the event loop
+    # stays responsive while the synchronous GeoJSON rebuild executes.
+    loop = asyncio.get_event_loop()
+    geojson = await loop.run_in_executor(None, lambda: registry.get_geojson(since=since))
+
+    if not since:
+        # Serve the pre-serialized copy that was just written by get_geojson()
+        cached = registry.get_geojson_json()
+        if cached is not None:
+            return Response(content=cached, media_type="application/json")
+
+    return geojson
 
 
 @router.get("/api/v1/vessels/stats")

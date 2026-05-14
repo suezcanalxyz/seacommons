@@ -10,6 +10,7 @@ Architecture:
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import time
@@ -82,6 +83,7 @@ class VesselRegistry:
         self._cache: dict[str, dict] = {}
         self._dirty = False
         self._geojson_cache: dict | None = None
+        self._geojson_json: bytes | None = None  # pre-serialized, skips FastAPI encoder
         self._geojson_cache_ts: float = 0.0
         self._write_queue: list[dict] = []
         self._write_lock = threading.Lock()
@@ -222,12 +224,24 @@ class VesselRegistry:
         }
 
         if not since:
+            serialized = json.dumps(result).encode()
             with self._lock:
                 self._geojson_cache = result
+                self._geojson_json = serialized
                 self._geojson_cache_ts = time.monotonic()
                 self._dirty = False
 
         return result
+
+    def get_geojson_json(self) -> bytes | None:
+        """Return pre-serialized GeoJSON bytes if the cache is still valid, else None."""
+        with self._lock:
+            if self._geojson_json is None:
+                return None
+            now_ts = time.monotonic()
+            if not self._dirty or (now_ts - self._geojson_cache_ts) < _GEOJSON_CACHE_TTL_S:
+                return self._geojson_json
+        return None
 
     def stats(self) -> dict:
         with self._lock:
