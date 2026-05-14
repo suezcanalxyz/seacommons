@@ -39,8 +39,18 @@ services:
     build:
       context: ..
       dockerfile: apps/api/Dockerfile.api
-    command: python -c "import time, os; from edge.sync.satellite import SatelliteSync; from datetime import datetime, timezone, timedelta; sync = SatelliteSync();\
- while True: sync.push_events(datetime.now(timezone.utc) - timedelta(hours=1)); sync.pull_config(); time.sleep(int(os.environ.get('TID_POLL_INTERVAL_S', '300')))"
+    command:
+      - python
+      - -c
+      - |
+        import time, os
+        from edge.sync.satellite import SatelliteSync
+        from datetime import datetime, timezone, timedelta
+        sync = SatelliteSync()
+        while True:
+            sync.push_events(datetime.now(timezone.utc) - timedelta(hours=1))
+            sync.pull_config()
+            time.sleep(int(os.environ.get('TID_POLL_INTERVAL_S', '300')))
     env_file:
       - ../.env
     depends_on:
