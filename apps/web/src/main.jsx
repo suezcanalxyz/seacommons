@@ -980,12 +980,15 @@ function App() {
     let vesselSnapshot = null; // latest full GeoJSON snapshot
 
     async function fetchVessels() {
-      // First call: full load. Subsequent: incremental diff only (much smaller payload).
+      // First call: full load (active vessels last 2h, gzipped ~80KB).
+      // Subsequent: incremental diff only (vessels updated since last poll).
+      const isFirst = !lastVesselTs;
       const url = lastVesselTs ? `/api/v1/vessels?since=${encodeURIComponent(lastVesselTs)}` : '/api/v1/vessels';
-      const data = await fetchJson(apiBase, url);
+      const timeoutMs = isFirst ? 20000 : 12000;
+      const data = await fetchJson(apiBase, url, undefined, timeoutMs);
       if (!data?.features) return;
       lastVesselTs = new Date().toISOString();
-      if (!vesselSnapshot || !lastVesselTs) {
+      if (!vesselSnapshot) {
         vesselSnapshot = data;
       } else {
         // Merge incremental updates into snapshot

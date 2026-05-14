@@ -191,7 +191,12 @@ class VesselRegistry:
             except ValueError:
                 vessels = all_values
         else:
-            vessels = all_values
+            # Full load: only vessels active in the last 2 hours.
+            # The DB accumulates months of data (9k+) but SAR only needs
+            # vessels currently underway. Stale vessels are excluded here
+            # but will re-appear in incremental ?since= polls when active again.
+            active_cutoff = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+            vessels = [v for v in all_values if (v.get("last_seen") or "") >= active_cutoff]
 
         features = []
         for v in vessels:
