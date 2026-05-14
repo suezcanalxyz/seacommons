@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
+
+_GEOJSON_CACHE_TTL_S = 10.0  # serve cached GeoJSON for up to 10 s even when dirty
 
 _DB_PATH = Path("core/data/vessels.db")
 
@@ -79,6 +82,7 @@ class VesselRegistry:
         self._cache: dict[str, dict] = {}
         self._dirty = False
         self._geojson_cache: dict | None = None
+        self._geojson_cache_ts: float = 0.0
         self._write_queue: list[dict] = []
         self._write_lock = threading.Lock()
         self._init_db()
@@ -174,7 +178,11 @@ class VesselRegistry:
                 except ValueError:
                     vessels = list(self._cache.values())
             else:
-                if not self._dirty and self._geojson_cache is not None:
+                now_ts = time.monotonic()
+                if (
+                    self._geojson_cache is not None
+                    and (not self._dirty or (now_ts - self._geojson_cache_ts) < _GEOJSON_CACHE_TTL_S)
+                ):
                     return self._geojson_cache
                 vessels = list(self._cache.values())
 
@@ -216,6 +224,7 @@ class VesselRegistry:
         if not since:
             with self._lock:
                 self._geojson_cache = result
+                self._geojson_cache_ts = time.monotonic()
                 self._dirty = False
 
         return result
