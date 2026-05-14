@@ -195,14 +195,37 @@ async def list_alerts():
 
 @router.get("/api/v1/alerts/geojson")
 async def list_alerts_geojson():
-    from core.db.store import get_drift, list_alerts
+    import asyncio
+    from core.db.session import session_scope
+    from core.db.models import AlertEvent, DriftResultDB
+    from sqlalchemy import select
+    from core.db.store import drift_to_dict
+
+    loop = asyncio.get_event_loop()
+
+    def _fetch():
+        with session_scope() as db:
+            drifts = db.execute(
+                select(DriftResultDB)
+                .where(DriftResultDB.status == "completed")
+                .order_by(DriftResultDB.created_at.desc())
+                .limit(100)
+            ).scalars().all()
+            return [drift_to_dict(d) for d in drifts]
+
+    try:
+        completed = await asyncio.wait_for(loop.run_in_executor(None, _fetch), timeout=4.0)
+    except Exception:
+        completed = []
 
     features = []
-    for alert in list_alerts():
-        drift = get_drift(alert["event_id"])
-        if drift is None or drift.get("status") != "completed":
+    for drift in completed:
+        if not drift:
             continue
-        features.extend([drift["trajectory"], drift["cone_6h"], drift["cone_12h"], drift["cone_24h"]])
+        for key in ("trajectory", "cone_6h", "cone_12h", "cone_24h"):
+            f = drift.get(key)
+            if f:
+                features.append(f)
     return {"type": "FeatureCollection", "features": features}
 
 

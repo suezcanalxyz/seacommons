@@ -27,8 +27,16 @@ async def ops_summary():
         _tz_status = {"enabled": False, "reachable": None, "host": "—", "port": 4371}
     recent_raw_events = _integration_store.recent(limit=50)
     vessel_stats = registry.stats()
-    alerts = list_alerts()
-    forensic_packets = list_forensic_packets()
+    try:
+        alerts, forensic_packets = await asyncio.wait_for(
+            asyncio.gather(
+                loop.run_in_executor(None, list_alerts),
+                loop.run_in_executor(None, list_forensic_packets),
+            ),
+            timeout=4.0,
+        )
+    except Exception:
+        alerts, forensic_packets = [], []
     ais_client = get_client()
     ais_connected = bool(ais_client.connected) if ais_client else False
     ais_messages = int(ais_client.messages_received) if ais_client else 0

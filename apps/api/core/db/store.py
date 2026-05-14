@@ -69,10 +69,10 @@ def get_alert(event_id: str) -> dict[str, Any] | None:
         }
 
 
-def list_alerts() -> list[dict[str, Any]]:
+def list_alerts(limit: int = 200) -> list[dict[str, Any]]:
     with session_scope() as session:
         rows = session.execute(
-            select(AlertEvent).order_by(AlertEvent.created_at.desc())
+            select(AlertEvent).order_by(AlertEvent.created_at.desc()).limit(limit)
         ).scalars().all()
         return [
             {
@@ -241,18 +241,28 @@ def get_forensic_packet(event_id: str) -> dict[str, Any] | None:
         }
 
 
-def list_forensic_packets(since: str | None = None) -> list[dict[str, Any]]:
+def list_forensic_packets(since: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
     with session_scope() as session:
-        rows = session.execute(
-            select(ForensicEvent).order_by(ForensicEvent.created_at.desc())
-        ).scalars().all()
-
-        packets: list[dict[str, Any]] = []
-        for row in rows:
-            packet = get_forensic_packet(row.event_id)
-            if packet is None:
-                continue
-            if since and packet.get("timestamp_utc", "") < since:
-                continue
-            packets.append(packet)
-        return packets
+        q = select(ForensicEvent).order_by(ForensicEvent.created_at.desc())
+        if since:
+            q = q.where(ForensicEvent.timestamp_utc >= since)
+        rows = session.execute(q.limit(limit)).scalars().all()
+        return [
+            {
+                "event_id": row.event_id,
+                "timestamp_utc": row.timestamp_utc,
+                "classification": row.classification,
+                "confidence": row.confidence,
+                "position": row.position or {},
+                "vessel_id": row.vessel_id or "",
+                "contributing_sensors": row.contributing_sensors or [],
+                "sensor_data": row.sensor_data or {},
+                "drift_result": row.drift_result or {},
+                "waveform_miniseed_b64": row.waveform_miniseed_b64 or "",
+                "rinex_dtec_b64": row.rinex_dtec_b64 or "",
+                "public_key": row.public_key or "",
+                "hash_blake3": row.hash_blake3 or "",
+                "signature_ed25519": row.signature_ed25519 or "",
+            }
+            for row in rows
+        ]

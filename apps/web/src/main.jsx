@@ -27,13 +27,19 @@ function apiUrl(base, path) {
   return `${base.replace(/\/$/, '')}${path}`;
 }
 
-async function fetchJson(base, path, options) {
-  const response = await fetch(apiUrl(base, path), options);
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(text || `HTTP ${response.status}`);
+async function fetchJson(base, path, options, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(apiUrl(base, path), { signal: controller.signal, ...options });
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(text || `HTTP ${response.status}`);
+    }
+    return response.json();
+  } finally {
+    window.clearTimeout(timer);
   }
-  return response.json();
 }
 
 function Pill({ label, tone = 'default' }) {
