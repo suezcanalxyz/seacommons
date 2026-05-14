@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter
+from fastapi.responses import Response
 
 from core.config import config
 from core.vessels.aisstream import get_client
 from core.vessels.registry import registry
 
 router = APIRouter()
+
+_stats_cache: bytes | None = None
+_stats_cache_ts: float = 0.0
+_STATS_TTL = 30.0
 
 
 @router.get("/api/v1/ops/summary")
@@ -85,7 +92,12 @@ async def ops_stats():
     """
     Heavier stats (DB-backed): alert counts, forensic packets, recent events.
     Polled separately on a longer interval — not needed for initial page load.
+    Cached 30s to avoid repeated heavy DB reads.
     """
+    global _stats_cache, _stats_cache_ts
+    if _stats_cache is not None and (time.monotonic() - _stats_cache_ts) < _STATS_TTL:
+        return Response(content=_stats_cache, media_type="application/json")
+
     loop = asyncio.get_event_loop()
 
     try:
@@ -119,7 +131,7 @@ async def ops_stats():
             "lon": event.get("lon"),
         })
 
-    return {
+    result = {
         "sar": {
             "open_alerts": sum(1 for a in alerts if a.get("status") != "completed"),
             "completed_alerts": sum(1 for a in alerts if a.get("status") == "completed"),
@@ -130,3 +142,7 @@ async def ops_stats():
             "recent_events": recent_events,
         },
     }
+    payload = json.dumps(result).encode()
+    _stats_cache = payload
+    _stats_cache_ts = time.monotonic()
+    return Response(content=payload, media_type="application/json")

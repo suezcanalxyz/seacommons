@@ -16,7 +16,7 @@ import asyncio
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from core.intel.ngo_registry import NGO_VESSELS, get_ngo_info, is_ngo
@@ -349,13 +349,17 @@ def _run_intel_drift(event_id: str, lat: float, lon: float,
 
 
 @router.post("/api/v1/intel/auto-drift")
-async def intel_auto_drift(body: AutoDriftRequest, bg: BackgroundTasks):
+async def intel_auto_drift(body: AutoDriftRequest):
     """
     Trigger a SAR drift simulation from an intel event's known position.
-    The drift runs in the background; result stored in drift_jobs table.
+    The drift runs in a daemon thread so the response returns immediately.
     """
-    bg.add_task(_run_intel_drift, body.intel_event_id, body.lat, body.lon,
-                body.persons, body.vessel_type)
+    import threading
+    threading.Thread(
+        target=_run_intel_drift,
+        args=(body.intel_event_id, body.lat, body.lon, body.persons, body.vessel_type),
+        daemon=True,
+    ).start()
     return {"status": "queued", "intel_event_id": body.intel_event_id}
 
 

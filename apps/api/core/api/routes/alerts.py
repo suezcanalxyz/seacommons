@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, WebSocket
+from fastapi import APIRouter, HTTPException, WebSocket
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -148,7 +148,7 @@ async def _ws_send(ws: WebSocket, text: str) -> None:
 
 
 @router.post("/api/v1/alert")
-async def create_alert(event: MaritimeEvent, bg: BackgroundTasks):
+async def create_alert(event: MaritimeEvent):
     from core.db.store import create_alert, create_drift_job
 
     event_id = str(uuid.uuid4())
@@ -162,7 +162,7 @@ async def create_alert(event: MaritimeEvent, bg: BackgroundTasks):
         duration_h=config.ALERT_DRIFT_DURATION_H,
         started_at=event.timestamp,
     )
-    bg.add_task(_process_drift, event_id, event)
+    threading.Thread(target=_process_drift, args=(event_id, event), daemon=True).start()
     return {"event_id": event_id, "status": "processing"}
 
 

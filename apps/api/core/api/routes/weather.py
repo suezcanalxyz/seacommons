@@ -5,14 +5,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
-
-from core.ocean.cmems import fetch_ocean_point
+from fastapi.responses import Response
+import json as _json_mod
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_weather_cache: dict[tuple, tuple[float, bytes]] = {}  # (lat_r, lon_r) → (ts, bytes)
+_WEATHER_TTL = 600.0  # 10 minutes
 
 
 def _coalesce_float(value, default: float) -> float:
@@ -28,11 +32,17 @@ def _coalesce_float(value, default: float) -> float:
 
 @router.get("/api/v1/weather")
 async def get_weather(lat: float = Query(35.5), lon: float = Query(14.0)):
-    return await asyncio.to_thread(_live_weather, lat, lon)
+    key = (round(lat, 1), round(lon, 1))
+    cached = _weather_cache.get(key)
+    if cached and (time.monotonic() - cached[0]) < _WEATHER_TTL:
+        return Response(content=cached[1], media_type="application/json")
+    result = await asyncio.to_thread(_live_weather, lat, lon)
+    payload = _json_mod.dumps(result).encode()
+    _weather_cache[key] = (time.monotonic(), payload)
+    return Response(content=payload, media_type="application/json")
 
 
 def _live_weather(lat: float, lon: float) -> dict:
-    import json as _json
     import urllib.request
 
     try:
@@ -45,25 +55,26 @@ def _live_weather(lat: float, lon: float) -> dict:
             f"&wind_speed_unit=ms&forecast_days=1&timezone=UTC"
         )
         with urllib.request.urlopen(url, timeout=8) as resp:
-            data = _json.loads(resp.read())
+            data = _json_mod.loads(resp.read())
         cur = data.get("current", {})
         hr = data.get("hourly", {})
         ws = _coalesce_float(cur.get("wind_speed_10m"), 5.0)
         wd = _coalesce_float(cur.get("wind_direction_10m"), 270.0)
         at = _coalesce_float(cur.get("temperature_2m"), 20.0)
-        ocean = fetch_ocean_point(lat, lon)
         wv = _coalesce_float(hr.get("wave_height", [1.0])[0] if hr.get("wave_height") else 1.0, 1.0)
-        if ocean and ocean.get("wave_height_m") is not None:
-            wv = _coalesce_float(ocean.get("wave_height_m"), wv)
+        current_speed = _coalesce_float(
+            hr.get("ocean_current_velocity", [0.15])[0] if hr.get("ocean_current_velocity") else 0.15, 0.15
+        )
+        current_dir = _coalesce_float(
+            hr.get("ocean_current_direction", [None])[0] if hr.get("ocean_current_direction") else None,
+            round((wd + 30) % 360, 1),
+        )
         beaufort = _beaufort(ws)
-        water_temp = _coalesce_float(ocean.get("water_temp_c") if ocean else None, round(at - 2.0, 1))
-        current_speed = _coalesce_float(ocean.get("current_speed_ms") if ocean else None, 0.15)
-        current_dir = _coalesce_float(ocean.get("current_dir_deg") if ocean else None, round((wd + 30) % 360, 1))
-        source = "open-meteo+cmems" if ocean else "open-meteo"
+        water_temp = round(at - 2.0, 1)
         return {
             "lat": lat, "lon": lon,
             "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-            "source": source,
+            "source": "open-meteo",
             "wind": {
                 "speed_ms": round(ws, 2),
                 "speed_kn": round(ws * 1.944, 1),
@@ -83,7 +94,7 @@ def _live_weather(lat: float, lon: float) -> dict:
             },
             "air": {
                 "temp_c": round(at, 1),
-                    "pressure_hpa": round(_coalesce_float(cur.get("surface_pressure"), 1013.0), 1),
+                "pressure_hpa": round(_coalesce_float(cur.get("surface_pressure"), 1013.0), 1),
                 "visibility_km": 15.0,
             },
             "sar_conditions": {
