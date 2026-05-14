@@ -268,16 +268,19 @@ function App() {
     caseStatusRef.current = caseStatus;
   }, [caseStatus]);
 
-  // ── Intel feed: WebSocket with REST polling fallback ─────────────────────────
+  // ── Intel feed: REST polling always-on + WS upgrade when available ───────────
+  // Vercel does NOT proxy WebSocket connections, so wss://seacommons.suezcanal.xyz
+  // always fails in production. We start REST polling immediately so data flows
+  // on first load, and attempt WS in parallel — if it connects (direct backend /
+  // dev) it takes over; if it fails we just keep polling.
   useEffect(() => {
     const wsBase = apiBase.replace(/^http/, 'ws');
     let ws = null;
     let reconnectTimer = null;
     let pollTimer = null;
-    let failCount = 0;
-    let polling = false;   // guard: only one poll loop at a time
+    let wsAlive = true;   // false once we give up on WS
+    let polling = false;
     let alive = true;
-    const MAX_WS_FAILS = 3;
 
     function handleWsMessage(e) {
       try {
@@ -319,12 +322,13 @@ function App() {
         if (data.features) {
           setIntelEvents(data.features);
           setIntelConnected(true);
-          setIntelMode('poll');
+          // only set 'poll' if WS hasn't taken over
+          setIntelMode((prev) => prev === 'ws' ? 'ws' : 'poll');
         }
       } catch {
         if (!alive) return;
         setIntelConnected(false);
-        setIntelMode('offline');
+        setIntelMode((prev) => prev === 'ws' ? 'ws' : 'offline');
       }
     }
 
@@ -339,40 +343,38 @@ function App() {
       polling = false;
     }
 
-    function connect() {
-      if (!alive) return;
+    function tryWs() {
+      if (!alive || !wsAlive) return;
       ws = new WebSocket(`${wsBase}/ws/intel`);
       intelWsRef.current = ws;
 
       const openTimer = window.setTimeout(() => {
         if (ws && ws.readyState !== WebSocket.OPEN) ws.close();
-      }, 5000);
+      }, 4000);
 
       ws.onopen = () => {
         window.clearTimeout(openTimer);
-        failCount = 0;
         setIntelConnected(true);
         setIntelMode('ws');
       };
       ws.onclose = () => {
         window.clearTimeout(openTimer);
         if (!alive) return;
-        failCount += 1;
-        if (failCount >= MAX_WS_FAILS) {
-          // Give up on WS — switch to polling permanently
-          setIntelMode('poll');
-          pollLoop();
-        } else {
-          reconnectTimer = window.setTimeout(connect, 5000);
-        }
+        // WS failed — stop trying; polling already covers the feed
+        wsAlive = false;
       };
       ws.onerror = () => { window.clearTimeout(openTimer); ws?.close(); };
       ws.onmessage = handleWsMessage;
     }
 
-    connect();
+    // Start REST polling immediately — data on first load regardless of WS
+    pollLoop();
+    // Attempt WS upgrade in parallel (works in dev / direct backend access)
+    tryWs();
+
     return () => {
       alive = false;
+      wsAlive = false;
       window.clearTimeout(reconnectTimer);
       window.clearTimeout(pollTimer);
       ws?.close();
