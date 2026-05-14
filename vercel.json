@@ -4,7 +4,6 @@
   "outputDirectory": "apps/web/dist",
   "framework": "vite",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "http://204.216.210.155/api/:path*" },
-    { "source": "/(.*)",       "destination": "/index.html" }
+    { "source": "/api/:path*", "destination": "http://204.216.210.155/api/:path*" }
   ]
 }
