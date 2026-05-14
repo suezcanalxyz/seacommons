@@ -30,6 +30,12 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * radius_km * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+async def _registry_geojson(since: Optional[str] = None) -> dict:
+    from core.vessels.registry import registry
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: registry.get_geojson(since=since))
+
+
 @router.get("/api/v1/vessels")
 async def vessel_registry(since: Optional[str] = Query(default=None)):
     from core.vessels.registry import registry
