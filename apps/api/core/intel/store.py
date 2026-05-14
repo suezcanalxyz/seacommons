@@ -122,6 +122,7 @@ class IntelStore:
         try:
             from core.db.session import session_scope
             from core.db.models import IntelEventDB
+            events_to_add: list[IntelEvent] = []
             with session_scope() as db:
                 rows = (
                     db.query(IntelEventDB)
@@ -129,23 +130,25 @@ class IntelStore:
                     .limit(limit)
                     .all()
                 )
+                # Build IntelEvent objects inside session so all columns are
+                # accessed while the session is open (expire_on_commit=True default)
+                for row in reversed(rows):
+                    events_to_add.append(IntelEvent(
+                        id=row.id,
+                        timestamp_utc=row.timestamp_utc,
+                        type=row.type or "",
+                        severity=row.severity or "",
+                        lat=row.lat,
+                        lon=row.lon,
+                        title=row.title or "",
+                        text=row.text or "",
+                        url=row.url or "",
+                        source=row.source or "",
+                        linked_mmsi=row.linked_mmsi or "",
+                        metadata=dict(row.meta or {}),
+                    ))
             loaded = 0
-            # Insert oldest first so deque order (newest-first) is correct
-            for row in reversed(rows):
-                ev = IntelEvent(
-                    id=row.id,
-                    timestamp_utc=row.timestamp_utc,
-                    type=row.type or "",
-                    severity=row.severity or "",
-                    lat=row.lat,
-                    lon=row.lon,
-                    title=row.title or "",
-                    text=row.text or "",
-                    url=row.url or "",
-                    source=row.source or "",
-                    linked_mmsi=row.linked_mmsi or "",
-                    metadata=row.meta or {},
-                )
+            for ev in events_to_add:
                 key = ev.content_hash()
                 with self._lock:
                     if key not in self._seen:
