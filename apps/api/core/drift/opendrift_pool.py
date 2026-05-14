@@ -257,7 +257,7 @@ def _fetch_grid(center_lat: float, center_lon: float, hours: int) -> dict[str, A
     v_curr = np.full((hours, n, n), np.nan)
 
     point_map: dict[concurrent.futures.Future, tuple[int, int]] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(n * n, 3)) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=n * n) as ex:
         for i, lat in enumerate(lats):
             for j, lon in enumerate(lons):
                 point_map[ex.submit(fetch_point, lat, lon)] = (i, j)
@@ -365,7 +365,7 @@ def _build_cmems_reader(
             logger.info("CMEMS: using cached slice %s", nc_path.name)
         else:
             # ── Download ───────────────────────────────────────────────────────
-            pad = 2.0  # ±2° gives ~480 km buffer around starting point
+            pad = 1.0  # ±1° gives ~240 km buffer — smaller file, faster download
             t_start = (start_time - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
             t_end = (start_time + timedelta(hours=duration_h + 1)).strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -378,11 +378,7 @@ def _build_cmems_reader(
 
             norm_lon = _normalize_lon(lon)
 
-            try:
-                logger.info(
-                    "CMEMS: downloading current slice %.2f,%.2f ±2° for %dh…",
-                    lat, lon, duration_h,
-                )
+            def _do_subset():
                 copernicusmarine.subset(
                     dataset_id=app_config.CMEMS_CURRENT_DATASET,
                     username=app_config.CMEMS_USERNAME,
@@ -399,11 +395,23 @@ def _build_cmems_reader(
                     output_filename=str(nc_path),
                     force_download=True,
                 )
+
+            try:
+                logger.info(
+                    "CMEMS: downloading current slice %.2f,%.2f ±1° for %dh…",
+                    lat, lon, duration_h,
+                )
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
+                    _fut = _ex.submit(_do_subset)
+                    _fut.result(timeout=90)  # hard cap: fall back to Open-Meteo grid after 90s
                 logger.info("CMEMS: download complete → %s (%.1f KB)",
                             nc_path.name, nc_path.stat().st_size / 1024)
+            except concurrent.futures.TimeoutError:
+                logger.warning("CMEMS download timed out after 90s — using Open-Meteo grid")
+                nc_path.unlink(missing_ok=True)
+                return None
             except Exception as exc:
                 logger.warning("CMEMS download failed: %s", exc)
-                # Remove partial file if present
                 nc_path.unlink(missing_ok=True)
                 return None
 

@@ -85,8 +85,8 @@ class DriftEngine:
                 "land_binary_mask": 0,
             },
             "wind_series": wind_series,
-            "particles": int(config.get("particles", os.getenv("OPENDRIFT_PARTICLES", "128"))),
-            "time_step_seconds": int(config.get("time_step_seconds", os.getenv("OPENDRIFT_TIMESTEP_SECONDS", "900"))),
+            "particles": int(config.get("particles", os.getenv("OPENDRIFT_PARTICLES", "50"))),
+            "time_step_seconds": int(config.get("time_step_seconds", os.getenv("OPENDRIFT_TIMESTEP_SECONDS", "1800"))),
             "time_step_output_seconds": int(config.get("time_step_output_seconds", os.getenv("OPENDRIFT_OUTPUT_SECONDS", "3600"))),
             "object_type": (
                 resolve_object_type(config["vessel_type"], int(config.get("persons", 1)))
