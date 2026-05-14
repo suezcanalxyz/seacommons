@@ -207,6 +207,7 @@ function App() {
   const [intelConnected, setIntelConnected] = useState(false);
   const [intelMode, setIntelMode] = useState('offline'); // 'ws' | 'poll' | 'offline'
   const [intelFilter, setIntelFilter] = useState('all');
+  const [triggeringDrift, setTriggeringDrift] = useState(() => new Set());
   const caseEventIdRef = useRef(null);
   const caseStatusRef = useRef('idle');
   const simParamsRef = useRef({});
@@ -252,6 +253,24 @@ function App() {
     );
     setWeatherGrid(payload);
     setWeatherVectors(weatherGridToVectors(payload));
+  }
+
+  async function triggerIntelDrift(eventId, lat, lon) {
+    setTriggeringDrift((prev) => new Set([...prev, eventId]));
+    try {
+      await fetchJson(apiBase, '/api/v1/intel/auto-drift', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ intel_event_id: eventId, lat, lon, vessel_type: 'rubber_boat' }),
+      }, 8000);
+      setIntelEvents((prev) => prev.map((f) =>
+        f.properties?.id === eventId
+          ? { ...f, properties: { ...f.properties, drift_status: 'computing' } }
+          : f
+      ));
+    } catch (err) {
+      setTriggeringDrift((prev) => { const n = new Set(prev); n.delete(eventId); return n; });
+    }
   }
 
   async function loadNearestVessels(lat, lon) {
@@ -1455,7 +1474,7 @@ function App() {
                               {ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                             </time>
                           )}
-                          {hasDrift && (
+                          {hasDrift ? (
                             <button
                               className="intel-drift-btn intel-drift-btn--ready"
                               title="See drift on map"
@@ -1468,7 +1487,20 @@ function App() {
                                 setSidebarOpen(false);
                               }}
                             >See on map</button>
-                          )}
+                          ) : coords && (p.drift_status === 'computing' || triggeringDrift.has(p.id)) ? (
+                            <button className="intel-drift-btn intel-drift-btn--computing" disabled>
+                              Computing…
+                            </button>
+                          ) : coords && p.drift_status !== 'completed' ? (
+                            <button
+                              className="intel-drift-btn intel-drift-btn--trigger"
+                              title="Compute SAR drift for this event"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerIntelDrift(p.id, coords[1], coords[0]);
+                              }}
+                            >Compute Drift</button>
+                          ) : null}
                         </div>
                         <strong className="intel-title">{p.title}</strong>
                         <span className="intel-source">

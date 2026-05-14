@@ -320,7 +320,7 @@ def start() -> None:
 
         scheduler.start()
         _scheduler = scheduler
-        logger.info("Background scheduler started: drift_pending(15m), refresh_news(30m), iom_incidents(1h), forensic_scan(6h)")
+        logger.info("Background scheduler started: refresh_news(30m), iom_incidents(1h), forensic_scan(6h) [drift: manual-only]")
 
 
 def stop() -> None:
