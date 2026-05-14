@@ -169,24 +169,29 @@ class VesselRegistry:
         If `since` is an ISO timestamp, only return vessels updated after that time.
         """
         with self._lock:
-            if since:
-                try:
-                    cutoff = datetime.fromisoformat(since.replace("Z", "+00:00"))
-                    vessels = [
-                        v for v in self._cache.values()
-                        if v.get("last_seen") and
-                           datetime.fromisoformat(v["last_seen"]) >= cutoff
-                    ]
-                except ValueError:
-                    vessels = list(self._cache.values())
-            else:
+            if not since:
                 now_ts = time.monotonic()
                 if (
                     self._geojson_cache is not None
                     and (not self._dirty or (now_ts - self._geojson_cache_ts) < _GEOJSON_CACHE_TTL_S)
                 ):
                     return self._geojson_cache
-                vessels = list(self._cache.values())
+            # Snapshot values under lock — O(1) copy of references, not dicts
+            all_values = list(self._cache.values())
+
+        # Filter outside the lock — fromisoformat on 9k rows takes ~20ms
+        if since:
+            try:
+                cutoff = datetime.fromisoformat(since.replace("Z", "+00:00"))
+                vessels = [
+                    v for v in all_values
+                    if v.get("last_seen") and
+                       datetime.fromisoformat(v["last_seen"]) >= cutoff
+                ]
+            except ValueError:
+                vessels = all_values
+        else:
+            vessels = all_values
 
         features = []
         for v in vessels:
