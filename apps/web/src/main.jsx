@@ -369,8 +369,14 @@ function App() {
 
     // Start REST polling immediately — data on first load regardless of WS
     pollLoop();
-    // Attempt WS upgrade in parallel (works in dev / direct backend access)
-    tryWs();
+    // Attempt WS upgrade only when apiBase is a direct backend URL (dev / LAN).
+    // On Vercel (frontend ≠ backend origin) WS cannot be proxied — skip to avoid
+    // ROUTER_EXTERNAL_TARGET_ERROR and browser mixed-content errors.
+    const apiHost = apiBase.replace(/^https?:\/\//, '').split('/')[0];
+    const isSameOrigin = apiHost === window.location.host;
+    const isDirectBackend = /^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(apiHost)
+      || /^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(apiHost);
+    if (isSameOrigin || isDirectBackend) tryWs();
 
     return () => {
       alive = false;
