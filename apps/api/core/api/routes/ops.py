@@ -23,13 +23,16 @@ async def ops_summary():
     """
     loop = asyncio.get_event_loop()
 
-    # TimeZero health — 2s timeout, non-blocking
-    try:
-        from core.integrations.timezero import timezero_health
-        _tz_status = await asyncio.wait_for(
-            loop.run_in_executor(None, timezero_health), timeout=2.0
-        )
-    except Exception:
+    # TimeZero health — only checked if explicitly enabled, max 1s
+    if config.TIMEZERO_ENABLED:
+        try:
+            from core.integrations.timezero import timezero_health
+            _tz_status = await asyncio.wait_for(
+                loop.run_in_executor(None, timezero_health), timeout=1.0
+            )
+        except Exception:
+            _tz_status = {"enabled": True, "reachable": False, "host": config.TIMEZERO_HOST, "port": config.TIMEZERO_PORT}
+    else:
         _tz_status = {"enabled": False, "reachable": None, "host": "—", "port": 4371}
 
     # AIS client — in-memory, instant
