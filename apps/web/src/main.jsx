@@ -1045,11 +1045,11 @@ function App() {
   const serviceRows = useMemo(() => {
     if (!summary) return [];
     return [
-      { name: 'AISStream', state: summary.backend.aisstream_connected ? 'live' : 'degraded', detail: summary.backend.aisstream_connected ? `live feed (${summary.backend.aisstream_messages} msgs)` : 'feed unavailable' },
-      { name: 'CMEMS',     state: summary.backend.cmems_configured ? 'ready' : 'degraded', detail: summary.backend.cmems_configured ? 'live currents configured' : 'credentials missing' },
-      { name: 'Redis',     state: summary.backend.redis_configured ? 'ok' : 'off',      detail: summary.backend.redis_configured ? 'cache active' : 'not configured' },
-      { name: 'Database',  state: summary.backend.database,                             detail: summary.backend.database === 'postgres' ? 'persistent' : 'local' },
-      { name: 'Scheduler', state: summary.scheduler?.running ? 'live' : 'off',          detail: summary.scheduler?.running ? `${summary.scheduler.jobs?.length || 0} jobs active` : 'not running' },
+      { name: 'AISStream', state: summary.backend?.aisstream_connected ? 'live' : 'degraded', detail: summary.backend?.aisstream_connected ? `live feed (${summary.backend?.aisstream_messages} msgs)` : 'feed unavailable' },
+      { name: 'CMEMS',     state: summary.backend?.cmems_configured ? 'ready' : 'degraded', detail: summary.backend?.cmems_configured ? 'live currents configured' : 'credentials missing' },
+      { name: 'Redis',     state: summary.backend?.redis_configured ? 'ok' : 'off',      detail: summary.backend?.redis_configured ? 'cache active' : 'not configured' },
+      { name: 'Database',  state: summary.backend?.database ?? '—',                      detail: summary.backend?.database === 'postgres' ? 'persistent' : 'local' },
+      { name: 'Scheduler', state: summary.scheduler?.running ? 'live' : 'off',           detail: summary.scheduler?.running ? `${summary.scheduler?.jobs?.length || 0} jobs active` : 'not running' },
       { name: 'TimeZero',  state: timezero ? (timezero.enabled ? (timezero.reachable ? 'reachable' : 'off') : 'disabled') : 'pending', detail: timezero ? `${timezero.host}:${timezero.port}` : 'pending' },
     ];
   }, [summary, timezero]);
@@ -1341,10 +1341,10 @@ function App() {
                 </div>
                 {weather ? (
                   <div className="weather-card">
-                    <span>Wind {weather.wind.speed_ms} m/s {weather.wind.direction_label}</span>
-                    <span>Wave {weather.waves.significant_height_m} m</span>
-                    <span>Current {weather.ocean.current_speed_ms} m/s</span>
-                    <span>Drift {weather.sar_conditions.drift_speed_ms} m/s — {weather.sar_conditions.drift_dir_deg}°</span>
+                    <span>Wind {weather.wind?.speed_ms ?? '—'} m/s {weather.wind?.direction_label ?? ''}</span>
+                    <span>Wave {weather.waves?.significant_height_m ?? '—'} m</span>
+                    <span>Current {weather.ocean?.current_speed_ms ?? '—'} m/s</span>
+                    <span>Drift {weather.sar_conditions?.drift_speed_ms ?? '—'} m/s — {weather.sar_conditions?.drift_dir_deg ?? '—'}°</span>
                   </div>
                 ) : null}
                 <div className="action-row">
@@ -1357,7 +1357,7 @@ function App() {
                 <p className="section-kicker">Recent signals</p>
                 <h3>Event intake</h3>
                 <ul className="signal-list">
-                  {(summary?.signals.recent_events || []).map((item) => (
+                  {(stats?.signals?.recent_events || []).map((item) => (
                     <li key={`${item.timestamp}-${item.vessel_id || 'evt'}`}>
                       <strong>{item.ship_name || item.vessel_id || item.event_type}</strong>
                       <span>{item.adapter || item.protocol || 'unknown source'}</span>

@@ -244,17 +244,13 @@ class VesselRegistry:
         return None
 
     def stats(self) -> dict:
+        # Snapshot values list outside the lock scan to minimise hold time.
         with self._lock:
-            total = len(self._cache)
-            positioned = sum(
-                1 for v in self._cache.values()
-                if v.get("last_lat") is not None
-            )
-            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
-            active = sum(
-                1 for v in self._cache.values()
-                if (v.get("last_seen") or "") >= cutoff
-            )
+            values = list(self._cache.values())
+        total = len(values)
+        positioned = sum(1 for v in values if v.get("last_lat") is not None)
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+        active = sum(1 for v in values if (v.get("last_seen") or "") >= cutoff)
         return {"total_known": total, "positioned": positioned, "active_30m": active}
 
 

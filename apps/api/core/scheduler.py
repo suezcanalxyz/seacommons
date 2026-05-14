@@ -26,27 +26,60 @@ _scheduler_lock = threading.Lock()
 
 # ── Job: drift pending events ─────────────────────────────────────────────────
 
+def _available_ram_mb() -> int:
+    """Return available RAM in MB by reading /proc/meminfo (Linux only)."""
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+    except Exception:
+        pass
+    return 9999  # unknown → don't block
+
+
 def _job_drift_pending() -> None:
     """
     Find high/critical intel events with coordinates that have no drift result yet.
-    Queues a drift computation for each (max 3 per run to avoid overloading).
+    Queues at most 1 drift per run to avoid memory exhaustion on the 1 GB VM.
+    Skips if available RAM < 400 MB (drift + CMEMS needs ~600 MB headroom).
     """
     try:
+        ram_mb = _available_ram_mb()
+        if ram_mb < 400:
+            logger.info("Scheduler: skipping drift_pending — only %d MB RAM available", ram_mb)
+            return
+
         from core.intel.store import intel_store
-        from core.db.store import get_drift
+        from core.db.store import list_drift_jobs_for_event
 
         events = intel_store.events(limit=200)
-        pending = [
-            e for e in events
-            if e.severity in ("critical", "high")
-            and e.lat is not None and e.lon is not None
-            and e.metadata.get("drift_job_id") is None
-        ][:3]  # max 3 per run
+        pending = []
+        for e in events:
+            if e.severity not in ("critical", "high"):
+                continue
+            if e.lat is None or e.lon is None:
+                continue
+            # Check in-memory metadata first (fast path)
+            if e.metadata.get("drift_job_id") is not None:
+                continue
+            # Check DB for any existing drift linked to this event (survives restarts)
+            try:
+                existing = list_drift_jobs_for_event(f"intel:{e.id}")
+                if existing:
+                    # Back-fill metadata so we don't check DB every run
+                    e.metadata["drift_job_id"] = existing[0].get("id", "exists")
+                    continue
+            except Exception:
+                pass
+            pending.append(e)
+            if len(pending) >= 1:  # max 1 per run on 1 GB VM
+                break
 
         if not pending:
             return
 
-        logger.info("Scheduler: %d pending drift jobs for geolocated intel events", len(pending))
+        logger.info("Scheduler: queuing %d drift job(s), RAM available: %d MB", len(pending), ram_mb)
         for event in pending:
             _compute_drift_for_event(event)
     except Exception as exc:

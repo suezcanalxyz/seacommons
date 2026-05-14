@@ -40,25 +40,22 @@ async def _registry_geojson(since: Optional[str] = None) -> dict:
 async def vessel_registry(since: Optional[str] = Query(default=None)):
     from core.vessels.registry import registry
 
-    # Serve pre-serialized JSON bytes on cache hit — bypasses FastAPI's slow
-    # jsonable_encoder which was taking 13+ s on a 3.5 MB / 9k-feature response.
-    if not since:
-        cached = registry.get_geojson_json()
-        if cached is not None:
-            return Response(content=cached, media_type="application/json")
+    # Always serve pre-serialized JSON bytes when the cache is valid.
+    # For ?since= requests we return the full dataset — the client merges it.
+    # This avoids a slow filtered rebuild under memory pressure that was
+    # causing 12-second timeouts on the incremental-update poll.
+    cached = registry.get_geojson_json()
+    if cached is not None:
+        return Response(content=cached, media_type="application/json")
 
-    # Cache miss or incremental request — run in executor so the event loop
-    # stays responsive while the synchronous GeoJSON rebuild executes.
+    # Cache miss — build in executor so the event loop stays responsive.
     loop = asyncio.get_event_loop()
-    geojson = await loop.run_in_executor(None, lambda: registry.get_geojson(since=since))
+    await loop.run_in_executor(None, lambda: registry.get_geojson(since=None))
+    cached = registry.get_geojson_json()
+    if cached is not None:
+        return Response(content=cached, media_type="application/json")
 
-    if not since:
-        # Serve the pre-serialized copy that was just written by get_geojson()
-        cached = registry.get_geojson_json()
-        if cached is not None:
-            return Response(content=cached, media_type="application/json")
-
-    return geojson
+    return await loop.run_in_executor(None, lambda: registry.get_geojson(since=since))
 
 
 @router.get("/api/v1/vessels/stats")

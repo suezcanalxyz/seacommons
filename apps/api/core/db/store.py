@@ -167,6 +167,15 @@ def fail_drift_job(
         row.status = "failed"
 
 
+def list_drift_jobs_for_event(event_id: str) -> list[dict[str, Any]]:
+    """Return all drift jobs linked to the given event_id (survives restarts)."""
+    with session_scope() as session:
+        rows = session.execute(
+            select(DriftResultDB).where(DriftResultDB.event_id == event_id)
+        ).scalars().all()
+        return [{"id": r.drift_id, "status": getattr(r, "status", "completed")} for r in rows]
+
+
 def get_drift(drift_id: str) -> dict[str, Any] | None:
     with session_scope() as session:
         row = session.get(DriftResultDB, drift_id)
