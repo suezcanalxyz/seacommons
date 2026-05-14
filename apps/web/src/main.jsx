@@ -977,16 +977,24 @@ function App() {
       return vesselSnapshot;
     }
 
-    async function loadAll() {
+    async function loadSummary() {
       try {
-        const [summaryPayload, vesselsPayload, alertsPayload] = await Promise.all([
-          fetchJson(apiBase, '/api/v1/ops/summary'),
+        const summaryPayload = await fetchJson(apiBase, '/api/v1/ops/summary', undefined, 8000);
+        if (!alive) return;
+        setSummary(summaryPayload);
+        setTimezero(summaryPayload?.backend?.timezero || null);
+      } catch { /* non-critical — map works without it */ }
+    }
+
+    async function loadAll() {
+      // ops/summary is NOT in this Promise.all — it's non-critical and
+      // must never delay the map render or the loading banner clearing.
+      try {
+        const [vesselsPayload, alertsPayload] = await Promise.all([
           fetchVessels(),
           fetchJson(apiBase, '/api/v1/alerts/geojson'),
         ]);
         if (!alive) return;
-        setSummary(summaryPayload);
-        setTimezero(summaryPayload.backend.timezero || null);
         if (vesselsPayload) setVessels(vesselsPayload);
         setAlerts(alertsPayload);
         setError('');
@@ -996,6 +1004,8 @@ function App() {
       } finally {
         if (alive) setLoading(false);
       }
+      // Fire summary fetch after banner clears — failure is silent
+      loadSummary();
     }
     loadAll();
     const id = window.setInterval(loadAll, 15000);

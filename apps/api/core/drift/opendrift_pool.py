@@ -46,11 +46,11 @@ _Leeway = None
 _reader_constant = None
 _grid_reader_cls = None  # lazily constructed after OpenDrift import
 
-# Concurrency limiter — at most 2 OpenDrift simulations run simultaneously.
-# A third call blocks here (in its background thread) until a slot is free.
-# This prevents thread-pool exhaustion when users trigger multiple distress
-# scenarios in quick succession.
-_drift_semaphore = threading.Semaphore(2)
+# Concurrency limiter — at most 1 OpenDrift simulation runs at a time.
+# The 1 GB VM cannot handle concurrent CMEMS downloads + OpenDrift runs
+# without exhausting memory and going into heavy swap (observed: 881 MB swap).
+# A second call blocks here (in its background thread) until the slot is free.
+_drift_semaphore = threading.Semaphore(1)
 _drift_queue_count = 0  # approximate number of waiting sims (informational)
 
 # Grid parameters for Open-Meteo spatially-varying reader
@@ -257,7 +257,7 @@ def _fetch_grid(center_lat: float, center_lon: float, hours: int) -> dict[str, A
     v_curr = np.full((hours, n, n), np.nan)
 
     point_map: dict[concurrent.futures.Future, tuple[int, int]] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=n * n) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(n * n, 3)) as ex:
         for i, lat in enumerate(lats):
             for j, lon in enumerate(lons):
                 point_map[ex.submit(fetch_point, lat, lon)] = (i, j)
