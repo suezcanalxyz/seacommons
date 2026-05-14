@@ -6,17 +6,29 @@ import asyncio
 import json
 import logging
 import threading
+import time
 import uuid
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, WebSocket
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from core.config import config
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_alerts_geojson_cache: bytes | None = None
+_alerts_geojson_ts: float = 0.0
+_ALERTS_GEOJSON_TTL = 60.0  # seconds
+
+
+def invalidate_alerts_cache() -> None:
+    """Call after a drift job completes to force cache refresh."""
+    global _alerts_geojson_ts
+    _alerts_geojson_ts = 0.0
 
 
 class MaritimeEvent(BaseModel):
@@ -104,6 +116,7 @@ def _process_drift(event_id: str, event: MaritimeEvent) -> None:
         )
 
     update_alert_status(event_id, status)
+    invalidate_alerts_cache()
     _broadcast_ws({"event_id": event_id, "status": status})
 
 
@@ -195,10 +208,14 @@ async def list_alerts():
 
 @router.get("/api/v1/alerts/geojson")
 async def list_alerts_geojson():
-    import asyncio
+    global _alerts_geojson_cache, _alerts_geojson_ts
+
+    if _alerts_geojson_cache is not None and (time.monotonic() - _alerts_geojson_ts) < _ALERTS_GEOJSON_TTL:
+        return Response(content=_alerts_geojson_cache, media_type="application/json")
+
     from core.db.session import session_scope
-    from core.db.models import AlertEvent, DriftResultDB
-    from sqlalchemy import select
+    from core.db.models import DriftResultDB
+    from sqlalchemy import select, not_
     from core.db.store import drift_to_dict
 
     loop = asyncio.get_event_loop()
@@ -207,14 +224,17 @@ async def list_alerts_geojson():
         with session_scope() as db:
             drifts = db.execute(
                 select(DriftResultDB)
-                .where(DriftResultDB.status == "completed")
+                .where(
+                    DriftResultDB.status == "completed",
+                    not_(DriftResultDB.event_id.like("intel:%")),
+                )
                 .order_by(DriftResultDB.created_at.desc())
-                .limit(100)
+                .limit(50)
             ).scalars().all()
             return [drift_to_dict(d) for d in drifts]
 
     try:
-        completed = await asyncio.wait_for(loop.run_in_executor(None, _fetch), timeout=4.0)
+        completed = await asyncio.wait_for(loop.run_in_executor(None, _fetch), timeout=6.0)
     except Exception:
         completed = []
 
@@ -226,7 +246,11 @@ async def list_alerts_geojson():
             f = drift.get(key)
             if f:
                 features.append(f)
-    return {"type": "FeatureCollection", "features": features}
+
+    payload = json.dumps({"type": "FeatureCollection", "features": features}).encode()
+    _alerts_geojson_cache = payload
+    _alerts_geojson_ts = time.monotonic()
+    return Response(content=payload, media_type="application/json")
 
 
 @router.websocket("/ws/events")
