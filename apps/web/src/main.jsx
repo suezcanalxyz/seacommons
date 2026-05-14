@@ -173,6 +173,7 @@ function App() {
   const [apiBase, setApiBase] = useState(guessApiBase);
   const [localSettings, setLocalSettings] = useState(loadLocalSettings);
   const [summary, setSummary] = useState(null);
+  const [stats, setStats] = useState(null);
   const [vessels, setVessels] = useState({ type: 'FeatureCollection', features: [] });
   const [ngoVessels, setNgoVessels] = useState({ type: 'FeatureCollection', features: [] });
   const [platforms, setPlatforms] = useState({ type: 'FeatureCollection', features: [] });
@@ -983,7 +984,12 @@ function App() {
         if (!alive) return;
         setSummary(summaryPayload);
         setTimezero(summaryPayload?.backend?.timezero || null);
-      } catch { /* non-critical — map works without it */ }
+      } catch { /* non-critical */ }
+      try {
+        const statsPayload = await fetchJson(apiBase, '/api/v1/ops/stats', undefined, 10000);
+        if (!alive) return;
+        setStats(statsPayload);
+      } catch { /* non-critical */ }
     }
 
     async function loadAll() {
@@ -1027,13 +1033,14 @@ function App() {
   // ── Derived data ─────────────────────────────────────────────────────────────
   const topStats = useMemo(() => {
     if (!summary) return [];
+    const openAlerts = stats?.sar?.open_alerts ?? 0;
     return [
-      { label: 'AIS',      value: summary.traffic.registry.active_30m,   tone: 'ok' },
-      { label: 'Signals',  value: summary.signals.recent_event_count,     tone: 'info' },
-      { label: 'Alerts',   value: summary.sar.open_alerts,                tone: summary.sar.open_alerts > 0 ? 'warn' : 'default' },
-      { label: 'Forensics',value: summary.sar.forensic_packets,           tone: 'default' },
+      { label: 'AIS',      value: summary.traffic?.registry?.active_30m ?? '—', tone: 'ok' },
+      { label: 'Signals',  value: stats?.signals?.recent_event_count ?? '—',    tone: 'info' },
+      { label: 'Alerts',   value: openAlerts,                                    tone: openAlerts > 0 ? 'warn' : 'default' },
+      { label: 'Forensics',value: stats?.sar?.forensic_packets ?? '—',           tone: 'default' },
     ];
-  }, [summary]);
+  }, [summary, stats]);
 
   const serviceRows = useMemo(() => {
     if (!summary) return [];
