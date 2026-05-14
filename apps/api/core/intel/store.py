@@ -112,22 +112,7 @@ class IntelStore:
 
         self._fire_broadcast(event)
         self._persist(event)
-        # Auto-queue drift for high/critical events with known coordinates
-        if event.severity in ("critical", "high") and event.lat is not None and event.lon is not None:
-            self._queue_auto_drift(event)
         return True
-
-    def _queue_auto_drift(self, event: IntelEvent) -> None:
-        """Enqueue drift computation for a geolocated high-priority event."""
-        import threading
-        threading.Thread(target=self._run_auto_drift, args=(event,), daemon=True).start()
-
-    def _run_auto_drift(self, event: IntelEvent) -> None:
-        try:
-            from core.scheduler import _compute_drift_for_event
-            _compute_drift_for_event(event)
-        except Exception as exc:
-            logger.warning("Auto-drift failed for event %s: %s", event.id, exc)
 
     def load_from_db(self, limit: int = MAX_EVENTS) -> int:
         """
@@ -178,17 +163,37 @@ class IntelStore:
         After startup, any in-memory event whose drift_status is 'computing'
         was orphaned by the previous process kill. Reset to 'failed' so the
         UI shows a Retry button instead of a permanent spinner.
+        Also persists the change to DB so it survives future restarts.
         Returns number of events fixed.
         """
-        n = 0
+        to_fix: list[str] = []
         with self._lock:
             for ev in self._events:
                 if ev.metadata.get("drift_status") == "computing":
                     ev.metadata["drift_status"] = "failed"
-                    n += 1
-        if n:
-            logger.info("intel_store: reset %d orphaned computing drift(s) to failed", n)
-        return n
+                    to_fix.append(ev.id)
+        if to_fix:
+            logger.info("intel_store: reset %d orphaned computing drift(s) to failed", len(to_fix))
+            import threading
+            threading.Thread(target=self._persist_drift_status_reset, args=(to_fix,), daemon=True).start()
+        return len(to_fix)
+
+    def _persist_drift_status_reset(self, event_ids: list[str]) -> None:
+        """Write drift_status=failed into DB meta for each orphaned event."""
+        try:
+            from core.db.session import session_scope
+            from core.db.models import IntelEventDB
+            import json as _json
+            with session_scope() as db:
+                rows = db.query(IntelEventDB).filter(IntelEventDB.id.in_(event_ids)).all()
+                for row in rows:
+                    meta = dict(row.meta or {})
+                    if meta.get("drift_status") == "computing":
+                        meta["drift_status"] = "failed"
+                        row.meta = meta
+                db.flush()
+        except Exception as exc:
+            logger.debug("intel_store: DB drift_status reset skipped: %s", exc)
 
     def _persist(self, event: IntelEvent) -> None:
         """Write event to DB in a background thread — never blocks the caller."""
