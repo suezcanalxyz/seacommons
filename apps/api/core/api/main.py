@@ -41,6 +41,11 @@ async def lifespan(app: FastAPI):
     )
     init_database()
     try:
+        from core.intel.store import intel_store
+        intel_store.load_from_db()
+    except Exception as exc:
+        logger.warning("Intel DB reload failed: %s", exc)
+    try:
         from core.drift.opendrift_pool import prewarm
         prewarm()
     except Exception as exc:

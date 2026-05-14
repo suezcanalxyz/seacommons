@@ -171,6 +171,68 @@ async def get_iom_incidents(limit: int = Query(50, ge=1, le=200)):
     }
 
 
+@router.get("/api/v1/intel/archive")
+async def get_intel_archive(
+    days: int = Query(7, ge=1, le=90, description="How many days back to query"),
+    severity: Optional[str] = Query(None),
+    type_filter: Optional[str] = Query(None, alias="type"),
+    limit: int = Query(500, ge=1, le=2000),
+    fmt: str = Query("geojson", description="geojson | json"),
+):
+    """
+    Historical intel events from DB (survives backend restarts).
+    Use fmt=json for a flat list; fmt=geojson for map-compatible output.
+    """
+    from datetime import datetime, timezone, timedelta
+    from core.db.session import session_scope
+    from core.db.models import IntelEventDB
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    try:
+        with session_scope() as db:
+            q = db.query(IntelEventDB).filter(IntelEventDB.timestamp_utc >= cutoff)
+            if severity:
+                q = q.filter(IntelEventDB.severity == severity)
+            if type_filter:
+                q = q.filter(IntelEventDB.type == type_filter)
+            rows = q.order_by(IntelEventDB.timestamp_utc.desc()).limit(limit).all()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"DB unavailable: {exc}")
+
+    if fmt == "json":
+        return {
+            "events": [
+                {
+                    "id": r.id, "timestamp_utc": r.timestamp_utc,
+                    "type": r.type, "severity": r.severity,
+                    "lat": r.lat, "lon": r.lon,
+                    "title": r.title, "source": r.source,
+                    "url": r.url, "meta": r.meta or {},
+                }
+                for r in rows
+            ],
+            "meta": {"count": len(rows), "days": days},
+        }
+
+    features = [
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [r.lon, r.lat]} if r.lat and r.lon else None,
+            "properties": {
+                "id": r.id, "type": r.type, "severity": r.severity,
+                "title": r.title, "source": r.source, "url": r.url,
+                "timestamp_utc": r.timestamp_utc, **(r.meta or {}),
+            },
+        }
+        for r in rows
+    ]
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "meta": {"count": len(features), "days": days},
+    }
+
+
 # ── Image coordinate extraction ───────────────────────────────────────────────
 
 class ImageExtractRequest(BaseModel):

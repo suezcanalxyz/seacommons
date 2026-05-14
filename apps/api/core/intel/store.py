@@ -129,6 +129,50 @@ class IntelStore:
         except Exception as exc:
             logger.warning("Auto-drift failed for event %s: %s", event.id, exc)
 
+    def load_from_db(self, limit: int = MAX_EVENTS) -> int:
+        """
+        Reload recent events from DB into the in-memory store on startup.
+        Returns number of events loaded.  Silent on any DB error.
+        """
+        try:
+            from core.db.session import session_scope
+            from core.db.models import IntelEventDB
+            with session_scope() as db:
+                rows = (
+                    db.query(IntelEventDB)
+                    .order_by(IntelEventDB.timestamp_utc.desc())
+                    .limit(limit)
+                    .all()
+                )
+            loaded = 0
+            # Insert oldest first so deque order (newest-first) is correct
+            for row in reversed(rows):
+                ev = IntelEvent(
+                    id=row.id,
+                    timestamp_utc=row.timestamp_utc,
+                    type=row.type or "",
+                    severity=row.severity or "",
+                    lat=row.lat,
+                    lon=row.lon,
+                    title=row.title or "",
+                    text=row.text or "",
+                    url=row.url or "",
+                    source=row.source or "",
+                    linked_mmsi=row.linked_mmsi or "",
+                    metadata=row.meta or {},
+                )
+                key = ev.content_hash()
+                with self._lock:
+                    if key not in self._seen:
+                        self._seen.add(key)
+                        self._events.appendleft(ev)
+                        loaded += 1
+            logger.info("intel_store: loaded %d events from DB", loaded)
+            return loaded
+        except Exception as exc:
+            logger.warning("intel_store: DB reload skipped: %s", exc)
+            return 0
+
     def _persist(self, event: IntelEvent) -> None:
         """Write event to DB in a background thread — never blocks the caller."""
         import threading

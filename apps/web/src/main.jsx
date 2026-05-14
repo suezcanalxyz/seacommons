@@ -186,7 +186,13 @@ function App() {
   const [showScenario, setShowScenario] = useState(false);
   const [scenarioType, setScenarioType] = useState('distress');
   const [caseEventId, setCaseEventId] = useState(null);
-  const [intelEvents, setIntelEvents] = useState([]);
+  const [intelEvents, setIntelEvents] = useState(() => {
+    try {
+      const cached = window.localStorage.getItem('seacommons_intel_cache');
+      if (cached) return JSON.parse(cached);
+    } catch { /* ignore */ }
+    return [];
+  });
   const [intelDrifts, setIntelDrifts] = useState({ type: 'FeatureCollection', features: [] });
   const [intelConnected, setIntelConnected] = useState(false);
   const [intelMode, setIntelMode] = useState('offline'); // 'ws' | 'poll' | 'offline'
@@ -321,6 +327,7 @@ function App() {
         if (!alive) return;
         if (data.features) {
           setIntelEvents(data.features);
+          try { window.localStorage.setItem('seacommons_intel_cache', JSON.stringify(data.features)); } catch { /* quota */ }
           setIntelConnected(true);
           // only set 'poll' if WS hasn't taken over
           setIntelMode((prev) => prev === 'ws' ? 'ws' : 'poll');
