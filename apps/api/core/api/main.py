@@ -40,9 +40,11 @@ async def lifespan(app: FastAPI):
         config.RUNTIME_PROFILE,
     )
     init_database()
+    _reset_stale_computing_jobs()
     try:
         from core.intel.store import intel_store
         intel_store.load_from_db()
+        intel_store.reset_computing_drifts()
     except Exception as exc:
         logger.warning("Intel DB reload failed: %s", exc)
     try:
@@ -60,6 +62,36 @@ async def lifespan(app: FastAPI):
         scheduler_stop()
     except Exception:
         pass
+
+
+def _reset_stale_computing_jobs() -> None:
+    """
+    At startup, mark any drift/alert jobs stuck in 'computing' as 'failed'.
+    They were killed by the previous process shutdown and will never complete.
+    Also resets drift_status on in-memory intel events so the UI shows a retry button.
+    """
+    try:
+        from core.db.session import session_scope
+        from core.db.models import DriftResultDB, AlertEvent
+        from sqlalchemy import update
+        with session_scope() as db:
+            result = db.execute(
+                update(DriftResultDB)
+                .where(DriftResultDB.status == "computing")
+                .values(status="failed")
+            )
+            n_drift = result.rowcount
+        with session_scope() as db:
+            result = db.execute(
+                update(AlertEvent)
+                .where(AlertEvent.status == "processing")
+                .values(status="failed")
+            )
+            n_alert = result.rowcount
+        if n_drift or n_alert:
+            logger.info("Startup cleanup: reset %d stuck drift jobs, %d stuck alerts to 'failed'", n_drift, n_alert)
+    except Exception as exc:
+        logger.warning("Startup cleanup failed: %s", exc)
 
 
 def _start_background_sensors():

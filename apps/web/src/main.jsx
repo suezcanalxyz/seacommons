@@ -1491,6 +1491,15 @@ function App() {
                             <button className="intel-drift-btn intel-drift-btn--computing" disabled>
                               Computing…
                             </button>
+                          ) : coords && p.drift_status === 'failed' ? (
+                            <button
+                              className="intel-drift-btn intel-drift-btn--retry"
+                              title="Drift failed — click to retry"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerIntelDrift(p.id, coords[1], coords[0]);
+                              }}
+                            >Retry Drift</button>
                           ) : coords && p.drift_status !== 'completed' ? (
                             <button
                               className="intel-drift-btn intel-drift-btn--trigger"

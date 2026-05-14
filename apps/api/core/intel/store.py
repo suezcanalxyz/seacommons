@@ -173,6 +173,23 @@ class IntelStore:
             logger.warning("intel_store: DB reload skipped: %s", exc)
             return 0
 
+    def reset_computing_drifts(self) -> int:
+        """
+        After startup, any in-memory event whose drift_status is 'computing'
+        was orphaned by the previous process kill. Reset to 'failed' so the
+        UI shows a Retry button instead of a permanent spinner.
+        Returns number of events fixed.
+        """
+        n = 0
+        with self._lock:
+            for ev in self._events:
+                if ev.metadata.get("drift_status") == "computing":
+                    ev.metadata["drift_status"] = "failed"
+                    n += 1
+        if n:
+            logger.info("intel_store: reset %d orphaned computing drift(s) to failed", n)
+        return n
+
     def _persist(self, event: IntelEvent) -> None:
         """Write event to DB in a background thread — never blocks the caller."""
         import threading
