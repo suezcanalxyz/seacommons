@@ -124,7 +124,7 @@ def _live_weather_batch(points: list[tuple[float, float]]) -> list[dict]:
         f"&wind_speed_unit=ms&forecast_days=1&timezone=UTC"
     )
     try:
-        with urllib.request.urlopen(url, timeout=12) as resp:
+        with urllib.request.urlopen(url, timeout=20) as resp:
             raw = _json.loads(resp.read())
         if isinstance(raw, dict):
             raw = [raw]
@@ -196,15 +196,18 @@ async def weather_grid(
     lat_max: float = Query(44.0),
     lon_min: float = Query(6.0),
     lon_max: float = Query(36.0),
-    n: int = Query(7),
+    n: int = Query(4),
 ):
     """Return a GeoJSON grid of real weather and current data for the map overlay."""
-    key = (round(lat_min, 1), round(lat_max, 1), round(lon_min, 1), round(lon_max, 1), max(3, min(n, 10)))
+    n_clamped = max(3, min(n, 6))  # hard cap at 6 (36 pts) — Open-Meteo batch limit
+    # Round bbox to 1° grid so nearby views share the same cache entry.
+    # Fine rounding (0.1°) caused constant cache misses on every small pan.
+    key = (round(lat_min), round(lat_max), round(lon_min), round(lon_max), n_clamped)
     cached = _weather_grid_cache.get(key)
     if cached and (time.monotonic() - cached[0]) < _WEATHER_TTL:
         return Response(content=cached[1], media_type="application/json")
 
-    result = await asyncio.to_thread(_weather_grid_payload, lat_min, lat_max, lon_min, lon_max, n)
+    result = await asyncio.to_thread(_weather_grid_payload, lat_min, lat_max, lon_min, lon_max, n_clamped)
     payload = _json_mod.dumps(result).encode()
     _weather_grid_cache[key] = (time.monotonic(), payload)
     return Response(content=payload, media_type="application/json")

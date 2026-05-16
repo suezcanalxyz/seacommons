@@ -286,7 +286,9 @@ function App() {
     const bounds = map.getBounds();
     const payload = await fetchJson(
       apiBase,
-      `/api/v1/weather/grid?lat_min=${bounds.getSouth().toFixed(3)}&lat_max=${bounds.getNorth().toFixed(3)}&lon_min=${bounds.getWest().toFixed(3)}&lon_max=${bounds.getEast().toFixed(3)}&n=6`,
+      `/api/v1/weather/grid?lat_min=${bounds.getSouth().toFixed(3)}&lat_max=${bounds.getNorth().toFixed(3)}&lon_min=${bounds.getWest().toFixed(3)}&lon_max=${bounds.getEast().toFixed(3)}&n=4`,
+      undefined,
+      25000,  // 25s — backend batch timeout is 20s + network headroom
     );
     setWeatherGrid(payload);
     setWeatherVectors(weatherGridToVectors(payload));
