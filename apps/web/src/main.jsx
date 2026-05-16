@@ -58,9 +58,17 @@ async function fetchJson(base, path, options, timeoutMs = 12000) {
     const response = await fetch(apiUrl(base, path), { signal: controller.signal, ...options });
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      throw new Error(text || `HTTP ${response.status}`);
+      // If the error body is HTML (proxy / cold-start page), surface a clean message.
+      const msg = text && !text.trimStart().startsWith('<')
+        ? text
+        : `HTTP ${response.status} — backend unavailable`;
+      throw new Error(msg);
     }
-    return response.json();
+    const text = await response.text();
+    if (!text || text.trimStart().startsWith('<')) {
+      throw new Error('Backend returned non-JSON — may still be starting up');
+    }
+    return JSON.parse(text);
   } finally {
     window.clearTimeout(timer);
   }

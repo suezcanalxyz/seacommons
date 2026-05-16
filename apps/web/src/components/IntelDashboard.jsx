@@ -95,7 +95,10 @@ function ManualInjectForm({ apiBase, onClose, onSuccess }) {
       });
       if (!resp.ok) {
         const txt = await resp.text().catch(() => '');
-        throw new Error(txt || `HTTP ${resp.status}`);
+        const msg = txt && !txt.trimStart().startsWith('<')
+          ? txt
+          : `HTTP ${resp.status} — backend unavailable`;
+        throw new Error(msg);
       }
       onSuccess?.();
       onClose?.();
