@@ -14,7 +14,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from core.config import config
 from core.db.models import Base
 
-_DEFAULT_SQLITE = "sqlite:///./core/data/suezcanal_pilot.db"
+# Anchor the default SQLite path to the apps/api directory regardless of CWD.
+# __file__ = apps/api/core/db/session.py → parents[2] = apps/api/
+_API_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_SQLITE = f"sqlite:///{_API_ROOT}/core/data/suezcanal_pilot.db"
 
 
 def database_url() -> str:
@@ -37,7 +40,7 @@ def session_factory():
 
 
 def init_database() -> None:
-    Path("core/data").mkdir(parents=True, exist_ok=True)
+    (_API_ROOT / "core" / "data").mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine())
 
 

@@ -17,7 +17,7 @@ import threading
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -114,18 +114,21 @@ class IntelStore:
         self._persist(event)
         return True
 
-    def load_from_db(self, limit: int = MAX_EVENTS) -> int:
+    def load_from_db(self, limit: int = MAX_EVENTS, max_age_days: int = 30) -> int:
         """
         Reload recent events from DB into the in-memory store on startup.
+        Only loads events from the last `max_age_days` days.
         Returns number of events loaded.  Silent on any DB error.
         """
         try:
             from core.db.session import session_scope
             from core.db.models import IntelEventDB
             events_to_add: list[IntelEvent] = []
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
             with session_scope() as db:
                 rows = (
                     db.query(IntelEventDB)
+                    .filter(IntelEventDB.timestamp_utc >= cutoff)
                     .order_by(IntelEventDB.timestamp_utc.desc())
                     .limit(limit)
                     .all()
@@ -232,9 +235,12 @@ class IntelStore:
         severity: Optional[str] = None,
         type_filter: Optional[str] = None,
         limit: int = 200,
+        max_age_days: int = 30,
     ) -> list[IntelEvent]:
         with self._lock:
             evts = list(self._events)
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+        evts = [e for e in evts if (e.timestamp_utc or "") >= cutoff]
         if severity:
             evts = [e for e in evts if e.severity == severity]
         if type_filter:

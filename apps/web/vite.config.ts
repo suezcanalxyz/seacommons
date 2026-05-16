@@ -7,7 +7,7 @@ export default defineConfig(({mode}) => {
   const repoRoot = path.resolve(__dirname, '../..');
   // loadEnv from repo root for local dev; Docker passes vars as real env vars
   const env = { ...loadEnv(mode, repoRoot, ''), ...process.env };
-  const publicBase = env.VITE_PUBLIC_BASE || '/seacommons/';
+  const publicBase = env.VITE_PUBLIC_BASE || '/';
   return {
     base: publicBase,
     plugins: [react(), tailwindcss()],

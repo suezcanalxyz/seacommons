@@ -16,6 +16,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 _weather_cache: dict[tuple, tuple[float, bytes]] = {}  # (lat_r, lon_r) → (ts, bytes)
+_weather_grid_cache: dict[tuple, tuple[float, bytes]] = {}  # grid key → (ts, bytes)
 _WEATHER_TTL = 600.0  # 10 minutes
 
 
@@ -198,14 +199,15 @@ async def weather_grid(
     n: int = Query(7),
 ):
     """Return a GeoJSON grid of real weather and current data for the map overlay."""
-    return await asyncio.to_thread(
-        _weather_grid_payload,
-        lat_min,
-        lat_max,
-        lon_min,
-        lon_max,
-        n,
-    )
+    key = (round(lat_min, 1), round(lat_max, 1), round(lon_min, 1), round(lon_max, 1), max(3, min(n, 10)))
+    cached = _weather_grid_cache.get(key)
+    if cached and (time.monotonic() - cached[0]) < _WEATHER_TTL:
+        return Response(content=cached[1], media_type="application/json")
+
+    result = await asyncio.to_thread(_weather_grid_payload, lat_min, lat_max, lon_min, lon_max, n)
+    payload = _json_mod.dumps(result).encode()
+    _weather_grid_cache[key] = (time.monotonic(), payload)
+    return Response(content=payload, media_type="application/json")
 
 
 def _weather_grid_payload(

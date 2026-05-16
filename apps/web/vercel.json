@@ -6,13 +6,19 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "http://204.216.210.155/api/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "http://204.216.210.155/health"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
   ],
   "env": {
-    "VITE_API_BASE": "https://seacommons-api-demo.onrender.com",
-    "VITE_PUBLIC_BASE": "/",
-    "VITE_MAPTILER_KEY": "@maptiler_key"
+    "VITE_PUBLIC_BASE": "/"
   }
 }

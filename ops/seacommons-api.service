@@ -1,0 +1,52 @@
+[Unit]
+Description=SeaCommons API (FastAPI/Uvicorn)
+Documentation=https://github.com/suezcanalxyz/seacommons
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+
+# Absolute path so the DB and data files always resolve correctly.
+WorkingDirectory=/home/ubuntu/seacommons/apps/api
+
+# PYTHONPATH must include apps/api so `from core.*` imports resolve.
+Environment=PYTHONPATH=/home/ubuntu/seacommons/apps/api
+Environment=PYTHONUNBUFFERED=1
+
+# Load secrets from a file that is NOT in git.
+# Create this file on the server: sudo cp /home/ubuntu/seacommons/.env.production /etc/seacommons.env
+EnvironmentFile=/etc/seacommons.env
+
+ExecStart=/home/ubuntu/seacommons/.venv/bin/uvicorn \
+    core.api.main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --workers 2 \
+    --log-level info \
+    --access-log
+
+# Restart policy: always restart, but wait 5 s between attempts.
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+# Hard limits: kill the process if it uses more than 1.5 GB RAM.
+MemoryMax=1536M
+MemorySwapMax=0
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/seacommons/apps/api/core/data
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=seacommons-api
+
+[Install]
+WantedBy=multi-user.target

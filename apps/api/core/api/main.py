@@ -182,12 +182,26 @@ app = FastAPI(
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# CORS: allow_credentials MUST be False when allow_origins=["*"].
+# Starlette ≥0.40 raises ValueError otherwise (HTTP spec violation).
+# The frontend never sends cookies, so credentials=False is correct.
+# In production the browser talks to Vercel (same-origin); CORS is only
+# exercised during local dev (localhost → Oracle direct).
+_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
+    "ALLOWED_ORIGINS",
+    "https://seacommons.suezcanal.xyz,https://www.suezcanal.xyz,"
+    "http://localhost:5173,http://localhost:3000,http://localhost:8000",
+).split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["X-Request-Id"],
 )
 
 app.include_router(alerts.router)
