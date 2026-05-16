@@ -139,6 +139,12 @@ class NewsMonitor:
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     def _loop(self) -> None:
+        from core.intel.source_registry import source_registry
+        source_registry.register("IOM Missing Migrants", "rss")
+        source_registry.register("RSS Feeds", "rss")
+        source_registry.register("Alarm Phone", "scrape")
+        source_registry.register("Nitter/Twitter RSS", "rss")
+
         while self._running:
             now = time.monotonic()
             try:
@@ -230,13 +236,17 @@ class NewsMonitor:
             if intel_store.add(event, dedup_key=f"iom:{iid}"):
                 new += 1
 
+        from core.intel.source_registry import source_registry
+        source_registry.record_poll("IOM Missing Migrants", events_found=new)
         if new:
             logger.info("IOM: +%d new incidents", new)
 
     # ── RSS feeds ─────────────────────────────────────────────────────────────
 
     def _poll_rss_all(self) -> None:
+        from core.intel.source_registry import source_registry
         new = 0
+        error_str = None
         for feed in RSS_FEEDS:
             try:
                 items = self._fetch_rss(feed["url"])
@@ -245,6 +255,8 @@ class NewsMonitor:
                         new += 1
             except Exception as exc:
                 logger.debug("RSS %s failed: %s", feed["label"], exc)
+                error_str = str(exc)
+        source_registry.record_poll("RSS Feeds", events_found=new, error=error_str)
         if new:
             logger.info("RSS feeds: +%d new intel events", new)
 
@@ -347,6 +359,8 @@ class NewsMonitor:
                 self._nitter_base = None  # force re-discover on next cycle
                 break
 
+        from core.intel.source_registry import source_registry
+        source_registry.record_poll("Nitter/Twitter RSS", events_found=new)
         if new:
             logger.info("Twitter/Nitter: +%d new distress signals", new)
 
@@ -479,6 +493,8 @@ class NewsMonitor:
             if intel_store.add(event, dedup_key=dedup):
                 new += 1
 
+        from core.intel.source_registry import source_registry
+        source_registry.record_poll("Alarm Phone", events_found=new)
         if new:
             logger.info("Alarm Phone: +%d new calls", new)
 

@@ -1,0 +1,505 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
+const SEV_LABELS = ['critical', 'high', 'medium', 'low'];
+const TYPE_ICONS = {
+  distress:    '🆘',
+  twitter:     '𝕏',
+  mastodon:    '🐘',
+  news:        '📰',
+  iom_incident:'🔴',
+  ais_spike:   '📡',
+  ngo_activity:'🚢',
+  manual:      '✍️',
+};
+
+function statusTone(s) {
+  if (s === 'active')  return '#22c55e';
+  if (s === 'degraded') return '#f59e0b';
+  if (s === 'offline') return '#ef4444';
+  return '#6b7280';
+}
+
+function relativeTime(isoStr) {
+  if (!isoStr) return '—';
+  const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000);
+  if (diff < 60)   return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+// ── Source Health Bar ─────────────────────────────────────────────────────────
+function SourceHealthBar({ sources }) {
+  if (!sources || sources.length === 0) {
+    return (
+      <div className="intel-sources-row intel-sources-row--empty">
+        <span style={{ color: '#4a7a6e', fontSize: 11 }}>Source registry loading…</span>
+      </div>
+    );
+  }
+  return (
+    <div className="intel-sources-row">
+      {sources.map((src) => (
+        <div key={src.name} className="intel-source-chip" title={`Last poll: ${src.last_poll_at ? relativeTime(src.last_poll_at) : 'never'}\nEvents/h: ${src.events_last_hour}\nErrors: ${src.consecutive_errors}${src.last_error ? '\n' + src.last_error : ''}`}>
+          <span className="intel-source-dot" style={{ background: statusTone(src.status) }} />
+          <span className="intel-source-chip-name">{src.name}</span>
+          {src.events_last_hour > 0 && (
+            <span className="intel-source-chip-count">{src.events_last_hour}/h</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Manual Injection Form ─────────────────────────────────────────────────────
+function ManualInjectForm({ apiBase, onClose, onSuccess }) {
+  const [form, setForm] = useState({
+    title: '',
+    text: '',
+    source: 'manual',
+    severity: 'high',
+    type: 'manual',
+    lat: '',
+    lon: '',
+    url: '',
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  function setField(k, v) {
+    setForm((cur) => ({ ...cur, [k]: v }));
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.title.trim()) { setError('Title is required'); return; }
+    setSubmitting(true);
+    setError('');
+    try {
+      const body = {
+        title: form.title.trim(),
+        text: form.text.trim(),
+        source: form.source.trim() || 'manual',
+        severity: form.severity,
+        type: form.type,
+        url: form.url.trim(),
+        lat: form.lat !== '' ? parseFloat(form.lat) : null,
+        lon: form.lon !== '' ? parseFloat(form.lon) : null,
+      };
+      const resp = await fetch(`${apiBase}/api/v1/intel/manual`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const txt = await resp.text().catch(() => '');
+        throw new Error(txt || `HTTP ${resp.status}`);
+      }
+      onSuccess?.();
+      onClose?.();
+    } catch (err) {
+      setError(err.message || 'Submission failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="intel-inject-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
+      <div className="intel-inject-modal">
+        <div className="intel-inject-header">
+          <strong>Inject intel event</strong>
+          <button className="intel-inject-close" onClick={onClose}>✕</button>
+        </div>
+        <form onSubmit={handleSubmit} className="intel-inject-form">
+          <label>
+            Title *
+            <input value={form.title} onChange={(e) => setField('title', e.target.value)} placeholder="Brief description of the event" />
+          </label>
+          <label>
+            Details
+            <textarea value={form.text} onChange={(e) => setField('text', e.target.value)} rows={3} placeholder="Additional context, quotes, source details…" />
+          </label>
+          <div className="intel-inject-row">
+            <label>
+              Severity
+              <select value={form.severity} onChange={(e) => setField('severity', e.target.value)}>
+                {SEV_LABELS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label>
+              Type
+              <select value={form.type} onChange={(e) => setField('type', e.target.value)}>
+                {['manual', 'distress', 'news', 'iom_incident'].map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="intel-inject-row">
+            <label>
+              Lat
+              <input type="number" step="any" value={form.lat} onChange={(e) => setField('lat', e.target.value)} placeholder="e.g. 35.8" />
+            </label>
+            <label>
+              Lon
+              <input type="number" step="any" value={form.lon} onChange={(e) => setField('lon', e.target.value)} placeholder="e.g. 13.4" />
+            </label>
+          </div>
+          <label>
+            Source
+            <input value={form.source} onChange={(e) => setField('source', e.target.value)} placeholder="e.g. phone call, email, partner org" />
+          </label>
+          <label>
+            URL
+            <input value={form.url} onChange={(e) => setField('url', e.target.value)} placeholder="https://…" />
+          </label>
+          {error && <p className="intel-inject-error">{error}</p>}
+          <div className="intel-inject-actions">
+            <button type="submit" disabled={submitting}>{submitting ? 'Saving…' : 'Save event'}</button>
+            <button type="button" onClick={onClose}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Timeline grouping ────────────────────────────────────────────────────────
+function groupByHour(events) {
+  const groups = [];
+  let currentKey = null;
+  let currentGroup = null;
+  for (const ev of events) {
+    const ts = ev.properties?.timestamp_utc;
+    if (!ts) continue;
+    const d = new Date(ts);
+    const key = `${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} ${d.getHours().toString().padStart(2, '0')}:00`;
+    if (key !== currentKey) {
+      if (currentGroup) groups.push(currentGroup);
+      currentKey = key;
+      currentGroup = { key, events: [] };
+    }
+    currentGroup.events.push(ev);
+  }
+  if (currentGroup) groups.push(currentGroup);
+  return groups;
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
+export default function IntelDashboard({
+  apiBase,
+  intelEvents,
+  intelDrifts,
+  intelStats,
+  intelFilter,
+  setIntelFilter,
+  intelMode,
+  showAisAlerts,
+  setShowAisAlerts,
+  triggeringDrift,
+  triggerIntelDrift,
+  mapRef,
+  setSidebarOpen,
+}) {
+  const [sources, setSources] = useState([]);
+  const [search, setSearch] = useState('');
+  const [channelFilter, setChannelFilter] = useState('all');
+  const [viewMode, setViewMode] = useState('list');   // 'list' | 'timeline'
+  const [showInject, setShowInject] = useState(false);
+  const [injectSuccess, setInjectSuccess] = useState(false);
+  const pollRef = useRef(null);
+
+  // Poll source registry
+  useEffect(() => {
+    let alive = true;
+    async function loadSources() {
+      try {
+        const resp = await fetch(`${apiBase}/api/v1/intel/sources`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (alive) setSources(data.sources || []);
+        }
+      } catch { /* silent */ }
+      if (alive) pollRef.current = window.setTimeout(loadSources, 30000);
+    }
+    loadSources();
+    return () => {
+      alive = false;
+      window.clearTimeout(pollRef.current);
+    };
+  }, [apiBase]);
+
+  // Filtered + searched events
+  const filteredEvents = useMemo(() => {
+    let evs = showAisAlerts ? intelEvents : intelEvents.filter((f) => f.properties?.type !== 'ais_spike');
+
+    if (intelFilter !== 'all') evs = evs.filter((f) => f.properties?.severity === intelFilter);
+    if (channelFilter !== 'all') evs = evs.filter((f) => f.properties?.type === channelFilter);
+
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      evs = evs.filter((f) => {
+        const p = f.properties || {};
+        return (
+          (p.title || '').toLowerCase().includes(q) ||
+          (p.text  || '').toLowerCase().includes(q) ||
+          (p.source || '').toLowerCase().includes(q)
+        );
+      });
+    }
+    return evs;
+  }, [intelEvents, intelFilter, channelFilter, showAisAlerts, search]);
+
+  // Available channel types
+  const channelTypes = useMemo(() => {
+    const types = new Set(intelEvents.map((f) => f.properties?.type).filter(Boolean));
+    return Array.from(types).sort();
+  }, [intelEvents]);
+
+  const timelineGroups = useMemo(
+    () => viewMode === 'timeline' ? groupByHour(filteredEvents) : [],
+    [filteredEvents, viewMode],
+  );
+
+  const handleInjectSuccess = useCallback(() => {
+    setInjectSuccess(true);
+    window.setTimeout(() => setInjectSuccess(false), 3000);
+  }, []);
+
+  function flyTo(coords) {
+    if (coords && mapRef?.current) {
+      mapRef.current.flyTo({ center: coords, zoom: 9, duration: 800 });
+    }
+  }
+
+  function renderEvent(feat) {
+    const p = feat.properties || {};
+    const coords = feat.geometry?.coordinates;
+    const ts = p.timestamp_utc ? new Date(p.timestamp_utc) : null;
+    const hasDrift = p.drift_status === 'completed';
+    const driftFeat = hasDrift
+      ? intelDrifts.features.find((f) => f.properties?.intel_event_id === p.id && f.geometry?.type === 'LineString')
+      : null;
+    const isDistress = p.type === 'distress' || p.severity === 'critical';
+    const icon = TYPE_ICONS[p.type] || '•';
+
+    return (
+      <li
+        key={p.id || p.title}
+        className={`intel-event${isDistress ? ' intel-event--distress' : ''}`}
+        onClick={() => { flyTo(coords); setSidebarOpen?.(false); }}
+      >
+        <div className="intel-event-header">
+          <span className={`intel-sev intel-sev--${p.severity || 'low'}`}>{p.severity || 'low'}</span>
+          <span className="intel-type-icon" title={p.type}>{icon}</span>
+          {ts && (
+            <time title={ts.toISOString()}>
+              {ts.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}{' '}
+              {ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+            </time>
+          )}
+          {hasDrift ? (
+            <button
+              className="intel-drift-btn intel-drift-btn--ready"
+              onClick={(e) => {
+                e.stopPropagation();
+                const target = driftFeat
+                  ? driftFeat.geometry.coordinates[Math.floor(driftFeat.geometry.coordinates.length / 2)]
+                  : coords;
+                flyTo(target);
+                setSidebarOpen?.(false);
+              }}
+            >Map</button>
+          ) : coords && (p.drift_status === 'computing' || triggeringDrift?.has(p.id)) ? (
+            <button className="intel-drift-btn intel-drift-btn--computing" disabled>…</button>
+          ) : coords && p.drift_status === 'failed' ? (
+            <button
+              className="intel-drift-btn intel-drift-btn--retry"
+              onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(p.id, coords[1], coords[0]); }}
+            >Retry</button>
+          ) : coords && p.drift_status !== 'completed' ? (
+            <button
+              className="intel-drift-btn intel-drift-btn--trigger"
+              onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(p.id, coords[1], coords[0]); }}
+            >Drift</button>
+          ) : null}
+        </div>
+        <strong className="intel-title">{p.title}</strong>
+        <span className="intel-source">
+          <span>{p.source}</span>
+          <span style={{ opacity: 0.45 }}>·</span>
+          <span>{(p.type || '').replace(/_/g, ' ')}</span>
+          {coords && (
+            <span style={{ opacity: 0.45 }}>
+              · {coords[1]?.toFixed(3)}, {coords[0]?.toFixed(3)}
+            </span>
+          )}
+          {p.url && (
+            <a className="intel-source-link" href={p.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>↗</a>
+          )}
+        </span>
+        {p.text && (
+          <p className="intel-text">{p.text.slice(0, 200)}{p.text.length > 200 ? '…' : ''}</p>
+        )}
+      </li>
+    );
+  }
+
+  return (
+    <div className="panel-stack">
+
+      {/* Source health */}
+      <section className="panel-block" style={{ paddingBottom: 8 }}>
+        <div className="osint-feed-header" style={{ marginBottom: 6 }}>
+          <span className="section-kicker" style={{ margin: 0 }}>Source health</span>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span
+              className={intelMode === 'ws' ? 'intel-connected' : intelMode === 'poll' ? 'intel-connected-poll' : 'intel-offline'}
+              title={intelMode === 'ws' ? 'Live WebSocket' : intelMode === 'poll' ? 'Polling every 30s' : 'Connecting…'}
+            >●</span>
+            <button className="intel-inject-trigger" onClick={() => setShowInject(true)} title="Inject manual event">
+              + Manual
+            </button>
+          </div>
+        </div>
+        <SourceHealthBar sources={sources} />
+        {injectSuccess && <p style={{ color: '#22c55e', fontSize: 11, margin: '4px 0 0' }}>Event saved and broadcast.</p>}
+      </section>
+
+      {/* Stats row */}
+      <section className="panel-block" style={{ paddingTop: 0, paddingBottom: 8 }}>
+        <div className="osint-stats-row">
+          <div className="osint-stat">
+            <strong>{intelStats.total}</strong><span>events</span>
+          </div>
+          <div className="osint-stat osint-stat--critical">
+            <strong>{intelStats.by_sev?.critical || 0}</strong><span>critical</span>
+          </div>
+          <div className="osint-stat osint-stat--high">
+            <strong>{intelStats.by_sev?.high || 0}</strong><span>high</span>
+          </div>
+          <div className="osint-stat">
+            <strong>{filteredEvents.length}</strong><span>shown</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Controls */}
+      <section className="panel-block" style={{ paddingTop: 0, paddingBottom: 0 }}>
+        {/* Search */}
+        <div className="intel-search-row">
+          <input
+            className="intel-search-input"
+            type="search"
+            placeholder="Search title, text, source…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* Severity filter */}
+        <div className="intel-filter-row" style={{ marginTop: 6 }}>
+          {['all', 'critical', 'high', 'medium', 'low'].map((f) => (
+            <button
+              key={f}
+              className={`intel-filter-btn ${intelFilter === f ? 'is-active' : ''}`}
+              onClick={() => setIntelFilter(f)}
+            >{f}</button>
+          ))}
+          <button
+            className={`intel-filter-btn ${showAisAlerts ? 'is-active' : ''}`}
+            onClick={() => setShowAisAlerts((v) => !v)}
+            title="Toggle AIS loitering alerts"
+          >AIS</button>
+        </div>
+
+        {/* Channel filter */}
+        {channelTypes.length > 0 && (
+          <div className="intel-filter-row" style={{ marginTop: 4 }}>
+            <button
+              className={`intel-filter-btn intel-filter-btn--channel ${channelFilter === 'all' ? 'is-active' : ''}`}
+              onClick={() => setChannelFilter('all')}
+            >all channels</button>
+            {channelTypes.map((t) => (
+              <button
+                key={t}
+                className={`intel-filter-btn intel-filter-btn--channel ${channelFilter === t ? 'is-active' : ''}`}
+                onClick={() => setChannelFilter((cur) => cur === t ? 'all' : t)}
+              >{TYPE_ICONS[t] || ''} {t.replace(/_/g, ' ')}</button>
+            ))}
+          </div>
+        )}
+
+        {/* View toggle */}
+        <div style={{ display: 'flex', gap: 6, marginTop: 6, marginBottom: 2 }}>
+          <button
+            className={`intel-filter-btn ${viewMode === 'list' ? 'is-active' : ''}`}
+            onClick={() => setViewMode('list')}
+          >List</button>
+          <button
+            className={`intel-filter-btn ${viewMode === 'timeline' ? 'is-active' : ''}`}
+            onClick={() => setViewMode('timeline')}
+          >Timeline</button>
+        </div>
+      </section>
+
+      {/* Event list / timeline */}
+      <section className="panel-block" style={{ padding: 0 }}>
+        {viewMode === 'list' ? (
+          <ul className="intel-list">
+            {filteredEvents.length === 0 ? (
+              <li className="intel-empty">
+                {intelMode !== 'offline'
+                  ? `No events${intelFilter !== 'all' || channelFilter !== 'all' || search ? ' matching filters' : ''}`
+                  : 'Connecting to intel feed…'}
+              </li>
+            ) : filteredEvents.map(renderEvent)}
+          </ul>
+        ) : (
+          <div className="intel-timeline">
+            {timelineGroups.length === 0 ? (
+              <div className="intel-empty">No events matching filters</div>
+            ) : timelineGroups.map((group) => (
+              <div key={group.key} className="intel-timeline-group">
+                <div className="intel-timeline-hour">{group.key}</div>
+                <ul className="intel-list" style={{ margin: 0 }}>
+                  {group.events.map(renderEvent)}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Channel breakdown */}
+      {Object.keys(intelStats.by_type || {}).length > 0 && (
+        <section className="panel-block">
+          <p className="section-kicker">By channel</p>
+          <ul className="signal-list" style={{ marginTop: 4 }}>
+            {Object.entries(intelStats.by_type).sort((a, b) => b[1] - a[1]).map(([type, count]) => (
+              <li
+                key={type}
+                style={{ cursor: 'pointer' }}
+                onClick={() => setChannelFilter((cur) => cur === type ? 'all' : type)}
+                className={channelFilter === type ? 'is-active' : ''}
+              >
+                <strong>{TYPE_ICONS[type] || ''} {type.replace(/_/g, ' ')}</strong>
+                <span>{count}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Manual injection modal */}
+      {showInject && (
+        <ManualInjectForm
+          apiBase={apiBase}
+          onClose={() => setShowInject(false)}
+          onSuccess={handleInjectSuccess}
+        />
+      )}
+    </div>
+  );
+}

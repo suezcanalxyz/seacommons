@@ -4,10 +4,12 @@ Maritime intelligence API routes.
 
 GET  /api/v1/intel                   All events GeoJSON (filterable)
 GET  /api/v1/intel/stats             Event counts by type/severity
+GET  /api/v1/intel/sources           OSINT source health (registry)
 GET  /api/v1/intel/ngo               NGO/coastguard vessel positions (GeoJSON)
 GET  /api/v1/intel/ais-spikes        AIS anomaly events only
 POST /api/v1/intel/extract-image     Extract GPS coords from an image URL
 POST /api/v1/intel/auto-drift        Trigger SAR drift from a geolocated event
+POST /api/v1/intel/manual            Manually inject an intel event
 WS   /ws/intel                       Real-time event stream (JSON per event)
 """
 from __future__ import annotations
@@ -20,7 +22,7 @@ from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconn
 from pydantic import BaseModel
 
 from core.intel.ngo_registry import NGO_VESSELS, get_ngo_info, is_ngo
-from core.intel.store import intel_store
+from core.intel.store import IntelEvent, intel_store
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -34,13 +36,14 @@ async def get_intel(
     type_filter: Optional[str] = Query(None, alias="type",
                                         description="twitter|news|iom_incident|ais_spike|ngo_activity"),
     limit: int = Query(200, ge=1, le=500),
+    days: int = Query(30, ge=1, le=365, description="Only return events from the last N days"),
 ):
     """
     All intelligence events as GeoJSON FeatureCollection.
     Only events with known coordinates are included in `features`.
     Events without coordinates are listed in `meta.no_coords`.
     """
-    all_events = intel_store.events(severity=severity, type_filter=type_filter, limit=limit)
+    all_events = intel_store.events(severity=severity, type_filter=type_filter, limit=limit, max_age_days=days)
     with_coords = [e for e in all_events if e.lat is not None and e.lon is not None]
     no_coords   = [e for e in all_events if e.lat is None or e.lon is None]
 
@@ -65,6 +68,25 @@ async def get_intel(
 async def get_intel_stats():
     """Event counts by type and severity."""
     return intel_store.stats()
+
+
+@router.get("/api/v1/intel/sources")
+async def get_intel_sources():
+    """OSINT source health: last poll time, events/h, error count per monitor."""
+    from core.intel.source_registry import source_registry
+    sources = source_registry.get_all()
+    active   = sum(1 for s in sources if s["status"] == "active")
+    degraded = sum(1 for s in sources if s["status"] == "degraded")
+    offline  = sum(1 for s in sources if s["status"] == "offline")
+    return {
+        "sources": sources,
+        "summary": {
+            "total": len(sources),
+            "active": active,
+            "degraded": degraded,
+            "offline": offline,
+        },
+    }
 
 
 @router.get("/api/v1/intel/ngo")
@@ -231,6 +253,51 @@ async def get_intel_archive(
         "features": features,
         "meta": {"count": len(features), "days": days},
     }
+
+
+# ── Manual intel event injection ─────────────────────────────────────────────
+
+class ManualIntelRequest(BaseModel):
+    title: str
+    text: str = ""
+    source: str = "manual"
+    severity: str = "medium"           # critical | high | medium | low
+    type: str = "manual"               # manual | distress | news | twitter | ...
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    url: str = ""
+    linked_mmsi: str = ""
+
+
+@router.post("/api/v1/intel/manual", status_code=201)
+async def inject_manual_intel(body: ManualIntelRequest):
+    """
+    Manually inject an intel event — e.g. from a phone call or direct contact.
+    The event is stored in DB and broadcast to all WebSocket clients.
+    """
+    from core.intel.source_registry import source_registry
+    source_registry.register("Manual", "manual")
+
+    if body.severity not in ("critical", "high", "medium", "low"):
+        raise HTTPException(status_code=422, detail="severity must be critical|high|medium|low")
+
+    event = IntelEvent(
+        type=body.type,
+        severity=body.severity,
+        lat=body.lat,
+        lon=body.lon,
+        title=body.title[:255],
+        text=body.text[:1000],
+        url=body.url[:511],
+        source=body.source or "manual",
+        linked_mmsi=body.linked_mmsi,
+        metadata={"injected_manually": True},
+    )
+    stored = intel_store.add(event)
+    source_registry.record_poll("Manual", events_found=1 if stored else 0)
+    if not stored:
+        raise HTTPException(status_code=409, detail="Duplicate event — already in store")
+    return {"id": event.id, "timestamp_utc": event.timestamp_utc, "stored": True}
 
 
 # ── Image coordinate extraction ───────────────────────────────────────────────

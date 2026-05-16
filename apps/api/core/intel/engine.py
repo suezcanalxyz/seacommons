@@ -22,6 +22,7 @@ class IntelEngine:
         self._twitter: Optional[object] = None
         self._news: Optional[object] = None
         self._ais: Optional[object] = None
+        self._mastodon: Optional[object] = None
         self._started = False
 
     def start(
@@ -31,6 +32,7 @@ class IntelEngine:
         twitter_enabled: bool = True,
         news_enabled: bool = True,
         ais_enabled: bool = True,
+        mastodon_enabled: bool = True,
     ) -> None:
         if self._started:
             return
@@ -67,8 +69,17 @@ class IntelEngine:
             except Exception as exc:
                 logger.warning("IntelEngine: AIS spike detector failed to start: %s", exc)
 
+        if mastodon_enabled:
+            try:
+                from core.intel.mastodon_monitor import MastodonMonitor
+                self._mastodon = MastodonMonitor()
+                self._mastodon.start()  # type: ignore[attr-defined]
+                logger.info("IntelEngine: Mastodon monitor started")
+            except Exception as exc:
+                logger.warning("IntelEngine: Mastodon monitor failed to start: %s", exc)
+
     def stop(self) -> None:
-        for monitor in (self._twitter, self._news, self._ais):
+        for monitor in (self._twitter, self._news, self._ais, self._mastodon):
             if monitor:
                 try:
                     monitor.stop()  # type: ignore[attr-defined]

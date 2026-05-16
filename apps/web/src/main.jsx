@@ -3,15 +3,36 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 import MapFloatingPanel from './components/ConePanel.jsx';
 import ScenarioModal from './components/ScenarioModal.jsx';
+import SimHistory from './components/SimHistory.jsx';
+import IntelDashboard from './components/IntelDashboard.jsx';
+
+function enrichCaseGeo(geojson, lat, lon) {
+  return {
+    ...geojson,
+    features: [
+      ...geojson.features,
+      {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [Number(lon), Number(lat)] },
+        properties: { type: 'origin_point' },
+      },
+    ],
+  };
+}
 
 function guessApiBase() {
   const envBase = import.meta.env.VITE_API_BASE;
   if (envBase) return envBase.replace(/\/$/, '');
-  const saved = window.localStorage.getItem('seacommons_api_base');
-  if (saved) return saved.replace(/\/$/, '');
   const { protocol, hostname, port, origin } = window.location;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return `${protocol}//${hostname}:8000`;
-  if (port === '3000' || port === '5173' || port === '4173') return `${protocol}//${hostname}:8000`;
+  const isLocal = hostname === 'localhost' || hostname === '127.0.0.1'
+    || port === '3000' || port === '5173' || port === '4173';
+  if (isLocal) {
+    const saved = window.localStorage.getItem('seacommons_api_base');
+    if (saved) return saved.replace(/\/$/, '');
+    return `${protocol}//${hostname}:8000`;
+  }
+  // In production always use origin — API is proxied via Vercel rewrites.
+  // Ignore any stale localStorage entry that may point to a dead backend.
   return origin;
 }
 
@@ -196,10 +217,16 @@ function App() {
   const [showScenario, setShowScenario] = useState(false);
   const [scenarioType, setScenarioType] = useState('distress');
   const [caseEventId, setCaseEventId] = useState(null);
+  const [simHistory, setSimHistory] = useState([]);   // session-only: cleared on page refresh
+  const [activeSimId, setActiveSimId] = useState(null);
   const [intelEvents, setIntelEvents] = useState(() => {
     try {
       const cached = window.localStorage.getItem('seacommons_intel_cache');
-      if (cached) return JSON.parse(cached);
+      if (cached) {
+        const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        const parsed = JSON.parse(cached);
+        return parsed.filter(e => (e.properties?.timestamp_utc || '') >= cutoff);
+      }
     } catch { /* ignore */ }
     return [];
   });
@@ -207,6 +234,8 @@ function App() {
   const [intelConnected, setIntelConnected] = useState(false);
   const [intelMode, setIntelMode] = useState('offline'); // 'ws' | 'poll' | 'offline'
   const [intelFilter, setIntelFilter] = useState('all');
+  const [showAisAlerts, setShowAisAlerts] = useState(false);
+  const [showVesselLinks, setShowVesselLinks] = useState(false);
   const [triggeringDrift, setTriggeringDrift] = useState(() => new Set());
   const caseEventIdRef = useRef(null);
   const caseStatusRef = useRef('idle');
@@ -352,7 +381,7 @@ function App() {
 
     async function pollOnce() {
       try {
-        const data = await fetchJson(apiBase, '/api/v1/intel?limit=200');
+        const data = await fetchJson(apiBase, '/api/v1/intel?limit=200&days=30');
         if (!alive) return;
         if (data.features) {
           setIntelEvents(data.features);
@@ -517,6 +546,7 @@ function App() {
         map.addSource('proximity-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-events',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-drifts',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('intel-vessel-links', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
         // weather vectors
         map.addLayer({
@@ -634,10 +664,23 @@ function App() {
           filter: ['==', '$type', 'LineString'],
           paint: {
             'line-color': '#ff3b3b',
-            'line-width': 2.5,
-            'line-opacity': 0.92,
-            'line-dasharray': [6, 4],
+            'line-width': 3,
+            'line-opacity': 0.95,
           },
+        });
+        map.addLayer({
+          id: 'sar-case-traj-arrows', type: 'symbol', source: 'sar-case',
+          filter: ['all', ['==', '$type', 'LineString'], ['==', ['get', 'type'], 'trajectory']],
+          layout: {
+            'symbol-placement': 'line',
+            'symbol-spacing': 100,
+            'icon-image': 'vessel-arrow',
+            'icon-size': 0.55,
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
+          paint: { 'icon-color': '#ff3b3b', 'icon-opacity': 1.0 },
         });
 
         // Proximity: dashed lines from distress to nearest vessels
@@ -752,6 +795,19 @@ function App() {
           },
         });
 
+        // Intel → vessel correlation lines (toggled manually via showVesselLinks)
+        map.addLayer({
+          id: 'intel-vessel-links-layer', type: 'line', source: 'intel-vessel-links',
+          layout: { visibility: 'none' },
+          paint: {
+            'line-color': ['match', ['get', 'severity'],
+              'critical', '#ff3b3b', 'high', '#ff7b54', 'medium', '#ffe06d', '#8bf0c5'],
+            'line-width': 1.5,
+            'line-opacity': 0.7,
+            'line-dasharray': [3, 3],
+          },
+        });
+
         // Intel event circles — exclude routine AIS loiter alerts from map
         const _noAisFilter = ['!=', ['get', 'type'], 'ais_spike'];
         map.addLayer({
@@ -788,8 +844,10 @@ function App() {
           id: 'sar-case-points', type: 'circle', source: 'sar-case',
           filter: ['==', '$type', 'Point'],
           paint: {
-            'circle-radius': 6, 'circle-color': '#fff4bf',
-            'circle-stroke-width': 1.8, 'circle-stroke-color': '#ff7b54',
+            'circle-radius': ['match', ['get', 'type'], 'origin_point', 8, 6],
+            'circle-color': ['match', ['get', 'type'], 'origin_point', '#ff3b3b', '#fff4bf'],
+            'circle-stroke-width': 2,
+            'circle-stroke-color': ['match', ['get', 'type'], 'origin_point', '#ffffff', '#ff7b54'],
           },
         });
 
@@ -973,6 +1031,40 @@ function App() {
     map.getSource('intel-drifts')?.setData(intelDrifts);
   }, [intelDrifts, mapReady]);
 
+  // Intel → vessel correlation lines (manual toggle only)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
+    const layer = map.getLayer('intel-vessel-links-layer');
+    if (!layer) return;
+    if (!showVesselLinks) {
+      map.setLayoutProperty('intel-vessel-links-layer', 'visibility', 'none');
+      map.getSource('intel-vessel-links')?.setData({ type: 'FeatureCollection', features: [] });
+      return;
+    }
+    // Build a lookup of MMSI → vessel coordinates from the current registry
+    const vesselByMmsi = {};
+    for (const f of (vessels.features || [])) {
+      const mmsi = f.properties?.mmsi;
+      if (mmsi && f.geometry?.coordinates) vesselByMmsi[String(mmsi)] = f.geometry.coordinates;
+    }
+    const features = [];
+    for (const ev of intelEvents) {
+      const p = ev.properties || {};
+      const evCoords = ev.geometry?.coordinates;
+      if (!evCoords || !p.linked_mmsi) continue;
+      const vesselCoords = vesselByMmsi[String(p.linked_mmsi)];
+      if (!vesselCoords) continue;
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: [evCoords, vesselCoords] },
+        properties: { severity: p.severity, mmsi: p.linked_mmsi, title: p.title },
+      });
+    }
+    map.getSource('intel-vessel-links')?.setData({ type: 'FeatureCollection', features });
+    map.setLayoutProperty('intel-vessel-links-layer', 'visibility', 'visible');
+  }, [showVesselLinks, intelEvents, vessels, mapReady]);
+
   // ── Initial data load + polling ──────────────────────────────────────────────
   useEffect(() => {
     let alive = true;
@@ -1151,10 +1243,23 @@ function App() {
         }
         if (statusResp.status === 'completed') {
           const geojson = await fetchJson(apiBase, `/api/v1/alert/${created.event_id}/geojson`);
-          setCaseGeojson(geojson);
-          mapRef.current?.getSource('sar-case')?.setData(geojson);
+          const enriched = enrichCaseGeo(geojson, lat, lon);
+          setCaseGeojson(enriched);
+          mapRef.current?.getSource('sar-case')?.setData(enriched);
           setCaseStatus('completed');
           pushCaseLog(`Drift ready ${created.event_id.slice(0, 8)}`);
+          // Save to session history (session-only — clears on page refresh)
+          const _simEntry = {
+            id: created.event_id,
+            label: `${activeSType.replace(/_/g, ' ')} @ ${Number(lat).toFixed(3)}, ${Number(lon).toFixed(3)}`,
+            ts: new Date().toISOString(),
+            geojson: enriched,
+            lat: Number(lat),
+            lon: Number(lon),
+            params: simParamsRef.current,
+          };
+          setSimHistory(prev => [_simEntry, ...prev.filter(s => s.id !== created.event_id).slice(0, 9)]);
+          setActiveSimId(created.event_id);
           const trajFeature = geojson.features?.find(f => f.geometry?.type === 'LineString');
           const trajCoords = trajFeature?.geometry?.coordinates;
           const trajParam = trajCoords ? encodeURIComponent(JSON.stringify(trajCoords)) : '';
@@ -1216,6 +1321,23 @@ function App() {
     });
   }
 
+  function replaySim(sim) {
+    const enriched = enrichCaseGeo(sim.geojson, sim.lat, sim.lon);
+    setCaseGeojson(enriched);
+    mapRef.current?.getSource('sar-case')?.setData(enriched);
+    setActiveSimId(sim.id);
+    setCaseStatus('completed');
+    mapRef.current?.flyTo({ center: [sim.lon, sim.lat], zoom: 8.4, essential: true, duration: 900 });
+    setMapPanel({
+      type: 'cone',
+      feature: sim.geojson.features?.[0] || null,
+      eventId: sim.id,
+      caseStatus: 'completed',
+      simParams: sim.params,
+      legalAnalysis: null,
+    });
+  }
+
   const intelStats = useMemo(() => {
     const by_type = {};
     const by_sev = {};
@@ -1226,14 +1348,6 @@ function App() {
     }
     return { total: intelEvents.length, by_type, by_sev };
   }, [intelEvents]);
-
-  const [showAisAlerts, setShowAisAlerts] = useState(false);
-
-  const intelEventsFiltered = useMemo(() => {
-    let events = showAisAlerts ? intelEvents : intelEvents.filter((f) => f.properties?.type !== 'ais_spike');
-    if (intelFilter === 'all') return events;
-    return events.filter((f) => f.properties?.severity === intelFilter);
-  }, [intelEvents, intelFilter, showAisAlerts]);
 
   const isOnSim = activePanel === 'sim' || selectionMode;
 
@@ -1391,169 +1505,23 @@ function App() {
             </div>
           ) : null}
 
-          {/* ── OSINT TAB (unified Data + Intel) ── */}
+          {/* ── OSINT TAB ── */}
           {activePanel === 'osint' ? (
-            <div className="panel-stack">
-              {/* Stats row */}
-              <section className="panel-block">
-                <p className="section-kicker">Open Source Intelligence</p>
-                <div className="osint-stats-row">
-                  <div className="osint-stat">
-                    <strong>{intelStats.total}</strong><span>events</span>
-                  </div>
-                  <div className="osint-stat osint-stat--critical">
-                    <strong>{intelStats.by_sev['critical'] || 0}</strong><span>critical</span>
-                  </div>
-                  <div className="osint-stat osint-stat--high">
-                    <strong>{intelStats.by_sev['high'] || 0}</strong><span>high</span>
-                  </div>
-                  <div className="osint-stat">
-                    <strong>{summary?.traffic?.registry?.active_30m ?? '—'}</strong><span>AIS live</span>
-                  </div>
-                  <div className="osint-stat">
-                    <strong>{summary?.sar?.open_alerts ?? '—'}</strong><span>alerts</span>
-                  </div>
-                </div>
-              </section>
-
-              {/* Filter + feed */}
-              <section className="panel-block" style={{ paddingBottom: 0 }}>
-                <div className="osint-feed-header">
-                  <span className="osint-feed-title">
-                    Intel feed{' '}
-                    <span
-                      className={intelMode === 'ws' ? 'intel-connected' : intelMode === 'poll' ? 'intel-connected-poll' : 'intel-offline'}
-                      title={intelMode === 'ws' ? 'Live WebSocket' : intelMode === 'poll' ? 'Polling every 30s' : 'Connecting…'}
-                    >●</span>
-                    {intelMode === 'poll' && <span style={{ fontSize: 9, color: '#7a9a94', marginLeft: 3 }}>poll</span>}
-                  </span>
-                  <div className="intel-filter-row">
-                    {['all', 'critical', 'high', 'medium', 'low'].map((f) => (
-                      <button
-                        key={f}
-                        className={`intel-filter-btn ${intelFilter === f ? 'is-active' : ''}`}
-                        onClick={() => setIntelFilter(f)}
-                      >{f}</button>
-                    ))}
-                    <button
-                      className={`intel-filter-btn ${showAisAlerts ? 'is-active' : ''}`}
-                      onClick={() => setShowAisAlerts((v) => !v)}
-                      title="Toggle AIS loitering alerts"
-                    >AIS</button>
-                  </div>
-                </div>
-              </section>
-
-              <section className="panel-block" style={{ padding: 0 }}>
-                <ul className="intel-list">
-                  {intelEventsFiltered.length === 0 ? (
-                    <li className="intel-empty">
-                      {intelMode !== 'offline' ? `No events${intelFilter !== 'all' ? ` (${intelFilter})` : ''} yet` : 'Connecting to intel feed…'}
-                    </li>
-                  ) : intelEventsFiltered.map((feat) => {
-                    const p = feat.properties || {};
-                    const coords = feat.geometry?.coordinates;
-                    const ts = p.timestamp_utc ? new Date(p.timestamp_utc) : null;
-                    const hasDrift = p.drift_status === 'completed';
-                    const driftFeat = hasDrift
-                      ? intelDrifts.features.find(
-                          (f) => f.properties?.intel_event_id === p.id && f.geometry?.type === 'LineString'
-                        )
-                      : null;
-                    const isDistress = p.type === 'distress';
-                    return (
-                      <li
-                        key={p.id || p.title}
-                        className={`intel-event${isDistress ? ' intel-event--distress' : ''}`}
-                        onClick={() => {
-                          if (coords) mapRef.current?.flyTo({ center: coords, zoom: 9, duration: 800 });
-                        }}
-                      >
-                        <div className="intel-event-header">
-                          <span className={`intel-sev intel-sev--${p.severity || 'low'}`}>{p.severity || 'low'}</span>
-                          {ts && (
-                            <time title={ts.toISOString()}>
-                              {ts.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}{' '}
-                              {ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                            </time>
-                          )}
-                          {hasDrift ? (
-                            <button
-                              className="intel-drift-btn intel-drift-btn--ready"
-                              title="See drift on map"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const target = driftFeat
-                                  ? driftFeat.geometry.coordinates[Math.floor(driftFeat.geometry.coordinates.length / 2)]
-                                  : coords;
-                                if (target) mapRef.current?.flyTo({ center: target, zoom: 8, duration: 900 });
-                                setSidebarOpen(false);
-                              }}
-                            >See on map</button>
-                          ) : coords && (p.drift_status === 'computing' || triggeringDrift.has(p.id)) ? (
-                            <button className="intel-drift-btn intel-drift-btn--computing" disabled>
-                              Computing…
-                            </button>
-                          ) : coords && p.drift_status === 'failed' ? (
-                            <button
-                              className="intel-drift-btn intel-drift-btn--retry"
-                              title="Drift failed — click to retry"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                triggerIntelDrift(p.id, coords[1], coords[0]);
-                              }}
-                            >Retry Drift</button>
-                          ) : coords && p.drift_status !== 'completed' ? (
-                            <button
-                              className="intel-drift-btn intel-drift-btn--trigger"
-                              title="Compute SAR drift for this event"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                triggerIntelDrift(p.id, coords[1], coords[0]);
-                              }}
-                            >Compute Drift</button>
-                          ) : null}
-                        </div>
-                        <strong className="intel-title">{p.title}</strong>
-                        <span className="intel-source">
-                          <span>{p.source}</span>
-                          <span style={{ opacity: 0.5 }}>·</span>
-                          <span>{(p.type || '').replace(/_/g, ' ')}</span>
-                          {p.url && (
-                            <a
-                              className="intel-source-link"
-                              href={p.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              title="Open original source"
-                            >↗ source</a>
-                          )}
-                        </span>
-                        {p.text && (
-                          <p className="intel-text">{p.text.slice(0, 180)}{p.text.length > 180 ? '…' : ''}</p>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-
-              {/* Channel breakdown */}
-              {Object.keys(intelStats.by_type).length > 0 && (
-                <section className="panel-block">
-                  <p className="section-kicker">By channel</p>
-                  <ul className="signal-list" style={{ marginTop: 4 }}>
-                    {Object.entries(intelStats.by_type).sort((a, b) => b[1] - a[1]).map(([type, count]) => (
-                      <li key={type}>
-                        <strong>{type.replace(/_/g, ' ')}</strong>
-                        <span>{count}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-            </div>
+            <IntelDashboard
+              apiBase={apiBase}
+              intelEvents={intelEvents}
+              intelDrifts={intelDrifts}
+              intelStats={intelStats}
+              intelFilter={intelFilter}
+              setIntelFilter={setIntelFilter}
+              intelMode={intelMode}
+              showAisAlerts={showAisAlerts}
+              setShowAisAlerts={setShowAisAlerts}
+              triggeringDrift={triggeringDrift}
+              triggerIntelDrift={triggerIntelDrift}
+              mapRef={mapRef}
+              setSidebarOpen={setSidebarOpen}
+            />
           ) : null}
 
           {/* ── DEMO TAB ── */}
@@ -1639,6 +1607,14 @@ function App() {
                   )}
                 </ul>
               </section>
+
+              <SimHistory
+                history={simHistory}
+                activeId={activeSimId}
+                onReplay={replaySim}
+                onRemove={(id) => setSimHistory(prev => prev.filter(s => s.id !== id))}
+                onClear={() => { setSimHistory([]); setActiveSimId(null); }}
+              />
             </div>
           ) : null}
 

@@ -108,12 +108,16 @@ class TwitterMonitor:
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     def _loop(self) -> None:
+        from core.intel.source_registry import source_registry
+        source_registry.register("Twitter/X", "twitter")
+
         while self._running:
+            new_count = 0
+            error_str = None
             try:
                 query = _SEARCH_QUERIES[self._query_idx % len(_SEARCH_QUERIES)]
                 self._query_idx += 1
                 tweets = self._fetch(query)
-                new_count = 0
                 for tw in tweets:
                     if self._ingest(tw, query):
                         new_count += 1
@@ -121,6 +125,8 @@ class TwitterMonitor:
                     logger.info("Twitter: +%d new intel events", new_count)
             except Exception as exc:
                 logger.warning("Twitter monitor error: %s", exc)
+                error_str = str(exc)
+            source_registry.record_poll("Twitter/X", events_found=new_count, error=error_str)
             time.sleep(_POLL_INTERVAL_S)
 
     # ── Fetch strategies ──────────────────────────────────────────────────────
