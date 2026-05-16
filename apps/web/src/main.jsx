@@ -1076,12 +1076,13 @@ function App() {
   // ── Initial data load + polling ──────────────────────────────────────────────
   useEffect(() => {
     let alive = true;
-    let lastVesselTs = null; // ISO timestamp of last full vessel fetch
-    let vesselSnapshot = null; // latest full GeoJSON snapshot
+    let running = false;           // guard: skip tick if previous loadAll still in flight
+    let consecutiveErrors = 0;
+    let lastVesselTs = null;       // ISO timestamp of last successful vessel fetch
+    let vesselSnapshot = null;     // latest merged GeoJSON snapshot
 
     async function fetchVessels() {
-      // First call: full load (active vessels last 2h, gzipped ~80KB).
-      // Subsequent: incremental diff only (vessels updated since last poll).
+      // First call: full load. Subsequent: incremental diff via ?since=.
       const isFirst = !lastVesselTs;
       const url = lastVesselTs ? `/api/v1/vessels?since=${encodeURIComponent(lastVesselTs)}` : '/api/v1/vessels';
       const timeoutMs = isFirst ? 20000 : 12000;
@@ -1091,7 +1092,6 @@ function App() {
       if (!vesselSnapshot) {
         vesselSnapshot = data;
       } else {
-        // Merge incremental updates into snapshot
         const updated = new Map(data.features.map((f) => [f.properties?.mmsi, f]));
         const merged = vesselSnapshot.features.map((f) => updated.get(f.properties?.mmsi) || f);
         data.features.forEach((f) => { if (!vesselSnapshot.features.some((e) => e.properties?.mmsi === f.properties?.mmsi)) merged.push(f); });
@@ -1115,8 +1115,8 @@ function App() {
     }
 
     async function loadAll() {
-      // ops/summary is NOT in this Promise.all — it's non-critical and
-      // must never delay the map render or the loading banner clearing.
+      if (running) return;  // previous fetch still in flight — skip this tick
+      running = true;
       try {
         const [vesselsPayload, alertsPayload] = await Promise.all([
           fetchVessels(),
@@ -1126,17 +1126,21 @@ function App() {
         if (vesselsPayload) setVessels(vesselsPayload);
         setAlerts(alertsPayload);
         setError('');
+        consecutiveErrors = 0;
       } catch (err) {
         if (!alive) return;
-        setError(err.message || 'Backend unreachable');
+        consecutiveErrors += 1;
+        // Only show error after 2 consecutive failures to avoid transient flicker
+        if (consecutiveErrors >= 2) setError(err.message || 'Backend unreachable');
       } finally {
+        running = false;
         if (alive) setLoading(false);
       }
-      // Fire summary fetch after banner clears — failure is silent
       loadSummary();
     }
     loadAll();
-    const id = window.setInterval(loadAll, 15000);
+    // 30s interval: vessels update on AIS heartbeat (~every 2 min) so 15s was wasteful
+    const id = window.setInterval(loadAll, 30000);
     return () => {
       alive = false;
       window.clearInterval(id);

@@ -53,9 +53,14 @@ _grid_reader_cls = None  # lazily constructed after OpenDrift import
 _drift_semaphore = threading.Semaphore(1)
 _drift_queue_count = 0  # approximate number of waiting sims (informational)
 
-# Grid parameters for Open-Meteo spatially-varying reader
-_GRID_N = 3          # 3×3 = 9 sample points
-_GRID_DEG = 0.5      # spacing in degrees (≈55 km at Mediterranean latitudes)
+# Grid parameters for Open-Meteo spatially-varying reader.
+# 5×5 at 1.0° spacing covers ±2° (≈220 km) around the start — large enough
+# that a particle drifting at 2 m/s stays inside the grid for the full 24 h
+# simulation. The old 3×3 / 0.5° grid (±0.5°, ≈55 km) caused straight
+# trajectories because particles exited the grid in ~10 h and bilinear
+# interpolation then clamped to constant edge values.
+_GRID_N = 5          # 5×5 = 25 sample points
+_GRID_DEG = 1.0      # spacing in degrees (≈111 km at equator, ≈95 km at 30°N)
 
 # CMEMS NetCDF cache — files are kept for 3 h to avoid redundant downloads
 _CMEMS_CACHE_DIR = Path(tempfile.gettempdir()) / "seacommons_cmems_cache"
@@ -111,7 +116,8 @@ def _get_grid_reader_class():
             z=None, indrealization=None,
         ):
             # Fall back to reader_constant behaviour when coordinates are absent
-            base = {v: self.data[v] for v in requested_variables if v in self.data}
+            pmap = self._parameter_value_map
+            base = {v: pmap[v] for v in requested_variables if v in pmap}
             if time is None or x is None:
                 return base
 
@@ -178,15 +184,24 @@ def prewarm() -> None:
     logger.info("OpenDrift: pre-warm thread started")
 
 
-def _fetch_grid(center_lat: float, center_lon: float, hours: int) -> dict[str, Any]:
+def _fetch_grid(
+    center_lat: float,
+    center_lon: float,
+    hours: int,
+    fallback_wind_x: float = 0.0,
+    fallback_wind_y: float = 0.0,
+    fallback_u: float = 0.0,
+    fallback_v: float = 0.0,
+) -> dict[str, Any]:
     """
     Build a spatially-varying forcing grid by querying Open-Meteo atmosphere
     and Open-Meteo Marine APIs for a _GRID_N × _GRID_N set of points centred
     on (center_lat, center_lon).
 
     All HTTP calls are made in parallel (ThreadPoolExecutor).  Points that
-    fail (land-masked, network error) are filled from the centre point so the
-    simulation always gets valid data.
+    fail (land-masked, network error) are filled from the centre point.  If the
+    centre itself fails (e.g. the whole region has no marine coverage), the
+    fallback_* values from the weather API are used instead of zeros.
 
     Returns a dict with numpy arrays of shape (hours, GRID_N, GRID_N).
     """
@@ -272,17 +287,23 @@ def _fetch_grid(center_lat: float, center_lon: float, hours: int) -> dict[str, A
             except Exception as exc:
                 logger.debug("Grid point (%d,%d) failed: %s", i, j, exc)
 
-    # Fill NaN cells (land-masked or failed) from the centre point
+    # Fill NaN cells (land-masked or failed) from the centre point.
+    # If the centre itself is NaN (whole region has no marine data), use the
+    # fallback values derived from the weather API rather than zero.
     ci = n // 2
-    for arr in (wind_x, wind_y, u_curr, v_curr):
+    for arr, final_fallback in [
+        (wind_x, fallback_wind_x),
+        (wind_y, fallback_wind_y),
+        (u_curr, fallback_u),
+        (v_curr, fallback_v),
+    ]:
         centre = arr[:, ci, ci].copy()
         for i in range(n):
             for j in range(n):
                 mask = np.isnan(arr[:, i, j])
                 if mask.any():
                     arr[mask, i, j] = centre[mask]
-        # If centre itself is NaN (shouldn't happen but defensive), fill zeros
-        arr[np.isnan(arr)] = 0.0
+        arr[np.isnan(arr)] = final_fallback
 
     logger.info(
         "Grid fetch complete: %.2f,%.2f  wind_mean=(%.2f,%.2f) m/s  "
@@ -388,12 +409,14 @@ def _build_cmems_reader(
                     maximum_longitude=norm_lon + pad,
                     minimum_latitude=lat - pad,
                     maximum_latitude=lat + pad,
-                    minimum_depth=0.0,
+                    # Dataset shallowest level is ~0.494 m; requesting 0.0
+                    # triggers a harmless warning and gets clamped to 0.494.
+                    minimum_depth=0.494,
                     maximum_depth=5.0,
                     start_datetime=t_start,
                     end_datetime=t_end,
                     output_filename=str(nc_path),
-                    force_download=True,
+                    overwrite_output_data=True,
                 )
 
             try:
@@ -612,25 +635,37 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
     # not x_wind/y_wind, the _GridReader fills the wind gap automatically.
 
     readers_added: list[str] = []
+    grid_reader_added = False
 
-    # Layer 1 — universal fallback (lowest priority)
-    sim.add_reader(_reader_constant.Reader(base_env))
-    readers_added.append("reader_constant")
+    # _GridReader extends reader_constant.Reader and already inherits constant
+    # fallback behaviour for every variable not covered by the grid (e.g.
+    # land_binary_mask).  Adding a separate reader_constant instance alongside
+    # it creates an ambiguous duplicate that can silently win the priority race
+    # in OpenDrift and override the spatially-varying data with flat constants.
+    #
+    # Rule: add reader_constant ONLY when _GridReader is not available.
 
-    # Layer 2 — Open-Meteo spatially-varying wind + currents
+    # Layer 1 — Open-Meteo spatially-varying wind + currents (5×5 grid)
     try:
         grid = _fetch_grid(
             center_lat=float(payload["lat"]),
             center_lon=float(payload["lon"]),
             hours=duration_h,
+            fallback_wind_x=base_env["x_wind"],
+            fallback_wind_y=base_env["y_wind"],
+            fallback_u=base_env["x_sea_water_velocity"],
+            fallback_v=base_env["y_sea_water_velocity"],
         )
         GridReader = _get_grid_reader_class()
         sim.add_reader(GridReader(grid, base_env, start_time))
         readers_added.append("GridReader(Open-Meteo 3×3)")
+        grid_reader_added = True
     except Exception as exc:
         logger.warning("Open-Meteo grid reader failed: %s", exc)
 
-    # Layer 3 — CMEMS NetCDF (0.083°, requires credentials)
+    # Layer 2 — CMEMS NetCDF (0.083°, requires credentials).
+    # Added after GridReader so OpenDrift picks it up as the higher-priority
+    # source for ocean current variables (last-added wins in OpenDrift ≥1.11).
     try:
         cmems_reader = _build_cmems_reader(
             lat=float(payload["lat"]),
@@ -643,6 +678,13 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
             readers_added.append("CMEMS-NetCDF(0.083°)")
     except Exception as exc:
         logger.warning("CMEMS reader failed: %s", exc)
+
+    # Fallback — only when GridReader itself failed (e.g. Open-Meteo timeout).
+    # _GridReader already provides constant behaviour through inheritance, so
+    # this branch is only reached in degraded / offline conditions.
+    if not grid_reader_added:
+        sim.add_reader(_reader_constant.Reader(base_env))
+        readers_added.append("reader_constant")
 
     logger.info("Drift readers active: %s", " → ".join(readers_added))
     sim.seed_elements(
