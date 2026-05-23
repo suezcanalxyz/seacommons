@@ -4,6 +4,11 @@
   "outputDirectory": "apps/web/dist",
   "framework": "vite",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "http://204.216.210.155/api/:path*" }
-  ]
+    { "source": "/api/:path*", "destination": "http://204.216.210.155/api/:path*" },
+    { "source": "/health", "destination": "http://204.216.210.155/health" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "env": {
+    "VITE_PUBLIC_BASE": "/"
+  }
 }
