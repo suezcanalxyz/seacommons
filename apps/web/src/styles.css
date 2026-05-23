@@ -747,7 +747,34 @@ a { color: #9be5d7; text-decoration: none; }
   border-radius: 4px;
   max-height: calc(100vh - 220px);
   overflow-y: auto;
+  overflow-x: auto;
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Cone panel reopen button ── */
+.cone-reopen-btn {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 35;
+  padding: 6px 12px;
+  background: rgba(3, 10, 14, 0.92);
+  border: 1px solid rgba(255, 224, 109, 0.3);
+  border-radius: 4px;
+  color: rgba(255, 224, 109, 0.85);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.cone-reopen-btn:hover {
+  background: rgba(255, 224, 109, 0.1);
+  border-color: rgba(255, 224, 109, 0.6);
+  color: #ffe07d;
 }
 
 .cone-panel-header {
@@ -1189,6 +1216,51 @@ a { color: #9be5d7; text-decoration: none; }
   color: #061015;
   font-weight: 700;
   border: none;
+}
+
+/* ── Scrollbar eleganti: sottili, nere ── */
+.cone-panel::-webkit-scrollbar,
+.sidebar-inner::-webkit-scrollbar,
+.scenario-modal::-webkit-scrollbar,
+.case-log-panel::-webkit-scrollbar,
+.intel-inject-modal::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+
+.cone-panel::-webkit-scrollbar-track,
+.sidebar-inner::-webkit-scrollbar-track,
+.scenario-modal::-webkit-scrollbar-track,
+.case-log-panel::-webkit-scrollbar-track,
+.intel-inject-modal::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cone-panel::-webkit-scrollbar-thumb,
+.sidebar-inner::-webkit-scrollbar-thumb,
+.scenario-modal::-webkit-scrollbar-thumb,
+.case-log-panel::-webkit-scrollbar-thumb,
+.intel-inject-modal::-webkit-scrollbar-thumb {
+  background: #000;
+  border-radius: 2px;
+}
+
+.cone-panel::-webkit-scrollbar-thumb:hover,
+.sidebar-inner::-webkit-scrollbar-thumb:hover,
+.scenario-modal::-webkit-scrollbar-thumb:hover,
+.case-log-panel::-webkit-scrollbar-thumb:hover,
+.intel-inject-modal::-webkit-scrollbar-thumb:hover {
+  background: #111;
+}
+
+/* Firefox */
+.cone-panel,
+.sidebar-inner,
+.scenario-modal,
+.case-log-panel,
+.intel-inject-modal {
+  scrollbar-width: thin;
+  scrollbar-color: #000 transparent;
 }
 
 /* ── Mobile ── */

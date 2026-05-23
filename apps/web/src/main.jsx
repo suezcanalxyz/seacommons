@@ -222,6 +222,7 @@ function App() {
   const [caseStatus, setCaseStatus] = useState('idle');
   const [caseLog, setCaseLog] = useState([]);
   const [mapPanel, setMapPanel] = useState(null);
+  const [conePanelHidden, setConePanelHidden] = useState(false);
   const [showScenario, setShowScenario] = useState(false);
   const [scenarioType, setScenarioType] = useState('distress');
   const [caseEventId, setCaseEventId] = useState(null);
@@ -264,6 +265,10 @@ function App() {
 
   const selectedLat = parseFloat(form.lat);
   const selectedLon = parseFloat(form.lon);
+
+  useEffect(() => {
+    if (mapPanel?.type === 'cone') setConePanelHidden(false);
+  }, [mapPanel]);
 
   function pushCaseLog(message) {
     setCaseLog((cur) => [
@@ -1424,12 +1429,21 @@ function App() {
         ) : null}
 
         {/* Cone detail panel — right side, appears when clicking a drift cone */}
-        {mapPanel?.type === 'cone' && (
+        {mapPanel?.type === 'cone' && !conePanelHidden && (
           <MapFloatingPanel
             panel={mapPanel}
-            onClose={() => setMapPanel(null)}
+            onClose={() => setConePanelHidden(true)}
             onComputeDrift={null}
           />
+        )}
+        {mapPanel?.type === 'cone' && conePanelHidden && (
+          <button
+            className="cone-reopen-btn"
+            onClick={() => setConePanelHidden(false)}
+            title="Apri pannello drift"
+          >
+            SAR ›
+          </button>
         )}
 
         {/* Scenario modal — center, appears when clicking empty map */}

@@ -57,6 +57,20 @@ async def ops_summary():
     except Exception:
         sched = {"running": False, "jobs": []}
 
+    # Best-effort SAR counters for backward compatibility with older UI/test callers.
+    # Keep the timeout tight so this summary endpoint stays responsive even if the DB stalls.
+    try:
+        from core.db.store import list_alerts, list_forensic_packets
+        alerts, forensic_packets = await asyncio.wait_for(
+            asyncio.gather(
+                loop.run_in_executor(None, list_alerts),
+                loop.run_in_executor(None, list_forensic_packets),
+            ),
+            timeout=0.75,
+        )
+    except Exception:
+        alerts, forensic_packets = [], []
+
     return {
         "product": {
             "name": "Seacommons",
@@ -76,6 +90,11 @@ async def ops_summary():
         },
         "traffic": {
             "registry": vessel_stats,
+        },
+        "sar": {
+            "open_alerts": sum(1 for a in alerts if a.get("status") != "completed"),
+            "completed_alerts": sum(1 for a in alerts if a.get("status") == "completed"),
+            "forensic_packets": len(forensic_packets),
         },
         "scheduler": sched,
         "cost_profile": {

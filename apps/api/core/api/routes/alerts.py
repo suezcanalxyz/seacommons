@@ -8,14 +8,16 @@ import logging
 import threading
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, WebSocket
 from fastapi.responses import Response
 from pydantic import BaseModel
+from sqlalchemy import not_, select
 
 from core.config import config
+from core.forensic.packet import ForensicPacket
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -150,6 +152,7 @@ async def _ws_send(ws: WebSocket, text: str) -> None:
 @router.post("/api/v1/alert")
 async def create_alert(event: MaritimeEvent):
     from core.db.store import create_alert, create_drift_job
+    from core.forensic.logger import sign_and_store
 
     event_id = str(uuid.uuid4())
     create_alert(event_id, event, status="processing")
@@ -162,6 +165,23 @@ async def create_alert(event: MaritimeEvent):
         duration_h=config.ALERT_DRIFT_DURATION_H,
         started_at=event.timestamp,
     )
+
+    # Make the forensic endpoint immediately readable even before the drift
+    # worker finishes, then let the final signed packet overwrite this record.
+    sign_and_store(
+        ForensicPacket(
+            event_id=event_id,
+            timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            classification="sar_alert_received",
+            confidence=0.6,
+            position={"lat": event.lat, "lon": event.lon, "alt": 0, "source": "alert"},
+            vessel_id="",
+            contributing_sensors=["alert"],
+            sensor_data=event.model_dump(mode="json"),
+            drift_result={"status": "processing", "domain": event.domain},
+        )
+    )
+
     threading.Thread(target=_process_drift, args=(event_id, event), daemon=True).start()
     return {"event_id": event_id, "status": "processing"}
 
@@ -215,39 +235,44 @@ async def list_alerts_geojson():
 
     from core.db.session import session_scope
     from core.db.models import DriftResultDB
-    from sqlalchemy import select, not_
-    from core.db.store import drift_to_dict
 
     loop = asyncio.get_event_loop()
 
     def _fetch():
         with session_scope() as db:
-            drifts = db.execute(
-                select(DriftResultDB)
+            rows = db.execute(
+                select(
+                    DriftResultDB.trajectory,
+                    DriftResultDB.cone_6h,
+                    DriftResultDB.cone_12h,
+                    DriftResultDB.cone_24h,
+                )
                 .where(
                     DriftResultDB.status == "completed",
                     not_(DriftResultDB.event_id.like("intel:%")),
                 )
                 .order_by(DriftResultDB.created_at.desc())
                 .limit(50)
-            ).scalars().all()
-            return [drift_to_dict(d) for d in drifts]
+            ).all()
+
+            features: list[dict] = []
+            for trajectory, cone_6h, cone_12h, cone_24h in rows:
+                for feature in (trajectory, cone_6h, cone_12h, cone_24h):
+                    if feature:
+                        features.append(feature)
+            return features
 
     try:
-        completed = await asyncio.wait_for(loop.run_in_executor(None, _fetch), timeout=6.0)
+        features = await asyncio.wait_for(loop.run_in_executor(None, _fetch), timeout=2.5)
     except Exception:
-        completed = []
+        if _alerts_geojson_cache is not None:
+            return Response(content=_alerts_geojson_cache, media_type="application/json")
+        features = []
 
-    features = []
-    for drift in completed:
-        if not drift:
-            continue
-        for key in ("trajectory", "cone_6h", "cone_12h", "cone_24h"):
-            f = drift.get(key)
-            if f:
-                features.append(f)
-
-    payload = json.dumps({"type": "FeatureCollection", "features": features}).encode()
+    payload = json.dumps(
+        {"type": "FeatureCollection", "features": features},
+        separators=(",", ":"),
+    ).encode()
     _alerts_geojson_cache = payload
     _alerts_geojson_ts = time.monotonic()
     return Response(content=payload, media_type="application/json")

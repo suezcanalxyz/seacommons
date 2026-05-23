@@ -19,34 +19,6 @@ def store_packet(packet_dict: dict) -> None:
     _store[packet_dict["event_id"]] = packet_dict
 
 
-@router.get("/api/v1/forensic/{event_id}")
-async def get_forensic(event_id: str):
-    from core.db.store import get_forensic_packet
-
-    pkt = get_forensic_packet(event_id) or _store.get(event_id)
-    if not pkt:
-        raise HTTPException(status_code=404, detail="Forensic event not found")
-    return pkt
-
-
-@router.get("/api/v1/forensic/{event_id}/verify")
-async def verify_forensic(event_id: str):
-    from core.db.store import get_forensic_packet
-    from core.forensic.logger import verify_packet
-    from core.forensic.packet import ForensicPacket
-
-    pkt = get_forensic_packet(event_id) or _store.get(event_id)
-    if not pkt:
-        raise HTTPException(status_code=404, detail="Forensic event not found")
-
-    try:
-        fp = ForensicPacket.model_validate(pkt)
-        result = verify_packet(fp)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-    return result
-
-
 @router.get("/api/v1/forensic/export")
 async def export_forensic(
     since: Optional[str] = Query(default=None),
@@ -88,3 +60,32 @@ async def export_forensic(
         )
 
     return {"count": len(events), "events": events}
+
+
+@router.get("/api/v1/forensic/{event_id}")
+async def get_forensic(event_id: str):
+    from core.db.store import get_forensic_packet
+
+    pkt = get_forensic_packet(event_id) or _store.get(event_id)
+    if not pkt:
+        raise HTTPException(status_code=404, detail="Forensic event not found")
+    return pkt
+
+
+@router.get("/api/v1/forensic/{event_id}/verify")
+async def verify_forensic(event_id: str):
+    from core.db.store import get_forensic_packet
+    from core.forensic.logger import verify_packet
+    from core.forensic.packet import ForensicPacket
+
+    pkt = get_forensic_packet(event_id) or _store.get(event_id)
+    if not pkt:
+        raise HTTPException(status_code=404, detail="Forensic event not found")
+
+    try:
+        fp = ForensicPacket.model_validate(pkt)
+        result = verify_packet(fp)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return result
+
