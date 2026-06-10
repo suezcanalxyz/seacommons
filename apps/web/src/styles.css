@@ -5,6 +5,12 @@
   line-height: 1.4;
   font-weight: 400;
   font-size: 13px;
+  --sidebar-w: 290px;
+}
+
+/* Wider sidebar on large desktop monitors — denser ops layout stays readable */
+@media (min-width: 1440px) {
+  :root { --sidebar-w: 330px; }
 }
 
 * { box-sizing: border-box; }
@@ -20,11 +26,22 @@ button, input, select { font: inherit; }
 
 a { color: #9be5d7; text-decoration: none; }
 
+/* Keyboard / accessibility focus ring — applies everywhere, invisible for mouse users */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgba(131, 244, 223, 0.65);
+  outline-offset: 1px;
+}
+
 /* ── Root shell ── */
 .cop-shell {
   position: relative;
   width: 100vw;
   height: 100vh;
+  height: 100dvh; /* mobile browsers: track the *visible* viewport (URL bar collapse) */
   overflow: hidden;
 }
 
@@ -86,13 +103,15 @@ a { color: #9be5d7; text-decoration: none; }
 .pill, .map-toggle {
   display: inline-flex;
   align-items: center;
-  border-radius: 3px;
-  padding: 5px 8px;
+  border-radius: 4px;
+  padding: 5px 9px;
   background: rgba(5, 15, 20, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #dfeae7;
   font-size: 11px;
   line-height: 1;
+  backdrop-filter: blur(10px);
+  font-variant-numeric: tabular-nums;
 }
 
 .map-toggle { cursor: pointer; }
@@ -113,8 +132,9 @@ a { color: #9be5d7; text-decoration: none; }
   position: absolute;
   top: 0;
   left: 0;
-  width: 290px;
+  width: var(--sidebar-w);
   height: 100vh;
+  height: 100dvh;
   z-index: 20;
   display: flex;
   flex-direction: column;
@@ -124,10 +144,11 @@ a { color: #9be5d7; text-decoration: none; }
   transform: translateX(0);
   transition: transform 0.22s ease;
   overflow: hidden;
+  box-shadow: 10px 0 32px rgba(0, 0, 0, 0.28);
 }
 
 .sidebar.is-closed {
-  transform: translateX(-290px);
+  transform: translateX(calc(-1 * var(--sidebar-w) - 12px));
 }
 
 .sidebar-inner {
@@ -149,7 +170,7 @@ a { color: #9be5d7; text-decoration: none; }
   justify-content: center;
   background: rgba(5, 15, 20, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 3px;
+  border-radius: 4px;
   color: #b8d4cf;
   cursor: pointer;
   font-size: 15px;
@@ -159,7 +180,7 @@ a { color: #9be5d7; text-decoration: none; }
 }
 
 .sidebar-toggle.panel-open {
-  left: 298px;
+  left: calc(var(--sidebar-w) + 8px);
 }
 
 /* ── Sidebar header ── */
@@ -193,14 +214,17 @@ a { color: #9be5d7; text-decoration: none; }
 .sidebar-tabs button {
   border: 1px solid rgba(255, 255, 255, 0.08);
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: 4px;
   padding: 6px 8px;
   background: rgba(255, 255, 255, 0.04);
   color: #dbe7e3;
   font-size: 11px;
   font-weight: 600;
   text-align: center;
+  transition: background 0.15s ease;
 }
+
+.sidebar-tabs button:hover:not(.is-active) { background: rgba(255, 255, 255, 0.09); }
 
 .sidebar-tabs button.is-active {
   background: linear-gradient(135deg, #83f4df, #70a2ff);
@@ -215,6 +239,13 @@ a { color: #9be5d7; text-decoration: none; }
   padding: 9px 10px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+}
+
+/* Unified corner radius across small cards (was a mix of square + rounded) */
+.info-box, .weather-card, .status-strip, .demo-note, .settings-note,
+.signal-list li, .service-list li, .overlay-card, .cred-list li {
+  border-radius: 4px;
 }
 
 .panel-block h3 {
@@ -266,10 +297,17 @@ a { color: #9be5d7; text-decoration: none; }
   width: 100%;
   padding: 5px 7px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+  border-radius: 4px;
   background: #0e2229;
   color: #f1faf8;
   font-size: 12px;
+  transition: border-color 0.15s ease;
+}
+
+.demo-form input:focus,
+.field-block input:focus,
+.field-block select:focus {
+  border-color: rgba(131, 244, 223, 0.5);
 }
 
 .demo-form input::placeholder,
@@ -291,14 +329,18 @@ a { color: #9be5d7; text-decoration: none; }
 .action-row button, .link-button {
   border: 0;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: 4px;
   padding: 6px 11px;
   background: linear-gradient(135deg, #83f4df, #70a2ff);
   color: #061015;
   font-weight: 700;
   font-size: 11px;
   text-align: center;
+  transition: filter 0.15s ease;
 }
+
+.action-row button:hover, .link-button:hover { filter: brightness(1.12); }
+.action-row button:active, .link-button:active { filter: brightness(0.92); }
 
 .link-button {
   display: inline-flex;
@@ -497,7 +539,7 @@ a { color: #9be5d7; text-decoration: none; }
   font-size: 10px;
   font-weight: 700;
   padding: 3px 8px;
-  border-radius: 3px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
   color: #dfeae7;
@@ -518,7 +560,7 @@ a { color: #9be5d7; text-decoration: none; }
   font-size: 12px;
   font-weight: 700;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: 4px;
   border: none;
   background: transparent;
   color: #9cb5b0;
@@ -534,7 +576,7 @@ a { color: #9be5d7; text-decoration: none; }
   z-index: 30;
   max-width: 200px;
   padding: 5px 9px;
-  border-radius: 3px;
+  border-radius: 4px;
   font-size: 11px;
   color: #def9f3;
   pointer-events: none;
@@ -549,7 +591,7 @@ a { color: #9be5d7; text-decoration: none; }
   left: 8px;
   z-index: 20;
   padding: 5px 9px;
-  border-radius: 3px;
+  border-radius: 4px;
   color: #e9f1ef;
   background: rgba(5, 14, 20, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -557,7 +599,7 @@ a { color: #9be5d7; text-decoration: none; }
   backdrop-filter: blur(8px);
 }
 
-.map-banner.sidebar-open { left: 298px; }
+.map-banner.sidebar-open { left: calc(var(--sidebar-w) + 8px); }
 .map-banner.error { color: #ffd3ca; }
 
 /* ── Bottom-left selected point overlay ── */
@@ -571,7 +613,7 @@ a { color: #9be5d7; text-decoration: none; }
   width: 200px;
 }
 
-.map-overlay.sidebar-open { left: 298px; }
+.map-overlay.sidebar-open { left: calc(var(--sidebar-w) + 8px); }
 
 /* ── Top-left selected vessel overlay (distinct from bottom-left point overlay) ── */
 .map-overlay-vessel {
@@ -582,7 +624,7 @@ a { color: #9be5d7; text-decoration: none; }
   width: 220px;
 }
 
-.map-overlay-vessel.sidebar-open { left: 298px; }
+.map-overlay-vessel.sidebar-open { left: calc(var(--sidebar-w) + 8px); }
 
 .overlay-card {
   padding: 6px 9px;
@@ -704,7 +746,7 @@ a { color: #9be5d7; text-decoration: none; }
   gap: 3px;
   padding: 8px 5px;
   border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 3px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.04);
   color: #c8dfd9;
   font-size: 10px;
@@ -831,7 +873,7 @@ a { color: #9be5d7; text-decoration: none; }
 .intel-filter-btn {
   padding: 3px 8px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.04);
   color: #9cb5b0;
   font-size: 10px;
@@ -957,7 +999,7 @@ a { color: #9be5d7; text-decoration: none; }
   padding: 2px 8px;
   font-size: 10px;
   font-weight: 600;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s, border-color 0.15s;
@@ -1263,14 +1305,332 @@ a { color: #9be5d7; text-decoration: none; }
   scrollbar-color: #000 transparent;
 }
 
-/* ── Mobile ── */
+/* ── MapLibre native controls: align under the pill toolbar ── */
+.maplibregl-ctrl-top-right { top: 36px; }
+
+.maplibregl-ctrl-top-right .maplibregl-ctrl-group {
+  background: rgba(5, 15, 20, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.maplibregl-ctrl-top-right .maplibregl-ctrl-group button {
+  background-color: transparent;
+}
+
+.maplibregl-ctrl-top-right .maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.maplibregl-ctrl button .maplibregl-ctrl-icon {
+  filter: invert(0.85) hue-rotate(180deg);
+}
+
+.maplibregl-ctrl-scale {
+  background: rgba(5, 15, 20, 0.7);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #cfe3df;
+  font-size: 10px;
+}
+
+/* ── Layer visibility control (below MapLibre nav controls, top-right) ── */
+.layer-control {
+  position: absolute;
+  top: 116px;
+  right: 8px;
+  z-index: 26;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.layer-fab {
+  position: relative;
+  width: 31px;
+  height: 31px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 15, 20, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: #b8d4cf;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.layer-fab:hover, .layer-fab.is-open {
+  color: #83f4df;
+  border-color: rgba(131, 244, 223, 0.4);
+}
+
+.layer-fab-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffe07d;
+  border: 1px solid #04131a;
+}
+
+.layer-panel {
+  min-width: 150px;
+  padding: 8px 10px;
+  background: rgba(4, 12, 17, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.layer-panel-title {
+  font-size: 9px;
+  color: #87cabc;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  margin-bottom: 6px;
+}
+
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 0;
+  font-size: 11px;
+  color: #dfeae7;
+  cursor: pointer;
+  user-select: none;
+}
+
+.layer-row input {
+  accent-color: #83f4df;
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Mobile layout — full-screen map + bottom tab bar + bottom-sheet panels
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Bottom navigation (rendered only on mobile via JS) ── */
+.bottom-nav {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  display: flex;
+  align-items: stretch;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: rgba(4, 12, 17, 0.97);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.bottom-nav-tab {
+  flex: 1;
+  min-height: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 7px 0 5px;
+  background: none;
+  border: 0;
+  color: #8fa9a3;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s ease;
+}
+
+.bottom-nav-tab.is-active { color: #83f4df; }
+
+.bottom-nav-icon {
+  position: relative;
+  width: 22px;
+  height: 22px;
+}
+
+.bottom-nav-icon svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+.bottom-nav-badge {
+  position: absolute;
+  top: -5px;
+  right: -12px;
+  min-width: 16px;
+  height: 15px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(255, 123, 84, 0.92);
+  color: #1a0a05;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.bottom-nav-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* ── Bottom-sheet grab handle (visible only on mobile) ── */
+.sheet-handle { display: none; }
+
 @media (max-width: 680px) {
-  .sidebar { width: 100vw; }
-  .sidebar.is-closed { transform: translateX(-100vw); }
-  .sidebar-toggle.panel-open { left: calc(100vw + 8px); }
-  .case-log-panel { width: calc(100% - 24px); left: 12px; transform: none; }
-  .map-overlay { width: calc(100% - 16px); }
-  .map-overlay-vessel { width: calc(100% - 16px); }
-  .cone-panel { left: 8px; right: 8px; width: auto; }
+  /* Space reserved at the bottom of the screen for the tab bar */
+  :root {
+    --nav-h: calc(54px + env(safe-area-inset-bottom));
+  }
+
+  /* ── Sidebar becomes a bottom sheet sitting on top of the tab bar ── */
+  .sidebar {
+    top: auto;
+    bottom: var(--nav-h);
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: min(62dvh, 540px);
+    border-right: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -18px 44px rgba(0, 0, 0, 0.5);
+    transform: translateY(0);
+    transition: transform 0.26s ease;
+  }
+
+  .sidebar.is-closed {
+    /* Slide fully below the viewport (past the tab bar too) */
+    transform: translateY(calc(100% + var(--nav-h) + 20px));
+  }
+
+  .sheet-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 9px 0 5px;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .sheet-handle span {
+    width: 42px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.24);
+  }
+
+  .sidebar-header { padding-top: 2px; }
+
+  /* Desktop chevron toggle is not rendered on mobile, but keep a CSS guard */
+  .sidebar-toggle { display: none; }
+
+  /* ── Touch ergonomics ── */
+  /* 16px inputs prevent iOS Safari from auto-zooming on focus */
+  .demo-form input,
+  .field-block input,
+  .field-block select,
+  .intel-search-input,
+  .intel-inject-form input,
+  .intel-inject-form select,
+  .intel-inject-form textarea {
+    font-size: 16px;
+    padding: 9px 10px;
+  }
+
+  .sidebar-tabs button { padding: 10px 8px; font-size: 12px; }
+  .action-row button, .link-button { padding: 10px 14px; font-size: 12px; min-height: 42px; }
+  .intel-filter-btn { padding: 7px 11px; font-size: 11px; }
+  .scenario-type-btn { min-height: 56px; }
+  .sim-history-btn { padding: 7px 11px; font-size: 11px; }
+  .cone-close-btn { min-width: 44px; min-height: 44px; }
+
+  /* ── Map furniture repositioned above the tab bar ── */
+  .map-toolbar {
+    left: 8px;
+    right: 8px;
+    justify-content: flex-end;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .map-toolbar::-webkit-scrollbar { display: none; }
+  .toolbar-pills { flex-wrap: nowrap; }
+  .pill { white-space: nowrap; }
+
+  .map-banner,
+  .map-banner.sidebar-open { left: 8px; right: 8px; top: 42px; }
+
+  .map-overlay,
+  .map-overlay.sidebar-open {
+    left: 8px;
+    bottom: calc(var(--nav-h) + 8px);
+    width: 178px;
+  }
+
+  .map-overlay-vessel,
+  .map-overlay-vessel.sidebar-open {
+    left: 8px;
+    top: 42px;
+    width: min(240px, calc(100vw - 16px));
+  }
+
+  .case-log-panel {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    transform: none;
+    bottom: calc(var(--nav-h) + 8px);
+    max-height: 132px;
+  }
+
+  .cone-panel {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    bottom: calc(var(--nav-h) + 8px);
+    max-height: 52dvh;
+  }
+
+  .cone-reopen-btn {
+    right: 8px;
+    bottom: calc(var(--nav-h) + 8px);
+    min-height: 42px;
+  }
+
+  .scenario-modal {
+    max-height: 80dvh;
+    width: min(380px, calc(100vw - 24px));
+  }
+
   .scenario-types { grid-template-columns: repeat(4, 1fr); }
+
+  /* Keep the modal clear of the on-screen keyboard / tab bar */
+  .scenario-backdrop { align-items: flex-end; padding-bottom: calc(var(--nav-h) + 10px); }
+
+  .intel-inject-modal { max-height: 78dvh; }
+
+  /* MapLibre controls: keep clear of the tab bar; larger touch targets */
+  .maplibregl-ctrl-bottom-right,
+  .maplibregl-ctrl-bottom-left { bottom: var(--nav-h); }
+  .maplibregl-ctrl-top-right .maplibregl-ctrl-group button { width: 36px; height: 36px; }
+  .layer-fab { width: 40px; height: 40px; }
+  .layer-control { top: 128px; }
+  .layer-row { padding: 7px 0; font-size: 13px; }
 }

@@ -5,8 +5,13 @@ import MapFloatingPanel from './components/ConePanel.jsx';
 import ScenarioModal from './components/ScenarioModal.jsx';
 import SimHistory from './components/SimHistory.jsx';
 import IntelDashboard from './components/IntelDashboard.jsx';
+import BottomNav from './components/BottomNav.jsx';
+import LayerToggles, { LAYER_GROUPS } from './components/LayerToggles.jsx';
+import useIsMobile from './hooks/useIsMobile.js';
 
 function enrichCaseGeo(geojson, lat, lon) {
+  // Idempotent: replaying an already-enriched collection must not duplicate the origin marker.
+  if (geojson.features?.some((f) => f.properties?.type === 'origin_point')) return geojson;
   return {
     ...geojson,
     features: [
@@ -197,7 +202,9 @@ function createVesselArrowImage(size = 48) {
 }
 
 function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const isMobile = useIsMobile();
+  // On mobile start with the panel closed: the map IS the landing experience.
+  const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia('(max-width: 680px)').matches);
   const [activePanel, setActivePanel] = useState('sim');
   const [apiBase, setApiBase] = useState(guessApiBase);
   const [localSettings, setLocalSettings] = useState(loadLocalSettings);
@@ -226,7 +233,7 @@ function App() {
   const [showScenario, setShowScenario] = useState(false);
   const [scenarioType, setScenarioType] = useState('distress');
   const [caseEventId, setCaseEventId] = useState(null);
-  const [simHistory, setSimHistory] = useState([]);   // session-only: cleared on page refresh
+  const [simHistory, setSimHistory] = useState([]);   // session sims + persisted cases from /api/v1/alerts
   const [activeSimId, setActiveSimId] = useState(null);
   const [intelEvents, setIntelEvents] = useState(() => {
     try {
@@ -245,6 +252,14 @@ function App() {
   const [intelFilter, setIntelFilter] = useState('all');
   const [showAisAlerts, setShowAisAlerts] = useState(false);
   const [showVesselLinks, setShowVesselLinks] = useState(false);
+  const [layerVis, setLayerVis] = useState(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem('seacommons_layer_vis') || '{}');
+      return { vessels: true, weather: true, intel: true, platforms: true, alerts: true, ...saved };
+    } catch {
+      return { vessels: true, weather: true, intel: true, platforms: true, alerts: true };
+    }
+  });
   const [triggeringDrift, setTriggeringDrift] = useState(() => new Set());
   const caseEventIdRef = useRef(null);
   const caseStatusRef = useRef('idle');
@@ -288,6 +303,7 @@ function App() {
   }
 
   async function loadWeatherGridForMap(map) {
+    if (!map) return;   // guard: button can be pressed before map init completes
     const bounds = map.getBounds();
     const payload = await fetchJson(
       apiBase,
@@ -487,6 +503,36 @@ function App() {
       .catch(() => {});
   }, [apiBase]);
 
+  // ── Rehydrate case history from the DB (survives page refresh) ──────────────
+  // GeoJSON is loaded lazily on "Show" to keep the initial payload small.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await fetchJson(apiBase, '/api/v1/alerts');
+        if (!alive || !Array.isArray(data)) return;
+        const completed = data.filter((a) => a.status === 'completed').slice(0, 8);
+        if (!completed.length) return;
+        setSimHistory((prev) => {
+          const known = new Set(prev.map((s) => s.id));
+          const restored = completed
+            .filter((a) => !known.has(a.event_id))
+            .map((a) => ({
+              id: a.event_id,
+              label: `${(a.event?.vessel_type || 'case').replace(/_/g, ' ')} @ ${Number(a.event?.lat).toFixed(3)}, ${Number(a.event?.lon).toFixed(3)}`,
+              ts: a.event?.timestamp || new Date().toISOString(),
+              geojson: null,   // fetched on first replay
+              lat: Number(a.event?.lat),
+              lon: Number(a.event?.lon),
+              params: { vesselType: a.event?.vessel_type, persons: a.event?.persons },
+            }));
+          return [...prev, ...restored].slice(0, 10);
+        });
+      } catch { /* backend cold — history stays session-only */ }
+    })();
+    return () => { alive = false; };
+  }, [apiBase]);
+
   useEffect(() => {
     let alive = true;
     async function loadNgoVessels() {
@@ -534,6 +580,14 @@ function App() {
         zoom: 6.5,
         attributionControl: true,
       });
+
+      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+      map.addControl(new maplibregl.GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: true,
+        showUserHeading: true,
+      }), 'top-right');
+      map.addControl(new maplibregl.ScaleControl({ maxWidth: 110, unit: 'nautical' }), 'bottom-right');
 
       liveMap = map;
 
@@ -876,7 +930,8 @@ function App() {
           const [lon, lat] = feature.geometry.coordinates;
           map.flyTo({ center: [lon, lat], zoom: 9, duration: 800 });
           setActivePanel('osint');
-          setSidebarOpen(true);
+          // On mobile the sheet would cover the point we just flew to — keep map visible.
+          if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
           event.originalEvent?.stopPropagation?.();
         });
         map.on('mouseenter', 'intel-drift-line', () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -895,7 +950,9 @@ function App() {
             if (!feature) return;
             const [lon, lat] = feature.geometry.coordinates;
             setSelectedVessel({ ...feature.properties, lon, lat });
-            setSidebarOpen(true);
+            // Vessel details render as a map overlay card — opening the sheet on
+            // mobile would hide both the vessel and its card.
+            if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
             event.originalEvent?.stopPropagation?.();
           });
         }
@@ -1031,6 +1088,23 @@ function App() {
     map.getSource('proximity-lines')?.setData(lfc);
   }, [nearestVessels, selectedLat, selectedLon, mapReady]);
 
+  // Layer group visibility — applied to every MapLibre layer in the group
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    for (const group of LAYER_GROUPS) {
+      const vis = layerVis[group.key] === false ? 'none' : 'visible';
+      for (const id of group.layers) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+      }
+    }
+    try { window.localStorage.setItem('seacommons_layer_vis', JSON.stringify(layerVis)); } catch { /* quota */ }
+  }, [layerVis, mapReady]);
+
+  function toggleLayerGroup(key) {
+    setLayerVis((cur) => ({ ...cur, [key]: cur[key] === false }));
+  }
+
   // Intel events map layer
   useEffect(() => {
     const map = mapRef.current;
@@ -1087,6 +1161,8 @@ function App() {
     let consecutiveErrors = 0;
     let lastVesselTs = null;       // ISO timestamp of last successful vessel fetch
     let vesselSnapshot = null;     // latest merged GeoJSON snapshot
+    const seenAt = new Map();      // mmsi → epoch ms of last appearance in a feed diff
+    const VESSEL_TTL_MS = 30 * 60 * 1000;  // drop vessels silent for 30 min
 
     async function fetchVessels() {
       // First call: full load. Subsequent: incremental diff via ?since=.
@@ -1096,13 +1172,21 @@ function App() {
       const data = await fetchJson(apiBase, url, undefined, timeoutMs);
       if (!data?.features) return;
       lastVesselTs = new Date().toISOString();
+      const now = Date.now();
+      data.features.forEach((f) => { if (f.properties?.mmsi) seenAt.set(f.properties.mmsi, now); });
       if (!vesselSnapshot) {
         vesselSnapshot = data;
       } else {
         const updated = new Map(data.features.map((f) => [f.properties?.mmsi, f]));
         const merged = vesselSnapshot.features.map((f) => updated.get(f.properties?.mmsi) || f);
         data.features.forEach((f) => { if (!vesselSnapshot.features.some((e) => e.properties?.mmsi === f.properties?.mmsi)) merged.push(f); });
-        vesselSnapshot = { type: 'FeatureCollection', features: merged };
+        // Expire vessels not seen in any diff for VESSEL_TTL_MS — otherwise a
+        // vessel that left the feed stays painted on the map until full reload.
+        const fresh = merged.filter((f) => {
+          const ts = seenAt.get(f.properties?.mmsi);
+          return ts === undefined || (now - ts) < VESSEL_TTL_MS;
+        });
+        vesselSnapshot = { type: 'FeatureCollection', features: fresh };
       }
       return vesselSnapshot;
     }
@@ -1157,10 +1241,14 @@ function App() {
   useEffect(() => {
     if (!Number.isFinite(selectedLat) || !Number.isFinite(selectedLon)) return;
     let cancelled = false;
-    loadNearestVessels(selectedLat, selectedLon).catch(() => {
-      if (!cancelled) setNearestVessels([]);
-    });
-    return () => { cancelled = true; };
+    // Debounced: lat/lon also change on every keystroke in the manual inputs,
+    // so wait for typing to settle before hitting /vessels/nearest.
+    const timer = window.setTimeout(() => {
+      loadNearestVessels(selectedLat, selectedLon).catch(() => {
+        if (!cancelled) setNearestVessels([]);
+      });
+    }, 400);
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, [apiBase, selectedLat, selectedLon]);
 
   // ── Derived data ─────────────────────────────────────────────────────────────
@@ -1326,6 +1414,16 @@ function App() {
     setLocalSettings((cur) => ({ ...cur, [key]: value }));
   }
 
+  /** Mobile bottom-nav: 'map' dismisses the sheet; active tab re-tap toggles it closed. */
+  function handleNavSelect(tabId) {
+    if (tabId === 'map' || (sidebarOpen && activePanel === tabId)) {
+      setSidebarOpen(false);
+      return;
+    }
+    setActivePanel(tabId);
+    setSidebarOpen(true);
+  }
+
   function setField(key, value) {
     setForm((cur) => ({ ...cur, [key]: value }));
   }
@@ -1340,8 +1438,19 @@ function App() {
     });
   }
 
-  function replaySim(sim) {
-    const enriched = enrichCaseGeo(sim.geojson, sim.lat, sim.lon);
+  async function replaySim(sim) {
+    let geojson = sim.geojson;
+    if (!geojson) {
+      // Persisted case restored from DB — fetch its drift GeoJSON on demand
+      try {
+        geojson = await fetchJson(apiBase, `/api/v1/alert/${sim.id}/geojson`);
+        setSimHistory((prev) => prev.map((s) => (s.id === sim.id ? { ...s, geojson } : s)));
+      } catch (err) {
+        setError(err.message || 'Could not load saved case');
+        return;
+      }
+    }
+    const enriched = enrichCaseGeo(geojson, sim.lat, sim.lon);
     setCaseGeojson(enriched);
     mapRef.current?.getSource('sar-case')?.setData(enriched);
     setActiveSimId(sim.id);
@@ -1349,7 +1458,7 @@ function App() {
     mapRef.current?.flyTo({ center: [sim.lon, sim.lat], zoom: 8.4, essential: true, duration: 900 });
     setMapPanel({
       type: 'cone',
-      feature: sim.geojson.features?.[0] || null,
+      feature: enriched.features?.[0] || null,
       eventId: sim.id,
       caseStatus: 'completed',
       simParams: sim.params,
@@ -1384,6 +1493,8 @@ function App() {
             <Pill label={MAPTILER_KEY ? 'Satellite' : 'OSM'} tone="info" />
           </div>
         </div>
+
+        <LayerToggles visibility={layerVis} onToggle={toggleLayerGroup} />
 
         {error  ? <div className={`map-banner error ${sidebarOpen ? 'sidebar-open' : ''}`}>{error}</div> : null}
         {loading ? <div className={`map-banner ${sidebarOpen ? 'sidebar-open' : ''}`}>Connecting to backend…</div> : null}
@@ -1440,7 +1551,7 @@ function App() {
           <button
             className="cone-reopen-btn"
             onClick={() => setConePanelHidden(false)}
-            title="Apri pannello drift"
+            title="Open drift panel"
           >
             SAR ›
           </button>
@@ -1463,15 +1574,35 @@ function App() {
         )}
       </section>
 
-      <button
-        className={`sidebar-toggle ${sidebarOpen ? 'panel-open' : ''}`}
-        onClick={() => setSidebarOpen((open) => !open)}
-        title={sidebarOpen ? 'Close panel' : 'Open panel'}
-      >
-        {sidebarOpen ? '‹' : '›'}
-      </button>
+      {!isMobile && (
+        <button
+          className={`sidebar-toggle ${sidebarOpen ? 'panel-open' : ''}`}
+          onClick={() => setSidebarOpen((open) => !open)}
+          title={sidebarOpen ? 'Close panel' : 'Open panel'}
+        >
+          {sidebarOpen ? '‹' : '›'}
+        </button>
+      )}
+
+      {isMobile && (
+        <BottomNav
+          activePanel={activePanel}
+          sheetOpen={sidebarOpen}
+          badgeCounts={{ osint: intelEvents.length }}
+          onSelect={handleNavSelect}
+        />
+      )}
 
       <aside className={`sidebar ${sidebarOpen ? '' : 'is-closed'}`}>
+        {/* Mobile bottom-sheet grab handle — hidden on desktop via CSS */}
+        <button
+          type="button"
+          className="sheet-handle"
+          aria-label="Close panel"
+          onClick={() => setSidebarOpen(false)}
+        >
+          <span />
+        </button>
         <header className="sidebar-header">
           <p className="sidebar-kicker">SeaCommons / SAR pilot</p>
           <h2>Operational dashboard</h2>
@@ -1566,11 +1697,11 @@ function App() {
                   <div className="demo-form">
                     <label>
                       Latitude
-                      <input value={form.lat} onChange={(e) => setField('lat', e.target.value)} />
+                      <input inputMode="decimal" value={form.lat} onChange={(e) => setField('lat', e.target.value)} />
                     </label>
                     <label>
                       Longitude
-                      <input value={form.lon} onChange={(e) => setField('lon', e.target.value)} />
+                      <input inputMode="decimal" value={form.lon} onChange={(e) => setField('lon', e.target.value)} />
                     </label>
                     <label>
                       Persons aboard

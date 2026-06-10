@@ -6,7 +6,7 @@ export default function SimHistory({ history, activeId, onReplay, onRemove, onCl
   return (
     <section className="panel-block">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-        <p className="section-kicker" style={{ margin: 0 }}>Session simulations</p>
+        <p className="section-kicker" style={{ margin: 0 }}>Case history</p>
         <button className="link-button" style={{ fontSize: 10, opacity: 0.45 }} onClick={onClear}>
           Clear all
         </button>

@@ -18,9 +18,10 @@ import asyncio
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
+from core.api.ratelimit import rate_limit
 from core.intel.ngo_registry import NGO_VESSELS, get_ngo_info, is_ngo
 from core.intel.store import IntelEvent, intel_store
 
@@ -270,11 +271,12 @@ class ManualIntelRequest(BaseModel):
 
 
 @router.post("/api/v1/intel/manual", status_code=201)
-async def inject_manual_intel(body: ManualIntelRequest):
+async def inject_manual_intel(body: ManualIntelRequest, request: Request):
     """
     Manually inject an intel event — e.g. from a phone call or direct contact.
     The event is stored in DB and broadcast to all WebSocket clients.
     """
+    rate_limit(request, max_per_minute=10, scope="intel-manual")
     from core.intel.source_registry import source_registry
     source_registry.register("Manual", "manual")
 
@@ -350,12 +352,13 @@ async def get_intel_drifts():
 
 
 @router.post("/api/v1/intel/extract-image")
-async def extract_image_coords(body: ImageExtractRequest):
+async def extract_image_coords(body: ImageExtractRequest, request: Request):
     """
     Fetch an image URL and extract GPS coordinates.
     Pipeline: EXIF metadata → Claude Vision (claude-haiku-4-5).
     Returns {lat, lon, method, confidence} or 404 if nothing found.
     """
+    rate_limit(request, max_per_minute=10, scope="intel-image")
     from core.intel.vision import extract_from_url
 
     result = await extract_from_url(body.url)
@@ -416,11 +419,12 @@ def _run_intel_drift(event_id: str, lat: float, lon: float,
 
 
 @router.post("/api/v1/intel/auto-drift")
-async def intel_auto_drift(body: AutoDriftRequest):
+async def intel_auto_drift(body: AutoDriftRequest, request: Request):
     """
     Trigger a SAR drift simulation from an intel event's known position.
     The drift runs in a daemon thread so the response returns immediately.
     """
+    rate_limit(request, max_per_minute=6, scope="intel-drift")
     import threading
     threading.Thread(
         target=_run_intel_drift,

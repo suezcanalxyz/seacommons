@@ -11,11 +11,12 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, WebSocket
+from fastapi import APIRouter, HTTPException, Request, WebSocket
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import not_, select
 
+from core.api.ratelimit import acquire_drift_slot, rate_limit, release_drift_slot
 from core.config import config
 from core.forensic.packet import ForensicPacket
 
@@ -51,6 +52,13 @@ _ws_lock = threading.Lock()
 
 
 def _process_drift(event_id: str, event: MaritimeEvent) -> None:
+    try:
+        _process_drift_inner(event_id, event)
+    finally:
+        release_drift_slot()
+
+
+def _process_drift_inner(event_id: str, event: MaritimeEvent) -> None:
     from core.db.store import complete_drift_job, fail_drift_job, update_alert_status
     from core.drift.engine import DriftEngine
     from core.forensic.logger import sign_and_broadcast
@@ -150,39 +158,53 @@ async def _ws_send(ws: WebSocket, text: str) -> None:
 
 
 @router.post("/api/v1/alert")
-async def create_alert(event: MaritimeEvent):
+async def create_alert(event: MaritimeEvent, request: Request):
     from core.db.store import create_alert, create_drift_job
     from core.forensic.logger import sign_and_store
 
-    event_id = str(uuid.uuid4())
-    create_alert(event_id, event, status="processing")
-    create_drift_job(
-        event_id,
-        event_id=event_id,
-        lat=event.lat,
-        lon=event.lon,
-        domain=event.domain,
-        duration_h=config.ALERT_DRIFT_DURATION_H,
-        started_at=event.timestamp,
-    )
-
-    # Make the forensic endpoint immediately readable even before the drift
-    # worker finishes, then let the final signed packet overwrite this record.
-    sign_and_store(
-        ForensicPacket(
-            event_id=event_id,
-            timestamp_utc=datetime.now(timezone.utc).isoformat(),
-            classification="sar_alert_received",
-            confidence=0.6,
-            position={"lat": event.lat, "lon": event.lon, "alt": 0, "source": "alert"},
-            vessel_id="",
-            contributing_sensors=["alert"],
-            sensor_data=event.model_dump(mode="json"),
-            drift_result={"status": "processing", "domain": event.domain},
+    rate_limit(request, max_per_minute=6, scope="alert")
+    if not acquire_drift_slot():
+        raise HTTPException(
+            status_code=429,
+            detail="Drift engine busy — too many concurrent simulations. Retry shortly.",
+            headers={"Retry-After": "30"},
         )
-    )
 
-    threading.Thread(target=_process_drift, args=(event_id, event), daemon=True).start()
+    event_id = str(uuid.uuid4())
+    try:
+        create_alert(event_id, event, status="processing")
+        create_drift_job(
+            event_id,
+            event_id=event_id,
+            lat=event.lat,
+            lon=event.lon,
+            domain=event.domain,
+            duration_h=config.ALERT_DRIFT_DURATION_H,
+            started_at=event.timestamp,
+        )
+
+        # Make the forensic endpoint immediately readable even before the drift
+        # worker finishes, then let the final signed packet overwrite this record.
+        sign_and_store(
+            ForensicPacket(
+                event_id=event_id,
+                timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                classification="sar_alert_received",
+                confidence=0.6,
+                position={"lat": event.lat, "lon": event.lon, "alt": 0, "source": "alert"},
+                vessel_id="",
+                contributing_sensors=["alert"],
+                sensor_data=event.model_dump(mode="json"),
+                drift_result={"status": "processing", "domain": event.domain},
+            )
+        )
+
+        threading.Thread(target=_process_drift, args=(event_id, event), daemon=True).start()
+    except Exception:
+        # Slot is normally released by the worker thread; if we never got to
+        # start it, release here so failed requests don't leak capacity.
+        release_drift_slot()
+        raise
     return {"event_id": event_id, "status": "processing"}
 
 
