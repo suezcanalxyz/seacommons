@@ -304,6 +304,7 @@ function App() {
 
   async function loadWeatherGridForMap(map) {
     if (!map) return;   // guard: button can be pressed before map init completes
+    if (map.getZoom() < 4) return;  // world/globe view — a 4x4 grid over the planet is meaningless
     const bounds = map.getBounds();
     const payload = await fetchJson(
       apiBase,
@@ -576,10 +577,38 @@ function App() {
       const map = new maplibregl.Map({
         container: mapNodeRef.current,
         style: mapStyle(),
-        center: [14.3, 35.8],
-        zoom: 6.5,
+        center: [14.3, 31.0],
+        zoom: 1.9,            // globe intro: whole world, Mediterranean centered
         attributionControl: true,
       });
+
+      // ── Globe intro: 3D globe that flattens to 2D as you zoom in ──────────
+      map.on('style.load', () => {
+        try { map.setProjection({ type: 'globe' }); } catch { /* projection unsupported — flat fallback */ }
+      });
+
+      // Slow rotation until the first user interaction
+      let spinning = true;
+      const SPIN_DEG_PER_STEP = 8;
+      const SPIN_STEP_MS = 6000;
+      function spinStep() {
+        if (!spinning) return;
+        const c = map.getCenter();
+        map.easeTo({
+          center: [c.lng - SPIN_DEG_PER_STEP, c.lat],
+          duration: SPIN_STEP_MS,
+          easing: (t) => t,
+        });
+      }
+      function stopSpin() {
+        if (!spinning) return;
+        spinning = false;
+        map.stop();
+      }
+      map.on('moveend', () => { if (spinning) spinStep(); });
+      for (const ev of ['mousedown', 'wheel', 'touchstart', 'dragstart', 'pitchstart']) {
+        map.on(ev, stopSpin);
+      }
 
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
       map.addControl(new maplibregl.GeolocateControl({
@@ -990,6 +1019,13 @@ function App() {
         });
 
         map.on('click', (event) => {
+          // Globe intro: at world zoom a click dives into the Mediterranean
+          // instead of opening the SAR scenario modal.
+          if (map.getZoom() < 4.5) {
+            stopSpin();
+            map.flyTo({ center: [14.3, 35.8], zoom: 6.3, duration: 2400, essential: true });
+            return;
+          }
           const hit = map.queryRenderedFeatures(event.point, {
             layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'vessels-stationary', 'vessels-ngo', 'vessels-ngo-stationary', 'proximity-vessels-layer', 'intel-events-layer'],
           });
@@ -1028,6 +1064,7 @@ function App() {
         map.getSource('sar-case')?.setData(caseGeojson);
         setMapReady(true);
         loadWeatherGridForMap(map).catch(() => {});
+        spinStep();   // begin the globe intro rotation
       });
 
       mapRef.current = map;
