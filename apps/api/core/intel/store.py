@@ -55,6 +55,49 @@ class IntelEvent:
     # Free-form extras (incident counts, vessel names, etc.)
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    # ── Operational classification ─────────────────────────────────────────────
+    # Distress is the product's reason to exist: distress events are surfaced as
+    # the top "operational" tier (pinned, blinking, drift-ready). Everything else
+    # is context. Tiers (highest priority first):
+    #   operational → a live distress / SAR call demanding action
+    #   news        → reporting / incidents / situational updates
+    #   signal      → low-salience telemetry (AIS loiter spikes, NGO movements)
+    _OPERATIONAL_TYPES = frozenset({"distress", "iom_incident"})
+    _NEWS_TYPES = frozenset({"news", "twitter", "mastodon", "manual"})
+    _SIGNAL_TYPES = frozenset({"ais_spike", "ngo_activity"})
+
+    def tier(self) -> str:
+        if self.type == "distress" or self.metadata.get("is_distress"):
+            return "operational"
+        if self.type == "iom_incident" and self.severity in ("critical", "high"):
+            return "operational"
+        if self.type in self._SIGNAL_TYPES:
+            return "signal"
+        if self.type in self._NEWS_TYPES or self.type == "iom_incident":
+            return "news"
+        return "news"
+
+    def priority(self) -> int:
+        """Lower = more urgent. Used for stable operational sorting."""
+        tier_rank = {"operational": 0, "news": 1, "signal": 2}.get(self.tier(), 1)
+        sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(self.severity, 2)
+        return tier_rank * 10 + sev_rank
+
+    def verification_status(self) -> str:
+        """
+        Evidence-first labelling (nextstep.txt): never present an asserted public
+        report as confirmed fact. Manual operator entries are treated as
+        operator-asserted; everything ingested from public sources is unverified.
+        """
+        explicit = self.metadata.get("verification_status")
+        if explicit:
+            return explicit
+        if self.type == "ais_spike":
+            return "derived"          # computed from AIS telemetry
+        if self.source and self.source.lower() in ("manual", "operator"):
+            return "operator_asserted"
+        return "unverified_public_source"
+
     def to_geojson_feature(self) -> dict[str, Any]:
         geo = (
             {"type": "Point", "coordinates": [self.lon, self.lat]}
@@ -68,6 +111,10 @@ class IntelEvent:
                 "id": self.id,
                 "type": self.type,
                 "severity": self.severity,
+                "tier": self.tier(),
+                "priority": self.priority(),
+                "verification_status": self.verification_status(),
+                "drift_ready": geo is not None and self.tier() == "operational",
                 "title": self.title,
                 "text": self.text,
                 "url": self.url,
@@ -272,13 +319,17 @@ class IntelStore:
             evts = list(self._events)
         by_type: dict[str, int] = {}
         by_sev: dict[str, int] = {}
+        by_tier: dict[str, int] = {}
         for e in evts:
             by_type[e.type] = by_type.get(e.type, 0) + 1
             by_sev[e.severity] = by_sev.get(e.severity, 0) + 1
+            t = e.tier()
+            by_tier[t] = by_tier.get(t, 0) + 1
         return {
             "total": len(evts),
             "by_type": by_type,
             "by_severity": by_sev,
+            "by_tier": by_tier,
         }
 
     # ── WebSocket broadcast ───────────────────────────────────────────────────

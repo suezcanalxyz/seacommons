@@ -29,6 +29,28 @@ function relativeTime(isoStr) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+// Operational tiers (mirrors IntelEvent.tier() on the backend).
+const TIERS = [
+  { key: 'operational', label: 'Operational', sub: 'Distress & SAR calls' },
+  { key: 'news',        label: 'News & reports', sub: 'Situational updates' },
+  { key: 'signal',      label: 'Signals',     sub: 'AIS & movement telemetry' },
+];
+
+function eventTier(p) {
+  // Backend supplies `tier`; fall back to type-based inference for cached/legacy events.
+  if (p.tier) return p.tier;
+  if (p.type === 'distress') return 'operational';
+  if (p.type === 'ais_spike' || p.type === 'ngo_activity') return 'signal';
+  return 'news';
+}
+
+const VERIF_LABEL = {
+  unverified_public_source: 'unverified',
+  operator_asserted: 'operator',
+  derived: 'derived',
+  confirmed: 'confirmed',
+};
+
 // ── Source Health Bar ─────────────────────────────────────────────────────────
 function SourceHealthBar({ sources }) {
   if (!sources || sources.length === 0) {
@@ -208,6 +230,7 @@ export default function IntelDashboard({
   const [sources, setSources] = useState([]);
   const [search, setSearch] = useState('');
   const [channelFilter, setChannelFilter] = useState('all');
+  const [tierFilter, setTierFilter] = useState('all');   // 'all' | operational | news | signal
   const [viewMode, setViewMode] = useState('list');   // 'list' | 'timeline'
   const [showInject, setShowInject] = useState(false);
   const [injectSuccess, setInjectSuccess] = useState(false);
@@ -237,6 +260,7 @@ export default function IntelDashboard({
   const filteredEvents = useMemo(() => {
     let evs = showAisAlerts ? intelEvents : intelEvents.filter((f) => f.properties?.type !== 'ais_spike');
 
+    if (tierFilter !== 'all') evs = evs.filter((f) => eventTier(f.properties || {}) === tierFilter);
     if (intelFilter !== 'all') evs = evs.filter((f) => f.properties?.severity === intelFilter);
     if (channelFilter !== 'all') evs = evs.filter((f) => f.properties?.type === channelFilter);
 
@@ -252,7 +276,19 @@ export default function IntelDashboard({
       });
     }
     return evs;
-  }, [intelEvents, intelFilter, channelFilter, showAisAlerts, search]);
+  }, [intelEvents, intelFilter, channelFilter, tierFilter, showAisAlerts, search]);
+
+  // Group the visible events by operational tier (operational pinned on top).
+  const tierGroups = useMemo(() => {
+    const g = { operational: [], news: [], signal: [] };
+    for (const f of filteredEvents) {
+      const t = eventTier(f.properties || {});
+      (g[t] || g.news).push(f);
+    }
+    return g;
+  }, [filteredEvents]);
+
+  const operationalCount = tierGroups.operational.length;
 
   // Available channel types
   const channelTypes = useMemo(() => {
@@ -284,18 +320,23 @@ export default function IntelDashboard({
     const driftFeat = hasDrift
       ? intelDrifts.features.find((f) => f.properties?.intel_event_id === p.id && f.geometry?.type === 'LineString')
       : null;
-    const isDistress = p.type === 'distress' || p.severity === 'critical';
+    const tier = eventTier(p);
+    const isDistress = tier === 'operational';
     const icon = TYPE_ICONS[p.type] || '•';
+    const verif = p.verification_status || 'unverified_public_source';
 
     return (
       <li
         key={p.id || p.title}
         className={`intel-event${isDistress ? ' intel-event--distress' : ''}`}
-        onClick={() => { flyTo(coords); setSidebarOpen?.(false); }}
+        onClick={() => { flyTo(coords); if (coords) setSidebarOpen?.(false); }}
       >
         <div className="intel-event-header">
           <span className={`intel-sev intel-sev--${p.severity || 'low'}`}>{p.severity || 'low'}</span>
           <span className="intel-type-icon" title={p.type}>{icon}</span>
+          <span className={`intel-verif intel-verif--${verif}`} title={`Verification: ${verif.replace(/_/g, ' ')}`}>
+            {VERIF_LABEL[verif] || 'unverified'}
+          </span>
           {ts && (
             <time title={ts.toISOString()}>
               {ts.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}{' '}
@@ -401,6 +442,26 @@ export default function IntelDashboard({
           />
         </div>
 
+        {/* Tier filter — primary operational control */}
+        <div className="intel-tier-row">
+          <button
+            className={`intel-tier-btn ${tierFilter === 'all' ? 'is-active' : ''}`}
+            onClick={() => setTierFilter('all')}
+          >All</button>
+          {TIERS.map((t) => (
+            <button
+              key={t.key}
+              className={`intel-tier-btn intel-tier-btn--${t.key} ${tierFilter === t.key ? 'is-active' : ''}`}
+              onClick={() => setTierFilter((cur) => cur === t.key ? 'all' : t.key)}
+              title={t.sub}
+            >
+              {t.key === 'operational' && <span className="intel-tier-dot" />}
+              {t.label}
+              <span className="intel-tier-count">{tierGroups[t.key].length}</span>
+            </button>
+          ))}
+        </div>
+
         {/* Severity filter */}
         <div className="intel-filter-row" style={{ marginTop: 6 }}>
           {['all', 'critical', 'high', 'medium', 'low'].map((f) => (
@@ -450,15 +511,34 @@ export default function IntelDashboard({
       {/* Event list / timeline */}
       <section className="panel-block" style={{ padding: 0 }}>
         {viewMode === 'list' ? (
-          <ul className="intel-list">
-            {filteredEvents.length === 0 ? (
+          filteredEvents.length === 0 ? (
+            <ul className="intel-list">
               <li className="intel-empty">
                 {intelMode !== 'offline'
-                  ? `No events${intelFilter !== 'all' || channelFilter !== 'all' || search ? ' matching filters' : ''}`
+                  ? `No events${tierFilter !== 'all' || intelFilter !== 'all' || channelFilter !== 'all' || search ? ' matching filters' : ''}`
                   : 'Connecting to intel feed…'}
               </li>
-            ) : filteredEvents.map(renderEvent)}
-          </ul>
+            </ul>
+          ) : (
+            // Grouped by tier — operational (distress) always pinned on top.
+            TIERS.map((t) => {
+              const group = tierGroups[t.key];
+              if (!group.length) return null;
+              return (
+                <div key={t.key} className={`intel-tier-group intel-tier-group--${t.key}`}>
+                  <div className="intel-tier-head">
+                    {t.key === 'operational' && <span className="intel-tier-dot" />}
+                    <span className="intel-tier-head-label">{t.label}</span>
+                    <span className="intel-tier-head-sub">{t.sub}</span>
+                    <span className="intel-tier-head-count">{group.length}</span>
+                  </div>
+                  <ul className="intel-list" style={{ margin: 0 }}>
+                    {group.map(renderEvent)}
+                  </ul>
+                </div>
+              );
+            })
+          )
         ) : (
           <div className="intel-timeline">
             {timelineGroups.length === 0 ? (

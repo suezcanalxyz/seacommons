@@ -285,6 +285,15 @@ function App() {
     if (mapPanel?.type === 'cone') setConePanelHidden(false);
   }, [mapPanel]);
 
+  // Mobile: the drift cone panel and the dashboard sheet are both bottom sheets,
+  // so they must be mutually exclusive — opening the cone closes the dashboard.
+  const coneVisible = mapPanel?.type === 'cone' && !conePanelHidden;
+  useEffect(() => {
+    if (coneVisible && window.matchMedia('(max-width: 680px)').matches) {
+      setSidebarOpen(false);
+    }
+  }, [coneVisible]);
+
   function pushCaseLog(message) {
     setCaseLog((cur) => [
       { id: `${Date.now()}-${Math.random()}`, message, at: new Date().toISOString() },
@@ -643,6 +652,7 @@ function App() {
         map.addSource('proximity-lines',   { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('proximity-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-events',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('intel-distress',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-drifts',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-vessel-links', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
@@ -937,6 +947,57 @@ function App() {
           },
         });
 
+        // ── Operational distress beacons — pulsing rings, topmost priority ──
+        // Two concentric circle layers; the outer radius is animated in a
+        // requestAnimationFrame loop (see distressPulse below).
+        map.addLayer({
+          id: 'intel-distress-pulse', type: 'circle', source: 'intel-distress',
+          paint: {
+            'circle-radius': 8,
+            'circle-color': 'rgba(255,59,59,0.18)',
+            'circle-stroke-color': 'rgba(255,80,80,0.9)',
+            'circle-stroke-width': 1.5,
+          },
+        });
+        map.addLayer({
+          id: 'intel-distress-core', type: 'circle', source: 'intel-distress',
+          paint: {
+            'circle-radius': 5,
+            'circle-color': '#ff3b3b',
+            'circle-stroke-width': 1.5,
+            'circle-stroke-color': '#fff4bf',
+          },
+        });
+        map.on('mouseenter', 'intel-distress-core', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'intel-distress-core', () => {
+          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+        });
+        map.on('click', 'intel-distress-core', (event) => {
+          const feature = event.features?.[0];
+          if (!feature) return;
+          const [lon, lat] = feature.geometry.coordinates;
+          map.flyTo({ center: [lon, lat], zoom: 9, duration: 800 });
+          setActivePanel('osint');
+          if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
+          event.originalEvent?.stopPropagation?.();
+        });
+
+        // Pulse animation: oscillate the outer ring radius/opacity ~1.4s
+        let pulseRaf = null;
+        const pulseStart = performance.now();
+        function distressPulse(now) {
+          if (!map.getLayer('intel-distress-pulse')) return;
+          const t = ((now - pulseStart) % 1400) / 1400;       // 0..1
+          const r = 8 + 14 * t;                               // grow ring
+          const o = 0.45 * (1 - t);                           // fade out
+          map.setPaintProperty('intel-distress-pulse', 'circle-radius', r);
+          map.setPaintProperty('intel-distress-pulse', 'circle-color', `rgba(255,59,59,${o})`);
+          map.setPaintProperty('intel-distress-pulse', 'circle-stroke-opacity', 1 - t);
+          pulseRaf = requestAnimationFrame(distressPulse);
+        }
+        pulseRaf = requestAnimationFrame(distressPulse);
+        map.once('remove', () => { if (pulseRaf) cancelAnimationFrame(pulseRaf); });
+
         // Active SAR impact point — topmost layer
         map.addLayer({
           id: 'sar-case-points', type: 'circle', source: 'sar-case',
@@ -1142,12 +1203,19 @@ function App() {
     setLayerVis((cur) => ({ ...cur, [key]: cur[key] === false }));
   }
 
-  // Intel events map layer
+  // Intel events map layer — split distress (operational) into its own pulsing source
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
-    const features = intelEvents.filter((f) => f.geometry?.coordinates);
-    map.getSource('intel-events')?.setData({ type: 'FeatureCollection', features });
+    const positioned = intelEvents.filter((f) => f.geometry?.coordinates);
+    const isOperational = (f) => {
+      const p = f.properties || {};
+      return p.tier === 'operational' || p.type === 'distress';
+    };
+    const distress = positioned.filter(isOperational);
+    const others = positioned.filter((f) => !isOperational(f));
+    map.getSource('intel-events')?.setData({ type: 'FeatureCollection', features: others });
+    map.getSource('intel-distress')?.setData({ type: 'FeatureCollection', features: distress });
   }, [intelEvents, mapReady]);
 
   // Intel drift traces map layer
@@ -1457,6 +1525,8 @@ function App() {
       setSidebarOpen(false);
       return;
     }
+    // Opening the dashboard sheet must hide the drift cone sheet (mutually exclusive).
+    setConePanelHidden(true);
     setActivePanel(tabId);
     setSidebarOpen(true);
   }

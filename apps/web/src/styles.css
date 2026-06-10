@@ -1006,19 +1006,144 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .intel-event:hover { background: rgba(255, 255, 255, 0.04); }
 
 .intel-event--distress {
-  border-left: 2px solid rgba(255, 59, 59, 0.55);
-  background: rgba(255, 59, 59, 0.04);
+  border-left: 2px solid rgba(255, 59, 59, 0.7);
+  background: rgba(255, 59, 59, 0.05);
 }
-.intel-event--distress:hover { background: rgba(255, 59, 59, 0.09); }
+.intel-event--distress:hover { background: rgba(255, 59, 59, 0.1); }
+
+/* ── Tier filter row (primary OSINT control) ── */
+.intel-tier-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.intel-tier-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink-2);
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.intel-tier-btn:hover:not(.is-active) { color: var(--ink-1); }
+
+.intel-tier-btn.is-active {
+  background: rgba(110, 231, 216, 0.1);
+  border-color: rgba(110, 231, 216, 0.4);
+  color: var(--accent);
+}
+
+.intel-tier-btn--operational.is-active {
+  background: rgba(255, 59, 59, 0.12);
+  border-color: rgba(255, 90, 90, 0.5);
+  color: #ff8a7a;
+}
+
+.intel-tier-count {
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 0 5px;
+  line-height: 1.5;
+}
+
+.intel-tier-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff4d4d;
+  box-shadow: 0 0 6px #ff4d4d;
+  animation: distress-blink 1.1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes distress-blink {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.25; transform: scale(0.7); }
+}
+
+/* ── Tier group sections ── */
+.intel-tier-group { border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
+
+.intel-tier-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px 5px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--glass-bg-solid);
+  backdrop-filter: blur(8px);
+}
+
+.intel-tier-head-label {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink-1);
+  text-transform: uppercase;
+}
+
+.intel-tier-head-sub {
+  font-size: 9.5px;
+  color: var(--ink-3);
+  flex: 1;
+}
+
+.intel-tier-head-count {
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.intel-tier-group--operational .intel-tier-head {
+  background: linear-gradient(90deg, rgba(255, 59, 59, 0.14), var(--glass-bg-solid));
+}
+.intel-tier-group--operational .intel-tier-head-label { color: #ff8a7a; }
+
+/* ── Verification badge ── */
+.intel-verif {
+  font-size: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.intel-verif--unverified_public_source { color: #c79a5a; border-color: rgba(199, 154, 90, 0.4); }
+.intel-verif--operator_asserted        { color: #8fcfff; border-color: rgba(143, 207, 255, 0.4); }
+.intel-verif--derived                  { color: #9aa6c4; border-color: rgba(154, 166, 196, 0.35); }
+.intel-verif--confirmed                { color: #7ff0c9; border-color: rgba(127, 240, 201, 0.45); }
 
 .intel-event-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 5px;
   margin-bottom: 3px;
 }
 
-.intel-event-header time { color: #7a9a94; font-size: 10px; }
+.intel-event-header time { color: #7a9a94; font-size: 10px; margin-left: auto; }
+.intel-event-header .intel-drift-btn { margin-left: 0; }
 
 .intel-sev {
   font-size: 9px;
@@ -1734,18 +1859,38 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
     max-height: 132px;
   }
 
+  /* Drift cone becomes a full-width bottom sheet, flush above the tab bar */
   .cone-panel {
-    left: 8px;
-    right: 8px;
-    width: auto;
-    bottom: calc(var(--nav-h) + 8px);
-    max-height: 52dvh;
+    left: 0;
+    right: 0;
+    width: 100%;
+    bottom: var(--nav-h);
+    max-height: 56dvh;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    box-shadow: 0 -16px 40px rgba(0, 0, 0, 0.5);
   }
+
+  /* Grab-handle affordance at the top of the cone sheet */
+  .cone-panel::before {
+    content: '';
+    display: block;
+    width: 42px;
+    height: 4px;
+    margin: 7px auto 1px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.24);
+  }
+  /* Header sits just under the handle, not at the very top */
+  .cone-panel .cone-panel-header { top: 12px; }
 
   .cone-reopen-btn {
     right: 8px;
     bottom: calc(var(--nav-h) + 8px);
-    min-height: 42px;
+    min-height: 40px;
+    border-radius: 999px;
   }
 
   .scenario-modal {

@@ -36,31 +36,40 @@ async def get_intel(
     severity: Optional[str] = Query(None, description="critical|high|medium|low"),
     type_filter: Optional[str] = Query(None, alias="type",
                                         description="twitter|news|iom_incident|ais_spike|ngo_activity"),
+    tier: Optional[str] = Query(None, description="operational|news|signal"),
     limit: int = Query(200, ge=1, le=500),
     days: int = Query(30, ge=1, le=365, description="Only return events from the last N days"),
 ):
     """
-    All intelligence events as GeoJSON FeatureCollection.
-    Only events with known coordinates are included in `features`.
-    Events without coordinates are listed in `meta.no_coords`.
+    All intelligence events as a GeoJSON FeatureCollection, **sorted by
+    operational priority** (distress first). Events without coordinates are
+    returned as features with `geometry: null` so the dashboard can still
+    surface them (e.g. an Alarm Phone distress call with no lat/lon yet) —
+    the map layer simply skips null-geometry features.
     """
+    from datetime import datetime, timezone
+
     all_events = intel_store.events(severity=severity, type_filter=type_filter, limit=limit, max_age_days=days)
+    if tier:
+        all_events = [e for e in all_events if e.tier() == tier]
+
+    # Two stable passes: newest-first, then by operational priority. Python's
+    # sort is stable, so within one priority the newest event stays on top.
+    all_events.sort(key=lambda e: e.timestamp_utc or "", reverse=True)
+    all_events.sort(key=lambda e: e.priority())
+
     with_coords = [e for e in all_events if e.lat is not None and e.lon is not None]
-    no_coords   = [e for e in all_events if e.lat is None or e.lon is None]
+    operational = [e for e in all_events if e.tier() == "operational"]
 
     return {
         "type": "FeatureCollection",
-        "features": [e.to_geojson_feature() for e in with_coords],
+        "features": [e.to_geojson_feature() for e in all_events],
         "meta": {
             "total": len(all_events),
             "with_coords": len(with_coords),
-            "no_coords_count": len(no_coords),
-            "no_coords": [
-                {"id": e.id, "type": e.type, "severity": e.severity,
-                 "title": e.title[:100], "source": e.source,
-                 "timestamp_utc": e.timestamp_utc}
-                for e in no_coords[:30]
-            ],
+            "no_coords_count": len(all_events) - len(with_coords),
+            "operational_count": len(operational),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         },
     }
 
