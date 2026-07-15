@@ -29,6 +29,39 @@ function enrichCaseGeo(geojson, lat, lon) {
   };
 }
 
+function buildDemoFallbackGeo(lat, lon, durationHours = 24) {
+  const latitude = Number(lat);
+  const longitude = Number(lon);
+  const cosLat = Math.max(0.2, Math.cos(latitude * Math.PI / 180));
+  const velocityEast = 0.16;
+  const velocityNorth = 0.045;
+  const point = (hours) => [
+    longitude + velocityEast * hours * 3600 / (111320 * cosLat),
+    latitude + velocityNorth * hours * 3600 / 111320,
+  ];
+  const cone = (hours, type) => {
+    const boundedHours = Math.min(hours, durationHours);
+    const center = point(boundedHours);
+    const radius = 500 + boundedHours * 450;
+    const ring = Array.from({ length: 33 }, (_, index) => {
+      const angle = 2 * Math.PI * index / 32;
+      return [
+        center[0] + Math.cos(angle) * radius / (111320 * cosLat),
+        center[1] + Math.sin(angle) * radius / 111320,
+      ];
+    });
+    return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] },
+      properties: { type, radius_m: radius, degraded: true, operational_use: false } };
+  };
+  const hours = [...new Set([0, Math.min(6, durationHours), Math.min(12, durationHours), durationHours])].sort((a, b) => a - b);
+  const coordinates = hours.map(point);
+  return { type: 'FeatureCollection', features: [
+    { type: 'Feature', geometry: { type: 'LineString', coordinates }, properties: { type: 'trajectory', degraded: true, operational_use: false } },
+    cone(6, 'cone_6h'), cone(12, 'cone_12h'), cone(24, 'cone_24h'),
+    { type: 'Feature', geometry: { type: 'Point', coordinates: coordinates.at(-1) }, properties: { type: 'impact_point', degraded: true, operational_use: false } },
+  ] };
+}
+
 function guessApiBase() {
   const envBase = import.meta.env.VITE_API_BASE;
   if (envBase) return envBase.replace(/\/$/, '');
@@ -1528,6 +1561,23 @@ function App() {
       setCaseStatus('timeout');
       pushCaseLog('SAR case: timeout — server may still be computing');
     } catch (err) {
+      if (APP_PROFILE === 'demo') {
+        const fallbackId = `demo-${Date.now()}`;
+        const fallback = enrichCaseGeo(buildDemoFallbackGeo(latitude, longitude), latitude, longitude);
+        setCaseGeojson(fallback);
+        mapRef.current?.getSource('sar-case')?.setData(fallback);
+        setCaseStatus('completed · demo estimate');
+        setError('OpenDrift is temporarily unavailable. Showing a non-operational demonstration estimate.');
+        pushCaseLog('Degraded demo estimate generated locally — not for operational use');
+        const entry = { id: fallbackId, label: `demo estimate @ ${latitude.toFixed(3)}, ${longitude.toFixed(3)}`,
+          ts: new Date().toISOString(), geojson: fallback, lat: latitude, lon: longitude, params: simParamsRef.current };
+        setSimHistory((previous) => [entry, ...previous.slice(0, 9)]);
+        setActiveSimId(fallbackId);
+        setMapPanel({ type: 'cone', feature: fallback.features.find((feature) => feature.properties?.type === 'cone_24h'),
+          eventId: fallbackId, caseStatus: 'degraded demo', simParams: simParamsRef.current, legalAnalysis: null });
+        mapRef.current?.flyTo({ center: [longitude, latitude], zoom: 8.4, essential: true, duration: 900 });
+        return;
+      }
       setCaseStatus('error');
       setError(err.message || 'SAR case failed');
       pushCaseLog(`Error: ${err.message || 'unknown'}`);
