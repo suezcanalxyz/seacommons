@@ -11,7 +11,10 @@ import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
 import JobMonitor from './components/JobMonitor.jsx';
 
-const APP_PROFILE = import.meta.env.VITE_APP_PROFILE || 'live';
+const PUBLIC_DEMO_HOSTS = new Set(['seacommons.suezcanal.xyz', 'demo.seacommons.org']);
+const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname) ||
+  (window.location.hostname.endsWith('.vercel.app') && !window.location.hostname.includes('console'));
+const APP_PROFILE = import.meta.env.VITE_APP_PROFILE === 'demo' || isPublicDemoHost ? 'demo' : 'live';
 
 function enrichCaseGeo(geojson, lat, lon) {
   // Idempotent: replaying an already-enriched collection must not duplicate the origin marker.
