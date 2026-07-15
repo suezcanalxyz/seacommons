@@ -51,7 +51,7 @@ services:
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=suez
-      - POSTGRES_PASSWORD=canal
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       - POSTGRES_DB=suezcanal
     ports:
       - "5432:5432"

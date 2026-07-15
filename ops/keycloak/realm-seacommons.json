@@ -1,0 +1,62 @@
+{
+  "realm": "seacommons",
+  "displayName": "SeaCommons Research Infrastructure",
+  "enabled": true,
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "verifyEmail": true,
+  "loginTheme": "seacommons",
+  "sslRequired": "external",
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "roles": {
+    "realm": [
+      {"name": "viewer", "description": "Read operational material"},
+      {"name": "researcher", "description": "Create simulations and research cases"},
+      {"name": "analyst", "description": "Review operational and forensic material"},
+      {"name": "operator", "description": "Manage live operational cases"},
+      {"name": "case_manager", "description": "Manage case lifecycle and evidence"},
+      {"name": "data_steward", "description": "Manage governed research data"},
+      {"name": "integration_service", "description": "Machine integration role"},
+      {"name": "administrator", "description": "Manage governance and platform configuration"}
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "seacommons-console",
+      "name": "SeaCommons Operational Console",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "frontchannelLogout": true,
+      "rootUrl": "https://console.seacommons.org",
+      "baseUrl": "https://console.seacommons.org/",
+      "redirectUris": ["https://console.seacommons.org/*"],
+      "webOrigins": ["https://console.seacommons.org"],
+      "attributes": {"pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "https://console.seacommons.org/*"},
+      "defaultClientScopes": ["web-origins", "acr", "roles", "profile", "email"],
+      "protocolMappers": [
+        {
+          "name": "seacommons-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {"included.client.audience": "seacommons-api", "id.token.claim": "false", "access.token.claim": "true"}
+        }
+      ]
+    },
+    {
+      "clientId": "seacommons-api",
+      "name": "SeaCommons API audience",
+      "enabled": true,
+      "bearerOnly": true
+    }
+  ]
+}

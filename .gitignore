@@ -13,6 +13,7 @@ __pycache__/
 .codex-runlogs/
 .pytest_cache/
 .tmp/
+apps/api/core/data/attachments/
 .env*
 !.env.example
 .gstack/

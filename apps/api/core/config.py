@@ -46,6 +46,35 @@ class SuezCanalConfig(BaseSettings):
         )
     REDIS_URL: str = "redis://localhost:6379/0"
     DATABASE_URL: str = "postgresql://suez:canal@localhost:5432/suezcanal"
+    AUTH_ENABLED: bool = False
+    OIDC_ISSUER: str = ""
+    OIDC_AUDIENCE: str = "seacommons-api"
+    OIDC_JWKS_URL: str = ""
+    OIDC_ROLES_CLAIM: str = "realm_access.roles"
+    OIDC_ORGANIZATION_CLAIM: str = "organization_id"
+    DEFAULT_RETENTION_DAYS: int = 365
+    TELEGRAM_WEBHOOK_SECRET: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_WHATSAPP_NUMBER: str = ""
+    TWILIO_OPERATIONS_WHATSAPP_TO: str = ""
+    PARTNER_WEBHOOK_SECRET: str = ""
+    MAX_WEBHOOK_BODY_BYTES: int = 1_000_000
+    OBJECT_STORAGE_ENDPOINT: str = ""
+    OBJECT_STORAGE_ACCESS_KEY: str = ""
+    OBJECT_STORAGE_SECRET_KEY: str = ""
+    OBJECT_STORAGE_BUCKET: str = "seacommons"
+    OBJECT_STORAGE_SECURE: bool = False
+    MAX_ATTACHMENT_BYTES: int = 25_000_000
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_OPERATIONS_CHAT_ID: str = ""
+    PUBLIC_API_URL: str = ""
+    JOB_EXECUTION_MODE: str = "inline"
+    JOB_MAX_ATTEMPTS: int = 3
+    JOB_LEASE_SECONDS: int = 900
+    JOB_POLL_SECONDS: float = 1.0
+    WORKER_HEARTBEAT_SECONDS: int = 15
+    LOG_FORMAT: str = "json"
     WITNESS_ENDPOINTS: list[str] = []
     INFRASOUND_ENABLED: bool = False
     INFRASOUND_DEVICE: str = "rboom"
@@ -86,7 +115,7 @@ class SuezCanalConfig(BaseSettings):
     EXTERNAL_DATA_TIMEOUT_S: float = 12.0
     ALERT_DRIFT_DURATION_H: int = 24
     MOCK: bool = False  # deprecated compatibility flag; operational runtime ignores it
-    DEMO_PUBLIC_MODE: bool = False  # deprecated compatibility flag; operational runtime ignores it
+    DEMO_PUBLIC_MODE: bool = False  # isolates the public demo and blocks operational mutations
 
     # ── Intel layer (Twitter/X + news + AIS spike detection) ─────────────────
     INTEL_ENABLED: bool = True

@@ -1,13 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
+import './suez-theme.css';
 import MapFloatingPanel from './components/ConePanel.jsx';
 import ScenarioModal from './components/ScenarioModal.jsx';
 import SimHistory from './components/SimHistory.jsx';
 import IntelDashboard from './components/IntelDashboard.jsx';
-import BottomNav from './components/BottomNav.jsx';
 import LayerToggles, { LAYER_GROUPS } from './components/LayerToggles.jsx';
-import useIsMobile from './hooks/useIsMobile.js';
+import { AuthGate } from './auth.jsx';
+import CasesWorkspace from './components/CasesWorkspace.jsx';
+import JobMonitor from './components/JobMonitor.jsx';
+
+const PUBLIC_DEMO_HOSTS = new Set(['seacommons.suezcanal.xyz', 'demo.seacommons.org']);
+const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname) ||
+  (window.location.hostname.endsWith('.vercel.app') && !window.location.hostname.includes('console'));
+const APP_PROFILE = import.meta.env.VITE_APP_PROFILE === 'demo' || isPublicDemoHost ? 'demo' : 'live';
 
 function enrichCaseGeo(geojson, lat, lon) {
   // Idempotent: replaying an already-enriched collection must not duplicate the origin marker.
@@ -23,6 +30,39 @@ function enrichCaseGeo(geojson, lat, lon) {
       },
     ],
   };
+}
+
+function buildDemoFallbackGeo(lat, lon, durationHours = 24) {
+  const latitude = Number(lat);
+  const longitude = Number(lon);
+  const cosLat = Math.max(0.2, Math.cos(latitude * Math.PI / 180));
+  const velocityEast = 0.16;
+  const velocityNorth = 0.045;
+  const point = (hours) => [
+    longitude + velocityEast * hours * 3600 / (111320 * cosLat),
+    latitude + velocityNorth * hours * 3600 / 111320,
+  ];
+  const cone = (hours, type) => {
+    const boundedHours = Math.min(hours, durationHours);
+    const center = point(boundedHours);
+    const radius = 500 + boundedHours * 450;
+    const ring = Array.from({ length: 33 }, (_, index) => {
+      const angle = 2 * Math.PI * index / 32;
+      return [
+        center[0] + Math.cos(angle) * radius / (111320 * cosLat),
+        center[1] + Math.sin(angle) * radius / 111320,
+      ];
+    });
+    return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] },
+      properties: { type, radius_m: radius, degraded: true, operational_use: false } };
+  };
+  const hours = [...new Set([0, Math.min(6, durationHours), Math.min(12, durationHours), durationHours])].sort((a, b) => a - b);
+  const coordinates = hours.map(point);
+  return { type: 'FeatureCollection', features: [
+    { type: 'Feature', geometry: { type: 'LineString', coordinates }, properties: { type: 'trajectory', degraded: true, operational_use: false } },
+    cone(6, 'cone_6h'), cone(12, 'cone_12h'), cone(24, 'cone_24h'),
+    { type: 'Feature', geometry: { type: 'Point', coordinates: coordinates.at(-1) }, properties: { type: 'impact_point', degraded: true, operational_use: false } },
+  ] };
 }
 
 function guessApiBase() {
@@ -60,7 +100,9 @@ async function fetchJson(base, path, options, timeoutMs = 12000) {
     timeoutMs,
   );
   try {
-    const response = await fetch(apiUrl(base, path), { signal: controller.signal, ...options });
+    const token = window.__SEACOMMONS_ACCESS_TOKEN__;
+    const headers = { ...(options?.headers || {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    const response = await fetch(apiUrl(base, path), { signal: controller.signal, ...options, headers });
     if (!response.ok) {
       const text = await response.text().catch(() => '');
       // If the error body is HTML (proxy / cold-start page), surface a clean message.
@@ -202,9 +244,7 @@ function createVesselArrowImage(size = 48) {
 }
 
 function App() {
-  const isMobile = useIsMobile();
-  // On mobile start with the panel closed: the map IS the landing experience.
-  const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia('(max-width: 680px)').matches);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activePanel, setActivePanel] = useState('sim');
   const [apiBase, setApiBase] = useState(guessApiBase);
   const [localSettings, setLocalSettings] = useState(loadLocalSettings);
@@ -451,7 +491,10 @@ function App() {
 
     function tryWs() {
       if (!alive || !wsAlive) return;
-      ws = new WebSocket(`${wsBase}/ws/intel`);
+      const token = window.__SEACOMMONS_ACCESS_TOKEN__;
+      ws = token
+        ? new WebSocket(`${wsBase}/ws/intel`, ['bearer', token])
+        : new WebSocket(`${wsBase}/ws/intel`);
       intelWsRef.current = ws;
 
       const openTimer = window.setTimeout(() => {
@@ -1377,6 +1420,9 @@ function App() {
       { name: 'Database',  state: summary.backend?.database ?? '—',                      detail: summary.backend?.database === 'postgres' ? 'persistent' : 'local' },
       { name: 'Scheduler', state: summary.scheduler?.running ? 'live' : 'off',           detail: summary.scheduler?.running ? `${summary.scheduler?.jobs?.length || 0} jobs active` : 'not running' },
       { name: 'TimeZero',  state: timezero ? (timezero.enabled ? (timezero.reachable ? 'reachable' : 'off') : 'disabled') : 'pending', detail: timezero ? `${timezero.host}:${timezero.port}` : 'pending' },
+      { name: 'WhatsApp',  state: summary.channels?.whatsapp?.configured ? 'ready' : 'off', detail: summary.channels?.whatsapp?.outbound_ready ? 'Twilio inbound and outbound credentials ready' : summary.channels?.whatsapp?.inbound_ready ? 'Twilio signed inbound ready' : 'Twilio credentials missing' },
+      { name: 'Telegram',  state: summary.channels?.telegram?.configured ? 'ready' : 'off', detail: summary.channels?.telegram?.configured ? (summary.channels?.telegram?.operations_chat ? 'inbound and operations chat ready' : 'inbound ready; operations chat missing') : 'bot or webhook secret missing' },
+      { name: 'Partner link', state: summary.channels?.partner_webhook?.configured ? 'ready' : 'off', detail: summary.channels?.partner_webhook?.configured ? 'signed partner webhook ready' : 'partner webhook secret missing' },
     ];
   }, [summary, timezero]);
 
@@ -1395,6 +1441,20 @@ function App() {
     const vesselType = form.vessel_type;
     const riskLevel = form.risk_level;
     const activeSType = overrides.scenarioType || scenarioType;
+    const latitude = Number(lat);
+    const longitude = Number(lon);
+    const personsAboard = Number(persons);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+        !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      setCaseStatus('invalid coordinates');
+      setError('Enter valid coordinates: latitude -90..90 and longitude -180..180.');
+      return;
+    }
+    if (!Number.isInteger(personsAboard) || personsAboard < 1 || personsAboard > 10000) {
+      setCaseStatus('invalid persons');
+      setError('Persons aboard must be a whole number between 1 and 10,000.');
+      return;
+    }
     simParamsRef.current = { scenarioType: activeSType, vesselType, persons, riskLevel, lat, lon };
     setCaseStatus('starting…');
     const emptyGeo = { type: 'FeatureCollection', features: [] };
@@ -1418,10 +1478,10 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          lat: Number(lat),
-          lon: Number(lon),
+          lat: latitude,
+          lon: longitude,
           timestamp: new Date().toISOString(),
-          persons: Number(persons || 0),
+          persons: personsAboard,
           vessel_type: vesselType,
           risk_level: riskLevel,
           scenario_type: activeSType,
@@ -1504,6 +1564,23 @@ function App() {
       setCaseStatus('timeout');
       pushCaseLog('SAR case: timeout — server may still be computing');
     } catch (err) {
+      if (APP_PROFILE === 'demo') {
+        const fallbackId = `demo-${Date.now()}`;
+        const fallback = enrichCaseGeo(buildDemoFallbackGeo(latitude, longitude), latitude, longitude);
+        setCaseGeojson(fallback);
+        mapRef.current?.getSource('sar-case')?.setData(fallback);
+        setCaseStatus('completed · demo estimate');
+        setError('OpenDrift is temporarily unavailable. Showing a non-operational demonstration estimate.');
+        pushCaseLog('Degraded demo estimate generated locally — not for operational use');
+        const entry = { id: fallbackId, label: `demo estimate @ ${latitude.toFixed(3)}, ${longitude.toFixed(3)}`,
+          ts: new Date().toISOString(), geojson: fallback, lat: latitude, lon: longitude, params: simParamsRef.current };
+        setSimHistory((previous) => [entry, ...previous.slice(0, 9)]);
+        setActiveSimId(fallbackId);
+        setMapPanel({ type: 'cone', feature: fallback.features.find((feature) => feature.properties?.type === 'cone_24h'),
+          eventId: fallbackId, caseStatus: 'degraded demo', simParams: simParamsRef.current, legalAnalysis: null });
+        mapRef.current?.flyTo({ center: [longitude, latitude], zoom: 8.4, essential: true, duration: 900 });
+        return;
+      }
       setCaseStatus('error');
       setError(err.message || 'SAR case failed');
       pushCaseLog(`Error: ${err.message || 'unknown'}`);
@@ -1517,18 +1594,6 @@ function App() {
 
   function updateSetting(key, value) {
     setLocalSettings((cur) => ({ ...cur, [key]: value }));
-  }
-
-  /** Mobile bottom-nav: 'map' dismisses the sheet; active tab re-tap toggles it closed. */
-  function handleNavSelect(tabId) {
-    if (tabId === 'map' || (sidebarOpen && activePanel === tabId)) {
-      setSidebarOpen(false);
-      return;
-    }
-    // Opening the dashboard sheet must hide the drift cone sheet (mutually exclusive).
-    setConePanelHidden(true);
-    setActivePanel(tabId);
-    setSidebarOpen(true);
   }
 
   function setField(key, value) {
@@ -1585,6 +1650,7 @@ function App() {
   }, [intelEvents]);
 
   const isOnSim = activePanel === 'sim' || selectionMode;
+  const simulationRunning = caseStatus.startsWith('starting') || caseStatus.startsWith('queued') || caseStatus.startsWith('computing');
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -1681,39 +1747,23 @@ function App() {
         )}
       </section>
 
-      {!isMobile && (
-        <button
-          className={`sidebar-toggle ${sidebarOpen ? 'panel-open' : ''}`}
-          onClick={() => setSidebarOpen((open) => !open)}
-          title={sidebarOpen ? 'Close panel' : 'Open panel'}
-        >
-          {sidebarOpen ? '‹' : '›'}
-        </button>
-      )}
-
-      {isMobile && (
-        <BottomNav
-          activePanel={activePanel}
-          sheetOpen={sidebarOpen}
-          badgeCounts={{ osint: intelEvents.length }}
-          onSelect={handleNavSelect}
-        />
-      )}
-
-      <aside className={`sidebar ${sidebarOpen ? '' : 'is-closed'}`}>
+      <nav className="workspace-nav" aria-label="Operational views">
+        <span className={`runtime-badge runtime-badge--${APP_PROFILE}`}>{APP_PROFILE}</span>
+        <button className={!sidebarOpen ? 'is-active' : ''} onClick={() => setSidebarOpen(false)}>Map</button>
+        {['cases','sim','live','osint','settings'].map((view) => (
+          <button key={view} className={sidebarOpen && activePanel === view ? 'is-active' : ''} onClick={() => { setActivePanel(view); setSidebarOpen(true); }}>
+            {view === 'settings' ? 'Config' : view}
+          </button>
+        ))}
+      </nav>
+      <section className={`workspace-overlay ${sidebarOpen ? 'is-open' : ''}`} aria-hidden={!sidebarOpen}>
+        <button type="button" className="workspace-close" aria-label="Close workspace" onClick={() => setSidebarOpen(false)}>×</button>
         {/* Mobile bottom-sheet grab handle — hidden on desktop via CSS */}
-        <button
-          type="button"
-          className="sheet-handle"
-          aria-label="Close panel"
-          onClick={() => setSidebarOpen(false)}
-        >
-          <span />
-        </button>
-        <header className="sidebar-header">
-          <p className="sidebar-kicker">SeaCommons / SAR pilot</p>
+        <header className="workspace-header">
+          <p className="workspace-kicker">SeaCommons / SAR pilot</p>
           <h2>Operational dashboard</h2>
-          <div className="sidebar-tabs sidebar-tabs--4">
+          <div className="sidebar-tabs sidebar-tabs--5">
+            <button className={activePanel === 'cases' ? 'is-active' : ''} onClick={() => setActivePanel('cases')}>Cases</button>
             <button className={activePanel === 'sim'      ? 'is-active' : ''} onClick={() => setActivePanel('sim')}>Sim</button>
             <button className={activePanel === 'live'     ? 'is-active' : ''} onClick={() => setActivePanel('live')}>Live</button>
             <button className={activePanel === 'osint'    ? 'is-active' : ''} onClick={() => setActivePanel('osint')}>
@@ -1723,7 +1773,14 @@ function App() {
           </div>
         </header>
 
-        <div className="sidebar-inner">
+        <div className="workspace-content">
+
+          {activePanel === 'cases' ? (
+            <CasesWorkspace apiBase={apiBase} fetchJson={fetchJson} onLocate={(lat, lon) => {
+              setForm(cur => ({ ...cur, lat: String(lat), lon: String(lon) }));
+              mapRef.current?.flyTo({ center: [Number(lon), Number(lat)], zoom: 8 });
+            }} />
+          ) : null}
 
           {/* ── LIVE TAB ── */}
           {activePanel === 'live' ? (
@@ -1830,8 +1887,8 @@ function App() {
                   </div>
 
                   <div className="action-row">
-                    <button type="submit">Compute drift</button>
-                    <button type="button" onClick={() => setSelectionMode((v) => !v)}>
+                    <button type="submit" disabled={simulationRunning}>{simulationRunning ? 'Computing…' : 'Compute drift'}</button>
+                    <button type="button" disabled={simulationRunning} onClick={() => setSelectionMode((v) => !v)}>
                       {selectionMode ? 'Cancel selection' : 'Pick from map'}
                     </button>
                   </div>
@@ -1888,6 +1945,7 @@ function App() {
           {/* ── CONFIG TAB ── */}
           {activePanel === 'settings' ? (
             <div className="panel-stack">
+              <JobMonitor apiBase={apiBase} fetchJson={fetchJson} />
               <section className="panel-block">
                 <p className="section-kicker">Connectivity</p>
                 <h3>API endpoint</h3>
@@ -1951,9 +2009,9 @@ function App() {
           ) : null}
 
         </div>
-      </aside>
+      </section>
     </main>
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')).render(<AuthGate><App /></AuthGate>);

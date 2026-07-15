@@ -229,7 +229,7 @@ def _job_iom_incidents() -> None:
             elif total > 0:
                 severity = "medium"
 
-            uid = hashlib.md5(f"iom:{title}:{date_str}".encode()).hexdigest()[:8]
+            uid = hashlib.blake2s(f"iom:{title}:{date_str}".encode(), digest_size=8).hexdigest()
             event = IntelEvent(
                 id=uid,
                 type="iom_incident",

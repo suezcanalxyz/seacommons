@@ -270,7 +270,7 @@ class NewsMonitor:
         self, item: dict[str, Any], source: str, apply_filter: bool
     ) -> bool:
         guid = item.get("guid") or item.get("link") or item.get("title", "")
-        dedup = hashlib.sha1(f"{source}:{guid}".encode()).hexdigest()[:16]
+        dedup = hashlib.blake2s(f"{source}:{guid}".encode(), digest_size=8).hexdigest()
         if dedup in self._rss_last_guids:
             return False
         self._rss_last_guids.add(dedup)
@@ -370,7 +370,7 @@ class NewsMonitor:
         back to Vision extraction on any embedded image URL found in the description.
         """
         guid = item.get("guid") or item.get("link") or item.get("title", "")
-        dedup = hashlib.sha1(f"twitter:{source}:{guid}".encode()).hexdigest()[:16]
+        dedup = hashlib.blake2s(f"twitter:{source}:{guid}".encode(), digest_size=8).hexdigest()
         if dedup in self._twitter_seen:
             return False
         self._twitter_seen.add(dedup)
@@ -460,7 +460,7 @@ class NewsMonitor:
             if not is_distress(text_raw) and "alarm" not in text_raw.lower():
                 continue
 
-            dedup = hashlib.sha1(text_raw[:120].encode()).hexdigest()[:16]
+            dedup = hashlib.blake2s(text_raw[:120].encode(), digest_size=8).hexdigest()
             if dedup in self._alarmphone_seen:
                 continue
             self._alarmphone_seen.add(dedup)

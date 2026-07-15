@@ -30,13 +30,15 @@ def handle_twilio_whatsapp(form: dict[str, Any]) -> DistressSignal:
         extra["Latitude"]  = form["Latitude"]
         extra["Longitude"] = form.get("Longitude", "")
 
-    return _whatsapp_parser.parse(
+    signal = _whatsapp_parser.parse(
         raw=raw,
         source_channel="whatsapp",
         source_id=source_id,
         received_at=received_at,
         extra=extra,
     )
+    signal.provider_message_id = str(msg_sid) or None
+    return signal
 
 
 def handle_twilio_sms(form: dict[str, Any]) -> DistressSignal:
@@ -49,9 +51,11 @@ def handle_twilio_sms(form: dict[str, Any]) -> DistressSignal:
     source_id   = form.get("From", "unknown")
     received_at = datetime.now(timezone.utc)
 
-    return _sms_parser.parse(
+    signal = _sms_parser.parse(
         raw=raw,
         source_channel="sms",
         source_id=source_id,
         received_at=received_at,
     )
+    signal.provider_message_id = str(form.get("MessageSid", "")) or None
+    return signal

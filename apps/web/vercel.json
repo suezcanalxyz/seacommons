@@ -19,6 +19,8 @@
     }
   ],
   "env": {
-    "VITE_PUBLIC_BASE": "/"
+    "VITE_PUBLIC_BASE": "/",
+    "VITE_APP_PROFILE": "demo",
+    "VITE_AUTH_ENABLED": "false"
   }
 }

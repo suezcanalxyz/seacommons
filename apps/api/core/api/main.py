@@ -24,35 +24,43 @@ for _env in [
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse, Response
+from fastapi import HTTPException
 
 from core.config import config
 from core.api.routes import alerts, drift, anomaly, forensic, integrations, ops, vessels
-from core.api.routes import ingest, probability, weather, zones, intel
+from core.api.routes import ingest, probability, weather, zones, intel, cases, governance
 from core.db.session import init_database
+from core.security import READ_ROLES, WRITE_ROLES, require_roles, validate_production_security
+from core.observability import configure_logging, metrics_middleware
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
+configure_logging()
 logger = logging.getLogger("seacommons.api")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_production_security()
     logger.info(
         "Seacommons API starting up (RUNTIME_PROFILE=%s)",
         config.RUNTIME_PROFILE,
     )
     init_database()
-    _reset_stale_computing_jobs()
+    if config.JOB_EXECUTION_MODE != "queue":
+        _reset_stale_computing_jobs()
     try:
         from core.intel.store import intel_store
         intel_store.load_from_db()
         intel_store.reset_computing_drifts()
     except Exception as exc:
         logger.warning("Intel DB reload failed: %s", exc)
-    try:
-        from core.drift.opendrift_pool import prewarm
-        prewarm()
-    except Exception as exc:
-        logger.warning("OpenDrift prewarm failed to start: %s", exc)
+    if config.JOB_EXECUTION_MODE != "queue":
+        try:
+            from core.drift.opendrift_pool import prewarm
+            prewarm()
+        except Exception as exc:
+            logger.warning("OpenDrift prewarm failed to start: %s", exc)
     _start_background_sensors()
     _start_intel_engine()
     _start_scheduler()
@@ -182,6 +190,33 @@ app = FastAPI(
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.middleware("http")(metrics_middleware)
+
+
+@app.middleware("http")
+async def authorization_gate(request, call_next):
+    """Protect operational reads and all mutations; webhook authenticity is route-specific."""
+    path = request.url.path
+    if config.DEMO_PUBLIC_MODE and request.method not in {"GET", "HEAD", "OPTIONS"} and not (
+        request.method == "POST" and path == "/api/v1/alert"
+    ):
+        return JSONResponse(status_code=403, content={"detail": "This operation is disabled in the public demo"})
+    public = path in {
+        "/health", "/ready", "/metrics", "/docs", "/openapi.json", "/redoc",
+        "/api/v1/ingest/twilio/whatsapp", "/api/v1/ingest/twilio/sms",
+        "/api/v1/ingest/telegram", "/api/v1/ingest/webhook",
+    }
+    try:
+        if not public:
+            if path.startswith(("/api/v1/admin", "/api/v1/governance")):
+                require_roles(request, {"administrator"})
+            elif request.method not in {"GET", "HEAD", "OPTIONS"}:
+                require_roles(request, WRITE_ROLES)
+            elif path.startswith(("/api/v1/forensic", "/api/v1/intel", "/api/v1/ingest/signals", "/api/v1/inbox", "/api/v1/cases", "/api/v1/audit", "/api/v1/jobs", "/api/v1/admin")):
+                require_roles(request, READ_ROLES)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return await call_next(request)
 
 # CORS: allow_credentials MUST be False when allow_origins=["*"].
 # Starlette ≥0.40 raises ValueError otherwise (HTTP spec violation).
@@ -216,11 +251,33 @@ app.include_router(probability.router)
 app.include_router(weather.router)
 app.include_router(zones.router)
 app.include_router(intel.router)
+app.include_router(cases.router)
+app.include_router(governance.router)
 
 
 @app.get("/health")
 async def health():
     return {"status": "ok", "runtime_profile": config.RUNTIME_PROFILE}
+
+
+@app.get("/ready")
+async def ready():
+    from core.db.session import engine
+    from sqlalchemy import text
+    try:
+        with engine().connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return {"status": "ready", "database": "ok"}
+    except Exception as exc:
+        return JSONResponse(status_code=503, content={"status": "not_ready", "database": "error"})
+
+
+@app.get("/metrics")
+async def metrics():
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+    from core.observability import refresh_operational_gauges
+    refresh_operational_gauges()
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/api/v1/config")

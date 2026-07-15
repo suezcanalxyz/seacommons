@@ -129,7 +129,7 @@ class IntelEvent:
     def content_hash(self) -> str:
         """Stable dedup key based on source + core content."""
         raw = f"{self.source}:{self.title}:{self.text[:120]}"
-        return hashlib.sha1(raw.encode()).hexdigest()[:16]
+        return hashlib.blake2s(raw.encode(), digest_size=8).hexdigest()
 
 
 class IntelStore:

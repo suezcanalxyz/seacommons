@@ -2,6 +2,9 @@
 """Ingestion API routes — receive distress signals from all channels."""
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -9,6 +12,7 @@ from pydantic import BaseModel
 
 from core.ingestion import router as ingest_router
 from core.ingestion.signal import DistressSignal
+from core.config import config
 
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
 
@@ -44,6 +48,7 @@ async def twilio_whatsapp(request: Request) -> dict:
     """Twilio inbound WhatsApp webhook."""
     form = await request.form()
     form_dict = dict(form)
+    _verify_twilio(request, form_dict)
     sig = ingest_router.ingest_twilio_whatsapp(form_dict)
     return _sig_summary(sig)
 
@@ -53,6 +58,7 @@ async def twilio_sms(request: Request) -> dict:
     """Twilio inbound SMS webhook."""
     form = await request.form()
     form_dict = dict(form)
+    _verify_twilio(request, form_dict)
     sig = ingest_router.ingest_twilio_sms(form_dict)
     return _sig_summary(sig)
 
@@ -60,10 +66,19 @@ async def twilio_sms(request: Request) -> dict:
 @router.post("/telegram", response_model=dict)
 async def telegram_update(request: Request) -> dict:
     """Telegram Bot API webhook endpoint."""
+    expected = config.TELEGRAM_WEBHOOK_SECRET
+    supplied = request.headers.get("x-telegram-bot-api-secret-token", "")
+    if expected and not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Invalid Telegram webhook secret")
+    if config.RUNTIME_PROFILE.lower() in {"production", "prod"} and not expected:
+        raise HTTPException(status_code=503, detail="Telegram webhook is not configured securely")
     try:
         payload: dict[str, Any] = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
+    command = _handle_telegram_command(payload)
+    if command is not None:
+        return command
     sig = ingest_router.ingest_telegram(payload)
     if sig is None:
         return {"status": "ignored", "reason": "no parsable message"}
@@ -71,8 +86,20 @@ async def telegram_update(request: Request) -> dict:
 
 
 @router.post("/webhook", response_model=dict)
-async def generic_webhook(payload: WebhookPayload) -> dict:
+async def generic_webhook(request: Request) -> dict:
     """Generic JSON webhook for partner NGOs and API clients."""
+    raw = await _limited_body(request)
+    expected = config.PARTNER_WEBHOOK_SECRET
+    supplied = request.headers.get("x-seacommons-signature", "")
+    digest = "sha256=" + hmac.new(expected.encode(), raw, hashlib.sha256).hexdigest() if expected else ""
+    if expected and not hmac.compare_digest(supplied, digest):
+        raise HTTPException(status_code=401, detail="Invalid partner webhook signature")
+    if config.RUNTIME_PROFILE.lower() in {"production", "prod"} and not expected:
+        raise HTTPException(status_code=503, detail="Partner webhook is not configured securely")
+    try:
+        payload = WebhookPayload.model_validate_json(raw)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid webhook payload") from exc
     sig = ingest_router.ingest_webhook(payload.model_dump(exclude_none=True))
     return _sig_summary(sig)
 
@@ -107,3 +134,74 @@ def _sig_summary(sig: DistressSignal) -> dict:
         "requires_human_review": sig.requires_human_review,
         "urgency": "IMMEDIATE" if sig.requires_human_review else "ROUTINE",
     }
+
+
+async def _limited_body(request: Request) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared and int(declared) > config.MAX_WEBHOOK_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="Webhook body too large")
+    body = await request.body()
+    if len(body) > config.MAX_WEBHOOK_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="Webhook body too large")
+    return body
+
+
+def _verify_twilio(request: Request, form: dict[str, Any]) -> None:
+    """Verify Twilio's HMAC-SHA1 signature without requiring its SDK."""
+    token = config.TWILIO_AUTH_TOKEN
+    if not token:
+        if config.RUNTIME_PROFILE.lower() in {"production", "prod"}:
+            raise HTTPException(status_code=503, detail="Twilio webhook is not configured securely")
+        return
+    forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    forwarded_host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc))
+    url = f"{forwarded_proto}://{forwarded_host}{request.url.path}"
+    if request.url.query:
+        url += "?" + request.url.query
+    canonical = url + "".join(k + str(form[k]) for k in sorted(form))
+    expected = base64.b64encode(hmac.new(token.encode(), canonical.encode(), hashlib.sha1).digest()).decode()
+    supplied = request.headers.get("x-twilio-signature", "")
+    if not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Invalid Twilio webhook signature")
+
+
+def _handle_telegram_command(payload: dict[str, Any]) -> dict | None:
+    """Allow the configured operations chat to update cases through the bot."""
+    import re
+    import uuid
+    from core.audit import record
+    from core.db.models import CaseDB, CaseTimelineDB
+    from core.db.session import session_scope
+
+    message = payload.get("message") or {}
+    text = str(message.get("text") or "").strip()
+    if not text.startswith(("/case ", "/status ")):
+        return None
+    chat_id = str((message.get("chat") or {}).get("id", ""))
+    if not config.TELEGRAM_OPERATIONS_CHAT_ID or not hmac.compare_digest(chat_id, config.TELEGRAM_OPERATIONS_CHAT_ID):
+        raise HTTPException(status_code=403, detail="Telegram chat is not authorised for operations")
+    actor = f"telegram:{chat_id}"
+    note = re.fullmatch(r"/case\s+([0-9a-fA-F-]{8,36})\s+(.+)", text, re.DOTALL)
+    status = re.fullmatch(r"/status\s+([0-9a-fA-F-]{8,36})\s+(open|triage|active|monitoring|resolved|closed)", text)
+    match = note or status
+    if not match:
+        raise HTTPException(status_code=422, detail="Use /case <id> <note> or /status <id> <status>")
+    case_ref = match.group(1).lower()
+    with session_scope() as db:
+        rows = db.query(CaseDB).filter(CaseDB.case_id.like(f"{case_ref}%")).limit(2).all()
+        if len(rows) != 1:
+            raise HTTPException(status_code=404, detail="Case prefix not found or ambiguous")
+        case = rows[0]
+        if note:
+            body = note.group(2).strip()
+            case_event = "note"
+            action = "case.telegram_note"
+        else:
+            case.status = status.group(2)
+            body = f"Status changed to {case.status}"
+            case_event = "updated"
+            action = "case.telegram_status"
+        db.add(CaseTimelineDB(entry_id=str(uuid.uuid4()), case_id=case.case_id,
+                              event_type=case_event, actor=actor, body=body, data={"channel": "telegram"}))
+        record(db, actor=actor, action=action, resource_type="case", resource_id=case.case_id)
+        return {"status": "ok", "case_id": case.case_id, "action": action}

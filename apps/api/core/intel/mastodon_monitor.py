@@ -147,7 +147,7 @@ class MastodonMonitor:
 
     def _ingest(self, status: dict[str, Any], source_label: str, instance: str) -> bool:
         status_id = str(status.get("id", ""))
-        dedup = hashlib.sha1(f"mastodon:{instance}:{status_id}".encode()).hexdigest()[:16]
+        dedup = hashlib.blake2s(f"mastodon:{instance}:{status_id}".encode(), digest_size=8).hexdigest()
 
         with self._seen_lock:
             if dedup in self._seen:

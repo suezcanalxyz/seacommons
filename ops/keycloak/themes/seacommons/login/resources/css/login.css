@@ -1,0 +1,9 @@
+@import url('https://cdn.jsdelivr.net/npm/@fontsource-variable/archivo@5.1.0/index.min.css');
+:root{--pf-v5-global--FontFamily--text:'Archivo Variable',Arial,sans-serif;--pf-v5-global--primary-color--100:#3cc896;--pf-v5-global--primary-color--200:#32c3b9}
+body.login-pf{font-family:'Archivo Variable',Arial,sans-serif;background:#071a26;background-image:linear-gradient(rgba(60,200,150,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(60,200,150,.035) 1px,transparent 1px);background-size:48px 48px}
+.login-pf-page .card-pf{background:#0d2235;border:1px solid rgba(255,255,255,.09);box-shadow:0 30px 100px rgba(0,0,0,.34);color:rgba(230,245,255,.92)}
+#kc-header-wrapper{font-size:0;color:transparent;text-transform:none}#kc-header-wrapper::after{content:'SEA COMMONS';font-size:15px;font-weight:650;letter-spacing:.18em;color:rgba(230,245,255,.92)}
+#kc-page-title{font-weight:520;letter-spacing:-.035em;color:rgba(230,245,255,.92)}
+label,.instruction{color:rgba(150,185,225,.78)!important}.pf-c-form-control{background:#071a26!important;border-color:rgba(255,255,255,.12)!important;color:#e6f5ff!important}
+.pf-c-button.pf-m-primary{border-radius:999px;background:#3cc896;color:#071a26;font-weight:650}.pf-c-button.pf-m-primary:hover{background:#50d5a8}
+a{color:#50c8a0!important}
