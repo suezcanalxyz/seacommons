@@ -36,10 +36,14 @@ const ICONS = {
       <circle cx="8" cy="17" r="2.2" />
     </svg>
   ),
+  cases: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 7h16v13H4zM8 7V4h8v3"/><path d="M4 12h16"/></svg>
+  ),
 };
 
 const TABS = [
   { id: 'map',      label: 'Map',    icon: 'map' },
+  { id: 'cases',    label: 'Cases',  icon: 'cases' },
   { id: 'sim',      label: 'SAR',    icon: 'sim' },
   { id: 'live',     label: 'Live',   icon: 'live' },
   { id: 'osint',    label: 'OSINT',  icon: 'osint' },

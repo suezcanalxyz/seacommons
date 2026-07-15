@@ -163,7 +163,8 @@ async def create_alert(event: MaritimeEvent, request: Request):
     from core.forensic.logger import sign_and_store
 
     rate_limit(request, max_per_minute=6, scope="alert")
-    if not acquire_drift_slot():
+    queued = config.JOB_EXECUTION_MODE == "queue"
+    if not queued and not acquire_drift_slot():
         raise HTTPException(
             status_code=429,
             detail="Drift engine busy — too many concurrent simulations. Retry shortly.",
@@ -199,11 +200,16 @@ async def create_alert(event: MaritimeEvent, request: Request):
             )
         )
 
-        threading.Thread(target=_process_drift, args=(event_id, event), daemon=True).start()
+        if queued:
+            from core.jobs import enqueue
+            enqueue("alert_drift", {"event_id": event_id, "event": event.model_dump(mode="json")}, job_id=event_id)
+        else:
+            threading.Thread(target=_process_drift, args=(event_id, event), daemon=True).start()
     except Exception:
         # Slot is normally released by the worker thread; if we never got to
         # start it, release here so failed requests don't leak capacity.
-        release_drift_slot()
+        if not queued:
+            release_drift_slot()
         raise
     return {"event_id": event_id, "status": "processing"}
 
@@ -302,7 +308,11 @@ async def list_alerts_geojson():
 
 @router.websocket("/ws/events")
 async def ws_events(websocket: WebSocket):
-    await websocket.accept()
+    from core.security import READ_ROLES, authorize_websocket
+    protocol = await authorize_websocket(websocket, READ_ROLES)
+    if protocol == "closed":
+        return
+    await websocket.accept(subprotocol=protocol)
     loop = asyncio.get_event_loop()
     entry = (websocket, loop)
     with _ws_lock:

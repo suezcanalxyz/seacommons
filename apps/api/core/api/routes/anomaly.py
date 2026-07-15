@@ -59,7 +59,11 @@ _ws_clients: list[WebSocket] = []
 
 @router.websocket("/api/v1/anomalies/live")
 async def anomaly_live(websocket: WebSocket):
-    await websocket.accept()
+    from core.security import READ_ROLES, authorize_websocket
+    protocol = await authorize_websocket(websocket, READ_ROLES)
+    if protocol == "closed":
+        return
+    await websocket.accept(subprotocol=protocol)
     _ws_clients.append(websocket)
     try:
         while True:

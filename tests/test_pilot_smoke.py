@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+import tempfile
 
-os.environ["DATABASE_URL"] = "sqlite:///./core/data/test_pilot_smoke.db"
+os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(tempfile.gettempdir(), f"seacommons_test_{os.getpid()}.db").replace("\\", "/")
 os.environ["SUEZCANAL_SIGNING_KEY"] = "1111111111111111111111111111111111111111111111111111111111111111"
 os.environ["RUNTIME_PROFILE"] = "operational"
 

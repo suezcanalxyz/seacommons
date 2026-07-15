@@ -13,6 +13,7 @@ class DistressSignal(BaseModel):
     signal_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     source_channel: str                       # whatsapp | telegram | sms | twitter | api
     source_id: str                            # phone number, @handle, tweet_id, message_id
+    provider_message_id: Optional[str] = None # channel delivery ID used for idempotency
     source_name: Optional[str] = None        # display name if known
     raw_text: str                             # original message, unmodified
     lat: Optional[float] = None              # None if extraction failed

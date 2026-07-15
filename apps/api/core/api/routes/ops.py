@@ -87,6 +87,24 @@ async def ops_summary():
             "aisstream_messages": ais_messages,
             "cmems_configured": bool(config.CMEMS_USERNAME and config.CMEMS_PASSWORD),
             "timezero": _tz_status,
+            "job_execution_mode": config.JOB_EXECUTION_MODE,
+        },
+        "channels": {
+            "whatsapp": {
+                "configured": bool(config.TWILIO_AUTH_TOKEN),
+                "inbound_ready": bool(config.TWILIO_AUTH_TOKEN),
+                "outbound_ready": bool(config.TWILIO_ACCOUNT_SID and config.TWILIO_AUTH_TOKEN and config.TWILIO_WHATSAPP_NUMBER and config.TWILIO_OPERATIONS_WHATSAPP_TO),
+                "webhook_url": f"{config.PUBLIC_API_URL.rstrip('/')}/api/v1/ingest/twilio/whatsapp" if config.PUBLIC_API_URL else None,
+            },
+            "telegram": {
+                "configured": bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_WEBHOOK_SECRET),
+                "operations_chat": bool(config.TELEGRAM_OPERATIONS_CHAT_ID),
+                "webhook_url": f"{config.PUBLIC_API_URL.rstrip('/')}/api/v1/ingest/telegram" if config.PUBLIC_API_URL else None,
+            },
+            "partner_webhook": {
+                "configured": bool(config.PARTNER_WEBHOOK_SECRET),
+                "webhook_url": f"{config.PUBLIC_API_URL.rstrip('/')}/api/v1/ingest/webhook" if config.PUBLIC_API_URL else None,
+            },
         },
         "traffic": {
             "registry": vessel_stats,
@@ -101,7 +119,7 @@ async def ops_summary():
             "frontend": "static_vite",
             "backend": "fastapi_polling",
             "state_store": "sqlite_or_postgres",
-            "queue": "optional",
+            "queue": "database_durable" if config.JOB_EXECUTION_MODE == "queue" else "inline_development",
         },
     }
 

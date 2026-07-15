@@ -43,10 +43,12 @@ def handle_telegram_update(update: dict[str, Any]) -> DistressSignal | None:
         if ts else datetime.now(timezone.utc)
     )
 
-    return _parser.parse(
+    signal = _parser.parse(
         raw=raw,
         source_channel="telegram",
         source_id=source_id,
         received_at=received_at,
         update=update,
     )
+    signal.provider_message_id = str(update.get("update_id", "")) or None
+    return signal

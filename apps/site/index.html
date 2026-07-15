@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Open research infrastructure for accountable maritime evidence and uncertainty-aware search and rescue analysis.">
+  <title>Seacommons — Accountable maritime evidence</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/archivo@5.1.0/index.min.css">
+  <link rel="stylesheet" href="/site.css">
+  <link rel="stylesheet" href="/suez-theme.css">
+</head>
+<body>
+  <header class="nav"><a class="wordmark" href="#top">SEA<span>COMMONS</span></a><nav aria-label="Primary"><a href="#research">Research</a><a href="#methods">Methods</a><a href="#data">Data</a><a href="#governance">Governance</a><button class="console" type="button" data-console-open>Console <span>Beta</span></button></nav></header>
+  <main id="top">
+    <section class="hero">
+      <div class="hero-grid" aria-hidden="true"></div>
+      <p class="eyebrow"><i></i> Open maritime research infrastructure · Mediterranean</p>
+      <h1>Evidence at sea,<br><em>held accountable.</em></h1>
+      <p class="lede">Seacommons develops open methods for transforming incomplete and contested maritime signals into traceable, uncertainty-aware evidence and search-and-rescue analysis.</p>
+      <div class="hero-actions"><a class="button" href="#research">Explore the programme</a><a class="text-link" href="https://github.com/suezcanalxyz/seacommons">Source code ↗</a></div>
+      <dl class="status"><div><dt>System</dt><dd><i></i> Research prototype</dd></div><div><dt>Licence</dt><dd>AGPL-3.0-or-later</dd></div><div><dt>Public data</dt><dd>Aggregated / delayed</dd></div></dl>
+    </section>
+
+    <section id="research" class="section split"><div><p class="section-num">01 / Research</p><h2>A commons for signals that do not arrive complete.</h2></div><div class="prose"><p>Maritime distress evidence is fragmented across vessels, environmental models, official feeds, civil-society reports and public observations. Seacommons studies how these sources can be fused without hiding their uncertainty or political context.</p><blockquote>How can heterogeneous signals become timely evidence while remaining traceable, contestable and safe for vulnerable people?</blockquote></div></section>
+
+    <section class="programmes"><article><b>WP·01</b><h3>Governed corpus</h3><p>Canonical observations, provenance, sensitivity tiers and ethically managed benchmark data.</p></article><article><b>WP·02</b><h3>Calibrated fusion</h3><p>Detection baselines, missingness, source reliability and explicit uncertainty propagation.</p></article><article><b>WP·03</b><h3>Drift ensembles</h3><p>OpenDrift trajectories evaluated against operational ocean and atmosphere forcing.</p></article><article><b>WP·04</b><h3>Human decisions</h3><p>Interfaces that help operators act without turning estimates into false certainty.</p></article></section>
+
+    <section id="methods" class="section dark"><p class="section-num">02 / Methods</p><div class="methods-head"><h2>Every output should explain itself.</h2><p>Analytical results expose their source, time, transformation, software version, parameters, uncertainty and known limitations.</p></div><ol class="pipeline"><li><span>01</span><b>Observe</b><small>Raw, immutable acquisition</small></li><li><span>02</span><b>Qualify</b><small>Reliability and sensitivity</small></li><li><span>03</span><b>Transform</b><small>Versioned computation</small></li><li><span>04</span><b>Contest</b><small>Review and correction</small></li><li><span>05</span><b>Release</b><small>Tiered, documented access</small></li></ol></section>
+
+    <section id="data" class="section split"><div><p class="section-num">03 / Data</p><h2>Open where safe.<br>Restricted where necessary.</h2></div><div class="tiers"><div><b>PUBLIC</b><p>Aggregated indicators, methods, synthetic fixtures and release documentation.</p></div><div><b>RESEARCH</b><p>Controlled datasets under documented purpose, minimisation and retention rules.</p></div><div><b>OPERATIONAL</b><p>Live positions, contact details and case materials available only to authorised teams.</p></div></div></section>
+
+    <section id="governance" class="section governance"><p class="section-num">04 / Governance</p><h2>Accountability is part of the system architecture.</h2><div class="governance-grid"><p>Data minimisation<br><span>Collect only what the declared purpose requires.</span></p><p>Contestability<br><span>Preserve corrections, disagreements and model limitations.</span></p><p>Dual-use review<br><span>Separate humanitarian research from threat-oriented experiments.</span></p><p>Open maintenance<br><span>Publish source, changes, methods and security policy.</span></p></div></section>
+  </main>
+  <footer><div class="wordmark">SEA<span>COMMONS</span></div><p>Open research infrastructure for accountable maritime evidence.</p><div><a href="#methods">Methods</a><a href="#governance">Security</a><a href="https://github.com/suezcanalxyz/seacommons">GitHub</a></div><small>Research prototype — not a substitute for official emergency services.</small></footer>
+  <dialog class="beta-dialog" aria-labelledby="beta-title">
+    <button class="dialog-close" type="button" aria-label="Close" data-console-close>&times;</button>
+    <p class="section-num">Controlled research beta</p>
+    <h2 id="beta-title">The operational console is being tested.</h2>
+    <p>The beta is currently under evaluation by a limited group of researchers before a stable public release. Access is restricted, activity is logged and outputs must not be treated as an official emergency-service response.</p>
+    <div class="dialog-actions"><a class="button" href="https://demo.seacommons.org">Open public demo</a><a class="text-button" href="https://console.seacommons.org">Researcher sign-in</a><button class="text-button" type="button" data-console-close>Return to site</button></div>
+  </dialog>
+  <script>
+    const betaDialog = document.querySelector('.beta-dialog');
+    document.querySelector('[data-console-open]').addEventListener('click', () => betaDialog.showModal());
+    document.querySelectorAll('[data-console-close]').forEach((button) => button.addEventListener('click', () => betaDialog.close()));
+    betaDialog.addEventListener('click', (event) => { if (event.target === betaDialog) betaDialog.close(); });
+  </script>
+</body></html>

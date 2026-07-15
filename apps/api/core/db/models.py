@@ -3,7 +3,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Float, DateTime, JSON, Text, create_engine
+    Column, String, Float, Integer, DateTime, JSON, Text, UniqueConstraint, ForeignKey, create_engine
 )
 from sqlalchemy.orm import DeclarativeBase, Session
 
@@ -94,6 +94,152 @@ class IntelEventDB(Base):
     linked_mmsi   = Column(String(16),  default="")
     meta          = Column(JSON,        default=dict)
     created_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+
+
+class IngestedSignalDB(Base):
+    """Canonical inbound signal; external delivery key makes webhooks idempotent."""
+    __tablename__ = "ingested_signals"
+    signal_id = Column(String(36), primary_key=True)
+    source_channel = Column(String(32), nullable=False, index=True)
+    source_id = Column(String(256), nullable=False)
+    provider_message_id = Column(String(256), nullable=True)
+    payload = Column(JSON, nullable=False)
+    received_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_channel", "provider_message_id", name="uq_ingested_signal_delivery"
+        ),
+    )
+
+
+class CaseDB(Base):
+    __tablename__ = "cases"
+    case_id = Column(String(36), primary_key=True)
+    organization_id = Column(String(36), ForeignKey("organizations.organization_id"), nullable=True, index=True)
+    title = Column(String(256), nullable=False)
+    status = Column(String(32), nullable=False, default="open", index=True)
+    priority = Column(String(16), nullable=False, default="medium", index=True)
+    sensitivity = Column(String(16), nullable=False, default="restricted")
+    summary = Column(Text, default="")
+    lat = Column(Float)
+    lon = Column(Float)
+    persons = Column(Float)
+    assigned_to = Column(String(256))
+    retention_until = Column(DateTime)
+    legal_hold = Column(Integer, nullable=False, default=0)
+    created_by = Column(String(256), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class CaseSignalDB(Base):
+    __tablename__ = "case_signals"
+    case_id = Column(String(36), ForeignKey("cases.case_id", ondelete="CASCADE"), primary_key=True)
+    signal_id = Column(String(36), ForeignKey("ingested_signals.signal_id", ondelete="CASCADE"), primary_key=True)
+    linked_by = Column(String(256), nullable=False)
+    linked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class CaseTimelineDB(Base):
+    __tablename__ = "case_timeline"
+    entry_id = Column(String(36), primary_key=True)
+    case_id = Column(String(36), ForeignKey("cases.case_id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type = Column(String(32), nullable=False)
+    actor = Column(String(256), nullable=False)
+    body = Column(Text, default="")
+    data = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class CaseAttachmentDB(Base):
+    __tablename__ = "case_attachments"
+    attachment_id = Column(String(36), primary_key=True)
+    case_id = Column(String(36), ForeignKey("cases.case_id", ondelete="CASCADE"), nullable=False, index=True)
+    object_key = Column(String(512), nullable=False, unique=True)
+    filename = Column(String(256), nullable=False)
+    content_type = Column(String(128), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    uploaded_by = Column(String(256), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class AuditLogDB(Base):
+    __tablename__ = "audit_log"
+    audit_id = Column(String(36), primary_key=True)
+    actor = Column(String(256), nullable=False, index=True)
+    action = Column(String(64), nullable=False, index=True)
+    resource_type = Column(String(64), nullable=False)
+    resource_id = Column(String(64), nullable=False, index=True)
+    data = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class JobDB(Base):
+    __tablename__ = "jobs"
+    job_id = Column(String(36), primary_key=True)
+    job_type = Column(String(64), nullable=False, index=True)
+    status = Column(String(16), nullable=False, default="queued", index=True)
+    payload = Column(JSON, nullable=False)
+    attempts = Column(Integer, nullable=False, default=0)
+    max_attempts = Column(Integer, nullable=False, default=3)
+    available_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    lease_until = Column(DateTime)
+    worker_id = Column(String(128))
+    last_error = Column(Text)
+    result = Column(JSON)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class WorkerHeartbeatDB(Base):
+    __tablename__ = "worker_heartbeats"
+    worker_id = Column(String(128), primary_key=True)
+    hostname = Column(String(256), nullable=False)
+    process_id = Column(Integer, nullable=False)
+    current_job_id = Column(String(36))
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_seen_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+
+class OrganizationDB(Base):
+    __tablename__ = "organizations"
+    organization_id = Column(String(36), primary_key=True)
+    name = Column(String(256), nullable=False, unique=True)
+    slug = Column(String(64), nullable=False, unique=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class MembershipDB(Base):
+    __tablename__ = "memberships"
+    organization_id = Column(String(36), ForeignKey("organizations.organization_id", ondelete="CASCADE"), primary_key=True)
+    subject = Column(String(256), primary_key=True)
+    role = Column(String(32), nullable=False, default="member")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class CaseAccessDB(Base):
+    __tablename__ = "case_access"
+    case_id = Column(String(36), ForeignKey("cases.case_id", ondelete="CASCADE"), primary_key=True)
+    subject = Column(String(256), primary_key=True)
+    permission = Column(String(16), nullable=False, default="read")
+    granted_by = Column(String(256), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class DeletionRequestDB(Base):
+    __tablename__ = "deletion_requests"
+    request_id = Column(String(36), primary_key=True)
+    organization_id = Column(String(36), ForeignKey("organizations.organization_id"), nullable=True)
+    resource_type = Column(String(64), nullable=False)
+    resource_id = Column(String(64), nullable=False)
+    reason = Column(Text, nullable=False)
+    status = Column(String(16), nullable=False, default="pending", index=True)
+    requested_by = Column(String(256), nullable=False)
+    reviewed_by = Column(String(256))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    reviewed_at = Column(DateTime)
 
 
 def create_all(database_url: str) -> None:

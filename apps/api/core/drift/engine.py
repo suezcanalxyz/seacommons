@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""DriftEngine — wraps OpenDrift and BallisticTerminal with explicit SAR failure on missing OpenDrift."""
+"""Drift engine with strict operational OpenDrift and an explicit demo-only fallback."""
 from __future__ import annotations
 
 import logging
@@ -10,6 +10,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
+from core.config import config as runtime_config
 from core.drift.cache import CacheManager
 from core.drift.models import BallisticTerminal, resolve_object_type
 from core.drift.opendrift_pool import run_leeway
@@ -30,29 +31,15 @@ class DriftEngine:
     def __init__(self):
         self._cache = CacheManager()
 
-    def compute(
-        self,
-        lat: float,
-        lon: float,
-        time_utc: datetime,
-        duration_h: int = 24,
-        domain: str = "ocean_sar",
-        config: Optional[dict] = None,
-    ) -> DriftResult:
+    def compute(self, lat: float, lon: float, time_utc: datetime, duration_h: int = 24,
+                domain: str = "ocean_sar", config: Optional[dict] = None) -> DriftResult:
         """Forward drift from lat/lon."""
         if domain == "ballistic":
             return self._ballistic(lat, lon, time_utc, config or {})
         return self._opendrift(lat, lon, time_utc, duration_h, domain, config or {})
 
-    def backtrack(
-        self,
-        lat: float,
-        lon: float,
-        time_utc: datetime,
-        duration_h: int = 24,
-        domain: str = "ocean_sar",
-        config: Optional[dict] = None,
-    ) -> DriftResult:
+    def backtrack(self, lat: float, lon: float, time_utc: datetime, duration_h: int = 24,
+                  domain: str = "ocean_sar", config: Optional[dict] = None) -> DriftResult:
         """Backward drift using the same real-data engine with reversed vectors."""
         wind = self._cache.get_wind_live(lat, lon)
         _ = (wind.get("wind_dir_deg", 270.0) + 180) % 360
@@ -90,8 +77,7 @@ class DriftEngine:
             "time_step_output_seconds": int(config.get("time_step_output_seconds", os.getenv("OPENDRIFT_OUTPUT_SECONDS", "3600"))),
             "object_type": (
                 resolve_object_type(config["vessel_type"], int(config.get("persons", 1)))
-                if config.get("vessel_type")
-                else int(config.get("object_type", 26))
+                if config.get("vessel_type") else int(config.get("object_type", 26))
             ),
             "seed_radius_m": float(config.get("seed_radius_m", 150)),
         }
@@ -99,52 +85,73 @@ class DriftEngine:
             return DriftResult.model_validate(run_leeway(payload))
         except Exception as exc:
             logger.error("OpenDrift failed for %s at %.5f,%.5f: %s", domain, lat, lon, exc)
+            if runtime_config.DEMO_PUBLIC_MODE:
+                logger.warning("Using explicitly degraded public-demo drift fallback")
+                return self._demo_fallback(lat, lon, time_utc, duration_h, payload, str(exc))
             raise RuntimeError(f"OpenDrift failed: {exc}") from exc
+
+    @staticmethod
+    def _demo_fallback(lat, lon, time_utc, duration_h, payload, reason) -> DriftResult:
+        """Bounded deterministic fallback for the isolated public demo only."""
+        env = payload["environment"]
+        velocity_x = float(env["x_sea_water_velocity"]) + float(env["x_wind"]) * 0.03
+        velocity_y = float(env["y_sea_water_velocity"]) + float(env["y_wind"]) * 0.03
+        cos_lat = max(0.2, math.cos(math.radians(lat)))
+
+        def point(hours: float) -> tuple[float, float]:
+            seconds = hours * 3600
+            return (lon + velocity_x * seconds / (111_320 * cos_lat),
+                    lat + velocity_y * seconds / 111_320)
+
+        def cone(hours: float, key: str) -> dict[str, Any]:
+            center_lon, center_lat = point(min(hours, duration_h))
+            radius_m = 500 + min(hours, duration_h) * 450
+            ring = []
+            for step in range(33):
+                angle = 2 * math.pi * step / 32
+                ring.append([
+                    center_lon + math.cos(angle) * radius_m / (111_320 * cos_lat),
+                    center_lat + math.sin(angle) * radius_m / 111_320,
+                ])
+            return {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [ring]},
+                    "properties": {"type": key, "radius_m": radius_m, "degraded": True}}
+
+        hours = sorted(set([0, min(6, duration_h), min(12, duration_h), duration_h]))
+        coordinates = [list(point(hour)) for hour in hours]
+        return DriftResult(
+            trajectory={"type": "Feature", "geometry": {"type": "LineString", "coordinates": coordinates},
+                        "properties": {"type": "trajectory", "degraded": True}},
+            cone_6h=cone(6, "cone_6h"), cone_12h=cone(12, "cone_12h"), cone_24h=cone(24, "cone_24h"),
+            impact_point={"type": "FeatureCollection", "features": [{
+                "type": "Feature", "geometry": {"type": "Point", "coordinates": coordinates[-1]},
+                "properties": {"type": "impact_point", "hours": duration_h, "degraded": True}}]},
+            metadata={"domain": payload.get("domain", "ocean_sar"), "start_time": time_utc.isoformat(),
+                      "duration_h": duration_h, "model": "degraded demonstration fallback",
+                      "operational_use": False, "fallback_reason": reason[:300], "forcing": env},
+        )
 
     def _ballistic(self, lat, lon, time_utc, config) -> DriftResult:
         solver = BallisticTerminal()
         result = solver.solve(
-            lat=lat,
-            lon=lon,
-            entry_angle_deg=config.get("entry_angle_deg", 45),
+            lat=lat, lon=lon, entry_angle_deg=config.get("entry_angle_deg", 45),
             entry_velocity_ms=config.get("entry_velocity_ms", 800),
             entry_altitude_m=config.get("entry_altitude_m", 10_000),
-            wind_speed_ms=config.get("wind_speed_ms", 5.0),
-            wind_dir_deg=config.get("wind_dir_deg", 270.0),
+            wind_speed_ms=config.get("wind_speed_ms", 5.0), wind_dir_deg=config.get("wind_dir_deg", 270.0),
         )
         il, io_ = result["impact"]["lat"], result["impact"]["lon"]
-        traj = {
-            "type": "Feature",
-            "geometry": {"type": "LineString", "coordinates": [[lon, lat], [io_, il]]},
-            "properties": {"type": "trajectory"},
-        }
-        cone = {
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [io_, il]},
-            "properties": {"radius_m": result["fragment_radius_m"]},
-        }
+        traj = {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[lon, lat], [io_, il]]},
+                "properties": {"type": "trajectory"}}
+        cone = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [io_, il]},
+                "properties": {"radius_m": result["fragment_radius_m"]}}
         return DriftResult(
-            trajectory=traj,
-            cone_6h=cone,
-            cone_12h=cone,
-            cone_24h=cone,
-            impact_point=result["geojson"],
-            metadata={
-                "domain": "ballistic",
-                "range_m": result["range_m"],
-                "fragment_radius_m": result["fragment_radius_m"],
-                "start_time": time_utc.isoformat(),
-            },
+            trajectory=traj, cone_6h=cone, cone_12h=cone, cone_24h=cone, impact_point=result["geojson"],
+            metadata={"domain": "ballistic", "range_m": result["range_m"],
+                      "fragment_radius_m": result["fragment_radius_m"], "start_time": time_utc.isoformat()},
         )
 
 
 if __name__ == "__main__":
     from datetime import timezone
-
     engine = DriftEngine()
     result = engine.compute(lat=35.5, lon=14.0, time_utc=datetime.now(timezone.utc))
     print("DriftEngine self-test OK:", result.metadata)
-    back = engine.backtrack(lat=35.5, lon=14.0, time_utc=datetime.now(timezone.utc))
-    print("Backtrack OK:", back.metadata)
-    bal = engine.compute(lat=55.535, lon=15.698, time_utc=datetime.now(timezone.utc), domain="ballistic")
-    print("Ballistic OK:", bal.impact_point)

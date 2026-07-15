@@ -85,8 +85,56 @@ async def create_drift(req: DriftRequest, bg: BackgroundTasks):
         duration_h=req.duration_h,
         started_at=req.timestamp or datetime.utcnow(),
     )
-    bg.add_task(_run_drift, drift_id, req)
-    return {"drift_id": drift_id, "status": "computing"}
+    from core.config import config
+    if config.JOB_EXECUTION_MODE == "queue":
+        from core.jobs import enqueue
+        job_id = enqueue("drift", {"drift_id": drift_id, "request": req.model_dump(mode="json")})
+    else:
+        bg.add_task(_run_drift, drift_id, req)
+        job_id = None
+    return {"drift_id": drift_id, "job_id": job_id, "status": "computing"}
+
+
+@router.get("/api/v1/jobs/{job_id}")
+async def get_job(job_id: str):
+    from core.jobs import get
+    job = get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.get("/api/v1/jobs")
+async def list_jobs(status: str | None = None, limit: int = 100):
+    from core.jobs import list_jobs as load_jobs
+    if status and status not in {"queued", "running", "retry", "completed", "dead"}:
+        raise HTTPException(status_code=422, detail="Invalid job status")
+    return load_jobs(status=status, limit=min(max(limit, 1), 500))
+
+
+@router.post("/api/v1/jobs/{job_id}/retry")
+async def retry_job(job_id: str):
+    from core.jobs import retry
+    try:
+        job = retry(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.get("/api/v1/admin/workers")
+async def workers():
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from core.db.models import WorkerHeartbeatDB
+    from core.db.session import session_scope
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with session_scope() as db:
+        rows = db.execute(select(WorkerHeartbeatDB).order_by(WorkerHeartbeatDB.last_seen_at.desc())).scalars().all()
+        return [{**{c.name: getattr(row, c.name) for c in row.__table__.columns},
+                 "alive": bool(row.last_seen_at and (now - row.last_seen_at).total_seconds() < 60)} for row in rows]
 
 
 @router.get("/api/v1/drift/{drift_id}/geojson")

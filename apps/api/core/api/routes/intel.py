@@ -454,7 +454,11 @@ async def ws_intel(websocket: WebSocket):
     On connect: sends the last 50 events as a batch (type="snapshot").
     Then: individual events streamed as type="event".
     """
-    await websocket.accept()
+    from core.security import READ_ROLES, authorize_websocket
+    protocol = await authorize_websocket(websocket, READ_ROLES)
+    if protocol == "closed":
+        return
+    await websocket.accept(subprotocol=protocol)
     loop = asyncio.get_event_loop()
     intel_store.register_ws(websocket, loop)
     logger.info("Intel WebSocket client connected")

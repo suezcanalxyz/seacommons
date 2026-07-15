@@ -2,7 +2,6 @@
 """Extract GPS coordinates from images via EXIF metadata or Claude Vision."""
 from __future__ import annotations
 
-import base64
 import io
 import logging
 import re
@@ -48,50 +47,7 @@ def _exif_gps(image_bytes: bytes) -> Optional[dict]:
 
 
 async def _vision_extract(image_bytes: bytes, mime: str = "image/jpeg") -> Optional[dict]:
-    """Ask Claude Haiku to find coordinates in the image."""
-    try:
-        from anthropic import AsyncAnthropic
-
-        b64 = base64.standard_b64encode(image_bytes).decode()
-        client = AsyncAnthropic()
-        msg = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=256,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {"type": "base64", "media_type": mime, "data": b64},
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            "Extract any GPS coordinates, latitude/longitude values, or "
-                            "place names with known coordinates from this image. "
-                            "Reply ONLY with JSON: "
-                            "{\"lat\": <float|null>, \"lon\": <float|null>, \"place\": \"<name or null>\", \"confidence\": <0-1>}. "
-                            "If nothing found: {\"lat\": null, \"lon\": null, \"place\": null, \"confidence\": 0}."
-                        ),
-                    },
-                ],
-            }],
-        )
-        import json
-        text = msg.content[0].text.strip()
-        data = json.loads(text)
-        if data.get("lat") is not None and data.get("lon") is not None:
-            return {
-                "lat": float(data["lat"]),
-                "lon": float(data["lon"]),
-                "place": data.get("place"),
-                "method": "vision",
-                "confidence": float(data.get("confidence", 0.7)),
-            }
-        if data.get("place"):
-            return {"lat": None, "lon": None, "place": data["place"], "method": "vision", "confidence": 0.3}
-    except Exception as exc:
-        logger.warning("Claude Vision extraction failed: %s", exc)
+    """Reserved hook for a future local open-source OCR/vision worker."""
     return None
 
 
