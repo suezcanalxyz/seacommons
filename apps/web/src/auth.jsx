@@ -1,11 +1,15 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { UserManager, WebStorageStateStore } from 'oidc-client-ts';
 
-const enabled = import.meta.env.VITE_AUTH_ENABLED === 'true';
+const PUBLIC_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org', 'live.seacommons.org']);
+const CONTROLLED_HOSTS = new Set(['console.seacommons.org']);
+const hostname = window.location.hostname;
+const enabled = CONTROLLED_HOSTS.has(hostname)
+  || (!PUBLIC_HOSTS.has(hostname) && import.meta.env.VITE_AUTH_ENABLED === 'true');
 const AuthContext = createContext({ token: null, user: null });
 
 const manager = enabled ? new UserManager({
-  authority: import.meta.env.VITE_OIDC_AUTHORITY,
+  authority: import.meta.env.VITE_OIDC_AUTHORITY || 'https://auth.seacommons.org',
   client_id: import.meta.env.VITE_OIDC_CLIENT_ID || 'seacommons-console',
   redirect_uri: `${window.location.origin}${import.meta.env.BASE_URL}`,
   post_logout_redirect_uri: `${window.location.origin}${import.meta.env.BASE_URL}`,

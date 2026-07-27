@@ -1,7 +1,7 @@
 {
   "name": "SeaCommons",
   "description": "Operational maritime SAR and forensic drift platform for distress intake, live drift simulation, and evidentiary documentation.",
-  "homepage": "https://www.suezcanal.xyz/tools/seacommons/",
+  "homepage": "https://seacommons.org/",
   "repository": "https://github.com/suezcanalxyz/seacommons",
   "requestFramePermissions": []
 }

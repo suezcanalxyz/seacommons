@@ -36,11 +36,11 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "frontchannelLogout": true,
-      "rootUrl": "https://console.seacommons.org",
-      "baseUrl": "https://console.seacommons.org/",
-      "redirectUris": ["https://console.seacommons.org/*"],
-      "webOrigins": ["https://console.seacommons.org"],
-      "attributes": {"pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "https://console.seacommons.org/*"},
+      "rootUrl": "https://live.seacommons.org",
+      "baseUrl": "https://live.seacommons.org/",
+      "redirectUris": ["https://live.seacommons.org/*", "https://console.seacommons.org/*"],
+      "webOrigins": ["https://live.seacommons.org", "https://console.seacommons.org"],
+      "attributes": {"pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "https://live.seacommons.org/*##https://console.seacommons.org/*"},
       "defaultClientScopes": ["web-origins", "acr", "roles", "profile", "email"],
       "protocolMappers": [
         {

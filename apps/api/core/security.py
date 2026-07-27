@@ -78,6 +78,8 @@ def authenticate_token(token: str) -> Principal:
     roles_value = _claim(claims, config.OIDC_ROLES_CLAIM) or claims.get("roles") or []
     if isinstance(roles_value, str):
         roles_value = roles_value.split()
+    if not roles_value:
+        roles_value = config.OIDC_DEFAULT_ROLES
     return Principal(str(claims["sub"]), frozenset(map(str, roles_value)), claims)
 
 

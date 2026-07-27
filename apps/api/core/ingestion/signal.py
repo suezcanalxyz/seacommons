@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -29,6 +29,9 @@ class DistressSignal(BaseModel):
     requires_human_review: bool = True       # True if confidence < 0.70
     extraction_method: str = "regex"         # regex | llm | manual | shared_location
     language_detected: Optional[str] = None  # iso 639-1
+    # User-originated signals are private unless an authenticated reviewer or a
+    # trusted signed partner webhook makes an explicit publication decision.
+    publication_status: Literal["private", "internal", "published"] = "private"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DistressSignal":

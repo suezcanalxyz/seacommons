@@ -51,6 +51,7 @@ class SuezCanalConfig(BaseSettings):
     OIDC_AUDIENCE: str = "seacommons-api"
     OIDC_JWKS_URL: str = ""
     OIDC_ROLES_CLAIM: str = "realm_access.roles"
+    OIDC_DEFAULT_ROLES: list[str] = []
     OIDC_ORGANIZATION_CLAIM: str = "organization_id"
     DEFAULT_RETENTION_DAYS: int = 365
     TELEGRAM_WEBHOOK_SECRET: str = ""
@@ -133,7 +134,7 @@ class SuezCanalConfig(BaseSettings):
     TIMEZERO_EXPORT_DIR: str | None = None
     TIMEZERO_API_KEY: str | None = None
 
-    @field_validator("WITNESS_ENDPOINTS", "TID_CORS_REGIONS", mode="before")
+    @field_validator("WITNESS_ENDPOINTS", "TID_CORS_REGIONS", "OIDC_DEFAULT_ROLES", mode="before")
     @classmethod
     def _split_csv(cls, v: Any) -> list[str]:
         if isinstance(v, str):

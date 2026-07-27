@@ -1,26 +1,46 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build:unified",
   "outputDirectory": "dist",
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/api/v1/live/signals",
+      "destination": "/api/live?resource=signals"
+    },
+    {
+      "source": "/api/v1/live/sources",
+      "destination": "/api/live?resource=sources"
+    },
+    {
       "source": "/api/:path*",
-      "destination": "http://204.216.210.155/api/:path*"
+      "destination": "/api/proxy?path=:path*"
     },
     {
       "source": "/health",
-      "destination": "http://204.216.210.155/health"
+      "destination": "/api/proxy?health=1"
     },
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "source": "/",
+      "has": [{ "type": "host", "value": "play.seacommons.org" }],
+      "destination": "/console.html"
+    },
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "live.seacommons.org" }],
+      "destination": "/console.html"
+    },
+    {
+      "source": "/",
+      "destination": "/site.html"
     }
   ],
   "env": {
     "VITE_PUBLIC_BASE": "/",
     "VITE_APP_PROFILE": "demo",
-    "VITE_AUTH_ENABLED": "false"
+    "VITE_AUTH_ENABLED": "false",
+    "VITE_OIDC_AUTHORITY": "https://auth.seacommons.org",
+    "VITE_OIDC_CLIENT_ID": "seacommons-console"
   }
 }

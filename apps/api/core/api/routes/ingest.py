@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from typing import Literal
 
 from core.ingestion import router as ingest_router
 from core.ingestion.signal import DistressSignal
@@ -39,6 +40,7 @@ class WebhookPayload(BaseModel):
     medical_emergency: bool = False
     children_aboard: bool = False
     timestamp_utc: str | None = None
+    publication_status: Literal["private", "internal", "published"] = "private"
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────

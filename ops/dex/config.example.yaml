@@ -1,0 +1,29 @@
+issuer: https://auth.seacommons.org
+
+storage:
+  type: sqlite3
+  config:
+    file: /var/dex/dex.db
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  grantTypes:
+    - authorization_code
+    - refresh_token
+
+staticClients:
+  - id: seacommons-console
+    name: SeaCommons research console
+    public: true
+    redirectURIs:
+      - https://console.seacommons.org/
+      - https://live.seacommons.org/
+
+enablePasswordDB: true
+staticPasswords:
+  - email: __BETA_EMAIL__
+    hash: __BCRYPT_HASH__
+    username: SeaCommons researcher
+    userID: __BETA_USER_ID__

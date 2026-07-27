@@ -1,4 +1,4 @@
-# suezcanal.xyz Simulation Demo Plan
+# SeaCommons Simulation Demo Plan
 
 ## Intent
 

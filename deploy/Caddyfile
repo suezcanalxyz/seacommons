@@ -3,6 +3,14 @@
   reverse_proxy site:80
 }
 
+{$WWW_DOMAIN} {
+  redir https://{$PUBLIC_DOMAIN}{uri} permanent
+}
+
+{$LEGACY_DOMAIN} {
+  redir https://{$PUBLIC_DOMAIN}{uri} permanent
+}
+
 {$SEACOMMONS_DOMAIN} {
   encode zstd gzip
   reverse_proxy dashboard:3000

@@ -6,8 +6,9 @@ Licensed under AGPL-3.0.
 
 ## Links
 
-- Project page: `https://www.suezcanal.xyz/tools/seacommons/`
-- Live console path: `https://www.suezcanal.xyz/seacommons/`
+- Institutional site: `https://seacommons.org/`
+- Live research map: `https://live.seacommons.org/`
+- Public demo: `https://play.seacommons.org/`
 - Repository: `https://github.com/suezcanalxyz/seacommons`
 
 ## Repository Layout
@@ -54,7 +55,10 @@ Pilot URLs:
 - API: `http://localhost:8000`
 - API docs: `http://localhost:8000/docs`
 
-The dashboard is separate from the public site and uses a small polling surface. When published on the Suez Canal domain, the recommended public path is `/seacommons/`.
+The dashboard is separate from the public institutional site. Production uses
+`live.seacommons.org` for the authenticated operational map and
+`play.seacommons.org` for the isolated public demo. Both expose a same-origin
+`/api` surface; their operational and demo runtimes remain isolated internally.
 
 - `/api/v1/ops/summary`
 - `/api/v1/vessels`

@@ -17,3 +17,5 @@ apps/api/core/data/attachments/
 .env*
 !.env.example
 .gstack/
+.vercel
+.env*.local
