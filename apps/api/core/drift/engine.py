@@ -81,6 +81,16 @@ class DriftEngine:
             ),
             "seed_radius_m": float(config.get("seed_radius_m", 150)),
         }
+        if runtime_config.DEMO_PUBLIC_MODE:
+            logger.info("Using bounded public-demo drift estimate; OpenDrift is reserved for live runtime")
+            return self._demo_fallback(
+                lat,
+                lon,
+                time_utc,
+                duration_h,
+                payload,
+                "isolated public demo profile",
+            )
         try:
             return DriftResult.model_validate(run_leeway(payload))
         except Exception as exc:

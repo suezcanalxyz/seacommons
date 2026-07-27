@@ -9,10 +9,44 @@ from fastapi.testclient import TestClient
 
 from core.api.main import app
 from core.config import config
-from core.security import validate_production_security
+from core.db.session import init_database
+from core.security import authenticate_token, validate_production_security
 
 
+init_database()
 client = TestClient(app)
+
+
+def test_oidc_default_roles_apply_only_after_token_validation(monkeypatch) -> None:
+    import core.security as security
+
+    class SigningKey:
+        key = "validated-signing-key"
+
+    class JWKClient:
+        def __init__(self, _url, cache_keys=True):
+            assert cache_keys is True
+
+        def get_signing_key_from_jwt(self, token):
+            assert token == "signed-token"
+            return SigningKey()
+
+    captured = {}
+
+    def decode(token, key, **kwargs):
+        captured.update(token=token, key=key, **kwargs)
+        return {"sub": "beta-researcher", "exp": 2_000_000_000, "iat": 1_900_000_000}
+
+    previous = config.OIDC_DEFAULT_ROLES
+    config.OIDC_DEFAULT_ROLES = ["researcher"]
+    monkeypatch.setattr(security.jwt, "PyJWKClient", JWKClient)
+    monkeypatch.setattr(security.jwt, "decode", decode)
+    try:
+        principal = authenticate_token("signed-token")
+        assert principal.roles == frozenset({"researcher"})
+        assert captured["options"] == {"require": ["exp", "iat", "sub"]}
+    finally:
+        config.OIDC_DEFAULT_ROLES = previous
 
 
 def test_mutation_requires_auth_when_enabled() -> None:

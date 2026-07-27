@@ -6,6 +6,8 @@ services:
     ports: ["80:80", "443:443"]
     environment:
       PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:-seacommons.org}
+      WWW_DOMAIN: ${WWW_DOMAIN:-www.seacommons.org}
+      LEGACY_DOMAIN: ${LEGACY_DOMAIN:-seacommons.suezcanal.xyz}
       SEACOMMONS_DOMAIN: ${SEACOMMONS_DOMAIN:-console.seacommons.org}
       DEMO_DOMAIN: ${DEMO_DOMAIN:-demo.seacommons.org}
       DEMO_API_DOMAIN: ${DEMO_API_DOMAIN:-demo-api.seacommons.org}

@@ -22,7 +22,7 @@ _MAX_TRACKED_IPS = 10_000  # hard memory bound
 
 
 def _client_ip(request: Request) -> str:
-    # Behind the Vercel rewrite proxy the real client is in x-forwarded-for.
+    # Behind the production reverse proxy the real client is in x-forwarded-for.
     fwd = request.headers.get("x-forwarded-for")
     if fwd:
         return fwd.split(",")[0].strip()

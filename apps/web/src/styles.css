@@ -76,6 +76,197 @@ a:focus-visible {
   border: none;
 }
 
+.map-frame.is-concealed {
+  visibility: hidden;
+}
+
+.cop-shell.is-play-mode .workspace-nav,
+.cop-shell.is-play-mode .workspace-overlay,
+.cop-shell.is-play-mode .map-toolbar,
+.cop-shell.is-play-mode .map-banner,
+.cop-shell.is-play-mode .case-log-panel,
+.cop-shell.is-play-mode .map-cursor-hint,
+.cop-shell.is-play-mode .map-overlay-vessel {
+  display: none;
+}
+
+/* ── Public Play / Cesium 3D sea laboratory ─────────────────────────────── */
+.play-cesium {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: none;
+  overflow: hidden;
+  color: #e9f1ef;
+  background: #06151b;
+}
+.play-cesium.is-active { display: block; }
+.play-cesium__viewport { position: absolute; inset: 0; }
+.play-cesium .cesium-viewer,
+.play-cesium .cesium-viewer-cesiumWidgetContainer,
+.play-cesium .cesium-widget,
+.play-cesium canvas { width: 100%; height: 100%; }
+.play-cesium .cesium-viewer-bottom { left: auto; right: 8px; bottom: 5px; max-width: 55%; }
+.play-cesium .cesium-widget-credits { color: rgba(255,255,255,.62); }
+.play-cesium__weather-fx {
+  --rain-opacity: 0;
+  --cloud-shade: .2;
+  --wind-duration: 1s;
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(2,8,14,calc(var(--cloud-shade) * .22)), transparent 44%);
+  mix-blend-mode: screen;
+}
+.play-cesium__weather-fx::after {
+  content: "";
+  position: absolute;
+  inset: -30% -15%;
+  opacity: var(--rain-opacity);
+  background-image: repeating-linear-gradient(
+    106deg,
+    transparent 0 18px,
+    rgba(205,231,236,.68) 19px,
+    transparent 20px 38px
+  );
+  background-size: 160px 160px;
+  filter: blur(.35px);
+  animation: play-rain var(--wind-duration) linear infinite;
+}
+@keyframes play-rain {
+  from { transform: translate3d(-2%, -10%, 0); }
+  to { transform: translate3d(6%, 16%, 0); }
+}
+.play-cesium__status {
+  position: absolute;
+  top: 54px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+  color: rgba(229,244,240,.72);
+  font: 9px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.play-cesium__status i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: #caff3d;
+  box-shadow: 0 0 12px rgba(202,255,61,.7);
+}
+.play-cesium__status i.is-error { background: #ff603c; box-shadow: none; }
+.play-cesium__source {
+  position: absolute;
+  top: 78px;
+  left: 14px;
+  z-index: 5;
+  max-width: min(440px, calc(100% - 28px));
+  color: rgba(229,244,240,.52);
+  font: 8px var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  pointer-events: none;
+}
+.play-cesium__reticle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  width: 28px;
+  height: 28px;
+  transform: translate(-50%,-50%);
+  opacity: .46;
+  pointer-events: none;
+}
+.play-cesium__reticle i {
+  position: absolute;
+  background: rgba(202,255,61,.82);
+}
+.play-cesium__reticle i:first-child { left: 0; top: 13px; width: 28px; height: 1px; }
+.play-cesium__reticle i:last-child { left: 13px; top: 0; width: 1px; height: 28px; }
+.play-cesium__instrument {
+  position: absolute;
+  left: 14px;
+  bottom: 48px;
+  width: min(350px, calc(100% - 28px));
+  background: rgba(4,16,21,.82);
+  border: 1px solid rgba(202,255,61,.32);
+  backdrop-filter: blur(14px);
+}
+.play-cesium__instrument header {
+  padding: 8px 10px;
+  display: flex;
+  justify-content: space-between;
+  color: #caff3d;
+  border-bottom: 1px solid rgba(255,255,255,.12);
+  font: 8px var(--font-mono);
+}
+.play-cesium__instrument dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; }
+.play-cesium__instrument dl div { padding: 9px 10px; border-right: 1px solid rgba(255,255,255,.1); border-bottom: 1px solid rgba(255,255,255,.1); }
+.play-cesium__instrument dl div:nth-child(2n) { border-right: 0; }
+.play-cesium__instrument dt { color: rgba(229,244,240,.42); font: 7px var(--font-mono); text-transform: uppercase; }
+.play-cesium__instrument dd { margin: 4px 0 0; font: 9px var(--font-mono); }
+.play-cesium__instrument > p { margin: 0; padding: 8px 10px; color: rgba(229,244,240,.46); font: 7px/1.45 var(--font-mono); }
+.play-cesium__views {
+  position: absolute;
+  right: 14px;
+  top: 78px;
+  display: flex;
+  background: rgba(4,16,21,.78);
+  border: 1px solid rgba(255,255,255,.14);
+  backdrop-filter: blur(12px);
+}
+.play-cesium__views button {
+  padding: 7px 10px;
+  color: rgba(229,244,240,.58);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid rgba(255,255,255,.12);
+  font: 8px var(--font-mono);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.play-cesium__views button:last-child { border: 0; }
+.play-cesium__views button.is-active { color: #071015; background: #caff3d; }
+.play-cesium__hint {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  padding: 6px 9px;
+  color: rgba(229,244,240,.62);
+  background: rgba(4,16,21,.76);
+  border: 1px solid rgba(255,255,255,.1);
+  font: 8px var(--font-mono);
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.play-cesium__error {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%,-50%);
+  padding: 12px 16px;
+  color: #fff;
+  background: rgba(120,20,15,.9);
+  border: 1px solid #ff603c;
+  font: 10px var(--font-mono);
+}
+.play-cesium.is-orbital .play-cesium__instrument {
+  opacity: .18;
+  transform: translateY(14px);
+}
+.play-cesium.is-orbital .play-cesium__reticle { opacity: .18; }
+.play-cesium__instrument { transition: opacity .4s ease, transform .4s ease; }
+
 /* ── Windy overlay: tracks map viewport ── */
 .map-windy-overlay {
   position: absolute;
@@ -110,6 +301,7 @@ a:focus-visible {
   pointer-events: none;
   max-width: calc(100% - 220px);
 }
+.map-toolbar.is-3d { top: 108px; }
 
 .toolbar-pills {
   display: flex;

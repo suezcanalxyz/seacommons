@@ -7,11 +7,21 @@ is not required; any Linux host with Docker Compose works.
 
 ## Required DNS
 
-- `console.seacommons.org` -> host public IP
-- `demo.seacommons.org` -> host public IP
-- `demo-api.seacommons.org` -> host public IP
+- `seacommons.org` -> host public IP
+- `www.seacommons.org` -> `seacommons.org`
+- `live.seacommons.org` -> authenticated live-map frontend
+- `play.seacommons.org` -> isolated public-demo frontend
 - `api.seacommons.org` -> host public IP
 - `auth.seacommons.org` -> host public IP
+
+The Vercel edge profile serves both frontends with same-origin `/api` routes.
+The operational and demo API processes stay separate internally, even though
+users do not need a second public API hostname.
+
+After the new names pass TLS and application acceptance, point
+`seacommons.suezcanal.xyz` to the same host and keep the permanent redirect to
+`https://seacommons.org`. Do not delete the old record before the redirect is
+live, or existing bookmarks and indexed URLs will break.
 
 ## Bootstrap
 

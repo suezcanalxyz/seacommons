@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seacommons.org/schemas/drift-scene-v1.schema.json",
+  "title": "SeaCommons drift scene v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scenario_id",
+    "generated_at",
+    "simulation",
+    "subject",
+    "environment",
+    "trajectory",
+    "rendering"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "drift-scene/v1"
+    },
+    "scenario_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "simulation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "status", "authoritative_for"],
+      "properties": {
+        "engine": {
+          "enum": ["opendrift", "deterministic-fallback"]
+        },
+        "status": {
+          "enum": ["operational", "degraded", "demo"]
+        },
+        "authoritative_for": {
+          "type": "array",
+          "items": {
+            "enum": ["horizontal_drift", "uncertainty", "none"]
+          },
+          "uniqueItems": true
+        },
+        "model_version": {
+          "type": "string"
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "persons", "anonymous"],
+      "properties": {
+        "kind": {
+          "enum": ["vessel", "raft", "person_in_water", "unknown"]
+        },
+        "persons": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "anonymous": {
+          "const": true
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observed_at", "wind", "current", "waves"],
+      "properties": {
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "wind": {
+          "$ref": "#/$defs/vector"
+        },
+        "current": {
+          "$ref": "#/$defs/vector"
+        },
+        "waves": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "significant_height_m",
+            "period_s",
+            "direction_deg",
+            "direction_source"
+          ],
+          "properties": {
+            "significant_height_m": {
+              "type": "number",
+              "minimum": 0
+            },
+            "period_s": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "direction_deg": {
+              "$ref": "#/$defs/bearing"
+            },
+            "direction_source": {
+              "enum": [
+                "directional-wave-product",
+                "wind-proxy",
+                "scenario-assumption"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "trajectory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["crs", "positions"],
+      "properties": {
+        "crs": {
+          "const": "EPSG:4326"
+        },
+        "positions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["time", "coordinates"],
+            "properties": {
+              "time": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "coordinates": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "minItems": 2,
+                "maxItems": 3
+              }
+            }
+          }
+        }
+      }
+    },
+    "rendering": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "people_per_cube",
+        "vertical_motion_physical",
+        "interpolation"
+      ],
+      "properties": {
+        "people_per_cube": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "vertical_motion_physical": {
+          "type": "boolean"
+        },
+        "interpolation": {
+          "enum": ["linear", "sampled-position"]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "bearing": {
+      "type": "number",
+      "minimum": 0,
+      "exclusiveMaximum": 360
+    },
+    "vector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["speed_m_s", "direction_deg", "source"],
+      "properties": {
+        "speed_m_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "direction_deg": {
+          "$ref": "#/$defs/bearing"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

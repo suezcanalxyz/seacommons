@@ -1,0 +1,18 @@
+[Unit]
+Description=SeaCommons lightweight OIDC provider (Dex)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+ExecStartPre=-/usr/bin/docker rm -f seacommons-dex
+ExecStart=/usr/bin/docker run --name seacommons-dex --memory=128m --memory-swap=256m --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -p 127.0.0.1:5556:5556 -v /etc/seacommons-dex/config.yaml:/etc/dex/config.yaml:ro -v /var/lib/seacommons-dex:/var/dex ghcr.io/dexidp/dex:v2.45.1-alpine dex serve /etc/dex/config.yaml
+ExecStop=/usr/bin/docker stop -t 15 seacommons-dex
+TimeoutStartSec=180
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -4,8 +4,8 @@ This is the cheapest practical live-demo setup for SeaCommons:
 
 - Frontend on Cloudflare Pages
 - Backend API on Oracle Cloud Always Free
-- Public frontend domain like `demo.suezcanal.xyz`
-- Public API domain like `api-demo.suezcanal.xyz`
+- Public frontend domain `demo.seacommons.org`
+- Public API domain `demo-api.seacommons.org`
 
 ## 1. Frontend: Cloudflare Pages
 
@@ -23,7 +23,7 @@ Root directory: /
 Environment variables for the frontend:
 
 ```text
-VITE_API_BASE=https://api-demo.suezcanal.xyz
+VITE_API_BASE=https://demo-api.seacommons.org
 VITE_PUBLIC_BASE=/
 VITE_MAPTILER_KEY=your_maptiler_key
 VITE_WINDY_KEY=
@@ -32,7 +32,7 @@ VITE_OWM_KEY=
 
 Notes:
 
-- `VITE_PUBLIC_BASE=/` is the correct value when Pages serves the app from the root of `demo.suezcanal.xyz`.
+- `VITE_PUBLIC_BASE=/` is the correct value when Pages serves the app from the root of `demo.seacommons.org`.
 - If you host under a path instead, use `VITE_PUBLIC_BASE=/seacommons/`.
 - The `public/_redirects` file ensures SPA fallback to `index.html`.
 
@@ -141,7 +141,7 @@ Create `/etc/nginx/sites-available/seacommons-api`:
 
 ```nginx
 server {
-    server_name api-demo.suezcanal.xyz;
+    server_name demo-api.seacommons.org;
 
     location / {
         proxy_pass http://127.0.0.1:8000;
@@ -166,22 +166,22 @@ Use Certbot once DNS is pointed:
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d api-demo.suezcanal.xyz
+sudo certbot --nginx -d demo-api.seacommons.org
 ```
 
 ## 8. DNS
 
 Set:
 
-- `demo.suezcanal.xyz` -> Cloudflare Pages custom domain
-- `api-demo.suezcanal.xyz` -> Oracle VM public IP
+- `demo.seacommons.org` -> Cloudflare Pages custom domain
+- `demo-api.seacommons.org` -> Oracle VM public IP
 
 ## 9. Recommended rollout order
 
 1. Bring up Oracle VM and API first.
-2. Verify `https://api-demo.suezcanal.xyz/health`.
+2. Verify `https://demo-api.seacommons.org/health`.
 3. Deploy frontend to Cloudflare Pages with `VITE_API_BASE` set.
-4. Attach `demo.suezcanal.xyz`.
+4. Attach `demo.seacommons.org`.
 5. Test `POST /api/v1/alert` from the live frontend.
 
 ## 10. Limits of the free demo

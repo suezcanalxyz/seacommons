@@ -29,7 +29,7 @@ from fastapi import HTTPException
 
 from core.config import config
 from core.api.routes import alerts, drift, anomaly, forensic, integrations, ops, vessels
-from core.api.routes import ingest, probability, weather, zones, intel, cases, governance
+from core.api.routes import ingest, probability, weather, zones, intel, cases, governance, live
 from core.db.session import init_database
 from core.security import READ_ROLES, WRITE_ROLES, require_roles, validate_production_security
 from core.observability import configure_logging, metrics_middleware
@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
         intel_store.reset_computing_drifts()
     except Exception as exc:
         logger.warning("Intel DB reload failed: %s", exc)
-    if config.JOB_EXECUTION_MODE != "queue":
+    if config.JOB_EXECUTION_MODE != "queue" and not config.DEMO_PUBLIC_MODE:
         try:
             from core.drift.opendrift_pool import prewarm
             prewarm()
@@ -205,7 +205,10 @@ async def authorization_gate(request, call_next):
         "/health", "/ready", "/metrics", "/docs", "/openapi.json", "/redoc",
         "/api/v1/ingest/twilio/whatsapp", "/api/v1/ingest/twilio/sms",
         "/api/v1/ingest/telegram", "/api/v1/ingest/webhook",
-    }
+    } or (
+        request.method in {"GET", "HEAD", "OPTIONS"}
+        and path.startswith("/api/v1/live/")
+    )
     try:
         if not public:
             if path.startswith(("/api/v1/admin", "/api/v1/governance")):
@@ -221,11 +224,11 @@ async def authorization_gate(request, call_next):
 # CORS: allow_credentials MUST be False when allow_origins=["*"].
 # Starlette ≥0.40 raises ValueError otherwise (HTTP spec violation).
 # The frontend never sends cookies, so credentials=False is correct.
-# In production the browser talks to Vercel (same-origin); CORS is only
-# exercised during local dev (localhost → Oracle direct).
+# Production frontends use the dedicated SeaCommons API hosts. Local origins
+# remain available for development.
 _ALLOWED_ORIGINS = [o.strip() for o in os.environ.get(
     "ALLOWED_ORIGINS",
-    "https://seacommons.suezcanal.xyz,https://www.suezcanal.xyz,"
+    "https://console.seacommons.org,https://demo.seacommons.org,"
     "http://localhost:5173,http://localhost:3000,http://localhost:8000",
 ).split(",") if o.strip()]
 
@@ -253,6 +256,7 @@ app.include_router(zones.router)
 app.include_router(intel.router)
 app.include_router(cases.router)
 app.include_router(governance.router)
+app.include_router(live.router)
 
 
 @app.get("/health")

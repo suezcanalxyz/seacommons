@@ -214,6 +214,7 @@ function groupByHour(events) {
 // ── Main component ───────────────────────────────────────────────────────────
 export default function IntelDashboard({
   apiBase,
+  publicMode = false,
   intelEvents,
   intelDrifts,
   intelStats,
@@ -241,7 +242,8 @@ export default function IntelDashboard({
     let alive = true;
     async function loadSources() {
       try {
-        const resp = await fetch(`${apiBase}/api/v1/intel/sources`);
+        const endpoint = publicMode ? '/api/v1/live/sources' : '/api/v1/intel/sources';
+        const resp = await fetch(`${apiBase}${endpoint}`);
         if (resp.ok) {
           const data = await resp.json();
           if (alive) setSources(data.sources || []);
@@ -254,7 +256,7 @@ export default function IntelDashboard({
       alive = false;
       window.clearTimeout(pollRef.current);
     };
-  }, [apiBase]);
+  }, [apiBase, publicMode]);
 
   // Filtered + searched events
   const filteredEvents = useMemo(() => {
@@ -357,12 +359,12 @@ export default function IntelDashboard({
             >Map</button>
           ) : coords && (p.drift_status === 'computing' || triggeringDrift?.has(p.id)) ? (
             <button className="intel-drift-btn intel-drift-btn--computing" disabled>…</button>
-          ) : coords && p.drift_status === 'failed' ? (
+          ) : !publicMode && coords && p.drift_status === 'failed' ? (
             <button
               className="intel-drift-btn intel-drift-btn--retry"
               onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(p.id, coords[1], coords[0]); }}
             >Retry</button>
-          ) : coords && p.drift_status !== 'completed' ? (
+          ) : !publicMode && coords && p.drift_status !== 'completed' ? (
             <button
               className="intel-drift-btn intel-drift-btn--trigger"
               onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(p.id, coords[1], coords[0]); }}
@@ -402,9 +404,11 @@ export default function IntelDashboard({
               className={intelMode === 'ws' ? 'intel-connected' : intelMode === 'poll' ? 'intel-connected-poll' : 'intel-offline'}
               title={intelMode === 'ws' ? 'Live WebSocket' : intelMode === 'poll' ? 'Polling every 30s' : 'Connecting…'}
             >●</span>
-            <button className="intel-inject-trigger" onClick={() => setShowInject(true)} title="Inject manual event">
-              + Manual
-            </button>
+            {!publicMode ? (
+              <button className="intel-inject-trigger" onClick={() => setShowInject(true)} title="Inject manual event">
+                + Manual
+              </button>
+            ) : null}
           </div>
         </div>
         <SourceHealthBar sources={sources} />
@@ -576,7 +580,7 @@ export default function IntelDashboard({
       )}
 
       {/* Manual injection modal */}
-      {showInject && (
+      {!publicMode && showInject && (
         <ManualInjectForm
           apiBase={apiBase}
           onClose={() => setShowInject(false)}

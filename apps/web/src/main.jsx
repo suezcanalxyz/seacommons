@@ -10,11 +10,20 @@ import LayerToggles, { LAYER_GROUPS } from './components/LayerToggles.jsx';
 import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
 import JobMonitor from './components/JobMonitor.jsx';
+import PlayCesium from './components/PlayCesium.jsx';
 
-const PUBLIC_DEMO_HOSTS = new Set(['seacommons.suezcanal.xyz', 'demo.seacommons.org']);
-const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname) ||
-  (window.location.hostname.endsWith('.vercel.app') && !window.location.hostname.includes('console'));
-const APP_PROFILE = import.meta.env.VITE_APP_PROFILE === 'demo' || isPublicDemoHost ? 'demo' : 'live';
+const PUBLIC_DEMO_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org']);
+const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org']);
+const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
+const isPublicLiveHost = window.location.hostname === 'live.seacommons.org';
+const isLiveHost = LIVE_HOSTS.has(window.location.hostname);
+const APP_PROFILE = isLiveHost
+  ? 'live'
+  : isPublicDemoHost
+    ? 'demo'
+    : import.meta.env.VITE_APP_PROFILE === 'live'
+      ? 'live'
+      : 'demo';
 
 function enrichCaseGeo(geojson, lat, lon) {
   // Idempotent: replaying an already-enriched collection must not duplicate the origin marker.
@@ -76,8 +85,10 @@ function guessApiBase() {
     if (saved) return saved.replace(/\/$/, '');
     return `${protocol}//${hostname}:8000`;
   }
-  // In production always use origin — API is proxied via Vercel rewrites.
-  // Ignore any stale localStorage entry that may point to a dead backend.
+  if (hostname === 'console.seacommons.org') return 'https://api.seacommons.org';
+  if (hostname === 'demo.seacommons.org') return 'https://demo-api.seacommons.org';
+  // Other production deployments may provide a same-origin API proxy.
+  // Ignore stale localStorage entries that may point to a retired backend.
   return origin;
 }
 
@@ -119,6 +130,106 @@ async function fetchJson(base, path, options, timeoutMs = 12000) {
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+async function fetchOpenMeteoEnvironment(lat, lon) {
+  const latitude = Number(lat);
+  const longitude = Number(lon);
+  const weatherUrl = new URL('https://api.open-meteo.com/v1/forecast');
+  weatherUrl.searchParams.set('latitude', latitude.toFixed(4));
+  weatherUrl.searchParams.set('longitude', longitude.toFixed(4));
+  weatherUrl.searchParams.set(
+    'current',
+    'temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,visibility,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
+  );
+  weatherUrl.searchParams.set('wind_speed_unit', 'ms');
+  weatherUrl.searchParams.set('timezone', 'UTC');
+
+  const marineUrl = new URL('https://marine-api.open-meteo.com/v1/marine');
+  marineUrl.searchParams.set('latitude', latitude.toFixed(4));
+  marineUrl.searchParams.set('longitude', longitude.toFixed(4));
+  marineUrl.searchParams.set(
+    'current',
+    'wave_height,wave_direction,wave_period,sea_surface_temperature,ocean_current_velocity,ocean_current_direction',
+  );
+  marineUrl.searchParams.set('timezone', 'UTC');
+
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 10000);
+  try {
+    const [weatherResponse, marineResponse] = await Promise.all([
+      fetch(weatherUrl, { signal: controller.signal }),
+      fetch(marineUrl, { signal: controller.signal }),
+    ]);
+    if (!weatherResponse.ok || !marineResponse.ok) {
+      throw new Error(`Open-Meteo ${weatherResponse.status}/${marineResponse.status}`);
+    }
+    const [weatherPayload, marinePayload] = await Promise.all([
+      weatherResponse.json(),
+      marineResponse.json(),
+    ]);
+    const current = weatherPayload.current || {};
+    const marine = marinePayload.current || {};
+    const marineUnits = marinePayload.current_units || {};
+    const currentVelocity = Number(marine.ocean_current_velocity);
+    const currentSpeedMs = marineUnits.ocean_current_velocity === 'km/h'
+      ? currentVelocity / 3.6
+      : currentVelocity;
+    const timestamp = String(current.time || marine.time || new Date().toISOString());
+
+    return {
+      timestamp_utc: timestamp.endsWith('Z') || timestamp.includes('+') ? timestamp : `${timestamp}:00Z`,
+      source: 'Open-Meteo weather + marine best match',
+      wind: {
+        speed_ms: Number(current.wind_speed_10m),
+        speed_kn: Number(current.wind_speed_10m) * 1.94384,
+        direction_deg: Number(current.wind_direction_10m),
+        gust_speed_ms: Number(current.wind_gusts_10m),
+      },
+      waves: {
+        significant_height_m: Number(marine.wave_height),
+        period_s: Number(marine.wave_period),
+        direction_deg: Number(marine.wave_direction),
+        direction_source: 'Open-Meteo marine model',
+      },
+      ocean: {
+        water_temp_c: Number(marine.sea_surface_temperature),
+        current_speed_ms: currentSpeedMs,
+        current_dir_deg: Number(marine.ocean_current_direction),
+      },
+      air: {
+        temp_c: Number(current.temperature_2m),
+        apparent_temp_c: Number(current.apparent_temperature),
+        humidity_pct: Number(current.relative_humidity_2m),
+        pressure_hpa: Number(current.surface_pressure),
+        visibility_km: Number(current.visibility) / 1000,
+        cloud_cover_pct: Number(current.cloud_cover),
+        precipitation_mm: Number(current.precipitation),
+        weather_code: Number(current.weather_code),
+        is_day: Number(current.is_day) === 1,
+      },
+      environmental_model: {
+        kind: 'modelled-current-conditions',
+        weather_resolution: 'best-match',
+        marine_resolution: '5–9 km nominal',
+        navigation_use: false,
+      },
+    };
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+function mergeEnvironment(base, realtime) {
+  if (!realtime) return base;
+  return {
+    ...base,
+    ...realtime,
+    wind: { ...(base?.wind || {}), ...realtime.wind },
+    waves: { ...(base?.waves || {}), ...realtime.waves },
+    ocean: { ...(base?.ocean || {}), ...realtime.ocean },
+    air: { ...(base?.air || {}), ...realtime.air },
+  };
 }
 
 function Pill({ label, tone = 'default' }) {
@@ -258,6 +369,7 @@ function App() {
   const [weather, setWeather] = useState(null);
   const [weatherGrid, setWeatherGrid] = useState({ type: 'FeatureCollection', features: [] });
   const [weatherVectors, setWeatherVectors] = useState({ type: 'FeatureCollection', features: [] });
+  const [play3D, setPlay3D] = useState(APP_PROFILE === 'demo');
   const [timezero, setTimezero] = useState(null);
   const [selectedVessel, setSelectedVessel] = useState(null);
   const [nearestVessels, setNearestVessels] = useState([]);
@@ -306,8 +418,8 @@ function App() {
   const simParamsRef = useRef({});
   const intelWsRef = useRef(null);
   const [form, setForm] = useState({
-    lat: '',
-    lon: '',
+    lat: APP_PROFILE === 'demo' ? '35.52' : '',
+    lon: APP_PROFILE === 'demo' ? '14.08' : '',
     persons: '1',
     vessel_type: 'rubber_boat',
     risk_level: 'high',
@@ -342,9 +454,19 @@ function App() {
   }
 
   async function loadWeatherFor(lat, lon) {
-    const payload = await fetchJson(
-      apiBase,
-      `/api/v1/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
+    const [baseResult, realtimeResult] = await Promise.allSettled([
+      fetchJson(
+        apiBase,
+        `/api/v1/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
+      ),
+      fetchOpenMeteoEnvironment(lat, lon),
+    ]);
+    if (baseResult.status === 'rejected' && realtimeResult.status === 'rejected') {
+      throw baseResult.reason;
+    }
+    const payload = mergeEnvironment(
+      baseResult.status === 'fulfilled' ? baseResult.value : {},
+      realtimeResult.status === 'fulfilled' ? realtimeResult.value : null,
     );
     setWeather(payload);
     pushCaseLog(`Weather ${payload.source} @ ${Number(lat).toFixed(3)}, ${Number(lon).toFixed(3)}`);
@@ -414,12 +536,16 @@ function App() {
   }, [caseStatus]);
 
   // ── Intel feed: REST polling always-on + WS upgrade when available ───────────
-  // Vercel does NOT proxy WebSocket connections, so wss://seacommons.suezcanal.xyz
-  // always fails in production. We start REST polling immediately so data flows
-  // on first load, and attempt WS in parallel — if it connects (direct backend /
-  // dev) it takes over; if it fails we just keep polling.
+  // Start REST polling immediately so data flows on first load. The dedicated
+  // api.seacommons.org endpoint supports WebSocket upgrades; if the upgrade
+  // fails, polling remains active.
   useEffect(() => {
     const wsBase = apiBase.replace(/^http/, 'ws');
+    const feedPath = isPublicLiveHost
+      ? '/api/v1/live/signals?limit=300&days=30'
+      : '/api/v1/intel?limit=200&days=30';
+    const streamPath = isPublicLiveHost ? '/api/v1/live/stream' : '/ws/intel';
+    const pollIntervalMs = isPublicLiveHost ? 10000 : 30000;
     let ws = null;
     let reconnectTimer = null;
     let pollTimer = null;
@@ -462,7 +588,7 @@ function App() {
 
     async function pollOnce() {
       try {
-        const data = await fetchJson(apiBase, '/api/v1/intel?limit=200&days=30');
+        const data = await fetchJson(apiBase, feedPath);
         if (!alive) return;
         if (data.features) {
           setIntelEvents(data.features);
@@ -484,7 +610,7 @@ function App() {
       while (alive) {
         await pollOnce();
         if (!alive) break;
-        await new Promise((res) => { pollTimer = window.setTimeout(res, 30000); });
+        await new Promise((res) => { pollTimer = window.setTimeout(res, pollIntervalMs); });
       }
       polling = false;
     }
@@ -493,8 +619,8 @@ function App() {
       if (!alive || !wsAlive) return;
       const token = window.__SEACOMMONS_ACCESS_TOKEN__;
       ws = token
-        ? new WebSocket(`${wsBase}/ws/intel`, ['bearer', token])
-        : new WebSocket(`${wsBase}/ws/intel`);
+        ? new WebSocket(`${wsBase}${streamPath}`, ['bearer', token])
+        : new WebSocket(`${wsBase}${streamPath}`);
       intelWsRef.current = ws;
 
       const openTimer = window.setTimeout(() => {
@@ -518,12 +644,11 @@ function App() {
 
     // Start REST polling immediately — data on first load regardless of WS
     pollLoop();
-    // Only try WebSocket for a direct backend (localhost, LAN IP, raw public IP).
-    // When apiBase === window.location.origin the frontend is served via a CDN
-    // rewrite (e.g. Vercel) which cannot proxy WebSocket upgrades — skip to avoid
-    // the WS failed console error on every page load.
+    // A distinct API origin is a direct reverse-proxy endpoint and supports the
+    // WebSocket upgrade. Same-origin CDN deployments retain REST polling only.
     const apiHost = apiBase.replace(/^https?:\/\//, '').split('/')[0];
-    const isDirectBackend = /^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(apiHost)
+    const isDirectBackend = apiBase !== window.location.origin
+      || /^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(apiHost)
       || /^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(apiHost);
     if (isDirectBackend) tryWs();
 
@@ -1395,6 +1520,9 @@ function App() {
       loadNearestVessels(selectedLat, selectedLon).catch(() => {
         if (!cancelled) setNearestVessels([]);
       });
+      loadWeatherFor(selectedLat, selectedLon).catch(() => {
+        // The renderer retains its last valid environmental state.
+      });
     }, 400);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [apiBase, selectedLat, selectedLon]);
@@ -1405,11 +1533,12 @@ function App() {
     const openAlerts = stats?.sar?.open_alerts ?? 0;
     return [
       { label: 'AIS',      value: summary.traffic?.registry?.active_30m ?? '—', tone: 'ok' },
-      { label: 'Signals',  value: stats?.signals?.recent_event_count ?? '—',    tone: 'info' },
+      { label: 'Signals',  value: intelEvents.length || stats?.signals?.recent_event_count || 0, tone: 'info' },
+      { label: 'Feed',     value: intelMode === 'ws' ? 'stream' : intelMode === 'poll' ? 'live' : 'sync', tone: intelConnected ? 'ok' : 'info' },
       { label: 'Alerts',   value: openAlerts,                                    tone: openAlerts > 0 ? 'warn' : 'default' },
       { label: 'Forensics',value: stats?.sar?.forensic_packets ?? '—',           tone: 'default' },
     ];
-  }, [summary, stats]);
+  }, [summary, stats, intelEvents.length, intelMode, intelConnected]);
 
   const serviceRows = useMemo(() => {
     if (!summary) return [];
@@ -1654,20 +1783,40 @@ function App() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <main className="cop-shell">
+    <main className={`cop-shell ${play3D && APP_PROFILE === 'demo' ? 'is-play-mode' : ''}`}>
       <section className="map-stage">
-        <div className="map-frame" ref={mapNodeRef} />
+        <div className={`map-frame ${play3D ? 'is-concealed' : ''}`} ref={mapNodeRef} />
+        {APP_PROFILE === 'demo' ? (
+          <PlayCesium
+            active={play3D}
+            geojson={caseGeojson}
+            weather={weather}
+            lat={form.lat}
+            lon={form.lon}
+            persons={form.persons}
+            onPick={(pickedLat, pickedLon) => {
+              setForm((current) => ({ ...current, lat: pickedLat.toFixed(5), lon: pickedLon.toFixed(5) }));
+              loadWeatherFor(pickedLat, pickedLon).catch(() => {});
+              loadNearestVessels(pickedLat, pickedLon).catch(() => {});
+            }}
+          />
+        ) : null}
 
-        <div className="map-toolbar">
+        <div className={`map-toolbar ${play3D ? 'is-3d' : ''}`}>
           <div className="toolbar-pills">
+            {APP_PROFILE === 'demo' ? (
+              <button className={`map-toggle ${play3D ? 'is-on' : ''}`} type="button" onClick={() => setPlay3D((current) => !current)}>
+                {play3D ? '3D sea' : '2D chart'}
+              </button>
+            ) : null}
             {topStats.map((stat) => (
               <Pill key={stat.label} label={`${stat.label}: ${stat.value}`} tone={stat.tone} />
             ))}
-            <Pill label={MAPTILER_KEY ? 'Satellite' : 'OSM'} tone="info" />
+            <Pill label={play3D ? 'WGS84' : MAPTILER_KEY ? 'Satellite' : 'OSM'} tone="info" />
           </div>
         </div>
 
-        <LayerToggles visibility={layerVis} onToggle={toggleLayerGroup} />
+        {!play3D ? <LayerToggles visibility={layerVis} onToggle={toggleLayerGroup} /> : null}
 
         {error  ? <div className={`map-banner error ${sidebarOpen ? 'sidebar-open' : ''}`}>{error}</div> : null}
         {loading ? <div className={`map-banner ${sidebarOpen ? 'sidebar-open' : ''}`}>Connecting to backend…</div> : null}
@@ -1678,15 +1827,17 @@ function App() {
           </div>
         ) : null}
 
-        <div className={`map-overlay ${sidebarOpen ? 'sidebar-open' : ''}`}>
-          <div className="overlay-card">
-            <span className="overlay-label">Selected point</span>
-            <strong>{Number.isFinite(selectedLat) ? `${selectedLat.toFixed(5)}, ${selectedLon.toFixed(5)}` : '—'}</strong>
-            <span>{isOnSim ? 'Click map to set coordinates.' : 'Click map for point forecast.'}</span>
+        {!play3D ? (
+          <div className={`map-overlay ${sidebarOpen ? 'sidebar-open' : ''}`}>
+            <div className="overlay-card">
+              <span className="overlay-label">Selected point</span>
+              <strong>{Number.isFinite(selectedLat) ? `${selectedLat.toFixed(5)}, ${selectedLon.toFixed(5)}` : '—'}</strong>
+              <span>{isOnSim ? 'Click map to set coordinates.' : 'Click map for point forecast.'}</span>
+            </div>
           </div>
-        </div>
+        ) : null}
 
-        {selectedVessel ? (
+        {selectedVessel && !play3D ? (
           <div className={`map-overlay-vessel ${sidebarOpen ? 'sidebar-open' : ''}`}>
             <div className="overlay-card">
               <span className="overlay-label">Selected vessel</span>
@@ -1832,6 +1983,7 @@ function App() {
           {activePanel === 'osint' ? (
             <IntelDashboard
               apiBase={apiBase}
+              publicMode={isPublicLiveHost}
               intelEvents={intelEvents}
               intelDrifts={intelDrifts}
               intelStats={intelStats}

@@ -82,4 +82,5 @@ def handle_webhook(payload: dict[str, Any]) -> DistressSignal:
         requires_human_review=confidence < 0.70,
         extraction_method=method,
         language_detected=_extractor.detect_language(raw) if raw else None,
+        publication_status=str(payload.get("publication_status") or "private"),
     )
