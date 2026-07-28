@@ -160,6 +160,28 @@ _MEDIUM_TERMS = frozenset([
     "contact lost", "missing", "irregolari", "migranti",
 ])
 
+_DIRECT_DISTRESS_PATTERNS = tuple(
+    re.compile(pattern, re.I)
+    for pattern in (
+        r"(?:🆘|🆘️|\bmayday\b|\bsos\b)",
+        r"\b(?:people|persons|lives|passengers|migrants)\s+(?:are\s+)?(?:in distress|at risk|in danger)\b",
+        r"\b(?:boat|vessel|dinghy|rubber boat)\b.{0,45}\b(?:in distress|taking water|sinking|capsized)\b",
+        r"\b(?:taking water|people drowning|drifting at sea|no fuel left|engine (?:does not|doesn't|stopped|failed|is not) work)\b",
+        r"\b(?:rescue|medical assistance)\s+(?:is|are)\s+(?:urgently\s+|immediately\s+)?(?:needed|required)\b",
+        r"\b(?:ask|asked|asking|call|called|calling)\s+for\s+(?:an?\s+)?(?:urgent|immediate)\s+(?:search and rescue|rescue|medical assistance|assistance)\b",
+        r"\b(?:critical situation|critical condition)\b.{0,100}\b(?:authorities|coast ?guard|rescue|assistance)\b",
+    )
+)
+_RESOLVED_DISTRESS_PATTERNS = tuple(
+    re.compile(pattern, re.I)
+    for pattern in (
+        r"\b(?:all|everyone|the group|the people)\s+(?:is|are|were)\s+(?:now\s+)?safe\b",
+        r"\b(?:was|were|has been|have been)\s+(?:rescued|disembarked|transferred to the mainland)\b",
+        r"\b(?:rescue|operation)\s+(?:was|is|has been)\s+(?:completed|concluded)\b",
+        r"\barrived safely\b",
+    )
+)
+
 # ── Regex patterns ────────────────────────────────────────────────────────────
 _RE_DECIMAL_NS = re.compile(
     r"(\d{1,2}(?:\.\d{1,5})?)\s*°?\s*([NnSs])"
@@ -262,6 +284,21 @@ def is_distress(text: str) -> bool:
     """True if text contains any distress keyword."""
     tl = text.lower()
     return any(kw in tl for kw in DISTRESS_KW)
+
+
+def is_direct_distress_call(text: str) -> bool:
+    """Return True only for an actionable, direct distress or SAR request.
+
+    This intentionally excludes retrospective reporting and generic concern.
+    Live uses this stricter signal than ``is_distress`` so a mention of a past
+    shipwreck or an already completed rescue cannot become an operational call.
+    """
+    normalised = re.sub(r"\s+", " ", text).strip()
+    if not normalised:
+        return False
+    if any(pattern.search(normalised) for pattern in _RESOLVED_DISTRESS_PATTERNS):
+        return False
+    return any(pattern.search(normalised) for pattern in _DIRECT_DISTRESS_PATTERNS)
 
 
 def is_rescue(text: str) -> bool:

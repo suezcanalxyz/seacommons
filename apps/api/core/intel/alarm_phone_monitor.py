@@ -25,7 +25,7 @@ from core.intel.geoextract import (
     classify_severity,
     extract_coords,
     extract_numeric_coords,
-    is_distress,
+    is_direct_distress_call,
 )
 from core.intel.store import IntelEvent, intel_store
 
@@ -274,7 +274,7 @@ class AlarmPhoneMonitor:
         tweet_id = post.get("id", "")
         if len(text) < 10 or not tweet_id:
             return False
-        distress = is_distress(text)
+        distress = is_direct_distress_call(text)
         text_coords = extract_numeric_coords(text)
         media_coords = post.get("media_coords")
         coords = text_coords or media_coords or extract_coords(text)
@@ -314,6 +314,9 @@ class AlarmPhoneMonitor:
                     else "none"
                 ),
                 "is_distress": distress,
+                "distress_classification": (
+                    "direct_call" if distress else "context"
+                ),
                 "verification_status": (
                     "machine_extracted_unverified"
                     if coordinate_source == "media_ocr_consensus"

@@ -16,7 +16,7 @@ from core.intel.alarm_phone_monitor import (
     parse_official_timeline,
     x_id_timestamp,
 )
-from core.intel.geoextract import extract_numeric_coords
+from core.intel.geoextract import extract_numeric_coords, is_direct_distress_call
 from core.intel.news_monitor import RSS_FEEDS
 from core.intel.store import IntelEvent, IntelStore
 from core.intel.twitter_monitor import TwitterMonitor
@@ -148,6 +148,31 @@ def test_alarm_phone_official_site_policy_can_enter_live() -> None:
     assert feature is not None
     assert feature["geometry"] is None
     assert feature["properties"]["verification_status"] == "unverified_public_source"
+
+
+def test_direct_distress_call_classifier_is_conservative() -> None:
+    assert is_direct_distress_call(
+        "🆘 from 42 people in distress south of Crete. "
+        "They have no fuel left and are drifting at sea."
+    )
+    assert is_direct_distress_call(
+        "21 lives at risk. Rescue to a safe place is needed!"
+    )
+    assert is_direct_distress_call(
+        "10 people are stuck on an islet. Two infants are in critical "
+        "condition. We asked authorities for urgent medical assistance."
+    )
+    assert not is_direct_distress_call(
+        "Where is the person stranded on Chafarinas Islands? Three days ago "
+        "authorities claimed the person was transferred to the mainland."
+    )
+    assert not is_direct_distress_call(
+        "There is no information about the whereabouts of this group. "
+        "We fear another pushback."
+    )
+    assert not is_direct_distress_call(
+        "The group was rescued and everyone is now safe."
+    )
 
 
 def test_intel_store_deduplicates_source_ids_and_content() -> None:

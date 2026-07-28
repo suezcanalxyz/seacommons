@@ -29,6 +29,7 @@ _PUBLIC_METADATA = frozenset(
         "coordinate_source",
         "country",
         "dead",
+        "distress_classification",
         "incident_id",
         "is_distress",
         "location_uncertainty_m",
@@ -195,7 +196,12 @@ def public_signal_collection(
     since: Optional[str] = None,
 ) -> dict[str, Any]:
     events = intel_store.events(limit=min(limit * 2, 600), max_age_days=days)
-    features = [feature for event in events if (feature := _public_intel_feature(event))]
+    features = [
+        feature
+        for event in events
+        if (feature := _public_intel_feature(event))
+        and feature["properties"].get("kind") == "distress"
+    ]
     features.extend(_published_ingested_features(limit))
     if since:
         features = [
@@ -509,7 +515,7 @@ async def live_stream(websocket: WebSocket):
     previous_digest = ""
     try:
         while True:
-            snapshot = public_signal_collection(limit=300, days=30)
+            snapshot = public_signal_collection(limit=300, days=3)
             payload = json.dumps(
                 {
                     "type": "snapshot",
