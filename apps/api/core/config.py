@@ -55,6 +55,10 @@ class SuezCanalConfig(BaseSettings):
     OIDC_ORGANIZATION_CLAIM: str = "organization_id"
     DEFAULT_RETENTION_DAYS: int = 365
     TELEGRAM_WEBHOOK_SECRET: str = ""
+    META_APP_ID: str = ""
+    META_APP_SECRET: str = ""
+    META_WEBHOOK_VERIFY_TOKEN: str = ""
+    META_EMBEDDED_SIGNUP_CONFIG_ID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_WHATSAPP_NUMBER: str = ""

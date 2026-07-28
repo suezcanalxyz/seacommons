@@ -8,12 +8,16 @@ import hmac
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from typing import Literal
 
 from core.ingestion import router as ingest_router
 from core.ingestion.signal import DistressSignal
 from core.config import config
+from core.connectors.service import active_whatsapp_connector, mark_seen, public_connector
+from core.db.session import session_scope
+from core.security import authenticate
 
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
 
@@ -53,6 +57,66 @@ async def twilio_whatsapp(request: Request) -> dict:
     _verify_twilio(request, form_dict)
     sig = ingest_router.ingest_twilio_whatsapp(form_dict)
     return _sig_summary(sig)
+
+
+@router.get("/meta/whatsapp", response_class=PlainTextResponse)
+async def meta_whatsapp_verify(request: Request) -> PlainTextResponse:
+    """Meta webhook subscription challenge."""
+    mode = request.query_params.get("hub.mode", "")
+    supplied = request.query_params.get("hub.verify_token", "")
+    challenge = request.query_params.get("hub.challenge", "")
+    expected = config.META_WEBHOOK_VERIFY_TOKEN
+    if not expected:
+        raise HTTPException(status_code=503, detail="Meta webhook is not configured")
+    if mode != "subscribe" or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=403, detail="Invalid Meta verification token")
+    return PlainTextResponse(challenge)
+
+
+@router.post("/meta/whatsapp", response_model=dict)
+async def meta_whatsapp(request: Request) -> dict:
+    """Receive signed WhatsApp Cloud API messages for partner-owned numbers."""
+    raw = await _limited_body(request)
+    secret = config.META_APP_SECRET
+    if not secret:
+        raise HTTPException(status_code=503, detail="Meta webhook is not configured")
+    supplied = request.headers.get("x-hub-signature-256", "")
+    expected = "sha256=" + hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Invalid Meta webhook signature")
+    try:
+        import json
+        payload: dict[str, Any] = json.loads(raw)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON") from exc
+    if payload.get("object") != "whatsapp_business_account":
+        return {"status": "ignored", "reason": "unsupported object", "accepted": 0}
+
+    accepted: list[str] = []
+    unknown_channels: set[str] = set()
+    for entry in payload.get("entry") or []:
+        for change in entry.get("changes") or []:
+            if change.get("field") != "messages":
+                continue
+            value = change.get("value") or {}
+            phone_number_id = str((value.get("metadata") or {}).get("phone_number_id") or "")
+            if not phone_number_id or not value.get("messages"):
+                continue
+            with session_scope() as db:
+                row = active_whatsapp_connector(db, phone_number_id)
+                if row is None:
+                    unknown_channels.add(phone_number_id or "missing")
+                    continue
+                connector = public_connector(row)
+                mark_seen(row)
+            signals = ingest_router.ingest_meta_whatsapp(value, connector)
+            accepted.extend(signal.signal_id for signal in signals)
+    return {
+        "status": "accepted" if accepted else "ignored",
+        "accepted": len(accepted),
+        "signal_ids": accepted,
+        "unknown_channels": sorted(unknown_channels),
+    }
 
 
 @router.post("/twilio/sms", response_model=dict)
@@ -106,17 +170,33 @@ async def generic_webhook(request: Request) -> dict:
     return _sig_summary(sig)
 
 
+def _principal_organization(request: Request) -> str | None:
+    principal = authenticate(request)
+    if principal is None or "administrator" in principal.roles:
+        return None
+    value: Any = principal.claims
+    for part in config.OIDC_ORGANIZATION_CLAIM.split("."):
+        if not isinstance(value, dict):
+            return ""
+        value = value.get(part)
+    return str(value or "")
+
+
 @router.get("/signals", response_model=list[dict])
-async def list_signals(limit: int = 100) -> list[dict]:
+async def list_signals(request: Request, limit: int = 100) -> list[dict]:
     """Return the most recent ingested distress signals."""
-    signals = ingest_router.load_recent(limit=min(limit, 500))
+    signals = ingest_router.load_recent(
+        limit=min(limit, 500), organization_id=_principal_organization(request)
+    )
     return [s.model_dump(mode="json") for s in signals]
 
 
 @router.get("/signals/{signal_id}", response_model=dict)
-async def get_signal(signal_id: str) -> dict:
+async def get_signal(signal_id: str, request: Request) -> dict:
     """Return a single signal by ID (searches recent store)."""
-    signals = ingest_router.load_recent(limit=500)
+    signals = ingest_router.load_recent(
+        limit=500, organization_id=_principal_organization(request)
+    )
     for sig in signals:
         if sig.signal_id == signal_id:
             return sig.model_dump(mode="json")

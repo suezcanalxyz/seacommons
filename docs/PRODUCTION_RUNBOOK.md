@@ -66,16 +66,18 @@ database dependency. Application logs are JSON and every HTTP response carries
 ## Webhooks
 
 Telegram uses `X-Telegram-Bot-Api-Secret-Token`. Partner webhooks sign the exact
-body with HMAC-SHA256 and send `X-Seacommons-Signature: sha256=<hex>`. Twilio
-uses `X-Twilio-Signature`. Missing verification configuration fails closed in
-production. Set `PUBLIC_API_URL=https://api.seacommons.org` so the console can
-display the exact webhook addresses without exposing credentials.
+body with HMAC-SHA256 and send `X-Seacommons-Signature: sha256=<hex>`. Meta
+WhatsApp Cloud signs the exact body in `X-Hub-Signature-256`; its callback is
+`/api/v1/ingest/meta/whatsapp`. Missing verification configuration fails closed.
+Set `PUBLIC_API_URL=https://api.seacommons.org` so Engine can display the exact
+callback address without exposing credentials.
 
-For WhatsApp inbound, configure Twilio to call
-`/api/v1/ingest/twilio/whatsapp` and set `TWILIO_AUTH_TOKEN`. For case
-notifications also set `TWILIO_ACCOUNT_SID`, `TWILIO_WHATSAPP_NUMBER` and
-`TWILIO_OPERATIONS_WHATSAPP_TO`. Outbound delivery is best-effort and never
-rolls back a case transaction. Twilio/WhatsApp may charge provider fees.
+For partner-owned WhatsApp numbers, configure the platform Meta app with
+`META_APP_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN` and the Embedded
+Signup configuration ID. Each partner connector is tenant-scoped by its Meta
+`phone_number_id`; its access token stays in Oracle Vault and the application
+database stores only a `secret_ref`. Inbound messages are private by default.
+Twilio remains available as a legacy bridge for SMS and existing deployments.
 
 When `TELEGRAM_OPERATIONS_CHAT_ID` is configured, that chat can use
 `/case <case-id-or-prefix> <note>` and `/status <case-id-or-prefix> <status>`.

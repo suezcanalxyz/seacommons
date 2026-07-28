@@ -117,28 +117,34 @@ def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
         from core.db.session import session_scope
 
         with session_scope() as db:
-            rows = list(
-                db.execute(
+            rows = [
+                {
+                    "signal_id": row.signal_id,
+                    "source_channel": row.source_channel,
+                    "payload": dict(row.payload or {}),
+                    "received_at": row.received_at,
+                }
+                for row in db.execute(
                     select(IngestedSignalDB)
                     .order_by(IngestedSignalDB.received_at.desc())
                     .limit(min(limit * 3, 500))
                 ).scalars()
-            )
+            ]
     except Exception:
         return []
 
     features: list[dict[str, Any]] = []
     for row in rows:
-        payload = dict(row.payload or {})
+        payload = row["payload"]
         if payload.get("publication_status") != "published":
             continue
         lat, lon = payload.get("lat"), payload.get("lon")
         if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
             continue
-        signal_id = str(payload.get("signal_id") or row.signal_id)
+        signal_id = str(payload.get("signal_id") or row["signal_id"])
         public_lat, public_lon = _approximate_public_point(signal_id, float(lat), float(lon))
         condition = str(payload.get("vessel_condition") or "reported distress").replace("_", " ")
-        channel = str(payload.get("source_channel") or row.source_channel or "partner")
+        channel = str(payload.get("source_channel") or row["source_channel"] or "partner")
         partner_report = channel in {"webhook", "api", "partner"}
         features.append(
             {
@@ -164,9 +170,9 @@ def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
                     "location_uncertainty_m": 2500,
                     "timestamp_utc": payload.get("event_time_utc")
                     or payload.get("timestamp_utc")
-                    or row.received_at.replace(tzinfo=timezone.utc).isoformat(),
+                    or row["received_at"].replace(tzinfo=timezone.utc).isoformat(),
                     "received_at": payload.get("timestamp_utc")
-                    or row.received_at.replace(tzinfo=timezone.utc).isoformat(),
+                    or row["received_at"].replace(tzinfo=timezone.utc).isoformat(),
                 },
             }
         )
@@ -358,9 +364,22 @@ async def live_sources():
         for source in source_registry.get_all()
         if source["name"] in {"X / Twitter", "Mastodon", "Official NGO RSS"}
     }
+    try:
+        from core.connectors.service import status_counts
+        from core.db.session import session_scope
+        with session_scope() as db:
+            whatsapp_connectors = status_counts(db, "whatsapp_cloud")
+    except Exception:
+        whatsapp_connectors = {}
+    whatsapp_ready = bool(
+        config.META_APP_ID
+        and config.META_APP_SECRET
+        and config.META_WEBHOOK_VERIFY_TOKEN
+        and whatsapp_connectors.get("active", 0)
+    )
     expected = (
         ("X / Twitter", "twitter", bool(config.TWITTER_BEARER_TOKEN)),
-        ("WhatsApp intake", "whatsapp", bool(config.TWILIO_AUTH_TOKEN)),
+        ("WhatsApp partner intake", "whatsapp", whatsapp_ready),
         (
             "Telegram intake",
             "telegram",
@@ -405,7 +424,8 @@ async def live_sources():
         },
         "channels": {
             "twitter": bool(config.TWITTER_BEARER_TOKEN),
-            "whatsapp": bool(config.TWILIO_AUTH_TOKEN),
+            "whatsapp": whatsapp_ready,
+            "whatsapp_active_connectors": whatsapp_connectors.get("active", 0),
             "telegram": bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_WEBHOOK_SECRET),
             "partner_webhook": bool(config.PARTNER_WEBHOOK_SECRET),
         },

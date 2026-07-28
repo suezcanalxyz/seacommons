@@ -11,9 +11,10 @@ import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
 import JobMonitor from './components/JobMonitor.jsx';
 import PlayCesium from './components/PlayCesium.jsx';
+import ConnectorWorkspace from './components/ConnectorWorkspace.jsx';
 
 const PUBLIC_DEMO_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org']);
-const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org']);
+const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'engine.seacommons.org']);
 const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
 const isPublicLiveHost = window.location.hostname === 'live.seacommons.org';
 const isLiveHost = LIVE_HOSTS.has(window.location.hostname);
@@ -100,7 +101,7 @@ function guessApiBase() {
     if (saved) return saved.replace(/\/$/, '');
     return `${protocol}//${hostname}:8000`;
   }
-  if (hostname === 'console.seacommons.org') return 'https://api.seacommons.org';
+  if (hostname === 'console.seacommons.org' || hostname === 'engine.seacommons.org') return 'https://api.seacommons.org';
   if (hostname === 'demo.seacommons.org') return 'https://demo-api.seacommons.org';
   // Other production deployments may provide a same-origin API proxy.
   // Ignore stale localStorage entries that may point to a retired backend.
@@ -2446,6 +2447,7 @@ function App() {
           {/* ── CONFIG TAB ── */}
           {activePanel === 'settings' ? (
             <div className="panel-stack">
+              <ConnectorWorkspace apiBase={apiBase} fetchJson={fetchJson} />
               <JobMonitor apiBase={apiBase} fetchJson={fetchJson} />
               <section className="panel-block">
                 <p className="section-kicker">Connectivity</p>

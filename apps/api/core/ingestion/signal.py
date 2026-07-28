@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 
 class DistressSignal(BaseModel):
     signal_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    organization_id: Optional[str] = None
+    connector_id: Optional[str] = None
     source_channel: str                       # whatsapp | telegram | sms | twitter | api
     source_id: str                            # phone number, @handle, tweet_id, message_id
     provider_message_id: Optional[str] = None # channel delivery ID used for idempotency
@@ -29,6 +31,7 @@ class DistressSignal(BaseModel):
     requires_human_review: bool = True       # True if confidence < 0.70
     extraction_method: str = "regex"         # regex | llm | manual | shared_location
     language_detected: Optional[str] = None  # iso 639-1
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
     # User-originated signals are private unless an authenticated reviewer or a
     # trusted signed partner webhook makes an explicit publication decision.
     publication_status: Literal["private", "internal", "published"] = "private"

@@ -61,6 +61,10 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-seacommons}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-seacommons}
       REDIS_URL: redis://valkey:6379/0
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
+      META_EMBEDDED_SIGNUP_CONFIG_ID: ${META_EMBEDDED_SIGNUP_CONFIG_ID:-}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
       TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER:-}
@@ -76,7 +80,7 @@ services:
       PUBLIC_API_URL: https://${API_DOMAIN:-api.seacommons.org}
       JOB_EXECUTION_MODE: queue
       SUEZCANAL_SIGNING_KEY: ${SUEZCANAL_SIGNING_KEY:?set SUEZCANAL_SIGNING_KEY}
-      ALLOWED_ORIGINS: https://${SEACOMMONS_DOMAIN:-console.seacommons.org}
+      ALLOWED_ORIGINS: https://${SEACOMMONS_DOMAIN:-engine.seacommons.org},https://console.seacommons.org
     depends_on:
       postgres: { condition: service_healthy }
       valkey: { condition: service_healthy }

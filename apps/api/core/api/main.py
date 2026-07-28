@@ -29,7 +29,7 @@ from fastapi import HTTPException
 
 from core.config import config
 from core.api.routes import alerts, drift, anomaly, forensic, integrations, ops, vessels
-from core.api.routes import ingest, probability, weather, zones, intel, cases, governance, live
+from core.api.routes import ingest, probability, weather, zones, intel, cases, governance, live, connectors
 from core.db.session import init_database
 from core.security import READ_ROLES, WRITE_ROLES, require_roles, validate_production_security
 from core.observability import configure_logging, metrics_middleware
@@ -201,6 +201,7 @@ async def authorization_gate(request, call_next):
     public = path in {
         "/health", "/ready", "/metrics", "/docs", "/openapi.json", "/redoc",
         "/api/v1/ingest/twilio/whatsapp", "/api/v1/ingest/twilio/sms",
+        "/api/v1/ingest/meta/whatsapp",
         "/api/v1/ingest/telegram", "/api/v1/ingest/webhook",
     } or (
         request.method in {"GET", "HEAD", "OPTIONS"}
@@ -254,6 +255,7 @@ app.include_router(intel.router)
 app.include_router(cases.router)
 app.include_router(governance.router)
 app.include_router(live.router)
+app.include_router(connectors.router)
 
 
 @app.get("/health")

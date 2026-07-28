@@ -100,6 +100,8 @@ class IngestedSignalDB(Base):
     """Canonical inbound signal; external delivery key makes webhooks idempotent."""
     __tablename__ = "ingested_signals"
     signal_id = Column(String(36), primary_key=True)
+    organization_id = Column(String(36), ForeignKey("organizations.organization_id"), nullable=True, index=True)
+    connector_id = Column(String(36), ForeignKey("connectors.connector_id"), nullable=True, index=True)
     source_channel = Column(String(32), nullable=False, index=True)
     source_id = Column(String(256), nullable=False)
     provider_message_id = Column(String(256), nullable=True)
@@ -217,6 +219,45 @@ class MembershipDB(Base):
     subject = Column(String(256), primary_key=True)
     role = Column(String(32), nullable=False, default="member")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class ConnectorDB(Base):
+    """Partner-owned inbound channel.
+
+    Provider credentials are never stored here. ``secret_ref`` points to an
+    external secret manager entry controlled by the deployment environment.
+    """
+    __tablename__ = "connectors"
+    connector_id = Column(String(36), primary_key=True)
+    organization_id = Column(
+        String(36),
+        ForeignKey("organizations.organization_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    provider = Column(String(32), nullable=False, index=True)
+    display_name = Column(String(128), nullable=False)
+    status = Column(String(16), nullable=False, default="pending", index=True)
+    external_account_id = Column(String(128))
+    external_channel_id = Column(String(128), nullable=False)
+    display_address = Column(String(128))
+    secret_ref = Column(String(256))
+    publication_policy = Column(String(16), nullable=False, default="private")
+    configuration = Column(JSON, default=dict)
+    created_by = Column(String(256), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    last_seen_at = Column(DateTime)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "provider", "external_channel_id", name="uq_connector_provider_channel"
+        ),
+    )
 
 
 class CaseAccessDB(Base):

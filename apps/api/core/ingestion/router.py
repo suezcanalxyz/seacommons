@@ -13,6 +13,7 @@ from typing import Callable, Any
 from core.ingestion.channels.twilio import handle_twilio_whatsapp, handle_twilio_sms
 from core.ingestion.channels.telegram_bot import handle_telegram_update
 from core.ingestion.channels.webhook import handle_webhook
+from core.ingestion.channels.meta_whatsapp import parse_meta_whatsapp
 from core.ingestion.signal import DistressSignal
 
 logger = logging.getLogger(__name__)
@@ -54,13 +55,29 @@ def ingest_webhook(payload: dict[str, Any]) -> DistressSignal:
     return sig
 
 
-def load_recent(limit: int = 200) -> list[DistressSignal]:
+def ingest_meta_whatsapp(
+    value: dict[str, Any], connector: dict[str, Any]
+) -> list[DistressSignal]:
+    signals = parse_meta_whatsapp(value, connector)
+    for sig in signals:
+        _save_and_notify(sig)
+    return signals
+
+
+def load_recent(
+    limit: int = 200, organization_id: str | None = None
+) -> list[DistressSignal]:
     """Return the most recent signals from the canonical database."""
     from sqlalchemy import select
     from core.db.models import IngestedSignalDB
     from core.db.session import session_scope
     with session_scope() as db:
-        rows = db.execute(select(IngestedSignalDB).order_by(IngestedSignalDB.received_at.desc()).limit(limit)).scalars()
+        query = select(IngestedSignalDB)
+        if organization_id is not None:
+            query = query.where(IngestedSignalDB.organization_id == organization_id)
+        rows = db.execute(
+            query.order_by(IngestedSignalDB.received_at.desc()).limit(limit)
+        ).scalars()
         return [DistressSignal.model_validate(row.payload) for row in rows]
 
 
@@ -89,6 +106,8 @@ def _persist(sig: DistressSignal) -> bool:
         with session_scope() as db:
             db.add(IngestedSignalDB(
                 signal_id=sig.signal_id,
+                organization_id=sig.organization_id,
+                connector_id=sig.connector_id,
                 source_channel=sig.source_channel,
                 source_id=sig.source_id,
                 provider_message_id=sig.provider_message_id,

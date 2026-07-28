@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { UserManager, WebStorageStateStore } from 'oidc-client-ts';
 
 const PUBLIC_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org', 'live.seacommons.org']);
-const CONTROLLED_HOSTS = new Set(['console.seacommons.org']);
+const CONTROLLED_HOSTS = new Set(['console.seacommons.org', 'engine.seacommons.org']);
 const hostname = window.location.hostname;
 const enabled = CONTROLLED_HOSTS.has(hostname)
   || (!PUBLIC_HOSTS.has(hostname) && import.meta.env.VITE_AUTH_ENABLED === 'true');

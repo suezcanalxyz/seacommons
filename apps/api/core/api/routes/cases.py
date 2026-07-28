@@ -78,13 +78,20 @@ def _require_case_access(request: Request, db, row: CaseDB, write: bool = False)
 
 
 @router.get("/inbox")
-def inbox(limit: int = Query(100, ge=1, le=500)) -> list[dict]:
+def inbox(request: Request, limit: int = Query(100, ge=1, le=500)) -> list[dict]:
     linked = select(CaseSignalDB.signal_id)
     with session_scope() as db:
+        query = select(IngestedSignalDB).where(
+            ~IngestedSignalDB.signal_id.in_(linked)
+        )
+        if config.AUTH_ENABLED:
+            principal = authenticate(request)
+            if principal and "administrator" not in principal.roles:
+                query = query.where(
+                    IngestedSignalDB.organization_id == _principal_org(request)
+                )
         rows = db.execute(
-            select(IngestedSignalDB)
-            .where(~IngestedSignalDB.signal_id.in_(linked))
-            .order_by(IngestedSignalDB.received_at.desc()).limit(limit)
+            query.order_by(IngestedSignalDB.received_at.desc()).limit(limit)
         ).scalars().all()
         return [{**row.payload, "received_at": row.received_at} for row in rows]
 
@@ -110,14 +117,23 @@ def create_case(body: CaseCreate, request: Request) -> dict:
         raise HTTPException(422, "Invalid priority")
     actor = _actor(request)
     organization_id = body.organization_id or _principal_org(request)
+    principal = authenticate(request)
     if config.AUTH_ENABLED:
-        principal = authenticate(request)
         if not principal or ("administrator" not in principal.roles and organization_id != _principal_org(request)):
             raise HTTPException(403, "Invalid organization")
     case_id = str(uuid.uuid4())
     with session_scope() as db:
-        if body.signal_id and db.get(IngestedSignalDB, body.signal_id) is None:
-            raise HTTPException(404, "Signal not found")
+        if body.signal_id:
+            signal = db.get(IngestedSignalDB, body.signal_id)
+            if signal is None:
+                raise HTTPException(404, "Signal not found")
+            if (
+                config.AUTH_ENABLED
+                and principal
+                and "administrator" not in principal.roles
+                and signal.organization_id != organization_id
+            ):
+                raise HTTPException(403, "Signal belongs to another organization")
         row = CaseDB(case_id=case_id, organization_id=organization_id, title=body.title, priority=body.priority,
                      sensitivity=body.sensitivity, summary=body.summary, lat=body.lat,
                      lon=body.lon, persons=body.persons, created_by=actor,
@@ -184,9 +200,12 @@ def update_case(case_id: str, body: CaseUpdate, request: Request) -> dict:
 def link_signal(case_id: str, signal_id: str, request: Request) -> dict:
     with session_scope() as db:
         case = db.get(CaseDB, case_id)
-        if case is None or db.get(IngestedSignalDB, signal_id) is None:
+        signal = db.get(IngestedSignalDB, signal_id)
+        if case is None or signal is None:
             raise HTTPException(404, "Case or signal not found")
         _require_case_access(request, db, case, write=True)
+        if signal.organization_id and signal.organization_id != case.organization_id:
+            raise HTTPException(403, "Signal belongs to another organization")
         if db.get(CaseSignalDB, (case_id, signal_id)) is not None:
             return {"status": "already_linked"}
         actor = _actor(request)

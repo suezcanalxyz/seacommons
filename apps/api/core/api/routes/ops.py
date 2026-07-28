@@ -47,6 +47,14 @@ async def ops_summary():
     ais_connected = bool(ais_client.connected) if ais_client else False
     ais_messages = int(ais_client.messages_received) if ais_client else 0
 
+    try:
+        from core.connectors.service import status_counts
+        from core.db.session import session_scope
+        with session_scope() as db:
+            whatsapp_connectors = status_counts(db, "whatsapp_cloud")
+    except Exception:
+        whatsapp_connectors = {}
+
     # Vessel registry — in-memory, instant
     vessel_stats = registry.stats()
 
@@ -95,10 +103,22 @@ async def ops_summary():
                 "transport": "official_x_api",
             },
             "whatsapp": {
-                "configured": bool(config.TWILIO_AUTH_TOKEN),
-                "inbound_ready": bool(config.TWILIO_AUTH_TOKEN),
-                "outbound_ready": bool(config.TWILIO_ACCOUNT_SID and config.TWILIO_AUTH_TOKEN and config.TWILIO_WHATSAPP_NUMBER and config.TWILIO_OPERATIONS_WHATSAPP_TO),
-                "webhook_url": f"{config.PUBLIC_API_URL.rstrip('/')}/api/v1/ingest/twilio/whatsapp" if config.PUBLIC_API_URL else None,
+                "configured": bool(
+                    config.META_APP_ID
+                    and config.META_APP_SECRET
+                    and config.META_WEBHOOK_VERIFY_TOKEN
+                ),
+                "provider": "meta_cloud",
+                "active_connectors": whatsapp_connectors.get("active", 0),
+                "pending_connectors": whatsapp_connectors.get("pending", 0),
+                "inbound_ready": bool(
+                    config.META_APP_ID
+                    and config.META_APP_SECRET
+                    and config.META_WEBHOOK_VERIFY_TOKEN
+                    and whatsapp_connectors.get("active", 0)
+                ),
+                "webhook_url": f"{config.PUBLIC_API_URL.rstrip('/')}/api/v1/ingest/meta/whatsapp" if config.PUBLIC_API_URL else None,
+                "legacy_twilio_configured": bool(config.TWILIO_AUTH_TOKEN),
             },
             "telegram": {
                 "configured": bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_WEBHOOK_SECRET),
