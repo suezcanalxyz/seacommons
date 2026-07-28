@@ -249,6 +249,43 @@ a:focus-visible {
   text-transform: uppercase;
   pointer-events: none;
 }
+.play-cesium__controls {
+  position: absolute;
+  right: 14px;
+  top: 114px;
+  bottom: auto;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 5px 12px;
+  min-width: 245px;
+  padding: 10px 11px;
+  color: rgba(229,244,240,.62);
+  background: rgba(4,16,21,.76);
+  border: 1px solid rgba(255,255,255,.12);
+  backdrop-filter: blur(12px);
+  font: 8px/1.25 var(--font-mono);
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.play-cesium__controls strong {
+  grid-column: 1 / -1;
+  color: #caff3d;
+  letter-spacing: .09em;
+}
+.play-cesium__controls kbd {
+  display: inline-block;
+  min-width: 34px;
+  margin-right: 5px;
+  padding: 2px 4px;
+  color: #e9f1ef;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.17);
+  border-radius: 2px;
+  box-shadow: none;
+  font: inherit;
+  text-align: center;
+}
 .play-cesium__error {
   position: absolute;
   left: 50%;
@@ -261,11 +298,29 @@ a:focus-visible {
   font: 10px var(--font-mono);
 }
 .play-cesium.is-orbital .play-cesium__instrument {
-  opacity: .18;
-  transform: translateY(14px);
+  opacity: .94;
+  transform: none;
 }
-.play-cesium.is-orbital .play-cesium__reticle { opacity: .18; }
+.play-cesium.is-analysis .play-cesium__reticle { opacity: .18; }
+.play-cesium.is-analysis .play-cesium__instrument {
+  border-color: rgba(255,96,60,.42);
+}
 .play-cesium__instrument { transition: opacity .4s ease, transform .4s ease; }
+
+@media (max-width: 760px) {
+  .play-cesium__controls {
+    right: 10px;
+    top: 112px;
+    bottom: auto;
+    grid-template-columns: 1fr;
+    min-width: 0;
+    padding: 8px;
+  }
+  .play-cesium__controls strong,
+  .play-cesium__controls span:nth-of-type(n+4) { display: none; }
+  .play-cesium__views { right: 10px; }
+  .play-cesium__views button { padding: 7px 8px; }
+}
 
 /* ── Windy overlay: tracks map viewport ── */
 .map-windy-overlay {

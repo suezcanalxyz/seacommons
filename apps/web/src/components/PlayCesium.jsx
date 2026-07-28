@@ -103,6 +103,8 @@ export default function PlayCesium({
   const [status, setStatus] = useState('loading 3D sea');
   const [error, setError] = useState('');
   const [cameraAltitude, setCameraAltitude] = useState(145);
+  const [cameraView, setCameraView] = useState('simulation');
+  const [cameraNavSpeed, setCameraNavSpeed] = useState(24);
   const [driftSpeedMs, setDriftSpeedMs] = useState(0);
 
   useEffect(() => {
@@ -142,6 +144,13 @@ export default function PlayCesium({
     let removePreRender = null;
     let removeCameraMoveEnd = null;
     let keyHandler = null;
+    let keyUpHandler = null;
+    let pointerDownHandler = null;
+    let pointerUpHandler = null;
+    let pointerMoveHandler = null;
+    let wheelHandler = null;
+    let contextMenuHandler = null;
+    let blurHandler = null;
 
     const start = async () => {
       try {
@@ -184,6 +193,8 @@ export default function PlayCesium({
         viewer.scene.globe.showGroundAtmosphere = true;
         viewer.scene.globe.depthTestAgainstTerrain = true;
         viewer.scene.globe.enableLighting = true;
+        viewer.scene.globe.dynamicAtmosphereLighting = true;
+        viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
         viewer.scene.fog.enabled = true;
         viewer.scene.fog.density = 2.2e-4;
         viewer.scene.skyAtmosphere.show = true;
@@ -192,16 +203,27 @@ export default function PlayCesium({
         viewer.scene.moon.show = true;
         viewer.scene.atmosphere.dynamicLighting = Cesium.DynamicAtmosphereLightingType.SUNLIGHT;
         viewer.scene.light = new Cesium.SunLight({ intensity: 1.35 });
+        viewer.scene.highDynamicRange = viewer.scene.highDynamicRangeSupported;
         viewer.scene.postProcessStages.fxaa.enabled = true;
         viewer.scene.screenSpaceCameraController.minimumZoomDistance = 12;
         viewer.scene.screenSpaceCameraController.maximumZoomDistance = 45_000_000;
         viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
+        viewer.scene.screenSpaceCameraController.zoomEventTypes = [
+          Cesium.CameraEventType.WHEEL,
+          Cesium.CameraEventType.PINCH,
+        ];
 
         const entities = [];
         const waveLines = [];
         const people = [];
         const clouds = [];
         const runtime = runtimeRef.current;
+        const navigation = {
+          keys: new Set(),
+          looking: false,
+          speed: 24,
+          lastFrameAt: performance.now(),
+        };
         const pose = {
           position: Cesium.Cartesian3.fromDegrees(DEFAULT_LON, DEFAULT_LAT, 3),
           heading: 0,
@@ -229,6 +251,9 @@ export default function PlayCesium({
             uniforms: {
               deepColor: Cesium.Color.fromCssColorString('#071f2d'),
               crestColor: Cesium.Color.fromCssColorString('#0a7890'),
+              skyColor: Cesium.Color.fromCssColorString('#79b9c9'),
+              horizonColor: Cesium.Color.fromCssColorString('#d2e5df'),
+              ambientStrength: .045,
               direction: Cesium.Math.toRadians(285),
               frequency: 82,
               speed: .013,
@@ -249,6 +274,12 @@ export default function PlayCesium({
                 float wave = primary * 0.56 + secondary * 0.29 + detail * 0.15;
                 float crest = smoothstep(0.18, 0.92, wave);
                 material.diffuse = mix(deepColor.rgb, crestColor.rgb, 0.18 + crest * 0.52);
+                vec3 skyContribution = mix(
+                  skyColor.rgb,
+                  horizonColor.rgb,
+                  0.28 + crest * 0.16
+                );
+                material.emission = skyContribution * ambientStrength;
                 material.normal = normalize(vec3(
                   -axis.x * primary * roughness - crossAxis.x * secondary * roughness * 0.45,
                   -axis.y * primary * roughness - crossAxis.y * secondary * roughness * 0.45,
@@ -345,6 +376,9 @@ export default function PlayCesium({
           viewer.scene.light.intensity = night
             ? .18
             : Cesium.Math.lerp(2.05, .72, cloudRatio);
+          viewer.scene.light.color = Cesium.Color.fromCssColorString(
+            night ? '#9bb8d5' : cloudRatio > .72 ? '#dce4e3' : '#fff2d4',
+          );
           viewer.scene.skyAtmosphere.atmosphereLightIntensity = night
             ? 4
             : Cesium.Math.lerp(56, 28, cloudRatio);
@@ -367,6 +401,15 @@ export default function PlayCesium({
           waterMaterial.uniforms.crestColor = Cesium.Color.fromCssColorString(
             night ? '#082539' : cloudRatio > .72 ? '#244b56' : '#0a8196',
           );
+          waterMaterial.uniforms.skyColor = Cesium.Color.fromCssColorString(
+            night ? '#07172c' : cloudRatio > .72 ? '#71858c' : '#79b9c9',
+          );
+          waterMaterial.uniforms.horizonColor = Cesium.Color.fromCssColorString(
+            night ? '#13283a' : cloudRatio > .72 ? '#aab8b8' : '#d2e5df',
+          );
+          waterMaterial.uniforms.ambientStrength = night
+            ? .018
+            : Cesium.Math.lerp(.045, .075, cloudRatio);
           waterMaterial.uniforms.direction = Cesium.Math.toRadians(environment.directionDeg);
           waterMaterial.uniforms.frequency = Math.min(
             145,
@@ -461,6 +504,7 @@ export default function PlayCesium({
           name: 'Anonymous low-poly vessel',
           position: boatPosition(0, 0, 0),
           orientation,
+          viewFrom: new Cesium.Cartesian3(-38, -28, 22),
           box: {
             dimensions: new Cesium.Cartesian3(13, 4.2, 1.8),
             material: Cesium.Color.fromCssColorString('#d9e4df'),
@@ -517,7 +561,9 @@ export default function PlayCesium({
           name: 'OpenDrift trajectory',
           polyline: {
             positions: new Cesium.CallbackProperty(
-              () => Cesium.Cartesian3.fromDegreesArray(runtime.trajectory.flatMap((point) => [point[0], point[1]])),
+              () => Cesium.Cartesian3.fromDegreesArrayHeights(
+                runtime.trajectory.flatMap((point) => [point[0], point[1], 7]),
+              ),
               false,
             ),
             width: 4,
@@ -583,12 +629,12 @@ export default function PlayCesium({
           runtime.lodMode = 'sea';
           applyEnvironment();
           updateCloudField(first[0], first[1]);
-          setCameraAltitude(145);
+          setCameraAltitude(42);
           viewer.camera.flyTo({
-            destination: Cesium.Cartesian3.fromDegrees(first[0], first[1] - .0021, 145),
+            destination: Cesium.Cartesian3.fromDegrees(first[0], first[1] - .00055, 42),
             orientation: {
               heading: Cesium.Math.toRadians(2),
-              pitch: Cesium.Math.toRadians(-18),
+              pitch: Cesium.Math.toRadians(-31),
               roll: 0,
             },
             duration: 1.1,
@@ -599,22 +645,44 @@ export default function PlayCesium({
         const setCamera = (mode) => {
           if (mode === 'vessel') {
             setCameraAltitude(24);
+            setCameraView('vessel');
             viewer.trackedEntity = hull;
             return;
           }
           viewer.trackedEntity = undefined;
           const first = runtime.trajectory[0] || [DEFAULT_LON, DEFAULT_LAT];
+          if (mode === 'overview') {
+            const pathPositions = runtime.trajectory.map((point) => (
+              Cesium.Cartesian3.fromDegrees(point[0], point[1], 7)
+            ));
+            const bounds = Cesium.BoundingSphere.fromPoints(pathPositions);
+            setCameraView('analysis');
+            viewer.camera.flyToBoundingSphere(bounds, {
+              offset: new Cesium.HeadingPitchRange(
+                0,
+                Cesium.Math.toRadians(-89),
+                Math.max(2_400, bounds.radius * 2.8),
+              ),
+              duration: .9,
+              complete: () => {
+                const altitude = Math.max(0, viewer.camera.positionCartographic.height);
+                setCameraAltitude(altitude);
+              },
+            });
+            return;
+          }
           const seaView = mode === 'sea';
-          setCameraAltitude(seaView ? 145 : 430);
+          setCameraView('simulation');
+          setCameraAltitude(seaView ? 42 : 430);
           viewer.camera.flyTo({
             destination: Cesium.Cartesian3.fromDegrees(
               first[0],
-              first[1] - (seaView ? .0021 : .0048),
-              seaView ? 145 : 430,
+              first[1] - (seaView ? .00055 : .0048),
+              seaView ? 42 : 430,
             ),
             orientation: {
               heading: Cesium.Math.toRadians(4),
-              pitch: Cesium.Math.toRadians(seaView ? -18 : -32),
+              pitch: Cesium.Math.toRadians(seaView ? -31 : -32),
               roll: 0,
             },
             duration: .9,
@@ -624,6 +692,20 @@ export default function PlayCesium({
         removePreRender = viewer.scene.preRender.addEventListener(() => {
           calculatePose();
           const nowMs = performance.now();
+          const elapsedSeconds = Math.min(.05, Math.max(0, (nowMs - navigation.lastFrameAt) / 1000));
+          navigation.lastFrameAt = nowMs;
+          if (navigation.looking && navigation.keys.size) {
+            const shiftMultiplier = navigation.keys.has('ShiftLeft') || navigation.keys.has('ShiftRight')
+              ? 3
+              : 1;
+            const movement = navigation.speed * shiftMultiplier * elapsedSeconds;
+            if (navigation.keys.has('KeyW')) viewer.camera.moveForward(movement);
+            if (navigation.keys.has('KeyS')) viewer.camera.moveBackward(movement);
+            if (navigation.keys.has('KeyA')) viewer.camera.moveLeft(movement);
+            if (navigation.keys.has('KeyD')) viewer.camera.moveRight(movement);
+            if (navigation.keys.has('KeyE')) viewer.camera.moveUp(movement);
+            if (navigation.keys.has('KeyQ')) viewer.camera.moveDown(movement);
+          }
           if (
             nowMs - (runtime.lastSpeedDisplayAt || 0) > 500
             && Math.abs((runtime.currentDriftSpeedMs || 0) - (runtime.displayDriftSpeedMs || 0)) > .002
@@ -655,10 +737,33 @@ export default function PlayCesium({
           const altitude = Math.max(0, viewer.camera.positionCartographic.height);
           runtime.displayAltitude = altitude;
           setCameraAltitude(altitude);
+          if (!viewer.trackedEntity && !navigation.looking) {
+            const transition = Cesium.Math.smoothstep(800, 12_000, altitude);
+            const targetPitch = Cesium.Math.lerp(
+              Cesium.Math.toRadians(-31),
+              Cesium.Math.toRadians(-89),
+              transition,
+            );
+            if (Math.abs(viewer.camera.pitch - targetPitch) > Cesium.Math.toRadians(.75)) {
+              viewer.camera.setView({
+                destination: viewer.camera.position,
+                orientation: {
+                  heading: viewer.camera.heading,
+                  pitch: targetPitch,
+                  roll: 0,
+                },
+              });
+            }
+            setCameraView(altitude >= 8_000 ? 'analysis' : 'simulation');
+          }
         });
 
         keyHandler = (event) => {
           if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+          if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ShiftLeft', 'ShiftRight'].includes(event.code)) {
+            navigation.keys.add(event.code);
+            if (navigation.looking) event.preventDefault();
+          }
           if (event.code === 'Space') {
             event.preventDefault();
             setCamera('sea');
@@ -670,7 +775,54 @@ export default function PlayCesium({
             setCamera('overview');
           }
         };
+        keyUpHandler = (event) => {
+          navigation.keys.delete(event.code);
+        };
         window.addEventListener('keydown', keyHandler);
+        window.addEventListener('keyup', keyUpHandler);
+
+        const canvas = viewer.scene.canvas;
+        pointerDownHandler = (event) => {
+          if (event.button !== 2) return;
+          navigation.looking = true;
+          canvas.setPointerCapture?.(event.pointerId);
+          event.preventDefault();
+        };
+        pointerUpHandler = (event) => {
+          if (event.button !== 2) return;
+          navigation.looking = false;
+          canvas.releasePointerCapture?.(event.pointerId);
+          event.preventDefault();
+        };
+        pointerMoveHandler = (event) => {
+          if (!navigation.looking || !(event.buttons & 2)) return;
+          viewer.trackedEntity = undefined;
+          setCameraView('simulation');
+          viewer.camera.lookRight(-event.movementX * .0022);
+          viewer.camera.lookUp(-event.movementY * .0022);
+          event.preventDefault();
+        };
+        wheelHandler = (event) => {
+          if (!navigation.looking) return;
+          navigation.speed = Cesium.Math.clamp(
+            navigation.speed * (event.deltaY < 0 ? 1.22 : .82),
+            .5,
+            250_000,
+          );
+          setCameraNavSpeed(navigation.speed);
+          event.preventDefault();
+        };
+        contextMenuHandler = (event) => event.preventDefault();
+        blurHandler = () => {
+          navigation.looking = false;
+          navigation.keys.clear();
+        };
+        canvas.addEventListener('pointerdown', pointerDownHandler);
+        canvas.addEventListener('pointerup', pointerUpHandler);
+        canvas.addEventListener('pointermove', pointerMoveHandler);
+        canvas.addEventListener('wheel', wheelHandler, { passive: false });
+        canvas.addEventListener('contextmenu', contextMenuHandler);
+        window.addEventListener('blur', blurHandler);
 
         clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
         clickHandler.setInputAction((movement) => {
@@ -707,6 +859,16 @@ export default function PlayCesium({
       removePreRender?.();
       removeCameraMoveEnd?.();
       if (keyHandler) window.removeEventListener('keydown', keyHandler);
+      if (keyUpHandler) window.removeEventListener('keyup', keyUpHandler);
+      const canvas = viewer?.scene?.canvas;
+      if (canvas) {
+        if (pointerDownHandler) canvas.removeEventListener('pointerdown', pointerDownHandler);
+        if (pointerUpHandler) canvas.removeEventListener('pointerup', pointerUpHandler);
+        if (pointerMoveHandler) canvas.removeEventListener('pointermove', pointerMoveHandler);
+        if (wheelHandler) canvas.removeEventListener('wheel', wheelHandler);
+        if (contextMenuHandler) canvas.removeEventListener('contextmenu', contextMenuHandler);
+      }
+      if (blurHandler) window.removeEventListener('blur', blurHandler);
       clickHandler?.destroy();
       if (viewer && !viewer.isDestroyed()) viewer.destroy();
       sceneRef.current = null;
@@ -725,7 +887,7 @@ export default function PlayCesium({
   const rainOpacity = Math.min(.62, environment.precipitationMm * .28);
 
   return (
-    <section className={`play-cesium ${active ? 'is-active' : ''} ${cameraAltitude > 600_000 ? 'is-orbital' : ''}`} aria-label="Cesium 3D drift laboratory">
+    <section className={`play-cesium ${active ? 'is-active' : ''} ${cameraAltitude > 600_000 ? 'is-orbital' : ''} ${cameraView === 'analysis' ? 'is-analysis' : ''}`} aria-label="Cesium 3D drift laboratory">
       <div className="play-cesium__viewport" ref={containerRef} />
       <div
         className="play-cesium__weather-fx"
@@ -738,7 +900,12 @@ export default function PlayCesium({
       />
       <div className="play-cesium__status">
         <span><i className={error ? 'is-error' : ''} /> CESIUM / {status}</span>
-        <span>{cameraAltitude > 600_000 ? 'ORBIT' : cameraAltitude > 8_000 ? 'REGIONAL' : 'SEA'} · {cameraAltitude >= 1000 ? `${(cameraAltitude / 1000).toFixed(1)} km` : `${Math.round(cameraAltitude)} m`}</span>
+        <span>{cameraView === 'vessel' ? 'VESSEL' : cameraView === 'analysis' ? 'ANALYSIS' : 'SIMULATION'} · {cameraAltitude >= 1000 ? `${(cameraAltitude / 1000).toFixed(1)} km` : `${Math.round(cameraAltitude)} m`}</span>
+      </div>
+      <div className="play-cesium__views" aria-label="Camera views">
+        <button type="button" className={cameraView === 'simulation' ? 'is-active' : ''} onClick={() => sceneRef.current?.setCamera('sea')}>1 Simulation</button>
+        <button type="button" className={cameraView === 'vessel' ? 'is-active' : ''} onClick={() => sceneRef.current?.setCamera('vessel')}>2 Vessel</button>
+        <button type="button" className={cameraView === 'analysis' ? 'is-active' : ''} onClick={() => sceneRef.current?.setCamera('overview')}>3 Analysis</button>
       </div>
       <aside className="play-cesium__instrument">
         <header><span>SEA STATE / NOW</span><span>VISUAL MODEL</span></header>
@@ -755,7 +922,16 @@ export default function PlayCesium({
       </aside>
       <div className="play-cesium__source">{environment.source}</div>
       <div className="play-cesium__reticle" aria-hidden="true"><i /><i /></div>
-      <div className="play-cesium__hint">Drag orbit · wheel altitude · space recenter · double-click origin</div>
+      <div className="play-cesium__controls" aria-label="Navigation controls">
+        <strong>UNREAL NAV</strong>
+        <span><kbd>RMB</kbd> look</span>
+        <span><kbd>W A S D</kbd> move</span>
+        <span><kbd>Q / E</kbd> down / up</span>
+        <span><kbd>SHIFT</kbd> boost</span>
+        <span><kbd>WHEEL + RMB</kbd> speed {cameraNavSpeed < 1000 ? `${cameraNavSpeed.toFixed(0)} m/s` : `${(cameraNavSpeed / 1000).toFixed(1)} km/s`}</span>
+        <span><kbd>SPACE</kbd> recenter</span>
+      </div>
+      <div className="play-cesium__hint">Wheel: zoom · zoom in: inclined 3D · zoom out: top-down trajectory analysis</div>
       {error ? <div className="play-cesium__error">{error}</div> : null}
     </section>
   );
