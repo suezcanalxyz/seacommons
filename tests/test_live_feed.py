@@ -11,7 +11,12 @@ from core.api.main import app
 from core.api.routes.live import _approximate_public_point, _public_intel_feature
 from core.config import config
 from core.ingestion.signal import DistressSignal
-from core.intel.alarm_phone_monitor import parse_official_timeline, x_id_timestamp
+from core.intel.alarm_phone_monitor import (
+    consensus_ocr_coordinate,
+    parse_official_timeline,
+    x_id_timestamp,
+)
+from core.intel.geoextract import extract_numeric_coords
 from core.intel.news_monitor import RSS_FEEDS
 from core.intel.store import IntelEvent, IntelStore
 from core.intel.twitter_monitor import TwitterMonitor
@@ -158,6 +163,48 @@ def test_intel_store_deduplicates_source_ids_and_content() -> None:
     )
     assert store.add(event, dedup_key="x:2081334685649526892") is True
     assert store.add(event) is False
+
+
+def test_media_ocr_requires_numeric_consensus() -> None:
+    passes = [
+        "GPS position N 35°30' E 012°36'",
+        "Position: N 35° 30' / E 012° 36'",
+        "unrelated map labels Malta",
+    ]
+    assert consensus_ocr_coordinate(passes) == (35.5, 12.6)
+    assert consensus_ocr_coordinate([passes[0], "unrelated map labels Malta"]) is None
+    assert extract_numeric_coords("Malta") is None
+    assert extract_numeric_coords("N 28° 06' / W 015° 24'") == (28.1, -15.4)
+
+
+def test_existing_event_can_be_enriched_with_media_location() -> None:
+    store = IntelStore()
+    event = IntelEvent(
+        id="ocrplace01",
+        type="twitter",
+        severity="high",
+        title="Public report with attached map",
+        source="Alarm Phone",
+    )
+    assert store.add(event) is True
+    metadata = {
+        "coordinate_source": "media_ocr_consensus",
+        "coordinate_review_status": "machine_consensus_unverified",
+    }
+    assert store.enrich_location(
+        event.id,
+        lat=35.5,
+        lon=12.6,
+        metadata=metadata,
+    ) is True
+    assert event.lat == 35.5
+    assert event.lon == 12.6
+    assert store.enrich_location(
+        event.id,
+        lat=36.0,
+        lon=13.0,
+        metadata=metadata,
+    ) is False
 
 
 def test_sensitive_public_position_is_stable_and_approximate() -> None:

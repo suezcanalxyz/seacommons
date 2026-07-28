@@ -279,6 +279,61 @@ class IntelStore:
         except Exception as exc:
             logger.debug("Intel DB persist skipped: %s", exc)
 
+    def enrich_location(
+        self,
+        event_id: str,
+        *,
+        lat: float,
+        lon: float,
+        metadata: dict[str, Any],
+    ) -> bool:
+        """Attach a newly derived location without overwriting an existing one."""
+        updated: Optional[IntelEvent] = None
+        with self._lock:
+            for event in self._events:
+                if event.id != event_id:
+                    continue
+                if event.lat is not None or event.lon is not None:
+                    return False
+                event.lat = lat
+                event.lon = lon
+                event.metadata.update(metadata)
+                updated = event
+                break
+        if updated is None:
+            return False
+        threading.Thread(
+            target=self._persist_location_sync,
+            args=(event_id, lat, lon, dict(metadata)),
+            daemon=True,
+        ).start()
+        self._fire_broadcast(updated)
+        return True
+
+    def _persist_location_sync(
+        self,
+        event_id: str,
+        lat: float,
+        lon: float,
+        metadata: dict[str, Any],
+    ) -> None:
+        try:
+            from core.db.models import IntelEventDB
+            from core.db.session import session_scope
+
+            with session_scope() as db:
+                row = db.query(IntelEventDB).filter(IntelEventDB.id == event_id).first()
+                if row is None or row.lat is not None or row.lon is not None:
+                    return
+                row.lat = lat
+                row.lon = lon
+                merged = dict(row.meta or {})
+                merged.update(metadata)
+                row.meta = merged
+                db.flush()
+        except Exception as exc:
+            logger.debug("Intel DB location enrichment skipped: %s", exc)
+
     # ── Read ──────────────────────────────────────────────────────────────────
 
     def events(

@@ -25,12 +25,15 @@ _BLOCKED_SOURCE_POLICIES = frozenset({"nitter", "scrape", "twscrape", "unofficia
 _PUBLIC_METADATA = frozenset(
     {
         "category",
+        "coordinate_review_status",
+        "coordinate_source",
         "country",
         "dead",
         "incident_id",
         "is_distress",
         "location_uncertainty_m",
         "missing",
+        "ocr_attempted",
         "platform",
         "region",
         "source_policy",

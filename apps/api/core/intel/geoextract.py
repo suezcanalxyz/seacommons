@@ -162,7 +162,8 @@ _MEDIUM_TERMS = frozenset([
 
 # ── Regex patterns ────────────────────────────────────────────────────────────
 _RE_DECIMAL_NS = re.compile(
-    r"(\d{1,2}(?:\.\d{1,5})?)\s*°?\s*[Nn][,\s/]+(\d{1,3}(?:\.\d{1,5})?)\s*°?\s*[Ee]"
+    r"(\d{1,2}(?:\.\d{1,5})?)\s*°?\s*([NnSs])"
+    r"[,\s/]+(\d{1,3}(?:\.\d{1,5})?)\s*°?\s*([EeWw])"
 )
 _RE_DECIMAL_PAIR = re.compile(
     r"(?<!\d)([+-]?(?:3[0-9]|4[0-4])\.\d{2,5})[,\s/]+([+-]?(?:[0-3]?\d|1[0-7]\d)\.\d{2,5})(?!\d)"
@@ -170,25 +171,22 @@ _RE_DECIMAL_PAIR = re.compile(
 _MIN = "[\x27‘’′]"  # ascii apostrophe, left/right curly quote, prime
 _DEG = r"[°º]"
 _RE_DMS = re.compile(
-    r"(\d{1,2})" + _DEG + r"(\d{1,2})" + _MIN + r"?\s*[Nn][,\s]+"
-    r"(\d{1,3})" + _DEG + r"(\d{1,2})" + _MIN + r"?\s*[Ee]"
+    r"(\d{1,2})" + _DEG + r"(\d{1,2})" + _MIN + r"?\s*([NnSs])[,\s]+"
+    r"(\d{1,3})" + _DEG + r"(\d{1,2})" + _MIN + r"?\s*([EeWw])"
 )
-# Alarm Phone / map format: "N 34° 30’ ..."  or  "N 34°30’" etc.
+# Alarm Phone / map format: "N 34° 30’ ..." or "S 34°30’" etc.
 _RE_DMS_PREFIX = re.compile(
-    r"[Nn]\s*(\d{1,2})\s*" + _DEG + r"\s*(\d{1,2})\s*" + _MIN
+    r"([NnSs])\s*(\d{1,2})\s*" + _DEG + r"\s*(\d{1,2})\s*" + _MIN
     + r"[^EeWw]{0,25}"
-    + r"[Ee]\s*(\d{1,3})\s*" + _DEG + r"\s*(\d{1,2})\s*" + _MIN
+    + r"([EeWw])\s*(\d{1,3})\s*" + _DEG + r"\s*(\d{1,2})\s*" + _MIN
 )
 _RE_POSITION_LABEL = re.compile(
     r"(?:position|pos|coord|gps|location)[:\s]+([^\n]{5,60})", re.I
 )
 
 
-def extract_coords(text: str) -> Optional[tuple[float, float]]:
-    """
-    Return (lat, lon) from text, or None.
-    Tries multiple strategies in order of precision.
-    """
+def extract_numeric_coords(text: str) -> Optional[tuple[float, float]]:
+    """Return only explicit numeric coordinates, never a place-name centroid."""
     # 0. Look for "Position: ..." prefix first — common in Alarm Phone tweets
     m = _RE_POSITION_LABEL.search(text)
     snippet = m.group(1) if m else text
@@ -196,7 +194,11 @@ def extract_coords(text: str) -> Optional[tuple[float, float]]:
     # 1. Decimal with N/E suffix  e.g. "35.5N 12.3E"
     m = _RE_DECIMAL_NS.search(snippet) or _RE_DECIMAL_NS.search(text)
     if m:
-        lat, lon = float(m.group(1)), float(m.group(2))
+        lat, lon = float(m.group(1)), float(m.group(3))
+        if m.group(2).lower() == "s":
+            lat = -lat
+        if m.group(4).lower() == "w":
+            lon = -lon
         if _valid(lat, lon):
             return lat, lon
 
@@ -211,17 +213,37 @@ def extract_coords(text: str) -> Optional[tuple[float, float]]:
     m = _RE_DMS.search(text)
     if m:
         lat = int(m.group(1)) + int(m.group(2)) / 60.0
-        lon = int(m.group(3)) + int(m.group(4)) / 60.0
+        lon = int(m.group(4)) + int(m.group(5)) / 60.0
+        if m.group(3).lower() == "s":
+            lat = -lat
+        if m.group(6).lower() == "w":
+            lon = -lon
         if _valid(lat, lon):
             return lat, lon
 
     # 3b. DMS prefix form  e.g. "N 34° 30' ... E 013° 15'"
     m = _RE_DMS_PREFIX.search(text)
     if m:
-        lat = int(m.group(1)) + int(m.group(2)) / 60.0
-        lon = int(m.group(3)) + int(m.group(4)) / 60.0
+        lat = int(m.group(2)) + int(m.group(3)) / 60.0
+        lon = int(m.group(5)) + int(m.group(6)) / 60.0
+        if m.group(1).lower() == "s":
+            lat = -lat
+        if m.group(4).lower() == "w":
+            lon = -lon
         if _valid(lat, lon):
             return lat, lon
+
+    return None
+
+
+def extract_coords(text: str) -> Optional[tuple[float, float]]:
+    """
+    Return (lat, lon) from text, or None.
+    Tries explicit numeric coordinates before a known-place centroid.
+    """
+    numeric = extract_numeric_coords(text)
+    if numeric:
+        return numeric
 
     # 4. Place name gazetteer (longest match first)
     tl = text.lower()
