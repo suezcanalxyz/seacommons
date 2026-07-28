@@ -147,11 +147,12 @@ class IntelStore:
         Add an event.  Returns True if stored, False if duplicate.
         Thread-safe.
         """
-        key = dedup_key or event.content_hash()
+        content_key = event.content_hash()
+        keys = {dedup_key or content_key, content_key}
         with self._lock:
-            if key in self._seen:
+            if any(key in self._seen for key in keys):
                 return False
-            self._seen.add(key)
+            self._seen.update(keys)
             if len(self._seen) > DEDUP_WINDOW:
                 # Keep the newest half
                 self._seen = set(list(self._seen)[DEDUP_WINDOW // 2 :])
@@ -199,10 +200,13 @@ class IntelStore:
                     ))
             loaded = 0
             for ev in events_to_add:
-                key = ev.content_hash()
+                keys = {ev.content_hash()}
+                tweet_id = str(ev.metadata.get("tweet_id") or "")
+                if tweet_id:
+                    keys.add(f"x:{tweet_id}")
                 with self._lock:
-                    if key not in self._seen:
-                        self._seen.add(key)
+                    if not any(key in self._seen for key in keys):
+                        self._seen.update(keys)
                         self._events.appendleft(ev)
                         loaded += 1
             logger.info("intel_store: loaded %d events from DB", loaded)

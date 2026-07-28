@@ -37,7 +37,6 @@ _HEADERS = {
 # Known NGO accounts on Mastodon — (instance, handle_without_at, label)
 # Public-facing accounts; verified by checking their profiles.
 _NGO_ACCOUNTS = [
-    ("mastodon.social",       "alarm_phone",        "Alarm Phone"),
     ("mastodon.social",       "sosmediterranee",     "SOS Méditerranée"),
     ("social.coop",           "seawatch",           "Sea Watch"),
     ("mastodon.social",       "MSF_Sea",            "MSF Sea"),

@@ -11,8 +11,9 @@ from core.api.main import app
 from core.api.routes.live import _approximate_public_point, _public_intel_feature
 from core.config import config
 from core.ingestion.signal import DistressSignal
+from core.intel.alarm_phone_monitor import parse_official_timeline, x_id_timestamp
 from core.intel.news_monitor import RSS_FEEDS
-from core.intel.store import IntelEvent
+from core.intel.store import IntelEvent, IntelStore
 from core.intel.twitter_monitor import TwitterMonitor
 
 
@@ -97,7 +98,66 @@ def test_only_official_social_transport_is_available() -> None:
     monitor = TwitterMonitor()
     assert monitor.configured is False
     assert all("nitter" not in feed["url"].lower() for feed in RSS_FEEDS)
-    assert {feed["label"] for feed in RSS_FEEDS} == {"Sea Watch", "SOS Méditerranée"}
+    assert {feed["label"] for feed in RSS_FEEDS} == {
+        "Alarm Phone",
+        "Sea Watch",
+        "SOS Méditerranée",
+    }
+
+
+def test_alarm_phone_first_party_timeline_parser() -> None:
+    document = """
+    <div class="ctf-item ctf-author-alarm_phone" id="2081334685649526892">
+      <div class="ctf-tweet-content">
+        <p class="ctf-tweet-text">
+          SOS from 42 people at 35.50N 12.60E &amp; taking water.
+        </p>
+      </div>
+    </div>
+    """
+    posts = parse_official_timeline(document)
+    assert posts == [
+        {
+            "id": "2081334685649526892",
+            "text": "SOS from 42 people at 35.50N 12.60E & taking water.",
+            "created_at": x_id_timestamp("2081334685649526892"),
+            "url": "https://x.com/alarm_phone/status/2081334685649526892",
+        }
+    ]
+    assert posts[0]["created_at"].startswith("2026-07-26T")
+
+
+def test_alarm_phone_official_site_policy_can_enter_live() -> None:
+    event = IntelEvent(
+        id="alarmphone01",
+        type="twitter",
+        severity="critical",
+        title="Alarm Phone: reported distress",
+        source="Alarm Phone",
+        metadata={
+            "source_policy": "official_site_embed",
+            "is_distress": True,
+        },
+    )
+    feature = _public_intel_feature(event)
+    assert feature is not None
+    assert feature["geometry"] is None
+    assert feature["properties"]["verification_status"] == "unverified_public_source"
+
+
+def test_intel_store_deduplicates_source_ids_and_content() -> None:
+    store = IntelStore()
+    event = IntelEvent(
+        id="tweet01",
+        type="twitter",
+        severity="low",
+        title="Same public report",
+        text="Stable content",
+        source="Alarm Phone",
+        metadata={"tweet_id": "2081334685649526892"},
+    )
+    assert store.add(event, dedup_key="x:2081334685649526892") is True
+    assert store.add(event) is False
 
 
 def test_sensitive_public_position_is_stable_and_approximate() -> None:

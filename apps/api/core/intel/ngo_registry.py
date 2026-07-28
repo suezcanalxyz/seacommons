@@ -47,7 +47,7 @@ NGO_VESSELS: dict[str, dict[str, Any]] = {
 
 # Twitter handles for social monitoring (no @ prefix)
 NGO_TWITTER_HANDLES = [
-    "alarm__phone",      # Alarm Phone — posts distress calls with GPS coords
+    "alarm_phone",       # Alarm Phone — public distress and SAR reports
     "MSF_Sea",           # MSF Sea Rescue
     "openarms_fund",     # Open Arms
     "sosmediterranee",   # SOS Méditerranée

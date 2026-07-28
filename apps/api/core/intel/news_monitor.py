@@ -33,6 +33,10 @@ _HEADERS = {
 
 RSS_FEEDS = [
     {
+        "url": "https://alarmphone.org/en/feed/",
+        "label": "Alarm Phone",
+    },
+    {
         "url": "https://sea-watch.org/en/feed/",
         "label": "Sea Watch",
     },

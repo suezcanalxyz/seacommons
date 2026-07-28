@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 class IntelEngine:
     def __init__(self) -> None:
         self._twitter: Optional[object] = None
+        self._alarm_phone: Optional[object] = None
         self._news: Optional[object] = None
         self._ais: Optional[object] = None
         self._mastodon: Optional[object] = None
@@ -38,6 +39,14 @@ class IntelEngine:
         self._started = True
 
         if twitter_enabled:
+            try:
+                from core.intel.alarm_phone_monitor import AlarmPhoneMonitor
+                self._alarm_phone = AlarmPhoneMonitor()
+                self._alarm_phone.start()  # type: ignore[attr-defined]
+                logger.info("IntelEngine: Alarm Phone first-party monitor started")
+            except Exception as exc:
+                logger.warning("IntelEngine: Alarm Phone monitor failed to start: %s", exc)
+
             try:
                 from core.intel.twitter_monitor import TwitterMonitor
                 self._twitter = TwitterMonitor(bearer_token=twitter_bearer)
@@ -77,7 +86,13 @@ class IntelEngine:
                 logger.warning("IntelEngine: Mastodon monitor failed to start: %s", exc)
 
     def stop(self) -> None:
-        for monitor in (self._twitter, self._news, self._ais, self._mastodon):
+        for monitor in (
+            self._twitter,
+            self._alarm_phone,
+            self._news,
+            self._ais,
+            self._mastodon,
+        ):
             if monitor:
                 try:
                     monitor.stop()  # type: ignore[attr-defined]

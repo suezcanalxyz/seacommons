@@ -18,7 +18,9 @@ from core.intel.store import IntelEvent, intel_store
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
 
 _PUBLIC_INTEL_TYPES = frozenset({"distress", "twitter", "mastodon", "ngo_activity"})
-_APPROVED_SOURCE_POLICIES = frozenset({"official_api", "official_rss", "trusted_partner"})
+_APPROVED_SOURCE_POLICIES = frozenset(
+    {"official_api", "official_rss", "official_site_embed", "trusted_partner"}
+)
 _BLOCKED_SOURCE_POLICIES = frozenset({"nitter", "scrape", "twscrape", "unofficial"})
 _PUBLIC_METADATA = frozenset(
     {
@@ -61,14 +63,16 @@ def _public_intel_feature(event: IntelEvent) -> Optional[dict[str, Any]]:
         return None
     if event.type not in _PUBLIC_INTEL_TYPES and publication != "published":
         return None
-    if event.lat is None or event.lon is None:
-        return None
-
     metadata = {key: event.metadata[key] for key in _PUBLIC_METADATA if key in event.metadata}
+    geometry = (
+        {"type": "Point", "coordinates": [event.lon, event.lat]}
+        if event.lat is not None and event.lon is not None
+        else None
+    )
     return {
         "type": "Feature",
         "id": f"intel:{event.id}",
-        "geometry": {"type": "Point", "coordinates": [event.lon, event.lat]},
+        "geometry": geometry,
         "properties": {
             "schema": "org.seacommons.live-signal/v1",
             "id": f"intel:{event.id}",
@@ -206,7 +210,9 @@ def public_signal_collection(
         "meta": {
             "schema": "org.seacommons.live-feed/v1",
             "total": len(features),
-            "with_coords": len(features),
+            "with_coords": sum(
+                1 for feature in features if feature.get("geometry") is not None
+            ),
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "privacy": "published signals only; private identifiers and raw messages excluded",
         },
@@ -404,7 +410,13 @@ async def live_sources():
     registry_sources = {
         source["name"]: source
         for source in source_registry.get_all()
-        if source["name"] in {"X / Twitter", "Mastodon", "Official NGO RSS"}
+        if source["name"]
+        in {
+            "X / Twitter",
+            "Alarm Phone / X official site",
+            "Mastodon",
+            "Official NGO RSS",
+        }
     }
     try:
         from core.connectors.service import status_counts
@@ -420,6 +432,7 @@ async def live_sources():
         and whatsapp_connectors.get("active", 0)
     )
     expected = (
+        ("Alarm Phone / X official site", "twitter", True),
         ("X / Twitter", "twitter", bool(config.TWITTER_BEARER_TOKEN)),
         ("WhatsApp partner intake", "whatsapp", whatsapp_ready),
         (
@@ -466,6 +479,11 @@ async def live_sources():
         },
         "channels": {
             "twitter": bool(config.TWITTER_BEARER_TOKEN),
+            "twitter_alarm_phone": any(
+                source["name"] == "Alarm Phone / X official site"
+                and source["status"] == "active"
+                for source in sources
+            ),
             "whatsapp": whatsapp_ready,
             "whatsapp_active_connectors": whatsapp_connectors.get("active", 0),
             "telegram": bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_WEBHOOK_SECRET),

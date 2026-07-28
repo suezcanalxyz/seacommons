@@ -162,7 +162,7 @@ class TwitterMonitor:
                 "is_distress": distress,
             },
         )
-        return intel_store.add(event)
+        return intel_store.add(event, dedup_key=f"x:{post.get('id', '')}")
 
 
 def _make_title(text: str, author: str) -> str:
