@@ -10,12 +10,10 @@ Why not subprocess?
 
 Reader priority stack (highest wins):
   1. CMEMS NetCDF (reader_netCDF_CF_generic) — 0.083° resolution (~8 km),
-       real ocean currents from Copernicus operational forecast.
+       ocean currents from the Copernicus operational forecast model.
        Requires CMEMS_USERNAME + CMEMS_PASSWORD env vars.
-       Covers wind from ERA5 (via CMEMS wave dataset) and currents from
-       the global physics analysis/forecast model.
-  2. Open-Meteo _GridReader — 0.5° resolution (~55 km), free, no credentials.
-       3×3 grid with bilinear spatial + linear temporal interpolation.
+  2. Open-Meteo _GridReader — 1.0° sample spacing, free, no credentials.
+       5×5 grid with bilinear spatial + linear temporal interpolation.
        Falls back to this when CMEMS is unavailable.
   3. reader_constant — uniform forcing, produces straight trajectories.
        Last resort if both above fail.
@@ -65,6 +63,32 @@ _GRID_DEG = 1.0      # spacing in degrees (≈111 km at equator, ≈95 km at 30�
 # CMEMS NetCDF cache — files are kept for 3 h to avoid redundant downloads
 _CMEMS_CACHE_DIR = Path(tempfile.gettempdir()) / "seacommons_cmems_cache"
 _CMEMS_CACHE_TTL_S = 3 * 3600  # 3 hours
+
+
+def _vector_components(
+    speed_ms: float,
+    direction_deg: float,
+    *,
+    direction_is_from: bool = False,
+) -> tuple[float, float]:
+    """Convert a north-referenced bearing to eastward/northward components."""
+    factor = -1.0 if direction_is_from else 1.0
+    radians = math.radians(direction_deg)
+    return (
+        factor * speed_ms * math.sin(radians),
+        factor * speed_ms * math.cos(radians),
+    )
+
+
+def _speed_to_ms(value: float, unit: str) -> float:
+    normalized = unit.lower().strip()
+    if normalized in {"km/h", "kmh", "kph"}:
+        return value / 3.6
+    if normalized in {"kn", "kt", "knots"}:
+        return value * 0.514444
+    if normalized in {"mph"}:
+        return value * 0.44704
+    return value
 
 
 def _do_import() -> None:
@@ -188,6 +212,7 @@ def _fetch_grid(
     center_lat: float,
     center_lon: float,
     hours: int,
+    start_time: datetime,
     fallback_wind_x: float = 0.0,
     fallback_wind_y: float = 0.0,
     fallback_u: float = 0.0,
@@ -203,7 +228,7 @@ def _fetch_grid(
     centre itself fails (e.g. the whole region has no marine coverage), the
     fallback_* values from the weather API are used instead of zeros.
 
-    Returns a dict with numpy arrays of shape (hours, GRID_N, GRID_N).
+    Returns arrays covering every model hour including the final endpoint.
     """
     import numpy as np
 
@@ -212,13 +237,21 @@ def _fetch_grid(
     offsets = [(k - n // 2) * sp for k in range(n)]
     lats = sorted([center_lat + dy for dy in offsets])
     lons = sorted([center_lon + dx for dx in offsets])
-    forecast_days = max(2, hours // 24 + 1)
+    sample_count = hours + 1
+    utc_start = (
+        start_time.replace(tzinfo=timezone.utc)
+        if start_time.tzinfo is None
+        else start_time.astimezone(timezone.utc)
+    ).replace(minute=0, second=0, microsecond=0)
+    utc_end = utc_start + timedelta(hours=hours)
+    start_hour = utc_start.strftime("%Y-%m-%dT%H:%M")
+    end_hour = utc_end.strftime("%Y-%m-%dT%H:%M")
 
     def fetch_point(lat: float, lon: float):
-        wx = np.full(hours, np.nan)
-        wy = np.full(hours, np.nan)
-        uc = np.full(hours, np.nan)
-        vc = np.full(hours, np.nan)
+        wx = np.full(sample_count, np.nan)
+        wy = np.full(sample_count, np.nan)
+        uc = np.full(sample_count, np.nan)
+        vc = np.full(sample_count, np.nan)
 
         # ── Atmospheric wind (Open-Meteo, always free) ────────────────────────
         try:
@@ -226,19 +259,22 @@ def _fetch_grid(
                 f"https://api.open-meteo.com/v1/forecast"
                 f"?latitude={lat:.3f}&longitude={lon:.3f}"
                 f"&hourly=wind_speed_10m,wind_direction_10m"
-                f"&wind_speed_unit=ms&forecast_days={forecast_days}"
+                f"&wind_speed_unit=ms&timezone=UTC"
+                f"&start_hour={start_hour}&end_hour={end_hour}"
             )
             with urllib.request.urlopen(url, timeout=12) as r:
                 d = json.loads(r.read())
             h = d.get("hourly", {})
             spds = h.get("wind_speed_10m", [])
             dirs = h.get("wind_direction_10m", [])
-            for i in range(min(hours, len(spds))):
+            for i in range(min(sample_count, len(spds))):
                 ws = float(spds[i]) if spds[i] is not None else 5.0
                 wd = float(dirs[i]) if dirs[i] is not None else 270.0
-                rad = math.radians(wd)
-                wx[i] = ws * math.sin(rad)
-                wy[i] = ws * math.cos(rad)
+                wx[i], wy[i] = _vector_components(
+                    ws,
+                    wd,
+                    direction_is_from=True,
+                )
         except Exception as exc:
             logger.debug("Grid wind fetch %.2f,%.2f: %s", lat, lon, exc)
 
@@ -248,28 +284,32 @@ def _fetch_grid(
                 f"https://marine-api.open-meteo.com/v1/marine"
                 f"?latitude={lat:.3f}&longitude={lon:.3f}"
                 f"&hourly=ocean_current_velocity,ocean_current_direction"
-                f"&forecast_days={forecast_days}"
+                f"&timezone=UTC&cell_selection=sea"
+                f"&start_hour={start_hour}&end_hour={end_hour}"
             )
             with urllib.request.urlopen(url, timeout=12) as r:
                 d = json.loads(r.read())
             h = d.get("hourly", {})
             vels = h.get("ocean_current_velocity", [])
             dirs = h.get("ocean_current_direction", [])
-            for i in range(min(hours, len(vels))):
-                cs = float(vels[i]) if vels[i] is not None else 0.0
+            velocity_unit = (
+                d.get("hourly_units", {}).get("ocean_current_velocity")
+                or "km/h"
+            )
+            for i in range(min(sample_count, len(vels))):
+                raw_speed = float(vels[i]) if vels[i] is not None else 0.0
+                cs = _speed_to_ms(raw_speed, velocity_unit)
                 cd = float(dirs[i]) if dirs[i] is not None else 0.0
-                crad = math.radians(cd)
-                uc[i] = cs * math.sin(crad)
-                vc[i] = cs * math.cos(crad)
+                uc[i], vc[i] = _vector_components(cs, cd)
         except Exception as exc:
             logger.debug("Grid marine fetch %.2f,%.2f: %s", lat, lon, exc)
 
         return wx, wy, uc, vc
 
-    wind_x = np.full((hours, n, n), np.nan)
-    wind_y = np.full((hours, n, n), np.nan)
-    u_curr = np.full((hours, n, n), np.nan)
-    v_curr = np.full((hours, n, n), np.nan)
+    wind_x = np.full((sample_count, n, n), np.nan)
+    wind_y = np.full((sample_count, n, n), np.nan)
+    u_curr = np.full((sample_count, n, n), np.nan)
+    v_curr = np.full((sample_count, n, n), np.nan)
 
     point_map: dict[concurrent.futures.Future, tuple[int, int]] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=n * n) as ex:
@@ -322,7 +362,7 @@ def _fetch_grid(
         "wind_y": wind_y,
         "u_current": u_curr,
         "v_current": v_curr,
-        "n_hours": hours,
+        "n_hours": sample_count,
     }
 
 
@@ -463,11 +503,13 @@ def _ensure_imported() -> None:
 
 # ── GeoJSON helpers (copied from opendrift_runner, fixed to use timedelta) ───
 
-def _mean_path(result_dataset: Any) -> list[list[float]]:
+def _representative_path(result_dataset: Any) -> tuple[list[list[float]], list[int]]:
+    """Return a spherical ensemble centre for every valid output time."""
     lons = result_dataset.lon.values
     lats = result_dataset.lat.values
     n_traj, n_time = lons.shape
     coords: list[list[float]] = []
+    time_indices: list[int] = []
     for t_index in range(n_time):
         col_lon = lons[:, t_index]
         col_lat = lats[:, t_index]
@@ -478,11 +520,113 @@ def _mean_path(result_dataset: Any) -> list[list[float]]:
         ]
         if not pts:
             continue
-        coords.append([
-            sum(p[0] for p in pts) / len(pts),
-            sum(p[1] for p in pts) / len(pts),
-        ])
-    return coords
+        mean_x = sum(
+            math.cos(math.radians(lat)) * math.cos(math.radians(lon))
+            for lon, lat in pts
+        ) / len(pts)
+        mean_y = sum(
+            math.cos(math.radians(lat)) * math.sin(math.radians(lon))
+            for lon, lat in pts
+        ) / len(pts)
+        mean_z = sum(math.sin(math.radians(lat)) for _, lat in pts) / len(pts)
+        mean_lon = math.degrees(math.atan2(mean_y, mean_x))
+        mean_lat = math.degrees(math.atan2(mean_z, math.hypot(mean_x, mean_y)))
+        coords.append([mean_lon, mean_lat])
+        time_indices.append(t_index)
+    return coords, time_indices
+
+
+def _mean_path(result_dataset: Any) -> list[list[float]]:
+    """Compatibility wrapper for callers that only need coordinates."""
+    return _representative_path(result_dataset)[0]
+
+
+def _haversine_m(first: list[float], second: list[float]) -> float:
+    radius_m = 6_371_008.8
+    lon1, lat1 = map(math.radians, first[:2])
+    lon2, lat2 = map(math.radians, second[:2])
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    value = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    )
+    return 2 * radius_m * math.asin(min(1.0, math.sqrt(value)))
+
+
+def _bearing_deg(first: list[float], second: list[float]) -> float:
+    lon1, lat1 = map(math.radians, first[:2])
+    lon2, lat2 = map(math.radians, second[:2])
+    dlon = lon2 - lon1
+    east = math.sin(dlon) * math.cos(lat2)
+    north = (
+        math.cos(lat1) * math.sin(lat2)
+        - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    )
+    return (math.degrees(math.atan2(east, north)) + 360) % 360
+
+
+def _trajectory_properties(
+    coords: list[list[float]],
+    start_time: datetime,
+    output_seconds: int,
+    time_indices: list[int] | None = None,
+) -> dict[str, Any]:
+    """Build timestamps, drift speed and course from the modelled path."""
+    indices = time_indices or list(range(len(coords)))
+    timestamps = []
+    for index in indices:
+        sample_time = start_time + timedelta(seconds=index * output_seconds)
+        sample_time = (
+            sample_time.replace(tzinfo=timezone.utc)
+            if sample_time.tzinfo is None
+            else sample_time.astimezone(timezone.utc)
+        )
+        timestamps.append(sample_time.isoformat().replace("+00:00", "Z"))
+    segment_distances = [
+        _haversine_m(coords[index], coords[index + 1])
+        for index in range(len(coords) - 1)
+    ]
+    segment_durations = [
+        max(1, (indices[index + 1] - indices[index]) * output_seconds)
+        for index in range(len(indices) - 1)
+    ]
+    segment_speeds = [
+        distance / duration
+        for distance, duration in zip(segment_distances, segment_durations)
+    ]
+    segment_courses = [
+        _bearing_deg(coords[index], coords[index + 1])
+        for index in range(len(coords) - 1)
+    ]
+    point_speeds = (
+        [segment_speeds[0], *segment_speeds]
+        if segment_speeds
+        else [0.0] * len(coords)
+    )
+    point_courses = (
+        [segment_courses[0], *segment_courses]
+        if segment_courses
+        else [0.0] * len(coords)
+    )
+    total_duration_s = sum(segment_durations)
+    total_distance_m = sum(segment_distances)
+    return {
+        "type": "trajectory",
+        "timestamps_utc": timestamps,
+        "speed_ms": [round(value, 4) for value in point_speeds],
+        "speed_kn": [round(value * 1.943844, 4) for value in point_speeds],
+        "course_deg": [round(value, 2) for value in point_courses],
+        "distance_m": round(total_distance_m, 1),
+        "mean_speed_ms": round(
+            total_distance_m / total_duration_s if total_duration_s else 0.0,
+            4,
+        ),
+        "max_speed_ms": round(max(point_speeds, default=0.0), 4),
+        "sample_interval_s": output_seconds,
+        "sample_count": len(coords),
+        "speed_basis": "geodesic displacement of OpenDrift ensemble centre",
+    }
 
 
 def _convex_hull(points: list[tuple[float, float]]) -> list[list[float]]:
@@ -614,25 +758,10 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
 
     # ── Reader priority stack ─────────────────────────────────────────────────
     #
-    # OpenDrift merges multiple readers: each reader covers a subset of
-    # variables and a spatial domain.  We add them highest-priority last
-    # (OpenDrift reads from the last-added reader that covers the variable).
-    # Actually OpenDrift's convention is first-added = highest priority, so
-    # we add in descending priority order.
-    #
-    # Priority 1 (highest): reader_constant — always added first as the
-    #   universal fallback for variables not covered by higher-priority readers.
-    #
-    # Priority 2: Open-Meteo _GridReader — replaces wind + currents with
-    #   spatially and temporally varying values from a 3×3 free grid.
-    #
-    # Priority 3 (highest): CMEMS reader_netCDF_CF_generic — when credentials
-    #   are configured, replaces ocean currents with 0.083° Copernicus data.
-    #   Wind comes from _GridReader (Open-Meteo) since CMEMS current-only
-    #   datasets don't include wind components.
-    #
-    # OpenDrift resolves variable-level conflicts: if CMEMS covers uo/vo but
-    # not x_wind/y_wind, the _GridReader fills the wind gap automatically.
+    # OpenDrift appends each new reader to its per-variable priority list.
+    # The 5x5 Open-Meteo grid supplies time-varying wind and fallback currents.
+    # CMEMS is inserted with first=True below so its 0.083-degree currents take
+    # precedence wherever its spatial/time domain covers the simulation.
 
     readers_added: list[str] = []
     grid_reader_added = False
@@ -651,6 +780,7 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
             center_lat=float(payload["lat"]),
             center_lon=float(payload["lon"]),
             hours=duration_h,
+            start_time=start_time,
             fallback_wind_x=base_env["x_wind"],
             fallback_wind_y=base_env["y_wind"],
             fallback_u=base_env["x_sea_water_velocity"],
@@ -658,7 +788,7 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
         )
         GridReader = _get_grid_reader_class()
         sim.add_reader(GridReader(grid, base_env, start_time))
-        readers_added.append("GridReader(Open-Meteo 3×3)")
+        readers_added.append("GridReader(Open-Meteo 5x5)")
         grid_reader_added = True
     except Exception as exc:
         logger.warning("Open-Meteo grid reader failed: %s", exc)
@@ -674,7 +804,9 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
             start_time=start_time,
         )
         if cmems_reader is not None:
-            sim.add_reader(cmems_reader)
+            # add_reader appends by default; first=True ensures CMEMS governs
+            # ocean currents wherever its high-resolution domain is available.
+            sim.add_reader(cmems_reader, first=True)
             readers_added.append("CMEMS-NetCDF(0.083°)")
     except Exception as exc:
         logger.warning("CMEMS reader failed: %s", exc)
@@ -704,11 +836,11 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
     result = sim.result
-    coords = _mean_path(result)
+    coords, time_indices = _representative_path(result)
     if len(coords) < 2:
         raise RuntimeError("OpenDrift produced insufficient trajectory points")
 
-    output_hours = [int(i * output_s / 3600) for i in range(len(coords))]
+    output_hours = [int(index * output_s / 3600) for index in time_indices]
     idx_6 = _hours_to_index(6, output_hours)
     idx_12 = _hours_to_index(12, output_hours)
     idx_24 = _hours_to_index(min(24, duration_h), output_hours)
@@ -719,11 +851,28 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
         props["type"] = cone_key
         return {**feat, "properties": props}
 
+    trajectory_properties = _trajectory_properties(
+        coords,
+        start_time,
+        output_s,
+        time_indices,
+    )
+    forcing_resolution = (
+        "0.083deg-CMEMS" if any("CMEMS" in reader for reader in readers_added)
+        else "1.0deg-OpenMeteo-grid" if any("GridReader" in reader for reader in readers_added)
+        else "constant"
+    )
+    forcing_quality = (
+        "spatiotemporal"
+        if forcing_resolution != "constant"
+        else "degraded-constant"
+    )
+
     return {
         "trajectory": {
             "type": "Feature",
             "geometry": {"type": "LineString", "coordinates": coords},
-            "properties": {"type": "trajectory"},
+            "properties": trajectory_properties,
         },
         "cone_6h": _tagged_polygon(result, idx_6, "cone_6h"),
         "cone_12h": _tagged_polygon(result, idx_12, "cone_12h"),
@@ -741,14 +890,18 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
             "start_time": start_time.isoformat(),
             "duration_h": duration_h,
             "model": "OpenDrift Leeway",
+            "operational_use": forcing_quality == "spatiotemporal",
             "particles": particles,
             "object_type": object_type,
             "readers": readers_added,
-            "forcing_resolution": (
-                "0.083deg-CMEMS" if any("CMEMS" in r for r in readers_added)
-                else "0.5deg-OpenMeteo" if any("GridReader" in r for r in readers_added)
-                else "constant"
-            ),
+            "forcing_resolution": forcing_resolution,
+            "forcing_quality": forcing_quality,
+            "trajectory_distance_m": trajectory_properties["distance_m"],
+            "mean_drift_speed_ms": trajectory_properties["mean_speed_ms"],
+            "max_drift_speed_ms": trajectory_properties["max_speed_ms"],
+            "trajectory_samples": trajectory_properties["sample_count"],
+            "time_step_seconds": time_step_s,
+            "time_step_output_seconds": output_s,
             "forcing": {
                 "x_wind": float(env["x_wind"]),
                 "y_wind": float(env["y_wind"]),

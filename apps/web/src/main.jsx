@@ -690,18 +690,17 @@ function App() {
 
   // ── Intel drift traces polling ───────────────────────────────────────────────
   useEffect(() => {
-    if (isPublicLiveHost) {
-      setIntelDrifts({ type: 'FeatureCollection', features: [] });
-      return undefined;
-    }
     let alive = true;
     let driftTimer = null;
     async function loadDrifts() {
       try {
-        const data = await fetchJson(apiBase, '/api/v1/intel/drifts');
+        const path = isPublicLiveHost ? '/api/v1/live/drifts' : '/api/v1/intel/drifts';
+        const data = await fetchJson(apiBase, path);
         if (alive && data.features) setIntelDrifts(data);
       } catch { /* ignore */ }
-      if (alive) driftTimer = window.setTimeout(loadDrifts, 120_000);
+      if (alive) {
+        driftTimer = window.setTimeout(loadDrifts, isPublicLiveHost ? 30_000 : 120_000);
+      }
     }
     loadDrifts();
     return () => {
@@ -1299,6 +1298,17 @@ function App() {
         map.on('mouseenter', 'intel-drift-line', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'intel-drift-line', () => {
           map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+        });
+        map.on('click', 'intel-drift-line', (event) => {
+          const feature = event.features?.[0];
+          if (!feature) return;
+          setMapPanel({
+            type: 'trajectory',
+            feature,
+            caseStatus: feature.properties?.verification_status || 'modelled',
+          });
+          setConePanelHidden(false);
+          event.originalEvent?.stopPropagation?.();
         });
 
         // vessel click (commercial + NGO share same handler)
@@ -1997,14 +2007,14 @@ function App() {
         ) : null}
 
         {/* Cone detail panel — right side, appears when clicking a drift cone */}
-        {mapPanel?.type === 'cone' && !conePanelHidden && (
+        {['cone', 'trajectory'].includes(mapPanel?.type) && !conePanelHidden && (
           <MapFloatingPanel
             panel={mapPanel}
             onClose={() => setConePanelHidden(true)}
             onComputeDrift={null}
           />
         )}
-        {mapPanel?.type === 'cone' && conePanelHidden && (
+        {['cone', 'trajectory'].includes(mapPanel?.type) && conePanelHidden && (
           <button
             className="cone-reopen-btn"
             onClick={() => setConePanelHidden(false)}

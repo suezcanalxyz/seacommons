@@ -171,7 +171,9 @@ def list_drift_jobs_for_event(event_id: str) -> list[dict[str, Any]]:
     """Return all drift jobs linked to the given event_id (survives restarts)."""
     with session_scope() as session:
         rows = session.execute(
-            select(DriftResultDB).where(DriftResultDB.event_id == event_id)
+            select(DriftResultDB)
+            .where(DriftResultDB.event_id == event_id)
+            .order_by(DriftResultDB.created_at.desc())
         ).scalars().all()
         return [{"id": r.drift_id, "status": getattr(r, "status", "completed")} for r in rows]
 

@@ -244,11 +244,62 @@ function ConeView({ panel }) {
   );
 }
 
+function TrajectoryView({ panel }) {
+  const props = panel.feature?.properties || {};
+  const meanSpeed = Number(props.mean_speed_ms);
+  const maxSpeed = Number(props.max_speed_ms);
+  const distance = Number(props.distance_m);
+  return (
+    <>
+      <div className="cone-section">
+        <SectionLabel>Live model product</SectionLabel>
+        <Row label="Signal" value={props.intel_title || props.intel_event_id || 'Published signal'} />
+        <Row label="Source" value={props.intel_source || 'published feed'} />
+        <Row label="Status" value={props.verification_status || 'modelled'} color="#8bf0c5" />
+      </div>
+      <div className="cone-section">
+        <SectionLabel>Trajectory dynamics</SectionLabel>
+        <Row
+          label="Mean drift speed"
+          value={Number.isFinite(meanSpeed)
+            ? `${meanSpeed.toFixed(2)} m/s · ${(meanSpeed * 1.943844).toFixed(2)} kn`
+            : '—'}
+        />
+        <Row
+          label="Peak drift speed"
+          value={Number.isFinite(maxSpeed)
+            ? `${maxSpeed.toFixed(2)} m/s · ${(maxSpeed * 1.943844).toFixed(2)} kn`
+            : '—'}
+        />
+        <Row label="Path distance" value={Number.isFinite(distance) ? `${(distance / 1000).toFixed(1)} km` : '—'} />
+        <Row label="Samples" value={props.sample_count || '—'} />
+        <Row label="Interval" value={props.sample_interval_s ? `${Number(props.sample_interval_s) / 60} min` : '—'} />
+      </div>
+      <div className="cone-section" style={{ borderBottom: 'none' }}>
+        <SectionLabel>Provenance</SectionLabel>
+        <Row label="Model" value={props.model || 'OpenDrift Leeway'} />
+        <Row label="Forcing" value={props.forcing_resolution || '—'} />
+        <div style={{ fontSize: 9, color: '#87cabc', lineHeight: 1.45, marginTop: 6 }}>
+          Forecast trajectory from time-varying environmental forcing. It is not an observed GPS track.
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function MapFloatingPanel({ panel, onClose, onComputeDrift }) {
   if (!panel) return null;
 
-  const title = panel.type === 'cone' ? 'Drift projection' : 'Selected point';
-  const kicker = panel.type === 'cone' ? 'SAR drift cone' : 'Map click';
+  const title = panel.type === 'trajectory'
+    ? 'Live drift trajectory'
+    : panel.type === 'cone'
+      ? 'Drift projection'
+      : 'Selected point';
+  const kicker = panel.type === 'trajectory'
+    ? 'OpenDrift forecast'
+    : panel.type === 'cone'
+      ? 'SAR drift cone'
+      : 'Map click';
 
   return (
     <div className="cone-panel">
@@ -265,6 +316,9 @@ export default function MapFloatingPanel({ panel, onClose, onComputeDrift }) {
       )}
       {panel.type === 'cone' && (
         <ConeView panel={panel} />
+      )}
+      {panel.type === 'trajectory' && (
+        <TrajectoryView panel={panel} />
       )}
     </div>
   );

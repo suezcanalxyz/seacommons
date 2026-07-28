@@ -10,7 +10,21 @@ function trajectoryFromGeoJson(geojson, fallbackLon, fallbackLat) {
   const coordinates = feature?.geometry?.coordinates
     ?.filter((point) => Array.isArray(point) && Number.isFinite(Number(point[0])) && Number.isFinite(Number(point[1])))
     .map((point) => [Number(point[0]), Number(point[1])]);
-  return coordinates?.length >= 2 ? coordinates : [[fallbackLon, fallbackLat]];
+  const safeCoordinates = coordinates?.length >= 2 ? coordinates : [[fallbackLon, fallbackLat]];
+  const rawTimes = feature?.properties?.timestamps_utc || [];
+  const parsedTimes = rawTimes.map((value) => Date.parse(value));
+  const validTimes = parsedTimes.length === safeCoordinates.length
+    && parsedTimes.every(Number.isFinite)
+    && parsedTimes.every((value, index) => index === 0 || value > parsedTimes[index - 1]);
+  const startTime = validTimes ? parsedTimes[0] : 0;
+  const timeOffsets = validTimes
+    ? parsedTimes.map((value) => (value - startTime) / 1000)
+    : safeCoordinates.map((_, index) => index * 3600);
+  const rawSpeeds = feature?.properties?.speed_ms || [];
+  const speeds = rawSpeeds.length === safeCoordinates.length
+    ? rawSpeeds.map((value) => Math.max(0, Number(value) || 0))
+    : safeCoordinates.map(() => 0);
+  return { coordinates: safeCoordinates, timeOffsets, speeds };
 }
 
 function environmentalState(weather) {
@@ -77,6 +91,8 @@ export default function PlayCesium({
   const containerRef = useRef(null);
   const runtimeRef = useRef({
     trajectory: [[DEFAULT_LON, DEFAULT_LAT]],
+    trajectoryTimeOffsets: [0],
+    trajectorySpeeds: [0],
     environment: environmentalState(null),
     persons: 1,
     startedAt: performance.now(),
@@ -87,6 +103,7 @@ export default function PlayCesium({
   const [status, setStatus] = useState('loading 3D sea');
   const [error, setError] = useState('');
   const [cameraAltitude, setCameraAltitude] = useState(145);
+  const [driftSpeedMs, setDriftSpeedMs] = useState(0);
 
   useEffect(() => {
     runtimeRef.current.onPick = onPick;
@@ -101,7 +118,13 @@ export default function PlayCesium({
     const longitude = Number(lon);
     const safeLat = Number.isFinite(latitude) ? latitude : DEFAULT_LAT;
     const safeLon = Number.isFinite(longitude) ? longitude : DEFAULT_LON;
-    runtimeRef.current.trajectory = trajectoryFromGeoJson(geojson, safeLon, safeLat);
+    const trajectory = trajectoryFromGeoJson(geojson, safeLon, safeLat);
+    runtimeRef.current.trajectory = trajectory.coordinates;
+    runtimeRef.current.trajectoryTimeOffsets = trajectory.timeOffsets;
+    runtimeRef.current.trajectorySpeeds = trajectory.speeds;
+    runtimeRef.current.currentDriftSpeedMs = trajectory.speeds[0] || 0;
+    runtimeRef.current.displayDriftSpeedMs = trajectory.speeds[0] || 0;
+    setDriftSpeedMs(trajectory.speeds[0] || 0);
     runtimeRef.current.environment = environmentalState(weather);
     runtimeRef.current.persons = Math.max(1, Math.round(Number(persons) || 1));
     runtimeRef.current.startedAt = performance.now();
@@ -368,18 +391,42 @@ export default function PlayCesium({
         const calculatePose = () => {
           const path = runtime.trajectory;
           const nowSeconds = (performance.now() - runtime.startedAt) / 1000;
-          const journeySeconds = Math.max(36, (path.length - 1) * 9);
+          const offsets = runtime.trajectoryTimeOffsets || [];
+          const totalModelSeconds = Math.max(1, offsets[offsets.length - 1] || (path.length - 1) * 3600);
+          const journeySeconds = Math.max(36, totalModelSeconds / 400);
           const normalized = (nowSeconds % journeySeconds) / journeySeconds;
-          const scaled = normalized * Math.max(1, path.length - 1);
-          const index = Math.min(path.length - 2, Math.floor(scaled));
-          const fraction = path.length > 1 ? scaled - index : 0;
+          const modelSeconds = normalized * totalModelSeconds;
+          let index = Math.max(0, path.length - 2);
+          for (let candidate = 0; candidate < path.length - 1; candidate += 1) {
+            if (modelSeconds <= (offsets[candidate + 1] ?? (candidate + 1) * 3600)) {
+              index = candidate;
+              break;
+            }
+          }
+          const intervalStart = offsets[index] ?? index * 3600;
+          const intervalEnd = offsets[index + 1] ?? (index + 1) * 3600;
+          const fraction = path.length > 1
+            ? Cesium.Math.clamp((modelSeconds - intervalStart) / Math.max(1, intervalEnd - intervalStart), 0, 1)
+            : 0;
           const first = path[index] || path[0];
           const second = path[index + 1] || first;
-          const longitude = Cesium.Math.lerp(first[0], second[0], fraction);
-          const latitude = Cesium.Math.lerp(first[1], second[1], fraction);
+          let longitude = first[0];
+          let latitude = first[1];
+          if (first[0] !== second[0] || first[1] !== second[1]) {
+            const geodesic = new Cesium.EllipsoidGeodesic(
+              Cesium.Cartographic.fromDegrees(first[0], first[1]),
+              Cesium.Cartographic.fromDegrees(second[0], second[1]),
+            );
+            const interpolated = geodesic.interpolateUsingFraction(fraction);
+            longitude = Cesium.Math.toDegrees(interpolated.longitude);
+            latitude = Cesium.Math.toDegrees(interpolated.latitude);
+          }
           const dx = (second[0] - first[0]) * Math.cos(Cesium.Math.toRadians(latitude));
           const dy = second[1] - first[1];
           const heading = Math.atan2(dx, dy);
+          const firstSpeed = runtime.trajectorySpeeds?.[index] || 0;
+          const secondSpeed = runtime.trajectorySpeeds?.[index + 1] || firstSpeed;
+          runtime.currentDriftSpeedMs = Cesium.Math.lerp(firstSpeed, secondSpeed, fraction);
           const environment = runtime.environment;
           const primary = Math.sin(nowSeconds * Math.PI * 2 / environment.wavePeriod);
           const secondary = Math.sin(nowSeconds * Math.PI * 2 / (environment.wavePeriod * .57) + 1.2);
@@ -474,6 +521,8 @@ export default function PlayCesium({
               false,
             ),
             width: 4,
+            arcType: Cesium.ArcType.GEODESIC,
+            granularity: Cesium.Math.toRadians(.0025),
             material: new Cesium.PolylineGlowMaterialProperty({
               color: Cesium.Color.fromCssColorString('#ff603c'),
               glowPower: .22,
@@ -574,6 +623,15 @@ export default function PlayCesium({
 
         removePreRender = viewer.scene.preRender.addEventListener(() => {
           calculatePose();
+          const nowMs = performance.now();
+          if (
+            nowMs - (runtime.lastSpeedDisplayAt || 0) > 500
+            && Math.abs((runtime.currentDriftSpeedMs || 0) - (runtime.displayDriftSpeedMs || 0)) > .002
+          ) {
+            runtime.lastSpeedDisplayAt = nowMs;
+            runtime.displayDriftSpeedMs = runtime.currentDriftSpeedMs || 0;
+            setDriftSpeedMs(runtime.displayDriftSpeedMs);
+          }
           const cloudDrift = pose.timeSeconds * Math.max(.03, runtime.environment.windSpeed * .018);
           cloudCollection.noiseOffset.x = Math.sin(Cesium.Math.toRadians(runtime.environment.directionDeg)) * cloudDrift;
           cloudCollection.noiseOffset.y = Math.cos(Cesium.Math.toRadians(runtime.environment.directionDeg)) * cloudDrift;
@@ -688,6 +746,7 @@ export default function PlayCesium({
           <div><dt>Wave</dt><dd>{environment.waveHeight.toFixed(2)} m / {environment.wavePeriod.toFixed(1)} s</dd></div>
           <div><dt>Direction</dt><dd>{Math.round(environment.directionDeg)}° · {environment.directionSource}</dd></div>
           <div><dt>Current</dt><dd>{environment.currentSpeed.toFixed(2)} m/s / {Math.round(environment.currentDirection)}°</dd></div>
+          <div><dt>Drift speed</dt><dd>{driftSpeedMs.toFixed(2)} m/s / {(driftSpeedMs * 1.943844).toFixed(2)} kn</dd></div>
           <div><dt>Sky</dt><dd>{Math.round(environment.cloudCover)}% · {weatherDescription(environment.weatherCode)}</dd></div>
           <div><dt>Visibility</dt><dd>{environment.visibilityKm.toFixed(1)} km · {environment.isDay ? 'day' : 'night'}</dd></div>
           <div><dt>People</dt><dd>{visibleCubes} cubes · {peoplePerCube > 1 ? `${peoplePerCube} people/cube` : '1 person/cube'}</dd></div>

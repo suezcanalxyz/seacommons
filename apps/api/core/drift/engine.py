@@ -65,8 +65,10 @@ class DriftEngine:
             "duration_h": duration_h,
             "domain": domain,
             "environment": {
-                "x_wind": float(config.get("x_wind", wind_speed * math.sin(wind_dir_rad))),
-                "y_wind": float(config.get("y_wind", wind_speed * math.cos(wind_dir_rad))),
+                # Open-Meteo uses meteorological wind direction (where wind
+                # comes from); OpenDrift expects eastward/northward vectors.
+                "x_wind": float(config.get("x_wind", -wind_speed * math.sin(wind_dir_rad))),
+                "y_wind": float(config.get("y_wind", -wind_speed * math.cos(wind_dir_rad))),
                 "x_sea_water_velocity": float(config.get("x_sea_water_velocity", current.get("u_ms", 0.0))),
                 "y_sea_water_velocity": float(config.get("y_sea_water_velocity", current.get("v_ms", 0.0))),
                 "land_binary_mask": 0,
@@ -82,14 +84,14 @@ class DriftEngine:
             "seed_radius_m": float(config.get("seed_radius_m", 150)),
         }
         if runtime_config.DEMO_PUBLIC_MODE:
-            logger.info("Using bounded public-demo drift estimate; OpenDrift is reserved for live runtime")
+            logger.info("Using bounded fallback in the isolated low-memory demo API")
             return self._demo_fallback(
                 lat,
                 lon,
                 time_utc,
                 duration_h,
                 payload,
-                "isolated public demo profile",
+                "isolated low-memory demo API; simulations use the operational engine",
             )
         try:
             return DriftResult.model_validate(run_leeway(payload))

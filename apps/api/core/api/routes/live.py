@@ -220,6 +220,7 @@ def _public_drift_feature(
     title: str,
     source: str,
     severity: str,
+    metadata: dict[str, Any],
 ) -> dict[str, Any]:
     properties = feature.get("properties") or {}
     return {
@@ -229,30 +230,69 @@ def _public_drift_feature(
             "type": properties.get("type"),
             "horizon_h": properties.get("horizon_h"),
             "radius_m": properties.get("radius_m"),
+            "timestamps_utc": properties.get("timestamps_utc"),
+            "speed_ms": properties.get("speed_ms"),
+            "speed_kn": properties.get("speed_kn"),
+            "course_deg": properties.get("course_deg"),
+            "distance_m": properties.get("distance_m"),
+            "mean_speed_ms": properties.get("mean_speed_ms"),
+            "max_speed_ms": properties.get("max_speed_ms"),
+            "sample_interval_s": properties.get("sample_interval_s"),
+            "sample_count": properties.get("sample_count"),
             "intel_event_id": event_id,
             "intel_title": title[:80],
             "intel_source": source[:64],
             "intel_severity": severity,
             "auto_drift": True,
             "publication_status": "published",
+            "trajectory_kind": "model_forecast",
+            "observed_track": False,
+            "model": metadata.get("model"),
+            "forcing_resolution": metadata.get("forcing_resolution"),
+            "forcing_quality": metadata.get("forcing_quality"),
+            "verification_status": "modelled_spatiotemporal",
         },
     }
 
 
+def _is_publishable_live_drift(drift: dict[str, Any]) -> bool:
+    """Only expose model runs backed by varying forcing, never demo fallbacks."""
+    metadata = drift.get("metadata") or {}
+    trajectory = drift.get("trajectory") or {}
+    properties = trajectory.get("properties") or {}
+    coordinates = (trajectory.get("geometry") or {}).get("coordinates") or []
+    return bool(
+        drift.get("status") == "completed"
+        and metadata.get("model") == "OpenDrift Leeway"
+        and metadata.get("forcing_quality") == "spatiotemporal"
+        and metadata.get("operational_use") is True
+        and len(coordinates) >= 2
+        and len(properties.get("timestamps_utc") or []) == len(coordinates)
+        and len(properties.get("speed_ms") or []) == len(coordinates)
+    )
+
+
 def public_drift_collection(limit: int = 100) -> dict[str, Any]:
     """Published model geometry linked to received public signals, without raw content."""
-    from core.db.store import get_drift
+    from core.db.store import get_drift, list_drift_jobs_for_event
 
     features: list[dict[str, Any]] = []
     drift_count = 0
     for event in intel_store.events(limit=min(limit * 3, 500)):
         public_event = _public_intel_feature(event)
         job_id = event.metadata.get("drift_job_id")
-        if public_event is None or not job_id or event.metadata.get("drift_status") != "completed":
+        if public_event is None:
+            continue
+        if not job_id:
+            jobs = list_drift_jobs_for_event(f"intel:{event.id}")
+            completed = [job for job in jobs if job.get("status") == "completed"]
+            job_id = completed[0].get("id") if completed else None
+        if not job_id:
             continue
         drift = get_drift(job_id)
-        if not drift or drift.get("status") != "completed":
+        if not drift or not _is_publishable_live_drift(drift):
             continue
+        metadata = drift.get("metadata") or {}
         drift_count += 1
         for feature in (drift.get("trajectory"), drift.get("cone_24h")):
             if feature:
@@ -263,6 +303,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
                         title=event.title,
                         source=event.source,
                         severity=event.severity,
+                        metadata=metadata,
                     )
                 )
         for feature in (drift.get("impact_point") or {}).get("features", []):
@@ -273,6 +314,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
                     title=event.title,
                     source=event.source,
                     severity=event.severity,
+                    metadata=metadata,
                 )
             )
         if drift_count >= limit:

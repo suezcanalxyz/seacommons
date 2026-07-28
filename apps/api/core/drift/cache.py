@@ -137,8 +137,8 @@ class CacheManager:
                     "h": h,
                     "wind_speed_ms": min(max(ws, 0.5), 30.0),
                     "wind_dir_deg":  wd,
-                    "wind_x": ws * math.sin(rad),
-                    "wind_y": ws * math.cos(rad),
+                    "wind_x": -ws * math.sin(rad),
+                    "wind_y": -ws * math.cos(rad),
                 })
             if series:
                 return series
@@ -153,7 +153,7 @@ class CacheManager:
             rad = math.radians(270.0)
             return [
                 {"h": h, "wind_speed_ms": 5.0, "wind_dir_deg": 270.0,
-                 "wind_x": 5.0 * math.sin(rad), "wind_y": 5.0 * math.cos(rad),
+                 "wind_x": -5.0 * math.sin(rad), "wind_y": -5.0 * math.cos(rad),
                  "source": "default-fallback"}
                 for h in range(hours)
             ]
@@ -170,8 +170,8 @@ class CacheManager:
                 "h": h,
                 "wind_speed_ms": min(max(ws, 0.5), 30.0),
                 "wind_dir_deg": wd,
-                "wind_x": ws * math.sin(rad),
-                "wind_y": ws * math.cos(rad),
+                "wind_x": -ws * math.sin(rad),
+                "wind_y": -ws * math.cos(rad),
                 "source": "open-meteo-cache",
             })
         if not series:

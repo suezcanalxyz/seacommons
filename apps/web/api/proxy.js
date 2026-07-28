@@ -3,6 +3,7 @@ import http from 'node:http';
 const UPSTREAM_HOST = '204.216.210.155';
 const ALLOWED_UPSTREAMS = new Set(['api.seacommons.org', 'demo-api.seacommons.org']);
 const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org']);
+const PLAY_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org']);
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
   'keep-alive',
@@ -37,10 +38,14 @@ function requestHostname(headers) {
   return String(headers.host || '').split(':')[0].trim().toLowerCase();
 }
 
-function selectUpstream(headers) {
+function selectUpstream(headers, query) {
   const configured = process.env.SEACOMMONS_UPSTREAM_VIRTUAL_HOST;
   if (configured && ALLOWED_UPSTREAMS.has(configured)) return configured;
-  return LIVE_HOSTS.has(requestHostname(headers))
+  const hostname = requestHostname(headers);
+  const path = String(first(query?.path) || '').replace(/^\/+/, '');
+  const isPlaySimulation = PLAY_HOSTS.has(hostname)
+    && (path === 'v1/alert' || path.startsWith('v1/alert/'));
+  return LIVE_HOSTS.has(hostname) || isPlaySimulation
     ? 'api.seacommons.org'
     : 'demo-api.seacommons.org';
 }
@@ -59,7 +64,7 @@ function requestHeaders(headers, upstreamVirtualHost) {
 }
 
 export default function handler(req, res) {
-  const upstreamVirtualHost = selectUpstream(req.headers);
+  const upstreamVirtualHost = selectUpstream(req.headers, req.query || {});
   const upstream = http.request(
     {
       hostname: UPSTREAM_HOST,
