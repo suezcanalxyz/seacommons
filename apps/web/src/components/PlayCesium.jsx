@@ -172,6 +172,7 @@ export default function PlayCesium({
           timeline: false,
           terrainProvider: new Cesium.EllipsoidTerrainProvider(),
           requestRenderMode: false,
+          shadows: true,
         });
 
         let globeLayer = null;
@@ -205,6 +206,11 @@ export default function PlayCesium({
         viewer.scene.light = new Cesium.SunLight({ intensity: 1.35 });
         viewer.scene.highDynamicRange = viewer.scene.highDynamicRangeSupported;
         viewer.scene.postProcessStages.fxaa.enabled = true;
+        viewer.shadows = true;
+        viewer.scene.shadowMap.enabled = true;
+        viewer.scene.shadowMap.softShadows = true;
+        viewer.scene.shadowMap.darkness = .32;
+        viewer.scene.shadowMap.maximumDistance = 18_000;
         viewer.scene.screenSpaceCameraController.minimumZoomDistance = 12;
         viewer.scene.screenSpaceCameraController.maximumZoomDistance = 45_000_000;
         viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
@@ -242,9 +248,9 @@ export default function PlayCesium({
           );
         };
 
-        // A procedural material keeps the simulation surface deterministic and
-        // removes the fragile external normal-map texture. At regional/globe
-        // altitude the local patch is intentionally hidden and Cesium takes over.
+        // The local sea uses an actual displaced multi-resolution mesh. Geometry
+        // is dense around the vessel and progressively coarser at the horizon;
+        // the fragment normals add the moving capillary detail between vertices.
         const waterMaterial = new Cesium.Material({
           fabric: {
             type: 'SeaCommonsProceduralSea',
@@ -259,6 +265,7 @@ export default function PlayCesium({
               speed: .013,
               roughness: .42,
               specularStrength: 1.15,
+              foamStrength: .12,
             },
             source: `
               czm_material czm_getMaterial(czm_materialInput materialInput)
@@ -271,22 +278,36 @@ export default function PlayCesium({
                 float primary = sin(dot(st, axis) * frequency + time);
                 float secondary = sin(dot(st, crossAxis) * frequency * 0.57 - time * 0.71);
                 float detail = sin((st.s + st.t) * frequency * 1.83 + time * 1.31);
-                float wave = primary * 0.56 + secondary * 0.29 + detail * 0.15;
-                float crest = smoothstep(0.18, 0.92, wave);
-                material.diffuse = mix(deepColor.rgb, crestColor.rgb, 0.18 + crest * 0.52);
+                float chop = sin((st.s * 1.71 - st.t * 1.18) * frequency * 2.67 - time * 1.92);
+                float wave = primary * 0.48 + secondary * 0.27 + detail * 0.17 + chop * 0.08;
+                float crest = smoothstep(0.24, 0.88, wave);
+                float undulation = smoothstep(-0.74, 0.72, wave);
+                float foam = smoothstep(0.58, 0.94, wave) * foamStrength;
+                material.diffuse = mix(
+                  mix(
+                    deepColor.rgb,
+                    crestColor.rgb,
+                    0.06 + undulation * 0.54 + crest * 0.16
+                  ),
+                  horizonColor.rgb,
+                  foam
+                );
                 vec3 skyContribution = mix(
                   skyColor.rgb,
                   horizonColor.rgb,
                   0.28 + crest * 0.16
                 );
-                material.emission = skyContribution * ambientStrength;
+                material.emission = skyContribution * ambientStrength
+                  + crestColor.rgb * crest * 0.018;
                 material.normal = normalize(vec3(
-                  -axis.x * primary * roughness - crossAxis.x * secondary * roughness * 0.45,
-                  -axis.y * primary * roughness - crossAxis.y * secondary * roughness * 0.45,
+                  -axis.x * (primary + detail * .34) * roughness
+                    - crossAxis.x * (secondary + chop * .22) * roughness * 0.52,
+                  -axis.y * (primary + detail * .34) * roughness
+                    - crossAxis.y * (secondary + chop * .22) * roughness * 0.52,
                   1.0
                 ));
                 material.specular = specularStrength;
-                material.shininess = 28.0;
+                material.shininess = 52.0;
                 material.alpha = 1.0;
                 return material;
               }
@@ -294,28 +315,213 @@ export default function PlayCesium({
           },
         });
         let waterPrimitive = null;
+        const makeWaterGeometry = (longitude, latitude) => {
+          const environment = runtime.environment;
+          const segments = 128;
+          const rowSize = segments + 1;
+          const halfSize = 13_500;
+          const denseRatio = .075;
+          const baseHeight = 1.25;
+          const waveHeight = Cesium.Math.clamp(environment.waveHeight, .08, 5);
+          const primaryLength = Cesium.Math.clamp(
+            1.56 * environment.wavePeriod * environment.wavePeriod,
+            22,
+            190,
+          );
+          const secondaryLength = Math.max(13, primaryLength * .46);
+          const tertiaryLength = Math.max(8, primaryLength * .23);
+          const bearing = Cesium.Math.toRadians(environment.directionDeg);
+          const primaryEast = Math.sin(bearing);
+          const primaryNorth = Math.cos(bearing);
+          const crossEast = Math.cos(bearing);
+          const crossNorth = -Math.sin(bearing);
+          const k1 = Math.PI * 2 / primaryLength;
+          const k2 = Math.PI * 2 / secondaryLength;
+          const k3 = Math.PI * 2 / tertiaryLength;
+          const amplitude1 = waveHeight * .42;
+          const amplitude2 = waveHeight * .17;
+          const amplitude3 = Math.min(.18, waveHeight * .07);
+          const origin = Cesium.Cartesian3.fromDegrees(longitude, latitude, 0);
+          const frame = Cesium.Transforms.eastNorthUpToFixedFrame(origin);
+          const worldEastOffset = longitude * 111_320 * Math.cos(Cesium.Math.toRadians(latitude));
+          const worldNorthOffset = latitude * 110_540;
+          const vertexCount = rowSize * rowSize;
+          const positions = new Float64Array(vertexCount * 3);
+          const normals = new Float32Array(vertexCount * 3);
+          const textureCoordinates = new Float32Array(vertexCount * 2);
+          const indices = new Uint16Array(segments * segments * 6);
+
+          const remap = (normalized) => {
+            const sign = Math.sign(normalized);
+            const magnitude = Math.abs(normalized);
+            return sign * halfSize * (
+              denseRatio * magnitude + (1 - denseRatio) * magnitude * magnitude * magnitude
+            );
+          };
+          let vertexOffset = 0;
+          let stOffset = 0;
+          for (let row = 0; row <= segments; row += 1) {
+            const v = row / segments;
+            const north = remap(v * 2 - 1);
+            for (let column = 0; column <= segments; column += 1) {
+              const u = column / segments;
+              const east = remap(u * 2 - 1);
+              const worldEast = worldEastOffset + east;
+              const worldNorth = worldNorthOffset + north;
+              const phase1 = (worldEast * primaryEast + worldNorth * primaryNorth) * k1;
+              const phase2 = (worldEast * crossEast + worldNorth * crossNorth) * k2 + 1.7;
+              const phase3 = ((worldEast + worldNorth) * .7071) * k3 - .8;
+              const distance = Math.hypot(east, north);
+              const fadeRatio = Cesium.Math.clamp((distance - 2_300) / 5_600, 0, 1);
+              const fade = 1 - fadeRatio * fadeRatio * (3 - 2 * fadeRatio);
+              const height = baseHeight + fade * (
+                amplitude1 * Math.sin(phase1)
+                + amplitude2 * Math.sin(phase2)
+                + amplitude3 * Math.sin(phase3)
+              );
+              // Follow the WGS84 curvature instead of extending a tangent plane
+              // to the horizon; this removes the visible edge/dome at sea level.
+              const pointLatitude = latitude + north / 110_540;
+              const pointLongitude = longitude + east / (
+                111_320 * Math.max(.2, Math.cos(Cesium.Math.toRadians(pointLatitude)))
+              );
+              const point = Cesium.Cartesian3.fromDegrees(
+                pointLongitude,
+                pointLatitude,
+                height,
+              );
+              positions[vertexOffset] = point.x;
+              positions[vertexOffset + 1] = point.y;
+              positions[vertexOffset + 2] = point.z;
+
+              const slopeEast = fade * (
+                amplitude1 * Math.cos(phase1) * k1 * primaryEast
+                + amplitude2 * Math.cos(phase2) * k2 * crossEast
+                + amplitude3 * Math.cos(phase3) * k3 * .7071
+              );
+              const slopeNorth = fade * (
+                amplitude1 * Math.cos(phase1) * k1 * primaryNorth
+                + amplitude2 * Math.cos(phase2) * k2 * crossNorth
+                + amplitude3 * Math.cos(phase3) * k3 * .7071
+              );
+              const worldNormal = Cesium.Matrix4.multiplyByPointAsVector(
+                frame,
+                new Cesium.Cartesian3(-slopeEast, -slopeNorth, 1),
+                new Cesium.Cartesian3(),
+              );
+              Cesium.Cartesian3.normalize(worldNormal, worldNormal);
+              normals[vertexOffset] = worldNormal.x;
+              normals[vertexOffset + 1] = worldNormal.y;
+              normals[vertexOffset + 2] = worldNormal.z;
+              textureCoordinates[stOffset] = u;
+              textureCoordinates[stOffset + 1] = v;
+              vertexOffset += 3;
+              stOffset += 2;
+            }
+          }
+
+          let indexOffset = 0;
+          for (let row = 0; row < segments; row += 1) {
+            for (let column = 0; column < segments; column += 1) {
+              const lowerLeft = row * rowSize + column;
+              const lowerRight = lowerLeft + 1;
+              const upperLeft = lowerLeft + rowSize;
+              const upperRight = upperLeft + 1;
+              indices[indexOffset] = lowerLeft;
+              indices[indexOffset + 1] = lowerRight;
+              indices[indexOffset + 2] = upperRight;
+              indices[indexOffset + 3] = lowerLeft;
+              indices[indexOffset + 4] = upperRight;
+              indices[indexOffset + 5] = upperLeft;
+              indexOffset += 6;
+            }
+          }
+
+          return new Cesium.Geometry({
+            attributes: {
+              position: new Cesium.GeometryAttribute({
+                componentDatatype: Cesium.ComponentDatatype.DOUBLE,
+                componentsPerAttribute: 3,
+                values: positions,
+              }),
+              normal: new Cesium.GeometryAttribute({
+                componentDatatype: Cesium.ComponentDatatype.FLOAT,
+                componentsPerAttribute: 3,
+                values: normals,
+              }),
+              st: new Cesium.GeometryAttribute({
+                componentDatatype: Cesium.ComponentDatatype.FLOAT,
+                componentsPerAttribute: 2,
+                values: textureCoordinates,
+              }),
+            },
+            indices,
+            primitiveType: Cesium.PrimitiveType.TRIANGLES,
+            boundingSphere: Cesium.BoundingSphere.fromVertices(positions),
+          });
+        };
         const replaceWaterSurface = (longitude, latitude) => {
           if (waterPrimitive) viewer.scene.primitives.remove(waterPrimitive);
-          const longitudeRadius = .12 / Math.max(.25, Math.cos(Cesium.Math.toRadians(latitude)));
+          const environment = runtime.environment;
+          const vertexDirection = Cesium.Math.toRadians(environment.directionDeg).toFixed(8);
+          const vertexSpeed = Math.min(
+            .038,
+            .006 + environment.windSpeed * .0017,
+          ).toFixed(8);
+          const vertexAmplitude = Math.min(
+            1.8,
+            Math.max(.06, environment.waveHeight * .34),
+          ).toFixed(8);
+          const vertexFrequency = Math.min(
+            520,
+            205 + environment.waveHeight * 36 + environment.windSpeed * 3.5,
+          ).toFixed(8);
           waterPrimitive = viewer.scene.primitives.add(new Cesium.Primitive({
             geometryInstances: new Cesium.GeometryInstance({
-              geometry: new Cesium.RectangleGeometry({
-                rectangle: Cesium.Rectangle.fromDegrees(
-                  longitude - longitudeRadius,
-                  latitude - .12,
-                  longitude + longitudeRadius,
-                  latitude + .12,
-                ),
-                height: 1.25,
-                vertexFormat: Cesium.EllipsoidSurfaceAppearance.VERTEX_FORMAT,
-              }),
+              geometry: makeWaterGeometry(longitude, latitude),
             }),
-            appearance: new Cesium.EllipsoidSurfaceAppearance({
-              aboveGround: false,
+            appearance: new Cesium.MaterialAppearance({
               faceForward: true,
               translucent: false,
+              closed: false,
+              flat: false,
               material: waterMaterial,
+              vertexShaderSource: `
+                in vec3 position3DHigh;
+                in vec3 position3DLow;
+                in vec3 normal;
+                in vec2 st;
+                in float batchId;
+
+                out vec3 v_positionEC;
+                out vec3 v_normalEC;
+                out vec2 v_st;
+
+                void main()
+                {
+                  vec4 p = czm_computePosition();
+                  float direction = ${vertexDirection};
+                  float speed = ${vertexSpeed};
+                  float vertexAmplitude = ${vertexAmplitude};
+                  float vertexFrequency = ${vertexFrequency};
+                  vec2 axis = normalize(vec2(sin(direction), cos(direction)));
+                  vec2 crossAxis = vec2(-axis.y, axis.x);
+                  float time = czm_frameNumber * speed;
+                  float swell = sin(dot(st, axis) * vertexFrequency + time);
+                  float crossSwell = sin(
+                    dot(st, crossAxis) * vertexFrequency * .48 - time * .67 + 1.4
+                  );
+                  float displacement = vertexAmplitude * (swell * .72 + crossSwell * .28);
+                  p.xyz += normalize(normal) * displacement;
+
+                  v_positionEC = (czm_modelViewRelativeToEye * p).xyz;
+                  v_normalEC = czm_normal * normal;
+                  v_st = st;
+                  gl_Position = czm_modelViewProjectionRelativeToEye * p;
+                }
+              `,
             }),
+            shadows: Cesium.ShadowMode.RECEIVE_ONLY,
             asynchronous: false,
           }));
         };
@@ -379,6 +585,11 @@ export default function PlayCesium({
           viewer.scene.light.color = Cesium.Color.fromCssColorString(
             night ? '#9bb8d5' : cloudRatio > .72 ? '#dce4e3' : '#fff2d4',
           );
+          // Cesium's astronomical skybox is a star field. During daylight it
+          // must be hidden so the atmospheric/background sky remains visible,
+          // including on browsers where low-altitude scattering is unavailable.
+          viewer.scene.skyBox.show = night;
+          viewer.scene.skyAtmosphere.show = true;
           viewer.scene.skyAtmosphere.atmosphereLightIntensity = night
             ? 4
             : Cesium.Math.lerp(56, 28, cloudRatio);
@@ -392,7 +603,7 @@ export default function PlayCesium({
             Math.max(7e-5, 1 / (environment.visibilityKm * 9500)),
           );
           viewer.scene.backgroundColor = Cesium.Color.fromCssColorString(
-            night ? '#020812' : cloudRatio > .72 ? '#6c7b82' : '#91bdca',
+            night ? '#020812' : cloudRatio > .72 ? '#728890' : '#82b7c8',
           );
 
           waterMaterial.uniforms.deepColor = Cesium.Color.fromCssColorString(
@@ -412,8 +623,8 @@ export default function PlayCesium({
             : Cesium.Math.lerp(.045, .075, cloudRatio);
           waterMaterial.uniforms.direction = Cesium.Math.toRadians(environment.directionDeg);
           waterMaterial.uniforms.frequency = Math.min(
-            145,
-            62 + environment.waveHeight * 12 + environment.windSpeed * 1.6,
+            560,
+            210 + environment.waveHeight * 42 + environment.windSpeed * 4.2,
           );
           waterMaterial.uniforms.speed = Math.min(
             .038,
@@ -423,6 +634,10 @@ export default function PlayCesium({
           waterMaterial.uniforms.specularStrength = night
             ? .35
             : Math.max(.42, 1.9 - cloudRatio * 1.25);
+          waterMaterial.uniforms.foamStrength = Math.min(
+            .5,
+            Math.max(.04, (environment.waveHeight - .35) * .12 + environment.windSpeed * .008),
+          );
         };
 
         const offsetFromPose = (forward, right, up = 0) => {
@@ -505,12 +720,13 @@ export default function PlayCesium({
           position: boatPosition(0, 0, 0),
           orientation,
           viewFrom: new Cesium.Cartesian3(-38, -28, 22),
-          box: {
-            dimensions: new Cesium.Cartesian3(13, 4.2, 1.8),
-            material: Cesium.Color.fromCssColorString('#d9e4df'),
-            outline: true,
-            outlineColor: Cesium.Color.fromCssColorString('#071015'),
-          },
+            box: {
+              dimensions: new Cesium.Cartesian3(13, 4.2, 1.8),
+              material: Cesium.Color.fromCssColorString('#d9e4df'),
+              outline: true,
+              outlineColor: Cesium.Color.fromCssColorString('#071015'),
+              shadows: Cesium.ShadowMode.ENABLED,
+            },
         });
         entities.push(hull);
 
@@ -520,6 +736,7 @@ export default function PlayCesium({
           box: {
             dimensions: new Cesium.Cartesian3(3.2, 2.5, 1.3),
             material: Cesium.Color.fromCssColorString('#b7c7c1'),
+            shadows: Cesium.ShadowMode.ENABLED,
           },
         }));
         entities.push(viewer.entities.add({
@@ -530,6 +747,7 @@ export default function PlayCesium({
             material: Cesium.Color.fromCssColorString('#304a50'),
             outline: true,
             outlineColor: Cesium.Color.fromCssColorString('#caff3d'),
+            shadows: Cesium.ShadowMode.ENABLED,
           },
         }));
 
@@ -551,6 +769,7 @@ export default function PlayCesium({
                 : Cesium.Color.fromCssColorString('#caff3d'),
               outline: true,
               outlineColor: Cesium.Color.fromCssColorString('#071015'),
+              shadows: Cesium.ShadowMode.ENABLED,
             },
           });
           people.push(cube);
@@ -923,7 +1142,7 @@ export default function PlayCesium({
           <div><dt>Visibility</dt><dd>{environment.visibilityKm.toFixed(1)} km · {environment.isDay ? 'day' : 'night'}</dd></div>
           <div><dt>People</dt><dd>{visibleCubes} cubes · {peoplePerCube > 1 ? `${peoplePerCube} people/cube` : '1 person/cube'}</dd></div>
         </dl>
-        <p>Trajectory: {trajectoryMode}. Sky, light and water shader use modelled current conditions from Open-Meteo weather + marine. Vessel translation follows the returned drift trajectory; vertical motion is visual.</p>
+        <p>Trajectory: {trajectoryMode}. Geometric swell, dynamic surface normals, sky light and soft sun shadows use current Open-Meteo weather + marine conditions. Vessel translation follows the returned drift trajectory; vertical motion is visual.</p>
       </aside>
       <div className="play-cesium__source">{environment.source}</div>
       <div className="play-cesium__reticle" aria-hidden="true"><i /><i /></div>
