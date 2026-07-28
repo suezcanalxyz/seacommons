@@ -118,6 +118,32 @@ def consensus_ocr_coordinate(texts: list[str]) -> Optional[tuple[float, float]]:
     return None
 
 
+def ocr_png_coordinate(
+    processed_png: bytes,
+    *,
+    executable: Optional[str] = None,
+) -> tuple[Optional[tuple[float, float]], bool]:
+    """Run independent Tesseract layouts over an already-normalised PNG."""
+    command = executable or shutil.which("tesseract")
+    if not command:
+        return None, False
+    texts: list[str] = []
+    for page_mode in ("3", "6", "11"):
+        try:
+            result = subprocess.run(
+                [command, "stdin", "stdout", "--psm", page_mode, "-l", "eng"],
+                input=processed_png,
+                capture_output=True,
+                check=False,
+                timeout=20,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode == 0:
+            texts.append(result.stdout.decode("utf-8", errors="replace")[:20_000])
+    return consensus_ocr_coordinate(texts), True
+
+
 def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool]:
     """Download one bounded public image and run three local Tesseract passes."""
     executable = shutil.which("tesseract")
@@ -156,22 +182,7 @@ def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool]:
         output = io.BytesIO()
         image.save(output, format="PNG", optimize=True)
         processed = output.getvalue()
-
-    texts: list[str] = []
-    for page_mode in ("3", "6", "11"):
-        try:
-            result = subprocess.run(
-                [executable, "stdin", "stdout", "--psm", page_mode, "-l", "eng"],
-                input=processed,
-                capture_output=True,
-                check=False,
-                timeout=20,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            continue
-        if result.returncode == 0:
-            texts.append(result.stdout.decode("utf-8", errors="replace")[:20_000])
-    return consensus_ocr_coordinate(texts), True
+    return ocr_png_coordinate(processed, executable=executable)
 
 
 class AlarmPhoneMonitor:
