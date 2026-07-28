@@ -62,23 +62,6 @@ NGO_TWITTER_HANDLES = [
     "UNHCR_Italia",      # UNHCR Italy
 ]
 
-# RSS/web feeds for maritime news
-NEWS_FEEDS = [
-    # Alarm Phone calls archive (HTML scrape)
-    {"url": "https://alarmphone.org/en/calls/",       "type": "html",    "label": "Alarm Phone"},
-    # IOM Missing Migrants (public JSON API)
-    {"url": "https://missingmigrants.iom.int/api/incidents?route=Mediterranean&status=Verified&page=1",
-                                                       "type": "iom_api", "label": "IOM Missing Migrants"},
-    # ReliefWeb Mediterranean emergency feeds
-    {"url": "https://reliefweb.int/updates/rss.xml",  "type": "rss",     "label": "ReliefWeb"},
-    # UNHCR news
-    {"url": "https://www.unhcr.org/rss/news.rss",     "type": "rss",     "label": "UNHCR"},
-    # InfoMigrants RSS
-    {"url": "https://www.infomigrants.net/en/rss",    "type": "rss",     "label": "InfoMigrants"},
-    # MarineTraffic news
-    {"url": "https://www.marinetraffic.com/blog/feed/","type": "rss",     "label": "MarineTraffic"},
-]
-
 _MMSI_SET = set(NGO_VESSELS.keys())
 
 

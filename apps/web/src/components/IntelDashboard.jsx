@@ -6,6 +6,9 @@ const TYPE_ICONS = {
   distress:    '🆘',
   twitter:     '𝕏',
   mastodon:    '🐘',
+  whatsapp:    'WA',
+  telegram:    'TG',
+  partner:     'P',
   news:        '📰',
   iom_incident:'🔴',
   ais_spike:   '📡',
@@ -35,6 +38,11 @@ const TIERS = [
   { key: 'news',        label: 'News & reports', sub: 'Situational updates' },
   { key: 'signal',      label: 'Signals',     sub: 'AIS & movement telemetry' },
 ];
+const PUBLIC_TIERS = [
+  { key: 'operational', label: 'Direct', sub: 'Published distress & partner reports' },
+  { key: 'news', label: 'Public feeds', sub: 'Official API & first-party publications' },
+  { key: 'signal', label: 'Partner ops', sub: 'Trusted operational observations' },
+];
 
 function eventTier(p) {
   // Backend supplies `tier`; fall back to type-based inference for cached/legacy events.
@@ -49,14 +57,23 @@ const VERIF_LABEL = {
   operator_asserted: 'operator',
   derived: 'derived',
   confirmed: 'confirmed',
+  user_reported: 'reported',
+  partner_reported: 'partner',
 };
 
 // ── Source Health Bar ─────────────────────────────────────────────────────────
-function SourceHealthBar({ sources }) {
-  if (!sources || sources.length === 0) {
+function SourceHealthBar({ sources, loaded = false }) {
+  if (!loaded) {
     return (
       <div className="intel-sources-row intel-sources-row--empty">
         <span style={{ color: '#4a7a6e', fontSize: 11 }}>Source registry loading…</span>
+      </div>
+    );
+  }
+  if (!sources || sources.length === 0) {
+    return (
+      <div className="intel-sources-row intel-sources-row--empty">
+        <span style={{ color: '#78998f', fontSize: 11 }}>No approved collector is configured.</span>
       </div>
     );
   }
@@ -229,6 +246,7 @@ export default function IntelDashboard({
   setSidebarOpen,
 }) {
   const [sources, setSources] = useState([]);
+  const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [search, setSearch] = useState('');
   const [channelFilter, setChannelFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');   // 'all' | operational | news | signal
@@ -249,6 +267,7 @@ export default function IntelDashboard({
           if (alive) setSources(data.sources || []);
         }
       } catch { /* silent */ }
+      if (alive) setSourcesLoaded(true);
       if (alive) pollRef.current = window.setTimeout(loadSources, 30000);
     }
     loadSources();
@@ -290,7 +309,7 @@ export default function IntelDashboard({
     return g;
   }, [filteredEvents]);
 
-  const operationalCount = tierGroups.operational.length;
+  const visibleTiers = publicMode ? PUBLIC_TIERS : TIERS;
 
   // Available channel types
   const channelTypes = useMemo(() => {
@@ -318,7 +337,7 @@ export default function IntelDashboard({
     const p = feat.properties || {};
     const coords = feat.geometry?.coordinates;
     const ts = p.timestamp_utc ? new Date(p.timestamp_utc) : null;
-    const hasDrift = p.drift_status === 'completed';
+    const hasDrift = !publicMode && p.drift_status === 'completed';
     const driftFeat = hasDrift
       ? intelDrifts.features.find((f) => f.properties?.intel_event_id === p.id && f.geometry?.type === 'LineString')
       : null;
@@ -411,7 +430,7 @@ export default function IntelDashboard({
             ) : null}
           </div>
         </div>
-        <SourceHealthBar sources={sources} />
+        <SourceHealthBar sources={sources} loaded={sourcesLoaded} />
         {injectSuccess && <p style={{ color: '#22c55e', fontSize: 11, margin: '4px 0 0' }}>Event saved and broadcast.</p>}
       </section>
 
@@ -452,7 +471,7 @@ export default function IntelDashboard({
             className={`intel-tier-btn ${tierFilter === 'all' ? 'is-active' : ''}`}
             onClick={() => setTierFilter('all')}
           >All</button>
-          {TIERS.map((t) => (
+          {visibleTiers.map((t) => (
             <button
               key={t.key}
               className={`intel-tier-btn intel-tier-btn--${t.key} ${tierFilter === t.key ? 'is-active' : ''}`}
@@ -475,11 +494,13 @@ export default function IntelDashboard({
               onClick={() => setIntelFilter(f)}
             >{f}</button>
           ))}
-          <button
-            className={`intel-filter-btn ${showAisAlerts ? 'is-active' : ''}`}
-            onClick={() => setShowAisAlerts((v) => !v)}
-            title="Toggle AIS loitering alerts"
-          >AIS</button>
+          {!publicMode ? (
+            <button
+              className={`intel-filter-btn ${showAisAlerts ? 'is-active' : ''}`}
+              onClick={() => setShowAisAlerts((v) => !v)}
+              title="Toggle AIS loitering alerts"
+            >AIS</button>
+          ) : null}
         </div>
 
         {/* Channel filter */}
@@ -518,14 +539,20 @@ export default function IntelDashboard({
           filteredEvents.length === 0 ? (
             <ul className="intel-list">
               <li className="intel-empty">
-                {intelMode !== 'offline'
+                {publicMode && intelMode !== 'offline' && tierFilter === 'all' && intelFilter === 'all' && channelFilter === 'all' && !search ? (
+                  <div className="intel-live-empty">
+                    <i />
+                    <strong>No live signal received</strong>
+                    <span>Listening to official APIs and explicitly published partner channels.</span>
+                  </div>
+                ) : intelMode !== 'offline'
                   ? `No events${tierFilter !== 'all' || intelFilter !== 'all' || channelFilter !== 'all' || search ? ' matching filters' : ''}`
-                  : 'Connecting to intel feed…'}
+                  : 'Connecting to live feed…'}
               </li>
             </ul>
           ) : (
             // Grouped by tier — operational (distress) always pinned on top.
-            TIERS.map((t) => {
+            visibleTiers.map((t) => {
               const group = tierGroups[t.key];
               if (!group.length) return null;
               return (

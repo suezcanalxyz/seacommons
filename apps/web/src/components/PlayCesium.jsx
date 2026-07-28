@@ -72,6 +72,7 @@ export default function PlayCesium({
   lon,
   persons,
   onPick,
+  selectionEnabled = false,
 }) {
   const containerRef = useRef(null);
   const runtimeRef = useRef({
@@ -80,6 +81,7 @@ export default function PlayCesium({
     persons: 1,
     startedAt: performance.now(),
     onPick,
+    selectionEnabled,
   });
   const sceneRef = useRef(null);
   const [status, setStatus] = useState('loading 3D sea');
@@ -89,6 +91,10 @@ export default function PlayCesium({
   useEffect(() => {
     runtimeRef.current.onPick = onPick;
   }, [onPick]);
+
+  useEffect(() => {
+    runtimeRef.current.selectionEnabled = selectionEnabled;
+  }, [selectionEnabled]);
 
   useEffect(() => {
     const latitude = Number(lat);
@@ -136,11 +142,12 @@ export default function PlayCesium({
           requestRenderMode: false,
         });
 
+        let globeLayer = null;
         try {
           const naturalEarth = await Cesium.TileMapServiceImageryProvider.fromUrl(
             '/cesium/Assets/Textures/NaturalEarthII',
           );
-          const globeLayer = viewer.imageryLayers.addImageryProvider(naturalEarth);
+          globeLayer = viewer.imageryLayers.addImageryProvider(naturalEarth);
           globeLayer.brightness = .72;
           globeLayer.contrast = 1.12;
           globeLayer.saturation = .68;
@@ -523,6 +530,8 @@ export default function PlayCesium({
           const nextWaveOrigin = Cesium.Cartesian3.fromDegrees(first[0], first[1], 2);
           Cesium.Cartesian3.clone(nextWaveOrigin, waveOrigin);
           replaceWaterSurface(first[0], first[1]);
+          if (globeLayer) globeLayer.show = false;
+          runtime.lodMode = 'sea';
           applyEnvironment();
           updateCloudField(first[0], first[1]);
           setCameraAltitude(145);
@@ -569,7 +578,15 @@ export default function PlayCesium({
           cloudCollection.noiseOffset.x = Math.sin(Cesium.Math.toRadians(runtime.environment.directionDeg)) * cloudDrift;
           cloudCollection.noiseOffset.y = Math.cos(Cesium.Math.toRadians(runtime.environment.directionDeg)) * cloudDrift;
           const altitude = viewer.camera.positionCartographic.height;
-          if (waterPrimitive) waterPrimitive.show = altitude < 150_000;
+          const localSeaMode = altitude < 12_000;
+          const lodMode = localSeaMode ? 'sea' : 'globe';
+          if (runtime.lodMode !== lodMode) {
+            runtime.lodMode = lodMode;
+            if (waterPrimitive) waterPrimitive.show = localSeaMode;
+            if (globeLayer) globeLayer.show = !localSeaMode;
+            waveLines.forEach((entity) => { entity.show = localSeaMode; });
+            cloudCollection.show = localSeaMode;
+          }
           const altitudeDelta = Math.abs(altitude - (runtime.displayAltitude ?? -1));
           if (altitudeDelta > Math.max(2, altitude * .006)) {
             runtime.displayAltitude = altitude;
@@ -599,11 +616,12 @@ export default function PlayCesium({
 
         clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
         clickHandler.setInputAction((movement) => {
+          if (!runtime.selectionEnabled) return;
           const cartesian = viewer.camera.pickEllipsoid(movement.position, viewer.scene.globe.ellipsoid);
           if (!cartesian) return;
           const point = Cesium.Cartographic.fromCartesian(cartesian);
           runtime.onPick?.(Cesium.Math.toDegrees(point.latitude), Cesium.Math.toDegrees(point.longitude));
-        }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
+        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
         sceneRef.current = {
           Cesium,

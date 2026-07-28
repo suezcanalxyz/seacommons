@@ -216,6 +216,7 @@ class MastodonMonitor:
                 "instance": instance,
                 "status_id": status_id,
                 "media_urls": media_urls[:3],
+                "source_policy": "official_api",
             },
         )
         return intel_store.add(event, dedup_key=dedup)

@@ -173,10 +173,7 @@ def _start_intel_engine() -> None:
         return
     try:
         from core.intel.engine import intel_engine
-        intel_engine.start(
-            twitter_bearer=config.TWITTER_BEARER_TOKEN,
-            twscrape_accounts=config.TWITTER_ACCOUNTS,
-        )
+        intel_engine.start(twitter_bearer=config.TWITTER_BEARER_TOKEN)
         logger.info("Intel engine started")
     except Exception as exc:
         logger.warning("Intel engine failed to start: %s", exc)

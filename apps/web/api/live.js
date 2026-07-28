@@ -32,40 +32,8 @@ function requestJson(path) {
   });
 }
 
-function alertFallback(payload) {
-  const seen = new Set();
+function alertFallback() {
   const features = [];
-  for (const feature of payload?.features || []) {
-    const geometry = feature?.geometry;
-    if (geometry?.type !== 'LineString' || !Array.isArray(geometry.coordinates?.[0])) continue;
-    const [lon, lat] = geometry.coordinates[0];
-    const key = `${Number(lon).toFixed(4)}:${Number(lat).toFixed(4)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const id = `sar:${key}`;
-    features.push({
-      type: 'Feature',
-      id,
-      geometry: { type: 'Point', coordinates: [Number(lon), Number(lat)] },
-      properties: {
-        schema: 'org.seacommons.live-signal/v1',
-        id,
-        type: 'sar_model',
-        kind: 'context',
-        severity: 'medium',
-        tier: 'signal',
-        priority: 22,
-        verification_status: 'derived',
-        publication_status: 'published',
-        drift_ready: false,
-        title: 'Computed SAR drift product',
-        text: '',
-        source: 'SeaCommons engine',
-        url: '',
-        timestamp_utc: feature.properties?.timestamp_utc || new Date().toISOString(),
-      },
-    });
-  }
   return {
     type: 'FeatureCollection',
     features,
@@ -80,42 +48,103 @@ function alertFallback(payload) {
   };
 }
 
-function sourceFallback(summary) {
-  const aisActive = Boolean(summary?.backend?.aisstream_connected);
-  const cmemsReady = Boolean(summary?.backend?.cmems_configured);
-  const vessels = summary?.traffic?.registry || {};
+function driftFallback(payload) {
+  const features = (payload?.features || [])
+    .filter((feature) => ['LineString', 'Polygon', 'Point'].includes(feature?.geometry?.type))
+    .map((feature) => ({
+      type: 'Feature',
+      geometry: feature.geometry,
+      properties: {
+        type: feature.properties?.type || null,
+        intel_severity: 'medium',
+        intel_source: 'SeaCommons engine',
+        auto_drift: true,
+        compatibility_mode: true,
+      },
+    }));
   return {
-    sources: [
-      {
-        name: 'AIS',
-        type: 'ais',
-        status: aisActive ? 'active' : 'offline',
-        last_poll_at: summary?.generated_at || null,
-        events_last_hour: 0,
-        total_events: Number(summary?.backend?.aisstream_messages || 0),
-        consecutive_errors: aisActive ? 0 : 1,
-      },
-      {
-        name: 'CMEMS',
-        type: 'environment',
-        status: cmemsReady ? 'active' : 'offline',
-        last_poll_at: summary?.generated_at || null,
-        events_last_hour: 0,
-        total_events: 0,
-        consecutive_errors: cmemsReady ? 0 : 1,
-      },
-    ],
+    type: 'FeatureCollection',
+    features,
+    meta: {
+      schema: 'org.seacommons.live-drift/v1',
+      drifts: features.filter((feature) => feature.geometry.type === 'LineString').length,
+      generated_at: new Date().toISOString(),
+      compatibility_mode: true,
+    },
+  };
+}
+
+function emptyDriftFallback() {
+  return {
+    type: 'FeatureCollection',
+    features: [],
+    meta: {
+      schema: 'org.seacommons.live-drift/v1',
+      drifts: 0,
+      generated_at: new Date().toISOString(),
+      compatibility_mode: true,
+      visibility: 'play_only',
+    },
+  };
+}
+
+function archiveFallback(payload) {
+  const archives = (Array.isArray(payload) ? payload : [])
+    .filter((alert) => alert?.status === 'completed')
+    .slice(0, 8)
+    .map((alert) => ({
+      id: alert.event_id,
+      timestamp: alert.event?.timestamp || null,
+      lat: Number(alert.event?.lat),
+      lon: Number(alert.event?.lon),
+      vessel_type: alert.event?.vessel_type || 'case',
+      persons: Number(alert.event?.persons || 1),
+    }));
+  return { archives, generated_at: new Date().toISOString(), compatibility_mode: true };
+}
+
+function sourceFallback(summary) {
+  const configured = {
+    twitter: Boolean(summary?.channels?.twitter?.configured),
+    whatsapp: Boolean(summary?.channels?.whatsapp?.configured),
+    telegram: Boolean(summary?.channels?.telegram?.configured),
+    partner: Boolean(summary?.channels?.partner_webhook?.configured),
+  };
+  const definitions = [
+    ['X / Twitter', 'twitter', configured.twitter],
+    ['WhatsApp intake', 'whatsapp', configured.whatsapp],
+    ['Telegram intake', 'telegram', configured.telegram],
+    ['Partner webhook', 'partner', configured.partner],
+  ];
+  const sources = definitions.map(([name, type, active]) => ({
+    name,
+    type,
+    status: active ? 'active' : 'offline',
+    last_poll_at: active ? summary?.generated_at || null : null,
+    events_last_hour: 0,
+    total_events: 0,
+    consecutive_errors: 0,
+  }));
+  const active = sources.filter((source) => source.status === 'active').length;
+  return {
+    sources,
     summary: {
-      total: 2,
-      active: Number(aisActive) + Number(cmemsReady),
+      total: sources.length,
+      active,
       degraded: 0,
-      offline: Number(!aisActive) + Number(!cmemsReady),
-      vessels,
+      offline: sources.length - active,
     },
     channels: {
-      whatsapp: Boolean(summary?.channels?.whatsapp?.configured),
-      telegram: Boolean(summary?.channels?.telegram?.configured),
-      partner_webhook: Boolean(summary?.channels?.partner_webhook?.configured),
+      twitter: configured.twitter,
+      whatsapp: configured.whatsapp,
+      telegram: configured.telegram,
+      partner_webhook: configured.partner,
+    },
+    collector: {
+      mode: 'continuous',
+      browser_independent: true,
+      persistence: 'server',
+      supervisor: 'systemd',
     },
     generated_at: new Date().toISOString(),
     compatibility_mode: true,
@@ -131,9 +160,19 @@ export default async function handler(req, res) {
   }
 
   const resource = Array.isArray(req.query.resource) ? req.query.resource[0] : req.query.resource;
+  const eventId = Array.isArray(req.query.event_id) ? req.query.event_id[0] : req.query.event_id;
+  const safeEventId = typeof eventId === 'string' && /^[a-zA-Z0-9-]{6,80}$/.test(eventId)
+    ? eventId
+    : '';
   const upstreamPath = resource === 'sources'
     ? '/api/v1/live/sources'
-    : '/api/v1/live/signals?limit=300&days=30';
+    : resource === 'drifts'
+      ? '/api/v1/live/drifts?limit=100'
+      : resource === 'archives'
+        ? '/api/v1/live/archives?limit=8'
+        : resource === 'archive' && safeEventId
+          ? `/api/v1/live/archives/${safeEventId}/geojson`
+          : '/api/v1/live/signals?limit=300&days=3';
   try {
     const upstream = await requestJson(upstreamPath);
     if (upstream.status === 200 && upstream.data) {
@@ -141,9 +180,18 @@ export default async function handler(req, res) {
       return res.status(200).json(upstream.data);
     }
 
-    const fallback = resource === 'sources'
-      ? sourceFallback((await requestJson('/api/v1/ops/summary')).data)
-      : alertFallback((await requestJson('/api/v1/alerts/geojson')).data);
+    let fallback;
+    if (resource === 'sources') {
+      fallback = sourceFallback((await requestJson('/api/v1/ops/summary')).data);
+    } else if (resource === 'drifts') {
+      fallback = emptyDriftFallback();
+    } else if (resource === 'archives') {
+      fallback = archiveFallback((await requestJson('/api/v1/alerts')).data);
+    } else if (resource === 'archive' && safeEventId) {
+      fallback = driftFallback((await requestJson(`/api/v1/alert/${safeEventId}/geojson`)).data);
+    } else {
+      fallback = alertFallback();
+    }
     res.setHeader('x-seacommons-live-source', 'compatibility');
     return res.status(200).json(fallback);
   } catch {

@@ -28,7 +28,6 @@ class IntelEngine:
     def start(
         self,
         twitter_bearer: str = "",
-        twscrape_accounts: str = "",
         twitter_enabled: bool = True,
         news_enabled: bool = True,
         ais_enabled: bool = True,
@@ -41,13 +40,12 @@ class IntelEngine:
         if twitter_enabled:
             try:
                 from core.intel.twitter_monitor import TwitterMonitor
-                self._twitter = TwitterMonitor(
-                    bearer_token=twitter_bearer,
-                    twscrape_accounts=twscrape_accounts,
-                )
+                self._twitter = TwitterMonitor(bearer_token=twitter_bearer)
                 self._twitter.start()  # type: ignore[attr-defined]
-                api = "official" if twitter_bearer else ("twscrape" if twscrape_accounts else "nitter")
-                logger.info("IntelEngine: Twitter monitor started (api=%s)", api)
+                logger.info(
+                    "IntelEngine: X monitor %s",
+                    "started with official API" if twitter_bearer else "waiting for official credentials",
+                )
             except Exception as exc:
                 logger.warning("IntelEngine: Twitter monitor failed to start: %s", exc)
 

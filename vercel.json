@@ -6,6 +6,9 @@
   "rewrites": [
     { "source": "/api/v1/live/signals", "destination": "/api/live?resource=signals" },
     { "source": "/api/v1/live/sources", "destination": "/api/live?resource=sources" },
+    { "source": "/api/v1/live/drifts", "destination": "/api/live?resource=drifts" },
+    { "source": "/api/v1/live/archives", "destination": "/api/live?resource=archives" },
+    { "source": "/api/v1/live/archives/:event_id/geojson", "destination": "/api/live?resource=archive&event_id=:event_id" },
     { "source": "/api/:path*", "destination": "/api/proxy?path=:path*" },
     { "source": "/health", "destination": "/api/proxy?health=1" },
     {

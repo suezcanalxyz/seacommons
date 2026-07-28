@@ -90,6 +90,10 @@ async def ops_summary():
             "job_execution_mode": config.JOB_EXECUTION_MODE,
         },
         "channels": {
+            "twitter": {
+                "configured": bool(config.TWITTER_BEARER_TOKEN),
+                "transport": "official_x_api",
+            },
             "whatsapp": {
                 "configured": bool(config.TWILIO_AUTH_TOKEN),
                 "inbound_ready": bool(config.TWILIO_AUTH_TOKEN),

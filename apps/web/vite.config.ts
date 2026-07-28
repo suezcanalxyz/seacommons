@@ -16,6 +16,7 @@ export default defineConfig(({mode}) => {
       },
     },
     server: {
+      allowedHosts: ['live.seacommons.org', 'play.seacommons.org'],
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: {
         ignored: ['**/core/data/**', '**/core/**/*.py', '**/*.jsonl'],

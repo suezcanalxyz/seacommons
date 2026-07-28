@@ -122,9 +122,6 @@ class SuezCanalConfig(BaseSettings):
     INTEL_ENABLED: bool = True
     # Official Twitter API v2 Bearer token (free tier — 500K reads/month)
     TWITTER_BEARER_TOKEN: str = ""
-    # twscrape accounts JSON — e.g. '[{"username":"u","password":"p"}]'
-    # Used when TWITTER_BEARER_TOKEN is absent. Requires: pip install twscrape
-    TWITTER_ACCOUNTS: str = ""
 
     # TimeZero Professional bridge
     TIMEZERO_ENABLED: bool = False

@@ -25,6 +25,21 @@ const APP_PROFILE = isLiveHost
       ? 'live'
       : 'demo';
 
+function receivedSignalFeatures(features) {
+  if (!Array.isArray(features)) return [];
+  return features.filter((feature) => {
+    const properties = feature?.properties || {};
+    const policy = String(properties.source_policy || '').toLowerCase();
+    const transport = String(properties.via || properties.scrape_source || '').toLowerCase();
+    return !['nitter', 'twscrape', 'scrape', 'unofficial'].some(
+      (blocked) => policy === blocked || transport.includes(blocked),
+    )
+      && properties.type !== 'sar_model'
+      && properties.title !== 'Computed SAR drift product'
+      && properties.source !== 'SeaCommons engine';
+  });
+}
+
 function enrichCaseGeo(geojson, lat, lon) {
   // Idempotent: replaying an already-enriched collection must not duplicate the origin marker.
   if (geojson.features?.some((f) => f.properties?.type === 'origin_point')) return geojson;
@@ -355,8 +370,10 @@ function createVesselArrowImage(size = 48) {
 }
 
 function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activePanel, setActivePanel] = useState('sim');
+  const [sidebarOpen, setSidebarOpen] = useState(isPublicLiveHost);
+  const [activePanel, setActivePanel] = useState(
+    isPublicLiveHost ? 'osint' : APP_PROFILE === 'demo' ? 'sim' : 'live',
+  );
   const [apiBase, setApiBase] = useState(guessApiBase);
   const [localSettings, setLocalSettings] = useState(loadLocalSettings);
   const [summary, setSummary] = useState(null);
@@ -370,6 +387,7 @@ function App() {
   const [weatherGrid, setWeatherGrid] = useState({ type: 'FeatureCollection', features: [] });
   const [weatherVectors, setWeatherVectors] = useState({ type: 'FeatureCollection', features: [] });
   const [play3D, setPlay3D] = useState(APP_PROFILE === 'demo');
+  const [playSimulationOpen, setPlaySimulationOpen] = useState(false);
   const [timezero, setTimezero] = useState(null);
   const [selectedVessel, setSelectedVessel] = useState(null);
   const [nearestVessels, setNearestVessels] = useState([]);
@@ -389,11 +407,14 @@ function App() {
   const [activeSimId, setActiveSimId] = useState(null);
   const [intelEvents, setIntelEvents] = useState(() => {
     try {
-      const cached = window.localStorage.getItem('seacommons_intel_cache');
+      const cacheKey = isPublicLiveHost ? 'seacommons_live_signal_cache_v2' : 'seacommons_intel_cache';
+      const cached = window.localStorage.getItem(cacheKey);
       if (cached) {
-        const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        const maxAgeDays = isPublicLiveHost ? 3 : 30;
+        const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000).toISOString();
         const parsed = JSON.parse(cached);
-        return parsed.filter(e => (e.properties?.timestamp_utc || '') >= cutoff);
+        const recent = parsed.filter(e => (e.properties?.timestamp_utc || '') >= cutoff);
+        return isPublicLiveHost ? receivedSignalFeatures(recent) : recent;
       }
     } catch { /* ignore */ }
     return [];
@@ -427,8 +448,9 @@ function App() {
 
   const mapNodeRef = useRef(null);
   const mapRef = useRef(null);
+  const liveSignalsFramedRef = useRef(false);
   const selectionModeRef = useRef(false);
-  const activePanelRef = useRef('sim');
+  const activePanelRef = useRef(isPublicLiveHost ? 'osint' : APP_PROFILE === 'demo' ? 'sim' : 'live');
 
   const selectedLat = parseFloat(form.lat);
   const selectedLon = parseFloat(form.lon);
@@ -542,7 +564,7 @@ function App() {
   useEffect(() => {
     const wsBase = apiBase.replace(/^http/, 'ws');
     const feedPath = isPublicLiveHost
-      ? '/api/v1/live/signals?limit=300&days=30'
+      ? '/api/v1/live/signals?limit=300&days=3'
       : '/api/v1/intel?limit=200&days=30';
     const streamPath = isPublicLiveHost ? '/api/v1/live/stream' : '/ws/intel';
     const pollIntervalMs = isPublicLiveHost ? 10000 : 30000;
@@ -558,15 +580,17 @@ function App() {
         const msg = JSON.parse(e.data);
         if (msg.type === 'ping') return;
         if (msg.type === 'snapshot') {
-          setIntelEvents(msg.features || []);
+          setIntelEvents(isPublicLiveHost ? receivedSignalFeatures(msg.features) : (msg.features || []));
         } else if (msg.type === 'Feature') {
-          setIntelEvents((prev) => [msg, ...prev].slice(0, 300));
+          const incoming = isPublicLiveHost ? receivedSignalFeatures([msg]) : [msg];
+          if (!incoming.length) return;
+          setIntelEvents((prev) => [...incoming, ...prev].slice(0, 300));
           const mp = msg.properties || {};
           if (mp.type === 'distress' && ['critical', 'high'].includes(mp.severity)) {
             setActivePanel('osint');
             setSidebarOpen(true);
           }
-        } else if (msg.type === 'event_update' && msg.drift?.trajectory) {
+        } else if (!isPublicLiveHost && msg.type === 'event_update' && msg.drift?.trajectory) {
           setIntelDrifts((prev) => {
             const keep = prev.features.filter(f => f.properties?.intel_event_id !== msg.id);
             const d = msg.drift;
@@ -591,8 +615,10 @@ function App() {
         const data = await fetchJson(apiBase, feedPath);
         if (!alive) return;
         if (data.features) {
-          setIntelEvents(data.features);
-          try { window.localStorage.setItem('seacommons_intel_cache', JSON.stringify(data.features)); } catch { /* quota */ }
+          const features = isPublicLiveHost ? receivedSignalFeatures(data.features) : data.features;
+          setIntelEvents(features);
+          const cacheKey = isPublicLiveHost ? 'seacommons_live_signal_cache_v2' : 'seacommons_intel_cache';
+          try { window.localStorage.setItem(cacheKey, JSON.stringify(features)); } catch { /* quota */ }
           setIntelConnected(true);
           // only set 'poll' if WS hasn't taken over
           setIntelMode((prev) => prev === 'ws' ? 'ws' : 'poll');
@@ -663,19 +689,28 @@ function App() {
 
   // ── Intel drift traces polling ───────────────────────────────────────────────
   useEffect(() => {
+    if (isPublicLiveHost) {
+      setIntelDrifts({ type: 'FeatureCollection', features: [] });
+      return undefined;
+    }
     let alive = true;
+    let driftTimer = null;
     async function loadDrifts() {
       try {
         const data = await fetchJson(apiBase, '/api/v1/intel/drifts');
         if (alive && data.features) setIntelDrifts(data);
       } catch { /* ignore */ }
-      if (alive) window.setTimeout(loadDrifts, 120_000);
+      if (alive) driftTimer = window.setTimeout(loadDrifts, 120_000);
     }
     loadDrifts();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+      window.clearTimeout(driftTimer);
+    };
   }, [apiBase]);
 
   useEffect(() => {
+    if (isPublicLiveHost) return;
     fetchJson(apiBase, '/api/v1/zones/platforms')
       .then(d => { if (d.features) setPlatforms(d); })
       .catch(() => {});
@@ -687,23 +722,32 @@ function App() {
     let alive = true;
     (async () => {
       try {
-        const data = await fetchJson(apiBase, '/api/v1/alerts');
-        if (!alive || !Array.isArray(data)) return;
-        const completed = data.filter((a) => a.status === 'completed').slice(0, 8);
+        const data = await fetchJson(
+          apiBase,
+          APP_PROFILE === 'demo' ? '/api/v1/live/archives' : '/api/v1/alerts',
+        );
+        const records = Array.isArray(data) ? data : data?.archives;
+        if (!alive || !Array.isArray(records)) return;
+        const completed = APP_PROFILE === 'demo'
+          ? records.slice(0, 8)
+          : records.filter((alert) => alert.status === 'completed').slice(0, 8);
         if (!completed.length) return;
         setSimHistory((prev) => {
           const known = new Set(prev.map((s) => s.id));
           const restored = completed
-            .filter((a) => !known.has(a.event_id))
-            .map((a) => ({
-              id: a.event_id,
-              label: `${(a.event?.vessel_type || 'case').replace(/_/g, ' ')} @ ${Number(a.event?.lat).toFixed(3)}, ${Number(a.event?.lon).toFixed(3)}`,
-              ts: a.event?.timestamp || new Date().toISOString(),
+            .filter((archive) => !known.has(archive.id || archive.event_id))
+            .map((archive) => {
+              const event = archive.event || archive;
+              return {
+              id: archive.id || archive.event_id,
+              label: `${(event.vessel_type || 'case').replace(/_/g, ' ')} @ ${Number(event.lat).toFixed(3)}, ${Number(event.lon).toFixed(3)}`,
+              ts: event.timestamp || new Date().toISOString(),
               geojson: null,   // fetched on first replay
-              lat: Number(a.event?.lat),
-              lon: Number(a.event?.lon),
-              params: { vesselType: a.event?.vessel_type, persons: a.event?.persons },
-            }));
+              lat: Number(event.lat),
+              lon: Number(event.lon),
+              params: { vesselType: event.vessel_type, persons: event.persons },
+            };
+            });
           return [...prev, ...restored].slice(0, 10);
         });
       } catch { /* backend cold — history stays session-only */ }
@@ -712,6 +756,7 @@ function App() {
   }, [apiBase]);
 
   useEffect(() => {
+    if (isPublicLiveHost || isPublicDemoHost) return undefined;
     let alive = true;
     async function loadNgoVessels() {
       try {
@@ -737,8 +782,61 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    map.getCanvas().style.cursor = (activePanel === 'sim' || selectionMode) ? 'crosshair' : '';
+    map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanel === 'sim' || selectionMode)
+      ? 'crosshair'
+      : '';
   }, [activePanel, selectionMode, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!isPublicLiveHost || !map || !mapReady || window.innerWidth <= 820) return;
+    map.easeTo({
+      padding: { top: 0, right: 0, bottom: 0, left: sidebarOpen ? 392 : 0 },
+      duration: 420,
+      essential: true,
+    });
+  }, [sidebarOpen, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const features = intelEvents || [];
+    if (!isPublicLiveHost || !map || !mapReady || liveSignalsFramedRef.current || !features.length) return;
+    let west = Infinity;
+    let south = Infinity;
+    let east = -Infinity;
+    let north = -Infinity;
+    let coordinateCount = 0;
+    const extendCoordinates = (coordinates) => {
+      if (!Array.isArray(coordinates)) return;
+      if (
+        coordinates.length >= 2
+        && Number.isFinite(Number(coordinates[0]))
+        && Number.isFinite(Number(coordinates[1]))
+      ) {
+        const longitude = Number(coordinates[0]);
+        const latitude = Number(coordinates[1]);
+        if (longitude < -6 || longitude > 37 || latitude < 28 || latitude > 47) return;
+        west = Math.min(west, longitude);
+        south = Math.min(south, latitude);
+        east = Math.max(east, longitude);
+        north = Math.max(north, latitude);
+        coordinateCount += 1;
+        return;
+      }
+      coordinates.forEach(extendCoordinates);
+    };
+    features.forEach((feature) => extendCoordinates(feature.geometry?.coordinates));
+    if (coordinateCount < 2 || ![west, south, east, north].every(Number.isFinite)) return;
+    liveSignalsFramedRef.current = true;
+    map.fitBounds([[west, south], [east, north]], {
+      padding: window.innerWidth > 820
+        ? { top: 100, right: 100, bottom: 100, left: sidebarOpen ? 470 : 100 }
+        : { top: 110, right: 38, bottom: 90, left: 38 },
+      maxZoom: 7.2,
+      duration: 1100,
+      essential: true,
+    });
+  }, [intelEvents, mapReady, sidebarOpen]);
 
   // ── Map init ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -754,8 +852,11 @@ function App() {
       const map = new maplibregl.Map({
         container: mapNodeRef.current,
         style: mapStyle(),
-        center: [14.3, 31.0],
-        zoom: 1.9,            // globe intro: whole world, Mediterranean centered
+        center: APP_PROFILE === 'live' ? [15.2, 36.1] : [14.3, 31.0],
+        zoom: APP_PROFILE === 'live' ? 4.15 : 1.9,
+        padding: isPublicLiveHost && window.innerWidth > 820
+          ? { top: 0, right: 0, bottom: 0, left: 392 }
+          : 0,
         attributionControl: true,
       });
 
@@ -765,7 +866,7 @@ function App() {
       });
 
       // Slow rotation until the first user interaction
-      let spinning = true;
+      let spinning = APP_PROFILE !== 'live';
       const SPIN_DEG_PER_STEP = 8;
       const SPIN_STEP_MS = 6000;
       function spinStep() {
@@ -799,6 +900,7 @@ function App() {
 
       let weatherTimer = null;
       map.on('moveend', () => {
+        if (isPublicLiveHost) return;
         window.clearTimeout(weatherTimer);
         weatherTimer = window.setTimeout(() => {
           loadWeatherGridForMap(map).catch((err) => setError(err.message || 'Weather grid unavailable'));
@@ -877,13 +979,13 @@ function App() {
           filter: ['==', '$type', 'Polygon'],
           paint: {
             'fill-color': ['match', ['get', 'intel_severity'],
-              'critical', 'rgba(255,59,59,0.08)',
-              'high',     'rgba(255,123,84,0.07)',
-                          'rgba(139,240,197,0.05)'],
+              'critical', isPublicLiveHost ? 'rgba(255,59,59,0.15)' : 'rgba(255,59,59,0.08)',
+              'high',     isPublicLiveHost ? 'rgba(255,123,84,0.14)' : 'rgba(255,123,84,0.07)',
+                          isPublicLiveHost ? 'rgba(92,255,215,0.12)' : 'rgba(139,240,197,0.05)'],
             'fill-outline-color': ['match', ['get', 'intel_severity'],
-              'critical', 'rgba(255,59,59,0.28)',
-              'high',     'rgba(255,123,84,0.22)',
-                          'rgba(139,240,197,0.18)'],
+              'critical', isPublicLiveHost ? 'rgba(255,90,74,0.62)' : 'rgba(255,59,59,0.28)',
+              'high',     isPublicLiveHost ? 'rgba(255,150,100,0.58)' : 'rgba(255,123,84,0.22)',
+                          isPublicLiveHost ? 'rgba(92,255,215,0.52)' : 'rgba(139,240,197,0.18)'],
           },
         });
         map.addLayer({
@@ -891,10 +993,10 @@ function App() {
           filter: ['==', '$type', 'LineString'],
           paint: {
             'line-color': ['match', ['get', 'intel_severity'],
-              'critical', 'rgba(255,59,59,0.55)',
-              'high',     'rgba(255,123,84,0.50)',
-                          'rgba(139,240,197,0.40)'],
-            'line-width': 1.5,
+              'critical', isPublicLiveHost ? 'rgba(255,72,62,0.94)' : 'rgba(255,59,59,0.55)',
+              'high',     isPublicLiveHost ? 'rgba(255,132,84,0.92)' : 'rgba(255,123,84,0.50)',
+                          isPublicLiveHost ? 'rgba(92,255,215,0.88)' : 'rgba(139,240,197,0.40)'],
+            'line-width': isPublicLiveHost ? 2.4 : 1.5,
             'line-dasharray': [3, 3],
           },
         });
@@ -946,7 +1048,7 @@ function App() {
         });
         map.addLayer({
           id: 'sar-case-traj-arrows', type: 'symbol', source: 'sar-case',
-          filter: ['all', ['==', '$type', 'LineString'], ['==', ['get', 'type'], 'trajectory']],
+          filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'type'], 'trajectory']],
           layout: {
             'symbol-placement': 'line',
             'symbol-spacing': 100,
@@ -1138,7 +1240,7 @@ function App() {
         });
         map.on('mouseenter', 'intel-distress-core', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'intel-distress-core', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+          map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
         });
         map.on('click', 'intel-distress-core', (event) => {
           const feature = event.features?.[0];
@@ -1155,12 +1257,13 @@ function App() {
         const pulseStart = performance.now();
         function distressPulse(now) {
           if (!map.getLayer('intel-distress-pulse')) return;
-          const t = ((now - pulseStart) % 1400) / 1400;       // 0..1
+          const elapsed = Math.max(0, now - pulseStart);
+          const t = (elapsed % 1400) / 1400;                  // 0..1
           const r = 8 + 14 * t;                               // grow ring
           const o = 0.45 * (1 - t);                           // fade out
           map.setPaintProperty('intel-distress-pulse', 'circle-radius', r);
           map.setPaintProperty('intel-distress-pulse', 'circle-color', `rgba(255,59,59,${o})`);
-          map.setPaintProperty('intel-distress-pulse', 'circle-stroke-opacity', 1 - t);
+          map.setPaintProperty('intel-distress-pulse', 'circle-stroke-opacity', Math.min(1, Math.max(0, 1 - t)));
           pulseRaf = requestAnimationFrame(distressPulse);
         }
         pulseRaf = requestAnimationFrame(distressPulse);
@@ -1180,7 +1283,7 @@ function App() {
 
         map.on('mouseenter', 'intel-events-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'intel-events-layer', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+          map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
         });
         map.on('click', 'intel-events-layer', (event) => {
           const feature = event.features?.[0];
@@ -1194,14 +1297,14 @@ function App() {
         });
         map.on('mouseenter', 'intel-drift-line', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'intel-drift-line', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+          map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
         });
 
         // vessel click (commercial + NGO share same handler)
         for (const lyr of ['vessels-layer', 'vessels-stationary', 'vessels-ngo', 'vessels-ngo-stationary', 'proximity-vessels-layer']) {
           map.on('mouseenter', lyr, () => { map.getCanvas().style.cursor = 'pointer'; });
           map.on('mouseleave', lyr, () => {
-            map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+            map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
           });
           map.on('click', lyr, (event) => {
             const feature = event.features?.[0];
@@ -1218,7 +1321,7 @@ function App() {
         // Drift cone click
         map.on('mouseenter', 'sar-case-cone', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'sar-case-cone', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+          map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
         });
         map.on('click', 'sar-case-cone', (event) => {
           const feature = event.features?.[0];
@@ -1229,7 +1332,7 @@ function App() {
         });
         map.on('mouseenter', 'sar-case-points', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'sar-case-points', () => {
-          map.getCanvas().style.cursor = (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+          map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
         });
         map.on('click', 'sar-case-points', (event) => {
           const feature = event.features?.[0];
@@ -1240,7 +1343,7 @@ function App() {
         });
 
         map.on('mousemove', (event) => {
-          if (activePanelRef.current !== 'sim' && !selectionModeRef.current) return;
+          if (APP_PROFILE !== 'demo' || (activePanelRef.current !== 'sim' && !selectionModeRef.current)) return;
           setCursorHint({ visible: true, x: event.point.x, y: event.point.y });
         });
         map.on('mouseleave', () => {
@@ -1255,6 +1358,7 @@ function App() {
             map.flyTo({ center: [14.3, 35.8], zoom: 6.3, duration: 2400, essential: true });
             return;
           }
+          if (isPublicLiveHost) return;
           const hit = map.queryRenderedFeatures(event.point, {
             layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'vessels-stationary', 'vessels-ngo', 'vessels-ngo-stationary', 'proximity-vessels-layer', 'intel-events-layer'],
           });
@@ -1265,7 +1369,7 @@ function App() {
           setForm((cur) => ({ ...cur, lat: nextLat, lon: nextLon }));
           setSelectionMode(false);
           setCursorHint({ visible: false, x: 0, y: 0 });
-          if (activePanelRef.current === 'sim' || selectionModeRef.current) {
+          if (APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current)) {
             setShowScenario(true);
             loadNearestVessels(nextLat, nextLon).catch(() => {});
             return;
@@ -1292,7 +1396,7 @@ function App() {
         });
         map.getSource('sar-case')?.setData(caseGeojson);
         setMapReady(true);
-        loadWeatherGridForMap(map).catch(() => {});
+        if (!isPublicLiveHost) loadWeatherGridForMap(map).catch(() => {});
         spinStep();   // begin the globe intro rotation
       });
 
@@ -1359,7 +1463,10 @@ function App() {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     for (const group of LAYER_GROUPS) {
-      const vis = layerVis[group.key] === false ? 'none' : 'visible';
+      const enabled = isPublicLiveHost
+        ? group.key === 'intel'
+        : layerVis[group.key] !== false;
+      const vis = enabled ? 'visible' : 'none';
       for (const id of group.layers) {
         if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
       }
@@ -1429,6 +1536,12 @@ function App() {
 
   // ── Initial data load + polling ──────────────────────────────────────────────
   useEffect(() => {
+    if (isPublicLiveHost) {
+      setVessels({ type: 'FeatureCollection', features: [] });
+      setAlerts({ type: 'FeatureCollection', features: [] });
+      setLoading(false);
+      return undefined;
+    }
     let alive = true;
     let running = false;           // guard: skip tick if previous loadAll still in flight
     let consecutiveErrors = 0;
@@ -1484,7 +1597,9 @@ function App() {
       try {
         const [vesselsPayload, alertsPayload] = await Promise.all([
           fetchVessels(),
-          fetchJson(apiBase, '/api/v1/alerts/geojson'),
+          isPublicLiveHost
+            ? Promise.resolve({ type: 'FeatureCollection', features: [] })
+            : fetchJson(apiBase, '/api/v1/alerts/geojson'),
         ]);
         if (!alive) return;
         if (vesselsPayload) setVessels(vesselsPayload);
@@ -1744,7 +1859,10 @@ function App() {
     if (!geojson) {
       // Persisted case restored from DB — fetch its drift GeoJSON on demand
       try {
-        geojson = await fetchJson(apiBase, `/api/v1/alert/${sim.id}/geojson`);
+        const archivePath = APP_PROFILE === 'demo'
+          ? `/api/v1/live/archives/${encodeURIComponent(sim.id)}/geojson`
+          : `/api/v1/alert/${encodeURIComponent(sim.id)}/geojson`;
+        geojson = await fetchJson(apiBase, archivePath);
         setSimHistory((prev) => prev.map((s) => (s.id === sim.id ? { ...s, geojson } : s)));
       } catch (err) {
         setError(err.message || 'Could not load saved case');
@@ -1778,12 +1896,24 @@ function App() {
     return { total: intelEvents.length, by_type, by_sev };
   }, [intelEvents]);
 
-  const isOnSim = activePanel === 'sim' || selectionMode;
+  const liveSourceCount = useMemo(
+    () => new Set(intelEvents.map((feature) => feature.properties?.source).filter(Boolean)).size,
+    [intelEvents],
+  );
+  const liveDistressCount = useMemo(
+    () => intelEvents.filter((feature) => {
+      const properties = feature.properties || {};
+      return properties.kind === 'distress' || properties.type === 'distress';
+    }).length,
+    [intelEvents],
+  );
+
+  const isOnSim = APP_PROFILE === 'demo' && (activePanel === 'sim' || selectionMode);
   const simulationRunning = caseStatus.startsWith('starting') || caseStatus.startsWith('queued') || caseStatus.startsWith('computing');
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <main className={`cop-shell ${play3D && APP_PROFILE === 'demo' ? 'is-play-mode' : ''}`}>
+    <main className={`cop-shell ${play3D && APP_PROFILE === 'demo' ? 'is-play-mode' : ''} ${isPublicLiveHost ? 'is-live-mode' : ''}`}>
       <section className="map-stage">
         <div className={`map-frame ${play3D ? 'is-concealed' : ''}`} ref={mapNodeRef} />
         {APP_PROFILE === 'demo' ? (
@@ -1794,8 +1924,10 @@ function App() {
             lat={form.lat}
             lon={form.lon}
             persons={form.persons}
+            selectionEnabled={playSimulationOpen && selectionMode}
             onPick={(pickedLat, pickedLon) => {
               setForm((current) => ({ ...current, lat: pickedLat.toFixed(5), lon: pickedLon.toFixed(5) }));
+              setSelectionMode(false);
               loadWeatherFor(pickedLat, pickedLon).catch(() => {});
               loadNearestVessels(pickedLat, pickedLon).catch(() => {});
             }}
@@ -1827,7 +1959,7 @@ function App() {
           </div>
         ) : null}
 
-        {!play3D ? (
+        {!play3D && !isPublicLiveHost ? (
           <div className={`map-overlay ${sidebarOpen ? 'sidebar-open' : ''}`}>
             <div className="overlay-card">
               <span className="overlay-label">Selected point</span>
@@ -1882,7 +2014,7 @@ function App() {
         )}
 
         {/* Scenario modal — center, appears when clicking empty map */}
-        {showScenario && (
+        {APP_PROFILE === 'demo' && showScenario && (
           <ScenarioModal
             lat={form.lat}
             lon={form.lon}
@@ -1896,12 +2028,230 @@ function App() {
             onClose={() => setShowScenario(false)}
           />
         )}
+
+        {APP_PROFILE === 'demo' ? (
+          <>
+            <button
+              type="button"
+              className={`play-simulation-launch ${playSimulationOpen ? 'is-open' : ''}`}
+              aria-expanded={playSimulationOpen}
+              onClick={() => {
+                setPlaySimulationOpen((open) => {
+                  const next = !open;
+                  setSelectionMode(next);
+                  return next;
+                });
+              }}
+            >
+              <span className="play-simulation-launch__pulse" />
+              <span>
+                <small>ENGINE</small>
+                SIMULATION
+              </span>
+              <b>{playSimulationOpen ? '×' : '+'}</b>
+            </button>
+
+            <aside className={`play-simulation-panel ${playSimulationOpen ? 'is-open' : ''}`} aria-hidden={!playSimulationOpen}>
+              <header className="play-simulation-panel__header">
+                <div>
+                  <p className="section-kicker">OpenDrift / scene control</p>
+                  <h2>Drift simulation</h2>
+                </div>
+                <span className={`play-origin-state ${selectionMode ? 'is-selecting' : ''}`}>
+                  {selectionMode ? 'CLICK SEA' : 'ORIGIN SET'}
+                </span>
+              </header>
+
+              <div className="play-origin-readout">
+                <span>ORIGIN / WGS84</span>
+                <strong>{form.lat}, {form.lon}</strong>
+                <small>Click the 3D sea to move the simulation origin.</small>
+              </div>
+
+              <form onSubmit={runSarCase} className="play-simulation-form">
+                <div className="demo-form">
+                  <label>
+                    Latitude
+                    <input inputMode="decimal" value={form.lat} onChange={(e) => setField('lat', e.target.value)} />
+                  </label>
+                  <label>
+                    Longitude
+                    <input inputMode="decimal" value={form.lon} onChange={(e) => setField('lon', e.target.value)} />
+                  </label>
+                  <label>
+                    Persons
+                    <input type="number" min="1" value={form.persons} onChange={(e) => setField('persons', e.target.value)} />
+                  </label>
+                  <label>
+                    Risk
+                    <select value={form.risk_level} onChange={(e) => setField('risk_level', e.target.value)}>
+                      {RISK_LEVELS.map((risk) => <option key={risk.value} value={risk.value}>{risk.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+
+                <label className="field-block">
+                  Vessel type
+                  <select value={form.vessel_type} onChange={(e) => setField('vessel_type', e.target.value)}>
+                    {VESSEL_TYPES.map((vessel) => <option key={vessel.value} value={vessel.value}>{vessel.label}</option>)}
+                  </select>
+                </label>
+
+                <div className="play-simulation-actions">
+                  <button type="submit" disabled={simulationRunning}>
+                    {simulationRunning ? 'COMPUTING…' : 'RUN SIMULATION'}
+                  </button>
+                  <button
+                    type="button"
+                    className={selectionMode ? 'is-active' : ''}
+                    disabled={simulationRunning}
+                    onClick={() => setSelectionMode((active) => !active)}
+                  >
+                    {selectionMode ? 'CANCEL PICK' : 'PICK ON SEA'}
+                  </button>
+                </div>
+              </form>
+
+              <div className="play-engine-state">
+                <span>ENGINE STATUS</span>
+                <strong>{caseStatus}</strong>
+              </div>
+
+              <section className="play-nearest">
+                <div className="play-nearest__head">
+                  <span>NEAREST LIVE AIS</span>
+                  <b>{nearestVessels.length}</b>
+                </div>
+                <ul>
+                  {nearestVessels.slice(0, 5).map((vessel, index) => (
+                    <li key={`${vessel.mmsi}-${vessel.distance_km}`}>
+                      <span>0{index + 1}</span>
+                      <strong>{vessel.ship_name}</strong>
+                      <small>{formatDistance(vessel)}</small>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+
+              <section className="play-archive">
+                <div className="play-nearest__head">
+                  <span>RECENT SIMULATION ARCHIVE</span>
+                  <b>{simHistory.length}</b>
+                </div>
+                {simHistory.length ? (
+                  <ul>
+                    {simHistory.slice(0, 6).map((simulation, index) => (
+                      <li key={simulation.id} className={simulation.id === activeSimId ? 'is-active' : ''}>
+                        <span>0{index + 1}</span>
+                        <div>
+                          <strong>{simulation.label}</strong>
+                          <small>{new Date(simulation.ts).toLocaleString('en-GB', {
+                            day: '2-digit',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}</small>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectionMode(false);
+                            replaySim(simulation);
+                          }}
+                        >
+                          {simulation.id === activeSimId ? 'LOADED' : 'LOAD 3D'}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>No completed simulation is available yet.</p>
+                )}
+              </section>
+            </aside>
+          </>
+        ) : null}
       </section>
 
+      {isPublicLiveHost ? (
+        <>
+          <aside className={`live-feed-panel ${sidebarOpen ? 'is-open' : 'is-collapsed'}`} aria-hidden={!sidebarOpen}>
+            <header className="live-feed-panel__header">
+              <div className="live-feed-panel__eyebrow">
+                <span className="live-feed-panel__mark">SC</span>
+                <span>SEACOMMONS / MEDITERRANEAN</span>
+                <b><i /> 24 / 7</b>
+              </div>
+              <div className="live-feed-panel__title">
+                <div>
+                  <p>PUBLIC SIGNAL FIELD</p>
+                  <h1>Live feed</h1>
+                </div>
+                <button type="button" onClick={() => setSidebarOpen(false)} aria-label="Collapse live feed">−</button>
+              </div>
+              <div className="live-feed-panel__metrics">
+                <div>
+                  <span>SOURCES</span>
+                  <strong>{liveSourceCount}</strong>
+                </div>
+                <div>
+                  <span>PUBLISHED</span>
+                  <strong>{intelEvents.length}</strong>
+                </div>
+                <div>
+                  <span>DISTRESS</span>
+                  <strong>{liveDistressCount}</strong>
+                </div>
+                <div>
+                  <span>TRANSPORT</span>
+                  <strong>{intelMode === 'ws' ? 'WS' : intelMode === 'poll' ? 'REST' : 'SYNC'}</strong>
+                </div>
+              </div>
+              <p className="live-feed-panel__continuity">
+                <span />
+                Approved collectors remain active when this map is closed.
+              </p>
+            </header>
+
+            <div className="live-feed-panel__body">
+              <IntelDashboard
+                apiBase={apiBase}
+                publicMode
+                intelEvents={intelEvents}
+                intelDrifts={intelDrifts}
+                intelStats={intelStats}
+                intelFilter={intelFilter}
+                setIntelFilter={setIntelFilter}
+                intelMode={intelMode}
+                showAisAlerts={showAisAlerts}
+                setShowAisAlerts={setShowAisAlerts}
+                triggeringDrift={triggeringDrift}
+                triggerIntelDrift={triggerIntelDrift}
+                mapRef={mapRef}
+                setSidebarOpen={(open) => {
+                  if (window.matchMedia('(max-width: 820px)').matches) setSidebarOpen(open);
+                }}
+              />
+            </div>
+          </aside>
+          <button
+            type="button"
+            className={`live-feed-toggle ${sidebarOpen ? 'is-panel-open' : ''}`}
+            onClick={() => setSidebarOpen((open) => !open)}
+            aria-label={sidebarOpen ? 'Collapse live feed' : 'Open live feed'}
+          >
+            <i />
+            LIVE FEED
+          </button>
+        </>
+      ) : null}
+
+      {!isPublicLiveHost && APP_PROFILE !== 'demo' ? (
+        <>
       <nav className="workspace-nav" aria-label="Operational views">
         <span className={`runtime-badge runtime-badge--${APP_PROFILE}`}>{APP_PROFILE}</span>
         <button className={!sidebarOpen ? 'is-active' : ''} onClick={() => setSidebarOpen(false)}>Map</button>
-        {['cases','sim','live','osint','settings'].map((view) => (
+        {['cases','live','osint','settings'].map((view) => (
           <button key={view} className={sidebarOpen && activePanel === view ? 'is-active' : ''} onClick={() => { setActivePanel(view); setSidebarOpen(true); }}>
             {view === 'settings' ? 'Config' : view}
           </button>
@@ -1913,9 +2263,8 @@ function App() {
         <header className="workspace-header">
           <p className="workspace-kicker">SeaCommons / SAR pilot</p>
           <h2>Operational dashboard</h2>
-          <div className="sidebar-tabs sidebar-tabs--5">
+          <div className="sidebar-tabs sidebar-tabs--4">
             <button className={activePanel === 'cases' ? 'is-active' : ''} onClick={() => setActivePanel('cases')}>Cases</button>
-            <button className={activePanel === 'sim'      ? 'is-active' : ''} onClick={() => setActivePanel('sim')}>Sim</button>
             <button className={activePanel === 'live'     ? 'is-active' : ''} onClick={() => setActivePanel('live')}>Live</button>
             <button className={activePanel === 'osint'    ? 'is-active' : ''} onClick={() => setActivePanel('osint')}>
               OSINT{intelEvents.length > 0 && <span className="tab-badge">{intelEvents.length}</span>}
@@ -2000,7 +2349,7 @@ function App() {
           ) : null}
 
           {/* ── DEMO TAB ── */}
-          {activePanel === 'sim' ? (
+          {APP_PROFILE === 'demo' && activePanel === 'sim' ? (
             <div className="panel-stack">
               <section className="panel-block">
                 <p className="section-kicker">SAR simulation</p>
@@ -2162,6 +2511,8 @@ function App() {
 
         </div>
       </section>
+        </>
+      ) : null}
     </main>
   );
 }

@@ -3,6 +3,8 @@ Description=SeaCommons v2 operational API
 After=network-online.target redis-server.service
 Wants=network-online.target
 Requires=redis-server.service
+StartLimitIntervalSec=300
+StartLimitBurst=20
 
 [Service]
 Type=simple
@@ -13,7 +15,9 @@ EnvironmentFile=/etc/seacommons-v2.env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/ubuntu/seacommons/v2/.venv/bin/uvicorn core.api.main:app --host 127.0.0.1 --port 8100
 Restart=always
-RestartSec=5
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGINT
 MemoryMax=650M
 MemorySwapMax=1536M
 NoNewPrivileges=true

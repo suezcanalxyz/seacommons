@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -16,21 +17,21 @@ from core.intel.store import IntelEvent, intel_store
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
 
-_PUBLIC_INTEL_TYPES = frozenset(
-    {"distress", "twitter", "mastodon", "news", "iom_incident", "ais_spike", "ngo_activity"}
-)
+_PUBLIC_INTEL_TYPES = frozenset({"distress", "twitter", "mastodon", "ngo_activity"})
+_APPROVED_SOURCE_POLICIES = frozenset({"official_api", "official_rss", "trusted_partner"})
+_BLOCKED_SOURCE_POLICIES = frozenset({"nitter", "scrape", "twscrape", "unofficial"})
 _PUBLIC_METADATA = frozenset(
     {
         "category",
         "country",
         "dead",
-        "drift_job_id",
-        "drift_status",
         "incident_id",
         "is_distress",
+        "location_uncertainty_m",
         "missing",
         "platform",
         "region",
+        "source_policy",
     }
 )
 
@@ -45,7 +46,19 @@ def _safe_public_url(value: str) -> str:
 
 def _public_intel_feature(event: IntelEvent) -> Optional[dict[str, Any]]:
     """Convert an internal event to the stable public signal contract."""
+    if event.type == "sar_model" or (event.title or "").strip().lower() == "computed sar drift product":
+        # Model outputs belong to Play/Engine, never to the received-signal feed.
+        return None
     publication = str(event.metadata.get("publication_status") or "").lower()
+    source_policy = str(event.metadata.get("source_policy") or "").lower()
+    transport = str(event.metadata.get("via") or event.metadata.get("scrape_source") or "").lower()
+    if source_policy in _BLOCKED_SOURCE_POLICIES or any(
+        blocked in transport for blocked in _BLOCKED_SOURCE_POLICIES
+    ):
+        # Old scraper records may still be persisted; they must never re-enter Live.
+        return None
+    if publication != "published" and source_policy not in _APPROVED_SOURCE_POLICIES:
+        return None
     if event.type not in _PUBLIC_INTEL_TYPES and publication != "published":
         return None
     if event.lat is None or event.lon is None:
@@ -66,16 +79,28 @@ def _public_intel_feature(event: IntelEvent) -> Optional[dict[str, Any]]:
             "priority": event.priority(),
             "verification_status": event.verification_status(),
             "publication_status": "published",
-            "drift_ready": event.tier() == "operational",
+            "source_policy": source_policy or "operator_published",
             "title": (event.title or "Maritime signal")[:255],
             # Public Live deliberately excludes raw text and author identifiers.
             "text": "",
             "url": _safe_public_url(event.url),
             "source": (event.source or event.type or "public feed")[:64],
             "timestamp_utc": event.timestamp_utc,
+            "received_at": event.timestamp_utc,
             **metadata,
         },
     }
+
+
+def _approximate_public_point(signal_id: str, lat: float, lon: float) -> tuple[float, float]:
+    """Deterministically displace sensitive inbound coordinates by 0.8-2.5 km."""
+    digest = hashlib.blake2s(signal_id.encode(), digest_size=8).digest()
+    angle = int.from_bytes(digest[:4], "big") / (2**32) * 2 * math.pi
+    radius_m = 800 + int.from_bytes(digest[4:], "big") / (2**32) * 1700
+    lat_offset = math.sin(angle) * radius_m / 111_320
+    lon_scale = max(0.2, math.cos(math.radians(lat)))
+    lon_offset = math.cos(angle) * radius_m / (111_320 * lon_scale)
+    return round(lat + lat_offset, 5), round(lon + lon_offset, 5)
 
 
 def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
@@ -111,12 +136,15 @@ def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
         if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
             continue
         signal_id = str(payload.get("signal_id") or row.signal_id)
+        public_lat, public_lon = _approximate_public_point(signal_id, float(lat), float(lon))
         condition = str(payload.get("vessel_condition") or "reported distress").replace("_", " ")
+        channel = str(payload.get("source_channel") or row.source_channel or "partner")
+        partner_report = channel in {"webhook", "api", "partner"}
         features.append(
             {
                 "type": "Feature",
                 "id": f"signal:{signal_id}",
-                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "geometry": {"type": "Point", "coordinates": [public_lon, public_lat]},
                 "properties": {
                     "schema": "org.seacommons.live-signal/v1",
                     "id": f"signal:{signal_id}",
@@ -125,15 +153,19 @@ def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
                     "severity": "high" if payload.get("medical_emergency") else "medium",
                     "tier": "operational",
                     "priority": 1,
-                    "verification_status": "user_reported",
+                    "verification_status": "partner_reported" if partner_report else "user_reported",
                     "publication_status": "published",
-                    "drift_ready": True,
                     "title": f"Maritime signal · {condition}"[:255],
                     "text": "",
                     "url": "",
-                    "source": "community report",
+                    "source": "partner intake" if partner_report else "community report",
+                    "channel": channel,
+                    "location_precision": "approximate",
+                    "location_uncertainty_m": 2500,
                     "timestamp_utc": payload.get("event_time_utc")
                     or payload.get("timestamp_utc")
+                    or row.received_at.replace(tzinfo=timezone.utc).isoformat(),
+                    "received_at": payload.get("timestamp_utc")
                     or row.received_at.replace(tzinfo=timezone.utc).isoformat(),
                 },
             }
@@ -175,6 +207,82 @@ def public_signal_collection(
     }
 
 
+def _public_drift_feature(
+    feature: dict[str, Any],
+    *,
+    event_id: str,
+    title: str,
+    source: str,
+    severity: str,
+) -> dict[str, Any]:
+    properties = feature.get("properties") or {}
+    return {
+        "type": "Feature",
+        "geometry": feature.get("geometry"),
+        "properties": {
+            "type": properties.get("type"),
+            "horizon_h": properties.get("horizon_h"),
+            "radius_m": properties.get("radius_m"),
+            "intel_event_id": event_id,
+            "intel_title": title[:80],
+            "intel_source": source[:64],
+            "intel_severity": severity,
+            "auto_drift": True,
+            "publication_status": "published",
+        },
+    }
+
+
+def public_drift_collection(limit: int = 100) -> dict[str, Any]:
+    """Published model geometry linked to received public signals, without raw content."""
+    from core.db.store import get_drift
+
+    features: list[dict[str, Any]] = []
+    drift_count = 0
+    for event in intel_store.events(limit=min(limit * 3, 500)):
+        public_event = _public_intel_feature(event)
+        job_id = event.metadata.get("drift_job_id")
+        if public_event is None or not job_id or event.metadata.get("drift_status") != "completed":
+            continue
+        drift = get_drift(job_id)
+        if not drift or drift.get("status") != "completed":
+            continue
+        drift_count += 1
+        for feature in (drift.get("trajectory"), drift.get("cone_24h")):
+            if feature:
+                features.append(
+                    _public_drift_feature(
+                        feature,
+                        event_id=event.id,
+                        title=event.title,
+                        source=event.source,
+                        severity=event.severity,
+                    )
+                )
+        for feature in (drift.get("impact_point") or {}).get("features", []):
+            features.append(
+                _public_drift_feature(
+                    feature,
+                    event_id=event.id,
+                    title=event.title,
+                    source=event.source,
+                    severity=event.severity,
+                )
+            )
+        if drift_count >= limit:
+            break
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "meta": {
+            "schema": "org.seacommons.live-drift/v1",
+            "drifts": drift_count,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "privacy": "derived geometry and published signal metadata only",
+        },
+    }
+
+
 @router.get("/signals")
 async def live_signals(
     limit: int = Query(300, ge=1, le=500),
@@ -185,38 +293,107 @@ async def live_signals(
     return public_signal_collection(limit=limit, days=days, since=since)
 
 
+@router.get("/drifts")
+async def live_drifts(limit: int = Query(100, ge=1, le=200)):
+    """Public map-ready drift products, kept separate from received signals."""
+    return public_drift_collection(limit=limit)
+
+
+@router.get("/archives")
+async def live_archives(limit: int = Query(8, ge=1, le=20)):
+    """Anonymised recent simulation index for Play."""
+    from core.db.store import list_alerts
+
+    archives = []
+    for alert in list_alerts(limit=limit * 3):
+        event = alert.get("event") or {}
+        if alert.get("status") != "completed":
+            continue
+        archives.append(
+            {
+                "id": alert["event_id"],
+                "timestamp": event.get("timestamp"),
+                "lat": event.get("lat"),
+                "lon": event.get("lon"),
+                "vessel_type": event.get("vessel_type") or "case",
+                "persons": event.get("persons") or 1,
+            }
+        )
+        if len(archives) >= limit:
+            break
+    return {"archives": archives, "generated_at": datetime.now(timezone.utc).isoformat()}
+
+
+@router.get("/archives/{event_id}/geojson")
+async def live_archive_geojson(event_id: str):
+    """Derived geometry for a public Play archive; no source message or identity."""
+    from fastapi import HTTPException
+    from core.db.store import get_alert, get_drift
+
+    alert = get_alert(event_id)
+    drift = get_drift(event_id)
+    if alert is None or alert.get("status") != "completed" or not drift or drift.get("status") != "completed":
+        raise HTTPException(status_code=404, detail="Archive not found")
+    features = [
+        feature
+        for feature in (
+            drift.get("trajectory"),
+            drift.get("cone_6h"),
+            drift.get("cone_12h"),
+            drift.get("cone_24h"),
+        )
+        if feature
+    ]
+    features.extend((drift.get("impact_point") or {}).get("features", []))
+    return {"type": "FeatureCollection", "features": features}
+
+
 @router.get("/sources")
 async def live_sources():
     """Public health summary without credentials, endpoint URLs or raw errors."""
     from core.intel.source_registry import source_registry
-    from core.vessels.aisstream import get_client
-    from core.vessels.registry import registry
 
-    sources = [
-        {
-            "name": source["name"],
-            "type": source["type"],
-            "status": source["status"],
-            "last_poll_at": source["last_poll_at"],
-            "events_last_hour": source["events_last_hour"],
-            "total_events": source["total_events"],
-            "consecutive_errors": source["consecutive_errors"],
-        }
+    registry_sources = {
+        source["name"]: source
         for source in source_registry.get_all()
-    ]
-    ais_client = get_client()
-    sources.insert(
-        0,
-        {
-            "name": "AIS",
-            "type": "ais",
-            "status": "active" if ais_client and ais_client.connected else "offline",
-            "last_poll_at": None,
-            "events_last_hour": 0,
-            "total_events": int(ais_client.messages_received) if ais_client else 0,
-            "consecutive_errors": 0 if ais_client and ais_client.connected else 1,
-        },
+        if source["name"] in {"X / Twitter", "Mastodon", "Official NGO RSS"}
+    }
+    expected = (
+        ("X / Twitter", "twitter", bool(config.TWITTER_BEARER_TOKEN)),
+        ("WhatsApp intake", "whatsapp", bool(config.TWILIO_AUTH_TOKEN)),
+        (
+            "Telegram intake",
+            "telegram",
+            bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_WEBHOOK_SECRET),
+        ),
+        ("Partner webhook", "partner", bool(config.PARTNER_WEBHOOK_SECRET)),
     )
+    sources = []
+    for name, source_type, configured in expected:
+        observed = registry_sources.pop(name, None)
+        sources.append(
+            {
+                "name": name,
+                "type": source_type,
+                "status": observed["status"] if observed else ("active" if configured else "offline"),
+                "last_poll_at": observed["last_poll_at"] if observed else None,
+                "events_last_hour": observed["events_last_hour"] if observed else 0,
+                "total_events": observed["total_events"] if observed else 0,
+                "consecutive_errors": observed["consecutive_errors"] if observed else 0,
+            }
+        )
+    for observed in registry_sources.values():
+        sources.append(
+            {
+                "name": observed["name"],
+                "type": observed["type"],
+                "status": observed["status"],
+                "last_poll_at": observed["last_poll_at"],
+                "events_last_hour": observed["events_last_hour"],
+                "total_events": observed["total_events"],
+                "consecutive_errors": observed["consecutive_errors"],
+            }
+        )
     active = sum(1 for source in sources if source["status"] == "active")
     return {
         "sources": sources,
@@ -225,12 +402,18 @@ async def live_sources():
             "active": active,
             "degraded": sum(1 for source in sources if source["status"] == "degraded"),
             "offline": sum(1 for source in sources if source["status"] == "offline"),
-            "vessels": registry.stats(),
         },
         "channels": {
+            "twitter": bool(config.TWITTER_BEARER_TOKEN),
             "whatsapp": bool(config.TWILIO_AUTH_TOKEN),
             "telegram": bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_WEBHOOK_SECRET),
             "partner_webhook": bool(config.PARTNER_WEBHOOK_SECRET),
+        },
+        "collector": {
+            "mode": "continuous",
+            "browser_independent": True,
+            "persistence": "database",
+            "supervisor": "systemd",
         },
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
