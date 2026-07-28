@@ -49,14 +49,23 @@ def test_oidc_default_roles_apply_only_after_token_validation(monkeypatch) -> No
         config.OIDC_DEFAULT_ROLES = previous
 
 
-def test_mutation_requires_auth_when_enabled() -> None:
-    previous = config.AUTH_ENABLED
-    config.AUTH_ENABLED = True
+def test_public_play_simulation_is_bounded_while_workspace_mutations_require_auth() -> None:
+    previous = config.AUTH_ENABLED, config.JOB_EXECUTION_MODE
+    config.AUTH_ENABLED, config.JOB_EXECUTION_MODE = True, "queue"
     try:
-        response = client.post("/api/v1/alert", json={})
-        assert response.status_code == 401
+        simulation = client.post("/api/v1/alert", json={
+            "lat": 35.1,
+            "lon": 15.4,
+            "timestamp": "2026-07-28T14:37:00Z",
+            "persons": 12,
+        })
+        assert simulation.status_code == 200
+        protected = client.post("/api/v1/cases", json={"title": "private workspace"})
+        assert protected.status_code == 401
+        from core.jobs import complete
+        complete(simulation.json()["event_id"], {"test_cleanup": True})
     finally:
-        config.AUTH_ENABLED = previous
+        config.AUTH_ENABLED, config.JOB_EXECUTION_MODE = previous
 
 
 def test_production_fails_closed_without_oidc() -> None:

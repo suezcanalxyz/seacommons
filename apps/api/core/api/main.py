@@ -204,6 +204,12 @@ async def authorization_gate(request, call_next):
         "/api/v1/ingest/meta/whatsapp",
         "/api/v1/ingest/telegram", "/api/v1/ingest/webhook",
     } or (
+        # Public Play simulations are resource-bounded by the route's per-IP
+        # rate limit and global drift concurrency slot. Operational workspaces,
+        # forensic records and case data remain authenticated.
+        request.method == "POST"
+        and path == "/api/v1/alert"
+    ) or (
         request.method in {"GET", "HEAD", "OPTIONS"}
         and path.startswith("/api/v1/live/")
     )
