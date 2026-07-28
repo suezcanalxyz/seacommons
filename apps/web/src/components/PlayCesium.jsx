@@ -738,7 +738,12 @@ export default function PlayCesium({
           runtime.displayAltitude = altitude;
           setCameraAltitude(altitude);
           if (!viewer.trackedEntity && !navigation.looking) {
-            const transition = Cesium.Math.smoothstep(800, 12_000, altitude);
+            const altitudeRatio = Cesium.Math.clamp(
+              (altitude - 800) / (12_000 - 800),
+              0,
+              1,
+            );
+            const transition = altitudeRatio * altitudeRatio * (3 - 2 * altitudeRatio);
             const targetPitch = Cesium.Math.lerp(
               Cesium.Math.toRadians(-31),
               Cesium.Math.toRadians(-89),
