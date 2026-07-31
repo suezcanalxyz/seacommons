@@ -63,7 +63,7 @@ class IntelEvent:
     #   news        → reporting / incidents / situational updates
     #   signal      → low-salience telemetry (AIS loiter spikes, NGO movements)
     _OPERATIONAL_TYPES = frozenset({"distress", "iom_incident"})
-    _NEWS_TYPES = frozenset({"news", "twitter", "mastodon", "manual"})
+    _NEWS_TYPES = frozenset({"news", "twitter", "mastodon", "manual", "gdacs", "bluesky"})
     _SIGNAL_TYPES = frozenset({"ais_spike", "ngo_activity"})
 
     def tier(self) -> str:
@@ -333,6 +333,59 @@ class IntelStore:
                 db.flush()
         except Exception as exc:
             logger.debug("Intel DB location enrichment skipped: %s", exc)
+
+    def update_metadata(
+        self,
+        event_id: str,
+        *,
+        metadata: dict[str, Any],
+        linked_mmsi: Optional[str] = None,
+    ) -> bool:
+        """Merge additional metadata onto an existing event in place.
+
+        Used to record cross-source corroboration (see intel/triangulation.py)
+        without creating a duplicate event or overwriting fields set by the
+        original ingestion path.
+        """
+        updated: Optional[IntelEvent] = None
+        with self._lock:
+            for event in self._events:
+                if event.id != event_id:
+                    continue
+                event.metadata.update(metadata)
+                if linked_mmsi:
+                    event.linked_mmsi = linked_mmsi
+                updated = event
+                break
+        if updated is None:
+            return False
+        threading.Thread(
+            target=self._persist_metadata_sync,
+            args=(event_id, dict(updated.metadata), updated.linked_mmsi),
+            daemon=True,
+        ).start()
+        self._fire_broadcast(updated)
+        return True
+
+    def _persist_metadata_sync(
+        self,
+        event_id: str,
+        metadata: dict[str, Any],
+        linked_mmsi: str,
+    ) -> None:
+        try:
+            from core.db.models import IntelEventDB
+            from core.db.session import session_scope
+            with session_scope() as db:
+                row = db.query(IntelEventDB).filter(IntelEventDB.id == event_id).first()
+                if row is None:
+                    return
+                row.meta = metadata
+                if linked_mmsi:
+                    row.linked_mmsi = linked_mmsi
+                db.flush()
+        except Exception as exc:
+            logger.debug("Intel DB metadata update skipped: %s", exc)
 
     # ── Read ──────────────────────────────────────────────────────────────────
 

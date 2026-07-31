@@ -157,6 +157,14 @@ export default function PlayCesium({
         const Cesium = await import('cesium');
         if (disposed || !containerRef.current) return;
 
+        const mobileProfile = window.matchMedia(
+          '(max-width: 760px), (pointer: coarse)',
+        ).matches;
+        const waterSegments = mobileProfile ? 72 : 128;
+        const cloudCount = mobileProfile ? 10 : 24;
+        const waveLineRadius = mobileProfile ? 3 : 5;
+        const waveLinePoints = mobileProfile ? 17 : 29;
+
         Cesium.buildModuleUrl.setBaseUrl('/cesium/');
         viewer = new Cesium.Viewer(containerRef.current, {
           animation: false,
@@ -172,8 +180,10 @@ export default function PlayCesium({
           timeline: false,
           terrainProvider: new Cesium.EllipsoidTerrainProvider(),
           requestRenderMode: false,
-          shadows: true,
+          shadows: !mobileProfile,
+          targetFrameRate: mobileProfile ? 30 : 60,
         });
+        viewer.resolutionScale = mobileProfile ? .72 : 1;
 
         let globeLayer = null;
         try {
@@ -204,13 +214,15 @@ export default function PlayCesium({
         viewer.scene.moon.show = true;
         viewer.scene.atmosphere.dynamicLighting = Cesium.DynamicAtmosphereLightingType.SUNLIGHT;
         viewer.scene.light = new Cesium.SunLight({ intensity: 1.35 });
-        viewer.scene.highDynamicRange = viewer.scene.highDynamicRangeSupported;
+        viewer.scene.highDynamicRange = !mobileProfile
+          && viewer.scene.highDynamicRangeSupported;
         viewer.scene.postProcessStages.fxaa.enabled = true;
-        viewer.shadows = true;
-        viewer.scene.shadowMap.enabled = true;
-        viewer.scene.shadowMap.softShadows = true;
+        viewer.shadows = !mobileProfile;
+        viewer.scene.shadowMap.enabled = !mobileProfile;
+        viewer.scene.shadowMap.softShadows = !mobileProfile;
         viewer.scene.shadowMap.darkness = .32;
-        viewer.scene.shadowMap.maximumDistance = 18_000;
+        viewer.scene.shadowMap.maximumDistance = mobileProfile ? 6_000 : 18_000;
+        viewer.scene.globe.maximumScreenSpaceError = mobileProfile ? 3.5 : 1.5;
         viewer.scene.screenSpaceCameraController.minimumZoomDistance = 12;
         viewer.scene.screenSpaceCameraController.maximumZoomDistance = 45_000_000;
         viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
@@ -282,7 +294,11 @@ export default function PlayCesium({
                 float wave = primary * 0.48 + secondary * 0.27 + detail * 0.17 + chop * 0.08;
                 float crest = smoothstep(0.24, 0.88, wave);
                 float undulation = smoothstep(-0.74, 0.72, wave);
-                float foam = smoothstep(0.58, 0.94, wave) * foamStrength;
+                // Finer, faster-varying interference pattern breaks the foam
+                // band up into patchy whitecaps instead of one smooth stripe.
+                float foamFleck = sin((st.s * 3.7 + st.t * 2.3) * frequency * 4.1 + time * 2.3)
+                                 * sin((st.s * 1.3 - st.t * 2.9) * frequency * 3.4 - time * 1.7);
+                float foam = smoothstep(0.58, 0.94, wave) * (0.62 + 0.38 * foamFleck) * foamStrength;
                 material.diffuse = mix(
                   mix(
                     deepColor.rgb,
@@ -315,13 +331,17 @@ export default function PlayCesium({
           },
         });
         let waterPrimitive = null;
-        const makeWaterGeometry = (longitude, latitude) => {
-          const environment = runtime.environment;
-          const segments = 128;
-          const rowSize = segments + 1;
-          const halfSize = 13_500;
-          const denseRatio = .075;
-          const baseHeight = 1.25;
+        // Sea-level datum used by the mesh and by seaHeightAndSlope() below —
+        // an arbitrary constant offset (not a real elevation), kept identical
+        // in both places so the vessel sits exactly on the rendered surface.
+        const BASE_SEA_HEIGHT = 1.25;
+
+        // Shared wave-field sample (superposed sine trains), keyed by absolute
+        // east/north meter offsets. Used both by the mesh generator below and
+        // by calculatePose()/orientation to place the vessel ON the same
+        // surface it is rendered on, instead of an independent decorative
+        // sine unrelated to its actual position.
+        const waveSample = (worldEast, worldNorth, environment) => {
           const waveHeight = Cesium.Math.clamp(environment.waveHeight, .08, 5);
           const primaryLength = Cesium.Math.clamp(
             1.56 * environment.wavePeriod * environment.wavePeriod,
@@ -341,6 +361,50 @@ export default function PlayCesium({
           const amplitude1 = waveHeight * .42;
           const amplitude2 = waveHeight * .17;
           const amplitude3 = Math.min(.18, waveHeight * .07);
+          const phase1 = (worldEast * primaryEast + worldNorth * primaryNorth) * k1;
+          const phase2 = (worldEast * crossEast + worldNorth * crossNorth) * k2 + 1.7;
+          const phase3 = ((worldEast + worldNorth) * .7071) * k3 - .8;
+          return {
+            sum: amplitude1 * Math.sin(phase1) + amplitude2 * Math.sin(phase2) + amplitude3 * Math.sin(phase3),
+            slopeEast: amplitude1 * Math.cos(phase1) * k1 * primaryEast
+              + amplitude2 * Math.cos(phase2) * k2 * crossEast
+              + amplitude3 * Math.cos(phase3) * k3 * .7071,
+            slopeNorth: amplitude1 * Math.cos(phase1) * k1 * primaryNorth
+              + amplitude2 * Math.cos(phase2) * k2 * crossNorth
+              + amplitude3 * Math.cos(phase3) * k3 * .7071,
+          };
+        };
+
+        // Sea height + local slope at an arbitrary lon/lat, matching the
+        // rendered mesh's fade-out from the current water surface's origin.
+        const seaHeightAndSlope = (longitude, latitude) => {
+          const environment = runtime.environment;
+          const worldEast = longitude * 111_320 * Math.cos(Cesium.Math.toRadians(latitude));
+          const worldNorth = latitude * 110_540;
+          const wave = waveSample(worldEast, worldNorth, environment);
+          let fade = 1;
+          if (runtime.waterOriginLon != null && runtime.waterOriginLat != null) {
+            const originEast = runtime.waterOriginLon * 111_320
+              * Math.cos(Cesium.Math.toRadians(runtime.waterOriginLat));
+            const originNorth = runtime.waterOriginLat * 110_540;
+            const distance = Math.hypot(worldEast - originEast, worldNorth - originNorth);
+            const fadeRatio = Cesium.Math.clamp((distance - 2_300) / 5_600, 0, 1);
+            fade = 1 - fadeRatio * fadeRatio * (3 - 2 * fadeRatio);
+          }
+          return {
+            height: BASE_SEA_HEIGHT + fade * wave.sum,
+            slopeEast: fade * wave.slopeEast,
+            slopeNorth: fade * wave.slopeNorth,
+          };
+        };
+
+        const makeWaterGeometry = (longitude, latitude) => {
+          const environment = runtime.environment;
+          const segments = waterSegments;
+          const rowSize = segments + 1;
+          const halfSize = 13_500;
+          const denseRatio = .075;
+          const baseHeight = BASE_SEA_HEIGHT;
           const origin = Cesium.Cartesian3.fromDegrees(longitude, latitude, 0);
           const frame = Cesium.Transforms.eastNorthUpToFixedFrame(origin);
           const worldEastOffset = longitude * 111_320 * Math.cos(Cesium.Math.toRadians(latitude));
@@ -368,17 +432,11 @@ export default function PlayCesium({
               const east = remap(u * 2 - 1);
               const worldEast = worldEastOffset + east;
               const worldNorth = worldNorthOffset + north;
-              const phase1 = (worldEast * primaryEast + worldNorth * primaryNorth) * k1;
-              const phase2 = (worldEast * crossEast + worldNorth * crossNorth) * k2 + 1.7;
-              const phase3 = ((worldEast + worldNorth) * .7071) * k3 - .8;
+              const wave = waveSample(worldEast, worldNorth, environment);
               const distance = Math.hypot(east, north);
               const fadeRatio = Cesium.Math.clamp((distance - 2_300) / 5_600, 0, 1);
               const fade = 1 - fadeRatio * fadeRatio * (3 - 2 * fadeRatio);
-              const height = baseHeight + fade * (
-                amplitude1 * Math.sin(phase1)
-                + amplitude2 * Math.sin(phase2)
-                + amplitude3 * Math.sin(phase3)
-              );
+              const height = baseHeight + fade * wave.sum;
               // Follow the WGS84 curvature instead of extending a tangent plane
               // to the horizon; this removes the visible edge/dome at sea level.
               const pointLatitude = latitude + north / 110_540;
@@ -394,16 +452,8 @@ export default function PlayCesium({
               positions[vertexOffset + 1] = point.y;
               positions[vertexOffset + 2] = point.z;
 
-              const slopeEast = fade * (
-                amplitude1 * Math.cos(phase1) * k1 * primaryEast
-                + amplitude2 * Math.cos(phase2) * k2 * crossEast
-                + amplitude3 * Math.cos(phase3) * k3 * .7071
-              );
-              const slopeNorth = fade * (
-                amplitude1 * Math.cos(phase1) * k1 * primaryNorth
-                + amplitude2 * Math.cos(phase2) * k2 * crossNorth
-                + amplitude3 * Math.cos(phase3) * k3 * .7071
-              );
+              const slopeEast = fade * wave.slopeEast;
+              const slopeNorth = fade * wave.slopeNorth;
               const worldNormal = Cesium.Matrix4.multiplyByPointAsVector(
                 frame,
                 new Cesium.Cartesian3(-slopeEast, -slopeNorth, 1),
@@ -462,6 +512,8 @@ export default function PlayCesium({
         };
         const replaceWaterSurface = (longitude, latitude) => {
           if (waterPrimitive) viewer.scene.primitives.remove(waterPrimitive);
+          runtime.waterOriginLon = longitude;
+          runtime.waterOriginLat = latitude;
           const environment = runtime.environment;
           const vertexDirection = Cesium.Math.toRadians(environment.directionDeg).toFixed(8);
           const vertexSpeed = Math.min(
@@ -527,10 +579,10 @@ export default function PlayCesium({
         };
 
         const cloudCollection = viewer.scene.primitives.add(new Cesium.CloudCollection({
-          noiseDetail: 20,
+          noiseDetail: mobileProfile ? 12 : 20,
           noiseOffset: new Cesium.Cartesian3(),
         }));
-        for (let index = 0; index < 24; index += 1) {
+        for (let index = 0; index < cloudCount; index += 1) {
           clouds.push(cloudCollection.add({
             show: false,
             position: Cesium.Cartesian3.fromDegrees(DEFAULT_LON, DEFAULT_LAT, 900),
@@ -685,11 +737,15 @@ export default function PlayCesium({
           const firstSpeed = runtime.trajectorySpeeds?.[index] || 0;
           const secondSpeed = runtime.trajectorySpeeds?.[index + 1] || firstSpeed;
           runtime.currentDriftSpeedMs = Cesium.Math.lerp(firstSpeed, secondSpeed, fraction);
-          const environment = runtime.environment;
-          const primary = Math.sin(nowSeconds * Math.PI * 2 / environment.wavePeriod);
-          const secondary = Math.sin(nowSeconds * Math.PI * 2 / (environment.wavePeriod * .57) + 1.2);
-          const altitude = 4 + environment.waveHeight * (.34 * primary + .13 * secondary);
+          // Sample the same wave field the rendered mesh uses at the vessel's
+          // actual position, instead of a decorative time-only sine — the
+          // hull now visibly rides the real sea surface under it.
+          const HULL_FREEBOARD = 4 - BASE_SEA_HEIGHT;
+          const surface = seaHeightAndSlope(longitude, latitude);
+          const altitude = HULL_FREEBOARD + surface.height;
           pose.position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude);
+          pose.surfaceSlopeEast = surface.slopeEast;
+          pose.surfaceSlopeNorth = surface.slopeNorth;
           pose.heading = Number.isFinite(heading) ? heading : 0;
           pose.altitude = altitude;
           pose.longitude = longitude;
@@ -699,11 +755,16 @@ export default function PlayCesium({
         };
 
         const orientation = new Cesium.CallbackProperty(() => {
-          const environment = runtime.environment;
-          const roll = Cesium.Math.toRadians(Math.min(7, environment.waveHeight * 2.7))
-            * Math.sin(pose.timeSeconds * Math.PI * 2 / (environment.wavePeriod * .73));
-          const pitch = Cesium.Math.toRadians(Math.min(4.5, environment.waveHeight * 1.9))
-            * Math.sin(pose.timeSeconds * Math.PI * 2 / environment.wavePeriod + .9);
+          // Roll/pitch derived from the local sea-surface slope under the
+          // hull (small-angle approximation: angle ≈ slope), sampled along
+          // and across the vessel's heading — replaces the previous
+          // decorative sine that was unrelated to the rendered surface.
+          const forwardSlope = (pose.surfaceSlopeEast || 0) * Math.sin(pose.heading)
+            + (pose.surfaceSlopeNorth || 0) * Math.cos(pose.heading);
+          const rightSlope = (pose.surfaceSlopeEast || 0) * Math.cos(pose.heading)
+            - (pose.surfaceSlopeNorth || 0) * Math.sin(pose.heading);
+          const roll = Cesium.Math.clamp(-rightSlope, -Cesium.Math.toRadians(7), Cesium.Math.toRadians(7));
+          const pitch = Cesium.Math.clamp(-forwardSlope, -Cesium.Math.toRadians(4.5), Cesium.Math.toRadians(4.5));
           return Cesium.Transforms.headingPitchRollQuaternion(
             pose.position,
             new Cesium.HeadingPitchRoll(pose.heading, pitch, roll),
@@ -799,7 +860,7 @@ export default function PlayCesium({
         entities.push(trajectoryEntity);
 
         const waveOrigin = Cesium.Cartesian3.fromDegrees(DEFAULT_LON, DEFAULT_LAT, 2);
-        for (let index = -5; index <= 5; index += 1) {
+        for (let index = -waveLineRadius; index <= waveLineRadius; index += 1) {
           const wave = viewer.entities.add({
             name: 'Environmental wave field',
             polyline: {
@@ -816,8 +877,12 @@ export default function PlayCesium({
                 const centerNorth = directionNorth * phaseTravel + crestNorth * lateral;
                 const center = localPoint(waveOrigin, centerEast, centerNorth, 0);
                 const length = 285 + environment.waveHeight * 55;
-                return Array.from({ length: 29 }, (_, pointIndex) => {
-                  const across = Cesium.Math.lerp(-length, length, pointIndex / 28);
+                return Array.from({ length: waveLinePoints }, (_, pointIndex) => {
+                  const across = Cesium.Math.lerp(
+                    -length,
+                    length,
+                    pointIndex / (waveLinePoints - 1),
+                  );
                   const ripple = Math.sin(across * .025 + index * .72 + pose.timeSeconds * .7)
                     * (2.2 + environment.waveHeight * 1.8);
                   return localPoint(
@@ -1147,7 +1212,7 @@ export default function PlayCesium({
       <div className="play-cesium__source">{environment.source}</div>
       <div className="play-cesium__reticle" aria-hidden="true"><i /><i /></div>
       <div className="play-cesium__controls" aria-label="Navigation controls">
-        <strong>UNREAL NAV</strong>
+        <strong>CESIUM 3D NAV</strong>
         <span><kbd>RMB</kbd> look</span>
         <span><kbd>W A S D</kbd> move</span>
         <span><kbd>Q / E</kbd> down / up</span>
@@ -1156,6 +1221,7 @@ export default function PlayCesium({
         <span><kbd>SPACE</kbd> recenter</span>
       </div>
       <div className="play-cesium__hint">Wheel: zoom · zoom in: inclined 3D · zoom out: top-down trajectory analysis</div>
+      <div className="play-cesium__touch-hint">1 dito: ruota · 2 dita: zoom/inclina · usa le viste per ricentrare</div>
       {error ? <div className="play-cesium__error">{error}</div> : null}
     </section>
   );

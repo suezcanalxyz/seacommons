@@ -19,3 +19,14 @@ apps/api/core/data/attachments/
 .gstack/
 .vercel
 .env*.local
+
+# Unreal Engine generated artifacts
+apps/unreal/**/Binaries/
+apps/unreal/**/Intermediate/
+apps/unreal/**/Saved/
+apps/unreal/**/DerivedDataCache/
+apps/unreal/**/.vs/
+apps/unreal/**/Packaged/
+apps/unreal/**/Samples/PixelStreaming/WebServers/*
+!apps/unreal/**/Samples/PixelStreaming/WebServers/get_ps_servers.bat
+!apps/unreal/**/Samples/PixelStreaming/WebServers/get_ps_servers.sh

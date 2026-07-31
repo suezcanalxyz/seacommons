@@ -21,7 +21,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from core.api.ratelimit import rate_limit
+from core.api.ratelimit import acquire_drift_slot, rate_limit, release_drift_slot
 from core.intel.ngo_registry import NGO_VESSELS, get_ngo_info, is_ngo
 from core.intel.store import IntelEvent, intel_store
 
@@ -389,6 +389,14 @@ class AutoDriftRequest(BaseModel):
 def _run_intel_drift(event_id: str, lat: float, lon: float,
                      persons: Optional[int], vessel_type: Optional[str]) -> None:
     """Background: compute drift from an intel event's position."""
+    try:
+        _run_intel_drift_inner(event_id, lat, lon, persons, vessel_type)
+    finally:
+        release_drift_slot()
+
+
+def _run_intel_drift_inner(event_id: str, lat: float, lon: float,
+                           persons: Optional[int], vessel_type: Optional[str]) -> None:
     import uuid
     from datetime import datetime, timezone
 
@@ -432,14 +440,29 @@ async def intel_auto_drift(body: AutoDriftRequest, request: Request):
     """
     Trigger a SAR drift simulation from an intel event's known position.
     The drift runs in a daemon thread so the response returns immediately.
+
+    Public (unauthenticated) endpoint — reachable from the anonymous Live map.
+    Protected the same way /api/v1/alert is: a per-IP rate limit plus the
+    shared global concurrency semaphore (MAX_CONCURRENT_DRIFTS), so a burst of
+    anonymous clicks cannot exhaust CPU/RAM on the pilot VM.
     """
     rate_limit(request, max_per_minute=6, scope="intel-drift")
+    if not acquire_drift_slot():
+        raise HTTPException(
+            status_code=429,
+            detail="Drift engine busy — too many concurrent simulations. Retry shortly.",
+            headers={"Retry-After": "30"},
+        )
     import threading
-    threading.Thread(
-        target=_run_intel_drift,
-        args=(body.intel_event_id, body.lat, body.lon, body.persons, body.vessel_type),
-        daemon=True,
-    ).start()
+    try:
+        threading.Thread(
+            target=_run_intel_drift,
+            args=(body.intel_event_id, body.lat, body.lon, body.persons, body.vessel_type),
+            daemon=True,
+        ).start()
+    except Exception:
+        release_drift_slot()
+        raise
     return {"status": "queued", "intel_event_id": body.intel_event_id}
 
 

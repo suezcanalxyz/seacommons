@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+const ALARM_PHONE_SOURCE = 'Alarm Phone / X official site';
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
 const SEV_LABELS = ['critical', 'high', 'medium', 'low'];
 const TYPE_ICONS = {
@@ -249,6 +250,7 @@ export default function IntelDashboard({
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [search, setSearch] = useState('');
   const [channelFilter, setChannelFilter] = useState('all');
+  const [sourceFilter, setSourceFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');   // 'all' | operational | news | signal
   const [viewMode, setViewMode] = useState('list');   // 'list' | 'timeline'
   const [showInject, setShowInject] = useState(false);
@@ -284,6 +286,7 @@ export default function IntelDashboard({
     if (tierFilter !== 'all') evs = evs.filter((f) => eventTier(f.properties || {}) === tierFilter);
     if (intelFilter !== 'all') evs = evs.filter((f) => f.properties?.severity === intelFilter);
     if (channelFilter !== 'all') evs = evs.filter((f) => f.properties?.type === channelFilter);
+    if (sourceFilter !== 'all') evs = evs.filter((f) => f.properties?.source === sourceFilter);
 
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -297,7 +300,7 @@ export default function IntelDashboard({
       });
     }
     return evs;
-  }, [intelEvents, intelFilter, channelFilter, tierFilter, showAisAlerts, search]);
+  }, [intelEvents, intelFilter, channelFilter, sourceFilter, tierFilter, showAisAlerts, search]);
 
   // Group the visible events by operational tier (operational pinned on top).
   const tierGroups = useMemo(() => {
@@ -337,7 +340,7 @@ export default function IntelDashboard({
     const p = feat.properties || {};
     const coords = feat.geometry?.coordinates;
     const ts = p.timestamp_utc ? new Date(p.timestamp_utc) : null;
-    const hasDrift = !publicMode && p.drift_status === 'completed';
+    const hasDrift = p.drift_status === 'completed';
     const driftFeat = hasDrift
       ? intelDrifts.features.find((f) => f.properties?.intel_event_id === p.id && f.geometry?.type === 'LineString')
       : null;
@@ -378,12 +381,12 @@ export default function IntelDashboard({
             >Map</button>
           ) : coords && (p.drift_status === 'computing' || triggeringDrift?.has(p.id)) ? (
             <button className="intel-drift-btn intel-drift-btn--computing" disabled>…</button>
-          ) : !publicMode && coords && p.drift_status === 'failed' ? (
+          ) : coords && p.drift_status === 'failed' ? (
             <button
               className="intel-drift-btn intel-drift-btn--retry"
               onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(p.id, coords[1], coords[0]); }}
             >Retry</button>
-          ) : !publicMode && coords && p.drift_status !== 'completed' ? (
+          ) : coords && p.drift_status !== 'completed' ? (
             <button
               className="intel-drift-btn intel-drift-btn--trigger"
               onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(p.id, coords[1], coords[0]); }}
@@ -501,6 +504,11 @@ export default function IntelDashboard({
               title="Toggle AIS loitering alerts"
             >AIS</button>
           ) : null}
+          <button
+            className={`intel-filter-btn ${sourceFilter === ALARM_PHONE_SOURCE ? 'is-active' : ''}`}
+            onClick={() => setSourceFilter((cur) => cur === ALARM_PHONE_SOURCE ? 'all' : ALARM_PHONE_SOURCE)}
+            title="Show only Alarm Phone reports"
+          >📞 Alarm Phone</button>
         </div>
 
         {/* Channel filter */}

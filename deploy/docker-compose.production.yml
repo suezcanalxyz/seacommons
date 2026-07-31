@@ -81,6 +81,13 @@ services:
       JOB_EXECUTION_MODE: queue
       SUEZCANAL_SIGNING_KEY: ${SUEZCANAL_SIGNING_KEY:?set SUEZCANAL_SIGNING_KEY}
       ALLOWED_ORIGINS: https://${SEACOMMONS_DOMAIN:-engine.seacommons.org},https://console.seacommons.org
+      INTEL_ENABLED: ${INTEL_ENABLED:-true}
+      TWITTER_BEARER_TOKEN: ${TWITTER_BEARER_TOKEN:-}
+      AISSTREAM_KEY: ${AISSTREAM_KEY:-}
+      BARENTSWATCH_CLIENT_ID: ${BARENTSWATCH_CLIENT_ID:-}
+      BARENTSWATCH_CLIENT_SECRET: ${BARENTSWATCH_CLIENT_SECRET:-}
+      CMEMS_USERNAME: ${CMEMS_USERNAME:-}
+      CMEMS_PASSWORD: ${CMEMS_PASSWORD:-}
     depends_on:
       postgres: { condition: service_healthy }
       valkey: { condition: service_healthy }

@@ -9,11 +9,11 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import not_, select
 
 from core.api.ratelimit import acquire_drift_slot, rate_limit, release_drift_slot
@@ -34,6 +34,32 @@ def invalidate_alerts_cache() -> None:
     _alerts_geojson_ts = 0.0
 
 
+class SceneVector(BaseModel):
+    speed_m_s: float = Field(ge=0)
+    direction_deg: float = Field(ge=0, lt=360)
+    direction_convention: Literal["from", "to"]
+    source: str
+
+
+class SceneWaves(BaseModel):
+    significant_height_m: float = Field(ge=0)
+    period_s: float = Field(gt=0)
+    direction_deg: float = Field(ge=0, lt=360)
+    direction_convention: Literal["from", "to"]
+    direction_source: Literal[
+        "directional-wave-product",
+        "wind-proxy",
+        "scenario-assumption",
+    ]
+
+
+class SceneEnvironment(BaseModel):
+    observed_at: datetime
+    wind: SceneVector
+    current: SceneVector
+    waves: SceneWaves
+
+
 class MaritimeEvent(BaseModel):
     lat: float
     lon: float
@@ -43,6 +69,7 @@ class MaritimeEvent(BaseModel):
     risk_level: Optional[str] = None
     scenario_type: Optional[str] = None
     domain: str = "ocean_sar"
+    environment: Optional[SceneEnvironment] = None
 
 
 # (websocket, asyncio_loop) — stored as tuples so background threads can
@@ -83,6 +110,8 @@ def _process_drift_inner(event_id: str, event: MaritimeEvent) -> None:
             domain=event.domain,
             config=alert_config,
         )
+        if event.environment is not None:
+            result.metadata["scene_environment"] = event.environment.model_dump(mode="json")
         complete_drift_job(
             event_id,
             event_id=event_id,
@@ -245,6 +274,28 @@ async def get_alert_geojson(event_id: str):
     if drift["impact_point"]:
         features.extend(drift["impact_point"].get("features", []))
     return {"type": "FeatureCollection", "features": features}
+
+
+@router.get("/api/v1/alert/{event_id}/scene")
+async def get_alert_scene(event_id: str):
+    """Return the renderer-neutral scene consumed by CesiumJS and Unreal."""
+    from core.db.store import get_alert, get_drift
+    from core.rendering.scene import build_drift_scene
+
+    alert = get_alert(event_id)
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    drift = get_drift(event_id)
+    if drift is None or drift.get("status") == "computing":
+        raise HTTPException(status_code=202, detail="Drift result not ready")
+    if drift.get("status") == "failed":
+        raise HTTPException(
+            status_code=500,
+            detail=drift.get("metadata", {}).get("error", "Drift result failed"),
+        )
+    if drift.get("status") != "completed":
+        raise HTTPException(status_code=404, detail="Drift result not ready")
+    return build_drift_scene(event_id, alert["event"], drift)
 
 
 @router.get("/api/v1/alerts")

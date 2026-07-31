@@ -145,7 +145,7 @@ def _start_background_sensors():
     except Exception as exc:
         logger.warning("CorrelationEngine failed to start: %s", exc)
 
-    # Start AISStream real-time AIS feed (BarentsWatch already started above)
+    # Start AISStream real-time AIS feed
     if config.AISSTREAM_KEY:
         try:
             from core.vessels import aisstream
@@ -155,6 +155,17 @@ def _start_background_sensors():
             logger.warning("AISStream failed to start: %s", exc)
     else:
         logger.warning("AISStream key missing: live vessel feed disabled")
+
+    # Start BarentsWatch AIS feed (second, independent free AIS source — Med/Red Sea/Gulf of Aden)
+    if config.BARENTSWATCH_CLIENT_ID and config.BARENTSWATCH_CLIENT_SECRET:
+        try:
+            from core.vessels import barentswatch
+            barentswatch.start(config.BARENTSWATCH_CLIENT_ID, config.BARENTSWATCH_CLIENT_SECRET)
+            logger.info("BarentsWatch client started")
+        except Exception as exc:
+            logger.warning("BarentsWatch failed to start: %s", exc)
+    else:
+        logger.warning("BarentsWatch credentials missing: secondary AIS feed disabled")
 
 
 def _start_scheduler() -> None:
@@ -204,11 +215,12 @@ async def authorization_gate(request, call_next):
         "/api/v1/ingest/meta/whatsapp",
         "/api/v1/ingest/telegram", "/api/v1/ingest/webhook",
     } or (
-        # Public Play simulations are resource-bounded by the route's per-IP
-        # rate limit and global drift concurrency slot. Operational workspaces,
-        # forensic records and case data remain authenticated.
+        # Public Play simulations and the public Live map's "simulate drift"
+        # action are resource-bounded by the route's per-IP rate limit and
+        # global drift concurrency slot. Operational workspaces, forensic
+        # records and case data remain authenticated.
         request.method == "POST"
-        and path == "/api/v1/alert"
+        and path in {"/api/v1/alert", "/api/v1/intel/auto-drift"}
     ) or (
         request.method in {"GET", "HEAD", "OPTIONS"}
         and path.startswith("/api/v1/live/")

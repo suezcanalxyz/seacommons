@@ -36,6 +36,24 @@ effects and must be labelled as such.
 Use UE 5.2 for the first prototype to avoid mixing plugin versions. Upgrade the
 engine and Cesium plugin together only after the scene is reproducible.
 
+## Implementation status
+
+- `GET /api/v1/alert/{event_id}/scene` produces the renderer-neutral
+  `drift-scene/v1` contract.
+- Play persists the environmental snapshot used by the scenario, including
+  explicit `from`/`to` direction conventions.
+- `apps/unreal/SeaCommonsImmersive` is a native UE 5.2 project with Water,
+  Pixel Streaming and Cesium for Unreal enabled.
+- `ASeaCommonsSceneController` accepts the contract from a file or Pixel
+  Streaming input and calibrates a deterministic Gerstner spectrum from
+  significant wave height, dominant period and direction.
+- The contract fixture and API output validate against the same JSON Schema.
+
+The remaining content task is the first `.umap`: ocean, sky, anonymous raft,
+buoyancy pontoons and cameras. The remaining infrastructure task is a GPU
+render host plus signaling, TURN and session brokering. Vercel and an Oracle
+Always Free CPU instance cannot render Unreal.
+
 ## Scene
 
 The initial level opens over the scenario origin and contains:

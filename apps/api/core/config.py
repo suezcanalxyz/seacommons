@@ -104,6 +104,9 @@ class SuezCanalConfig(BaseSettings):
     GNSS_ENABLED: bool = True
     CORRELATION_CONFIDENCE_ALERT: float = 0.55
     CORRELATION_CONFIDENCE_URGENT: float = 0.80
+    SAR_TRIANGULATION_RADIUS_KM: float = 15.0
+    SAR_TRIANGULATION_WINDOW_MIN: float = 90.0
+    SAR_TRIANGULATION_THRESHOLD: float = 0.55
     CMEMS_USERNAME: str = ""
     CMEMS_PASSWORD: str = ""
     CMEMS_CURRENT_DATASET: str = "cmems_mod_glo_phy-cur_anfc_0.083deg_P1D-m"
@@ -111,6 +114,9 @@ class SuezCanalConfig(BaseSettings):
     CMEMS_WAVE_DATASET: str = "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i"
     OPEN_METEO_BASE: str = "https://api.open-meteo.com/v1"
     AISSTREAM_KEY: str = ""
+    # BarentsWatch AIS (Norwegian government aggregator, free — register at https://www.barentswatch.no)
+    BARENTSWATCH_CLIENT_ID: str = ""
+    BARENTSWATCH_CLIENT_SECRET: str = ""
     ADSB_EXCHANGE_KEY: str = ""
     GPSJAM_URL: str = "https://gpsjam.org/geo.json"
     ACLED_KEY: str = ""

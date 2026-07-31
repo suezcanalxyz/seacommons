@@ -220,7 +220,11 @@ class NewsMonitor:
                 "is_distress": distress,
             },
         )
-        return intel_store.add(event, dedup_key=dedup)
+        added = intel_store.add(event, dedup_key=dedup)
+        if added and event.type == "distress":
+            from core.intel.triangulation import evaluate as evaluate_triangulation
+            evaluate_triangulation(event)
+        return added
 
 
 def _safe_float(value: Any) -> Optional[float]:

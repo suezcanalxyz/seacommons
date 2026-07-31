@@ -248,6 +248,46 @@ function mergeEnvironment(base, realtime) {
   };
 }
 
+function sceneEnvironmentSnapshot(weather) {
+  if (!weather) return null;
+  const windSpeed = Number(weather.wind?.speed_ms);
+  const windDirection = Number(weather.wind?.direction_deg);
+  const currentSpeed = Number(weather.ocean?.current_speed_ms);
+  const currentDirection = Number(weather.ocean?.current_dir_deg);
+  const waveHeight = Number(weather.waves?.significant_height_m);
+  const wavePeriod = Number(weather.waves?.period_s);
+  const waveDirection = Number(weather.waves?.direction_deg);
+  if (![windSpeed, windDirection, currentSpeed, currentDirection, waveHeight, wavePeriod]
+    .every(Number.isFinite)) return null;
+  const hasWaveDirection = Number.isFinite(waveDirection);
+  return {
+    observed_at: weather.timestamp_utc || new Date().toISOString(),
+    wind: {
+      speed_m_s: Math.max(0, windSpeed),
+      direction_deg: ((windDirection % 360) + 360) % 360,
+      direction_convention: 'from',
+      source: weather.source || 'environmental feed',
+    },
+    current: {
+      speed_m_s: Math.max(0, currentSpeed),
+      direction_deg: ((currentDirection % 360) + 360) % 360,
+      direction_convention: 'to',
+      source: weather.source || 'environmental feed',
+    },
+    waves: {
+      significant_height_m: Math.max(0, waveHeight),
+      period_s: Math.max(.1, wavePeriod),
+      direction_deg: hasWaveDirection
+        ? ((waveDirection % 360) + 360) % 360
+        : ((windDirection % 360) + 360) % 360,
+      direction_convention: 'from',
+      direction_source: hasWaveDirection
+        ? 'directional-wave-product'
+        : 'wind-proxy',
+    },
+  };
+}
+
 function Pill({ label, tone = 'default' }) {
   return <span className={`pill tone-${tone}`}>{label}</span>;
 }
@@ -1238,9 +1278,23 @@ function App() {
             'circle-stroke-color': '#fff4bf',
           },
         });
+        const distressHoverPopup = new maplibregl.Popup({
+          closeButton: false, closeOnClick: false, offset: 10,
+          className: 'intel-hover-popup',
+        });
         map.on('mouseenter', 'intel-distress-core', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mousemove', 'intel-distress-core', (event) => {
+          const feature = event.features?.[0];
+          if (!feature) return;
+          const [lon, lat] = feature.geometry.coordinates;
+          distressHoverPopup
+            .setLngLat([lon, lat])
+            .setHTML(`<strong>${lat.toFixed(4)}, ${lon.toFixed(4)}</strong>`)
+            .addTo(map);
+        });
         map.on('mouseleave', 'intel-distress-core', () => {
           map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+          distressHoverPopup.remove();
         });
         map.on('click', 'intel-distress-core', (event) => {
           const feature = event.features?.[0];
@@ -1249,6 +1303,10 @@ function App() {
           map.flyTo({ center: [lon, lat], zoom: 9, duration: 800 });
           setActivePanel('osint');
           if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
+          const props = feature.properties || {};
+          if (props.id && props.drift_status !== 'completed' && props.drift_status !== 'computing') {
+            triggerIntelDrift(props.id, lat, lon);
+          }
           event.originalEvent?.stopPropagation?.();
         });
 
@@ -1281,9 +1339,24 @@ function App() {
           },
         });
 
+        // Hover popup — shows the event's coordinates without needing to open the sidebar.
+        const intelHoverPopup = new maplibregl.Popup({
+          closeButton: false, closeOnClick: false, offset: 10,
+          className: 'intel-hover-popup',
+        });
         map.on('mouseenter', 'intel-events-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mousemove', 'intel-events-layer', (event) => {
+          const feature = event.features?.[0];
+          if (!feature) return;
+          const [lon, lat] = feature.geometry.coordinates;
+          intelHoverPopup
+            .setLngLat([lon, lat])
+            .setHTML(`<strong>${lat.toFixed(4)}, ${lon.toFixed(4)}</strong>`)
+            .addTo(map);
+        });
         map.on('mouseleave', 'intel-events-layer', () => {
           map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+          intelHoverPopup.remove();
         });
         map.on('click', 'intel-events-layer', (event) => {
           const feature = event.features?.[0];
@@ -1293,6 +1366,10 @@ function App() {
           setActivePanel('osint');
           // On mobile the sheet would cover the point we just flew to — keep map visible.
           if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
+          const props = feature.properties || {};
+          if (props.id && props.drift_status !== 'completed' && props.drift_status !== 'computing') {
+            triggerIntelDrift(props.id, lat, lon);
+          }
           event.originalEvent?.stopPropagation?.();
         });
         map.on('mouseenter', 'intel-drift-line', () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -1741,6 +1818,7 @@ function App() {
           risk_level: riskLevel,
           scenario_type: activeSType,
           domain: 'ocean_sar',
+          environment: sceneEnvironmentSnapshot(weather),
         }),
       });
 

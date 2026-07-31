@@ -218,7 +218,11 @@ class MastodonMonitor:
                 "source_policy": "official_api",
             },
         )
-        return intel_store.add(event, dedup_key=dedup)
+        added = intel_store.add(event, dedup_key=dedup)
+        if added and event_type == "distress":
+            from core.intel.triangulation import evaluate as evaluate_triangulation
+            evaluate_triangulation(event)
+        return added
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

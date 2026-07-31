@@ -12,6 +12,7 @@
     "subject",
     "environment",
     "trajectory",
+    "uncertainty",
     "rendering"
   ],
   "properties": {
@@ -90,6 +91,7 @@
             "significant_height_m",
             "period_s",
             "direction_deg",
+            "direction_convention",
             "direction_source"
           ],
           "properties": {
@@ -103,6 +105,9 @@
             },
             "direction_deg": {
               "$ref": "#/$defs/bearing"
+            },
+            "direction_convention": {
+              "enum": ["from", "to"]
             },
             "direction_source": {
               "enum": [
@@ -160,6 +165,22 @@
         }
       }
     },
+    "uncertainty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "features"],
+      "properties": {
+        "format": {
+          "const": "geojson-feature-list"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
     "rendering": {
       "type": "object",
       "additionalProperties": false,
@@ -191,7 +212,12 @@
     "vector": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["speed_m_s", "direction_deg", "source"],
+      "required": [
+        "speed_m_s",
+        "direction_deg",
+        "direction_convention",
+        "source"
+      ],
       "properties": {
         "speed_m_s": {
           "type": "number",
@@ -199,6 +225,9 @@
         },
         "direction_deg": {
           "$ref": "#/$defs/bearing"
+        },
+        "direction_convention": {
+          "enum": ["from", "to"]
         },
         "source": {
           "type": "string",

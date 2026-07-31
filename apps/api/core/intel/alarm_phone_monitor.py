@@ -341,4 +341,7 @@ class AlarmPhoneMonitor:
                 lon=media_coords[1],
                 metadata=event.metadata,
             )
+        if added and distress:
+            from core.intel.triangulation import evaluate as evaluate_triangulation
+            evaluate_triangulation(event)
         return added

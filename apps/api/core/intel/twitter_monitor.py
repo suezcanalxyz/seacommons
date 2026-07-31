@@ -162,7 +162,11 @@ class TwitterMonitor:
                 "is_distress": distress,
             },
         )
-        return intel_store.add(event, dedup_key=f"x:{post.get('id', '')}")
+        added = intel_store.add(event, dedup_key=f"x:{post.get('id', '')}")
+        if added and distress:
+            from core.intel.triangulation import evaluate as evaluate_triangulation
+            evaluate_triangulation(event)
+        return added
 
 
 def _make_title(text: str, author: str) -> str:

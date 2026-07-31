@@ -20,11 +20,12 @@ function first(value) {
 
 function upstreamPath(query) {
   if (first(query.health) === '1') return '/health';
+  if (first(query.ready) === '1') return '/ready';
 
   const path = String(first(query.path) || '').replace(/^\/+/, '');
   const search = new URLSearchParams();
   for (const [name, value] of Object.entries(query)) {
-    if (name === 'path' || name === 'health') continue;
+    if (name === 'path' || name === 'health' || name === 'ready') continue;
     for (const item of Array.isArray(value) ? value : [value]) {
       if (item !== undefined) search.append(name, String(item));
     }

@@ -24,6 +24,8 @@ class IntelEngine:
         self._news: Optional[object] = None
         self._ais: Optional[object] = None
         self._mastodon: Optional[object] = None
+        self._gdacs: Optional[object] = None
+        self._bluesky: Optional[object] = None
         self._started = False
 
     def start(
@@ -33,6 +35,8 @@ class IntelEngine:
         news_enabled: bool = True,
         ais_enabled: bool = True,
         mastodon_enabled: bool = True,
+        gdacs_enabled: bool = True,
+        bluesky_enabled: bool = True,
     ) -> None:
         if self._started:
             return
@@ -85,6 +89,24 @@ class IntelEngine:
             except Exception as exc:
                 logger.warning("IntelEngine: Mastodon monitor failed to start: %s", exc)
 
+        if gdacs_enabled:
+            try:
+                from core.intel.gdacs_monitor import GDACSMonitor
+                self._gdacs = GDACSMonitor()
+                self._gdacs.start()  # type: ignore[attr-defined]
+                logger.info("IntelEngine: GDACS monitor started")
+            except Exception as exc:
+                logger.warning("IntelEngine: GDACS monitor failed to start: %s", exc)
+
+        if bluesky_enabled:
+            try:
+                from core.intel.bluesky_monitor import BlueskyMonitor
+                self._bluesky = BlueskyMonitor()
+                self._bluesky.start()  # type: ignore[attr-defined]
+                logger.info("IntelEngine: Bluesky monitor started")
+            except Exception as exc:
+                logger.warning("IntelEngine: Bluesky monitor failed to start: %s", exc)
+
     def stop(self) -> None:
         for monitor in (
             self._twitter,
@@ -92,6 +114,8 @@ class IntelEngine:
             self._news,
             self._ais,
             self._mastodon,
+            self._gdacs,
+            self._bluesky,
         ):
             if monitor:
                 try:

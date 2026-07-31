@@ -1,0 +1,63 @@
+{
+  "schema_version": "drift-scene/v1",
+  "scenario_id": "local-mediterranean-demo",
+  "generated_at": "2026-07-29T09:00:00+00:00",
+  "simulation": {
+    "engine": "deterministic-fallback",
+    "status": "demo",
+    "authoritative_for": [
+      "horizontal_drift",
+      "uncertainty"
+    ],
+    "model_version": "local fixture"
+  },
+  "subject": {
+    "kind": "raft",
+    "persons": 12,
+    "anonymous": true
+  },
+  "environment": {
+    "observed_at": "2026-07-29T09:00:00+00:00",
+    "wind": {
+      "speed_m_s": 7.2,
+      "direction_deg": 292,
+      "direction_convention": "from",
+      "source": "local fixture"
+    },
+    "current": {
+      "speed_m_s": 0.28,
+      "direction_deg": 118,
+      "direction_convention": "to",
+      "source": "local fixture"
+    },
+    "waves": {
+      "significant_height_m": 1.4,
+      "period_s": 6.8,
+      "direction_deg": 305,
+      "direction_convention": "from",
+      "direction_source": "scenario-assumption"
+    }
+  },
+  "trajectory": {
+    "crs": "EPSG:4326",
+    "positions": [
+      {
+        "time": "2026-07-29T09:00:00+00:00",
+        "coordinates": [14.08, 35.52, 0]
+      },
+      {
+        "time": "2026-07-29T15:00:00+00:00",
+        "coordinates": [14.11, 35.55, 0]
+      }
+    ]
+  },
+  "uncertainty": {
+    "format": "geojson-feature-list",
+    "features": []
+  },
+  "rendering": {
+    "people_per_cube": 1,
+    "vertical_motion_physical": false,
+    "interpolation": "linear"
+  }
+}

@@ -34,6 +34,10 @@
       "destination": "/api/proxy?health=1"
     },
     {
+      "source": "/ready",
+      "destination": "/api/proxy?ready=1"
+    },
+    {
       "source": "/",
       "has": [{ "type": "host", "value": "play.seacommons.org" }],
       "destination": "/console.html"
@@ -41,6 +45,16 @@
     {
       "source": "/",
       "has": [{ "type": "host", "value": "live.seacommons.org" }],
+      "destination": "/console.html"
+    },
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "engine.seacommons.org" }],
+      "destination": "/console.html"
+    },
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "console.seacommons.org" }],
       "destination": "/console.html"
     },
     {

@@ -7,6 +7,7 @@ when no browser is connected — the systemd service keeps the process alive.
 
 Jobs:
   every 15 min  — check for unprocessed geolocated high/critical intel events → queue drift
+  every 15 min  — watch OSINT/AIS source health, alert ops on degraded/offline transitions
   every 30 min  — force-refresh news/RSS sources
   every  1 hr   — IOM Missing Migrants API pull (verified incident coords)
   every  6 hr   — forensic chain builder: link event → drift → forensic packet
@@ -192,6 +193,45 @@ def _job_refresh_news() -> None:
         logger.warning("Scheduler news refresh failed: %s", exc)
 
 
+# ── Job: intel source health alerting ─────────────────────────────────────────
+
+# name -> last status we alerted on, so we notify once per transition, not
+# once per 15-minute poll.
+_source_alert_state: dict[str, str] = {}
+
+
+def _job_source_health() -> None:
+    """
+    Watch OSINT/AIS source health (core.intel.source_registry) and alert ops
+    via Telegram when a source transitions into degraded/offline, or recovers.
+    Without this, a silently-broken free source (e.g. an HTML-scraping
+    monitor whose target site changed markup) is only visible to someone
+    manually polling /api/v1/intel/sources — nobody would notice in a 24/7
+    unattended deployment.
+    """
+    try:
+        from core.intel.source_registry import source_registry
+        from core.notifications import telegram
+
+        for src in source_registry.get_all():
+            name = src["name"]
+            status = src["status"]
+            previous = _source_alert_state.get(name)
+            if status == previous:
+                continue
+            if status in ("degraded", "offline"):
+                telegram(
+                    f"⚠️ SeaCommons intel source \"{name}\" is {status} "
+                    f"({src['consecutive_errors']} consecutive errors). "
+                    f"Last error: {src['last_error'] or 'n/a'}"
+                )
+            elif previous in ("degraded", "offline") and status == "active":
+                telegram(f"✅ SeaCommons intel source \"{name}\" recovered (active).")
+            _source_alert_state[name] = status
+    except Exception as exc:
+        logger.warning("Scheduler source_health job failed: %s", exc)
+
+
 # ── Job: IOM Missing Migrants API ────────────────────────────────────────────
 
 def _job_iom_incidents() -> None:
@@ -310,6 +350,10 @@ def start() -> None:
                           id="refresh_news",   replace_existing=True,
                           max_instances=1, misfire_grace_time=300)
 
+        scheduler.add_job(_job_source_health,  IntervalTrigger(minutes=15),
+                          id="source_health",  replace_existing=True,
+                          max_instances=1, misfire_grace_time=300)
+
         scheduler.add_job(_job_iom_incidents,  IntervalTrigger(hours=1),
                           id="iom_incidents",  replace_existing=True,
                           max_instances=1, misfire_grace_time=600)
@@ -320,7 +364,10 @@ def start() -> None:
 
         scheduler.start()
         _scheduler = scheduler
-        logger.info("Background scheduler started: refresh_news(30m), iom_incidents(1h), forensic_scan(6h) [drift: manual-only]")
+        logger.info(
+            "Background scheduler started: refresh_news(30m), source_health(15m), "
+            "iom_incidents(1h), forensic_scan(6h) [drift: manual-only]"
+        )
 
 
 def stop() -> None:
