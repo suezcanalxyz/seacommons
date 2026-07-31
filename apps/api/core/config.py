@@ -130,7 +130,13 @@ class SuezCanalConfig(BaseSettings):
 
     # ── Intel layer (Twitter/X + news + AIS spike detection) ─────────────────
     INTEL_ENABLED: bool = True
-    # Official Twitter API v2 Bearer token (free tier — 500K reads/month)
+    # Official X/Twitter API v2 Bearer token. NOT free since Feb 2023 — the
+    # tiers with read/search access (Basic+) are paid and X additionally
+    # meters some calls against a prepaid credit balance (search/recent can
+    # return HTTP 402 "credits depleted" even with a valid, authenticating
+    # token). Alarm Phone's distress feed does not depend on this token —
+    # see alarm_phone_monitor.py, which uses X's free public syndication CDN
+    # for photos only, not this API.
     TWITTER_BEARER_TOKEN: str = ""
 
     # TimeZero Professional bridge
