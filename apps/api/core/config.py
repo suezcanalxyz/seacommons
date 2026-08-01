@@ -131,7 +131,7 @@ class SuezCanalConfig(BaseSettings):
 
     # ── Intel layer (Twitter/X + news + AIS spike detection) ─────────────────
     INTEL_ENABLED: bool = True
-    ALARM_PHONE_POLL_INTERVAL_S: int = 60
+    ALARM_PHONE_POLL_INTERVAL_S: int = 30
     # Alarm Phone drift jobs are serialized by the shared OpenDrift semaphore;
     # results are persisted and served from the drift store after computation.
     INTEL_AUTO_DRIFT_ENABLED: bool = True
