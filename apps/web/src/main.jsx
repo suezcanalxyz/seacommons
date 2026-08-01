@@ -11,7 +11,16 @@ import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
 import JobMonitor from './components/JobMonitor.jsx';
 import PlayCesium from './components/PlayCesium.jsx';
+import UnrealPixelStream from './components/UnrealPixelStream.jsx';
 import ConnectorWorkspace from './components/ConnectorWorkspace.jsx';
+import { buildEnvironmentSnapshot, createScenario } from './simulation/contracts.js';
+import { loadStoredSimulations, storeScenario } from './simulation/scenarioStore.js';
+import { computeDriftInWorker } from './simulation/workerClient.js';
+import {
+  decorateLiveTracking,
+  liveTrackingCandidates,
+  mergeLiveDrifts,
+} from './simulation/liveTracking.js';
 
 const PUBLIC_DEMO_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org']);
 const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'engine.seacommons.org']);
@@ -55,39 +64,6 @@ function enrichCaseGeo(geojson, lat, lon) {
       },
     ],
   };
-}
-
-function buildDemoFallbackGeo(lat, lon, durationHours = 24) {
-  const latitude = Number(lat);
-  const longitude = Number(lon);
-  const cosLat = Math.max(0.2, Math.cos(latitude * Math.PI / 180));
-  const velocityEast = 0.16;
-  const velocityNorth = 0.045;
-  const point = (hours) => [
-    longitude + velocityEast * hours * 3600 / (111320 * cosLat),
-    latitude + velocityNorth * hours * 3600 / 111320,
-  ];
-  const cone = (hours, type) => {
-    const boundedHours = Math.min(hours, durationHours);
-    const center = point(boundedHours);
-    const radius = 500 + boundedHours * 450;
-    const ring = Array.from({ length: 33 }, (_, index) => {
-      const angle = 2 * Math.PI * index / 32;
-      return [
-        center[0] + Math.cos(angle) * radius / (111320 * cosLat),
-        center[1] + Math.sin(angle) * radius / 111320,
-      ];
-    });
-    return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] },
-      properties: { type, radius_m: radius, degraded: true, operational_use: false } };
-  };
-  const hours = [...new Set([0, Math.min(6, durationHours), Math.min(12, durationHours), durationHours])].sort((a, b) => a - b);
-  const coordinates = hours.map(point);
-  return { type: 'FeatureCollection', features: [
-    { type: 'Feature', geometry: { type: 'LineString', coordinates }, properties: { type: 'trajectory', degraded: true, operational_use: false } },
-    cone(6, 'cone_6h'), cone(12, 'cone_12h'), cone(24, 'cone_24h'),
-    { type: 'Feature', geometry: { type: 'Point', coordinates: coordinates.at(-1) }, properties: { type: 'impact_point', degraded: true, operational_use: false } },
-  ] };
 }
 
 function guessApiBase() {
@@ -151,6 +127,28 @@ async function fetchJson(base, path, options, timeoutMs = 12000) {
 async function fetchOpenMeteoEnvironment(lat, lon) {
   const latitude = Number(lat);
   const longitude = Number(lon);
+  const edgeBase = String(import.meta.env.VITE_EDGE_API_BASE || '').replace(/\/$/, '');
+  if (edgeBase) {
+    const edgeController = new AbortController();
+    const edgeTimer = window.setTimeout(() => edgeController.abort(), 8000);
+    try {
+      const edgeUrl = new URL(`${edgeBase}/v1/environment`);
+      edgeUrl.searchParams.set('lat', latitude.toFixed(5));
+      edgeUrl.searchParams.set('lon', longitude.toFixed(5));
+      const edgeResponse = await fetch(edgeUrl, { signal: edgeController.signal });
+      if (!edgeResponse.ok) throw new Error(`SeaCommons Edge ${edgeResponse.status}`);
+      const edgePayload = await edgeResponse.json();
+      if (!Array.isArray(edgePayload.forecast_frames) || !edgePayload.forecast_frames.length) {
+        throw new Error('SeaCommons Edge returned no forcing frames');
+      }
+      return edgePayload;
+    } catch {
+      // Direct provider access remains a no-Oracle fallback while the edge
+      // gateway is unavailable or before it is deployed.
+    } finally {
+      window.clearTimeout(edgeTimer);
+    }
+  }
   const weatherUrl = new URL('https://api.open-meteo.com/v1/forecast');
   weatherUrl.searchParams.set('latitude', latitude.toFixed(4));
   weatherUrl.searchParams.set('longitude', longitude.toFixed(4));
@@ -158,8 +156,11 @@ async function fetchOpenMeteoEnvironment(lat, lon) {
     'current',
     'temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,visibility,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
   );
+  weatherUrl.searchParams.set('hourly', 'wind_speed_10m,wind_direction_10m,wind_gusts_10m');
   weatherUrl.searchParams.set('wind_speed_unit', 'ms');
   weatherUrl.searchParams.set('timezone', 'UTC');
+  weatherUrl.searchParams.set('past_days', '2');
+  weatherUrl.searchParams.set('forecast_days', '3');
 
   const marineUrl = new URL('https://marine-api.open-meteo.com/v1/marine');
   marineUrl.searchParams.set('latitude', latitude.toFixed(4));
@@ -168,7 +169,13 @@ async function fetchOpenMeteoEnvironment(lat, lon) {
     'current',
     'wave_height,wave_direction,wave_period,sea_surface_temperature,ocean_current_velocity,ocean_current_direction',
   );
+  marineUrl.searchParams.set(
+    'hourly',
+    'wave_height,wave_direction,wave_period,sea_surface_temperature,ocean_current_velocity,ocean_current_direction',
+  );
   marineUrl.searchParams.set('timezone', 'UTC');
+  marineUrl.searchParams.set('past_days', '2');
+  marineUrl.searchParams.set('forecast_days', '3');
 
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 10000);
@@ -192,6 +199,40 @@ async function fetchOpenMeteoEnvironment(lat, lon) {
       ? currentVelocity / 3.6
       : currentVelocity;
     const timestamp = String(current.time || marine.time || new Date().toISOString());
+    const weatherHourly = weatherPayload.hourly || {};
+    const marineHourly = marinePayload.hourly || {};
+    const marineHourlyUnits = marinePayload.hourly_units || {};
+    const marineIndexByTime = new Map(
+      (marineHourly.time || []).map((time, index) => [time, index]),
+    );
+    const forecastFrames = (weatherHourly.time || []).map((time, weatherIndex) => {
+      const marineIndex = marineIndexByTime.get(time);
+      if (marineIndex === undefined) return null;
+      const hourlyCurrent = Number(marineHourly.ocean_current_velocity?.[marineIndex]);
+      const hourlyCurrentMs = marineHourlyUnits.ocean_current_velocity === 'km/h'
+        ? hourlyCurrent / 3.6
+        : hourlyCurrent;
+      const values = [
+        weatherHourly.wind_speed_10m?.[weatherIndex],
+        weatherHourly.wind_direction_10m?.[weatherIndex],
+        hourlyCurrentMs,
+        marineHourly.ocean_current_direction?.[marineIndex],
+        marineHourly.wave_height?.[marineIndex],
+        marineHourly.wave_period?.[marineIndex],
+        marineHourly.wave_direction?.[marineIndex],
+      ].map(Number);
+      if (!values.every(Number.isFinite)) return null;
+      return {
+        time_utc: `${time}:00Z`,
+        wind: { speed_m_s: values[0], direction_deg: values[1] },
+        current: { speed_m_s: values[2], direction_deg: values[3] },
+        waves: {
+          significant_height_m: values[4],
+          period_s: values[5],
+          direction_deg: values[6],
+        },
+      };
+    }).filter(Boolean);
 
     return {
       timestamp_utc: timestamp.endsWith('Z') || timestamp.includes('+') ? timestamp : `${timestamp}:00Z`,
@@ -230,6 +271,7 @@ async function fetchOpenMeteoEnvironment(lat, lon) {
         marine_resolution: '5–9 km nominal',
         navigation_use: false,
       },
+      forecast_frames: forecastFrames,
     };
   } finally {
     window.clearTimeout(timer);
@@ -311,6 +353,7 @@ const RISK_LEVELS = [
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY;
 const OWM_KEY = import.meta.env.VITE_OWM_KEY;
+const UNREAL_PIXEL_STREAM_URL = String(import.meta.env.VITE_UNREAL_PIXEL_STREAM_URL || '').trim();
 
 function mapStyle() {
   if (MAPTILER_KEY) {
@@ -428,6 +471,7 @@ function App() {
   const [weatherGrid, setWeatherGrid] = useState({ type: 'FeatureCollection', features: [] });
   const [weatherVectors, setWeatherVectors] = useState({ type: 'FeatureCollection', features: [] });
   const [play3D, setPlay3D] = useState(APP_PROFILE === 'demo');
+  const [playRenderer, setPlayRenderer] = useState('cesium');
   const [playSimulationOpen, setPlaySimulationOpen] = useState(false);
   const [timezero, setTimezero] = useState(null);
   const [selectedVessel, setSelectedVessel] = useState(null);
@@ -444,14 +488,15 @@ function App() {
   const [showScenario, setShowScenario] = useState(false);
   const [scenarioType, setScenarioType] = useState('distress');
   const [caseEventId, setCaseEventId] = useState(null);
-  const [simHistory, setSimHistory] = useState([]);   // session sims + persisted cases from /api/v1/alerts
+  const [simHistory, setSimHistory] = useState(loadStoredSimulations);
+  const [activeScenario, setActiveScenario] = useState(null);
   const [activeSimId, setActiveSimId] = useState(null);
   const [intelEvents, setIntelEvents] = useState(() => {
     try {
       const cacheKey = isPublicLiveHost ? 'seacommons_live_signal_cache_v2' : 'seacommons_intel_cache';
       const cached = window.localStorage.getItem(cacheKey);
       if (cached) {
-        const maxAgeDays = isPublicLiveHost ? 3 : 30;
+        const maxAgeDays = 30;
         const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000).toISOString();
         const parsed = JSON.parse(cached);
         const recent = parsed.filter(e => (e.properties?.timestamp_utc || '') >= cutoff);
@@ -461,6 +506,8 @@ function App() {
     return [];
   });
   const [intelDrifts, setIntelDrifts] = useState({ type: 'FeatureCollection', features: [] });
+  const [browserLiveDrifts, setBrowserLiveDrifts] = useState({ type: 'FeatureCollection', features: [] });
+  const [liveEstimateClock, setLiveEstimateClock] = useState(Date.now());
   const [intelConnected, setIntelConnected] = useState(false);
   const [intelMode, setIntelMode] = useState('offline'); // 'ws' | 'poll' | 'offline'
   const [intelFilter, setIntelFilter] = useState('all');
@@ -479,6 +526,7 @@ function App() {
   const caseStatusRef = useRef('idle');
   const simParamsRef = useRef({});
   const intelWsRef = useRef(null);
+  const liveTrackingRunsRef = useRef(new Map());
   const [form, setForm] = useState({
     lat: APP_PROFILE === 'demo' ? '35.52' : '',
     lon: APP_PROFILE === 'demo' ? '14.08' : '',
@@ -495,6 +543,15 @@ function App() {
 
   const selectedLat = parseFloat(form.lat);
   const selectedLon = parseFloat(form.lon);
+  const displayedIntelDrifts = useMemo(
+    () => mergeLiveDrifts(
+      intelDrifts,
+      browserLiveDrifts,
+      intelEvents,
+      new Date(liveEstimateClock),
+    ),
+    [intelDrifts, browserLiveDrifts, intelEvents, liveEstimateClock],
+  );
 
   useEffect(() => {
     if (mapPanel?.type === 'cone') setConePanelHidden(false);
@@ -605,7 +662,7 @@ function App() {
   useEffect(() => {
     const wsBase = apiBase.replace(/^http/, 'ws');
     const feedPath = isPublicLiveHost
-      ? '/api/v1/live/signals?limit=300&days=3'
+      ? '/api/v1/live/signals?limit=500&days=30'
       : '/api/v1/intel?limit=200&days=30';
     const streamPath = isPublicLiveHost ? '/api/v1/live/stream' : '/ws/intel';
     const pollIntervalMs = isPublicLiveHost ? 10000 : 30000;
@@ -727,6 +784,69 @@ function App() {
       ws?.close();
     };
   }, [apiBase]);
+
+  // Alarm Phone live tracking runs independently in the browser. It consumes
+  // hourly historical/current weather and marine fields, so an old report is
+  // never advanced using a present-only field relabelled as historical data.
+  useEffect(() => {
+    if (!isPublicLiveHost) return undefined;
+    const candidates = liveTrackingCandidates(intelEvents, new Date(), 48).slice(0, 12);
+    for (const signal of candidates) {
+      const properties = signal.properties || {};
+      const coordinates = signal.geometry.coordinates;
+      const id = String(properties.id || signal.id || '').replace(/^intel:/, '');
+      const runKey = `${id}:${coordinates[0]}:${coordinates[1]}:${properties.timestamp_utc}`;
+      const previousRun = liveTrackingRunsRef.current.get(runKey);
+      if (previousRun === 'running' || previousRun === 'completed') continue;
+      if (Number.isFinite(previousRun) && Date.now() - previousRun < 5 * 60_000) continue;
+      liveTrackingRunsRef.current.set(runKey, 'running');
+      (async () => {
+        try {
+          const environment = await fetchOpenMeteoEnvironment(coordinates[1], coordinates[0]);
+          const snapshot = buildEnvironmentSnapshot(environment, coordinates[1], coordinates[0]);
+          const elapsedHours = Math.max(
+            0,
+            (Date.now() - Date.parse(properties.timestamp_utc)) / 3_600_000,
+          );
+          const result = await computeDriftInWorker({
+            scenario: {
+              scenario_id: `live-${id}`,
+              observed_at: properties.timestamp_utc,
+              origin: { lat: Number(coordinates[1]), lon: Number(coordinates[0]) },
+              subject: { kind: 'rubber_boat', persons: 1 },
+            },
+            environmentSnapshot: snapshot,
+            options: {
+              duration_hours: Math.min(72, Math.max(24, Math.ceil(elapsedHours) + 12)),
+              particles: 64,
+            },
+          });
+          const decorated = decorateLiveTracking(result, signal);
+          setBrowserLiveDrifts((previous) => ({
+            type: 'FeatureCollection',
+            features: [
+              ...(previous.features || []).filter(
+                (feature) => String(feature.properties?.intel_event_id || '').replace(/^intel:/, '') !== id,
+              ),
+              ...decorated.features,
+            ],
+          }));
+          liveTrackingRunsRef.current.set(runKey, 'completed');
+        } catch {
+          // A provider/network failure is retried after five minutes. No
+          // synthetic or straight-line fallback is drawn on the map.
+          liveTrackingRunsRef.current.set(runKey, Date.now());
+        }
+      })();
+    }
+    return undefined;
+  }, [intelEvents]);
+
+  useEffect(() => {
+    if (!isPublicLiveHost) return undefined;
+    const timer = window.setInterval(() => setLiveEstimateClock(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // ── Intel drift traces polling ───────────────────────────────────────────────
   useEffect(() => {
@@ -1202,7 +1322,7 @@ function App() {
         // Intel auto-drift impact points (above vessels)
         map.addLayer({
           id: 'intel-drift-point', type: 'circle', source: 'intel-drifts',
-          filter: ['==', '$type', 'Point'],
+          filter: ['all', ['==', '$type', 'Point'], ['!=', ['get', 'type'], 'current_estimate']],
           paint: {
             'circle-radius': 4,
             'circle-color': ['match', ['get', 'intel_severity'],
@@ -1210,6 +1330,26 @@ function App() {
             'circle-opacity': 0.78,
             'circle-stroke-width': 1,
             'circle-stroke-color': '#04131a',
+          },
+        });
+        map.addLayer({
+          id: 'intel-current-estimate-halo', type: 'circle', source: 'intel-drifts',
+          filter: ['all', ['==', '$type', 'Point'], ['==', ['get', 'type'], 'current_estimate']],
+          paint: {
+            'circle-radius': 13,
+            'circle-color': 'rgba(255,224,109,.18)',
+            'circle-blur': .65,
+          },
+        });
+        map.addLayer({
+          id: 'intel-current-estimate', type: 'circle', source: 'intel-drifts',
+          filter: ['all', ['==', '$type', 'Point'], ['==', ['get', 'type'], 'current_estimate']],
+          paint: {
+            'circle-radius': 6,
+            'circle-color': '#ffe06d',
+            'circle-opacity': .96,
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#201b08',
           },
         });
 
@@ -1304,7 +1444,8 @@ function App() {
           setActivePanel('osint');
           if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
           const props = feature.properties || {};
-          if (props.id && props.drift_status !== 'completed' && props.drift_status !== 'computing') {
+          if (!isPublicLiveHost && props.id
+              && props.drift_status !== 'completed' && props.drift_status !== 'computing') {
             triggerIntelDrift(props.id, lat, lon);
           }
           event.originalEvent?.stopPropagation?.();
@@ -1575,8 +1716,14 @@ function App() {
       const p = f.properties || {};
       return p.tier === 'operational' || p.type === 'distress';
     };
-    const distress = positioned.filter(isOperational);
-    const others = positioned.filter((f) => !isOperational(f));
+    const distress = positioned.filter(
+      (feature) => isOperational(feature)
+        && feature.properties?.coordinate_source !== 'place_centroid',
+    );
+    const distressIds = new Set(distress.map((feature) => feature.properties?.id));
+    const others = positioned.filter(
+      (feature) => !distressIds.has(feature.properties?.id),
+    );
     map.getSource('intel-events')?.setData({ type: 'FeatureCollection', features: others });
     map.getSource('intel-distress')?.setData({ type: 'FeatureCollection', features: distress });
   }, [intelEvents, mapReady]);
@@ -1585,8 +1732,8 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
-    map.getSource('intel-drifts')?.setData(intelDrifts);
-  }, [intelDrifts, mapReady]);
+    map.getSource('intel-drifts')?.setData(displayedIntelDrifts);
+  }, [displayedIntelDrifts, mapReady]);
 
   // Intel → vessel correlation lines (manual toggle only)
   useEffect(() => {
@@ -1805,6 +1952,85 @@ function App() {
       pushCaseLog(`Nearest: ${nearby.map((v) => `${v.ship_name} (${v.distance_nm.toFixed(1)} nm)`).join(', ')}`);
     }
 
+    // Public Play is independent from Oracle: live forcing is snapshotted and
+    // numerical integration runs inside a Web Worker. OpenDrift can validate
+    // this same scenario asynchronously when dedicated capacity is available.
+    if (APP_PROFILE === 'demo') {
+      try {
+        setCaseStatus('loading live fields');
+        const liveWeather = await loadWeatherFor(latitude, longitude);
+        const environmentSnapshot = buildEnvironmentSnapshot(liveWeather, latitude, longitude);
+        const localScenarioId = globalThis.crypto?.randomUUID?.() || `scenario-${Date.now()}`;
+        const observedAt = new Date().toISOString();
+        setCaseEventId(localScenarioId);
+        setCaseStatus('computing in browser');
+        pushCaseLog(`Live snapshot ${environmentSnapshot.snapshot_id} · ${environmentSnapshot.frames.length} forcing frames`);
+
+        const simulationResult = await computeDriftInWorker({
+          scenario: {
+            scenario_id: localScenarioId,
+            observed_at: observedAt,
+            origin: { lat: latitude, lon: longitude },
+            subject: { kind: vesselType, persons: personsAboard },
+          },
+          environmentSnapshot,
+          options: { duration_hours: 24, particles: 128 },
+        }, (progress) => setCaseStatus(`computing ${Math.round(progress * 100)}%`));
+        const scenario = createScenario({
+          scenarioId: localScenarioId,
+          lat: latitude,
+          lon: longitude,
+          observedAt,
+          scenarioType: activeSType,
+          vesselType,
+          persons: personsAboard,
+          riskLevel,
+          environmentSnapshot,
+          simulationResult,
+        });
+        const enriched = enrichCaseGeo(simulationResult.geojson, latitude, longitude);
+        setCaseGeojson(enriched);
+        mapRef.current?.getSource('sar-case')?.setData(enriched);
+        setCaseStatus('completed · live browser engine');
+        pushCaseLog(
+          `Trajectory ready locally · ${simulationResult.diagnostics.particles} particles · ${simulationResult.diagnostics.steps} steps`,
+        );
+        const entry = {
+          id: localScenarioId,
+          label: `${activeSType.replace(/_/g, ' ')} @ ${latitude.toFixed(3)}, ${longitude.toFixed(3)}`,
+          ts: observedAt,
+          geojson: enriched,
+          lat: latitude,
+          lon: longitude,
+          params: simParamsRef.current,
+          scenario,
+        };
+        storeScenario(scenario);
+        setActiveScenario(scenario);
+        setSimHistory((previous) => [entry, ...previous.filter((item) => item.id !== localScenarioId)].slice(0, 10));
+        setActiveSimId(localScenarioId);
+        const cone = enriched.features.find((feature) => feature.properties?.type === 'cone_24h')
+          || enriched.features.find((feature) => feature.geometry?.type === 'Polygon');
+        setMapPanel({
+          type: 'cone',
+          feature: cone,
+          eventId: localScenarioId,
+          caseStatus: 'live browser engine',
+          simParams: simParamsRef.current,
+          legalAnalysis: null,
+        });
+        mapRef.current?.flyTo({
+          center: [longitude, latitude], zoom: 8.4, essential: true, duration: 900,
+        });
+        return;
+      } catch (err) {
+        setCaseStatus('environment unavailable');
+        setError(err.message || 'Live environmental simulation failed');
+        pushCaseLog(`Simulation stopped: ${err.message || 'live fields unavailable'}`);
+        return;
+      }
+    }
+
     try {
       const created = await fetchJson(apiBase, '/api/v1/alert', {
         method: 'POST',
@@ -1897,23 +2123,6 @@ function App() {
       setCaseStatus('timeout');
       pushCaseLog('SAR case: timeout — server may still be computing');
     } catch (err) {
-      if (APP_PROFILE === 'demo') {
-        const fallbackId = `demo-${Date.now()}`;
-        const fallback = enrichCaseGeo(buildDemoFallbackGeo(latitude, longitude), latitude, longitude);
-        setCaseGeojson(fallback);
-        mapRef.current?.getSource('sar-case')?.setData(fallback);
-        setCaseStatus('completed · demo estimate');
-        setError('OpenDrift is temporarily unavailable. Showing a non-operational demonstration estimate.');
-        pushCaseLog('Degraded demo estimate generated locally — not for operational use');
-        const entry = { id: fallbackId, label: `demo estimate @ ${latitude.toFixed(3)}, ${longitude.toFixed(3)}`,
-          ts: new Date().toISOString(), geojson: fallback, lat: latitude, lon: longitude, params: simParamsRef.current };
-        setSimHistory((previous) => [entry, ...previous.slice(0, 9)]);
-        setActiveSimId(fallbackId);
-        setMapPanel({ type: 'cone', feature: fallback.features.find((feature) => feature.properties?.type === 'cone_24h'),
-          eventId: fallbackId, caseStatus: 'degraded demo', simParams: simParamsRef.current, legalAnalysis: null });
-        mapRef.current?.flyTo({ center: [longitude, latitude], zoom: 8.4, essential: true, duration: 900 });
-        return;
-      }
       setCaseStatus('error');
       setError(err.message || 'SAR case failed');
       pushCaseLog(`Error: ${err.message || 'unknown'}`);
@@ -1960,6 +2169,7 @@ function App() {
     }
     const enriched = enrichCaseGeo(geojson, sim.lat, sim.lon);
     setCaseGeojson(enriched);
+    setActiveScenario(sim.scenario || null);
     mapRef.current?.getSource('sar-case')?.setData(enriched);
     setActiveSimId(sim.id);
     setCaseStatus('completed');
@@ -2007,7 +2217,7 @@ function App() {
         <div className={`map-frame ${play3D ? 'is-concealed' : ''}`} ref={mapNodeRef} />
         {APP_PROFILE === 'demo' ? (
           <PlayCesium
-            active={play3D}
+            active={play3D && playRenderer === 'cesium'}
             geojson={caseGeojson}
             weather={weather}
             lat={form.lat}
@@ -2022,12 +2232,28 @@ function App() {
             }}
           />
         ) : null}
+        {APP_PROFILE === 'demo' && UNREAL_PIXEL_STREAM_URL ? (
+          <UnrealPixelStream
+            active={play3D && playRenderer === 'unreal'}
+            streamUrl={UNREAL_PIXEL_STREAM_URL}
+            scenario={activeScenario}
+          />
+        ) : null}
 
         <div className={`map-toolbar ${play3D ? 'is-3d' : ''}`}>
           <div className="toolbar-pills">
             {APP_PROFILE === 'demo' ? (
               <button className={`map-toggle ${play3D ? 'is-on' : ''}`} type="button" onClick={() => setPlay3D((current) => !current)}>
                 {play3D ? '3D sea' : '2D chart'}
+              </button>
+            ) : null}
+            {APP_PROFILE === 'demo' && play3D && UNREAL_PIXEL_STREAM_URL ? (
+              <button
+                className={`map-toggle ${playRenderer === 'unreal' ? 'is-on' : ''}`}
+                type="button"
+                onClick={() => setPlayRenderer((current) => current === 'cesium' ? 'unreal' : 'cesium')}
+              >
+                {playRenderer === 'unreal' ? 'Unreal stream' : 'Cesium local'}
               </button>
             ) : null}
             {topStats.map((stat) => (
@@ -2143,7 +2369,7 @@ function App() {
             <aside className={`play-simulation-panel ${playSimulationOpen ? 'is-open' : ''}`} aria-hidden={!playSimulationOpen}>
               <header className="play-simulation-panel__header">
                 <div>
-                  <p className="section-kicker">OpenDrift / scene control</p>
+                  <p className="section-kicker">Live fields / browser physics</p>
                   <h2>Drift simulation</h2>
                 </div>
                 <span className={`play-origin-state ${selectionMode ? 'is-selecting' : ''}`}>
@@ -2307,7 +2533,7 @@ function App() {
                 apiBase={apiBase}
                 publicMode
                 intelEvents={intelEvents}
-                intelDrifts={intelDrifts}
+                intelDrifts={displayedIntelDrifts}
                 intelStats={intelStats}
                 intelFilter={intelFilter}
                 setIntelFilter={setIntelFilter}
@@ -2423,7 +2649,7 @@ function App() {
               apiBase={apiBase}
               publicMode={isPublicLiveHost}
               intelEvents={intelEvents}
-              intelDrifts={intelDrifts}
+              intelDrifts={displayedIntelDrifts}
               intelStats={intelStats}
               intelFilter={intelFilter}
               setIntelFilter={setIntelFilter}

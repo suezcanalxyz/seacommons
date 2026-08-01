@@ -838,7 +838,7 @@ export default function PlayCesium({
         }
 
         const trajectoryEntity = viewer.entities.add({
-          name: 'OpenDrift trajectory',
+          name: 'SeaCommons trajectory',
           polyline: {
             positions: new Cesium.CallbackProperty(
               () => Cesium.Cartesian3.fromDegreesArrayHeights(
@@ -1170,6 +1170,8 @@ export default function PlayCesium({
   const trajectoryFeatures = geojson?.features || [];
   const trajectoryMode = trajectoryFeatures.length === 0
     ? 'awaiting trajectory'
+    : trajectoryFeatures.some((feature) => feature.properties?.engine === 'seacommons-browser')
+      ? 'live browser engine'
     : trajectoryFeatures.some((feature) => feature.properties?.degraded)
       ? 'degraded estimate'
       : 'OpenDrift result';

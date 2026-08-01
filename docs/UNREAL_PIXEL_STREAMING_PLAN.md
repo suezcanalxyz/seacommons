@@ -11,16 +11,19 @@ view. It does not calculate drift and it is not an independent source of
 environmental truth.
 
 ```
-environmental feeds ─┐
-                     ├─ OpenDrift/API ─ scene contract v1 ─┬─ CesiumJS
-case parameters ─────┘                                     └─ Unreal Engine
-                                                                  │
-                                                        Pixel Streaming/WebRTC
-                                                                  │
-                                                               browser
+environmental feeds ─► environment-snapshot/v1 ─► browser Worker ─► scenario/v2
+                                                            │             │
+                                                            │             ├─ CesiumJS
+                                                            │             └─ drift-scene/v1 ─► Unreal
+                                                            │                                  │
+                                                            └─ optional OpenDrift validation   ▼
+                                                                                   Pixel Streaming/WebRTC
 ```
 
-OpenDrift remains authoritative for horizontal translation and uncertainty.
+The public runtime computes a deterministic live-field estimate in the client,
+using time-varying current, wind/leeway and bounded Stokes drift. OpenDrift is
+the asynchronous reference validator when compute capacity is available; it is
+not required to start or finish a public Play simulation.
 Wave height, period and direction come from the environmental product declared
 in the scenario. Visual heave, roll, pitch, foam and interpolation are renderer
 effects and must be labelled as such.
@@ -40,6 +43,11 @@ engine and Cesium plugin together only after the scene is reproducible.
 
 - `GET /api/v1/alert/{event_id}/scene` produces the renderer-neutral
   `drift-scene/v1` contract.
+- Public Play creates `environment-snapshot/v1` and `scenario/v2`, calculates
+  an ensemble in a Web Worker and persists recent pseudonymous scenarios in
+  browser storage.
+- `sceneAdapter.js` converts the public result to `drift-scene/v1`, so Unreal
+  and Cesium receive the exact same sampled coordinates and timestamps.
 - Play persists the environmental snapshot used by the scenario, including
   explicit `from`/`to` direction conventions.
 - `apps/unreal/SeaCommonsImmersive` is a native UE 5.2 project with Water,
@@ -72,18 +80,24 @@ interpolation must never write back to the evidence record.
 
 ## Runtime contract
 
-Both renderers consume `docs/contracts/drift-scene-v1.schema.json`.
+The canonical state is `docs/contracts/scenario-v2.schema.json`; environmental
+input is validated by `environment-snapshot-v1.schema.json`. Cesium consumes
+the scenario GeoJSON directly. Unreal consumes the renderer adapter output in
+`drift-scene-v1.schema.json`.
 
-- `simulation.engine` declares whether the result is OpenDrift or a degraded
-  estimate.
+- `simulation.engine` declares OpenDrift, browser live fields or an explicitly
+  degraded estimate.
 - `environment.waves.direction_source` prevents a wind proxy being presented as
   measured wave direction.
 - `rendering.vertical_motion_physical` is false until a validated six-degree
   vessel model is supplied.
 - coordinates use WGS84 longitude, latitude, altitude.
 
-The browser can pass the contract to Unreal through the Pixel Streaming data
-channel. Do not expose Unreal Remote Control to the public internet.
+The Play iframe sends `seacommons.scene` to the Pixel Streaming frontend using
+`postMessage`. That frontend must install
+`Web/SeaCommonsPixelStreamingBridge.js`, allow only the Play origin and forward
+the envelope through `emitUIInteraction`. Do not expose Unreal Remote Control
+to the public internet.
 
 ## Prototype phases
 
@@ -138,7 +152,8 @@ unavailable or full.
 - The same scenario ID produces the same horizontal path in 2D, CesiumJS and
   Unreal within the declared interpolation tolerance.
 - The UI always displays engine, data timestamp and degradation state.
-- Changing wave height changes visual heave but not the OpenDrift path.
+- Changing wind, current or waves and rerunning changes the browser-model path;
+  changing purely visual Gerstner parameters never writes back to that path.
 - Changing current or wind and rerunning the model changes the returned path.
 - A stream failure returns the user to CesiumJS without losing the scenario.
 - No public endpoint exposes Unreal Remote Control.

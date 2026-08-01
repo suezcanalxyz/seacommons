@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./core/data/test_live_feed.db")
 os.environ.setdefault("RUNTIME_PROFILE", "operational")
@@ -8,7 +9,12 @@ os.environ.setdefault("RUNTIME_PROFILE", "operational")
 from fastapi.testclient import TestClient
 
 from core.api.main import app
-from core.api.routes.live import _approximate_public_point, _public_intel_feature
+from core.api.routes.live import (
+    _approximate_public_point,
+    _current_trajectory_estimate,
+    _public_intel_feature,
+    public_signal_collection,
+)
 from core.config import config
 from core.ingestion.signal import DistressSignal
 from core.intel.alarm_phone_monitor import (
@@ -16,7 +22,11 @@ from core.intel.alarm_phone_monitor import (
     parse_official_timeline,
     x_id_timestamp,
 )
-from core.intel.geoextract import extract_numeric_coords, is_direct_distress_call
+from core.intel.geoextract import (
+    extract_numeric_coords,
+    extract_relative_coords,
+    is_direct_distress_call,
+)
 from core.intel.news_monitor import RSS_FEEDS
 from core.intel.store import IntelEvent, IntelStore
 from core.intel.twitter_monitor import TwitterMonitor
@@ -202,6 +212,34 @@ def test_media_ocr_requires_numeric_consensus() -> None:
     assert extract_numeric_coords("N 28° 06' / W 015° 24'") == (28.1, -15.4)
 
 
+def test_relative_alarm_phone_location_is_geolocated_with_declared_offset() -> None:
+    lat, lon = extract_relative_coords(
+        "🆘 47 people were 50 km south of #Crete, Greece when they last spoke."
+    )
+    assert 34.78 < lat < 34.80
+    assert 24.80 < lon < 24.82
+
+
+def test_alarm_phone_screenshot_dmm_and_noisy_dms_are_parsed() -> None:
+    assert extract_numeric_coords(
+        "35 people in distress N 34° 37.377′, E 012° 35.525′"
+    ) == (34.62295, 12.592083)
+    assert extract_numeric_coords(
+        '26 people N 34° 39° 36.887", E 012° 38° 36.341"'
+    ) == (34.660246, 12.643428)
+    assert extract_numeric_coords(
+        '49 people N 35° Q4\' 17.6", E @11° 12\' 08"'
+    ) == (35.071556, 11.202222)
+
+
+def test_relative_location_can_reference_an_island_named_earlier() -> None:
+    lat, lon = extract_relative_coords(
+        "47 people south of #Crete. The group was 50 km south of the island when last contacted."
+    )
+    assert 34.78 < lat < 34.80
+    assert 24.80 < lon < 24.82
+
+
 def test_existing_event_can_be_enriched_with_media_location() -> None:
     store = IntelStore()
     event = IntelEvent(
@@ -240,6 +278,48 @@ def test_sensitive_public_position_is_stable_and_approximate() -> None:
     assert first != original
     assert abs(first[0] - original[0]) < 0.03
     assert abs(first[1] - original[1]) < 0.03
+
+
+def test_live_feed_merges_durable_alarm_phone_events_after_memory_eviction(monkeypatch) -> None:
+    durable = IntelEvent(
+        id="alarm-durable-01",
+        timestamp_utc="2026-08-01T08:00:00+00:00",
+        type="twitter",
+        severity="high",
+        lat=34.79,
+        lon=24.81,
+        title="Alarm Phone: direct distress",
+        source="Alarm Phone",
+        metadata={"source_policy": "official_site_embed", "is_distress": True},
+    )
+    monkeypatch.setattr("core.api.routes.live.intel_store.events", lambda **_kwargs: [])
+    monkeypatch.setattr(
+        "core.api.routes.live.intel_store.persisted_events",
+        lambda **_kwargs: [durable],
+    )
+    collection = public_signal_collection(limit=50, days=1)
+    assert [feature["properties"]["id"] for feature in collection["features"]] == [
+        "intel:alarm-durable-01"
+    ]
+    assert collection["meta"]["durable_alarm_phone_candidates"] == 1
+
+
+def test_current_position_uses_elapsed_time_on_sampled_trajectory() -> None:
+    trajectory = {
+        "geometry": {"type": "LineString", "coordinates": [[14.0, 35.0], [15.0, 36.0]]},
+        "properties": {
+            "timestamps_utc": ["2026-08-01T10:00:00Z", "2026-08-01T12:00:00Z"]
+        },
+    }
+    estimate = _current_trajectory_estimate(
+        trajectory,
+        event_timestamp="2026-08-01T09:00:00Z",
+        now=datetime.fromisoformat("2026-08-01T11:00:00+00:00"),
+    )
+    assert estimate is not None
+    assert estimate["geometry"]["coordinates"] == [14.5, 35.5]
+    assert estimate["properties"]["elapsed_hours"] == 2.0
+    assert estimate["properties"]["trajectory_state"] == "interpolated"
 
 
 def test_user_signal_is_private_by_default() -> None:

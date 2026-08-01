@@ -18,7 +18,8 @@
     "build": "vite build",
     "build:unified": "vite build && node scripts/package-unified.mjs",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:simulation": "node --test src/simulation/*.test.js"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.4",

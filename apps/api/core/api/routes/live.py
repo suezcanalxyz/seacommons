@@ -30,14 +30,19 @@ _PUBLIC_METADATA = frozenset(
         "country",
         "dead",
         "distress_classification",
+        "drift_status",
+        "first_source_seen_at",
+        "incident_status",
         "incident_id",
         "is_distress",
+        "last_source_seen_at",
         "location_uncertainty_m",
         "missing",
         "ocr_attempted",
         "platform",
         "region",
         "source_policy",
+        "source_scan_count",
     }
 )
 
@@ -68,6 +73,14 @@ def _public_intel_feature(event: IntelEvent) -> Optional[dict[str, Any]]:
     if event.type not in _PUBLIC_INTEL_TYPES and publication != "published":
         return None
     metadata = {key: event.metadata[key] for key in _PUBLIC_METADATA if key in event.metadata}
+    coordinate_source = str(event.metadata.get("coordinate_source") or "")
+    location_precision = (
+        "regional_centroid"
+        if coordinate_source == "place_centroid"
+        else "reported_or_derived"
+        if event.lat is not None and event.lon is not None
+        else "unpositioned"
+    )
     geometry = (
         {"type": "Point", "coordinates": [event.lon, event.lat]}
         if event.lat is not None and event.lon is not None
@@ -94,7 +107,9 @@ def _public_intel_feature(event: IntelEvent) -> Optional[dict[str, Any]]:
             "url": _safe_public_url(event.url),
             "source": (event.source or event.type or "public feed")[:64],
             "timestamp_utc": event.timestamp_utc,
-            "received_at": event.timestamp_utc,
+            "source_timestamp_utc": event.timestamp_utc,
+            "received_at": event.metadata.get("first_source_seen_at") or event.timestamp_utc,
+            "location_precision": location_precision,
             **metadata,
         },
     }
@@ -195,7 +210,17 @@ def public_signal_collection(
     days: int = 30,
     since: Optional[str] = None,
 ) -> dict[str, Any]:
-    events = intel_store.events(limit=min(limit * 2, 600), max_age_days=days)
+    memory_events = intel_store.events(limit=min(limit * 2, 600), max_age_days=days)
+    durable_alarm_phone = intel_store.persisted_events(
+        source="Alarm Phone",
+        max_age_days=days,
+        limit=min(max(limit * 3, 300), 1500),
+    )
+    by_id = {event.id: event for event in durable_alarm_phone}
+    # In-memory objects contain the most recent metadata observations and must
+    # win over the durable snapshot when both are present.
+    by_id.update({event.id: event for event in memory_events})
+    events = list(by_id.values())
     features = [
         feature
         for event in events
@@ -209,8 +234,13 @@ def public_signal_collection(
             for feature in features
             if str(feature["properties"].get("timestamp_utc") or "") > since
         ]
-    features.sort(key=lambda f: str(f["properties"].get("timestamp_utc") or ""), reverse=True)
-    features.sort(key=lambda f: int(f["properties"].get("priority", 99)))
+    # Live is a timeline: newest source timestamp always wins. Severity remains
+    # a visual attribute and filter, never a second sort that can place an old
+    # critical item above a newly received report.
+    features.sort(
+        key=lambda f: str(f["properties"].get("timestamp_utc") or ""),
+        reverse=True,
+    )
     features = features[:limit]
 
     return {
@@ -219,6 +249,8 @@ def public_signal_collection(
         "meta": {
             "schema": "org.seacommons.live-feed/v1",
             "total": len(features),
+            "memory_candidates": len(memory_events),
+            "durable_alarm_phone_candidates": len(durable_alarm_phone),
             "with_coords": sum(
                 1 for feature in features if feature.get("geometry") is not None
             ),
@@ -254,6 +286,9 @@ def _public_drift_feature(
             "max_speed_ms": properties.get("max_speed_ms"),
             "sample_interval_s": properties.get("sample_interval_s"),
             "sample_count": properties.get("sample_count"),
+            "elapsed_hours": properties.get("elapsed_hours"),
+            "estimate_time_utc": properties.get("estimate_time_utc"),
+            "trajectory_state": properties.get("trajectory_state"),
             "intel_event_id": event_id,
             "intel_title": title[:80],
             "intel_source": source[:64],
@@ -266,6 +301,61 @@ def _public_drift_feature(
             "forcing_resolution": metadata.get("forcing_resolution"),
             "forcing_quality": metadata.get("forcing_quality"),
             "verification_status": "modelled_spatiotemporal",
+        },
+    }
+
+
+def _current_trajectory_estimate(
+    trajectory: dict[str, Any],
+    *,
+    event_timestamp: str,
+    now: Optional[datetime] = None,
+) -> Optional[dict[str, Any]]:
+    """Interpolate the modelled position at wall-clock time."""
+    geometry = trajectory.get("geometry") or {}
+    properties = trajectory.get("properties") or {}
+    coordinates = geometry.get("coordinates") or []
+    timestamps = properties.get("timestamps_utc") or []
+    if len(coordinates) < 2 or len(timestamps) != len(coordinates):
+        return None
+    try:
+        parsed_times = [
+            datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+            for value in timestamps
+        ]
+        event_time = datetime.fromisoformat(event_timestamp.replace("Z", "+00:00"))
+        if event_time.tzinfo is None:
+            event_time = event_time.replace(tzinfo=timezone.utc)
+        event_time = event_time.astimezone(timezone.utc)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if current <= parsed_times[0]:
+        coordinate = coordinates[0]
+        state = "before_model_start"
+    elif current >= parsed_times[-1]:
+        coordinate = coordinates[-1]
+        state = "model_horizon_reached"
+    else:
+        upper = next(index for index, value in enumerate(parsed_times) if value >= current)
+        lower = upper - 1
+        span = max(1.0, (parsed_times[upper] - parsed_times[lower]).total_seconds())
+        ratio = (current - parsed_times[lower]).total_seconds() / span
+        coordinate = [
+            float(coordinates[lower][0])
+            + (float(coordinates[upper][0]) - float(coordinates[lower][0])) * ratio,
+            float(coordinates[lower][1])
+            + (float(coordinates[upper][1]) - float(coordinates[lower][1])) * ratio,
+        ]
+        state = "interpolated"
+    return {
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": coordinate[:2]},
+        "properties": {
+            "type": "current_estimate",
+            "elapsed_hours": round(max(0.0, (current - event_time).total_seconds() / 3600), 2),
+            "estimate_time_utc": current.isoformat(),
+            "trajectory_state": state,
         },
     }
 
@@ -293,7 +383,16 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
 
     features: list[dict[str, Any]] = []
     drift_count = 0
-    for event in intel_store.events(limit=min(limit * 3, 500)):
+    drift_events = {
+        event.id: event
+        for event in intel_store.persisted_events(
+            source="Alarm Phone", max_age_days=30, limit=min(limit * 5, 1000)
+        )
+    }
+    drift_events.update({
+        event.id: event for event in intel_store.events(limit=min(limit * 3, 500))
+    })
+    for event in drift_events.values():
         public_event = _public_intel_feature(event)
         job_id = event.metadata.get("drift_job_id")
         if public_event is None:
@@ -321,6 +420,21 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
                         metadata=metadata,
                     )
                 )
+        current_estimate = _current_trajectory_estimate(
+            drift.get("trajectory") or {},
+            event_timestamp=event.timestamp_utc,
+        )
+        if current_estimate:
+            features.append(
+                _public_drift_feature(
+                    current_estimate,
+                    event_id=event.id,
+                    title=event.title,
+                    source=event.source,
+                    severity=event.severity,
+                    metadata=metadata,
+                )
+            )
         for feature in (drift.get("impact_point") or {}).get("features", []):
             features.append(
                 _public_drift_feature(
@@ -515,7 +629,7 @@ async def live_stream(websocket: WebSocket):
     previous_digest = ""
     try:
         while True:
-            snapshot = public_signal_collection(limit=300, days=3)
+            snapshot = public_signal_collection(limit=500, days=30)
             payload = json.dumps(
                 {
                     "type": "snapshot",

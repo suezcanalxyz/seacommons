@@ -1,8 +1,9 @@
 # SeaCommons Immersive
 
-Unreal Engine 5.2 renderer for `drift-scene/v1`. OpenDrift remains
-authoritative for horizontal drift and uncertainty; Unreal renders the ocean,
-weather, vessel response and camera experience.
+Unreal Engine 5.2 renderer for `drift-scene/v1`. The scene may contain either
+an OpenDrift validation product or the public deterministic browser result.
+Unreal renders the ocean, weather, vessel response and camera experience; it
+never changes the persisted horizontal path.
 
 ## Local baseline
 
@@ -48,6 +49,12 @@ Pixel Streaming UI interaction:
 
 The full `payload` must validate against
 `docs/contracts/drift-scene-v1.schema.json`.
+
+When embedded by the public Play application, configure
+`VITE_UNREAL_PIXEL_STREAM_URL` with the signalling frontend URL and install
+`Web/SeaCommonsPixelStreamingBridge.js` in that frontend. The bridge must use
+an explicit allow-list containing `https://play.seacommons.org`; it forwards
+only `seacommons.scene` envelopes to Pixel Streaming's `emitUIInteraction`.
 
 ## Pixel Streaming prototype
 

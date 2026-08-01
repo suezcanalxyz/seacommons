@@ -9,6 +9,7 @@ Strategy (in order):
   4. None — caller decides whether to discard or use a default zone
 """
 from __future__ import annotations
+import math
 import re
 from typing import Optional
 
@@ -71,6 +72,9 @@ _PLACES: dict[str, tuple[float, float]] = {
     "dodecanese":          (36.50, 28.00),
     "piraeus":             (37.94, 23.65),
     "athens":              (37.98, 23.73),
+    "crete":               (35.24, 24.81),
+    "kriti":               (35.24, 24.81),
+    "gavdos":              (34.84, 24.08),
     # Turkey (departure Aegean)
     "izmir":               (38.42, 27.14),
     "cesme":               (38.33, 26.30),
@@ -101,6 +105,9 @@ _PLACES: dict[str, tuple[float, float]] = {
     "tunisian coast":      (37.00, 10.00),
     "libya":               (27.00, 17.00),
     "tunisia":             (33.89, 9.53),
+    "ceuta":               (35.89, -5.32),
+    "chafarinas islands":  (35.18, -2.43),
+    "chafarinas":          (35.18, -2.43),
     "mediterranean":       (35.00, 18.00),
     "med sea":             (35.00, 18.00),
     # Red Sea / Horn (wider coverage for non-Med SAR)
@@ -205,10 +212,82 @@ _RE_DMS_PREFIX = re.compile(
 _RE_POSITION_LABEL = re.compile(
     r"(?:position|pos|coord|gps|location)[:\s]+([^\n]{5,60})", re.I
 )
+_RE_OCR_PREFIX_COORD = re.compile(
+    r"([NS])\s*([0-9OQ@]{1,3})\s*[°º]\s*"
+    r"([0-9OQ@]{1,2}(?:[.,][0-9OQ@]+)?)\s*['’′°º\"”″]"
+    r"(?:\s*([0-9OQ@]{1,2}(?:[.,][0-9OQ@]+)?)\s*[\"”″])?"
+    r"[^EW]{0,35}"
+    r"([EW])\s*([0-9OQ@]{1,3})\s*[°º]\s*"
+    r"([0-9OQ@]{1,2}(?:[.,][0-9OQ@]+)?)\s*['’′°º\"”″]"
+    r"(?:\s*([0-9OQ@]{1,2}(?:[.,][0-9OQ@]+)?)\s*[\"”″])?",
+    re.I,
+)
+_RE_OCR_DMM_PREFIX = re.compile(
+    r"(?<![A-Z])([NS])\s*[|:]?\s*([0-9OQ@]{1,3})\s*[°º]\s*"
+    r"([0-9OQ@]{1,2}[.,][0-9OQ@]+)"
+    r"[^EW]{0,35}"
+    r"(?<![A-Z])([EW])\s*[|:]?\s*([0-9OQ@]{1,3})\s*[°º]\s*"
+    r"([0-9OQ@]{1,2}[.,][0-9OQ@]+)",
+    re.I,
+)
+_RELATIVE_DISTANCE = r"(\d{1,3}(?:\.\d+)?)\s*(km|kilomet(?:er|re)s?|nm|nautical miles?)"
+_RELATIVE_DIRECTION = (
+    r"(north|south|east|west|north[ -]?east|north[ -]?west|"
+    r"south[ -]?east|south[ -]?west)"
+)
+_BEARINGS = {
+    "north": 0.0,
+    "northeast": 45.0,
+    "east": 90.0,
+    "southeast": 135.0,
+    "south": 180.0,
+    "southwest": 225.0,
+    "west": 270.0,
+    "northwest": 315.0,
+}
 
 
 def extract_numeric_coords(text: str) -> Optional[tuple[float, float]]:
     """Return only explicit numeric coordinates, never a place-name centroid."""
+    # OCR commonly confuses 0 with O/Q/@ and sometimes reads the minutes
+    # separator as another degree sign. Accept both DMM and DMS map labels.
+    ocr_text = text.upper().translate(str.maketrans({"O": "0", "Q": "0", "@": "0"}))
+    dmm_match = _RE_OCR_DMM_PREFIX.search(ocr_text)
+    if dmm_match:
+        lat_minutes = float(dmm_match.group(3).replace(",", "."))
+        lon_minutes = float(dmm_match.group(6).replace(",", "."))
+        if lat_minutes >= 60 or lon_minutes >= 60:
+            dmm_match = None
+        else:
+            lat = float(dmm_match.group(2)) + lat_minutes / 60
+            lon = float(dmm_match.group(5)) + lon_minutes / 60
+    if dmm_match:
+        if dmm_match.group(1).upper() == "S":
+            lat = -lat
+        if dmm_match.group(4).upper() == "W":
+            lon = -lon
+        if _valid(lat, lon):
+            return round(lat, 6), round(lon, 6)
+    ocr_match = _RE_OCR_PREFIX_COORD.search(ocr_text)
+    if ocr_match:
+        def component(degrees: str, minutes: str, seconds: Optional[str]) -> Optional[float]:
+            deg = float(degrees.replace(",", "."))
+            minute = float(minutes.replace(",", "."))
+            second = float(seconds.replace(",", ".")) if seconds else 0.0
+            if minute >= 60 or second >= 60:
+                return None
+            return deg + minute / 60 + second / 3600
+
+        lat = component(ocr_match.group(2), ocr_match.group(3), ocr_match.group(4))
+        lon = component(ocr_match.group(6), ocr_match.group(7), ocr_match.group(8))
+        if lat is not None and lon is not None:
+            if ocr_match.group(1).upper() == "S":
+                lat = -lat
+            if ocr_match.group(5).upper() == "W":
+                lon = -lon
+            if _valid(lat, lon):
+                return round(lat, 6), round(lon, 6)
+
     # 0. Look for "Position: ..." prefix first — common in Alarm Phone tweets
     m = _RE_POSITION_LABEL.search(text)
     snippet = m.group(1) if m else text
@@ -267,12 +346,83 @@ def extract_coords(text: str) -> Optional[tuple[float, float]]:
     if numeric:
         return numeric
 
+    relative = extract_relative_coords(text)
+    if relative:
+        return relative
+
     # 4. Place name gazetteer (longest match first)
     tl = text.lower()
     for place, coords in _PLACES_SORTED:
         if place in tl:
             return coords
 
+    return None
+
+
+def extract_relative_coords(text: str) -> Optional[tuple[float, float]]:
+    """Resolve statements such as ``50 km south of Crete``.
+
+    The result is an approximate point derived from a declared distance and a
+    gazetteer centroid. Callers must retain an uncertainty label; this is never
+    equivalent to an explicit GPS position.
+    """
+    normalized = re.sub(r"[#_]", " ", text.lower())
+    normalized = re.sub(r"\s+", " ", normalized)
+
+    def offset(origin: tuple[float, float], match: re.Match[str]) -> Optional[tuple[float, float]]:
+        distance = float(match.group(1))
+        unit = match.group(2).lower()
+        if unit == "nm" or unit.startswith("nautical"):
+            distance *= 1.852
+        direction = re.sub(r"[ -]", "", match.group(3).lower())
+        bearing = math.radians(_BEARINGS[direction])
+        lat, lon = origin
+        north_km = math.cos(bearing) * distance
+        east_km = math.sin(bearing) * distance
+        estimated_lat = lat + north_km / 111.32
+        lon_scale = max(0.2, math.cos(math.radians(lat)))
+        estimated_lon = lon + east_km / (111.32 * lon_scale)
+        if _valid(estimated_lat, estimated_lon):
+            return round(estimated_lat, 5), round(estimated_lon, 5)
+        return None
+
+    for place, origin in _PLACES_SORTED:
+        place_pattern = re.escape(place).replace(r"\ ", r"\s+")
+        pattern = re.compile(
+            _RELATIVE_DISTANCE
+            + r"\s+"
+            + _RELATIVE_DIRECTION
+            + r"\s+(?:of|from)\s+(?:the\s+(?:island|coast)\s+of\s+)?"
+            + place_pattern,
+            re.I,
+        )
+        match = pattern.search(normalized)
+        if not match:
+            continue
+        return offset(origin, match)
+
+    # Alarm Phone can name the island in one sentence, then write "50 km
+    # south of the island" in the next. Resolve this only when the post names
+    # exactly one gazetteer location, avoiding an arbitrary place selection.
+    generic = re.search(
+        _RELATIVE_DISTANCE
+        + r"\s+"
+        + _RELATIVE_DIRECTION
+        + r"\s+(?:of|from)\s+(?:the\s+)?(?:island|coast)\b",
+        normalized,
+        re.I,
+    )
+    if generic:
+        origins = {
+            origin
+            for place, origin in _PLACES_SORTED
+            if re.search(
+                r"\b" + re.escape(place).replace(r"\ ", r"\s+") + r"\b",
+                normalized,
+            )
+        }
+        if len(origins) == 1:
+            return offset(next(iter(origins)), generic)
     return None
 
 
@@ -299,6 +449,14 @@ def is_direct_distress_call(text: str) -> bool:
     if any(pattern.search(normalised) for pattern in _RESOLVED_DISTRESS_PATTERNS):
         return False
     return any(pattern.search(normalised) for pattern in _DIRECT_DISTRESS_PATTERNS)
+
+
+def is_resolved_distress(text: str) -> bool:
+    """True only when the text explicitly reports a completed safe outcome."""
+    normalised = re.sub(r"\s+", " ", text).strip()
+    if re.search(r"\brescued\s*!*", normalised, re.I):
+        return True
+    return any(pattern.search(normalised) for pattern in _RESOLVED_DISTRESS_PATTERNS)
 
 
 def is_rescue(text: str) -> bool:

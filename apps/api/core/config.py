@@ -75,6 +75,7 @@ class SuezCanalConfig(BaseSettings):
     TELEGRAM_OPERATIONS_CHAT_ID: str = ""
     PUBLIC_API_URL: str = ""
     JOB_EXECUTION_MODE: str = "inline"
+    OPENDRIFT_PREWARM_ENABLED: bool = True
     JOB_MAX_ATTEMPTS: int = 3
     JOB_LEASE_SECONDS: int = 900
     JOB_POLL_SECONDS: float = 1.0
@@ -130,6 +131,10 @@ class SuezCanalConfig(BaseSettings):
 
     # ── Intel layer (Twitter/X + news + AIS spike detection) ─────────────────
     INTEL_ENABLED: bool = True
+    ALARM_PHONE_POLL_INTERVAL_S: int = 60
+    # Alarm Phone drift jobs are serialized by the shared OpenDrift semaphore;
+    # results are persisted and served from the drift store after computation.
+    INTEL_AUTO_DRIFT_ENABLED: bool = True
     # Official X/Twitter API v2 Bearer token. NOT free since Feb 2023 — the
     # tiers with read/search access (Basic+) are paid and X additionally
     # meters some calls against a prepaid credit balance (search/recent can

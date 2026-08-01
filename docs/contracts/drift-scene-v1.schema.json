@@ -34,10 +34,10 @@
       "required": ["engine", "status", "authoritative_for"],
       "properties": {
         "engine": {
-          "enum": ["opendrift", "deterministic-fallback"]
+          "enum": ["opendrift", "browser-live-fields", "deterministic-fallback"]
         },
         "status": {
-          "enum": ["operational", "degraded", "demo"]
+          "enum": ["operational", "model-estimate", "degraded", "demo"]
         },
         "authoritative_for": {
           "type": "array",

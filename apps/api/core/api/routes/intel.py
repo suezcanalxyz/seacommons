@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -387,29 +389,41 @@ class AutoDriftRequest(BaseModel):
 
 
 def _run_intel_drift(event_id: str, lat: float, lon: float,
-                     persons: Optional[int], vessel_type: Optional[str]) -> None:
+                     persons: Optional[int], vessel_type: Optional[str],
+                     observed_at: str) -> None:
     """Background: compute drift from an intel event's position."""
     try:
-        _run_intel_drift_inner(event_id, lat, lon, persons, vessel_type)
+        _run_intel_drift_inner(event_id, lat, lon, persons, vessel_type, observed_at)
     finally:
         release_drift_slot()
 
 
 def _run_intel_drift_inner(event_id: str, lat: float, lon: float,
-                           persons: Optional[int], vessel_type: Optional[str]) -> None:
+                           persons: Optional[int], vessel_type: Optional[str],
+                           observed_at: str) -> None:
     import uuid
+    import math
     from datetime import datetime, timezone
 
     from core.db.store import complete_drift_job, create_drift_job, fail_drift_job
     from core.drift.engine import DriftEngine
 
     job_id = str(uuid.uuid4())
-    time_utc = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    try:
+        time_utc = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+        if time_utc.tzinfo is None:
+            time_utc = time_utc.replace(tzinfo=timezone.utc)
+        time_utc = min(time_utc.astimezone(timezone.utc), now)
+    except (AttributeError, TypeError, ValueError):
+        time_utc = now
+    elapsed_h = max(0.0, (now - time_utc).total_seconds() / 3600)
+    duration_h = min(72, max(24, math.ceil(elapsed_h) + 12))
     create_drift_job(
         job_id,
         event_id=f"intel:{event_id}",
         lat=lat, lon=lon, domain="ocean_sar",
-        duration_h=24,
+        duration_h=duration_h,
         started_at=time_utc,
     )
     try:
@@ -421,18 +435,62 @@ def _run_intel_drift_inner(event_id: str, lat: float, lon: float,
             cfg["persons"] = persons
         result = engine.compute(
             lat=lat, lon=lon, time_utc=time_utc,
-            duration_h=24, domain="ocean_sar", config=cfg,
+            duration_h=duration_h, domain="ocean_sar", config=cfg,
         )
         complete_drift_job(
             job_id, event_id=f"intel:{event_id}",
             lat=lat, lon=lon, domain="ocean_sar", result=result,
         )
+        intel_store.update_metadata(event_id, metadata={
+            "drift_job_id": job_id,
+            "drift_status": "completed",
+            "drift_origin_timestamp_utc": time_utc.isoformat(),
+            "drift_duration_h": duration_h,
+        })
         intel_store.broadcast_event_update(event_id, {"drift_job_id": job_id, "drift_status": "completed"})
         logger.info("Auto-drift completed for intel event %s → job %s", event_id, job_id)
     except Exception as exc:
         fail_drift_job(job_id, event_id=f"intel:{event_id}",
                        lat=lat, lon=lon, domain="ocean_sar", error_message=str(exc))
+        intel_store.update_metadata(event_id, metadata={
+            "drift_job_id": job_id,
+            "drift_status": "failed",
+            "drift_error": str(exc)[:240],
+        })
         logger.warning("Auto-drift failed for intel event %s: %s", event_id, exc)
+
+
+def schedule_intel_drift(
+    event_id: str,
+    lat: float,
+    lon: float,
+    persons: Optional[int],
+    vessel_type: Optional[str],
+    observed_at: str,
+) -> bool:
+    """Start one durable-linked drift if the shared model slot is available."""
+    normalized_id = event_id.removeprefix("intel:")
+    event = intel_store.get(normalized_id)
+    if event and event.metadata.get("drift_status") in {"computing", "completed"}:
+        return True
+    if not acquire_drift_slot():
+        return False
+    intel_store.update_metadata(normalized_id, metadata={
+        "drift_status": "computing",
+        "drift_requested_at": datetime.now(timezone.utc).isoformat(),
+        "drift_origin_timestamp_utc": observed_at,
+    })
+    try:
+        threading.Thread(
+            target=_run_intel_drift,
+            args=(normalized_id, lat, lon, persons, vessel_type, observed_at),
+            daemon=True,
+        ).start()
+    except Exception:
+        release_drift_slot()
+        intel_store.update_metadata(normalized_id, metadata={"drift_status": "failed"})
+        raise
+    return True
 
 
 @router.post("/api/v1/intel/auto-drift")
@@ -447,23 +505,25 @@ async def intel_auto_drift(body: AutoDriftRequest, request: Request):
     anonymous clicks cannot exhaust CPU/RAM on the pilot VM.
     """
     rate_limit(request, max_per_minute=6, scope="intel-drift")
-    if not acquire_drift_slot():
+    normalized_id = body.intel_event_id.removeprefix("intel:")
+    stored = intel_store.get(normalized_id)
+    lat = stored.lat if stored and stored.lat is not None else body.lat
+    lon = stored.lon if stored and stored.lon is not None else body.lon
+    observed_at = stored.timestamp_utc if stored else datetime.now(timezone.utc).isoformat()
+    if not schedule_intel_drift(
+        normalized_id,
+        lat,
+        lon,
+        body.persons,
+        body.vessel_type,
+        observed_at,
+    ):
         raise HTTPException(
             status_code=429,
             detail="Drift engine busy — too many concurrent simulations. Retry shortly.",
             headers={"Retry-After": "30"},
         )
-    import threading
-    try:
-        threading.Thread(
-            target=_run_intel_drift,
-            args=(body.intel_event_id, body.lat, body.lon, body.persons, body.vessel_type),
-            daemon=True,
-        ).start()
-    except Exception:
-        release_drift_slot()
-        raise
-    return {"status": "queued", "intel_event_id": body.intel_event_id}
+    return {"status": "queued", "intel_event_id": normalized_id, "observed_at": observed_at}
 
 
 # ── WebSocket real-time stream ─────────────────────────────────────────────────

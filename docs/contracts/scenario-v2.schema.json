@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seacommons.org/schemas/scenario-v2.schema.json",
+  "title": "SeaCommons scenario v2",
+  "type": "object",
+  "required": ["schema_version", "scenario_id", "created_at", "updated_at", "observed_at", "origin", "subject", "classification", "environment_snapshot", "simulation", "features", "evidence", "rendering"],
+  "properties": {
+    "schema_version": { "const": "scenario/v2" },
+    "scenario_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "origin": {
+      "type": "object",
+      "required": ["type", "coordinates", "crs"],
+      "properties": {
+        "type": { "const": "Point" },
+        "coordinates": {
+          "type": "array",
+          "prefixItems": [
+            { "type": "number", "minimum": -180, "maximum": 180 },
+            { "type": "number", "minimum": -90, "maximum": 90 }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "crs": { "const": "EPSG:4326" }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "required": ["kind", "persons", "anonymous"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "persons": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "anonymous": { "const": true }
+      }
+    },
+    "classification": {
+      "type": "object",
+      "required": ["scenario_type", "risk_level"],
+      "properties": {
+        "scenario_type": { "type": "string", "minLength": 1 },
+        "risk_level": { "enum": ["low", "medium", "high", "critical"] }
+      }
+    },
+    "environment_snapshot": { "$ref": "environment-snapshot-v1.schema.json" },
+    "simulation": {
+      "type": "object",
+      "required": ["engine", "engine_version", "status", "computed_at", "input_hash", "seed", "live_feed", "operational_use", "products"],
+      "properties": {
+        "engine": { "type": "string", "minLength": 1 },
+        "engine_version": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["queued", "computing", "completed", "failed"] },
+        "computed_at": { "type": "string", "format": "date-time" },
+        "input_hash": { "type": "string", "minLength": 1 },
+        "seed": { "type": "integer", "minimum": 0 },
+        "live_feed": { "type": "boolean" },
+        "operational_use": { "type": "boolean" },
+        "products": {
+          "type": "object",
+          "required": ["drift_geojson"],
+          "properties": { "drift_geojson": { "type": "object" } }
+        }
+      }
+    },
+    "features": {
+      "type": "array",
+      "description": "Time-aware geospatial entities rendered by Cesium or Unreal.",
+      "items": { "type": "object" }
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Images, audio, news and documents with provenance, rights and coordinate/time anchors.",
+      "items": { "type": "object" }
+    },
+    "rendering": {
+      "type": "object",
+      "required": ["preferred_renderer", "compatible_renderers"],
+      "properties": {
+        "preferred_renderer": { "enum": ["cesium-web", "unreal-pixel-streaming"] },
+        "compatible_renderers": {
+          "type": "array",
+          "items": { "enum": ["cesium-web", "unreal-pixel-streaming"] },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

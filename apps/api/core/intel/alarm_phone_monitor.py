@@ -11,6 +11,7 @@ import html
 import io
 import json
 import logging
+import math
 import re
 import shutil
 import subprocess
@@ -25,16 +26,18 @@ from core.intel.geoextract import (
     classify_severity,
     extract_coords,
     extract_numeric_coords,
+    extract_relative_coords,
     is_direct_distress_call,
+    is_resolved_distress,
 )
 from core.intel.store import IntelEvent, intel_store
+from core.config import config
 
 logger = logging.getLogger(__name__)
 
 SOURCE_NAME = "Alarm Phone / X official site"
 PAGE_URL = "https://alarmphone.org/en/"
 _SYNDICATION_URL = "https://cdn.syndication.twimg.com/tweet-result"
-_POLL_INTERVAL_S = 90
 _X_EPOCH_MS = 1_288_834_974_657
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
 _ALLOWED_MEDIA_HOSTS = frozenset({"pbs.twimg.com"})
@@ -141,7 +144,17 @@ def ocr_png_coordinate(
             continue
         if result.returncode == 0:
             texts.append(result.stdout.decode("utf-8", errors="replace")[:20_000])
-    return consensus_ocr_coordinate(texts), True
+    consensus = consensus_ocr_coordinate(texts)
+    if consensus is not None:
+        return consensus, True
+    # A tightly cropped popup may be legible in only one Tesseract layout.
+    # Accept it as explicitly unverified only when exactly one valid,
+    # hemisphere-labelled coordinate survives the strict range parser.
+    candidates = {
+        candidate for text in texts
+        if (candidate := extract_numeric_coords(text)) is not None
+    }
+    return (next(iter(candidates)) if len(candidates) == 1 else None), True
 
 
 def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool]:
@@ -168,21 +181,88 @@ def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool]:
     from PIL import Image, ImageFilter, ImageOps
 
     Image.MAX_IMAGE_PIXELS = 25_000_000
+    attempted = False
     with Image.open(io.BytesIO(payload)) as source:
         image = ImageOps.exif_transpose(source).convert("L")
-        image.thumbnail((2600, 2600), Image.Resampling.LANCZOS)
-        if max(image.size) < 1500:
-            scale = min(3, max(1, 1500 // max(1, max(image.size))))
+        width, height = image.size
+        popup_boxes: list[tuple[int, int, int, int]] = []
+        try:
+            import numpy as np
+
+            pixels = np.asarray(image)
+            bright = pixels >= 235
+            active_rows = np.flatnonzero(
+                bright.sum(axis=1) >= max(80, int(width * 0.22))
+            )
+
+            def runs(values):
+                if not len(values):
+                    return []
+                output = []
+                start = previous = int(values[0])
+                for raw in values[1:]:
+                    value = int(raw)
+                    if value != previous + 1:
+                        output.append((start, previous + 1))
+                        start = value
+                    previous = value
+                output.append((start, previous + 1))
+                return output
+
+            row_runs = runs(active_rows)
+            merged_rows: list[tuple[int, int]] = []
+            for top, bottom in row_runs:
+                if merged_rows and top - merged_rows[-1][1] <= 32:
+                    merged_rows[-1] = (merged_rows[-1][0], bottom)
+                else:
+                    merged_rows.append((top, bottom))
+
+            for top, bottom in merged_rows:
+                if bottom - top < 30:
+                    continue
+                active_columns = np.flatnonzero(
+                    bright[top:bottom].sum(axis=0)
+                    >= max(15, int((bottom - top) * 0.42))
+                )
+                for left, right in runs(active_columns):
+                    if right - left < 140:
+                        continue
+                    padding = 12
+                    popup_boxes.append((
+                        max(0, left - padding),
+                        max(0, top - padding),
+                        min(width, right + padding),
+                        min(height, bottom + padding),
+                    ))
+        except Exception:
+            popup_boxes = []
+        # Alarm Phone map popups can appear at the top, centre or bottom. A
+        # full-map OCR pass often misses their small coordinate row, so scan
+        # three overlapping horizontal bands as well as the complete image.
+        boxes = popup_boxes + [
+            (0, 0, width, height),
+            (0, 0, width, max(1, int(height * 0.55))),
+            (0, int(height * 0.22), width, max(1, int(height * 0.78))),
+            (0, int(height * 0.45), width, height),
+        ]
+        for box in boxes:
+            candidate_image = image.crop(box)
+            scale = min(4, max(1, math.ceil(2400 / max(1, candidate_image.width))))
             if scale > 1:
-                image = image.resize(
-                    (image.width * scale, image.height * scale),
+                candidate_image = candidate_image.resize(
+                    (candidate_image.width * scale, candidate_image.height * scale),
                     Image.Resampling.LANCZOS,
                 )
-        image = ImageOps.autocontrast(image).filter(ImageFilter.SHARPEN)
-        output = io.BytesIO()
-        image.save(output, format="PNG", optimize=True)
-        processed = output.getvalue()
-    return ocr_png_coordinate(processed, executable=executable)
+            candidate_image = ImageOps.autocontrast(candidate_image).filter(ImageFilter.SHARPEN)
+            output = io.BytesIO()
+            candidate_image.save(output, format="PNG", optimize=True)
+            coordinate, did_attempt = ocr_png_coordinate(
+                output.getvalue(), executable=executable
+            )
+            attempted = attempted or did_attempt
+            if coordinate is not None:
+                return coordinate, attempted
+    return None, attempted
 
 
 class AlarmPhoneMonitor:
@@ -222,7 +302,16 @@ class AlarmPhoneMonitor:
             with urllib.request.urlopen(request, timeout=20) as response:
                 document = response.read().decode("utf-8", errors="replace")
             for post in parse_official_timeline(document):
-                media_coords, media_count, ocr_attempted = self._media_context(post["id"])
+                text_coordinate = (
+                    extract_numeric_coords(post.get("text", ""))
+                    or extract_relative_coords(post.get("text", ""))
+                )
+                if text_coordinate is not None:
+                    # Text/declared offsets are available immediately; do not
+                    # delay ingestion behind several expensive OCR passes.
+                    media_coords, media_count, ocr_attempted = None, 0, False
+                else:
+                    media_coords, media_count, ocr_attempted = self._media_context(post["id"])
                 post["media_coords"] = media_coords
                 post["media_count"] = media_count
                 post["ocr_attempted"] = ocr_attempted
@@ -236,7 +325,8 @@ class AlarmPhoneMonitor:
     def _loop(self) -> None:
         while self._running:
             self.scan()
-            for _ in range(_POLL_INTERVAL_S):
+            poll_interval = max(30, int(config.ALARM_PHONE_POLL_INTERVAL_S))
+            for _ in range(poll_interval):
                 if not self._running:
                     return
                 time.sleep(1)
@@ -277,13 +367,17 @@ class AlarmPhoneMonitor:
         distress = is_direct_distress_call(text)
         text_coords = extract_numeric_coords(text)
         media_coords = post.get("media_coords")
-        coords = text_coords or media_coords or extract_coords(text)
+        relative_coords = extract_relative_coords(text)
+        coords = text_coords or media_coords or relative_coords or extract_coords(text)
         if text_coords:
             coordinate_source = "post_text"
             location_uncertainty_m = 250
         elif media_coords:
-            coordinate_source = "media_ocr_consensus"
-            location_uncertainty_m = 1000
+            coordinate_source = "media_ocr_text"
+            location_uncertainty_m = 1500
+        elif relative_coords:
+            coordinate_source = "relative_place_offset"
+            location_uncertainty_m = 15_000
         elif coords:
             coordinate_source = "place_centroid"
             location_uncertainty_m = 25_000
@@ -291,6 +385,7 @@ class AlarmPhoneMonitor:
             coordinate_source = "none"
             location_uncertainty_m = None
         snippet = re.sub(r"https?://\S+", "", text).strip()
+        observed_at = datetime.now(timezone.utc).isoformat()
         event = IntelEvent(
             id=f"x{tweet_id[-15:]}",
             type="twitter",
@@ -319,29 +414,64 @@ class AlarmPhoneMonitor:
                 ),
                 "verification_status": (
                     "machine_extracted_unverified"
-                    if coordinate_source == "media_ocr_consensus"
+                    if coordinate_source.startswith("media_ocr")
                     else "unverified_public_source"
                 ),
                 "coordinate_source": coordinate_source,
                 "coordinate_review_status": (
-                    "machine_consensus_unverified"
-                    if coordinate_source == "media_ocr_consensus"
+                    "machine_ocr_unverified"
+                    if coordinate_source.startswith("media_ocr")
                     else "not_required"
                 ),
                 "location_uncertainty_m": location_uncertainty_m,
                 "media_count": int(post.get("media_count") or 0),
                 "ocr_attempted": bool(post.get("ocr_attempted")),
+                "incident_status": "resolved" if is_resolved_distress(text) else "active" if distress else "context",
+                "first_source_seen_at": observed_at,
+                "last_source_seen_at": observed_at,
+                "source_scan_count": 1,
             },
         )
         added = intel_store.add(event, dedup_key=f"x:{tweet_id}")
-        if not added and media_coords:
+        if not added and coords:
+            location_metadata = {
+                key: value
+                for key, value in event.metadata.items()
+                if key not in {
+                    "first_source_seen_at", "last_source_seen_at", "source_scan_count"
+                }
+            }
             intel_store.enrich_location(
                 event.id,
-                lat=media_coords[0],
-                lon=media_coords[1],
-                metadata=event.metadata,
+                lat=coords[0],
+                lon=coords[1],
+                metadata=location_metadata,
             )
+        if not added:
+            intel_store.touch_source_observation(event.id, observed_at)
         if added and distress:
             from core.intel.triangulation import evaluate as evaluate_triangulation
             evaluate_triangulation(event)
+        stored_event = intel_store.get(event.id) or event
+        if (
+            distress
+            and config.INTEL_AUTO_DRIFT_ENABLED
+            and stored_event.lat is not None
+            and stored_event.lon is not None
+            and stored_event.metadata.get("coordinate_source")
+            in {"post_text", "media_ocr_consensus", "media_ocr_text", "relative_place_offset"}
+            and stored_event.metadata.get("drift_status") not in {"computing", "completed"}
+        ):
+            try:
+                from core.api.routes.intel import schedule_intel_drift
+                schedule_intel_drift(
+                    stored_event.id,
+                    stored_event.lat,
+                    stored_event.lon,
+                    persons=None,
+                    vessel_type="rubber_boat",
+                    observed_at=stored_event.timestamp_utc,
+                )
+            except Exception as exc:
+                logger.debug("Alarm Phone auto-drift deferred for %s: %s", event.id, exc)
         return added

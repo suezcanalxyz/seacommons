@@ -154,6 +154,7 @@ function sourceFallback(summary) {
 export default async function handler(req, res) {
   res.setHeader('cache-control', 'no-store');
   res.setHeader('content-type', 'application/json; charset=utf-8');
+  res.setHeader('x-seacommons-live-version', '2026-08-01.2');
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.setHeader('allow', 'GET, HEAD');
     return res.status(405).json({ detail: 'Method not allowed' });
@@ -164,6 +165,8 @@ export default async function handler(req, res) {
   const safeEventId = typeof eventId === 'string' && /^[a-zA-Z0-9-]{6,80}$/.test(eventId)
     ? eventId
     : '';
+  const requestedLimit = Math.min(500, Math.max(1, Number.parseInt(req.query.limit, 10) || 500));
+  const requestedDays = Math.min(365, Math.max(1, Number.parseInt(req.query.days, 10) || 30));
   const upstreamPath = resource === 'sources'
     ? '/api/v1/live/sources'
     : resource === 'drifts'
@@ -172,7 +175,7 @@ export default async function handler(req, res) {
         ? '/api/v1/live/archives?limit=8'
         : resource === 'archive' && safeEventId
           ? `/api/v1/live/archives/${safeEventId}/geojson`
-          : '/api/v1/live/signals?limit=300&days=3';
+          : `/api/v1/live/signals?limit=${requestedLimit}&days=${requestedDays}`;
   try {
     const upstream = await requestJson(upstreamPath);
     if (upstream.status === 200 && upstream.data) {

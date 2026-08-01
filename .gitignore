@@ -13,6 +13,8 @@ __pycache__/
 .codex-runlogs/
 .pytest_cache/
 .tmp/
+.oci-cli/
+oci-cli-env/
 apps/api/core/data/attachments/
 .env*
 !.env.example

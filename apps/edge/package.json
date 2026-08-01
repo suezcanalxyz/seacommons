@@ -1,0 +1,14 @@
+{
+  "name": "seacommons-edge-gateway",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test src/*.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.27.0"
+  }
+}

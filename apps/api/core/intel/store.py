@@ -22,6 +22,15 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+_COORDINATE_SOURCE_RANK = {
+    "none": 0,
+    "place_centroid": 1,
+    "relative_place_offset": 2,
+    "media_ocr_consensus": 3,
+    "media_ocr_text": 3,
+    "post_text": 4,
+}
+
 MAX_EVENTS = 600
 DEDUP_WINDOW = 2000  # max unique hashes kept in memory
 
@@ -287,14 +296,21 @@ class IntelStore:
         lon: float,
         metadata: dict[str, Any],
     ) -> bool:
-        """Attach a newly derived location without overwriting an existing one."""
+        """Attach a location, upgrading an existing lower-quality estimate."""
         updated: Optional[IntelEvent] = None
         with self._lock:
             for event in self._events:
                 if event.id != event_id:
                     continue
                 if event.lat is not None or event.lon is not None:
-                    return False
+                    previous_rank = _COORDINATE_SOURCE_RANK.get(
+                        str(event.metadata.get("coordinate_source") or "none"), 0
+                    )
+                    new_rank = _COORDINATE_SOURCE_RANK.get(
+                        str(metadata.get("coordinate_source") or "none"), 0
+                    )
+                    if new_rank <= previous_rank:
+                        return False
                 event.lat = lat
                 event.lon = lon
                 event.metadata.update(metadata)
@@ -323,11 +339,20 @@ class IntelStore:
 
             with session_scope() as db:
                 row = db.query(IntelEventDB).filter(IntelEventDB.id == event_id).first()
-                if row is None or row.lat is not None or row.lon is not None:
+                if row is None:
                     return
+                merged = dict(row.meta or {})
+                if row.lat is not None or row.lon is not None:
+                    previous_rank = _COORDINATE_SOURCE_RANK.get(
+                        str(merged.get("coordinate_source") or "none"), 0
+                    )
+                    new_rank = _COORDINATE_SOURCE_RANK.get(
+                        str(metadata.get("coordinate_source") or "none"), 0
+                    )
+                    if new_rank <= previous_rank:
+                        return
                 row.lat = lat
                 row.lon = lon
-                merged = dict(row.meta or {})
                 merged.update(metadata)
                 row.meta = merged
                 db.flush()
@@ -387,7 +412,87 @@ class IntelStore:
         except Exception as exc:
             logger.debug("Intel DB metadata update skipped: %s", exc)
 
+    def touch_source_observation(self, event_id: str, observed_at: str) -> bool:
+        """Record that a source item is still visible without creating a copy."""
+        found = False
+        with self._lock:
+            for event in self._events:
+                if event.id != event_id:
+                    continue
+                event.metadata["last_source_seen_at"] = observed_at
+                event.metadata["source_scan_count"] = int(
+                    event.metadata.get("source_scan_count") or 1
+                ) + 1
+                found = True
+                break
+        threading.Thread(
+            target=self._persist_source_observation_sync,
+            args=(event_id, observed_at),
+            daemon=True,
+        ).start()
+        return found
+
+    def _persist_source_observation_sync(self, event_id: str, observed_at: str) -> None:
+        try:
+            from core.db.models import IntelEventDB
+            from core.db.session import session_scope
+            with session_scope() as db:
+                row = db.query(IntelEventDB).filter(IntelEventDB.id == event_id).first()
+                if row is None:
+                    return
+                metadata = dict(row.meta or {})
+                metadata["last_source_seen_at"] = observed_at
+                metadata["source_scan_count"] = int(metadata.get("source_scan_count") or 1) + 1
+                row.meta = metadata
+                db.flush()
+        except Exception as exc:
+            logger.debug("Intel DB source observation skipped: %s", exc)
+
     # ── Read ──────────────────────────────────────────────────────────────────
+
+    def get(self, event_id: str) -> Optional[IntelEvent]:
+        normalized = event_id.removeprefix("intel:")
+        with self._lock:
+            return next((event for event in self._events if event.id == normalized), None)
+
+    def persisted_events(
+        self,
+        *,
+        source: Optional[str] = None,
+        max_age_days: int = 30,
+        limit: int = 1000,
+    ) -> list[IntelEvent]:
+        """Read durable events independently from the bounded in-memory deque."""
+        try:
+            from core.db.models import IntelEventDB
+            from core.db.session import session_scope
+
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+            with session_scope() as db:
+                query = db.query(IntelEventDB).filter(IntelEventDB.timestamp_utc >= cutoff)
+                if source:
+                    query = query.filter(IntelEventDB.source == source)
+                rows = query.order_by(IntelEventDB.timestamp_utc.desc()).limit(limit).all()
+                return [
+                    IntelEvent(
+                        id=row.id,
+                        timestamp_utc=row.timestamp_utc,
+                        type=row.type or "",
+                        severity=row.severity or "",
+                        lat=row.lat,
+                        lon=row.lon,
+                        title=row.title or "",
+                        text=row.text or "",
+                        url=row.url or "",
+                        source=row.source or "",
+                        linked_mmsi=row.linked_mmsi or "",
+                        metadata=dict(row.meta or {}),
+                    )
+                    for row in rows
+                ]
+        except Exception as exc:
+            logger.warning("intel_store: durable event read skipped: %s", exc)
+            return []
 
     def events(
         self,

@@ -55,12 +55,18 @@ async def lifespan(app: FastAPI):
         intel_store.reset_computing_drifts()
     except Exception as exc:
         logger.warning("Intel DB reload failed: %s", exc)
-    if config.JOB_EXECUTION_MODE != "queue" and not config.DEMO_PUBLIC_MODE:
+    if (
+        config.JOB_EXECUTION_MODE != "queue"
+        and not config.DEMO_PUBLIC_MODE
+        and config.OPENDRIFT_PREWARM_ENABLED
+    ):
         try:
             from core.drift.opendrift_pool import prewarm
             prewarm()
         except Exception as exc:
             logger.warning("OpenDrift prewarm failed to start: %s", exc)
+    elif config.JOB_EXECUTION_MODE != "queue" and not config.DEMO_PUBLIC_MODE:
+        logger.info("OpenDrift pre-warm disabled; model will load on first use")
     _start_background_sensors()
     _start_intel_engine()
     _start_scheduler()

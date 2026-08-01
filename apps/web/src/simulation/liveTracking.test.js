@@ -1,0 +1,79 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  currentEstimateFeature,
+  decorateLiveTracking,
+  liveTrackingCandidates,
+  mergeLiveDrifts,
+} from './liveTracking.js';
+
+const signal = {
+  type: 'Feature',
+  id: 'intel:x123',
+  geometry: { type: 'Point', coordinates: [24.81, 34.79] },
+  properties: {
+    id: 'intel:x123',
+    kind: 'distress',
+    tier: 'operational',
+    source: 'Alarm Phone',
+    severity: 'high',
+    title: '47 people south of Crete',
+    timestamp_utc: '2026-08-01T09:00:00Z',
+    incident_status: 'active',
+    coordinate_source: 'relative_place_offset',
+  },
+};
+
+const trajectory = {
+  type: 'Feature',
+  geometry: { type: 'LineString', coordinates: [[24.81, 34.79], [25.01, 34.89]] },
+  properties: {
+    type: 'trajectory',
+    timestamps_utc: ['2026-08-01T09:00:00Z', '2026-08-01T11:00:00Z'],
+  },
+};
+
+test('selects only recent active geolocated Alarm Phone distress signals', () => {
+  const now = new Date('2026-08-01T10:00:00Z');
+  assert.deepEqual(liveTrackingCandidates([signal], now), [signal]);
+  assert.equal(liveTrackingCandidates([{ ...signal, geometry: null }], now).length, 0);
+  assert.equal(liveTrackingCandidates([{
+    ...signal,
+    properties: { ...signal.properties, incident_status: 'resolved' },
+  }], now).length, 0);
+  assert.equal(liveTrackingCandidates([{
+    ...signal,
+    properties: { ...signal.properties, coordinate_source: 'place_centroid' },
+  }], now).length, 0);
+});
+
+test('interpolates a wall-clock estimate along the calculated trajectory', () => {
+  const estimate = currentEstimateFeature(
+    trajectory,
+    signal.properties.timestamp_utc,
+    new Date('2026-08-01T10:00:00Z'),
+  );
+  assert.deepEqual(estimate.geometry.coordinates, [24.91, 34.84]);
+  assert.equal(estimate.properties.elapsed_hours, 1);
+  assert.equal(estimate.properties.trajectory_state, 'interpolated');
+});
+
+test('decorates browser output and prefers a verified server trajectory when present', () => {
+  const browser = decorateLiveTracking({ geojson: { features: [trajectory] } }, signal);
+  assert.equal(browser.features[0].properties.intel_event_id, 'x123');
+  assert.equal(browser.features[0].properties.verification_status, 'modelled_live_fields');
+  const serverTrajectory = {
+    ...trajectory,
+    properties: { ...trajectory.properties, intel_event_id: 'x123', model: 'OpenDrift Leeway' },
+  };
+  const merged = mergeLiveDrifts(
+    { type: 'FeatureCollection', features: [serverTrajectory] },
+    browser,
+    [signal],
+    new Date('2026-08-01T10:00:00Z'),
+  );
+  assert.equal(merged.features.filter((feature) => feature.geometry.type === 'LineString').length, 1);
+  assert.equal(merged.features[0].properties.model, 'OpenDrift Leeway');
+  assert.equal(merged.features.at(-1).properties.type, 'current_estimate');
+});

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-const ALARM_PHONE_SOURCE = 'Alarm Phone / X official site';
+const ALARM_PHONE_SOURCE = 'Alarm Phone';
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
 const SEV_LABELS = ['critical', 'high', 'medium', 'low'];
 const TYPE_ICONS = {
@@ -299,7 +299,10 @@ export default function IntelDashboard({
         );
       });
     }
-    return evs;
+    return [...evs].sort((left, right) => (
+      Date.parse(right.properties?.timestamp_utc || 0)
+      - Date.parse(left.properties?.timestamp_utc || 0)
+    ));
   }, [intelEvents, intelFilter, channelFilter, sourceFilter, tierFilter, showAisAlerts, search]);
 
   // Group the visible events by operational tier (operational pinned on top).
@@ -340,10 +343,19 @@ export default function IntelDashboard({
     const p = feat.properties || {};
     const coords = feat.geometry?.coordinates;
     const ts = p.timestamp_utc ? new Date(p.timestamp_utc) : null;
-    const hasDrift = p.drift_status === 'completed';
-    const driftFeat = hasDrift
-      ? intelDrifts.features.find((f) => f.properties?.intel_event_id === p.id && f.geometry?.type === 'LineString')
-      : null;
+    const driftFeat = intelDrifts.features.find(
+      (f) => String(f.properties?.intel_event_id || '').replace(/^intel:/, '')
+        === String(p.id || '').replace(/^intel:/, '')
+        && f.geometry?.type === 'LineString',
+    );
+    const currentEstimate = intelDrifts.features.find(
+      (f) => String(f.properties?.intel_event_id || '').replace(/^intel:/, '')
+        === String(p.id || '').replace(/^intel:/, '')
+        && f.properties?.type === 'current_estimate'
+        && f.geometry?.type === 'Point',
+    );
+    const currentCoords = currentEstimate?.geometry?.coordinates;
+    const hasDrift = p.drift_status === 'completed' || Boolean(driftFeat);
     const tier = eventTier(p);
     const isDistress = tier === 'operational';
     const icon = TYPE_ICONS[p.type] || '•';
@@ -363,8 +375,15 @@ export default function IntelDashboard({
           </span>
           {ts && (
             <time title={ts.toISOString()}>
-              {ts.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}{' '}
-              {ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              {ts.toLocaleString('it-IT', {
+                timeZone: 'Europe/Rome',
+                day: '2-digit',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+                timeZoneName: 'short',
+              })}
             </time>
           )}
           {hasDrift ? (
@@ -372,9 +391,9 @@ export default function IntelDashboard({
               className="intel-drift-btn intel-drift-btn--ready"
               onClick={(e) => {
                 e.stopPropagation();
-                const target = driftFeat
+                const target = currentCoords || (driftFeat
                   ? driftFeat.geometry.coordinates[Math.floor(driftFeat.geometry.coordinates.length / 2)]
-                  : coords;
+                  : coords);
                 flyTo(target);
                 setSidebarOpen?.(false);
               }}
@@ -386,6 +405,8 @@ export default function IntelDashboard({
               className="intel-drift-btn intel-drift-btn--retry"
               onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(p.id, coords[1], coords[0]); }}
             >Retry</button>
+          ) : publicMode && coords ? (
+            <button className="intel-drift-btn intel-drift-btn--computing" disabled>Auto</button>
           ) : coords && p.drift_status !== 'completed' ? (
             <button
               className="intel-drift-btn intel-drift-btn--trigger"
@@ -400,13 +421,22 @@ export default function IntelDashboard({
           <span>{(p.type || '').replace(/_/g, ' ')}</span>
           {coords && (
             <span style={{ opacity: 0.45 }}>
-              · {coords[1]?.toFixed(3)}, {coords[0]?.toFixed(3)}
+              · {p.coordinate_source === 'place_centroid' ? 'zona' : 'segnalata'}{' '}
+              {coords[1]?.toFixed(3)}, {coords[0]?.toFixed(3)}
             </span>
           )}
           {p.url && (
             <a className="intel-source-link" href={p.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>↗</a>
           )}
         </span>
+        {currentCoords && (
+          <span className="intel-source" style={{ color: '#ffe06d' }}>
+            Stimata ora · {currentCoords[1]?.toFixed(4)}, {currentCoords[0]?.toFixed(4)}
+            {Number.isFinite(Number(currentEstimate.properties?.elapsed_hours))
+              ? ` · ${Number(currentEstimate.properties.elapsed_hours).toFixed(1)}h`
+              : ''}
+          </span>
+        )}
         {p.text && (
           <p className="intel-text">{p.text.slice(0, 200)}{p.text.length > 200 ? '…' : ''}</p>
         )}

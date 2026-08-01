@@ -40,7 +40,7 @@ CHANNEL_WEIGHTS: dict[str, float] = {
     "news": 0.20,
     "mastodon": 0.15,
     "bluesky": 0.15,
-    "ais_spike": 0.40,
+    "ais_rescue_movement": 0.40,
 }
 
 
@@ -78,8 +78,20 @@ def channel_of(event: IntelEvent) -> Optional[str]:
     """
     if event.lat is None or event.lon is None:
         return None
+    if event.metadata.get("coordinate_source") == "place_centroid":
+        return None
     if event.type == "ais_spike":
-        return "ais_spike"
+        # Generic stops/loitering are not evidence for a distress position.
+        # Only movement from a known rescue/NGO vessel or a rescue cluster can
+        # independently corroborate the reported area.
+        rescue_types = {"ngo_search_pattern", "rescue_cluster"}
+        if (
+            event.metadata.get("spike_type") in rescue_types
+            or bool(event.metadata.get("vessel_role"))
+            or bool(event.metadata.get("org"))
+        ):
+            return "ais_rescue_movement"
+        return None
     if event.type == "news" or event.metadata.get("transport") == "rss":
         return "news"
     if event.type == "mastodon" or event.metadata.get("platform") == "mastodon":
@@ -87,7 +99,7 @@ def channel_of(event: IntelEvent) -> Optional[str]:
     if event.type == "bluesky" or event.metadata.get("platform") == "bluesky":
         return "bluesky"
     if event.type in ("twitter", "distress"):
-        if event.metadata.get("coordinate_source") == "media_ocr_consensus":
+        if str(event.metadata.get("coordinate_source") or "").startswith("media_ocr"):
             return "media_ocr_consensus"
         if event.metadata.get("source_policy") == "official_api":
             return "official_x_api"
@@ -145,11 +157,15 @@ def evaluate(new_event: IntelEvent) -> Optional[dict[str, Any]]:
         "corroborating_sources": sorted(contributing.keys()),
         "corroboration_confidence": confidence,
     }
-    intel_store.update_metadata(
-        new_event.id,
-        metadata=summary,
-        linked_mmsi=linked_mmsi or None,
-    )
+    # Apply corroboration to every participating event. In particular, if an
+    # AIS rescue movement arrives after Alarm Phone, the original distress
+    # report must gain the linked MMSI and verification state too.
+    for contributing_event in contributing.values():
+        intel_store.update_metadata(
+            contributing_event.id,
+            metadata=summary,
+            linked_mmsi=linked_mmsi or None,
+        )
     logger.info(
         "Triangulation: event %s corroborated by %s (confidence=%.2f)",
         new_event.id,
@@ -195,19 +211,26 @@ def test_triangulation() -> None:
     assert solo.verification_status() == "unverified_public_source"
 
     # Test 2: an AIS rescue cluster near the same place/time corroborates it.
-    ais = make("ais_spike", 35.505, 12.605, plus_20min_ts)
+    ais = make(
+        "ais_spike", 35.505, 12.605, plus_20min_ts,
+        spike_type="rescue_cluster", org="Test SAR",
+    )
     ais.linked_mmsi = "123456789"
     result = evaluate(solo)
     assert result is not None, "expected corroboration from ais_spike + alarmphone_text"
     assert result["verification_status"] == "multi_source_corroborated"
-    assert set(result["corroborating_sources"]) == {"alarmphone_text", "ais_spike"}
+    assert set(result["corroborating_sources"]) == {
+        "alarmphone_text", "ais_rescue_movement"
+    }
     assert solo.linked_mmsi == "123456789"
 
     # Test 3: a second event from the SAME channel does not add confidence.
     same_channel = make("twitter", 35.51, 12.61, base_ts, source_policy="official_site_embed")
     r2 = evaluate(same_channel)
     assert r2 is not None  # still corroborated by the earlier ais_spike
-    assert set(r2["corroborating_sources"]) == {"alarmphone_text", "ais_spike"}
+    assert set(r2["corroborating_sources"]) == {
+        "alarmphone_text", "ais_rescue_movement"
+    }
 
     # Test 4: far away in space does not corroborate.
     make("news", 10.0, 10.0, base_ts)
