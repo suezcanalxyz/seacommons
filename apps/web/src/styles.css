@@ -1617,6 +1617,16 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 }
 .intel-source-link:hover { opacity: 1; text-decoration: underline; }
 
+.intel-reply-link {
+  color: #ffe07d;
+  text-decoration: none;
+  font-size: 10px;
+  opacity: 0.85;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.intel-reply-link:hover { opacity: 1; text-decoration: underline; }
+
 .intel-empty {
   padding: 12px 10px;
   color: #7a9a94;

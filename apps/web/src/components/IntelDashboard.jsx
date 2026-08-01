@@ -425,6 +425,16 @@ export default function IntelDashboard({
               {coords[1]?.toFixed(3)}, {coords[0]?.toFixed(3)}
             </span>
           )}
+          {p.reply_count > 0 && p.url && (
+            <a
+              className="intel-reply-link"
+              href={p.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="Reply text isn't fetched (would need the paid X API) — open the thread on X to read updates"
+            >💬 {p.reply_count} {p.reply_count === 1 ? 'reply' : 'replies'}</a>
+          )}
           {p.url && (
             <a className="intel-source-link" href={p.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>↗</a>
           )}

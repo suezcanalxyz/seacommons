@@ -87,14 +87,18 @@ def parse_official_timeline(document: str) -> list[dict[str, Any]]:
     return posts
 
 
-def _x_photo_urls(tweet_id: str) -> list[str]:
-    """Resolve public photo media through X's embed syndication response."""
+def _x_syndication(tweet_id: str) -> dict[str, Any]:
+    """Fetch X's public embed syndication response for one tweet (free, no key)."""
     request = urllib.request.Request(
         f"{_SYNDICATION_URL}?id={tweet_id}&lang=en&token=1",
         headers={**_HEADERS, "Accept": "application/json"},
     )
     with urllib.request.urlopen(request, timeout=15) as response:
-        payload = json.loads(response.read())
+        return json.loads(response.read())
+
+
+def _x_photo_urls(payload: dict[str, Any]) -> list[str]:
+    """Extract public photo URLs from an already-fetched syndication payload."""
     urls: list[str] = []
     for photo in payload.get("photos") or []:
         url = str(photo.get("url") or "")
@@ -309,12 +313,13 @@ class AlarmPhoneMonitor:
                 if text_coordinate is not None:
                     # Text/declared offsets are available immediately; do not
                     # delay ingestion behind several expensive OCR passes.
-                    media_coords, media_count, ocr_attempted = None, 0, False
+                    media_coords, media_count, ocr_attempted, reply_count = None, 0, False, 0
                 else:
-                    media_coords, media_count, ocr_attempted = self._media_context(post["id"])
+                    media_coords, media_count, ocr_attempted, reply_count = self._media_context(post["id"])
                 post["media_coords"] = media_coords
                 post["media_count"] = media_count
                 post["ocr_attempted"] = ocr_attempted
+                post["reply_count"] = reply_count
                 if self._ingest(post):
                     new_count += 1
         except Exception as exc:
@@ -334,15 +339,17 @@ class AlarmPhoneMonitor:
     def _media_context(
         self,
         tweet_id: str,
-    ) -> tuple[Optional[tuple[float, float]], int, bool]:
+    ) -> tuple[Optional[tuple[float, float]], int, bool, int]:
         cached = self._media_cache.get(tweet_id)
         if cached is not None:
             return cached
         try:
-            photos = _x_photo_urls(tweet_id)
+            payload = _x_syndication(tweet_id)
+            photos = _x_photo_urls(payload)
+            reply_count = int(payload.get("conversation_count") or 0)
         except Exception as exc:
             logger.debug("Alarm Phone media lookup failed for %s: %s", tweet_id, exc)
-            return None, 0, False
+            return None, 0, False, 0
         coordinate: Optional[tuple[float, float]] = None
         attempted = False
         for photo_url in photos:
@@ -355,7 +362,7 @@ class AlarmPhoneMonitor:
             except Exception as exc:
                 attempted = True
                 logger.debug("Alarm Phone media OCR failed for %s: %s", tweet_id, exc)
-        result = (coordinate, len(photos), attempted)
+        result = (coordinate, len(photos), attempted, reply_count)
         self._media_cache[tweet_id] = result
         return result
 
@@ -426,6 +433,10 @@ class AlarmPhoneMonitor:
                 "location_uncertainty_m": location_uncertainty_m,
                 "media_count": int(post.get("media_count") or 0),
                 "ocr_attempted": bool(post.get("ocr_attempted")),
+                # Free (syndication conversation_count), but only a count — the
+                # reply text itself needs the paid X API or the tweet's own web
+                # page, so we link out rather than fabricate reply content.
+                "reply_count": int(post.get("reply_count") or 0),
                 "incident_status": "resolved" if is_resolved_distress(text) else "active" if distress else "context",
                 "first_source_seen_at": observed_at,
                 "last_source_seen_at": observed_at,
