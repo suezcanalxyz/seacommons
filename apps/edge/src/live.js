@@ -1,4 +1,5 @@
 const MAX_EVENTS = 500;
+const DEFAULT_TTL_SECONDS = 6 * 60 * 60;
 
 function json(payload, status = 200, headers = {}) {
   return new Response(JSON.stringify(payload), {
@@ -33,6 +34,18 @@ function timingSafeEqual(left, right) {
   return mismatch === 0;
 }
 
+function ttlSeconds(env) {
+  const parsed = Number(env.LIVE_EVENT_TTL_SECONDS || DEFAULT_TTL_SECONDS);
+  return Number.isFinite(parsed) && parsed >= 60 ? parsed : DEFAULT_TTL_SECONDS;
+}
+
+function isFresh(event, env, now = Date.now()) {
+  const expiresAt = Number(event.expires_at_ms || 0);
+  if (expiresAt) return expiresAt > now;
+  const received = Date.parse(event.received_at || event.observed_at || '');
+  return Number.isFinite(received) && received + ttlSeconds(env) * 1000 > now;
+}
+
 export async function verifyIngestRequest(request, secret) {
   if (!secret) return { ok: false, status: 503, error: 'INGEST_SECRET is not configured' };
   const body = await request.text();
@@ -48,18 +61,20 @@ export async function verifyIngestRequest(request, secret) {
   }
 }
 
-export async function normalizeEvent(input, previousHash = null) {
+export async function normalizeEvent(input, previousHash = null, ttl = DEFAULT_TTL_SECONDS) {
   if (!input || typeof input !== 'object') throw new Error('event must be an object');
   if (!input.type || !input.source || !input.observed_at) {
     throw new Error('type, source and observed_at are required');
   }
+  const receivedAt = new Date().toISOString();
   const event = {
     schema: 'seacommons-event-v1',
     type: String(input.type),
     source: String(input.source),
     node: String(input.node || 'unknown'),
     observed_at: new Date(input.observed_at).toISOString(),
-    received_at: new Date().toISOString(),
+    received_at: receivedAt,
+    expires_at_ms: Date.parse(receivedAt) + ttl * 1000,
     visibility: input.visibility === 'private' ? 'private' : 'public',
     confidence: Number.isFinite(Number(input.confidence)) ? Number(input.confidence) : null,
     geometry: input.geometry || null,
@@ -82,6 +97,8 @@ export class LiveRoom {
     const url = new URL(request.url);
     if (url.pathname.endsWith('/stream')) return this.stream(request);
     if (url.pathname.endsWith('/snapshot')) return this.snapshot();
+    if (url.pathname.endsWith('/status')) return this.status();
+    if (url.pathname.endsWith('/reset') && request.method === 'POST') return this.reset(request);
     if (url.pathname.endsWith('/events') && request.method === 'POST') return this.ingest(request);
     return json({ error: 'not found' }, 404);
   }
@@ -93,15 +110,39 @@ export class LiveRoom {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.state.acceptWebSocket(server);
-    const snapshot = await this.loadSnapshot();
-    server.send(JSON.stringify({ type: 'snapshot', ...snapshot }));
+    server.send(JSON.stringify({ type: 'snapshot', ...(await this.loadSnapshot()) }));
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async snapshot() {
     return json(await this.loadSnapshot(), 200, {
-      'Cache-Control': 'public, max-age=5, s-maxage=15, stale-while-revalidate=120',
+      'Cache-Control': 'no-store, max-age=0',
     });
+  }
+
+  async status() {
+    const snapshot = await this.loadSnapshot();
+    const ageSeconds = snapshot.updated_at
+      ? Math.max(0, Math.round((Date.now() - Date.parse(snapshot.updated_at)) / 1000))
+      : null;
+    return json({
+      status: ageSeconds !== null && ageSeconds <= 120 ? 'live' : 'waiting',
+      updated_at: snapshot.updated_at,
+      age_seconds: ageSeconds,
+      event_count: snapshot.events.length,
+      ttl_seconds: ttlSeconds(this.env),
+      websocket_clients: this.state.getWebSockets().length,
+    });
+  }
+
+  async reset(request) {
+    const verified = await verifyIngestRequest(request, this.env.INGEST_SECRET);
+    if (!verified.ok) return json({ error: verified.error }, verified.status);
+    await this.state.storage.deleteAll();
+    for (const socket of this.state.getWebSockets()) {
+      try { socket.send(JSON.stringify({ type: 'reset', at: new Date().toISOString() })); } catch { socket.close(1011, 'reset broadcast failed'); }
+    }
+    return json({ reset: true, at: new Date().toISOString() }, 200);
   }
 
   async ingest(request) {
@@ -111,7 +152,7 @@ export class LiveRoom {
     const previousHash = await this.state.storage.get('head_hash') || null;
     let event;
     try {
-      event = await normalizeEvent(verified.event, previousHash);
+      event = await normalizeEvent(verified.event, previousHash, ttlSeconds(this.env));
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : 'invalid event' }, 400);
     }
@@ -120,17 +161,21 @@ export class LiveRoom {
     const seen = await this.state.storage.get(`event:${event.id}`);
     if (seen) return json({ accepted: true, duplicate: true, event_id: event.id }, 200);
 
-    const events = await this.state.storage.get('events') || [];
-    events.push(event);
-    const trimmed = events.slice(-MAX_EVENTS);
+    const existing = await this.state.storage.get('events') || [];
+    const fresh = existing.filter((item) => isFresh(item, this.env));
+    const targetId = String(event.properties?.incident_id || event.id);
+    const withoutPreviousVersion = fresh.filter((item) => String(item.properties?.incident_id || item.id) !== targetId);
+    const resolved = Boolean(event.properties?.resolved || event.properties?.archived || event.type === 'incident_resolved');
+    const events = resolved ? withoutPreviousVersion : [...withoutPreviousVersion, event].slice(-MAX_EVENTS);
+
     await this.state.storage.put({
-      events: trimmed,
+      events,
       head_hash: event.hash,
       updated_at: event.received_at,
       [`event:${event.id}`]: true,
     });
 
-    const message = JSON.stringify({ type: 'event', event });
+    const message = JSON.stringify({ type: resolved ? 'remove' : 'event', event, incident_id: targetId });
     for (const socket of this.state.getWebSockets()) {
       try { socket.send(message); } catch { socket.close(1011, 'broadcast failed'); }
     }
@@ -153,15 +198,20 @@ export class LiveRoom {
       }));
     }
 
-    return json({ accepted: true, event_id: event.id, hash: event.hash }, 202);
+    return json({ accepted: true, removed: resolved, event_id: event.id, hash: event.hash }, 202);
   }
 
   async loadSnapshot() {
+    const stored = await this.state.storage.get('events') || [];
+    const events = stored.filter((event) => isFresh(event, this.env));
+    if (events.length !== stored.length) await this.state.storage.put('events', events);
     return {
       schema: 'seacommons-live-snapshot-v1',
+      mode: 'ephemeral-live',
       updated_at: await this.state.storage.get('updated_at') || null,
       head_hash: await this.state.storage.get('head_hash') || null,
-      events: await this.state.storage.get('events') || [],
+      ttl_seconds: ttlSeconds(this.env),
+      events,
     };
   }
 }
