@@ -26,6 +26,7 @@ from core.intel.geoextract import (
     classify_severity,
     extract_coords,
     extract_numeric_coords,
+    extract_region_coords,
     extract_relative_coords,
     is_direct_distress_call,
     is_resolved_distress,
@@ -375,7 +376,15 @@ class AlarmPhoneMonitor:
         text_coords = extract_numeric_coords(text)
         media_coords = post.get("media_coords")
         relative_coords = extract_relative_coords(text)
-        coords = text_coords or media_coords or relative_coords or extract_coords(text)
+        place_coords = extract_coords(text)
+        region_coords, region_radius_m = (None, None)
+        if not (text_coords or media_coords or relative_coords or place_coords):
+            # No specific place or coordinate at all — fall back to a much
+            # wider country/sea-basin area rather than dropping the location.
+            region_match = extract_region_coords(text)
+            if region_match:
+                region_coords, region_radius_m = region_match
+        coords = text_coords or media_coords or relative_coords or place_coords or region_coords
         if text_coords:
             coordinate_source = "post_text"
             location_uncertainty_m = 250
@@ -385,9 +394,12 @@ class AlarmPhoneMonitor:
         elif relative_coords:
             coordinate_source = "relative_place_offset"
             location_uncertainty_m = 15_000
-        elif coords:
+        elif place_coords:
             coordinate_source = "place_centroid"
             location_uncertainty_m = 25_000
+        elif region_coords:
+            coordinate_source = "region_area"
+            location_uncertainty_m = region_radius_m
         else:
             coordinate_source = "none"
             location_uncertainty_m = None

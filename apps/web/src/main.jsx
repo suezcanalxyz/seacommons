@@ -22,6 +22,16 @@ import {
   mergeLiveDrifts,
 } from './simulation/liveTracking.js';
 
+// Real-world-scaled circle radius: interpolate exponentially with zoom so
+// `location_uncertainty_m` (meters) renders as an actually-to-scale area
+// rather than a fixed pixel size. cos(37°) ≈ 0.8 approximates the whole
+// Mediterranean band well enough for a visual "this is imprecise" cue.
+const METERS_TO_PX_RADIUS = [
+  'interpolate', ['exponential', 2], ['zoom'],
+  0, ['/', ['coalesce', ['get', 'location_uncertainty_m'], 0], 156543.03392 * 0.8],
+  22, ['/', ['coalesce', ['get', 'location_uncertainty_m'], 0], (156543.03392 * 0.8) / Math.pow(2, 22)],
+];
+
 const PUBLIC_DEMO_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org']);
 const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'engine.seacommons.org']);
 const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
@@ -1083,6 +1093,7 @@ function App() {
         map.addSource('proximity-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-events',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-distress',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('intel-archived',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-drifts',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-vessel-links', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('live-nearby-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -1398,6 +1409,22 @@ function App() {
           },
         });
 
+        // Area indicator: when a report only carries a place/region centroid
+        // (no exact position), show a real-world-scaled translucent circle
+        // instead of a pin that implies false precision. Radius tracks
+        // location_uncertainty_m in meters (not screen pixels) via the
+        // standard MapLibre meters→pixels-per-zoom conversion.
+        map.addLayer({
+          id: 'intel-distress-area', type: 'circle', source: 'intel-distress',
+          filter: ['>', ['coalesce', ['get', 'location_uncertainty_m'], 0], 20000],
+          paint: {
+            'circle-radius': METERS_TO_PX_RADIUS,
+            'circle-color': 'rgba(255,59,59,0.10)',
+            'circle-stroke-color': 'rgba(255,80,80,0.4)',
+            'circle-stroke-width': 1,
+          },
+        });
+
         // ── Operational distress beacons — pulsing rings, topmost priority ──
         // Two concentric circle layers; the outer radius is animated in a
         // requestAnimationFrame loop (see distressPulse below).
@@ -1468,6 +1495,57 @@ function App() {
         }
         pulseRaf = requestAnimationFrame(distressPulse);
         map.once('remove', () => { if (pulseRaf) cancelAnimationFrame(pulseRaf); });
+
+        // ── Archived distress — resolved or aged out, kept readable but muted.
+        // No pulse: this is history, not something demanding attention now.
+        map.addLayer({
+          id: 'intel-archived-area', type: 'circle', source: 'intel-archived',
+          filter: ['>', ['coalesce', ['get', 'location_uncertainty_m'], 0], 20000],
+          paint: {
+            'circle-radius': METERS_TO_PX_RADIUS,
+            'circle-color': 'rgba(180,180,190,0.08)',
+            'circle-stroke-color': 'rgba(180,180,190,0.3)',
+            'circle-stroke-width': 1,
+          },
+        });
+        map.addLayer({
+          id: 'intel-archived-layer', type: 'circle', source: 'intel-archived',
+          paint: {
+            'circle-radius': 4,
+            'circle-color': '#9aa0ab',
+            'circle-opacity': 0.75,
+            'circle-stroke-width': 1,
+            'circle-stroke-color': '#2a2e35',
+          },
+        });
+        const archivedHoverPopup = new maplibregl.Popup({
+          closeButton: false, closeOnClick: false, offset: 10,
+          className: 'intel-hover-popup',
+        });
+        map.on('mouseenter', 'intel-archived-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mousemove', 'intel-archived-layer', (event) => {
+          const feature = event.features?.[0];
+          if (!feature) return;
+          const [lon, lat] = feature.geometry.coordinates;
+          const props = feature.properties || {};
+          archivedHoverPopup
+            .setLngLat([lon, lat])
+            .setHTML(`<strong>Archived</strong><br/>${props.title || ''}`)
+            .addTo(map);
+        });
+        map.on('mouseleave', 'intel-archived-layer', () => {
+          map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+          archivedHoverPopup.remove();
+        });
+        map.on('click', 'intel-archived-layer', (event) => {
+          const feature = event.features?.[0];
+          if (!feature) return;
+          const [lon, lat] = feature.geometry.coordinates;
+          map.flyTo({ center: [lon, lat], zoom: 9, duration: 800 });
+          setActivePanel('osint');
+          if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
+          event.originalEvent?.stopPropagation?.();
+        });
 
         // Vessels reported near an active Live distress point (AIS, refreshed
         // periodically — see the liveNearbyVessels effect below).
@@ -1750,25 +1828,26 @@ function App() {
     setLayerVis((cur) => ({ ...cur, [key]: cur[key] === false }));
   }
 
-  // Intel events map layer — split distress (operational) into its own pulsing source
+  // Intel events map layer — split into three buckets driven by the backend's
+  // `kind`: "distress" (active, pulsing), "archived" (resolved/aged out —
+  // kept visible but muted, never dropped), "context" (news, static).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
     const positioned = intelEvents.filter((f) => f.geometry?.coordinates);
-    const isOperational = (f) => {
+    const kindOf = (f) => {
       const p = f.properties || {};
-      return p.tier === 'operational' || p.type === 'distress';
+      if (p.kind === 'archived') return 'archived';
+      if (p.kind === 'distress' || p.tier === 'operational' || p.type === 'distress') return 'distress';
+      return 'context';
     };
-    const distress = positioned.filter(
-      (feature) => isOperational(feature)
-        && feature.properties?.coordinate_source !== 'place_centroid',
-    );
-    const distressIds = new Set(distress.map((feature) => feature.properties?.id));
-    const others = positioned.filter(
-      (feature) => !distressIds.has(feature.properties?.id),
-    );
+    const distress = positioned.filter((f) => kindOf(f) === 'distress');
+    const archived = positioned.filter((f) => kindOf(f) === 'archived');
+    const bucketedIds = new Set([...distress, ...archived].map((f) => f.properties?.id));
+    const others = positioned.filter((f) => !bucketedIds.has(f.properties?.id));
     map.getSource('intel-events')?.setData({ type: 'FeatureCollection', features: others });
     map.getSource('intel-distress')?.setData({ type: 'FeatureCollection', features: distress });
+    map.getSource('intel-archived')?.setData({ type: 'FeatureCollection', features: archived });
   }, [intelEvents, mapReady]);
 
   // Live nearby vessels: AIS positions around each active distress point,

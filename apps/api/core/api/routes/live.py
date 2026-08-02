@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import math
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -13,6 +14,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from core.config import config
+from core.intel.geoextract import is_resolved_distress
 from core.intel.store import IntelEvent, intel_store
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
@@ -75,7 +77,9 @@ def _public_intel_feature(event: IntelEvent) -> Optional[dict[str, Any]]:
     metadata = {key: event.metadata[key] for key in _PUBLIC_METADATA if key in event.metadata}
     coordinate_source = str(event.metadata.get("coordinate_source") or "")
     location_precision = (
-        "regional_centroid"
+        "area"
+        if coordinate_source == "region_area"
+        else "regional_centroid"
         if coordinate_source == "place_centroid"
         else "reported_or_derived"
         if event.lat is not None and event.lon is not None
@@ -205,26 +209,73 @@ def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
 
 
 _DISTRESS_LIVE_MAX_AGE_DAYS = 3
+_RESOLUTION_LOOKBACK_DAYS = 10
+_KEYWORD_STOPWORDS = frozenset({
+    "with", "from", "were", "have", "been", "that", "this", "they", "them",
+    "their", "people", "group", "persons", "boat", "vessel", "distress",
+    "alarm", "phone", "alarmphone", "still", "remain", "remains", "found",
+    "hospitalised", "hospitalized", "informed", "authorities", "relatives",
+})
 
 
-def _distress_still_live(event: IntelEvent, *, now: datetime) -> bool:
-    """A distress marker stays on Live only while active and recent.
+def _text_keywords(text: str) -> set[str]:
+    """Significant lowercase words/hashtags (4+ chars) for cross-post matching."""
+    return {
+        stripped
+        for word in re.findall(r"#?\w{4,}", text or "")
+        if (stripped := word.strip("#.,!?:;").lower()) not in _KEYWORD_STOPWORDS
+    }
 
-    Resolved reports (a later Alarm Phone post saying the group was rescued)
-    already fail is_direct_distress_call at ingestion, so they never reach
-    this check as "distress" kind. This guards the remaining case: an
-    original distress report that nothing ever updated — it must still
-    age out of the public map after a few days rather than pin forever.
+
+def _parse_utc(value: str) -> Optional[datetime]:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _has_resolution_signal(event: IntelEvent, same_source: list[IntelEvent]) -> bool:
+    """True if a later post from the same source reports this incident resolved.
+
+    Matches on shared keywords/place names/hashtags between the original
+    report and the candidate resolution post, within a bounded time window —
+    a lightweight cross-check rather than a hard age cutoff.
+    """
+    event_time = _parse_utc(event.timestamp_utc)
+    event_kw = _text_keywords(event.text or event.title)
+    if event_time is None or not event_kw:
+        return False
+    for other in same_source:
+        if other.id == event.id:
+            continue
+        other_time = _parse_utc(other.timestamp_utc)
+        if other_time is None or other_time <= event_time:
+            continue
+        if (other_time - event_time).days > _RESOLUTION_LOOKBACK_DAYS:
+            continue
+        if not is_resolved_distress(other.text or other.title):
+            continue
+        if event_kw & _text_keywords(other.text or other.title):
+            return True
+    return False
+
+
+def _distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[IntelEvent]) -> str:
+    """'active' (pulsing, current) or 'archived' (kept, but visually muted).
+
+    Distress markers are never dropped from Live outright — once resolved
+    (explicit self-report, or a later same-source post that cross-checks as
+    a resolution) or older than a few days, they downgrade to "archived" so
+    the history stays readable instead of disappearing.
     """
     if str(event.metadata.get("incident_status") or "") == "resolved":
-        return False
-    try:
-        observed = datetime.fromisoformat(str(event.timestamp_utc).replace("Z", "+00:00"))
-        if observed.tzinfo is None:
-            observed = observed.replace(tzinfo=timezone.utc)
-    except (TypeError, ValueError):
-        return True
-    return (now - observed.astimezone(timezone.utc)).days < _DISTRESS_LIVE_MAX_AGE_DAYS
+        return "archived"
+    if _has_resolution_signal(event, same_source):
+        return "archived"
+    observed = _parse_utc(event.timestamp_utc)
+    age_days = (now - observed).days if observed else 0
+    return "archived" if age_days >= _DISTRESS_LIVE_MAX_AGE_DAYS else "active"
 
 
 def public_signal_collection(
@@ -245,13 +296,18 @@ def public_signal_collection(
     by_id.update({event.id: event for event in memory_events})
     events = list(by_id.values())
     now = datetime.now(timezone.utc)
-    features = [
-        feature
-        for event in events
-        if (feature := _public_intel_feature(event))
-        and feature["properties"].get("kind") == "distress"
-        and _distress_still_live(event, now=now)
-    ]
+    by_source: dict[str, list[IntelEvent]] = {}
+    for event in events:
+        by_source.setdefault(event.source, []).append(event)
+    features = []
+    for event in events:
+        feature = _public_intel_feature(event)
+        if not feature or feature["properties"].get("kind") != "distress":
+            continue
+        lifecycle = _distress_lifecycle(event, now=now, same_source=by_source.get(event.source, []))
+        feature["properties"]["kind"] = "distress" if lifecycle == "active" else "archived"
+        feature["properties"]["incident_lifecycle"] = lifecycle
+        features.append(feature)
     features.extend(_published_ingested_features(limit))
     if since:
         features = [

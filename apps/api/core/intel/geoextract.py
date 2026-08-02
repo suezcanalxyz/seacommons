@@ -110,6 +110,13 @@ _PLACES: dict[str, tuple[float, float]] = {
     "chafarinas":          (35.18, -2.43),
     "mediterranean":       (35.00, 18.00),
     "med sea":             (35.00, 18.00),
+    # Western Mediterranean (Algeria/Morocco → Spain route)
+    "oran":                (35.70, -0.63),
+    "ibiza":               (38.91, 1.43),
+    "balearic islands":    (39.50, 2.80),
+    "almeria":             (36.83, -2.46),
+    "cartagena":           (37.61, -0.99),
+    "melilla":             (35.29, -2.94),
     # Red Sea / Horn (wider coverage for non-Med SAR)
     "suez":                (30.00, 32.54),
     "suez canal":          (30.70, 32.34),
@@ -123,6 +130,36 @@ _PLACES: dict[str, tuple[float, float]] = {
 
 # Sorted longest-first for greedy matching
 _PLACES_SORTED = sorted(_PLACES.items(), key=lambda x: -len(x[0]))
+
+# Country/sea-basin fallback — only tried when no specific place/coordinate
+# matches. These names span hundreds of km, so each carries its own much
+# wider radius_m; callers must render this as an area, never a precise pin.
+_REGIONS: dict[str, tuple[float, float, float]] = {
+    "algeria":                    (36.75, 3.50, 220_000),
+    "algérie":                    (36.75, 3.50, 220_000),
+    "algerie":                    (36.75, 3.50, 220_000),
+    "western mediterranean":      (37.50, 1.50, 180_000),
+    "westernmed":                 (37.50, 1.50, 180_000),
+    "méditerranée occidentale":   (37.50, 1.50, 180_000),
+    "méditerranéeoccidentale":    (37.50, 1.50, 180_000),
+    "mediterranee occidentale":   (37.50, 1.50, 180_000),
+    "alboran sea":                (35.90, -3.00, 100_000),
+    "morocco":                    (33.50, -6.50, 220_000),
+    "maroc":                      (33.50, -6.50, 220_000),
+}
+_REGIONS_SORTED = sorted(_REGIONS.items(), key=lambda x: -len(x[0]))
+
+
+def extract_region_coords(text: str) -> Optional[tuple[tuple[float, float], float]]:
+    """Broad country/sea-basin fallback for when no specific place or explicit
+    coordinate can be found. Returns ((lat, lon), radius_m) — the caller must
+    surface this as an area indicator, not a precise-looking pin."""
+    tl = text.lower()
+    for region, (lat, lon, radius_m) in _REGIONS_SORTED:
+        if region in tl:
+            return (lat, lon), radius_m
+    return None
+
 
 # ── Distress & emergency keyword sets ────────────────────────────────────────
 DISTRESS_KW = frozenset([
