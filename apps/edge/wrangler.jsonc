@@ -7,6 +7,7 @@
   "observability": { "enabled": true },
   "vars": {
     "ALLOWED_ORIGINS": "https://live.seacommons.org,https://play.seacommons.org,http://localhost:5173",
+    "LIVE_EVENT_TTL_SECONDS": "21600",
     "NOSTR_BRIDGE_URL": ""
   },
   "durable_objects": {
