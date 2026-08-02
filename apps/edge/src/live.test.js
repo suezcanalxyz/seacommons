@@ -14,7 +14,8 @@ async function hmac(secret, body) {
   return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-test('normalizes a public event into the versioned append-only contract', async () => {
+test('normalizes a public event with an explicit live expiry', async () => {
+  const before = Date.now();
   const event = await normalizeEvent({
     type: 'distress_observation',
     source: 'alarm-phone',
@@ -22,13 +23,14 @@ test('normalizes a public event into the versioned append-only contract', async 
     observed_at: '2026-08-02T12:00:00Z',
     confidence: 0.7,
     geometry: { type: 'Point', coordinates: [14.5, 35.5] },
-  }, 'previous');
+  }, 'previous', 3600);
 
   assert.equal(event.schema, 'seacommons-event-v1');
   assert.equal(event.previous_hash, 'previous');
   assert.equal(event.visibility, 'public');
   assert.match(event.id, /^[a-f0-9]{64}$/);
   assert.match(event.hash, /^[a-f0-9]{64}$/);
+  assert.ok(event.expires_at_ms >= before + 3_599_000);
 });
 
 test('accepts a correctly signed collector request', async () => {
