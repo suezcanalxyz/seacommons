@@ -539,6 +539,8 @@ async def live_sources():
             "Alarm Phone / X official site",
             "Mastodon",
             "Official NGO RSS",
+            "GDACS",
+            "Bluesky",
         }
     }
     try:
