@@ -1,6 +1,6 @@
 import http from 'node:http';
 
-const UPSTREAM_HOST = '204.216.210.155';
+const UPSTREAM_HOST = '79.72.46.166';
 const UPSTREAM_VIRTUAL_HOST = 'api.seacommons.org';
 
 function requestJson(path) {

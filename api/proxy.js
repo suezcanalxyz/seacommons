@@ -1,6 +1,6 @@
 import http from 'node:http';
 
-const UPSTREAM_HOST = '204.216.210.155';
+const UPSTREAM_HOST = '79.72.46.166';
 const ALLOWED_UPSTREAMS = new Set(['api.seacommons.org', 'demo-api.seacommons.org']);
 const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org']);
 const HOP_BY_HOP_HEADERS = new Set([
