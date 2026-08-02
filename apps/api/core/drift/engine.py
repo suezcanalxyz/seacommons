@@ -27,6 +27,32 @@ class DriftResult(BaseModel):
     metadata: dict[str, Any]
 
 
+def _remote_compute(lat: float, lon: float, time_utc: datetime, duration_h: int,
+                     domain: str, config: Optional[dict], backtrack: bool) -> Optional[DriftResult]:
+    """POST to DRIFT_WORKER_URL when configured. Returns None to fall back to
+    in-process compute (unset URL, unreachable worker, or any worker error) —
+    a remote-compute failure must never take the whole request down."""
+    if not runtime_config.DRIFT_WORKER_URL or domain == "ballistic":
+        return None
+    try:
+        import httpx
+        response = httpx.post(
+            f"{runtime_config.DRIFT_WORKER_URL.rstrip('/')}/compute",
+            json={
+                "lat": lat, "lon": lon, "time_utc": time_utc.isoformat(),
+                "duration_h": duration_h, "domain": domain, "config": config,
+                "backtrack": backtrack,
+            },
+            headers={"X-Worker-Secret": runtime_config.DRIFT_WORKER_SECRET},
+            timeout=runtime_config.DRIFT_WORKER_TIMEOUT_S,
+        )
+        response.raise_for_status()
+        return DriftResult(**response.json())
+    except Exception as exc:
+        logger.warning("Drift worker unreachable, computing in-process instead: %s", exc)
+        return None
+
+
 class DriftEngine:
     def __init__(self):
         self._cache = CacheManager()
@@ -34,6 +60,9 @@ class DriftEngine:
     def compute(self, lat: float, lon: float, time_utc: datetime, duration_h: int = 24,
                 domain: str = "ocean_sar", config: Optional[dict] = None) -> DriftResult:
         """Forward drift from lat/lon."""
+        remote = _remote_compute(lat, lon, time_utc, duration_h, domain, config, backtrack=False)
+        if remote is not None:
+            return remote
         if domain == "ballistic":
             return self._ballistic(lat, lon, time_utc, config or {})
         return self._opendrift(lat, lon, time_utc, duration_h, domain, config or {})

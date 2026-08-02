@@ -126,6 +126,11 @@ class SuezCanalConfig(BaseSettings):
     RUNTIME_PROFILE: str = "operational"
     EXTERNAL_DATA_TIMEOUT_S: float = 12.0
     ALERT_DRIFT_DURATION_H: int = 24
+    # Offload OpenDrift/CMEMS compute to a dedicated worker VM. Leave blank to
+    # keep computing in-process (the default — nothing changes if unset).
+    DRIFT_WORKER_URL: str = ""
+    DRIFT_WORKER_SECRET: str = ""
+    DRIFT_WORKER_TIMEOUT_S: float = 90.0
     MOCK: bool = False  # deprecated compatibility flag; operational runtime ignores it
     DEMO_PUBLIC_MODE: bool = False  # isolates the public demo and blocks operational mutations
 
