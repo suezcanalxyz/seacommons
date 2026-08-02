@@ -1,0 +1,27 @@
+[Unit]
+Description=SeaCommons Live edge publisher
+After=network-online.target seacommons-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/seacommons/apps/api
+EnvironmentFile=/home/ubuntu/seacommons/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/seacommons/.venv/bin/python -m core.live_edge_publisher
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/seacommons/shared
+MemoryMax=220M
+MemoryHigh=180M
+CPUQuota=35%
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
