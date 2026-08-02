@@ -177,6 +177,14 @@ _DIRECT_DISTRESS_PATTERNS = tuple(
         r"\b(?:rescue|medical assistance)\s+(?:is|are)\s+(?:urgently\s+|immediately\s+)?(?:needed|required)\b",
         r"\b(?:ask|asked|asking|call|called|calling)\s+for\s+(?:an?\s+)?(?:urgent|immediate)\s+(?:search and rescue|rescue|medical assistance|assistance)\b",
         r"\b(?:critical situation|critical condition)\b.{0,100}\b(?:authorities|coast ?guard|rescue|assistance)\b",
+        # A first report of a shipwreck is itself an active distress call, even
+        # when it doesn't repeat "in distress"/"sinking" — Alarm Phone posts
+        # these as standalone incident openers (e.g. "Shipwreck in the
+        # WesternMed. We were alerted by relatives…" / "Naufrage en
+        # Méditerranée... Des proches ont signalé..."). Already-resolved
+        # reports are excluded above via _RESOLVED_DISTRESS_PATTERNS first.
+        r"\b(?:shipwreck|naufrage|naufragio)\b",
+        r"\b(?:people|persons|migrants)\s+(?:are\s+)?missing\b",
     )
 )
 _RESOLVED_DISTRESS_PATTERNS = tuple(
