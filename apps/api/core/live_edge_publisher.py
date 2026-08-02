@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Persistent best-effort publisher from the SeaCommons intel DB to Live edge.
+"""Low-memory live publisher from SeaCommons intel state to the edge.
 
-Designed for 1 GB Oracle micro instances:
-- no additional broker is required;
-- a small SQLite outbox survives restarts and network failures;
-- delivery is idempotent because the edge deduplicates event IDs;
-- private/non-operational material is never exported by default.
+The operational mode is deliberately live-first:
+- no historical backfill is required;
+- recent rows are rescanned so location/status enrichments are published;
+- each material state version gets a deterministic event ID;
+- a SQLite outbox survives short network failures;
+- delivered versions are remembered locally to avoid repeated sends.
 
 Run with:
     python -m core.live_edge_publisher
@@ -21,7 +22,7 @@ import signal
 import sqlite3
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -36,9 +37,11 @@ class PublisherSettings:
     ingest_secret: str
     node_id: str
     outbox_path: Path
-    poll_seconds: float = 15.0
+    poll_seconds: float = 1.0
     batch_size: int = 25
-    request_timeout_seconds: float = 12.0
+    scan_limit: int = 200
+    live_window_minutes: int = 360
+    request_timeout_seconds: float = 8.0
     max_attempts: int = 20
 
     @classmethod
@@ -48,9 +51,11 @@ class PublisherSettings:
             ingest_secret=os.getenv("LIVE_EDGE_INGEST_SECRET", ""),
             node_id=os.getenv("SEACOMMONS_NODE_ID", os.uname().nodename),
             outbox_path=Path(os.getenv("LIVE_EDGE_OUTBOX_PATH", "./shared/live-edge-outbox.db")),
-            poll_seconds=float(os.getenv("LIVE_EDGE_POLL_SECONDS", "15")),
+            poll_seconds=max(0.5, float(os.getenv("LIVE_EDGE_POLL_SECONDS", "1"))),
             batch_size=max(1, int(os.getenv("LIVE_EDGE_BATCH_SIZE", "25"))),
-            request_timeout_seconds=float(os.getenv("LIVE_EDGE_TIMEOUT_SECONDS", "12")),
+            scan_limit=max(10, int(os.getenv("LIVE_EDGE_SCAN_LIMIT", "200"))),
+            live_window_minutes=max(5, int(os.getenv("LIVE_EDGE_WINDOW_MINUTES", "360"))),
+            request_timeout_seconds=float(os.getenv("LIVE_EDGE_TIMEOUT_SECONDS", "8")),
             max_attempts=max(1, int(os.getenv("LIVE_EDGE_MAX_ATTEMPTS", "20"))),
         )
 
@@ -70,10 +75,6 @@ class Outbox:
         self.connection.execute("PRAGMA synchronous=NORMAL")
         self.connection.executescript(
             """
-            CREATE TABLE IF NOT EXISTS state (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
             CREATE TABLE IF NOT EXISTS pending (
                 event_id TEXT PRIMARY KEY,
                 payload TEXT NOT NULL,
@@ -82,30 +83,29 @@ class Outbox:
                 next_attempt_at REAL NOT NULL DEFAULT 0,
                 last_error TEXT
             );
+            CREATE TABLE IF NOT EXISTS delivered (
+                event_id TEXT PRIMARY KEY,
+                delivered_at TEXT NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS pending_ready_idx
                 ON pending(next_attempt_at, created_at);
+            CREATE INDEX IF NOT EXISTS delivered_at_idx
+                ON delivered(delivered_at);
             """
         )
         self.connection.commit()
 
-    def get_cursor(self) -> str:
-        row = self.connection.execute("SELECT value FROM state WHERE key='cursor'").fetchone()
-        return str(row["value"]) if row else ""
-
-    def set_cursor(self, value: str) -> None:
-        self.connection.execute(
-            "INSERT INTO state(key,value) VALUES('cursor',?) "
-            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            (value,),
-        )
-        self.connection.commit()
-
-    def enqueue(self, event_id: str, payload: dict[str, Any]) -> None:
-        self.connection.execute(
+    def enqueue(self, event_id: str, payload: dict[str, Any]) -> bool:
+        if self.connection.execute(
+            "SELECT 1 FROM delivered WHERE event_id=?", (event_id,)
+        ).fetchone():
+            return False
+        cursor = self.connection.execute(
             "INSERT OR IGNORE INTO pending(event_id,payload,created_at) VALUES(?,?,?)",
             (event_id, json.dumps(payload, separators=(",", ":"), sort_keys=True), now_iso()),
         )
         self.connection.commit()
+        return cursor.rowcount > 0
 
     def ready(self, limit: int) -> list[sqlite3.Row]:
         return list(
@@ -117,16 +117,25 @@ class Outbox:
         )
 
     def acknowledge(self, event_id: str) -> None:
-        self.connection.execute("DELETE FROM pending WHERE event_id=?", (event_id,))
-        self.connection.commit()
+        with self.connection:
+            self.connection.execute("DELETE FROM pending WHERE event_id=?", (event_id,))
+            self.connection.execute(
+                "INSERT OR REPLACE INTO delivered(event_id,delivered_at) VALUES(?,?)",
+                (event_id, now_iso()),
+            )
 
     def fail(self, event_id: str, attempts: int, error: str, max_attempts: int) -> None:
         capped_attempts = min(attempts, max_attempts)
-        delay = min(3600.0, 2 ** min(capped_attempts, 11))
+        delay = min(300.0, 2 ** min(capped_attempts, 8))
         self.connection.execute(
             "UPDATE pending SET attempts=?, next_attempt_at=?, last_error=? WHERE event_id=?",
             (attempts, time.time() + delay, error[:500], event_id),
         )
+        self.connection.commit()
+
+    def prune(self, retention_hours: int = 48) -> None:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=retention_hours)).isoformat()
+        self.connection.execute("DELETE FROM delivered WHERE delivered_at < ?", (cutoff,))
         self.connection.commit()
 
     def counts(self) -> dict[str, int]:
@@ -139,6 +148,22 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _version_id(incident_id: str, payload: dict[str, Any]) -> str:
+    material = json.dumps(
+        {
+            "type": payload.get("type"),
+            "geometry": payload.get("geometry"),
+            "confidence": payload.get("confidence"),
+            "properties": payload.get("properties"),
+            "source_url": payload.get("source_url"),
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    version = hashlib.sha256(material.encode()).hexdigest()[:20]
+    return f"{incident_id}:{version}"
+
+
 def public_event_from_row(row: Any, node_id: str) -> dict[str, Any] | None:
     metadata = dict(getattr(row, "meta", None) or {})
     event_type = str(getattr(row, "type", "") or "")
@@ -148,6 +173,7 @@ def public_event_from_row(row: Any, node_id: str) -> dict[str, Any] | None:
     if not is_distress and not explicitly_public:
         return None
 
+    incident_id = str(getattr(row, "id"))
     lat = getattr(row, "lat", None)
     lon = getattr(row, "lon", None)
     geometry = None
@@ -160,24 +186,29 @@ def public_event_from_row(row: Any, node_id: str) -> dict[str, Any] | None:
     except (TypeError, ValueError):
         confidence = None
 
+    resolved = bool(metadata.get("resolved"))
+    archived = bool(metadata.get("archived"))
     properties = {
+        "incident_id": incident_id,
         "severity": severity,
         "title": str(getattr(row, "title", "") or ""),
         "text": str(getattr(row, "text", "") or ""),
         "verification_status": metadata.get("verification_status", "unverified_public_source"),
         "coordinate_source": metadata.get("coordinate_source"),
         "radius_m": metadata.get("radius_m"),
-        "resolved": bool(metadata.get("resolved")),
-        "archived": bool(metadata.get("archived")),
+        "resolved": resolved,
+        "archived": archived,
         "persons": metadata.get("persons"),
         "linked_mmsi": str(getattr(row, "linked_mmsi", "") or ""),
+        "last_source_seen_at": metadata.get("last_source_seen_at"),
     }
     properties = {key: value for key, value in properties.items() if value not in (None, "")}
 
-    return {
+    payload: dict[str, Any] = {
         "schema": "seacommons-event-v1",
-        "id": str(getattr(row, "id")),
-        "type": "distress_observation" if is_distress else event_type,
+        "type": "incident_resolved" if resolved or archived else (
+            "distress_observation" if is_distress else event_type
+        ),
         "source": str(getattr(row, "source", "") or "unknown"),
         "node": node_id,
         "observed_at": str(getattr(row, "timestamp_utc", "") or now_iso()),
@@ -187,6 +218,8 @@ def public_event_from_row(row: Any, node_id: str) -> dict[str, Any] | None:
         "properties": properties,
         "source_url": str(getattr(row, "url", "") or "") or None,
     }
+    payload["id"] = _version_id(incident_id, payload)
+    return payload
 
 
 def signature(secret: str, body: str) -> str:
@@ -200,32 +233,32 @@ class LiveEdgePublisher:
         self.outbox = Outbox(settings.outbox_path)
         self.running = True
         self.client = httpx.Client(timeout=settings.request_timeout_seconds)
+        self.cycles = 0
 
     def stop(self, *_: Any) -> None:
         self.running = False
 
     def collect(self) -> int:
-        """Copy new eligible DB rows into the durable local outbox."""
+        """Rescan only the live window and enqueue unseen material versions."""
         from core.db.models import IntelEventDB
         from core.db.session import session_scope
 
-        cursor = self.outbox.get_cursor()
+        cutoff = (datetime.now(timezone.utc) - timedelta(
+            minutes=self.settings.live_window_minutes
+        )).isoformat()
         added = 0
-        newest_cursor = cursor
         with session_scope() as db:
-            query = db.query(IntelEventDB).order_by(IntelEventDB.timestamp_utc.asc())
-            if cursor:
-                query = query.filter(IntelEventDB.timestamp_utc > cursor)
-            rows = query.limit(self.settings.batch_size * 4).all()
-            for row in rows:
-                newest_cursor = max(newest_cursor, str(row.timestamp_utc or ""))
+            rows = (
+                db.query(IntelEventDB)
+                .filter(IntelEventDB.timestamp_utc >= cutoff)
+                .order_by(IntelEventDB.timestamp_utc.desc())
+                .limit(self.settings.scan_limit)
+                .all()
+            )
+            for row in reversed(rows):
                 payload = public_event_from_row(row, self.settings.node_id)
-                if payload is None:
-                    continue
-                self.outbox.enqueue(payload["id"], payload)
-                added += 1
-        if newest_cursor and newest_cursor != cursor:
-            self.outbox.set_cursor(newest_cursor)
+                if payload is not None and self.outbox.enqueue(payload["id"], payload):
+                    added += 1
         return added
 
     def deliver(self) -> int:
@@ -256,11 +289,20 @@ class LiveEdgePublisher:
         return delivered
 
     def run(self) -> None:
-        logger.info("Live edge publisher started for node %s", self.settings.node_id)
+        logger.info(
+            "Live-first edge publisher started node=%s poll=%.2fs window=%dm",
+            self.settings.node_id,
+            self.settings.poll_seconds,
+            self.settings.live_window_minutes,
+        )
         while self.running:
+            started = time.monotonic()
             try:
                 added = self.collect()
                 delivered = self.deliver()
+                self.cycles += 1
+                if self.cycles % 3600 == 0:
+                    self.outbox.prune()
                 if added or delivered:
                     logger.info(
                         "Live edge cycle: collected=%d delivered=%d outbox=%s",
@@ -270,7 +312,9 @@ class LiveEdgePublisher:
                     )
             except Exception:
                 logger.exception("Live edge publisher cycle failed")
-            time.sleep(self.settings.poll_seconds)
+            remaining = self.settings.poll_seconds - (time.monotonic() - started)
+            if remaining > 0:
+                time.sleep(remaining)
 
 
 def main() -> None:
