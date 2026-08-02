@@ -9,7 +9,7 @@ data/
 deploy/
 docs/
 infrastructure/
-scripts/
+/scripts/
 tests/
 *.db
 *.sqlite*
