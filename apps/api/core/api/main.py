@@ -28,6 +28,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi import HTTPException
 
 from core.config import config
+from core import bootstrap
 from core.api.routes import alerts, drift, anomaly, forensic, integrations, ops, vessels
 from core.api.routes import ingest, probability, weather, zones, intel, cases, governance, live, connectors
 from core.db.session import init_database
@@ -48,7 +49,7 @@ async def lifespan(app: FastAPI):
     )
     init_database()
     if config.JOB_EXECUTION_MODE != "queue":
-        _reset_stale_computing_jobs()
+        bootstrap.reset_stale_computing_jobs()
     try:
         from core.intel.store import intel_store
         intel_store.load_from_db()
@@ -67,9 +68,16 @@ async def lifespan(app: FastAPI):
             logger.warning("OpenDrift prewarm failed to start: %s", exc)
     elif config.JOB_EXECUTION_MODE != "queue" and not config.DEMO_PUBLIC_MODE:
         logger.info("OpenDrift pre-warm disabled; model will load on first use")
-    _start_background_sensors()
-    _start_intel_engine()
-    _start_scheduler()
+    if config.INTEL_MONITORS_ENABLED:
+        bootstrap.start_background_sensors()
+        bootstrap.start_intel_engine()
+        bootstrap.start_scheduler()
+    else:
+        # Monitors run as a standalone process elsewhere (core.intel_worker_main)
+        # writing to the same shared DB — periodically pull their writes (and
+        # any metadata updates to events already cached) into this process.
+        logger.info("Intel monitors disabled here (INTEL_MONITORS_ENABLED=false) — syncing from DB instead")
+        _start_intel_sync_loop()
     yield
     logger.info("Seacommons API shutting down")
     try:
@@ -79,121 +87,21 @@ async def lifespan(app: FastAPI):
         pass
 
 
-def _reset_stale_computing_jobs() -> None:
-    """
-    At startup, mark any drift/alert jobs stuck in 'computing' as 'failed'.
-    They were killed by the previous process shutdown and will never complete.
-    Also resets drift_status on in-memory intel events so the UI shows a retry button.
-    """
-    try:
-        from core.db.session import session_scope
-        from core.db.models import DriftResultDB, AlertEvent
-        from sqlalchemy import update
-        with session_scope() as db:
-            result = db.execute(
-                update(DriftResultDB)
-                .where(DriftResultDB.status == "computing")
-                .values(status="failed")
-            )
-            n_drift = result.rowcount
-        with session_scope() as db:
-            result = db.execute(
-                update(AlertEvent)
-                .where(AlertEvent.status == "processing")
-                .values(status="failed")
-            )
-            n_alert = result.rowcount
-        if n_drift or n_alert:
-            logger.info("Startup cleanup: reset %d stuck drift jobs, %d stuck alerts to 'failed'", n_drift, n_alert)
-    except Exception as exc:
-        logger.warning("Startup cleanup failed: %s", exc)
+def _start_intel_sync_loop() -> None:
+    """Periodically pull fresh/updated intel events from DB (split-deployment mode)."""
+    import threading
+    import time
 
+    def _loop():
+        from core.intel.store import intel_store
+        while True:
+            time.sleep(30)
+            try:
+                intel_store.sync_from_db()
+            except Exception as exc:
+                logger.debug("Intel DB sync tick failed: %s", exc)
 
-def _start_background_sensors():
-    """Start enabled sensor background threads."""
-    try:
-        if config.TID_ENABLED:
-            from core.sensors.ionospheric import IonosphericMonitor
-            mon = IonosphericMonitor()
-            mon.start()
-            logger.info("IonosphericMonitor started")
-    except Exception as exc:
-        logger.warning("IonosphericMonitor failed to start: %s", exc)
-
-    try:
-        if config.INFRASOUND_ENABLED:
-            from core.sensors.infrasound import InfrasoundDetector
-            InfrasoundDetector().start()
-    except Exception as exc:
-        logger.warning("InfrasoundDetector failed to start: %s", exc)
-
-    try:
-        if config.SEISMIC_ENABLED:
-            from core.sensors.seismic import SeismicDetector
-            SeismicDetector().start()
-    except Exception as exc:
-        logger.warning("SeismicDetector failed to start: %s", exc)
-
-    try:
-        if config.ADSB_ENABLED:
-            from core.sensors.adsb import ADSBReceiver
-            ADSBReceiver().start()
-    except Exception as exc:
-        logger.warning("ADSBReceiver failed to start: %s", exc)
-
-    # Start correlation engine
-    try:
-        from core.anomaly.correlation import CorrelationEngine
-        engine = CorrelationEngine()
-        import threading
-        t = threading.Thread(target=engine.start, daemon=True)
-        t.start()
-    except Exception as exc:
-        logger.warning("CorrelationEngine failed to start: %s", exc)
-
-    # Start AISStream real-time AIS feed
-    if config.AISSTREAM_KEY:
-        try:
-            from core.vessels import aisstream
-            aisstream.start(config.AISSTREAM_KEY)
-            logger.info("AISStream client started")
-        except Exception as exc:
-            logger.warning("AISStream failed to start: %s", exc)
-    else:
-        logger.warning("AISStream key missing: live vessel feed disabled")
-
-    # Start BarentsWatch AIS feed (second, independent free AIS source — Med/Red Sea/Gulf of Aden)
-    if config.BARENTSWATCH_CLIENT_ID and config.BARENTSWATCH_CLIENT_SECRET:
-        try:
-            from core.vessels import barentswatch
-            barentswatch.start(config.BARENTSWATCH_CLIENT_ID, config.BARENTSWATCH_CLIENT_SECRET)
-            logger.info("BarentsWatch client started")
-        except Exception as exc:
-            logger.warning("BarentsWatch failed to start: %s", exc)
-    else:
-        logger.warning("BarentsWatch credentials missing: secondary AIS feed disabled")
-
-
-def _start_scheduler() -> None:
-    """Start APScheduler: drift-pending, news refresh, IOM incidents, forensic scan."""
-    try:
-        from core.scheduler import start as scheduler_start
-        scheduler_start()
-    except Exception as exc:
-        logger.warning("Scheduler failed to start: %s", exc)
-
-
-def _start_intel_engine() -> None:
-    """Start maritime intelligence monitors (Twitter, news, AIS spikes)."""
-    if not config.INTEL_ENABLED:
-        logger.info("Intel engine disabled (INTEL_ENABLED=false)")
-        return
-    try:
-        from core.intel.engine import intel_engine
-        intel_engine.start(twitter_bearer=config.TWITTER_BEARER_TOKEN)
-        logger.info("Intel engine started")
-    except Exception as exc:
-        logger.warning("Intel engine failed to start: %s", exc)
+    threading.Thread(target=_loop, daemon=True, name="intel-db-sync").start()
 
 
 app = FastAPI(

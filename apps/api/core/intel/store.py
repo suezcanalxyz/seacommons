@@ -224,6 +224,70 @@ class IntelStore:
             logger.warning("intel_store: DB reload skipped: %s", exc)
             return 0
 
+    def sync_from_db(self, limit: int = MAX_EVENTS, max_age_days: int = 7) -> tuple[int, int]:
+        """Pull recent DB rows in, updating events already cached in memory.
+
+        load_from_db() only ever adds — it never touches an event this
+        process has already seen, so metadata written by a monitor running
+        in a *different* process (e.g. a drift_status flip to "completed")
+        would never reach this process's copy. Call this on an interval
+        instead when monitors and API are split across processes/VMs.
+        Returns (new_count, updated_count).
+        """
+        try:
+            from core.db.session import session_scope
+            from core.db.models import IntelEventDB
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+            with session_scope() as db:
+                rows = (
+                    db.query(IntelEventDB)
+                    .filter(IntelEventDB.timestamp_utc >= cutoff)
+                    .order_by(IntelEventDB.timestamp_utc.desc())
+                    .limit(limit)
+                    .all()
+                )
+                row_data = [
+                    (row.id, row.timestamp_utc, row.type or "", row.severity or "",
+                     row.lat, row.lon, row.title or "", row.text or "", row.url or "",
+                     row.source or "", row.linked_mmsi or "", dict(row.meta or {}))
+                    for row in rows
+                ]
+        except Exception as exc:
+            logger.warning("intel_store: DB sync skipped: %s", exc)
+            return (0, 0)
+
+        new_count = 0
+        updated_count = 0
+        with self._lock:
+            by_id = {event.id: event for event in self._events}
+            for (row_id, timestamp_utc, type_, severity, lat, lon, title, text, url,
+                 source, linked_mmsi, meta) in row_data:
+                existing = by_id.get(row_id)
+                if existing is not None:
+                    if existing.metadata != meta or existing.lat != lat or existing.lon != lon:
+                        existing.lat = lat
+                        existing.lon = lon
+                        existing.metadata = meta
+                        updated_count += 1
+                    continue
+                new_event = IntelEvent(
+                    id=row_id, timestamp_utc=timestamp_utc, type=type_, severity=severity,
+                    lat=lat, lon=lon, title=title, text=text, url=url,
+                    source=source, linked_mmsi=linked_mmsi, metadata=meta,
+                )
+                keys = {new_event.content_hash()}
+                tweet_id = str(meta.get("tweet_id") or "")
+                if tweet_id:
+                    keys.add(f"x:{tweet_id}")
+                if any(key in self._seen for key in keys):
+                    continue
+                self._seen.update(keys)
+                self._events.appendleft(new_event)
+                new_count += 1
+        if new_count or updated_count:
+            logger.info("intel_store: sync_from_db +%d new, %d updated", new_count, updated_count)
+        return (new_count, updated_count)
+
     def reset_computing_drifts(self) -> int:
         """
         After startup, any in-memory event whose drift_status is 'computing'

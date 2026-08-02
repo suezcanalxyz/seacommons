@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
 
+from core.intel.auto_drift_client import request_auto_drift
 from core.intel.geoextract import (
     classify_severity,
     extract_coords,
@@ -486,15 +487,7 @@ class AlarmPhoneMonitor:
             and stored_event.metadata.get("drift_status") not in {"computing", "completed"}
         ):
             try:
-                from core.api.routes.intel import schedule_intel_drift
-                schedule_intel_drift(
-                    stored_event.id,
-                    stored_event.lat,
-                    stored_event.lon,
-                    persons=None,
-                    vessel_type="rubber_boat",
-                    observed_at=stored_event.timestamp_utc,
-                )
+                request_auto_drift(stored_event.id, stored_event.lat, stored_event.lon, vessel_type="rubber_boat")
             except Exception as exc:
                 logger.debug("Alarm Phone auto-drift deferred for %s: %s", event.id, exc)
         return added

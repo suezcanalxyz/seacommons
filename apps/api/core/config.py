@@ -131,11 +131,19 @@ class SuezCanalConfig(BaseSettings):
     DRIFT_WORKER_URL: str = ""
     DRIFT_WORKER_SECRET: str = ""
     DRIFT_WORKER_TIMEOUT_S: float = 90.0
+    # Where intel monitors reach the API's own HTTP routes (e.g. to trigger
+    # auto-drift). Defaults to same-host — only needs changing when monitors
+    # run as a standalone process on a different VM than the API.
+    API_INTERNAL_URL: str = "http://127.0.0.1:8100"
     MOCK: bool = False  # deprecated compatibility flag; operational runtime ignores it
     DEMO_PUBLIC_MODE: bool = False  # isolates the public demo and blocks operational mutations
 
     # ── Intel layer (Twitter/X + news + AIS spike detection) ─────────────────
     INTEL_ENABLED: bool = True
+    # False on an API-only node in a split deployment (see core/intel_worker_main.py) —
+    # background sensors/monitors/scheduler run on a separate process/VM instead,
+    # and this node periodically syncs from the shared DB (core/bootstrap.py).
+    INTEL_MONITORS_ENABLED: bool = True
     ALARM_PHONE_POLL_INTERVAL_S: int = 30
     # Alarm Phone drift jobs are serialized by the shared OpenDrift semaphore;
     # results are persisted and served from the drift store after computation.
