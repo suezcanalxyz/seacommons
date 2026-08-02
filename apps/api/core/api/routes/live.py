@@ -204,6 +204,29 @@ def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
     return features
 
 
+_DISTRESS_LIVE_MAX_AGE_DAYS = 3
+
+
+def _distress_still_live(event: IntelEvent, *, now: datetime) -> bool:
+    """A distress marker stays on Live only while active and recent.
+
+    Resolved reports (a later Alarm Phone post saying the group was rescued)
+    already fail is_direct_distress_call at ingestion, so they never reach
+    this check as "distress" kind. This guards the remaining case: an
+    original distress report that nothing ever updated — it must still
+    age out of the public map after a few days rather than pin forever.
+    """
+    if str(event.metadata.get("incident_status") or "") == "resolved":
+        return False
+    try:
+        observed = datetime.fromisoformat(str(event.timestamp_utc).replace("Z", "+00:00"))
+        if observed.tzinfo is None:
+            observed = observed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return True
+    return (now - observed.astimezone(timezone.utc)).days < _DISTRESS_LIVE_MAX_AGE_DAYS
+
+
 def public_signal_collection(
     *,
     limit: int = 300,
@@ -221,11 +244,13 @@ def public_signal_collection(
     # win over the durable snapshot when both are present.
     by_id.update({event.id: event for event in memory_events})
     events = list(by_id.values())
+    now = datetime.now(timezone.utc)
     features = [
         feature
         for event in events
         if (feature := _public_intel_feature(event))
         and feature["properties"].get("kind") == "distress"
+        and _distress_still_live(event, now=now)
     ]
     features.extend(_published_ingested_features(limit))
     if since:

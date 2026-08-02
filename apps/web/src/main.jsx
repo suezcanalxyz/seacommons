@@ -1085,6 +1085,7 @@ function App() {
         map.addSource('intel-distress',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-drifts',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-vessel-links', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('live-nearby-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
         // weather vectors
         map.addLayer({
@@ -1468,6 +1469,48 @@ function App() {
         pulseRaf = requestAnimationFrame(distressPulse);
         map.once('remove', () => { if (pulseRaf) cancelAnimationFrame(pulseRaf); });
 
+        // Vessels reported near an active Live distress point (AIS, refreshed
+        // periodically — see the liveNearbyVessels effect below).
+        map.addLayer({
+          id: 'live-nearby-vessels-halo', type: 'circle', source: 'live-nearby-vessels',
+          paint: { 'circle-radius': 11, 'circle-color': 'rgba(56,189,248,0.22)', 'circle-blur': 0.8 },
+        });
+        map.addLayer({
+          id: 'live-nearby-vessels-layer', type: 'symbol', source: 'live-nearby-vessels',
+          layout: {
+            'icon-image': 'vessel-arrow',
+            'icon-size': 0.48,
+            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
+          paint: {
+            'icon-color': '#38bdf8',
+            'icon-halo-color': '#03212e',
+            'icon-halo-width': 1.6,
+          },
+        });
+        const liveVesselPopup = new maplibregl.Popup({
+          closeButton: false, closeOnClick: false, offset: 10,
+          className: 'intel-hover-popup',
+        });
+        map.on('mouseenter', 'live-nearby-vessels-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mousemove', 'live-nearby-vessels-layer', (event) => {
+          const feature = event.features?.[0];
+          if (!feature) return;
+          const [lon, lat] = feature.geometry.coordinates;
+          const props = feature.properties || {};
+          liveVesselPopup
+            .setLngLat([lon, lat])
+            .setHTML(`<strong>${props.ship_name || 'Vessel'}</strong><br/>${props.distance_km ?? '?'} km from distress`)
+            .addTo(map);
+        });
+        map.on('mouseleave', 'live-nearby-vessels-layer', () => {
+          map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+          liveVesselPopup.remove();
+        });
+
         // Active SAR impact point — topmost layer
         map.addLayer({
           id: 'sar-case-points', type: 'circle', source: 'sar-case',
@@ -1727,6 +1770,72 @@ function App() {
     map.getSource('intel-events')?.setData({ type: 'FeatureCollection', features: others });
     map.getSource('intel-distress')?.setData({ type: 'FeatureCollection', features: distress });
   }, [intelEvents, mapReady]);
+
+  // Live nearby vessels: AIS positions around each active distress point,
+  // refreshed on an interval. /api/v1/vessels/nearest reads an already-cached
+  // in-memory registry (no new AIS/network call per request), so this is
+  // cheap even polled every few minutes — 3 min balances "feels live" against
+  // request volume on the free-tier API box.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return undefined;
+    const LIVE_VESSEL_REFRESH_MS = 3 * 60 * 1000;
+    const MAX_DISTRESS_POINTS = 8;
+    const VESSELS_PER_POINT = 4;
+    let alive = true;
+    let timer = null;
+
+    async function refresh() {
+      const points = intelEvents
+        .filter((f) => {
+          const p = f.properties || {};
+          return (p.tier === 'operational' || p.type === 'distress') && f.geometry?.coordinates;
+        })
+        .slice(0, MAX_DISTRESS_POINTS);
+      if (!points.length) {
+        map.getSource('live-nearby-vessels')?.setData({ type: 'FeatureCollection', features: [] });
+        return;
+      }
+      const results = await Promise.all(points.map(async (point) => {
+        const [lon, lat] = point.geometry.coordinates;
+        try {
+          const data = await fetchJson(
+            apiBase,
+            `/api/v1/vessels/nearest?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&limit=${VESSELS_PER_POINT}`,
+            undefined,
+            8000,
+          );
+          return (data?.vessels || []).map((v) => ({ ...v, distress_id: point.properties?.id }));
+        } catch {
+          return [];
+        }
+      }));
+      if (!alive) return;
+      const byMmsi = new Map();
+      for (const vessel of results.flat()) {
+        const key = vessel.mmsi || `${vessel.lat},${vessel.lon}`;
+        const existing = byMmsi.get(key);
+        if (!existing || (vessel.distance_km ?? Infinity) < (existing.distance_km ?? Infinity)) {
+          byMmsi.set(key, vessel);
+        }
+      }
+      const features = Array.from(byMmsi.values())
+        .filter((v) => Number.isFinite(v.lat) && Number.isFinite(v.lon))
+        .map((v) => ({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [v.lon, v.lat] },
+          properties: {
+            mmsi: v.mmsi, ship_name: v.ship_name, course: v.course,
+            distance_km: v.distance_km, distress_id: v.distress_id,
+          },
+        }));
+      map.getSource('live-nearby-vessels')?.setData({ type: 'FeatureCollection', features });
+    }
+
+    refresh();
+    timer = window.setInterval(refresh, LIVE_VESSEL_REFRESH_MS);
+    return () => { alive = false; if (timer) window.clearInterval(timer); };
+  }, [intelEvents, mapReady, apiBase]);
 
   // Intel drift traces map layer
   useEffect(() => {
