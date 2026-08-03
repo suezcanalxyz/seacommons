@@ -79,6 +79,14 @@ function edgeEventToFeature(event) {
       schema: 'org.seacommons.live-signal/v1',
       id: `intel:${props.incident_id || event.id}`,
       type: event.type === 'distress_observation' ? 'twitter' : event.type,
+      // Every event that reaches the edge is already distress-classified
+      // (the publisher drops anything else — see public_event_from_row in
+      // core/live_edge_publisher.py), so tier is always "operational" here
+      // regardless of active/resolved/archived state — tier is about *what
+      // kind* of report this is, kind/incident_lifecycle is its current
+      // status. Without this, IntelDashboard's eventTier() fallback reads
+      // it as "news" and hides the distress styling and nearby-vessels button.
+      tier: 'operational',
       kind: lifecycleState === 'active' ? 'distress' : lifecycleState,
       incident_lifecycle: lifecycleState,
       severity: props.severity || 'low',
@@ -1481,7 +1489,7 @@ function App() {
         // Intel auto-drift impact points (above vessels)
         map.addLayer({
           id: 'intel-drift-point', type: 'circle', source: 'intel-drifts',
-          filter: ['all', ['==', '$type', 'Point'], ['!=', ['get', 'type'], 'current_estimate']],
+          filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get', 'type'], 'current_estimate']],
           paint: {
             'circle-radius': 4,
             'circle-color': ['match', ['get', 'intel_severity'],
@@ -1493,7 +1501,7 @@ function App() {
         });
         map.addLayer({
           id: 'intel-current-estimate-halo', type: 'circle', source: 'intel-drifts',
-          filter: ['all', ['==', '$type', 'Point'], ['==', ['get', 'type'], 'current_estimate']],
+          filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'type'], 'current_estimate']],
           paint: {
             'circle-radius': 13,
             'circle-color': 'rgba(255,224,109,.18)',
@@ -1502,7 +1510,7 @@ function App() {
         });
         map.addLayer({
           id: 'intel-current-estimate', type: 'circle', source: 'intel-drifts',
-          filter: ['all', ['==', '$type', 'Point'], ['==', ['get', 'type'], 'current_estimate']],
+          filter: ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'type'], 'current_estimate']],
           paint: {
             'circle-radius': 6,
             'circle-color': '#ffe06d',
