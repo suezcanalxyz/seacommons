@@ -32,6 +32,21 @@ const METERS_TO_PX_RADIUS = [
   22, ['/', ['coalesce', ['get', 'location_uncertainty_m'], 0], (156543.03392 * 0.8) / Math.pow(2, 22)],
 ];
 
+// Distress lifecycle colors: red (active/unresolved), green (resolved/known
+// outcome), gray (archived/stale, no update in a while). All three pulse —
+// only the fill/stroke color differs, driven by `incident_lifecycle` (see
+// core/api/routes/live.py) so the map never has to guess status itself.
+const LIFECYCLE_CORE_COLOR = ['match', ['get', 'incident_lifecycle'],
+  'resolved', '#22c55e', 'archived', '#9aa0ab', '#ff3b3b'];
+const LIFECYCLE_PULSE_FILL = ['match', ['get', 'incident_lifecycle'],
+  'resolved', 'rgba(34,197,94,0.35)', 'archived', 'rgba(154,160,171,0.35)', 'rgba(255,59,59,0.35)'];
+const LIFECYCLE_PULSE_STROKE = ['match', ['get', 'incident_lifecycle'],
+  'resolved', 'rgba(34,197,94,0.9)', 'archived', 'rgba(154,160,171,0.9)', 'rgba(255,80,80,0.9)'];
+const LIFECYCLE_AREA_FILL = ['match', ['get', 'incident_lifecycle'],
+  'resolved', 'rgba(34,197,94,0.10)', 'archived', 'rgba(154,160,171,0.08)', 'rgba(255,59,59,0.10)'];
+const LIFECYCLE_AREA_STROKE = ['match', ['get', 'incident_lifecycle'],
+  'resolved', 'rgba(34,197,94,0.4)', 'archived', 'rgba(154,160,171,0.35)', 'rgba(255,80,80,0.4)'];
+
 const PUBLIC_DEMO_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org']);
 const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'engine.seacommons.org']);
 const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
@@ -1093,7 +1108,6 @@ function App() {
         map.addSource('proximity-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-events',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-distress',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-        map.addSource('intel-archived',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-drifts',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-vessel-links', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('live-nearby-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -1419,21 +1433,23 @@ function App() {
           filter: ['>', ['coalesce', ['get', 'location_uncertainty_m'], 0], 20000],
           paint: {
             'circle-radius': METERS_TO_PX_RADIUS,
-            'circle-color': 'rgba(255,59,59,0.10)',
-            'circle-stroke-color': 'rgba(255,80,80,0.4)',
+            'circle-color': LIFECYCLE_AREA_FILL,
+            'circle-stroke-color': LIFECYCLE_AREA_STROKE,
             'circle-stroke-width': 1,
           },
         });
 
-        // ── Operational distress beacons — pulsing rings, topmost priority ──
-        // Two concentric circle layers; the outer radius is animated in a
-        // requestAnimationFrame loop (see distressPulse below).
+        // ── Distress beacons — pulsing rings for all three lifecycle states
+        // (active/resolved/archived). Color is a static per-feature match
+        // expression (LIFECYCLE_*); only radius/opacity animate, so the
+        // pulse loop never needs to know about color at all.
         map.addLayer({
           id: 'intel-distress-pulse', type: 'circle', source: 'intel-distress',
           paint: {
             'circle-radius': 8,
-            'circle-color': 'rgba(255,59,59,0.18)',
-            'circle-stroke-color': 'rgba(255,80,80,0.9)',
+            'circle-color': LIFECYCLE_PULSE_FILL,
+            'circle-opacity': 0.45,
+            'circle-stroke-color': LIFECYCLE_PULSE_STROKE,
             'circle-stroke-width': 1.5,
           },
         });
@@ -1441,7 +1457,7 @@ function App() {
           id: 'intel-distress-core', type: 'circle', source: 'intel-distress',
           paint: {
             'circle-radius': 5,
-            'circle-color': '#ff3b3b',
+            'circle-color': LIFECYCLE_CORE_COLOR,
             'circle-stroke-width': 1.5,
             'circle-stroke-color': '#fff4bf',
           },
@@ -1450,14 +1466,17 @@ function App() {
           closeButton: false, closeOnClick: false, offset: 10,
           className: 'intel-hover-popup',
         });
+        const LIFECYCLE_LABEL = { resolved: 'Resolved', archived: 'Archived', active: 'Active' };
         map.on('mouseenter', 'intel-distress-core', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mousemove', 'intel-distress-core', (event) => {
           const feature = event.features?.[0];
           if (!feature) return;
           const [lon, lat] = feature.geometry.coordinates;
+          const props = feature.properties || {};
+          const label = LIFECYCLE_LABEL[props.incident_lifecycle] || 'Active';
           distressHoverPopup
             .setLngLat([lon, lat])
-            .setHTML(`<strong>${lat.toFixed(4)}, ${lon.toFixed(4)}</strong>`)
+            .setHTML(`<strong>${label}</strong> · ${lat.toFixed(4)}, ${lon.toFixed(4)}`)
             .addTo(map);
         });
         map.on('mouseleave', 'intel-distress-core', () => {
@@ -1479,7 +1498,9 @@ function App() {
           event.originalEvent?.stopPropagation?.();
         });
 
-        // Pulse animation: oscillate the outer ring radius/opacity ~1.4s
+        // Pulse animation: oscillate the outer ring radius/opacity ~1.4s.
+        // Only numeric properties are touched here — color stays whatever
+        // the LIFECYCLE_* match expressions set per feature.
         let pulseRaf = null;
         const pulseStart = performance.now();
         function distressPulse(now) {
@@ -1489,63 +1510,12 @@ function App() {
           const r = 8 + 14 * t;                               // grow ring
           const o = 0.45 * (1 - t);                           // fade out
           map.setPaintProperty('intel-distress-pulse', 'circle-radius', r);
-          map.setPaintProperty('intel-distress-pulse', 'circle-color', `rgba(255,59,59,${o})`);
+          map.setPaintProperty('intel-distress-pulse', 'circle-opacity', o);
           map.setPaintProperty('intel-distress-pulse', 'circle-stroke-opacity', Math.min(1, Math.max(0, 1 - t)));
           pulseRaf = requestAnimationFrame(distressPulse);
         }
         pulseRaf = requestAnimationFrame(distressPulse);
         map.once('remove', () => { if (pulseRaf) cancelAnimationFrame(pulseRaf); });
-
-        // ── Archived distress — resolved or aged out, kept readable but muted.
-        // No pulse: this is history, not something demanding attention now.
-        map.addLayer({
-          id: 'intel-archived-area', type: 'circle', source: 'intel-archived',
-          filter: ['>', ['coalesce', ['get', 'location_uncertainty_m'], 0], 20000],
-          paint: {
-            'circle-radius': METERS_TO_PX_RADIUS,
-            'circle-color': 'rgba(180,180,190,0.08)',
-            'circle-stroke-color': 'rgba(180,180,190,0.3)',
-            'circle-stroke-width': 1,
-          },
-        });
-        map.addLayer({
-          id: 'intel-archived-layer', type: 'circle', source: 'intel-archived',
-          paint: {
-            'circle-radius': 4,
-            'circle-color': '#9aa0ab',
-            'circle-opacity': 0.75,
-            'circle-stroke-width': 1,
-            'circle-stroke-color': '#2a2e35',
-          },
-        });
-        const archivedHoverPopup = new maplibregl.Popup({
-          closeButton: false, closeOnClick: false, offset: 10,
-          className: 'intel-hover-popup',
-        });
-        map.on('mouseenter', 'intel-archived-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mousemove', 'intel-archived-layer', (event) => {
-          const feature = event.features?.[0];
-          if (!feature) return;
-          const [lon, lat] = feature.geometry.coordinates;
-          const props = feature.properties || {};
-          archivedHoverPopup
-            .setLngLat([lon, lat])
-            .setHTML(`<strong>Archived</strong><br/>${props.title || ''}`)
-            .addTo(map);
-        });
-        map.on('mouseleave', 'intel-archived-layer', () => {
-          map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
-          archivedHoverPopup.remove();
-        });
-        map.on('click', 'intel-archived-layer', (event) => {
-          const feature = event.features?.[0];
-          if (!feature) return;
-          const [lon, lat] = feature.geometry.coordinates;
-          map.flyTo({ center: [lon, lat], zoom: 9, duration: 800 });
-          setActivePanel('osint');
-          if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
-          event.originalEvent?.stopPropagation?.();
-        });
 
         // Vessels reported near an active Live distress point (AIS, refreshed
         // periodically — see the liveNearbyVessels effect below).
@@ -1828,26 +1798,25 @@ function App() {
     setLayerVis((cur) => ({ ...cur, [key]: cur[key] === false }));
   }
 
-  // Intel events map layer — split into three buckets driven by the backend's
-  // `kind`: "distress" (active, pulsing), "archived" (resolved/aged out —
-  // kept visible but muted, never dropped), "context" (news, static).
+  // Intel events map layer — the backend's `kind` is "distress" (active),
+  // "resolved" or "archived" (all three still distress-tier, pulsing, colored
+  // by incident_lifecycle — see LIFECYCLE_* expressions above) or "context"
+  // (news, static, no pulse). All non-context kinds share one source/layer
+  // set; only fill color varies per feature via the match expressions.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
     const positioned = intelEvents.filter((f) => f.geometry?.coordinates);
-    const kindOf = (f) => {
+    const isDistressTier = (f) => {
       const p = f.properties || {};
-      if (p.kind === 'archived') return 'archived';
-      if (p.kind === 'distress' || p.tier === 'operational' || p.type === 'distress') return 'distress';
-      return 'context';
+      return p.kind === 'distress' || p.kind === 'resolved' || p.kind === 'archived'
+        || p.tier === 'operational' || p.type === 'distress';
     };
-    const distress = positioned.filter((f) => kindOf(f) === 'distress');
-    const archived = positioned.filter((f) => kindOf(f) === 'archived');
-    const bucketedIds = new Set([...distress, ...archived].map((f) => f.properties?.id));
-    const others = positioned.filter((f) => !bucketedIds.has(f.properties?.id));
+    const distress = positioned.filter(isDistressTier);
+    const distressIds = new Set(distress.map((f) => f.properties?.id));
+    const others = positioned.filter((f) => !distressIds.has(f.properties?.id));
     map.getSource('intel-events')?.setData({ type: 'FeatureCollection', features: others });
     map.getSource('intel-distress')?.setData({ type: 'FeatureCollection', features: distress });
-    map.getSource('intel-archived')?.setData({ type: 'FeatureCollection', features: archived });
   }, [intelEvents, mapReady]);
 
   // Live nearby vessels: AIS positions around each active distress point,
@@ -2447,7 +2416,6 @@ function App() {
             {topStats.map((stat) => (
               <Pill key={stat.label} label={`${stat.label}: ${stat.value}`} tone={stat.tone} />
             ))}
-            <Pill label={play3D ? 'WGS84' : MAPTILER_KEY ? 'Satellite' : 'OSM'} tone="info" />
           </div>
         </div>
 

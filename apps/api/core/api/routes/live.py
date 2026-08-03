@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from core.config import config
-from core.intel.geoextract import is_resolved_distress
+from core.intel.geoextract import is_concluded_incident
 from core.intel.store import IntelEvent, intel_store
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
@@ -254,28 +254,36 @@ def _has_resolution_signal(event: IntelEvent, same_source: list[IntelEvent]) -> 
             continue
         if (other_time - event_time).days > _RESOLUTION_LOOKBACK_DAYS:
             continue
-        if not is_resolved_distress(other.text or other.title):
+        if not is_concluded_incident(other.text or other.title):
             continue
         if event_kw & _text_keywords(other.text or other.title):
             return True
     return False
 
 
-def _distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[IntelEvent]) -> str:
-    """'active' (pulsing, current) or 'archived' (kept, but visually muted).
+# Once an unresolved report has had no update for this long, it fades from
+# "active" (red) to "archived" (gray) — no longer treated as demanding
+# attention, but not yet dropped from the map either. Shorter than the total
+# display window so the gray state is actually visible before removal.
+_ARCHIVE_AFTER_HOURS = 24
 
-    Distress markers are never dropped from Live outright — once resolved
-    (explicit self-report, or a later same-source post that cross-checks as
-    a resolution) or older than a few days, they downgrade to "archived" so
-    the history stays readable instead of disappearing.
+
+def _distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[IntelEvent]) -> str:
+    """'active' (red, unresolved & recent), 'resolved' (green, known outcome),
+    or 'archived' (gray, unresolved but stale). All three pulse on the map;
+    only the color differs. Callers must drop anything past
+    _DISTRESS_LIVE_MAX_AGE_DAYS entirely (see public_signal_collection) —
+    this function only distinguishes among events still within that window.
     """
     if str(event.metadata.get("incident_status") or "") == "resolved":
-        return "archived"
+        return "resolved"
+    if is_concluded_incident(event.text or event.title):
+        return "resolved"
     if _has_resolution_signal(event, same_source):
-        return "archived"
+        return "resolved"
     observed = _parse_utc(event.timestamp_utc)
-    age_days = (now - observed).days if observed else 0
-    return "archived" if age_days >= _DISTRESS_LIVE_MAX_AGE_DAYS else "active"
+    age_hours = (now - observed).total_seconds() / 3600 if observed else 0
+    return "archived" if age_hours >= _ARCHIVE_AFTER_HOURS else "active"
 
 
 def public_signal_collection(
@@ -304,8 +312,17 @@ def public_signal_collection(
         feature = _public_intel_feature(event)
         if not feature or feature["properties"].get("kind") != "distress":
             continue
+        observed = _parse_utc(event.timestamp_utc)
+        age_days = (now - observed).total_seconds() / 86400 if observed else 0
+        if age_days >= _DISTRESS_LIVE_MAX_AGE_DAYS:
+            # Hard cutoff: a distress marker's total life on Live is bounded,
+            # regardless of whether it was ever resolved. Older history lives
+            # in the archive/replay views, not the live pulsing map.
+            continue
         lifecycle = _distress_lifecycle(event, now=now, same_source=by_source.get(event.source, []))
-        feature["properties"]["kind"] = "distress" if lifecycle == "active" else "archived"
+        # kind: "distress" (red, active) | "resolved" (green) | "archived" (gray)
+        # — all three pulse on the map; only fill color differs.
+        feature["properties"]["kind"] = "distress" if lifecycle == "active" else lifecycle
         feature["properties"]["incident_lifecycle"] = lifecycle
         features.append(feature)
     features.extend(_published_ingested_features(limit))

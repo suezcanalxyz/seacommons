@@ -233,6 +233,39 @@ _RESOLVED_DISTRESS_PATTERNS = tuple(
         r"\barrived safely\b",
     )
 )
+# A report can also conclude with a known, final outcome (survivors accounted
+# for, some confirmed missing) rather than a purely positive one. Either way
+# there is no longer an active SAR situation needing live tracking — this is
+# distinct from _RESOLVED_DISTRESS_PATTERNS (kept ingestion-side, unchanged)
+# and used only for the public Live map's lifecycle colouring (see live.py),
+# so widening it here cannot change what gets ingested as a distress call.
+_CONCLUDED_OUTCOME_PATTERNS = tuple(
+    re.compile(pattern, re.I)
+    for pattern in (
+        r"\bsurvivors?\s+(?:were|was|have been)?\s*found\b",
+        r"\b(?:were|was)\s+(?:found|hospitalis|hospitaliz)",
+        r"\b(?:people|persons|migrants)?\s*remain(?:s|ing)?\s+missing\b",
+        r"\bstill\s+missing\b",
+        r"\bconfirmed\s+dead\b",
+        r"\bbod(?:y|ies)\s+(?:were|was)?\s*recovered\b",
+    )
+)
+
+
+def is_concluded_incident(text: str) -> bool:
+    """True once a report's own text describes a final, known outcome.
+
+    Broader than is_resolved_distress: also matches conclusive-but-not-purely-
+    happy reports (e.g. "8 survivors were found... 4 people remain missing"),
+    which describe a closed incident just as much as a clean rescue does.
+    Lifecycle-only — never used to gate ingestion/auto-drift.
+    """
+    normalised = re.sub(r"\s+", " ", text).strip()
+    if not normalised:
+        return False
+    if is_resolved_distress(normalised):
+        return True
+    return any(pattern.search(normalised) for pattern in _CONCLUDED_OUTCOME_PATTERNS)
 
 # ── Regex patterns ────────────────────────────────────────────────────────────
 _RE_DECIMAL_NS = re.compile(

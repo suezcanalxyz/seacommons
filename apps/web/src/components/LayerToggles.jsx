@@ -9,7 +9,7 @@ import React, { useState } from 'react';
 export const LAYER_GROUPS = [
   { key: 'vessels',   label: 'AIS vessels',    layers: ['vessels-layer', 'vessels-stationary', 'vessels-ngo', 'vessels-ngo-stationary'] },
   { key: 'weather',   label: 'Weather grid',   layers: ['weather-vectors', 'weather-points'] },
-  { key: 'intel',     label: 'OSINT events',   layers: ['intel-events-layer', 'intel-events-halo', 'intel-distress-core', 'intel-distress-pulse', 'intel-distress-area', 'intel-archived-layer', 'intel-archived-area', 'intel-drift-cone', 'intel-drift-line', 'intel-drift-point', 'live-nearby-vessels-layer', 'live-nearby-vessels-halo'] },
+  { key: 'intel',     label: 'OSINT events',   layers: ['intel-events-layer', 'intel-events-halo', 'intel-distress-core', 'intel-distress-pulse', 'intel-distress-area', 'intel-drift-cone', 'intel-drift-line', 'intel-drift-point', 'live-nearby-vessels-layer', 'live-nearby-vessels-halo'] },
   { key: 'platforms', label: 'Platforms',      layers: ['platforms-layer', 'platforms-halo'] },
   { key: 'alerts',    label: 'Past SAR cones', layers: ['alerts-cone', 'alerts-layer'] },
 ];
