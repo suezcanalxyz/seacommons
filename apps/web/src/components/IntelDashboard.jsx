@@ -245,8 +245,15 @@ export default function IntelDashboard({
   triggerIntelDrift,
   mapRef,
   setSidebarOpen,
+  loadNearestVessels,
 }) {
   const [sources, setSources] = useState([]);
+  // "Navi vicine" expansion: local to this component so it never fights
+  // Play's own use of the same shared loadNearestVessels/nearestVessels
+  // state in main.jsx — each click here fetches and stores its own result.
+  const [vesselsForEventId, setVesselsForEventId] = useState(null);
+  const [nearbyVessels, setNearbyVessels] = useState([]);
+  const [vesselsLoading, setVesselsLoading] = useState(false);
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [search, setSearch] = useState('');
   const [channelFilter, setChannelFilter] = useState('all');
@@ -336,6 +343,22 @@ export default function IntelDashboard({
   function flyTo(coords) {
     if (coords && mapRef?.current) {
       mapRef.current.flyTo({ center: coords, zoom: 9, duration: 800 });
+    }
+  }
+
+  async function toggleNearbyVessels(eventId, lat, lon) {
+    if (vesselsForEventId === eventId) {
+      setVesselsForEventId(null);
+      return;
+    }
+    setVesselsForEventId(eventId);
+    setNearbyVessels([]);
+    setVesselsLoading(true);
+    try {
+      const vessels = await loadNearestVessels?.(lat, lon);
+      setNearbyVessels(vessels || []);
+    } finally {
+      setVesselsLoading(false);
     }
   }
 
@@ -449,6 +472,36 @@ export default function IntelDashboard({
         )}
         {p.text && (
           <p className="intel-text">{p.text.slice(0, 200)}{p.text.length > 200 ? '…' : ''}</p>
+        )}
+        {isDistress && coords && loadNearestVessels && (
+          <button
+            type="button"
+            className="intel-nearby-toggle"
+            onClick={(e) => { e.stopPropagation(); toggleNearbyVessels(p.id, coords[1], coords[0]); }}
+          >
+            {vesselsForEventId === p.id ? '▲ Navi vicine' : '▼ Navi vicine'}
+          </button>
+        )}
+        {isDistress && vesselsForEventId === p.id && (
+          <div className="intel-nearby-vessels" onClick={(e) => e.stopPropagation()}>
+            {vesselsLoading ? (
+              <span className="intel-nearby-loading">Ricerca navi…</span>
+            ) : nearbyVessels.length ? (
+              <ul>
+                {nearbyVessels.map((vessel) => (
+                  <li key={vessel.mmsi || `${vessel.lat},${vessel.lon}`}>
+                    <span className="intel-nearby-name">{vessel.ship_name || vessel.mmsi || 'Nave'}</span>
+                    <span className="intel-nearby-dist">{vessel.distance_nm?.toFixed(1)} nm</span>
+                    {Number.isFinite(vessel.speed) && (
+                      <span className="intel-nearby-speed">{vessel.speed.toFixed(1)} kn</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <span className="intel-nearby-loading">Nessuna nave AIS nelle vicinanze</span>
+            )}
+          </div>
         )}
       </li>
     );

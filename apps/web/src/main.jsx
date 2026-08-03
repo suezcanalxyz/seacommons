@@ -2832,6 +2832,7 @@ function App() {
                 triggeringDrift={triggeringDrift}
                 triggerIntelDrift={triggerIntelDrift}
                 mapRef={mapRef}
+                loadNearestVessels={loadNearestVessels}
                 setSidebarOpen={(open) => {
                   if (window.matchMedia('(max-width: 820px)').matches) setSidebarOpen(open);
                 }}
@@ -2948,6 +2949,7 @@ function App() {
               triggeringDrift={triggeringDrift}
               triggerIntelDrift={triggerIntelDrift}
               mapRef={mapRef}
+              loadNearestVessels={loadNearestVessels}
               setSidebarOpen={setSidebarOpen}
             />
           ) : null}

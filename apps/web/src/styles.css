@@ -1701,6 +1701,49 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   border-color: rgba(255,80,80,0.65);
 }
 
+.intel-nearby-toggle {
+  margin-top: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  background: rgba(56,189,248,0.1);
+  border: 1px solid rgba(56,189,248,0.3);
+  color: #38bdf8;
+  align-self: flex-start;
+}
+.intel-nearby-toggle:hover {
+  background: rgba(56,189,248,0.2);
+  border-color: rgba(56,189,248,0.55);
+}
+.intel-nearby-vessels {
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(56,189,248,0.06);
+  border: 1px solid rgba(56,189,248,0.18);
+}
+.intel-nearby-vessels ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.intel-nearby-vessels li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: #cfe9f5;
+}
+.intel-nearby-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.intel-nearby-dist { color: #38bdf8; font-weight: 600; white-space: nowrap; }
+.intel-nearby-speed { opacity: 0.65; white-space: nowrap; }
+.intel-nearby-loading { font-size: 10px; color: #7a9a94; }
+
 /* ── OSINT tab ── */
 .osint-stats-row {
   display: flex;
