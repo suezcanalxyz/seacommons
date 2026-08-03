@@ -60,6 +60,48 @@ const APP_PROFILE = isLiveHost
       ? 'live'
       : 'demo';
 
+// Cloudflare edge Live feed (core/live_edge_publisher.py -> apps/edge/src/live.js).
+// Zero-cost, WebSocket-pushed alternative to polling the Oracle VM directly.
+// Both paths share the exact same lifecycle policy (core/intel/lifecycle.py),
+// so a converted edge event and a VM /api/v1/live/signals feature must be
+// interchangeable to the rest of this file — same `kind`/`incident_lifecycle`
+// semantics, same property names the map layers already filter/color on.
+const LIVE_EDGE_BASE = String(import.meta.env.VITE_LIVE_EDGE_BASE || '').replace(/\/$/, '');
+
+function edgeEventToFeature(event) {
+  const props = event.properties || {};
+  const lifecycleState = props.incident_lifecycle || 'active';
+  return {
+    type: 'Feature',
+    id: `intel:${props.incident_id || event.id}`,
+    geometry: event.geometry || null,
+    properties: {
+      schema: 'org.seacommons.live-signal/v1',
+      id: `intel:${props.incident_id || event.id}`,
+      type: event.type === 'distress_observation' ? 'twitter' : event.type,
+      kind: lifecycleState === 'active' ? 'distress' : lifecycleState,
+      incident_lifecycle: lifecycleState,
+      severity: props.severity || 'low',
+      verification_status: props.verification_status || 'unverified_public_source',
+      title: props.title || 'Maritime signal',
+      text: '',
+      url: event.source_url || '',
+      source: event.source || 'public feed',
+      timestamp_utc: event.observed_at,
+      source_timestamp_utc: event.observed_at,
+      received_at: event.received_at || event.observed_at,
+      location_precision: Number(props.radius_m) > 20000 ? 'area' : 'reported_or_derived',
+      location_uncertainty_m: props.radius_m,
+      coordinate_source: props.coordinate_source,
+    },
+  };
+}
+
+function edgeSnapshotToFeatures(snapshot) {
+  if (!Array.isArray(snapshot?.events)) return [];
+  return snapshot.events.map(edgeEventToFeature);
+}
+
 function receivedSignalFeatures(features) {
   if (!Array.isArray(features)) return [];
   return features.filter((feature) => {
@@ -552,6 +594,11 @@ function App() {
   const simParamsRef = useRef({});
   const intelWsRef = useRef(null);
   const liveTrackingRunsRef = useRef(new Map());
+  // True once the Cloudflare edge feed is confirmed live — the VM poll/WS
+  // effect below keeps running as a warm standby but stops writing state,
+  // so the edge is the visible source of truth without visible flicker
+  // and an instant fallback if the edge ever drops.
+  const edgeLiveActiveRef = useRef(false);
   const [form, setForm] = useState({
     lat: APP_PROFILE === 'demo' ? '35.52' : '',
     lon: APP_PROFILE === 'demo' ? '14.08' : '',
@@ -699,6 +746,7 @@ function App() {
     let alive = true;
 
     function handleWsMessage(e) {
+      if (edgeLiveActiveRef.current) return; // edge feed is authoritative while live
       try {
         const msg = JSON.parse(e.data);
         if (msg.type === 'ping') return;
@@ -736,7 +784,7 @@ function App() {
     async function pollOnce() {
       try {
         const data = await fetchJson(apiBase, feedPath);
-        if (!alive) return;
+        if (!alive || edgeLiveActiveRef.current) return; // edge feed is authoritative while live
         if (data.features) {
           const features = isPublicLiveHost ? receivedSignalFeatures(data.features) : data.features;
           setIntelEvents(features);
@@ -747,7 +795,7 @@ function App() {
           setIntelMode((prev) => prev === 'ws' ? 'ws' : 'poll');
         }
       } catch {
-        if (!alive) return;
+        if (!alive || edgeLiveActiveRef.current) return;
         setIntelConnected(false);
         setIntelMode((prev) => prev === 'ws' ? 'ws' : 'offline');
       }
@@ -778,6 +826,7 @@ function App() {
 
       ws.onopen = () => {
         window.clearTimeout(openTimer);
+        if (edgeLiveActiveRef.current) return;
         setIntelConnected(true);
         setIntelMode('ws');
       };
@@ -809,6 +858,90 @@ function App() {
       ws?.close();
     };
   }, [apiBase]);
+
+  // Cloudflare edge Live feed — zero-cost WebSocket delivery, tried first on
+  // the public Live host. The VM poll/WS effect above keeps running as a warm
+  // standby (see edgeLiveActiveRef gates in its handlers) so if the edge ever
+  // stops responding, the very next VM poll tick (≤10s) picks the feed back
+  // up with no code path left uninitialized.
+  useEffect(() => {
+    if (!isPublicLiveHost || !LIVE_EDGE_BASE) return undefined;
+    let alive = true;
+    let ws = null;
+    let pollTimer = null;
+    let reconnectTimer = null;
+
+    function applySnapshot(snapshot) {
+      if (!alive) return;
+      const features = edgeSnapshotToFeatures(snapshot);
+      setIntelEvents(features);
+      try { window.localStorage.setItem('seacommons_live_signal_cache_v2', JSON.stringify(features)); } catch { /* quota */ }
+      setIntelConnected(true);
+      setIntelMode('ws');
+      edgeLiveActiveRef.current = true;
+    }
+
+    async function pollSnapshot() {
+      // Clear any pending regular-cadence tick — this may run either from
+      // that timer or from a WS-triggered re-fetch; either way there must
+      // only ever be one scheduled next call, never overlapping chains.
+      window.clearTimeout(pollTimer);
+      try {
+        const response = await fetch(`${LIVE_EDGE_BASE}/v1/live/snapshot`);
+        if (!response.ok) throw new Error(`edge snapshot HTTP ${response.status}`);
+        applySnapshot(await response.json());
+      } catch {
+        if (!alive) return;
+        // Edge unreachable — hand back to the VM path, which has been
+        // running quietly this whole time and resumes writing on its
+        // next tick since edgeLiveActiveRef is now false.
+        edgeLiveActiveRef.current = false;
+      }
+      if (alive) pollTimer = window.setTimeout(pollSnapshot, 10000);
+    }
+
+    function connectWs() {
+      if (!alive) return;
+      const wsUrl = `${LIVE_EDGE_BASE.replace(/^http/, 'ws')}/v1/live/stream`;
+      ws = new WebSocket(wsUrl);
+      const openTimer = window.setTimeout(() => {
+        if (ws && ws.readyState !== WebSocket.OPEN) ws.close();
+      }, 4000);
+      ws.onopen = () => window.clearTimeout(openTimer);
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'snapshot') {
+            applySnapshot(msg);
+          } else if (msg.type === 'event' || msg.type === 'remove') {
+            // Incremental updates still need the full picture to re-derive
+            // removal/lifecycle correctly — re-fetch the authoritative
+            // snapshot rather than hand-rolling incremental Feature merges.
+            pollSnapshot();
+          }
+        } catch { /* ignore malformed */ }
+      };
+      ws.onclose = () => {
+        window.clearTimeout(openTimer);
+        if (!alive) return;
+        reconnectTimer = window.setTimeout(connectWs, 5000);
+      };
+      ws.onerror = () => { window.clearTimeout(openTimer); ws?.close(); };
+    }
+
+    // Probe once via snapshot first — establishes edgeLiveActiveRef before
+    // the WS connects, and gives the map real data immediately on load.
+    pollSnapshot();
+    connectWs();
+
+    return () => {
+      alive = false;
+      edgeLiveActiveRef.current = false;
+      window.clearTimeout(pollTimer);
+      window.clearTimeout(reconnectTimer);
+      ws?.close();
+    };
+  }, [isPublicLiveHost]);
 
   // Alarm Phone live tracking runs independently in the browser. It consumes
   // hourly historical/current weather and marine fields, so an old report is

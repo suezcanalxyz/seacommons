@@ -68,6 +68,7 @@
     "VITE_AUTH_ENABLED": "false",
     "VITE_OIDC_AUTHORITY": "https://auth.seacommons.org",
     "VITE_OIDC_CLIENT_ID": "seacommons-console",
-    "VITE_EDGE_API_BASE": "https://seacommons-edge.seacommons.workers.dev"
+    "VITE_EDGE_API_BASE": "https://seacommons-edge.seacommons.workers.dev",
+    "VITE_LIVE_EDGE_BASE": "https://seacommons-edge.seacommons.workers.dev"
   }
 }
