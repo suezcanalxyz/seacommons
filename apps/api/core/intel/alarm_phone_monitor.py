@@ -3,7 +3,10 @@
 
 Alarm Phone republishes its X posts in the server-rendered HTML at
 alarmphone.org. This narrow collector reads that official public copy without
-an X login, account automation, or an unofficial social-media mirror.
+an X login, account automation, or an unofficial social-media mirror — the
+homepage embed only shows the 3 most recent posts, so each poll fetches
+deeper (see fetch_recent_timeline_document) via the same widget's own public
+"Load More" endpoint rather than relying on that fixed 3-post window.
 """
 from __future__ import annotations
 
@@ -20,7 +23,7 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from core.intel.auto_drift_client import request_auto_drift
 from core.intel.geoextract import (
@@ -39,6 +42,20 @@ logger = logging.getLogger(__name__)
 
 SOURCE_NAME = "Alarm Phone / X official site"
 PAGE_URL = "https://alarmphone.org/en/"
+# The homepage embed (server-rendered by the "Custom Twitter Feeds" WordPress
+# plugin) shows only the 3 most recent posts. On a busy day Alarm Phone can
+# post more than 3 updates between polls, so relying on the homepage alone
+# silently drops anything that scrolled past the visible 3 — not a polling
+# bug, a hard ceiling on that one page. The plugin's own "Load More" button
+# calls this admin-ajax action (found in its public ctf-scripts.min.js) to
+# fetch deeper into the same feed; calling it directly for the newest
+# _RECENT_POSTS_DEPTH each cycle covers that gap without needing X credentials,
+# an unofficial API, or any account automation — same first-party site, one
+# page deeper than the embed shows by default.
+_AJAX_URL = "https://alarmphone.org/wp-admin/admin-ajax.php"
+_FEED_ID = "1"
+_POST_ID = "173468"
+_RECENT_POSTS_DEPTH = 25
 _SYNDICATION_URL = "https://cdn.syndication.twimg.com/tweet-result"
 _X_EPOCH_MS = 1_288_834_974_657
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -63,6 +80,33 @@ def x_id_timestamp(tweet_id: str) -> str:
     """Recover the exact UTC creation time encoded in an X Snowflake ID."""
     milliseconds = (int(tweet_id) >> 22) + _X_EPOCH_MS
     return datetime.fromtimestamp(milliseconds / 1000, tz=timezone.utc).isoformat()
+
+
+def fetch_recent_timeline_document(num_needed: int = _RECENT_POSTS_DEPTH) -> str:
+    """Fetch the N most recent posts via the widget's own "load more" action.
+
+    An empty last_id_data returns the newest `num_needed` posts directly
+    (verified against the live endpoint), rather than paginating from an
+    anchor — exactly what a poll loop needs each cycle.
+    """
+    body = urlencode({
+        "action": "ctf_get_more_posts",
+        "last_id_data": "",
+        "shortcode_data": json.dumps({"feed": _FEED_ID}),
+        "num_needed": str(num_needed),
+        "persistent_index": "0",
+        "feed_id": _FEED_ID,
+        "location": PAGE_URL,
+        "post_id": _POST_ID,
+        "v2feed": _FEED_ID,
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        _AJAX_URL,
+        data=body,
+        headers={**_HEADERS, "Content-Type": "application/x-www-form-urlencoded"},
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return response.read().decode("utf-8", errors="replace")
 
 
 def parse_official_timeline(document: str) -> list[dict[str, Any]]:
@@ -304,9 +348,16 @@ class AlarmPhoneMonitor:
         new_count = 0
         error: Optional[str] = None
         try:
-            request = urllib.request.Request(PAGE_URL, headers=_HEADERS)
-            with urllib.request.urlopen(request, timeout=20) as response:
-                document = response.read().decode("utf-8", errors="replace")
+            try:
+                document = fetch_recent_timeline_document()
+            except Exception as exc:
+                # The "load more" AJAX action is an internal plugin contract,
+                # not a documented API — fall back to the plain homepage
+                # (3 posts only) rather than going dark if it ever changes.
+                logger.debug("Alarm Phone deep-fetch failed, falling back to homepage: %s", exc)
+                request = urllib.request.Request(PAGE_URL, headers=_HEADERS)
+                with urllib.request.urlopen(request, timeout=20) as response:
+                    document = response.read().decode("utf-8", errors="replace")
             for post in parse_official_timeline(document):
                 text_coordinate = (
                     extract_numeric_coords(post.get("text", ""))
