@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seacommons.org/schemas/seacommons-event-v1.schema.json",
+  "title": "SeaCommons Event v1",
+  "type": "object",
+  "required": ["schema", "id", "hash", "type", "source", "node", "observed_at", "received_at", "visibility", "properties"],
+  "properties": {
+    "schema": { "const": "seacommons-event-v1" },
+    "id": { "type": "string", "minLength": 16 },
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "previous_hash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "type": { "type": "string", "minLength": 1 },
+    "source": { "type": "string", "minLength": 1 },
+    "node": { "type": "string", "minLength": 1 },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "received_at": { "type": "string", "format": "date-time" },
+    "visibility": { "enum": ["public", "private"] },
+    "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "geometry": { "type": ["object", "null"] },
+    "properties": { "type": "object" },
+    "source_url": { "type": ["string", "null"], "format": "uri" }
+  },
+  "additionalProperties": false
+}

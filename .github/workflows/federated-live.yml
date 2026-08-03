@@ -1,0 +1,50 @@
+name: Federated Live
+
+on:
+  pull_request:
+    paths:
+      - "apps/edge/**"
+      - "apps/api/core/live_edge_publisher.py"
+      - "tests/test_live_edge_publisher.py"
+      - "docs/contracts/seacommons-event-v1.schema.json"
+      - ".github/workflows/federated-live.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/edge/**"
+      - "apps/api/core/live_edge_publisher.py"
+      - "tests/test_live_edge_publisher.py"
+      - "docs/contracts/seacommons-event-v1.schema.json"
+
+permissions:
+  contents: read
+
+jobs:
+  edge:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/edge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/edge/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  publisher:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install "httpx>=0.27" "pytest>=8"
+      - run: python -m pytest -q tests/test_live_edge_publisher.py
+        env:
+          PYTHONPATH: apps/api

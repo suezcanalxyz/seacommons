@@ -1,0 +1,332 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""Low-memory live publisher from SeaCommons intel state to the edge.
+
+The operational mode is deliberately live-first:
+- no historical backfill is required;
+- recent rows are rescanned so location/status enrichments are published;
+- each material state version gets a deterministic event ID;
+- a SQLite outbox survives short network failures;
+- delivered versions are remembered locally to avoid repeated sends.
+
+Run with:
+    python -m core.live_edge_publisher
+"""
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import logging
+import os
+import signal
+import sqlite3
+import time
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+logger = logging.getLogger("seacommons.live_edge_publisher")
+
+
+@dataclass(frozen=True)
+class PublisherSettings:
+    edge_url: str
+    ingest_secret: str
+    node_id: str
+    outbox_path: Path
+    poll_seconds: float = 1.0
+    batch_size: int = 25
+    scan_limit: int = 200
+    live_window_minutes: int = 360
+    request_timeout_seconds: float = 8.0
+    max_attempts: int = 20
+
+    @classmethod
+    def from_env(cls) -> "PublisherSettings":
+        return cls(
+            edge_url=os.getenv("LIVE_EDGE_INGEST_URL", "").rstrip("/"),
+            ingest_secret=os.getenv("LIVE_EDGE_INGEST_SECRET", ""),
+            node_id=os.getenv("SEACOMMONS_NODE_ID", os.uname().nodename),
+            outbox_path=Path(os.getenv("LIVE_EDGE_OUTBOX_PATH", "./shared/live-edge-outbox.db")),
+            poll_seconds=max(0.5, float(os.getenv("LIVE_EDGE_POLL_SECONDS", "1"))),
+            batch_size=max(1, int(os.getenv("LIVE_EDGE_BATCH_SIZE", "25"))),
+            scan_limit=max(10, int(os.getenv("LIVE_EDGE_SCAN_LIMIT", "200"))),
+            live_window_minutes=max(5, int(os.getenv("LIVE_EDGE_WINDOW_MINUTES", "360"))),
+            request_timeout_seconds=float(os.getenv("LIVE_EDGE_TIMEOUT_SECONDS", "8")),
+            max_attempts=max(1, int(os.getenv("LIVE_EDGE_MAX_ATTEMPTS", "20"))),
+        )
+
+    def validate(self) -> None:
+        if not self.edge_url:
+            raise RuntimeError("LIVE_EDGE_INGEST_URL is required")
+        if not self.ingest_secret:
+            raise RuntimeError("LIVE_EDGE_INGEST_SECRET is required")
+
+
+class Outbox:
+    def __init__(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.connection = sqlite3.connect(path)
+        self.connection.row_factory = sqlite3.Row
+        self.connection.execute("PRAGMA journal_mode=WAL")
+        self.connection.execute("PRAGMA synchronous=NORMAL")
+        self.connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS pending (
+                event_id TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                next_attempt_at REAL NOT NULL DEFAULT 0,
+                last_error TEXT
+            );
+            CREATE TABLE IF NOT EXISTS delivered (
+                event_id TEXT PRIMARY KEY,
+                delivered_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS pending_ready_idx
+                ON pending(next_attempt_at, created_at);
+            CREATE INDEX IF NOT EXISTS delivered_at_idx
+                ON delivered(delivered_at);
+            """
+        )
+        self.connection.commit()
+
+    def enqueue(self, event_id: str, payload: dict[str, Any]) -> bool:
+        if self.connection.execute(
+            "SELECT 1 FROM delivered WHERE event_id=?", (event_id,)
+        ).fetchone():
+            return False
+        cursor = self.connection.execute(
+            "INSERT OR IGNORE INTO pending(event_id,payload,created_at) VALUES(?,?,?)",
+            (event_id, json.dumps(payload, separators=(",", ":"), sort_keys=True), now_iso()),
+        )
+        self.connection.commit()
+        return cursor.rowcount > 0
+
+    def ready(self, limit: int) -> list[sqlite3.Row]:
+        return list(
+            self.connection.execute(
+                "SELECT * FROM pending WHERE next_attempt_at <= ? "
+                "ORDER BY created_at ASC LIMIT ?",
+                (time.time(), limit),
+            ).fetchall()
+        )
+
+    def acknowledge(self, event_id: str) -> None:
+        with self.connection:
+            self.connection.execute("DELETE FROM pending WHERE event_id=?", (event_id,))
+            self.connection.execute(
+                "INSERT OR REPLACE INTO delivered(event_id,delivered_at) VALUES(?,?)",
+                (event_id, now_iso()),
+            )
+
+    def fail(self, event_id: str, attempts: int, error: str, max_attempts: int) -> None:
+        capped_attempts = min(attempts, max_attempts)
+        delay = min(300.0, 2 ** min(capped_attempts, 8))
+        self.connection.execute(
+            "UPDATE pending SET attempts=?, next_attempt_at=?, last_error=? WHERE event_id=?",
+            (attempts, time.time() + delay, error[:500], event_id),
+        )
+        self.connection.commit()
+
+    def prune(self, retention_hours: int = 48) -> None:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=retention_hours)).isoformat()
+        self.connection.execute("DELETE FROM delivered WHERE delivered_at < ?", (cutoff,))
+        self.connection.commit()
+
+    def counts(self) -> dict[str, int]:
+        total = self.connection.execute("SELECT COUNT(*) FROM pending").fetchone()[0]
+        failed = self.connection.execute("SELECT COUNT(*) FROM pending WHERE attempts > 0").fetchone()[0]
+        return {"pending": int(total), "retrying": int(failed)}
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _version_id(incident_id: str, payload: dict[str, Any]) -> str:
+    material = json.dumps(
+        {
+            "type": payload.get("type"),
+            "geometry": payload.get("geometry"),
+            "confidence": payload.get("confidence"),
+            "properties": payload.get("properties"),
+            "source_url": payload.get("source_url"),
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    version = hashlib.sha256(material.encode()).hexdigest()[:20]
+    return f"{incident_id}:{version}"
+
+
+def public_event_from_row(row: Any, node_id: str) -> dict[str, Any] | None:
+    metadata = dict(getattr(row, "meta", None) or {})
+    event_type = str(getattr(row, "type", "") or "")
+    severity = str(getattr(row, "severity", "") or "")
+    is_distress = bool(metadata.get("is_distress")) or event_type in {"distress", "iom_incident"}
+    explicitly_public = metadata.get("publication_state") in {"public", "published"}
+    if not is_distress and not explicitly_public:
+        return None
+
+    incident_id = str(getattr(row, "id"))
+    lat = getattr(row, "lat", None)
+    lon = getattr(row, "lon", None)
+    geometry = None
+    if lat is not None and lon is not None:
+        geometry = {"type": "Point", "coordinates": [float(lon), float(lat)]}
+
+    confidence = metadata.get("confidence")
+    try:
+        confidence = float(confidence) if confidence is not None else None
+    except (TypeError, ValueError):
+        confidence = None
+
+    resolved = bool(metadata.get("resolved"))
+    archived = bool(metadata.get("archived"))
+    properties = {
+        "incident_id": incident_id,
+        "severity": severity,
+        "title": str(getattr(row, "title", "") or ""),
+        "text": str(getattr(row, "text", "") or ""),
+        "verification_status": metadata.get("verification_status", "unverified_public_source"),
+        "coordinate_source": metadata.get("coordinate_source"),
+        "radius_m": metadata.get("radius_m"),
+        "resolved": resolved,
+        "archived": archived,
+        "persons": metadata.get("persons"),
+        "linked_mmsi": str(getattr(row, "linked_mmsi", "") or ""),
+        "last_source_seen_at": metadata.get("last_source_seen_at"),
+    }
+    properties = {key: value for key, value in properties.items() if value not in (None, "")}
+
+    payload: dict[str, Any] = {
+        "schema": "seacommons-event-v1",
+        "type": "incident_resolved" if resolved or archived else (
+            "distress_observation" if is_distress else event_type
+        ),
+        "source": str(getattr(row, "source", "") or "unknown"),
+        "node": node_id,
+        "observed_at": str(getattr(row, "timestamp_utc", "") or now_iso()),
+        "visibility": "public",
+        "confidence": confidence,
+        "geometry": geometry,
+        "properties": properties,
+        "source_url": str(getattr(row, "url", "") or "") or None,
+    }
+    payload["id"] = _version_id(incident_id, payload)
+    return payload
+
+
+def signature(secret: str, body: str) -> str:
+    return hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
+
+
+class LiveEdgePublisher:
+    def __init__(self, settings: PublisherSettings) -> None:
+        settings.validate()
+        self.settings = settings
+        self.outbox = Outbox(settings.outbox_path)
+        self.running = True
+        self.client = httpx.Client(timeout=settings.request_timeout_seconds)
+        self.cycles = 0
+
+    def stop(self, *_: Any) -> None:
+        self.running = False
+
+    def collect(self) -> int:
+        """Rescan only the live window and enqueue unseen material versions."""
+        from core.db.models import IntelEventDB
+        from core.db.session import session_scope
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(
+            minutes=self.settings.live_window_minutes
+        )).isoformat()
+        added = 0
+        with session_scope() as db:
+            rows = (
+                db.query(IntelEventDB)
+                .filter(IntelEventDB.timestamp_utc >= cutoff)
+                .order_by(IntelEventDB.timestamp_utc.desc())
+                .limit(self.settings.scan_limit)
+                .all()
+            )
+            for row in reversed(rows):
+                payload = public_event_from_row(row, self.settings.node_id)
+                if payload is not None and self.outbox.enqueue(payload["id"], payload):
+                    added += 1
+        return added
+
+    def deliver(self) -> int:
+        delivered = 0
+        for row in self.outbox.ready(self.settings.batch_size):
+            body = str(row["payload"])
+            try:
+                response = self.client.post(
+                    self.settings.edge_url,
+                    content=body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-SeaCommons-Signature": signature(self.settings.ingest_secret, body),
+                        "User-Agent": f"SeaCommons-Node/{self.settings.node_id}",
+                    },
+                )
+                if response.status_code in {200, 202}:
+                    self.outbox.acknowledge(str(row["event_id"]))
+                    delivered += 1
+                    continue
+                raise RuntimeError(f"edge HTTP {response.status_code}: {response.text[:200]}")
+            except Exception as exc:
+                attempts = int(row["attempts"]) + 1
+                self.outbox.fail(
+                    str(row["event_id"]), attempts, str(exc), self.settings.max_attempts
+                )
+                logger.warning("Live edge delivery failed for %s: %s", row["event_id"], exc)
+        return delivered
+
+    def run(self) -> None:
+        logger.info(
+            "Live-first edge publisher started node=%s poll=%.2fs window=%dm",
+            self.settings.node_id,
+            self.settings.poll_seconds,
+            self.settings.live_window_minutes,
+        )
+        while self.running:
+            started = time.monotonic()
+            try:
+                added = self.collect()
+                delivered = self.deliver()
+                self.cycles += 1
+                if self.cycles % 3600 == 0:
+                    self.outbox.prune()
+                if added or delivered:
+                    logger.info(
+                        "Live edge cycle: collected=%d delivered=%d outbox=%s",
+                        added,
+                        delivered,
+                        self.outbox.counts(),
+                    )
+            except Exception:
+                logger.exception("Live edge publisher cycle failed")
+            remaining = self.settings.poll_seconds - (time.monotonic() - started)
+            if remaining > 0:
+                time.sleep(remaining)
+
+
+def main() -> None:
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+    publisher = LiveEdgePublisher(PublisherSettings.from_env())
+    signal.signal(signal.SIGTERM, publisher.stop)
+    signal.signal(signal.SIGINT, publisher.stop)
+    publisher.run()
+
+
+if __name__ == "__main__":
+    main()
