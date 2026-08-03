@@ -242,12 +242,25 @@ _RESOLVED_DISTRESS_PATTERNS = tuple(
 _CONCLUDED_OUTCOME_PATTERNS = tuple(
     re.compile(pattern, re.I)
     for pattern in (
+        # English
         r"\bsurvivors?\s+(?:were|was|have been)?\s*found\b",
         r"\b(?:were|was)\s+(?:found|hospitalis|hospitaliz)",
         r"\b(?:people|persons|migrants)?\s*remain(?:s|ing)?\s+missing\b",
         r"\bstill\s+missing\b",
         r"\bconfirmed\s+dead\b",
         r"\bbod(?:y|ies)\s+(?:were|was)?\s*recovered\b",
+        # French — Alarm Phone posts most reports bilingually (EN/FR); without
+        # these, a French duplicate of an already-concluded English report
+        # would show active/red while its English twin shows resolved/green.
+        r"\bsurvivants?\s+(?:ont\s+été|ont\s+ete)?\s*retrouv[ée]s?\b",
+        r"\b(?:ont\s+été|ont\s+ete)\s+(?:retrouv[ée]s?|hospitalis[ée]s?)\b",
+        r"\b(?:sont\s+)?(?:toujours\s+)?port[ée]s?\s+disparu(?:e|s|es)?\b",
+        r"\bd[ée]c[ée]d[ée]s?\s+confirm[ée]s?\b",
+        r"\bcorps\s+(?:ont\s+été|ont\s+ete|a\s+été|a\s+ete)?\s*retrouv[ée]s?\b",
+        # Italian
+        r"\bsopravvissuti\s+(?:sono\s+stati\s+)?trovati\b",
+        r"\brisultano\s+(?:ancora\s+)?dispersi\b",
+        r"\bcorpi\s+(?:sono\s+stati\s+)?recuperati\b",
     )
 )
 
