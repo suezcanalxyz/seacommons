@@ -313,6 +313,106 @@ async def inject_manual_intel(body: ManualIntelRequest, request: Request):
     return {"id": event.id, "timestamp_utc": event.timestamp_utc, "stored": True}
 
 
+# ── External shared-secret intel ingestion ───────────────────────────────────
+# For an operator's own external script/service that produces already-parsed
+# text reports (e.g. reading some feed the operator runs independently).
+# SeaCommons has no visibility into and makes no claim about how that data
+# was produced — this endpoint only accepts a finished {text, url, source}
+# report and runs it through the same pipeline (dedup, coordinate
+# extraction, triangulation, optional auto-drift) as any other monitor.
+# Auth mirrors /api/v1/ingest/webhook: HMAC-SHA256 over the raw body using
+# EXTERNAL_INTEL_INGEST_SECRET, not the OIDC operator-role login that
+# /api/v1/intel/manual requires — meant for a standalone script, not a human
+# in the console.
+
+class ExternalIntelPayload(BaseModel):
+    source: str                        # short label for this feed, e.g. "personal-x-relay"
+    source_id: str = ""                # upstream ID (e.g. tweet id) for dedup, if known
+    text: str
+    title: str = ""
+    url: str = ""
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    timestamp_utc: Optional[str] = None
+    # Default False: the event still lands in intel_store (visible on the
+    # authenticated console, feeds triangulation/auto-drift) but does not
+    # appear on the public live.seacommons.org map until the operator
+    # explicitly opts an item in — same conservative default as manual
+    # console entries, which also don't auto-publish.
+    publish: bool = False
+
+
+@router.post("/api/v1/intel/external", status_code=201)
+async def ingest_external_intel(request: Request):
+    """Shared-secret ingestion of operator-supplied text reports (see module note above)."""
+    import hashlib
+    import hmac as hmac_lib
+
+    from core.config import config
+    from core.intel.geoextract import (
+        classify_severity,
+        extract_coords,
+        extract_numeric_coords,
+        extract_relative_coords,
+        is_direct_distress_call,
+    )
+
+    expected = config.EXTERNAL_INTEL_INGEST_SECRET
+    if not expected:
+        raise HTTPException(status_code=503, detail="External intel ingest is not configured")
+    raw = await request.body()
+    if len(raw) > 20_000:
+        raise HTTPException(status_code=413, detail="Payload too large")
+    supplied = request.headers.get("x-seacommons-signature", "")
+    digest = "sha256=" + hmac_lib.new(expected.encode(), raw, hashlib.sha256).hexdigest()
+    if not hmac_lib.compare_digest(supplied, digest):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+    try:
+        body = ExternalIntelPayload.model_validate_json(raw)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid payload") from exc
+
+    rate_limit(request, max_per_minute=60, scope="intel-external")
+    from core.intel.source_registry import source_registry
+
+    source_name = f"External / {body.source}"[:64]
+    source_registry.register(source_name, "twitter")
+
+    distress = is_direct_distress_call(body.text)
+    coords = (
+        (body.lat, body.lon) if body.lat is not None and body.lon is not None
+        else extract_numeric_coords(body.text) or extract_relative_coords(body.text) or extract_coords(body.text)
+    )
+    metadata = {
+        "is_distress": distress,
+        "verification_status": "operator_asserted",
+        "coordinate_source": "post_text" if (body.lat is not None or extract_numeric_coords(body.text)) else "place_centroid",
+    }
+    if body.publish:
+        metadata["publication_status"] = "published"
+        metadata["source_policy"] = "operator_published"
+
+    event = IntelEvent(
+        type="twitter",
+        severity=classify_severity(body.text) if distress else "low",
+        lat=coords[0] if coords else None,
+        lon=coords[1] if coords else None,
+        title=(body.title or body.text[:120])[:255],
+        text=body.text[:600],
+        url=body.url[:511],
+        source=source_name,
+        timestamp_utc=body.timestamp_utc or "",
+        metadata=metadata,
+    )
+    dedup_key = f"external:{body.source}:{body.source_id}" if body.source_id else ""
+    added = intel_store.add(event, dedup_key=dedup_key)
+    source_registry.record_poll(source_name, events_found=1 if added else 0)
+    if added and distress:
+        from core.intel.triangulation import evaluate as evaluate_triangulation
+        evaluate_triangulation(event)
+    return {"id": event.id, "stored": added, "published": body.publish}
+
+
 # ── Image coordinate extraction ───────────────────────────────────────────────
 
 class ImageExtractRequest(BaseModel):

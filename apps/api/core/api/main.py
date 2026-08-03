@@ -132,9 +132,12 @@ async def authorization_gate(request, call_next):
         # Public Play simulations and the public Live map's "simulate drift"
         # action are resource-bounded by the route's per-IP rate limit and
         # global drift concurrency slot. Operational workspaces, forensic
-        # records and case data remain authenticated.
+        # records and case data remain authenticated. /api/v1/intel/external
+        # is the same pattern as the ingest/webhook routes above — its own
+        # HMAC shared-secret check inside the route is the real gate, not
+        # OIDC roles, since it's meant for a standalone external script.
         request.method == "POST"
-        and path in {"/api/v1/alert", "/api/v1/intel/auto-drift"}
+        and path in {"/api/v1/alert", "/api/v1/intel/auto-drift", "/api/v1/intel/external"}
     ) or (
         request.method in {"GET", "HEAD", "OPTIONS"}
         and path.startswith("/api/v1/live/")

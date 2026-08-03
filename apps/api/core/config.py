@@ -148,6 +148,13 @@ class SuezCanalConfig(BaseSettings):
     # Alarm Phone drift jobs are serialized by the shared OpenDrift semaphore;
     # results are persisted and served from the drift store after computation.
     INTEL_AUTO_DRIFT_ENABLED: bool = True
+    # Shared-secret auth for an operator's own external script pushing
+    # already-parsed text reports into the intel pipeline (e.g. a personal
+    # tool reading some feed the operator runs themselves) — see
+    # POST /api/v1/intel/external in routes/intel.py. SeaCommons never
+    # touches how that data was produced; same HMAC pattern as
+    # PARTNER_WEBHOOK_SECRET. Empty disables the endpoint entirely.
+    EXTERNAL_INTEL_INGEST_SECRET: str = ""
     # Official X/Twitter API v2 Bearer token. NOT free since Feb 2023 — the
     # tiers with read/search access (Basic+) are paid and X additionally
     # meters some calls against a prepaid credit balance (search/recent can
