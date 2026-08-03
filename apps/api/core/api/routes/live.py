@@ -6,7 +6,6 @@ import asyncio
 import hashlib
 import json
 import math
-import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -14,7 +13,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from core.config import config
-from core.intel.geoextract import is_concluded_incident
+from core.intel import lifecycle
 from core.intel.store import IntelEvent, intel_store
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
@@ -208,82 +207,6 @@ def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
     return features
 
 
-_DISTRESS_LIVE_MAX_AGE_DAYS = 3
-_RESOLUTION_LOOKBACK_DAYS = 10
-_KEYWORD_STOPWORDS = frozenset({
-    "with", "from", "were", "have", "been", "that", "this", "they", "them",
-    "their", "people", "group", "persons", "boat", "vessel", "distress",
-    "alarm", "phone", "alarmphone", "still", "remain", "remains", "found",
-    "hospitalised", "hospitalized", "informed", "authorities", "relatives",
-})
-
-
-def _text_keywords(text: str) -> set[str]:
-    """Significant lowercase words/hashtags (4+ chars) for cross-post matching."""
-    return {
-        stripped
-        for word in re.findall(r"#?\w{4,}", text or "")
-        if (stripped := word.strip("#.,!?:;").lower()) not in _KEYWORD_STOPWORDS
-    }
-
-
-def _parse_utc(value: str) -> Optional[datetime]:
-    try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
-    except (TypeError, ValueError):
-        return None
-
-
-def _has_resolution_signal(event: IntelEvent, same_source: list[IntelEvent]) -> bool:
-    """True if a later post from the same source reports this incident resolved.
-
-    Matches on shared keywords/place names/hashtags between the original
-    report and the candidate resolution post, within a bounded time window —
-    a lightweight cross-check rather than a hard age cutoff.
-    """
-    event_time = _parse_utc(event.timestamp_utc)
-    event_kw = _text_keywords(event.text or event.title)
-    if event_time is None or not event_kw:
-        return False
-    for other in same_source:
-        if other.id == event.id:
-            continue
-        other_time = _parse_utc(other.timestamp_utc)
-        if other_time is None or other_time <= event_time:
-            continue
-        if (other_time - event_time).days > _RESOLUTION_LOOKBACK_DAYS:
-            continue
-        if not is_concluded_incident(other.text or other.title):
-            continue
-        if event_kw & _text_keywords(other.text or other.title):
-            return True
-    return False
-
-
-# Once an unresolved report has had no update for this long, it fades from
-# "active" (red) to "archived" (gray) — no longer treated as demanding
-# attention, but not yet dropped from the map either. Shorter than the total
-# display window so the gray state is actually visible before removal.
-_ARCHIVE_AFTER_HOURS = 24
-
-
-def _distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[IntelEvent]) -> str:
-    """'active' (red, unresolved & recent), 'resolved' (green, known outcome),
-    or 'archived' (gray, unresolved but stale). All three pulse on the map;
-    only the color differs. Callers must drop anything past
-    _DISTRESS_LIVE_MAX_AGE_DAYS entirely (see public_signal_collection) —
-    this function only distinguishes among events still within that window.
-    """
-    if str(event.metadata.get("incident_status") or "") == "resolved":
-        return "resolved"
-    if is_concluded_incident(event.text or event.title):
-        return "resolved"
-    if _has_resolution_signal(event, same_source):
-        return "resolved"
-    observed = _parse_utc(event.timestamp_utc)
-    age_hours = (now - observed).total_seconds() / 3600 if observed else 0
-    return "archived" if age_hours >= _ARCHIVE_AFTER_HOURS else "active"
 
 
 def public_signal_collection(
@@ -312,18 +235,16 @@ def public_signal_collection(
         feature = _public_intel_feature(event)
         if not feature or feature["properties"].get("kind") != "distress":
             continue
-        observed = _parse_utc(event.timestamp_utc)
-        age_days = (now - observed).total_seconds() / 86400 if observed else 0
-        if age_days >= _DISTRESS_LIVE_MAX_AGE_DAYS:
+        if not lifecycle.is_within_live_window(event, now=now):
             # Hard cutoff: a distress marker's total life on Live is bounded,
             # regardless of whether it was ever resolved. Older history lives
             # in the archive/replay views, not the live pulsing map.
             continue
-        lifecycle = _distress_lifecycle(event, now=now, same_source=by_source.get(event.source, []))
+        state = lifecycle.distress_lifecycle(event, now=now, same_source=by_source.get(event.source, []))
         # kind: "distress" (red, active) | "resolved" (green) | "archived" (gray)
         # — all three pulse on the map; only fill color differs.
-        feature["properties"]["kind"] = "distress" if lifecycle == "active" else lifecycle
-        feature["properties"]["incident_lifecycle"] = lifecycle
+        feature["properties"]["kind"] = "distress" if state == "active" else state
+        feature["properties"]["incident_lifecycle"] = state
         features.append(feature)
     features.extend(_published_ingested_features(limit))
     if since:

@@ -1,12 +1,12 @@
 # SeaCommons Live-first cutover
 
-Status: implementation plan for a clean realtime start. Existing SeaCommons data may be discarded.
+Status: deployed, unified with the VM-hosted lifecycle model. Distress markers are colored (active/resolved/archived), not deleted, until the true 3-day cutoff.
 
 ## Objective
 
-Run `live.seacommons.org` as an ephemeral realtime operational surface rather than an archive or a mirror of the current database.
+Run `live.seacommons.org` as a realtime operational surface delivered over a zero-cost Cloudflare edge (WebSocket + Durable Object), while keeping exactly one lifecycle policy: `core/intel/lifecycle.py`, shared with the VM-hosted `/api/v1/live/signals` feed (`core/api/routes/live.py`).
 
-The system starts from the moment it is enabled. It does not backfill existing incidents. Each accepted event is visible for a limited TTL, is replaced when the same incident changes, and is removed immediately when resolved or archived.
+The system does not backfill on a cold start (see "Clean start" below), but once running it is **not** a bare 6-hour ephemeral cache: a distress marker stays visible — colored red (active), green (resolved), or gray (archived/stale) — for its full lifecycle window (`lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS`, 3 days), and is only actively removed from the edge once that window ends (an explicit `incident_removed`/`expired` signal from the publisher). The edge's own `LIVE_EVENT_TTL_SECONDS` is a backstop only, set well beyond that window, in case the publisher stops running before it can send the removal itself.
 
 ## Runtime path
 
@@ -24,19 +24,26 @@ The database is used only as a local short-lived interchange point. Historical c
 
 ## Realtime semantics
 
-The Live edge now implements:
+The Live edge implements:
 
-- six-hour default TTL, configurable with `LIVE_EVENT_TTL_SECONDS`;
+- a `LIVE_EVENT_TTL_SECONDS` backstop (default 4 days — beyond the 3-day
+  lifecycle window on purpose; see "Data retention" below), not the primary
+  expiry mechanism;
 - no HTTP caching for the current snapshot;
 - a WebSocket snapshot on connection;
 - deterministic incident IDs and material state-version IDs;
 - replacement of an older version of the same incident;
-- immediate removal when an event is marked resolved or archived;
+- **resolved/archived is a color, not a removal** — a marker keeps
+  broadcasting as `event` (never `remove`) while
+  `event.properties.incident_lifecycle` is `active`/`resolved`/`archived`;
+  only `event.properties.expired === true` (equivalently
+  `type === 'incident_removed'`) triggers a `remove` broadcast and drops it
+  from Durable Object state;
 - `/v1/live/status` reporting freshness and connected clients;
 - authenticated `/v1/live/reset` for a clean start;
-- no historical backfill requirement.
+- no historical backfill requirement on a cold start.
 
-An event is considered a new material version when geometry, confidence, public properties, source URL or state changes.
+An event is considered a new material version when geometry, confidence, public properties (including `incident_lifecycle`), source URL or expiry state changes — so a lifecycle transition (e.g. active → resolved) always produces a fresh version and is re-delivered/re-broadcast.
 
 ## Oracle publisher settings
 
@@ -50,7 +57,9 @@ LIVE_EDGE_OUTBOX_PATH=/home/ubuntu/seacommons/shared/live-edge-outbox.db
 LIVE_EDGE_POLL_SECONDS=1
 LIVE_EDGE_BATCH_SIZE=25
 LIVE_EDGE_SCAN_LIMIT=200
-LIVE_EDGE_WINDOW_MINUTES=360
+# Must exceed lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS (3 days) with margin so an
+# aging event is still inside the scan when it needs its final removal sent.
+LIVE_EDGE_WINDOW_MINUTES=5760
 LIVE_EDGE_TIMEOUT_SECONDS=8
 LIVE_EDGE_MAX_ATTEMPTS=20
 ```
@@ -121,7 +130,7 @@ A healthy active result should report:
   "status": "live",
   "age_seconds": 12,
   "event_count": 1,
-  "ttl_seconds": 21600
+  "ttl_seconds": 345600
 }
 ```
 
@@ -148,12 +157,12 @@ A later optimization can add a common `publish_live(event)` hook directly to `In
 
 ## Data retention
 
-Live is not the archive:
+Live is not a full archive/replay surface, but a distress marker's lifecycle is now identical whether served from the VM API or the edge:
 
-- active edge state: six hours by default;
-- resolved incidents: removed immediately;
+- distress markers stay visible (colored) for `lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS` (3 days) from the source's own observed timestamp, then the publisher sends an explicit removal;
+- edge backstop TTL: 4 days (`LIVE_EVENT_TTL_SECONDS=345600`) — only matters if the publisher stops running before the 3-day mark;
 - local delivered-version registry: 48 hours;
-- existing operational database: may be deleted or rotated independently;
+- existing operational database: the source of truth; not deleted or rotated by this feature;
 - R2/Nostr/OpenTimestamps: disabled unless a separate archival policy is explicitly approved.
 
 ## Acceptance test
@@ -161,11 +170,13 @@ Live is not the archive:
 1. Reset edge and local outbox.
 2. Confirm snapshot contains zero events.
 3. Generate one real or controlled collector observation.
-4. Confirm it appears on `/v1/live/snapshot` within three seconds of DB persistence.
-5. Enrich its coordinates and confirm the marker is replaced rather than duplicated.
-6. Mark it resolved and confirm it disappears.
-7. Stop Oracle and confirm the last active state remains available until TTL expiration.
-8. Restart Oracle and confirm new events resume without replaying the old database.
+4. Confirm it appears on `/v1/live/snapshot` within three seconds of DB persistence, with `properties.incident_lifecycle === "active"`.
+5. Enrich its coordinates and confirm the marker is replaced (new version) rather than duplicated.
+6. Post a same-source follow-up reporting resolution and confirm the marker's `incident_lifecycle` flips to `"resolved"` in a new version — the marker must still be present in the snapshot, not removed.
+7. Leave an unresolved marker alone for 24h+ and confirm it turns `"archived"` without being removed.
+8. Advance past the 3-day window (or set a synthetic old `observed_at`) and confirm the publisher sends `type: "incident_removed"` / `properties.expired: true`, and the marker disappears from `/v1/live/snapshot`.
+9. Stop Oracle and confirm the last active state remains available until the backstop TTL.
+10. Restart Oracle and confirm collection resumes from the current DB state (not a full historical replay).
 
 ## Definition of Live
 

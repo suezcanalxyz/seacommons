@@ -52,6 +52,9 @@ SEACOMMONS_NODE_ID=oracle-intel-01
 LIVE_EDGE_OUTBOX_PATH=/home/ubuntu/seacommons/shared/live-edge-outbox.db
 LIVE_EDGE_POLL_SECONDS=15
 LIVE_EDGE_BATCH_SIZE=25
+# Must exceed lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS (3 days) with margin —
+# see LIVE_FIRST_CUTOVER.md's "Realtime semantics" for why.
+LIVE_EDGE_WINDOW_MINUTES=5760
 LIVE_EDGE_TIMEOUT_SECONDS=12
 LIVE_EDGE_MAX_ATTEMPTS=20
 ```
@@ -116,7 +119,7 @@ For 24 hours compare:
 - the newest event in `/v1/live/snapshot`;
 - event IDs and source timestamps;
 - coordinate confidence and radius;
-- resolved/archive status;
+- `incident_lifecycle` (active/resolved/archived) — must match the VM feed's `kind`/`incident_lifecycle` for the same incident, since both read `core/intel/lifecycle.py`;
 - source URL;
 - edge `updated_at` freshness.
 

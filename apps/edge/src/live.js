@@ -165,8 +165,14 @@ export class LiveRoom {
     const fresh = existing.filter((item) => isFresh(item, this.env));
     const targetId = String(event.properties?.incident_id || event.id);
     const withoutPreviousVersion = fresh.filter((item) => String(item.properties?.incident_id || item.id) !== targetId);
-    const resolved = Boolean(event.properties?.resolved || event.properties?.archived || event.type === 'incident_resolved');
-    const events = resolved ? withoutPreviousVersion : [...withoutPreviousVersion, event].slice(-MAX_EVENTS);
+    // Only an explicit "expired" signal (the publisher's own 3-day lifecycle
+    // cutoff, see core/intel/lifecycle.py) removes an incident outright.
+    // Resolved/archived are NOT removal triggers here — they're just a
+    // lifecycle color (event.properties.incident_lifecycle), same as the
+    // VM-hosted /api/v1/live/signals feed. The client keeps showing them
+    // (muted/green) until the publisher says the marker's 3-day window is up.
+    const removed = Boolean(event.properties?.expired || event.type === 'incident_removed');
+    const events = removed ? withoutPreviousVersion : [...withoutPreviousVersion, event].slice(-MAX_EVENTS);
 
     await this.state.storage.put({
       events,
@@ -175,7 +181,7 @@ export class LiveRoom {
       [`event:${event.id}`]: true,
     });
 
-    const message = JSON.stringify({ type: resolved ? 'remove' : 'event', event, incident_id: targetId });
+    const message = JSON.stringify({ type: removed ? 'remove' : 'event', event, incident_id: targetId });
     for (const socket of this.state.getWebSockets()) {
       try { socket.send(message); } catch { socket.close(1011, 'broadcast failed'); }
     }
@@ -198,7 +204,7 @@ export class LiveRoom {
       }));
     }
 
-    return json({ accepted: true, removed: resolved, event_id: event.id, hash: event.hash }, 202);
+    return json({ accepted: true, removed, event_id: event.id, hash: event.hash }, 202);
   }
 
   async loadSnapshot() {

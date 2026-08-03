@@ -40,7 +40,11 @@ class PublisherSettings:
     poll_seconds: float = 1.0
     batch_size: int = 25
     scan_limit: int = 200
-    live_window_minutes: int = 360
+    # Must comfortably exceed lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS (3 days) so
+    # an event stays inside the scan long enough to receive its final
+    # "expired" removal at the true 3-day boundary, plus margin for a
+    # same-source resolution post to still be seen before that.
+    live_window_minutes: int = 4 * 24 * 60
     request_timeout_seconds: float = 8.0
     max_attempts: int = 20
 
@@ -54,7 +58,7 @@ class PublisherSettings:
             poll_seconds=max(0.5, float(os.getenv("LIVE_EDGE_POLL_SECONDS", "1"))),
             batch_size=max(1, int(os.getenv("LIVE_EDGE_BATCH_SIZE", "25"))),
             scan_limit=max(10, int(os.getenv("LIVE_EDGE_SCAN_LIMIT", "200"))),
-            live_window_minutes=max(5, int(os.getenv("LIVE_EDGE_WINDOW_MINUTES", "360"))),
+            live_window_minutes=max(5, int(os.getenv("LIVE_EDGE_WINDOW_MINUTES", str(4 * 24 * 60)))),
             request_timeout_seconds=float(os.getenv("LIVE_EDGE_TIMEOUT_SECONDS", "8")),
             max_attempts=max(1, int(os.getenv("LIVE_EDGE_MAX_ATTEMPTS", "20"))),
         )
@@ -164,21 +168,51 @@ def _version_id(incident_id: str, payload: dict[str, Any]) -> str:
     return f"{incident_id}:{version}"
 
 
-def public_event_from_row(row: Any, node_id: str) -> dict[str, Any] | None:
-    metadata = dict(getattr(row, "meta", None) or {})
-    event_type = str(getattr(row, "type", "") or "")
-    severity = str(getattr(row, "severity", "") or "")
+def _event_from_row(row: Any) -> "IntelEvent":
+    from core.intel.store import IntelEvent
+
+    return IntelEvent(
+        id=str(getattr(row, "id")),
+        timestamp_utc=str(getattr(row, "timestamp_utc", "") or ""),
+        type=str(getattr(row, "type", "") or ""),
+        severity=str(getattr(row, "severity", "") or ""),
+        lat=getattr(row, "lat", None),
+        lon=getattr(row, "lon", None),
+        title=str(getattr(row, "title", "") or ""),
+        text=str(getattr(row, "text", "") or ""),
+        url=str(getattr(row, "url", "") or ""),
+        source=str(getattr(row, "source", "") or ""),
+        linked_mmsi=str(getattr(row, "linked_mmsi", "") or ""),
+        metadata=dict(getattr(row, "meta", None) or {}),
+    )
+
+
+def public_event_from_row(
+    row: Any,
+    node_id: str,
+    *,
+    now: datetime,
+    same_source: list[Any],
+) -> dict[str, Any] | None:
+    """Build an edge payload with the SAME lifecycle semantics as the VM's
+    public /api/v1/live/signals feed (core/api/routes/live.py) — both paths
+    import core.intel.lifecycle so a marker can never look "resolved" on one
+    and "still active" on the other.
+    """
+    from core.intel import lifecycle
+
+    event = _event_from_row(row)
+    metadata = event.metadata
+    event_type = event.type
     is_distress = bool(metadata.get("is_distress")) or event_type in {"distress", "iom_incident"}
     explicitly_public = metadata.get("publication_state") in {"public", "published"}
     if not is_distress and not explicitly_public:
         return None
 
-    incident_id = str(getattr(row, "id"))
-    lat = getattr(row, "lat", None)
-    lon = getattr(row, "lon", None)
+    incident_id = event.id
     geometry = None
-    if lat is not None and lon is not None:
-        geometry = {"type": "Point", "coordinates": [float(lon), float(lat)]}
+    if event.lat is not None and event.lon is not None:
+        geometry = {"type": "Point", "coordinates": [float(event.lon), float(event.lat)]}
 
     confidence = metadata.get("confidence")
     try:
@@ -186,37 +220,43 @@ def public_event_from_row(row: Any, node_id: str) -> dict[str, Any] | None:
     except (TypeError, ValueError):
         confidence = None
 
-    resolved = bool(metadata.get("resolved"))
-    archived = bool(metadata.get("archived"))
+    # expired: past the 3-day total Live window — the edge must purge it
+    # outright. incident_lifecycle (active/resolved/archived) governs color
+    # for anything still inside that window; it never triggers removal.
+    expired = is_distress and not lifecycle.is_within_live_window(event, now=now)
+    incident_lifecycle = (
+        lifecycle.distress_lifecycle(event, now=now, same_source=same_source)
+        if is_distress else None
+    )
     properties = {
         "incident_id": incident_id,
-        "severity": severity,
-        "title": str(getattr(row, "title", "") or ""),
-        "text": str(getattr(row, "text", "") or ""),
+        "severity": event.severity,
+        "title": event.title,
+        "text": event.text,
         "verification_status": metadata.get("verification_status", "unverified_public_source"),
         "coordinate_source": metadata.get("coordinate_source"),
-        "radius_m": metadata.get("radius_m"),
-        "resolved": resolved,
-        "archived": archived,
+        "radius_m": metadata.get("location_uncertainty_m"),
+        "incident_lifecycle": incident_lifecycle,
+        "expired": expired,
         "persons": metadata.get("persons"),
-        "linked_mmsi": str(getattr(row, "linked_mmsi", "") or ""),
+        "linked_mmsi": event.linked_mmsi,
         "last_source_seen_at": metadata.get("last_source_seen_at"),
     }
     properties = {key: value for key, value in properties.items() if value not in (None, "")}
 
     payload: dict[str, Any] = {
         "schema": "seacommons-event-v1",
-        "type": "incident_resolved" if resolved or archived else (
+        "type": "incident_removed" if expired else (
             "distress_observation" if is_distress else event_type
         ),
-        "source": str(getattr(row, "source", "") or "unknown"),
+        "source": event.source or "unknown",
         "node": node_id,
-        "observed_at": str(getattr(row, "timestamp_utc", "") or now_iso()),
+        "observed_at": event.timestamp_utc or now_iso(),
         "visibility": "public",
         "confidence": confidence,
         "geometry": geometry,
         "properties": properties,
-        "source_url": str(getattr(row, "url", "") or "") or None,
+        "source_url": event.url or None,
     }
     payload["id"] = _version_id(incident_id, payload)
     return payload
@@ -239,24 +279,49 @@ class LiveEdgePublisher:
         self.running = False
 
     def collect(self) -> int:
-        """Rescan only the live window and enqueue unseen material versions."""
+        """Rescan only the live window and enqueue unseen material versions.
+
+        Two queries, not one: a high-volume, non-distress source (AIS spike
+        detection can post dozens of rows per cycle) would otherwise crowd
+        genuine distress reports out of a single "most recent N" scan. The
+        second query is exempt from that noise so a real report is never
+        starved out of the window by spike volume.
+        """
         from core.db.models import IntelEventDB
         from core.db.session import session_scope
+        from core.intel import lifecycle
 
         cutoff = (datetime.now(timezone.utc) - timedelta(
             minutes=self.settings.live_window_minutes
         )).isoformat()
+        now = datetime.now(timezone.utc)
         added = 0
         with session_scope() as db:
-            rows = (
+            general = (
                 db.query(IntelEventDB)
                 .filter(IntelEventDB.timestamp_utc >= cutoff)
                 .order_by(IntelEventDB.timestamp_utc.desc())
                 .limit(self.settings.scan_limit)
                 .all()
             )
+            distress_bearing = (
+                db.query(IntelEventDB)
+                .filter(IntelEventDB.timestamp_utc >= cutoff)
+                .filter(IntelEventDB.type != "ais_spike")
+                .order_by(IntelEventDB.timestamp_utc.desc())
+                .limit(self.settings.scan_limit)
+                .all()
+            )
+            by_id = {row.id: row for row in general}
+            by_id.update({row.id: row for row in distress_bearing})
+            rows = list(by_id.values())
+            events = [_event_from_row(row) for row in rows]
+            by_source: dict[str, list[Any]] = {}
+            for event in events:
+                by_source.setdefault(event.source, []).append(event)
             for row in reversed(rows):
-                payload = public_event_from_row(row, self.settings.node_id)
+                same_source = by_source.get(str(getattr(row, "source", "") or ""), [])
+                payload = public_event_from_row(row, self.settings.node_id, now=now, same_source=same_source)
                 if payload is not None and self.outbox.enqueue(payload["id"], payload):
                     added += 1
         return added
