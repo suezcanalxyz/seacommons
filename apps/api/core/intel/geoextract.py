@@ -72,8 +72,12 @@ _PLACES: dict[str, tuple[float, float]] = {
     "dodecanese":          (36.50, 28.00),
     "piraeus":             (37.94, 23.65),
     "athens":              (37.98, 23.73),
-    "crete":               (35.24, 24.81),
-    "kriti":               (35.24, 24.81),
+    # Crete's own geometric centroid (35.24, 24.81) lands ON the island's
+    # landmass — every real report using this fallback is a boat "south of
+    # Crete" (the actual SAR route), so the centroid is placed just off the
+    # island's south coast instead, clearly in open water rather than on land.
+    "crete":               (34.85, 24.81),
+    "kriti":               (34.85, 24.81),
     "gavdos":              (34.84, 24.08),
     # Turkey (departure Aegean)
     "izmir":               (38.42, 27.14),
@@ -234,6 +238,14 @@ _RESOLVED_DISTRESS_PATTERNS = tuple(
         r"\b(?:rescue|operation)\s+(?:was|is|has been)\s+(?:completed|concluded)\b",
         r"\barrived safely\b",
     )
+)
+# A rescue mentioned alongside any of these is one step in a still-ongoing
+# crisis (a pushback/forced-return/disembarkation dispute), not a resolved
+# ending — see is_resolved_distress's docstring for the motivating report.
+_RESOLUTION_OVERRIDE_RE = re.compile(
+    r"\b(?:pushback|forced back|refuses?\s+to\s+disembark|denied\s+disembark"
+    r"|at\s+risk\s+of\s+being|not\s+(?:yet\s+)?safe|outrageous)\b",
+    re.I,
 )
 # A report can also conclude with a known, final outcome (survivors accounted
 # for, some confirmed missing) rather than a purely positive one. Either way
@@ -575,9 +587,21 @@ def is_direct_distress_call(text: str) -> bool:
 
 
 def is_resolved_distress(text: str) -> bool:
-    """True only when the text explicitly reports a completed safe outcome."""
+    """True only when the text explicitly reports a completed safe outcome.
+
+    A rescue mention is not automatically a resolved incident: Alarm Phone
+    posts like "...was over night rescued by Merchant Vessel Safi Lion. Even
+    though Crete is clearly the closest port, @HCoastGuard refuses to
+    disembark the people... This is outrageous!" describe an ONGOING rights
+    violation (pushback / forced return / refused disembarkation) that just
+    happens to mention a rescue as one step in a still-active crisis — a bare
+    "rescued" match there would wrongly show the incident as a green,
+    resolved marker on the live map. When that kind of override language is
+    present, only the strict phrase patterns below (which require "was/were
+    rescued" as a tight, unbroken phrase) can still mark it resolved.
+    """
     normalised = re.sub(r"\s+", " ", text).strip()
-    if re.search(r"\brescued\s*!*", normalised, re.I):
+    if not _RESOLUTION_OVERRIDE_RE.search(normalised) and re.search(r"\brescued\s*!*", normalised, re.I):
         return True
     return any(pattern.search(normalised) for pattern in _RESOLVED_DISTRESS_PATTERNS)
 

@@ -85,9 +85,16 @@ def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[In
 
     Callers must separately drop anything past DISTRESS_LIVE_MAX_AGE_DAYS —
     this only distinguishes among events still within that window.
+
+    Deliberately does NOT trust a stored `incident_status` metadata field:
+    that value (only ever set by alarm_phone_monitor.py, never by twikit) is
+    frozen at ingestion time using whatever text-classification logic
+    existed then — a classifier fix or improvement can never retroactively
+    correct it, and a duplicate of the same tweet from a source that never
+    set the field would silently disagree with one that did. Always
+    recomputing from the event's own text keeps this consistent across
+    sources and self-healing across classifier fixes.
     """
-    if str(event.metadata.get("incident_status") or "") == "resolved":
-        return "resolved"
     if is_concluded_incident(event.text or event.title):
         return "resolved"
     if has_resolution_signal(event, same_source):

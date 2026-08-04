@@ -26,7 +26,9 @@ from core.intel.geoextract import (
     extract_numeric_coords,
     extract_relative_coords,
     is_direct_distress_call,
+    is_resolved_distress,
 )
+from core.intel import lifecycle
 from core.intel.news_monitor import RSS_FEEDS
 from core.intel.store import IntelEvent, IntelStore
 from core.intel.twitter_monitor import TwitterMonitor
@@ -185,6 +187,54 @@ def test_direct_distress_call_classifier_is_conservative() -> None:
     )
 
 
+def test_resolved_distress_ignores_a_rescue_mention_inside_an_ongoing_pushback() -> None:
+    # Real Alarm Phone report (2026-07-29): a rescue is only one step in a
+    # still-active rights violation (forced-return risk, refused
+    # disembarkation) — the bare word "rescued" must not short-circuit this
+    # to "resolved". This is the exact text that showed as a wrongly-green
+    # "resolved" marker on the live map before the fix.
+    assert not is_resolved_distress(
+        "🚨People at risk of being forced back to #Egypt. This group was over "
+        "night rescued by Merchant Vessel Safi Lion. Even though #Crete is "
+        "clearly the closest port, @HCoastGuard refuses to disembark the "
+        "people in #Greece! This is outrageous!"
+    )
+
+
+def test_resolved_distress_still_recognizes_a_clean_rescue() -> None:
+    assert is_resolved_distress(
+        "Rescued!! Thank you #OceanViking for rescuing the 14 people who "
+        "called us when in distress on a small boat in international waters."
+    )
+    assert is_resolved_distress("The group was rescued and everyone is now safe.")
+
+
+def test_lifecycle_recomputes_from_text_instead_of_trusting_stale_incident_status() -> None:
+    # A stored incident_status="resolved" — the exact value the OLD,
+    # over-broad is_resolved_distress() would have baked in at ingestion for
+    # the pushback report above — must no longer short-circuit the lifecycle
+    # colour. Only the live-recomputed text classification governs it now,
+    # so a classifier fix or a same-tweet duplicate from a source that never
+    # set the field (twikit does not) can never disagree with it.
+    now = datetime.fromisoformat("2026-07-29T12:00:00+00:00")
+    event = IntelEvent(
+        id="pushback01",
+        type="twitter",
+        severity="high",
+        title="Alarm Phone",
+        text=(
+            "🚨People at risk of being forced back to #Egypt. This group was "
+            "over night rescued by Merchant Vessel Safi Lion. Even though "
+            "#Crete is clearly the closest port, @HCoastGuard refuses to "
+            "disembark the people in #Greece! This is outrageous!"
+        ),
+        source="Alarm Phone",
+        timestamp_utc="2026-07-29T05:58:12+00:00",
+        metadata={"incident_status": "resolved"},
+    )
+    assert lifecycle.distress_lifecycle(event, now=now, same_source=[]) == "active"
+
+
 def test_intel_store_deduplicates_source_ids_and_content() -> None:
     store = IntelStore()
     event = IntelEvent(
@@ -216,7 +266,10 @@ def test_relative_alarm_phone_location_is_geolocated_with_declared_offset() -> N
     lat, lon = extract_relative_coords(
         "🆘 47 people were 50 km south of #Crete, Greece when they last spoke."
     )
-    assert 34.78 < lat < 34.80
+    # Crete's gazetteer base is just off the island's south coast (not its
+    # landmass centroid — see geoextract.py), so "50 km south" lands further
+    # south than the old landmass-centroid-based expectation.
+    assert 34.39 < lat < 34.41
     assert 24.80 < lon < 24.82
 
 
@@ -236,7 +289,10 @@ def test_relative_location_can_reference_an_island_named_earlier() -> None:
     lat, lon = extract_relative_coords(
         "47 people south of #Crete. The group was 50 km south of the island when last contacted."
     )
-    assert 34.78 < lat < 34.80
+    # Crete's gazetteer base is just off the island's south coast (not its
+    # landmass centroid — see geoextract.py), so "50 km south" lands further
+    # south than the old landmass-centroid-based expectation.
+    assert 34.39 < lat < 34.41
     assert 24.80 < lon < 24.82
 
 
