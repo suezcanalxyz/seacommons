@@ -81,7 +81,7 @@ from datetime import UTC, datetime
 from typing import Any, Optional
 
 from core.config import config
-from core.intel.alarm_phone_monitor import _ocr_photo
+from core.intel.x_media_utils import _ocr_photo
 from core.intel.auto_drift_client import request_auto_drift
 from core.intel.geoextract import (
     classify_severity,
@@ -108,7 +108,7 @@ _PRIORITY_DEFAULT = "alarm_phone"
 _DEFAULT_ACCOUNTS = list(NGO_TWITTER_HANDLES)
 # Alarm Phone (and the other tracked SAR NGOs) publish the actual GPS position
 # as a map screenshot, not in the tweet text. Same host allow-list as the
-# Alarm Phone monitor's OCR path (alarm_phone_monitor._ocr_photo).
+# shared OCR path (x_media_utils._ocr_photo).
 _ALLOWED_MEDIA_HOSTS = frozenset({"pbs.twimg.com"})
 
 

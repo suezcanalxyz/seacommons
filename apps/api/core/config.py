@@ -144,12 +144,7 @@ class SuezCanalConfig(BaseSettings):
     # background sensors/monitors/scheduler run on a separate process/VM instead,
     # and this node periodically syncs from the shared DB (core/bootstrap.py).
     INTEL_MONITORS_ENABLED: bool = True
-    # Legacy first-party Alarm Phone embed channel. Disabled on the micro now
-    # that the twikit monitor (primary) covers @alarm_phone and classifies
-    # distress/news correctly; keeping both would re-ingest the same tweets.
-    ALARM_PHONE_ENABLED: bool = True
-    ALARM_PHONE_POLL_INTERVAL_S: int = 30
-    # Alarm Phone drift jobs are serialized by the shared OpenDrift semaphore;
+    # Intel drift jobs are serialized by the shared OpenDrift semaphore;
     # results are persisted and served from the drift store after computation.
     INTEL_AUTO_DRIFT_ENABLED: bool = True
     # Shared-secret auth for an operator's own external script pushing
@@ -163,9 +158,9 @@ class SuezCanalConfig(BaseSettings):
     # tiers with read/search access (Basic+) are paid and X additionally
     # meters some calls against a prepaid credit balance (search/recent can
     # return HTTP 402 "credits depleted" even with a valid, authenticating
-    # token). Alarm Phone's distress feed does not depend on this token —
-    # see alarm_phone_monitor.py, which uses X's free public syndication CDN
-    # for photos only, not this API.
+    # token). The twikit monitor's distress feed does not depend on this
+    # token — see x_media_utils.py, which uses X's free public syndication
+    # CDN for photos only, not this API.
     TWITTER_BEARER_TOKEN: str = ""
     # Twikit: free X client that reads public tweets through a real account
     # session (cookies file exported from the browser — the Google-created

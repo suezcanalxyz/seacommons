@@ -116,7 +116,7 @@ def start_scheduler() -> None:
 
 
 def start_intel_engine() -> None:
-    """Start maritime intelligence monitors (Alarm Phone, Mastodon, GDACS, AIS spikes, ...)."""
+    """Start maritime intelligence monitors (twikit, GDACS, AIS spikes, ...)."""
     if not config.INTEL_ENABLED:
         logger.info("Intel engine disabled (INTEL_ENABLED=false)")
         return
@@ -124,7 +124,6 @@ def start_intel_engine() -> None:
         from core.intel.engine import intel_engine
         intel_engine.start(
             twitter_bearer=config.TWITTER_BEARER_TOKEN,
-            alarm_phone_enabled=config.ALARM_PHONE_ENABLED,
             twikit_enabled=config.TWIKIT_ENABLED,
             twikit_cookies_file=config.TWIKIT_COOKIES_FILE,
             twikit_accounts=config.TWIKIT_ACCOUNTS,

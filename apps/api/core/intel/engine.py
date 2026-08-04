@@ -2,9 +2,6 @@
 """
 IntelEngine — orchestrates all maritime intelligence monitors.
 
-Starts TwitterMonitor, NewsMonitor, and AISSpikeDetector in background
-daemon threads.  All three share the module-level IntelStore singleton.
-
 Usage (called once at API startup):
     from core.intel.engine import intel_engine
     intel_engine.start()
@@ -20,20 +17,16 @@ class IntelEngine:
     def __init__(self) -> None:
         self._twitter: object | None = None
         self._twikit: object | None = None
-        self._alarm_phone: object | None = None
         self._news: object | None = None
         self._ais: object | None = None
         self._drift_refresh: object | None = None
-        self._mastodon: object | None = None
         self._gdacs: object | None = None
-        self._bluesky: object | None = None
         self._started = False
 
     def start(
         self,
         twitter_bearer: str = "",
         twitter_enabled: bool = True,
-        alarm_phone_enabled: bool = True,
         twikit_enabled: bool = False,
         twikit_cookies_file: str = "",
         twikit_accounts: str = "",
@@ -43,26 +36,13 @@ class IntelEngine:
         twikit_alerts_enabled: bool = False,
         news_enabled: bool = True,
         ais_enabled: bool = True,
-        mastodon_enabled: bool = True,
         gdacs_enabled: bool = True,
-        bluesky_enabled: bool = True,
     ) -> None:
         if self._started:
             return
         self._started = True
 
         if twitter_enabled:
-            if alarm_phone_enabled:
-                try:
-                    from core.intel.alarm_phone_monitor import AlarmPhoneMonitor
-                    self._alarm_phone = AlarmPhoneMonitor()
-                    self._alarm_phone.start()  # type: ignore[attr-defined]
-                    logger.info("IntelEngine: Alarm Phone first-party monitor started")
-                except Exception as exc:
-                    logger.warning("IntelEngine: Alarm Phone monitor failed to start: %s", exc)
-            else:
-                logger.info("IntelEngine: Alarm Phone first-party monitor disabled (ALARM_PHONE_ENABLED=false)")
-
             try:
                 from core.intel.twikit_monitor import TwikitMonitor
                 self._twikit = TwikitMonitor(
@@ -120,15 +100,6 @@ class IntelEngine:
             except Exception as exc:
                 logger.warning("IntelEngine: drift refresher failed to start: %s", exc)
 
-        if mastodon_enabled:
-            try:
-                from core.intel.mastodon_monitor import MastodonMonitor
-                self._mastodon = MastodonMonitor()
-                self._mastodon.start()  # type: ignore[attr-defined]
-                logger.info("IntelEngine: Mastodon monitor started")
-            except Exception as exc:
-                logger.warning("IntelEngine: Mastodon monitor failed to start: %s", exc)
-
         if gdacs_enabled:
             try:
                 from core.intel.gdacs_monitor import GDACSMonitor
@@ -138,26 +109,14 @@ class IntelEngine:
             except Exception as exc:
                 logger.warning("IntelEngine: GDACS monitor failed to start: %s", exc)
 
-        if bluesky_enabled:
-            try:
-                from core.intel.bluesky_monitor import BlueskyMonitor
-                self._bluesky = BlueskyMonitor()
-                self._bluesky.start()  # type: ignore[attr-defined]
-                logger.info("IntelEngine: Bluesky monitor started")
-            except Exception as exc:
-                logger.warning("IntelEngine: Bluesky monitor failed to start: %s", exc)
-
     def stop(self) -> None:
         for monitor in (
             self._twitter,
             self._twikit,
-            self._alarm_phone,
             self._news,
             self._ais,
             self._drift_refresh,
-            self._mastodon,
             self._gdacs,
-            self._bluesky,
         ):
             if monitor:
                 try:

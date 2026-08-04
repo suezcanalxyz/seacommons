@@ -17,11 +17,7 @@ from core.api.routes.live import (
 )
 from core.config import config
 from core.ingestion.signal import DistressSignal
-from core.intel.alarm_phone_monitor import (
-    consensus_ocr_coordinate,
-    parse_official_timeline,
-    x_id_timestamp,
-)
+from core.intel.x_media_utils import consensus_ocr_coordinate
 from core.intel.geoextract import (
     extract_numeric_coords,
     extract_relative_coords,
@@ -120,28 +116,6 @@ def test_only_official_social_transport_is_available() -> None:
         "Sea Watch",
         "SOS Méditerranée",
     }
-
-
-def test_alarm_phone_first_party_timeline_parser() -> None:
-    document = """
-    <div class="ctf-item ctf-author-alarm_phone" id="2081334685649526892">
-      <div class="ctf-tweet-content">
-        <p class="ctf-tweet-text">
-          SOS from 42 people at 35.50N 12.60E &amp; taking water.
-        </p>
-      </div>
-    </div>
-    """
-    posts = parse_official_timeline(document)
-    assert posts == [
-        {
-            "id": "2081334685649526892",
-            "text": "SOS from 42 people at 35.50N 12.60E & taking water.",
-            "created_at": x_id_timestamp("2081334685649526892"),
-            "url": "https://x.com/alarm_phone/status/2081334685649526892",
-        }
-    ]
-    assert posts[0]["created_at"].startswith("2026-07-26T")
 
 
 def test_alarm_phone_official_site_policy_can_enter_live() -> None:
