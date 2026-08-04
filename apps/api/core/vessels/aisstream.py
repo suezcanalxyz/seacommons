@@ -196,20 +196,28 @@ def get_ngo_client() -> AISStreamClient | None:
     return _ngo_client
 
 
-def start(api_key: str) -> AISStreamClient:
+def start(api_key: str, *, ngo_api_key: str = "") -> AISStreamClient:
+    """`ngo_api_key` must be a SEPARATE AISStream key from `api_key` — verified
+    live against the real service that it allows only one open connection per
+    key, so a second subscription reusing the same key gets dropped
+    immediately (connects, subscribes, then closes within ~1s, in a tight
+    reconnect loop). With no second key, the NGO-fleet subscription is simply
+    not started rather than spinning in that broken state.
+    """
     global _client, _ngo_client
     _client = AISStreamClient(api_key, label="Mediterranean")
     _client.start()
 
-    try:
-        from core.intel.ngo_registry import NGO_VESSELS
+    if ngo_api_key and ngo_api_key != api_key:
+        try:
+            from core.intel.ngo_registry import NGO_VESSELS
 
-        ngo_mmsi = list(NGO_VESSELS.keys())[:50]  # AISStream's FiltersShipMMSI cap
-        _ngo_client = AISStreamClient(
-            api_key, label="NGO fleet (global)", bbox=_GLOBAL_BBOX, mmsi_filter=ngo_mmsi,
-        )
-        _ngo_client.start()
-    except Exception:
-        logger.warning("AISStream NGO-fleet subscription failed to start", exc_info=True)
+            ngo_mmsi = list(NGO_VESSELS.keys())[:50]  # AISStream's FiltersShipMMSI cap
+            _ngo_client = AISStreamClient(
+                ngo_api_key, label="NGO fleet (global)", bbox=_GLOBAL_BBOX, mmsi_filter=ngo_mmsi,
+            )
+            _ngo_client.start()
+        except Exception:
+            logger.warning("AISStream NGO-fleet subscription failed to start", exc_info=True)
 
     return _client

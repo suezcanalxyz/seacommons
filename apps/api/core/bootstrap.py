@@ -88,7 +88,7 @@ def start_background_sensors() -> None:
     if config.AISSTREAM_KEY:
         try:
             from core.vessels import aisstream
-            aisstream.start(config.AISSTREAM_KEY)
+            aisstream.start(config.AISSTREAM_KEY, ngo_api_key=config.AISSTREAM_NGO_KEY)
             logger.info("AISStream client started")
         except Exception as exc:
             logger.warning("AISStream failed to start: %s", exc)

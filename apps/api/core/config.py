@@ -115,6 +115,12 @@ class SuezCanalConfig(BaseSettings):
     CMEMS_WAVE_DATASET: str = "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i"
     OPEN_METEO_BASE: str = "https://api.open-meteo.com/v1"
     AISSTREAM_KEY: str = ""
+    # Optional SEPARATE AISStream API key (different account/registration) for
+    # a dedicated, globally-scoped subscription tracking the known NGO/SAR
+    # fleet by MMSI. AISStream allows only one open connection per key, so
+    # reusing AISSTREAM_KEY here would just get the second connection dropped
+    # — see core/vessels/aisstream.py. Leave unset to skip this subscription.
+    AISSTREAM_NGO_KEY: str = ""
     ADSB_EXCHANGE_KEY: str = ""
     GPSJAM_URL: str = "https://gpsjam.org/geo.json"
     ACLED_KEY: str = ""
