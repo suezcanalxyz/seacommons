@@ -30,6 +30,12 @@ import httpx
 
 logger = logging.getLogger("seacommons.live_edge_publisher")
 
+# Same block list as core/api/routes/live.py's VM-hosted public feed. Kept as
+# a local copy (not an import) so this low-memory publisher process never
+# pulls in FastAPI — but the values must stay identical: a record blocked on
+# the VM standby path must never leak through the primary edge path instead.
+_BLOCKED_SOURCE_POLICIES = frozenset({"nitter", "scrape", "twscrape", "unofficial"})
+
 
 @dataclass(frozen=True)
 class PublisherSettings:
@@ -208,10 +214,24 @@ def public_event_from_row(
     # news/archive channels (e.g. official RSS) mark their rows "private" so an
     # NGO article that merely mentions distress vocabulary can never surface on
     # the public live map.
-    if str(metadata.get("publication_status") or "").lower() == "private":
+    publication_status = str(metadata.get("publication_status") or "").lower()
+    if publication_status == "private":
+        return None
+    # Defense in depth, same as the VM path: a blocked source policy (legacy
+    # scraper rows, unofficial transport) must never reach the public map even
+    # if `publication_status`/`is_distress` were ever set incorrectly upstream.
+    source_policy = str(metadata.get("source_policy") or "").lower()
+    transport = str(metadata.get("via") or metadata.get("scrape_source") or "").lower()
+    if source_policy in _BLOCKED_SOURCE_POLICIES or any(
+        blocked in transport for blocked in _BLOCKED_SOURCE_POLICIES
+    ):
         return None
     is_distress = bool(metadata.get("is_distress")) or event_type in {"distress", "iom_incident"}
-    explicitly_public = metadata.get("publication_state") in {"public", "published"}
+    # NOTE: previously checked a "publication_state" key that no producer in
+    # this codebase ever sets (a typo for publication_status) — this branch
+    # was therefore dead: it never once evaluated True in production. Only
+    # `is_distress` was ever actually gating inclusion.
+    explicitly_public = publication_status == "published"
     if not is_distress and not explicitly_public:
         return None
 

@@ -84,6 +84,40 @@ def test_event_past_the_live_window_is_marked_for_removal() -> None:
     assert event["properties"]["expired"] is True
 
 
+def test_blocked_source_policy_never_reaches_the_edge_even_if_flagged_distress() -> None:
+    # Same guarantee as core/api/routes/live.py's blocklist: a legacy scraper
+    # record or an "unofficial" transport must never surface on the public
+    # map, even if is_distress/publication_status say otherwise. This is the
+    # primary live.seacommons.org path, so it needs the same guarantee the
+    # VM standby path already has.
+    for overrides in (
+        {"source_policy": "unofficial"},
+        {"via": "nitter"},
+        {"scrape_source": "twscrape-mirror"},
+    ):
+        row = distress_row(**overrides)
+        assert public_event_from_row(row, "node", now=_NOW, same_source=[]) is None
+
+
+def test_row_without_distress_flag_or_explicit_publication_is_not_exported() -> None:
+    # Mirrors the VM path: a bare row with no is_distress flag, a non-distress
+    # type, and no explicit publication decision must not leak onto the
+    # public map.
+    row = distress_row(is_distress=False)
+    row.type = "news"
+    assert public_event_from_row(row, "node", now=_NOW, same_source=[]) is None
+
+
+def test_explicit_publication_without_is_distress_flag_is_exported() -> None:
+    # The publication_status=="published" branch (fixed from a "publication_state"
+    # typo that was never set by any producer and was therefore always False)
+    # must actually work: an explicitly published non-distress row still needs
+    # a path onto the public map.
+    row = distress_row(is_distress=False, publication_status="published")
+    row.type = "ngo_activity"
+    assert public_event_from_row(row, "node", now=_NOW, same_source=[]) is not None
+
+
 def test_non_public_context_event_is_not_exported() -> None:
     row = SimpleNamespace(
         id="evt-2",
