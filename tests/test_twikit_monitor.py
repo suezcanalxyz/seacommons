@@ -404,6 +404,76 @@ def test_non_repost_tweets_still_ingested_normally(tmp_path, monkeypatch):
     assert store.events()[0].metadata.get("repost_count") is None
 
 
+def test_repost_record_carries_repost_kind_without_note(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("6001", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
+    m._ingest(original, handle="alarm_phone")
+    repost = _FakeTweet("6002", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E", original=original)
+    m._ingest(repost, handle="alarm_phone")
+    record = store.events()[0].metadata["thread_reposts"][0]
+    assert record["kind"] == "repost"
+    assert "note" not in record
+
+
+def test_quote_of_untracked_original_merges_caption_and_quoted_geo(tmp_path, monkeypatch):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    quoted = _FakeTweet("4001", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
+    caption = _FakeTweet("4002", "🆘")
+    caption.quote = quoted
+    assert m._ingest(caption, handle="alarm_phone") is True
+    events = store.events()
+    assert len(events) == 1
+    evt = events[0]
+    assert evt.metadata["is_distress"] is True
+    assert evt.metadata["tweet_id"] == "4002"
+    assert evt.metadata["quoted_tweet_id"] == "4001"
+    assert evt.metadata["quoted_tweet_url"].endswith("/4001")
+    assert evt.lat == 35.5 and evt.lon == 12.6
+
+
+def test_quote_of_tracked_incident_threads_with_note_instead_of_new_marker(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("5001", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
+    assert m._ingest(original, handle="alarm_phone") is True
+
+    quote = _FakeTweet("5002", "Confirmed: all 20 people rescued safely.")
+    quote.quote = original
+    assert m._ingest(quote, handle="alarm_phone") is False
+
+    events = store.events()
+    assert len(events) == 1
+    record = events[0].metadata["thread_reposts"][0]
+    assert record["tweet_id"] == "5002"
+    assert record["kind"] == "quote"
+    assert record["note"] == "Confirmed: all 20 people rescued safely."
+
+
+def test_quote_media_is_merged_into_ocr_candidate_urls(tmp_path, monkeypatch):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    monkeypatch.setattr("core.intel.twikit_monitor.shutil.which", lambda name: "/usr/bin/tesseract")
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    quoted = _FakeTweet(
+        "4010",
+        "🆘 38 lives at risk south of #Crete! #Greece",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg")],
+    )
+    caption = _FakeTweet("4011", "Sharing this")
+    caption.quote = quoted
+    assert m._tweet_media_urls(caption) == []
+    assert m._tweet_media_urls(quoted) == ["https://pbs.twimg.com/media/map.jpg?name=orig"]
+    assert m._ingest(caption, handle="alarm_phone") is True
+    evt = store.events()[0]
+    assert evt.metadata["media_count"] == 1
+    assert evt.metadata["media_transport"] == "x_media_ocr"
+
+
 def test_tweet_media_urls_media_attr_filtered_to_twimg(tmp_path):
     m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
     tweet = _FakeTweet(
@@ -562,6 +632,82 @@ def test_media_ocr_upgrades_position_and_drifts(tmp_path, monkeypatch):
     assert evt.metadata["media_transport"] == "x_media_ocr"
     assert drift_calls, "drift must fire with the OCR position"
     assert drift_calls[-1][1] == 35.5 and drift_calls[-1][2] == 24.9
+
+
+def test_async_loop_retries_session_setup_instead_of_giving_up():
+    m = TwikitMonitor(enabled=True, accounts="a", cookies_file="dummy.json")
+    m._next_delay = lambda error: 0.0  # skip real backoff sleep in the test
+
+    attempts = {"n": 0}
+
+    async def flaky_build():
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise RuntimeError("transient network error")
+        return object()
+
+    async def fake_fetch(client, handle):
+        m._running = False
+        return []
+
+    m._build_client = flaky_build
+    m._fetch_account = fake_fetch
+    m._running = True
+    m._next_poll_ts = {"a": 0.0}
+
+    asyncio.run(m._async_loop())
+    assert attempts["n"] == 2, "a failed session setup must be retried, not fatal"
+
+
+def test_async_loop_rebuilds_session_after_consecutive_full_failures(monkeypatch):
+    import core.intel.twikit_monitor as mod
+
+    monkeypatch.setattr(mod, "_SESSION_REBUILD_AFTER_FAILURES", 2)
+    m = TwikitMonitor(enabled=True, accounts="a", cookies_file="dummy.json")
+    m._next_delay = lambda error: 0.0
+
+    build_calls = {"n": 0}
+    fetch_calls = {"n": 0}
+
+    async def counting_build():
+        build_calls["n"] += 1
+        return object()
+
+    async def failing_fetch(client, handle):
+        fetch_calls["n"] += 1
+        if fetch_calls["n"] >= 3:
+            m._running = False
+        raise RuntimeError("poll broke")
+
+    m._build_client = counting_build
+    m._fetch_account = failing_fetch
+    m._running = True
+    m._next_poll_ts = {"a": 0.0}
+
+    asyncio.run(m._async_loop())
+    assert build_calls["n"] == 2, "session should be rebuilt once the failure streak hits the threshold"
+    assert fetch_calls["n"] == 3
+
+
+def test_fetch_failure_evicts_cached_user_for_retry():
+    m = TwikitMonitor(enabled=True, accounts="a", cookies_file="dummy.json")
+    m._next_delay = lambda error: 0.0
+    m._users["a"] = object()  # a stale/broken cached user object
+
+    async def build():
+        return object()
+
+    async def fetch(client, handle):
+        m._running = False
+        raise RuntimeError("boom")
+
+    m._build_client = build
+    m._fetch_account = fetch
+    m._running = True
+    m._next_poll_ts = {"a": 0.0}
+
+    asyncio.run(m._async_loop())
+    assert "a" not in m._users
 
 
 def test_media_ocr_failure_keeps_fallback_and_drifts(tmp_path, monkeypatch):

@@ -32,6 +32,26 @@ marker, never bumps a version, and never re-broadcasts an update. Only if the
 original was never tracked is the original content ingested (deduplicated by
 tweet id), so nothing is lost.
 
+Quote-tweet semantics: a quote tweet of an already-tracked incident is
+threaded the same way as a plain repost (no new marker, no re-broadcast), but
+— unlike a plain RT — the quoting account's own caption is new content (e.g.
+"confirmed rescued"), so it is kept as a `note` on the thread record instead
+of being discarded. When the quoted tweet is NOT already tracked, its text
+and media are merged with the quoting account's caption for distress/geo
+extraction: Alarm Phone and other tracked NGOs sometimes quote a source (a
+witness, a partner NGO) with only a short caption of their own, and the real
+distress content — including the map screenshot with GPS coordinates — lives
+in the quoted tweet, not the caption. Losing that would mean losing the
+signal entirely.
+
+Session resilience: a transient failure while establishing the twikit session
+(e.g. a network blip at process start) retries with the same capped backoff
+used for poll errors, rather than permanently killing the monitor until the
+next process restart. If every tracked account fails to poll for several
+consecutive cycles — a strong signal the session itself has gone stale, not
+that every account broke independently — the client is rebuilt from the same
+cookies file on the next cycle.
+
 
 Security posture (must be preserved):
   * Strictly opt-in: `TWIKIT_ENABLED=true` AND `TWIKIT_COOKIES_FILE` must point
@@ -83,6 +103,7 @@ _MAX_BACKOFF_S = 900  # 15 min — be extremely gentle with the real account
 _BASE_POLL_INTERVAL_S = 300  # non-priority accounts
 _PRIORITY_POLL_INTERVAL_S = 45  # near-real-time accounts (default @alarm_phone)
 _SLEEP_CAP_S = 60.0  # wake up at most this often to recompute due accounts
+_SESSION_REBUILD_AFTER_FAILURES = 3  # consecutive all-accounts-failed cycles
 _PRIORITY_DEFAULT = "alarm_phone"
 _DEFAULT_ACCOUNTS = list(NGO_TWITTER_HANDLES)
 # Alarm Phone (and the other tracked SAR NGOs) publish the actual GPS position
@@ -195,19 +216,23 @@ class TwikitMonitor:
     async def _async_loop(self) -> None:
         from core.intel.source_registry import source_registry
 
-        try:
-            client = await self._build_client()
-        except Exception as exc:
-            logger.error(
-                "X (twikit) session setup failed (%s); monitor will not retry "
-                "until the process restarts. Cookie file: %s",
-                exc,
-                self._cookies_file,
-            )
-            source_registry.record_poll(_SOURCE_NAME, error=str(exc))
-            return
-
+        client = None
+        consecutive_full_failures = 0
         while self._running:
+            if client is None:
+                try:
+                    client = await self._build_client()
+                except Exception as exc:
+                    logger.error(
+                        "X (twikit) session setup failed (%s); retrying with backoff "
+                        "instead of giving up. Cookie file: %s",
+                        exc,
+                        self._cookies_file,
+                    )
+                    source_registry.record_poll(_SOURCE_NAME, error=str(exc))
+                    await asyncio.sleep(self._next_delay("session setup failed"))
+                    continue
+
             now = time.monotonic()
             due = [h for h in self._accounts if self._next_poll_ts[h] <= now]
             new_count = 0
@@ -223,8 +248,25 @@ class TwikitMonitor:
                         raise
                     except Exception as exc:
                         failed += 1
+                        # Evict the cached user object: a renamed/suspended-then
+                        # -reinstated account or a one-off API hiccup should not
+                        # wedge this handle into the same failure forever.
+                        self._users.pop(handle, None)
                         logger.warning("X (twikit) poll error for @%s: %s", handle, exc)
             error = "poll failed" if due and failed == len(due) else None
+            if error:
+                consecutive_full_failures += 1
+                if consecutive_full_failures >= _SESSION_REBUILD_AFTER_FAILURES:
+                    logger.warning(
+                        "X (twikit) %d consecutive fully-failed polls; rebuilding the "
+                        "session (cookies may have rotated or expired)",
+                        consecutive_full_failures,
+                    )
+                    client = None
+                    self._users.clear()
+                    consecutive_full_failures = 0
+            else:
+                consecutive_full_failures = 0
             source_registry.record_poll(_SOURCE_NAME, events_found=new_count, error=error)
             await asyncio.sleep(self._next_delay(error))
 
@@ -295,6 +337,22 @@ class TwikitMonitor:
         if fresh:
             self._since_id[handle] = max(since, max(int(str(tweet.id)) for tweet in fresh))
         return fresh
+
+    @staticmethod
+    def _quoted_tweet(tweet: Any) -> Optional[Any]:
+        """Best-effort access to a quote-tweet's quoted status.
+
+        twikit/twifork have exposed the quoted tweet under different attribute
+        names across versions/forks (``quote``, ``quoted_tweet``,
+        ``quoted_status``). Try each so a library upgrade never silently drops
+        the quoted content — which is often where the actual distress text
+        and coordinate screenshot live, not in the quoting account's caption.
+        """
+        for attr in ("quote", "quoted_tweet", "quoted_status"):
+            quoted = getattr(tweet, attr, None)
+            if quoted is not None and getattr(quoted, "id", None) is not None:
+                return quoted
+        return None
 
     @staticmethod
     def _tweet_media_urls(tweet: Any) -> list[str]:
@@ -422,15 +480,31 @@ class TwikitMonitor:
     def _ingest(self, tweet: Any, handle: str) -> bool:
         original = getattr(tweet, "retweeted_tweet", None)
         if original is not None and getattr(original, "id", None) is not None:
-            return self._thread_repost(tweet, handle, original)
+            return self._thread_repost(tweet, handle, original, kind="repost")
 
-        text = str(getattr(tweet, "text", "") or "")
-        if len(text) < 10:
+        quoted = self._quoted_tweet(tweet)
+        if quoted is not None:
+            quoted_parent = intel_store.find_by_tweet_id(str(quoted.id))
+            if quoted_parent is not None:
+                # Amplifying an already-tracked incident — thread it like a
+                # repost (no new marker, no re-broadcast), but keep the
+                # caption: unlike a plain RT a quote often carries new
+                # operational info (e.g. "confirmed rescued").
+                return self._thread_repost(tweet, handle, quoted, kind="quote")
+
+        own_text = str(getattr(tweet, "text", "") or "")
+        quoted_text = str(getattr(quoted, "text", "") or "") if quoted is not None else ""
+        # The real distress content (and its GPS map screenshot) often lives
+        # in the quoted tweet, not the tracked account's short caption — feed
+        # both to distress/geo extraction so a terse "🆘" caption quoting a
+        # full report is never silently dropped or mis-classified.
+        combined_text = f"{own_text}\n{quoted_text}".strip() if quoted_text else own_text
+        if len(combined_text) < 10:
             return False
 
-        distress = is_direct_distress_call(text)
-        resolved = is_resolved_distress(text)
-        severity = classify_severity(text) if distress else "low"
+        distress = is_direct_distress_call(combined_text)
+        resolved = is_resolved_distress(combined_text)
+        severity = classify_severity(combined_text) if distress else "low"
         author = ""
         try:
             user = tweet.user
@@ -441,8 +515,12 @@ class TwikitMonitor:
         # Alarm Phone (and the tracked SAR NGOs) publish the real GPS position
         # as a map screenshot. Priority: explicit text coords > OCR of attached
         # images > declared relative offset > place-name centroid.
-        text_coords = extract_numeric_coords(text)
+        text_coords = extract_numeric_coords(combined_text)
         media_urls = self._tweet_media_urls(tweet)
+        if quoted is not None:
+            for url in self._tweet_media_urls(quoted):
+                if url not in media_urls:
+                    media_urls.append(url)
         media_count = len(media_urls)
         ocr_pending = False
         if distress and not text_coords and media_count:
@@ -460,8 +538,10 @@ class TwikitMonitor:
                     media_count,
                 )
         media_coords: Optional[tuple[float, float]] = None
-        relative_coords = extract_relative_coords(text) if not text_coords else None
-        place_coords = extract_coords(text) if not (text_coords or relative_coords) else None
+        relative_coords = extract_relative_coords(combined_text) if not text_coords else None
+        place_coords = (
+            extract_coords(combined_text) if not (text_coords or relative_coords) else None
+        )
         coords = text_coords or media_coords or relative_coords or place_coords
         coordinate_source = (
             "post_text" if text_coords
@@ -478,13 +558,19 @@ class TwikitMonitor:
             else None
         )
 
+        # Prefer the tracked account's own words for the title/display text;
+        # fall back to the combined text only when the caption alone is too
+        # thin to summarize (e.g. a bare "🆘" quoting a full report).
+        title_source = own_text if len(own_text.strip()) >= 10 else combined_text
+        display_text = own_text if own_text.strip() else combined_text
+
         event = IntelEvent(
             type="twitter",
             severity=severity,
             lat=coords[0] if coords else None,
             lon=coords[1] if coords else None,
-            title=_make_title(text, author or handle),
-            text=text[:500],
+            title=_make_title(title_source, author or handle),
+            text=display_text[:500],
             url=f"https://x.com/i/web/status/{tweet.id}",
             source=author or handle,
             author=author or handle,
@@ -516,6 +602,10 @@ class TwikitMonitor:
                 "ocr_attempted": False,
                 "provenance": "twikit_account_timeline",
                 "tracked_account": handle,
+                "quoted_tweet_id": str(quoted.id) if quoted is not None else None,
+                "quoted_tweet_url": (
+                    f"https://x.com/i/web/status/{quoted.id}" if quoted is not None else None
+                ),
             },
         )
         added = intel_store.add(event, dedup_key=f"x:{tweet.id}")
@@ -557,14 +647,21 @@ class TwikitMonitor:
                 logger.debug("X (twikit) auto-drift deferred for %s: %s", event.id, exc)
         return added
 
-    def _thread_repost(self, repost: Any, handle: str, original: Any) -> bool:
-        """A repost must answer the SAME thread, never spawn a new marker.
+    def _thread_repost(
+        self, repost: Any, handle: str, original: Any, *, kind: str = "repost"
+    ) -> bool:
+        """A repost/quote must answer the SAME thread, never spawn a new marker.
 
         If the original alert is already tracked in the store, the repost is
         recorded onto that incident's thread bookkeeping without touching any
         field the live edge publishes (no version bump, no marker update). If
         the original was never seen, the original content is ingested so the
         signal is not lost.
+
+        A quote tweet (``kind="quote"``) additionally carries the quoting
+        account's own caption, which — unlike a plain RT — can be new
+        operational information (e.g. "confirmed rescued"), so it is kept as
+        a ``note`` on the thread record instead of being discarded.
         """
         original_id = str(getattr(original, "id", "") or "")
         repost_id = str(getattr(repost, "id", "") or "")
@@ -575,15 +672,21 @@ class TwikitMonitor:
         if parent is None:
             return self._ingest(original, handle)
 
-        record = {
+        record: dict[str, Any] = {
             "tweet_id": repost_id,
             "posted_at": self._timestamp(repost),
             "url": f"https://x.com/i/web/status/{repost_id}",
+            "kind": kind,
         }
+        if kind == "quote":
+            note = str(getattr(repost, "text", "") or "").strip()
+            if note:
+                record["note"] = note[:200]
         added = intel_store.append_thread_repost(parent.id, record)
         if added:
             logger.info(
-                "X (twikit) repost %s by @%s threaded onto incident %s (no new event)",
+                "X (twikit) %s %s by @%s threaded onto incident %s (no new event)",
+                kind,
                 repost_id,
                 handle,
                 parent.id,
