@@ -154,6 +154,9 @@ def test_ingest_marks_distress_and_geo(tmp_path, monkeypatch):
     assert evt.metadata["report_kind"] == "distress"
     assert evt.metadata["distress_classification"] == "direct_call"
     assert evt.lat == 35.5 and evt.lon == 12.6
+    # Tracked accounts are a curated NGO/SAR allowlist, not open public
+    # chatter — their own testimony gets the "partner" trust tier.
+    assert evt.metadata["verification_status"] == "partner_reported"
 
 
 def test_ingest_marks_resolved_posts_as_not_distress(tmp_path, monkeypatch):

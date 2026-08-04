@@ -650,10 +650,14 @@ class TwikitMonitor:
                     if coordinate_source == "media_ocr_text"
                     else "not_required"
                 ),
+                # TWIKIT_ACCOUNTS is a curated allowlist of known SAR/humanitarian
+                # NGOs (Alarm Phone, MSF, Sea-Watch, ...), not an open public-tweet
+                # scrape — their own testimony deserves the "partner" trust tier,
+                # not the same generic bucket as anonymous public chatter.
                 "verification_status": (
                     "machine_extracted_unverified"
                     if coordinate_source == "media_ocr_text"
-                    else "unverified_public_source"
+                    else "partner_reported"
                 ),
                 "location_uncertainty_m": location_uncertainty_m,
                 "media_count": media_count,
