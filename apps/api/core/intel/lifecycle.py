@@ -59,6 +59,15 @@ def parse_utc(value: str) -> Optional[datetime]:
         return None
 
 
+# A single shared keyword is not enough to say two posts are about the same
+# incident: common domain vocabulary ("rescued", "distress", a frequently-
+# mentioned place like "crete") recurs across many unrelated Alarm Phone
+# reports. Two independent shared terms (e.g. a number + a name, or two
+# specific place/vessel references) is a much stronger same-incident signal
+# and was true of every real cross-post resolution case seen in practice.
+_MIN_SHARED_KEYWORDS_FOR_RESOLUTION_MATCH = 2
+
+
 def has_resolution_signal(event: IntelEvent, same_source: list[IntelEvent]) -> bool:
     """True if a later post from the same source reports this incident resolved."""
     event_time = parse_utc(event.timestamp_utc)
@@ -75,7 +84,7 @@ def has_resolution_signal(event: IntelEvent, same_source: list[IntelEvent]) -> b
             continue
         if not is_concluded_incident(other.text or other.title):
             continue
-        if event_kw & text_keywords(other.text or other.title):
+        if len(event_kw & text_keywords(other.text or other.title)) >= _MIN_SHARED_KEYWORDS_FOR_RESOLUTION_MATCH:
             return True
     return False
 

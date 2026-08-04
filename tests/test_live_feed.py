@@ -235,6 +235,63 @@ def test_lifecycle_recomputes_from_text_instead_of_trusting_stale_incident_statu
     assert lifecycle.distress_lifecycle(event, now=now, same_source=[]) == "active"
 
 
+def test_resolution_signal_ignores_a_single_shared_generic_word() -> None:
+    # Real false positive: this Egypt pushback report and a totally
+    # unrelated "Rescued!! Thank you OceanViking..." post from the same
+    # source share only the single generic word "rescued" — that alone must
+    # not mark the Egypt report resolved.
+    egypt = IntelEvent(
+        id="pushback02",
+        type="twitter",
+        severity="high",
+        title="Alarm Phone",
+        text=(
+            "🚨People at risk of being forced back to #Egypt. This group was "
+            "over night rescued by Merchant Vessel Safi Lion. Even though "
+            "#Crete is clearly the closest port, @HCoastGuard refuses to "
+            "disembark the people in #Greece! This is outrageous!"
+        ),
+        source="Alarm Phone",
+        timestamp_utc="2026-07-29T05:58:12+00:00",
+    )
+    unrelated_rescue = IntelEvent(
+        id="oceanviking01",
+        type="twitter",
+        severity="low",
+        title="Alarm Phone",
+        text=(
+            "Rescued!! Thank you #OceanViking for rescuing the 14 people "
+            "who called us when in distress on a small boat in "
+            "international waters."
+        ),
+        source="Alarm Phone",
+        timestamp_utc="2026-07-31T10:37:23+00:00",
+    )
+    assert lifecycle.has_resolution_signal(egypt, [unrelated_rescue]) is False
+
+
+def test_resolution_signal_still_fires_on_genuinely_matching_follow_up() -> None:
+    original = IntelEvent(
+        id="boat01",
+        type="twitter",
+        severity="high",
+        title="Alarm Phone",
+        text="🆘 47 people in distress aboard the vessel Zenobia near Lampedusa.",
+        source="Alarm Phone",
+        timestamp_utc="2026-07-29T05:00:00+00:00",
+    )
+    follow_up = IntelEvent(
+        id="boat01-followup",
+        type="twitter",
+        severity="low",
+        title="Alarm Phone",
+        text="Update: all 47 people aboard the Zenobia near Lampedusa were rescued and are now safe.",
+        source="Alarm Phone",
+        timestamp_utc="2026-07-29T09:00:00+00:00",
+    )
+    assert lifecycle.has_resolution_signal(original, [follow_up]) is True
+
+
 def test_intel_store_deduplicates_source_ids_and_content() -> None:
     store = IntelStore()
     event = IntelEvent(
