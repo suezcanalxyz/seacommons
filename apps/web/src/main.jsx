@@ -7,6 +7,7 @@ import ScenarioModal from './components/ScenarioModal.jsx';
 import SimHistory from './components/SimHistory.jsx';
 import IntelDashboard from './components/IntelDashboard.jsx';
 import LayerToggles, { LAYER_GROUPS } from './components/LayerToggles.jsx';
+import Legend from './components/Legend.jsx';
 import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
 import JobMonitor from './components/JobMonitor.jsx';
@@ -2659,6 +2660,7 @@ function App() {
         </div>
 
         {!play3D ? <LayerToggles visibility={layerVis} onToggle={toggleLayerGroup} /> : null}
+        {!play3D ? <Legend /> : null}
 
         {error  ? <div className={`map-banner error ${sidebarOpen ? 'sidebar-open' : ''}`}>{error}</div> : null}
         {loading ? <div className={`map-banner ${sidebarOpen ? 'sidebar-open' : ''}`}>Connecting to backend…</div> : null}

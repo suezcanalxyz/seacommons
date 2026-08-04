@@ -2227,6 +2227,67 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   cursor: pointer;
 }
 
+/* ── Legend — bottom-right, mirrors the layer-control FAB pattern ── */
+.legend-control {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  z-index: 26;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.legend-fab {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  color: #b8d4cf;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition: color 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease;
+}
+
+.legend-fab:hover, .legend-fab.is-open {
+  color: var(--accent);
+  border-color: var(--glass-border-hi);
+  box-shadow: var(--glow);
+}
+
+.legend-panel {
+  min-width: 168px;
+  padding: 8px 10px;
+  background: rgba(4, 12, 17, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.legend-panel-title {
+  font-size: 9px;
+  color: #87cabc;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  margin-bottom: 6px;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 11px;
+  color: #dfeae7;
+}
+
 /* ════════════════════════════════════════════════════════════════════════════
    Mobile layout — full-screen map + bottom tab bar + bottom-sheet panels
    ════════════════════════════════════════════════════════════════════════════ */
@@ -2499,6 +2560,9 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   .layer-fab { width: 40px; height: 40px; }
   .layer-control { top: 170px; right: 10px; }
   .layer-row { padding: 7px 0; font-size: 13px; }
+  .legend-fab { width: 40px; height: 40px; }
+  .legend-control { bottom: calc(var(--nav-h) + 10px); right: 10px; }
+  .legend-row { padding: 6px 0; font-size: 13px; }
 }
 .bottom-nav{display:none!important}
 .workspace-nav{position:fixed;z-index:1200;top:14px;left:50%;transform:translateX(-50%);display:flex;gap:2px;padding:4px;border:1px solid rgba(255,255,255,.12);background:rgba(5,13,19,.9);backdrop-filter:blur(14px);border-radius:4px}.workspace-nav button{border:0;background:transparent;color:rgba(225,239,235,.62);padding:.5rem .72rem;font:9px 'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.06em}.workspace-nav button.is-active{background:#83f4df;color:#061015}
