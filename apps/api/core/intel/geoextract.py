@@ -162,14 +162,14 @@ _PLACES: dict[str, tuple[float, float]] = {
     "aden":                (12.78, 45.03),
 }
 
-# Sorted longest-first for greedy matching
-_PLACES_SORTED = sorted(_PLACES.items(), key=lambda x: -len(x[0]))
-
 # _PLACES entries that name a whole sea basin, strait, island group or country
-# rather than a specific point — fine as a text-extraction fallback (with the
-# caller rendering it as an area), but useless or actively misleading as a
-# pixel-calibration anchor for map_pin_geolocate.py, since a single centroid
-# can sit hundreds of km from where the name is actually printed on a map.
+# rather than a specific point. These need to lose to any specific place named
+# in the same text — "close to #Sfax, #Tunisia" must resolve to Sfax, not to
+# Tunisia's country centroid (which sits inland, nowhere near the coast) just
+# because "tunisia" is a longer string than "sfax". They're also useless (or
+# actively misleading) as a pixel-calibration anchor for map_pin_geolocate.py,
+# since a country/sea centroid can sit hundreds of km from where the name is
+# actually printed on a map.
 _IMPRECISE_PLACE_NAMES = frozenset({
     "strait of sicily", "sicilian channel", "sicily channel",
     "canal de sicile", "canal de sicilia", "central mediterranean",
@@ -180,10 +180,19 @@ _IMPRECISE_PLACE_NAMES = frozenset({
     "gulf of aden", "horn of africa", "somalia", "dodecanese", "calabria",
 })
 
-# Precise-point subset usable as pixel-calibration anchors (see above).
+# Precise-point subset usable as pixel-calibration anchors (see above) and as
+# the first-priority tier for text matching.
 PRECISE_PLACES: dict[str, tuple[float, float]] = {
     name: coords for name, coords in _PLACES.items() if name not in _IMPRECISE_PLACE_NAMES
 }
+
+# Sorted longest-first for greedy matching within each tier, but every precise
+# place is tried before any imprecise/broad one regardless of string length —
+# see _IMPRECISE_PLACE_NAMES above for why plain length-only sorting is wrong.
+_PLACES_SORTED = sorted(PRECISE_PLACES.items(), key=lambda x: -len(x[0])) + sorted(
+    ((name, coords) for name, coords in _PLACES.items() if name in _IMPRECISE_PLACE_NAMES),
+    key=lambda x: -len(x[0]),
+)
 
 # Country/sea-basin fallback — only tried when no specific place/coordinate
 # matches. These names span hundreds of km, so each carries its own much
