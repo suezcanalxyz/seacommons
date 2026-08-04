@@ -1511,6 +1511,11 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   font-size: 10px;
   color: #9fb6c4;
 }
+.intel-update-list { list-style: none; margin: 0; padding: 0; }
+.intel-update-list li { padding: 5px 0; border-top: 1px solid rgba(255, 255, 255, 0.05); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.intel-update-list li:first-child { border-top: none; }
+.intel-update-kind { text-transform: uppercase; font-size: 9px; letter-spacing: 0.06em; color: #38bdf8; }
+.intel-update-note { flex-basis: 100%; margin: 2px 0 0; color: #cfe9ff; font-size: 10.5px; line-height: 1.4; }
 .intel-ngo-summary { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 4px; color: #7a9a94; }
 .intel-ngo-summary strong { color: #e2f4ff; }
 .intel-ngo-eta strong { color: #38bdf8; }

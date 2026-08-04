@@ -44,6 +44,8 @@ _PUBLIC_METADATA = frozenset(
         "region",
         "source_policy",
         "source_scan_count",
+        "repost_count",
+        "last_repost_at",
     }
 )
 
@@ -74,6 +76,16 @@ def _public_intel_feature(event: IntelEvent) -> Optional[dict[str, Any]]:
     if event.type not in _PUBLIC_INTEL_TYPES and publication != "published":
         return None
     metadata = {key: event.metadata[key] for key in _PUBLIC_METADATA if key in event.metadata}
+    # Public Live excludes raw text everywhere else, so strip each repost's
+    # `note` (a quote tweet's own caption) — keep only which public tweet
+    # answered this incident and when, as a link.
+    thread_reposts = event.metadata.get("thread_reposts")
+    if thread_reposts:
+        metadata["thread_reposts"] = [
+            {"tweet_id": r.get("tweet_id"), "posted_at": r.get("posted_at"),
+             "url": r.get("url"), "kind": r.get("kind")}
+            for r in thread_reposts
+        ]
     coordinate_source = str(event.metadata.get("coordinate_source") or "")
     location_precision = (
         "area"
