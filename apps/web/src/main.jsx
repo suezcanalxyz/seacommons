@@ -49,6 +49,10 @@ const LIFECYCLE_AREA_STROKE = ['match', ['get', 'incident_lifecycle'],
 
 const PUBLIC_DEMO_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org']);
 const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'engine.seacommons.org']);
+// The public Live map only ever fetches data for these layer groups (see the
+// ngo-vessels/platforms effects and loadWeatherGridForMap's isPublicLiveHost
+// guard) — everything else stays hidden there regardless of the layer toggle.
+const PUBLIC_LIVE_LAYER_GROUPS = new Set(['intel', 'ngo_vessels', 'platforms']);
 const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
 const isPublicLiveHost = window.location.hostname === 'live.seacommons.org';
 const isLiveHost = LIVE_HOSTS.has(window.location.hostname);
@@ -591,9 +595,9 @@ function App() {
   const [layerVis, setLayerVis] = useState(() => {
     try {
       const saved = JSON.parse(window.localStorage.getItem('seacommons_layer_vis') || '{}');
-      return { vessels: true, weather: true, intel: true, platforms: true, alerts: true, ...saved };
+      return { vessels: true, ngo_vessels: true, weather: true, intel: true, platforms: true, alerts: true, ...saved };
     } catch {
-      return { vessels: true, weather: true, intel: true, platforms: true, alerts: true };
+      return { vessels: true, ngo_vessels: true, weather: true, intel: true, platforms: true, alerts: true };
     }
   });
   const [triggeringDrift, setTriggeringDrift] = useState(() => new Set());
@@ -1072,11 +1076,11 @@ function App() {
   }, [apiBase]);
 
   useEffect(() => {
-    if (isPublicLiveHost) return;
-    fetchJson(apiBase, '/api/v1/zones/platforms')
+    const path = isPublicLiveHost ? '/api/v1/live/platforms' : '/api/v1/zones/platforms';
+    fetchJson(apiBase, path)
       .then(d => { if (d.features) setPlatforms(d); })
       .catch(() => {});
-  }, [apiBase]);
+  }, [apiBase, isPublicLiveHost]);
 
   // ── Rehydrate case history from the DB (survives page refresh) ──────────────
   // GeoJSON is loaded lazily on "Show" to keep the initial payload small.
@@ -1118,11 +1122,15 @@ function App() {
   }, [apiBase]);
 
   useEffect(() => {
-    if (isPublicLiveHost || isPublicDemoHost) return undefined;
+    if (isPublicDemoHost) return undefined;
+    // AIS positions are public data either way; the public host just reads
+    // them through /api/v1/live/ (unauthenticated) instead of the
+    // operator-only /api/v1/intel/ngo (requires a session).
+    const path = isPublicLiveHost ? '/api/v1/live/ngo-vessels' : '/api/v1/intel/ngo';
     let alive = true;
     async function loadNgoVessels() {
       try {
-        const data = await fetchJson(apiBase, '/api/v1/intel/ngo');
+        const data = await fetchJson(apiBase, path);
         if (alive && data.features) {
           // Only keep positioned vessels (geometry != null)
           const positioned = { ...data, features: data.features.filter((f) => f.geometry?.coordinates) };
@@ -1133,7 +1141,7 @@ function App() {
     }
     loadNgoVessels();
     return () => { alive = false; };
-  }, [apiBase]);
+  }, [apiBase, isPublicLiveHost, isPublicDemoHost]);
 
   useEffect(() => {
     window.localStorage.setItem('seacommons_tz_host', localSettings.timezeroHost);
@@ -2015,7 +2023,7 @@ function App() {
     if (!map || !mapReady) return;
     for (const group of LAYER_GROUPS) {
       const enabled = isPublicLiveHost
-        ? group.key === 'intel'
+        ? PUBLIC_LIVE_LAYER_GROUPS.has(group.key) && layerVis[group.key] !== false
         : layerVis[group.key] !== false;
       const vis = enabled ? 'visible' : 'none';
       for (const id of group.layers) {

@@ -428,7 +428,10 @@ def test_live_routes_remain_public_when_internal_reads_require_auth() -> None:
         public_drifts = client.get("/api/v1/live/drifts")
         public_archives = client.get("/api/v1/live/archives")
         public_sources = client.get("/api/v1/live/sources")
+        public_ngo = client.get("/api/v1/live/ngo-vessels")
+        public_platforms = client.get("/api/v1/live/platforms")
         internal_feed = client.get("/api/v1/intel")
+        internal_ngo = client.get("/api/v1/intel/ngo")
         assert public_feed.status_code == 200
         assert public_feed.json()["meta"]["schema"] == "org.seacommons.live-feed/v1"
         assert public_drifts.status_code == 200
@@ -437,6 +440,11 @@ def test_live_routes_remain_public_when_internal_reads_require_auth() -> None:
         source_payload = public_sources.json()
         assert source_payload["collector"]["browser_independent"] is True
         assert all(source["type"] != "ais" for source in source_payload["sources"])
+        assert public_ngo.status_code == 200
+        assert public_ngo.json()["type"] == "FeatureCollection"
+        assert public_platforms.status_code == 200
+        assert public_platforms.json()["type"] == "FeatureCollection"
         assert internal_feed.status_code == 401
+        assert internal_ngo.status_code == 401
     finally:
         config.AUTH_ENABLED = previous

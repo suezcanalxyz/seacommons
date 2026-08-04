@@ -122,3 +122,64 @@ def get_ngo_info(mmsi: str) -> dict[str, Any] | None:
 
 def ngo_mmsi_set() -> frozenset[str]:
     return frozenset(_MMSI_SET)
+
+
+def ngo_vessel_geojson() -> dict[str, Any]:
+    """Live NGO/coastguard vessel positions as GeoJSON, enriched from the
+    registry above. Shared by the authenticated operator route
+    (/api/v1/intel/ngo) and the public Live route (/api/v1/live/ngo-vessels)
+    so both always agree — AIS positions are public data either way, this
+    is just about which surface exposes them.
+    """
+    from core.vessels.registry import registry  # lazy to avoid circular import
+
+    geojson = registry.get_geojson()
+    ngo_features = []
+    seen_mmsi: set[str] = set()
+
+    for feat in geojson.get("features", []):
+        props = feat.get("properties") or {}
+        mmsi = str(props.get("mmsi", ""))
+        if not is_ngo(mmsi):
+            continue
+        info = get_ngo_info(mmsi) or {}
+        seen_mmsi.add(mmsi)
+        ngo_features.append({
+            **feat,
+            "properties": {
+                **props,
+                "intel_type": "ngo_vessel",
+                "org": info.get("org", ""),
+                "role": info.get("role", ""),
+                "vessel_class": "ngo",
+            },
+        })
+
+    # Known NGO vessels not currently seen in AIS — surfaced as "last known"/offline.
+    for mmsi, info in NGO_VESSELS.items():
+        if mmsi in seen_mmsi:
+            continue
+        ngo_features.append({
+            "type": "Feature",
+            "geometry": None,
+            "properties": {
+                "mmsi": mmsi,
+                "ship_name": info.get("name", ""),
+                "org": info.get("org", ""),
+                "role": info.get("role", ""),
+                "flag": info.get("flag", ""),
+                "intel_type": "ngo_vessel",
+                "ais_status": "offline",
+                "vessel_class": "ngo",
+            },
+        })
+
+    return {
+        "type": "FeatureCollection",
+        "features": ngo_features,
+        "meta": {
+            "total_registered": len(NGO_VESSELS),
+            "live_ais": len(seen_mmsi),
+            "offline": len(NGO_VESSELS) - len(seen_mmsi),
+        },
+    }

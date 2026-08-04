@@ -24,7 +24,6 @@ from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSock
 from pydantic import BaseModel
 
 from core.api.ratelimit import acquire_drift_slot, rate_limit, release_drift_slot
-from core.intel.ngo_registry import NGO_VESSELS, get_ngo_info, is_ngo
 from core.intel.store import IntelEvent, intel_store
 
 router = APIRouter()
@@ -108,59 +107,9 @@ async def get_ngo_positions():
     Enriched with org, role, and website data.
     Returns GeoJSON FeatureCollection.
     """
-    from core.vessels.registry import registry  # lazy to avoid circular
+    from core.intel.ngo_registry import ngo_vessel_geojson
 
-    geojson = registry.get_geojson()
-    ngo_features = []
-    seen_mmsi: set[str] = set()
-
-    # Enrich positioned NGO vessels from live AIS
-    for feat in geojson.get("features", []):
-        props = feat.get("properties") or {}
-        mmsi = str(props.get("mmsi", ""))
-        if not is_ngo(mmsi):
-            continue
-        info = get_ngo_info(mmsi) or {}
-        seen_mmsi.add(mmsi)
-        ngo_features.append({
-            **feat,
-            "properties": {
-                **props,
-                "intel_type": "ngo_vessel",
-                "org": info.get("org", ""),
-                "role": info.get("role", ""),
-                "vessel_class": "ngo",
-            },
-        })
-
-    # Add known NGO vessels not currently in AIS (show as "last known" or "offline")
-    for mmsi, info in NGO_VESSELS.items():
-        if mmsi in seen_mmsi:
-            continue
-        ngo_features.append({
-            "type": "Feature",
-            "geometry": None,  # no current position
-            "properties": {
-                "mmsi": mmsi,
-                "ship_name": info.get("name", ""),
-                "org": info.get("org", ""),
-                "role": info.get("role", ""),
-                "flag": info.get("flag", ""),
-                "intel_type": "ngo_vessel",
-                "ais_status": "offline",
-                "vessel_class": "ngo",
-            },
-        })
-
-    return {
-        "type": "FeatureCollection",
-        "features": ngo_features,
-        "meta": {
-            "total_registered": len(NGO_VESSELS),
-            "live_ais": len(seen_mmsi),
-            "offline": len(NGO_VESSELS) - len(seen_mmsi),
-        },
-    }
+    return ngo_vessel_geojson()
 
 
 @router.get("/api/v1/intel/ais-spikes")
