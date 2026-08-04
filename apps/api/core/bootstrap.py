@@ -95,16 +95,6 @@ def start_background_sensors() -> None:
     else:
         logger.warning("AISStream key missing: live vessel feed disabled")
 
-    if config.BARENTSWATCH_CLIENT_ID and config.BARENTSWATCH_CLIENT_SECRET:
-        try:
-            from core.vessels import barentswatch
-            barentswatch.start(config.BARENTSWATCH_CLIENT_ID, config.BARENTSWATCH_CLIENT_SECRET)
-            logger.info("BarentsWatch client started")
-        except Exception as exc:
-            logger.warning("BarentsWatch failed to start: %s", exc)
-    else:
-        logger.warning("BarentsWatch credentials missing: secondary AIS feed disabled")
-
 
 def start_scheduler() -> None:
     """Start APScheduler: news refresh, source health, IOM incidents, forensic scan."""

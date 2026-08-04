@@ -5,6 +5,15 @@ AISStream.io WebSocket client - feeds real AIS position data into VesselRegistry
 Connects to wss://stream.aisstream.io/v0/stream, subscribes to Mediterranean
 bounding box, processes PositionReport and ShipStaticData messages.
 Auto-reconnects on disconnect.
+
+A second, independent connection additionally tracks the known NGO/SAR fleet
+by MMSI (AISStream's FiltersShipMMSI, capped at 50 values — the fleet is
+~20) with a global bounding box, so a tracked vessel is never missed just
+because it repositions outside the Mediterranean box (e.g. transiting to a
+European drydock). Both run on the free tier — AISStream's public docs
+document no data/message quota, just per-connection throughput and
+throttling-under-load caveats — so this is additive coverage, not a
+different plan.
 """
 from __future__ import annotations
 
@@ -21,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 # Mediterranean + Black Sea bounding box [lat_min, lon_min], [lat_max, lon_max]
 _BBOX = [[[28.0, -6.0], [47.0, 42.0]]]
+# Whole-world box, used only for the MMSI-filtered NGO-fleet subscription.
+_GLOBAL_BBOX = [[[-90.0, -180.0], [90.0, 180.0]]]
 _WS_URL = "wss://stream.aisstream.io/v0/stream"
 
 _SHIP_TYPE_MAP = {
@@ -54,8 +65,18 @@ def _ship_type_label(type_code: int) -> str:
 class AISStreamClient:
     """Background thread that streams live AIS data from AISStream.io."""
 
-    def __init__(self, api_key: str):
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        label: str = "Mediterranean",
+        bbox: list | None = None,
+        mmsi_filter: list[str] | None = None,
+    ):
         self._api_key = api_key
+        self._label = label
+        self._bbox = bbox or _BBOX
+        self._mmsi_filter = mmsi_filter
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._connected = False
@@ -69,9 +90,11 @@ class AISStreamClient:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="aisstream")
+        self._thread = threading.Thread(
+            target=self._run, daemon=True, name=f"aisstream-{self._label}"
+        )
         self._thread.start()
-        logger.info("AISStream client started (Mediterranean bbox)")
+        logger.info("AISStream client started (%s)", self._label)
 
     def stop(self) -> None:
         self._stop.set()
@@ -84,18 +107,20 @@ class AISStreamClient:
         backoff = 2
         while not self._stop.is_set():
             try:
-                logger.info("AISStream: connecting to %s", _WS_URL)
+                logger.info("AISStream: connecting to %s (%s)", _WS_URL, self._label)
                 with ws_sync.connect(_WS_URL, open_timeout=15) as ws:
                     # Subscribe
                     sub = {
                         "APIKey": self._api_key,
-                        "BoundingBoxes": _BBOX,
+                        "BoundingBoxes": self._bbox,
                         "FilterMessageTypes": ["PositionReport", "ShipStaticData"],
                     }
+                    if self._mmsi_filter:
+                        sub["FiltersShipMMSI"] = self._mmsi_filter
                     ws.send(json.dumps(sub))
                     self._connected = True
                     backoff = 2
-                    logger.info("AISStream: subscribed to Mediterranean")
+                    logger.info("AISStream: subscribed (%s)", self._label)
 
                     while not self._stop.is_set():
                         raw = ws.recv(timeout=60)
@@ -111,7 +136,10 @@ class AISStreamClient:
             except Exception as exc:
                 self._connected = False
                 if not self._stop.is_set():
-                    logger.warning("AISStream disconnected: %s  retry in %ds", exc, backoff)
+                    logger.warning(
+                        "AISStream (%s) disconnected: %s  retry in %ds",
+                        self._label, exc, backoff,
+                    )
                     time.sleep(backoff)
                     backoff = min(backoff * 2, 60)
 
@@ -153,16 +181,35 @@ class AISStreamClient:
             )
 
 
-# Module-level singleton - started by main.py lifespan
+# Module-level singletons - started by main.py lifespan
 _client: AISStreamClient | None = None
+_ngo_client: AISStreamClient | None = None
 
 
 def get_client() -> AISStreamClient | None:
+    """The primary Mediterranean-bbox client (used for ops health reporting)."""
     return _client
 
 
+def get_ngo_client() -> AISStreamClient | None:
+    """The secondary, MMSI-filtered global client tracking the known NGO fleet."""
+    return _ngo_client
+
+
 def start(api_key: str) -> AISStreamClient:
-    global _client
-    _client = AISStreamClient(api_key)
+    global _client, _ngo_client
+    _client = AISStreamClient(api_key, label="Mediterranean")
     _client.start()
+
+    try:
+        from core.intel.ngo_registry import NGO_VESSELS
+
+        ngo_mmsi = list(NGO_VESSELS.keys())[:50]  # AISStream's FiltersShipMMSI cap
+        _ngo_client = AISStreamClient(
+            api_key, label="NGO fleet (global)", bbox=_GLOBAL_BBOX, mmsi_filter=ngo_mmsi,
+        )
+        _ngo_client.start()
+    except Exception:
+        logger.warning("AISStream NGO-fleet subscription failed to start", exc_info=True)
+
     return _client

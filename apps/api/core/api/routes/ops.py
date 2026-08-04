@@ -11,7 +11,7 @@ from fastapi import APIRouter
 from fastapi.responses import Response
 
 from core.config import config
-from core.vessels.aisstream import get_client
+from core.vessels.aisstream import get_client, get_ngo_client
 from core.vessels.registry import registry
 
 router = APIRouter()
@@ -46,6 +46,9 @@ async def ops_summary():
     ais_client = get_client()
     ais_connected = bool(ais_client.connected) if ais_client else False
     ais_messages = int(ais_client.messages_received) if ais_client else 0
+    ngo_ais_client = get_ngo_client()
+    ngo_ais_connected = bool(ngo_ais_client.connected) if ngo_ais_client else False
+    ngo_ais_messages = int(ngo_ais_client.messages_received) if ngo_ais_client else 0
 
     try:
         from core.connectors.service import status_counts
@@ -93,6 +96,8 @@ async def ops_summary():
             "aisstream_configured": bool(config.AISSTREAM_KEY),
             "aisstream_connected": ais_connected,
             "aisstream_messages": ais_messages,
+            "aisstream_ngo_fleet_connected": ngo_ais_connected,
+            "aisstream_ngo_fleet_messages": ngo_ais_messages,
             "cmems_configured": bool(config.CMEMS_USERNAME and config.CMEMS_PASSWORD),
             "timezero": _tz_status,
             "job_execution_mode": config.JOB_EXECUTION_MODE,
