@@ -1252,6 +1252,8 @@ function App() {
         map.addSource('intel-drifts',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-vessel-links', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('live-nearby-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('ngo-response-lines',  { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('ngo-response-points', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
         // weather vectors
         map.addLayer({
@@ -1698,6 +1700,54 @@ function App() {
         map.on('mouseleave', 'live-nearby-vessels-layer', () => {
           map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
           liveVesselPopup.remove();
+        });
+
+        // Per-episode NGO response analysis — lines from the episode to each
+        // known NGO vessel + vessel points. Data is written by IntelDashboard's
+        // "NGO response" panel from GET /api/v1/live/signals/{id}/response.
+        map.addLayer({
+          id: 'ngo-response-lines-layer', type: 'line', source: 'ngo-response-lines',
+          layout: { 'line-dasharray': [2, 1] },
+          paint: {
+            'line-color': ['match', ['get', 'heading_toward'], true, '#38bdf8', '#94a3b8'],
+            'line-width': 1.4,
+            'line-opacity': 0.75,
+          },
+        });
+        map.addLayer({
+          id: 'ngo-response-points-layer', type: 'circle', source: 'ngo-response-points',
+          paint: {
+            'circle-radius': ['match', ['get', 'heading_toward'], true, 7, 5],
+            'circle-color': ['match', ['get', 'heading_toward'], true, '#38bdf8', '#7dd3fc'],
+            'circle-stroke-width': 1.5,
+            'circle-stroke-color': '#03212e',
+            'circle-opacity': 0.95,
+          },
+        });
+        const ngoResponsePopup = new maplibregl.Popup({
+          closeButton: false, closeOnClick: false, offset: 10,
+          className: 'intel-hover-popup',
+        });
+        map.on('mouseenter', 'ngo-response-points-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mousemove', 'ngo-response-points-layer', (event) => {
+          const feature = event.features?.[0];
+          if (!feature) return;
+          const [lon, lat] = feature.geometry.coordinates;
+          const props = feature.properties || {};
+          ngoResponsePopup
+            .setLngLat([lon, lat])
+            .setHTML(
+              `<strong>${props.name || 'NGO vessel'}</strong>` +
+              (props.org ? `<br/>${props.org}` : '') +
+              `<br/>${props.heading_toward ? '→ heading toward' : 'not heading toward'}` +
+              (props.eta_h != null ? `<br/>ETA ~${Number(props.eta_h).toFixed(1)}h` : '') +
+              `<br/>${props.distance_nm} nm`
+            )
+            .addTo(map);
+        });
+        map.on('mouseleave', 'ngo-response-points-layer', () => {
+          map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+          ngoResponsePopup.remove();
         });
 
         // Active SAR impact point — topmost layer

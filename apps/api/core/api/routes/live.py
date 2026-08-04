@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 
 from core.config import config
 from core.intel import lifecycle
@@ -487,6 +487,47 @@ async def live_signals(
 ):
     """Public map-ready signal feed. No private inbound content is returned."""
     return public_signal_collection(limit=limit, days=days, since=since)
+
+
+@router.get("/signals/{event_id}/response")
+async def live_signal_response(event_id: str, request: Request):
+    """
+    On-demand NGO cross-check for a single live episode.
+
+    Returns which known SAR NGO / coastguard vessels are within range and
+    heading toward the episode (bearing/ETA/heading), when each track was last
+    saved to the AIS registry, recent motion flags (speed spike, search
+    pattern, sudden stop, loitering, rescue cluster — reused from the AIS
+    spike detector's stored observations), and other live signals nearby
+    (cross-check). Also returns a GeoJSON FeatureCollection (`geojson`) of the
+    episode→vessel lines and vessel points for direct map rendering.
+
+    Privacy: only public AIS telemetry and the already-public signal metadata
+    are returned — never raw messages or identifiers. Anonymous + rate limited
+    like the other live read endpoints.
+    """
+    from core.api.ratelimit import rate_limit
+    from core.intel.ngo_response import analyze_ngo_response
+
+    rate_limit(request, max_per_minute=30, scope="live-response")
+    normalized = event_id.removeprefix("intel:")
+    event = intel_store.get(normalized)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Signal not found")
+    if event.lat is None or event.lon is None:
+        raise HTTPException(status_code=422, detail="Signal has no position")
+    if _public_intel_feature(event) is None:
+        raise HTTPException(status_code=404, detail="Signal not found")
+
+    related_signals = [
+        other
+        for other in intel_store.events(limit=300, max_age_days=3)
+        if _public_intel_feature(other) is not None
+    ]
+    try:
+        return analyze_ngo_response(event, related_signals=related_signals)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Signal has no position")
 
 
 @router.get("/drifts")

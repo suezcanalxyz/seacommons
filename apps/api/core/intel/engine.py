@@ -12,26 +12,35 @@ Usage (called once at API startup):
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
 class IntelEngine:
     def __init__(self) -> None:
-        self._twitter: Optional[object] = None
-        self._alarm_phone: Optional[object] = None
-        self._news: Optional[object] = None
-        self._ais: Optional[object] = None
-        self._mastodon: Optional[object] = None
-        self._gdacs: Optional[object] = None
-        self._bluesky: Optional[object] = None
+        self._twitter: object | None = None
+        self._twikit: object | None = None
+        self._alarm_phone: object | None = None
+        self._news: object | None = None
+        self._ais: object | None = None
+        self._drift_refresh: object | None = None
+        self._mastodon: object | None = None
+        self._gdacs: object | None = None
+        self._bluesky: object | None = None
         self._started = False
 
     def start(
         self,
         twitter_bearer: str = "",
         twitter_enabled: bool = True,
+        alarm_phone_enabled: bool = True,
+        twikit_enabled: bool = False,
+        twikit_cookies_file: str = "",
+        twikit_accounts: str = "",
+        twikit_poll_interval_s: int = 300,
+        twikit_priority_accounts: str = "",
+        twikit_priority_poll_interval_s: int = 45,
+        twikit_alerts_enabled: bool = False,
         news_enabled: bool = True,
         ais_enabled: bool = True,
         mastodon_enabled: bool = True,
@@ -43,20 +52,44 @@ class IntelEngine:
         self._started = True
 
         if twitter_enabled:
+            if alarm_phone_enabled:
+                try:
+                    from core.intel.alarm_phone_monitor import AlarmPhoneMonitor
+                    self._alarm_phone = AlarmPhoneMonitor()
+                    self._alarm_phone.start()  # type: ignore[attr-defined]
+                    logger.info("IntelEngine: Alarm Phone first-party monitor started")
+                except Exception as exc:
+                    logger.warning("IntelEngine: Alarm Phone monitor failed to start: %s", exc)
+            else:
+                logger.info("IntelEngine: Alarm Phone first-party monitor disabled (ALARM_PHONE_ENABLED=false)")
+
             try:
-                from core.intel.alarm_phone_monitor import AlarmPhoneMonitor
-                self._alarm_phone = AlarmPhoneMonitor()
-                self._alarm_phone.start()  # type: ignore[attr-defined]
-                logger.info("IntelEngine: Alarm Phone first-party monitor started")
+                from core.intel.twikit_monitor import TwikitMonitor
+                self._twikit = TwikitMonitor(
+                    enabled=twikit_enabled,
+                    cookies_file=twikit_cookies_file,
+                    accounts=twikit_accounts,
+                    poll_interval_s=twikit_poll_interval_s,
+                    priority_accounts=twikit_priority_accounts,
+                    priority_poll_interval_s=twikit_priority_poll_interval_s,
+                    alerts_enabled=twikit_alerts_enabled,
+                )
+                self._twikit.start()  # type: ignore[attr-defined]
+                logger.info(
+                    "IntelEngine: X monitor (twikit, primary) %s",
+                    "started with account session"
+                    if self._twikit.configured
+                    else "inactive — set TWIKIT_ENABLED + TWIKIT_COOKIES_FILE",
+                )
             except Exception as exc:
-                logger.warning("IntelEngine: Alarm Phone monitor failed to start: %s", exc)
+                logger.warning("IntelEngine: X (twikit) monitor failed to start: %s", exc)
 
             try:
                 from core.intel.twitter_monitor import TwitterMonitor
                 self._twitter = TwitterMonitor(bearer_token=twitter_bearer)
                 self._twitter.start()  # type: ignore[attr-defined]
                 logger.info(
-                    "IntelEngine: X monitor %s",
+                    "IntelEngine: X monitor (official API, secondary) %s",
                     "started with official API" if twitter_bearer else "waiting for official credentials",
                 )
             except Exception as exc:
@@ -79,6 +112,13 @@ class IntelEngine:
                 logger.info("IntelEngine: AIS spike detector started")
             except Exception as exc:
                 logger.warning("IntelEngine: AIS spike detector failed to start: %s", exc)
+
+            try:
+                from core.intel.drift_refresher import DriftRefresher
+                self._drift_refresh = DriftRefresher()
+                self._drift_refresh.start()  # type: ignore[attr-defined]
+            except Exception as exc:
+                logger.warning("IntelEngine: drift refresher failed to start: %s", exc)
 
         if mastodon_enabled:
             try:
@@ -110,9 +150,11 @@ class IntelEngine:
     def stop(self) -> None:
         for monitor in (
             self._twitter,
+            self._twikit,
             self._alarm_phone,
             self._news,
             self._ais,
+            self._drift_refresh,
             self._mastodon,
             self._gdacs,
             self._bluesky,

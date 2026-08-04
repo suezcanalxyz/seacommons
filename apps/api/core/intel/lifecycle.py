@@ -16,7 +16,9 @@ from core.intel.geoextract import is_concluded_incident
 from core.intel.store import IntelEvent
 
 # Total visible lifetime of a distress marker on Live, regardless of state.
-DISTRESS_LIVE_MAX_AGE_DAYS = 3
+# A full week keeps a rolling weekly overview on the map: every case from the
+# last 7 days stays visible (gray once archived) while it remains relevant.
+DISTRESS_LIVE_MAX_AGE_DAYS = 7
 # How far back to look for a later same-source post reporting resolution.
 RESOLUTION_LOOKBACK_DAYS = 10
 # Once an unresolved report has had no update for this long, it fades from
@@ -32,11 +34,19 @@ _KEYWORD_STOPWORDS = frozenset({
 })
 
 
+_URL_RE = re.compile(r"https?://\S+", re.I)
+
+
 def text_keywords(text: str) -> set[str]:
-    """Significant lowercase words/hashtags (4+ chars) for cross-post matching."""
+    """Significant lowercase words/hashtags (4+ chars) for cross-post matching.
+
+    URLs are stripped first so the t.co slug of one post can never count as a
+    shared keyword with a different post.
+    """
+    stripped_text = _URL_RE.sub(" ", text or "")
     return {
         stripped
-        for word in re.findall(r"#?\w{4,}", text or "")
+        for word in re.findall(r"#?\w{4,}", stripped_text)
         if (stripped := word.strip("#.,!?:;").lower()) not in _KEYWORD_STOPWORDS
     }
 

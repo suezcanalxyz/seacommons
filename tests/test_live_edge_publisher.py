@@ -75,7 +75,7 @@ def test_stale_unresolved_report_turns_archived_not_removed() -> None:
 
 
 def test_event_past_the_live_window_is_marked_for_removal() -> None:
-    old_timestamp = (_NOW - timedelta(days=4)).isoformat()
+    old_timestamp = (_NOW - timedelta(days=8)).isoformat()
     row = distress_row(timestamp_utc=old_timestamp)
     event = public_event_from_row(row, "node", now=_NOW, same_source=[])
 

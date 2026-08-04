@@ -19,7 +19,11 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from core.intel.geoextract import classify_severity, extract_coords, is_distress
+from core.intel.geoextract import (
+    classify_severity,
+    extract_coords,
+    is_direct_distress_call,
+)
 from core.intel.store import IntelEvent, intel_store
 
 logger = logging.getLogger(__name__)
@@ -201,7 +205,15 @@ class NewsMonitor:
         ).strip()
         if not text:
             return False
-        distress = is_distress(text)
+        # Use the strict active-call signal (same as the X/twikit channel) so a
+        # policy statement or retrospective report that merely *mentions*
+        # distress vocabulary cannot become a live distress marker.
+        distress = is_direct_distress_call(text)
+        # The RSS feeds are a news/archive channel, not an active-call channel.
+        # Mark every row operator-only so the live edge never surfaces an NGO
+        # article that merely mentions distress vocabulary, regardless of the
+        # classifier outcome (publication_status == "private" is an explicit
+        # opt-out in core/live_edge_publisher.py).
         coords = extract_coords(text)
         severity = classify_severity(text) if distress else "low"
         event = IntelEvent(
@@ -218,6 +230,7 @@ class NewsMonitor:
                 "source_policy": "official_rss",
                 "transport": "rss",
                 "is_distress": distress,
+                "publication_status": "private",
             },
         )
         added = intel_store.add(event, dedup_key=dedup)

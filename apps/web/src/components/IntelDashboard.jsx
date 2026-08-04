@@ -53,6 +53,27 @@ function eventTier(p) {
   return 'news';
 }
 
+// Distress lifecycle marker (mirrors core/api/routes/live.py): the backend
+// projects `incident_lifecycle` = active | resolved | archived onto public
+// features, and sets `kind` for older cache entries. Null = not a distress
+// marker (plain context event), so it never gets lifecycle coloring.
+function eventLifecycle(p) {
+  if (p.incident_lifecycle) return p.incident_lifecycle;
+  if (p.kind === 'resolved') return 'resolved';
+  if (p.kind === 'archived') return 'archived';
+  return null;
+}
+
+// Card color class driven by lifecycle: red active, green resolved, gray
+// archived (same palette as the map's LIFECYCLE_* expressions).
+function lifecycleColorClass(p, isDistress) {
+  if (!isDistress) return 'context';
+  const state = eventLifecycle(p);
+  if (state === 'resolved') return 'resolved';
+  if (state === 'archived') return 'archived';
+  return 'distress';
+}
+
 const VERIF_LABEL = {
   unverified_public_source: 'unverified',
   operator_asserted: 'operator',
@@ -229,6 +250,88 @@ function groupByHour(events) {
   return groups;
 }
 
+// ── NGO response panel ───────────────────────────────────────────────────────
+const NGO_FLAG_LABELS = {
+  search_pattern: 'search',
+  loitering: 'loiter',
+  sudden_stop: 'stop',
+  rescue_cluster: 'cluster',
+  speed_spike: 'spike',
+};
+
+function NgoResponsePanel({ response }) {
+  const summary = response.summary || {};
+  const vessels = response.ngo_vessels || [];
+  const related = response.cross_check?.related_signals || [];
+  return (
+    <div className="intel-ngo-panel">
+      <div className="intel-ngo-summary">
+        <span><strong>{summary.approaching_ngo_vessels ?? 0}</strong> in avvicinamento</span>
+        <span><strong>{summary.ngo_vessels_in_range ?? 0}</strong> ngo in range</span>
+        {summary.fastest_approach_eta_h != null && (
+          <span className="intel-ngo-eta">
+            ETA più vicino: <strong>{summary.fastest_approach_name}</strong> in {Number(summary.fastest_approach_eta_h).toFixed(1)}h
+          </span>
+        )}
+      </div>
+      {summary.nearest_ngo && (
+        <div className="intel-ngo-nearest">
+          Nave più vicina: <strong>{summary.nearest_ngo.name}</strong> · {summary.nearest_ngo.org || 'NGO'} · {summary.nearest_ngo.distance_nm} nm
+        </div>
+      )}
+      {vessels.length > 0 ? (
+        <ul className="intel-ngo-list">
+          {vessels.map((v) => (
+            <li key={v.mmsi || v.name} className={`intel-ngo-row${v.heading_toward ? ' intel-ngo-row--toward' : ''}`}>
+              <div className="intel-ngo-row-head">
+                <span className="intel-ngo-dir" title={v.heading_toward ? 'heading toward episode' : 'not heading toward'}>
+                  {v.heading_toward ? '→' : '·'}
+                </span>
+                <strong>{v.name}</strong>
+                <span className="intel-ngo-org">{v.org || v.role || 'NGO'}</span>
+                {v.motion_flags?.length > 0 && (
+                  <span className="intel-ngo-flags">
+                    {v.motion_flags.map((f) => (
+                      <i key={f} className="intel-ngo-flag">{NGO_FLAG_LABELS[f] || f}</i>
+                    ))}
+                  </span>
+                )}
+              </div>
+              <div className="intel-ngo-meta">
+                <span>{v.distance_nm} nm</span>
+                {v.eta_h != null && <span>ETA {v.eta_h}h</span>}
+                {v.course_deg != null && <span>rotta {v.course_deg}°</span>}
+                <span>{v.speed_kn} kn</span>
+                <span className="intel-ngo-track" title={v.last_seen || ''}>{v.track_saved}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="intel-ngo-empty">Nessuna NGO nota in range (250 nm).</div>
+      )}
+      {related.length > 0 && (
+        <div className="intel-ngo-related">
+          <span className="intel-ngo-related-title">Segnali correlati entro 50 nm ({related.length})</span>
+          <ul>
+            {related.map((r) => (
+              <li key={r.id}>
+                <span>{r.title}</span>
+                <span>{r.type}</span>
+                <span>{r.distance_nm} nm</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="intel-ngo-note">
+        Assets entro 50 nm: {summary.assets_within_50nm ?? 0}
+        {response.episode?.lifecycle ? ` · stato: ${response.episode.lifecycle}` : ''}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 export default function IntelDashboard({
   apiBase,
@@ -262,6 +365,11 @@ export default function IntelDashboard({
   const [viewMode, setViewMode] = useState('list');   // 'list' | 'timeline'
   const [showInject, setShowInject] = useState(false);
   const [injectSuccess, setInjectSuccess] = useState(false);
+  const [archivedOpen, setArchivedOpen] = useState(false);
+  const [ngoEventId, setNgoEventId] = useState(null);
+  const [ngoResponse, setNgoResponse] = useState(null);
+  const [ngoLoading, setNgoLoading] = useState(false);
+  const [ngoError, setNgoError] = useState('');
   const pollRef = useRef(null);
 
   // Poll source registry
@@ -362,6 +470,61 @@ export default function IntelDashboard({
     }
   }
 
+  function setNgoMapData(geojson) {
+    const map = mapRef?.current;
+    if (!map) return;
+    const features = geojson?.features || [];
+    map.getSource('ngo-response-lines')?.setData({
+      type: 'FeatureCollection',
+      features: features.filter((f) => f.geometry?.type === 'LineString'),
+    });
+    map.getSource('ngo-response-points')?.setData({
+      type: 'FeatureCollection',
+      features: features.filter((f) => f.geometry?.type === 'Point'),
+    });
+  }
+
+  function clearNgoMap() {
+    const map = mapRef?.current;
+    if (!map) return;
+    map.getSource('ngo-response-lines')?.setData({ type: 'FeatureCollection', features: [] });
+    map.getSource('ngo-response-points')?.setData({ type: 'FeatureCollection', features: [] });
+  }
+
+  async function toggleNgo(eventId, lat, lon) {
+    if (ngoEventId === eventId) {
+      setNgoEventId(null);
+      setNgoResponse(null);
+      clearNgoMap();
+      return;
+    }
+    setNgoEventId(eventId);
+    setNgoResponse(null);
+    setNgoError('');
+    setNgoLoading(true);
+    clearNgoMap();
+    try {
+      const resp = await fetch(`${apiBase}/api/v1/live/signals/${encodeURIComponent(eventId)}/response`);
+      if (!resp.ok) {
+        let msg = `HTTP ${resp.status}`;
+        try {
+          const body = await resp.json();
+          if (body?.detail) msg = typeof body.detail === 'string' ? body.detail : msg;
+        } catch { /* keep HTTP fallback */ }
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      setNgoResponse(data);
+      setNgoMapData(data.geojson);
+    } catch (err) {
+      setNgoError(err.message || 'NGO analysis unavailable');
+    } finally {
+      setNgoLoading(false);
+    }
+  }
+
+  useEffect(() => () => { clearNgoMap(); }, []);
+
   function renderEvent(feat) {
     const p = feat.properties || {};
     const coords = feat.geometry?.coordinates;
@@ -383,11 +546,13 @@ export default function IntelDashboard({
     const isDistress = tier === 'operational';
     const icon = TYPE_ICONS[p.type] || '•';
     const verif = p.verification_status || 'unverified_public_source';
+    const lifecycle = isDistress ? (eventLifecycle(p) || 'active') : null;
+    const colorClass = lifecycleColorClass(p, isDistress);
 
     return (
       <li
         key={p.id || p.title}
-        className={`intel-event${isDistress ? ' intel-event--distress' : ''}`}
+        className={`intel-event intel-event--${colorClass}`}
         onClick={() => { flyTo(coords); if (coords) setSidebarOpen?.(false); }}
       >
         <div className="intel-event-header">
@@ -396,6 +561,11 @@ export default function IntelDashboard({
           <span className={`intel-verif intel-verif--${verif}`} title={`Verification: ${verif.replace(/_/g, ' ')}`}>
             {VERIF_LABEL[verif] || 'unverified'}
           </span>
+          {lifecycle && (
+            <span className={`intel-lifecycle intel-lifecycle--${lifecycle}`}>
+              {lifecycle === 'active' ? 'LIVE' : lifecycle === 'resolved' ? 'RISOLTO' : 'ARCHIVED'}
+            </span>
+          )}
           {ts && (
             <time title={ts.toISOString()}>
               {ts.toLocaleString('it-IT', {
@@ -481,6 +651,26 @@ export default function IntelDashboard({
           >
             {vesselsForEventId === p.id ? '▲ Navi vicine' : '▼ Navi vicine'}
           </button>
+        )}
+        {isDistress && coords && (
+          <button
+            type="button"
+            className="intel-ngo-toggle"
+            onClick={(e) => { e.stopPropagation(); toggleNgo(p.id, coords[1], coords[0]); }}
+          >
+            {ngoEventId === p.id ? '▲ NGO response' : '▼ NGO response'}
+          </button>
+        )}
+        {isDistress && ngoEventId === p.id && (
+          <div className="intel-ngo-panel" onClick={(e) => e.stopPropagation()}>
+            {ngoLoading ? (
+              <span className="intel-nearby-loading">Analisi NGO…</span>
+            ) : ngoError ? (
+              <span className="intel-nearby-loading">{ngoError}</span>
+            ) : ngoResponse ? (
+              <NgoResponsePanel response={ngoResponse} />
+            ) : null}
+          </div>
         )}
         {isDistress && vesselsForEventId === p.id && (
           <div className="intel-nearby-vessels" onClick={(e) => e.stopPropagation()}>
@@ -656,17 +846,46 @@ export default function IntelDashboard({
             visibleTiers.map((t) => {
               const group = tierGroups[t.key];
               if (!group.length) return null;
+              const isOperational = t.key === 'operational';
+              // Archived markers stay in the feed but are collapsed at the
+              // bottom of the operational tier behind a chevron toggle.
+              const archived = isOperational
+                ? group.filter((f) => eventLifecycle(f.properties || {}) === 'archived')
+                : [];
+              const live = isOperational
+                ? group.filter((f) => eventLifecycle(f.properties || {}) !== 'archived')
+                : group;
               return (
                 <div key={t.key} className={`intel-tier-group intel-tier-group--${t.key}`}>
                   <div className="intel-tier-head">
                     {t.key === 'operational' && <span className="intel-tier-dot" />}
                     <span className="intel-tier-head-label">{t.label}</span>
                     <span className="intel-tier-head-sub">{t.sub}</span>
-                    <span className="intel-tier-head-count">{group.length}</span>
+                    <span className="intel-tier-head-count">{live.length}</span>
                   </div>
                   <ul className="intel-list" style={{ margin: 0 }}>
-                    {group.map(renderEvent)}
+                    {live.map(renderEvent)}
                   </ul>
+                  {isOperational && archived.length > 0 && (
+                    <div className="intel-archive-block">
+                      <button
+                        type="button"
+                        className="intel-archive-toggle"
+                        onClick={() => setArchivedOpen((v) => !v)}
+                        aria-expanded={archivedOpen}
+                      >
+                        <span className={`intel-archive-chevron${archivedOpen ? ' is-open' : ''}`}>▾</span>
+                        <span className="intel-archive-label">Archived</span>
+                        <span className="intel-archive-sub">gli archivi restano nel feed</span>
+                        <span className="intel-tier-head-count">{archived.length}</span>
+                      </button>
+                      {archivedOpen && (
+                        <ul className="intel-list" style={{ margin: 0 }}>
+                          {archived.map(renderEvent)}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })

@@ -1,0 +1,588 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+from __future__ import annotations
+
+import asyncio
+import json
+
+import pytest
+
+from core.intel.store import IntelStore
+from core.intel.twikit_monitor import TwikitMonitor
+
+
+@pytest.fixture(autouse=True)
+def _no_auto_drift_network(monkeypatch):
+    # New distress episodes schedule an auto-drift over HTTP (request_auto_drift);
+    # keep tests hermetic — never make a real network call to the API.
+    monkeypatch.setattr("core.intel.twikit_monitor.request_auto_drift", lambda *args, **kwargs: True)
+
+
+class _FakeUser:
+    screen_name = "alarm_phone"
+
+
+class _FakeMedia:
+    """Mimics twikit's Media object: the image URL is exposed via the
+    ``media_url``/``source_url`` properties, not a ``media_url_https`` attr."""
+
+    def __init__(self, url: str, legacy_attrs: bool = False) -> None:
+        self.media_url = url
+        self.source_url = f"{url}?name=orig"
+        self.url = "https://t.co/short"
+        if legacy_attrs:
+            self.media_url_https = url
+
+
+class _FakeTweet:
+    def __init__(
+        self,
+        tweet_id: str,
+        text: str,
+        original: object = None,
+        media: list = None,
+        extended_entities: dict = None,
+    ) -> None:
+        self.id = tweet_id
+        self.text = text
+        self.user = _FakeUser()
+        self.created_at_datetime = "2026-08-03T10:00:00+00:00"
+        self.retweeted_tweet = original
+        self.media = media or []
+        if extended_entities is not None:
+            self.extended_entities = extended_entities
+
+
+def _write_cookies(tmp_path, payload) -> str:
+    path = tmp_path / "cookies.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return str(path)
+
+
+def test_disabled_by_default_even_with_cookies_file(tmp_path):
+    m = TwikitMonitor(enabled=False, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "b"}))
+    assert m.configured is False
+
+
+def test_requires_existing_cookies_file():
+    assert TwikitMonitor(enabled=True, cookies_file="").configured is False
+    assert TwikitMonitor(enabled=True, cookies_file="D:/does/not/exist.json").configured is False
+
+
+def test_configured_when_enabled_and_file_exists(tmp_path):
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "b"}))
+    assert m.configured is True
+
+
+def test_accounts_default_to_ngo_registry_when_unset():
+    from core.intel.ngo_registry import NGO_TWITTER_HANDLES
+
+    m = TwikitMonitor(enabled=True)
+    assert m.tracked_accounts == list(NGO_TWITTER_HANDLES)
+
+
+def test_accounts_parsed_from_csv_without_at_prefix():
+    m = TwikitMonitor(enabled=True, accounts="alarm_phone, @MSF_Sea, openarms_fund")
+    assert m.tracked_accounts == ["alarm_phone", "MSF_Sea", "openarms_fund"]
+
+
+def test_load_cookies_accepts_browser_export_array(tmp_path):
+    payload = [
+        {"name": "auth_token", "value": "tok123"},
+        {"name": "ct0", "value": "ct0abc"},
+        {"name": "guest_id", "value": "g"},
+    ]
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, payload))
+    assert m._load_cookies() == {"auth_token": "tok123", "ct0": "ct0abc", "guest_id": "g"}
+
+
+def test_load_cookies_accepts_plain_dict(tmp_path):
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "tok123", "ct0": "ct0abc"}))
+    assert m._load_cookies() == {"auth_token": "tok123", "ct0": "ct0abc"}
+
+
+def test_build_client_rejects_missing_auth_cookies(tmp_path):
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"guest_id": "g"}))
+
+    async def run() -> bool:
+        try:
+            await m._build_client()
+            return False
+        except RuntimeError:
+            return True
+
+    assert asyncio.run(run())
+
+
+def test_build_client_accepts_auth_token_and_ct0(tmp_path):
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+
+    async def run() -> bool:
+        try:
+            client = await m._build_client()
+            return client is not None
+        except RuntimeError:
+            return False
+
+    assert asyncio.run(run())
+
+
+def test_ingest_tracked_account_tweets_are_ingested_regardless_of_distress(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet("111222333", "Operational update from the rescue vessel position update 35.5N 12.6E.")
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    events = store.events()
+    assert len(events) == 1
+    assert events[0].metadata["source_policy"] == "unofficial"
+    assert events[0].metadata["provenance"] == "twikit_account_timeline"
+    assert events[0].metadata["tracked_account"] == "alarm_phone"
+    assert events[0].metadata["report_kind"] == "news"
+    assert events[0].metadata["is_distress"] is False
+    assert events[0].author == "alarm_phone"
+    assert m._ingest(tweet, handle="alarm_phone") is False
+
+
+def test_ingest_marks_distress_and_geo(tmp_path, monkeypatch):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet("9", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    evt = store.events()[0]
+    assert evt.metadata["is_distress"] is True
+    assert evt.metadata["report_kind"] == "distress"
+    assert evt.metadata["distress_classification"] == "direct_call"
+    assert evt.lat == 35.5 and evt.lon == 12.6
+
+
+def test_ingest_marks_resolved_posts_as_not_distress(tmp_path, monkeypatch):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet("10", "Rescued! All people are now safe thanks to #OceanViking.")
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    evt = store.events()[0]
+    assert evt.metadata["report_kind"] == "resolved"
+    assert evt.metadata["is_distress"] is False
+
+
+def test_ingest_concluded_mourning_report_is_news_not_distress(tmp_path, monkeypatch):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet(
+        "11",
+        "Shipwreck in the WesternMed. 8 survivors were found and hospitalised on Ibiza. "
+        "4 people remain missing.",
+    )
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    evt = store.events()[0]
+    assert evt.metadata["is_distress"] is False
+    assert evt.metadata["report_kind"] == "news"
+
+
+def test_ingest_sos_override_beats_concluded_outcome_wording(tmp_path, monkeypatch):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet(
+        "12",
+        "🆘 3 people at risk of pushback in the Evros area! They were found by the police. "
+        "Since then we have no news from them.",
+    )
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    evt = store.events()[0]
+    assert evt.metadata["is_distress"] is True
+    assert evt.metadata["report_kind"] == "distress"
+
+
+def test_ingest_retrospective_massacre_report_is_news(tmp_path, monkeypatch):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet(
+        "15",
+        "⚫️ Massacre in the #Atlantic. On July 18, a rescue operation off the coast of "
+        "#Mauritania brought ashore 38 people who had left #Gambia on a boat carrying "
+        "more than 150 people, after drifting at sea for 25 days.",
+    )
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    evt = store.events()[0]
+    assert evt.metadata["is_distress"] is False
+    assert evt.metadata["report_kind"] == "news"
+
+
+def test_ingest_distress_is_published_news_is_private(tmp_path, monkeypatch):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    m._ingest(_FakeTweet("13", "MAYDAY 20 people boat sinking off Lampedusa"), handle="alarm_phone")
+    m._ingest(_FakeTweet("14", "Operational update from the rescue vessel position update"), handle="alarm_phone")
+    kinds = {e.metadata["report_kind"]: e.metadata for e in store.events()}
+    assert kinds["distress"]["source_policy"] == "operator_published"
+    assert kinds["distress"]["publication_status"] == "published"
+    assert kinds["news"]["source_policy"] == "unofficial"
+    assert kinds["news"]["publication_status"] == "private"
+
+
+def test_notify_fires_telegram_on_new_post(monkeypatch, tmp_path):
+    calls: list[str] = []
+
+    def fake_telegram(text: str) -> bool:
+        calls.append(text)
+        return True
+
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", IntelStore())
+    monkeypatch.setattr("core.notifications.telegram", fake_telegram)
+    m = TwikitMonitor(
+        enabled=True,
+        cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}),
+        alerts_enabled=True,
+    )
+    tweet = _FakeTweet("77", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    import time
+
+    for _ in range(50):
+        if calls:
+            break
+        time.sleep(0.05)
+    assert calls, "telegram alert should have been sent"
+    assert "DISTRESS" in calls[0]
+    assert "alarm_phone" in calls[0]
+
+
+def test_notify_disabled_when_alerts_off(monkeypatch, tmp_path):
+    sent: list[str] = []
+
+    def fake_telegram(text: str) -> bool:
+        sent.append(text)
+        return True
+
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", IntelStore())
+    monkeypatch.setattr("core.notifications.telegram", fake_telegram)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet("78", "MAYDAY boat sinking off Lampedusa")
+    m._ingest(tweet, handle="alarm_phone")
+    import time
+
+    time.sleep(0.3)
+    assert sent == []
+
+
+def test_ingest_skips_very_short_tweets(tmp_path, monkeypatch):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    assert m._ingest(_FakeTweet("1", "hi"), handle="alarm_phone") is False
+    assert len(store.events()) == 0
+
+
+def test_priority_accounts_default_to_alarm_phone():
+    assert TwikitMonitor().priority_accounts == ["alarm_phone"]
+
+
+def test_priority_accounts_parsed_from_csv():
+    m = TwikitMonitor(priority_accounts=" @MSF_Sea , alarm_phone ")
+    assert m.priority_accounts == ["MSF_Sea", "alarm_phone"]
+
+
+def test_interval_for_uses_priority_and_base_intervals():
+    m = TwikitMonitor(
+        accounts="alarm_phone,MSF_Sea",
+        priority_accounts="alarm_phone",
+        poll_interval_s=300,
+        priority_poll_interval_s=45,
+    )
+    assert m._interval_for("alarm_phone") == 45
+    assert m._interval_for("MSF_Sea") == 300
+
+
+def test_loop_polls_only_due_accounts(monkeypatch):
+    import core.intel.twikit_monitor as mod
+
+    monkeypatch.setattr(mod, "_SLEEP_CAP_S", 0.01)
+    fetched: list[str] = []
+    m = TwikitMonitor(enabled=True, accounts="a,b", cookies_file="dummy.json")
+
+    async def fake_build():
+        return object()
+
+    async def fake_fetch(client, handle):
+        fetched.append(handle)
+        m._running = False
+        return []
+
+    m._build_client = fake_build
+    m._fetch_account = fake_fetch
+    m._running = True
+    m._next_poll_ts = {"a": 0.0, "b": 1e9}
+
+    asyncio.run(m._async_loop())
+    assert fetched == ["a"]
+    assert m._next_poll_ts["b"] == 1e9
+    assert m._next_poll_ts["a"] > 0
+
+
+def test_backoff_grows_after_errors_and_resets_on_success():
+    m = TwikitMonitor()
+    d1 = m._next_delay(error="boom")
+    d2 = m._next_delay(error="boom again")
+    assert d2 > d1
+    assert m._backoff > 0
+    assert m._next_delay(error=None) >= 1.0
+    assert m._backoff == 0.0
+
+
+def test_repost_threads_onto_existing_alert_without_new_event(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("2001", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
+    assert m._ingest(original, handle="alarm_phone") is True
+    parent = store.events()[0]
+
+    repost = _FakeTweet("2002", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E", original=original)
+    assert m._ingest(repost, handle="alarm_phone") is False
+
+    events = store.events()
+    assert len(events) == 1
+    assert events[0].id == parent.id
+    posts = events[0].metadata.get("thread_reposts") or []
+    assert len(posts) == 1
+    assert posts[0]["tweet_id"] == "2002"
+    assert posts[0]["url"].endswith("/2002")
+    assert events[0].metadata["repost_count"] == 1
+    assert events[0].metadata["last_repost_at"]
+
+
+def test_repost_is_deduplicated_on_repeat(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("2010", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
+    m._ingest(original, handle="alarm_phone")
+    repost = _FakeTweet("2011", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E", original=original)
+    assert m._ingest(repost, handle="alarm_phone") is False
+    assert m._ingest(repost, handle="alarm_phone") is False
+    assert store.events()[0].metadata["repost_count"] == 1
+
+
+def test_repost_never_rebroadcasts_marker(monkeypatch, tmp_path):
+    store = IntelStore()
+    calls: list[str] = []
+    store._fire_broadcast = lambda *a, **k: calls.append("broadcast")
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("2020", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
+    m._ingest(original, handle="alarm_phone")
+    calls.clear()
+    repost = _FakeTweet("2021", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E", original=original)
+    m._ingest(repost, handle="alarm_phone")
+    assert calls == []
+
+
+def test_repost_of_untracked_original_falls_back_to_ingest(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("2030", "MAYDAY 12 people boat in distress 34.0N 13.0E")
+    repost = _FakeTweet("2031", "MAYDAY 12 people boat in distress 34.0N 13.0E", original=original)
+    assert m._ingest(repost, handle="alarm_phone") is True
+    events = store.events()
+    assert len(events) == 1
+    assert events[0].metadata["tweet_id"] == "2030"
+    assert events[0].metadata["is_distress"] is True
+
+
+def test_non_repost_tweets_still_ingested_normally(tmp_path, monkeypatch):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    assert m._ingest(_FakeTweet("2040", "MAYDAY boat sinking off Lampedusa 35.5N 12.6E"), handle="alarm_phone") is True
+    assert store.events()[0].metadata.get("repost_count") is None
+
+
+def test_tweet_media_urls_media_attr_filtered_to_twimg(tmp_path):
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet(
+        "3000",
+        "🆘 38 lives at risk south of #Crete! #Greece",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg"), _FakeMedia("http://insecure/x.jpg")],
+    )
+    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/map.jpg?name=orig"]
+
+
+def test_tweet_media_urls_accepts_legacy_media_url_https_attr(tmp_path):
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet(
+        "3009",
+        "🆘 38 lives at risk south of #Crete! #Greece",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg", legacy_attrs=True)],
+    )
+    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/map.jpg?name=orig"]
+
+
+def test_tweet_media_urls_extended_entities_fallback(tmp_path):
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet(
+        "3001",
+        "🆘 38 lives at risk south of #Crete! #Greece",
+        extended_entities={"media": [{"media_url_https": "https://pbs.twimg.com/media/map.png"}]},
+    )
+    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/map.png"]
+
+
+def _ocr_gated_monitor(tmp_path, monkeypatch, which, *, drift_calls=None, scheduled=None):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    monkeypatch.setattr("core.intel.twikit_monitor.shutil.which", which)
+    if scheduled is not None:
+        monkeypatch.setattr(
+            TwikitMonitor,
+            "_schedule_media_ocr",
+            lambda self, tweet_id, event_id, urls: scheduled.append((tweet_id, event_id, list(urls))),
+        )
+    if drift_calls is not None:
+        monkeypatch.setattr(
+            "core.intel.twikit_monitor.request_auto_drift",
+            lambda *args, **kwargs: drift_calls.append(args),
+        )
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    return m, store
+
+
+def test_distress_with_media_schedules_ocr_and_defers_inline_drift(tmp_path, monkeypatch):
+    scheduled: list = []
+    drift_calls: list = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+        drift_calls=drift_calls,
+        scheduled=scheduled,
+    )
+    tweet = _FakeTweet(
+        "3005",
+        "🆘 38 lives at risk south of #Crete! #Greece",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg")],
+    )
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    evt = store.events()[0]
+    assert evt.metadata["is_distress"] is True
+    assert evt.metadata["media_count"] == 1
+    assert evt.metadata["media_transport"] == "x_media_ocr"
+    assert evt.metadata["ocr_attempted"] is False
+    # provisional fallback (Crete centroid) until the worker OCRs the image
+    assert evt.metadata["coordinate_source"] == "place_centroid"
+    assert evt.lat is not None
+    # OCR is deferred to the worker, so no inline drift from the fallback point
+    assert drift_calls == []
+    assert len(scheduled) == 1
+    assert scheduled[0][0] == "3005"
+    assert scheduled[0][2] == ["https://pbs.twimg.com/media/map.jpg?name=orig"]
+
+
+def test_text_coords_win_over_media_no_ocr(tmp_path, monkeypatch):
+    scheduled: list = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+        scheduled=scheduled,
+    )
+    tweet = _FakeTweet(
+        "3006",
+        "🆘 20 people boat sinking off Lampedusa 35.5N 12.6E",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg")],
+    )
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    evt = store.events()[0]
+    assert evt.metadata["coordinate_source"] == "post_text"
+    assert evt.lat == 35.5 and evt.lon == 12.6
+    assert evt.metadata["media_transport"] == "none"
+    assert scheduled == []
+
+
+def test_non_distress_media_never_schedules_ocr(tmp_path, monkeypatch):
+    scheduled: list = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+        scheduled=scheduled,
+    )
+    tweet = _FakeTweet(
+        "3007",
+        "Operational update from the rescue vessel position update 35.5N 12.6E",
+        media=[_FakeMedia("https://pbs.twimg.com/media/update.jpg")],
+    )
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    assert store.events()[0].metadata["media_transport"] == "none"
+    assert scheduled == []
+
+
+def test_no_ocr_when_tesseract_missing(tmp_path, monkeypatch):
+    scheduled: list = []
+    m, store = _ocr_gated_monitor(tmp_path, monkeypatch, lambda name: None, scheduled=scheduled)
+    tweet = _FakeTweet(
+        "3008",
+        "🆘 38 lives at risk south of #Crete! #Greece",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg")],
+    )
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    evt = store.events()[0]
+    assert scheduled == []
+    assert evt.metadata["media_transport"] == "none"
+    assert evt.metadata["coordinate_source"] == "place_centroid"
+
+
+def test_media_ocr_upgrades_position_and_drifts(tmp_path, monkeypatch):
+    drift_calls: list = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+        drift_calls=drift_calls,
+    )
+    monkeypatch.setattr("core.intel.twikit_monitor._ocr_photo", lambda url: ((35.5, 24.9), True))
+    tweet = _FakeTweet(
+        "3010",
+        "🆘 38 lives at risk south of #Crete! #Greece",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg")],
+    )
+    m._ingest(tweet, handle="alarm_phone")
+    evt = store.events()[0]
+    m._apply_media_ocr(evt.id, ["https://pbs.twimg.com/media/map.jpg"])
+    evt = store.get(evt.id)
+    assert evt.lat == 35.5 and evt.lon == 24.9
+    assert evt.metadata["coordinate_source"] == "media_ocr_text"
+    assert evt.metadata["ocr_attempted"] is True
+    assert evt.metadata["media_transport"] == "x_media_ocr"
+    assert drift_calls, "drift must fire with the OCR position"
+    assert drift_calls[-1][1] == 35.5 and drift_calls[-1][2] == 24.9
+
+
+def test_media_ocr_failure_keeps_fallback_and_drifts(tmp_path, monkeypatch):
+    drift_calls: list = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+        drift_calls=drift_calls,
+    )
+    monkeypatch.setattr("core.intel.twikit_monitor._ocr_photo", lambda url: (None, True))
+    tweet = _FakeTweet(
+        "3011",
+        "🆘 38 lives at risk south of #Crete! #Greece",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg")],
+    )
+    m._ingest(tweet, handle="alarm_phone")
+    evt = store.events()[0]
+    m._apply_media_ocr(evt.id, ["https://pbs.twimg.com/media/map.jpg"])
+    evt = store.get(evt.id)
+    assert evt.metadata["ocr_attempted"] is True
+    assert evt.metadata["coordinate_source"] == "place_centroid"
+    assert evt.lat is not None
+    assert drift_calls and drift_calls[-1][1] == evt.lat and drift_calls[-1][2] == evt.lon

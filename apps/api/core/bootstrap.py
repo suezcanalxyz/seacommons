@@ -20,9 +20,10 @@ def reset_stale_computing_jobs() -> None:
     They were killed by the previous process shutdown and will never complete.
     """
     try:
-        from core.db.session import session_scope
-        from core.db.models import DriftResultDB, AlertEvent
         from sqlalchemy import update
+
+        from core.db.models import AlertEvent, DriftResultDB
+        from core.db.session import session_scope
         with session_scope() as db:
             result = db.execute(
                 update(DriftResultDB)
@@ -121,7 +122,17 @@ def start_intel_engine() -> None:
         return
     try:
         from core.intel.engine import intel_engine
-        intel_engine.start(twitter_bearer=config.TWITTER_BEARER_TOKEN)
+        intel_engine.start(
+            twitter_bearer=config.TWITTER_BEARER_TOKEN,
+            alarm_phone_enabled=config.ALARM_PHONE_ENABLED,
+            twikit_enabled=config.TWIKIT_ENABLED,
+            twikit_cookies_file=config.TWIKIT_COOKIES_FILE,
+            twikit_accounts=config.TWIKIT_ACCOUNTS,
+            twikit_poll_interval_s=config.TWIKIT_POLL_INTERVAL_S,
+            twikit_priority_accounts=config.TWIKIT_PRIORITY_ACCOUNTS,
+            twikit_priority_poll_interval_s=config.TWIKIT_PRIORITY_POLL_INTERVAL_S,
+            twikit_alerts_enabled=config.TWIKIT_ALERTS_ENABLED,
+        )
         logger.info("Intel engine started")
     except Exception as exc:
         logger.warning("Intel engine failed to start: %s", exc)

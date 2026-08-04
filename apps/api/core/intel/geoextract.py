@@ -204,10 +204,12 @@ _MEDIUM_TERMS = frozenset([
     "contact lost", "missing", "irregolari", "migranti",
 ])
 
+_SOS_MARKER_RE = re.compile(r"(?:🆘|🆘️|\bmayday\b|\bsos\b)", re.I)
+
 _DIRECT_DISTRESS_PATTERNS = tuple(
-    re.compile(pattern, re.I)
+    pattern if isinstance(pattern, re.Pattern) else re.compile(pattern, re.I)
     for pattern in (
-        r"(?:🆘|🆘️|\bmayday\b|\bsos\b)",
+        _SOS_MARKER_RE,
         r"\b(?:people|persons|lives|passengers|migrants)\s+(?:are\s+)?(?:in distress|at risk|in danger)\b",
         r"\b(?:boat|vessel|dinghy|rubber boat)\b.{0,45}\b(?:in distress|taking water|sinking|capsized)\b",
         r"\b(?:taking water|people drowning|drifting at sea|no fuel left|engine (?:does not|doesn't|stopped|failed|is not) work)\b",
@@ -249,6 +251,13 @@ _CONCLUDED_OUTCOME_PATTERNS = tuple(
         r"\bstill\s+missing\b",
         r"\bconfirmed\s+dead\b",
         r"\bbod(?:y|ies)\s+(?:were|was)?\s*recovered\b",
+        # Retrospective/aftermath reports: past-tense rescue/tragedy write-ups
+        # (e.g. "⚫️ Massacre in the Atlantic ... brought ashore 38 people ...
+        # after drifting at sea for 25 days"). The active variant "drifting at
+        # sea" (no "for") still reads as an open incident and is not matched.
+        r"\bmassacre\b",
+        r"\bbrought\s+ashore\b",
+        r"\bdrifting\s+at\s+sea\s+for\b",
         # French — Alarm Phone posts most reports bilingually (EN/FR); without
         # these, a French duplicate of an already-concluded English report
         # would show active/red while its English twin shows resolved/green.
@@ -272,12 +281,20 @@ def is_concluded_incident(text: str) -> bool:
     happy reports (e.g. "8 survivors were found... 4 people remain missing"),
     which describe a closed incident just as much as a clean rescue does.
     Lifecycle-only — never used to gate ingestion/auto-drift.
+
+    Mirrors the SOS override from is_direct_distress_call: an explicit "🆘"
+    opener marks an ongoing active call ("🆘 ... They were found by the police.
+    Since then we have no news" is NOT a closed incident), so it suppresses
+    concluded-outcome wording; a hard resolved outcome ("🆘 ... everyone is
+    safe") still closes the incident.
     """
     normalised = re.sub(r"\s+", " ", text).strip()
     if not normalised:
         return False
     if is_resolved_distress(normalised):
         return True
+    if _SOS_MARKER_RE.search(normalised):
+        return False
     return any(pattern.search(normalised) for pattern in _CONCLUDED_OUTCOME_PATTERNS)
 
 # ── Regex patterns ────────────────────────────────────────────────────────────
@@ -538,6 +555,21 @@ def is_direct_distress_call(text: str) -> bool:
     if not normalised:
         return False
     if any(pattern.search(normalised) for pattern in _RESOLVED_DISTRESS_PATTERNS):
+        return False
+    # An explicit SOS marker (🆘 / mayday / sos) is the operator's active-call
+    # signal and overrides concluded-outcome wording: "🆘 ... They were found
+    # by the police. Since then we have no news" is an ACTIVE call even though
+    # "were found" is also a concluded-outcome marker. A resolved outcome is
+    # still demoted above, so "🆘 ... everyone is safe" cannot become distress.
+    has_sos = bool(_SOS_MARKER_RE.search(normalised))
+    # A report that states a final outcome (survivors found/hospitalised,
+    # bodies recovered, confirmed dead, still/remain missing) is a concluded
+    # retrospective, not an active call — e.g. the mourning posts Alarm Phone
+    # opens with ⚫ (a shipwreck already reported days earlier). These must
+    # not become operational distress. "Survivors found" is a concluded
+    # outcome; "people are missing" on its own is not (it can be the opener
+    # of an active search, and stays distress when 🆘 is present).
+    if not has_sos and any(pattern.search(normalised) for pattern in _CONCLUDED_OUTCOME_PATTERNS):
         return False
     return any(pattern.search(normalised) for pattern in _DIRECT_DISTRESS_PATTERNS)
 

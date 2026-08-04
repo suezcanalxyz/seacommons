@@ -335,6 +335,23 @@ class IntelStore:
             from core.db.session import session_scope
             from core.db.models import IntelEventDB
             with session_scope() as db:
+                if event.url:
+                    # Persistent dedup: in-memory _seen is empty after a restart,
+                    # so a feed item that was already ingested (same source+url,
+                    # e.g. an RSS article or tweet re-fetched at boot) would
+                    # otherwise be inserted again as a fresh row → duplicate
+                    # markers on the live edge. Refuse to insert the duplicate.
+                    existing = db.query(IntelEventDB.id).filter(
+                        IntelEventDB.source == event.source,
+                        IntelEventDB.url == event.url,
+                    ).first()
+                    if existing is not None:
+                        logger.debug(
+                            "Intel DB persist skipped: duplicate (source=%s url=%s)",
+                            event.source,
+                            event.url,
+                        )
+                        return
                 db.add(IntelEventDB(
                     id=event.id,
                     timestamp_utc=event.timestamp_utc,
@@ -475,6 +492,54 @@ class IntelStore:
                 db.flush()
         except Exception as exc:
             logger.debug("Intel DB metadata update skipped: %s", exc)
+
+    def find_by_tweet_id(self, tweet_id: str) -> Optional[IntelEvent]:
+        """Locate an in-memory event by its source tweet id."""
+        normalized = str(tweet_id)
+        with self._lock:
+            return next(
+                (
+                    event
+                    for event in self._events
+                    if str(event.metadata.get("tweet_id") or "") == normalized
+                ),
+                None,
+            )
+
+    def append_thread_repost(self, event_id: str, repost: dict[str, Any]) -> bool:
+        """Record a repost onto an existing incident's thread.
+
+        The repost is attached to the SAME incident (thread) the source alert
+        opened, so a repost/echo can never spawn a new marker or re-broadcast an
+        update. Deliberately does NOT fire the WebSocket broadcast or change any
+        field the live edge publishes (text/geometry/lifecycle), so the marker
+        is untouched — only thread bookkeeping is persisted.
+        """
+        updated: Optional[IntelEvent] = None
+        with self._lock:
+            for event in self._events:
+                if event.id != event_id:
+                    continue
+                posts = list(event.metadata.get("thread_reposts") or [])
+                if any(
+                    str(post.get("tweet_id")) == str(repost.get("tweet_id"))
+                    for post in posts
+                ):
+                    return False
+                posts.append(repost)
+                event.metadata["thread_reposts"] = posts[-20:]
+                event.metadata["repost_count"] = len(posts)
+                event.metadata["last_repost_at"] = repost.get("posted_at")
+                updated = event
+                break
+        if updated is None:
+            return False
+        threading.Thread(
+            target=self._persist_metadata_sync,
+            args=(event_id, dict(updated.metadata), updated.linked_mmsi),
+            daemon=True,
+        ).start()
+        return True
 
     def touch_source_observation(self, event_id: str, observed_at: str) -> bool:
         """Record that a source item is still visible without creating a copy."""

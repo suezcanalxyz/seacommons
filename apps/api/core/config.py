@@ -144,6 +144,10 @@ class SuezCanalConfig(BaseSettings):
     # background sensors/monitors/scheduler run on a separate process/VM instead,
     # and this node periodically syncs from the shared DB (core/bootstrap.py).
     INTEL_MONITORS_ENABLED: bool = True
+    # Legacy first-party Alarm Phone embed channel. Disabled on the micro now
+    # that the twikit monitor (primary) covers @alarm_phone and classifies
+    # distress/news correctly; keeping both would re-ingest the same tweets.
+    ALARM_PHONE_ENABLED: bool = True
     ALARM_PHONE_POLL_INTERVAL_S: int = 30
     # Alarm Phone drift jobs are serialized by the shared OpenDrift semaphore;
     # results are persisted and served from the drift store after computation.
@@ -163,6 +167,25 @@ class SuezCanalConfig(BaseSettings):
     # see alarm_phone_monitor.py, which uses X's free public syndication CDN
     # for photos only, not this API.
     TWITTER_BEARER_TOKEN: str = ""
+    # Twikit: free X client that reads public tweets through a real account
+    # session (cookies file exported from the browser — the Google-created
+    # account has no password, so login() is impossible). Strictly opt-in:
+    # enabled only when TWIKIT_ENABLED=true AND TWIKIT_COOKIES_FILE points at
+    # an existing file. Events are labelled source_policy="unofficial", which
+    # the "honest live feeds" policy excludes from the public live map.
+    TWIKIT_ENABLED: bool = False
+    TWIKIT_COOKIES_FILE: str = ""
+    # Tiered polling: only accounts whose interval has elapsed are fetched each
+    # sweep (no always-on polling of everything). Base interval applies to the
+    # non-priority accounts.
+    TWIKIT_POLL_INTERVAL_S: int = 300
+    TWIKIT_PRIORITY_ACCOUNTS: str = "alarm_phone"
+    TWIKIT_PRIORITY_POLL_INTERVAL_S: int = 45
+    # Comma-separated X screen names to track (no @). Empty => NGO_TWITTER_HANDLES.
+    TWIKIT_ACCOUNTS: str = ""
+    # Telegram notification when a tracked account posts (uses TELEGRAM_BOT_TOKEN
+    # + TELEGRAM_OPERATIONS_CHAT_ID).
+    TWIKIT_ALERTS_ENABLED: bool = False
 
     # TimeZero Professional bridge
     TIMEZERO_ENABLED: bool = False

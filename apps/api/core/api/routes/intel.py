@@ -546,6 +546,7 @@ def _run_intel_drift_inner(event_id: str, lat: float, lon: float,
             "drift_status": "completed",
             "drift_origin_timestamp_utc": time_utc.isoformat(),
             "drift_duration_h": duration_h,
+            "drift_completed_at": datetime.now(timezone.utc).isoformat(),
         })
         intel_store.broadcast_event_update(event_id, {"drift_job_id": job_id, "drift_status": "completed"})
         logger.info("Auto-drift completed for intel event %s → job %s", event_id, job_id)
@@ -567,11 +568,19 @@ def schedule_intel_drift(
     persons: Optional[int],
     vessel_type: Optional[str],
     observed_at: str,
+    *,
+    force: bool = False,
 ) -> bool:
-    """Start one durable-linked drift if the shared model slot is available."""
+    """Start one durable-linked drift if the shared model slot is available.
+
+    `force` bypasses the once-only guard so a refresher can re-run an
+    already-completed drift against freshly observed wind/current forcing —
+    the whole point of keeping the drift live as conditions change. It still
+    respects the global model slot; a busy engine returns False.
+    """
     normalized_id = event_id.removeprefix("intel:")
     event = intel_store.get(normalized_id)
-    if event and event.metadata.get("drift_status") in {"computing", "completed"}:
+    if event and event.metadata.get("drift_status") in {"computing", "completed"} and not force:
         return True
     if not acquire_drift_slot():
         return False

@@ -30,6 +30,11 @@ sudo nginx -t
 sudo systemctl enable nginx
 sudo systemctl reload nginx || sudo systemctl start nginx
 
+echo "=== [3b/7] Install tesseract (image OCR for Alarm Phone map screenshots) ==="
+if ! command -v tesseract &>/dev/null; then
+    sudo apt-get update -q && sudo apt-get install -y tesseract-ocr tesseract-ocr-eng -q
+fi
+
 echo "=== [4/7] Open firewall ports ==="
 # Oracle OS-level firewall (nftables / iptables)
 if command -v ufw &>/dev/null; then

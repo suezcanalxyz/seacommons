@@ -1,4 +1,7 @@
 fastapi>=0.111
+# twifork = maintained drop-in fork of twikit (imports as `twikit`). Upstream
+# twikit 2.3.3 is broken on current X ("Couldn't get KEY_BYTE indices" — d60/twikit#408/409).
+twifork>=2.3.5
 uvicorn[standard]>=0.29
 pydantic>=2.7
 pydantic-settings>=2.2

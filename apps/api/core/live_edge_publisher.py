@@ -40,11 +40,11 @@ class PublisherSettings:
     poll_seconds: float = 1.0
     batch_size: int = 25
     scan_limit: int = 200
-    # Must comfortably exceed lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS (3 days) so
+    # Must comfortably exceed lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS (7 days) so
     # an event stays inside the scan long enough to receive its final
-    # "expired" removal at the true 3-day boundary, plus margin for a
+    # "expired" removal at the true 7-day boundary, plus margin for a
     # same-source resolution post to still be seen before that.
-    live_window_minutes: int = 4 * 24 * 60
+    live_window_minutes: int = 8 * 24 * 60
     request_timeout_seconds: float = 8.0
     max_attempts: int = 20
 
@@ -58,7 +58,7 @@ class PublisherSettings:
             poll_seconds=max(0.5, float(os.getenv("LIVE_EDGE_POLL_SECONDS", "1"))),
             batch_size=max(1, int(os.getenv("LIVE_EDGE_BATCH_SIZE", "25"))),
             scan_limit=max(10, int(os.getenv("LIVE_EDGE_SCAN_LIMIT", "200"))),
-            live_window_minutes=max(5, int(os.getenv("LIVE_EDGE_WINDOW_MINUTES", str(4 * 24 * 60)))),
+            live_window_minutes=max(5, int(os.getenv("LIVE_EDGE_WINDOW_MINUTES", str(8 * 24 * 60)))),
             request_timeout_seconds=float(os.getenv("LIVE_EDGE_TIMEOUT_SECONDS", "8")),
             max_attempts=max(1, int(os.getenv("LIVE_EDGE_MAX_ATTEMPTS", "20"))),
         )
@@ -204,6 +204,12 @@ def public_event_from_row(
     event = _event_from_row(row)
     metadata = event.metadata
     event_type = event.type
+    # Operator-only marker (same semantics as the VM's public live feed):
+    # news/archive channels (e.g. official RSS) mark their rows "private" so an
+    # NGO article that merely mentions distress vocabulary can never surface on
+    # the public live map.
+    if str(metadata.get("publication_status") or "").lower() == "private":
+        return None
     is_distress = bool(metadata.get("is_distress")) or event_type in {"distress", "iom_incident"}
     explicitly_public = metadata.get("publication_state") in {"public", "published"}
     if not is_distress and not explicitly_public:
@@ -220,7 +226,7 @@ def public_event_from_row(
     except (TypeError, ValueError):
         confidence = None
 
-    # expired: past the 3-day total Live window — the edge must purge it
+    # expired: past the 7-day total Live window — the edge must purge it
     # outright. incident_lifecycle (active/resolved/archived) governs color
     # for anything still inside that window; it never triggers removal.
     expired = is_distress and not lifecycle.is_within_live_window(event, now=now)
