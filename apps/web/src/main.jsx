@@ -597,6 +597,30 @@ function App() {
     }
   });
   const [triggeringDrift, setTriggeringDrift] = useState(() => new Set());
+  // triggerIntelDrift() adds an id here right away so the "…" spinner shows
+  // before the first server-confirmed 'computing' status arrives, but only
+  // ever removes it again on a request-level network error — a successful
+  // POST leaves it in the set forever. Left alone, that permanently pins the
+  // card on the spinner: p.drift_status can move on to 'completed'/'failed'
+  // (visible after a reload, since triggeringDrift resets on remount) while
+  // the live view still ORs in this stale flag and never shows it. Prune an
+  // id the moment its event reports a definitive, non-computing status.
+  useEffect(() => {
+    if (triggeringDrift.size === 0) return;
+    setTriggeringDrift((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const feat of intelEvents) {
+        const id = feat.properties?.id;
+        const status = feat.properties?.drift_status;
+        if (id && status && status !== 'computing' && next.has(id)) {
+          next.delete(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [intelEvents, triggeringDrift]);
   const caseEventIdRef = useRef(null);
   const caseStatusRef = useRef('idle');
   const simParamsRef = useRef({});
@@ -763,7 +787,19 @@ function App() {
         } else if (msg.type === 'Feature') {
           const incoming = isPublicLiveHost ? receivedSignalFeatures([msg]) : [msg];
           if (!incoming.length) return;
-          setIntelEvents((prev) => [...incoming, ...prev].slice(0, 300));
+          // This push fires for BOTH a brand-new event (store.add) and an
+          // in-place metadata update on an existing one (store.update_metadata /
+          // enrich_location — drift status, location upgrades, thread reposts,
+          // NGO checks, …). Blindly prepending duplicated the card and left a
+          // stale copy on screen — e.g. a failed drift's "Retry" button never
+          // appeared because the fresh update rendered as a second entry with
+          // the same React key instead of replacing the original. Replace any
+          // existing entry with the same id instead of accumulating both.
+          setIntelEvents((prev) => {
+            const incomingIds = new Set(incoming.map((f) => f.properties?.id).filter(Boolean));
+            const withoutStale = prev.filter((f) => !incomingIds.has(f.properties?.id));
+            return [...incoming, ...withoutStale].slice(0, 300);
+          });
           const mp = msg.properties || {};
           if (mp.type === 'distress' && ['critical', 'high'].includes(mp.severity)) {
             setActivePanel('osint');
