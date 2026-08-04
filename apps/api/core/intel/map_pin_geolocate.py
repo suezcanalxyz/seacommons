@@ -36,9 +36,15 @@ from core.intel.geoextract import PRECISE_PLACES
 _MIN_LANDMARK_MATCHES = 2
 _MIN_PIXEL_SPREAD = 20          # px — matched landmarks must actually spread out
 _MIN_WORD_CONF = 40             # tesseract word confidence, 0-100
-_EXTRAPOLATION_FACTOR = 2.0     # how far past the matched-landmark pixel span to still trust
 _LAT_RANGE = (20.0, 48.0)
 _LON_RANGE = (-12.0, 42.0)
+# A distress pin routinely sits hundreds of km out at sea from the nearest
+# labelled coastal town (that's the whole point of "boat spotted south of
+# Crete" reports), so this guards against a genuinely wrong landmark match
+# (OCR misread / wrong instance of an ambiguous name) rather than against
+# normal, expected extrapolation distance.
+_MAX_KM_FROM_NEAREST_LANDMARK = 600.0
+_EARTH_RADIUS_KM = 6371.0
 
 _PLACES_SORTED = sorted(PRECISE_PLACES.items(), key=lambda kv: -len(kv[0]))
 _MAX_PHRASE_WORDS = max((len(name.split()) for name in PRECISE_PLACES), default=1)
@@ -87,18 +93,27 @@ def _detect_marker_pixel(image) -> Optional[tuple[int, int]]:
 
 
 def _ocr_word_boxes(image, *, executable: str) -> list[dict]:
-    """Word-level OCR boxes (pixel-space) via tesseract's TSV output mode."""
-    from PIL import Image
+    """Word-level OCR boxes (pixel-space) via tesseract's TSV output mode.
 
-    width, _ = image.size
-    scale = max(1, min(3, 2000 // max(1, width)))
-    scaled = image.resize((image.width * scale, image.height * scale), Image.Resampling.LANCZOS) if scale > 1 else image
+    Empirically (verified against real Alarm Phone map screenshots), `--psm
+    11` (sparse text) fragments scattered map labels into unusable garbage —
+    treating dozens of stray coastline/road pixels as isolated "words" — no
+    matter how much the image is scaled or sharpened. `--psm 6` (uniform
+    text block) reads real labels ("Heraklion", "Chrisi", ...) cleanly at or
+    near native resolution; a modest 2x upscale surfaces a few more without
+    the artefacts that heavier scaling + sharpening introduced in testing.
+    """
+    from PIL import Image, ImageOps
+
+    scaled = image.resize((image.width * 2, image.height * 2), Image.Resampling.LANCZOS)
+    scaled = ImageOps.autocontrast(scaled.convert("RGB"))
     buf = io.BytesIO()
-    scaled.convert("RGB").save(buf, format="PNG")
+    scaled.save(buf, format="PNG")
+    scale = 2
 
     try:
         result = subprocess.run(
-            [executable, "stdin", "stdout", "--psm", "11", "-l", "eng", "tsv"],
+            [executable, "stdin", "stdout", "--psm", "6", "-l", "eng", "tsv"],
             input=buf.getvalue(),
             capture_output=True,
             check=False,
@@ -172,6 +187,16 @@ def _match_landmarks(word_boxes: list[dict]) -> list[tuple[str, float, float]]:
     return [(name, px, py) for name, (px, py) in matched.items()]
 
 
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    import math
+
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * _EARTH_RADIUS_KM * math.asin(min(1.0, math.sqrt(a)))
+
+
 def _fit_axis(pixel_values: list[float], geo_values: list[float]) -> Optional[tuple[float, float]]:
     """Least-squares pixel = slope*geo + intercept; None if geo values don't spread."""
     if max(geo_values) - min(geo_values) < 1e-6:
@@ -229,15 +254,13 @@ def geolocate_pin_from_image(payload: bytes, *, executable: Optional[str] = None
     lon = (pin_x - intercept_x) / slope_x
     lat = (pin_y - intercept_y) / slope_y
 
-    # Refuse to extrapolate far past the region the landmarks actually cover,
-    # and refuse anything outside the plausible operating theatre entirely.
-    x_span = max(pixel_xs) - min(pixel_xs)
-    y_span = max(pixel_ys) - min(pixel_ys)
-    if not (min(pixel_xs) - _EXTRAPOLATION_FACTOR * x_span <= pin_x <= max(pixel_xs) + _EXTRAPOLATION_FACTOR * x_span):
-        return None
-    if not (min(pixel_ys) - _EXTRAPOLATION_FACTOR * y_span <= pin_y <= max(pixel_ys) + _EXTRAPOLATION_FACTOR * y_span):
-        return None
     if not (_LAT_RANGE[0] <= lat <= _LAT_RANGE[1] and _LON_RANGE[0] <= lon <= _LON_RANGE[1]):
+        return None
+    nearest_km = min(
+        _haversine_km(lat, lon, PRECISE_PLACES[name][0], PRECISE_PLACES[name][1])
+        for name, _, _ in landmarks
+    )
+    if nearest_km > _MAX_KM_FROM_NEAREST_LANDMARK:
         return None
 
     return round(lat, 5), round(lon, 5)

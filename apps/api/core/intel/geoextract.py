@@ -91,6 +91,10 @@ _PLACES: dict[str, tuple[float, float]] = {
     "ierapetra":           (35.01, 25.74),
     "agios nikolaos":      (35.19, 25.72),
     "sitia":               (35.20, 26.10),
+    "palekastro":          (35.20, 26.25),
+    "moires":              (35.05, 24.87),
+    "spinalonga":          (35.30, 25.75),
+    "chrisi":              (34.90, 25.72),
     # Turkey (departure Aegean)
     "izmir":               (38.42, 27.14),
     "cesme":               (38.33, 26.30),
