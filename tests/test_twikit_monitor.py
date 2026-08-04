@@ -504,6 +504,55 @@ def test_tweet_media_urls_extended_entities_fallback(tmp_path):
     assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/map.png"]
 
 
+def test_tweet_media_urls_entities_fallback(tmp_path):
+    # A third raw shape some twikit/twifork versions expose: plain (non
+    # "extended") entities.media, tried only after both typed .media and
+    # .extended_entities come up empty.
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet("3002", "🆘 38 lives at risk south of #Crete! #Greece")
+    tweet.entities = {"media": [{"media_url_https": "https://pbs.twimg.com/media/entities.png"}]}
+    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/entities.png"]
+
+
+def test_tweet_media_urls_card_fallback(tmp_path):
+    # Some map-tool posts attach the screenshot as a link-preview card
+    # instead of native tweet media (e.g. posted through a scheduling tool).
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet("3003", "🆘 38 lives at risk south of #Crete! #Greece")
+
+    class _FakeCard:
+        thumbnail_url = "https://pbs.twimg.com/media/card.jpg"
+
+    tweet.card = _FakeCard()
+    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/card.jpg"]
+
+
+def test_tweet_media_urls_returns_empty_when_every_shape_is_absent(tmp_path, caplog):
+    # No media, no extended_entities, no entities, no card — must not raise,
+    # and must log at debug (not warning, since this is the ordinary case of
+    # a tweet with no attached image at all).
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet("3004", "🆘 38 lives at risk south of #Crete! #Greece")
+    assert m._tweet_media_urls(tweet, tweet_id="3004") == []
+
+
+def test_tweet_media_urls_warns_when_candidates_fail_host_allowlist(tmp_path, caplog):
+    # A real regression signature: candidate URL(s) were found but none
+    # matched pbs.twimg.com — this must be a WARNING (an actual extraction
+    # gap), distinct from the ordinary "no image at all" debug case.
+    import logging
+
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet(
+        "3005",
+        "🆘 38 lives at risk south of #Crete! #Greece",
+        media=[_FakeMedia("https://cdn.example.com/media/map.jpg")],
+    )
+    with caplog.at_level(logging.WARNING, logger="core.intel.twikit_monitor"):
+        assert m._tweet_media_urls(tweet, tweet_id="3005") == []
+    assert any("3005" in record.message for record in caplog.records)
+
+
 def _ocr_gated_monitor(tmp_path, monkeypatch, which, *, drift_calls=None, scheduled=None):
     store = IntelStore()
     monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)

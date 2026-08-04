@@ -355,19 +355,30 @@ class TwikitMonitor:
         return None
 
     @staticmethod
-    def _tweet_media_urls(tweet: Any) -> list[str]:
+    def _tweet_media_urls(tweet: Any, *, tweet_id: str = "") -> list[str]:
         """Best-effort extraction of https://pbs.twimg.com/ media from a tweet.
 
         Twikit (twifork) exposes each media entity as a typed object whose
         image URL lives on the ``media_url`` / ``source_url`` properties (the
         raw ``media_url_https`` key is not an attribute), while older shapes
         expose ``media_url_https`` directly or keep the raw ``extended_entities``
-        dict. Try every shape so an API change never silently disables
-        image-based geolocation. Same host allow-list as the OCR path.
+        dict, and some map-tool posts attach the screenshot as a link-preview
+        card (``tweet.card``) rather than native media. Try every shape so an
+        API change never silently disables image-based geolocation. Same host
+        allow-list as the OCR path.
+
+        Logs a diagnosable warning — listing exactly which raw shapes were
+        present and empty — whenever nothing at all is found, and separately
+        when candidate URLs were found but none matched the host allow-list,
+        so a real extraction gap (as opposed to "this tweet has no image")
+        shows up in logs instead of silently falling back to a rough
+        centroid.
         """
         urls: list[str] = []
+        shapes_tried: list[str] = []
         try:
             media = getattr(tweet, "media", None) or []
+            shapes_tried.append(f"media[{len(media)}]")
             for item in media:
                 url = str(
                     getattr(item, "source_url", "")
@@ -378,17 +389,51 @@ class TwikitMonitor:
                 )
                 if url:
                     urls.append(url)
-        except Exception:
-            pass
+        except Exception as exc:
+            shapes_tried.append(f"media[error:{exc}]")
         if not urls:
             try:
                 extended = getattr(tweet, "extended_entities", None) or {}
-                for item in extended.get("media") or []:
+                extended_media = extended.get("media") or []
+                shapes_tried.append(f"extended_entities[{len(extended_media)}]")
+                for item in extended_media:
                     url = str(item.get("media_url_https") or item.get("url") or "")
                     if url:
                         urls.append(url)
-            except Exception:
-                pass
+            except Exception as exc:
+                shapes_tried.append(f"extended_entities[error:{exc}]")
+        if not urls:
+            try:
+                entities = getattr(tweet, "entities", None) or {}
+                entities_media = entities.get("media") or []
+                shapes_tried.append(f"entities[{len(entities_media)}]")
+                for item in entities_media:
+                    url = str(item.get("media_url_https") or item.get("url") or "")
+                    if url:
+                        urls.append(url)
+            except Exception as exc:
+                shapes_tried.append(f"entities[error:{exc}]")
+        if not urls:
+            # Map-tool posts (Alarm Phone's screenshot generator, some NGO
+            # dashboards) can attach the image as a link-preview card rather
+            # than native tweet media, particularly when posted through a
+            # third-party scheduling tool.
+            try:
+                card = getattr(tweet, "card", None)
+                if card is not None:
+                    card_url = str(
+                        getattr(card, "thumbnail_url", "")
+                        or getattr(card, "image_url", "")
+                        or ""
+                    )
+                    shapes_tried.append(f"card[{'1' if card_url else '0'}]")
+                    if card_url:
+                        urls.append(card_url)
+                else:
+                    shapes_tried.append("card[absent]")
+            except Exception as exc:
+                shapes_tried.append(f"card[error:{exc}]")
+
         allowed = []
         for url in urls[:4]:
             try:
@@ -398,6 +443,20 @@ class TwikitMonitor:
                     allowed.append(url)
             except Exception:
                 continue
+
+        if not allowed:
+            if urls:
+                logger.warning(
+                    "X (twikit) tweet %s: %d candidate media URL(s) found but none "
+                    "matched the allowed host (%s); shapes tried: %s",
+                    tweet_id, len(urls), sorted(_ALLOWED_MEDIA_HOSTS), shapes_tried,
+                )
+            else:
+                logger.debug(
+                    "X (twikit) tweet %s: no media found in any known shape (%s) — "
+                    "this tweet likely has no attached image",
+                    tweet_id, shapes_tried,
+                )
         return allowed
 
     def _ocr_tweet_media(
@@ -516,9 +575,9 @@ class TwikitMonitor:
         # as a map screenshot. Priority: explicit text coords > OCR of attached
         # images > declared relative offset > place-name centroid.
         text_coords = extract_numeric_coords(combined_text)
-        media_urls = self._tweet_media_urls(tweet)
+        media_urls = self._tweet_media_urls(tweet, tweet_id=str(tweet.id))
         if quoted is not None:
-            for url in self._tweet_media_urls(quoted):
+            for url in self._tweet_media_urls(quoted, tweet_id=str(quoted.id)):
                 if url not in media_urls:
                     media_urls.append(url)
         media_count = len(media_urls)
