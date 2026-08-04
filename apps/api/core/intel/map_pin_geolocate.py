@@ -92,8 +92,11 @@ def _detect_marker_pixel(image) -> Optional[tuple[int, int]]:
     return center_x, tip_y
 
 
-def _ocr_word_boxes(image, *, executable: str) -> list[dict]:
-    """Word-level OCR boxes (pixel-space) via tesseract's TSV output mode.
+def _ocr_pass(image, *, executable: str, block_prefix: str) -> list[dict]:
+    """One tesseract TSV word-box pass over a (sub)image, in that image's
+    own local pixel space (offset 0,0). `block_prefix` keeps this pass's
+    (block, par, line) keys distinct from any other pass/tile so
+    `_match_landmarks` never joins words across pass/tile boundaries.
 
     Empirically (verified against real Alarm Phone map screenshots), `--psm
     11` (sparse text) fragments scattered map labels into unusable garbage —
@@ -105,6 +108,8 @@ def _ocr_word_boxes(image, *, executable: str) -> list[dict]:
     """
     from PIL import Image, ImageOps
 
+    if image.width < 1 or image.height < 1:
+        return []
     scaled = image.resize((image.width * 2, image.height * 2), Image.Resampling.LANCZOS)
     scaled = ImageOps.autocontrast(scaled.convert("RGB"))
     buf = io.BytesIO()
@@ -147,10 +152,47 @@ def _ocr_word_boxes(image, *, executable: str) -> list[dict]:
                 "top": int(top) // scale,
                 "width": int(w) // scale,
                 "height": int(h) // scale,
-                "block": block, "par": par, "line": line_num, "word": int(word_num),
+                "block": f"{block_prefix}-{block}", "par": par, "line": line_num,
+                "word": int(word_num),
             })
         except ValueError:
             continue
+    return boxes
+
+
+def _tile_regions(width: int, height: int) -> list[tuple[int, int, int, int]]:
+    """A 2x2 grid with ~15% overlap so a label straddling a naive cut line
+    still lands wholly inside at least one tile."""
+    half_w, half_h = width / 2, height / 2
+    ow, oh = int(half_w * 0.15), int(half_h * 0.15)
+    return [
+        (0, 0, int(half_w) + ow, int(half_h) + oh),
+        (int(half_w) - ow, 0, width, int(half_h) + oh),
+        (0, int(half_h) - oh, int(half_w) + ow, height),
+        (int(half_w) - ow, int(half_h) - oh, width, height),
+    ]
+
+
+def _ocr_word_boxes(image, *, executable: str) -> list[dict]:
+    """Word-level OCR boxes (pixel-space), merged from two passes.
+
+    A single whole-image `--psm 6` pass treats the entire screenshot as one
+    text block, which — verified against real screenshots — reads a strong
+    label or two cleanly but garbles most others once several spatially
+    separated labels compete for one reading order. Re-running the same pass
+    on four overlapping image quadrants gives each label a much smaller,
+    closer-to-uniform block to be read in, recovering labels the whole-image
+    pass missed; results are merged (duplicates across tiles are harmless —
+    `_match_landmarks` just keeps the first per name).
+    """
+    boxes = _ocr_pass(image, executable=executable, block_prefix="full")
+    for index, (left, top, right, bottom) in enumerate(_tile_regions(image.width, image.height)):
+        tile = image.crop((left, top, right, bottom))
+        tile_boxes = _ocr_pass(tile, executable=executable, block_prefix=f"tile{index}")
+        for box in tile_boxes:
+            box["left"] += left
+            box["top"] += top
+        boxes.extend(tile_boxes)
     return boxes
 
 

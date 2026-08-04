@@ -48,6 +48,16 @@ _PLACES: dict[str, tuple[float, float]] = {
     "trapani":             (38.02, 12.51),
     "mazara del vallo":    (37.66, 12.59),
     "marsala":             (37.80, 12.44),
+    # Small but very frequently-labelled Central Med SAR waypoints — the
+    # busiest Alarm Phone corridor, so these double as pixel-calibration
+    # anchors for map_pin_geolocate.py the same way the Crete towns do.
+    "portopalo":           (36.68, 15.13),
+    "capo passero":        (36.68, 15.14),
+    "lampione":            (35.53, 12.32),
+    "kerkennah":           (34.65, 11.20),
+    "houmt souk":          (33.87, 10.86),
+    "zawiya":              (32.75, 12.73),
+    "al zawiya":           (32.75, 12.73),
     "messina":             (38.19, 15.56),
     "reggio calabria":     (38.11, 15.65),
     "calabria":            (38.11, 16.55),
@@ -103,6 +113,10 @@ _PLACES: dict[str, tuple[float, float]] = {
     "canakkale":           (40.15, 26.41),
     "dikili":              (39.07, 26.89),
     "kusadasi":            (37.86, 27.26),
+    "datca":               (36.73, 27.68),
+    "didim":               (37.38, 27.26),
+    "foca":                (38.67, 26.76),
+    "ayvalik":             (39.32, 26.69),
     # Sea zones
     "strait of sicily":    (37.00, 11.50),
     "sicilian channel":    (37.00, 11.50),
