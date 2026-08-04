@@ -461,23 +461,23 @@ class TwikitMonitor:
 
     def _ocr_tweet_media(
         self, tweet_id: str, urls: list[str]
-    ) -> tuple[Optional[tuple[float, float]], bool]:
+    ) -> tuple[Optional[tuple[float, float]], bool, str]:
         """OCR the tweet's images until one yields a coordinate pair."""
         if not urls:
-            return None, False
+            return None, False, "none"
         for url in urls:
             try:
-                candidate, attempted = _ocr_photo(url)
+                candidate, attempted, method = _ocr_photo(url)
                 if candidate is not None:
-                    return candidate, attempted
+                    return candidate, attempted, method
             except Exception as exc:
                 logger.debug("X (twikit) media OCR failed for %s (%s): %s", tweet_id, url, exc)
-        return None, True
+        return None, True, "none"
 
     def _apply_media_ocr(self, event_id: str, urls: list[str]) -> None:
         """Run in a background thread: OCR, upgrade the stored position, drift."""
         try:
-            coords, attempted = self._ocr_tweet_media(event_id, urls)
+            coords, attempted, method = self._ocr_tweet_media(event_id, urls)
             if coords is None:
                 if attempted:
                     intel_store.update_metadata(event_id, metadata={"ocr_attempted": True})
@@ -488,10 +488,10 @@ class TwikitMonitor:
                 lat=coords[0],
                 lon=coords[1],
                 metadata={
-                    "coordinate_source": "media_ocr_text",
+                    "coordinate_source": "media_ocr_text" if method == "text" else "media_pin_landmark",
                     "coordinate_review_status": "machine_ocr_unverified",
                     "verification_status": "machine_extracted_unverified",
-                    "location_uncertainty_m": 1500,
+                    "location_uncertainty_m": 1500 if method == "text" else 4000,
                     "media_transport": "x_media_ocr",
                     "ocr_attempted": True,
                     "media_count": len(urls),

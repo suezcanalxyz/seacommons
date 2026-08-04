@@ -99,14 +99,20 @@ def ocr_png_coordinate(
     return (next(iter(candidates)) if len(candidates) == 1 else None), True
 
 
-def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool]:
-    """Download one bounded public image and run three local Tesseract passes."""
+def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool, str]:
+    """Download one bounded public image and run three local Tesseract passes.
+
+    Returns (coordinate, attempted, method) — method is "text" for a printed
+    coordinate readout, "pin_landmark" for a plain map screenshot geolocated
+    from its drop-pin plus visible place labels (see map_pin_geolocate.py),
+    or "none".
+    """
     executable = shutil.which("tesseract")
     if not executable:
-        return None, False
+        return None, False, "none"
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in _ALLOWED_MEDIA_HOSTS:
-        return None, False
+        return None, False, "none"
 
     request = urllib.request.Request(
         url,
@@ -115,10 +121,10 @@ def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool]:
     with urllib.request.urlopen(request, timeout=15) as response:
         content_type = str(response.headers.get("Content-Type") or "").lower()
         if not content_type.startswith("image/"):
-            return None, False
+            return None, False, "none"
         payload = response.read(_MAX_IMAGE_BYTES + 1)
     if len(payload) > _MAX_IMAGE_BYTES:
-        return None, False
+        return None, False, "none"
 
     from PIL import Image, ImageFilter, ImageOps
 
@@ -203,5 +209,18 @@ def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool]:
             )
             attempted = attempted or did_attempt
             if coordinate is not None:
-                return coordinate, attempted
-    return None, attempted
+                return coordinate, attempted, "text"
+
+    # No printed coordinate readout anywhere in the image — the screenshot
+    # may still carry a plain drop-pin with no text at all (see module
+    # docstring on map_pin_geolocate). Try recovering that from the pin's
+    # pixel position plus visible place-name labels before giving up.
+    try:
+        from core.intel.map_pin_geolocate import geolocate_pin_from_image
+
+        pin_coord = geolocate_pin_from_image(payload, executable=executable)
+    except Exception:
+        pin_coord = None
+    if pin_coord is not None:
+        return pin_coord, True, "pin_landmark"
+    return None, attempted, "none"

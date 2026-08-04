@@ -665,7 +665,7 @@ def test_media_ocr_upgrades_position_and_drifts(tmp_path, monkeypatch):
         lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
         drift_calls=drift_calls,
     )
-    monkeypatch.setattr("core.intel.twikit_monitor._ocr_photo", lambda url: ((35.5, 24.9), True))
+    monkeypatch.setattr("core.intel.twikit_monitor._ocr_photo", lambda url: ((35.5, 24.9), True, "text"))
     tweet = _FakeTweet(
         "3010",
         "🆘 38 lives at risk south of #Crete! #Greece",
@@ -681,6 +681,36 @@ def test_media_ocr_upgrades_position_and_drifts(tmp_path, monkeypatch):
     assert evt.metadata["media_transport"] == "x_media_ocr"
     assert drift_calls, "drift must fire with the OCR position"
     assert drift_calls[-1][1] == 35.5 and drift_calls[-1][2] == 24.9
+
+
+def test_media_pin_landmark_fallback_upgrades_position_with_wider_uncertainty(tmp_path, monkeypatch):
+    """A map screenshot with only a pin (no printed coordinates) should still
+    upgrade the event's position via map_pin_geolocate, tagged distinctly
+    from a text-OCR read and with a wider uncertainty radius."""
+    drift_calls: list = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+        drift_calls=drift_calls,
+    )
+    monkeypatch.setattr(
+        "core.intel.twikit_monitor._ocr_photo",
+        lambda url: ((35.19, 25.72), True, "pin_landmark"),
+    )
+    tweet = _FakeTweet(
+        "3012",
+        "🆘 38 lives at risk south of #Crete! #Greece",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg")],
+    )
+    m._ingest(tweet, handle="alarm_phone")
+    evt = store.events()[0]
+    m._apply_media_ocr(evt.id, ["https://pbs.twimg.com/media/map.jpg"])
+    evt = store.get(evt.id)
+    assert evt.lat == 35.19 and evt.lon == 25.72
+    assert evt.metadata["coordinate_source"] == "media_pin_landmark"
+    assert evt.metadata["location_uncertainty_m"] == 4000
+    assert drift_calls, "drift must fire with the pin-geolocated position"
 
 
 def test_async_loop_retries_session_setup_instead_of_giving_up():
@@ -767,7 +797,7 @@ def test_media_ocr_failure_keeps_fallback_and_drifts(tmp_path, monkeypatch):
         lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
         drift_calls=drift_calls,
     )
-    monkeypatch.setattr("core.intel.twikit_monitor._ocr_photo", lambda url: (None, True))
+    monkeypatch.setattr("core.intel.twikit_monitor._ocr_photo", lambda url: (None, True, "none"))
     tweet = _FakeTweet(
         "3011",
         "🆘 38 lives at risk south of #Crete! #Greece",

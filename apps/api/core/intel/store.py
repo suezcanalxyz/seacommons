@@ -26,9 +26,14 @@ _COORDINATE_SOURCE_RANK = {
     "none": 0,
     "place_centroid": 1,
     "relative_place_offset": 2,
-    "media_ocr_consensus": 3,
-    "media_ocr_text": 3,
-    "post_text": 4,
+    # A plain map screenshot with no printed coordinates, geolocated from its
+    # drop-pin pixel position plus visible place labels (map_pin_geolocate.py)
+    # — better than a bare centroid guess, but less precise than an actual
+    # printed readout.
+    "media_pin_landmark": 3,
+    "media_ocr_consensus": 4,
+    "media_ocr_text": 4,
+    "post_text": 5,
 }
 
 MAX_EVENTS = 600

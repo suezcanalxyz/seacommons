@@ -79,6 +79,18 @@ _PLACES: dict[str, tuple[float, float]] = {
     "crete":               (34.85, 24.81),
     "kriti":               (34.85, 24.81),
     "gavdos":              (34.84, 24.08),
+    # Crete coastal towns — real (precise) coordinates, not zone centroids.
+    # Alarm Phone's map screenshots for "south of Crete" reports consistently
+    # label these on the basemap even when no coordinate text is printed, so
+    # they double as calibration anchors for map_pin_geolocate.py.
+    "heraklion":           (35.34, 25.13),
+    "iraklio":             (35.34, 25.13),
+    "rethymno":            (35.37, 24.47),
+    "rethimno":            (35.37, 24.47),
+    "chania":              (35.52, 24.02),
+    "ierapetra":           (35.01, 25.74),
+    "agios nikolaos":      (35.19, 25.72),
+    "sitia":               (35.20, 26.10),
     # Turkey (departure Aegean)
     "izmir":               (38.42, 27.14),
     "cesme":               (38.33, 26.30),
@@ -134,6 +146,26 @@ _PLACES: dict[str, tuple[float, float]] = {
 
 # Sorted longest-first for greedy matching
 _PLACES_SORTED = sorted(_PLACES.items(), key=lambda x: -len(x[0]))
+
+# _PLACES entries that name a whole sea basin, strait, island group or country
+# rather than a specific point — fine as a text-extraction fallback (with the
+# caller rendering it as an area), but useless or actively misleading as a
+# pixel-calibration anchor for map_pin_geolocate.py, since a single centroid
+# can sit hundreds of km from where the name is actually printed on a map.
+_IMPRECISE_PLACE_NAMES = frozenset({
+    "strait of sicily", "sicilian channel", "sicily channel",
+    "canal de sicile", "canal de sicilia", "central mediterranean",
+    "central med", "sicily", "sardinia", "aegean sea", "aegean",
+    "ionian sea", "ionian", "tyrrhenian", "adriatic", "libyan waters",
+    "libyan coast", "tunisian waters", "tunisian coast", "libya", "tunisia",
+    "mediterranean", "med sea", "balearic islands", "red sea",
+    "gulf of aden", "horn of africa", "somalia", "dodecanese", "calabria",
+})
+
+# Precise-point subset usable as pixel-calibration anchors (see above).
+PRECISE_PLACES: dict[str, tuple[float, float]] = {
+    name: coords for name, coords in _PLACES.items() if name not in _IMPRECISE_PLACE_NAMES
+}
 
 # Country/sea-basin fallback — only tried when no specific place/coordinate
 # matches. These names span hundreds of km, so each carries its own much
