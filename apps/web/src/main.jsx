@@ -1669,6 +1669,8 @@ function App() {
           map.flyTo({ center: [lon, lat], zoom: 9, duration: 800 });
           setActivePanel('osint');
           if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
+          setMapPanel({ type: 'intel', feature });
+          setConePanelHidden(false);
           const props = feature.properties || {};
           if (!isPublicLiveHost && props.id
               && props.drift_status !== 'completed' && props.drift_status !== 'computing') {
@@ -1825,6 +1827,8 @@ function App() {
           setActivePanel('osint');
           // On mobile the sheet would cover the point we just flew to — keep map visible.
           if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
+          setMapPanel({ type: 'intel', feature });
+          setConePanelHidden(false);
           const props = feature.properties || {};
           if (props.id && props.drift_status !== 'completed' && props.drift_status !== 'computing') {
             triggerIntelDrift(props.id, lat, lon);
@@ -2693,15 +2697,15 @@ function App() {
           </div>
         ) : null}
 
-        {/* Cone detail panel — right side, appears when clicking a drift cone */}
-        {['cone', 'trajectory'].includes(mapPanel?.type) && !conePanelHidden && (
+        {/* Cone detail panel — right side, appears when clicking a drift cone or a signal marker */}
+        {['cone', 'trajectory', 'intel'].includes(mapPanel?.type) && !conePanelHidden && (
           <MapFloatingPanel
             panel={mapPanel}
             onClose={() => setConePanelHidden(true)}
             onComputeDrift={null}
           />
         )}
-        {['cone', 'trajectory'].includes(mapPanel?.type) && conePanelHidden && (
+        {['cone', 'trajectory', 'intel'].includes(mapPanel?.type) && conePanelHidden && (
           <button
             className="cone-reopen-btn"
             onClick={() => setConePanelHidden(false)}

@@ -244,6 +244,55 @@ function ConeView({ panel }) {
   );
 }
 
+const INTEL_KIND_COLOR = { distress: '#ff3b3b', resolved: '#22c55e', archived: '#9aa0ab' };
+
+function IntelView({ panel }) {
+  const props = panel.feature?.properties || {};
+  const lifecycle = props.incident_lifecycle
+    || (props.kind === 'resolved' ? 'resolved' : props.kind === 'archived' ? 'archived' : 'distress');
+  const color = INTEL_KIND_COLOR[lifecycle] || INTEL_KIND_COLOR.distress;
+  const when = props.timestamp_utc || props.source_timestamp_utc;
+  return (
+    <>
+      <div className="cone-section">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flex: '0 0 auto' }} />
+          <strong style={{ fontSize: 12, lineHeight: 1.35 }}>{props.title || 'Maritime signal'}</strong>
+        </div>
+        {props.text && (
+          <p style={{ fontSize: 11, color: '#c9e3da', lineHeight: 1.5, margin: '4px 0 8px' }}>{props.text}</p>
+        )}
+        <Row label="Source" value={props.source || '—'} />
+        <Row label="Status" value={lifecycle} color={color} />
+        {props.verification_status && (
+          <Row label="Verification" value={String(props.verification_status).replace(/_/g, ' ')} />
+        )}
+        {props.severity && <Row label="Severity" value={props.severity} />}
+        <Row
+          label="Reported"
+          value={when ? new Date(when).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
+        />
+      </div>
+      {props.url && (
+        <div className="cone-section" style={{ borderBottom: 'none' }}>
+          <a
+            href={props.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'block', textAlign: 'center', padding: '7px 0', borderRadius: 3,
+              background: 'rgba(131,244,223,0.12)', border: '1px solid rgba(131,244,223,0.35)',
+              color: '#83f4df', fontWeight: 700, fontSize: 11, textDecoration: 'none',
+            }}
+          >
+            Open source ↗
+          </a>
+        </div>
+      )}
+    </>
+  );
+}
+
 function TrajectoryView({ panel }) {
   const props = panel.feature?.properties || {};
   const meanSpeed = Number(props.mean_speed_ms);
@@ -294,12 +343,16 @@ export default function MapFloatingPanel({ panel, onClose, onComputeDrift }) {
     ? 'Live drift trajectory'
     : panel.type === 'cone'
       ? 'Drift projection'
-      : 'Selected point';
+      : panel.type === 'intel'
+        ? 'Signal'
+        : 'Selected point';
   const kicker = panel.type === 'trajectory'
     ? 'OpenDrift forecast'
     : panel.type === 'cone'
       ? 'SAR drift cone'
-      : 'Map click';
+      : panel.type === 'intel'
+        ? 'Live report'
+        : 'Map click';
 
   return (
     <div className="cone-panel">
@@ -319,6 +372,9 @@ export default function MapFloatingPanel({ panel, onClose, onComputeDrift }) {
       )}
       {panel.type === 'trajectory' && (
         <TrajectoryView panel={panel} />
+      )}
+      {panel.type === 'intel' && (
+        <IntelView panel={panel} />
       )}
     </div>
   );
