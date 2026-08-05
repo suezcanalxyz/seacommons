@@ -511,6 +511,66 @@ class IntelStore:
                 None,
             )
 
+    def find_by_content_hash(self, content_hash: str) -> Optional[IntelEvent]:
+        """Locate an in-memory event whose current content_hash matches.
+
+        Used to recover the real stored event behind a dedup-rejected add():
+        add() only records content_hash in a flat _seen set, so the caller
+        otherwise has no way back to the actual event (a rejected duplicate
+        is a fresh, never-stored IntelEvent with its own throwaway id).
+        """
+        with self._lock:
+            return next(
+                (event for event in self._events if event.content_hash() == content_hash),
+                None,
+            )
+
+    def refresh_source_link(self, event_id: str, *, tweet_id: str, url: str) -> bool:
+        """Repoint an existing event at a newer tweet id/url for the same content.
+
+        Tracked accounts occasionally delete a tweet moments after posting and
+        repost near-identical text — same content_hash, new tweet id. Content-hash
+        dedup then silently drops the repost, leaving the stored event's link
+        pointing at a dead status forever. This updates the link in place,
+        unconditionally (unlike enrich_location, not gated on coordinate-quality
+        ranking), since a live link is strictly better than a dead one regardless
+        of position precision.
+        """
+        updated: Optional[IntelEvent] = None
+        with self._lock:
+            for event in self._events:
+                if event.id != event_id:
+                    continue
+                event.url = url
+                event.metadata["tweet_id"] = tweet_id
+                updated = event
+                break
+        if updated is None:
+            return False
+        threading.Thread(
+            target=self._persist_link_sync,
+            args=(event_id, url, tweet_id),
+            daemon=True,
+        ).start()
+        self._fire_broadcast(updated)
+        return True
+
+    def _persist_link_sync(self, event_id: str, url: str, tweet_id: str) -> None:
+        try:
+            from core.db.models import IntelEventDB
+            from core.db.session import session_scope
+            with session_scope() as db:
+                row = db.query(IntelEventDB).filter(IntelEventDB.id == event_id).first()
+                if row is None:
+                    return
+                row.url = url
+                merged = dict(row.meta or {})
+                merged["tweet_id"] = tweet_id
+                row.meta = merged
+                db.flush()
+        except Exception as exc:
+            logger.debug("Intel DB link refresh skipped: %s", exc)
+
     def append_thread_repost(self, event_id: str, repost: dict[str, Any]) -> bool:
         """Record a repost onto an existing incident's thread.
 

@@ -697,20 +697,35 @@ class TwikitMonitor:
             # background thread, then upgrade the stored position and drift on
             # the corrected coordinates (never block the 45 s poll loop).
             self._schedule_media_ocr(str(tweet.id), event.id, media_urls)
-        elif not added and coords:
-            # Re-seen tweet (this or another collector) carrying a better
-            # position — enrich the stored event instead of creating a dup.
-            location_metadata = {
-                key: value
-                for key, value in event.metadata.items()
-                if key not in {"first_source_seen_at", "last_source_seen_at", "source_scan_count"}
-            }
-            intel_store.enrich_location(
-                event.id,
-                lat=coords[0],
-                lon=coords[1],
-                metadata=location_metadata,
-            )
+        elif not added:
+            # Duplicate content_hash — `event` above was never stored, so its
+            # id is a throwaway UUID; recover the real stored event first.
+            existing = intel_store.find_by_content_hash(event.content_hash())
+            if existing is not None:
+                if str(existing.metadata.get("tweet_id") or "") != str(tweet.id):
+                    # The tracked account deleted its earlier post and reposted
+                    # near-identical text (same content_hash, new tweet id) —
+                    # without this the stored event keeps linking to a dead
+                    # status forever, which reads to users as "never updated".
+                    intel_store.refresh_source_link(
+                        existing.id,
+                        tweet_id=str(tweet.id),
+                        url=f"https://x.com/i/web/status/{tweet.id}",
+                    )
+                if coords:
+                    # Re-seen tweet (this or another collector) carrying a
+                    # better position — enrich instead of creating a dup.
+                    location_metadata = {
+                        key: value
+                        for key, value in event.metadata.items()
+                        if key not in {"first_source_seen_at", "last_source_seen_at", "source_scan_count"}
+                    }
+                    intel_store.enrich_location(
+                        existing.id,
+                        lat=coords[0],
+                        lon=coords[1],
+                        metadata=location_metadata,
+                    )
         if (
             added
             and distress
