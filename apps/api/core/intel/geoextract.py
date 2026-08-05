@@ -534,11 +534,17 @@ def extract_coords(text: str) -> Optional[tuple[float, float]]:
     if relative:
         return relative
 
-    # 4. Place name gazetteer (longest match first)
+    # 4. Place name gazetteer (longest match first). Every report here is a
+    # boat, always at sea — a place's own centroid can still legitimately
+    # land on its landmass (a small island's true geometric center, a
+    # coastal city itself), so nudge onto the nearest sea point rather than
+    # plotting a boat on dry land. See core.intel.landmask for why this is
+    # a search rather than a per-place hand-curated offset.
     tl = text.lower()
     for place, coords in _PLACES_SORTED:
         if place in tl:
-            return coords
+            from core.intel.landmask import nearest_sea_point
+            return nearest_sea_point(*coords)
 
     return None
 
