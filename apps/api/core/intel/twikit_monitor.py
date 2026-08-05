@@ -91,6 +91,7 @@ from core.intel.geoextract import (
     extract_relative_coords,
     is_direct_distress_call,
     is_resolved_distress,
+    place_match_precision,
 )
 from core.intel.ngo_registry import NGO_TWITTER_HANDLES
 from core.intel.store import IntelEvent, intel_store
@@ -645,6 +646,12 @@ class TwikitMonitor:
         place_coords = (
             extract_coords(combined_text) if not (text_coords or relative_coords) else None
         )
+        # A country/sea/strait-scale match ("Libya", "Central Med") implies a
+        # far larger "could be anywhere in here" than a specific city or
+        # small island does — reporting both at the same flat radius made
+        # the map draw an equally-tight-looking circle for both, which reads
+        # as false precision for the coarse case.
+        place_precision = place_match_precision(combined_text) if place_coords else None
         coords = text_coords or media_coords or relative_coords or place_coords
         coordinate_source = (
             "post_text" if text_coords
@@ -657,7 +664,7 @@ class TwikitMonitor:
             250 if text_coords
             else 1500 if media_coords
             else 15_000 if relative_coords
-            else 25_000 if place_coords
+            else (120_000 if place_precision == "imprecise" else 25_000) if place_coords
             else None
         )
 

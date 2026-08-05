@@ -928,6 +928,33 @@ def test_media_pin_landmark_fallback_upgrades_position_with_wider_uncertainty(tm
     assert drift_calls, "drift must fire with the pin-geolocated position"
 
 
+def test_precise_place_match_uses_tighter_uncertainty_radius(tmp_path, monkeypatch):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet("4001", "🆘 20 people boat sinking off Lampedusa")
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    evt = store.events()[0]
+    assert evt.metadata["coordinate_source"] == "place_centroid"
+    assert evt.metadata["location_uncertainty_m"] == 25_000
+
+
+def test_imprecise_place_match_uses_wider_uncertainty_radius(tmp_path, monkeypatch):
+    # Real production case (Alarm Phone: "informed authorities in #Italy and
+    # #Malta about a boat in severe weather") that resolved to a single
+    # country-scale place name. A flat 25km radius for a country/sea-scale
+    # match understated how imprecise the position actually was, and drew a
+    # falsely tight-looking area on the public map.
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet("4002", "🆘 30 people in grave distress off #Libya in bad weather")
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    evt = store.events()[0]
+    assert evt.metadata["coordinate_source"] == "place_centroid"
+    assert evt.metadata["location_uncertainty_m"] == 120_000
+
+
 def test_async_loop_retries_session_setup_instead_of_giving_up():
     m = TwikitMonitor(enabled=True, accounts="a", cookies_file="dummy.json")
     m._next_delay = lambda error: 0.0  # skip real backoff sleep in the test

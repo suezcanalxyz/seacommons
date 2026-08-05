@@ -33,6 +33,10 @@ const METERS_TO_PX_RADIUS = [
   22, ['/', ['coalesce', ['get', 'location_uncertainty_m'], 0], (156543.03392 * 0.8) / Math.pow(2, 22)],
 ];
 
+// Same 20km threshold as intel-distress-area's filter, inverted: a report
+// this imprecise gets the area circle instead of a point, never both.
+const _PRECISE_POINT_FILTER = ['<=', ['coalesce', ['get', 'location_uncertainty_m'], 0], 20000];
+
 // Distress lifecycle colors: red (active/unresolved), green (resolved/known
 // outcome), gray (archived/stale, no update in a while). All three pulse —
 // only the fill/stroke color differs, driven by `incident_lifecycle` (see
@@ -1633,8 +1637,15 @@ function App() {
         // (active/resolved/archived). Color is a static per-feature match
         // expression (LIFECYCLE_*); only radius/opacity animate, so the
         // pulse loop never needs to know about color at all.
+        //
+        // Mutually exclusive with intel-distress-area above (same >20000
+        // threshold, inverted): a report with only a place/region centroid
+        // gets the translucent area circle and nothing else — drawing a
+        // precise-looking pulsing dot in the middle of it would silently
+        // undo the whole point of having an area indicator at all.
         map.addLayer({
           id: 'intel-distress-pulse', type: 'circle', source: 'intel-distress',
+          filter: _PRECISE_POINT_FILTER,
           paint: {
             'circle-radius': 8,
             'circle-color': LIFECYCLE_PULSE_FILL,
@@ -1645,6 +1656,7 @@ function App() {
         });
         map.addLayer({
           id: 'intel-distress-core', type: 'circle', source: 'intel-distress',
+          filter: _PRECISE_POINT_FILTER,
           paint: {
             'circle-radius': 5,
             'circle-color': LIFECYCLE_CORE_COLOR,

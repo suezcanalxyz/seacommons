@@ -543,6 +543,24 @@ def extract_coords(text: str) -> Optional[tuple[float, float]]:
     return None
 
 
+def place_match_precision(text: str) -> Optional[str]:
+    """Which gazetteer tier a bare place-name match would resolve through.
+
+    Mirrors extract_coords's own place-lookup order (precise tier first,
+    longest match within each tier) without duplicating its numeric/relative
+    branches -- callers only need this after extract_coords has already
+    fallen through to the gazetteer, to size the reported uncertainty
+    honestly: a country/sea-scale name (_IMPRECISE_PLACE_NAMES) implies a
+    far larger "could be anywhere in here" than a specific city or small
+    island does, and today both were reported with the same flat radius.
+    """
+    tl = text.lower()
+    for place, _coords in _PLACES_SORTED:
+        if place in tl:
+            return "imprecise" if place in _IMPRECISE_PLACE_NAMES else "precise"
+    return None
+
+
 def extract_relative_coords(text: str) -> Optional[tuple[float, float]]:
     """Resolve statements such as ``50 km south of Crete``.
 
