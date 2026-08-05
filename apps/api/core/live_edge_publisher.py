@@ -117,6 +117,20 @@ class Outbox:
         self.connection.commit()
         return cursor.rowcount > 0
 
+    def was_ever_delivered(self, incident_id: str) -> bool:
+        """Whether any version of this incident was ever actually sent.
+
+        Used to decide whether a row that no longer qualifies for the
+        public feed needs an explicit removal pushed -- most excluded rows
+        (AIS spikes, private reports) were never published in the first
+        place and don't need one; only a row that flips from published to
+        excluded (e.g. a duplicate later marked private) does.
+        """
+        return self.connection.execute(
+            "SELECT 1 FROM delivered WHERE event_id LIKE ? LIMIT 1",
+            (f"{incident_id}:%",),
+        ).fetchone() is not None
+
     def ready(self, limit: int) -> list[sqlite3.Row]:
         return list(
             self.connection.execute(
@@ -302,6 +316,29 @@ def public_event_from_row(
     return payload
 
 
+def removed_payload(incident_id: str, node_id: str, *, source: str = "unknown") -> dict[str, Any]:
+    """A synthetic incident_removed payload for a row still inside the scan
+    window but no longer eligible for the public feed (e.g. flipped to
+    private after being published) -- without this the edge keeps serving
+    whatever version it last received forever, since it never re-scans
+    anything itself; collect() is the only thing that ever revisits a row.
+    """
+    payload: dict[str, Any] = {
+        "schema": "seacommons-event-v1",
+        "type": "incident_removed",
+        "source": source,
+        "node": node_id,
+        "observed_at": now_iso(),
+        "visibility": "public",
+        "confidence": None,
+        "geometry": None,
+        "properties": {"incident_id": incident_id},
+        "source_url": None,
+    }
+    payload["id"] = _version_id(incident_id, payload)
+    return payload
+
+
 def signature(secret: str, body: str) -> str:
     return hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
 
@@ -362,8 +399,18 @@ class LiveEdgePublisher:
             for row in reversed(rows):
                 same_source = by_source.get(str(getattr(row, "source", "") or ""), [])
                 payload = public_event_from_row(row, self.settings.node_id, now=now, same_source=same_source)
-                if payload is not None and self.outbox.enqueue(payload["id"], payload):
-                    added += 1
+                if payload is not None:
+                    if self.outbox.enqueue(payload["id"], payload):
+                        added += 1
+                    continue
+                # Row is still within the scan window but no longer public
+                # (e.g. a duplicate later marked private) -- if the edge was
+                # ever actually sent a version of it, it needs an explicit
+                # removal, or it keeps showing the last version forever.
+                if self.outbox.was_ever_delivered(row.id):
+                    removal = removed_payload(row.id, self.settings.node_id, source=str(row.source or "unknown"))
+                    if self.outbox.enqueue(removal["id"], removal):
+                        added += 1
         return added
 
     def deliver(self) -> int:

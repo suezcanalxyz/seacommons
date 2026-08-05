@@ -526,6 +526,52 @@ def test_current_position_uses_elapsed_time_on_sampled_trajectory() -> None:
     assert estimate["properties"]["trajectory_state"] == "interpolated"
 
 
+def test_drift_not_shown_for_resolved_or_archived_incidents(monkeypatch) -> None:
+    # Once an incident is resolved (or has gone stale/archived), the search
+    # is over -- an active-looking pulsing drift cone still on the map reads
+    # as "still adrift, still searching", which is exactly wrong.
+    from datetime import timezone
+
+    from core.api.routes.live import public_drift_collection
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    active_event = IntelEvent(
+        id="drift-active", type="distress", severity="high",
+        lat=35.0, lon=14.0, title="MAYDAY still adrift", source="alarm_phone",
+        timestamp_utc=now_iso,
+        metadata={"is_distress": True, "source_policy": "official_api", "drift_job_id": "job-active"},
+    )
+    resolved_event = IntelEvent(
+        id="drift-resolved", type="distress", severity="high",
+        lat=35.0, lon=14.0, title="Rescued! Everyone is safe.", source="alarm_phone",
+        timestamp_utc=now_iso,
+        metadata={"is_distress": True, "source_policy": "official_api", "drift_job_id": "job-resolved"},
+    )
+    monkeypatch.setattr("core.api.routes.live.intel_store.persisted_events", lambda **_kwargs: [])
+    monkeypatch.setattr(
+        "core.api.routes.live.intel_store.events",
+        lambda **_kwargs: [active_event, resolved_event],
+    )
+    fake_drift = {
+        "trajectory": {
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": [[14.0, 35.0], [14.1, 35.1]]},
+            "properties": {},
+        },
+        "cone_24h": None,
+        "impact_point": {},
+        "metadata": {"published": True},
+    }
+    monkeypatch.setattr("core.db.store.get_drift", lambda job_id: fake_drift)
+    monkeypatch.setattr("core.db.store.list_drift_jobs_for_event", lambda event_id: [])
+    monkeypatch.setattr("core.api.routes.live._is_publishable_live_drift", lambda drift: True)
+
+    collection = public_drift_collection(limit=50)
+    event_ids = {f["properties"]["intel_event_id"] for f in collection["features"]}
+    assert "drift-active" in event_ids
+    assert "drift-resolved" not in event_ids
+
+
 def test_user_signal_is_private_by_default() -> None:
     signal = DistressSignal(
         source_channel="whatsapp",

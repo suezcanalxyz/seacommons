@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-from core.live_edge_publisher import Outbox, public_event_from_row, signature
+from core.live_edge_publisher import Outbox, public_event_from_row, removed_payload, signature
 
 _NOW = datetime(2026, 8, 2, 12, 30, tzinfo=timezone.utc)
 
@@ -192,6 +192,29 @@ def test_outbox_survives_reopen_and_remembers_delivery(tmp_path: Path) -> None:
     third = Outbox(path)
     assert third.counts()["pending"] == 0
     assert third.enqueue("evt-3:v1", {"id": "evt-3:v1"}) is False
+
+
+def test_was_ever_delivered_tracks_by_incident_not_exact_version(tmp_path: Path) -> None:
+    outbox = Outbox(tmp_path / "outbox.db")
+    assert outbox.was_ever_delivered("evt-9") is False
+
+    outbox.enqueue("evt-9:v1", {"id": "evt-9:v1"})
+    assert outbox.was_ever_delivered("evt-9") is False  # pending, not yet delivered
+
+    outbox.acknowledge("evt-9:v1")
+    assert outbox.was_ever_delivered("evt-9") is True
+    # A later, different version of the SAME incident still counts.
+    assert outbox.was_ever_delivered("evt-9") is True
+    # An unrelated incident with a similar-looking id must not false-match.
+    assert outbox.was_ever_delivered("evt-9-other") is False
+
+
+def test_removed_payload_is_a_valid_incident_removed_event() -> None:
+    payload = removed_payload("evt-10", "node-a", source="alarm_phone")
+    assert payload["type"] == "incident_removed"
+    assert payload["properties"]["incident_id"] == "evt-10"
+    assert payload["geometry"] is None
+    assert payload["id"].startswith("evt-10:")
 
 
 def test_signature_is_stable() -> None:

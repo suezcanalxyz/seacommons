@@ -415,10 +415,23 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
     drift_events.update({
         event.id: event for event in intel_store.events(limit=min(limit * 3, 500))
     })
+    now = datetime.now(timezone.utc)
+    by_source: dict[str, list[IntelEvent]] = {}
+    for event in drift_events.values():
+        by_source.setdefault(event.source, []).append(event)
     for event in drift_events.values():
         public_event = _public_intel_feature(event)
         job_id = event.metadata.get("drift_job_id")
         if public_event is None:
+            continue
+        # Once an incident is resolved or archived, the search is over --
+        # an active-looking pulsing drift cone still on the map reads as
+        # "still adrift, still searching", which is exactly wrong for a
+        # case that's already been rescued or gone stale.
+        state = lifecycle.distress_lifecycle(
+            event, now=now, same_source=by_source.get(event.source, []),
+        )
+        if state != "active":
             continue
         if not job_id:
             jobs = list_drift_jobs_for_event(f"intel:{event.id}")
