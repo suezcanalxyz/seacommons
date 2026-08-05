@@ -63,7 +63,7 @@ const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'en
 // The public Live map only ever fetches data for these layer groups (see the
 // ngo-vessels/platforms effects and loadWeatherGridForMap's isPublicLiveHost
 // guard) — everything else stays hidden there regardless of the layer toggle.
-const PUBLIC_LIVE_LAYER_GROUPS = new Set(['intel', 'ngo_vessels', 'platforms']);
+const PUBLIC_LIVE_LAYER_GROUPS = new Set(['nautical', 'intel', 'ngo_vessels', 'platforms']);
 const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
 const isPublicLiveHost = window.location.hostname === 'live.seacommons.org';
 const isLiveHost = LIVE_HOSTS.has(window.location.hostname);
@@ -1299,6 +1299,21 @@ function App() {
       map.on('load', () => {
         // Register vessel arrow SDF icon
         map.addImage('vessel-arrow', createVesselArrowImage(48), { sdf: true });
+
+        // Nautical seamarks (OpenSeaMap): buoys, lights, beacons, fairways,
+        // depth contours — an open, free overlay drawn directly on top of
+        // the base map/satellite, standard IHO-style chart symbology. Added
+        // first (right after the base style, before every data source
+        // below) so every marker/vessel layer draws on top of it, never
+        // the other way round.
+        map.addSource('seamarks', {
+          type: 'raster',
+          tiles: ['https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          maxzoom: 18,
+          attribution: '&copy; OpenSeaMap contributors',
+        });
+        map.addLayer({ id: 'seamarks-layer', type: 'raster', source: 'seamarks', paint: { 'raster-opacity': 0.9 } });
 
         // sources
         map.addSource('weather-points',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });

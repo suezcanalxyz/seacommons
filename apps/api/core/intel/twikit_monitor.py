@@ -84,6 +84,7 @@ from core.config import config
 from core.intel.x_media_utils import _ocr_photo
 from core.intel.auto_drift_client import request_auto_drift
 from core.intel.area_extract import extract_area
+from core.intel.forensic_link import attach_forensic_packet
 from core.intel.lifecycle import has_own_reply_resolution
 from core.intel.geoextract import (
     classify_severity,
@@ -552,6 +553,9 @@ class TwikitMonitor:
             # started from the weaker fallback position, unblock and recompute.
             intel_store.update_metadata(event_id, metadata={"drift_status": "superseded"})
             self._auto_drift_if_live(event_id, force=True)
+            upgraded_event = intel_store.get(event_id)
+            if upgraded_event is not None:
+                attach_forensic_packet(upgraded_event)
         except Exception as exc:
             logger.debug("X (twikit) media OCR enrichment failed for %s: %s", event_id, exc)
 
@@ -751,6 +755,8 @@ class TwikitMonitor:
         added = intel_store.add(event, dedup_key=f"x:{tweet.id}")
         if added and self._alerts_enabled:
             self._notify(event)
+        if added and distress:
+            attach_forensic_packet(event)
         if ocr_pending and added:
             # The real position is almost certainly in the images — OCR in a
             # background thread, then upgrade the stored position and drift on

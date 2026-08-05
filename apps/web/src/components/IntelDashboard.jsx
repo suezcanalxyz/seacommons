@@ -297,6 +297,11 @@ export default function IntelDashboard({
   const [injectSuccess, setInjectSuccess] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [updatesEventId, setUpdatesEventId] = useState(null);
+  // Forensic record expansion: internal-only (/api/v1/forensic requires
+  // auth) -- fetched on demand per event, same lazy pattern as Navi vicine.
+  const [forensicEventId, setForensicEventId] = useState(null);
+  const [forensicRecord, setForensicRecord] = useState(null);
+  const [forensicLoading, setForensicLoading] = useState(false);
   const pollRef = useRef(null);
 
   // Poll source registry
@@ -399,6 +404,30 @@ export default function IntelDashboard({
 
   function toggleUpdates(eventId) {
     setUpdatesEventId((current) => (current === eventId ? null : eventId));
+  }
+
+  async function toggleForensic(eventId) {
+    if (forensicEventId === eventId) {
+      setForensicEventId(null);
+      return;
+    }
+    setForensicEventId(eventId);
+    setForensicRecord(null);
+    setForensicLoading(true);
+    try {
+      const rawId = String(eventId).replace(/^intel:/, '');
+      const [recordResp, verifyResp] = await Promise.all([
+        fetch(`${apiBase}/api/v1/forensic/${rawId}`),
+        fetch(`${apiBase}/api/v1/forensic/${rawId}/verify`),
+      ]);
+      const record = recordResp.ok ? await recordResp.json() : null;
+      const verify = verifyResp.ok ? await verifyResp.json() : null;
+      setForensicRecord(record ? { ...record, verify } : null);
+    } catch {
+      setForensicRecord(null);
+    } finally {
+      setForensicLoading(false);
+    }
   }
 
   function renderEvent(feat) {
@@ -538,7 +567,7 @@ export default function IntelDashboard({
         {p.text && (
           <p className="intel-text">{p.text.slice(0, 200)}{p.text.length > 200 ? '…' : ''}</p>
         )}
-        {isDistress && ((coords && !isArea && loadNearestVessels && lifecycle === 'active') || p.repost_count > 0) && (
+        {isDistress && ((coords && !isArea && loadNearestVessels && lifecycle === 'active') || p.repost_count > 0 || !publicMode) && (
           <div className="intel-panel-toggles">
             {coords && !isArea && loadNearestVessels && lifecycle === 'active' && (
               <button
@@ -557,6 +586,54 @@ export default function IntelDashboard({
               >
                 {updatesEventId === p.id ? '▲ Updates' : `▼ Updates (${p.repost_count})`}
               </button>
+            )}
+            {!publicMode && (
+              <button
+                type="button"
+                className="intel-forensic-toggle"
+                onClick={(e) => { e.stopPropagation(); toggleForensic(p.id); }}
+                title="Record forense firmato (hash blake3 + firma ed25519) associato a questo evento"
+              >
+                {forensicEventId === p.id ? '▲ Forense' : '▼ Forense'}
+              </button>
+            )}
+          </div>
+        )}
+        {isDistress && forensicEventId === p.id && (
+          <div className="intel-ngo-panel intel-forensic-panel" onClick={(e) => e.stopPropagation()}>
+            {forensicLoading ? (
+              <span className="intel-nearby-loading">Verifica record forense…</span>
+            ) : !forensicRecord ? (
+              <span className="intel-nearby-loading">Nessun record forense per questo evento.</span>
+            ) : (
+              <>
+                <div className="intel-forensic-row">
+                  <span className={`intel-forensic-badge ${forensicRecord.verify?.valid ? 'is-valid' : 'is-invalid'}`}>
+                    {forensicRecord.verify?.valid ? '✓ firma valida' : '✗ firma non valida'}
+                  </span>
+                  <span>{forensicRecord.classification}</span>
+                  <span>confidenza {(Number(forensicRecord.confidence) * 100).toFixed(0)}%</span>
+                </div>
+                <div className="intel-forensic-row">
+                  <span>posizione: {forensicRecord.position?.lat?.toFixed?.(4)}, {forensicRecord.position?.lon?.toFixed?.(4)}</span>
+                  <span>fonte: {forensicRecord.position?.source}</span>
+                </div>
+                {forensicRecord.contributing_sensors?.length > 0 && (
+                  <div className="intel-forensic-row">
+                    sensori: {forensicRecord.contributing_sensors.join(', ')}
+                  </div>
+                )}
+                <div className="intel-forensic-hash" title={forensicRecord.hash_blake3}>
+                  hash: {String(forensicRecord.hash_blake3 || '').slice(0, 24)}…
+                </div>
+                <a
+                  className="intel-source-link"
+                  href={`${apiBase}/api/v1/forensic/export?format=json`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                >Esporta record →</a>
+              </>
             )}
           </div>
         )}
