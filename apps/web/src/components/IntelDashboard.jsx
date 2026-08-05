@@ -508,30 +508,36 @@ export default function IntelDashboard({
         {p.text && (
           <p className="intel-text">{p.text.slice(0, 200)}{p.text.length > 200 ? '…' : ''}</p>
         )}
-        {isDistress && coords && loadNearestVessels && (
-          <button
-            type="button"
-            className="intel-nearby-toggle"
-            onClick={(e) => { e.stopPropagation(); toggleNearbyVessels(p.id, coords[1], coords[0]); }}
-          >
-            {vesselsForEventId === p.id ? '▲ Navi vicine' : '▼ Navi vicine'}
-          </button>
-        )}
-        {isDistress && p.repost_count > 0 && (
-          <button
-            type="button"
-            className="intel-ngo-toggle"
-            onClick={(e) => { e.stopPropagation(); toggleUpdates(p.id); }}
-          >
-            {updatesEventId === p.id ? '▲ Update' : `▼ Update (${p.repost_count})`}
-          </button>
+        {isDistress && ((coords && loadNearestVessels && lifecycle === 'active') || p.repost_count > 0) && (
+          <div className="intel-panel-toggles">
+            {coords && loadNearestVessels && lifecycle === 'active' && (
+              <button
+                type="button"
+                className="intel-nearby-toggle"
+                onClick={(e) => { e.stopPropagation(); toggleNearbyVessels(p.id, coords[1], coords[0]); }}
+              >
+                {vesselsForEventId === p.id ? '▲ Navi vicine' : '▼ Navi vicine'}
+              </button>
+            )}
+            {p.repost_count > 0 && (
+              <button
+                type="button"
+                className="intel-ngo-toggle"
+                onClick={(e) => { e.stopPropagation(); toggleUpdates(p.id); }}
+              >
+                {updatesEventId === p.id ? '▲ Updates' : `▼ Updates (${p.repost_count})`}
+              </button>
+            )}
+          </div>
         )}
         {isDistress && updatesEventId === p.id && (
           <div className="intel-ngo-panel" onClick={(e) => e.stopPropagation()}>
             <ul className="intel-update-list">
               {(p.thread_reposts || []).map((r) => (
                 <li key={r.tweet_id}>
-                  <span className="intel-update-kind">{r.kind === 'quote' ? 'quote' : 'repost'}</span>
+                  <span className="intel-update-kind">
+                    {r.kind === 'quote' ? 'quote' : r.kind === 'reply' ? 'reply' : 'repost'}
+                  </span>
                   <span>{relativeTime(r.posted_at)}</span>
                   {r.note && <p className="intel-update-note">{r.note}</p>}
                   {r.url && (
@@ -542,7 +548,7 @@ export default function IntelDashboard({
             </ul>
           </div>
         )}
-        {isDistress && vesselsForEventId === p.id && (
+        {isDistress && lifecycle === 'active' && vesselsForEventId === p.id && (
           <div className="intel-nearby-vessels" onClick={(e) => e.stopPropagation()}>
             {vesselsLoading ? (
               <span className="intel-nearby-loading">Ricerca navi…</span>

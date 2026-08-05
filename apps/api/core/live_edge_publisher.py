@@ -254,6 +254,12 @@ def public_event_from_row(
         lifecycle.distress_lifecycle(event, now=now, same_source=same_source)
         if is_distress else None
     )
+    # Same redaction as the VM's public feed (core/api/routes/live.py,
+    # _public_intel_feature): only the tracked account's own reply fields —
+    # never the event's private-caller-sourced `text` (already blanked
+    # above) or anything else from thread_reposts.
+    thread_reposts = metadata.get("thread_reposts")
+    repost_count = metadata.get("repost_count")
     properties = {
         "incident_id": incident_id,
         "severity": event.severity,
@@ -267,6 +273,12 @@ def public_event_from_row(
         "persons": metadata.get("persons"),
         "linked_mmsi": event.linked_mmsi,
         "last_source_seen_at": metadata.get("last_source_seen_at"),
+        "repost_count": repost_count,
+        "thread_reposts": [
+            {"tweet_id": r.get("tweet_id"), "posted_at": r.get("posted_at"),
+             "url": r.get("url"), "kind": r.get("kind"), "note": r.get("note")}
+            for r in thread_reposts
+        ] if thread_reposts else None,
     }
     properties = {key: value for key, value in properties.items() if value not in (None, "")}
 

@@ -41,6 +41,34 @@ def test_public_distress_event_mapping_is_versioned() -> None:
     assert event["properties"]["incident_lifecycle"] == "active"
 
 
+def test_thread_reposts_and_repost_count_reach_the_edge_payload() -> None:
+    # Without this the public Live host's "Updates" panel is silently empty
+    # for every event, since the edge (tried first there, ahead of the VM's
+    # own API) never carried this data at all -- a self-reply was correctly
+    # threaded on the VM/DB side but had no way to reach the public map.
+    row = distress_row(
+        repost_count=1,
+        thread_reposts=[{
+            "tweet_id": "999", "posted_at": "2026-08-02T12:10:00+00:00",
+            "url": "https://x.com/i/web/status/999", "kind": "reply",
+            "note": "Rescued, all safe.",
+            # Fields that must never leak: not part of the public contract.
+            "internal_debug": "should not appear",
+        }],
+    )
+    event = public_event_from_row(row, "node", now=_NOW, same_source=[])
+
+    assert event is not None
+    assert event["properties"]["repost_count"] == 1
+    reposts = event["properties"]["thread_reposts"]
+    assert len(reposts) == 1
+    assert reposts[0] == {
+        "tweet_id": "999", "posted_at": "2026-08-02T12:10:00+00:00",
+        "url": "https://x.com/i/web/status/999", "kind": "reply",
+        "note": "Rescued, all safe.",
+    }
+
+
 def test_material_update_gets_new_version_id() -> None:
     first = public_event_from_row(distress_row(), "node", now=_NOW, same_source=[])
     second = public_event_from_row(distress_row(confidence=0.9), "node", now=_NOW, same_source=[])

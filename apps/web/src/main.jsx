@@ -106,6 +106,8 @@ function edgeEventToFeature(event) {
       location_precision: Number(props.radius_m) > 20000 ? 'area' : 'reported_or_derived',
       location_uncertainty_m: props.radius_m,
       coordinate_source: props.coordinate_source,
+      repost_count: props.repost_count,
+      thread_reposts: props.thread_reposts,
     },
   };
 }

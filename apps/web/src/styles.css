@@ -1489,6 +1489,17 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .intel-archive-chevron.is-open { transform: rotate(180deg); }
 .intel-archive-sub { flex: 1; text-transform: none; font-weight: 400; opacity: 0.6; font-size: 9px; }
 
+.intel-panel-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.intel-panel-toggles .intel-nearby-toggle,
+.intel-panel-toggles .intel-ngo-toggle {
+  margin-top: 0;
+}
+
 .intel-ngo-toggle {
   margin-top: 4px;
   padding: 2px 6px;
