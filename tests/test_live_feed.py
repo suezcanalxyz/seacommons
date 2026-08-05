@@ -279,6 +279,58 @@ def test_resolution_signal_ignores_a_single_shared_generic_word() -> None:
     assert lifecycle.has_resolution_signal(egypt, [unrelated_rescue]) is False
 
 
+def test_self_reply_marks_the_incident_resolved_without_keyword_overlap() -> None:
+    # A structurally-verified self-reply (twikit_monitor._check_self_replies
+    # only threads a reply from the SAME author, linked via X's own
+    # in_reply_to) needs no keyword-overlap check the way cross-event
+    # resolution matching does — it's already proven to be about this exact
+    # incident, unlike two independently-worded posts that merely share
+    # vocabulary (see test_resolution_signal_ignores_a_single_shared_generic_word).
+    event = IntelEvent(
+        id="lampedusa01",
+        type="twitter",
+        severity="high",
+        title="Alarm Phone",
+        text="🆘 52 people in grave distress! We informed authorities in #Italy and #Malta.",
+        source="Alarm Phone",
+        timestamp_utc="2026-07-30T08:57:00+00:00",
+        metadata={
+            "thread_reposts": [
+                {
+                    "tweet_id": "2083234981816512957",
+                    "posted_at": "2026-07-31T09:00:00+00:00",
+                    "url": "https://x.com/i/web/status/2083234981816512957",
+                    "kind": "reply",
+                    "note": "Rescued to #Lampedusa! The 52 people have safely arrived in Italy.",
+                }
+            ]
+        },
+    )
+    assert lifecycle.has_own_reply_resolution(event) is True
+    now = datetime.fromisoformat("2026-07-31T12:00:00+00:00")
+    assert lifecycle.distress_lifecycle(event, now=now, same_source=[]) == "resolved"
+
+
+def test_thread_reposts_without_a_resolved_note_stay_active() -> None:
+    event = IntelEvent(
+        id="lampedusa02",
+        type="twitter",
+        severity="high",
+        title="Alarm Phone",
+        text="🆘 52 people in grave distress! We informed authorities in #Italy and #Malta.",
+        source="Alarm Phone",
+        timestamp_utc="2026-07-30T08:57:00+00:00",
+        metadata={
+            "thread_reposts": [
+                {"tweet_id": "1", "posted_at": "2026-07-30T09:00:00+00:00",
+                 "url": "https://x.com/i/web/status/1", "kind": "reply",
+                 "note": "Any update on this??"},
+            ]
+        },
+    )
+    assert lifecycle.has_own_reply_resolution(event) is False
+
+
 def test_resolution_signal_still_fires_on_genuinely_matching_follow_up() -> None:
     original = IntelEvent(
         id="boat01",

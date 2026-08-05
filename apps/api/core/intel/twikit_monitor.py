@@ -104,6 +104,12 @@ _BASE_POLL_INTERVAL_S = 300  # non-priority accounts
 _PRIORITY_POLL_INTERVAL_S = 45  # near-real-time accounts (default @alarm_phone)
 _SLEEP_CAP_S = 60.0  # wake up at most this often to recompute due accounts
 _SESSION_REBUILD_AFTER_FAILURES = 3  # consecutive all-accounts-failed cycles
+# How often to re-check active incidents for a self-reply update ("Rescued to
+# #Lampedusa!"). These never appear via the account's own "Tweets"/"Replies"
+# timeline fetch — verified live: X excludes an account's replies to its own
+# thread from both — only tweet.replies on the original tweet surfaces them.
+# 15 min is gentle (one extra call per still-active incident per cycle).
+_REPLY_CHECK_INTERVAL_S = 900
 _PRIORITY_DEFAULT = "alarm_phone"
 _DEFAULT_ACCOUNTS = list(NGO_TWITTER_HANDLES)
 # Alarm Phone (and the other tracked SAR NGOs) publish the actual GPS position
@@ -135,6 +141,7 @@ class TwikitMonitor:
         self._since_id: dict[str, int] = {}
         self._users: dict[str, Any] = {}
         self._next_poll_ts: dict[str, float] = {}
+        self._next_reply_check_ts = 0.0
         self._running = False
         self._thread: threading.Thread | None = None
         self._backoff = 0.0
@@ -187,6 +194,9 @@ class TwikitMonitor:
 
         source_registry.register(_SOURCE_NAME, "twitter")
         self._next_poll_ts = {handle: time.monotonic() for handle in self._accounts}
+        # First reply check happens after one full interval, not immediately —
+        # a freshly (re)started process has nothing new to find yet.
+        self._next_reply_check_ts = time.monotonic() + _REPLY_CHECK_INTERVAL_S
         self._running = True
         self._thread = threading.Thread(
             target=self._run_loop,
@@ -253,6 +263,15 @@ class TwikitMonitor:
                         # wedge this handle into the same failure forever.
                         self._users.pop(handle, None)
                         logger.warning("X (twikit) poll error for @%s: %s", handle, exc)
+            if now >= self._next_reply_check_ts:
+                try:
+                    await self._check_self_replies(client)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.warning("X (twikit) self-reply check failed: %s", exc)
+                self._next_reply_check_ts = time.monotonic() + _REPLY_CHECK_INTERVAL_S
+
             error = "poll failed" if due and failed == len(due) else None
             if error:
                 consecutive_full_failures += 1
@@ -754,6 +773,54 @@ class TwikitMonitor:
                 parent.id,
             )
         return False
+
+    async def _check_self_replies(self, client) -> None:
+        """Thread delayed self-reply updates onto still-active incidents.
+
+        Verified live: a tracked account's own reply to its own earlier
+        tweet ("Rescued to #Lampedusa! ...") never appears via
+        user.get_tweets("Tweets"/"Replies", ...) — X excludes it from both.
+        The only way to find it is tweet.replies on the original tweet,
+        which comes back fully hydrated (text, user) with no extra fetch.
+        Only replies from the SAME author as the original are threaded —
+        replies from other accounts are public commentary, not an
+        operational update, and are left alone.
+        """
+        candidates = [
+            event
+            for event in intel_store.events(type_filter="twitter", max_age_days=7)
+            if event.metadata.get("is_distress") and event.metadata.get("tweet_id")
+        ]
+        for event in candidates:
+            tweet_id = str(event.metadata["tweet_id"])
+            try:
+                tweet = await client.get_tweet_by_id(tweet_id)
+            except Exception as exc:
+                logger.debug("X (twikit) reply check: could not refetch %s: %s", tweet_id, exc)
+                continue
+            author_id = str(getattr(getattr(tweet, "user", None), "id", "") or "")
+            for reply in getattr(tweet, "replies", None) or []:
+                reply_author_id = str(getattr(getattr(reply, "user", None), "id", "") or "")
+                if not author_id or reply_author_id != author_id:
+                    continue
+                reply_id = str(getattr(reply, "id", "") or "")
+                if not reply_id:
+                    continue
+                reply_text = str(getattr(reply, "text", "") or "").strip()
+                record: dict[str, Any] = {
+                    "tweet_id": reply_id,
+                    "posted_at": self._timestamp(reply),
+                    "url": f"https://x.com/i/web/status/{reply_id}",
+                    "kind": "reply",
+                }
+                if reply_text:
+                    record["note"] = reply_text[:200]
+                added = intel_store.append_thread_repost(event.id, record)
+                if added:
+                    logger.info(
+                        "X (twikit) self-reply %s threaded onto incident %s",
+                        reply_id, event.id,
+                    )
 
     def _notify(self, event: IntelEvent) -> None:
         """Fire-and-forget Telegram notification when a tracked account posts."""

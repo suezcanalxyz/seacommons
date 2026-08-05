@@ -19,6 +19,7 @@ def _no_auto_drift_network(monkeypatch):
 
 class _FakeUser:
     screen_name = "alarm_phone"
+    id = "2980429169"
 
 
 class _FakeMedia:
@@ -41,13 +42,16 @@ class _FakeTweet:
         original: object = None,
         media: list = None,
         extended_entities: dict = None,
+        user: object = None,
+        replies: list = None,
     ) -> None:
         self.id = tweet_id
         self.text = text
-        self.user = _FakeUser()
+        self.user = user or _FakeUser()
         self.created_at_datetime = "2026-08-03T10:00:00+00:00"
         self.retweeted_tweet = original
         self.media = media or []
+        self.replies = replies or []
         if extended_entities is not None:
             self.extended_entities = extended_entities
 
@@ -396,6 +400,78 @@ def test_repost_of_untracked_original_falls_back_to_ingest(monkeypatch, tmp_path
     assert len(events) == 1
     assert events[0].metadata["tweet_id"] == "2030"
     assert events[0].metadata["is_distress"] is True
+
+
+class _FakeClient:
+    """Mimics twikit's Client.get_tweet_by_id — the only call
+    _check_self_replies makes, keyed by the id it's asked to refetch."""
+
+    def __init__(self, tweets_by_id: dict) -> None:
+        self._tweets = tweets_by_id
+
+    async def get_tweet_by_id(self, tweet_id: str):
+        return self._tweets[str(tweet_id)]
+
+
+def test_self_reply_threads_as_update_onto_active_incident(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("3001", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
+    m._ingest(original, handle="alarm_phone")
+    event_id = store.events()[0].id
+
+    reply = _FakeTweet("3002", "Rescued to #Lampedusa! Everyone arrived safely.", user=_FakeUser())
+    refetched = _FakeTweet("3001", original.text, user=_FakeUser(), replies=[reply])
+    client = _FakeClient({"3001": refetched})
+
+    asyncio.run(m._check_self_replies(client))
+
+    event = store.get(event_id)
+    posts = event.metadata.get("thread_reposts") or []
+    assert len(posts) == 1
+    assert posts[0]["tweet_id"] == "3002"
+    assert posts[0]["kind"] == "reply"
+    assert "Rescued" in posts[0]["note"]
+
+
+def test_reply_from_a_different_account_is_not_threaded(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("3010", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
+    m._ingest(original, handle="alarm_phone")
+    event_id = store.events()[0].id
+
+    class _OtherUser:
+        screen_name = "random_account"
+        id = "111111"
+
+    stranger_reply = _FakeTweet("3011", "This happens all the time", user=_OtherUser())
+    refetched = _FakeTweet("3010", original.text, user=_FakeUser(), replies=[stranger_reply])
+    client = _FakeClient({"3010": refetched})
+
+    asyncio.run(m._check_self_replies(client))
+
+    assert not (store.get(event_id).metadata.get("thread_reposts") or [])
+
+
+def test_self_reply_check_is_idempotent(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("3020", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
+    m._ingest(original, handle="alarm_phone")
+    event_id = store.events()[0].id
+
+    reply = _FakeTweet("3021", "Rescued! All safe.", user=_FakeUser())
+    refetched = _FakeTweet("3020", original.text, user=_FakeUser(), replies=[reply])
+    client = _FakeClient({"3020": refetched})
+
+    asyncio.run(m._check_self_replies(client))
+    asyncio.run(m._check_self_replies(client))
+
+    assert len(store.get(event_id).metadata.get("thread_reposts") or []) == 1
 
 
 def test_non_repost_tweets_still_ingested_normally(tmp_path, monkeypatch):

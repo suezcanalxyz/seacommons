@@ -89,6 +89,24 @@ def has_resolution_signal(event: IntelEvent, same_source: list[IntelEvent]) -> b
     return False
 
 
+def has_own_reply_resolution(event: IntelEvent) -> bool:
+    """True if one of this event's own thread_reposts entries — a self-reply
+    structurally verified (via X's own in_reply_to link + matching author,
+    see twikit_monitor._check_self_replies) to answer THIS exact tweet, not a
+    text-similarity guess across different posts — reads as a concluded
+    outcome (e.g. "Rescued to #Lampedusa!").
+
+    No keyword-overlap check needed here, unlike has_resolution_signal: the
+    reply is already proven to be about this incident by X's own thread
+    link, so there is no cross-incident false-match risk to guard against.
+    """
+    for repost in event.metadata.get("thread_reposts") or []:
+        note = repost.get("note")
+        if note and is_concluded_incident(str(note)):
+            return True
+    return False
+
+
 def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[IntelEvent]) -> str:
     """'active' (red), 'resolved' (green) or 'archived' (gray).
 
@@ -105,6 +123,8 @@ def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[In
     sources and self-healing across classifier fixes.
     """
     if is_concluded_incident(event.text or event.title):
+        return "resolved"
+    if has_own_reply_resolution(event):
         return "resolved"
     if has_resolution_signal(event, same_source):
         return "resolved"
