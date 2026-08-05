@@ -72,10 +72,19 @@ export default function handler(req, res) {
     (response) => {
       res.statusCode = response.statusCode || 502;
       for (const [name, value] of Object.entries(response.headers)) {
-        if (!HOP_BY_HOP_HEADERS.has(name.toLowerCase()) && value !== undefined) {
+        const lower = name.toLowerCase();
+        if (lower === 'cache-control') continue; // forced below, never trust upstream's
+        if (!HOP_BY_HOP_HEADERS.has(lower) && value !== undefined) {
           res.setHeader(name, value);
         }
       }
+      // Unlike api/live.js's dedicated signals/sources/drifts/archives paths,
+      // this generic catch-all has no per-resource logic to reason about —
+      // every route through it (ngo-vessels, platforms, anything not given
+      // its own named vercel.json rewrite) must never be cached by the
+      // browser or Vercel's edge, or a stale AIS/platform snapshot could
+      // silently outlive its own 120s refresh cycle.
+      res.setHeader('cache-control', 'no-store');
       res.setHeader('x-seacommons-proxy', upstreamVirtualHost);
       response.pipe(res);
     },
