@@ -474,6 +474,41 @@ def test_existing_event_can_be_enriched_with_media_location() -> None:
     ) is False
 
 
+def test_enrich_location_clears_stale_area_on_upgrade_to_a_real_point() -> None:
+    # Real production bug: an event ingested from a bare place match gets a
+    # real sea-only area_geojson polygon (core.intel.area_extract). When OCR
+    # later finds the actual position and upgrades it via enrich_location,
+    # the old polygon must not keep silently overriding the new point --
+    # public_geometry_and_precision always prefers area_geojson when
+    # present, so a leftover stale one makes an "active without drift"-
+    # looking event show a huge obsolete area forever, even though the
+    # underlying lat/lon (and drift) are already correct.
+    store = IntelStore()
+    event = IntelEvent(
+        id="ocrarea01",
+        type="twitter",
+        severity="high",
+        title="Boat off #Libya",
+        source="alarm_phone",
+        lat=31.5, lon=17.5,  # the area's own centroid, exactly as _ingest sets it
+        metadata={
+            "coordinate_source": "region_area",
+            "area_geojson": {"type": "Polygon", "coordinates": [[[17.0, 31.0], [18.0, 31.0], [18.0, 32.0], [17.0, 31.0]]]},
+            "area_confidence": "area_low_confidence",
+        },
+    )
+    assert store.add(event) is True
+    assert store.enrich_location(
+        event.id,
+        lat=32.5,
+        lon=17.8,
+        metadata={"coordinate_source": "media_ocr_text", "location_uncertainty_m": 1500},
+    ) is True
+    assert "area_geojson" not in event.metadata
+    assert "area_confidence" not in event.metadata
+    assert event.lat == 32.5 and event.lon == 17.8
+
+
 def test_sensitive_public_position_is_stable_and_approximate() -> None:
     original = (35.5, 14.1)
     first = _approximate_public_point("signal-privacy-test", *original)

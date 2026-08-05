@@ -400,6 +400,21 @@ class IntelStore:
                 event.lat = lat
                 event.lon = lon
                 event.metadata.update(metadata)
+                # Upgrading to a real point supersedes any prior area result.
+                # dict.update() above only adds/overwrites keys the new
+                # metadata mentions -- it never removes ones it doesn't, so a
+                # stale area_geojson (e.g. from the initial bare-place-match
+                # fallback, before OCR found the real position) would keep
+                # silently overriding the new point forever: the public
+                # projection (core.intel.public_geometry) always prefers
+                # area_geojson over lat/lon whenever it's present.
+                if (
+                    event.metadata.get("coordinate_source") != "region_area"
+                    and "area_geojson" not in metadata
+                ):
+                    event.metadata.pop("area_geojson", None)
+                    event.metadata.pop("area_confidence", None)
+                    event.metadata.pop("area_weather_narrowed", None)
                 updated = event
                 break
         if updated is None:
@@ -440,6 +455,15 @@ class IntelStore:
                 row.lat = lat
                 row.lon = lon
                 merged.update(metadata)
+                # Same as the in-memory path above: an upgrade to a real
+                # point must not leave a now-stale area_geojson in the
+                # durable row either, or a process restart (which reloads
+                # from this row) would resurrect the bug the in-memory fix
+                # just cleared.
+                if merged.get("coordinate_source") != "region_area" and "area_geojson" not in metadata:
+                    merged.pop("area_geojson", None)
+                    merged.pop("area_confidence", None)
+                    merged.pop("area_weather_narrowed", None)
                 row.meta = merged
                 db.flush()
         except Exception as exc:
