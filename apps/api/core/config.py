@@ -136,8 +136,15 @@ class SuezCanalConfig(BaseSettings):
     DRIFT_WORKER_TIMEOUT_S: float = 90.0
     # Where intel monitors reach the API's own HTTP routes (e.g. to trigger
     # auto-drift). Defaults to same-host — only needs changing when monitors
-    # run as a standalone process on a different VM than the API.
+    # run as a standalone process on a different VM than the API. Point this
+    # at the API host's real IP directly, not its public domain — a public
+    # domain that only works for browser/CDN traffic can (and did, verified
+    # live) silently time out for server-to-server calls.
     API_INTERNAL_URL: str = "http://127.0.0.1:8100"
+    # Set only if API_INTERNAL_URL is a bare IP/port: the reverse proxy in
+    # front of the API host does host-based virtual routing, so a request
+    # by IP alone needs an explicit Host header naming the intended vhost.
+    API_INTERNAL_HOST_HEADER: str = ""
     MOCK: bool = False  # deprecated compatibility flag; operational runtime ignores it
     DEMO_PUBLIC_MODE: bool = False  # isolates the public demo and blocks operational mutations
 
