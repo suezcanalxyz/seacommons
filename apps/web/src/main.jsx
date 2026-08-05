@@ -34,8 +34,14 @@ const METERS_TO_PX_RADIUS = [
 ];
 
 // Same 20km threshold as intel-distress-area's filter, inverted: a report
-// this imprecise gets the area circle instead of a point, never both.
-const _PRECISE_POINT_FILTER = ['<=', ['coalesce', ['get', 'location_uncertainty_m'], 0], 20000];
+// this imprecise gets the area circle instead of a point, never both. A
+// real area polygon (location_uncertainty_m unset, since the polygon IS
+// the uncertainty) is excluded explicitly rather than relying on circle
+// layers implicitly ignoring non-Point geometries.
+const _PRECISE_POINT_FILTER = ['all',
+  ['==', ['geometry-type'], 'Point'],
+  ['<=', ['coalesce', ['get', 'location_uncertainty_m'], 0], 20000],
+];
 
 // Distress lifecycle colors: red (active/unresolved), green (resolved/known
 // outcome), gray (archived/stale, no update in a while). All three pulse —
@@ -107,11 +113,17 @@ function edgeEventToFeature(event) {
       timestamp_utc: event.observed_at,
       source_timestamp_utc: event.observed_at,
       received_at: event.received_at || event.observed_at,
-      location_precision: Number(props.radius_m) > 20000 ? 'area' : 'reported_or_derived',
+      // The edge now sends this directly (core.live_edge_publisher, via the
+      // same public_geometry_and_precision helper the VM path uses) — the
+      // radius_m-threshold guess below only covers edge payloads cached
+      // from before that field existed.
+      location_precision: props.location_precision
+        || (Number(props.radius_m) > 20000 ? 'area' : 'reported_or_derived'),
       location_uncertainty_m: props.radius_m,
       coordinate_source: props.coordinate_source,
       repost_count: props.repost_count,
       thread_reposts: props.thread_reposts,
+      area_weather_narrowed: props.area_weather_narrowed,
     },
   };
 }
@@ -1617,14 +1629,43 @@ function App() {
           },
         });
 
-        // Area indicator: when a report only carries a place/region centroid
-        // (no exact position), show a real-world-scaled translucent circle
-        // instead of a pin that implies false precision. Radius tracks
-        // location_uncertainty_m in meters (not screen pixels) via the
-        // standard MapLibre meters→pixels-per-zoom conversion.
+        // Real search-area polygon (core.intel.area_extract): a sea-only
+        // shape that actually follows what the report names — a single
+        // place, or the corridor between several — rather than an arbitrary
+        // circle. area_low_confidence (couldn't be narrowed by weather, and
+        // still large) gets a visibly different, more tentative dashed
+        // outline and lower fill so "we genuinely don't know more than
+        // this" reads differently from a normal, already-narrow area.
+        map.addLayer({
+          id: 'intel-distress-polygon-fill', type: 'fill', source: 'intel-distress',
+          filter: ['==', ['geometry-type'], 'Polygon'],
+          paint: {
+            'fill-color': LIFECYCLE_AREA_FILL,
+            'fill-opacity': ['match', ['get', 'location_precision'], 'area_low_confidence', 0.5, 1.0],
+          },
+        });
+        map.addLayer({
+          id: 'intel-distress-polygon-outline', type: 'line', source: 'intel-distress',
+          filter: ['==', ['geometry-type'], 'Polygon'],
+          paint: {
+            'line-color': LIFECYCLE_AREA_STROKE,
+            'line-width': 1.5,
+            'line-dasharray': ['match', ['get', 'location_precision'], 'area_low_confidence', ['literal', [2, 2]], ['literal', [1, 0]]],
+          },
+        });
+
+        // Circle area indicator: when a report only carries a place/region
+        // centroid (no exact position) and no real polygon was built for
+        // it, show a real-world-scaled translucent circle instead of a pin
+        // that implies false precision. Radius tracks location_uncertainty_m
+        // in meters (not screen pixels) via the standard MapLibre
+        // meters→pixels-per-zoom conversion.
         map.addLayer({
           id: 'intel-distress-area', type: 'circle', source: 'intel-distress',
-          filter: ['>', ['coalesce', ['get', 'location_uncertainty_m'], 0], 20000],
+          filter: ['all',
+            ['==', ['geometry-type'], 'Point'],
+            ['>', ['coalesce', ['get', 'location_uncertainty_m'], 0], 20000],
+          ],
           paint: {
             'circle-radius': METERS_TO_PX_RADIUS,
             'circle-color': LIFECYCLE_AREA_FILL,

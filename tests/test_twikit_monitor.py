@@ -808,8 +808,8 @@ def test_distress_with_media_schedules_ocr_and_defers_inline_drift(tmp_path, mon
     assert evt.metadata["media_count"] == 1
     assert evt.metadata["media_transport"] == "x_media_ocr"
     assert evt.metadata["ocr_attempted"] is False
-    # provisional fallback (Crete centroid) until the worker OCRs the image
-    assert evt.metadata["coordinate_source"] == "place_centroid"
+    # provisional fallback (Crete sea-area) until the worker OCRs the image
+    assert evt.metadata["coordinate_source"] == "region_area"
     assert evt.lat is not None
     # OCR is deferred to the worker, so no inline drift from the fallback point
     assert drift_calls == []
@@ -869,7 +869,7 @@ def test_no_ocr_when_tesseract_missing(tmp_path, monkeypatch):
     evt = store.events()[0]
     assert scheduled == []
     assert evt.metadata["media_transport"] == "none"
-    assert evt.metadata["coordinate_source"] == "place_centroid"
+    assert evt.metadata["coordinate_source"] == "region_area"
 
 
 def test_media_ocr_upgrades_position_and_drifts(tmp_path, monkeypatch):
@@ -929,6 +929,11 @@ def test_media_pin_landmark_fallback_upgrades_position_with_wider_uncertainty(tm
 
 
 def test_precise_place_match_uses_tighter_uncertainty_radius(tmp_path, monkeypatch):
+    # Fallback path only: extract_area (a real sea-only polygon, tried
+    # first) succeeding is covered separately in test_area_extract.py and
+    # the *_falls_back_to_plain_centroid tests below. This exercises what
+    # happens when it can't build one at all (landmask/CMEMS unavailable).
+    monkeypatch.setattr("core.intel.twikit_monitor.extract_area", lambda text, **kw: None)
     store = IntelStore()
     monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
     m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
@@ -944,7 +949,9 @@ def test_imprecise_place_match_uses_wider_uncertainty_radius(tmp_path, monkeypat
     # #Malta about a boat in severe weather") that resolved to a single
     # country-scale place name. A flat 25km radius for a country/sea-scale
     # match understated how imprecise the position actually was, and drew a
-    # falsely tight-looking area on the public map.
+    # falsely tight-looking area on the public map. Fallback path only --
+    # see the module docstring above.
+    monkeypatch.setattr("core.intel.twikit_monitor.extract_area", lambda text, **kw: None)
     store = IntelStore()
     monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
     m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
@@ -953,6 +960,36 @@ def test_imprecise_place_match_uses_wider_uncertainty_radius(tmp_path, monkeypat
     evt = store.events()[0]
     assert evt.metadata["coordinate_source"] == "place_centroid"
     assert evt.metadata["location_uncertainty_m"] == 120_000
+
+
+def test_area_extraction_used_when_available_for_place_matches(tmp_path, monkeypatch):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    drift_calls: list = []
+    monkeypatch.setattr(
+        "core.intel.twikit_monitor.request_auto_drift",
+        lambda *args, **kwargs: drift_calls.append(args) or True,
+    )
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+
+    from core.intel.area_extract import AreaResult
+    fake_result = AreaResult(
+        polygon={"type": "Polygon", "coordinates": [[[14.0, 35.0], [14.1, 35.0], [14.1, 35.1], [14.0, 35.0]]]},
+        centroid=(35.05, 14.05),
+        confidence="area",
+        weather_narrowed=False,
+    )
+    monkeypatch.setattr("core.intel.twikit_monitor.extract_area", lambda text, **kw: fake_result)
+
+    tweet = _FakeTweet("4003", "🆘 20 people boat sinking off Lampedusa")
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    evt = store.events()[0]
+    assert evt.metadata["coordinate_source"] == "region_area"
+    assert evt.metadata["area_geojson"] == fake_result.polygon
+    assert evt.metadata["area_confidence"] == "area"
+    assert evt.lat == 35.05 and evt.lon == 14.05
+    # No single defensible starting point for a leeway simulation.
+    assert drift_calls == []
 
 
 def test_async_loop_retries_session_setup_instead_of_giving_up():
@@ -1050,6 +1087,6 @@ def test_media_ocr_failure_keeps_fallback_and_drifts(tmp_path, monkeypatch):
     m._apply_media_ocr(evt.id, ["https://pbs.twimg.com/media/map.jpg"])
     evt = store.get(evt.id)
     assert evt.metadata["ocr_attempted"] is True
-    assert evt.metadata["coordinate_source"] == "place_centroid"
+    assert evt.metadata["coordinate_source"] == "region_area"
     assert evt.lat is not None
     assert drift_calls and drift_calls[-1][1] == evt.lat and drift_calls[-1][2] == evt.lon

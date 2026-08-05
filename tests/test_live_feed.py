@@ -99,6 +99,31 @@ def test_public_projection_exposes_repost_thread_including_its_own_note() -> Non
     assert props["thread_reposts"][1]["note"] == "Rescued to #Lampedusa! Everyone arrived safely."
 
 
+def test_public_projection_shows_an_area_polygon_when_no_precise_point_exists() -> None:
+    polygon = {"type": "Polygon", "coordinates": [[[14.0, 35.0], [14.1, 35.0], [14.1, 35.1], [14.0, 35.0]]]}
+    event = IntelEvent(
+        id="public03",
+        type="twitter",
+        severity="high",
+        lat=35.05,
+        lon=14.05,
+        title="Reported maritime distress",
+        source="alarm_phone",
+        url="https://x.com/i/web/status/1",
+        metadata={
+            "is_distress": True,
+            "source_policy": "official_api",
+            "coordinate_source": "region_area",
+            "area_geojson": polygon,
+            "area_confidence": "area_low_confidence",
+        },
+    )
+    feature = _public_intel_feature(event)
+    assert feature is not None
+    assert feature["geometry"] == polygon
+    assert feature["properties"]["location_precision"] == "area_low_confidence"
+
+
 def test_manual_event_requires_explicit_publication() -> None:
     private = IntelEvent(
         id="manual01",

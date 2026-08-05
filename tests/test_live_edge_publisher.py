@@ -69,6 +69,20 @@ def test_thread_reposts_and_repost_count_reach_the_edge_payload() -> None:
     }
 
 
+def test_area_geojson_becomes_the_geometry_on_the_edge_too() -> None:
+    # Same class of bug as the thread_reposts test above: a report with only
+    # an area (no single defensible point) must show as an area on the
+    # public Live host too, not silently fall back to a point because this
+    # path forgot about area_geojson.
+    polygon = {"type": "Polygon", "coordinates": [[[14.0, 35.0], [14.1, 35.0], [14.1, 35.1], [14.0, 35.0]]]}
+    row = distress_row(area_geojson=polygon, area_confidence="area_low_confidence")
+    event = public_event_from_row(row, "node", now=_NOW, same_source=[])
+
+    assert event is not None
+    assert event["geometry"] == polygon
+    assert event["properties"]["location_precision"] == "area_low_confidence"
+
+
 def test_material_update_gets_new_version_id() -> None:
     first = public_event_from_row(distress_row(), "node", now=_NOW, same_source=[])
     second = public_event_from_row(distress_row(confidence=0.9), "node", now=_NOW, same_source=[])

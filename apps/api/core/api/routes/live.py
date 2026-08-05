@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSock
 
 from core.config import config
 from core.intel import lifecycle
+from core.intel.public_geometry import public_geometry_and_precision
 from core.intel.store import IntelEvent, intel_store
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
@@ -46,6 +47,7 @@ _PUBLIC_METADATA = frozenset(
         "source_scan_count",
         "repost_count",
         "last_repost_at",
+        "area_weather_narrowed",
     }
 )
 
@@ -90,21 +92,7 @@ def _public_intel_feature(event: IntelEvent) -> Optional[dict[str, Any]]:
              "url": r.get("url"), "kind": r.get("kind"), "note": r.get("note")}
             for r in thread_reposts
         ]
-    coordinate_source = str(event.metadata.get("coordinate_source") or "")
-    location_precision = (
-        "area"
-        if coordinate_source == "region_area"
-        else "regional_centroid"
-        if coordinate_source == "place_centroid"
-        else "reported_or_derived"
-        if event.lat is not None and event.lon is not None
-        else "unpositioned"
-    )
-    geometry = (
-        {"type": "Point", "coordinates": [event.lon, event.lat]}
-        if event.lat is not None and event.lon is not None
-        else None
-    )
+    geometry, location_precision = public_geometry_and_precision(event)
     return {
         "type": "Feature",
         "id": f"intel:{event.id}",

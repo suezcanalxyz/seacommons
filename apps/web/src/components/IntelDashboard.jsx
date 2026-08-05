@@ -64,6 +64,17 @@ function eventLifecycle(p) {
   return null;
 }
 
+// Average of a Polygon's exterior-ring vertices -- good enough for "fly
+// here" / display purposes; not a true area-weighted centroid.
+function polygonCentroid(polygonCoords) {
+  const ring = polygonCoords?.[0];
+  if (!Array.isArray(ring) || !ring.length) return null;
+  let sumLon = 0;
+  let sumLat = 0;
+  for (const [lon, lat] of ring) { sumLon += lon; sumLat += lat; }
+  return [sumLon / ring.length, sumLat / ring.length];
+}
+
 // Card color class driven by lifecycle: red active, green resolved, gray
 // archived (same palette as the map's LIFECYCLE_* expressions).
 function lifecycleColorClass(p, isDistress) {
@@ -392,7 +403,10 @@ export default function IntelDashboard({
 
   function renderEvent(feat) {
     const p = feat.properties || {};
-    const coords = feat.geometry?.coordinates;
+    const isArea = feat.geometry?.type === 'Polygon';
+    // Average of the exterior ring's vertices -- good enough for "fly here"
+    // / display purposes, not a true area-weighted centroid.
+    const coords = isArea ? polygonCentroid(feat.geometry.coordinates) : feat.geometry?.coordinates;
     const ts = p.timestamp_utc ? new Date(p.timestamp_utc) : null;
     const driftFeat = intelDrifts.features.find(
       (f) => String(f.properties?.intel_event_id || '').replace(/^intel:/, '')
@@ -463,9 +477,12 @@ export default function IntelDashboard({
               className="intel-drift-btn intel-drift-btn--retry"
               onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(p.id, coords[1], coords[0]); }}
             >Retry</button>
-          ) : publicMode && coords ? (
+          ) : publicMode && coords && !isArea ? (
             <button className="intel-drift-btn intel-drift-btn--computing" disabled>Auto</button>
-          ) : coords && p.drift_status !== 'completed' ? (
+          ) : coords && !isArea && p.drift_status !== 'completed' ? (
+            // A leeway simulation needs one defensible starting point --
+            // an area report's centroid is just the middle of a whole
+            // uncertain zone, not a real position to drift from.
             <button
               className="intel-drift-btn intel-drift-btn--trigger"
               onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(p.id, coords[1], coords[0]); }}
@@ -477,10 +494,23 @@ export default function IntelDashboard({
           <span>{p.source}</span>
           <span style={{ opacity: 0.45 }}>·</span>
           <span>{(p.type || '').replace(/_/g, ' ')}</span>
-          {coords && (
+          {coords && !isArea && (
             <span style={{ opacity: 0.45 }}>
               · {p.coordinate_source === 'place_centroid' ? 'zona' : 'segnalata'}{' '}
               {coords[1]?.toFixed(3)}, {coords[0]?.toFixed(3)}
+            </span>
+          )}
+          {isArea && (
+            <span style={{ opacity: 0.45 }}>
+              · area in mare{p.area_weather_narrowed ? ' (ristretta da dati meteo)' : ''}
+            </span>
+          )}
+          {p.location_precision === 'area_low_confidence' && (
+            <span
+              className="intel-low-confidence"
+              title="L'area è troppo ampia per essere una pista di ricerca utile — informazioni insufficienti per restringerla ulteriormente."
+            >
+              ⚠ info insufficienti
             </span>
           )}
           {p.reply_count > 0 && p.url && (
@@ -508,9 +538,9 @@ export default function IntelDashboard({
         {p.text && (
           <p className="intel-text">{p.text.slice(0, 200)}{p.text.length > 200 ? '…' : ''}</p>
         )}
-        {isDistress && ((coords && loadNearestVessels && lifecycle === 'active') || p.repost_count > 0) && (
+        {isDistress && ((coords && !isArea && loadNearestVessels && lifecycle === 'active') || p.repost_count > 0) && (
           <div className="intel-panel-toggles">
-            {coords && loadNearestVessels && lifecycle === 'active' && (
+            {coords && !isArea && loadNearestVessels && lifecycle === 'active' && (
               <button
                 type="button"
                 className="intel-nearby-toggle"
@@ -548,7 +578,7 @@ export default function IntelDashboard({
             </ul>
           </div>
         )}
-        {isDistress && lifecycle === 'active' && vesselsForEventId === p.id && (
+        {isDistress && !isArea && lifecycle === 'active' && vesselsForEventId === p.id && (
           <div className="intel-nearby-vessels" onClick={(e) => e.stopPropagation()}>
             {vesselsLoading ? (
               <span className="intel-nearby-loading">Ricerca navi…</span>

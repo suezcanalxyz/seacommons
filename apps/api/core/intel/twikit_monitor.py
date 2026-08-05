@@ -83,6 +83,7 @@ from typing import Any, Optional
 from core.config import config
 from core.intel.x_media_utils import _ocr_photo
 from core.intel.auto_drift_client import request_auto_drift
+from core.intel.area_extract import extract_area
 from core.intel.lifecycle import has_own_reply_resolution
 from core.intel.geoextract import (
     classify_severity,
@@ -652,11 +653,31 @@ class TwikitMonitor:
         # the map draw an equally-tight-looking circle for both, which reads
         # as false precision for the coarse case.
         place_precision = place_match_precision(combined_text) if place_coords else None
-        coords = text_coords or media_coords or relative_coords or place_coords
+        timestamp_utc = self._timestamp(tweet)
+
+        # No source better than a bare place match: rather than a single
+        # (possibly arbitrary) point, follow what the report actually names
+        # — a real sea-only search polygon, narrowed by wave data only if
+        # the report itself claims rough weather. area_result stays None
+        # (falling back to the plain centroid below) whenever it can't
+        # build an honest area — never a fabricated one.
+        area_result = None
+        if place_coords and not (text_coords or relative_coords):
+            try:
+                report_time = datetime.fromisoformat(timestamp_utc)
+            except ValueError:
+                report_time = None
+            area_result = extract_area(combined_text, report_time=report_time)
+
+        coords = (
+            text_coords or media_coords or relative_coords
+            or (area_result.centroid if area_result else place_coords)
+        )
         coordinate_source = (
             "post_text" if text_coords
             else "media_ocr_text" if media_coords
             else "relative_place_offset" if relative_coords
+            else "region_area" if area_result
             else "place_centroid" if place_coords
             else "none"
         )
@@ -664,6 +685,7 @@ class TwikitMonitor:
             250 if text_coords
             else 1500 if media_coords
             else 15_000 if relative_coords
+            else None if area_result  # the polygon itself is the uncertainty
             else (120_000 if place_precision == "imprecise" else 25_000) if place_coords
             else None
         )
@@ -684,9 +706,14 @@ class TwikitMonitor:
             url=f"https://x.com/i/web/status/{tweet.id}",
             source=author or handle,
             author=author or handle,
-            timestamp_utc=self._timestamp(tweet),
+            timestamp_utc=timestamp_utc,
             metadata={
                 "tweet_id": str(tweet.id),
+                **({
+                    "area_geojson": area_result.polygon,
+                    "area_confidence": area_result.confidence,
+                    "area_weather_narrowed": area_result.weather_narrowed,
+                } if area_result else {}),
                 "platform": "x",
                 "source_policy": "operator_published" if distress else "unofficial",
                 "publication_status": "published" if distress else "private",
@@ -766,9 +793,13 @@ class TwikitMonitor:
             and event.lon is not None
             and event.metadata.get("drift_status") not in {"computing", "completed"}
             and not ocr_pending
+            and area_result is None
         ):
             # With OCR pending the drift fires from the worker once the image
             # position is known, so the cone never uses a centroid fallback.
+            # An area result has no single defensible starting point at all —
+            # a leeway simulation from its centroid would imply a false
+            # precision the polygon itself exists specifically to avoid.
             try:
                 request_auto_drift(event.id, event.lat, event.lon, vessel_type="rubber_boat")
             except Exception as exc:

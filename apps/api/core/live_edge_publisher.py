@@ -235,10 +235,10 @@ def public_event_from_row(
     if not is_distress and not explicitly_public:
         return None
 
+    from core.intel.public_geometry import public_geometry_and_precision
+
     incident_id = event.id
-    geometry = None
-    if event.lat is not None and event.lon is not None:
-        geometry = {"type": "Point", "coordinates": [float(event.lon), float(event.lat)]}
+    geometry, location_precision = public_geometry_and_precision(event)
 
     confidence = metadata.get("confidence")
     try:
@@ -279,6 +279,8 @@ def public_event_from_row(
              "url": r.get("url"), "kind": r.get("kind"), "note": r.get("note")}
             for r in thread_reposts
         ] if thread_reposts else None,
+        "location_precision": location_precision,
+        "area_weather_narrowed": metadata.get("area_weather_narrowed"),
     }
     properties = {key: value for key, value in properties.items() if value not in (None, "")}
 

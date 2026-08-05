@@ -142,7 +142,12 @@ _PLACES: dict[str, tuple[float, float]] = {
     "libyan coast":        (32.00, 15.00),
     "tunisian waters":     (37.00, 10.00),
     "tunisian coast":      (37.00, 10.00),
-    "libya":               (27.00, 17.00),
+    # A country's geographic centroid is not always its coastline -- Libya's
+    # true centroid sits deep in the Sahara, ~150km+ from the Mediterranean,
+    # useless as a seed point for a maritime search area (verified: a 120km
+    # search radius from the old centroid never reaches open water at all).
+    # This is the central Libyan coast (near Sirte) instead.
+    "libya":               (32.00, 18.00),
     "tunisia":             (33.89, 9.53),
     "ceuta":               (35.89, -5.32),
     "chafarinas islands":  (35.18, -2.43),
@@ -162,7 +167,10 @@ _PLACES: dict[str, tuple[float, float]] = {
     "red sea":             (20.00, 38.00),
     "gulf of aden":        (12.00, 47.00),
     "horn of africa":      (11.00, 51.00),
-    "somalia":             (5.00, 46.00),
+    # Same fix as Libya above: the country's geographic centroid is well
+    # inland, ~200km+ from any coast (verified: zero sea points within
+    # 120km). This is the Indian Ocean coast near Mogadishu instead.
+    "somalia":             (2.05, 45.35),
     "djibouti":            (11.82, 42.59),
     "aden":                (12.78, 45.03),
 }
@@ -565,6 +573,46 @@ def place_match_precision(text: str) -> Optional[str]:
         if place in tl:
             return "imprecise" if place in _IMPRECISE_PLACE_NAMES else "precise"
     return None
+
+
+def find_all_place_matches(text: str) -> list[tuple[str, tuple[float, float], str]]:
+    """Every distinct gazetteer place mentioned in text, precise-tier first.
+
+    Unlike extract_coords (first match only), used to build a search-area
+    polygon that actually follows what a report says when it names more
+    than one place -- "informed authorities in Italy and Malta" implies a
+    corridor between the two, not just whichever matches first.
+    Deduplicated by resolved coordinate, since aliases of the same place
+    (e.g. "malta"/"valletta") must not double-count as two distinct points.
+    """
+    tl = text.lower()
+    seen: set[tuple[float, float]] = set()
+    matches: list[tuple[str, tuple[float, float], str]] = []
+    for place, coords in _PLACES_SORTED:
+        if place in tl and coords not in seen:
+            seen.add(coords)
+            matches.append((place, coords, "imprecise" if place in _IMPRECISE_PLACE_NAMES else "precise"))
+    return matches
+
+
+_SEVERE_WEATHER_TERMS = (
+    "severe weather", "bad weather", "storm", "stormy", "high seas",
+    "rough sea", "rough seas", "gale", "strong wind", "strong winds",
+    "heavy wind", "heavy winds", "big waves", "high waves",
+    "mauvais temps", "tempête", "mer agitée", "mare mosso", "maltempo",
+)
+
+
+def mentions_severe_weather(text: str) -> bool:
+    """Whether the report itself claims rough conditions.
+
+    Gates area_extract.extract_area's weather-based narrowing: wave-height
+    data is only used to shrink a search area when the report actually
+    asserts bad weather is involved -- never as an independent, unprompted
+    guess at where a boat might be.
+    """
+    tl = text.lower()
+    return any(term in tl for term in _SEVERE_WEATHER_TERMS)
 
 
 def extract_relative_coords(text: str) -> Optional[tuple[float, float]]:

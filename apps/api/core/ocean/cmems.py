@@ -68,7 +68,9 @@ def fetch_current_point(lat: float, lon: float) -> dict[str, Any] | None:
     }
 
 
-def fetch_ocean_batch(points: list[tuple[float, float]]) -> list[dict[str, Any] | None]:
+def fetch_ocean_batch(
+    points: list[tuple[float, float]], *, at: datetime | None = None,
+) -> list[dict[str, Any] | None]:
     if not points or not cmems_enabled():
         return [None for _ in points]
 
@@ -81,8 +83,17 @@ def fetch_ocean_batch(points: list[tuple[float, float]]) -> list[dict[str, Any] 
     lats = [lat for lat, _ in points]
     lons = [_normalize_lon(lon) for _, lon in points]
     pad = 0.2
-    start = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
-    end = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    now = datetime.now(timezone.utc)
+    # Default window covers "now"; widen it to also cover `at` when that
+    # falls outside it, so a request for conditions at a report's own
+    # (possibly days-old) timestamp doesn't silently fall back to "latest".
+    window_start = now - timedelta(days=2)
+    window_end = now + timedelta(days=1)
+    if at is not None:
+        window_start = min(window_start, at - timedelta(hours=6))
+        window_end = max(window_end, at + timedelta(hours=6))
+    start = window_start.isoformat()
+    end = window_end.isoformat()
 
     try:
         current_ds = copernicusmarine.open_dataset(
@@ -136,10 +147,10 @@ def fetch_ocean_batch(points: list[tuple[float, float]]) -> list[dict[str, Any] 
     for lat, lon in points:
         try:
             norm_lon = _normalize_lon(lon)
-            u = _sample_value(current_ds, "uo", lat, norm_lon)
-            v = _sample_value(current_ds, "vo", lat, norm_lon)
-            temp = _sample_value(temp_ds, "thetao", lat, norm_lon)
-            wave = _sample_value(wave_ds, "VHM0", lat, norm_lon)
+            u = _sample_value(current_ds, "uo", lat, norm_lon, at=at)
+            v = _sample_value(current_ds, "vo", lat, norm_lon, at=at)
+            temp = _sample_value(temp_ds, "thetao", lat, norm_lon, at=at)
+            wave = _sample_value(wave_ds, "VHM0", lat, norm_lon, at=at)
 
             current_speed = math.hypot(u, v)
             current_dir = (math.degrees(math.atan2(u, v)) + 360.0) % 360.0
@@ -163,7 +174,9 @@ def _load_copernicusmarine():
     return copernicusmarine
 
 
-def _sample_value(ds, variable: str, lat: float, lon: float) -> float:
+def _sample_value(
+    ds, variable: str, lat: float, lon: float, *, at: datetime | None = None,
+) -> float:
     da = ds[variable]
     for depth_name in ("depth", "deptho", "depthu"):
         if depth_name in da.dims:
@@ -171,7 +184,10 @@ def _sample_value(ds, variable: str, lat: float, lon: float) -> float:
             break
     for time_name in ("time", "valid_time"):
         if time_name in da.dims:
-            da = da.isel({time_name: -1})
+            if at is not None:
+                da = da.sel({time_name: at}, method="nearest")
+            else:
+                da = da.isel({time_name: -1})
             break
     lat_name = _coord_name(da, "latitude", "lat")
     lon_name = _coord_name(da, "longitude", "lon")
