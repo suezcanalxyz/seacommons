@@ -110,6 +110,7 @@ _SESSION_REBUILD_AFTER_FAILURES = 3  # consecutive all-accounts-failed cycles
 # thread from both — only tweet.replies on the original tweet surfaces them.
 # 15 min is gentle (one extra call per still-active incident per cycle).
 _REPLY_CHECK_INTERVAL_S = 900
+_REPLY_CHECK_STARTUP_DELAY_S = 60
 # How far back into an account's own timeline to look for a still-active
 # incident's original tweet. Generous enough to comfortably cover the 7-day
 # candidate window even for an account posting several times a day.
@@ -198,9 +199,13 @@ class TwikitMonitor:
 
         source_registry.register(_SOURCE_NAME, "twitter")
         self._next_poll_ts = {handle: time.monotonic() for handle in self._accounts}
-        # First reply check happens after one full interval, not immediately —
-        # a freshly (re)started process has nothing new to find yet.
-        self._next_reply_check_ts = time.monotonic() + _REPLY_CHECK_INTERVAL_S
+        # A short delay, not the full interval: a reply can land on an
+        # already-tracked incident at any time, independent of when this
+        # process happens to (re)start — a deploy restart must not open an
+        # up-to-15-minute blind window before resuming self-reply checks.
+        # Still delayed slightly so it doesn't stack on top of the initial
+        # per-account poll burst.
+        self._next_reply_check_ts = time.monotonic() + _REPLY_CHECK_STARTUP_DELAY_S
         self._running = True
         self._thread = threading.Thread(
             target=self._run_loop,
