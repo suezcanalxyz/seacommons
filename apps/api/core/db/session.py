@@ -30,7 +30,18 @@ def database_url() -> str:
 @lru_cache(maxsize=1)
 def engine():
     url = database_url()
-    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+    if url.startswith("sqlite"):
+        connect_args = {"check_same_thread": False}
+    else:
+        # pool_pre_ping only catches a connection that's already dead; it does
+        # nothing for one that's alive but stuck (e.g. a server-side restart
+        # or network blip mid-query). Without a hard cap, a single long-lived
+        # background loop (like live_edge_publisher's 1s poll) can hang on
+        # one bad query forever with no exception to recover from — verified
+        # live: the publisher froze silently for 46+ minutes, serving a
+        # stale snapshot to the public map the whole time, with systemd still
+        # reporting it as healthy since the process never actually exited.
+        connect_args = {"connect_timeout": 10, "options": "-c statement_timeout=20000"}
     return create_engine(url, future=True, pool_pre_ping=True, connect_args=connect_args)
 
 
