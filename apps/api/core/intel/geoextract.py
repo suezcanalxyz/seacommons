@@ -26,7 +26,12 @@ _PLACES: dict[str, tuple[float, float]] = {
     "tripoli":             (32.90, 13.18),
     "benghazi":            (32.12, 20.07),
     "derna":               (32.75, 22.65),
-    "sfax":                (34.74, 10.76),
+    # Sfax's own coordinates are the city itself, on land. A report reading
+    # "boat in distress close to #Sfax" (the actual real-world case this was
+    # found from) is always offshore — nudged into the Gulf of Gabès, toward
+    # the Kerkennah Islands, same fix already applied to Crete for the same
+    # on-landmass-centroid reason.
+    "sfax":                (34.70, 10.95),
     "sousse":              (35.83, 10.64),
     "kairouan":            (35.68, 10.10),
     "zarzis":              (33.50, 11.11),

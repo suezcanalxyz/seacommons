@@ -59,7 +59,11 @@ def test_public_projection_excludes_sensitive_content() -> None:
     assert feature["properties"]["publication_status"] == "published"
 
 
-def test_public_projection_exposes_repost_thread_without_captions() -> None:
+def test_public_projection_exposes_repost_thread_including_its_own_note() -> None:
+    # Unlike the event's own `text` (may originate from a private caller who
+    # never consented to publication), a thread_reposts note only ever comes
+    # from the tracked account's own public reply/quote to its own tweet —
+    # already readable by anyone on X — so it is NOT stripped here.
     event = IntelEvent(
         id="public02",
         type="distress",
@@ -79,7 +83,7 @@ def test_public_projection_exposes_repost_thread_without_captions() -> None:
                  "url": "https://x.com/i/web/status/2", "kind": "repost"},
                 {"tweet_id": "3", "posted_at": "2026-08-04T12:00:00+00:00",
                  "url": "https://x.com/i/web/status/3", "kind": "quote",
-                 "note": "private caption text that must not leak publicly"},
+                 "note": "Rescued to #Lampedusa! Everyone arrived safely."},
             ],
         },
     )
@@ -89,9 +93,10 @@ def test_public_projection_exposes_repost_thread_without_captions() -> None:
     assert props["repost_count"] == 2
     assert props["last_repost_at"] == "2026-08-04T12:00:00+00:00"
     assert len(props["thread_reposts"]) == 2
-    assert all("note" not in r for r in props["thread_reposts"])
+    assert props["thread_reposts"][0].get("note") is None
     assert props["thread_reposts"][1]["kind"] == "quote"
     assert props["thread_reposts"][1]["url"] == "https://x.com/i/web/status/3"
+    assert props["thread_reposts"][1]["note"] == "Rescued to #Lampedusa! Everyone arrived safely."
 
 
 def test_manual_event_requires_explicit_publication() -> None:

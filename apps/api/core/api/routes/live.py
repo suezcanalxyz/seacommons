@@ -76,14 +76,18 @@ def _public_intel_feature(event: IntelEvent) -> Optional[dict[str, Any]]:
     if event.type not in _PUBLIC_INTEL_TYPES and publication != "published":
         return None
     metadata = {key: event.metadata[key] for key in _PUBLIC_METADATA if key in event.metadata}
-    # Public Live excludes raw text everywhere else, so strip each repost's
-    # `note` (a quote tweet's own caption) — keep only which public tweet
-    # answered this incident and when, as a link.
+    # Unlike the event's own `text` (stripped everywhere on public Live,
+    # since it may originate from a private WhatsApp/SMS caller who never
+    # consented to publication), a thread_reposts `note` only ever comes from
+    # the tracked account's OWN public quote/reply to its OWN tweet — already
+    # readable by anyone on X. Without it the public "Update" panel would
+    # show a link with no indication of what the update actually says, which
+    # defeats the point of surfacing it at all.
     thread_reposts = event.metadata.get("thread_reposts")
     if thread_reposts:
         metadata["thread_reposts"] = [
             {"tweet_id": r.get("tweet_id"), "posted_at": r.get("posted_at"),
-             "url": r.get("url"), "kind": r.get("kind")}
+             "url": r.get("url"), "kind": r.get("kind"), "note": r.get("note")}
             for r in thread_reposts
         ]
     coordinate_source = str(event.metadata.get("coordinate_source") or "")
