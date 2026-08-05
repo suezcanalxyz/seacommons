@@ -102,9 +102,24 @@ class AISStreamClient:
 
     def _run(self) -> None:
         from core.vessels.registry import registry
+        from core.intel.source_registry import source_registry
         import websockets.sync.client as ws_sync
 
+        # AIS never reported into the same health/alerting system every other
+        # source already uses -- verified live: the whole Mediterranean feed
+        # went completely silent (connects, subscribes, then times out with
+        # zero messages every cycle -- a known, unresolved upstream AISstream
+        # bug, github.com/aisstream/aisstream/issues/15) for 7+ hours with
+        # nothing surfacing it anywhere except a user noticing "no nearby
+        # vessels" on the map. record_poll on every disconnect means the
+        # existing 15-minute source_health job (core/scheduler.py) now alerts
+        # within a few reconnect cycles instead.
+        source_name = "aisstream_" + self._label.lower().replace(" ", "_").replace("(", "").replace(")", "")
+        source_registry.register(source_name, "ais")
+
         backoff = 2
+        last_report_ts = time.monotonic()
+        messages_since_report = 0
         while not self._stop.is_set():
             try:
                 logger.info("AISStream: connecting to %s (%s)", _WS_URL, self._label)
@@ -130,11 +145,20 @@ class AISStreamClient:
                             msg = json.loads(raw)
                             self._handle(msg, registry)
                             self.messages_received += 1
+                            messages_since_report += 1
                         except Exception as e:
                             logger.debug("AISStream msg parse error: %s", e)
+                        now = time.monotonic()
+                        if now - last_report_ts >= 60:
+                            source_registry.record_poll(source_name, events_found=messages_since_report)
+                            messages_since_report = 0
+                            last_report_ts = now
 
             except Exception as exc:
                 self._connected = False
+                source_registry.record_poll(source_name, events_found=messages_since_report, error=str(exc))
+                messages_since_report = 0
+                last_report_ts = time.monotonic()
                 if not self._stop.is_set():
                     logger.warning(
                         "AISStream (%s) disconnected: %s  retry in %ds",
