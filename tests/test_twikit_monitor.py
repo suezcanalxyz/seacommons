@@ -517,6 +517,81 @@ def test_self_reply_thread_with_stranger_reply_interleaved_is_still_threaded(mon
     assert threaded_ids == {"3031", "3033"}
 
 
+def _age_event(store: IntelStore, event_id: str, hours_old: float) -> None:
+    from datetime import UTC, datetime, timedelta
+    event = store.get(event_id)
+    event.timestamp_utc = (datetime.now(UTC) - timedelta(hours=hours_old)).isoformat()
+
+
+def test_stale_incident_flagged_when_tweet_vanishes_from_timeline(monkeypatch, tmp_path):
+    # An old, still-unresolved incident whose tweet no longer shows up at all
+    # in the account's recent timeline (deleted with no matching repost, so
+    # the ingestion-side dead-link fix never had a repost to latch onto)
+    # can't be auto-healed -- it must be surfaced instead of silently
+    # sitting wrong on the live map.
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    sent = []
+    monkeypatch.setattr("core.notifications.telegram", lambda text: sent.append(text) or True)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("3050", "MAYDAY 12 people boat sinking off Crete 34.5N 25.0E")
+    m._ingest(original, handle="alarm_phone")
+    event_id = store.events()[0].id
+    _age_event(store, event_id, hours_old=8)
+
+    other_tweet = _FakeTweet("3099", "Unrelated later post", user=_FakeUser())
+    client = _FakeClient({"alarm_phone": _FakeTimelineUser(_FakeUser.id, [other_tweet])})
+
+    asyncio.run(m._check_self_replies(client))
+    import time as _time
+    _time.sleep(0.05)  # telegram fires on a background thread
+
+    assert event_id in m._flagged_unreachable
+    assert any("3050" in t or "Crete" in t for t in sent) or sent  # alert fired
+
+
+def test_recently_missing_tweet_is_not_flagged_yet(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    sent = []
+    monkeypatch.setattr("core.notifications.telegram", lambda text: sent.append(text) or True)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("3060", "MAYDAY 12 people boat sinking off Crete 34.5N 25.0E")
+    m._ingest(original, handle="alarm_phone")
+    event_id = store.events()[0].id
+    _age_event(store, event_id, hours_old=1)  # well under _UNREACHABLE_MIN_AGE_S
+
+    other_tweet = _FakeTweet("3098", "Unrelated later post", user=_FakeUser())
+    client = _FakeClient({"alarm_phone": _FakeTimelineUser(_FakeUser.id, [other_tweet])})
+
+    asyncio.run(m._check_self_replies(client))
+
+    assert event_id not in m._flagged_unreachable
+    assert not sent
+
+
+def test_stale_flag_is_not_repeated_on_second_check(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    sent = []
+    monkeypatch.setattr("core.notifications.telegram", lambda text: sent.append(text) or True)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("3070", "MAYDAY 12 people boat sinking off Crete 34.5N 25.0E")
+    m._ingest(original, handle="alarm_phone")
+    event_id = store.events()[0].id
+    _age_event(store, event_id, hours_old=10)
+
+    other_tweet = _FakeTweet("3097", "Unrelated later post", user=_FakeUser())
+    client = _FakeClient({"alarm_phone": _FakeTimelineUser(_FakeUser.id, [other_tweet])})
+
+    asyncio.run(m._check_self_replies(client))
+    asyncio.run(m._check_self_replies(client))
+    import time as _time
+    _time.sleep(0.05)
+
+    assert len(sent) == 1
+
+
 def test_reply_check_ignores_timeline_tweets_not_tracked_as_incidents(monkeypatch, tmp_path):
     store = IntelStore()
     monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)

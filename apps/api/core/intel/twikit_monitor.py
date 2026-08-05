@@ -83,6 +83,7 @@ from typing import Any, Optional
 from core.config import config
 from core.intel.x_media_utils import _ocr_photo
 from core.intel.auto_drift_client import request_auto_drift
+from core.intel.lifecycle import has_own_reply_resolution
 from core.intel.geoextract import (
     classify_severity,
     extract_coords,
@@ -111,6 +112,20 @@ _SESSION_REBUILD_AFTER_FAILURES = 3  # consecutive all-accounts-failed cycles
 # 15 min is gentle (one extra call per still-active incident per cycle).
 _REPLY_CHECK_INTERVAL_S = 900
 _REPLY_CHECK_STARTUP_DELAY_S = 60
+# Give a tweet time to scroll further back than _REPLY_CHECK_TIMELINE_SIZE
+# covers before treating its absence as suspicious, not just "not fetched
+# far enough back yet" on an active-posting day.
+_UNREACHABLE_MIN_AGE_S = 6 * 3600
+
+
+def _age_seconds(timestamp_utc: str) -> Optional[float]:
+    try:
+        posted = datetime.fromisoformat(timestamp_utc)
+    except (TypeError, ValueError):
+        return None
+    if posted.tzinfo is None:
+        posted = posted.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - posted).total_seconds()
 # How far back into an account's own timeline to look for a still-active
 # incident's original tweet. Generous enough to comfortably cover the 7-day
 # candidate window even for an account posting several times a day.
@@ -147,6 +162,7 @@ class TwikitMonitor:
         self._users: dict[str, Any] = {}
         self._next_poll_ts: dict[str, float] = {}
         self._next_reply_check_ts = 0.0
+        self._flagged_unreachable: set[str] = set()
         self._running = False
         self._thread: threading.Thread | None = None
         self._backoff = 0.0
@@ -821,6 +837,14 @@ class TwikitMonitor:
         Only replies from the SAME author as the original are threaded —
         replies from other accounts are public commentary, not an
         operational update, and are left alone.
+
+        Also self-audits: any still-unresolved candidate whose own tweet
+        does not turn up in its account's fetched timeline — old enough that
+        it should have, if the tweet were still reachable — likely means the
+        tweet was deleted with no matching repost (so the ingestion-side
+        dead-link fix never had anything to latch onto). That case can't be
+        auto-healed here, so it's surfaced instead of silently sitting wrong
+        on the live map — see _flag_unreachable_tweets().
         """
         candidates = [
             event
@@ -834,6 +858,7 @@ class TwikitMonitor:
             str(event.metadata.get("tracked_account") or "")
             for event in candidates
         } - {""}
+        seen_tweet_ids: set[str] = set()
         for handle in handles:
             user = self._users.get(handle)
             if user is None:
@@ -849,7 +874,9 @@ class TwikitMonitor:
                 logger.debug("X (twikit) reply check: could not fetch @%s timeline: %s", handle, exc)
                 continue
             for tweet in recent:
-                event = by_tweet_id.get(str(tweet.id))
+                tweet_id = str(tweet.id)
+                seen_tweet_ids.add(tweet_id)
+                event = by_tweet_id.get(tweet_id)
                 if event is None:
                     continue
                 author_id = str(getattr(getattr(tweet, "user", None), "id", "") or "")
@@ -875,6 +902,51 @@ class TwikitMonitor:
                             "X (twikit) self-reply %s threaded onto incident %s",
                             reply_id, event.id,
                         )
+        unresolved = [
+            event for tweet_id, event in by_tweet_id.items()
+            if tweet_id not in seen_tweet_ids and not has_own_reply_resolution(event)
+        ]
+        self._flag_unreachable_tweets(unresolved)
+
+    def _flag_unreachable_tweets(self, unresolved: list[IntelEvent]) -> None:
+        """Alert once per incident when its own tweet vanished from the
+        timeline before we ever saw a resolution for it.
+
+        Most likely cause: the tracked account deleted the tweet without a
+        matching repost (a genuine edit/retraction, not the delete+repost
+        pattern the ingestion-side dead-link fix already self-heals). That
+        case has no reply thread to recover a correction from, so it can't
+        be fixed automatically — surfaced here instead of just staying wrong
+        on the live map until someone happens to notice.
+        """
+        now = time.monotonic()
+        for event in unresolved:
+            if event.id in self._flagged_unreachable:
+                continue
+            age_s = _age_seconds(event.timestamp_utc)
+            if age_s is None or age_s < _UNREACHABLE_MIN_AGE_S:
+                continue
+            self._flagged_unreachable.add(event.id)
+            logger.warning(
+                "X (twikit) incident %s (%s) no longer found in @%s's timeline and has no "
+                "resolution reply — tweet may have been deleted without a repost; needs a "
+                "manual check",
+                event.id, event.url, event.metadata.get("tracked_account"),
+            )
+            try:
+                from core.notifications import telegram
+            except Exception:
+                continue
+            body = (
+                f"⚠️ Possibile link morto — @{event.metadata.get('tracked_account')}\n"
+                f"{event.title[:150]}\n"
+                f"Il tweet originale non è più nella timeline e non risulta risolto.\n"
+                f"🔗 {event.url}"
+            )
+            threading.Thread(
+                target=telegram, args=(body,), daemon=True, name="intel-x-stale-link-alert",
+            ).start()
+        self._flagged_unreachable &= {event.id for event in unresolved}
 
     def _notify(self, event: IntelEvent) -> None:
         """Fire-and-forget Telegram notification when a tracked account posts."""
