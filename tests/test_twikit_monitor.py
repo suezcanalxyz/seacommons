@@ -402,15 +402,25 @@ def test_repost_of_untracked_original_falls_back_to_ingest(monkeypatch, tmp_path
     assert events[0].metadata["is_distress"] is True
 
 
+class _FakeTimelineUser:
+    """Mimics twikit's User.get_tweets("Tweets", ...) — the only call
+    _check_self_replies makes, per tracked handle."""
+
+    def __init__(self, user_id: str, tweets: list) -> None:
+        self.id = user_id
+        self._tweets = tweets
+
+    async def get_tweets(self, kind: str, count: int = 20):
+        assert kind == "Tweets"
+        return self._tweets
+
+
 class _FakeClient:
-    """Mimics twikit's Client.get_tweet_by_id — the only call
-    _check_self_replies makes, keyed by the id it's asked to refetch."""
+    def __init__(self, users_by_handle: dict) -> None:
+        self._users = users_by_handle
 
-    def __init__(self, tweets_by_id: dict) -> None:
-        self._tweets = tweets_by_id
-
-    async def get_tweet_by_id(self, tweet_id: str):
-        return self._tweets[str(tweet_id)]
+    async def get_user_by_screen_name(self, handle: str):
+        return self._users[handle]
 
 
 def test_self_reply_threads_as_update_onto_active_incident(monkeypatch, tmp_path):
@@ -423,7 +433,7 @@ def test_self_reply_threads_as_update_onto_active_incident(monkeypatch, tmp_path
 
     reply = _FakeTweet("3002", "Rescued to #Lampedusa! Everyone arrived safely.", user=_FakeUser())
     refetched = _FakeTweet("3001", original.text, user=_FakeUser(), replies=[reply])
-    client = _FakeClient({"3001": refetched})
+    client = _FakeClient({"alarm_phone": _FakeTimelineUser(_FakeUser.id, [refetched])})
 
     asyncio.run(m._check_self_replies(client))
 
@@ -449,7 +459,7 @@ def test_reply_from_a_different_account_is_not_threaded(monkeypatch, tmp_path):
 
     stranger_reply = _FakeTweet("3011", "This happens all the time", user=_OtherUser())
     refetched = _FakeTweet("3010", original.text, user=_FakeUser(), replies=[stranger_reply])
-    client = _FakeClient({"3010": refetched})
+    client = _FakeClient({"alarm_phone": _FakeTimelineUser(_FakeUser.id, [refetched])})
 
     asyncio.run(m._check_self_replies(client))
 
@@ -466,7 +476,7 @@ def test_self_reply_check_is_idempotent(monkeypatch, tmp_path):
 
     reply = _FakeTweet("3021", "Rescued! All safe.", user=_FakeUser())
     refetched = _FakeTweet("3020", original.text, user=_FakeUser(), replies=[reply])
-    client = _FakeClient({"3020": refetched})
+    client = _FakeClient({"alarm_phone": _FakeTimelineUser(_FakeUser.id, [refetched])})
 
     asyncio.run(m._check_self_replies(client))
     asyncio.run(m._check_self_replies(client))
@@ -474,29 +484,11 @@ def test_self_reply_check_is_idempotent(monkeypatch, tmp_path):
     assert len(store.get(event_id).metadata.get("thread_reposts") or []) == 1
 
 
-class _FakeReplyPage:
-    """Mimics twikit's Result: plain iteration/len only sees this page;
-    reaching further replies requires an explicit awaited .next()."""
-
-    def __init__(self, items: list, next_page: "_FakeReplyPage | None" = None) -> None:
-        self._items = items
-        self._next_page = next_page
-
-    def __iter__(self):
-        return iter(self._items)
-
-    def __len__(self):
-        return len(self._items)
-
-    async def next(self):
-        return self._next_page if self._next_page is not None else _FakeReplyPage([])
-
-
-def test_self_reply_found_on_a_later_page_is_still_threaded(monkeypatch, tmp_path):
+def test_self_reply_thread_with_stranger_reply_interleaved_is_still_threaded(monkeypatch, tmp_path):
     # Real production case (Alarm Phone, 38 people south of Crete): the
-    # resolution reply landed on page 2, behind a page-1 status update and a
-    # third party's reply — plain iteration over tweet.replies only ever
-    # sees page 1, so this must walk .next() to find it.
+    # timeline's own reply-thread module mixes a stranger's reply in between
+    # two of the author's own replies; only the two self-replies should be
+    # threaded, regardless of their position in the list.
     store = IntelStore()
     monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
     m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
@@ -512,16 +504,36 @@ def test_self_reply_found_on_a_later_page_is_still_threaded(monkeypatch, tmp_pat
     stranger_reply = _FakeTweet("3032", "Please help find my family", user=_OtherUser())
     rescue_reply = _FakeTweet("3033", "Rescued by commercial vessel, all safe.", user=_FakeUser())
 
-    page_two = _FakeReplyPage([stranger_reply, rescue_reply])
-    page_one = _FakeReplyPage([status_update], next_page=page_two)
-    refetched = _FakeTweet("3030", original.text, user=_FakeUser(), replies=page_one)
-    client = _FakeClient({"3030": refetched})
+    refetched = _FakeTweet(
+        "3030", original.text, user=_FakeUser(),
+        replies=[status_update, stranger_reply, rescue_reply],
+    )
+    client = _FakeClient({"alarm_phone": _FakeTimelineUser(_FakeUser.id, [refetched])})
 
     asyncio.run(m._check_self_replies(client))
 
     posts = store.get(event_id).metadata.get("thread_reposts") or []
     threaded_ids = {p["tweet_id"] for p in posts}
     assert threaded_ids == {"3031", "3033"}
+
+
+def test_reply_check_ignores_timeline_tweets_not_tracked_as_incidents(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("3040", "MAYDAY 12 people boat sinking off Crete 34.5N 25.0E")
+    m._ingest(original, handle="alarm_phone")
+    event_id = store.events()[0].id
+
+    reply = _FakeTweet("3041", "Rescued! All safe.", user=_FakeUser())
+    refetched = _FakeTweet("3040", original.text, user=_FakeUser(), replies=[reply])
+    unrelated = _FakeTweet("9999", "New publication out now", user=_FakeUser())
+    client = _FakeClient({"alarm_phone": _FakeTimelineUser(_FakeUser.id, [unrelated, refetched])})
+
+    asyncio.run(m._check_self_replies(client))
+
+    posts = store.get(event_id).metadata.get("thread_reposts") or []
+    assert {p["tweet_id"] for p in posts} == {"3041"}
 
 
 def test_non_repost_tweets_still_ingested_normally(tmp_path, monkeypatch):

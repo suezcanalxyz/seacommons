@@ -110,9 +110,10 @@ _SESSION_REBUILD_AFTER_FAILURES = 3  # consecutive all-accounts-failed cycles
 # thread from both — only tweet.replies on the original tweet surfaces them.
 # 15 min is gentle (one extra call per still-active incident per cycle).
 _REPLY_CHECK_INTERVAL_S = 900
-# tweet.replies pages in small batches (verified live: ~2/page); a real
-# outcome reply can land several pages in behind public commentary/replies.
-_MAX_REPLY_PAGES = 6
+# How far back into an account's own timeline to look for a still-active
+# incident's original tweet. Generous enough to comfortably cover the 7-day
+# candidate window even for an account posting several times a day.
+_REPLY_CHECK_TIMELINE_SIZE = 40
 _PRIORITY_DEFAULT = "alarm_phone"
 _DEFAULT_ACCOUNTS = list(NGO_TWITTER_HANDLES)
 # Alarm Phone (and the other tracked SAR NGOs) publish the actual GPS position
@@ -797,15 +798,20 @@ class TwikitMonitor:
 
         Verified live: a tracked account's own reply to its own earlier
         tweet ("Rescued to #Lampedusa! ...") never appears via
-        user.get_tweets("Tweets"/"Replies", ...) — X excludes it from both.
-        The only way to find it is tweet.replies on the original tweet.
+        user.get_tweets("Tweets"/"Replies", ...) at the top level — X
+        excludes it from both. It DOES appear nested under the original
+        tweet's own `.replies`, but only when that tweet is reached via the
+        account's own timeline: X groups a tweet together with the author's
+        own reply-thread as a single "profile-conversation" module there,
+        and twikit exposes it as a plain, already-complete list.
 
-        tweet.replies is a twikit Result — a *paginated* view, not a plain
-        list. Iterating it directly only sees the first page (verified live:
-        capped around 2 replies), so a resolution reply posted after other
-        back-and-forth on the same thread would silently never be seen.
-        Walk pages via `.next()` up to _MAX_REPLY_PAGES to cover threads with
-        real conversation before the actual outcome reply.
+        get_tweet_by_id(...).replies looked like an equivalent shortcut (one
+        fetch per event, no full timeline scan) but isn't: verified live
+        against a real 3-reply thread (self, stranger, self) that its cursor
+        cuts off after 2 replies and never surfaces the 3rd via `.next()` —
+        silently dropping the actual resolution reply. The timeline path
+        does not have this gap, so re-walking each tracked account's recent
+        timeline (already fetched every poll anyway) is used instead.
 
         Only replies from the SAME author as the original are threaded —
         replies from other accounts are public commentary, not an
@@ -816,19 +822,33 @@ class TwikitMonitor:
             for event in intel_store.events(type_filter="twitter", max_age_days=7)
             if event.metadata.get("is_distress") and event.metadata.get("tweet_id")
         ]
-        for event in candidates:
-            tweet_id = str(event.metadata["tweet_id"])
+        if not candidates:
+            return
+        by_tweet_id = {str(event.metadata["tweet_id"]): event for event in candidates}
+        handles = {
+            str(event.metadata.get("tracked_account") or "")
+            for event in candidates
+        } - {""}
+        for handle in handles:
+            user = self._users.get(handle)
+            if user is None:
+                try:
+                    user = await client.get_user_by_screen_name(handle)
+                except Exception as exc:
+                    logger.debug("X (twikit) reply check: could not resolve @%s: %s", handle, exc)
+                    continue
+                self._users[handle] = user
             try:
-                tweet = await client.get_tweet_by_id(tweet_id)
+                recent = await user.get_tweets("Tweets", count=_REPLY_CHECK_TIMELINE_SIZE)
             except Exception as exc:
-                logger.debug("X (twikit) reply check: could not refetch %s: %s", tweet_id, exc)
+                logger.debug("X (twikit) reply check: could not fetch @%s timeline: %s", handle, exc)
                 continue
-            author_id = str(getattr(getattr(tweet, "user", None), "id", "") or "")
-            page = getattr(tweet, "replies", None)
-            pages_walked = 0
-            while page is not None and pages_walked < _MAX_REPLY_PAGES:
-                pages_walked += 1
-                for reply in page:
+            for tweet in recent:
+                event = by_tweet_id.get(str(tweet.id))
+                if event is None:
+                    continue
+                author_id = str(getattr(getattr(tweet, "user", None), "id", "") or "")
+                for reply in getattr(tweet, "replies", None) or []:
                     reply_author_id = str(getattr(getattr(reply, "user", None), "id", "") or "")
                     if not author_id or reply_author_id != author_id:
                         continue
@@ -850,18 +870,6 @@ class TwikitMonitor:
                             "X (twikit) self-reply %s threaded onto incident %s",
                             reply_id, event.id,
                         )
-                if len(page) == 0:
-                    break
-                try:
-                    next_page = await page.next()
-                except Exception as exc:
-                    logger.debug(
-                        "X (twikit) reply check: pagination failed for %s: %s", tweet_id, exc
-                    )
-                    break
-                if len(next_page) == 0:
-                    break
-                page = next_page
 
     def _notify(self, event: IntelEvent) -> None:
         """Fire-and-forget Telegram notification when a tracked account posts."""
