@@ -110,6 +110,9 @@ _SESSION_REBUILD_AFTER_FAILURES = 3  # consecutive all-accounts-failed cycles
 # thread from both — only tweet.replies on the original tweet surfaces them.
 # 15 min is gentle (one extra call per still-active incident per cycle).
 _REPLY_CHECK_INTERVAL_S = 900
+# tweet.replies pages in small batches (verified live: ~2/page); a real
+# outcome reply can land several pages in behind public commentary/replies.
+_MAX_REPLY_PAGES = 6
 _PRIORITY_DEFAULT = "alarm_phone"
 _DEFAULT_ACCOUNTS = list(NGO_TWITTER_HANDLES)
 # Alarm Phone (and the other tracked SAR NGOs) publish the actual GPS position
@@ -795,8 +798,15 @@ class TwikitMonitor:
         Verified live: a tracked account's own reply to its own earlier
         tweet ("Rescued to #Lampedusa! ...") never appears via
         user.get_tweets("Tweets"/"Replies", ...) — X excludes it from both.
-        The only way to find it is tweet.replies on the original tweet,
-        which comes back fully hydrated (text, user) with no extra fetch.
+        The only way to find it is tweet.replies on the original tweet.
+
+        tweet.replies is a twikit Result — a *paginated* view, not a plain
+        list. Iterating it directly only sees the first page (verified live:
+        capped around 2 replies), so a resolution reply posted after other
+        back-and-forth on the same thread would silently never be seen.
+        Walk pages via `.next()` up to _MAX_REPLY_PAGES to cover threads with
+        real conversation before the actual outcome reply.
+
         Only replies from the SAME author as the original are threaded —
         replies from other accounts are public commentary, not an
         operational update, and are left alone.
@@ -814,28 +824,44 @@ class TwikitMonitor:
                 logger.debug("X (twikit) reply check: could not refetch %s: %s", tweet_id, exc)
                 continue
             author_id = str(getattr(getattr(tweet, "user", None), "id", "") or "")
-            for reply in getattr(tweet, "replies", None) or []:
-                reply_author_id = str(getattr(getattr(reply, "user", None), "id", "") or "")
-                if not author_id or reply_author_id != author_id:
-                    continue
-                reply_id = str(getattr(reply, "id", "") or "")
-                if not reply_id:
-                    continue
-                reply_text = str(getattr(reply, "text", "") or "").strip()
-                record: dict[str, Any] = {
-                    "tweet_id": reply_id,
-                    "posted_at": self._timestamp(reply),
-                    "url": f"https://x.com/i/web/status/{reply_id}",
-                    "kind": "reply",
-                }
-                if reply_text:
-                    record["note"] = reply_text[:200]
-                added = intel_store.append_thread_repost(event.id, record)
-                if added:
-                    logger.info(
-                        "X (twikit) self-reply %s threaded onto incident %s",
-                        reply_id, event.id,
+            page = getattr(tweet, "replies", None)
+            pages_walked = 0
+            while page is not None and pages_walked < _MAX_REPLY_PAGES:
+                pages_walked += 1
+                for reply in page:
+                    reply_author_id = str(getattr(getattr(reply, "user", None), "id", "") or "")
+                    if not author_id or reply_author_id != author_id:
+                        continue
+                    reply_id = str(getattr(reply, "id", "") or "")
+                    if not reply_id:
+                        continue
+                    reply_text = str(getattr(reply, "text", "") or "").strip()
+                    record: dict[str, Any] = {
+                        "tweet_id": reply_id,
+                        "posted_at": self._timestamp(reply),
+                        "url": f"https://x.com/i/web/status/{reply_id}",
+                        "kind": "reply",
+                    }
+                    if reply_text:
+                        record["note"] = reply_text[:200]
+                    added = intel_store.append_thread_repost(event.id, record)
+                    if added:
+                        logger.info(
+                            "X (twikit) self-reply %s threaded onto incident %s",
+                            reply_id, event.id,
+                        )
+                if len(page) == 0:
+                    break
+                try:
+                    next_page = await page.next()
+                except Exception as exc:
+                    logger.debug(
+                        "X (twikit) reply check: pagination failed for %s: %s", tweet_id, exc
                     )
+                    break
+                if len(next_page) == 0:
+                    break
+                page = next_page
 
     def _notify(self, event: IntelEvent) -> None:
         """Fire-and-forget Telegram notification when a tracked account posts."""
