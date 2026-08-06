@@ -15,6 +15,7 @@ the other.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from typing import Any
 
@@ -45,6 +46,9 @@ def attach_forensic_packet(event: Any) -> None:
     blocks the ingestion loop (signing + DB write run on a background
     thread, same pattern as intel_store's own location persistence)."""
     if event.lat is None or event.lon is None:
+        return
+    if os.getenv("SEACOMMONS_FORENSIC_SYNC", "").lower() in {"1", "true", "yes"}:
+        _build_and_sign(event)
         return
     threading.Thread(
         target=_build_and_sign,

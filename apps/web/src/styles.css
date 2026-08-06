@@ -1447,6 +1447,11 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   background: rgba(34, 197, 94, 0.05);
 }
 .intel-event--resolved:hover { background: rgba(34, 197, 94, 0.1); }
+.intel-event--needs-review {
+  border-left-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.06);
+}
+.intel-event--needs-review:hover { background: rgba(245, 158, 11, 0.11); }
 .intel-event--archived {
   border-left: 2px solid rgba(154, 160, 171, 0.6);
   background: rgba(154, 160, 171, 0.05);
@@ -1464,6 +1469,7 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 }
 .intel-lifecycle--active   { color: #ff7070; background: rgba(255, 59, 59, 0.18); border: 1px solid rgba(255, 59, 59, 0.4); }
 .intel-lifecycle--resolved { color: #7ff0c9; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.4); }
+.intel-lifecycle--needs_review { color: #fbbf24; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); }
 .intel-lifecycle--archived { color: #b6bec3; background: rgba(154, 160, 171, 0.12); border: 1px solid rgba(154, 160, 171, 0.35); }
 
 /* Archived collapsible group at the bottom of the operational tier */

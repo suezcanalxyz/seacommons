@@ -19,6 +19,7 @@
     "build:unified": "vite build && node scripts/package-unified.mjs",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "test": "npm run test:simulation",
     "test:simulation": "node --test src/simulation/*.test.js"
   },
   "dependencies": {

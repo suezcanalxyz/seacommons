@@ -92,18 +92,44 @@ def test_material_update_gets_new_version_id() -> None:
     assert first["properties"]["incident_id"] == second["properties"]["incident_id"]
 
 
-def test_concluded_report_becomes_resolved_but_stays_visible() -> None:
-    # Same semantics as core/api/routes/live.py: a known outcome (rescued,
-    # or "found + remain missing") colors the marker green — it must NOT be
-    # removed from the edge outright the way the old resolved/archived flags
-    # used to trigger immediate deletion.
+def test_concluded_report_is_resolved_and_removed_from_operational_live() -> None:
+    # Lifecycle remains explicit for archive consumers while the removal
+    # version clears the incident from operational edge state.
     row = distress_row(text="Rescued!! Thank you Ocean Viking for rescuing the 14 people")
     event = public_event_from_row(row, "node", now=_NOW, same_source=[])
 
     assert event is not None
     assert event["properties"]["incident_lifecycle"] == "resolved"
-    assert event["type"] != "incident_removed"
-    assert event["properties"]["expired"] is False
+    assert event["type"] == "incident_removed"
+    assert event["properties"]["expired"] is True
+
+
+def test_saved_arrival_reply_resolves_on_the_edge() -> None:
+    row = distress_row(thread_reposts=[{
+        "tweet_id": "2085235676618846249",
+        "posted_at": "2026-08-02T12:10:00+00:00",
+        "kind": "reply",
+        "note": "We received news that the people arrived on Sicily!",
+    }])
+    event = public_event_from_row(row, "node", now=_NOW, same_source=[])
+    assert event is not None
+    assert event["properties"]["incident_lifecycle"] == "resolved"
+    assert event["type"] == "incident_removed"
+
+
+def test_unsafe_rescue_reply_stays_active_on_the_edge() -> None:
+    row = distress_row(thread_reposts=[{
+        "tweet_id": "2084583427207057896",
+        "posted_at": "2026-08-02T12:10:00+00:00",
+        "kind": "reply",
+        "note": (
+            "A vessel rescued the people but they need to be disembarked in a country "
+            "of safety, which Egypt is not!"
+        ),
+    }])
+    event = public_event_from_row(row, "node", now=_NOW, same_source=[])
+    assert event is not None
+    assert event["properties"]["incident_lifecycle"] == "active"
 
 
 def test_stale_unresolved_report_turns_archived_not_removed() -> None:

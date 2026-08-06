@@ -1,5 +1,5 @@
 const MAX_EVENTS = 500;
-const DEFAULT_TTL_SECONDS = 6 * 60 * 60;
+const DEFAULT_TTL_SECONDS = 8 * 24 * 60 * 60;
 
 function json(payload, status = 200, headers = {}) {
   return new Response(JSON.stringify(payload), {
@@ -165,12 +165,9 @@ export class LiveRoom {
     const fresh = existing.filter((item) => isFresh(item, this.env));
     const targetId = String(event.properties?.incident_id || event.id);
     const withoutPreviousVersion = fresh.filter((item) => String(item.properties?.incident_id || item.id) !== targetId);
-    // Only an explicit "expired" signal (the publisher's own 3-day lifecycle
-    // cutoff, see core/intel/lifecycle.py) removes an incident outright.
-    // Resolved/archived are NOT removal triggers here — they're just a
-    // lifecycle color (event.properties.incident_lifecycle), same as the
-    // VM-hosted /api/v1/live/signals feed. The client keeps showing them
-    // (muted/green) until the publisher says the marker's 3-day window is up.
+    // Only an explicit "expired" signal from the canonical publisher removes
+    // an incident outright. It covers a direct resolution as well as the
+    // 7-day cutoff; the edge never tries to reclassify incident text itself.
     const removed = Boolean(event.properties?.expired || event.type === 'incident_removed');
     const events = removed ? withoutPreviousVersion : [...withoutPreviousVersion, event].slice(-MAX_EVENTS);
 

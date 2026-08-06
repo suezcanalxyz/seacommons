@@ -846,7 +846,7 @@ class TwikitMonitor:
         if kind == "quote":
             note = str(getattr(repost, "text", "") or "").strip()
             if note:
-                record["note"] = note[:200]
+                record["note"] = note[:500]
         added = intel_store.append_thread_repost(parent.id, record)
         if added:
             logger.info(
@@ -939,7 +939,7 @@ class TwikitMonitor:
                         "kind": "reply",
                     }
                     if reply_text:
-                        record["note"] = reply_text[:200]
+                        record["note"] = reply_text[:500]
                     added = intel_store.append_thread_repost(event.id, record)
                     if added:
                         logger.info(

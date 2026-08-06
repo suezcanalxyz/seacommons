@@ -260,9 +260,9 @@ def public_event_from_row(
     except (TypeError, ValueError):
         confidence = None
 
-    # expired: past the 7-day total Live window — the edge must purge it
-    # outright. incident_lifecycle (active/resolved/archived) governs color
-    # for anything still inside that window; it never triggers removal.
+    # expired: outside the operational Live window — either directly resolved
+    # or older than 7 days. The edge purges it outright; lifecycle still
+    # describes records that remain visible or are consumed by archive views.
     expired = is_distress and not lifecycle.is_within_live_window(event, now=now)
     incident_lifecycle = (
         lifecycle.distress_lifecycle(event, now=now, same_source=same_source)
@@ -278,7 +278,9 @@ def public_event_from_row(
         "incident_id": incident_id,
         "severity": event.severity,
         "title": event.title,
-        "text": event.text,
+        # Same public contract as the VM feed: raw source/caller text stays
+        # private; verified public self-reply notes are projected separately.
+        "text": "",
         "verification_status": metadata.get("verification_status", "unverified_public_source"),
         "coordinate_source": metadata.get("coordinate_source"),
         "radius_m": metadata.get("location_uncertainty_m"),

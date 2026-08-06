@@ -430,6 +430,8 @@ def test_self_reply_threads_as_update_onto_active_incident(monkeypatch, tmp_path
     original = _FakeTweet("3001", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
     m._ingest(original, handle="alarm_phone")
     event_id = store.events()[0].id
+    broadcasts: list[str] = []
+    store._fire_broadcast = lambda event: broadcasts.append(event.id)
 
     reply = _FakeTweet("3002", "Rescued to #Lampedusa! Everyone arrived safely.", user=_FakeUser())
     refetched = _FakeTweet("3001", original.text, user=_FakeUser(), replies=[reply])
@@ -443,6 +445,7 @@ def test_self_reply_threads_as_update_onto_active_incident(monkeypatch, tmp_path
     assert posts[0]["tweet_id"] == "3002"
     assert posts[0]["kind"] == "reply"
     assert "Rescued" in posts[0]["note"]
+    assert broadcasts == [event_id]
 
 
 def test_reply_from_a_different_account_is_not_threaded(monkeypatch, tmp_path):

@@ -19,6 +19,7 @@ import { loadStoredSimulations, storeScenario } from './simulation/scenarioStore
 import { computeDriftInWorker } from './simulation/workerClient.js';
 import {
   decorateLiveTracking,
+  edgeSnapshotIsFresh,
   liveTrackingCandidates,
   mergeLiveDrifts,
 } from './simulation/liveTracking.js';
@@ -44,19 +45,19 @@ const _PRECISE_POINT_FILTER = ['all',
 ];
 
 // Distress lifecycle colors: red (active/unresolved), green (resolved/known
-// outcome), gray (archived/stale, no update in a while). All three pulse —
+// outcome), amber (verified update needs review), gray (archived/stale). All pulse —
 // only the fill/stroke color differs, driven by `incident_lifecycle` (see
 // core/api/routes/live.py) so the map never has to guess status itself.
 const LIFECYCLE_CORE_COLOR = ['match', ['get', 'incident_lifecycle'],
-  'resolved', '#22c55e', 'archived', '#9aa0ab', '#ff3b3b'];
+  'resolved', '#22c55e', 'needs_review', '#f59e0b', 'archived', '#9aa0ab', '#ff3b3b'];
 const LIFECYCLE_PULSE_FILL = ['match', ['get', 'incident_lifecycle'],
-  'resolved', 'rgba(34,197,94,0.35)', 'archived', 'rgba(154,160,171,0.35)', 'rgba(255,59,59,0.35)'];
+  'resolved', 'rgba(34,197,94,0.35)', 'needs_review', 'rgba(245,158,11,0.35)', 'archived', 'rgba(154,160,171,0.35)', 'rgba(255,59,59,0.35)'];
 const LIFECYCLE_PULSE_STROKE = ['match', ['get', 'incident_lifecycle'],
-  'resolved', 'rgba(34,197,94,0.9)', 'archived', 'rgba(154,160,171,0.9)', 'rgba(255,80,80,0.9)'];
+  'resolved', 'rgba(34,197,94,0.9)', 'needs_review', 'rgba(245,158,11,0.9)', 'archived', 'rgba(154,160,171,0.9)', 'rgba(255,80,80,0.9)'];
 const LIFECYCLE_AREA_FILL = ['match', ['get', 'incident_lifecycle'],
-  'resolved', 'rgba(34,197,94,0.10)', 'archived', 'rgba(154,160,171,0.08)', 'rgba(255,59,59,0.10)'];
+  'resolved', 'rgba(34,197,94,0.10)', 'needs_review', 'rgba(245,158,11,0.10)', 'archived', 'rgba(154,160,171,0.08)', 'rgba(255,59,59,0.10)'];
 const LIFECYCLE_AREA_STROKE = ['match', ['get', 'incident_lifecycle'],
-  'resolved', 'rgba(34,197,94,0.4)', 'archived', 'rgba(154,160,171,0.35)', 'rgba(255,80,80,0.4)'];
+  'resolved', 'rgba(34,197,94,0.4)', 'needs_review', 'rgba(245,158,11,0.5)', 'archived', 'rgba(154,160,171,0.35)', 'rgba(255,80,80,0.4)'];
 
 const PUBLIC_DEMO_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org']);
 const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'engine.seacommons.org']);
@@ -939,13 +940,14 @@ function App() {
     let reconnectTimer = null;
 
     function applySnapshot(snapshot) {
-      if (!alive) return;
+      if (!alive || !edgeSnapshotIsFresh(snapshot)) return false;
       const features = edgeSnapshotToFeatures(snapshot);
       setIntelEvents(features);
       try { window.localStorage.setItem('seacommons_live_signal_cache_v2', JSON.stringify(features)); } catch { /* quota */ }
       setIntelConnected(true);
       setIntelMode('ws');
       edgeLiveActiveRef.current = true;
+      return true;
     }
 
     async function pollSnapshot() {
@@ -956,7 +958,9 @@ function App() {
       try {
         const response = await fetch(`${LIVE_EDGE_BASE}/v1/live/snapshot`);
         if (!response.ok) throw new Error(`edge snapshot HTTP ${response.status}`);
-        applySnapshot(await response.json());
+        if (!applySnapshot(await response.json())) {
+          throw new Error('edge snapshot is stale');
+        }
       } catch {
         if (!alive) return;
         // Edge unreachable — hand back to the VM path, which has been
@@ -979,7 +983,7 @@ function App() {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'snapshot') {
-            applySnapshot(msg);
+            if (!applySnapshot(msg)) edgeLiveActiveRef.current = false;
           } else if (msg.type === 'event' || msg.type === 'remove') {
             // Incremental updates still need the full picture to re-derive
             // removal/lifecycle correctly — re-fetch the authoritative
@@ -1724,7 +1728,7 @@ function App() {
           closeButton: false, closeOnClick: false, offset: 10,
           className: 'intel-hover-popup',
         });
-        const LIFECYCLE_LABEL = { resolved: 'Resolved', archived: 'Archived', active: 'Active' };
+        const LIFECYCLE_LABEL = { resolved: 'Resolved', needs_review: 'Needs review', archived: 'Archived', active: 'Active' };
         map.on('mouseenter', 'intel-distress-core', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mousemove', 'intel-distress-core', (event) => {
           const feature = event.features?.[0];
@@ -2119,7 +2123,7 @@ function App() {
     const positioned = intelEvents.filter((f) => f.geometry?.coordinates);
     const isDistressTier = (f) => {
       const p = f.properties || {};
-      return p.kind === 'distress' || p.kind === 'resolved' || p.kind === 'archived'
+      return p.kind === 'distress' || p.kind === 'resolved' || p.kind === 'needs_review' || p.kind === 'archived'
         || p.tier === 'operational' || p.type === 'distress';
     };
     const distress = positioned.filter(isDistressTier);

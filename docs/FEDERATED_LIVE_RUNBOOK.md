@@ -119,7 +119,7 @@ For 24 hours compare:
 - the newest event in `/v1/live/snapshot`;
 - event IDs and source timestamps;
 - coordinate confidence and radius;
-- `incident_lifecycle` (active/resolved/archived) — must match the VM feed's `kind`/`incident_lifecycle` for the same incident, since both read `core/intel/lifecycle.py`;
+- `incident_lifecycle` (active/resolved/needs_review/archived) — must match the VM feed's `kind`/`incident_lifecycle` for the same incident, since both read `core/intel/lifecycle.py`;
 - source URL;
 - edge `updated_at` freshness.
 

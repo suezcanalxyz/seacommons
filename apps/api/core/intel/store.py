@@ -146,6 +146,28 @@ class IntelEvent:
         return hashlib.blake2s(raw.encode(), digest_size=8).hexdigest()
 
 
+def event_feature_with_lifecycle(
+    event: IntelEvent,
+    *,
+    same_source: list[IntelEvent],
+    now: Optional[datetime] = None,
+) -> dict[str, Any]:
+    """Project the canonical lifecycle onto every operational event contract."""
+    feature = event.to_geojson_feature()
+    if event.tier() != "operational":
+        return feature
+    from core.intel import lifecycle
+
+    state = lifecycle.distress_lifecycle(
+        event,
+        now=now or datetime.now(timezone.utc),
+        same_source=same_source,
+    )
+    feature["properties"]["incident_lifecycle"] = state
+    feature["properties"]["kind"] = "distress" if state == "active" else state
+    return feature
+
+
 class IntelStore:
     def __init__(self, maxlen: int = MAX_EVENTS) -> None:
         self._events: deque[IntelEvent] = deque(maxlen=maxlen)
@@ -263,6 +285,7 @@ class IntelStore:
 
         new_count = 0
         updated_count = 0
+        changed_events: list[IntelEvent] = []
         with self._lock:
             by_id = {event.id: event for event in self._events}
             for (row_id, timestamp_utc, type_, severity, lat, lon, title, text, url,
@@ -274,6 +297,7 @@ class IntelStore:
                         existing.lon = lon
                         existing.metadata = meta
                         updated_count += 1
+                        changed_events.append(existing)
                     continue
                 new_event = IntelEvent(
                     id=row_id, timestamp_utc=timestamp_utc, type=type_, severity=severity,
@@ -289,6 +313,9 @@ class IntelStore:
                 self._seen.update(keys)
                 self._events.appendleft(new_event)
                 new_count += 1
+                changed_events.append(new_event)
+        for changed_event in changed_events:
+            self._fire_broadcast(changed_event)
         if new_count or updated_count:
             logger.info("intel_store: sync_from_db +%d new, %d updated", new_count, updated_count)
         return (new_count, updated_count)
@@ -599,10 +626,9 @@ class IntelStore:
         """Record a repost onto an existing incident's thread.
 
         The repost is attached to the SAME incident (thread) the source alert
-        opened, so a repost/echo can never spawn a new marker or re-broadcast an
-        update. Deliberately does NOT fire the WebSocket broadcast or change any
-        field the live edge publishes (text/geometry/lifecycle), so the marker
-        is untouched — only thread bookkeeping is persisted.
+        opened, so a repost/echo can never spawn a new marker. A verified reply
+        carrying text may change lifecycle and is broadcast immediately; a
+        plain repost only updates bookkeeping and remains silent.
         """
         updated: Optional[IntelEvent] = None
         with self._lock:
@@ -628,6 +654,8 @@ class IntelStore:
             args=(event_id, dict(updated.metadata), updated.linked_mmsi),
             daemon=True,
         ).start()
+        if repost.get("note"):
+            self._fire_broadcast(updated)
         return True
 
     def touch_source_observation(self, event_id: str, observed_at: str) -> bool:
@@ -793,7 +821,9 @@ class IntelStore:
         Non-blocking: schedule coroutine in each registered loop.
         Called from background threads after a successful add().
         """
-        payload = json.dumps(event.to_geojson_feature())
+        with self._lock:
+            same_source = [candidate for candidate in self._events if candidate.source == event.source]
+        payload = json.dumps(event_feature_with_lifecycle(event, same_source=same_source))
         dead: list[Any] = []
         with self._lock:
             clients = list(self._ws_clients)

@@ -268,9 +268,20 @@ def analyze_ngo_response(
 
     try:
         from core.intel import lifecycle
-        state = lifecycle.distress_lifecycle(event, now=now, same_source=[])
+        same_source = [
+            candidate
+            for candidate in (related_signals or [])
+            if getattr(candidate, "source", None) == getattr(event, "source", None)
+        ]
+        if event not in same_source:
+            same_source.append(event)
+        state = lifecycle.distress_lifecycle(event, now=now, same_source=same_source)
     except Exception:
-        state = str(event.metadata.get("incident_status") or "active") if getattr(event, "metadata", None) else "active"
+        state = (
+            str(event.metadata.get("incident_lifecycle") or "active")
+            if getattr(event, "metadata", None)
+            else "active"
+        )
 
     return {
         "episode": {

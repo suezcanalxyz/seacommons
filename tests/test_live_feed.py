@@ -248,6 +248,91 @@ def test_resolved_distress_still_recognizes_a_clean_rescue() -> None:
     assert is_resolved_distress("The group was rescued and everyone is now safe.")
 
 
+def test_latest_real_arrival_reply_resolves_the_incident() -> None:
+    event = IntelEvent(
+        type="twitter",
+        severity="high",
+        title="Boat carrying 25 people drifting in the Maltese SAR zone",
+        text="Rescue is urgent!",
+        source="alarm_phone",
+        timestamp_utc="2026-08-05T16:36:54+00:00",
+        metadata={
+            "is_distress": True,
+            "thread_reposts": [{
+                "tweet_id": "2085235676618846249",
+                "posted_at": "2026-08-06T05:25:01+00:00",
+                "kind": "reply",
+                "note": (
+                    "We received news that the people arrived on #Sicily! "
+                    "We hope that everyone is fine after the long and difficult journey."
+                ),
+            }],
+        },
+    )
+    now = datetime.fromisoformat("2026-08-06T06:00:00+00:00")
+    assert lifecycle.distress_lifecycle(event, now=now, same_source=[]) == "resolved"
+
+
+def test_unsafe_rescue_reply_does_not_resolve_the_incident() -> None:
+    event = IntelEvent(
+        type="twitter",
+        severity="high",
+        title="38 lives at risk south of Crete",
+        text="Immediate rescue is needed",
+        source="alarm_phone",
+        timestamp_utc="2026-08-03T18:35:58+00:00",
+        metadata={
+            "is_distress": True,
+            "thread_reposts": [
+                {
+                    "posted_at": "2026-08-04T07:19:56+00:00",
+                    "note": "The situation is not resolved, the 38 people are still in danger!",
+                },
+                {
+                    "posted_at": "2026-08-04T10:13:13+00:00",
+                    "note": (
+                        "The commercial vessel THEMIS rescued the people but is heading towards "
+                        "Egypt. They need to be disembarked in a country of safety, which Egypt is not!"
+                    ),
+                },
+            ],
+        },
+    )
+    now = datetime.fromisoformat("2026-08-04T12:00:00+00:00")
+    assert lifecycle.distress_lifecycle(event, now=now, same_source=[]) == "active"
+
+
+def test_latest_reply_can_reopen_a_resolved_incident_and_refresh_archive_clock() -> None:
+    event = IntelEvent(
+        type="twitter",
+        severity="high",
+        title="Boat in distress",
+        text="Rescue is urgent",
+        source="alarm_phone",
+        timestamp_utc="2026-08-01T08:00:00+00:00",
+        metadata={
+            "is_distress": True,
+            "thread_reposts": [
+                {
+                    "posted_at": "2026-08-01T10:00:00+00:00",
+                    "note": "The people were rescued and arrived safely.",
+                },
+                {
+                    "posted_at": "2026-08-02T11:30:00+00:00",
+                    "note": "Correction: the situation is not resolved and they are still in danger.",
+                },
+            ],
+        },
+    )
+    now = datetime.fromisoformat("2026-08-02T12:00:00+00:00")
+    assert lifecycle.distress_lifecycle(event, now=now, same_source=[]) == "active"
+
+
+def test_rescue_negations_are_not_resolved() -> None:
+    assert not is_resolved_distress("The group has not been rescued and remains in danger.")
+    assert not is_resolved_distress("They are still waiting to be rescued.")
+
+
 def test_lifecycle_recomputes_from_text_instead_of_trusting_stale_incident_status() -> None:
     # A stored incident_status="resolved" — the exact value the OLD,
     # over-broad is_resolved_distress() would have baked in at ingestion for
@@ -341,7 +426,7 @@ def test_self_reply_marks_the_incident_resolved_without_keyword_overlap() -> Non
     assert lifecycle.distress_lifecycle(event, now=now, same_source=[]) == "resolved"
 
 
-def test_thread_reposts_without_a_resolved_note_stay_active() -> None:
+def test_ambiguous_latest_reply_requires_review() -> None:
     event = IntelEvent(
         id="lampedusa02",
         type="twitter",
@@ -359,6 +444,8 @@ def test_thread_reposts_without_a_resolved_note_stay_active() -> None:
         },
     )
     assert lifecycle.has_own_reply_resolution(event) is False
+    now = datetime.fromisoformat("2026-07-30T10:00:00+00:00")
+    assert lifecycle.distress_lifecycle(event, now=now, same_source=[]) == "needs_review"
 
 
 def test_resolution_signal_still_fires_on_genuinely_matching_follow_up() -> None:

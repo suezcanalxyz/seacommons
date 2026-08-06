@@ -1,12 +1,12 @@
 ﻿# SeaCommons Live-first cutover
 
-Status: deployed, unified with the VM-hosted lifecycle model. Distress markers are colored (active/resolved/archived), not deleted, until the true 7-day cutoff.
+Status: deployed, unified with the VM-hosted lifecycle model. Directly resolved incidents leave operational Live immediately; active, needs-review and archived markers remain bounded by the 7-day cutoff.
 
 ## Objective
 
 Run `live.seacommons.org` as a realtime operational surface delivered over a zero-cost Cloudflare edge (WebSocket + Durable Object), while keeping exactly one lifecycle policy: `core/intel/lifecycle.py`, shared with the VM-hosted `/api/v1/live/signals` feed (`core/api/routes/live.py`).
 
-The system does not backfill on a cold start (see "Clean start" below), but once running it is **not** a bare 6-hour ephemeral cache: a distress marker stays visible â€” colored red (active), green (resolved), or gray (archived/stale) â€” for its full lifecycle window (`lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS`, 7 days), and is only actively removed from the edge once that window ends (an explicit `incident_removed`/`expired` signal from the publisher). The edge's own `LIVE_EVENT_TTL_SECONDS` is a backstop only, set well beyond that window, in case the publisher stops running before it can send the removal itself.
+The system does not backfill on a cold start (see "Clean start" below), but once running it is **not** a bare 6-hour ephemeral cache. A directly concluded incident is removed from operational Live immediately. Other distress markers remain visible as red (active), amber (needs review), or gray (archived/stale) within `lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS` (7 days). The edge's 8-day TTL is only a backstop if the publisher stops before it sends the explicit removal.
 
 ## Runtime path
 
@@ -26,18 +26,17 @@ The database is used only as a local short-lived interchange point. Historical c
 
 The Live edge implements:
 
-- a `LIVE_EVENT_TTL_SECONDS` backstop (default 4 days â€” beyond the 7-day lifecycle window on purpose; see "Data retention" below), not the primary
+- an 8-day `LIVE_EVENT_TTL_SECONDS` backstop, beyond the 7-day lifecycle window, not the primary retention mechanism
   expiry mechanism;
 - no HTTP caching for the current snapshot;
 - a WebSocket snapshot on connection;
 - deterministic incident IDs and material state-version IDs;
 - replacement of an older version of the same incident;
-- **resolved/archived is a color, not a removal** â€” a marker keeps
-  broadcasting as `event` (never `remove`) while
-  `event.properties.incident_lifecycle` is `active`/`resolved`/`archived`;
-  only `event.properties.expired === true` (equivalently
-  `type === 'incident_removed'`) triggers a `remove` broadcast and drops it
-  from Durable Object state;
+- the edge removes only an explicit `event.properties.expired === true`
+  (`type === 'incident_removed'`) sent by the canonical publisher; this is
+  emitted for direct resolution and for the 7-day cutoff;
+- `incident_lifecycle` remains the canonical state contract for operational
+  and archive consumers: `active`, `resolved`, `needs_review`, `archived`;
 - `/v1/live/status` reporting freshness and connected clients;
 - authenticated `/v1/live/reset` for a clean start;
 - no historical backfill requirement on a cold start.
@@ -129,7 +128,7 @@ A healthy active result should report:
   "status": "live",
   "age_seconds": 12,
   "event_count": 1,
-  "ttl_seconds": 345600
+  "ttl_seconds": 691200
 }
 ```
 
@@ -158,8 +157,8 @@ A later optimization can add a common `publish_live(event)` hook directly to `In
 
 Live is not a full archive/replay surface, but a distress marker's lifecycle is now identical whether served from the VM API or the edge:
 
-- distress markers stay visible (colored) for `lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS` (7 days) from the source's own observed timestamp, then the publisher sends an explicit removal;
-- edge backstop TTL: 4 days (`LIVE_EVENT_TTL_SECONDS=345600`) â€” only matters if the publisher stops running before the 3-day mark;
+- directly resolved markers are removed from operational Live immediately; other distress markers remain for at most `lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS` (7 days), then the publisher sends an explicit removal;
+- edge backstop TTL: 8 days (`LIVE_EVENT_TTL_SECONDS=691200`) â€” only matters if the publisher stops before sending the 7-day removal;
 - local delivered-version registry: 48 hours;
 - existing operational database: the source of truth; not deleted or rotated by this feature;
 - R2/Nostr/OpenTimestamps: disabled unless a separate archival policy is explicitly approved.
@@ -171,7 +170,7 @@ Live is not a full archive/replay surface, but a distress marker's lifecycle is 
 3. Generate one real or controlled collector observation.
 4. Confirm it appears on `/v1/live/snapshot` within three seconds of DB persistence, with `properties.incident_lifecycle === "active"`.
 5. Enrich its coordinates and confirm the marker is replaced (new version) rather than duplicated.
-6. Post a same-source follow-up reporting resolution and confirm the marker's `incident_lifecycle` flips to `"resolved"` in a new version â€” the marker must still be present in the snapshot, not removed.
+6. Post a verified same-author reply reporting resolution and confirm the publisher sends a new expired version and the marker leaves the operational snapshot.
 7. Leave an unresolved marker alone for 24h+ and confirm it turns `"archived"` without being removed.
 8. Advance past the 7-day window (or set a synthetic old `observed_at`) and confirm the publisher sends `type: "incident_removed"` / `properties.expired: true`, and the marker disappears from `/v1/live/snapshot`.
 9. Stop Oracle and confirm the last active state remains available until the backstop TTL.

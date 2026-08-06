@@ -12,7 +12,7 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
-from core.intel.geoextract import is_concluded_incident
+from core.intel.geoextract import is_concluded_incident, is_ongoing_incident
 from core.intel.store import IntelEvent
 
 # Total visible lifetime of an unresolved distress marker on Live. Concluded
@@ -90,21 +90,50 @@ def has_resolution_signal(event: IntelEvent, same_source: list[IntelEvent]) -> b
 
 
 def has_own_reply_resolution(event: IntelEvent) -> bool:
-    """True if one of this event's own thread_reposts entries — a self-reply
-    structurally verified (via X's own in_reply_to link + matching author,
-    see twikit_monitor._check_self_replies) to answer THIS exact tweet, not a
-    text-similarity guess across different posts — reads as a concluded
-    outcome (e.g. "Rescued to #Lampedusa!").
+    """True if the latest decisive self-reply says the incident is resolved.
 
-    No keyword-overlap check needed here, unlike has_resolution_signal: the
-    reply is already proven to be about this incident by X's own thread
-    link, so there is no cross-incident false-match risk to guard against.
+    Replies are structurally verified through X's ``in_reply_to`` link and
+    matching author. A later ongoing-danger reply therefore reopens an event
+    that an earlier reply had marked resolved.
     """
-    for repost in event.metadata.get("thread_reposts") or []:
-        note = repost.get("note")
-        if note and is_concluded_incident(str(note)):
-            return True
-    return False
+    return latest_own_reply_outcome(event) == "resolved"
+
+
+def _outcome_from_text(text: str) -> Optional[str]:
+    """Return a decisive lifecycle outcome, or None for an ambiguous update."""
+    if is_ongoing_incident(text):
+        return "active"
+    if is_concluded_incident(text):
+        return "resolved"
+    return None
+
+
+def latest_own_reply_outcome(event: IntelEvent) -> Optional[str]:
+    """Outcome of the latest textual self-reply, allowing review or reopen."""
+    replies = sorted(
+        event.metadata.get("thread_reposts") or [],
+        key=lambda repost: parse_utc(str(repost.get("posted_at") or ""))
+        or datetime.min.replace(tzinfo=timezone.utc),
+    )
+    textual_replies = [
+        str(repost.get("note") or "").strip()
+        for repost in replies
+        if str(repost.get("note") or "").strip()
+    ]
+    if not textual_replies:
+        return None
+    return _outcome_from_text(textual_replies[-1]) or "needs_review"
+
+
+def _latest_activity_time(event: IntelEvent) -> Optional[datetime]:
+    timestamps = [parse_utc(event.timestamp_utc)]
+    timestamps.extend(
+        parse_utc(str(repost.get("posted_at") or ""))
+        for repost in event.metadata.get("thread_reposts") or []
+    )
+    timestamps.append(parse_utc(str(event.metadata.get("last_repost_at") or "")))
+    observed = [value for value in timestamps if value is not None]
+    return max(observed) if observed else None
 
 
 def is_directly_concluded(event: IntelEvent) -> bool:
@@ -112,14 +141,17 @@ def is_directly_concluded(event: IntelEvent) -> bool:
 
     This deliberately excludes fuzzy cross-post matching because callers that
     only have one event cannot safely infer relationships to other incidents.
-    Direct text and same-author self-replies are sufficient to remove the most
-    common Alarm Phone resolution path from Live immediately.
+    The latest same-author self-reply overrides the original post, so a later
+    danger update can reopen a case and an ambiguous one can request review.
     """
-    return is_concluded_incident(event.text or event.title) or has_own_reply_resolution(event)
+    reply_outcome = latest_own_reply_outcome(event)
+    if reply_outcome is not None:
+        return reply_outcome == "resolved"
+    return _outcome_from_text(event.text or event.title) == "resolved"
 
 
 def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[IntelEvent]) -> str:
-    """'active' (red), 'resolved' (green) or 'archived' (gray).
+    """Return active, resolved, archived, or needs_review lifecycle state.
 
     Callers must separately drop anything past DISTRESS_LIVE_MAX_AGE_DAYS —
     this only distinguishes among events still within that window.
@@ -133,11 +165,15 @@ def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[In
     recomputing from the event's own text keeps this consistent across
     sources and self-healing across classifier fixes.
     """
-    if is_directly_concluded(event):
-        return "resolved"
-    if has_resolution_signal(event, same_source):
-        return "resolved"
-    observed = parse_utc(event.timestamp_utc)
+    state = _outcome_from_text(event.text or event.title) or "active"
+    reply_outcome = latest_own_reply_outcome(event)
+    if reply_outcome is not None:
+        state = reply_outcome
+    elif has_resolution_signal(event, same_source):
+        state = "resolved"
+    if state in {"resolved", "needs_review"}:
+        return state
+    observed = _latest_activity_time(event)
     age_hours = (now - observed).total_seconds() / 3600 if observed else 0
     return "archived" if age_hours >= ARCHIVE_AFTER_HOURS else "active"
 

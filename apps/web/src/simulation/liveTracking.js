@@ -9,19 +9,39 @@ function parsedTime(value) {
   return Number.isFinite(milliseconds) ? milliseconds : null;
 }
 
+export function incidentLifecycle(properties = {}) {
+  if (['active', 'resolved', 'archived', 'needs_review'].includes(properties.incident_lifecycle)) {
+    return properties.incident_lifecycle;
+  }
+  if (['resolved', 'archived', 'needs_review'].includes(properties.kind)) return properties.kind;
+  // Compatibility for cached records created before incident_lifecycle became
+  // the canonical contract. New data must always use incident_lifecycle.
+  if (properties.incident_status === 'resolved') return 'resolved';
+  return 'active';
+}
+
+export function edgeSnapshotIsFresh(snapshot, now = Date.now(), maxAgeSeconds = 120) {
+  const updatedMs = parsedTime(snapshot?.updated_at);
+  const currentMs = now instanceof Date ? now.getTime() : Number(now);
+  if (updatedMs === null || !Number.isFinite(currentMs)) return false;
+  const ageMs = currentMs - updatedMs;
+  return ageMs >= -30_000 && ageMs <= maxAgeSeconds * 1000;
+}
+
 export function liveTrackingCandidates(events, now = new Date(), maxAgeHours = 48) {
   const currentMs = now instanceof Date ? now.getTime() : Number(now);
   return (Array.isArray(events) ? events : []).filter((feature) => {
     const properties = feature?.properties || {};
     const coordinates = feature?.geometry?.coordinates;
     const observedMs = parsedTime(properties.timestamp_utc);
+    const sourceName = String(properties.source || '').toLowerCase().replace(/[^a-z]/g, '');
     const usableCoordinate = [
       'post_text', 'media_ocr_consensus', 'media_ocr_text', 'relative_place_offset',
     ]
       .includes(properties.coordinate_source);
-    return properties.source === 'Alarm Phone'
+    return sourceName === 'alarmphone'
       && (properties.kind === 'distress' || properties.tier === 'operational')
-      && properties.incident_status !== 'resolved'
+      && incidentLifecycle(properties) === 'active'
       && usableCoordinate
       && Array.isArray(coordinates)
       && coordinates.length >= 2
@@ -100,8 +120,16 @@ export function currentEstimateFeature(trajectory, eventTimestamp, now = new Dat
 }
 
 export function mergeLiveDrifts(serverCollection, browserCollection, events, now = new Date()) {
-  const serverFeatures = serverCollection?.features || [];
-  const browserFeatures = browserCollection?.features || [];
+  const inactiveEventIds = new Set(
+    (Array.isArray(events) ? events : [])
+      .filter((feature) => incidentLifecycle(feature?.properties || {}) !== 'active')
+      .map(eventId),
+  );
+  const belongsToActiveIncident = (feature) => !inactiveEventIds.has(
+    String(feature?.properties?.intel_event_id || '').replace(/^intel:/, ''),
+  );
+  const serverFeatures = (serverCollection?.features || []).filter(belongsToActiveIncident);
+  const browserFeatures = (browserCollection?.features || []).filter(belongsToActiveIncident);
   const serverTrajectoryIds = new Set(
     serverFeatures
       .filter((feature) => feature?.geometry?.type === 'LineString')

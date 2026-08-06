@@ -309,6 +309,11 @@ _RESOLVED_DISTRESS_PATTERNS = tuple(
         r"\b(?:was|were|has been|have been)\s+(?:rescued|disembarked|transferred to the mainland)\b",
         r"\b(?:rescue|operation)\s+(?:was|is|has been)\s+(?:completed|concluded)\b",
         r"\barrived safely\b",
+        r"\b(?:the\s+)?(?:people|persons|group|everyone|they)\s+"
+        r"(?:have\s+|has\s+)?arrived\s+(?:on|in|at)\s+\S+",
+        r"\b(?:the\s+)?(?:people|persons|group|everyone|they)\s+"
+        r"(?:have\s+|has\s+)?(?:disembarked|landed)\s+(?:on|in|at)\s+\S+",
+        r"\b(?:reached|made\s+it\s+to)\s+(?:land|shore|safety)\b",
     )
 )
 # A rescue mentioned alongside any of these is one step in a still-ongoing
@@ -316,8 +321,31 @@ _RESOLVED_DISTRESS_PATTERNS = tuple(
 # ending — see is_resolved_distress's docstring for the motivating report.
 _RESOLUTION_OVERRIDE_RE = re.compile(
     r"\b(?:pushback|forced back|refuses?\s+to\s+disembark|denied\s+disembark"
-    r"|at\s+risk\s+of\s+being|not\s+(?:yet\s+)?safe|outrageous)\b",
+    r"|at\s+risk\s+of\s+being|not\s+(?:yet\s+)?safe|outrageous"
+    r"|not\s+(?:yet\s+)?rescued|waiting\s+to\s+be\s+rescued"
+    r"|needs?\s+to\s+be\s+disembarked|still\s+(?:in\s+)?(?:danger|distress|at\s+risk)"
+    r"|situation\s+is\s+not\s+resolved|no\s+news\s+of\s+them)\b",
     re.I,
+)
+
+# Explicit evidence that an update keeps or re-opens an incident.  These
+# signals take precedence over a bare rescue word: rescue can be only one step
+# in an ongoing pushback, unsafe transfer or disembarkation crisis.
+_ONGOING_INCIDENT_PATTERNS = tuple(
+    re.compile(pattern, re.I)
+    for pattern in (
+        r"\b(?:situation|case|incident)\s+(?:is|remains?)\s+not\s+resolved\b",
+        r"\bnot\s+(?:yet\s+)?(?:rescued|safe)\b",
+        r"\b(?:still\s+)?waiting\s+to\s+be\s+rescued\b",
+        r"\b(?:still|remain(?:s|ing)?|(?:are|is)\s+(?:still\s+)?)\s*"
+        r"(?:in\s+)?(?:danger|distress|at\s+risk)\b",
+        r"\b(?:rescue|assistance)\s+(?:is\s+)?(?:still\s+)?(?:urgent|needed|required)\b",
+        r"\bneeds?\s+to\s+be\s+disembarked\b",
+        r"\b(?:forced|taken|heading)\s+(?:back\s+)?(?:to|towards?)\b.{0,80}"
+        r"\b(?:unsafe|not\s+safe|pushback|forced\s+return)\b",
+        r"\bcountry\s+of\s+safety\b.{0,80}\b(?:is\s+not|isn't|not\s+safe)\b",
+        r"\b(?:no\s+news|lost\s+contact|without\s+contact)\b",
+    )
 )
 # A report can also conclude with a known, final outcome (survivors accounted
 # for, some confirmed missing) rather than a purely positive one. Either way
@@ -375,11 +403,21 @@ def is_concluded_incident(text: str) -> bool:
     normalised = re.sub(r"\s+", " ", text).strip()
     if not normalised:
         return False
+    if is_ongoing_incident(normalised):
+        return False
     if is_resolved_distress(normalised):
         return True
     if _SOS_MARKER_RE.search(normalised):
         return False
     return any(pattern.search(normalised) for pattern in _CONCLUDED_OUTCOME_PATTERNS)
+
+
+def is_ongoing_incident(text: str) -> bool:
+    """True when an update explicitly says the emergency remains open."""
+    normalised = re.sub(r"\s+", " ", text or "").strip()
+    return bool(normalised) and any(
+        pattern.search(normalised) for pattern in _ONGOING_INCIDENT_PATTERNS
+    )
 
 # ── Regex patterns ────────────────────────────────────────────────────────────
 _RE_DECIMAL_NS = re.compile(
@@ -737,6 +775,8 @@ def is_resolved_distress(text: str) -> bool:
     rescued" as a tight, unbroken phrase) can still mark it resolved.
     """
     normalised = re.sub(r"\s+", " ", text).strip()
+    if is_ongoing_incident(normalised):
+        return False
     if not _RESOLUTION_OVERRIDE_RE.search(normalised) and re.search(r"\brescued\s*!*", normalised, re.I):
         return True
     return any(pattern.search(normalised) for pattern in _RESOLVED_DISTRESS_PATTERNS)

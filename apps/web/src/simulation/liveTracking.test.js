@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  currentEstimateFeature,
-  decorateLiveTracking,
-  liveTrackingCandidates,
-  mergeLiveDrifts,
+    currentEstimateFeature,
+    decorateLiveTracking,
+    edgeSnapshotIsFresh,
+    liveTrackingCandidates,
+    mergeLiveDrifts,
 } from './liveTracking.js';
 
 const signal = {
@@ -40,12 +41,27 @@ test('selects only recent active geolocated Alarm Phone distress signals', () =>
   assert.equal(liveTrackingCandidates([{ ...signal, geometry: null }], now).length, 0);
   assert.equal(liveTrackingCandidates([{
     ...signal,
-    properties: { ...signal.properties, incident_status: 'resolved' },
+    properties: { ...signal.properties, incident_lifecycle: 'resolved' },
+  }], now).length, 0);
+  assert.equal(liveTrackingCandidates([{
+    ...signal,
+    properties: { ...signal.properties, incident_lifecycle: 'archived' },
+  }], now).length, 0);
+  assert.equal(liveTrackingCandidates([{
+    ...signal,
+    properties: { ...signal.properties, incident_lifecycle: 'needs_review' },
   }], now).length, 0);
   assert.equal(liveTrackingCandidates([{
     ...signal,
     properties: { ...signal.properties, coordinate_source: 'place_centroid' },
   }], now).length, 0);
+});
+
+test('accepts only fresh edge snapshots', () => {
+  const now = new Date('2026-08-06T14:00:00Z');
+  assert.equal(edgeSnapshotIsFresh({ updated_at: '2026-08-06T13:59:00Z' }, now), true);
+  assert.equal(edgeSnapshotIsFresh({ updated_at: '2026-08-06T13:50:00Z' }, now), false);
+  assert.equal(edgeSnapshotIsFresh({ updated_at: null }, now), false);
 });
 
 test('interpolates a wall-clock estimate along the calculated trajectory', () => {
@@ -76,4 +92,22 @@ test('decorates browser output and prefers a verified server trajectory when pre
   assert.equal(merged.features.filter((feature) => feature.geometry.type === 'LineString').length, 1);
   assert.equal(merged.features[0].properties.model, 'OpenDrift Leeway');
   assert.equal(merged.features.at(-1).properties.type, 'current_estimate');
+});
+
+test('removes server and browser drifts as soon as an incident is resolved', () => {
+  const browser = decorateLiveTracking({ geojson: { features: [trajectory] } }, signal);
+  const resolvedSignal = {
+    ...signal,
+    properties: { ...signal.properties, incident_lifecycle: 'resolved' },
+  };
+  const merged = mergeLiveDrifts(
+    { type: 'FeatureCollection', features: [{
+      ...trajectory,
+      properties: { ...trajectory.properties, intel_event_id: 'x123' },
+    }] },
+    browser,
+    [resolvedSignal],
+    new Date('2026-08-01T10:00:00Z'),
+  );
+  assert.deepEqual(merged.features, []);
 });

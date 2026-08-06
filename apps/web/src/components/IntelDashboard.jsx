@@ -54,12 +54,13 @@ function eventTier(p) {
 }
 
 // Distress lifecycle marker (mirrors core/api/routes/live.py): the backend
-// projects `incident_lifecycle` = active | resolved | archived onto public
+// projects `incident_lifecycle` = active | resolved | needs_review | archived onto public
 // features, and sets `kind` for older cache entries. Null = not a distress
 // marker (plain context event), so it never gets lifecycle coloring.
 function eventLifecycle(p) {
   if (p.incident_lifecycle) return p.incident_lifecycle;
   if (p.kind === 'resolved') return 'resolved';
+  if (p.kind === 'needs_review') return 'needs_review';
   if (p.kind === 'archived') return 'archived';
   return null;
 }
@@ -81,6 +82,7 @@ function lifecycleColorClass(p, isDistress) {
   if (!isDistress) return 'context';
   const state = eventLifecycle(p);
   if (state === 'resolved') return 'resolved';
+  if (state === 'needs_review') return 'needs-review';
   if (state === 'archived') return 'archived';
   return 'distress';
 }
@@ -471,7 +473,7 @@ export default function IntelDashboard({
           </span>
           {lifecycle && (
             <span className={`intel-lifecycle intel-lifecycle--${lifecycle}`}>
-              {lifecycle === 'active' ? 'LIVE' : lifecycle === 'resolved' ? 'RISOLTO' : 'ARCHIVED'}
+              {lifecycle === 'active' ? 'LIVE' : lifecycle === 'resolved' ? 'RISOLTO' : lifecycle === 'needs_review' ? 'DA VERIFICARE' : 'ARCHIVED'}
             </span>
           )}
           {ts && (

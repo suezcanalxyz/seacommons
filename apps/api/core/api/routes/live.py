@@ -34,7 +34,6 @@ _PUBLIC_METADATA = frozenset(
         "distress_classification",
         "drift_status",
         "first_source_seen_at",
-        "incident_status",
         "incident_id",
         "is_distress",
         "last_source_seen_at",
@@ -245,8 +244,8 @@ def public_signal_collection(
             # in the archive/replay views, not the live pulsing map.
             continue
         state = lifecycle.distress_lifecycle(event, now=now, same_source=by_source.get(event.source, []))
-        # kind: "distress" (red, active) | "resolved" (green) | "archived" (gray)
-        # — all three pulse on the map; only fill color differs.
+        # Directly resolved incidents were filtered above. Cross-post matches
+        # may still project resolved; ambiguous replies project needs_review.
         feature["properties"]["kind"] = "distress" if state == "active" else state
         feature["properties"]["incident_lifecycle"] = state
         features.append(feature)
@@ -613,7 +612,7 @@ async def live_sources():
         if source["name"]
         in {
             "X / Twitter",
-            "Alarm Phone / X official site",
+            "X / Twitter (twikit)",
             "Mastodon",
             "Official NGO RSS",
             "GDACS",
@@ -634,7 +633,7 @@ async def live_sources():
         and whatsapp_connectors.get("active", 0)
     )
     expected = (
-        ("Alarm Phone / X official site", "twitter", True),
+        ("X / Twitter (twikit)", "twitter", bool(config.TWIKIT_ENABLED)),
         ("X / Twitter", "twitter", bool(config.TWITTER_BEARER_TOKEN)),
         ("WhatsApp partner intake", "whatsapp", whatsapp_ready),
         (
@@ -651,7 +650,7 @@ async def live_sources():
             {
                 "name": name,
                 "type": source_type,
-                "status": observed["status"] if observed else ("active" if configured else "offline"),
+                "status": observed["status"] if observed else ("pending" if configured else "offline"),
                 "last_poll_at": observed["last_poll_at"] if observed else None,
                 "events_last_hour": observed["events_last_hour"] if observed else 0,
                 "total_events": observed["total_events"] if observed else 0,
@@ -682,7 +681,7 @@ async def live_sources():
         "channels": {
             "twitter": bool(config.TWITTER_BEARER_TOKEN),
             "twitter_alarm_phone": any(
-                source["name"] == "Alarm Phone / X official site"
+                source["name"] == "X / Twitter (twikit)"
                 and source["status"] == "active"
                 for source in sources
             ),

@@ -24,7 +24,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSock
 from pydantic import BaseModel
 
 from core.api.ratelimit import acquire_drift_slot, rate_limit, release_drift_slot
-from core.intel.store import IntelEvent, intel_store
+from core.intel.store import IntelEvent, event_feature_with_lifecycle, intel_store
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -61,10 +61,16 @@ async def get_intel(
 
     with_coords = [e for e in all_events if e.lat is not None and e.lon is not None]
     operational = [e for e in all_events if e.tier() == "operational"]
+    by_source: dict[str, list[IntelEvent]] = {}
+    for event in all_events:
+        by_source.setdefault(event.source, []).append(event)
 
     return {
         "type": "FeatureCollection",
-        "features": [e.to_geojson_feature() for e in all_events],
+        "features": [
+            event_feature_with_lifecycle(e, same_source=by_source.get(e.source, []))
+            for e in all_events
+        ],
         "meta": {
             "total": len(all_events),
             "with_coords": len(with_coords),

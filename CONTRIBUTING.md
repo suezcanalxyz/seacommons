@@ -3,10 +3,13 @@
 Use a feature branch and keep changes scoped. Before opening a pull request run:
 
 ```text
-pytest -q
+python -m pytest -q
 cd apps/web
 npm run lint
+npm run test:simulation
 npm run build
+cd ../edge
+npm test
 ```
 
 New analytical outputs must document source, timestamp, model/version,

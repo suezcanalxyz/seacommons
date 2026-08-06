@@ -244,12 +244,12 @@ function ConeView({ panel }) {
   );
 }
 
-const INTEL_KIND_COLOR = { distress: '#ff3b3b', resolved: '#22c55e', archived: '#9aa0ab' };
+const INTEL_KIND_COLOR = { distress: '#ff3b3b', resolved: '#22c55e', needs_review: '#f59e0b', archived: '#9aa0ab' };
 
 function IntelView({ panel }) {
   const props = panel.feature?.properties || {};
   const lifecycle = props.incident_lifecycle
-    || (props.kind === 'resolved' ? 'resolved' : props.kind === 'archived' ? 'archived' : 'distress');
+    || (['resolved', 'needs_review', 'archived'].includes(props.kind) ? props.kind : 'distress');
   const color = INTEL_KIND_COLOR[lifecycle] || INTEL_KIND_COLOR.distress;
   const when = props.timestamp_utc || props.source_timestamp_utc;
   return (
