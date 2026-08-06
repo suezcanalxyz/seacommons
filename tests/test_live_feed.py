@@ -333,6 +333,28 @@ def test_rescue_negations_are_not_resolved() -> None:
     assert not is_resolved_distress("They are still waiting to be rescued.")
 
 
+def test_without_news_reply_keeps_incident_active() -> None:
+    event = IntelEvent(
+        type="twitter",
+        severity="high",
+        title="37 people at sea",
+        text="The group called us from a boat in distress.",
+        source="alarm_phone",
+        timestamp_utc="2026-08-06T08:00:00+00:00",
+        metadata={
+            "thread_reposts": [{
+                "posted_at": "2026-08-06T15:00:00+00:00",
+                "note": (
+                    "Where are they? We are still without news about the 37 people. "
+                    "We have not been able to reach them the whole day."
+                ),
+            }],
+        },
+    )
+    now = datetime.fromisoformat("2026-08-06T15:20:00+00:00")
+    assert lifecycle.distress_lifecycle(event, now=now, same_source=[]) == "active"
+
+
 def test_lifecycle_recomputes_from_text_instead_of_trusting_stale_incident_status() -> None:
     # A stored incident_status="resolved" — the exact value the OLD,
     # over-broad is_resolved_distress() would have baked in at ingestion for

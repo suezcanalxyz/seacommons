@@ -344,7 +344,8 @@ _ONGOING_INCIDENT_PATTERNS = tuple(
         r"\b(?:forced|taken|heading)\s+(?:back\s+)?(?:to|towards?)\b.{0,80}"
         r"\b(?:unsafe|not\s+safe|pushback|forced\s+return)\b",
         r"\bcountry\s+of\s+safety\b.{0,80}\b(?:is\s+not|isn't|not\s+safe)\b",
-        r"\b(?:no\s+news|lost\s+contact|without\s+contact)\b",
+        r"\b(?:(?:no|without)\s+news|lost\s+contact|without\s+contact"
+        r"|(?:unable|not\s+able)\s+to\s+reach|(?:cannot|can't|couldn't)\s+reach)\b",
     )
 )
 # A report can also conclude with a known, final outcome (survivors accounted
