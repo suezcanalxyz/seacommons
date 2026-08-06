@@ -15,9 +15,9 @@ from typing import Optional
 from core.intel.geoextract import is_concluded_incident
 from core.intel.store import IntelEvent
 
-# Total visible lifetime of a distress marker on Live, regardless of state.
-# A full week keeps a rolling weekly overview on the map: every case from the
-# last 7 days stays visible (gray once archived) while it remains relevant.
+# Total visible lifetime of an unresolved distress marker on Live. Concluded
+# incidents leave Live immediately and remain available through archive/replay
+# surfaces instead of occupying the current operational timeline.
 DISTRESS_LIVE_MAX_AGE_DAYS = 7
 # How far back to look for a later same-source post reporting resolution.
 RESOLUTION_LOOKBACK_DAYS = 10
@@ -107,6 +107,17 @@ def has_own_reply_resolution(event: IntelEvent) -> bool:
     return False
 
 
+def is_directly_concluded(event: IntelEvent) -> bool:
+    """Whether this incident carries its own structurally reliable conclusion.
+
+    This deliberately excludes fuzzy cross-post matching because callers that
+    only have one event cannot safely infer relationships to other incidents.
+    Direct text and same-author self-replies are sufficient to remove the most
+    common Alarm Phone resolution path from Live immediately.
+    """
+    return is_concluded_incident(event.text or event.title) or has_own_reply_resolution(event)
+
+
 def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[IntelEvent]) -> str:
     """'active' (red), 'resolved' (green) or 'archived' (gray).
 
@@ -122,9 +133,7 @@ def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[In
     recomputing from the event's own text keeps this consistent across
     sources and self-healing across classifier fixes.
     """
-    if is_concluded_incident(event.text or event.title):
-        return "resolved"
-    if has_own_reply_resolution(event):
+    if is_directly_concluded(event):
         return "resolved"
     if has_resolution_signal(event, same_source):
         return "resolved"
@@ -134,7 +143,15 @@ def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[In
 
 
 def is_within_live_window(event: IntelEvent, *, now: datetime) -> bool:
-    """False once a distress marker exceeds its total Live lifetime."""
+    """Whether a marker belongs on the current operational Live surface.
+
+    A directly concluded incident is removed immediately. Unresolved cases
+    remain bounded by the rolling seven-day window; older history belongs in
+    archive/replay views. Cross-post conclusions are handled by callers that
+    have the full same-source context.
+    """
+    if is_directly_concluded(event):
+        return False
     observed = parse_utc(event.timestamp_utc)
     if observed is None:
         return True
