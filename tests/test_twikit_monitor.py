@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 
 import pytest
 
@@ -1029,6 +1030,7 @@ def test_async_loop_rebuilds_session_after_consecutive_full_failures(monkeypatch
     monkeypatch.setattr(mod, "_SESSION_REBUILD_AFTER_FAILURES", 2)
     m = TwikitMonitor(enabled=True, accounts="a", cookies_file="dummy.json")
     m._next_delay = lambda error: 0.0
+    m._interval_for = lambda handle: 0.0
 
     build_calls = {"n": 0}
     fetch_calls = {"n": 0}
@@ -1072,6 +1074,34 @@ def test_fetch_failure_evicts_cached_user_for_retry():
 
     asyncio.run(m._async_loop())
     assert "a" not in m._users
+    assert m._next_poll_ts["a"] > 0
+
+
+def test_failed_handle_waits_for_its_poll_interval_before_retry():
+    m = TwikitMonitor(
+        enabled=True,
+        accounts="missing",
+        cookies_file="dummy.json",
+        poll_interval_s=300,
+    )
+
+    async def build():
+        return object()
+
+    async def fetch(client, handle):
+        m._running = False
+        raise RuntimeError("The user does not exist")
+
+    m._build_client = build
+    m._fetch_account = fetch
+    m._next_delay = lambda error: 0.0
+    m._running = True
+    m._next_poll_ts = {"missing": 0.0}
+
+    before = time.monotonic()
+    asyncio.run(m._async_loop())
+
+    assert m._next_poll_ts["missing"] >= before + 299
 
 
 def test_media_ocr_failure_keeps_fallback_and_drifts(tmp_path, monkeypatch):

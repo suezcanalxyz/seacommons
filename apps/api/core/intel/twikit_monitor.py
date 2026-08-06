@@ -286,6 +286,14 @@ class TwikitMonitor:
                         raise
                     except Exception as exc:
                         failed += 1
+                        # A missing, renamed, or temporarily unavailable account
+                        # must observe the same polling interval as a successful
+                        # one.  Leaving it immediately due creates a hot loop and
+                        # can make the whole source look unavailable even while
+                        # other tracked accounts are healthy.
+                        self._next_poll_ts[handle] = (
+                            time.monotonic() + self._interval_for(handle)
+                        )
                         # Evict the cached user object: a renamed/suspended-then
                         # -reinstated account or a one-off API hiccup should not
                         # wedge this handle into the same failure forever.
