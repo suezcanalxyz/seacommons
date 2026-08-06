@@ -8,6 +8,7 @@ co-located single-process deployment.
 from __future__ import annotations
 
 import logging
+import os
 
 from core.config import config
 
@@ -78,11 +79,6 @@ def start_background_sensors() -> None:
 
     try:
         from core.anomaly.correlation import CorrelationEngine
-        # No Redis is deployed (and nothing else in this codebase publishes to
-        # the sensor pubsub channels it would subscribe to), so the Redis
-        # loop just spun on "connection refused" forever. in_memory=True runs
-        # its queue-based loop instead — functionally equivalent here since
-        # there's no external publisher either way, minus the log noise.
         engine = CorrelationEngine(in_memory=True)
         import threading
         t = threading.Thread(target=engine.start, daemon=True)
@@ -98,7 +94,23 @@ def start_background_sensors() -> None:
         except Exception as exc:
             logger.warning("AISStream failed to start: %s", exc)
     else:
-        logger.warning("AISStream key missing: live vessel feed disabled")
+        logger.warning("AISStream key missing: AISStream feed disabled")
+
+    # AISHub provides its aggregated feed at no charge to contributors that
+    # share a qualifying local AIS receiver. It is independent from AISStream,
+    # so either source can keep the vessel registry alive when the other is
+    # unavailable. The provider requires at least 60 seconds between requests.
+    aishub_username = os.getenv("AISHUB_USERNAME", "").strip()
+    if aishub_username:
+        try:
+            from core.vessels import aishub
+            poll_interval = max(60, int(os.getenv("AISHUB_POLL_INTERVAL_S", "60")))
+            aishub.start(aishub_username, poll_interval_s=poll_interval)
+            logger.info("AISHub contributor feed started")
+        except Exception as exc:
+            logger.warning("AISHub failed to start: %s", exc)
+    else:
+        logger.info("AISHub username missing: contributor feed disabled")
 
 
 def start_scheduler() -> None:
