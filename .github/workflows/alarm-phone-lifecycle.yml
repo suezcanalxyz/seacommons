@@ -1,0 +1,38 @@
+name: Alarm Phone lifecycle
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/core/intel/lifecycle.py"
+      - "apps/api/core/api/routes/live.py"
+      - "apps/api/core/live_edge_publisher.py"
+      - "tests/test_live_resolved_visibility.py"
+      - "tests/test_live_feed.py"
+      - ".github/workflows/alarm-phone-lifecycle.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/core/intel/lifecycle.py"
+      - "apps/api/core/api/routes/live.py"
+      - "apps/api/core/live_edge_publisher.py"
+      - "tests/test_live_resolved_visibility.py"
+      - "tests/test_live_feed.py"
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e "apps/api[dev]"
+      - run: python -m pytest -q tests/test_live_resolved_visibility.py
+        env:
+          PYTHONPATH: apps/api
+          DATABASE_URL: sqlite:///./apps/api/core/data/test_alarm_phone_lifecycle.db
