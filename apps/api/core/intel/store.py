@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import re
 import threading
 import uuid
@@ -400,8 +401,10 @@ class IntelStore:
             logger.debug("intel_store: DB drift_status reset skipped: %s", exc)
 
     def _persist(self, event: IntelEvent) -> None:
-        """Write event to DB in a background thread — never blocks the caller."""
-        import threading
+        """Write asynchronously in runtime, synchronously in isolated tests."""
+        if os.getenv("SEACOMMONS_INTEL_PERSIST_SYNC", "").lower() in {"1", "true", "yes"}:
+            self._persist_sync(event)
+            return
         threading.Thread(target=self._persist_sync, args=(event,), daemon=True).start()
 
     def _persist_sync(self, event: IntelEvent) -> None:
@@ -415,15 +418,25 @@ class IntelStore:
                     # e.g. an RSS article or tweet re-fetched at boot) would
                     # otherwise be inserted again as a fresh row → duplicate
                     # markers on the live edge. Refuse to insert the duplicate.
-                    existing = db.query(IntelEventDB.id).filter(
+                    existing = db.query(IntelEventDB).filter(
                         IntelEventDB.source == event.source,
                         IntelEventDB.url == event.url,
                     ).first()
                     if existing is not None:
+                        merged = {**event.metadata, **dict(existing.meta or {})}
+                        existing.meta = merged
+                        if existing.lat is None and event.lat is not None:
+                            existing.lat = event.lat
+                            existing.lon = event.lon
+                        # The event may not have been inside the bounded
+                        # in-memory DB preload. Repoint the live object to the
+                        # durable canonical ID before reply discovery runs.
+                        event.id = str(existing.id)
+                        event.metadata = merged
+                        db.flush()
                         logger.debug(
-                            "Intel DB persist skipped: duplicate (source=%s url=%s)",
-                            event.source,
-                            event.url,
+                            "Intel DB duplicate merged into canonical event %s",
+                            existing.id,
                         )
                         return
                 db.add(IntelEventDB(

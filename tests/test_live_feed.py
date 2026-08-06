@@ -546,6 +546,45 @@ def test_intel_store_merges_same_source_url_into_canonical_event(monkeypatch) ->
     assert merged.metadata["source_policy"] == "official_site_embed"
 
 
+def test_db_duplicate_repoints_live_event_to_canonical_id() -> None:
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+
+    url = "https://x.com/i/web/status/2083992029869051948"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id="canonical02",
+            timestamp_utc="2026-08-06T10:00:00+00:00",
+            type="twitter",
+            severity="high",
+            title="Canonical report",
+            text="37 people missing at sea",
+            url=url,
+            source="alarm_phone",
+            meta={"source_policy": "official_site_embed"},
+        ))
+
+    live_event = IntelEvent(
+        id="temporary02",
+        timestamp_utc="2026-08-06T10:00:00+00:00",
+        type="twitter",
+        severity="high",
+        title="Twikit report",
+        text="Where are the 37 people?",
+        url=url,
+        source="alarm_phone",
+        metadata={"tracked_account": "alarm_phone", "tweet_id": "2083992029869051948"},
+    )
+    IntelStore()._persist_sync(live_event)
+
+    assert live_event.id == "canonical02"
+    assert live_event.metadata["tracked_account"] == "alarm_phone"
+    assert live_event.metadata["source_policy"] == "official_site_embed"
+    with session_scope() as db:
+        persisted = db.query(IntelEventDB).filter(IntelEventDB.id == "canonical02").one()
+        assert persisted.meta["tracked_account"] == "alarm_phone"
+
+
 def test_media_ocr_requires_numeric_consensus() -> None:
     passes = [
         "GPS position N 35°30' E 012°36'",
