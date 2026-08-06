@@ -19,7 +19,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _API_URL = "https://data.aishub.net/ws.php"
-_DEFAULT_BBOX = (28.0, 47.0, -6.0, 42.0)  # latmin, latmax, lonmin, lonmax
+_DEFAULT_BBOX = (28.0, 47.0, -6.0, 42.0)
 _MIN_POLL_INTERVAL_S = 60
 
 
@@ -50,15 +50,14 @@ def _parse_timestamp(value: Any) -> datetime | None:
             return None
     for fmt in ("%Y-%m-%d %H:%M:%S GMT", "%Y-%m-%d %H:%M:%S"):
         try:
-            parsed = datetime.strptime(text, fmt)
-            return parsed.replace(tzinfo=timezone.utc)
+            return datetime.strptime(text, fmt).replace(tzinfo=timezone.utc)
         except ValueError:
             continue
     return None
 
 
 def parse_response(payload: Any) -> list[dict[str, Any]]:
-    """Normalize the AISHub JSON envelope into vessel dictionaries."""
+    """Normalize the AISHub JSON envelope into VesselRegistry arguments."""
     if not isinstance(payload, list) or len(payload) < 2:
         raise ValueError("invalid AISHub response envelope")
     status, records = payload[0], payload[1]
@@ -83,21 +82,19 @@ def parse_response(payload: Any) -> list[dict[str, Any]]:
         heading = _as_float(raw.get("HEADING"))
         if heading == 511:
             heading = None
-        vessels.append(
-            {
-                "mmsi": mmsi,
-                "ship_name": str(raw.get("NAME") or "").strip() or None,
-                "imo": str(raw.get("IMO") or "").strip() or None,
-                "ship_type": _as_int(raw.get("TYPE")),
-                "destination": str(raw.get("DEST") or "").strip() or None,
-                "lat": lat,
-                "lon": lon,
-                "course": _as_float(raw.get("COG")),
-                "speed": _as_float(raw.get("SOG")),
-                "heading": heading,
-                "last_seen": _parse_timestamp(raw.get("TIME") or raw.get("TSTAMP")),
-            }
-        )
+        vessels.append({
+            "mmsi": mmsi,
+            "ship_name": str(raw.get("NAME") or "").strip() or None,
+            "imo": str(raw.get("IMO") or "").strip() or None,
+            "ship_type": _as_int(raw.get("TYPE")),
+            "destination": str(raw.get("DEST") or "").strip() or None,
+            "lat": lat,
+            "lon": lon,
+            "course": _as_float(raw.get("COG")),
+            "speed": _as_float(raw.get("SOG")),
+            "heading": heading,
+            "last_seen": _parse_timestamp(raw.get("TIME") or raw.get("TSTAMP")),
+        })
     return vessels
 
 
@@ -160,7 +157,7 @@ class AISHubClient:
         response.raise_for_status()
         vessels = parse_response(response.json())
         for vessel in vessels:
-            registry.upsert(**vessel, source="aishub")
+            registry.upsert(**vessel)
         self.messages_received += len(vessels)
         return len(vessels)
 
