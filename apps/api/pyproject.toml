@@ -22,8 +22,17 @@ dependencies = [
     "python-dateutil>=2.9",
     "python-dotenv>=1.0",
     "requests>=2.31",
+    "PyJWT[crypto]>=2.8",
+    "python-multipart>=0.0.9",
+    "minio>=7.2",
+    "prometheus-client>=0.21",
     "copernicusmarine>=2.3.0",
     "xarray>=2025.0.0",
+    "opendrift>=1.14.9",
+    "Pillow>=10.0",
+    "apscheduler>=3.10",
+    "psycopg[binary]>=3.2",
+    "twifork>=2.3.5",
 ]
 
 [project.optional-dependencies]
@@ -40,6 +49,7 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.4",
     "mypy>=1.10",
+    "jsonschema>=4.23",
 ]
 full = ["suezcanal[sdr,tid,dev]"]
 
