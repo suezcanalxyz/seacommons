@@ -431,6 +431,8 @@ def test_self_reply_threads_as_update_onto_active_incident(monkeypatch, tmp_path
     m._ingest(original, handle="alarm_phone")
     event_id = store.events()[0].id
     broadcasts: list[str] = []
+    persisted: list[str] = []
+    store._persist_metadata_sync = lambda persisted_id, *_args: persisted.append(persisted_id)
     store._fire_broadcast = lambda event: broadcasts.append(event.id)
 
     reply = _FakeTweet("3002", "Rescued to #Lampedusa! Everyone arrived safely.", user=_FakeUser())
@@ -445,6 +447,7 @@ def test_self_reply_threads_as_update_onto_active_incident(monkeypatch, tmp_path
     assert posts[0]["tweet_id"] == "3002"
     assert posts[0]["kind"] == "reply"
     assert "Rescued" in posts[0]["note"]
+    assert persisted == [event_id]
     assert broadcasts == [event_id]
 
 

@@ -765,7 +765,10 @@ class TwikitMonitor:
         elif not added:
             # Duplicate content_hash — `event` above was never stored, so its
             # id is a throwaway UUID; recover the real stored event first.
-            existing = intel_store.find_by_content_hash(event.content_hash())
+            existing = (
+                intel_store.find_by_content_hash(event.content_hash())
+                or intel_store.find_by_source_url(event.source, event.url)
+            )
             if existing is not None:
                 if str(existing.metadata.get("tweet_id") or "") != str(tweet.id):
                     # The tracked account deleted its earlier post and reposted

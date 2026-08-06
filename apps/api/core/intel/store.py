@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import threading
 import uuid
 from collections import deque
@@ -21,6 +22,11 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _normalised_source(value: str) -> str:
+    """Stable identity for harmless source spelling variants."""
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
 
 _COORDINATE_SOURCE_RANK = {
     "none": 0,
@@ -185,14 +191,50 @@ class IntelStore:
         """
         content_key = event.content_hash()
         keys = {dedup_key or content_key, content_key}
+        url_duplicate: Optional[IntelEvent] = None
+        metadata_changed = False
         with self._lock:
-            if any(key in self._seen for key in keys):
+            if event.url:
+                source_key = _normalised_source(event.source)
+                url_duplicate = next(
+                    (
+                        candidate
+                        for candidate in self._events
+                        if candidate.url == event.url
+                        and _normalised_source(candidate.source) == source_key
+                    ),
+                    None,
+                )
+            if url_duplicate is not None:
+                # A second collector saw the same source item. Keep the
+                # canonical event/id and add only metadata it did not already
+                # have; in particular, never downgrade an official
+                # source_policy with Twikit's transport policy.
+                merged = {**event.metadata, **url_duplicate.metadata}
+                metadata_changed = merged != url_duplicate.metadata
+                url_duplicate.metadata = merged
+                self._seen.update(keys)
+            elif any(key in self._seen for key in keys):
                 return False
-            self._seen.update(keys)
-            if len(self._seen) > DEDUP_WINDOW:
-                # Keep the newest half
-                self._seen = set(list(self._seen)[DEDUP_WINDOW // 2 :])
-            self._events.appendleft(event)
+            else:
+                self._seen.update(keys)
+                if len(self._seen) > DEDUP_WINDOW:
+                    # Keep the newest half
+                    self._seen = set(list(self._seen)[DEDUP_WINDOW // 2 :])
+                self._events.appendleft(event)
+
+        if url_duplicate is not None:
+            if metadata_changed:
+                threading.Thread(
+                    target=self._persist_metadata_sync,
+                    args=(
+                        url_duplicate.id,
+                        dict(url_duplicate.metadata),
+                        url_duplicate.linked_mmsi,
+                    ),
+                    daemon=True,
+                ).start()
+            return False
 
         self._fire_broadcast(event)
         self._persist(event)
@@ -576,6 +618,19 @@ class IntelStore:
                 None,
             )
 
+    def find_by_source_url(self, source: str, url: str) -> Optional[IntelEvent]:
+        """Locate the canonical event for a source item already in memory."""
+        source_key = _normalised_source(source)
+        with self._lock:
+            return next(
+                (
+                    event
+                    for event in self._events
+                    if event.url == url and _normalised_source(event.source) == source_key
+                ),
+                None,
+            )
+
     def refresh_source_link(self, event_id: str, *, tweet_id: str, url: str) -> bool:
         """Repoint an existing event at a newer tweet id/url for the same content.
 
@@ -649,13 +704,20 @@ class IntelStore:
                 break
         if updated is None:
             return False
-        threading.Thread(
-            target=self._persist_metadata_sync,
-            args=(event_id, dict(updated.metadata), updated.linked_mmsi),
-            daemon=True,
-        ).start()
         if repost.get("note"):
+            # Verified replies change lifecycle and are rare/high-value. Commit
+            # before broadcasting so a restart cannot leave a visible reply
+            # attached only to an in-memory event.
+            self._persist_metadata_sync(
+                event_id, dict(updated.metadata), updated.linked_mmsi,
+            )
             self._fire_broadcast(updated)
+        else:
+            threading.Thread(
+                target=self._persist_metadata_sync,
+                args=(event_id, dict(updated.metadata), updated.linked_mmsi),
+                daemon=True,
+            ).start()
         return True
 
     def touch_source_observation(self, event_id: str, observed_at: str) -> bool:

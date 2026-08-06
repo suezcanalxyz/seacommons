@@ -507,6 +507,45 @@ def test_intel_store_deduplicates_source_ids_and_content() -> None:
     assert store.add(event) is False
 
 
+def test_intel_store_merges_same_source_url_into_canonical_event(monkeypatch) -> None:
+    store = IntelStore()
+    monkeypatch.setattr(store, "_persist", lambda _event: None)
+    monkeypatch.setattr(store, "_persist_metadata_sync", lambda *_args: None)
+    url = "https://x.com/i/web/status/2083992029869051949"
+    canonical = IntelEvent(
+        id="canonical01",
+        type="twitter",
+        severity="high",
+        title="Official Alarm Phone report",
+        text="37 people are missing at sea.",
+        url=url,
+        source="Alarm Phone",
+        metadata={"source_policy": "official_site_embed", "is_distress": True},
+    )
+    twikit_copy = IntelEvent(
+        id="temporary01",
+        type="twitter",
+        severity="high",
+        title="Alarm Phone X report",
+        text="Where are the 37 people?",
+        url=url,
+        source="alarm_phone",
+        metadata={
+            "source_policy": "operator_published",
+            "tracked_account": "alarm_phone",
+            "tweet_id": "2083992029869051949",
+        },
+    )
+
+    assert store.add(canonical) is True
+    assert store.add(twikit_copy, dedup_key="x:2083992029869051949") is False
+    assert len(store.events()) == 1
+    merged = store.find_by_source_url("alarm_phone", url)
+    assert merged is canonical
+    assert merged.metadata["tracked_account"] == "alarm_phone"
+    assert merged.metadata["source_policy"] == "official_site_embed"
+
+
 def test_media_ocr_requires_numeric_consensus() -> None:
     passes = [
         "GPS position N 35°30' E 012°36'",
