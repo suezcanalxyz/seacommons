@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import email.utils
 import hashlib
+import html
 import json
 import logging
 import re
@@ -22,6 +23,8 @@ from typing import Any, Optional
 from core.intel.geoextract import (
     classify_severity,
     extract_coords,
+    extract_numeric_coords,
+    extract_relative_coords,
     is_direct_distress_call,
 )
 from core.intel.store import IntelEvent, intel_store
@@ -34,6 +37,11 @@ _HEADERS = {
     "User-Agent": "SeaCommonsIntel/2.0 (official sources only)",
     "Accept": "application/json, application/rss+xml, application/atom+xml, */*",
 }
+_RSS_EMERGENCY_MARKER_RE = re.compile(
+    r"(?:🆘|\bmayday\b|\bsos\b"
+    r"(?!\s+(?:m[eé]diterran[eé]e|mediterranee|humanity)\b))",
+    re.I,
+)
 
 RSS_FEEDS = [
     {
@@ -194,29 +202,43 @@ class NewsMonitor:
         if len(self._rss_last_guids) > 4000:
             self._rss_last_guids = set(list(self._rss_last_guids)[2000:])
 
-        text = re.sub(
-            r"\s+",
-            " ",
-            re.sub(
-                r"<[^>]+>",
-                " ",
-                f"{item.get('title', '')} {item.get('description', '')}",
-            ),
-        ).strip()
+        text = _clean_rss_text(item)
         if not text:
             return False
         # Use the strict active-call signal (same as the X/twikit channel) so a
         # policy statement or retrospective report that merely *mentions*
         # distress vocabulary cannot become a live distress marker.
-        distress = is_direct_distress_call(text)
+        distress = _is_actionable_rss_distress(text)
         # The RSS feeds are a news/archive channel, not an active-call channel.
         # Mark every row operator-only so the live edge never surfaces an NGO
         # article that merely mentions distress vocabulary, regardless of the
         # classifier outcome (publication_status == "private" is an explicit
         # opt-out in core/live_edge_publisher.py).
-        coords = extract_coords(text)
+        # Context/news articles frequently mention courts, capitals, ports or
+        # an NGO's headquarters. Those are subjects of the article, not the
+        # boat's position. Gazetteer/relative inference is therefore enabled
+        # only for a direct, actionable maritime call. News remains searchable
+        # in the timeline but deliberately has no map geometry.
+        numeric_coords = extract_numeric_coords(text) if distress else None
+        relative_coords = (
+            extract_relative_coords(text) if distress and not numeric_coords else None
+        )
+        coords = (
+            numeric_coords
+            or relative_coords
+            or (extract_coords(text) if distress else None)
+        )
+        coordinate_source = (
+            "post_text" if numeric_coords
+            else "relative_place_offset" if relative_coords
+            else "place_centroid" if coords
+            else "none"
+        )
         severity = classify_severity(text) if distress else "low"
         event = IntelEvent(
+            # Stable across process restarts. Previously each scan generated
+            # a random UUID, so the same RSS item could be inserted again.
+            id=f"rss{dedup[:13]}",
             type="distress" if distress and severity in {"critical", "high"} else "news",
             severity=severity,
             lat=coords[0] if coords else None,
@@ -231,6 +253,12 @@ class NewsMonitor:
                 "transport": "rss",
                 "is_distress": distress,
                 "publication_status": "private",
+                "report_kind": "distress" if distress else "news",
+                "coordinate_source": coordinate_source,
+                "location_policy": "operational_maritime_only",
+                **({
+                    "location_suppressed_reason": "non_operational_context",
+                } if not distress else {}),
             },
         )
         added = intel_store.add(event, dedup_key=dedup)
@@ -238,6 +266,60 @@ class NewsMonitor:
             from core.intel.triangulation import evaluate as evaluate_triangulation
             evaluate_triangulation(event)
         return added
+
+
+def _clean_rss_text(item: dict[str, str]) -> str:
+    """Return article text without markup or syndication boilerplate.
+
+    WordPress descriptions often consist solely of "The post … appeared first
+    on SOS MEDITERRANEE". Besides adding no article content, that footer used
+    to trigger the bare ``SOS`` emergency marker.
+    """
+    title = str(item.get("title") or "")
+    description = str(item.get("description") or "")
+    description = re.sub(
+        r"\bthe\s+post\b.{0,1200}?\bappeared\s+first\s+on\b.{0,160}?\.?\s*$",
+        " ",
+        description,
+        flags=re.I | re.S,
+    )
+    description = re.sub(
+        r"\bder\s+beitrag\b.{0,1200}?\berschien\s+zuerst\s+auf\b.{0,160}?\.?\s*$",
+        " ",
+        description,
+        flags=re.I | re.S,
+    )
+    combined = f"{title} {description}"
+    return re.sub(
+        r"\s+",
+        " ",
+        html.unescape(re.sub(r"<[^>]+>", " ", combined)),
+    ).strip()
+
+
+def _is_actionable_rss_distress(text: str) -> bool:
+    """Conservative operational gate for article-style RSS content.
+
+    RSS summaries are retrospective far more often than social alert posts.
+    A generic word such as ``shipwreck`` or ``missing`` is insufficient here:
+    require present-tense operational evidence or an explicit emergency
+    marker. The article is still retained as private news when this is false.
+    """
+    if not is_direct_distress_call(text):
+        return False
+    if _RSS_EMERGENCY_MARKER_RE.search(text):
+        return True
+    operational_patterns = (
+        r"\b(?:we\s+(?:are|remain)|we['’]re)\s+in\s+contact\b",
+        r"\b(?:we|relatives?|famil(?:y|ies))\s+(?:were|have\s+been)\s+alerted\b",
+        r"\b(?:rescue|assistance|medical assistance)\s+(?:is\s+)?"
+        r"(?:still\s+|urgently\s+|immediately\s+)?(?:needed|required|requested)\b",
+        r"\b(?:urgent|ongoing|currently|right\s+now)\b.{0,100}"
+        r"\b(?:distress|danger|at\s+risk|missing|rescue)\b",
+        r"\b\d{1,3}\s+(?:people|persons|lives|passengers|migrants)\s+"
+        r"(?:are\s+)?(?:in\s+distress|at\s+risk|in\s+danger|missing)\b",
+    )
+    return any(re.search(pattern, text, re.I) for pattern in operational_patterns)
 
 
 def _safe_float(value: Any) -> Optional[float]:

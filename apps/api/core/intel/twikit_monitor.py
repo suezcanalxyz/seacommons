@@ -632,7 +632,7 @@ class TwikitMonitor:
         # Alarm Phone (and the tracked SAR NGOs) publish the real GPS position
         # as a map screenshot. Priority: explicit text coords > OCR of attached
         # images > declared relative offset > place-name centroid.
-        text_coords = extract_numeric_coords(combined_text)
+        text_coords = extract_numeric_coords(combined_text) if distress else None
         media_urls = self._tweet_media_urls(tweet, tweet_id=str(tweet.id))
         if quoted is not None:
             for url in self._tweet_media_urls(quoted, tweet_id=str(quoted.id)):
@@ -655,9 +655,13 @@ class TwikitMonitor:
                     media_count,
                 )
         media_coords: Optional[tuple[float, float]] = None
-        relative_coords = extract_relative_coords(combined_text) if not text_coords else None
+        relative_coords = (
+            extract_relative_coords(combined_text)
+            if distress and not text_coords else None
+        )
         place_coords = (
-            extract_coords(combined_text) if not (text_coords or relative_coords) else None
+            extract_coords(combined_text)
+            if distress and not (text_coords or relative_coords) else None
         )
         # A country/sea/strait-scale match ("Libya", "Central Med") implies a
         # far larger "could be anywhere in here" than a specific city or
@@ -735,6 +739,10 @@ class TwikitMonitor:
                     "direct_call" if distress else ("resolved" if resolved else "context")
                 ),
                 "coordinate_source": coordinate_source,
+                "location_policy": "operational_maritime_only",
+                **({
+                    "location_suppressed_reason": "non_operational_context",
+                } if not distress else {}),
                 "coordinate_review_status": (
                     "machine_ocr_unverified"
                     if coordinate_source == "media_ocr_text"

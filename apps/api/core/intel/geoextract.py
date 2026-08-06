@@ -280,7 +280,15 @@ _MEDIUM_TERMS = frozenset([
     "contact lost", "missing", "irregolari", "migranti",
 ])
 
-_SOS_MARKER_RE = re.compile(r"(?:🆘|🆘️|\bmayday\b|\bsos\b)", re.I)
+# ``SOS`` is also the first word in several NGO names. Treating a footer such
+# as "appeared first on SOS MEDITERRANEE" as an emergency promoted every
+# article from that RSS feed to a distress incident. Keep genuine SOS text,
+# but exclude the well-known organisation-name forms.
+_SOS_MARKER_RE = re.compile(
+    r"(?:🆘|🆘️|\bmayday\b|\bsos\b"
+    r"(?!\s+(?:m[eé]diterran[eé]e|mediterranee|humanity|balkanroute)\b))",
+    re.I,
+)
 
 _DIRECT_DISTRESS_PATTERNS = tuple(
     pattern if isinstance(pattern, re.Pattern) else re.compile(pattern, re.I)

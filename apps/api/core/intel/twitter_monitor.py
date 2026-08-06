@@ -11,7 +11,12 @@ import urllib.parse
 import urllib.request
 from typing import Any, Optional
 
-from core.intel.geoextract import classify_severity, extract_coords, is_distress
+from core.intel.geoextract import (
+    classify_severity,
+    extract_coords,
+    is_direct_distress_call,
+    is_distress,
+)
 from core.intel.ngo_registry import NGO_TWITTER_HANDLES
 from core.intel.store import IntelEvent, intel_store
 
@@ -135,14 +140,15 @@ class TwitterMonitor:
         if len(text) < 10:
             return False
         account_rule = "from:" in query
-        distress = is_distress(text)
-        if not distress and not account_rule:
+        keyword_match = is_distress(text)
+        if not keyword_match and not account_rule:
             return False
 
-        coords = extract_coords(text)
-        severity = classify_severity(text)
-        if not distress:
-            severity = "low" if severity == "low" else "medium"
+        distress = is_direct_distress_call(text)
+        # Account timelines include advocacy, court and policy news. Place
+        # names in that context are not incident positions.
+        coords = extract_coords(text) if distress else None
+        severity = classify_severity(text) if distress else "low"
         author = str(post.get("author") or "")
         event = IntelEvent(
             type="twitter",
@@ -160,6 +166,11 @@ class TwitterMonitor:
                 "platform": "x",
                 "source_policy": "official_api",
                 "is_distress": distress,
+                "coordinate_source": "post_text_or_maritime_place" if coords else "none",
+                **({
+                    "publication_status": "private",
+                    "location_suppressed_reason": "non_operational_context",
+                } if not distress else {}),
             },
         )
         added = intel_store.add(event, dedup_key=f"x:{post.get('id', '')}")

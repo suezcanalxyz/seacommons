@@ -144,6 +144,9 @@ def test_ingest_tracked_account_tweets_are_ingested_regardless_of_distress(monke
     assert events[0].metadata["tracked_account"] == "alarm_phone"
     assert events[0].metadata["report_kind"] == "news"
     assert events[0].metadata["is_distress"] is False
+    assert events[0].lat is None and events[0].lon is None
+    assert events[0].metadata["coordinate_source"] == "none"
+    assert events[0].metadata["location_suppressed_reason"] == "non_operational_context"
     assert events[0].author == "alarm_phone"
     assert m._ingest(tweet, handle="alarm_phone") is False
 

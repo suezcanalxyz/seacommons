@@ -72,6 +72,12 @@ def _public_intel_feature(event: IntelEvent) -> Optional[dict[str, Any]]:
     ):
         # Old scraper records may still be persisted; they must never re-enter Live.
         return None
+    # Explicit privacy is absolute. An approved transport/source policy may
+    # make an otherwise-unlabelled public observation eligible, but it must
+    # never override a producer's explicit private decision (RSS/news and
+    # direct-message channels rely on this guarantee).
+    if publication == "private":
+        return None
     if publication != "published" and source_policy not in _APPROVED_SOURCE_POLICIES:
         return None
     if event.type not in _PUBLIC_INTEL_TYPES and publication != "published":

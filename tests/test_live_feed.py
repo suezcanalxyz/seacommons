@@ -139,6 +139,25 @@ def test_manual_event_requires_explicit_publication() -> None:
     assert _public_intel_feature(private) is not None
 
 
+def test_explicit_private_status_overrides_approved_source_policy() -> None:
+    private_rss = IntelEvent(
+        id="private-rss-01",
+        type="distress",
+        severity="high",
+        lat=37.5,
+        lon=15.09,
+        title="Context article mentioning distress",
+        source="SOS Méditerranée",
+        metadata={
+            "source_policy": "official_rss",
+            "publication_status": "private",
+            "is_distress": True,
+        },
+    )
+
+    assert _public_intel_feature(private_rss) is None
+
+
 def test_computed_sar_products_never_enter_received_signal_feed() -> None:
     derived = IntelEvent(
         id="sar-model-01",
@@ -224,6 +243,11 @@ def test_direct_distress_call_classifier_is_conservative() -> None:
     assert not is_direct_distress_call(
         "The group was rescued and everyone is now safe."
     )
+    assert not is_direct_distress_call(
+        "The post Catania Court Acquits Crew Member appeared first on "
+        "SOS MEDITERRANEE."
+    )
+    assert is_direct_distress_call("SOS! 20 people are in distress south of Malta")
 
 
 def test_resolved_distress_ignores_a_rescue_mention_inside_an_ongoing_pushback() -> None:
