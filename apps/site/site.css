@@ -588,6 +588,89 @@ p {
   }
 }
 
+/* ---------- Environments ---------- */
+
+.environments-head {
+  display: grid;
+  grid-template-columns: 1.1fr .9fr;
+  gap: clamp(2rem, 5vw, 4rem);
+  align-items: end;
+  margin-bottom: clamp(2.4rem, 5vw, 3.6rem);
+}
+
+.environments-head h2 {
+  color: var(--paper);
+}
+
+.environments-head p {
+  color: var(--paper-muted);
+  font-size: .92rem;
+  line-height: 1.65;
+}
+
+.environments-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+
+.environment-card {
+  padding: 1.6rem 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background: var(--ink-soft);
+}
+
+.environment-card h3 {
+  margin: 0;
+  font: 600 1.5rem var(--mono);
+  letter-spacing: .02em;
+  color: var(--acid);
+}
+
+.environment-card:nth-child(2) h3 {
+  color: var(--paper);
+}
+
+.environment-card:nth-child(3) h3 {
+  color: var(--sea);
+}
+
+.environment-card p {
+  margin: 0;
+  color: var(--paper-muted);
+  font-size: .84rem;
+  line-height: 1.62;
+}
+
+.card-link {
+  margin-top: auto;
+  padding-top: .9rem;
+  border-top: 1px solid var(--line);
+  color: var(--acid);
+  font: 500 .68rem var(--mono);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  transition: opacity .2s;
+}
+
+.card-link:hover {
+  opacity: .7;
+}
+
+@media (max-width: 900px) {
+  .environments-head {
+    grid-template-columns: 1fr;
+  }
+
+  .environments-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- Thesis ---------- */
 
 .thesis-layout {
