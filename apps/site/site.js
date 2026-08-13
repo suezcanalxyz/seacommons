@@ -6,17 +6,34 @@
   updateClock();
   window.setInterval(updateClock, 1000);
 
-  const canvas = document.querySelector("[data-signal-field]");
-  if (!(canvas instanceof HTMLCanvasElement)) return;
+  const menuToggle = document.querySelector("[data-menu-toggle]");
+  const nav = document.querySelector("[data-nav]");
+  if (menuToggle && nav) {
+    menuToggle.addEventListener("click", () => {
+      const open = nav.getAttribute("data-open") === "true";
+      nav.setAttribute("data-open", String(!open));
+      menuToggle.setAttribute("aria-expanded", String(!open));
+    });
+    nav.querySelectorAll("a").forEach((link) => {
+      link.addEventListener("click", () => {
+        nav.setAttribute("data-open", "false");
+        menuToggle.setAttribute("aria-expanded", "false");
+      });
+    });
+  }
+
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const canvas = document.querySelector("[data-signal-canvas]");
+  if (!(canvas instanceof HTMLCanvasElement) || reducedMotion) return;
 
   const context = canvas.getContext("2d");
   if (!context) return;
 
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const signals = [
-    { y: .26, amplitude: .065, frequency: 5.2, speed: .00014, phase: .2, color: "215,255,69", alpha: .2 },
-    { y: .48, amplitude: .09, frequency: 4.1, speed: .0001, phase: 2.1, color: "47,107,255", alpha: .26 },
-    { y: .72, amplitude: .055, frequency: 6.8, speed: .00008, phase: 4.5, color: "241,244,233", alpha: .1 },
+    { y: .3, amplitude: .07, frequency: 5.2, speed: .00014, phase: .2, color: "215,255,69", alpha: .22 },
+    { y: .55, amplitude: .09, frequency: 4.1, speed: .0001, phase: 2.1, color: "47,107,255", alpha: .24 },
+    { y: .78, amplitude: .05, frequency: 6.8, speed: .00008, phase: 4.5, color: "241,244,233", alpha: .1 },
   ];
 
   let width = 0;
@@ -71,12 +88,12 @@
     });
 
     context.restore();
-    if (!reducedMotion) animationId = window.requestAnimationFrame(draw);
+    animationId = window.requestAnimationFrame(draw);
   };
 
   resize();
   draw(0);
-  if (!reducedMotion) animationId = window.requestAnimationFrame(draw);
+  animationId = window.requestAnimationFrame(draw);
 
   window.addEventListener("resize", resize);
   window.addEventListener("pagehide", () => window.cancelAnimationFrame(animationId));
