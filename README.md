@@ -1,17 +1,47 @@
-# Seacommons Console
+# Seacommons
 
-Open-source maritime rescue and awareness platform bridging real-time distress signals, Lagrangian trajectory modelling, and forensic documentation.
+**Open-source maritime intelligence infrastructure for Search & Rescue operations, situational awareness, drift modelling, and forensic documentation.**
 
-Licensed under AGPL-3.0.
+Seacommons brings together real-time distress intelligence, vessel context, trajectory prediction, operational mapping, and signed evidentiary records in a single modular stack designed for research, humanitarian operations, and public-interest technology.
 
-## Links
+[Institutional site](https://seacommons.org/) · [Live research map](https://live.seacommons.org/) · [Public demo](https://play.seacommons.org/)
 
-- Institutional site: `https://seacommons.org/`
-- Live research map: `https://live.seacommons.org/`
-- Public demo: `https://play.seacommons.org/`
-- Repository: `https://github.com/suezcanalxyz/seacommons`
+## What it does
 
-## Repository Layout
+- **Distress intelligence ingestion** — normalizes alerts and observations from multiple sources into a common operational model.
+- **Maritime situational awareness** — combines vessel, event, weather, chart, and contextual layers in a realtime geospatial interface.
+- **Drift prediction** — integrates OpenDrift/Leeway trajectories for Search & Rescue scenarios.
+- **Incident correlation** — maintains durable incident lifecycles across changing observations and source updates.
+- **Forensic records** — creates signed, verifiable evidentiary packets linked directly to operational events.
+- **Public / operational separation** — keeps authenticated operational workflows isolated from the lightweight public demo surface.
+
+## Core stack
+
+`Python` · `FastAPI` · `React` · `Vite` · `Docker` · `OpenDrift` · `AIS` · `OSINT` · `GeoJSON` · realtime geospatial systems
+
+## Architecture
+
+```text
+external signals / AIS / OSINT / weather
+                  │
+                  ▼
+        FastAPI intelligence layer
+                  │
+        ┌─────────┼─────────┐
+        ▼         ▼         ▼
+   incidents    drift     forensic
+    lifecycle   engine     records
+        │         │         │
+        └─────────┼─────────┘
+                  ▼
+        React operational console
+                  │
+        ┌─────────┴─────────┐
+        ▼                   ▼
+  authenticated live     public demo
+```
+
+## Repository layout
 
 ```text
 apps/
@@ -21,6 +51,10 @@ deploy/       Docker, Render and hosting manifests
 docs/         Methodology, governance and deployment notes
 scripts/      Local developer entrypoints
 ```
+
+Licensed under AGPL-3.0.
+
+---
 
 ## Quickstart
 
