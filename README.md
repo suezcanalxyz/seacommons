@@ -1,154 +1,235 @@
-# Seacommons Console
+# SeaCommons
 
-Open-source maritime rescue and awareness platform bridging real-time distress signals, Lagrangian trajectory modelling, and forensic documentation.
+**Open maritime data infrastructure for public-interest situational awareness, research and reproducible analysis.**
 
-Licensed under AGPL-3.0.
+SeaCommons is an AGPL-licensed open-source interoperability stack for ingesting, normalising, analysing and publishing heterogeneous maritime information. It combines vessel observations, public-source reports, environmental and ocean data, drift modelling and provenance-aware outputs behind common API and event contracts.
+
+The project originated in Mediterranean civil-society and maritime research contexts, but the reusable core is intended for independent deployments by researchers, NGOs, civic-technology teams and other public-interest actors.
+
+> **Safety and scope:** SeaCommons is research and public-interest infrastructure. It is not a replacement for official SAR/MRCC/GMDSS channels. Public Live deliberately suppresses private messages, personal identifiers and sensitive/exact locations unless an explicit publication decision allows their release.
+
+Licensed under **AGPL-3.0-or-later**.
 
 ## Links
 
 - Institutional site: `https://seacommons.org/`
-- Live research map: `https://live.seacommons.org/`
+- Operational map: `https://live.seacommons.org/`
 - Public demo: `https://play.seacommons.org/`
 - Repository: `https://github.com/suezcanalxyz/seacommons`
 
-## Repository Layout
+## What SeaCommons does
+
+SeaCommons is being developed as a reusable maritime interoperability layer rather than a single closed dashboard.
+
+```text
+Official X API ───────┐
+AIS / vessel data ────┤
+Ocean + weather ──────┤
+Partner webhooks ─────┼──> connectors / normalisation
+Community intake ─────┤              │
+Sensors / NMEA ───────┘              ▼
+                           SeaCommons event contracts
+                                      │
+                           provenance + verification
+                                      │
+                                      ▼
+                              FastAPI core API
+                         ┌────────────┼────────────┐
+                         ▼            ▼            ▼
+                     PostGIS       workers     drift models
+                         │            │            │
+                         └────────────┼────────────┘
+                                      ▼
+                         privacy/publication policy
+                                      │
+                         ┌────────────┼────────────┐
+                         ▼            ▼            ▼
+                      Live API      Web UI      external clients
+```
+
+The long-term goal is for external applications to consume SeaCommons data contracts and analytical components without requiring the SeaCommons web interface.
+
+## Current capabilities
+
+The repository already includes:
+
+- **FastAPI backend** with a versioned HTTP API;
+- **React/Vite operational console** with MapLibre/Cesium-based geospatial interfaces;
+- **PostgreSQL/PostGIS** production support, with SQLite for local development;
+- **AISStream** integration and vessel tracking components;
+- **official X API v2 recent-search ingestion**, implemented and activated when a Bearer Token is configured;
+- **Telegram, WhatsApp and signed partner-webhook ingestion** paths;
+- **Copernicus Marine (CMEMS)** integration for ocean data;
+- **OpenDrift** trajectory modelling with deterministic fallback behaviour;
+- **versioned JSON contracts** for SeaCommons events, live signals, environment snapshots and drift scenes;
+- **privacy-preserving public Live projection** separating operational/private data from publishable signals;
+- **forensic and provenance-oriented components** for derived outputs;
+- **edge/public gateway code** and separate operational/demo deployment paths;
+- **automated tests and GitHub Actions CI** for the API, web application and edge runtime;
+- optional sensor, NMEA, TimeZero and immersive/Unreal experiments.
+
+Not every component has the same stability level. The repository is currently undergoing a consolidation phase to make the reusable open core, supported adapters and experimental/operator-specific modules explicit.
+
+See [`docs/GRANT_READINESS_AUDIT_2026-08-19.md`](./docs/GRANT_READINESS_AUDIT_2026-08-19.md) for the current repository audit and preparation roadmap.
+
+## Public Live
+
+The canonical public projection is exposed under:
+
+```text
+GET /api/v1/live/signals
+GET /api/v1/live/sources
+```
+
+Live is designed around publication and privacy rules rather than mirroring every internally ingested event. Raw private distress messages, sender identifiers and sensitive coordinates are not automatically exposed.
+
+### Real X data
+
+SeaCommons already contains an official X API connector using the X API v2 recent-search endpoint. It is enabled by configuring a server-side Bearer Token:
+
+```env
+TWITTER_BEARER_TOKEN=...
+INTEL_ENABLED=true
+INTEL_MONITORS_ENABLED=true
+```
+
+The connector polls curated maritime/SAR queries, tracks upstream post IDs, normalises source metadata and deduplicates events before they enter the intelligence store.
+
+**Current preparation milestone:** production-validate this connector against the public Live pipeline and expose explicit connector freshness/health. Until a credentialed production deployment has been verified, the repository should not claim that X is continuously supplying the public Live endpoint.
+
+A streaming X adapter may be evaluated later for lower latency, while keeping the same normalised SeaCommons event boundary.
+
+## Event contracts
+
+SeaCommons already maintains versioned contracts under [`docs/contracts/`](./docs/contracts/), including:
+
+```text
+docs/contracts/seacommons-event-v1.schema.json
+docs/contracts/live-signal-v1.schema.json
+docs/contracts/environment-snapshot-v1.schema.json
+docs/contracts/drift-scene-v1.schema.json
+```
+
+The next core refactor will make the SeaCommons event contract the canonical boundary between upstream transports/connectors and downstream storage, analysis and publication.
+
+A connector should ultimately be responsible only for:
+
+```text
+fetch / receive
+      ↓
+validate
+      ↓
+normalise
+      ↓
+SeaCommons event
+```
+
+Transport-specific rules should not leak into the rest of the platform.
+
+## Repository layout
 
 ```text
 apps/
-  api/        FastAPI backend, drift engine, forensic and integrations
-  web/        React/Vite operational console
-deploy/       Docker, Render and hosting manifests
-docs/         Methodology, governance and deployment notes
-scripts/      Local developer entrypoints
+  api/        FastAPI backend, ingestion, drift, intel and integrations
+  web/        React/Vite operational and public geospatial clients
+  edge/       optional edge/public gateway
+  site/       institutional site
+  unreal/     experimental immersive client
+
+docs/
+  contracts/  versioned data contracts
+  *.md        architecture, deployment, research and historical runbooks
+
+deploy/       container/reverse-proxy/runtime deployment assets
+ops/          production service configuration examples
+scripts/      developer and deployment entrypoints
+tests/        Python integration/unit tests
 ```
+
+This remains a monorepo for now. The preparation work will establish stable internal package/adaptor boundaries before deciding whether any component deserves an independent repository.
 
 ## Quickstart
 
-Install and run the full stack in 3 commands:
+Clone the repository and create a local environment file:
 
 ```bash
-# Install system dependencies (required for TID module)
-sudo apt-get install gcc g++ libcurl4-openssl-dev libgeos-dev
-
 git clone https://github.com/suezcanalxyz/seacommons.git
 cd seacommons
 cp .env.example .env
+```
+
+For the full Docker stack:
+
+```bash
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
-The Common Operational Picture (COP) will be available at `http://localhost:3000`.
-The API will be available at `http://localhost:8000`.
+Local endpoints are typically:
 
-## Pilot Runtime
-
-The current repository is most reliable in low-cost pilot mode with an independent Seacommons dashboard.
-
-Recommended startup:
-
-```powershell
-docker compose -f deploy/docker-compose.pilot.yml up --build
+```text
+Web console: http://localhost:3000
+API:         http://localhost:8000
+API docs:    http://localhost:8000/docs
 ```
 
-Pilot URLs:
-
-- Dashboard: `http://localhost:3000`
-- API: `http://localhost:8000`
-- API docs: `http://localhost:8000/docs`
-
-The dashboard is separate from the public institutional site. Production uses
-`live.seacommons.org` for the authenticated operational map and
-`play.seacommons.org` for the isolated public demo. Both expose a same-origin
-`/api` surface; their operational and demo runtimes remain isolated internally.
-
-- `/api/v1/ops/summary`
-- `/api/v1/vessels`
-- `/api/v1/alerts/geojson`
-- `/api/v1/weather`
-- `/api/v1/alert`
-
-## Public Demo
-
-For a hosted public demo, do not rely on same-origin API guessing.
-
-- Frontend: set `VITE_API_BASE=https://your-api-host`
-- Backend: set `MOCK=true`
-- Backend: set `DEMO_PUBLIC_MODE=true`
-
-`DEMO_PUBLIC_MODE` keeps the API lightweight and allows SAR cases to use the Gaussian fallback when a hosted demo does not have a full OpenDrift runtime available.
-
-A starter Render blueprint is included in [deploy/render.yaml](./deploy/render.yaml). Render still needs this folder in a Git repository or a published image source before it can deploy the stack.
-
-For a zero-cost live demo, the recommended path is:
-
-- frontend on Cloudflare Pages
-- backend on Oracle Cloud Always Free
-
-See [docs/DEPLOY_CLOUDFLARE_ORACLE.md](./docs/DEPLOY_CLOUDFLARE_ORACLE.md).
-
-## Local Dev Without Docker
+For local development without Docker:
 
 ```bash
 bash scripts/run_dev.sh all
 ```
 
-This starts:
+See the deployment documentation under [`docs/`](./docs/) for production and edge-specific setups.
 
-- API from `apps/api`
-- console from `apps/web`
+## Drift and environmental data
 
-## OpenDrift Runtime
+SeaCommons integrates OpenDrift and contains a CMEMS data adapter. Drift computation is being moved toward a reproducible pipeline in which every result can state:
 
-The backend can call a real OpenDrift `Leeway` simulation through a dedicated Python interpreter.
+- model and version;
+- environmental forcing sources;
+- observation/model timestamps;
+- uncertainty and limitations;
+- transformation/provenance metadata.
 
-In this repository the practical setup is:
+The grant-preparation roadmap prioritises making this reproducibility explicit and separating durable worker execution from API request lifecycle concerns.
 
-- API/backend can keep running on the local default Python
-- OpenDrift is installed on Python 3.12
-- `OPENDRIFT_PYTHON` points to that interpreter
+## Development priorities
 
-The current integration uses real OpenDrift trajectories with configurable constant forcing:
+The current preparation sequence is:
 
-- `OPENDRIFT_WIND_X`
-- `OPENDRIFT_WIND_Y`
-- `OPENDRIFT_CURRENT_X`
-- `OPENDRIFT_CURRENT_Y`
-- `OPENDRIFT_PARTICLES`
-- `OPENDRIFT_TIMESTEP_SECONDS`
-- `OPENDRIFT_OUTPUT_SECONDS`
+1. **Repository hygiene** — remove duplicate runtime paths, generated data and legacy naming ambiguity.
+2. **Canonical events and connectors** — make a stable event schema and connector interface the core boundary.
+3. **Real-data Live validation** — demonstrate privacy-safe real data from at least two independent upstream sources, including the official X API path.
+4. **Drift + provenance** — strengthen operational environmental forcing, uncertainty and reproducibility.
+5. **Contributor-facing open core** — connector documentation, SDK/examples and additional GIS clients after contracts stabilise.
 
-This is a real trajectory engine, but it is not yet using live CMEMS/ERA5 readers. That should be the next step when you want ocean and atmosphere forcing from operational datasets.
+The objective is not to add features for their own sake. It is to make SeaCommons understandable, installable, extensible and independently reusable as open maritime infrastructure.
 
-## Hardware Bill of Materials (BOM) — Full Ship Node
+## Contributing
 
-| Component | Cost | Function |
-| :--- | :--- | :--- |
-| Raspberry Pi 4 (4GB) | ~€55 | Main compute |
-| RTL-SDR v4 dongle | ~€35 | RF / drone detection |
-| VHF antenna (marine) | ~€25 | AIS + RF |
-| Raspberry Boom HAT (OSOP) | ~€180 | Infrasound 0.05–20 Hz |
-| ADXL355 accelerometer (SPI) | ~€15 | Hull-coupled seismic |
-| Piezoelectric hydrophone | ~€50 | Underwater acoustic (optional) |
-| MCP3208 ADC | ~€5 | Only if not using Boom HAT |
-| SSD 256GB USB | ~€30 | Storage |
-| IP65 case | ~€20 | Marine environment |
-| **Total (with Boom HAT)** | **~€410** | **Complete node** |
-| **Total (DIY boom, no HAT)** | **~€240** | **Budget version** |
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
-## Test with Fake Alert
-
-To test the full pipeline, submit a mock distress signal:
+Before opening a pull request, the current baseline checks are:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/alert \
-  -H "Content-Type: application/json" \
-  -d '{
-    "lat": 35.123,
-    "lon": 15.456,
-    "timestamp": "2026-03-21T12:00:00Z",
-    "persons": 45,
-    "vessel_type": "rubber_boat",
-    "domain": "ocean_sar"
-  }'
+python -m pytest -q
+
+cd apps/web
+npm run lint
+npm run test:simulation
+npm run build
+
+cd ../edge
+npm test
 ```
 
-This will enqueue a drift calculation task, sign the forensic packet, and broadcast it to the configured witness endpoints.
+New analytical outputs should document their source, timestamp, model/version, uncertainty and limitations. Never commit credentials, personal data, live distress locations or unredacted operational exports.
+
+## Funding preparation
+
+SeaCommons is being prepared for open-source/public-interest infrastructure funding. Appropriate funded work should strengthen reusable components such as interoperability, data contracts, connector tooling, provenance, reproducible drift analysis, documentation and independent deployment — not create a closed or single-operator product.
+
+A detailed technical audit and proposed preparation sprints are maintained in [`docs/GRANT_READINESS_AUDIT_2026-08-19.md`](./docs/GRANT_READINESS_AUDIT_2026-08-19.md).
+
+## License
+
+SeaCommons is licensed under **AGPL-3.0-or-later**.
