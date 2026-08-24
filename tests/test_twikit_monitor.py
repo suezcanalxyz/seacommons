@@ -298,6 +298,34 @@ def test_priority_accounts_parsed_from_csv():
     assert m.priority_accounts == ["MSF_Sea", "alarm_phone"]
 
 
+def test_fetch_account_uses_combined_tweets_and_replies_timeline():
+    requested: list[tuple[str, int]] = []
+    tweet = _FakeTweet("99", "MAYDAY boat in distress south of Crete")
+
+    class User:
+        async def get_tweets(self, kind: str, count: int = 20):
+            requested.append((kind, count))
+            return [tweet]
+
+    class Client:
+        async def get_user_by_screen_name(self, handle: str):
+            assert handle == "alarm_phone"
+            return User()
+
+    monitor = TwikitMonitor(accounts="alarm_phone")
+    assert asyncio.run(monitor._fetch_account(Client(), "alarm_phone")) == [tweet]
+    assert requested == [("Replies", 20)]
+
+
+def test_idle_scheduler_tick_preserves_exponential_backoff():
+    monitor = TwikitMonitor(accounts="alarm_phone")
+    monitor._next_poll_ts = {"alarm_phone": time.monotonic() + 10}
+
+    assert monitor._next_delay("rate limited") == 30
+    monitor._next_delay(None)
+    assert monitor._next_delay("rate limited") == 90
+
+
 def test_interval_for_uses_priority_and_base_intervals():
     m = TwikitMonitor(
         accounts="alarm_phone,MSF_Sea",
@@ -335,14 +363,14 @@ def test_loop_polls_only_due_accounts(monkeypatch):
     assert m._next_poll_ts["a"] > 0
 
 
-def test_backoff_grows_after_errors_and_resets_on_success():
+def test_backoff_grows_after_errors_and_idle_delay_does_not_reset_it():
     m = TwikitMonitor()
     d1 = m._next_delay(error="boom")
     d2 = m._next_delay(error="boom again")
     assert d2 > d1
     assert m._backoff > 0
     assert m._next_delay(error=None) >= 1.0
-    assert m._backoff == 0.0
+    assert m._backoff == d2
 
 
 def test_repost_threads_onto_existing_alert_without_new_event(monkeypatch, tmp_path):
