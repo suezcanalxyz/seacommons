@@ -1791,6 +1791,12 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 }
 .intel-reply-link:hover { opacity: 1; text-decoration: underline; }
 
+.intel-no-location {
+  color: #ffcc7a;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
 .intel-low-confidence {
   font-size: 9px;
   font-weight: 600;
