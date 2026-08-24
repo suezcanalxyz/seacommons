@@ -299,7 +299,12 @@ class TwikitMonitor:
                         # wedge this handle into the same failure forever.
                         self._users.pop(handle, None)
                         logger.warning("X (twikit) poll error for @%s: %s", handle, exc)
-            if now >= self._next_reply_check_ts:
+            error = "poll failed" if due and failed == len(due) else None
+            # A failed timeline poll and the reply scan consume separate X
+            # endpoints, but firing both in the same cycle compounds a rate
+            # limit and delays recovery. Preserve the reply scan for the next
+            # healthy/idle cycle instead.
+            if error is None and now >= self._next_reply_check_ts:
                 try:
                     await self._check_self_replies(client)
                 except asyncio.CancelledError:
@@ -308,7 +313,6 @@ class TwikitMonitor:
                     logger.warning("X (twikit) self-reply check failed: %s", exc)
                 self._next_reply_check_ts = time.monotonic() + _REPLY_CHECK_INTERVAL_S
 
-            error = "poll failed" if due and failed == len(due) else None
             if error:
                 consecutive_full_failures += 1
                 if consecutive_full_failures >= _SESSION_REBUILD_AFTER_FAILURES:
@@ -320,8 +324,11 @@ class TwikitMonitor:
                     client = None
                     self._users.clear()
                     consecutive_full_failures = 0
-            else:
+            elif due:
+                # Only a real successful poll proves the session recovered.
+                # Idle scheduler ticks between retries must not erase backoff.
                 consecutive_full_failures = 0
+                self._backoff = 0.0
             source_registry.record_poll(_SOURCE_NAME, events_found=new_count, error=error)
             await asyncio.sleep(self._next_delay(error))
 
@@ -329,7 +336,6 @@ class TwikitMonitor:
         if error:
             self._backoff = min(self._backoff * 2 + 30, _MAX_BACKOFF_S) if self._backoff else 30.0
             return self._backoff
-        self._backoff = 0.0
         now = time.monotonic()
         next_due = min(
             (self._next_poll_ts.get(h, now) for h in self._accounts),
@@ -378,7 +384,11 @@ class TwikitMonitor:
         if user is None:
             user = await client.get_user_by_screen_name(handle)
             self._users[handle] = user
-        result = await user.get_tweets("Tweets", count=20)
+        # UserTweetsAndReplies contains the normal profile posts as well as
+        # standalone replies. Alarm Phone sometimes publishes a new distress
+        # call as a reply to an authority/partner; UserTweets silently misses
+        # those calls. One combined request keeps the same rate budget.
+        result = await user.get_tweets("Replies", count=20)
         since = self._since_id.get(handle, 0)
         fresh: list[Any] = []
         for tweet in result:
