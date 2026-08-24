@@ -568,6 +568,14 @@ export default function IntelDashboard({
               · area in mare{p.area_weather_narrowed ? ' (ristretta da dati meteo)' : ''}
             </span>
           )}
+          {!coords && (
+            <span
+              className="intel-no-location"
+              title="La fonte non ha pubblicato una posizione verificabile: nessun punto viene inventato sulla mappa."
+            >
+              · posizione non pubblicata
+            </span>
+          )}
           {p.location_precision === 'area_low_confidence' && (
             <span
               className="intel-low-confidence"

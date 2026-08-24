@@ -108,7 +108,10 @@ function edgeEventToFeature(event) {
       severity: props.severity || 'low',
       verification_status: props.verification_status || 'unverified_public_source',
       title: props.title || 'Maritime signal',
-      text: '',
+      // The publisher already strips the record down to the public contract.
+      // Preserve its public incident text: dropping it here made unpositioned
+      // Alarm Phone reports look like empty/stale cards in the Live panel.
+      text: props.text || '',
       url: event.source_url || '',
       source: event.source || 'public feed',
       timestamp_utc: event.observed_at,
