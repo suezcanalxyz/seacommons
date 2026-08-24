@@ -1,5 +1,6 @@
 const MAX_EVENTS = 500;
 const DEFAULT_TTL_SECONDS = 8 * 24 * 60 * 60;
+const DEFAULT_HEARTBEAT_MAX_AGE_SECONDS = 120;
 
 function json(payload, status = 200, headers = {}) {
   return new Response(JSON.stringify(payload), {
@@ -37,6 +38,24 @@ function timingSafeEqual(left, right) {
 function ttlSeconds(env) {
   const parsed = Number(env.LIVE_EVENT_TTL_SECONDS || DEFAULT_TTL_SECONDS);
   return Number.isFinite(parsed) && parsed >= 60 ? parsed : DEFAULT_TTL_SECONDS;
+}
+
+function heartbeatMaxAgeSeconds(env) {
+  const parsed = Number(env.LIVE_HEARTBEAT_MAX_AGE_SECONDS || DEFAULT_HEARTBEAT_MAX_AGE_SECONDS);
+  return Number.isFinite(parsed) && parsed >= 30 ? parsed : DEFAULT_HEARTBEAT_MAX_AGE_SECONDS;
+}
+
+function ageSeconds(value, now = Date.now()) {
+  const parsed = Date.parse(value || '');
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.round((now - parsed) / 1000));
+}
+
+export function classifyLiveStatus({ lastHeartbeatAt = null, eventCount = 0 } = {}, now = Date.now(), maxAgeSeconds = DEFAULT_HEARTBEAT_MAX_AGE_SECONDS) {
+  const heartbeatAge = ageSeconds(lastHeartbeatAt, now);
+  if (heartbeatAge !== null && heartbeatAge <= maxAgeSeconds) return 'live';
+  if (eventCount > 0) return 'degraded';
+  return 'waiting';
 }
 
 function isFresh(event, env, now = Date.now()) {
@@ -98,6 +117,7 @@ export class LiveRoom {
     if (url.pathname.endsWith('/stream')) return this.stream(request);
     if (url.pathname.endsWith('/snapshot')) return this.snapshot();
     if (url.pathname.endsWith('/status')) return this.status();
+    if (url.pathname.endsWith('/heartbeat') && request.method === 'POST') return this.heartbeat(request);
     if (url.pathname.endsWith('/reset') && request.method === 'POST') return this.reset(request);
     if (url.pathname.endsWith('/events') && request.method === 'POST') return this.ingest(request);
     return json({ error: 'not found' }, 404);
@@ -122,17 +142,46 @@ export class LiveRoom {
 
   async status() {
     const snapshot = await this.loadSnapshot();
-    const ageSeconds = snapshot.updated_at
-      ? Math.max(0, Math.round((Date.now() - Date.parse(snapshot.updated_at)) / 1000))
-      : null;
+    const eventAgeSeconds = ageSeconds(snapshot.updated_at);
+    const heartbeatAgeSeconds = ageSeconds(snapshot.last_heartbeat_at);
     return json({
-      status: ageSeconds !== null && ageSeconds <= 120 ? 'live' : 'waiting',
+      status: classifyLiveStatus(
+        { lastHeartbeatAt: snapshot.last_heartbeat_at, eventCount: snapshot.events.length },
+        Date.now(),
+        heartbeatMaxAgeSeconds(this.env),
+      ),
       updated_at: snapshot.updated_at,
-      age_seconds: ageSeconds,
+      age_seconds: eventAgeSeconds,
+      last_event_at: snapshot.updated_at,
+      event_age_seconds: eventAgeSeconds,
+      last_heartbeat_at: snapshot.last_heartbeat_at,
+      heartbeat_age_seconds: heartbeatAgeSeconds,
       event_count: snapshot.events.length,
+      counts: snapshot.counts,
+      sources: snapshot.source_health,
       ttl_seconds: ttlSeconds(this.env),
       websocket_clients: this.state.getWebSockets().length,
     });
+  }
+
+  async heartbeat(request) {
+    const verified = await verifyIngestRequest(request, this.env.INGEST_SECRET);
+    if (!verified.ok) return json({ error: verified.error }, verified.status);
+    const input = verified.event;
+    if (!input || typeof input !== 'object' || !input.source) {
+      return json({ error: 'source is required' }, 400);
+    }
+    let health;
+    try {
+      health = await this.recordSourceHealth(input);
+    } catch {
+      return json({ error: 'observed_at must be a valid timestamp' }, 400);
+    }
+    const message = JSON.stringify({ type: 'source_health', source: health });
+    for (const socket of this.state.getWebSockets()) {
+      try { socket.send(message); } catch { socket.close(1011, 'health broadcast failed'); }
+    }
+    return json({ accepted: true, source: health }, 202);
   }
 
   async reset(request) {
@@ -208,14 +257,61 @@ export class LiveRoom {
     const stored = await this.state.storage.get('events') || [];
     const events = stored.filter((event) => isFresh(event, this.env));
     if (events.length !== stored.length) await this.state.storage.put('events', events);
+    const sourceHealth = await this.loadSourceHealth();
+    const lifecycleCounts = events.reduce((counts, event) => {
+      const lifecycle = String(event.properties?.incident_lifecycle || 'active');
+      counts[lifecycle] = (counts[lifecycle] || 0) + 1;
+      return counts;
+    }, { active: 0, resolved: 0, needs_review: 0, archived: 0 });
     return {
       schema: 'seacommons-live-snapshot-v1',
       mode: 'ephemeral-live',
+      generated_at: new Date().toISOString(),
       updated_at: await this.state.storage.get('updated_at') || null,
       head_hash: await this.state.storage.get('head_hash') || null,
+      last_heartbeat_at: sourceHealth.reduce(
+        (latest, source) => !latest || source.received_at > latest ? source.received_at : latest,
+        null,
+      ),
+      source_health: sourceHealth,
+      counts: { total: events.length, ...lifecycleCounts },
       ttl_seconds: ttlSeconds(this.env),
       events,
     };
+  }
+
+  async recordSourceHealth(input, receivedAt = new Date().toISOString()) {
+    const source = String(input.source || '').trim();
+    const node = String(input.node || 'unknown').trim() || 'unknown';
+    const key = `${node}:${source}`;
+    const stored = await this.state.storage.get('source_health') || {};
+    const requestedStatus = String(input.status || 'active').toLowerCase();
+    const status = ['active', 'degraded', 'offline'].includes(requestedStatus)
+      ? requestedStatus
+      : 'degraded';
+    const health = {
+      source,
+      node,
+      status,
+      observed_at: new Date(input.observed_at || receivedAt).toISOString(),
+      received_at: receivedAt,
+    };
+    stored[key] = health;
+    await this.state.storage.put('source_health', stored);
+    return health;
+  }
+
+  async loadSourceHealth(now = Date.now()) {
+    const stored = await this.state.storage.get('source_health') || {};
+    const maxAge = heartbeatMaxAgeSeconds(this.env);
+    return Object.values(stored).map((source) => {
+      const sourceAge = ageSeconds(source.received_at, now);
+      return {
+        ...source,
+        age_seconds: sourceAge,
+        status: sourceAge !== null && sourceAge <= maxAge ? source.status : 'offline',
+      };
+    }).sort((left, right) => left.source.localeCompare(right.source));
   }
 }
 

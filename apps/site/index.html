@@ -11,7 +11,7 @@
   <meta property="og:url" content="https://seacommons.org/">
   <title>SeaCommons — Signals, uncertainty, accountability</title>
   <link rel="canonical" href="https://seacommons.org/">
-  <link rel="stylesheet" href="/site.css">
+  <link rel="stylesheet" href="site.css">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23081210'/%3E%3Cpath d='M10 43c8-12 14-17 22-17s14 5 22 17M10 30c8-12 14-17 22-17s14 5 22 17' fill='none' stroke='%23caff3d' stroke-width='4'/%3E%3C/svg%3E">
   <script type="application/ld+json">
     {
@@ -38,6 +38,7 @@
       <span>Menu</span><i></i>
     </button>
     <nav id="site-nav" class="site-nav" aria-label="Primary navigation" data-nav>
+      <a href="#environments">Environments</a>
       <a href="#research">Research</a>
       <a href="#system">System</a>
       <a href="#method">Method</a>
@@ -109,9 +110,39 @@
       </article>
     </section>
 
+    <section id="environments" class="environments section-pad" aria-labelledby="environments-title">
+      <div class="section-label reveal">
+        <span>Surfaces / 001</span>
+        <span>One dataset, three environments</span>
+      </div>
+      <div class="environments-head">
+        <h2 id="environments-title" class="display reveal">LIVE observes.<br>PLAY reconstructs.<br>ENGINE renders.</h2>
+        <p class="reveal">The three environments read the same underlying signal and drift-scene records. They differ in what they are for, not in what they claim to know: LIVE is operational today, PLAY is a public research demonstrator, ENGINE is in development with restricted access planned.</p>
+      </div>
+      <div class="environments-grid">
+        <article class="environment-card reveal">
+          <div class="card-top"><span>Operational</span><span>live.seacommons.org</span></div>
+          <h3>LIVE</h3>
+          <p>A public console that aggregates maritime signals — vessel tracking, marine weather, distress reports and civil-monitoring feeds — into one timestamped record of source health and observed activity. Provenance and confidence travel with each entry; sources are never silently merged into a single asserted position. Public access shows source health and aggregate indicators; positional and case-level detail is limited to authorised research and rescue-support teams under documented access conditions.</p>
+          <a class="card-link" href="https://live.seacommons.org">Open the console ↗</a>
+        </article>
+        <article class="environment-card reveal">
+          <div class="card-top"><span>Public / browser</span><span>play.seacommons.org</span></div>
+          <h3>PLAY</h3>
+          <p>An interactive demonstrator that reconstructs a selected trace as a drift simulation, computed in the browser with CesiumJS from bounded or synthetic scenarios. It exposes the environmental fields, model parameters and uncertainty behind each trajectory, so a result can be inspected rather than taken on trust. PLAY does not use live distress data; its scenarios are illustrative and are not evidence of an actual event.</p>
+          <a class="card-link" href="https://play.seacommons.org">Open the demonstrator ↗</a>
+        </article>
+        <article class="environment-card reveal">
+          <div class="card-top"><span>In development</span><span>Accredited access planned</span></div>
+          <h3>ENGINE</h3>
+          <p>A companion Unreal Engine renderer for the same drift-scene record used by PLAY. Where PLAY favours accessibility, ENGINE favours physical fidelity: a calibrated sea state, weather and vessel response driven by the persisted wave height, period and direction, delivered through browser-based streaming rather than a local install. It renders the scene; it does not alter the underlying trajectory or introduce a second source of environmental truth. It has no public endpoint yet.</p>
+        </article>
+      </div>
+    </section>
+
     <section class="thesis section-pad" aria-labelledby="thesis-title">
       <div class="section-label reveal">
-        <span>Position / 001</span>
+        <span>Position / 002</span>
         <span>Why this infrastructure</span>
       </div>
       <div class="thesis-layout">
@@ -130,7 +161,7 @@
     <section id="research" class="research" aria-labelledby="research-title">
       <div class="research-head section-pad">
         <div class="section-label section-label--light reveal">
-          <span>Programme / 002</span>
+          <span>Programme / 003</span>
           <span>Four connected workstreams</span>
         </div>
         <h2 id="research-title" class="display reveal">Four workstreams,<br>one accountable pipeline.</h2>
@@ -170,7 +201,7 @@
 
     <section id="system" class="system section-pad" aria-labelledby="system-title">
       <div class="section-label section-label--dark reveal">
-        <span>System / 003</span>
+        <span>System / 004</span>
         <span>Current research architecture</span>
       </div>
       <div class="system-title-row">
@@ -254,7 +285,7 @@
 
     <section id="method" class="method section-pad" aria-labelledby="method-title">
       <div class="section-label reveal">
-        <span>Method / 004</span>
+        <span>Method / 005</span>
         <span>Proof before presentation</span>
       </div>
       <div class="method-grid">
@@ -281,21 +312,22 @@
         <div class="lab-marker lab-marker--three">T+12 ENVELOPE</div>
       </div>
       <div class="lab-copy reveal">
-        <p class="section-label section-label--light"><span>Lab / 005</span><span>Next research surface</span></p>
-        <h2 id="lab-title" class="display">Browser-based spatial simulation of drift scenarios.</h2>
-        <p>Play runs on CesiumJS in the browser today, using the same scenario data as the operational map. Unreal Engine is planned as an optional high-fidelity renderer for an accredited immersive view, delivered through WebRTC pixel streaming rather than a local install. In both cases the simulation API remains authoritative — the renderer is an instrument for inspection and communication, not a second source of environmental truth.</p>
+        <p class="section-label section-label--light"><span>Engine / 006</span><span>Immersive renderer, in development</span></p>
+        <h2 id="lab-title" class="display">A physically calibrated renderer for the same drift record.</h2>
+        <p>ENGINE is built on Unreal Engine 5.2: a tiled, physically based ocean surface driven by the persisted significant wave height, period and direction, with weather and vessel response computed from the same drift-scene schema PLAY reads. It is delivered through browser-based WebRTC streaming, so no local installation or dedicated hardware is required on the viewing end. The simulation API remains authoritative in every case — the renderer is an instrument for inspection and communication, not a second source of environmental truth.</p>
+        <p>Realism work is not complete: vessel buoyancy and motion are still being calibrated against reference cases before they are treated as physically representative. Access is being designed as accredited and gated from the outset, for research and training use rather than open public release.</p>
         <dl>
-          <div><dt>Renderer</dt><dd>CesiumJS (public)<br>Unreal Engine (planned, accredited)</dd></div>
-          <div><dt>Delivery</dt><dd>Browser-native<br>WebRTC Pixel Streaming</dd></div>
+          <div><dt>Renderer</dt><dd>Unreal Engine 5.2<br>Cesium for Unreal georeference</dd></div>
+          <div><dt>Delivery</dt><dd>Browser-based<br>WebRTC streaming, no local install</dd></div>
           <div><dt>Boundary</dt><dd>Bounded scenarios only<br>Live distress data is never used here</dd></div>
         </dl>
-        <a class="action action--light" href="https://play.seacommons.org">Open current Play surface <span>↗</span></a>
+        <a class="action action--light" href="#environments">Compare the three environments <span>↓</span></a>
       </div>
     </section>
 
     <section id="governance" class="governance section-pad" aria-labelledby="governance-title">
       <div class="section-label reveal">
-        <span>Governance / 006</span>
+        <span>Governance / 007</span>
         <span>Access follows sensitivity</span>
       </div>
       <div class="governance-grid">
@@ -375,6 +407,6 @@
   </footer>
 
   <noscript><p class="noscript">SeaCommons works without JavaScript; only the illustrative signal animation and live demo status are disabled.</p></noscript>
-  <script src="/site.js" defer></script>
+  <script src="site.js" defer></script>
 </body>
 </html>

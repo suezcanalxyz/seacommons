@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./core/data/test_live_feed.db")
 os.environ.setdefault("RUNTIME_PROFILE", "operational")
-
-from fastapi.testclient import TestClient
 
 from core.api.main import app
 from core.api.routes.live import (
@@ -17,18 +15,18 @@ from core.api.routes.live import (
 )
 from core.config import config
 from core.ingestion.signal import DistressSignal
-from core.intel.x_media_utils import consensus_ocr_coordinate
+from core.intel import lifecycle
 from core.intel.geoextract import (
     extract_numeric_coords,
     extract_relative_coords,
     is_direct_distress_call,
     is_resolved_distress,
 )
-from core.intel import lifecycle
 from core.intel.news_monitor import RSS_FEEDS
 from core.intel.store import IntelEvent, IntelStore
 from core.intel.twitter_monitor import TwitterMonitor
-
+from core.intel.x_media_utils import consensus_ocr_coordinate
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
 
@@ -733,7 +731,7 @@ def test_sensitive_public_position_is_stable_and_approximate() -> None:
 def test_live_feed_merges_durable_alarm_phone_events_after_memory_eviction(monkeypatch) -> None:
     durable = IntelEvent(
         id="alarm-durable-01",
-        timestamp_utc="2026-08-01T08:00:00+00:00",
+        timestamp_utc=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
         type="twitter",
         severity="high",
         lat=34.79,

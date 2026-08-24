@@ -267,6 +267,7 @@ function groupByHour(events) {
 // ── Main component ───────────────────────────────────────────────────────────
 export default function IntelDashboard({
   apiBase,
+  liveEdgeBase = '',
   publicMode = false,
   intelEvents,
   intelDrifts,
@@ -311,11 +312,42 @@ export default function IntelDashboard({
     let alive = true;
     async function loadSources() {
       try {
-        const endpoint = publicMode ? '/api/v1/live/sources' : '/api/v1/intel/sources';
-        const resp = await fetch(`${apiBase}${endpoint}`);
+        const useEdgeStatus = publicMode && Boolean(liveEdgeBase);
+        const endpoint = useEdgeStatus ? '/v1/live/status' : publicMode ? '/api/v1/live/sources' : '/api/v1/intel/sources';
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 4000);
+        const resp = await fetch(`${useEdgeStatus ? liveEdgeBase : apiBase}${endpoint}`, {
+          signal: controller.signal,
+        });
+        window.clearTimeout(timeout);
         if (resp.ok) {
           const data = await resp.json();
-          if (alive) setSources(data.sources || []);
+          if (alive && useEdgeStatus) {
+            const edgeSources = Array.isArray(data.sources) && data.sources.length
+              ? data.sources.map((source) => ({
+                name: source.source || source.name || 'collector',
+                type: source.node || 'edge',
+                status: source.status || 'degraded',
+                last_poll_at: source.received_at || source.observed_at || null,
+                events_last_hour: 0,
+                total_events: 0,
+                consecutive_errors: source.status === 'active' ? 0 : 1,
+              }))
+              : [{
+                name: 'Cloudflare Live relay',
+                type: 'edge',
+                status: data.status === 'live'
+                  ? 'active'
+                  : data.status === 'degraded' ? 'degraded' : 'offline',
+                last_poll_at: data.last_heartbeat_at || data.updated_at || null,
+                events_last_hour: 0,
+                total_events: Number(data.event_count) || 0,
+                consecutive_errors: data.status === 'live' ? 0 : 1,
+              }];
+            setSources(edgeSources);
+          } else if (alive) {
+            setSources(data.sources || []);
+          }
         }
       } catch { /* silent */ }
       if (alive) setSourcesLoaded(true);
@@ -326,7 +358,7 @@ export default function IntelDashboard({
       alive = false;
       window.clearTimeout(pollRef.current);
     };
-  }, [apiBase, publicMode]);
+  }, [apiBase, liveEdgeBase, publicMode]);
 
   // Filtered + searched events
   const filteredEvents = useMemo(() => {

@@ -53,6 +53,7 @@ LIVE_EDGE_INGEST_SECRET=replace-with-cloudflare-secret
 SEACOMMONS_NODE_ID=oracle-intel-01
 LIVE_EDGE_OUTBOX_PATH=/home/ubuntu/seacommons/shared/live-edge-outbox.db
 LIVE_EDGE_POLL_SECONDS=1
+LIVE_EDGE_HEARTBEAT_SECONDS=60
 LIVE_EDGE_BATCH_SIZE=25
 LIVE_EDGE_SCAN_LIMIT=200
 # Must exceed lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS (7 days) with margin so an
@@ -126,13 +127,17 @@ A healthy active result should report:
 ```json
 {
   "status": "live",
-  "age_seconds": 12,
+  "heartbeat_age_seconds": 12,
   "event_count": 1,
   "ttl_seconds": 691200
 }
 ```
 
-`waiting` means the edge is online but has not received an event during the last two minutes. It does not necessarily mean the collectors are broken.
+`live` is driven by the signed publisher heartbeat, independently from incident
+arrival. `degraded` means the relay still has retained incidents but the
+publisher heartbeat is stale. `waiting` means that no fresh heartbeat and no
+retained incident are available; it does not by itself prove that the Worker is
+unreachable.
 
 ## Operational latency target
 
