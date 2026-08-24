@@ -53,6 +53,7 @@ class PublisherSettings:
     live_window_minutes: int = 8 * 24 * 60
     request_timeout_seconds: float = 8.0
     max_attempts: int = 20
+    heartbeat_seconds: float = 60.0
 
     @classmethod
     def from_env(cls) -> "PublisherSettings":
@@ -67,6 +68,7 @@ class PublisherSettings:
             live_window_minutes=max(5, int(os.getenv("LIVE_EDGE_WINDOW_MINUTES", str(8 * 24 * 60)))),
             request_timeout_seconds=float(os.getenv("LIVE_EDGE_TIMEOUT_SECONDS", "8")),
             max_attempts=max(1, int(os.getenv("LIVE_EDGE_MAX_ATTEMPTS", "20"))),
+            heartbeat_seconds=max(30.0, float(os.getenv("LIVE_EDGE_HEARTBEAT_SECONDS", "60"))),
         )
 
     def validate(self) -> None:
@@ -353,6 +355,7 @@ class LiveEdgePublisher:
         self.running = True
         self.client = httpx.Client(timeout=settings.request_timeout_seconds)
         self.cycles = 0
+        self.last_heartbeat_at = 0.0
 
     def stop(self, *_: Any) -> None:
         self.running = False
@@ -442,6 +445,37 @@ class LiveEdgePublisher:
                 logger.warning("Live edge delivery failed for %s: %s", row["event_id"], exc)
         return delivered
 
+    def heartbeat(self, status: str = "active", *, force: bool = False) -> bool:
+        """Report collector health independently from the arrival of incidents."""
+        now_monotonic = time.monotonic()
+        if not force and now_monotonic - self.last_heartbeat_at < self.settings.heartbeat_seconds:
+            return False
+        self.last_heartbeat_at = now_monotonic
+        payload = {
+            "source": "live-edge-publisher",
+            "node": self.settings.node_id,
+            "observed_at": now_iso(),
+            "status": status if status in {"active", "degraded", "offline"} else "degraded",
+        }
+        body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+        heartbeat_url = f"{self.settings.edge_url.rsplit('/', 1)[0]}/heartbeat"
+        try:
+            response = self.client.post(
+                heartbeat_url,
+                content=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-SeaCommons-Signature": signature(self.settings.ingest_secret, body),
+                    "User-Agent": f"SeaCommons-Node/{self.settings.node_id}",
+                },
+            )
+            if response.status_code in {200, 202}:
+                return True
+            raise RuntimeError(f"edge HTTP {response.status_code}: {response.text[:200]}")
+        except Exception as exc:
+            logger.warning("Live edge heartbeat failed: %s", exc)
+            return False
+
     def run(self) -> None:
         logger.info(
             "Live-first edge publisher started node=%s poll=%.2fs window=%dm",
@@ -451,6 +485,7 @@ class LiveEdgePublisher:
         )
         while self.running:
             started = time.monotonic()
+            cycle_status = "active"
             try:
                 added = self.collect()
                 delivered = self.deliver()
@@ -465,7 +500,9 @@ class LiveEdgePublisher:
                         self.outbox.counts(),
                     )
             except Exception:
+                cycle_status = "degraded"
                 logger.exception("Live edge publisher cycle failed")
+            self.heartbeat(cycle_status)
             remaining = self.settings.poll_seconds - (time.monotonic() - started)
             if remaining > 0:
                 time.sleep(remaining)

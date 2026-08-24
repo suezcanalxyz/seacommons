@@ -1,7 +1,14 @@
-import pytest
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 
+import pytest
 from core.intel.news_monitor import NewsMonitor, _clean_rss_text
 from core.intel.store import IntelStore
+
+_RECENT_RSS_DATE = format_datetime(
+    datetime.now(timezone.utc) - timedelta(hours=1),
+    usegmt=True,
+)
 
 
 @pytest.fixture
@@ -21,7 +28,7 @@ def test_rss_policy_statement_is_not_distress(fresh_store):
         ),
         "link": "https://www.sosmediterranee.org/open-letter/",
         "guid": "https://www.sosmediterranee.org/open-letter/",
-        "pub_date": "Fri, 17 Jul 2026 09:00:00 +0000",
+        "pub_date": _RECENT_RSS_DATE,
     }
     assert m._ingest_rss_item(item, "SOS Méditerranée") is True
     evt = fresh_store.events()[0]
@@ -43,7 +50,7 @@ def test_rss_active_distress_call_is_distress(fresh_store):
         ),
         "link": "https://www.sosmediterranee.org/urgent/",
         "guid": "https://www.sosmediterranee.org/urgent/",
-        "pub_date": "Fri, 17 Jul 2026 09:00:00 +0000",
+        "pub_date": _RECENT_RSS_DATE,
     }
     assert m._ingest_rss_item(item, "SOS Méditerranée") is True
     evt = fresh_store.events()[0]
@@ -62,7 +69,7 @@ def test_wordpress_sos_brand_footer_is_not_an_emergency(fresh_store):
         ),
         "link": "https://www.sosmediterranee.org/court/",
         "guid": "https://www.sosmediterranee.org/court/",
-        "pub_date": "Fri, 17 Jul 2026 09:00:00 +0000",
+        "pub_date": _RECENT_RSS_DATE,
     }
 
     assert _clean_rss_text(item) == "Catania Court Acquits Crew Member"
@@ -80,7 +87,7 @@ def test_news_place_name_never_becomes_incident_geometry(fresh_store):
         "description": "Representatives will meet on land in Palermo next week.",
         "link": "https://example.org/palermo-conference",
         "guid": "palermo-conference",
-        "pub_date": "Fri, 17 Jul 2026 09:00:00 +0000",
+        "pub_date": _RECENT_RSS_DATE,
     }
 
     assert m._ingest_rss_item(item, "Sea Watch") is True
@@ -95,7 +102,7 @@ def test_rss_event_id_is_stable_across_monitor_restarts(fresh_store):
         "description": "A contextual article.",
         "link": "https://example.org/stable-item",
         "guid": "https://example.org/stable-item",
-        "pub_date": "Fri, 17 Jul 2026 09:00:00 +0000",
+        "pub_date": _RECENT_RSS_DATE,
     }
 
     first = NewsMonitor()
@@ -133,7 +140,7 @@ def test_retrospective_rss_articles_remain_unlocated_news(
         "description": description,
         "link": f"https://example.org/{abs(hash(title))}",
         "guid": f"guid:{title}",
-        "pub_date": "Fri, 17 Jul 2026 09:00:00 +0000",
+        "pub_date": _RECENT_RSS_DATE,
     }
 
     assert NewsMonitor()._ingest_rss_item(item, "Sea Watch") is True

@@ -4,7 +4,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-from core.live_edge_publisher import Outbox, public_event_from_row, removed_payload, signature
+from core.live_edge_publisher import (
+    LiveEdgePublisher,
+    Outbox,
+    PublisherSettings,
+    public_event_from_row,
+    removed_payload,
+    signature,
+)
 
 _NOW = datetime(2026, 8, 2, 12, 30, tzinfo=timezone.utc)
 
@@ -246,3 +253,25 @@ def test_removed_payload_is_a_valid_incident_removed_event() -> None:
 def test_signature_is_stable() -> None:
     assert signature("secret", '{"id":"evt"}') == signature("secret", '{"id":"evt"}')
     assert signature("secret", '{"id":"evt"}') != signature("other", '{"id":"evt"}')
+
+
+def test_publisher_heartbeat_is_separate_from_event_delivery(tmp_path: Path) -> None:
+    settings = PublisherSettings(
+        edge_url="https://edge.example/v1/live/events",
+        ingest_secret="secret",
+        node_id="collector-a",
+        outbox_path=tmp_path / "outbox.db",
+    )
+    publisher = LiveEdgePublisher(settings)
+    calls = []
+
+    def post(url, *, content, headers):
+        calls.append((url, content, headers))
+        return SimpleNamespace(status_code=202, text="")
+
+    publisher.client.post = post
+    assert publisher.heartbeat(force=True) is True
+    assert calls[0][0] == "https://edge.example/v1/live/heartbeat"
+    body = calls[0][1]
+    assert '"source":"live-edge-publisher"' in body
+    assert calls[0][2]["X-SeaCommons-Signature"] == signature("secret", body)

@@ -51,6 +51,7 @@ LIVE_EDGE_INGEST_SECRET=replace-with-the-same-cloudflare-secret
 SEACOMMONS_NODE_ID=oracle-intel-01
 LIVE_EDGE_OUTBOX_PATH=/home/ubuntu/seacommons/shared/live-edge-outbox.db
 LIVE_EDGE_POLL_SECONDS=15
+LIVE_EDGE_HEARTBEAT_SECONDS=60
 LIVE_EDGE_BATCH_SIZE=25
 # Must exceed lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS (7 days) with margin —
 # see LIVE_FIRST_CUTOVER.md's "Realtime semantics" for why.
@@ -167,7 +168,7 @@ The frontend client should try, in this order:
 
 1. WebSocket `/v1/live/stream`;
 2. polling `/v1/live/snapshot`;
-3. current Oracle `/api/v1/live` feed;
+3. current Oracle `/api/v1/live` feed after three edge failures, rate-limited to one attempt per minute;
 4. last local browser snapshot.
 
 The UI must display `LIVE`, `DEGRADED`, `ARCHIVE` or `OFFLINE`, plus the last update timestamp. Keep the Oracle fallback until the edge path has completed a longer operational trial.
@@ -186,10 +187,9 @@ Then leave or restore the frontend to the existing Oracle Live endpoint. Durable
 
 Nostr is an optional public replication transport, not the authoritative operational database. OpenTimestamps may later anchor periodic manifest hashes to Bitcoin. Never publish private source material, personal data or sensitive operational coordinates to immutable or uncontrolled networks.
 
-## Remaining work before production cutover
+## Remaining work after the edge-first cutover
 
-- add the frontend edge/fallback client;
-- expose publisher health and outbox age to source-health monitoring;
+- expose outbox age and queue depth to source-health monitoring;
 - add signed key rotation with overlapping secrets;
 - generate periodic signed manifests;
 - implement an independently hosted Nostr bridge and relay policy;

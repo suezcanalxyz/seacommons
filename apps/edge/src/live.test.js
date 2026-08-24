@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeEvent, verifyIngestRequest } from './live.js';
+import { classifyLiveStatus, normalizeEvent, verifyIngestRequest } from './live.js';
 
 async function hmac(secret, body) {
   const key = await crypto.subtle.importKey(
@@ -55,4 +55,17 @@ test('rejects a collector request with an invalid signature', async () => {
   const result = await verifyIngestRequest(request, 'test-secret');
   assert.equal(result.ok, false);
   assert.equal(result.status, 401);
+});
+
+test('separates collector heartbeat health from event recency', () => {
+  const now = Date.parse('2026-08-24T12:00:00Z');
+  assert.equal(classifyLiveStatus({
+    lastHeartbeatAt: '2026-08-24T11:59:20Z',
+    eventCount: 0,
+  }, now), 'live');
+  assert.equal(classifyLiveStatus({
+    lastHeartbeatAt: '2026-08-24T11:40:00Z',
+    eventCount: 4,
+  }, now), 'degraded');
+  assert.equal(classifyLiveStatus({}, now), 'waiting');
 });

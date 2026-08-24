@@ -5,6 +5,7 @@ import {
     currentEstimateFeature,
     decorateLiveTracking,
     edgeSnapshotIsFresh,
+    edgeSnapshotIsUsable,
     liveTrackingCandidates,
     mergeLiveDrifts,
 } from './liveTracking.js';
@@ -62,6 +63,20 @@ test('accepts only fresh edge snapshots', () => {
   assert.equal(edgeSnapshotIsFresh({ updated_at: '2026-08-06T13:59:00Z' }, now), true);
   assert.equal(edgeSnapshotIsFresh({ updated_at: '2026-08-06T13:50:00Z' }, now), false);
   assert.equal(edgeSnapshotIsFresh({ updated_at: null }, now), false);
+});
+
+test('keeps a quiet edge snapshot usable for its retention window', () => {
+  const now = new Date('2026-08-06T14:00:00Z');
+  const quiet = {
+    schema: 'seacommons-live-snapshot-v1',
+    updated_at: '2026-08-06T10:00:00Z',
+    ttl_seconds: 8 * 24 * 60 * 60,
+    events: [{ id: 'incident-1' }],
+  };
+  assert.equal(edgeSnapshotIsFresh(quiet, now), false);
+  assert.equal(edgeSnapshotIsUsable(quiet, now), true);
+  assert.equal(edgeSnapshotIsUsable({ ...quiet, updated_at: '2026-07-01T10:00:00Z' }, now), false);
+  assert.equal(edgeSnapshotIsUsable({ ...quiet, schema: 'unknown' }, now), false);
 });
 
 test('interpolates a wall-clock estimate along the calculated trajectory', () => {

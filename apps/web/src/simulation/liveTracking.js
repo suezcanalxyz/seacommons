@@ -21,11 +21,34 @@ export function incidentLifecycle(properties = {}) {
 }
 
 export function edgeSnapshotIsFresh(snapshot, now = Date.now(), maxAgeSeconds = 120) {
-  const updatedMs = parsedTime(snapshot?.updated_at);
+  const updatedMs = parsedTime(snapshot?.last_heartbeat_at || snapshot?.updated_at);
   const currentMs = now instanceof Date ? now.getTime() : Number(now);
   if (updatedMs === null || !Number.isFinite(currentMs)) return false;
   const ageMs = currentMs - updatedMs;
   return ageMs >= -30_000 && ageMs <= maxAgeSeconds * 1000;
+}
+
+// Snapshot usability is deliberately different from collector freshness.
+// A quiet but reachable edge still carries the authoritative lifecycle and
+// archive state; rejecting it after two minutes made the browser fall back to
+// a slower, unavailable VM. New snapshots expose generated_at, while the
+// legacy deployed contract remains usable for its declared retention window.
+export function edgeSnapshotIsUsable(snapshot, now = Date.now()) {
+  if (snapshot?.schema !== 'seacommons-live-snapshot-v1' || !Array.isArray(snapshot.events)) {
+    return false;
+  }
+  const currentMs = now instanceof Date ? now.getTime() : Number(now);
+  if (!Number.isFinite(currentMs)) return false;
+  const generatedMs = parsedTime(snapshot.generated_at);
+  if (generatedMs !== null) {
+    const ageMs = currentMs - generatedMs;
+    return ageMs >= -30_000 && ageMs <= 5 * 60_000;
+  }
+  const updatedMs = parsedTime(snapshot.updated_at);
+  if (updatedMs === null) return snapshot.events.length === 0;
+  const retentionSeconds = Math.max(60, Number(snapshot.ttl_seconds) || 8 * 24 * 60 * 60);
+  const ageMs = currentMs - updatedMs;
+  return ageMs >= -30_000 && ageMs <= retentionSeconds * 1000;
 }
 
 export function liveTrackingCandidates(events, now = new Date(), maxAgeHours = 48) {

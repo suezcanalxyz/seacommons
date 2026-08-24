@@ -7,11 +7,12 @@
   "observability": { "enabled": true },
   "vars": {
     "ALLOWED_ORIGINS": "https://live.seacommons.org,https://play.seacommons.org,http://localhost:5173",
-    // Backstop only — the Oracle publisher (core/live_edge_publisher.py)
+    // Backstop only - the canonical publisher (core/live_edge_publisher.py)
     // sends an explicit removal at the real 7-day lifecycle cutoff
     // (core/intel/lifecycle.py). This TTL just guarantees nothing lingers
     // forever if the publisher ever goes down before sending that signal.
     "LIVE_EVENT_TTL_SECONDS": "691200",
+    "LIVE_HEARTBEAT_MAX_AGE_SECONDS": "120",
     "NOSTR_BRIDGE_URL": ""
   },
   "durable_objects": {

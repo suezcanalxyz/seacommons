@@ -19,7 +19,7 @@ import { loadStoredSimulations, storeScenario } from './simulation/scenarioStore
 import { computeDriftInWorker } from './simulation/workerClient.js';
 import {
   decorateLiveTracking,
-  edgeSnapshotIsFresh,
+  edgeSnapshotIsUsable,
   liveTrackingCandidates,
   mergeLiveDrifts,
 } from './simulation/liveTracking.js';
@@ -650,10 +650,9 @@ function App() {
   const simParamsRef = useRef({});
   const intelWsRef = useRef(null);
   const liveTrackingRunsRef = useRef(new Map());
-  // True once the Cloudflare edge feed is confirmed live — the VM poll/WS
-  // effect below keeps running as a warm standby but stops writing state,
-  // so the edge is the visible source of truth without visible flicker
-  // and an instant fallback if the edge ever drops.
+  // True once the Cloudflare edge feed is confirmed live. On the public host
+  // the regular VM loop is disabled; Oracle is an explicit, rate-limited
+  // backup only after repeated edge failures.
   const edgeLiveActiveRef = useRef(false);
   const [form, setForm] = useState({
     lat: APP_PROFILE === 'demo' ? '35.52' : '',
@@ -702,6 +701,13 @@ function App() {
   }
 
   async function loadWeatherFor(lat, lon) {
+    if (isPublicLiveHost) {
+      const realtime = await fetchOpenMeteoEnvironment(lat, lon);
+      const payload = mergeEnvironment({}, realtime);
+      setWeather(payload);
+      pushCaseLog(`Weather ${payload.source} @ ${Number(lat).toFixed(3)}, ${Number(lon).toFixed(3)}`);
+      return payload;
+    }
     const [baseResult, realtimeResult] = await Promise.allSettled([
       fetchJson(
         apiBase,
@@ -723,6 +729,7 @@ function App() {
 
   async function loadWeatherGridForMap(map) {
     if (!map) return;   // guard: button can be pressed before map init completes
+    if (isPublicLiveHost) return; // Live forcing is sampled per incident at the edge.
     if (map.getZoom() < 4) return;  // world/globe view — a 4x4 grid over the planet is meaningless
     const bounds = map.getBounds();
     const payload = await fetchJson(
@@ -755,6 +762,10 @@ function App() {
 
   async function loadNearestVessels(lat, lon) {
     if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) return [];
+    if (isPublicLiveHost) {
+      setNearestVessels([]);
+      return [];
+    }
     const payload = await fetchJson(
       apiBase,
       `/api/v1/vessels/nearest?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&limit=5`,
@@ -788,6 +799,9 @@ function App() {
   // api.seacommons.org endpoint supports WebSocket upgrades; if the upgrade
   // fails, polling remains active.
   useEffect(() => {
+    // The public host is edge-first. Oracle is contacted only by the explicit
+    // edge-failure fallback, not by a parallel loop that times out forever.
+    if (isPublicLiveHost && LIVE_EDGE_BASE) return undefined;
     const wsBase = apiBase.replace(/^http/, 'ws');
     const feedPath = isPublicLiveHost
       ? '/api/v1/live/signals?limit=500&days=30'
@@ -927,27 +941,48 @@ function App() {
     };
   }, [apiBase]);
 
-  // Cloudflare edge Live feed — zero-cost WebSocket delivery, tried first on
-  // the public Live host. The VM poll/WS effect above keeps running as a warm
-  // standby (see edgeLiveActiveRef gates in its handlers) so if the edge ever
-  // stops responding, the very next VM poll tick (≤10s) picks the feed back
-  // up with no code path left uninitialized.
+  // Cloudflare edge Live feed: WebSocket plus snapshot polling on the public
+  // host. Oracle is contacted only after three consecutive edge failures and
+  // at most once per minute; the last valid edge snapshot remains visible.
   useEffect(() => {
     if (!isPublicLiveHost || !LIVE_EDGE_BASE) return undefined;
     let alive = true;
     let ws = null;
     let pollTimer = null;
     let reconnectTimer = null;
+    let consecutiveFailures = 0;
+    let lastBackupAttempt = 0;
 
-    function applySnapshot(snapshot) {
-      if (!alive || !edgeSnapshotIsFresh(snapshot)) return false;
+    function applySnapshot(snapshot, transport = 'poll') {
+      if (!alive || !edgeSnapshotIsUsable(snapshot)) return false;
       const features = edgeSnapshotToFeatures(snapshot);
       setIntelEvents(features);
       try { window.localStorage.setItem('seacommons_live_signal_cache_v2', JSON.stringify(features)); } catch { /* quota */ }
       setIntelConnected(true);
-      setIntelMode('ws');
+      setIntelMode(transport);
       edgeLiveActiveRef.current = true;
+      consecutiveFailures = 0;
       return true;
+    }
+
+    async function loadOracleBackup() {
+      const now = Date.now();
+      if (now - lastBackupAttempt < 60_000) return;
+      lastBackupAttempt = now;
+      try {
+        const data = await fetchJson(
+          apiBase,
+          '/api/v1/live/signals?limit=500&days=30',
+          undefined,
+          3000,
+        );
+        if (!alive || !Array.isArray(data.features)) return;
+        const features = receivedSignalFeatures(data.features);
+        setIntelEvents(features);
+        try { window.localStorage.setItem('seacommons_live_signal_cache_v2', JSON.stringify(features)); } catch { /* quota */ }
+        setIntelConnected(true);
+        setIntelMode('poll');
+      } catch { /* cached edge snapshot remains visible */ }
     }
 
     async function pollSnapshot() {
@@ -956,17 +991,20 @@ function App() {
       // only ever be one scheduled next call, never overlapping chains.
       window.clearTimeout(pollTimer);
       try {
-        const response = await fetch(`${LIVE_EDGE_BASE}/v1/live/snapshot`);
-        if (!response.ok) throw new Error(`edge snapshot HTTP ${response.status}`);
-        if (!applySnapshot(await response.json())) {
-          throw new Error('edge snapshot is stale');
+        const snapshot = await fetchJson(LIVE_EDGE_BASE, '/v1/live/snapshot', undefined, 4000);
+        const transport = ws?.readyState === WebSocket.OPEN ? 'ws' : 'poll';
+        if (!applySnapshot(snapshot, transport)) {
+          throw new Error('edge snapshot is unusable');
         }
       } catch {
         if (!alive) return;
-        // Edge unreachable — hand back to the VM path, which has been
-        // running quietly this whole time and resumes writing on its
-        // next tick since edgeLiveActiveRef is now false.
+        // Do not create a parallel Oracle loop: wait for three real edge
+        // failures, then try the backup once while retaining cached data.
+        consecutiveFailures += 1;
         edgeLiveActiveRef.current = false;
+        setIntelConnected(false);
+        setIntelMode('offline');
+        if (consecutiveFailures >= 3) await loadOracleBackup();
       }
       if (alive) pollTimer = window.setTimeout(pollSnapshot, 10000);
     }
@@ -978,13 +1016,17 @@ function App() {
       const openTimer = window.setTimeout(() => {
         if (ws && ws.readyState !== WebSocket.OPEN) ws.close();
       }, 4000);
-      ws.onopen = () => window.clearTimeout(openTimer);
+      ws.onopen = () => {
+        window.clearTimeout(openTimer);
+        setIntelConnected(true);
+        setIntelMode('ws');
+      };
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'snapshot') {
-            if (!applySnapshot(msg)) edgeLiveActiveRef.current = false;
-          } else if (msg.type === 'event' || msg.type === 'remove') {
+            if (!applySnapshot(msg, 'ws')) edgeLiveActiveRef.current = false;
+          } else if (msg.type === 'event' || msg.type === 'remove' || msg.type === 'source_health') {
             // Incremental updates still need the full picture to re-derive
             // removal/lifecycle correctly — re-fetch the authoritative
             // snapshot rather than hand-rolling incremental Feature merges.
@@ -1012,7 +1054,7 @@ function App() {
       window.clearTimeout(reconnectTimer);
       ws?.close();
     };
-  }, [isPublicLiveHost]);
+  }, [apiBase, isPublicLiveHost]);
 
   // Alarm Phone live tracking runs independently in the browser. It consumes
   // hourly historical/current weather and marine fields, so an old report is
@@ -1081,6 +1123,12 @@ function App() {
   useEffect(() => {
     let alive = true;
     let driftTimer = null;
+    if (isPublicLiveHost) {
+      // Public Live calculates active, geolocated drifts in the browser.
+      // Oracle remains a backup and is not polled every 30 seconds.
+      setIntelDrifts({ type: 'FeatureCollection', features: [] });
+      return undefined;
+    }
     async function loadDrifts() {
       try {
         const path = isPublicLiveHost ? '/api/v1/live/drifts' : '/api/v1/intel/drifts';
@@ -1099,6 +1147,10 @@ function App() {
   }, [apiBase]);
 
   useEffect(() => {
+    if (isPublicLiveHost) {
+      setPlatforms({ type: 'FeatureCollection', features: [] });
+      return undefined;
+    }
     const path = isPublicLiveHost ? '/api/v1/live/platforms' : '/api/v1/zones/platforms';
     fetchJson(apiBase, path)
       .then(d => { if (d.features) setPlatforms(d); })
@@ -1108,6 +1160,9 @@ function App() {
   // ── Rehydrate case history from the DB (survives page refresh) ──────────────
   // GeoJSON is loaded lazily on "Show" to keep the initial payload small.
   useEffect(() => {
+    // Public Live archives incident lifecycle directly from the edge feed;
+    // simulation history is local-first and must not require Oracle.
+    if (isPublicLiveHost) return undefined;
     let alive = true;
     (async () => {
       try {
@@ -1145,7 +1200,10 @@ function App() {
   }, [apiBase]);
 
   useEffect(() => {
-    if (isPublicDemoHost) return undefined;
+    if (isPublicDemoHost || isPublicLiveHost) {
+      setNgoVessels({ type: 'FeatureCollection', features: [] });
+      return undefined;
+    }
     // AIS positions are public data either way; the public host just reads
     // them through /api/v1/live/ (unauthenticated) instead of the
     // operator-only /api/v1/intel/ngo (requires a session).
@@ -2141,6 +2199,10 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return undefined;
+    if (isPublicLiveHost) {
+      map.getSource('live-nearby-vessels')?.setData({ type: 'FeatureCollection', features: [] });
+      return undefined;
+    }
     const LIVE_VESSEL_REFRESH_MS = 3 * 60 * 1000;
     const MAX_DISTRESS_POINTS = 8;
     const VESSELS_PER_POINT = 4;
@@ -3002,6 +3064,7 @@ function App() {
             <div className="live-feed-panel__body">
               <IntelDashboard
                 apiBase={apiBase}
+                liveEdgeBase={LIVE_EDGE_BASE}
                 publicMode
                 intelEvents={intelEvents}
                 intelDrifts={displayedIntelDrifts}
@@ -3119,6 +3182,7 @@ function App() {
           {activePanel === 'osint' ? (
             <IntelDashboard
               apiBase={apiBase}
+              liveEdgeBase={LIVE_EDGE_BASE}
               publicMode={isPublicLiveHost}
               intelEvents={intelEvents}
               intelDrifts={displayedIntelDrifts}
