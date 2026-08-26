@@ -1,0 +1,46 @@
+name: Feature request
+description: Propose a scoped capability or engineering improvement.
+title: "feat: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the problem before proposing implementation. Do not include sensitive operational data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or engineering problem needs to be solved?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: State observable acceptance criteria, not only a preferred technology.
+    validations:
+      required: true
+  - type: dropdown
+    id: boundary
+    attributes:
+      label: Primary area
+      options:
+        - Live / realtime
+        - Intel / ingestion
+        - Drift / simulation
+        - Cases / governance
+        - Frontend / map
+        - Security / privacy
+        - Operations / deployment
+        - Documentation / research
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Data, safety and compatibility risks
+      description: Note public/private, migration, operational-safety or backward-compatibility effects.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

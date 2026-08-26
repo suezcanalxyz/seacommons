@@ -16,6 +16,7 @@ the newest dated filename.
   ordering, fallbacks and recovery.
 - [Contract catalogue](contracts/README.md) — versioned machine-readable
   payload contracts.
+- [Architecture decisions](adr/README.md) — durable decisions and trade-offs.
 
 These documents describe current intended behavior. If a dated audit conflicts
 with them, the canonical documents and executable tests take precedence.

@@ -529,7 +529,7 @@ production deployment.
 | Canonical Live contracts (cross-cutting follow-up) | Complete | `22a87fc` |
 | PR 8 — Split-runtime observability | Complete | `7297c68` |
 | PR 9 — Documentation consolidation | Complete | `docs/consolidate-architecture` |
-| PR 10 — Repository polish | Pending | — |
+| PR 10 — Repository polish | Complete | `chore/repository-polish` |
 
 The PR branches are intentionally small review units but currently form a
 partially stacked local history. Before remote merge, preserve their dependency

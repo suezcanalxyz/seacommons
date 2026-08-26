@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a reproducible defect without including sensitive operational data.
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include credentials, personal data, unredacted distress reports or live sensitive locations.
+        This tracker is not an emergency channel. Security issues must use private reporting.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - API / worker
+        - Operational web console
+        - Public Live edge
+        - Institutional site
+        - Deployment / CI
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the observed behavior and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Provide minimal, sanitized steps and inputs.
+      placeholder: |
+        1. Configure...
+        2. Request...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: Commit SHA, branch, or deployment version
+  - type: textarea
+    id: verification
+    attributes:
+      label: Sanitized diagnostics
+      description: Include relevant logs or screenshots only after removing sensitive data.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed credentials, personal data and sensitive operational locations.
+          required: true
+        - label: This is not a vulnerability report or an active emergency.
+          required: true

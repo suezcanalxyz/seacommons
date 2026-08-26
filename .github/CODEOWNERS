@@ -1,0 +1,16 @@
+# Default review owner. Add domain teams here as maintainership expands.
+* @suezcanalxyz
+
+# Correctness- and privacy-critical boundaries.
+/apps/api/core/domain/ @suezcanalxyz
+/apps/api/core/live/ @suezcanalxyz
+/apps/api/core/intel/public_*.py @suezcanalxyz
+/apps/edge/ @suezcanalxyz
+/docs/contracts/ @suezcanalxyz
+
+# Deployment, security and repository policy.
+/.github/ @suezcanalxyz
+/deploy/ @suezcanalxyz
+/ops/ @suezcanalxyz
+/SECURITY.md @suezcanalxyz
+/docs/SECURITY_MODEL.md @suezcanalxyz

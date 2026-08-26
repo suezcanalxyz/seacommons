@@ -17,48 +17,39 @@ Licensed under AGPL-3.0.
 apps/
   api/        FastAPI backend, drift engine, forensic and integrations
   web/        React/Vite operational console
-deploy/       Docker, Render and hosting manifests
-docs/         Methodology, governance and deployment notes
+  edge/       Cloudflare Worker and Durable Object for Public Live
+  site/       Static institutional website
+  unreal/     Experimental immersive renderer
+deploy/       Container, reverse-proxy and systemd manifests
+docs/         Canonical architecture, contracts, runbooks and research notes
 scripts/      Local developer entrypoints
 ```
 
 ## Quickstart
 
-Install and run the full stack in 3 commands:
+Install the API and web dependencies, then start the local development stack:
 
 ```bash
-# Install system dependencies (required for TID module)
-sudo apt-get install gcc g++ libcurl4-openssl-dev libgeos-dev
-
 git clone https://github.com/suezcanalxyz/seacommons.git
 cd seacommons
 cp .env.example .env
-docker compose -f deploy/docker-compose.yml up -d
+python -m pip install -e "apps/api[dev]"
+npm --prefix apps/web ci
+bash scripts/run_dev.sh all
 ```
 
-The Common Operational Picture (COP) will be available at `http://localhost:3000`.
+The Common Operational Picture (COP) will be available at `http://localhost:5173`.
 The API will be available at `http://localhost:8000`.
 
-## Pilot Runtime
-
-The current repository is most reliable in low-cost pilot mode with an independent Seacommons dashboard.
-
-Recommended startup:
-
-```powershell
-docker compose -f deploy/docker-compose.pilot.yml up --build
-```
-
-Pilot URLs:
-
-- Dashboard: `http://localhost:3000`
-- API: `http://localhost:8000`
-- API docs: `http://localhost:8000/docs`
-
-The dashboard is separate from the public institutional site. Production uses
+On Windows, after installing the same dependencies, use
+`powershell -File scripts/start.ps1`. The dashboard is separate from the public
+institutional site. Production uses
 `live.seacommons.org` for the authenticated operational map and
 `play.seacommons.org` for the isolated public demo. Both expose a same-origin
 `/api` surface; their operational and demo runtimes remain isolated internally.
+
+See the [documentation index](./docs/README.md) for architecture, security and
+validated operational runbooks.
 
 - `/api/v1/ops/summary`
 - `/api/v1/vessels`
@@ -75,8 +66,6 @@ For a hosted public demo, do not rely on same-origin API guessing.
 - Backend: set `DEMO_PUBLIC_MODE=true`
 
 `DEMO_PUBLIC_MODE` keeps the API lightweight and allows SAR cases to use the Gaussian fallback when a hosted demo does not have a full OpenDrift runtime available.
-
-A starter Render blueprint is included in [deploy/render.yaml](./deploy/render.yaml). Render still needs this folder in a Git repository or a published image source before it can deploy the stack.
 
 For a zero-cost live demo, the recommended path is:
 
