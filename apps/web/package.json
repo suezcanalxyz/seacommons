@@ -18,7 +18,8 @@
     "build": "vite build",
     "build:unified": "vite build && node scripts/package-unified.mjs",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit",
+    "lint": "npm run typecheck",
+    "typecheck": "tsc --noEmit",
     "test": "npm run test:simulation",
     "test:simulation": "node --test src/simulation/*.test.js"
   },
