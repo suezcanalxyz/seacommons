@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
+from core.domain.live_contracts import VerificationStatus
+
 logger = logging.getLogger(__name__)
 
 
@@ -114,10 +116,10 @@ class IntelEvent:
         if explicit:
             return explicit
         if self.type == "ais_spike":
-            return "derived"          # computed from AIS telemetry
+            return VerificationStatus.DERIVED.value  # computed from AIS telemetry
         if self.source and self.source.lower() in ("manual", "operator"):
-            return "operator_asserted"
-        return "unverified_public_source"
+            return VerificationStatus.OPERATOR_ASSERTED.value
+        return VerificationStatus.UNVERIFIED_PUBLIC_SOURCE.value
 
     def to_geojson_feature(self) -> dict[str, Any]:
         geo = (

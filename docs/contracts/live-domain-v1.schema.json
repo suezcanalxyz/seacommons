@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seacommons.org/contracts/live-domain-v1.schema.json",
+  "title": "SeaCommons Live domain vocabulary v1",
+  "$defs": {
+    "publication_status": {
+      "enum": ["private", "internal", "published"]
+    },
+    "visibility": {
+      "enum": ["public", "private"]
+    },
+    "incident_lifecycle": {
+      "enum": ["active", "resolved", "needs_review", "archived"]
+    },
+    "live_signal_kind": {
+      "enum": ["distress", "context"]
+    },
+    "severity": {
+      "enum": ["critical", "high", "medium", "low"]
+    },
+    "intel_tier": {
+      "enum": ["operational", "news", "signal"]
+    },
+    "source_policy": {
+      "enum": [
+        "official_api",
+        "official_rss",
+        "official_site_embed",
+        "trusted_partner",
+        "operator_published",
+        "archive",
+        "unofficial",
+        "nitter",
+        "scrape",
+        "twscrape"
+      ]
+    },
+    "location_precision": {
+      "enum": [
+        "unpositioned",
+        "approximate",
+        "regional_centroid",
+        "reported_or_derived",
+        "area",
+        "area_low_confidence"
+      ]
+    },
+    "verification_status": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Evidence label. Canonical values are documented, while tracked-source labels such as alarm_phone_twitter remain valid provenance."
+    },
+    "public_geometry": {
+      "oneOf": [
+        { "$ref": "#/$defs/point" },
+        { "$ref": "#/$defs/polygon" },
+        { "$ref": "#/$defs/multi_polygon" },
+        { "type": "null" }
+      ]
+    },
+    "position": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "number", "minimum": -180, "maximum": 180 },
+        { "type": "number", "minimum": -90, "maximum": 90 }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "point": {
+      "type": "object",
+      "required": ["type", "coordinates"],
+      "properties": {
+        "type": { "const": "Point" },
+        "coordinates": { "$ref": "#/$defs/position" }
+      },
+      "additionalProperties": false
+    },
+    "linear_ring": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/position" },
+      "minItems": 4
+    },
+    "polygon": {
+      "type": "object",
+      "required": ["type", "coordinates"],
+      "properties": {
+        "type": { "const": "Polygon" },
+        "coordinates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/linear_ring" },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "multi_polygon": {
+      "type": "object",
+      "required": ["type", "coordinates"],
+      "properties": {
+        "type": { "const": "MultiPolygon" },
+        "coordinates": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/linear_ring" },
+            "minItems": 1
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

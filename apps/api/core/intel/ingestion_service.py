@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from core.domain.live_contracts import PublicationStatus, SourcePolicy, VerificationStatus
 from core.intel.geoextract import (
     classify_severity,
     extract_coords,
@@ -68,14 +69,14 @@ def store_external_event(
     )
     metadata = {
         "is_distress": distress,
-        "verification_status": "operator_asserted",
+        "verification_status": VerificationStatus.OPERATOR_ASSERTED.value,
         "coordinate_source": (
             "post_text" if lat is not None or numeric_coords else "place_centroid"
         ),
     }
     if publish:
-        metadata["publication_status"] = "published"
-        metadata["source_policy"] = "operator_published"
+        metadata["publication_status"] = PublicationStatus.PUBLISHED.value
+        metadata["source_policy"] = SourcePolicy.OPERATOR_PUBLISHED.value
 
     event = IntelEvent(
         type="twitter",

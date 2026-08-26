@@ -28,6 +28,13 @@ from typing import Any
 
 import httpx
 
+from core.domain.live_contracts import (
+    FEDERATED_EVENT_SCHEMA,
+    PublicationStatus,
+    VerificationStatus,
+    Visibility,
+    validate_federated_event_input,
+)
 from core.intel.public_policy import is_blocked_source, is_explicitly_private
 
 logger = logging.getLogger("seacommons.live_edge_publisher")
@@ -213,7 +220,7 @@ def public_event_from_row(
     same_source: list[Any],
 ) -> dict[str, Any] | None:
     """Build an edge payload with the SAME lifecycle semantics as the VM's
-    public /api/v1/live/signals feed (core/api/routes/live.py) — both paths
+    public /api/v1/live/signals feed (core/live/feed.py) — both paths
     import core.intel.lifecycle so a marker can never look "resolved" on one
     and "still active" on the other.
     """
@@ -239,7 +246,7 @@ def public_event_from_row(
     # this codebase ever sets (a typo for publication_status) — this branch
     # was therefore dead: it never once evaluated True in production. Only
     # `is_distress` was ever actually gating inclusion.
-    explicitly_public = publication_status == "published"
+    explicitly_public = publication_status == PublicationStatus.PUBLISHED.value
     if not is_distress and not explicitly_public:
         return None
 
@@ -253,6 +260,8 @@ def public_event_from_row(
         confidence = float(confidence) if confidence is not None else None
     except (TypeError, ValueError):
         confidence = None
+    if confidence is not None and not 0 <= confidence <= 1:
+        confidence = None
 
     # expired: outside the operational Live window — either directly resolved
     # or older than 7 days. The edge purges it outright; lifecycle still
@@ -262,7 +271,7 @@ def public_event_from_row(
         lifecycle.distress_lifecycle(event, now=now, same_source=same_source)
         if is_distress else None
     )
-    # Same redaction as the VM's public feed (core/api/routes/live.py,
+    # Same redaction as the VM's public feed (core/live/projection.py,
     # _public_intel_feature): only the tracked account's own reply fields —
     # never the event's private-caller-sourced `text` (already blanked
     # above) or anything else from thread_reposts.
@@ -275,7 +284,9 @@ def public_event_from_row(
         # Same public contract as the VM feed: raw source/caller text stays
         # private; verified public self-reply notes are projected separately.
         "text": "",
-        "verification_status": metadata.get("verification_status", "unverified_public_source"),
+        "verification_status": metadata.get(
+            "verification_status", VerificationStatus.UNVERIFIED_PUBLIC_SOURCE.value
+        ),
         "coordinate_source": metadata.get("coordinate_source"),
         "radius_m": metadata.get("location_uncertainty_m"),
         "incident_lifecycle": incident_lifecycle,
@@ -295,21 +306,21 @@ def public_event_from_row(
     properties = {key: value for key, value in properties.items() if value not in (None, "")}
 
     payload: dict[str, Any] = {
-        "schema": "seacommons-event-v1",
+        "schema": FEDERATED_EVENT_SCHEMA,
         "type": "incident_removed" if expired else (
             "distress_observation" if is_distress else event_type
         ),
         "source": event.source or "unknown",
         "node": node_id,
         "observed_at": event.timestamp_utc or now_iso(),
-        "visibility": "public",
+        "visibility": Visibility.PUBLIC.value,
         "confidence": confidence,
         "geometry": geometry,
         "properties": properties,
         "source_url": event.url or None,
     }
     payload["id"] = _version_id(incident_id, payload)
-    return payload
+    return validate_federated_event_input(payload)
 
 
 def removed_payload(incident_id: str, node_id: str, *, source: str = "unknown") -> dict[str, Any]:
@@ -320,19 +331,19 @@ def removed_payload(incident_id: str, node_id: str, *, source: str = "unknown") 
     anything itself; collect() is the only thing that ever revisits a row.
     """
     payload: dict[str, Any] = {
-        "schema": "seacommons-event-v1",
+        "schema": FEDERATED_EVENT_SCHEMA,
         "type": "incident_removed",
         "source": source,
         "node": node_id,
         "observed_at": now_iso(),
-        "visibility": "public",
+        "visibility": Visibility.PUBLIC.value,
         "confidence": None,
         "geometry": None,
         "properties": {"incident_id": incident_id},
         "source_url": None,
     }
     payload["id"] = _version_id(incident_id, payload)
-    return payload
+    return validate_federated_event_input(payload)
 
 
 def signature(secret: str, body: str) -> str:

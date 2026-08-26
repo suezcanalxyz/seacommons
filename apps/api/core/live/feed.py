@@ -3,9 +3,21 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from core.domain.live_contracts import (
+    LIVE_SIGNAL_SCHEMA,
+    IncidentLifecycle,
+    IntelTier,
+    LiveSignalKind,
+    LocationPrecision,
+    PublicationStatus,
+    SourcePolicy,
+    VerificationStatus,
+    validate_live_signal,
+)
 from core.intel import lifecycle
 from core.intel.store import IntelEvent, intel_store
 from core.live.projection import (
@@ -15,6 +27,8 @@ from core.live.projection import (
     _public_drift_feature,
     _public_intel_feature,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
@@ -50,7 +64,7 @@ def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
     features: list[dict[str, Any]] = []
     for row in rows:
         payload = row["payload"]
-        if payload.get("publication_status") != "published":
+        if payload.get("publication_status") != PublicationStatus.PUBLISHED.value:
             continue
         lat, lon = payload.get("lat"), payload.get("lon")
         if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
@@ -60,38 +74,43 @@ def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
         condition = str(payload.get("vessel_condition") or "reported distress").replace("_", " ")
         channel = str(payload.get("source_channel") or row["source_channel"] or "partner")
         partner_report = channel in {"webhook", "api", "partner"}
-        features.append(
-            {
-                "type": "Feature",
+        feature = {
+            "type": "Feature",
+            "id": f"signal:{signal_id}",
+            "geometry": {"type": "Point", "coordinates": [public_lon, public_lat]},
+            "properties": {
+                "schema": LIVE_SIGNAL_SCHEMA,
                 "id": f"signal:{signal_id}",
-                "geometry": {"type": "Point", "coordinates": [public_lon, public_lat]},
-                "properties": {
-                    "schema": "org.seacommons.live-signal/v1",
-                    "id": f"signal:{signal_id}",
-                    "type": "distress",
-                    "kind": "distress",
-                    "severity": "high" if payload.get("medical_emergency") else "medium",
-                    "tier": "operational",
-                    "priority": 1,
-                    "verification_status": "partner_reported"
-                    if partner_report
-                    else "user_reported",
-                    "publication_status": "published",
-                    "title": f"Maritime signal · {condition}"[:255],
-                    "text": "",
-                    "url": "",
-                    "source": "partner intake" if partner_report else "community report",
-                    "channel": channel,
-                    "location_precision": "approximate",
-                    "location_uncertainty_m": 2500,
-                    "timestamp_utc": payload.get("event_time_utc")
-                    or payload.get("timestamp_utc")
-                    or row["received_at"].replace(tzinfo=UTC).isoformat(),
-                    "received_at": payload.get("timestamp_utc")
-                    or row["received_at"].replace(tzinfo=UTC).isoformat(),
-                },
-            }
-        )
+                "type": "distress",
+                "kind": LiveSignalKind.DISTRESS.value,
+                "severity": "high" if payload.get("medical_emergency") else "medium",
+                "tier": IntelTier.OPERATIONAL.value,
+                "priority": 1,
+                "verification_status": VerificationStatus.PARTNER_REPORTED.value
+                if partner_report
+                else VerificationStatus.USER_REPORTED.value,
+                "publication_status": PublicationStatus.PUBLISHED.value,
+                "source_policy": SourcePolicy.OPERATOR_PUBLISHED.value,
+                "title": f"Maritime signal · {condition}"[:255],
+                "text": "",
+                "url": "",
+                "source": "partner intake" if partner_report else "community report",
+                "channel": channel,
+                "location_precision": LocationPrecision.APPROXIMATE.value,
+                "location_uncertainty_m": 2500,
+                "incident_lifecycle": IncidentLifecycle.ACTIVE.value,
+                "timestamp_utc": payload.get("event_time_utc")
+                or payload.get("timestamp_utc")
+                or row["received_at"].replace(tzinfo=UTC).isoformat(),
+                "received_at": payload.get("timestamp_utc")
+                or row["received_at"].replace(tzinfo=UTC).isoformat(),
+            },
+        }
+        try:
+            features.append(validate_live_signal(feature))
+        except ValueError:
+            logger.warning("Dropping ingested signal that violates Live contract id=%s", signal_id)
+            continue
         if len(features) >= limit:
             break
     return features
@@ -133,7 +152,7 @@ def public_signal_collection(
         )
         # Directly resolved incidents were filtered above. Cross-post matches
         # may still project resolved; ambiguous replies project needs_review.
-        feature["properties"]["kind"] = "distress" if state == "active" else state
+        feature["properties"]["kind"] = LiveSignalKind.DISTRESS.value
         feature["properties"]["incident_lifecycle"] = state
         features.append(feature)
     features.extend(_published_ingested_features(limit))

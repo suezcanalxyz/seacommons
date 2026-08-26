@@ -7,38 +7,26 @@
   "properties": {
     "type": { "const": "Feature" },
     "id": { "type": "string", "minLength": 1 },
-    "geometry": {
-      "type": "object",
-      "required": ["type", "coordinates"],
-      "properties": {
-        "type": { "const": "Point" },
-        "coordinates": {
-          "type": "array",
-          "prefixItems": [
-            { "type": "number", "minimum": -180, "maximum": 180 },
-            { "type": "number", "minimum": -90, "maximum": 90 }
-          ],
-          "minItems": 2,
-          "maxItems": 2
-        }
-      },
-      "additionalProperties": false
-    },
+    "geometry": { "$ref": "live-domain-v1.schema.json#/$defs/public_geometry" },
     "properties": {
       "type": "object",
       "required": [
         "schema", "id", "type", "kind", "severity", "tier",
-        "verification_status", "publication_status", "timestamp_utc"
+        "verification_status", "publication_status", "source_policy",
+        "timestamp_utc", "location_precision"
       ],
       "properties": {
         "schema": { "const": "org.seacommons.live-signal/v1" },
         "id": { "type": "string" },
         "type": { "type": "string" },
-        "kind": { "enum": ["distress", "context"] },
-        "severity": { "enum": ["critical", "high", "medium", "low"] },
-        "tier": { "enum": ["operational", "news", "signal"] },
-        "verification_status": { "type": "string" },
+        "kind": { "$ref": "live-domain-v1.schema.json#/$defs/live_signal_kind" },
+        "severity": { "$ref": "live-domain-v1.schema.json#/$defs/severity" },
+        "tier": { "$ref": "live-domain-v1.schema.json#/$defs/intel_tier" },
+        "verification_status": { "$ref": "live-domain-v1.schema.json#/$defs/verification_status" },
         "publication_status": { "const": "published" },
+        "source_policy": { "$ref": "live-domain-v1.schema.json#/$defs/source_policy" },
+        "location_precision": { "$ref": "live-domain-v1.schema.json#/$defs/location_precision" },
+        "incident_lifecycle": { "$ref": "live-domain-v1.schema.json#/$defs/incident_lifecycle" },
         "timestamp_utc": { "type": "string", "format": "date-time" },
         "title": { "type": "string", "maxLength": 255 },
         "text": { "const": "" },

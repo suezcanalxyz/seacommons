@@ -3,7 +3,7 @@
 
 These two rules -- explicit privacy is absolute, and a blocked source/
 transport is never exposed -- must hold identically on both public Live
-paths (the VM's core.api.routes.live and the edge's
+paths (the VM's core.live.projection and the edge's
 core.live_edge_publisher). This file exists so a future edit to one path
 that silently drifts from the other is caught here instead of in
 production, per docs/ENGINEERING_AUDIT.md's P1 finding on duplicated

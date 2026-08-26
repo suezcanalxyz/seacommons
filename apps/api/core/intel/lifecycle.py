@@ -12,6 +12,7 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
+from core.domain.live_contracts import IncidentLifecycle
 from core.intel.geoextract import is_concluded_incident, is_ongoing_incident
 from core.intel.store import IntelEvent
 
@@ -96,15 +97,15 @@ def has_own_reply_resolution(event: IntelEvent) -> bool:
     matching author. A later ongoing-danger reply therefore reopens an event
     that an earlier reply had marked resolved.
     """
-    return latest_own_reply_outcome(event) == "resolved"
+    return latest_own_reply_outcome(event) == IncidentLifecycle.RESOLVED.value
 
 
 def _outcome_from_text(text: str) -> Optional[str]:
     """Return a decisive lifecycle outcome, or None for an ambiguous update."""
     if is_ongoing_incident(text):
-        return "active"
+        return IncidentLifecycle.ACTIVE.value
     if is_concluded_incident(text):
-        return "resolved"
+        return IncidentLifecycle.RESOLVED.value
     return None
 
 
@@ -122,7 +123,7 @@ def latest_own_reply_outcome(event: IntelEvent) -> Optional[str]:
     ]
     if not textual_replies:
         return None
-    return _outcome_from_text(textual_replies[-1]) or "needs_review"
+    return _outcome_from_text(textual_replies[-1]) or IncidentLifecycle.NEEDS_REVIEW.value
 
 
 def _latest_activity_time(event: IntelEvent) -> Optional[datetime]:
@@ -146,8 +147,8 @@ def is_directly_concluded(event: IntelEvent) -> bool:
     """
     reply_outcome = latest_own_reply_outcome(event)
     if reply_outcome is not None:
-        return reply_outcome == "resolved"
-    return _outcome_from_text(event.text or event.title) == "resolved"
+        return reply_outcome == IncidentLifecycle.RESOLVED.value
+    return _outcome_from_text(event.text or event.title) == IncidentLifecycle.RESOLVED.value
 
 
 def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[IntelEvent]) -> str:
@@ -165,17 +166,21 @@ def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[In
     recomputing from the event's own text keeps this consistent across
     sources and self-healing across classifier fixes.
     """
-    state = _outcome_from_text(event.text or event.title) or "active"
+    state = _outcome_from_text(event.text or event.title) or IncidentLifecycle.ACTIVE.value
     reply_outcome = latest_own_reply_outcome(event)
     if reply_outcome is not None:
         state = reply_outcome
     elif has_resolution_signal(event, same_source):
-        state = "resolved"
-    if state in {"resolved", "needs_review"}:
+        state = IncidentLifecycle.RESOLVED.value
+    if state in {IncidentLifecycle.RESOLVED.value, IncidentLifecycle.NEEDS_REVIEW.value}:
         return state
     observed = _latest_activity_time(event)
     age_hours = (now - observed).total_seconds() / 3600 if observed else 0
-    return "archived" if age_hours >= ARCHIVE_AFTER_HOURS else "active"
+    return (
+        IncidentLifecycle.ARCHIVED.value
+        if age_hours >= ARCHIVE_AFTER_HOURS
+        else IncidentLifecycle.ACTIVE.value
+    )
 
 
 def is_within_live_window(event: IntelEvent, *, now: datetime) -> bool:

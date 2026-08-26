@@ -4,19 +4,29 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
+from core.domain.live_contracts import (
+    APPROVED_SOURCE_POLICIES,
+    LIVE_SIGNAL_SCHEMA,
+    LiveSignalKind,
+    PublicationStatus,
+    Severity,
+    SourcePolicy,
+    VerificationStatus,
+    validate_live_signal,
+)
 from core.intel.public_geometry import public_geometry_and_precision
 from core.intel.public_policy import is_blocked_source, is_explicitly_private
 from core.intel.store import IntelEvent
 
+logger = logging.getLogger(__name__)
+
 _PUBLIC_INTEL_TYPES = frozenset({"distress", "twitter", "mastodon", "ngo_activity"})
-_APPROVED_SOURCE_POLICIES = frozenset(
-    {"official_api", "official_rss", "official_site_embed", "trusted_partner"}
-)
 _PUBLIC_METADATA = frozenset(
     {
         "category",
@@ -71,10 +81,26 @@ def _public_intel_feature(event: IntelEvent) -> dict[str, Any] | None:
     # direct-message channels rely on this guarantee).
     if is_explicitly_private(event.metadata):
         return None
-    if publication != "published" and source_policy not in _APPROVED_SOURCE_POLICIES:
+    if (
+        publication != PublicationStatus.PUBLISHED.value
+        and source_policy not in APPROVED_SOURCE_POLICIES
+    ):
         return None
-    if event.type not in _PUBLIC_INTEL_TYPES and publication != "published":
+    if event.type not in _PUBLIC_INTEL_TYPES and publication != PublicationStatus.PUBLISHED.value:
         return None
+    try:
+        canonical_source_policy = (
+            SourcePolicy(source_policy).value
+            if source_policy
+            else SourcePolicy.OPERATOR_PUBLISHED.value
+        )
+    except ValueError:
+        logger.warning("Dropping public event with unknown source policy id=%s", event.id)
+        return None
+    try:
+        severity = Severity(event.severity or Severity.LOW.value).value
+    except ValueError:
+        severity = Severity.LOW.value
     metadata = {key: event.metadata[key] for key in _PUBLIC_METADATA if key in event.metadata}
     # Unlike the event's own `text` (stripped everywhere on public Live,
     # since it may originate from a private WhatsApp/SMS caller who never
@@ -96,21 +122,25 @@ def _public_intel_feature(event: IntelEvent) -> dict[str, Any] | None:
             for r in thread_reposts
         ]
     geometry, location_precision = public_geometry_and_precision(event)
-    return {
+    feature = {
         "type": "Feature",
         "id": f"intel:{event.id}",
         "geometry": geometry,
         "properties": {
-            "schema": "org.seacommons.live-signal/v1",
+            "schema": LIVE_SIGNAL_SCHEMA,
             "id": f"intel:{event.id}",
             "type": event.type,
-            "kind": "distress" if event.tier() == "operational" else "context",
-            "severity": event.severity or "low",
+            "kind": (
+                LiveSignalKind.DISTRESS.value
+                if event.tier() == "operational"
+                else LiveSignalKind.CONTEXT.value
+            ),
+            "severity": severity,
             "tier": event.tier(),
             "priority": event.priority(),
             "verification_status": event.verification_status(),
-            "publication_status": "published",
-            "source_policy": source_policy or "operator_published",
+            "publication_status": PublicationStatus.PUBLISHED.value,
+            "source_policy": canonical_source_policy,
             "title": (event.title or "Maritime signal")[:255],
             # Public Live deliberately excludes raw text and author identifiers.
             "text": "",
@@ -123,6 +153,11 @@ def _public_intel_feature(event: IntelEvent) -> dict[str, Any] | None:
             **metadata,
         },
     }
+    try:
+        return validate_live_signal(feature)
+    except ValueError:
+        logger.warning("Dropping event that violates the public Live contract id=%s", event.id)
+        return None
 
 
 def _approximate_public_point(signal_id: str, lat: float, lon: float) -> tuple[float, float]:
@@ -170,13 +205,13 @@ def _public_drift_feature(
             "intel_source": source[:64],
             "intel_severity": severity,
             "auto_drift": True,
-            "publication_status": "published",
+            "publication_status": PublicationStatus.PUBLISHED.value,
             "trajectory_kind": "model_forecast",
             "observed_track": False,
             "model": metadata.get("model"),
             "forcing_resolution": metadata.get("forcing_resolution"),
             "forcing_quality": metadata.get("forcing_quality"),
-            "verification_status": "modelled_spatiotemporal",
+            "verification_status": VerificationStatus.MODELLED_SPATIOTEMPORAL.value,
         },
     }
 

@@ -10,13 +10,13 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
-from typing import Literal
 
-from core.ingestion import router as ingest_router
-from core.ingestion.signal import DistressSignal
 from core.config import config
 from core.connectors.service import active_whatsapp_connector, mark_seen, public_connector
 from core.db.session import session_scope
+from core.domain.live_contracts import PublicationStatus
+from core.ingestion import router as ingest_router
+from core.ingestion.signal import DistressSignal
 from core.security import authenticate
 
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
@@ -44,7 +44,7 @@ class WebhookPayload(BaseModel):
     medical_emergency: bool = False
     children_aboard: bool = False
     timestamp_utc: str | None = None
-    publication_status: Literal["private", "internal", "published"] = "private"
+    publication_status: PublicationStatus = PublicationStatus.PRIVATE
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
