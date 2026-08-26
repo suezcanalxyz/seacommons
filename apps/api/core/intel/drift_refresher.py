@@ -87,8 +87,8 @@ class DriftRefresher:
             time.sleep(SCAN_INTERVAL_S)
 
     def _scan(self) -> None:
-        from core.api.routes.intel import schedule_intel_drift
         from core.intel import lifecycle
+        from core.intel.drift_service import schedule_intel_drift
 
         now = datetime.now(timezone.utc)
         candidates = intel_store.events(limit=200, max_age_days=lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS)

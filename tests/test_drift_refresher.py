@@ -79,7 +79,7 @@ def test_refresher_force_reschedules_stale_completed_drift(monkeypatch) -> None:
 
     calls: list[tuple] = []
     monkeypatch.setattr(
-        "core.api.routes.intel.schedule_intel_drift",
+        "core.intel.drift_service.schedule_intel_drift",
         lambda *args, **kwargs: calls.append((args, kwargs)) or True,
     )
     store = drift_refresher.intel_store

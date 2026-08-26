@@ -3,14 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
-
-from core.api.routes.live import _is_publishable_live_drift
 from core.drift.opendrift_pool import (
     _representative_path,
     _speed_to_ms,
     _trajectory_properties,
     _vector_components,
 )
+from core.live.projection import _is_publishable_live_drift
 
 
 class _Matrix:
@@ -62,7 +61,9 @@ def test_trajectory_properties_include_physical_speed_time_and_curvature() -> No
     assert len(properties["speed_ms"]) == 3
     assert properties["distance_m"] > 1_900
     assert properties["mean_speed_ms"] > 0
-    assert properties["course_deg"][1] != pytest.approx(properties["course_deg"][2], abs=10)
+    assert properties["course_deg"][1] != pytest.approx(
+        properties["course_deg"][2], abs=10
+    )
 
 
 def test_forcing_units_and_direction_are_converted_to_opendrift_vectors() -> None:
