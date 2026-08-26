@@ -20,6 +20,21 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e "apps/api[dev]"
       - run: python -m pytest -q
+      # Baseline debt (ruff ~125 minimal-ruleset findings, mypy ~176 errors) predates this
+      # gate and isn't fixed here — see docs/ENGINEERING_AUDIT.md. Report-only until a
+      # follow-up PR triages the backlog and flips these to blocking.
+      - name: ruff (report-only)
+        run: python -m ruff check . --output-format=github
+        working-directory: apps/api
+        continue-on-error: true
+      - name: mypy (report-only)
+        run: python -m mypy core
+        working-directory: apps/api
+        continue-on-error: true
+      - name: pip-audit (report-only)
+        run: python -m pip-audit --strict
+        working-directory: apps/api
+        continue-on-error: true
 
   web:
     runs-on: ubuntu-latest
@@ -37,6 +52,11 @@ jobs:
       - run: npm run lint
       - run: npm run test:simulation
       - run: npm run build
+      # dompurify/nanoid/postcss vulns are transitive-only (cesium/vite pin them);
+      # fix requires a dependency bump, tracked separately. Report-only until then.
+      - name: npm audit (report-only)
+        run: npm audit --omit=dev
+        continue-on-error: true
 
   edge:
     runs-on: ubuntu-latest
@@ -52,3 +72,4 @@ jobs:
           cache-dependency-path: apps/edge/package-lock.json
       - run: npm ci
       - run: npm test
+      - run: npm audit --omit=dev
