@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 import json, logging, time, uuid
+from collections import Counter as CollectionCounter
 from datetime import datetime, timezone
 from prometheus_client import Counter, Gauge, Histogram
 
@@ -9,6 +10,33 @@ HTTP_LATENCY = Histogram("seacommons_http_request_duration_seconds", "HTTP reque
 JOBS = Gauge("seacommons_jobs", "Durable jobs by state", ["status"])
 WORKERS = Gauge("seacommons_workers_alive", "Workers with a fresh heartbeat")
 JOB_RUNS = Counter("seacommons_job_runs_total", "Worker job executions", ["type", "outcome"])
+INTEL_SYNC_RUNS = Counter(
+    "seacommons_intel_sync_runs_total",
+    "Split-runtime intel database sync attempts",
+    ["outcome"],
+)
+INTEL_SYNC_EVENTS = Counter(
+    "seacommons_intel_sync_events_total",
+    "Intel events observed by split-runtime database sync",
+    ["change"],
+)
+INTEL_SYNC_CONSECUTIVE_FAILURES = Gauge(
+    "seacommons_intel_sync_consecutive_failures",
+    "Consecutive split-runtime intel database sync failures",
+)
+INTEL_SYNC_LAST_SUCCESS = Gauge(
+    "seacommons_intel_sync_last_success_unixtime",
+    "Unix timestamp of the last successful split-runtime intel database sync",
+)
+INTEL_SOURCES = Gauge(
+    "seacommons_intel_sources",
+    "Registered intel sources by current health state",
+    ["status"],
+)
+INTEL_SOURCE_EVENTS = Gauge(
+    "seacommons_intel_source_events_last_hour",
+    "Events received from all registered intel sources in the last hour",
+)
 
 
 class JsonFormatter(logging.Formatter):
@@ -56,3 +84,30 @@ def refresh_operational_gauges() -> None:
         alive = db.execute(select(func.count()).select_from(WorkerHeartbeatDB).where(
             WorkerHeartbeatDB.last_seen_at >= now - timedelta(seconds=60))).scalar_one()
         WORKERS.set(alive)
+    refresh_source_health_gauges()
+
+
+def refresh_source_health_gauges() -> None:
+    """Export bounded-cardinality health totals from the in-process registry."""
+    from core.intel.source_registry import source_registry
+
+    sources = source_registry.get_all()
+    counts = CollectionCounter(source.get("status", "pending") for source in sources)
+    for status in ("pending", "active", "degraded", "offline"):
+        INTEL_SOURCES.labels(status).set(counts.get(status, 0))
+    INTEL_SOURCE_EVENTS.set(sum(int(source.get("events_last_hour") or 0) for source in sources))
+
+
+def record_intel_sync_success(new_count: int, updated_count: int) -> None:
+    """Record a successful API-side database sync in split-runtime mode."""
+    INTEL_SYNC_RUNS.labels("success").inc()
+    INTEL_SYNC_EVENTS.labels("new").inc(max(0, int(new_count)))
+    INTEL_SYNC_EVENTS.labels("updated").inc(max(0, int(updated_count)))
+    INTEL_SYNC_CONSECUTIVE_FAILURES.set(0)
+    INTEL_SYNC_LAST_SUCCESS.set_to_current_time()
+
+
+def record_intel_sync_failure(consecutive_failures: int) -> None:
+    """Record a failed API-side database sync without exposing exception details."""
+    INTEL_SYNC_RUNS.labels("failure").inc()
+    INTEL_SYNC_CONSECUTIVE_FAILURES.set(max(1, int(consecutive_failures)))

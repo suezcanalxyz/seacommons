@@ -5,6 +5,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Callable
 
 try:
     from dotenv import load_dotenv
@@ -94,14 +95,45 @@ def _start_intel_sync_loop() -> None:
 
     def _loop():
         from core.intel.store import intel_store
+        consecutive_failures = 0
         while True:
             time.sleep(30)
-            try:
-                intel_store.sync_from_db()
-            except Exception as exc:
-                logger.debug("Intel DB sync tick failed: %s", exc)
+            consecutive_failures = _run_intel_sync_tick(
+                intel_store.sync_from_db,
+                consecutive_failures=consecutive_failures,
+            )
 
     threading.Thread(target=_loop, daemon=True, name="intel-db-sync").start()
+
+
+def _run_intel_sync_tick(
+    sync_from_db: Callable[[], tuple[int, int]],
+    *,
+    consecutive_failures: int,
+) -> int:
+    """Run one observable sync tick and return the updated failure streak."""
+    from core.observability import record_intel_sync_failure, record_intel_sync_success
+
+    try:
+        new_count, updated_count = sync_from_db()
+    except Exception as exc:
+        failures = consecutive_failures + 1
+        record_intel_sync_failure(failures)
+        log = logger.error if failures >= 3 else logger.warning
+        log(
+            "Intel DB sync tick failed (consecutive_failures=%d, error_type=%s)",
+            failures,
+            type(exc).__name__,
+        )
+        return failures
+
+    record_intel_sync_success(new_count, updated_count)
+    if consecutive_failures:
+        logger.info(
+            "Intel DB sync recovered after %d consecutive failure(s)",
+            consecutive_failures,
+        )
+    return 0
 
 
 app = FastAPI(
