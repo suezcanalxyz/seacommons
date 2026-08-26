@@ -20,9 +20,10 @@
     "clean": "rm -rf dist",
     "lint": "npm run typecheck",
     "typecheck": "tsc --noEmit",
-    "test": "npm run test:simulation && npm run test:live && npm run test:api",
+    "test": "npm run test:simulation && npm run test:live && npm run test:api && npm run test:map",
     "test:api": "node --test src/services/api/*.test.js",
     "test:live": "node --test src/features/live/*.test.js",
+    "test:map": "node --test src/features/drift/*.test.js",
     "test:simulation": "node --test src/simulation/*.test.js"
   },
   "dependencies": {
