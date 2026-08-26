@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSock
 from core.config import config
 from core.intel import lifecycle
 from core.intel.public_geometry import public_geometry_and_precision
+from core.intel.public_policy import is_blocked_source, is_explicitly_private
 from core.intel.store import IntelEvent, intel_store
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
@@ -23,7 +24,6 @@ _PUBLIC_INTEL_TYPES = frozenset({"distress", "twitter", "mastodon", "ngo_activit
 _APPROVED_SOURCE_POLICIES = frozenset(
     {"official_api", "official_rss", "official_site_embed", "trusted_partner"}
 )
-_BLOCKED_SOURCE_POLICIES = frozenset({"nitter", "scrape", "twscrape", "unofficial"})
 _PUBLIC_METADATA = frozenset(
     {
         "category",
@@ -66,17 +66,14 @@ def _public_intel_feature(event: IntelEvent) -> Optional[dict[str, Any]]:
         return None
     publication = str(event.metadata.get("publication_status") or "").lower()
     source_policy = str(event.metadata.get("source_policy") or "").lower()
-    transport = str(event.metadata.get("via") or event.metadata.get("scrape_source") or "").lower()
-    if source_policy in _BLOCKED_SOURCE_POLICIES or any(
-        blocked in transport for blocked in _BLOCKED_SOURCE_POLICIES
-    ):
+    if is_blocked_source(event.metadata):
         # Old scraper records may still be persisted; they must never re-enter Live.
         return None
     # Explicit privacy is absolute. An approved transport/source policy may
     # make an otherwise-unlabelled public observation eligible, but it must
     # never override a producer's explicit private decision (RSS/news and
     # direct-message channels rely on this guarantee).
-    if publication == "private":
+    if is_explicitly_private(event.metadata):
         return None
     if publication != "published" and source_policy not in _APPROVED_SOURCE_POLICIES:
         return None
