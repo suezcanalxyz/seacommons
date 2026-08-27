@@ -37,9 +37,14 @@ def public_geometry_and_precision(event: IntelEvent) -> tuple[dict | None, str]:
         return None, LocationPrecision.UNPOSITIONED.value
 
     coordinate_source = str(event.metadata.get("coordinate_source") or "")
-    precision = (
-        LocationPrecision.REGIONAL_CENTROID.value
-        if coordinate_source == "place_centroid"
-        else LocationPrecision.REPORTED_OR_DERIVED.value
-    )
+    if coordinate_source == "place_centroid":
+        precision = LocationPrecision.REGIONAL_CENTROID.value
+    elif coordinate_source == "region_area":
+        # The point here is the centroid of a named-region search area; the
+        # polygon (handled above) is the real geometry. Reaching this branch
+        # means the polygon was lost somewhere upstream -- fail safe and never
+        # present a region centroid as a reported position.
+        precision = LocationPrecision.APPROXIMATE.value
+    else:
+        precision = LocationPrecision.REPORTED_OR_DERIVED.value
     return {"type": "Point", "coordinates": [event.lon, event.lat]}, precision

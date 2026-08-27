@@ -1520,9 +1520,12 @@ function App() {
         // "NGO response" panel from GET /api/v1/live/signals/{id}/response.
         map.addLayer({
           id: 'ngo-response-lines-layer', type: 'line', source: 'ngo-response-lines',
-          layout: { 'line-dasharray': [2, 1] },
           paint: {
-            'line-color': ['match', ['get', 'heading_toward'], true, '#38bdf8', '#94a3b8'],
+            // line-dasharray is a paint property; a data-driven match on the
+            // boolean heading_toward needs `case` (match branch labels must be
+            // strings/numbers, never booleans).
+            'line-dasharray': [2, 1],
+            'line-color': ['case', ['==', ['get', 'heading_toward'], true], '#38bdf8', '#94a3b8'],
             'line-width': 1.4,
             'line-opacity': 0.75,
           },
@@ -1530,8 +1533,8 @@ function App() {
         map.addLayer({
           id: 'ngo-response-points-layer', type: 'circle', source: 'ngo-response-points',
           paint: {
-            'circle-radius': ['match', ['get', 'heading_toward'], true, 7, 5],
-            'circle-color': ['match', ['get', 'heading_toward'], true, '#38bdf8', '#7dd3fc'],
+            'circle-radius': ['case', ['==', ['get', 'heading_toward'], true], 7, 5],
+            'circle-color': ['case', ['==', ['get', 'heading_toward'], true], '#38bdf8', '#7dd3fc'],
             'circle-stroke-width': 1.5,
             'circle-stroke-color': '#03212e',
             'circle-opacity': 0.95,
