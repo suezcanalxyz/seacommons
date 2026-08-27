@@ -511,6 +511,30 @@ technology, it needs the existing technology's responsibilities separated).
 10. **PR 10 — Repository polish.** CODEOWNERS, issue/PR templates, CHANGELOG, ADRs — once the
     substance above is in place.
 
+## Roadmap progress log
+
+Implementation status as of 2026-08-26. “Complete” means implemented and
+verified on the named local branch/commit; it does not claim remote merge or
+production deployment.
+
+| Roadmap item | Status | Implementation |
+|---|---|---|
+| PR 1 — Engineering baseline + CI gates | Complete | `427e674` |
+| PR 2 — Public/private boundary consolidation | Complete | `8ac1e0e` |
+| PR 3 — Realtime invariant tests | Complete | `ad3e4d2` |
+| PR 4 — Frontend domain contracts | Complete | `e213eb9` |
+| PR 5 — Frontend realtime extraction | Complete | `73dc8ab` |
+| PR 6 — Cesium responsibility extraction | Complete | `712ace5` |
+| PR 7 — Backend route decomposition | Complete | `c0ac398` |
+| Canonical Live contracts (cross-cutting follow-up) | Complete | `22a87fc` |
+| PR 8 — Split-runtime observability | Complete | `7297c68` |
+| PR 9 — Documentation consolidation | Complete | `docs/consolidate-architecture` |
+| PR 10 — Repository polish | Complete | `chore/repository-polish` |
+
+The PR branches are intentionally small review units but currently form a
+partially stacked local history. Before remote merge, preserve their dependency
+order or rebase each branch onto the merged predecessor.
+
 ## Exact Files Affected by PR #1
 
 - `.github/workflows/ci.yml` (add ruff/mypy/pip-audit steps to the `api` job; add
