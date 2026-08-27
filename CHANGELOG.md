@@ -11,6 +11,10 @@ Keep a Changelog structure; releases are identified by Git tags when published.
   availability); the console shows an "Image OCR" service row. A missing
   tesseract silently loses every Alarm Phone map-screenshot coordinate, so
   it is now visible.
+- Vessel incidents from the live AIS feed: AIS-SART/MOB/EPIRB beacons
+  (immediate distress), sustained aground (operational incident) and
+  sustained not-under-command (operator review). Runs off the existing
+  AISStream connection; incidents flow through the Live map and drift.
 
 - Per-object-class drift model selection (`core/drift/profiles.py`): powered
   and large hulls (cargo, container ship, tanker, motorboat, sailboat, lost

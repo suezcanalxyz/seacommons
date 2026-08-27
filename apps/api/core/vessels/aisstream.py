@@ -21,12 +21,26 @@ import json
 import logging
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+# Extra consumers of each parsed PositionReport, driven off the single
+# AISStream connection (the free tier allows only one open socket per key,
+# so a second consumer must never open its own). A hook is called with
+# (mmsi, ship_name, lat, lon, sog, nav_status) and must return fast and
+# never raise -- it runs on the stream thread.
+_position_hooks: list[Callable[[str, str, float, float, float | None, int | None], None]] = []
+
+
+def register_position_hook(
+    hook: Callable[[str, str, float, float, float | None, int | None], None],
+) -> None:
+    if hook not in _position_hooks:
+        _position_hooks.append(hook)
 
 # Mediterranean + Black Sea bounding box [lat_min, lon_min], [lat_max, lon_max]
 _BBOX = [[[28.0, -6.0], [47.0, 42.0]]]
@@ -181,16 +195,27 @@ class AISStreamClient:
             cog = pr.get("Cog")
             sog = pr.get("Sog")
             hdg = pr.get("TrueHeading")
+            nav_status = pr.get("NavigationalStatus")
             if lat is not None and lon is not None:
+                name = meta.get("ShipName", "").strip()
                 registry.upsert(
                     mmsi,
-                    ship_name=meta.get("ShipName", "").strip() or None,
+                    ship_name=name or None,
                     lat=float(lat),
                     lon=float(lon),
                     course=float(cog) if cog is not None else None,
                     speed=float(sog) if sog is not None else None,
                     heading=float(hdg) if hdg is not None and hdg != 511 else None,
                 )
+                for hook in _position_hooks:
+                    try:
+                        hook(
+                            mmsi, name, float(lat), float(lon),
+                            float(sog) if sog is not None else None,
+                            int(nav_status) if nav_status is not None else None,
+                        )
+                    except Exception:
+                        logger.debug("AIS position hook failed", exc_info=True)
 
         elif mtype == "ShipStaticData":
             sd = msg.get("Message", {}).get("ShipStaticData", {})

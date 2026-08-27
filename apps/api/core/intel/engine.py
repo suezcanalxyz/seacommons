@@ -19,6 +19,7 @@ class IntelEngine:
         self._twikit: object | None = None
         self._news: object | None = None
         self._ais: object | None = None
+        self._vessel_incidents: object | None = None
         self._drift_refresh: object | None = None
         self._gdacs: object | None = None
         self._started = False
@@ -100,6 +101,14 @@ class IntelEngine:
             except Exception as exc:
                 logger.warning("IntelEngine: drift refresher failed to start: %s", exc)
 
+            try:
+                from core.intel.vessel_incident_monitor import vessel_incident_monitor
+                vessel_incident_monitor.start()
+                self._vessel_incidents = vessel_incident_monitor
+                logger.info("IntelEngine: vessel incident monitor started")
+            except Exception as exc:
+                logger.warning("IntelEngine: vessel incident monitor failed to start: %s", exc)
+
         if gdacs_enabled:
             try:
                 from core.intel.gdacs_monitor import GDACSMonitor
@@ -115,6 +124,7 @@ class IntelEngine:
             self._twikit,
             self._news,
             self._ais,
+            self._vessel_incidents,
             self._drift_refresh,
             self._gdacs,
         ):
