@@ -10,7 +10,9 @@ collector.
 from __future__ import annotations
 
 import io
+import json
 import math
+import re
 import shutil
 import subprocess
 import urllib.request
@@ -36,14 +38,83 @@ def x_id_timestamp(tweet_id: str) -> str:
 
 
 def _x_photo_urls(payload: dict[str, Any]) -> list[str]:
-    """Extract public photo URLs from an already-fetched syndication payload."""
+    """Every pbs.twimg.com photo URL in a syndication tweet-result payload,
+    including its quoted tweet (Alarm Phone often puts the map in the quote)."""
     urls: list[str] = []
-    for photo in payload.get("photos") or []:
-        url = str(photo.get("url") or "")
+
+    def _harvest(node: dict[str, Any]) -> None:
+        for item in (node.get("mediaDetails") or []):
+            candidate = str(item.get("media_url_https") or item.get("media_url") or "")
+            if candidate:
+                urls.append(candidate)
+        for photo in (node.get("photos") or []):
+            candidate = str(photo.get("url") or "")
+            if candidate:
+                urls.append(candidate)
+
+    _harvest(payload)
+    quoted = payload.get("quoted_tweet")
+    if isinstance(quoted, dict):
+        _harvest(quoted)
+
+    seen: set[str] = set()
+    clean: list[str] = []
+    for url in urls:
         parsed = urlparse(url)
-        if parsed.scheme == "https" and parsed.hostname in _ALLOWED_MEDIA_HOSTS:
-            urls.append(url)
-    return urls[:4]
+        if (
+            parsed.scheme == "https"
+            and parsed.hostname in _ALLOWED_MEDIA_HOSTS
+            and url not in seen
+        ):
+            seen.add(url)
+            clean.append(url)
+    return clean[:6]
+
+
+def _syndication_token(tweet_id: str) -> str:
+    """The token the public tweet-result CDN expects:
+    ((id / 1e15) * pi).toString(36), with zero-runs and the dot removed."""
+    value = (int(tweet_id) / 1e15) * math.pi
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    whole = int(value)
+    frac = value - whole
+    out = ""
+    while whole > 0:
+        out = digits[whole % 36] + out
+        whole //= 36
+    out = out or "0"
+    if frac > 0:
+        out += "."
+        for _ in range(24):
+            frac *= 36
+            digit = int(frac)
+            out += digits[digit]
+            frac -= digit
+    return re.sub(r"(0+|\.)", "", out)
+
+
+def fetch_tweet_photos(tweet_id: str, *, timeout: float = 12.0) -> list[str]:
+    """Public pbs.twimg.com photo URLs for a tweet, via the syndication CDN --
+    no account, no API key. Used to re-process historical events whose image
+    URLs were never stored. Returns [] on any failure."""
+    tweet_id = str(tweet_id).strip()
+    if not tweet_id.isdigit():
+        return []
+    url = (
+        "https://cdn.syndication.twimg.com/tweet-result"
+        f"?id={tweet_id}&token={_syndication_token(tweet_id)}&lang=en"
+    )
+    try:
+        request = urllib.request.Request(
+            url, headers={"User-Agent": _HEADERS["User-Agent"], "Accept": "application/json"}
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read(2_000_000))
+    except Exception:
+        return []
+    if not isinstance(payload, dict):
+        return []
+    return _x_photo_urls(payload)
 
 
 def consensus_ocr_coordinate(texts: list[str]) -> Optional[tuple[float, float]]:

@@ -11,6 +11,12 @@ Keep a Changelog structure; releases are identified by Git tags when published.
   has flowing in and what it costs to run: ingestion sources, intel volume
   by type/source, vessel counts, drift job load, and the single-slot drift
   engine bottleneck. Documented in `docs/OPERATIONS_OVERVIEW.md`.
+- `python -m core.intel.backfill_alarm_phone` re-processes historical (and
+  archived) Alarm Phone events with the current OCR / pin-from-landmarks
+  pipeline: it re-fetches the tweet images from the public syndication CDN,
+  extracts a real position, writes it back, and can queue a drift for the
+  event's own moment. Dry-run by default. New ingests also persist the
+  media URLs so a re-process never has to resolve the tweet again.
 
 ## 0.6.0 - 2026-08-27
 
