@@ -85,6 +85,16 @@ def test_returning_to_normal_status_resets_the_episode(monitor) -> None:
     assert monitor._added == []  # only one fresh report since the reset
 
 
+def test_monitor_start_registers_exactly_one_position_hook(monkeypatch) -> None:
+    from core.vessels import aisstream
+
+    monkeypatch.setattr(aisstream, "_position_hooks", [])
+    m = vim.VesselIncidentMonitor()
+    m.start()
+    m.start()  # idempotent
+    assert aisstream.position_hook_count() == 1
+
+
 def test_emit_cooldown_suppresses_a_repeat(monitor) -> None:
     monitor.on_position("202020202", "", 35.0, 14.0, 0.0, 6)
     monitor._clock.advance(200)

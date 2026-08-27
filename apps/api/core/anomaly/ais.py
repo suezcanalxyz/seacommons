@@ -95,6 +95,14 @@ class AISAnomalyDetector:
         while self._running:
             time.sleep(90)
             now = time.time()
+            # Bounded memory on the small VM: drop tracks and cooldowns that
+            # can no longer produce an event.
+            self._last_seen = {
+                m: s for m, s in self._last_seen.items() if now - s["ts"] < 12 * 3600
+            }
+            self._emitted = {
+                k: t for k, t in self._emitted.items() if now - t < self._EMIT_COOLDOWN_S * 2
+            }
             for mmsi, seen in list(self._last_seen.items()):
                 if seen.get("gap_emitted"):
                     continue

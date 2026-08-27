@@ -42,6 +42,10 @@ def register_position_hook(
     if hook not in _position_hooks:
         _position_hooks.append(hook)
 
+
+def position_hook_count() -> int:
+    return len(_position_hooks)
+
 # Mediterranean + Black Sea bounding box [lat_min, lon_min], [lat_max, lon_max]
 _BBOX = [[[28.0, -6.0], [47.0, 42.0]]]
 # Whole-world box, used only for the MMSI-filtered NGO-fleet subscription.
@@ -151,6 +155,8 @@ class AISStreamClient:
                     backoff = 2
                     logger.info("AISStream: subscribed (%s)", self._label)
 
+                    silent_windows = 0
+                    positions_this_window = 0
                     while not self._stop.is_set():
                         raw = ws.recv(timeout=60)
                         if not raw:
@@ -160,13 +166,28 @@ class AISStreamClient:
                             self._handle(msg, registry)
                             self.messages_received += 1
                             messages_since_report += 1
+                            if msg.get("MessageType") == "PositionReport":
+                                positions_this_window += 1
                         except Exception as e:
                             logger.debug("AISStream msg parse error: %s", e)
                         now = time.monotonic()
                         if now - last_report_ts >= 60:
                             source_registry.record_poll(source_name, events_found=messages_since_report)
+                            # Known AISStream bug: the socket stays open (and
+                            # keepalives may arrive) but no real PositionReports
+                            # flow -- aisstream/aisstream#15. Force a fresh
+                            # connection after 3 empty minutes rather than sit
+                            # on a dead feed.
+                            silent_windows = silent_windows + 1 if positions_this_window == 0 else 0
                             messages_since_report = 0
+                            positions_this_window = 0
                             last_report_ts = now
+                            if silent_windows >= 3:
+                                logger.warning(
+                                    "AISStream (%s): 3 min with no PositionReports — forcing reconnect",
+                                    self._label,
+                                )
+                                break
 
             except Exception as exc:
                 self._connected = False
