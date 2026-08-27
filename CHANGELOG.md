@@ -7,6 +7,11 @@ Keep a Changelog structure; releases are identified by Git tags when published.
 
 ### Added
 
+- `/api/v1/ops/summary` reports `backend.image_ocr` (tesseract + Pillow
+  availability); the console shows an "Image OCR" service row. A missing
+  tesseract silently loses every Alarm Phone map-screenshot coordinate, so
+  it is now visible.
+
 - Per-object-class drift model selection (`core/drift/profiles.py`): powered
   and large hulls (cargo, container ship, tanker, motorboat, sailboat, lost
   container) now drift with OpenDrift `OceanDrift` and calibrated windage
@@ -22,6 +27,12 @@ Keep a Changelog structure; releases are identified by Git tags when published.
 
 ### Changed
 
+- Alarm Phone map-screenshot coordinate extraction is more robust: Tesseract
+  runs extra character-whitelisted passes, common digit/letter misreads are
+  folded before parsing, and the multi-pass consensus now clusters candidates
+  instead of requiring an exact pair. The pin-from-landmarks geolocation
+  detects blue and amber markers (not only map red) and drops a single
+  OCR-misplaced landmark before fitting.
 - Drift search cones are now a 90%-probability-of-containment ellipse fitted
   to the particle cloud (outlier-trimmed), replacing the raw convex hull that
   one stray particle could inflate. Properties carry `radius_p50_m`,

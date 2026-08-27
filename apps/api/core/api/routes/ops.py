@@ -16,6 +16,38 @@ from core.vessels.registry import registry
 
 router = APIRouter()
 
+
+def _image_ocr_status() -> dict:
+    """Whether the image-coordinate OCR pipeline can actually run.
+
+    Alarm Phone posts the precise position as a map screenshot, not text.
+    If tesseract or Pillow is missing on the host, every such coordinate is
+    silently lost -- this surfaces that instead of it being invisible.
+    """
+    import shutil
+
+    tesseract = shutil.which("tesseract")
+    try:
+        import PIL  # noqa: F401
+
+        pillow = True
+    except Exception:
+        pillow = False
+    try:
+        import numpy  # noqa: F401
+
+        has_numpy = True
+    except Exception:
+        has_numpy = False
+    return {
+        "available": bool(tesseract) and pillow,
+        "tesseract": bool(tesseract),
+        "tesseract_path": tesseract or None,
+        "pillow": pillow,
+        "numpy": has_numpy,
+    }
+
+
 _stats_cache: bytes | None = None
 _stats_cache_ts: float = 0.0
 _STATS_TTL = 30.0
@@ -101,6 +133,7 @@ async def ops_summary():
             "cmems_configured": bool(config.CMEMS_USERNAME and config.CMEMS_PASSWORD),
             "timezero": _tz_status,
             "job_execution_mode": config.JOB_EXECUTION_MODE,
+            "image_ocr": _image_ocr_status(),
         },
         "channels": {
             "twitter": {

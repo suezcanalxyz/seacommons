@@ -2,12 +2,54 @@
 from __future__ import annotations
 
 from core.intel.map_pin_geolocate import (
+    _detect_marker_pixel,
+    _drop_worst_landmark,
     _fit_axis,
     _haversine_km,
     _match_landmarks,
     _normalize_label,
     geolocate_pin_from_image,
 )
+
+
+def test_detect_marker_pixel_finds_non_red_markers() -> None:
+    from PIL import Image
+
+    for colour in ((214, 40, 40), (26, 115, 232), (240, 150, 30)):
+        img = Image.new("RGB", (400, 300), (238, 232, 220))  # light basemap
+        for y in range(150, 168):
+            for x in range(200 - (167 - y), 200 + (167 - y) + 1):  # teardrop-ish
+                img.putpixel((x, y), colour)
+        tip = _detect_marker_pixel(img)
+        assert tip is not None, colour
+        assert abs(tip[0] - 200) <= 3 and abs(tip[1] - 167) <= 3
+
+
+def test_detect_marker_pixel_ignores_a_large_coloured_region() -> None:
+    from PIL import Image
+
+    img = Image.new("RGB", (400, 300), (238, 232, 220))
+    for y in range(0, 200):          # a big blue sea area, not a marker
+        for x in range(0, 400):
+            img.putpixel((x, y), (30, 90, 200))
+    assert _detect_marker_pixel(img) is None
+
+
+def test_drop_worst_landmark_removes_a_single_outlier() -> None:
+    # heraklion/rethymno/chania roughly along Crete's north coast; a 4th
+    # "matched" label placed at a pixel far off the line is the misread.
+    good = [
+        ("heraklion", 300.0, 100.0),
+        ("rethymno", 220.0, 100.0),
+        ("chania", 140.0, 100.0),
+    ]
+    outlier = ("gavdos", 900.0, 900.0)
+    kept = _drop_worst_landmark(good + [outlier])
+    assert {n for n, _, _ in kept} == {"heraklion", "rethymno", "chania"}
+
+    # nothing dropped when all four are consistent
+    consistent = good + [("ierapetra", 360.0, 100.0)]
+    assert len(_drop_worst_landmark(consistent)) == 4
 
 
 def test_normalize_label_strips_accents_and_punctuation() -> None:
