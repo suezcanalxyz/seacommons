@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """AIS anomaly detector — gap, impossible speed, duplicate MMSI, dark zones, OFAC SDN."""
 from __future__ import annotations
-import asyncio
 import json
 import logging
 import os
@@ -49,73 +48,71 @@ class AISAnomalyDetector:
     def __init__(self, mock: bool = False, on_anomaly: Optional[Callable] = None):
         self.mock = mock or os.environ.get("MOCK", "").lower() == "true" or _cfg.MOCK
         self._on_anomaly = on_anomaly
-        self._last_seen: dict[str, dict] = {}  # mmsi → {lat, lon, ts, speed, type}
+        self._last_seen: dict[str, dict] = {}  # mmsi → {lat, lon, ts, speed, type, name}
         self._positions: dict[str, dict] = {}  # mmsi → latest position
         self._sdn_mmsi: set[str] = set()
+        self._emitted: dict[tuple[str, str], float] = {}  # (mmsi, type) → last emit
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
+        """Attach to the shared AIS feed and run the silence-sweep thread.
+
+        The old _ws_loop opened its own AISStream socket, which conflicts
+        with the primary client (one connection per key on the free tier) --
+        that is why this detector was never wired in. It now consumes the
+        same PositionReports as everything else via a position hook.
+        """
         self._running = True
         self._load_sdn()
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        try:
+            from core.vessels import aisstream
+
+            aisstream.register_position_hook(self._on_feed_position)
+        except Exception as exc:
+            logger.warning("AISAnomalyDetector: could not attach to AIS feed: %s", exc)
+        self._thread = threading.Thread(
+            target=self._silence_sweep_loop, daemon=True, name="ais-anomaly-sweep"
+        )
         self._thread.start()
 
     def stop(self) -> None:
         self._running = False
 
-    def _run(self) -> None:
-        if self.mock:
-            self._mock_loop()
-        else:
-            asyncio.run(self._ws_loop())
+    def _on_feed_position(
+        self, mmsi: str, name: str, lat: float, lon: float,
+        sog: float | None, nav_status: int | None,
+    ) -> None:
+        if self._running:
+            self.process_position(mmsi, name, lat, lon, sog or 0.0, "")
 
-    def _mock_loop(self) -> None:
-        import random
-        while self._running:
-            mmsi = f"2470{random.randint(10000, 99999)}"
-            lat = 35.0 + random.uniform(-3, 3)
-            lon = 14.0 + random.uniform(-4, 4)
-            speed = random.uniform(0, 25)
-            self.process_position(mmsi, "MockVessel", lat, lon, speed, "cargo")
-            time.sleep(2)
+    def _silence_sweep_loop(self) -> None:
+        """Emit a `gap` for a vessel last seen underway in open water that has
+        now been silent past the threshold -- the absence of a message, which
+        a per-message hook cannot see on its own."""
+        from datetime import datetime, timezone
 
-    async def _ws_loop(self) -> None:
-        try:
-            import websockets  # type: ignore[import]
-        except ImportError:
-            logger.warning("websockets not installed — AIS anomaly detector idle")
-            return
-        key = _cfg.AISSTREAM_KEY
-        if not key:
-            logger.warning("No AISSTREAM_KEY — AIS anomaly detector idle")
-            return
         while self._running:
-            try:
-                async with websockets.connect("wss://stream.aisstream.io/v0/stream") as ws:
-                    await ws.send(json.dumps({
-                        "APIKey": key,
-                        "BoundingBoxes": [[[-90, -180], [90, 180]]],
-                        "MessageTypes": ["PositionReport"],
-                    }))
-                    async for raw in ws:
-                        msg = json.loads(raw)
-                        meta = msg.get("MetaData", {})
-                        pr = (msg.get("Message", {}).get("PositionReport") or
-                              msg.get("Message", {}).get("StandardClassBPositionReport") or {})
-                        mmsi = str(meta.get("MMSI", ""))
-                        if mmsi and pr:
-                            self.process_position(
-                                mmsi,
-                                meta.get("ShipName", ""),
-                                meta.get("latitude", pr.get("Latitude", 0)),
-                                meta.get("longitude", pr.get("Longitude", 0)),
-                                pr.get("Sog", 0),
-                                "",
-                            )
-            except Exception as exc:
-                logger.warning("AIS WS error: %s — retry in 30s", exc)
-                await asyncio.sleep(30)
+            time.sleep(90)
+            now = time.time()
+            for mmsi, seen in list(self._last_seen.items()):
+                if seen.get("gap_emitted"):
+                    continue
+                silent_s = now - seen["ts"]
+                if silent_s < 900 or silent_s > 6 * 3600:
+                    continue
+                if seen.get("speed", 0) < 1.0 or self._in_dark_zone(seen["lat"], seen["lon"]):
+                    continue
+                seen["gap_emitted"] = True
+                self._emit(AISAnomalyEvent(
+                    event_id=str(uuid.uuid4()),
+                    timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                    anomaly_type="gap",
+                    mmsi=mmsi, vessel_name=seen.get("name", ""),
+                    position={"lat": seen["lat"], "lon": seen["lon"]},
+                    confidence=min(0.85, 0.4 + silent_s / 7200),
+                    evidence={"silent_seconds": round(silent_s), "sweep": True},
+                ))
 
     def process_position(
         self, mmsi: str, name: str, lat: float, lon: float, speed: float, vessel_type: str
@@ -125,16 +122,16 @@ class AISAnomalyDetector:
         prev = self._last_seen.get(mmsi)
         pos = {"lat": lat, "lon": lon}
 
-        # Gap detection: vessel previously seen in open water but now silent
+        # Impossible speed between two fixes (AIS spoofing / MMSI reuse).
+        # Silence "gap" is handled by the sweep loop, not here -- a normal AIS
+        # refresh interval routinely exceeds a few minutes.
         if prev:
             gap_s = now - prev["ts"]
-            # Check impossible speed
             import math
             dlat = lat - prev["lat"]
             dlon = lon - prev["lon"]
             dist_nm = math.sqrt(dlat**2 + dlon**2) * 60
             if gap_s > 0 and dist_nm > 0:
-                reported_speed = speed
                 actual_speed_kts = dist_nm / (gap_s / 3600)
                 max_spd = _MAX_SPEED.get(vessel_type, _MAX_SPEED["default"])
                 if actual_speed_kts > max_spd and actual_speed_kts > 55:
@@ -148,18 +145,6 @@ class AISAnomalyDetector:
                         evidence={"computed_kts": round(actual_speed_kts, 1),
                                   "max_allowed": max_spd, "gap_s": round(gap_s)},
                     ))
-
-            # Silence gap > 180s in open water
-            if gap_s > 180 and not self._in_dark_zone(lat, lon):
-                self._emit(AISAnomalyEvent(
-                    event_id=str(uuid.uuid4()),
-                    timestamp_utc=datetime.now(timezone.utc).isoformat(),
-                    anomaly_type="gap",
-                    mmsi=mmsi, vessel_name=name,
-                    position=pos,
-                    confidence=min(0.85, 0.4 + gap_s / 3600),
-                    evidence={"gap_seconds": round(gap_s)},
-                ))
 
         # Dark zone entry
         if self._in_dark_zone(lat, lon) and (not prev or not self._in_dark_zone(prev["lat"], prev["lon"])):
@@ -183,23 +168,74 @@ class AISAnomalyDetector:
                 evidence={"list": "OFAC_SDN"},
             ))
 
-        self._last_seen[mmsi] = {"lat": lat, "lon": lon, "ts": now, "speed": speed, "type": vessel_type}
+        self._last_seen[mmsi] = {
+            "lat": lat, "lon": lon, "ts": now, "speed": speed,
+            "type": vessel_type, "name": name or self._last_seen.get(mmsi, {}).get("name", ""),
+        }
         self._positions[mmsi] = pos
 
     def _in_dark_zone(self, lat: float, lon: float) -> bool:
         return any(lat0 <= lat <= lat1 and lon0 <= lon <= lon1
                    for lat0, lon0, lat1, lon1 in _DARK_ZONES)
 
+    _EMIT_COOLDOWN_S = 3 * 3600
+
     def _emit(self, event: AISAnomalyEvent) -> None:
+        key = (event.mmsi, event.anomaly_type)
+        now = time.time()
+        if now - self._emitted.get(key, 0.0) < self._EMIT_COOLDOWN_S:
+            return
+        self._emitted[key] = now
         logger.warning("AIS anomaly: %s mmsi=%s conf=%.2f", event.anomaly_type, event.mmsi, event.confidence)
         if self._on_anomaly:
             self._on_anomaly(event)
+        self._to_intel_event(event)
         try:
             import redis  # type: ignore[import]
             r = redis.from_url(os.environ.get("REDIS_URL", _cfg.REDIS_URL))
             r.publish("ais:anomalies", event.model_dump_json())
         except Exception:
             pass
+
+    @staticmethod
+    def _to_intel_event(event: AISAnomalyEvent) -> None:
+        """An AIS anomaly is an operator-only analysis signal -- never a
+        public distress. Persist it so it shows in the intel feed."""
+        try:
+            from core.intel.store import IntelEvent, intel_store
+
+            label = event.anomaly_type.replace("_", " ")
+            intel_store.add(
+                IntelEvent(
+                    id=f"aisanom:{event.mmsi}:{event.anomaly_type}",
+                    type="ais_anomaly",
+                    severity="high" if event.anomaly_type == "sdn_match" else "medium",
+                    lat=event.position.get("lat"),
+                    lon=event.position.get("lon"),
+                    title=f"AIS anomaly: {label}"
+                    + (f" — {event.vessel_name}" if event.vessel_name else ""),
+                    text=f"MMSI {event.mmsi}: {label} (confidence {event.confidence:.0%}).",
+                    url=f"https://www.marinetraffic.com/en/ais/details/ships/mmsi:{event.mmsi}",
+                    source="ais",
+                    linked_mmsi=event.mmsi,
+                    timestamp_utc=event.timestamp_utc,
+                    metadata={
+                        "source_policy": "official_api",
+                        "transport": "ais_stream",
+                        "verification_status": "ais_transponder",
+                        "is_distress": False,
+                        "publication_status": "internal",
+                        "report_kind": "ais_anomaly",
+                        "coordinate_source": "ais_position",
+                        "anomaly_type": event.anomaly_type,
+                        "anomaly_confidence": event.confidence,
+                        "anomaly_evidence": event.evidence,
+                    },
+                ),
+                dedup_key=f"aisanom:{event.mmsi}:{event.anomaly_type}",
+            )
+        except Exception:
+            logger.debug("AIS anomaly -> intel event failed", exc_info=True)
 
     def _load_sdn(self) -> None:
         if _SDN_CACHE.exists():
