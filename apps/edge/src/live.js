@@ -102,6 +102,20 @@ function isFresh(event, env, now = Date.now()) {
   return Number.isFinite(received) && received + ttlSeconds(env) * 1000 > now;
 }
 
+function isStaleIncidentVersion(current, incoming, removed) {
+  if (!current) return false;
+  const currentObservedAt = Date.parse(current.observed_at || '');
+  const incomingObservedAt = Date.parse(incoming.observed_at || '');
+  if (Number.isFinite(currentObservedAt) && incomingObservedAt < currentObservedAt) return true;
+  // A removal is a tombstone for the source observation it resolves. A
+  // delayed retry for that observation must not make the incident active
+  // again; only a genuinely newer source observation may supersede it.
+  return Boolean(current.removed)
+    && !removed
+    && Number.isFinite(currentObservedAt)
+    && incomingObservedAt <= currentObservedAt;
+}
+
 export async function verifyIngestRequest(request, secret) {
   if (!secret) return { ok: false, status: 503, error: 'INGEST_SECRET is not configured' };
   const body = await request.text();
@@ -257,11 +271,26 @@ export class LiveRoom {
     const existing = await this.state.storage.get('events') || [];
     const fresh = existing.filter((item) => isFresh(item, this.env));
     const targetId = String(event.properties?.incident_id || event.id);
+    const removed = Boolean(event.properties?.expired || event.type === 'incident_removed');
+    const incidentVersionKey = `incident:${targetId}`;
+    const visibleVersion = fresh.find(
+      (item) => String(item.properties?.incident_id || item.id) === targetId,
+    );
+    const currentVersion = await this.state.storage.get(incidentVersionKey) || (
+      visibleVersion ? {
+        event_id: visibleVersion.id,
+        observed_at: visibleVersion.observed_at,
+        removed: false,
+      } : null
+    );
+    if (isStaleIncidentVersion(currentVersion, event, removed)) {
+      await this.state.storage.put(`event:${event.id}`, true);
+      return json({ accepted: true, stale: true, event_id: event.id }, 200);
+    }
     const withoutPreviousVersion = fresh.filter((item) => String(item.properties?.incident_id || item.id) !== targetId);
     // Only an explicit "expired" signal from the canonical publisher removes
     // an incident outright. It covers a direct resolution as well as the
     // 7-day cutoff; the edge never tries to reclassify incident text itself.
-    const removed = Boolean(event.properties?.expired || event.type === 'incident_removed');
     const events = removed ? withoutPreviousVersion : [...withoutPreviousVersion, event].slice(-MAX_EVENTS);
 
     await this.state.storage.put({
@@ -269,6 +298,11 @@ export class LiveRoom {
       head_hash: event.hash,
       updated_at: event.received_at,
       [`event:${event.id}`]: true,
+      [incidentVersionKey]: {
+        event_id: event.id,
+        observed_at: event.observed_at,
+        removed,
+      },
     });
 
     const message = JSON.stringify({ type: removed ? 'remove' : 'event', event, incident_id: targetId });

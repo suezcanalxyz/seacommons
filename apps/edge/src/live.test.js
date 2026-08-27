@@ -1,7 +1,70 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { INCIDENT_LIFECYCLES, LOCATION_PRECISIONS } from './live-contracts.js';
-import { classifyLiveStatus, normalizeEvent, verifyIngestRequest } from './live.js';
+import { classifyLiveStatus, LiveRoom, normalizeEvent, verifyIngestRequest } from './live.js';
+
+function clone(value) {
+  return value === undefined ? undefined : structuredClone(value);
+}
+
+class MemoryStorage {
+  constructor(values = new Map()) {
+    this.values = values;
+  }
+
+  async get(key) {
+    return clone(this.values.get(key));
+  }
+
+  async put(keyOrEntries, value) {
+    if (typeof keyOrEntries === 'string') {
+      this.values.set(keyOrEntries, clone(value));
+      return;
+    }
+    for (const [key, entry] of Object.entries(keyOrEntries)) {
+      this.values.set(key, clone(entry));
+    }
+  }
+
+  async deleteAll() {
+    this.values.clear();
+  }
+}
+
+class FakeSocket {
+  constructor() {
+    this.messages = [];
+    this.closed = null;
+  }
+
+  send(message) {
+    this.messages.push(message);
+  }
+
+  close(code, reason) {
+    this.closed = { code, reason };
+  }
+}
+
+class FakeState {
+  constructor(storage = new MemoryStorage()) {
+    this.storage = storage;
+    this.sockets = [];
+    this.backgroundTasks = [];
+  }
+
+  acceptWebSocket(socket) {
+    this.sockets.push(socket);
+  }
+
+  getWebSockets() {
+    return this.sockets;
+  }
+
+  waitUntil(task) {
+    this.backgroundTasks.push(task);
+  }
+}
 
 async function hmac(secret, body) {
   const key = await crypto.subtle.importKey(
@@ -13,6 +76,38 @@ async function hmac(secret, body) {
   );
   const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body));
   return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function ingest(room, event, secret = 'test-secret') {
+  const body = JSON.stringify(event);
+  const response = await room.ingest(new Request('https://edge.example/v1/live/events', {
+    method: 'POST',
+    headers: { 'X-SeaCommons-Signature': await hmac(secret, body) },
+    body,
+  }));
+  return { response, body: await response.json() };
+}
+
+function incidentEvent({
+  id,
+  incidentId = 'incident-1',
+  observedAt = '2026-08-26T10:00:00Z',
+  removed = false,
+}) {
+  return {
+    id,
+    type: removed ? 'incident_removed' : 'distress_observation',
+    source: 'alarm_phone',
+    node: 'collector-1',
+    observed_at: observedAt,
+    visibility: 'public',
+    properties: {
+      incident_id: incidentId,
+      incident_lifecycle: removed ? 'resolved' : 'active',
+      location_precision: 'unpositioned',
+      ...(removed ? { expired: true } : {}),
+    },
+  };
 }
 
 test('normalizes a public event with an explicit live expiry', async () => {
@@ -102,4 +197,98 @@ test('separates collector heartbeat health from event recency', () => {
     eventCount: 4,
   }, now), 'degraded');
   assert.equal(classifyLiveStatus({}, now), 'waiting');
+});
+
+test('duplicate delivery is idempotent and broadcasts only once', async () => {
+  const state = new FakeState();
+  const socket = new FakeSocket();
+  state.sockets.push(socket);
+  const room = new LiveRoom(state, { INGEST_SECRET: 'test-secret' });
+  const event = incidentEvent({ id: 'incident-1:v1' });
+
+  const first = await ingest(room, event);
+  const duplicate = await ingest(room, event);
+  const snapshot = await room.loadSnapshot();
+
+  assert.equal(first.response.status, 202);
+  assert.equal(duplicate.response.status, 200);
+  assert.equal(duplicate.body.duplicate, true);
+  assert.deepEqual(snapshot.events.map((entry) => entry.id), ['incident-1:v1']);
+  assert.equal(socket.messages.length, 1);
+});
+
+test('an out-of-order observation cannot replace a newer incident version', async () => {
+  const state = new FakeState();
+  const room = new LiveRoom(state, { INGEST_SECRET: 'test-secret' });
+  const newer = incidentEvent({
+    id: 'incident-1:v2',
+    observedAt: '2026-08-26T10:10:00Z',
+  });
+  const older = incidentEvent({
+    id: 'incident-1:v1',
+    observedAt: '2026-08-26T10:00:00Z',
+  });
+
+  const accepted = await ingest(room, newer);
+  const headHash = accepted.body.hash;
+  const stale = await ingest(room, older);
+  const snapshot = await room.loadSnapshot();
+
+  assert.equal(stale.response.status, 200);
+  assert.equal(stale.body.stale, true);
+  assert.deepEqual(snapshot.events.map((entry) => entry.id), ['incident-1:v2']);
+  assert.equal(snapshot.head_hash, headHash);
+});
+
+test('restart retains the removal tombstone and reconnect snapshot', async () => {
+  const storage = new MemoryStorage();
+  const firstState = new FakeState(storage);
+  const firstRoom = new LiveRoom(firstState, { INGEST_SECRET: 'test-secret' });
+  await ingest(firstRoom, incidentEvent({ id: 'incident-1:active' }));
+  const removal = await ingest(firstRoom, incidentEvent({
+    id: 'incident-1:resolved',
+    removed: true,
+  }));
+
+  const restartedState = new FakeState(storage);
+  const restartedRoom = new LiveRoom(restartedState, { INGEST_SECRET: 'test-secret' });
+  const delayedActive = await ingest(restartedRoom, incidentEvent({
+    id: 'incident-1:delayed-active',
+  }));
+  const snapshot = await restartedRoom.loadSnapshot();
+
+  assert.equal(delayedActive.body.stale, true);
+  assert.deepEqual(snapshot.events, []);
+  assert.equal(snapshot.head_hash, removal.body.hash);
+
+  const OriginalResponse = globalThis.Response;
+  const OriginalWebSocketPair = globalThis.WebSocketPair;
+  class FakeWebSocketPair {
+    constructor() {
+      this.client = new FakeSocket();
+      this.server = new FakeSocket();
+    }
+  }
+  class SwitchingProtocolsResponse {
+    constructor(body, options) {
+      this.body = body;
+      Object.assign(this, options);
+    }
+  }
+  globalThis.Response = SwitchingProtocolsResponse;
+  globalThis.WebSocketPair = FakeWebSocketPair;
+  try {
+    const response = await restartedRoom.stream({
+      headers: new Headers({ Upgrade: 'websocket' }),
+    });
+    const reconnectMessage = JSON.parse(restartedState.sockets[0].messages[0]);
+    assert.equal(response.status, 101);
+    assert.equal(reconnectMessage.type, 'snapshot');
+    assert.deepEqual(reconnectMessage.events, []);
+    assert.equal(reconnectMessage.head_hash, removal.body.hash);
+  } finally {
+    globalThis.Response = OriginalResponse;
+    if (OriginalWebSocketPair === undefined) delete globalThis.WebSocketPair;
+    else globalThis.WebSocketPair = OriginalWebSocketPair;
+  }
 });
