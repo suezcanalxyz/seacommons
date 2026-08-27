@@ -800,23 +800,31 @@ operational_use stays false below a threshold.
 
 --- Suggested phasing ---
 
-  Phase 15a - drift_profile registry + object classes (incl. cargo/tanker/
-              debris) + model dispatch (Leeway | OceanDrift | OpenOil) in
-              opendrift_pool + case_type/vessel_type -> profile mapping +
-              forcing_quality metadata. No new data sources. Deterministic
-              tests with constant readers. Medium risk.
-  Phase 15b - enable Stokes drift from wave data; add the CMEMS wave
-              dataset (or Open-Meteo waves) to the reader stack; add
-              reader_global_landmask so particles beach. Needs an
-              integration test with real readers.
-  Phase 15c - gridded NWP wind (ERA5 reanalysis or GFS forecast) as the
-              top wind source, replacing the Open-Meteo grid where covered.
-  Phase 15d - daily batch analysis: scheduled drift for every active
-              unresolved distress incident; store trajectory history; show
-              predicted-vs-observed divergence where an AIS or a later
-              report corroborates a position. This is the "daily maritime
-              data analysis capacity" ask -- depends on the ARM 12 GB
-              worker being provisioned.
+  Phase 15a - DONE (branch feat/drift-model-hierarchy). drift_profile
+              registry: SAR objects keep Leeway; sailboat/motorboat/general
+              cargo/container ship/tanker/lost container -> OceanDrift with
+              calibrated windage. case_type/vessel_type -> profile.
+  Phase 15b - DONE (branch feat/drift-stokes-landmask). Wave-driven Stokes
+              from Open-Meteo wave height/period (bounded, gated on real
+              data); reader_global_landmask so particles beach. metadata
+              gains stokes_drift + landmask. OpenOil deferred (heavy deps).
+  Phase 15c - gridded NWP wind as the top wind source. Decision (2026-08-27):
+              GFS (NOAA, 0.25 degree, 6-hourly, near-real-time) -- ERA5's
+              ~5 day lag makes it unsuitable for forward operational SAR.
+              ERA5 stays a candidate for long-lookback forensic backtrack
+              only.
+  Phase 15d - daily analysis capacity. The scheduling already exists
+              (core/scheduler._job_drift_pending, core/intel/drift_refresher
+              re-runs every stale in-window distress drift), and every run
+              is already persisted as its own drift_results row. What was
+              missing is exposure: GET /api/v1/drift/history?event_id= now
+              returns the full prediction history per incident (model,
+              object_class, forcing_quality, stokes, impact point, per run).
+              Still to do (15d-2): a predicted-vs-observed divergence metric
+              where linked_mmsi AIS or a follow-up report gives a real
+              later position. On the existing VM the scheduler stays
+              RAM-gated and one-drift-per-run; higher throughput needs the
+              ARM worker.
   Phase 15e - ensemble / uncertainty: proper Leeway coefficient
               perturbation, multi-object shipwreck debris fields, and a
               calibrated probability cone instead of a convex hull.
@@ -824,13 +832,12 @@ operational_use stays false below a threshold.
 --- Open questions for a human decision ---
 
 - CMEMS on the operational box: confirmed configured (2026-08-27).
-- Is the ARM 12 GB worker provisioned, or is 15d blocked on hardware?
-  Note: production currently runs JOB_EXECUTION_MODE=inline, so even
-  15a runs drift on the API process.
-- ERA5 (reanalysis, ~5 day lag, free via CDS) or GFS (forecast, near-real-
-  time) for gridded wind in 15c?
+- ARM 12 GB worker: not provisioned. 15d runs on the existing VM at low
+  frequency; production is JOB_EXECUTION_MODE=inline (drift on the API
+  process).
+- Gridded wind source (15c): GFS -- decided 2026-08-27.
 - Should a case running its own drift override the intel event's
-  auto-drift, or run alongside it?
+  auto-drift, or run alongside it? (still open)
 
 ========================================
 IMPORTANT: DO NOT DO THESE THINGS

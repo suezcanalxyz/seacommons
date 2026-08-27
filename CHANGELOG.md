@@ -16,6 +16,9 @@ Keep a Changelog structure; releases are identified by Git tags when published.
   height and period, enabled only when wave data is actually returned.
 - A real coastline (`reader_global_landmask`) in drift runs, so particles
   beach instead of drifting across land.
+- `GET /api/v1/drift/history?event_id=` — the full drift prediction history
+  for an incident (model, object class, forcing quality, Stokes/landmask,
+  impact point, per run), for daily analysis of how a forecast evolved.
 
 ## 0.6.0 - 2026-08-27
 
