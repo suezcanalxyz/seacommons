@@ -30,6 +30,21 @@ def test_ops_summary() -> None:
     assert "backend" in data
     assert "traffic" in data
     assert "sar" in data
+    assert "image_ocr" in data["backend"]
+    assert "intel_monitors" in data["backend"]
+
+
+def test_ops_data_status() -> None:
+    response = client.get("/api/v1/ops/data-status")
+    assert response.status_code == 200
+    data = response.json()
+    assert set(data) >= {"ingestion", "intel_record", "drift", "compute"}
+    assert "ais" in data["ingestion"]
+    assert "monitors" in data["ingestion"]
+    assert "by_status" in data["drift"]
+    assert data["drift"]["engine"]["concurrent_slots"] == 1
+    intel = data["intel_record"]
+    assert intel["total_events"] == intel["positioned_events"] + intel["unpositioned_events"]
 
 
 def test_alert_lifecycle_and_forensic() -> None:

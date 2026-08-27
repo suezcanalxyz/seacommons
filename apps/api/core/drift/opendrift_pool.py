@@ -232,6 +232,18 @@ def _get_grid_reader_class():
     return _GridReader
 
 
+def pool_status() -> dict:
+    """OpenDrift runner state for the ops overview. One simulation runs at a
+    time on the small VM; queue_depth is how many callers are waiting."""
+    return {
+        "imported": _Leeway is not None,
+        "models": "Leeway+OceanDrift" if _OceanDrift is not None else ("Leeway" if _Leeway is not None else None),
+        "concurrent_slots": 1,
+        "queue_depth": _drift_queue_count,
+        "landmask": _reader_landmask is not None,
+    }
+
+
 def prewarm() -> None:
     """Start importing OpenDrift in a daemon thread. Call once at API startup."""
     t = threading.Thread(target=_do_import, daemon=True, name="opendrift-prewarm")

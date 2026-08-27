@@ -22,6 +22,8 @@ the newest dated filename.
   and common contributor tasks.
 - [Configuration](CONFIGURATION.md) — environment variables grouped by concern,
   production requirements and combination validation.
+- [Operations overview](OPERATIONS_OVERVIEW.md) — the real data sources, their
+  cost, the compute footprint, and what to check when something looks wrong.
 - [AI-assisted engineering policy](AI_ENGINEERING_POLICY.md) — rules for changes
   developed with AI coding tools.
 - [Contract catalogue](contracts/README.md) — versioned machine-readable
