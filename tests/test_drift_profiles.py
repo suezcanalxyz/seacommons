@@ -81,3 +81,64 @@ def test_engine_opendrift_payload_selects_the_model(monkeypatch) -> None:
     assert captured["object_class"] == "cargo_container_ship"
     assert captured["wind_drift_factor"] == pytest.approx(0.015)
     assert captured["object_type"] == 26  # unused by oceandrift, kept for payload shape
+
+
+def test_intel_drift_seeds_the_ensemble_over_the_report_position_uncertainty(monkeypatch) -> None:
+    from core.intel import drift_service
+    from core.intel.store import IntelEvent, intel_store
+
+    event = IntelEvent(
+        id="unc-evt-1", type="twitter", severity="high", title="Boat in the Malta SAR zone",
+        source="alarm_phone", lat=35.9, lon=14.5,
+        metadata={"location_uncertainty_m": 25_000, "coordinate_source": "region_area"},
+    )
+    intel_store.add(event)
+
+    captured: dict = {}
+
+    class _FakeEngine:
+        def compute(self, **kwargs):
+            captured.update(kwargs)
+            raise RuntimeError("stop after capture")
+
+    import core.db.store as store_module
+    import core.drift.engine as engine_module
+
+    monkeypatch.setattr(engine_module, "DriftEngine", _FakeEngine)
+    monkeypatch.setattr(store_module, "create_drift_job", lambda *a, **k: None)
+    monkeypatch.setattr(store_module, "fail_drift_job", lambda *a, **k: None)
+
+    drift_service._run_intel_drift_inner(
+        "unc-evt-1", 35.9, 14.5, None, "rubber_boat", "2026-08-21T16:00:00+00:00"
+    )
+
+    assert captured["config"]["seed_radius_m"] == 25_000.0  # not the fixed 150 m
+
+
+def test_intel_drift_seed_radius_is_capped(monkeypatch) -> None:
+    from core.intel import drift_service
+    from core.intel.store import IntelEvent, intel_store
+
+    intel_store.add(IntelEvent(
+        id="unc-evt-2", type="twitter", severity="high", title="Somewhere in the Med",
+        source="alarm_phone", lat=35.0, lon=16.0,
+        metadata={"location_uncertainty_m": 500_000},
+    ))
+    captured: dict = {}
+
+    class _FakeEngine:
+        def compute(self, **kwargs):
+            captured.update(kwargs)
+            raise RuntimeError("stop")
+
+    import core.db.store as store_module
+    import core.drift.engine as engine_module
+
+    monkeypatch.setattr(engine_module, "DriftEngine", _FakeEngine)
+    monkeypatch.setattr(store_module, "create_drift_job", lambda *a, **k: None)
+    monkeypatch.setattr(store_module, "fail_drift_job", lambda *a, **k: None)
+
+    drift_service._run_intel_drift_inner(
+        "unc-evt-2", 35.0, 16.0, None, "rubber_boat", "2026-08-21T16:00:00+00:00"
+    )
+    assert captured["config"]["seed_radius_m"] == 50_000.0  # capped
