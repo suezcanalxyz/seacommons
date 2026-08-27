@@ -1,8 +1,13 @@
 import http from 'node:http';
 
-const UPSTREAM_HOST = '79.72.46.166';
-const ALLOWED_UPSTREAMS = new Set(['api.seacommons.org', 'demo-api.seacommons.org']);
-const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org']);
+import {
+  ALLOWED_UPSTREAMS,
+  API_VHOST,
+  DEMO_VHOST,
+  LIVE_HOSTS,
+  UPSTREAM_HOST,
+  UPSTREAM_PORT,
+} from './_upstream.js';
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
   'keep-alive',
@@ -42,9 +47,7 @@ function selectUpstream(headers) {
   const configured = process.env.SEACOMMONS_UPSTREAM_VIRTUAL_HOST;
   if (configured && ALLOWED_UPSTREAMS.has(configured)) return configured;
   const hostname = requestHostname(headers);
-  return LIVE_HOSTS.has(hostname)
-    ? 'api.seacommons.org'
-    : 'demo-api.seacommons.org';
+  return LIVE_HOSTS.has(hostname) ? API_VHOST : DEMO_VHOST;
 }
 
 function requestHeaders(headers, upstreamVirtualHost) {
@@ -65,7 +68,7 @@ export default function handler(req, res) {
   const upstream = http.request(
     {
       hostname: UPSTREAM_HOST,
-      port: 80,
+      port: UPSTREAM_PORT,
       method: req.method,
       path: upstreamPath(req.query || {}),
       headers: requestHeaders(req.headers, upstreamVirtualHost),

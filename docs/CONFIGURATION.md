@@ -24,6 +24,7 @@ conceptually; `ops/.env.production.example` is the annotated template.
 | External APIs / sensors | `ADSB_EXCHANGE_KEY`, `ACLED_KEY`, `GPSJAM_URL`, `MADRIGAL_URL`, `EMSC_WS`, `TID_*`, `GNSS_ENABLED`, `INFRASOUND_*`, `SEISMIC_*`, `HYDRO_ENABLED`, `SDR_*`, `ADSB_*`, `WITNESS_ENDPOINTS`, `TIMEZERO_*` |
 | Correlation / SAR tuning | `CORRELATION_CONFIDENCE_ALERT`, `CORRELATION_CONFIDENCE_URGENT`, `SAR_TRIANGULATION_*` |
 | Edge (Worker vars, `apps/edge/wrangler.jsonc`) | `ALLOWED_ORIGINS`, `LIVE_EVENT_TTL_SECONDS`, `LIVE_HEARTBEAT_MAX_AGE_SECONDS`, `NOSTR_BRIDGE_URL`; publisher side: `LIVE_EDGE_INGEST_URL`, `LIVE_EDGE_INGEST_SECRET`, `LIVE_EDGE_METRICS_PORT` (0 = off), `LIVE_EDGE_POLL_SECONDS`, `LIVE_EDGE_BATCH_SIZE`, `LIVE_EDGE_MAX_ATTEMPTS`, `LIVE_EDGE_HEARTBEAT_SECONDS`, `SEACOMMONS_NODE_ID`, `LIVE_EDGE_OUTBOX_PATH` |
+| Frontend `/api` proxy (Vercel function runtime env, set with `vercel env`) | `SEACOMMONS_UPSTREAM_HOST`, `SEACOMMONS_UPSTREAM_PORT` (default 80), `SEACOMMONS_API_VHOST`, `SEACOMMONS_DEMO_VHOST`, `SEACOMMONS_LIVE_HOSTS` (comma-separated frontends that route to the operational API), `SEACOMMONS_UPSTREAM_VIRTUAL_HOST` (force one target). Defaults point at the reference deployment; a self-host overrides them. See `apps/web/api/_upstream.js`. |
 | Observability | see [PRODUCTION_RUNBOOK.md](PRODUCTION_RUNBOOK.md#observability); metrics are always on, exposure is controlled by the reverse proxy |
 
 ## Required in production
