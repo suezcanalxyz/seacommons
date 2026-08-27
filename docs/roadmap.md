@@ -697,6 +697,140 @@ OSINT incident.
   SDR-on-node the only path?
 
 ========================================
+PHASE 15 — PROPOSED: DRIFT FIDELITY AND PER-OBJECT MODEL HIERARCHY
+========================================
+
+Status: design proposal, not started. Requested as a priority: make the
+operational drift trajectories realistic, upgrade the forcing sources and
+their request hierarchy, and apply the right drift model to the right kind
+of object (a drifting cargo ship does not move like a person in the water).
+
+--- Current state (from a read of core/drift/) ---
+
+The live engine is core/drift/opendrift_pool.run_leeway (NOT the older,
+now-unused opendrift_runner.py). It is better than it first looks:
+
+- Forcing is already gridded and time-varying: a 5x5 Open-Meteo grid
+  (_GridReader) supplies wind and fallback currents; a CMEMS 0.083 degree
+  NetCDF slice (reader_netCDF_CF_generic) is inserted first-priority for
+  ocean currents when CMEMS_USERNAME/PASSWORD are set.
+- reader_constant is only a last-resort fallback.
+
+What still limits realism:
+
+1. One model for everything. `_Leeway` is hard-coded. OceanDrift, OpenOil
+   and WindBlow are defined in core/drift/models.py but never used. Only
+   the `ballistic` domain branches away (a custom solver).
+2. No large-vessel object class. core/drift/models.py LEEWAY_OBJECT_TYPE
+   has no cargo/container/tanker entry, so resolve_object_type() falls
+   through to 26 -- "person in water". A reported drifting cargo ship is
+   currently simulated with swimmer leeway coefficients.
+3. Stokes (wave) drift is explicitly disabled
+   (`sim.set_config("drift:stokes_drift", False)`), even though CMEMS also
+   publishes a wave dataset and Open-Meteo marine has wave fields.
+4. No landmask reader is added, so particles can drift across coastline.
+5. CMEMS is credential-gated. If the operational box has no CMEMS
+   credentials, currents come only from the coarser Open-Meteo grid --
+   verify the production configuration; this alone changes trajectory
+   quality substantially.
+6. case_type does not reach the drift path. Intel auto-drift takes a
+   vessel_type string (default "rubber_boat"); cases (which now carry
+   case_type) are a separate object and are not linked to intel drift.
+7. Single OpenDrift concurrency slot on a 1 GB VM. A "run drift for every
+   active incident daily" mode needs the ARM 12 GB worker
+   (see docs/CLOUDFLARE_EDGE_DEPLOYMENT.md "Future ARM 12 GB").
+
+--- Target architecture ---
+
+    request (case_type + vessel_type/object hint)
+        -> drift_profile registry: object_class -> (OpenDrift model, params)
+        -> ForcingProvider: per-field source hierarchy, each attempt tagged
+        -> OpenDrift run with the selected model + best available readers
+        -> result carries forcing_quality; operational_use gated on it
+
+drift_profile (new, replaces resolve_object_type):
+
+    object_class            model        notes
+    person_in_water         Leeway 26    unchanged
+    life_raft               Leeway 27/29 unchanged (by persons)
+    rubber_boat             Leeway 38    unchanged
+    small_wooden_boat       Leeway 46    unchanged
+    fishing_vessel_small    Leeway 52    unchanged
+    sailboat                OceanDrift   wind_drift_factor ~0.03, shallow
+    cargo_container_ship    OceanDrift   wind_drift_factor ~0.01-0.02,
+                                         wind_drift_depth deeper; current-
+                                         dominated
+    tanker                  OceanDrift   as above, even lower windage
+    lost_container/debris   OceanDrift   object-specific windage; often an
+                                         ensemble spread
+    oil_light/medium/heavy  OpenOil      weathering on
+
+case_type -> default object_class when no better hint:
+
+    distress_sar        -> rubber_boat (or vessel_type if given)
+    pushback            -> rubber_boat
+    missing_persons     -> person_in_water + rubber_boat ensemble
+    shipwreck           -> debris field (multi-object OceanDrift ensemble)
+    interception        -> rubber_boat
+    vessel_incident     -> from vessel_type; cargo/tanker -> OceanDrift
+    monitoring          -> no automatic drift
+
+ForcingProvider hierarchy (explicit, logged, and scored):
+
+    current : CMEMS gridded NetCDF -> Open-Meteo marine grid -> zero (flag)
+    wind    : (future) NWP gridded  -> Open-Meteo forecast grid -> default
+    waves   : CMEMS wave dataset    -> Open-Meteo marine waves  -> Stokes off
+
+Each level that actually covered the simulation's space/time domain is
+recorded in metadata.forcing_quality (e.g. "cmems_current+oms_wind+waves"
+vs "omg_current_only"). The UI shows high-fidelity vs degraded, and
+operational_use stays false below a threshold.
+
+--- Invariants (must hold before anything ships) ---
+
+- A cargo/tanker/large-vessel drift must never use Leeway PIW coefficients.
+- A wind-only drift (no current data at all) must be flagged degraded in
+  the output and the UI and must not be presented as operational.
+- The demo fallback stays visibly degraded (unchanged).
+- Enabling Stokes/landmask must not silently change historical stored
+  trajectories; re-runs are versioned like any other drift update.
+- No fabricated forcing: a missing field is zero-with-a-flag, never a
+  plausible-looking guess.
+
+--- Suggested phasing ---
+
+  Phase 15a - drift_profile registry + object classes (incl. cargo/tanker/
+              debris) + model dispatch (Leeway | OceanDrift | OpenOil) in
+              opendrift_pool + case_type/vessel_type -> profile mapping +
+              forcing_quality metadata. No new data sources. Deterministic
+              tests with constant readers. Medium risk.
+  Phase 15b - enable Stokes drift from wave data; add the CMEMS wave
+              dataset (or Open-Meteo waves) to the reader stack; add
+              reader_global_landmask so particles beach. Needs an
+              integration test with real readers.
+  Phase 15c - gridded NWP wind (ERA5 reanalysis or GFS forecast) as the
+              top wind source, replacing the Open-Meteo grid where covered.
+  Phase 15d - daily batch analysis: scheduled drift for every active
+              unresolved distress incident; store trajectory history; show
+              predicted-vs-observed divergence where an AIS or a later
+              report corroborates a position. This is the "daily maritime
+              data analysis capacity" ask -- depends on the ARM 12 GB
+              worker being provisioned.
+  Phase 15e - ensemble / uncertainty: proper Leeway coefficient
+              perturbation, multi-object shipwreck debris fields, and a
+              calibrated probability cone instead of a convex hull.
+
+--- Open questions for a human decision ---
+
+- Is CMEMS configured on the operational box today? 15b/15c planning
+  depends on the answer.
+- Is the ARM 12 GB worker provisioned, or is 15d blocked on hardware?
+- ERA5 (reanalysis, ~5 day lag, free via CDS) or GFS (forecast, near-real-
+  time) for gridded wind in 15c?
+- Should a case running its own drift override the intel event's
+  auto-drift, or run alongside it?
+
+========================================
 IMPORTANT: DO NOT DO THESE THINGS
 ========================================
 
