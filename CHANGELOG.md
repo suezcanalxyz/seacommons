@@ -7,6 +7,11 @@ Keep a Changelog structure; releases are identified by Git tags when published.
 
 ### Added
 
+- Case taxonomy: an operational `case_type` (distress SAR, pushback, shipwreck,
+  missing persons, interception, vessel incident, monitoring, unspecified),
+  filterable in the case list and editable per case, with an additive-column
+  backfill for databases created before it.
+
 - Canonical backend, frontend, JSON Schema and Edge contracts for Live domain
   vocabulary, lifecycle, geometry precision and publication policy.
 - Realtime invariant tests for duplicate delivery, ordering, removal and restart

@@ -2,12 +2,22 @@ import type { IsoDateTime, JsonObject } from './json';
 
 export type CaseStatus = 'active' | 'closed' | 'monitoring' | 'open' | 'resolved' | 'triage';
 export type CasePriority = 'critical' | 'high' | 'low' | 'medium';
+export type CaseType =
+  | 'distress_sar'
+  | 'pushback'
+  | 'shipwreck'
+  | 'missing_persons'
+  | 'interception'
+  | 'vessel_incident'
+  | 'monitoring'
+  | 'unspecified';
 
 export interface Case {
   case_id: string;
   organization_id: string | null;
   title: string;
   status: CaseStatus;
+  case_type: CaseType;
   priority: CasePriority;
   sensitivity: string;
   summary: string;

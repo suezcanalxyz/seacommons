@@ -22,11 +22,26 @@ router = APIRouter(prefix="/api/v1", tags=["cases"])
 
 STATUSES = {"open", "triage", "active", "monitoring", "resolved", "closed"}
 PRIORITIES = {"low", "medium", "high", "critical"}
+# Coarse operational taxonomy so cases can be separated by the kind of event
+# they track, independently of their lifecycle status. "unspecified" exists
+# for cases created before the operator has classified them.
+CASE_TYPES = {
+    "distress_sar",
+    "pushback",
+    "shipwreck",
+    "missing_persons",
+    "interception",
+    "vessel_incident",
+    "monitoring",
+    "unspecified",
+}
+DEFAULT_CASE_TYPE = "distress_sar"
 
 
 class CaseCreate(BaseModel):
     title: str = Field(min_length=3, max_length=256)
     priority: str = "medium"
+    case_type: str = DEFAULT_CASE_TYPE
     sensitivity: str = "restricted"
     summary: str = Field(default="", max_length=10_000)
     lat: float | None = Field(default=None, ge=-90, le=90)
@@ -39,6 +54,7 @@ class CaseCreate(BaseModel):
 class CaseUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=3, max_length=256)
     status: str | None = None
+    case_type: str | None = None
     priority: str | None = None
     summary: str | None = Field(default=None, max_length=10_000)
     assigned_to: str | None = Field(default=None, max_length=256)
@@ -97,11 +113,18 @@ def inbox(request: Request, limit: int = Query(100, ge=1, le=500)) -> list[dict]
 
 
 @router.get("/cases")
-def list_cases(request: Request, status: str | None = None, limit: int = Query(100, ge=1, le=500)) -> list[dict]:
+def list_cases(
+    request: Request,
+    status: str | None = None,
+    case_type: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+) -> list[dict]:
     with session_scope() as db:
         query = select(CaseDB)
         if status:
             query = query.where(CaseDB.status == status)
+        if case_type:
+            query = query.where(CaseDB.case_type == case_type)
         if config.AUTH_ENABLED:
             principal = authenticate(request)
             if principal and "administrator" not in principal.roles:
@@ -115,6 +138,8 @@ def list_cases(request: Request, status: str | None = None, limit: int = Query(1
 def create_case(body: CaseCreate, request: Request) -> dict:
     if body.priority not in PRIORITIES:
         raise HTTPException(422, "Invalid priority")
+    if body.case_type not in CASE_TYPES:
+        raise HTTPException(422, "Invalid case_type")
     actor = _actor(request)
     organization_id = body.organization_id or _principal_org(request)
     principal = authenticate(request)
@@ -135,6 +160,7 @@ def create_case(body: CaseCreate, request: Request) -> dict:
             ):
                 raise HTTPException(403, "Signal belongs to another organization")
         row = CaseDB(case_id=case_id, organization_id=organization_id, title=body.title, priority=body.priority,
+                     case_type=body.case_type,
                      sensitivity=body.sensitivity, summary=body.summary, lat=body.lat,
                      lon=body.lon, persons=body.persons, created_by=actor,
                      retention_until=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=config.DEFAULT_RETENTION_DAYS))
@@ -175,6 +201,8 @@ def update_case(case_id: str, body: CaseUpdate, request: Request) -> dict:
         raise HTTPException(422, "Invalid status")
     if "priority" in changes and changes["priority"] not in PRIORITIES:
         raise HTTPException(422, "Invalid priority")
+    if "case_type" in changes and changes["case_type"] not in CASE_TYPES:
+        raise HTTPException(422, "Invalid case_type")
     actor = _actor(request)
     with session_scope() as db:
         row = db.get(CaseDB, case_id)

@@ -50,9 +50,35 @@ def session_factory():
     return sessionmaker(bind=engine(), autoflush=False, autocommit=False, future=True)
 
 
+# Additive column backfill for deployments that predate a model change.
+# This project has no migration framework: create_all() adds missing tables
+# but never alters an existing one. Every entry here must be a nullable or
+# server-defaulted ADD COLUMN that is safe to apply repeatedly; the DDL form
+# below is accepted by both SQLite and PostgreSQL.
+_ADDITIVE_COLUMNS: list[tuple[str, str, str]] = [
+    ("cases", "case_type", "VARCHAR(32) NOT NULL DEFAULT 'distress_sar'"),
+]
+
+
+def _ensure_additive_columns(eng=None) -> None:
+    from sqlalchemy import inspect, text
+
+    eng = eng or engine()
+    inspector = inspect(eng)
+    tables = set(inspector.get_table_names())
+    with eng.begin() as conn:
+        for table, column, ddl in _ADDITIVE_COLUMNS:
+            if table not in tables:
+                continue
+            if column in {col["name"] for col in inspector.get_columns(table)}:
+                continue
+            conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN {column} {ddl}'))
+
+
 def init_database() -> None:
     (_API_ROOT / "core" / "data").mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine())
+    _ensure_additive_columns()
 
 
 @contextmanager
