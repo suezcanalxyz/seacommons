@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Canonical privacy-boundary primitives for SeaCommons' public Live paths.
 
-core/api/routes/live.py (VM REST/WS feed) and core/live_edge_publisher.py
+core/live/projection.py (VM REST/WS feed) and core/live_edge_publisher.py
 (Cloudflare edge push) each decide independently whether a stored intel
 event is safe to expose on the public Live map. The privacy-absolute rules
 below -- an operator's explicit private mark can never be overridden, and
@@ -22,16 +22,17 @@ feed and the edge feed intentionally serve different audiences (a broader
 and may legitimately keep different eligibility rules beyond the two
 privacy-absolute checks below -- see each caller's own criterion.
 """
+
 from __future__ import annotations
 
 from typing import Any, Mapping
 
-BLOCKED_SOURCE_POLICIES = frozenset({"nitter", "scrape", "twscrape", "unofficial"})
+from core.domain.live_contracts import BLOCKED_SOURCE_POLICIES, PublicationStatus
 
 
 def is_explicitly_private(metadata: Mapping[str, Any]) -> bool:
     """An operator's explicit private mark is absolute and can never be overridden."""
-    return str(metadata.get("publication_status") or "").lower() == "private"
+    return str(metadata.get("publication_status") or "").lower() == PublicationStatus.PRIVATE.value
 
 
 def is_blocked_source(metadata: Mapping[str, Any]) -> bool:

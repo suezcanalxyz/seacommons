@@ -1,501 +1,22 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Public, privacy-preserving projection of SeaCommons live signals."""
+
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import json
-import math
 from datetime import datetime, timezone
-from typing import Any, Optional
-from urllib.parse import urlparse
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 
 from core.config import config
-from core.intel import lifecycle
-from core.intel.public_geometry import public_geometry_and_precision
-from core.intel.public_policy import is_blocked_source, is_explicitly_private
-from core.intel.store import IntelEvent, intel_store
+from core.intel.store import intel_store
+from core.live.feed import public_drift_collection, public_signal_collection
+from core.live.projection import _public_intel_feature
 
 router = APIRouter(prefix="/api/v1/live", tags=["live"])
-
-_PUBLIC_INTEL_TYPES = frozenset({"distress", "twitter", "mastodon", "ngo_activity"})
-_APPROVED_SOURCE_POLICIES = frozenset(
-    {"official_api", "official_rss", "official_site_embed", "trusted_partner"}
-)
-_PUBLIC_METADATA = frozenset(
-    {
-        "category",
-        "coordinate_review_status",
-        "coordinate_source",
-        "country",
-        "dead",
-        "distress_classification",
-        "drift_status",
-        "first_source_seen_at",
-        "incident_id",
-        "is_distress",
-        "last_source_seen_at",
-        "location_uncertainty_m",
-        "missing",
-        "ocr_attempted",
-        "platform",
-        "region",
-        "source_policy",
-        "source_scan_count",
-        "repost_count",
-        "last_repost_at",
-        "area_weather_narrowed",
-    }
-)
-
-
-def _safe_public_url(value: str) -> str:
-    try:
-        parsed = urlparse(value)
-    except ValueError:
-        return ""
-    return value if parsed.scheme in {"http", "https"} and bool(parsed.netloc) else ""
-
-
-def _public_intel_feature(event: IntelEvent) -> Optional[dict[str, Any]]:
-    """Convert an internal event to the stable public signal contract."""
-    if event.type == "sar_model" or (event.title or "").strip().lower() == "computed sar drift product":
-        # Model outputs belong to Play/Engine, never to the received-signal feed.
-        return None
-    publication = str(event.metadata.get("publication_status") or "").lower()
-    source_policy = str(event.metadata.get("source_policy") or "").lower()
-    if is_blocked_source(event.metadata):
-        # Old scraper records may still be persisted; they must never re-enter Live.
-        return None
-    # Explicit privacy is absolute. An approved transport/source policy may
-    # make an otherwise-unlabelled public observation eligible, but it must
-    # never override a producer's explicit private decision (RSS/news and
-    # direct-message channels rely on this guarantee).
-    if is_explicitly_private(event.metadata):
-        return None
-    if publication != "published" and source_policy not in _APPROVED_SOURCE_POLICIES:
-        return None
-    if event.type not in _PUBLIC_INTEL_TYPES and publication != "published":
-        return None
-    metadata = {key: event.metadata[key] for key in _PUBLIC_METADATA if key in event.metadata}
-    # Unlike the event's own `text` (stripped everywhere on public Live,
-    # since it may originate from a private WhatsApp/SMS caller who never
-    # consented to publication), a thread_reposts `note` only ever comes from
-    # the tracked account's OWN public quote/reply to its OWN tweet — already
-    # readable by anyone on X. Without it the public "Update" panel would
-    # show a link with no indication of what the update actually says, which
-    # defeats the point of surfacing it at all.
-    thread_reposts = event.metadata.get("thread_reposts")
-    if thread_reposts:
-        metadata["thread_reposts"] = [
-            {"tweet_id": r.get("tweet_id"), "posted_at": r.get("posted_at"),
-             "url": r.get("url"), "kind": r.get("kind"), "note": r.get("note")}
-            for r in thread_reposts
-        ]
-    geometry, location_precision = public_geometry_and_precision(event)
-    return {
-        "type": "Feature",
-        "id": f"intel:{event.id}",
-        "geometry": geometry,
-        "properties": {
-            "schema": "org.seacommons.live-signal/v1",
-            "id": f"intel:{event.id}",
-            "type": event.type,
-            "kind": "distress" if event.tier() == "operational" else "context",
-            "severity": event.severity or "low",
-            "tier": event.tier(),
-            "priority": event.priority(),
-            "verification_status": event.verification_status(),
-            "publication_status": "published",
-            "source_policy": source_policy or "operator_published",
-            "title": (event.title or "Maritime signal")[:255],
-            # Public Live deliberately excludes raw text and author identifiers.
-            "text": "",
-            "url": _safe_public_url(event.url),
-            "source": (event.source or event.type or "public feed")[:64],
-            "timestamp_utc": event.timestamp_utc,
-            "source_timestamp_utc": event.timestamp_utc,
-            "received_at": event.metadata.get("first_source_seen_at") or event.timestamp_utc,
-            "location_precision": location_precision,
-            **metadata,
-        },
-    }
-
-
-def _approximate_public_point(signal_id: str, lat: float, lon: float) -> tuple[float, float]:
-    """Deterministically displace sensitive inbound coordinates by 0.8-2.5 km."""
-    digest = hashlib.blake2s(signal_id.encode(), digest_size=8).digest()
-    angle = int.from_bytes(digest[:4], "big") / (2**32) * 2 * math.pi
-    radius_m = 800 + int.from_bytes(digest[4:], "big") / (2**32) * 1700
-    lat_offset = math.sin(angle) * radius_m / 111_320
-    lon_scale = max(0.2, math.cos(math.radians(lat)))
-    lon_offset = math.cos(angle) * radius_m / (111_320 * lon_scale)
-    return round(lat + lat_offset, 5), round(lon + lon_offset, 5)
-
-
-def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
-    """
-    Project user/partner signals only after an explicit publication decision.
-
-    WhatsApp, SMS and Telegram are private by default. Their raw text, sender
-    identifier and provider delivery identifiers never enter this response.
-    """
-    try:
-        from sqlalchemy import select
-
-        from core.db.models import IngestedSignalDB
-        from core.db.session import session_scope
-
-        with session_scope() as db:
-            rows = [
-                {
-                    "signal_id": row.signal_id,
-                    "source_channel": row.source_channel,
-                    "payload": dict(row.payload or {}),
-                    "received_at": row.received_at,
-                }
-                for row in db.execute(
-                    select(IngestedSignalDB)
-                    .order_by(IngestedSignalDB.received_at.desc())
-                    .limit(min(limit * 3, 500))
-                ).scalars()
-            ]
-    except Exception:
-        return []
-
-    features: list[dict[str, Any]] = []
-    for row in rows:
-        payload = row["payload"]
-        if payload.get("publication_status") != "published":
-            continue
-        lat, lon = payload.get("lat"), payload.get("lon")
-        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
-            continue
-        signal_id = str(payload.get("signal_id") or row["signal_id"])
-        public_lat, public_lon = _approximate_public_point(signal_id, float(lat), float(lon))
-        condition = str(payload.get("vessel_condition") or "reported distress").replace("_", " ")
-        channel = str(payload.get("source_channel") or row["source_channel"] or "partner")
-        partner_report = channel in {"webhook", "api", "partner"}
-        features.append(
-            {
-                "type": "Feature",
-                "id": f"signal:{signal_id}",
-                "geometry": {"type": "Point", "coordinates": [public_lon, public_lat]},
-                "properties": {
-                    "schema": "org.seacommons.live-signal/v1",
-                    "id": f"signal:{signal_id}",
-                    "type": "distress",
-                    "kind": "distress",
-                    "severity": "high" if payload.get("medical_emergency") else "medium",
-                    "tier": "operational",
-                    "priority": 1,
-                    "verification_status": "partner_reported" if partner_report else "user_reported",
-                    "publication_status": "published",
-                    "title": f"Maritime signal · {condition}"[:255],
-                    "text": "",
-                    "url": "",
-                    "source": "partner intake" if partner_report else "community report",
-                    "channel": channel,
-                    "location_precision": "approximate",
-                    "location_uncertainty_m": 2500,
-                    "timestamp_utc": payload.get("event_time_utc")
-                    or payload.get("timestamp_utc")
-                    or row["received_at"].replace(tzinfo=timezone.utc).isoformat(),
-                    "received_at": payload.get("timestamp_utc")
-                    or row["received_at"].replace(tzinfo=timezone.utc).isoformat(),
-                },
-            }
-        )
-        if len(features) >= limit:
-            break
-    return features
-
-
-
-
-def public_signal_collection(
-    *,
-    limit: int = 300,
-    days: int = 30,
-    since: Optional[str] = None,
-) -> dict[str, Any]:
-    memory_events = intel_store.events(limit=min(limit * 2, 600), max_age_days=days)
-    durable_alarm_phone = intel_store.persisted_events(
-        source="Alarm Phone",
-        max_age_days=days,
-        limit=min(max(limit * 3, 300), 1500),
-    )
-    by_id = {event.id: event for event in durable_alarm_phone}
-    # In-memory objects contain the most recent metadata observations and must
-    # win over the durable snapshot when both are present.
-    by_id.update({event.id: event for event in memory_events})
-    events = list(by_id.values())
-    now = datetime.now(timezone.utc)
-    by_source: dict[str, list[IntelEvent]] = {}
-    for event in events:
-        by_source.setdefault(event.source, []).append(event)
-    features = []
-    for event in events:
-        feature = _public_intel_feature(event)
-        if not feature or feature["properties"].get("kind") != "distress":
-            continue
-        if not lifecycle.is_within_live_window(event, now=now):
-            # Hard cutoff: a distress marker's total life on Live is bounded,
-            # regardless of whether it was ever resolved. Older history lives
-            # in the archive/replay views, not the live pulsing map.
-            continue
-        state = lifecycle.distress_lifecycle(event, now=now, same_source=by_source.get(event.source, []))
-        # Directly resolved incidents were filtered above. Cross-post matches
-        # may still project resolved; ambiguous replies project needs_review.
-        feature["properties"]["kind"] = "distress" if state == "active" else state
-        feature["properties"]["incident_lifecycle"] = state
-        features.append(feature)
-    features.extend(_published_ingested_features(limit))
-    if since:
-        features = [
-            feature
-            for feature in features
-            if str(feature["properties"].get("timestamp_utc") or "") > since
-        ]
-    # Live is a timeline: newest source timestamp always wins. Severity remains
-    # a visual attribute and filter, never a second sort that can place an old
-    # critical item above a newly received report.
-    features.sort(
-        key=lambda f: str(f["properties"].get("timestamp_utc") or ""),
-        reverse=True,
-    )
-    features = features[:limit]
-
-    return {
-        "type": "FeatureCollection",
-        "features": features,
-        "meta": {
-            "schema": "org.seacommons.live-feed/v1",
-            "total": len(features),
-            "memory_candidates": len(memory_events),
-            "durable_alarm_phone_candidates": len(durable_alarm_phone),
-            "with_coords": sum(
-                1 for feature in features if feature.get("geometry") is not None
-            ),
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "privacy": "published signals only; private identifiers and raw messages excluded",
-        },
-    }
-
-
-def _public_drift_feature(
-    feature: dict[str, Any],
-    *,
-    event_id: str,
-    title: str,
-    source: str,
-    severity: str,
-    metadata: dict[str, Any],
-) -> dict[str, Any]:
-    properties = feature.get("properties") or {}
-    return {
-        "type": "Feature",
-        "geometry": feature.get("geometry"),
-        "properties": {
-            "type": properties.get("type"),
-            "horizon_h": properties.get("horizon_h"),
-            "radius_m": properties.get("radius_m"),
-            "timestamps_utc": properties.get("timestamps_utc"),
-            "speed_ms": properties.get("speed_ms"),
-            "speed_kn": properties.get("speed_kn"),
-            "course_deg": properties.get("course_deg"),
-            "distance_m": properties.get("distance_m"),
-            "mean_speed_ms": properties.get("mean_speed_ms"),
-            "max_speed_ms": properties.get("max_speed_ms"),
-            "sample_interval_s": properties.get("sample_interval_s"),
-            "sample_count": properties.get("sample_count"),
-            "elapsed_hours": properties.get("elapsed_hours"),
-            "estimate_time_utc": properties.get("estimate_time_utc"),
-            "trajectory_state": properties.get("trajectory_state"),
-            "intel_event_id": event_id,
-            "intel_title": title[:80],
-            "intel_source": source[:64],
-            "intel_severity": severity,
-            "auto_drift": True,
-            "publication_status": "published",
-            "trajectory_kind": "model_forecast",
-            "observed_track": False,
-            "model": metadata.get("model"),
-            "forcing_resolution": metadata.get("forcing_resolution"),
-            "forcing_quality": metadata.get("forcing_quality"),
-            "verification_status": "modelled_spatiotemporal",
-        },
-    }
-
-
-def _current_trajectory_estimate(
-    trajectory: dict[str, Any],
-    *,
-    event_timestamp: str,
-    now: Optional[datetime] = None,
-) -> Optional[dict[str, Any]]:
-    """Interpolate the modelled position at wall-clock time."""
-    geometry = trajectory.get("geometry") or {}
-    properties = trajectory.get("properties") or {}
-    coordinates = geometry.get("coordinates") or []
-    timestamps = properties.get("timestamps_utc") or []
-    if len(coordinates) < 2 or len(timestamps) != len(coordinates):
-        return None
-    try:
-        parsed_times = [
-            datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
-            for value in timestamps
-        ]
-        event_time = datetime.fromisoformat(event_timestamp.replace("Z", "+00:00"))
-        if event_time.tzinfo is None:
-            event_time = event_time.replace(tzinfo=timezone.utc)
-        event_time = event_time.astimezone(timezone.utc)
-    except (AttributeError, TypeError, ValueError):
-        return None
-    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    if current <= parsed_times[0]:
-        coordinate = coordinates[0]
-        state = "before_model_start"
-    elif current >= parsed_times[-1]:
-        coordinate = coordinates[-1]
-        state = "model_horizon_reached"
-    else:
-        upper = next(index for index, value in enumerate(parsed_times) if value >= current)
-        lower = upper - 1
-        span = max(1.0, (parsed_times[upper] - parsed_times[lower]).total_seconds())
-        ratio = (current - parsed_times[lower]).total_seconds() / span
-        coordinate = [
-            float(coordinates[lower][0])
-            + (float(coordinates[upper][0]) - float(coordinates[lower][0])) * ratio,
-            float(coordinates[lower][1])
-            + (float(coordinates[upper][1]) - float(coordinates[lower][1])) * ratio,
-        ]
-        state = "interpolated"
-    return {
-        "type": "Feature",
-        "geometry": {"type": "Point", "coordinates": coordinate[:2]},
-        "properties": {
-            "type": "current_estimate",
-            "elapsed_hours": round(max(0.0, (current - event_time).total_seconds() / 3600), 2),
-            "estimate_time_utc": current.isoformat(),
-            "trajectory_state": state,
-        },
-    }
-
-
-def _is_publishable_live_drift(drift: dict[str, Any]) -> bool:
-    """Only expose model runs backed by varying forcing, never demo fallbacks."""
-    metadata = drift.get("metadata") or {}
-    trajectory = drift.get("trajectory") or {}
-    properties = trajectory.get("properties") or {}
-    coordinates = (trajectory.get("geometry") or {}).get("coordinates") or []
-    return bool(
-        drift.get("status") == "completed"
-        and metadata.get("model") == "OpenDrift Leeway"
-        and metadata.get("forcing_quality") == "spatiotemporal"
-        and metadata.get("operational_use") is True
-        and len(coordinates) >= 2
-        and len(properties.get("timestamps_utc") or []) == len(coordinates)
-        and len(properties.get("speed_ms") or []) == len(coordinates)
-    )
-
-
-def public_drift_collection(limit: int = 100) -> dict[str, Any]:
-    """Published model geometry linked to received public signals, without raw content."""
-    from core.db.store import get_drift, list_drift_jobs_for_event
-
-    features: list[dict[str, Any]] = []
-    drift_count = 0
-    drift_events = {
-        event.id: event
-        for event in intel_store.persisted_events(
-            source="Alarm Phone", max_age_days=30, limit=min(limit * 5, 1000)
-        )
-    }
-    drift_events.update({
-        event.id: event for event in intel_store.events(limit=min(limit * 3, 500))
-    })
-    now = datetime.now(timezone.utc)
-    by_source: dict[str, list[IntelEvent]] = {}
-    for event in drift_events.values():
-        by_source.setdefault(event.source, []).append(event)
-    for event in drift_events.values():
-        public_event = _public_intel_feature(event)
-        job_id = event.metadata.get("drift_job_id")
-        if public_event is None:
-            continue
-        # Once an incident is resolved or archived, the search is over --
-        # an active-looking pulsing drift cone still on the map reads as
-        # "still adrift, still searching", which is exactly wrong for a
-        # case that's already been rescued or gone stale.
-        state = lifecycle.distress_lifecycle(
-            event, now=now, same_source=by_source.get(event.source, []),
-        )
-        if state != "active":
-            continue
-        if not job_id:
-            jobs = list_drift_jobs_for_event(f"intel:{event.id}")
-            completed = [job for job in jobs if job.get("status") == "completed"]
-            job_id = completed[0].get("id") if completed else None
-        if not job_id:
-            continue
-        drift = get_drift(job_id)
-        if not drift or not _is_publishable_live_drift(drift):
-            continue
-        metadata = drift.get("metadata") or {}
-        drift_count += 1
-        for feature in (drift.get("trajectory"), drift.get("cone_24h")):
-            if feature:
-                features.append(
-                    _public_drift_feature(
-                        feature,
-                        event_id=event.id,
-                        title=event.title,
-                        source=event.source,
-                        severity=event.severity,
-                        metadata=metadata,
-                    )
-                )
-        current_estimate = _current_trajectory_estimate(
-            drift.get("trajectory") or {},
-            event_timestamp=event.timestamp_utc,
-        )
-        if current_estimate:
-            features.append(
-                _public_drift_feature(
-                    current_estimate,
-                    event_id=event.id,
-                    title=event.title,
-                    source=event.source,
-                    severity=event.severity,
-                    metadata=metadata,
-                )
-            )
-        for feature in (drift.get("impact_point") or {}).get("features", []):
-            features.append(
-                _public_drift_feature(
-                    feature,
-                    event_id=event.id,
-                    title=event.title,
-                    source=event.source,
-                    severity=event.severity,
-                    metadata=metadata,
-                )
-            )
-        if drift_count >= limit:
-            break
-    return {
-        "type": "FeatureCollection",
-        "features": features,
-        "meta": {
-            "schema": "org.seacommons.live-drift/v1",
-            "drifts": drift_count,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "privacy": "derived geometry and published signal metadata only",
-        },
-    }
 
 
 @router.get("/signals")
@@ -584,11 +105,17 @@ async def live_archives(limit: int = Query(8, ge=1, le=20)):
 async def live_archive_geojson(event_id: str):
     """Derived geometry for a public Play archive; no source message or identity."""
     from fastapi import HTTPException
+
     from core.db.store import get_alert, get_drift
 
     alert = get_alert(event_id)
     drift = get_drift(event_id)
-    if alert is None or alert.get("status") != "completed" or not drift or drift.get("status") != "completed":
+    if (
+        alert is None
+        or alert.get("status") != "completed"
+        or not drift
+        or drift.get("status") != "completed"
+    ):
         raise HTTPException(status_code=404, detail="Archive not found")
     features = [
         feature
@@ -625,6 +152,7 @@ async def live_sources():
     try:
         from core.connectors.service import status_counts
         from core.db.session import session_scope
+
         with session_scope() as db:
             whatsapp_connectors = status_counts(db, "whatsapp_cloud")
     except Exception:
@@ -653,7 +181,9 @@ async def live_sources():
             {
                 "name": name,
                 "type": source_type,
-                "status": observed["status"] if observed else ("pending" if configured else "offline"),
+                "status": observed["status"]
+                if observed
+                else ("pending" if configured else "offline"),
                 "last_poll_at": observed["last_poll_at"] if observed else None,
                 "events_last_hour": observed["events_last_hour"] if observed else 0,
                 "total_events": observed["total_events"] if observed else 0,
@@ -684,8 +214,7 @@ async def live_sources():
         "channels": {
             "twitter": bool(config.TWITTER_BEARER_TOKEN),
             "twitter_alarm_phone": any(
-                source["name"] == "X / Twitter (twikit)"
-                and source["status"] == "active"
+                source["name"] == "X / Twitter (twikit)" and source["status"] == "active"
                 for source in sources
             ),
             "whatsapp": whatsapp_ready,

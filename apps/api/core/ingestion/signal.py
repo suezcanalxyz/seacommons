@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
+
+from core.domain.live_contracts import PublicationStatus
 
 
 class DistressSignal(BaseModel):
@@ -34,7 +36,7 @@ class DistressSignal(BaseModel):
     attachments: list[dict[str, Any]] = Field(default_factory=list)
     # User-originated signals are private unless an authenticated reviewer or a
     # trusted signed partner webhook makes an explicit publication decision.
-    publication_status: Literal["private", "internal", "published"] = "private"
+    publication_status: PublicationStatus = PublicationStatus.PRIVATE
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DistressSignal":

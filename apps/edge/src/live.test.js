@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { INCIDENT_LIFECYCLES, LOCATION_PRECISIONS } from './live-contracts.js';
 import { classifyLiveStatus, normalizeEvent, verifyIngestRequest } from './live.js';
 
 async function hmac(secret, body) {
@@ -31,6 +32,39 @@ test('normalizes a public event with an explicit live expiry', async () => {
   assert.match(event.id, /^[a-f0-9]{64}$/);
   assert.match(event.hash, /^[a-f0-9]{64}$/);
   assert.ok(event.expires_at_ms >= before + 3_599_000);
+});
+
+test('exports the canonical lifecycle and precision vocabulary', () => {
+  assert.deepEqual(INCIDENT_LIFECYCLES, ['active', 'resolved', 'needs_review', 'archived']);
+  assert.deepEqual(LOCATION_PRECISIONS, [
+    'unpositioned',
+    'approximate',
+    'regional_centroid',
+    'reported_or_derived',
+    'area',
+    'area_low_confidence',
+  ]);
+});
+
+test('rejects values outside the canonical Live vocabulary', async () => {
+  const base = {
+    type: 'distress_observation',
+    source: 'alarm-phone',
+    observed_at: '2026-08-02T12:00:00Z',
+  };
+
+  await assert.rejects(
+    normalizeEvent({ ...base, confidence: 1.2 }),
+    /confidence must be between 0 and 1/,
+  );
+  await assert.rejects(
+    normalizeEvent({ ...base, properties: { incident_lifecycle: 'closed' } }),
+    /invalid incident_lifecycle/,
+  );
+  await assert.rejects(
+    normalizeEvent({ ...base, geometry: { type: 'LineString', coordinates: [] } }),
+    /geometry type must be/,
+  );
 });
 
 test('accepts a correctly signed collector request', async () => {

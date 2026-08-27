@@ -4,7 +4,7 @@ Status: deployed, unified with the VM-hosted lifecycle model. Directly resolved 
 
 ## Objective
 
-Run `live.seacommons.org` as a realtime operational surface delivered over a zero-cost Cloudflare edge (WebSocket + Durable Object), while keeping exactly one lifecycle policy: `core/intel/lifecycle.py`, shared with the VM-hosted `/api/v1/live/signals` feed (`core/api/routes/live.py`).
+Run `live.seacommons.org` as a realtime operational surface delivered over a zero-cost Cloudflare edge (WebSocket + Durable Object), while keeping exactly one lifecycle policy: `core/intel/lifecycle.py`, shared with the VM-hosted `/api/v1/live/signals` feed (`core/live/feed.py`).
 
 The system does not backfill on a cold start (see "Clean start" below), but once running it is **not** a bare 6-hour ephemeral cache. A directly concluded incident is removed from operational Live immediately. Other distress markers remain visible as red (active), amber (needs review), or gray (archived/stale) within `lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS` (7 days). The edge's 8-day TTL is only a backstop if the publisher stops before it sends the explicit removal.
 

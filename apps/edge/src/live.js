@@ -1,6 +1,43 @@
+import {
+  FEDERATED_EVENT_SCHEMA,
+  INCIDENT_LIFECYCLES,
+  LOCATION_PRECISIONS,
+  PUBLIC_GEOMETRY_TYPES,
+} from './live-contracts.js';
+
 const MAX_EVENTS = 500;
 const DEFAULT_TTL_SECONDS = 8 * 24 * 60 * 60;
 const DEFAULT_HEARTBEAT_MAX_AGE_SECONDS = 120;
+const INCIDENT_LIFECYCLE_SET = new Set(INCIDENT_LIFECYCLES);
+const LOCATION_PRECISION_SET = new Set(LOCATION_PRECISIONS);
+
+function validateGeometry(geometry) {
+  if (geometry === null || geometry === undefined) return null;
+  if (typeof geometry !== 'object' || Array.isArray(geometry)) {
+    throw new Error('geometry must be an object or null');
+  }
+  if (!PUBLIC_GEOMETRY_TYPES.includes(geometry.type)) {
+    throw new Error('geometry type must be Point, Polygon, MultiPolygon, or null');
+  }
+  if (!Array.isArray(geometry.coordinates)) throw new Error('geometry coordinates are required');
+  return geometry;
+}
+
+function validateProperties(properties) {
+  if (properties === undefined || properties === null) return {};
+  if (typeof properties !== 'object' || Array.isArray(properties)) {
+    throw new Error('properties must be an object');
+  }
+  const lifecycle = properties.incident_lifecycle;
+  if (lifecycle !== undefined && lifecycle !== null && !INCIDENT_LIFECYCLE_SET.has(lifecycle)) {
+    throw new Error('invalid incident_lifecycle');
+  }
+  const precision = properties.location_precision;
+  if (precision !== undefined && precision !== null && !LOCATION_PRECISION_SET.has(precision)) {
+    throw new Error('invalid location_precision');
+  }
+  return properties;
+}
 
 function json(payload, status = 200, headers = {}) {
   return new Response(JSON.stringify(payload), {
@@ -85,9 +122,16 @@ export async function normalizeEvent(input, previousHash = null, ttl = DEFAULT_T
   if (!input.type || !input.source || !input.observed_at) {
     throw new Error('type, source and observed_at are required');
   }
+  const numericConfidence = input.confidence === null || input.confidence === undefined
+    ? null
+    : Number(input.confidence);
+  if (numericConfidence !== null
+      && (!Number.isFinite(numericConfidence) || numericConfidence < 0 || numericConfidence > 1)) {
+    throw new Error('confidence must be between 0 and 1');
+  }
   const receivedAt = new Date().toISOString();
   const event = {
-    schema: 'seacommons-event-v1',
+    schema: FEDERATED_EVENT_SCHEMA,
     type: String(input.type),
     source: String(input.source),
     node: String(input.node || 'unknown'),
@@ -95,9 +139,9 @@ export async function normalizeEvent(input, previousHash = null, ttl = DEFAULT_T
     received_at: receivedAt,
     expires_at_ms: Date.parse(receivedAt) + ttl * 1000,
     visibility: input.visibility === 'private' ? 'private' : 'public',
-    confidence: Number.isFinite(Number(input.confidence)) ? Number(input.confidence) : null,
-    geometry: input.geometry || null,
-    properties: input.properties && typeof input.properties === 'object' ? input.properties : {},
+    confidence: numericConfidence,
+    geometry: validateGeometry(input.geometry),
+    properties: validateProperties(input.properties),
     source_url: input.source_url ? String(input.source_url) : null,
     previous_hash: previousHash,
   };

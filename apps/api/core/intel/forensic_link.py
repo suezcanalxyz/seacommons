@@ -22,7 +22,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Same discipline as the public feed (core.intel.public_geometry /
-# core.api.routes.live): never let a private caller-sourced value leak
+# core.live.projection): never let a private caller-sourced value leak
 # into an exported/verifiable record -- an explicit allowlist, not "the
 # whole metadata dict minus a blocklist".
 _SENSOR_DATA_KEYS = (

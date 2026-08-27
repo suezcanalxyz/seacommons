@@ -11,7 +11,7 @@ individual boats in distress. It is ingested here as a *situational-awareness
 and corroboration* signal only (e.g. a red-alert storm over the Central
 Mediterranean the same day multiple crossing-distress reports come in), the
 same role `news_monitor.py`'s RSS feeds and the IOM archive play. It never
-appears in the public Live feed (see `core.api.routes.live._PUBLIC_INTEL_TYPES`)
+appears in the public Live feed (see `core.live.projection._PUBLIC_INTEL_TYPES`)
 since it does not represent a direct distress call.
 
 Runs in a background daemon thread; events are pushed to IntelStore.

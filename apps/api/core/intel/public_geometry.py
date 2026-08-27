@@ -1,21 +1,21 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Shared geometry + location-precision projection for the public feed.
 
-Used by both core/api/routes/live.py (the VM-hosted REST/WS feed) and
+Used by both core/live/projection.py (the VM-hosted REST/WS feed) and
 core/live_edge_publisher.py (the Cloudflare edge push) so a report's
 area-vs-point representation, and its precision label, can never silently
 diverge between the two paths. thread_reposts/repost_count reaching one
 path and not the other (both hand-maintained the same projection logic
 separately) is exactly the bug class this exists to stop repeating.
 """
+
 from __future__ import annotations
 
-from typing import Optional
-
+from core.domain.live_contracts import LocationPrecision
 from core.intel.store import IntelEvent
 
 
-def public_geometry_and_precision(event: IntelEvent) -> tuple[Optional[dict], str]:
+def public_geometry_and_precision(event: IntelEvent) -> tuple[dict | None, str]:
     """(geojson_geometry, location_precision) for the public feed.
 
     A stored area_geojson (see core.intel.area_extract) always wins over
@@ -26,15 +26,20 @@ def public_geometry_and_precision(event: IntelEvent) -> tuple[Optional[dict], st
     """
     area = event.metadata.get("area_geojson")
     if area:
-        confidence = str(event.metadata.get("area_confidence") or "area")
-        return area, confidence
+        confidence = str(event.metadata.get("area_confidence") or LocationPrecision.AREA)
+        try:
+            precision = LocationPrecision(confidence).value
+        except ValueError:
+            precision = LocationPrecision.AREA.value
+        return area, precision
 
     if event.lat is None or event.lon is None:
-        return None, "unpositioned"
+        return None, LocationPrecision.UNPOSITIONED.value
 
     coordinate_source = str(event.metadata.get("coordinate_source") or "")
     precision = (
-        "regional_centroid" if coordinate_source == "place_centroid"
-        else "reported_or_derived"
+        LocationPrecision.REGIONAL_CENTROID.value
+        if coordinate_source == "place_centroid"
+        else LocationPrecision.REPORTED_OR_DERIVED.value
     )
     return {"type": "Point", "coordinates": [event.lon, event.lat]}, precision

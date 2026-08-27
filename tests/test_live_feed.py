@@ -7,12 +7,6 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///./core/data/test_live_feed.db")
 os.environ.setdefault("RUNTIME_PROFILE", "operational")
 
 from core.api.main import app
-from core.api.routes.live import (
-    _approximate_public_point,
-    _current_trajectory_estimate,
-    _public_intel_feature,
-    public_signal_collection,
-)
 from core.config import config
 from core.ingestion.signal import DistressSignal
 from core.intel import lifecycle
@@ -26,6 +20,12 @@ from core.intel.news_monitor import RSS_FEEDS
 from core.intel.store import IntelEvent, IntelStore
 from core.intel.twitter_monitor import TwitterMonitor
 from core.intel.x_media_utils import consensus_ocr_coordinate
+from core.live.feed import public_signal_collection
+from core.live.projection import (
+    _approximate_public_point,
+    _current_trajectory_estimate,
+    _public_intel_feature,
+)
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -77,11 +77,19 @@ def test_public_projection_exposes_repost_thread_including_its_own_note() -> Non
             "repost_count": 2,
             "last_repost_at": "2026-08-04T12:00:00+00:00",
             "thread_reposts": [
-                {"tweet_id": "2", "posted_at": "2026-08-04T11:00:00+00:00",
-                 "url": "https://x.com/i/web/status/2", "kind": "repost"},
-                {"tweet_id": "3", "posted_at": "2026-08-04T12:00:00+00:00",
-                 "url": "https://x.com/i/web/status/3", "kind": "quote",
-                 "note": "Rescued to #Lampedusa! Everyone arrived safely."},
+                {
+                    "tweet_id": "2",
+                    "posted_at": "2026-08-04T11:00:00+00:00",
+                    "url": "https://x.com/i/web/status/2",
+                    "kind": "repost",
+                },
+                {
+                    "tweet_id": "3",
+                    "posted_at": "2026-08-04T12:00:00+00:00",
+                    "url": "https://x.com/i/web/status/3",
+                    "kind": "quote",
+                    "note": "Rescued to #Lampedusa! Everyone arrived safely.",
+                },
             ],
         },
     )
@@ -94,11 +102,17 @@ def test_public_projection_exposes_repost_thread_including_its_own_note() -> Non
     assert props["thread_reposts"][0].get("note") is None
     assert props["thread_reposts"][1]["kind"] == "quote"
     assert props["thread_reposts"][1]["url"] == "https://x.com/i/web/status/3"
-    assert props["thread_reposts"][1]["note"] == "Rescued to #Lampedusa! Everyone arrived safely."
+    assert (
+        props["thread_reposts"][1]["note"]
+        == "Rescued to #Lampedusa! Everyone arrived safely."
+    )
 
 
 def test_public_projection_shows_an_area_polygon_when_no_precise_point_exists() -> None:
-    polygon = {"type": "Polygon", "coordinates": [[[14.0, 35.0], [14.1, 35.0], [14.1, 35.1], [14.0, 35.0]]]}
+    polygon = {
+        "type": "Polygon",
+        "coordinates": [[[14.0, 35.0], [14.1, 35.0], [14.1, 35.1], [14.0, 35.0]]],
+    }
     event = IntelEvent(
         id="public03",
         type="twitter",
@@ -242,13 +256,14 @@ def test_direct_distress_call_classifier_is_conservative() -> None:
         "The group was rescued and everyone is now safe."
     )
     assert not is_direct_distress_call(
-        "The post Catania Court Acquits Crew Member appeared first on "
-        "SOS MEDITERRANEE."
+        "The post Catania Court Acquits Crew Member appeared first on SOS MEDITERRANEE."
     )
     assert is_direct_distress_call("SOS! 20 people are in distress south of Malta")
 
 
-def test_resolved_distress_ignores_a_rescue_mention_inside_an_ongoing_pushback() -> None:
+def test_resolved_distress_ignores_a_rescue_mention_inside_an_ongoing_pushback() -> (
+    None
+):
     # Real Alarm Phone report (2026-07-29): a rescue is only one step in a
     # still-active rights violation (forced-return risk, refused
     # disembarkation) — the bare word "rescued" must not short-circuit this
@@ -280,15 +295,17 @@ def test_latest_real_arrival_reply_resolves_the_incident() -> None:
         timestamp_utc="2026-08-05T16:36:54+00:00",
         metadata={
             "is_distress": True,
-            "thread_reposts": [{
-                "tweet_id": "2085235676618846249",
-                "posted_at": "2026-08-06T05:25:01+00:00",
-                "kind": "reply",
-                "note": (
-                    "We received news that the people arrived on #Sicily! "
-                    "We hope that everyone is fine after the long and difficult journey."
-                ),
-            }],
+            "thread_reposts": [
+                {
+                    "tweet_id": "2085235676618846249",
+                    "posted_at": "2026-08-06T05:25:01+00:00",
+                    "kind": "reply",
+                    "note": (
+                        "We received news that the people arrived on #Sicily! "
+                        "We hope that everyone is fine after the long and difficult journey."
+                    ),
+                }
+            ],
         },
     )
     now = datetime.fromisoformat("2026-08-06T06:00:00+00:00")
@@ -324,7 +341,9 @@ def test_unsafe_rescue_reply_does_not_resolve_the_incident() -> None:
     assert lifecycle.distress_lifecycle(event, now=now, same_source=[]) == "active"
 
 
-def test_latest_reply_can_reopen_a_resolved_incident_and_refresh_archive_clock() -> None:
+def test_latest_reply_can_reopen_a_resolved_incident_and_refresh_archive_clock() -> (
+    None
+):
     event = IntelEvent(
         type="twitter",
         severity="high",
@@ -351,7 +370,9 @@ def test_latest_reply_can_reopen_a_resolved_incident_and_refresh_archive_clock()
 
 
 def test_rescue_negations_are_not_resolved() -> None:
-    assert not is_resolved_distress("The group has not been rescued and remains in danger.")
+    assert not is_resolved_distress(
+        "The group has not been rescued and remains in danger."
+    )
     assert not is_resolved_distress("They are still waiting to be rescued.")
 
 
@@ -364,20 +385,24 @@ def test_without_news_reply_keeps_incident_active() -> None:
         source="alarm_phone",
         timestamp_utc="2026-08-06T08:00:00+00:00",
         metadata={
-            "thread_reposts": [{
-                "posted_at": "2026-08-06T15:00:00+00:00",
-                "note": (
-                    "Where are they? We are still without news about the 37 people. "
-                    "We have not been able to reach them the whole day."
-                ),
-            }],
+            "thread_reposts": [
+                {
+                    "posted_at": "2026-08-06T15:00:00+00:00",
+                    "note": (
+                        "Where are they? We are still without news about the 37 people. "
+                        "We have not been able to reach them the whole day."
+                    ),
+                }
+            ],
         },
     )
     now = datetime.fromisoformat("2026-08-06T15:20:00+00:00")
     assert lifecycle.distress_lifecycle(event, now=now, same_source=[]) == "active"
 
 
-def test_lifecycle_recomputes_from_text_instead_of_trusting_stale_incident_status() -> None:
+def test_lifecycle_recomputes_from_text_instead_of_trusting_stale_incident_status() -> (
+    None
+):
     # A stored incident_status="resolved" — the exact value the OLD,
     # over-broad is_resolved_distress() would have baked in at ingestion for
     # the pushback report above — must no longer short-circuit the lifecycle
@@ -481,15 +506,21 @@ def test_ambiguous_latest_reply_requires_review() -> None:
         timestamp_utc="2026-07-30T08:57:00+00:00",
         metadata={
             "thread_reposts": [
-                {"tweet_id": "1", "posted_at": "2026-07-30T09:00:00+00:00",
-                 "url": "https://x.com/i/web/status/1", "kind": "reply",
-                 "note": "Any update on this??"},
+                {
+                    "tweet_id": "1",
+                    "posted_at": "2026-07-30T09:00:00+00:00",
+                    "url": "https://x.com/i/web/status/1",
+                    "kind": "reply",
+                    "note": "Any update on this??",
+                },
             ]
         },
     )
     assert lifecycle.has_own_reply_resolution(event) is False
     now = datetime.fromisoformat("2026-07-30T10:00:00+00:00")
-    assert lifecycle.distress_lifecycle(event, now=now, same_source=[]) == "needs_review"
+    assert (
+        lifecycle.distress_lifecycle(event, now=now, same_source=[]) == "needs_review"
+    )
 
 
 def test_resolution_signal_still_fires_on_genuinely_matching_follow_up() -> None:
@@ -574,17 +605,19 @@ def test_db_duplicate_repoints_live_event_to_canonical_id() -> None:
 
     url = "https://x.com/i/web/status/2083992029869051948"
     with session_scope() as db:
-        db.add(IntelEventDB(
-            id="canonical02",
-            timestamp_utc="2026-08-06T10:00:00+00:00",
-            type="twitter",
-            severity="high",
-            title="Canonical report",
-            text="37 people missing at sea",
-            url=url,
-            source="alarm_phone",
-            meta={"source_policy": "official_site_embed"},
-        ))
+        db.add(
+            IntelEventDB(
+                id="canonical02",
+                timestamp_utc="2026-08-06T10:00:00+00:00",
+                type="twitter",
+                severity="high",
+                title="Canonical report",
+                text="37 people missing at sea",
+                url=url,
+                source="alarm_phone",
+                meta={"source_policy": "official_site_embed"},
+            )
+        )
 
     live_event = IntelEvent(
         id="temporary02",
@@ -603,7 +636,9 @@ def test_db_duplicate_repoints_live_event_to_canonical_id() -> None:
     assert live_event.metadata["tracked_account"] == "alarm_phone"
     assert live_event.metadata["source_policy"] == "official_site_embed"
     with session_scope() as db:
-        persisted = db.query(IntelEventDB).filter(IntelEventDB.id == "canonical02").one()
+        persisted = (
+            db.query(IntelEventDB).filter(IntelEventDB.id == "canonical02").one()
+        )
         assert persisted.meta["tracked_account"] == "alarm_phone"
 
 
@@ -637,9 +672,10 @@ def test_alarm_phone_screenshot_dmm_and_noisy_dms_are_parsed() -> None:
     assert extract_numeric_coords(
         '26 people N 34° 39° 36.887", E 012° 38° 36.341"'
     ) == (34.660246, 12.643428)
-    assert extract_numeric_coords(
-        '49 people N 35° Q4\' 17.6", E @11° 12\' 08"'
-    ) == (35.071556, 11.202222)
+    assert extract_numeric_coords("49 people N 35° Q4' 17.6\", E @11° 12' 08\"") == (
+        35.071556,
+        11.202222,
+    )
 
 
 def test_relative_location_can_reference_an_island_named_earlier() -> None:
@@ -667,20 +703,26 @@ def test_existing_event_can_be_enriched_with_media_location() -> None:
         "coordinate_source": "media_ocr_consensus",
         "coordinate_review_status": "machine_consensus_unverified",
     }
-    assert store.enrich_location(
-        event.id,
-        lat=35.5,
-        lon=12.6,
-        metadata=metadata,
-    ) is True
+    assert (
+        store.enrich_location(
+            event.id,
+            lat=35.5,
+            lon=12.6,
+            metadata=metadata,
+        )
+        is True
+    )
     assert event.lat == 35.5
     assert event.lon == 12.6
-    assert store.enrich_location(
-        event.id,
-        lat=36.0,
-        lon=13.0,
-        metadata=metadata,
-    ) is False
+    assert (
+        store.enrich_location(
+            event.id,
+            lat=36.0,
+            lon=13.0,
+            metadata=metadata,
+        )
+        is False
+    )
 
 
 def test_enrich_location_clears_stale_area_on_upgrade_to_a_real_point() -> None:
@@ -699,20 +741,32 @@ def test_enrich_location_clears_stale_area_on_upgrade_to_a_real_point() -> None:
         severity="high",
         title="Boat off #Libya",
         source="alarm_phone",
-        lat=31.5, lon=17.5,  # the area's own centroid, exactly as _ingest sets it
+        lat=31.5,
+        lon=17.5,  # the area's own centroid, exactly as _ingest sets it
         metadata={
             "coordinate_source": "region_area",
-            "area_geojson": {"type": "Polygon", "coordinates": [[[17.0, 31.0], [18.0, 31.0], [18.0, 32.0], [17.0, 31.0]]]},
+            "area_geojson": {
+                "type": "Polygon",
+                "coordinates": [
+                    [[17.0, 31.0], [18.0, 31.0], [18.0, 32.0], [17.0, 31.0]]
+                ],
+            },
             "area_confidence": "area_low_confidence",
         },
     )
     assert store.add(event) is True
-    assert store.enrich_location(
-        event.id,
-        lat=32.5,
-        lon=17.8,
-        metadata={"coordinate_source": "media_ocr_text", "location_uncertainty_m": 1500},
-    ) is True
+    assert (
+        store.enrich_location(
+            event.id,
+            lat=32.5,
+            lon=17.8,
+            metadata={
+                "coordinate_source": "media_ocr_text",
+                "location_uncertainty_m": 1500,
+            },
+        )
+        is True
+    )
     assert "area_geojson" not in event.metadata
     assert "area_confidence" not in event.metadata
     assert event.lat == 32.5 and event.lon == 17.8
@@ -728,7 +782,9 @@ def test_sensitive_public_position_is_stable_and_approximate() -> None:
     assert abs(first[1] - original[1]) < 0.03
 
 
-def test_live_feed_merges_durable_alarm_phone_events_after_memory_eviction(monkeypatch) -> None:
+def test_live_feed_merges_durable_alarm_phone_events_after_memory_eviction(
+    monkeypatch,
+) -> None:
     durable = IntelEvent(
         id="alarm-durable-01",
         timestamp_utc=(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
@@ -740,9 +796,9 @@ def test_live_feed_merges_durable_alarm_phone_events_after_memory_eviction(monke
         source="Alarm Phone",
         metadata={"source_policy": "official_site_embed", "is_distress": True},
     )
-    monkeypatch.setattr("core.api.routes.live.intel_store.events", lambda **_kwargs: [])
+    monkeypatch.setattr("core.live.feed.intel_store.events", lambda **_kwargs: [])
     monkeypatch.setattr(
-        "core.api.routes.live.intel_store.persisted_events",
+        "core.live.feed.intel_store.persisted_events",
         lambda **_kwargs: [durable],
     )
     collection = public_signal_collection(limit=50, days=1)
@@ -776,30 +832,53 @@ def test_drift_not_shown_for_resolved_or_archived_incidents(monkeypatch) -> None
     # as "still adrift, still searching", which is exactly wrong.
     from datetime import timezone
 
-    from core.api.routes.live import public_drift_collection
+    from core.live.feed import public_drift_collection
 
     now_iso = datetime.now(timezone.utc).isoformat()
     active_event = IntelEvent(
-        id="drift-active", type="distress", severity="high",
-        lat=35.0, lon=14.0, title="MAYDAY still adrift", source="alarm_phone",
+        id="drift-active",
+        type="distress",
+        severity="high",
+        lat=35.0,
+        lon=14.0,
+        title="MAYDAY still adrift",
+        source="alarm_phone",
         timestamp_utc=now_iso,
-        metadata={"is_distress": True, "source_policy": "official_api", "drift_job_id": "job-active"},
+        metadata={
+            "is_distress": True,
+            "source_policy": "official_api",
+            "drift_job_id": "job-active",
+        },
     )
     resolved_event = IntelEvent(
-        id="drift-resolved", type="distress", severity="high",
-        lat=35.0, lon=14.0, title="Rescued! Everyone is safe.", source="alarm_phone",
+        id="drift-resolved",
+        type="distress",
+        severity="high",
+        lat=35.0,
+        lon=14.0,
+        title="Rescued! Everyone is safe.",
+        source="alarm_phone",
         timestamp_utc=now_iso,
-        metadata={"is_distress": True, "source_policy": "official_api", "drift_job_id": "job-resolved"},
+        metadata={
+            "is_distress": True,
+            "source_policy": "official_api",
+            "drift_job_id": "job-resolved",
+        },
     )
-    monkeypatch.setattr("core.api.routes.live.intel_store.persisted_events", lambda **_kwargs: [])
     monkeypatch.setattr(
-        "core.api.routes.live.intel_store.events",
+        "core.live.feed.intel_store.persisted_events", lambda **_kwargs: []
+    )
+    monkeypatch.setattr(
+        "core.live.feed.intel_store.events",
         lambda **_kwargs: [active_event, resolved_event],
     )
     fake_drift = {
         "trajectory": {
             "type": "Feature",
-            "geometry": {"type": "LineString", "coordinates": [[14.0, 35.0], [14.1, 35.1]]},
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[14.0, 35.0], [14.1, 35.1]],
+            },
             "properties": {},
         },
         "cone_24h": None,
@@ -808,7 +887,7 @@ def test_drift_not_shown_for_resolved_or_archived_incidents(monkeypatch) -> None
     }
     monkeypatch.setattr("core.db.store.get_drift", lambda job_id: fake_drift)
     monkeypatch.setattr("core.db.store.list_drift_jobs_for_event", lambda event_id: [])
-    monkeypatch.setattr("core.api.routes.live._is_publishable_live_drift", lambda drift: True)
+    monkeypatch.setattr("core.live.feed._is_publishable_live_drift", lambda drift: True)
 
     collection = public_drift_collection(limit=50)
     event_ids = {f["properties"]["intel_event_id"] for f in collection["features"]}

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from core.domain.live_contracts import PublicationStatus
 from core.ingestion.parsers.whatsapp import WhatsAppParser
 from core.ingestion.signal import DistressSignal
 
@@ -43,7 +44,7 @@ def parse_meta_whatsapp(
         signal.source_name = contacts.get(source_id) or connector.get("display_name")
         signal.attachments = attachments
         # Raw partner messages remain private until an authorised operator publishes.
-        signal.publication_status = "private"
+        signal.publication_status = PublicationStatus.PRIVATE
         signals.append(signal)
     return signals
 

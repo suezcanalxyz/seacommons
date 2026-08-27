@@ -3,7 +3,10 @@
   "$id": "https://seacommons.org/schemas/seacommons-event-v1.schema.json",
   "title": "SeaCommons Event v1",
   "type": "object",
-  "required": ["schema", "id", "hash", "type", "source", "node", "observed_at", "received_at", "visibility", "properties"],
+  "required": [
+    "schema", "id", "hash", "previous_hash", "type", "source", "node",
+    "observed_at", "received_at", "expires_at_ms", "visibility", "properties"
+  ],
   "properties": {
     "schema": { "const": "seacommons-event-v1" },
     "id": { "type": "string", "minLength": 16 },
@@ -14,11 +17,12 @@
     "node": { "type": "string", "minLength": 1 },
     "observed_at": { "type": "string", "format": "date-time" },
     "received_at": { "type": "string", "format": "date-time" },
-    "visibility": { "enum": ["public", "private"] },
+    "visibility": { "$ref": "https://seacommons.org/contracts/live-domain-v1.schema.json#/$defs/visibility" },
     "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
-    "geometry": { "type": ["object", "null"] },
+    "geometry": { "$ref": "https://seacommons.org/contracts/live-domain-v1.schema.json#/$defs/public_geometry" },
     "properties": { "type": "object" },
-    "source_url": { "type": ["string", "null"], "format": "uri" }
+    "source_url": { "type": ["string", "null"], "format": "uri" },
+    "expires_at_ms": { "type": "integer", "minimum": 0 }
   },
   "additionalProperties": false
 }
