@@ -833,9 +833,19 @@ operational_use stays false below a threshold.
               (farthest 10% trimmed) returning the 90%-containment ellipse,
               elongated along the drift-uncertainty axis, with the 50% ring
               and area_km2 in properties. Standard SAR practice.
-              Still to do: proper Leeway coefficient perturbation on seed,
-              multi-object shipwreck debris fields, and raising the particle
-              count once the ARM worker exists.
+              15e-2 DONE (branch feat/drift-ensemble-uncertainty): the seed
+              radius now comes from the report's location_uncertainty_m
+              (capped 50 km) instead of a fixed 150 m -- a boat located only
+              to a named SAR zone no longer produces a falsely confident
+              start (~7 km^2 cone became ~250 km^2 for a 5 km position
+              uncertainty). Per-particle current_drift_factor spread (~8%,
+              both models) and wind_drift_factor spread (~20%, OceanDrift).
+              Deterministic RNG keyed on the request so re-runs reproduce.
+              Still to do: Leeway downwind coefficient perturbation (the
+              model computes it from its own table and rejects a seed
+              override -- needs a post-seed element write), multi-object
+              shipwreck debris fields, and raising the particle count once
+              the ARM worker exists.
 
 --- Open questions for a human decision ---
 

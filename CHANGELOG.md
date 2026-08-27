@@ -26,6 +26,11 @@ Keep a Changelog structure; releases are identified by Git tags when published.
   to the particle cloud (outlier-trimmed), replacing the raw convex hull that
   one stray particle could inflate. Properties carry `radius_p50_m`,
   `radius_p90_m`, `semi_axes_p90_m` and `area_km2`.
+- Drift ensembles are seeded over the report's actual position uncertainty
+  (`location_uncertainty_m`, capped 50 km) instead of a fixed 150 m radius,
+  and each particle now carries an independent current-factor (~8%) and,
+  for vessels, windage (~20%) perturbation. Runs are deterministic per
+  request.
 
 ## 0.6.0 - 2026-08-27
 

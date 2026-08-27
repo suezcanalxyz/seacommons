@@ -991,16 +991,35 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
             logger.warning("landmask reader failed: %s", exc)
 
     logger.info("Drift readers active: %s", " → ".join(readers_added))
+
+    # Phase 15e: per-particle forcing-factor spread so the ensemble reflects
+    # real uncertainty, not just seed radius + diffusion. Deterministic RNG
+    # keyed on the request so a re-run of the same snapshot is reproducible.
+    import hashlib
+
+    import numpy as np
+
+    seed_src = f"{float(payload['lat']):.4f}:{float(payload['lon']):.4f}:{start_time.isoformat()}:{particles}"
+    seed_int = int(hashlib.sha256(seed_src.encode()).hexdigest()[:8], 16)
+    rng = np.random.default_rng(seed_int)
+    # ~8% uncertainty on the ocean-current field (model error + interpolation).
+    current_drift_factor = np.clip(rng.normal(1.0, 0.08, particles), 0.6, 1.4)
+
     seed_kwargs: dict[str, Any] = {
         "lon": float(payload["lon"]),
         "lat": float(payload["lat"]),
         "time": start_time,
         "radius": float(payload.get("seed_radius_m", 150)),
         "number": particles,
+        "current_drift_factor": current_drift_factor,
     }
     if model_name == "oceandrift":
         if wind_drift_factor is not None:
-            seed_kwargs["wind_drift_factor"] = float(wind_drift_factor)
+            wdf = float(wind_drift_factor)
+            # ~20% uncertainty on the vessel windage coefficient.
+            seed_kwargs["wind_drift_factor"] = np.clip(
+                rng.normal(wdf, 0.2 * wdf, particles), wdf * 0.3, wdf * 2.5
+            )
     else:
         seed_kwargs["object_type"] = object_type
     sim.seed_elements(**seed_kwargs)
@@ -1071,6 +1090,11 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
             "operational_use": forcing_quality == "spatiotemporal",
             "stokes_drift": stokes_enabled,
             "landmask": "global_landmask" if landmask_added else None,
+            "seed_radius_m": float(payload.get("seed_radius_m", 150)),
+            "ensemble_spread": {
+                "current_drift_factor_std": 0.08,
+                "wind_drift_factor_rel_std": 0.2 if model_name == "oceandrift" else None,
+            },
             "particles": particles,
             "object_type": object_type if model_name == "leeway" else None,
             "wind_drift_factor": float(wind_drift_factor) if (model_name == "oceandrift" and wind_drift_factor is not None) else None,

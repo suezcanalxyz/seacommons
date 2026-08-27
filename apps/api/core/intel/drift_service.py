@@ -65,11 +65,27 @@ def _run_intel_drift_inner(
     )
     try:
         engine = DriftEngine()
-        cfg = {}
+        cfg: dict = {}
         if vessel_type:
             cfg["vessel_type"] = vessel_type
         if persons is not None:
             cfg["persons"] = persons
+        # Seed the drift ensemble over the report's actual position
+        # uncertainty, not a fixed 150 m -- a boat located only to a named
+        # SAR zone must not produce a falsely confident start.
+        from core.intel.store import intel_store
+
+        event = intel_store.get(event_id)
+        if event is not None:
+            uncertainty = event.metadata.get("location_uncertainty_m")
+            case_type = event.metadata.get("case_type")
+            if case_type:
+                cfg["case_type"] = case_type
+            try:
+                if uncertainty is not None:
+                    cfg["seed_radius_m"] = max(150.0, min(float(uncertainty), 50_000.0))
+            except (TypeError, ValueError):
+                pass
         result = engine.compute(
             lat=lat,
             lon=lon,
