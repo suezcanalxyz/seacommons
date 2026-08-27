@@ -35,6 +35,12 @@ Keep a Changelog structure; releases are identified by Git tags when published.
 
 ### Changed
 
+- AIS stream reliability: forces a reconnect after 3 minutes with an open
+  socket but no PositionReports (a known AISStream failure mode), and the
+  anomaly detector now prunes its per-vessel tracking so memory stays
+  bounded on the small VM. `/api/v1/ops/summary` reports
+  `backend.intel_monitors` (which monitors attached, and the AIS feed hook
+  count) so a silent pipeline is visible.
 - Alarm Phone map-screenshot coordinate extraction is more robust: Tesseract
   runs extra character-whitelisted passes, common digit/letter misreads are
   folded before parsing, and the multi-pass consensus now clusters candidates

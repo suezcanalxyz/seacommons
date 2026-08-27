@@ -149,6 +149,28 @@ class IntelEngine:
     def is_running(self) -> bool:
         return self._started
 
+    def status(self) -> dict:
+        """Which monitors actually attached -- so a silent pipeline is
+        visible rather than assumed."""
+        try:
+            from core.vessels.aisstream import position_hook_count
+
+            hooks = position_hook_count()
+        except Exception:
+            hooks = 0
+        return {
+            "running": self._started,
+            "twikit": self._twikit is not None,
+            "twitter_api": self._twitter is not None,
+            "news": self._news is not None,
+            "ais_spike": self._ais is not None,
+            "vessel_incidents": self._vessel_incidents is not None,
+            "ais_anomaly": self._ais_anomaly is not None,
+            "gdacs": self._gdacs is not None,
+            "drift_refresher": self._drift_refresh is not None,
+            "ais_feed_hooks": hooks,
+        }
+
 
 # Module-level singleton
 intel_engine = IntelEngine()

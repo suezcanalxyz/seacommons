@@ -48,6 +48,19 @@ def _image_ocr_status() -> dict:
     }
 
 
+def _intel_monitor_status() -> dict:
+    """Which intel monitors are attached in this process. In a split
+    deployment they run on the intel worker, not here -- an all-false result
+    with INTEL_MONITORS_ENABLED=false is expected; all-false with it true
+    means the engine did not start."""
+    try:
+        from core.intel.engine import intel_engine
+
+        return {"monitors_enabled": bool(config.INTEL_MONITORS_ENABLED), **intel_engine.status()}
+    except Exception:
+        return {"monitors_enabled": bool(config.INTEL_MONITORS_ENABLED), "running": False}
+
+
 _stats_cache: bytes | None = None
 _stats_cache_ts: float = 0.0
 _STATS_TTL = 30.0
@@ -134,6 +147,7 @@ async def ops_summary():
             "timezero": _tz_status,
             "job_execution_mode": config.JOB_EXECUTION_MODE,
             "image_ocr": _image_ocr_status(),
+            "intel_monitors": _intel_monitor_status(),
         },
         "channels": {
             "twitter": {
