@@ -29,6 +29,13 @@ export interface DriftFeatureProperties {
   radius_m?: number;
   hours?: number;
   degraded?: boolean;
+  // Probability-of-containment search ellipse (server cones, Phase 15e).
+  method?: string;
+  particles?: number;
+  radius_p50_m?: number;
+  radius_p90_m?: number;
+  semi_axes_p90_m?: [number, number];
+  area_km2?: number;
 }
 
 export interface DriftResult {
