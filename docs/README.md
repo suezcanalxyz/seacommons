@@ -14,6 +14,16 @@ the newest dated filename.
   webhook authenticity and public/private policy.
 - [Realtime architecture](REALTIME_ARCHITECTURE.md) — delivery semantics,
   ordering, fallbacks and recovery.
+- [Testing strategy](TESTING.md) — the testing pyramid and the map from the ten
+  highest-risk flows to the tests that guard them.
+- [Deployment](DEPLOYMENT.md) — deployment modes, required production
+  configuration, rollout and rollback order.
+- [Development](DEVELOPMENT.md) — local setup, the dev stack, test/lint commands
+  and common contributor tasks.
+- [Configuration](CONFIGURATION.md) — environment variables grouped by concern,
+  production requirements and combination validation.
+- [AI-assisted engineering policy](AI_ENGINEERING_POLICY.md) — rules for changes
+  developed with AI coding tools.
 - [Contract catalogue](contracts/README.md) — versioned machine-readable
   payload contracts.
 - [Architecture decisions](adr/README.md) — durable decisions and trade-offs.
@@ -47,9 +57,10 @@ documents above:
 - `LIVE_AUDIT_2026-08-24.md`
 - `ENGINEERING_AUDIT.md`
 
-`ENGINEERING_AUDIT.md` also retains the implementation roadmap and its progress
-log. Its audit findings remain useful history; the canonical documents reflect
-the resulting architecture.
+`ENGINEERING_AUDIT.md` holds the baseline audit. [`roadmap.md`](roadmap.md) is
+the production-hardening plan built on that audit, with a progress log tracking
+the state of each item. The canonical documents above reflect the resulting
+architecture.
 
 ## Plans and research proposals
 

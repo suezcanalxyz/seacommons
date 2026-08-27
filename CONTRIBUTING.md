@@ -1,12 +1,17 @@
 # Contributing
 
+Local setup and the dev stack are documented in
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Changes developed with AI coding
+tools must also follow
+[docs/AI_ENGINEERING_POLICY.md](docs/AI_ENGINEERING_POLICY.md).
+
 Use a feature branch and keep changes scoped. Before opening a pull request run:
 
 ```text
 python -m pytest -q
 cd apps/web
 npm run lint
-npm run test:simulation
+npm test
 npm run build
 cd ../edge
 npm test
