@@ -1,33 +1,99 @@
-# Seacommons Console
+# SeaCommons
 
-Open-source maritime rescue and awareness platform bridging real-time distress signals, Lagrangian trajectory modelling, and forensic documentation.
+[![Full CI](https://github.com/suezcanalxyz/seacommons/actions/workflows/ci.yml/badge.svg)](https://github.com/suezcanalxyz/seacommons/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/suezcanalxyz/seacommons/actions/workflows/codeql.yml/badge.svg)](https://github.com/suezcanalxyz/seacommons/actions/workflows/codeql.yml)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](./LICENSE)
 
-Licensed under AGPL-3.0.
+Open-source maritime search-and-rescue and awareness platform. SeaCommons
+turns real-time distress signals into an operational picture: it normalizes
+reports from multiple sources into canonical incidents, runs Lagrangian
+drift trajectories, and distributes a privacy-filtered public Live map — while
+keeping operational and personal data behind authentication.
 
-## Links
+It is a working system, deployed and running. This repository is maintained
+at production-engineering standard: typed domain contracts, blocking CI
+quality/security gates, realtime reliability invariants encoded as tests, and
+canonical architecture documentation.
 
-- Institutional site: `https://seacommons.org/`
-- Live research map: `https://live.seacommons.org/`
-- Public demo: `https://play.seacommons.org/`
-- Repository: `https://github.com/suezcanalxyz/seacommons`
+## Live surfaces
 
-## Repository Layout
+| Surface | URL | What it is |
+| --- | --- | --- |
+| Institutional site | https://seacommons.org | Public information; no operational data |
+| Public Live map | https://live.seacommons.org | Privacy-filtered incident map (read-only, no login) |
+| Public demo | https://play.seacommons.org | Isolated SAR-simulation sandbox |
+| Public Live edge | https://seacommons-edge.seacommons.workers.dev/health | Cloudflare Worker + Durable Object distributing Public Live |
+
+## What is operational vs experimental
+
+| Area | Status |
+| --- | --- |
+| Incident ingestion, normalization, lifecycle | **operational** |
+| Public/private policy and canonical Live projection | **operational** |
+| Realtime Public Live (edge Worker + outbox + reconnect) | **operational** |
+| OpenDrift `Leeway` / `OceanDrift` trajectories with configurable forcing | **operational** |
+| Authenticated operational console (Live, Intel, drift, vessels, cases) | **operational** |
+| Live AIS, weather and marine-current feeds | **operational** (per-deployment keys) |
+| Live CMEMS / ERA5 forcing readers inside drift | **planned** |
+| Client-side (Pyodide) drift, immersive Unreal renderer | **experimental** |
+| Onboard hardware sensor node (infrasound / seismic / SDR) | **research** |
+
+## Architecture
+
+SeaCommons is a modular monorepo with four deployable surfaces. It is not a
+microservice system: the operational backend is one FastAPI application with
+optional worker processes that share its database and domain code.
+
+```mermaid
+flowchart LR
+  Public[Public visitor] --> Edge[Cloudflare Worker + LiveRoom]
+  Operator[Authenticated operator] --> Web[React console]
+  Web --> API[FastAPI API]
+  API --> DB[(PostgreSQL / SQLite dev)]
+  API --> Objects[(S3 / MinIO)]
+  Worker[Job worker] --> DB
+  Intel[Intel worker] --> DB
+  API --> Publisher[Live edge publisher + outbox]
+  Publisher --> Edge
+  Edge --> DO[(Durable Object storage)]
+```
+
+Read the canonical design docs before diving into the code:
+[Architecture](./docs/ARCHITECTURE.md) ·
+[Data flow](./docs/DATA_FLOW.md) ·
+[Security model](./docs/SECURITY_MODEL.md) ·
+[Realtime architecture](./docs/REALTIME_ARCHITECTURE.md) ·
+[Testing strategy](./docs/TESTING.md) ·
+[full index](./docs/README.md)
+
+## Tech stack
+
+- **Backend** — Python 3.12, FastAPI, SQLAlchemy, PostgreSQL (SQLite for dev),
+  Prometheus, OIDC/JWT (Keycloak), S3/MinIO
+- **Drift** — OpenDrift (`Leeway`, `OceanDrift`) via a dedicated interpreter
+- **Frontend** — React 19, Vite, Cesium, MapLibre GL, TypeScript domain contracts
+- **Public Live edge** — Cloudflare Workers + Durable Objects
+- **CI** — GitHub Actions: pytest, ruff, mypy, ESLint, `npm audit` / `pip-audit`,
+  gitleaks, CodeQL, `wrangler` dry-run
+
+## Repository layout
 
 ```text
 apps/
-  api/        FastAPI backend, drift engine, forensic and integrations
-  web/        React/Vite operational console
-  edge/       Cloudflare Worker and Durable Object for Public Live
-  site/       Static institutional website
-  unreal/     Experimental immersive renderer
-deploy/       Container, reverse-proxy and systemd manifests
-docs/         Canonical architecture, contracts, runbooks and research notes
-scripts/      Local developer entrypoints
+  api/   FastAPI backend, drift engine, forensic pipeline, integrations
+  web/   React/Vite operational console
+  edge/  Cloudflare Worker and Durable Object for Public Live
+  site/  Static institutional website
+  unreal/ Experimental immersive renderer
+deploy/  Container, reverse-proxy and systemd manifests
+docs/    Canonical architecture, contracts, runbooks
+scripts/ Local developer entrypoints
+tests/   Backend + cross-runtime contract tests
 ```
 
-## Quickstart
+## Run it locally
 
-Install the API and web dependencies, then start the local development stack:
+No database server needed; the default is SQLite.
 
 ```bash
 git clone https://github.com/suezcanalxyz/seacommons.git
@@ -35,109 +101,46 @@ cd seacommons
 cp .env.example .env
 python -m pip install -e "apps/api[dev]"
 npm --prefix apps/web ci
-bash scripts/run_dev.sh all
+bash scripts/run_dev.sh all          # Windows: powershell -File scripts/start.ps1
 ```
 
-The Common Operational Picture (COP) will be available at `http://localhost:5173`.
-The API will be available at `http://localhost:8000`.
+Console at http://localhost:5173, API at http://localhost:8000 (`/docs` for the
+OpenAPI UI). Full setup, test and contribution guide:
+[docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md).
 
-On Windows, after installing the same dependencies, use
-`powershell -File scripts/start.ps1`. The dashboard is separate from the public
-institutional site. Production uses
-`live.seacommons.org` for the authenticated operational map and
-`play.seacommons.org` for the isolated public demo. Both expose a same-origin
-`/api` surface; their operational and demo runtimes remain isolated internally.
-
-See the [documentation index](./docs/README.md) for architecture, security and
-validated operational runbooks.
-
-- `/api/v1/ops/summary`
-- `/api/v1/vessels`
-- `/api/v1/alerts/geojson`
-- `/api/v1/weather`
-- `/api/v1/alert`
-
-## Public Demo
-
-For a hosted public demo, do not rely on same-origin API guessing.
-
-- Frontend: set `VITE_API_BASE=https://your-api-host`
-- Backend: set `MOCK=true`
-- Backend: set `DEMO_PUBLIC_MODE=true`
-
-`DEMO_PUBLIC_MODE` keeps the API lightweight and allows SAR cases to use the Gaussian fallback when a hosted demo does not have a full OpenDrift runtime available.
-
-For a zero-cost live demo, the recommended path is:
-
-- frontend on Cloudflare Pages
-- backend on Oracle Cloud Always Free
-
-See [docs/DEPLOY_CLOUDFLARE_ORACLE.md](./docs/DEPLOY_CLOUDFLARE_ORACLE.md).
-
-## Local Dev Without Docker
-
-```bash
-bash scripts/run_dev.sh all
-```
-
-This starts:
-
-- API from `apps/api`
-- console from `apps/web`
-
-## OpenDrift Runtime
-
-The backend can call a real OpenDrift `Leeway` simulation through a dedicated Python interpreter.
-
-In this repository the practical setup is:
-
-- API/backend can keep running on the local default Python
-- OpenDrift is installed on Python 3.12
-- `OPENDRIFT_PYTHON` points to that interpreter
-
-The current integration uses real OpenDrift trajectories with configurable constant forcing:
-
-- `OPENDRIFT_WIND_X`
-- `OPENDRIFT_WIND_Y`
-- `OPENDRIFT_CURRENT_X`
-- `OPENDRIFT_CURRENT_Y`
-- `OPENDRIFT_PARTICLES`
-- `OPENDRIFT_TIMESTEP_SECONDS`
-- `OPENDRIFT_OUTPUT_SECONDS`
-
-This is a real trajectory engine, but it is not yet using live CMEMS/ERA5 readers. That should be the next step when you want ocean and atmosphere forcing from operational datasets.
-
-## Hardware Bill of Materials (BOM) — Full Ship Node
-
-| Component | Cost | Function |
-| :--- | :--- | :--- |
-| Raspberry Pi 4 (4GB) | ~€55 | Main compute |
-| RTL-SDR v4 dongle | ~€35 | RF / drone detection |
-| VHF antenna (marine) | ~€25 | AIS + RF |
-| Raspberry Boom HAT (OSOP) | ~€180 | Infrasound 0.05–20 Hz |
-| ADXL355 accelerometer (SPI) | ~€15 | Hull-coupled seismic |
-| Piezoelectric hydrophone | ~€50 | Underwater acoustic (optional) |
-| MCP3208 ADC | ~€5 | Only if not using Boom HAT |
-| SSD 256GB USB | ~€30 | Storage |
-| IP65 case | ~€20 | Marine environment |
-| **Total (with Boom HAT)** | **~€410** | **Complete node** |
-| **Total (DIY boom, no HAT)** | **~€240** | **Budget version** |
-
-## Test with Fake Alert
-
-To test the full pipeline, submit a mock distress signal:
+Submit a mock distress signal to exercise the pipeline (drift job + forensic
+signing + witness broadcast):
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/alert \
   -H "Content-Type: application/json" \
-  -d '{
-    "lat": 35.123,
-    "lon": 15.456,
-    "timestamp": "2026-03-21T12:00:00Z",
-    "persons": 45,
-    "vessel_type": "rubber_boat",
-    "domain": "ocean_sar"
-  }'
+  -d '{"lat":35.123,"lon":15.456,"timestamp":"2026-03-21T12:00:00Z","persons":45,"vessel_type":"rubber_boat","domain":"ocean_sar"}'
 ```
 
-This will enqueue a drift calculation task, sign the forensic packet, and broadcast it to the configured witness endpoints.
+## Deployment
+
+Three modes — self-hosted production (Docker Compose), zero-cost live demo
+(Cloudflare Pages/Vercel + Oracle Free), and the Public Live edge Worker.
+See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) and
+[docs/CONFIGURATION.md](./docs/CONFIGURATION.md).
+
+## OpenDrift runtime
+
+The backend calls a real OpenDrift simulation through a dedicated interpreter
+(`OPENDRIFT_PYTHON`). Constant forcing is configurable via `OPENDRIFT_WIND_X/Y`,
+`OPENDRIFT_CURRENT_X/Y`, `OPENDRIFT_PARTICLES`, `OPENDRIFT_TIMESTEP_SECONDS`,
+`OPENDRIFT_OUTPUT_SECONDS`. Live CMEMS/ERA5 forcing readers are the planned
+next step.
+
+## Hardware sensor node (research)
+
+A ship-mounted node design for passive detection. Bill of materials in
+[docs/BOM.md](./docs/BOM.md); ~€240–410 depending on the infrasound option.
+
+## License and contributing
+
+Licensed under [AGPL-3.0-or-later](./LICENSE). See
+[CONTRIBUTING.md](./CONTRIBUTING.md) and, for AI-assisted changes,
+[docs/AI_ENGINEERING_POLICY.md](./docs/AI_ENGINEERING_POLICY.md). Report
+vulnerabilities through the repository's private security advisory channel,
+never a public issue.
