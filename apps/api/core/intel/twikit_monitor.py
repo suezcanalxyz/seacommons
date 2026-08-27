@@ -782,6 +782,9 @@ class TwikitMonitor:
                 ),
                 "location_uncertainty_m": location_uncertainty_m,
                 "media_count": media_count,
+                # Kept so a later re-process (core.intel.backfill_alarm_phone)
+                # never has to resolve the tweet again.
+                **({"media_urls": media_urls[:6]} if media_urls else {}),
                 "media_transport": "x_media_ocr" if ocr_pending else "none",
                 "ocr_attempted": False,
                 "provenance": "twikit_account_timeline",
