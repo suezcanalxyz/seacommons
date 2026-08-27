@@ -5,8 +5,20 @@ Keep a Changelog structure; releases are identified by Git tags when published.
 
 ## Unreleased
 
+## 0.6.0 - 2026-08-27
+
 ### Added
 
+- Realistic operational drift (Phase 15): per-object-class OpenDrift model
+  selection, wave-driven Stokes drift, a real coastline landmask,
+  probability-of-containment search ellipses, ensembles seeded over the
+  report's real position uncertainty, multi-object shipwreck debris fields,
+  and `GET /api/v1/drift/history` for prediction history. See the individual
+  entries below.
+- Vessel incidents and anomalies from the live AIS feed: SART/MOB/EPIRB
+  beacons, sustained aground / not-under-command, and operator-only signals
+  for impossible speed, dark-zone entry, OFAC-SDN match and AIS silence.
+- Case taxonomy (`case_type`) with an additive-column backfill.
 - `/api/v1/ops/summary` reports `backend.image_ocr` (tesseract + Pillow
   availability); the console shows an "Image OCR" service row. A missing
   tesseract silently loses every Alarm Phone map-screenshot coordinate, so
@@ -61,21 +73,16 @@ Keep a Changelog structure; releases are identified by Git tags when published.
   widening the search area to match how differently those objects drift.
 - The drift panel shows the 90% search area, radius and ellipse axes.
 
-## 0.6.0 - 2026-08-27
-
-### Added
+### Also in 0.6.0 — foundational work
 
 - OSINT ingestion layer: X/Twitter monitor (`twikit_monitor.py`), GDACS
   disaster-alert monitor, NGO response registry, and a source-connector
   review workflow (registry, opportunity/source review states, verified
   attachment), each with dedicated test coverage
   (`test_twikit_monitor.py`, `test_ngo_response.py`, `test_connectors.py`).
-- Case taxonomy: an operational `case_type` (distress SAR, pushback, shipwreck,
-  missing persons, interception, vessel incident, monitoring, unspecified),
-  filterable in the case list and editable per case, with an additive-column
-  backfill for databases created before it.
+- Case taxonomy `case_type` — filterable, editable per case, additive-column
+  backfill for existing databases.
 - Governance routes and workflows for connector/source review.
-
 - Canonical backend, frontend, JSON Schema and Edge contracts for Live domain
   vocabulary, lifecycle, geometry precision and publication policy.
 - Realtime invariant tests for duplicate delivery, ordering, removal and restart
