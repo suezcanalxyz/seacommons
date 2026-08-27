@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.4",
-    "cesium": "^1.143.0",
+    "cesium": "^1.144.0",
     "maplibre-gl": "^5.21.0",
     "oidc-client-ts": "^3.1.0",
     "react": "^19.0.0",
