@@ -43,6 +43,7 @@ _ready = threading.Event()
 _Leeway = None
 _OceanDrift = None
 _reader_constant = None
+_reader_landmask = None
 _grid_reader_cls = None  # lazily constructed after OpenDrift import
 
 # Concurrency limiter — at most 1 OpenDrift simulation runs at a time.
@@ -81,6 +82,19 @@ def _vector_components(
     )
 
 
+def _surface_stokes_speed(hs_m: float, tp_s: float) -> float:
+    """Deep-water surface Stokes drift speed from significant height and peak
+    period (same bounded monochromatic estimate as the browser drift engine).
+
+    Us = (2 * pi^3 / g) * Hs^2 / Tp^3, clamped to 0.35 m/s -- Hs and Tp are
+    not a full directional spectrum, so this stays deliberately conservative.
+    """
+    if not (hs_m and tp_s) or hs_m <= 0 or tp_s <= 0:
+        return 0.0
+    us = (2.0 * math.pi**3 / 9.80665) * (hs_m**2) / (tp_s**3)
+    return max(0.0, min(us, 0.35))
+
+
 def _speed_to_ms(value: float, unit: str) -> float:
     normalized = unit.lower().strip()
     if normalized in {"km/h", "kmh", "kph"}:
@@ -93,7 +107,7 @@ def _speed_to_ms(value: float, unit: str) -> float:
 
 
 def _do_import() -> None:
-    global _Leeway, _OceanDrift, _reader_constant
+    global _Leeway, _OceanDrift, _reader_constant, _reader_landmask
     with _lock:
         if _Leeway is not None:
             _ready.set()
@@ -109,6 +123,11 @@ def _do_import() -> None:
             logger.info("OpenDrift: Leeway + OceanDrift import complete")
         except Exception as exc:
             logger.error("OpenDrift: import failed — %s", exc)
+        try:
+            from opendrift.readers import reader_global_landmask as _lm
+            _reader_landmask = _lm
+        except Exception as exc:  # optional — sim still runs without coastline
+            logger.warning("OpenDrift: global landmask reader unavailable — %s", exc)
     _ready.set()
 
 
@@ -137,6 +156,13 @@ def _get_grid_reader_class():
             super().__init__(base_env)
             self._grid = grid
             self._t0 = start_time
+            if grid.get("has_waves"):
+                for wave_var in (
+                    "sea_surface_wave_stokes_drift_x_velocity",
+                    "sea_surface_wave_stokes_drift_y_velocity",
+                ):
+                    if wave_var not in self.variables:
+                        self.variables.append(wave_var)
 
         def get_variables(
             self, requested_variables, time=None, x=None, y=None,
@@ -176,6 +202,8 @@ def _get_grid_reader_class():
                 ("y_wind", "wind_y"),
                 ("x_sea_water_velocity", "u_current"),
                 ("y_sea_water_velocity", "v_current"),
+                ("sea_surface_wave_stokes_drift_x_velocity", "stokes_x"),
+                ("sea_surface_wave_stokes_drift_y_velocity", "stokes_y"),
             ]:
                 if var not in requested_variables or key not in self._grid:
                     continue
@@ -255,6 +283,8 @@ def _fetch_grid(
         wy = np.full(sample_count, np.nan)
         uc = np.full(sample_count, np.nan)
         vc = np.full(sample_count, np.nan)
+        sx = np.full(sample_count, np.nan)
+        sy = np.full(sample_count, np.nan)
 
         # ── Atmospheric wind (Open-Meteo, always free) ────────────────────────
         try:
@@ -281,12 +311,13 @@ def _fetch_grid(
         except Exception as exc:
             logger.debug("Grid wind fetch %.2f,%.2f: %s", lat, lon, exc)
 
-        # ── Ocean currents (Open-Meteo Marine, free, global, no credentials) ──
+        # ── Ocean currents + waves (Open-Meteo Marine, free, no credentials) ──
         try:
             url = (
                 f"https://marine-api.open-meteo.com/v1/marine"
                 f"?latitude={lat:.3f}&longitude={lon:.3f}"
-                f"&hourly=ocean_current_velocity,ocean_current_direction"
+                f"&hourly=ocean_current_velocity,ocean_current_direction,"
+                f"wave_height,wave_direction,wave_period"
                 f"&timezone=UTC&cell_selection=sea"
                 f"&start_hour={start_hour}&end_hour={end_hour}"
             )
@@ -295,6 +326,9 @@ def _fetch_grid(
             h = d.get("hourly", {})
             vels = h.get("ocean_current_velocity", [])
             dirs = h.get("ocean_current_direction", [])
+            wave_h = h.get("wave_height", [])
+            wave_d = h.get("wave_direction", [])
+            wave_p = h.get("wave_period", [])
             velocity_unit = (
                 d.get("hourly_units", {}).get("ocean_current_velocity")
                 or "km/h"
@@ -304,15 +338,24 @@ def _fetch_grid(
                 cs = _speed_to_ms(raw_speed, velocity_unit)
                 cd = float(dirs[i]) if dirs[i] is not None else 0.0
                 uc[i], vc[i] = _vector_components(cs, cd)
+            for i in range(min(sample_count, len(wave_h))):
+                hs = float(wave_h[i]) if wave_h[i] is not None else 0.0
+                tp = float(wave_p[i]) if i < len(wave_p) and wave_p[i] is not None else 0.0
+                wd = float(wave_d[i]) if i < len(wave_d) and wave_d[i] is not None else 0.0
+                us = _surface_stokes_speed(hs, tp)
+                # Open-Meteo wave_direction is the direction waves come FROM.
+                sx[i], sy[i] = _vector_components(us, wd, direction_is_from=True)
         except Exception as exc:
             logger.debug("Grid marine fetch %.2f,%.2f: %s", lat, lon, exc)
 
-        return wx, wy, uc, vc
+        return wx, wy, uc, vc, sx, sy
 
     wind_x = np.full((sample_count, n, n), np.nan)
     wind_y = np.full((sample_count, n, n), np.nan)
     u_curr = np.full((sample_count, n, n), np.nan)
     v_curr = np.full((sample_count, n, n), np.nan)
+    stokes_x = np.full((sample_count, n, n), np.nan)
+    stokes_y = np.full((sample_count, n, n), np.nan)
 
     point_map: dict[concurrent.futures.Future, tuple[int, int]] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=n * n) as ex:
@@ -322,11 +365,13 @@ def _fetch_grid(
         for future in concurrent.futures.as_completed(point_map):
             i, j = point_map[future]
             try:
-                wx, wy, uc_, vc_ = future.result()
+                wx, wy, uc_, vc_, sx_, sy_ = future.result()
                 wind_x[:, i, j] = wx
                 wind_y[:, i, j] = wy
                 u_curr[:, i, j] = uc_
                 v_curr[:, i, j] = vc_
+                stokes_x[:, i, j] = sx_
+                stokes_y[:, i, j] = sy_
             except Exception as exc:
                 logger.debug("Grid point (%d,%d) failed: %s", i, j, exc)
 
@@ -339,6 +384,9 @@ def _fetch_grid(
         (wind_y, fallback_wind_y),
         (u_curr, fallback_u),
         (v_curr, fallback_v),
+        # Waves: a missing value is genuinely no-wave-data, never a guess.
+        (stokes_x, 0.0),
+        (stokes_y, 0.0),
     ]:
         centre = arr[:, ci, ci].copy()
         for i in range(n):
@@ -347,6 +395,8 @@ def _fetch_grid(
                 if mask.any():
                     arr[mask, i, j] = centre[mask]
         arr[np.isnan(arr)] = final_fallback
+
+    has_waves = bool(np.any(np.abs(stokes_x[:, ci, ci]) + np.abs(stokes_y[:, ci, ci]) > 1e-4))
 
     logger.info(
         "Grid fetch complete: %.2f,%.2f  wind_mean=(%.2f,%.2f) m/s  "
@@ -365,6 +415,9 @@ def _fetch_grid(
         "wind_y": wind_y,
         "u_current": u_curr,
         "v_current": v_curr,
+        "stokes_x": stokes_x,
+        "stokes_y": stokes_y,
+        "has_waves": has_waves,
         "n_hours": sample_count,
     }
 
@@ -767,14 +820,16 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
         sim = _Leeway(loglevel=50)
         sim.set_config("drift:stokes_drift", False)
 
-    # Base constant env (used as fallback inside _GridReader and as the
-    # land_binary_mask source which the grid doesn't provide)
+    # Base constant env (used as fallback inside _GridReader). Zero Stokes is
+    # the honest fallback for a position/time the wave grid does not cover.
     base_env = {
         "x_wind": float(env["x_wind"]),
         "y_wind": float(env["y_wind"]),
         "x_sea_water_velocity": float(env["x_sea_water_velocity"]),
         "y_sea_water_velocity": float(env["y_sea_water_velocity"]),
         "land_binary_mask": int(env.get("land_binary_mask", 0)),
+        "sea_surface_wave_stokes_drift_x_velocity": 0.0,
+        "sea_surface_wave_stokes_drift_y_velocity": 0.0,
     }
 
     # ── Reader priority stack ─────────────────────────────────────────────────
@@ -786,6 +841,8 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
 
     readers_added: list[str] = []
     grid_reader_added = False
+    stokes_enabled = False
+    landmask_added = False
 
     # _GridReader extends reader_constant.Reader and already inherits constant
     # fallback behaviour for every variable not covered by the grid (e.g.
@@ -811,6 +868,13 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
         sim.add_reader(GridReader(grid, base_env, start_time))
         readers_added.append("GridReader(Open-Meteo 5x5)")
         grid_reader_added = True
+        # Phase 15b: enable wave-driven Stokes drift only when the marine
+        # grid actually returned wave data. A missing wave field never
+        # becomes a fabricated Stokes velocity.
+        if grid.get("has_waves"):
+            sim.set_config("drift:stokes_drift", True)
+            stokes_enabled = True
+            readers_added.append("Stokes(Open-Meteo waves)")
     except Exception as exc:
         logger.warning("Open-Meteo grid reader failed: %s", exc)
 
@@ -838,6 +902,16 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
     if not grid_reader_added:
         sim.add_reader(_reader_constant.Reader(base_env))
         readers_added.append("reader_constant")
+
+    # Phase 15b: real coastline so particles beach instead of drifting across
+    # land. Added last so it governs land_binary_mask over the constant 0.
+    if _reader_landmask is not None:
+        try:
+            sim.add_reader(_reader_landmask.Reader())
+            readers_added.append("global_landmask")
+            landmask_added = True
+        except Exception as exc:
+            logger.warning("landmask reader failed: %s", exc)
 
     logger.info("Drift readers active: %s", " → ".join(readers_added))
     seed_kwargs: dict[str, Any] = {
@@ -918,6 +992,8 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
             "model": "OpenDrift OceanDrift" if model_name == "oceandrift" else "OpenDrift Leeway",
             "object_class": object_class or None,
             "operational_use": forcing_quality == "spatiotemporal",
+            "stokes_drift": stokes_enabled,
+            "landmask": "global_landmask" if landmask_added else None,
             "particles": particles,
             "object_type": object_type if model_name == "leeway" else None,
             "wind_drift_factor": float(wind_drift_factor) if (model_name == "oceandrift" and wind_drift_factor is not None) else None,
