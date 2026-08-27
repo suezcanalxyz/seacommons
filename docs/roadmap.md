@@ -690,9 +690,13 @@ OSINT incident.
               (case_type vessel_incident -> OceanDrift). Did not build a
               separate NavalCommsEvent model yet -- reused the intel event
               contract; revisit if DSC/NAVTEX (14c/14d) need a distinct one.
-              The dormant AISAnomalyDetector (gap / impossible-speed /
-              dark-zone / OFAC-SDN, never wired because it opened its own
-              socket) can fold into the same hook next.
+              14a-2 DONE (branch feat/ais-anomaly-hook): the dormant
+              AISAnomalyDetector -- impossible speed (spoofing), dark-zone
+              entry, OFAC-SDN match, and a silence sweep for "gap" -- is now
+              driven by the same position hook (its own socket removed) and
+              its output, which previously went nowhere, is persisted as
+              operator-only ais_anomaly intel events with a per-(mmsi,type)
+              cooldown.
   Phase 14b - canonical NavalCommsEvent contract + the operator-only comms
               context stream and a dedicated monitoring view.
   Phase 14c - DSC ingestion (SDR-on-node decoder or a lawful online feed).

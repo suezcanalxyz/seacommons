@@ -87,7 +87,7 @@ class IntelEvent:
     #   signal      → low-salience telemetry (AIS loiter spikes, NGO movements)
     _OPERATIONAL_TYPES = frozenset({"distress", "iom_incident"})
     _NEWS_TYPES = frozenset({"news", "twitter", "mastodon", "manual", "gdacs", "bluesky"})
-    _SIGNAL_TYPES = frozenset({"ais_spike", "ngo_activity"})
+    _SIGNAL_TYPES = frozenset({"ais_spike", "ngo_activity", "ais_anomaly"})
 
     def tier(self) -> str:
         if self.type == "distress" or self.metadata.get("is_distress"):

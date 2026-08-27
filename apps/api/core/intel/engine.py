@@ -20,6 +20,7 @@ class IntelEngine:
         self._news: object | None = None
         self._ais: object | None = None
         self._vessel_incidents: object | None = None
+        self._ais_anomaly: object | None = None
         self._drift_refresh: object | None = None
         self._gdacs: object | None = None
         self._started = False
@@ -109,6 +110,14 @@ class IntelEngine:
             except Exception as exc:
                 logger.warning("IntelEngine: vessel incident monitor failed to start: %s", exc)
 
+            try:
+                from core.anomaly.ais import AISAnomalyDetector
+                self._ais_anomaly = AISAnomalyDetector()
+                self._ais_anomaly.start()  # type: ignore[attr-defined]
+                logger.info("IntelEngine: AIS anomaly detector started")
+            except Exception as exc:
+                logger.warning("IntelEngine: AIS anomaly detector failed to start: %s", exc)
+
         if gdacs_enabled:
             try:
                 from core.intel.gdacs_monitor import GDACSMonitor
@@ -125,6 +134,7 @@ class IntelEngine:
             self._news,
             self._ais,
             self._vessel_incidents,
+            self._ais_anomaly,
             self._drift_refresh,
             self._gdacs,
         ):

@@ -15,6 +15,10 @@ Keep a Changelog structure; releases are identified by Git tags when published.
   (immediate distress), sustained aground (operational incident) and
   sustained not-under-command (operator review). Runs off the existing
   AISStream connection; incidents flow through the Live map and drift.
+- AIS anomaly signals (operator-only): impossible speed, dark-zone entry,
+  OFAC-SDN vessel match, and prolonged AIS silence for a vessel last seen
+  underway. Previously implemented but never wired; now driven off the
+  shared AIS feed and persisted as `ais_anomaly` intel events.
 
 - Per-object-class drift model selection (`core/drift/profiles.py`): powered
   and large hulls (cargo, container ship, tanker, motorboat, sailboat, lost
