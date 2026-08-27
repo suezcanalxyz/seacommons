@@ -12,7 +12,8 @@ from pydantic import BaseModel
 
 from core.config import config as runtime_config
 from core.drift.cache import CacheManager
-from core.drift.models import BallisticTerminal, resolve_object_type
+from core.drift.models import BallisticTerminal
+from core.drift.profiles import resolve_profile
 from core.drift.opendrift_pool import run_leeway
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,11 @@ class DriftEngine:
         wind_speed = float(wind.get("wind_speed_ms", 0.0))
         wind_dir_deg = float(wind.get("wind_dir_deg", 0.0))
         wind_dir_rad = math.radians(wind_dir_deg)
+        profile = resolve_profile(
+            vessel_type=config.get("vessel_type"),
+            case_type=config.get("case_type"),
+            persons=int(config.get("persons", 1)),
+        )
         payload = {
             "lat": lat,
             "lon": lon,
@@ -106,9 +112,21 @@ class DriftEngine:
             "particles": int(config.get("particles", os.getenv("OPENDRIFT_PARTICLES", "50"))),
             "time_step_seconds": int(config.get("time_step_seconds", os.getenv("OPENDRIFT_TIMESTEP_SECONDS", "1800"))),
             "time_step_output_seconds": int(config.get("time_step_output_seconds", os.getenv("OPENDRIFT_OUTPUT_SECONDS", "3600"))),
+            "model": profile.model,
+            "object_class": profile.object_class,
             "object_type": (
-                resolve_object_type(config["vessel_type"], int(config.get("persons", 1)))
-                if config.get("vessel_type") else int(config.get("object_type", 26))
+                int(config["object_type"]) if config.get("object_type") is not None
+                else profile.leeway_object_type
+                if profile.leeway_object_type is not None
+                else 26
+            ),
+            "wind_drift_factor": (
+                float(config["wind_drift_factor"]) if config.get("wind_drift_factor") is not None
+                else profile.wind_drift_factor
+            ),
+            "wind_drift_depth": (
+                float(config["wind_drift_depth"]) if config.get("wind_drift_depth") is not None
+                else profile.wind_drift_depth
             ),
             "seed_radius_m": float(config.get("seed_radius_m", 150)),
         }

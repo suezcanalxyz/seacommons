@@ -1,0 +1,83 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""Phase 15a: per-object-class drift model selection."""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+
+from core.drift.profiles import DEFAULT_PROFILE, resolve_profile
+
+
+def test_sar_objects_stay_on_leeway_with_their_object_type() -> None:
+    assert resolve_profile(vessel_type="rubber_boat").model == "leeway"
+    assert resolve_profile(vessel_type="rubber_boat").leeway_object_type == 38
+    assert resolve_profile(vessel_type="person_in_water").leeway_object_type == 26
+    assert resolve_profile(vessel_type="life_raft", persons=3).leeway_object_type == 27
+    assert resolve_profile(vessel_type="life_raft", persons=8).leeway_object_type == 29
+
+
+def test_large_and_powered_hulls_use_oceandrift_not_piw_leeway() -> None:
+    for vessel_type in ("container_ship", "cargo", "tanker", "motorboat", "sailboat"):
+        profile = resolve_profile(vessel_type=vessel_type)
+        assert profile.model == "oceandrift", vessel_type
+        assert profile.leeway_object_type is None, vessel_type
+        assert profile.wind_drift_factor is not None and profile.wind_drift_factor < 0.05
+
+    # A tanker has the lowest windage of the set.
+    assert resolve_profile(vessel_type="tanker").wind_drift_factor < resolve_profile(
+        vessel_type="container_ship"
+    ).wind_drift_factor
+
+
+def test_case_type_supplies_a_default_when_no_vessel_type() -> None:
+    assert resolve_profile(case_type="missing_persons").object_class == "person_in_water"
+    assert resolve_profile(case_type="vessel_incident").model == "oceandrift"
+    assert resolve_profile(case_type="pushback").object_class == "rubber_boat"
+
+
+def test_vessel_type_wins_over_case_type() -> None:
+    profile = resolve_profile(vessel_type="tanker", case_type="distress_sar")
+    assert profile.object_class == "tanker"
+
+
+def test_unknown_input_falls_back_to_the_conservative_sar_default() -> None:
+    assert resolve_profile() is DEFAULT_PROFILE
+    assert resolve_profile(vessel_type="teleporter").object_class == "rubber_boat"
+    assert resolve_profile(case_type="not_a_case_type").object_class == "rubber_boat"
+
+
+def test_engine_opendrift_payload_selects_the_model(monkeypatch) -> None:
+    from core.drift import engine as engine_module
+
+    captured: dict = {}
+
+    def fake_run_leeway(payload):
+        captured.update(payload)
+        return {
+            "trajectory": {
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": [[14.0, 35.0], [14.1, 35.1]]},
+                "properties": {"timestamps_utc": ["a", "b"], "speed_ms": [0.1, 0.2]},
+            },
+            "cone_6h": {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[]]}, "properties": {}},
+            "cone_12h": {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[]]}, "properties": {}},
+            "cone_24h": {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[]]}, "properties": {}},
+            "impact_point": {"type": "FeatureCollection", "features": []},
+            "metadata": {"model": "OpenDrift OceanDrift"},
+        }
+
+    monkeypatch.setattr(engine_module, "run_leeway", fake_run_leeway)
+    monkeypatch.setattr(engine_module.CacheManager, "get_wind_live", lambda self, a, b: {"wind_speed_ms": 5.0, "wind_dir_deg": 270.0})
+    monkeypatch.setattr(engine_module.CacheManager, "get_ocean_currents", lambda self, a, b: {"u_ms": 0.1, "v_ms": 0.0})
+    monkeypatch.setattr(engine_module.CacheManager, "get_wind_forecast_series", lambda self, a, b, hours=48: [])
+    monkeypatch.setattr(engine_module.runtime_config, "DEMO_PUBLIC_MODE", False)
+
+    eng = engine_module.DriftEngine()
+    eng.compute(35.0, 14.0, datetime(2026, 7, 28, tzinfo=timezone.utc), duration_h=12,
+                config={"vessel_type": "container_ship"})
+
+    assert captured["model"] == "oceandrift"
+    assert captured["object_class"] == "cargo_container_ship"
+    assert captured["wind_drift_factor"] == pytest.approx(0.015)
+    assert captured["object_type"] == 26  # unused by oceandrift, kept for payload shape
