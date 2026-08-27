@@ -275,3 +275,59 @@ def test_publisher_heartbeat_is_separate_from_event_delivery(tmp_path: Path) -> 
     body = calls[0][1]
     assert '"source":"live-edge-publisher"' in body
     assert calls[0][2]["X-SeaCommons-Signature"] == signature("secret", body)
+
+
+def _publisher(tmp_path: Path) -> LiveEdgePublisher:
+    return LiveEdgePublisher(
+        PublisherSettings(
+            edge_url="https://edge.example/v1/live/events",
+            ingest_secret="secret",
+            node_id="collector-a",
+            outbox_path=tmp_path / "outbox.db",
+        )
+    )
+
+
+def test_delivery_and_heartbeat_outcomes_are_exported_as_metrics(tmp_path: Path) -> None:
+    from prometheus_client import REGISTRY
+
+    def sample(name: str, **labels: str) -> float:
+        return REGISTRY.get_sample_value(name, labels) or 0.0
+
+    publisher = _publisher(tmp_path)
+    publisher.outbox.enqueue("evt-1:v1", {"id": "evt-1:v1", "type": "Feature"})
+
+    before_ok = sample("seacommons_live_publish_events_total", stage="delivered")
+    publisher.client.post = lambda url, *, content, headers: SimpleNamespace(status_code=202, text="")
+    assert publisher.deliver() == 1
+    assert sample("seacommons_live_publish_events_total", stage="delivered") == before_ok + 1
+    assert sample("seacommons_live_publish_last_delivery_unixtime") > 0
+
+    publisher.outbox.enqueue("evt-2:v1", {"id": "evt-2:v1", "type": "Feature"})
+    before_fail = sample("seacommons_live_publish_events_total", stage="delivery_failed")
+    publisher.client.post = lambda url, *, content, headers: SimpleNamespace(status_code=500, text="boom")
+    assert publisher.deliver() == 0
+    assert sample("seacommons_live_publish_events_total", stage="delivery_failed") == before_fail + 1
+
+    publisher.client.post = lambda url, *, content, headers: SimpleNamespace(status_code=502, text="down")
+    assert publisher.heartbeat(force=True) is False
+    assert sample("seacommons_live_edge_heartbeat_ok") == 0.0
+
+
+def test_outbox_depth_gauge_tracks_pending_and_retrying(tmp_path: Path) -> None:
+    from core.observability import record_publisher_cycle
+    from prometheus_client import REGISTRY
+
+    outbox = _publisher(tmp_path).outbox
+    outbox.enqueue("evt-3:v1", {"id": "evt-3:v1"})
+    outbox.enqueue("evt-4:v1", {"id": "evt-4:v1"})
+    outbox.fail("evt-4:v1", 1, "temporary", 20)
+
+    record_publisher_cycle(outcome="ok", collected=2, outbox_counts=outbox.counts())
+
+    assert REGISTRY.get_sample_value(
+        "seacommons_live_outbox_depth", {"state": "pending"}
+    ) == 2
+    assert REGISTRY.get_sample_value(
+        "seacommons_live_outbox_depth", {"state": "retrying"}
+    ) == 1

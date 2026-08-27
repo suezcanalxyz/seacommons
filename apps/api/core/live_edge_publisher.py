@@ -36,6 +36,11 @@ from core.domain.live_contracts import (
     validate_federated_event_input,
 )
 from core.intel.public_policy import is_blocked_source, is_explicitly_private
+from core.observability import (
+    record_publisher_cycle,
+    record_publisher_delivery,
+    record_publisher_heartbeat,
+)
 
 if TYPE_CHECKING:
     from core.intel.store import IntelEvent
@@ -60,6 +65,9 @@ class PublisherSettings:
     request_timeout_seconds: float = 8.0
     max_attempts: int = 20
     heartbeat_seconds: float = 60.0
+    # Prometheus scrape endpoint for this standalone process. 0 disables it
+    # (default), so nothing changes for an existing deployment.
+    metrics_port: int = 0
 
     @classmethod
     def from_env(cls) -> "PublisherSettings":
@@ -75,6 +83,7 @@ class PublisherSettings:
             request_timeout_seconds=float(os.getenv("LIVE_EDGE_TIMEOUT_SECONDS", "8")),
             max_attempts=max(1, int(os.getenv("LIVE_EDGE_MAX_ATTEMPTS", "20"))),
             heartbeat_seconds=max(30.0, float(os.getenv("LIVE_EDGE_HEARTBEAT_SECONDS", "60"))),
+            metrics_port=max(0, int(os.getenv("LIVE_EDGE_METRICS_PORT", "0"))),
         )
 
     def validate(self) -> None:
@@ -441,6 +450,7 @@ class LiveEdgePublisher:
                 if response.status_code in {200, 202}:
                     self.outbox.acknowledge(str(row["event_id"]))
                     delivered += 1
+                    record_publisher_delivery(delivered=True)
                     continue
                 raise RuntimeError(f"edge HTTP {response.status_code}: {response.text[:200]}")
             except Exception as exc:
@@ -448,6 +458,7 @@ class LiveEdgePublisher:
                 self.outbox.fail(
                     str(row["event_id"]), attempts, str(exc), self.settings.max_attempts
                 )
+                record_publisher_delivery(delivered=False)
                 logger.warning("Live edge delivery failed for %s: %s", row["event_id"], exc)
         return delivered
 
@@ -476,9 +487,11 @@ class LiveEdgePublisher:
                 },
             )
             if response.status_code in {200, 202}:
+                record_publisher_heartbeat(ok=True)
                 return True
             raise RuntimeError(f"edge HTTP {response.status_code}: {response.text[:200]}")
         except Exception as exc:
+            record_publisher_heartbeat(ok=False)
             logger.warning("Live edge heartbeat failed: %s", exc)
             return False
 
@@ -492,6 +505,8 @@ class LiveEdgePublisher:
         while self.running:
             started = time.monotonic()
             cycle_status = "active"
+            added = 0
+            delivered = 0
             try:
                 added = self.collect()
                 delivered = self.deliver()
@@ -508,6 +523,14 @@ class LiveEdgePublisher:
             except Exception:
                 cycle_status = "degraded"
                 logger.exception("Live edge publisher cycle failed")
+            try:
+                record_publisher_cycle(
+                    outcome="ok" if cycle_status == "active" else "degraded",
+                    collected=added,
+                    outbox_counts=self.outbox.counts(),
+                )
+            except Exception:  # metrics must never break the delivery loop
+                logger.debug("publisher metric update failed", exc_info=True)
             self.heartbeat(cycle_status)
             remaining = self.settings.poll_seconds - (time.monotonic() - started)
             if remaining > 0:
@@ -519,7 +542,13 @@ def main() -> None:
         level=os.getenv("LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    publisher = LiveEdgePublisher(PublisherSettings.from_env())
+    settings = PublisherSettings.from_env()
+    if settings.metrics_port:
+        from prometheus_client import start_http_server
+
+        start_http_server(settings.metrics_port)
+        logger.info("Publisher metrics on :%d/metrics", settings.metrics_port)
+    publisher = LiveEdgePublisher(settings)
     signal.signal(signal.SIGTERM, publisher.stop)
     signal.signal(signal.SIGINT, publisher.stop)
     publisher.run()
