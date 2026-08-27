@@ -6,6 +6,7 @@ import pytest
 from core.drift.opendrift_pool import (
     _representative_path,
     _speed_to_ms,
+    _surface_stokes_speed,
     _trajectory_properties,
     _vector_components,
 )
@@ -76,6 +77,19 @@ def test_forcing_units_and_direction_are_converted_to_opendrift_vectors() -> Non
     current_east, current_north = _vector_components(_speed_to_ms(3.6, "km/h"), 90)
     assert current_east == pytest.approx(1)
     assert current_north == pytest.approx(0, abs=1e-10)
+
+
+def test_surface_stokes_speed_is_bounded_and_zero_without_wave_data() -> None:
+    # No wave data -> no fabricated Stokes drift.
+    assert _surface_stokes_speed(0.0, 0.0) == 0.0
+    assert _surface_stokes_speed(1.5, 0.0) == 0.0
+    # Realistic Med sea state.
+    moderate = _surface_stokes_speed(1.5, 6.0)
+    assert 0.03 < moderate < 0.12
+    # Steep short waves would over-predict monochromatic Stokes; it is clamped.
+    assert _surface_stokes_speed(8.0, 4.0) == pytest.approx(0.35)
+    # Longer period at the same height gives a weaker surface Stokes drift.
+    assert _surface_stokes_speed(2.0, 10.0) < _surface_stokes_speed(2.0, 6.0)
 
 
 def test_live_only_publishes_spatiotemporal_opendrift_with_speed_samples() -> None:

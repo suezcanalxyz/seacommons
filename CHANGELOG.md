@@ -12,6 +12,10 @@ Keep a Changelog structure; releases are identified by Git tags when published.
   container) now drift with OpenDrift `OceanDrift` and calibrated windage
   instead of person-in-water Leeway coefficients. SAR objects keep Leeway.
   `case_type` supplies a default object class when no `vessel_type` is given.
+- Wave-driven Stokes drift in operational drift runs, from Open-Meteo wave
+  height and period, enabled only when wave data is actually returned.
+- A real coastline (`reader_global_landmask`) in drift runs, so particles
+  beach instead of drifting across land.
 
 ## 0.6.0 - 2026-08-27
 
