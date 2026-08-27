@@ -276,7 +276,7 @@ def _is_publishable_live_drift(drift: dict[str, Any]) -> bool:
     coordinates = (trajectory.get("geometry") or {}).get("coordinates") or []
     return bool(
         drift.get("status") == "completed"
-        and metadata.get("model") == "OpenDrift Leeway"
+        and str(metadata.get("model") or "").startswith("OpenDrift ")
         and metadata.get("forcing_quality") == "spatiotemporal"
         and metadata.get("operational_use") is True
         and len(coordinates) >= 2

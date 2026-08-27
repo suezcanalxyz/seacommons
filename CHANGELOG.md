@@ -5,6 +5,14 @@ Keep a Changelog structure; releases are identified by Git tags when published.
 
 ## Unreleased
 
+### Added
+
+- Per-object-class drift model selection (`core/drift/profiles.py`): powered
+  and large hulls (cargo, container ship, tanker, motorboat, sailboat, lost
+  container) now drift with OpenDrift `OceanDrift` and calibrated windage
+  instead of person-in-water Leeway coefficients. SAR objects keep Leeway.
+  `case_type` supplies a default object class when no `vessel_type` is given.
+
 ## 0.6.0 - 2026-08-27
 
 ### Added

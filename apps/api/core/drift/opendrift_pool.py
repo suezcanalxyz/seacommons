@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 _lock = threading.Lock()
 _ready = threading.Event()
 _Leeway = None
+_OceanDrift = None
 _reader_constant = None
 _grid_reader_cls = None  # lazily constructed after OpenDrift import
 
@@ -92,18 +93,20 @@ def _speed_to_ms(value: float, unit: str) -> float:
 
 
 def _do_import() -> None:
-    global _Leeway, _reader_constant
+    global _Leeway, _OceanDrift, _reader_constant
     with _lock:
         if _Leeway is not None:
             _ready.set()
             return
-        logger.info("OpenDrift: importing Leeway — this takes ~50 s on first load…")
+        logger.info("OpenDrift: importing models — this takes ~50 s on first load…")
         try:
             from opendrift.models.leeway import Leeway as _L
+            from opendrift.models.oceandrift import OceanDrift as _OD
             from opendrift.readers import reader_constant as _rc
             _Leeway = _L
+            _OceanDrift = _OD
             _reader_constant = _rc
-            logger.info("OpenDrift: Leeway import complete")
+            logger.info("OpenDrift: Leeway + OceanDrift import complete")
         except Exception as exc:
             logger.error("OpenDrift: import failed — %s", exc)
     _ready.set()
@@ -743,8 +746,26 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
     output_s = int(payload.get("time_step_output_seconds", 3600))
     object_type = int(payload.get("object_type", 26))
 
-    sim = _Leeway(loglevel=50)
-    sim.set_config("drift:stokes_drift", False)
+    # Phase 15a: dispatch the OpenDrift model per object class. Leeway keeps
+    # its SAR object_type coefficients; OceanDrift is used for powered/large
+    # hulls (current-dominated, low windage) so a cargo ship is no longer
+    # simulated with person-in-water leeway.
+    model_name = str(payload.get("model", "leeway")).lower()
+    object_class = str(payload.get("object_class", "") or "")
+    wind_drift_factor = payload.get("wind_drift_factor")
+    wind_drift_depth = payload.get("wind_drift_depth")
+    if model_name == "oceandrift" and _OceanDrift is not None:
+        sim = _OceanDrift(loglevel=50)
+        sim.set_config("drift:stokes_drift", False)
+        if wind_drift_depth is not None:
+            try:
+                sim.set_config("drift:wind_drift_depth", float(wind_drift_depth))
+            except Exception:  # config key varies by OpenDrift version
+                logger.debug("could not set drift:wind_drift_depth", exc_info=True)
+    else:
+        model_name = "leeway"
+        sim = _Leeway(loglevel=50)
+        sim.set_config("drift:stokes_drift", False)
 
     # Base constant env (used as fallback inside _GridReader and as the
     # land_binary_mask source which the grid doesn't provide)
@@ -819,14 +840,19 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
         readers_added.append("reader_constant")
 
     logger.info("Drift readers active: %s", " → ".join(readers_added))
-    sim.seed_elements(
-        lon=float(payload["lon"]),
-        lat=float(payload["lat"]),
-        time=start_time,
-        radius=float(payload.get("seed_radius_m", 150)),
-        number=particles,
-        object_type=object_type,
-    )
+    seed_kwargs: dict[str, Any] = {
+        "lon": float(payload["lon"]),
+        "lat": float(payload["lat"]),
+        "time": start_time,
+        "radius": float(payload.get("seed_radius_m", 150)),
+        "number": particles,
+    }
+    if model_name == "oceandrift":
+        if wind_drift_factor is not None:
+            seed_kwargs["wind_drift_factor"] = float(wind_drift_factor)
+    else:
+        seed_kwargs["object_type"] = object_type
+    sim.seed_elements(**seed_kwargs)
     # Use timedelta objects — integer seconds trigger a conflict with internal
     # config state in OpenDrift 1.14.x, producing only 2 output time steps.
     sim.run(
@@ -889,10 +915,12 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
             "domain": payload.get("domain", "ocean_sar"),
             "start_time": start_time.isoformat(),
             "duration_h": duration_h,
-            "model": "OpenDrift Leeway",
+            "model": "OpenDrift OceanDrift" if model_name == "oceandrift" else "OpenDrift Leeway",
+            "object_class": object_class or None,
             "operational_use": forcing_quality == "spatiotemporal",
             "particles": particles,
-            "object_type": object_type,
+            "object_type": object_type if model_name == "leeway" else None,
+            "wind_drift_factor": float(wind_drift_factor) if (model_name == "oceandrift" and wind_drift_factor is not None) else None,
             "readers": readers_added,
             "forcing_resolution": forcing_resolution,
             "forcing_quality": forcing_quality,
