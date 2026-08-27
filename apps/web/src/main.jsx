@@ -17,9 +17,11 @@ import ConnectorWorkspace from './components/ConnectorWorkspace.jsx';
 import { buildEnvironmentSnapshot, createScenario } from './simulation/contracts.js';
 import { loadStoredSimulations, storeScenario } from './simulation/scenarioStore.js';
 import { computeDriftInWorker } from './simulation/workerClient.js';
+import { fetchJson } from './services/api/client.js';
+import { useLiveFeed } from './hooks/useLiveFeed.js';
+import { mergeIntelDriftUpdate } from './features/live/normalize.js';
 import {
   decorateLiveTracking,
-  edgeSnapshotIsUsable,
   liveTrackingCandidates,
   mergeLiveDrifts,
 } from './simulation/liveTracking.js';
@@ -84,74 +86,6 @@ const APP_PROFILE = isLiveHost
 // semantics, same property names the map layers already filter/color on.
 const LIVE_EDGE_BASE = String(import.meta.env.VITE_LIVE_EDGE_BASE || '').replace(/\/$/, '');
 
-function edgeEventToFeature(event) {
-  const props = event.properties || {};
-  const lifecycleState = props.incident_lifecycle || 'active';
-  return {
-    type: 'Feature',
-    id: `intel:${props.incident_id || event.id}`,
-    geometry: event.geometry || null,
-    properties: {
-      schema: 'org.seacommons.live-signal/v1',
-      id: `intel:${props.incident_id || event.id}`,
-      type: event.type === 'distress_observation' ? 'twitter' : event.type,
-      // Every event that reaches the edge is already distress-classified
-      // (the publisher drops anything else — see public_event_from_row in
-      // core/live_edge_publisher.py), so tier is always "operational" here
-      // regardless of active/resolved/archived state — tier is about *what
-      // kind* of report this is, kind/incident_lifecycle is its current
-      // status. Without this, IntelDashboard's eventTier() fallback reads
-      // it as "news" and hides the distress styling and nearby-vessels button.
-      tier: 'operational',
-      kind: lifecycleState === 'active' ? 'distress' : lifecycleState,
-      incident_lifecycle: lifecycleState,
-      severity: props.severity || 'low',
-      verification_status: props.verification_status || 'unverified_public_source',
-      title: props.title || 'Maritime signal',
-      // The publisher already strips the record down to the public contract.
-      // Preserve its public incident text: dropping it here made unpositioned
-      // Alarm Phone reports look like empty/stale cards in the Live panel.
-      text: props.text || '',
-      url: event.source_url || '',
-      source: event.source || 'public feed',
-      timestamp_utc: event.observed_at,
-      source_timestamp_utc: event.observed_at,
-      received_at: event.received_at || event.observed_at,
-      // The edge now sends this directly (core.live_edge_publisher, via the
-      // same public_geometry_and_precision helper the VM path uses) — the
-      // radius_m-threshold guess below only covers edge payloads cached
-      // from before that field existed.
-      location_precision: props.location_precision
-        || (Number(props.radius_m) > 20000 ? 'area' : 'reported_or_derived'),
-      location_uncertainty_m: props.radius_m,
-      coordinate_source: props.coordinate_source,
-      repost_count: props.repost_count,
-      thread_reposts: props.thread_reposts,
-      area_weather_narrowed: props.area_weather_narrowed,
-    },
-  };
-}
-
-function edgeSnapshotToFeatures(snapshot) {
-  if (!Array.isArray(snapshot?.events)) return [];
-  return snapshot.events.map(edgeEventToFeature);
-}
-
-function receivedSignalFeatures(features) {
-  if (!Array.isArray(features)) return [];
-  return features.filter((feature) => {
-    const properties = feature?.properties || {};
-    const policy = String(properties.source_policy || '').toLowerCase();
-    const transport = String(properties.via || properties.scrape_source || '').toLowerCase();
-    return !['nitter', 'twscrape', 'scrape', 'unofficial'].some(
-      (blocked) => policy === blocked || transport.includes(blocked),
-    )
-      && properties.type !== 'sar_model'
-      && properties.title !== 'Computed SAR drift product'
-      && properties.source !== 'SeaCommons engine';
-  });
-}
-
 function enrichCaseGeo(geojson, lat, lon) {
   // Idempotent: replaying an already-enriched collection must not duplicate the origin marker.
   if (geojson.features?.some((f) => f.properties?.type === 'origin_point')) return geojson;
@@ -192,38 +126,6 @@ function loadLocalSettings() {
     timezeroPort: window.localStorage.getItem('seacommons_tz_port') || '4371',
     timezeroEnabled: window.localStorage.getItem('seacommons_tz_enabled') || 'false',
   };
-}
-
-function apiUrl(base, path) {
-  return `${base.replace(/\/$/, '')}${path}`;
-}
-
-async function fetchJson(base, path, options, timeoutMs = 12000) {
-  const controller = new AbortController();
-  const timer = window.setTimeout(
-    () => controller.abort(new DOMException(`Request timeout: ${path}`, 'TimeoutError')),
-    timeoutMs,
-  );
-  try {
-    const token = window.__SEACOMMONS_ACCESS_TOKEN__;
-    const headers = { ...(options?.headers || {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-    const response = await fetch(apiUrl(base, path), { signal: controller.signal, ...options, headers });
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      // If the error body is HTML (proxy / cold-start page), surface a clean message.
-      const msg = text && !text.trimStart().startsWith('<')
-        ? text
-        : `HTTP ${response.status} — backend unavailable`;
-      throw new Error(msg);
-    }
-    const text = await response.text();
-    if (!text || text.trimStart().startsWith('<')) {
-      throw new Error('Backend returned non-JSON — may still be starting up');
-    }
-    return JSON.parse(text);
-  } finally {
-    window.clearTimeout(timer);
-  }
 }
 
 async function fetchOpenMeteoEnvironment(lat, lon) {
@@ -593,25 +495,21 @@ function App() {
   const [simHistory, setSimHistory] = useState(loadStoredSimulations);
   const [activeScenario, setActiveScenario] = useState(null);
   const [activeSimId, setActiveSimId] = useState(null);
-  const [intelEvents, setIntelEvents] = useState(() => {
-    try {
-      const cacheKey = isPublicLiveHost ? 'seacommons_live_signal_cache_v2' : 'seacommons_intel_cache';
-      const cached = window.localStorage.getItem(cacheKey);
-      if (cached) {
-        const maxAgeDays = 30;
-        const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000).toISOString();
-        const parsed = JSON.parse(cached);
-        const recent = parsed.filter(e => (e.properties?.timestamp_utc || '') >= cutoff);
-        return isPublicLiveHost ? receivedSignalFeatures(recent) : recent;
-      }
-    } catch { /* ignore */ }
-    return [];
-  });
   const [intelDrifts, setIntelDrifts] = useState({ type: 'FeatureCollection', features: [] });
+  const { intelEvents, setIntelEvents, intelConnected, intelMode } = useLiveFeed({
+    apiBase,
+    edgeBase: LIVE_EDGE_BASE,
+    isPublicLiveHost,
+    onCriticalDistress: () => {
+      setActivePanel('osint');
+      setSidebarOpen(true);
+    },
+    onDriftUpdate: (message) => {
+      setIntelDrifts((previous) => mergeIntelDriftUpdate(previous, message));
+    },
+  });
   const [browserLiveDrifts, setBrowserLiveDrifts] = useState({ type: 'FeatureCollection', features: [] });
   const [liveEstimateClock, setLiveEstimateClock] = useState(Date.now());
-  const [intelConnected, setIntelConnected] = useState(false);
-  const [intelMode, setIntelMode] = useState('offline'); // 'ws' | 'poll' | 'offline'
   const [intelFilter, setIntelFilter] = useState('all');
   const [showAisAlerts, setShowAisAlerts] = useState(false);
   const [showVesselLinks, setShowVesselLinks] = useState(false);
@@ -651,12 +549,7 @@ function App() {
   const caseEventIdRef = useRef(null);
   const caseStatusRef = useRef('idle');
   const simParamsRef = useRef({});
-  const intelWsRef = useRef(null);
   const liveTrackingRunsRef = useRef(new Map());
-  // True once the Cloudflare edge feed is confirmed live. On the public host
-  // the regular VM loop is disabled; Oracle is an explicit, rate-limited
-  // backup only after repeated edge failures.
-  const edgeLiveActiveRef = useRef(false);
   const [form, setForm] = useState({
     lat: APP_PROFILE === 'demo' ? '35.52' : '',
     lon: APP_PROFILE === 'demo' ? '14.08' : '',
@@ -796,268 +689,6 @@ function App() {
   useEffect(() => {
     caseStatusRef.current = caseStatus;
   }, [caseStatus]);
-
-  // ── Intel feed: REST polling always-on + WS upgrade when available ───────────
-  // Start REST polling immediately so data flows on first load. The dedicated
-  // api.seacommons.org endpoint supports WebSocket upgrades; if the upgrade
-  // fails, polling remains active.
-  useEffect(() => {
-    // The public host is edge-first. Oracle is contacted only by the explicit
-    // edge-failure fallback, not by a parallel loop that times out forever.
-    if (isPublicLiveHost && LIVE_EDGE_BASE) return undefined;
-    const wsBase = apiBase.replace(/^http/, 'ws');
-    const feedPath = isPublicLiveHost
-      ? '/api/v1/live/signals?limit=500&days=30'
-      : '/api/v1/intel?limit=200&days=30';
-    const streamPath = isPublicLiveHost ? '/api/v1/live/stream' : '/ws/intel';
-    const pollIntervalMs = isPublicLiveHost ? 10000 : 30000;
-    let ws = null;
-    let reconnectTimer = null;
-    let pollTimer = null;
-    let wsAlive = true;   // false once we give up on WS
-    let polling = false;
-    let alive = true;
-
-    function handleWsMessage(e) {
-      if (edgeLiveActiveRef.current) return; // edge feed is authoritative while live
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'ping') return;
-        if (msg.type === 'snapshot') {
-          setIntelEvents(isPublicLiveHost ? receivedSignalFeatures(msg.features) : (msg.features || []));
-        } else if (msg.type === 'Feature') {
-          const incoming = isPublicLiveHost ? receivedSignalFeatures([msg]) : [msg];
-          if (!incoming.length) return;
-          // This push fires for BOTH a brand-new event (store.add) and an
-          // in-place metadata update on an existing one (store.update_metadata /
-          // enrich_location — drift status, location upgrades, thread reposts,
-          // NGO checks, …). Blindly prepending duplicated the card and left a
-          // stale copy on screen — e.g. a failed drift's "Retry" button never
-          // appeared because the fresh update rendered as a second entry with
-          // the same React key instead of replacing the original. Replace any
-          // existing entry with the same id instead of accumulating both.
-          setIntelEvents((prev) => {
-            const incomingIds = new Set(incoming.map((f) => f.properties?.id).filter(Boolean));
-            const withoutStale = prev.filter((f) => !incomingIds.has(f.properties?.id));
-            return [...incoming, ...withoutStale].slice(0, 300);
-          });
-          const mp = msg.properties || {};
-          if (mp.type === 'distress' && ['critical', 'high'].includes(mp.severity)) {
-            setActivePanel('osint');
-            setSidebarOpen(true);
-          }
-        } else if (!isPublicLiveHost && msg.type === 'event_update' && msg.drift?.trajectory) {
-          setIntelDrifts((prev) => {
-            const keep = prev.features.filter(f => f.properties?.intel_event_id !== msg.id);
-            const d = msg.drift;
-            const newFeats = [d.trajectory, d.cone_24h].filter(Boolean).map(f => ({
-              ...f,
-              properties: { ...f.properties, intel_event_id: msg.id,
-                intel_title: d.title, intel_severity: d.severity, intel_source: d.source, auto_drift: true },
-            }));
-            if (d.impact_point?.features) {
-              d.impact_point.features.forEach(f => newFeats.push({
-                ...f, properties: { ...f.properties, intel_event_id: msg.id, auto_drift: true },
-              }));
-            }
-            return { type: 'FeatureCollection', features: [...keep, ...newFeats] };
-          });
-        }
-      } catch { /* ignore malformed */ }
-    }
-
-    async function pollOnce() {
-      try {
-        const data = await fetchJson(apiBase, feedPath);
-        if (!alive || edgeLiveActiveRef.current) return; // edge feed is authoritative while live
-        if (data.features) {
-          const features = isPublicLiveHost ? receivedSignalFeatures(data.features) : data.features;
-          setIntelEvents(features);
-          const cacheKey = isPublicLiveHost ? 'seacommons_live_signal_cache_v2' : 'seacommons_intel_cache';
-          try { window.localStorage.setItem(cacheKey, JSON.stringify(features)); } catch { /* quota */ }
-          setIntelConnected(true);
-          // only set 'poll' if WS hasn't taken over
-          setIntelMode((prev) => prev === 'ws' ? 'ws' : 'poll');
-        }
-      } catch {
-        if (!alive || edgeLiveActiveRef.current) return;
-        setIntelConnected(false);
-        setIntelMode((prev) => prev === 'ws' ? 'ws' : 'offline');
-      }
-    }
-
-    async function pollLoop() {
-      if (!alive || polling) return;
-      polling = true;
-      while (alive) {
-        await pollOnce();
-        if (!alive) break;
-        await new Promise((res) => { pollTimer = window.setTimeout(res, pollIntervalMs); });
-      }
-      polling = false;
-    }
-
-    function tryWs() {
-      if (!alive || !wsAlive) return;
-      const token = window.__SEACOMMONS_ACCESS_TOKEN__;
-      ws = token
-        ? new WebSocket(`${wsBase}${streamPath}`, ['bearer', token])
-        : new WebSocket(`${wsBase}${streamPath}`);
-      intelWsRef.current = ws;
-
-      const openTimer = window.setTimeout(() => {
-        if (ws && ws.readyState !== WebSocket.OPEN) ws.close();
-      }, 4000);
-
-      ws.onopen = () => {
-        window.clearTimeout(openTimer);
-        if (edgeLiveActiveRef.current) return;
-        setIntelConnected(true);
-        setIntelMode('ws');
-      };
-      ws.onclose = () => {
-        window.clearTimeout(openTimer);
-        if (!alive) return;
-        // WS failed — stop trying; polling already covers the feed
-        wsAlive = false;
-      };
-      ws.onerror = () => { window.clearTimeout(openTimer); ws?.close(); };
-      ws.onmessage = handleWsMessage;
-    }
-
-    // Start REST polling immediately — data on first load regardless of WS
-    pollLoop();
-    // A distinct API origin is a direct reverse-proxy endpoint and supports the
-    // WebSocket upgrade. Same-origin CDN deployments retain REST polling only.
-    const apiHost = apiBase.replace(/^https?:\/\//, '').split('/')[0];
-    const isDirectBackend = apiBase !== window.location.origin
-      || /^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(apiHost)
-      || /^\d+\.\d+\.\d+\.\d+(:\d+)?$/.test(apiHost);
-    if (isDirectBackend) tryWs();
-
-    return () => {
-      alive = false;
-      wsAlive = false;
-      window.clearTimeout(reconnectTimer);
-      window.clearTimeout(pollTimer);
-      ws?.close();
-    };
-  }, [apiBase]);
-
-  // Cloudflare edge Live feed: WebSocket plus snapshot polling on the public
-  // host. Oracle is contacted only after three consecutive edge failures and
-  // at most once per minute; the last valid edge snapshot remains visible.
-  useEffect(() => {
-    if (!isPublicLiveHost || !LIVE_EDGE_BASE) return undefined;
-    let alive = true;
-    let ws = null;
-    let pollTimer = null;
-    let reconnectTimer = null;
-    let consecutiveFailures = 0;
-    let lastBackupAttempt = 0;
-
-    function applySnapshot(snapshot, transport = 'poll') {
-      if (!alive || !edgeSnapshotIsUsable(snapshot)) return false;
-      const features = edgeSnapshotToFeatures(snapshot);
-      setIntelEvents(features);
-      try { window.localStorage.setItem('seacommons_live_signal_cache_v2', JSON.stringify(features)); } catch { /* quota */ }
-      setIntelConnected(true);
-      setIntelMode(transport);
-      edgeLiveActiveRef.current = true;
-      consecutiveFailures = 0;
-      return true;
-    }
-
-    async function loadOracleBackup() {
-      const now = Date.now();
-      if (now - lastBackupAttempt < 60_000) return;
-      lastBackupAttempt = now;
-      try {
-        const data = await fetchJson(
-          apiBase,
-          '/api/v1/live/signals?limit=500&days=30',
-          undefined,
-          3000,
-        );
-        if (!alive || !Array.isArray(data.features)) return;
-        const features = receivedSignalFeatures(data.features);
-        setIntelEvents(features);
-        try { window.localStorage.setItem('seacommons_live_signal_cache_v2', JSON.stringify(features)); } catch { /* quota */ }
-        setIntelConnected(true);
-        setIntelMode('poll');
-      } catch { /* cached edge snapshot remains visible */ }
-    }
-
-    async function pollSnapshot() {
-      // Clear any pending regular-cadence tick — this may run either from
-      // that timer or from a WS-triggered re-fetch; either way there must
-      // only ever be one scheduled next call, never overlapping chains.
-      window.clearTimeout(pollTimer);
-      try {
-        const snapshot = await fetchJson(LIVE_EDGE_BASE, '/v1/live/snapshot', undefined, 4000);
-        const transport = ws?.readyState === WebSocket.OPEN ? 'ws' : 'poll';
-        if (!applySnapshot(snapshot, transport)) {
-          throw new Error('edge snapshot is unusable');
-        }
-      } catch {
-        if (!alive) return;
-        // Do not create a parallel Oracle loop: wait for three real edge
-        // failures, then try the backup once while retaining cached data.
-        consecutiveFailures += 1;
-        edgeLiveActiveRef.current = false;
-        setIntelConnected(false);
-        setIntelMode('offline');
-        if (consecutiveFailures >= 3) await loadOracleBackup();
-      }
-      if (alive) pollTimer = window.setTimeout(pollSnapshot, 10000);
-    }
-
-    function connectWs() {
-      if (!alive) return;
-      const wsUrl = `${LIVE_EDGE_BASE.replace(/^http/, 'ws')}/v1/live/stream`;
-      ws = new WebSocket(wsUrl);
-      const openTimer = window.setTimeout(() => {
-        if (ws && ws.readyState !== WebSocket.OPEN) ws.close();
-      }, 4000);
-      ws.onopen = () => {
-        window.clearTimeout(openTimer);
-        setIntelConnected(true);
-        setIntelMode('ws');
-      };
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.type === 'snapshot') {
-            if (!applySnapshot(msg, 'ws')) edgeLiveActiveRef.current = false;
-          } else if (msg.type === 'event' || msg.type === 'remove' || msg.type === 'source_health') {
-            // Incremental updates still need the full picture to re-derive
-            // removal/lifecycle correctly — re-fetch the authoritative
-            // snapshot rather than hand-rolling incremental Feature merges.
-            pollSnapshot();
-          }
-        } catch { /* ignore malformed */ }
-      };
-      ws.onclose = () => {
-        window.clearTimeout(openTimer);
-        if (!alive) return;
-        reconnectTimer = window.setTimeout(connectWs, 5000);
-      };
-      ws.onerror = () => { window.clearTimeout(openTimer); ws?.close(); };
-    }
-
-    // Probe once via snapshot first — establishes edgeLiveActiveRef before
-    // the WS connects, and gives the map real data immediately on load.
-    pollSnapshot();
-    connectWs();
-
-    return () => {
-      alive = false;
-      edgeLiveActiveRef.current = false;
-      window.clearTimeout(pollTimer);
-      window.clearTimeout(reconnectTimer);
-      ws?.close();
-    };
-  }, [apiBase, isPublicLiveHost]);
 
   // Alarm Phone live tracking runs independently in the browser. It consumes
   // hourly historical/current weather and marine fields, so an old report is
