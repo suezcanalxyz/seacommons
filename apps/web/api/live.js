@@ -1,17 +1,16 @@
 import http from 'node:http';
 
-const UPSTREAM_HOST = '79.72.46.166';
-const UPSTREAM_VIRTUAL_HOST = 'api.seacommons.org';
+import { API_VHOST, UPSTREAM_HOST, UPSTREAM_PORT } from './_upstream.js';
 
 function requestJson(path) {
   return new Promise((resolve, reject) => {
     const request = http.get(
       {
         hostname: UPSTREAM_HOST,
-        port: 80,
+        port: UPSTREAM_PORT,
         path,
         headers: {
-          host: UPSTREAM_VIRTUAL_HOST,
+          host: API_VHOST,
           accept: 'application/json',
           'user-agent': 'SeaCommons-Vercel-Live/1.0',
         },
