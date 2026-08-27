@@ -678,9 +678,21 @@ OSINT incident.
 
 --- Suggested phasing ---
 
-  Phase 14a - AIS safety-related messages (SART/MOB/EPIRB, type 12/14)
-              from the existing AISStream feed. Smallest, highest-value
-              slice. Adds a NavalCommsEvent model + the AIS branch + tests.
+  Phase 14a - DONE (branch feat/ais-vessel-incidents). Vessel incidents
+              from the existing AISStream feed via a position hook (one
+              shared socket, no second connection): AIS-SART/MOB/EPIRB
+              (MMSI 970/972/974 or nav status 14) -> immediate distress;
+              aground (nav 6, sustained) -> operational vessel incident;
+              not-under-command (nav 2, sustained) -> operator-review
+              vessel incident. Restricted-manoeuvrability (nav 3) ignored.
+              Emitted as canonical IntelEvents (source_policy official_api),
+              so they flow through public policy, the Live map and drift
+              (case_type vessel_incident -> OceanDrift). Did not build a
+              separate NavalCommsEvent model yet -- reused the intel event
+              contract; revisit if DSC/NAVTEX (14c/14d) need a distinct one.
+              The dormant AISAnomalyDetector (gap / impossible-speed /
+              dark-zone / OFAC-SDN, never wired because it opened its own
+              socket) can fold into the same hook next.
   Phase 14b - canonical NavalCommsEvent contract + the operator-only comms
               context stream and a dedicated monitoring view.
   Phase 14c - DSC ingestion (SDR-on-node decoder or a lawful online feed).
