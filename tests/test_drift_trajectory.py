@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 from core.drift.opendrift_pool import (
+    _containment_polygon,
     _representative_path,
     _speed_to_ms,
     _surface_stokes_speed,
@@ -77,6 +78,39 @@ def test_forcing_units_and_direction_are_converted_to_opendrift_vectors() -> Non
     current_east, current_north = _vector_components(_speed_to_ms(3.6, "km/h"), 90)
     assert current_east == pytest.approx(1)
     assert current_north == pytest.approx(0, abs=1e-10)
+
+
+def test_containment_polygon_is_a_probability_ellipse_robust_to_outliers() -> None:
+    import numpy as np
+
+    class _NpVar:
+        def __init__(self, a):
+            self.values = np.asarray(a, dtype=float)
+
+    class _NpDataset:
+        def __init__(self, lons, lats):
+            self.lon = _NpVar(lons)
+            self.lat = _NpVar(lats)
+
+    rng = np.random.default_rng(7)
+    n = 80
+    lon = 14.0 + rng.normal(0, 0.02, n)   # ~1.8 km east-west spread
+    lat = 35.0 + rng.normal(0, 0.006, n)  # ~0.7 km north-south spread
+    lon[0] += 0.6   # a stray particle 50+ km away
+    lat[1] -= 0.5
+    dataset = _NpDataset(np.column_stack([lon, lon]), np.column_stack([lat, lat]))
+
+    feature = _containment_polygon(dataset, 1)
+    props = feature["properties"]
+
+    assert props["method"] == "gaussian_containment"
+    assert props["radius_p90_m"] > props["radius_p50_m"]
+    # east-west axis is the longer one, and the outliers have not blown it up
+    east_axis, north_axis = props["semi_axes_p90_m"]
+    assert east_axis > north_axis
+    assert props["area_km2"] < 30  # a convex hull of the same cloud would be ~thousands
+    ring = feature["geometry"]["coordinates"][0]
+    assert len(ring) == 33 and ring[0] == ring[-1]
 
 
 def test_surface_stokes_speed_is_bounded_and_zero_without_wave_data() -> None:

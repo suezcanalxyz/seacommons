@@ -743,6 +743,83 @@ def _cloud_polygon(result_dataset: Any, time_index: int) -> dict[str, Any]:
     }
 
 
+def _containment_polygon(result_dataset: Any, time_index: int) -> dict[str, Any]:
+    """Probability-of-containment search area from the particle cloud.
+
+    A convex hull of every particle is not a search area -- one stray or
+    beached particle inflates it and it carries no probability. This fits a
+    2-D Gaussian to the cloud (after trimming the farthest 10% for outlier
+    resistance) and returns the 90%-containment ellipse, with the 50% ring
+    in properties. Standard SAR drift practice.
+    """
+    import numpy as np
+
+    lons = np.asarray(result_dataset.lon.values, dtype=float)
+    lats = np.asarray(result_dataset.lat.values, dtype=float)
+    n_traj, n_time = lons.shape
+    idx = max(0, min(time_index, n_time - 1))
+    lon_col = lons[:, idx]
+    lat_col = lats[:, idx]
+    valid = np.isfinite(lon_col) & np.isfinite(lat_col)
+    plon = lon_col[valid]
+    plat = lat_col[valid]
+
+    if plon.size < 4:
+        return _cloud_polygon(result_dataset, time_index)
+
+    lat0 = float(np.median(plat))
+    lon0 = float(np.median(plon))
+    m_per_deg_lat = 111_320.0
+    m_per_deg_lon = 111_320.0 * max(0.1, math.cos(math.radians(lat0)))
+    xs = (plon - lon0) * m_per_deg_lon
+    ys = (plat - lat0) * m_per_deg_lat
+
+    # Trim the farthest 10% (from the median centre) before fitting.
+    dist = np.hypot(xs, ys)
+    keep = dist <= np.quantile(dist, 0.90)
+    if keep.sum() >= 4:
+        xs, ys = xs[keep], ys[keep]
+
+    cx, cy = float(np.mean(xs)), float(np.mean(ys))
+    cov = np.cov(np.vstack([xs - cx, ys - cy]))
+    if not np.all(np.isfinite(cov)):
+        return _cloud_polygon(result_dataset, time_index)
+    evals, evecs = np.linalg.eigh(cov)
+    evals = np.clip(evals, 1.0, None)  # floor at 1 m^2 so a tight cloud still has an area
+
+    # Mahalanobis^2 for 2 DOF: p=0.5 -> 1.3863, p=0.9 -> 4.6052
+    k50, k90 = math.sqrt(1.3863), math.sqrt(4.6052)
+    ax90 = np.sqrt(evals) * k90  # semi-axes in metres
+    ax50 = np.sqrt(evals) * k50
+
+    angle = math.atan2(evecs[1, 1], evecs[0, 1])
+    ring: list[list[float]] = []
+    for step in range(33):
+        theta = 2 * math.pi * step / 32
+        ex = ax90[1] * math.cos(theta)
+        ey = ax90[0] * math.sin(theta)
+        rx = ex * math.cos(angle) - ey * math.sin(angle)
+        ry = ex * math.sin(angle) + ey * math.cos(angle)
+        ring.append([
+            lon0 + (cx + rx) / m_per_deg_lon,
+            lat0 + (cy + ry) / m_per_deg_lat,
+        ])
+
+    return {
+        "type": "Feature",
+        "geometry": {"type": "Polygon", "coordinates": [ring]},
+        "properties": {
+            "hours": idx,
+            "method": "gaussian_containment",
+            "particles": int(plon.size),
+            "radius_p50_m": round(float(math.sqrt(ax50[0] * ax50[1])), 1),
+            "radius_p90_m": round(float(math.sqrt(ax90[0] * ax90[1])), 1),
+            "semi_axes_p90_m": [round(float(ax90[1]), 1), round(float(ax90[0]), 1)],
+            "area_km2": round(float(math.pi * ax90[0] * ax90[1]) / 1e6, 2),
+        },
+    }
+
+
 def _hours_to_index(hours: int, output_hours: list[int]) -> int:
     best_idx, best_diff = 0, 10 ** 9
     for idx, cur in enumerate(output_hours):
@@ -946,7 +1023,7 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
     idx_24 = _hours_to_index(min(24, duration_h), output_hours)
 
     def _tagged_polygon(dataset, time_idx: int, cone_key: str) -> dict:
-        feat = _cloud_polygon(dataset, time_idx)
+        feat = _containment_polygon(dataset, time_idx)
         props = dict(feat.get("properties") or {})
         props["type"] = cone_key
         return {**feat, "properties": props}

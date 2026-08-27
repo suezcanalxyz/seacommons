@@ -825,9 +825,17 @@ operational_use stays false below a threshold.
               later position. On the existing VM the scheduler stays
               RAM-gated and one-drift-per-run; higher throughput needs the
               ARM worker.
-  Phase 15e - ensemble / uncertainty: proper Leeway coefficient
-              perturbation, multi-object shipwreck debris fields, and a
-              calibrated probability cone instead of a convex hull.
+  Phase 15e - ensemble / uncertainty.
+              15e-1 DONE (branch feat/drift-containment-cone): the search
+              cones were a raw convex hull of every particle -- one stray or
+              beached particle inflated the whole area and it carried no
+              probability. Replaced with a 2-D Gaussian fit to the cloud
+              (farthest 10% trimmed) returning the 90%-containment ellipse,
+              elongated along the drift-uncertainty axis, with the 50% ring
+              and area_km2 in properties. Standard SAR practice.
+              Still to do: proper Leeway coefficient perturbation on seed,
+              multi-object shipwreck debris fields, and raising the particle
+              count once the ARM worker exists.
 
 --- Open questions for a human decision ---
 

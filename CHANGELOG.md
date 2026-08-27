@@ -20,6 +20,13 @@ Keep a Changelog structure; releases are identified by Git tags when published.
   for an incident (model, object class, forcing quality, Stokes/landmask,
   impact point, per run), for daily analysis of how a forecast evolved.
 
+### Changed
+
+- Drift search cones are now a 90%-probability-of-containment ellipse fitted
+  to the particle cloud (outlier-trimmed), replacing the raw convex hull that
+  one stray particle could inflate. Properties carry `radius_p50_m`,
+  `radius_p90_m`, `semi_axes_p90_m` and `area_km2`.
+
 ## 0.6.0 - 2026-08-27
 
 ### Added
