@@ -729,10 +729,11 @@ What still limits realism:
    (`sim.set_config("drift:stokes_drift", False)`), even though CMEMS also
    publishes a wave dataset and Open-Meteo marine has wave fields.
 4. No landmask reader is added, so particles can drift across coastline.
-5. CMEMS is credential-gated. If the operational box has no CMEMS
-   credentials, currents come only from the coarser Open-Meteo grid --
-   verify the production configuration; this alone changes trajectory
-   quality substantially.
+5. CMEMS is credential-gated. Confirmed 2026-08-27 via
+   api.seacommons.org /api/v1/ops/summary: `cmems_configured: true` on the
+   operational box, so the 0.083 degree current slice is active. (The same
+   endpoint shows `job_execution_mode: inline` -- drift runs on the API
+   process, one OpenDrift slot; see point 7.)
 6. case_type does not reach the drift path. Intel auto-drift takes a
    vessel_type string (default "rubber_boat"); cases (which now carry
    case_type) are a separate object and are not linked to intel drift.
@@ -822,9 +823,10 @@ operational_use stays false below a threshold.
 
 --- Open questions for a human decision ---
 
-- Is CMEMS configured on the operational box today? 15b/15c planning
-  depends on the answer.
+- CMEMS on the operational box: confirmed configured (2026-08-27).
 - Is the ARM 12 GB worker provisioned, or is 15d blocked on hardware?
+  Note: production currently runs JOB_EXECUTION_MODE=inline, so even
+  15a runs drift on the API process.
 - ERA5 (reanalysis, ~5 day lag, free via CDS) or GFS (forecast, near-real-
   time) for gridded wind in 15c?
 - Should a case running its own drift override the intel event's
