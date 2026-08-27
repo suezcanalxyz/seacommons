@@ -159,6 +159,45 @@ def test_case_type_taxonomy() -> None:
     assert bad_patch.status_code == 422
 
 
+def test_drift_history_returns_every_run_for_an_incident_newest_first() -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from core.db.models import DriftResultDB
+    from core.db.session import session_scope
+
+    event_id = "intel:hist-evt-1"
+    base = datetime(2026, 7, 28, 6, tzinfo=timezone.utc).replace(tzinfo=None)
+    with session_scope() as db:
+        for i, model in enumerate(("OpenDrift Leeway", "OpenDrift OceanDrift")):
+            db.add(DriftResultDB(
+                drift_id=f"hist-run-{i}",
+                event_id=event_id,
+                domain="ocean_sar",
+                lat=35.0, lon=14.0,
+                impact_point={"type": "FeatureCollection", "features": [
+                    {"geometry": {"type": "Point", "coordinates": [14.1 + i, 35.1]}}
+                ]},
+                metadata_json={
+                    "model": model, "object_class": "rubber_boat" if i == 0 else "tanker",
+                    "forcing_quality": "spatiotemporal", "stokes_drift": True,
+                    "duration_h": 24, "operational_use": True,
+                },
+                status="completed",
+                created_at=base + timedelta(hours=i),
+            ))
+
+    # accepts the bare id too, not only the intel: prefix
+    resp = client.get("/api/v1/drift/history?event_id=hist-evt-1")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 2
+    assert [r["drift_id"] for r in body["runs"]] == ["hist-run-1", "hist-run-0"]  # newest first
+    assert body["runs"][0]["model"] == "OpenDrift OceanDrift"
+    assert body["runs"][0]["object_class"] == "tanker"
+    assert body["runs"][0]["impact_point"] == [15.1, 35.1]
+    assert body["runs"][1]["stokes_drift"] is True
+
+
 def test_durable_job_queue_lifecycle() -> None:
     from core.jobs import claim, complete, enqueue, get
     job_id = enqueue("test", {"value": 1})

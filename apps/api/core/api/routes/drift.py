@@ -7,8 +7,10 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from pydantic import BaseModel
+
+from core.security import READ_ROLES, require_roles
 
 router = APIRouter()
 
@@ -135,6 +137,21 @@ async def workers():
         rows = db.execute(select(WorkerHeartbeatDB).order_by(WorkerHeartbeatDB.last_seen_at.desc())).scalars().all()
         return [{**{c.name: getattr(row, c.name) for c in row.__table__.columns},
                  "alive": bool(row.last_seen_at and (now - row.last_seen_at).total_seconds() < 60)} for row in rows]
+
+
+@router.get("/api/v1/drift/history")
+async def drift_history(
+    request: Request,
+    event_id: str = Query(min_length=1, max_length=128),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Prediction history: every stored drift run for one incident, newest
+    first. Operator-facing analysis endpoint."""
+    require_roles(request, READ_ROLES)
+    from core.db.store import list_drift_history
+
+    runs = list_drift_history(event_id, limit=limit)
+    return {"event_id": event_id, "count": len(runs), "runs": runs}
 
 
 @router.get("/api/v1/drift/{drift_id}/geojson")

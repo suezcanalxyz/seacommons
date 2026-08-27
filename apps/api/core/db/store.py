@@ -178,6 +178,47 @@ def list_drift_jobs_for_event(event_id: str) -> list[dict[str, Any]]:
         return [{"id": r.drift_id, "status": getattr(r, "status", "completed")} for r in rows]
 
 
+def list_drift_history(event_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    """Every stored drift run for an event, newest first, with a compact
+    per-run summary for prediction-history analysis."""
+    candidates = {event_id, f"intel:{event_id}", event_id.removeprefix("intel:")}
+    history: list[dict[str, Any]] = []
+    with session_scope() as session:
+        rows = session.execute(
+            select(DriftResultDB)
+            .where(DriftResultDB.event_id.in_(candidates))
+            .order_by(DriftResultDB.created_at.desc())
+            .limit(limit)
+        ).scalars().all()
+
+        for row in rows:
+            meta = row.metadata_json or {}
+            impact = None
+            try:
+                feats = (row.impact_point or {}).get("features") or []
+                if feats:
+                    impact = feats[0].get("geometry", {}).get("coordinates")
+            except (AttributeError, TypeError):
+                impact = None
+            history.append({
+                "drift_id": row.drift_id,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "status": getattr(row, "status", "completed"),
+                "model": meta.get("model"),
+                "object_class": meta.get("object_class"),
+                "duration_h": meta.get("duration_h"),
+                "forcing_quality": meta.get("forcing_quality"),
+                "forcing_resolution": meta.get("forcing_resolution"),
+                "stokes_drift": meta.get("stokes_drift"),
+                "landmask": meta.get("landmask"),
+                "operational_use": meta.get("operational_use"),
+                "trajectory_distance_m": meta.get("trajectory_distance_m"),
+                "mean_drift_speed_ms": meta.get("mean_drift_speed_ms"),
+                "impact_point": impact,
+            })
+    return history
+
+
 def get_drift(drift_id: str) -> dict[str, Any] | None:
     with session_scope() as session:
         row = session.get(DriftResultDB, drift_id)
