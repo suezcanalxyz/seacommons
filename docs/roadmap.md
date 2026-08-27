@@ -841,11 +841,16 @@ operational_use stays false below a threshold.
               uncertainty). Per-particle current_drift_factor spread (~8%,
               both models) and wind_drift_factor spread (~20%, OceanDrift).
               Deterministic RNG keyed on the request so re-runs reproduce.
+              15e-3 DONE (branch feat/drift-debris-field): shipwreck cases
+              seed a multi-object Leeway debris field (45% persons in water,
+              30% life rafts, 25% wooden fragments) -- rafts blow downwind
+              faster than swimmers, so the search area is ~65% larger than a
+              single-object drift. ConePanel now shows the 90% containment
+              area / radius / axes.
               Still to do: Leeway downwind coefficient perturbation (the
               model computes it from its own table and rejects a seed
-              override -- needs a post-seed element write), multi-object
-              shipwreck debris fields, and raising the particle count once
-              the ARM worker exists.
+              override -- needs a post-seed element write), and raising the
+              particle count once the ARM worker exists.
 
 --- Open questions for a human decision ---
 
