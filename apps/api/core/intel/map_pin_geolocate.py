@@ -56,12 +56,37 @@ def _normalize_label(text: str) -> str:
     return re.sub(r"[^a-z ]", "", stripped.lower()).strip()
 
 
-def _detect_marker_pixel(image) -> Optional[tuple[int, int]]:
-    """Find a single compact red drop-pin marker; None if none/ambiguous.
+def _blob_from_mask(mask, width: int, height: int) -> Optional[tuple[int, int]]:
+    """A single compact, isolated marker blob from a boolean mask; its tip."""
+    import numpy as np
 
-    Tuned for the marker red used by Google/Apple Maps and similar static
-    map exports (high red, low green, low blue) — narrow enough to reject
-    orange/tan basemap fills, which have a much higher green channel.
+    count = int(mask.sum())
+    if count < 10 or count > 0.02 * width * height:
+        return None
+    ys, xs = np.nonzero(mask)
+    box_w = int(xs.max() - xs.min()) + 1
+    box_h = int(ys.max() - ys.min()) + 1
+    # A single pin icon is small and compact; a large/sparse bounding box
+    # means multiple unrelated elements were picked up.
+    if box_w > 0.1 * width or box_h > 0.14 * height:
+        return None
+    # Fill ratio: a real marker fills a good fraction of its bounding box;
+    # scattered specks do not.
+    if count < 0.20 * box_w * box_h:
+        return None
+    center_x = int(round(float(xs.mean())))
+    tip_y = int(ys.max())  # a teardrop pin's point is its bottom tip
+    return center_x, tip_y
+
+
+def _detect_marker_pixel(image) -> Optional[tuple[int, int]]:
+    """Find a single compact drop-pin / circle marker; None if none/ambiguous.
+
+    Alarm Phone's map screenshots come from several tools, so the marker is
+    not always Google-red. Try, in order: the classic map red, then a
+    high-saturation blue and an amber/orange marker, then a dark
+    high-contrast teardrop. Each candidate must still be small, compact and
+    isolated (see _blob_from_mask) so a basemap accent can't pass.
     """
     import numpy as np
 
@@ -70,26 +95,20 @@ def _detect_marker_pixel(image) -> Optional[tuple[int, int]]:
     r = pixels[:, :, 0].astype(int)
     g = pixels[:, :, 1].astype(int)
     b = pixels[:, :, 2].astype(int)
-    mask = (r > 150) & (g < 110) & (b < 110) & (r - g > 60) & (r - b > 60)
+    height, width = r.shape
 
-    count = int(mask.sum())
-    height, width = mask.shape
-    if count < 12 or count > 0.02 * width * height:
-        return None
-
-    ys, xs = np.nonzero(mask)
-    box_w = int(xs.max() - xs.min()) + 1
-    box_h = int(ys.max() - ys.min()) + 1
-    # A single pin icon is small and compact; a large/sparse red bounding box
-    # means multiple unrelated red elements were picked up — bail rather
-    # than average them into a meaningless point.
-    if box_w > 0.1 * width or box_h > 0.12 * height:
-        return None
-
-    center_x = int(round(float(xs.mean())))
-    # A teardrop pin's point is its bottom tip, not its centroid.
-    tip_y = int(ys.max())
-    return center_x, tip_y
+    for mask in (
+        # classic map-pin red
+        (r > 150) & (g < 110) & (b < 110) & (r - g > 60) & (r - b > 60),
+        # saturated blue marker (compactness check rejects the water body)
+        (b > 150) & (r < 120) & (g < 150) & (b - r > 55) & (b - g > 25),
+        # amber / orange marker
+        (r > 180) & (g > 90) & (g < 190) & (b < 100) & (r - b > 90) & (r - g > 25),
+    ):
+        tip = _blob_from_mask(np.asarray(mask), width, height)
+        if tip is not None:
+            return tip
+    return None
 
 
 def _ocr_pass(image, *, executable: str, block_prefix: str) -> list[dict]:
@@ -229,6 +248,38 @@ def _match_landmarks(word_boxes: list[dict]) -> list[tuple[str, float, float]]:
     return [(name, px, py) for name, (px, py) in matched.items()]
 
 
+def _drop_worst_landmark(
+    landmarks: list[tuple[str, float, float]],
+) -> list[tuple[str, float, float]]:
+    """Drop one landmark if its pixel position is a clear outlier against a
+    linear pixel<->geo fit of the rest; otherwise keep them all."""
+    import numpy as np
+
+    names = [n for n, _, _ in landmarks]
+    px = np.array([x for _, x, _ in landmarks])
+    py = np.array([y for _, _, y in landmarks])
+    lon = np.array([PRECISE_PLACES[n][1] for n in names])
+    lat = np.array([PRECISE_PLACES[n][0] for n in names])
+
+    residuals: list[float] = []
+    for i in range(len(landmarks)):
+        keep = [j for j in range(len(landmarks)) if j != i]
+        if np.ptp(lon[keep]) < 1e-6 or np.ptp(lat[keep]) < 1e-6:
+            return landmarks
+        sx, ix = np.polyfit(lon[keep], px[keep], 1)
+        sy, iy = np.polyfit(lat[keep], py[keep], 1)
+        residuals.append(
+            float(abs(px[i] - (sx * lon[i] + ix)) + abs(py[i] - (sy * lat[i] + iy)))
+        )
+
+    worst = int(np.argmax(residuals))
+    others = [residuals[j] for j in range(len(residuals)) if j != worst]
+    median_other = float(np.median(others)) if others else 0.0
+    if residuals[worst] > max(25.0, 3.0 * median_other):
+        return [lm for j, lm in enumerate(landmarks) if j != worst]
+    return landmarks
+
+
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     import math
 
@@ -273,6 +324,11 @@ def geolocate_pin_from_image(payload: bytes, *, executable: Optional[str] = None
     landmarks = _match_landmarks(word_boxes)
     if len(landmarks) < _MIN_LANDMARK_MATCHES:
         return None
+
+    # Robust to one OCR-misplaced label: with >= 4 matches, drop the single
+    # landmark whose position is the worst fit if it is a clear outlier.
+    if len(landmarks) >= 4:
+        landmarks = _drop_worst_landmark(landmarks)
 
     pixel_xs = [px for _, px, _ in landmarks]
     pixel_ys = [py for _, _, py in landmarks]

@@ -544,10 +544,24 @@ class TwikitMonitor:
         try:
             coords, attempted, method = self._ocr_tweet_media(event_id, urls)
             if coords is None:
+                # Visible in prod logs: was OCR even possible, and did it run
+                # but fail to read a coordinate? (Alarm Phone posts the
+                # position as a map screenshot -- a silent miss here is a
+                # lost distress location.)
+                import shutil
+
+                logger.warning(
+                    "media OCR: no coordinate for %s (images=%d, tesseract=%s, attempted=%s)",
+                    event_id, len(urls), bool(shutil.which("tesseract")), attempted,
+                )
                 if attempted:
                     intel_store.update_metadata(event_id, metadata={"ocr_attempted": True})
                 self._auto_drift_if_live(event_id, force=False)
                 return
+            logger.info(
+                "media OCR: %s -> %.5f,%.5f via %s for %s",
+                "coordinate", coords[0], coords[1], method, event_id,
+            )
             upgraded = intel_store.enrich_location(
                 event_id,
                 lat=coords[0],

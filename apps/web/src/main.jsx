@@ -2065,6 +2065,7 @@ function App() {
     return [
       { name: 'AISStream', state: summary.backend?.aisstream_connected ? 'live' : 'degraded', detail: summary.backend?.aisstream_connected ? `live feed (${summary.backend?.aisstream_messages} msgs)` : 'feed unavailable' },
       { name: 'CMEMS',     state: summary.backend?.cmems_configured ? 'ready' : 'degraded', detail: summary.backend?.cmems_configured ? 'live currents configured' : 'credentials missing' },
+      { name: 'Image OCR', state: summary.backend?.image_ocr?.available ? 'ready' : 'degraded', detail: summary.backend?.image_ocr?.available ? 'map-screenshot coordinates readable' : (summary.backend?.image_ocr?.tesseract ? 'Pillow missing' : 'tesseract not installed') },
       { name: 'Redis',     state: summary.backend?.redis_configured ? 'ok' : 'off',      detail: summary.backend?.redis_configured ? 'cache active' : 'not configured' },
       { name: 'Database',  state: summary.backend?.database ?? '—',                      detail: summary.backend?.database === 'postgres' ? 'persistent' : 'local' },
       { name: 'Scheduler', state: summary.scheduler?.running ? 'live' : 'off',           detail: summary.scheduler?.running ? `${summary.scheduler?.jobs?.length || 0} jobs active` : 'not running' },

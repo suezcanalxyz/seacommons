@@ -654,6 +654,25 @@ def test_media_ocr_requires_numeric_consensus() -> None:
     assert extract_numeric_coords("N 28° 06' / W 015° 24'") == (28.1, -15.4)
 
 
+def test_media_ocr_consensus_tolerates_one_bad_pass() -> None:
+    # Two Tesseract layouts agree; a third misreads a degree. The clean
+    # two-pass agreement should still win instead of being blocked.
+    passes = [
+        "N 35° 24.0' E 012° 36.0'",
+        "Position N 35° 24.1' / E 012° 36.0'",
+        "N 37° 10.0' E 019° 05.0'",   # garbled — a different cluster
+    ]
+    result = consensus_ocr_coordinate(passes)
+    assert result is not None
+    assert abs(result[0] - 35.4) < 0.05 and abs(result[1] - 12.6) < 0.05
+
+
+def test_ocr_char_folding_recovers_common_misreads() -> None:
+    # I -> 1, O -> 0 on the small text of a map label.
+    lat, lon = extract_numeric_coords("N 35° I2.0' E 0I2° 36.0'")
+    assert abs(lat - 35.2) < 0.01 and abs(lon - 12.6) < 0.01
+
+
 def test_relative_alarm_phone_location_is_geolocated_with_declared_offset() -> None:
     lat, lon = extract_relative_coords(
         "🆘 47 people were 50 km south of #Crete, Greece when they last spoke."

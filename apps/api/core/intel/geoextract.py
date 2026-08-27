@@ -488,9 +488,14 @@ _BEARINGS = {
 
 def extract_numeric_coords(text: str) -> Optional[tuple[float, float]]:
     """Return only explicit numeric coordinates, never a place-name centroid."""
-    # OCR commonly confuses 0 with O/Q/@ and sometimes reads the minutes
-    # separator as another degree sign. Accept both DMM and DMS map labels.
-    ocr_text = text.upper().translate(str.maketrans({"O": "0", "Q": "0", "@": "0"}))
+    # OCR commonly confuses digits for letters on the small text of a map
+    # label. Only fold letters that are never a hemisphere marker (N/S/E/W)
+    # or unit -- folding S->5 would corrupt a southern latitude.
+    ocr_text = text.upper().translate(str.maketrans({
+        "O": "0", "Q": "0", "@": "0",
+        "I": "1", "|": "1", "!": "1",
+        "Z": "2", "B": "8",
+    }))
     dmm_match = _RE_OCR_DMM_PREFIX.search(ocr_text)
     if dmm_match:
         lat_minutes = float(dmm_match.group(3).replace(",", "."))

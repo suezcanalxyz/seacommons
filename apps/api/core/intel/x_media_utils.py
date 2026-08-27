@@ -47,20 +47,45 @@ def _x_photo_urls(payload: dict[str, Any]) -> list[str]:
 
 
 def consensus_ocr_coordinate(texts: list[str]) -> Optional[tuple[float, float]]:
-    """Accept an OCR location only when two independent layout passes agree."""
+    """Accept an OCR location only when two independent layout passes agree.
+
+    Clusters the per-pass candidates (within ~0.03 deg) rather than testing
+    exact pairs, so one bad digit in a third pass no longer blocks a clear
+    two-pass agreement; returns the median of the largest cluster once it
+    holds at least two candidates.
+    """
     candidates = [
         candidate
         for text in texts
         if (candidate := extract_numeric_coords(text)) is not None
     ]
-    for index, first in enumerate(candidates):
-        for second in candidates[index + 1 :]:
-            if abs(first[0] - second[0]) <= 0.01 and abs(first[1] - second[1]) <= 0.01:
-                return (
-                    round((first[0] + second[0]) / 2, 5),
-                    round((first[1] + second[1]) / 2, 5),
-                )
+    cluster = _largest_agreeing_cluster(candidates, tol=0.03)
+    if len(cluster) >= 2:
+        lats = sorted(c[0] for c in cluster)
+        lons = sorted(c[1] for c in cluster)
+        mid = len(cluster) // 2
+        return round(lats[mid], 5), round(lons[mid], 5)
     return None
+
+
+def _largest_agreeing_cluster(
+    candidates: list[tuple[float, float]], *, tol: float
+) -> list[tuple[float, float]]:
+    best: list[tuple[float, float]] = []
+    for anchor in candidates:
+        group = [
+            other
+            for other in candidates
+            if abs(other[0] - anchor[0]) <= tol and abs(other[1] - anchor[1]) <= tol
+        ]
+        if len(group) > len(best):
+            best = group
+    return best
+
+
+# Characters a coordinate readout can contain — a whitelist makes Tesseract
+# far more accurate on the small text of a map label.
+_COORD_WHITELIST = "0123456789.,'\"NSEWnsew:/-()[] "
 
 
 def ocr_png_coordinate(
@@ -73,14 +98,20 @@ def ocr_png_coordinate(
     if not command:
         return None, False
     texts: list[str] = []
-    for page_mode in ("3", "6", "11"):
+    # (psm, restrict-to-coordinate-characters). The whitelisted passes read
+    # digits off a map label far more reliably; the open passes still catch
+    # the "Position:" prefix and any degree glyph.
+    variants = (
+        ("3", False), ("6", False), ("11", False),
+        ("6", True), ("7", True), ("11", True),
+    )
+    for page_mode, restrict in variants:
+        cmd = [command, "stdin", "stdout", "--psm", page_mode, "--oem", "1", "-l", "eng"]
+        if restrict:
+            cmd += ["-c", f"tessedit_char_whitelist={_COORD_WHITELIST}"]
         try:
             result = subprocess.run(
-                [command, "stdin", "stdout", "--psm", page_mode, "-l", "eng"],
-                input=processed_png,
-                capture_output=True,
-                check=False,
-                timeout=20,
+                cmd, input=processed_png, capture_output=True, check=False, timeout=20
             )
         except (OSError, subprocess.TimeoutExpired):
             continue
