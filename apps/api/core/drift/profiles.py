@@ -28,6 +28,10 @@ class DriftProfile:
     # OceanDrift: element wind_drift_factor and the config drift:wind_drift_depth
     wind_drift_factor: float | None = None
     wind_drift_depth: float | None = None
+    # Debris field: a mix of Leeway object types, each with a particle
+    # fraction. Used for shipwrecks -- survivors, rafts and debris drift
+    # differently, so a single object type understates the search area.
+    debris_mix: tuple[tuple[int, float], ...] | None = None
 
 
 # Leeway categories keep the existing OpenDrift object_type integers.
@@ -78,6 +82,16 @@ PROFILES: dict[str, DriftProfile] = {
         "lost_container", _OCEAN, "Shipping container lost at sea (floats low)",
         wind_drift_factor=0.03, wind_drift_depth=0.3,
     ),
+    "shipwreck_debris_field": DriftProfile(
+        "shipwreck_debris_field", _LEEWAY,
+        "Shipwreck: persons in water, life rafts and wooden debris",
+        leeway_object_type=26,  # fallback if the mix is dropped downstream
+        debris_mix=(
+            (26, 0.45),  # person in water
+            (27, 0.30),  # life raft
+            (46, 0.25),  # wooden / fibreglass fragments
+        ),
+    ),
 }
 
 DEFAULT_PROFILE = PROFILES["rubber_boat"]
@@ -108,7 +122,7 @@ _CASE_TYPE_TO_CLASS: dict[str, str] = {
     "pushback": "rubber_boat",
     "interception": "rubber_boat",
     "missing_persons": "person_in_water",
-    "shipwreck": "person_in_water",
+    "shipwreck": "shipwreck_debris_field",
     "vessel_incident": "general_cargo",
     "monitoring": "rubber_boat",
     "unspecified": "rubber_boat",

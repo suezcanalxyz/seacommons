@@ -156,6 +156,28 @@ function ConeView({ panel }) {
         {law?.drift_nm != null && <Row label="Drift distance" value={`${law.drift_nm} nm`} />}
       </div>
 
+      {/* ── Search area (probability of containment) ── */}
+      {Number.isFinite(Number(props.area_km2)) && (
+        <div className="cone-section">
+          <SectionLabel>Search area · 90% containment</SectionLabel>
+          <Row label="Area" value={`${Number(props.area_km2).toFixed(1)} km²`} />
+          {Number.isFinite(Number(props.radius_p90_m)) && (
+            <Row label="Radius (90%)" value={`${(Number(props.radius_p90_m) / 1000).toFixed(1)} km`} />
+          )}
+          {Number.isFinite(Number(props.radius_p50_m)) && (
+            <Row label="Radius (50%)" value={`${(Number(props.radius_p50_m) / 1000).toFixed(1)} km`} />
+          )}
+          {Array.isArray(props.semi_axes_p90_m) && props.semi_axes_p90_m.length === 2 && (
+            <Row
+              label="Axes (90%)"
+              value={`${(props.semi_axes_p90_m[0] / 1000).toFixed(1)} × ${(props.semi_axes_p90_m[1] / 1000).toFixed(1)} km`}
+              mono
+            />
+          )}
+          {props.particles && <Row label="Particles" value={props.particles} />}
+        </div>
+      )}
+
       {/* ── Simulation parameters ── */}
       {(sim.scenarioType || sim.vesselType || sim.persons) && (
         <div className="cone-section">

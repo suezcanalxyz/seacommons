@@ -114,6 +114,10 @@ class DriftEngine:
             "time_step_output_seconds": int(config.get("time_step_output_seconds", os.getenv("OPENDRIFT_OUTPUT_SECONDS", "3600"))),
             "model": profile.model,
             "object_class": profile.object_class,
+            "debris_mix": (
+                [{"object_type": ot, "fraction": fr} for ot, fr in profile.debris_mix]
+                if profile.debris_mix else None
+            ),
             "object_type": (
                 int(config["object_type"]) if config.get("object_type") is not None
                 else profile.leeway_object_type

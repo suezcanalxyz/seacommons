@@ -31,6 +31,10 @@ Keep a Changelog structure; releases are identified by Git tags when published.
   and each particle now carries an independent current-factor (~8%) and,
   for vessels, windage (~20%) perturbation. Runs are deterministic per
   request.
+- Shipwreck cases seed a multi-object Leeway debris field (persons in
+  water, life rafts, wooden fragments) rather than a single object type,
+  widening the search area to match how differently those objects drift.
+- The drift panel shows the 90% search area, radius and ellipse axes.
 
 ## 0.6.0 - 2026-08-27
 

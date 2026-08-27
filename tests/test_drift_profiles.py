@@ -36,6 +36,16 @@ def test_case_type_supplies_a_default_when_no_vessel_type() -> None:
     assert resolve_profile(case_type="pushback").object_class == "rubber_boat"
 
 
+def test_shipwreck_is_a_multi_object_debris_field() -> None:
+    profile = resolve_profile(case_type="shipwreck")
+    assert profile.object_class == "shipwreck_debris_field"
+    assert profile.model == "leeway"
+    assert profile.debris_mix is not None
+    object_types = [ot for ot, _ in profile.debris_mix]
+    assert 26 in object_types  # person in water
+    assert sum(fraction for _, fraction in profile.debris_mix) == pytest.approx(1.0)
+
+
 def test_vessel_type_wins_over_case_type() -> None:
     profile = resolve_profile(vessel_type="tanker", case_type="distress_sar")
     assert profile.object_class == "tanker"

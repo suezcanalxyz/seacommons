@@ -1005,24 +1005,49 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
     # ~8% uncertainty on the ocean-current field (model error + interpolation).
     current_drift_factor = np.clip(rng.normal(1.0, 0.08, particles), 0.6, 1.4)
 
-    seed_kwargs: dict[str, Any] = {
+    common_seed = {
         "lon": float(payload["lon"]),
         "lat": float(payload["lat"]),
         "time": start_time,
         "radius": float(payload.get("seed_radius_m", 150)),
-        "number": particles,
-        "current_drift_factor": current_drift_factor,
     }
-    if model_name == "oceandrift":
+    debris_mix = payload.get("debris_mix") if model_name == "leeway" else None
+    if debris_mix:
+        # A shipwreck is not one object: split particles across persons /
+        # rafts / debris, each with its own Leeway coefficients. The wider
+        # multi-modal spread is captured by the containment ellipse.
+        offset = 0
+        for component in debris_mix:
+            frac = float(component.get("fraction", 0))
+            n_k = max(1, round(frac * particles)) if component is not debris_mix[-1] else particles - offset
+            n_k = max(1, min(n_k, particles - offset))
+            if n_k <= 0:
+                continue
+            sim.seed_elements(
+                **common_seed,
+                number=n_k,
+                object_type=int(component.get("object_type", 26)),
+                current_drift_factor=current_drift_factor[offset:offset + n_k],
+            )
+            offset += n_k
+            if offset >= particles:
+                break
+    elif model_name == "oceandrift":
+        seed_kwargs = {**common_seed, "number": particles, "current_drift_factor": current_drift_factor}
         if wind_drift_factor is not None:
             wdf = float(wind_drift_factor)
             # ~20% uncertainty on the vessel windage coefficient.
             seed_kwargs["wind_drift_factor"] = np.clip(
                 rng.normal(wdf, 0.2 * wdf, particles), wdf * 0.3, wdf * 2.5
             )
+        sim.seed_elements(**seed_kwargs)
     else:
-        seed_kwargs["object_type"] = object_type
-    sim.seed_elements(**seed_kwargs)
+        sim.seed_elements(
+            **common_seed,
+            number=particles,
+            object_type=object_type,
+            current_drift_factor=current_drift_factor,
+        )
     # Use timedelta objects — integer seconds trigger a conflict with internal
     # config state in OpenDrift 1.14.x, producing only 2 output time steps.
     sim.run(
@@ -1091,6 +1116,7 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
             "stokes_drift": stokes_enabled,
             "landmask": "global_landmask" if landmask_added else None,
             "seed_radius_m": float(payload.get("seed_radius_m", 150)),
+            "debris_mix": debris_mix or None,
             "ensemble_spread": {
                 "current_drift_factor_std": 0.08,
                 "wind_drift_factor_rel_std": 0.2 if model_name == "oceandrift" else None,
