@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
+const CASE_TYPES = [
+  'distress_sar', 'pushback', 'shipwreck', 'missing_persons',
+  'interception', 'vessel_incident', 'monitoring', 'unspecified',
+];
+const caseTypeLabel = (value) => (value || 'unspecified').replace(/_/g, ' ');
+
 export default function CasesWorkspace({ apiBase, fetchJson, onLocate }) {
   const [cases, setCases] = useState([]);
   const [inbox, setInbox] = useState([]);
@@ -8,15 +14,19 @@ export default function CasesWorkspace({ apiBase, fetchJson, onLocate }) {
   const [note, setNote] = useState('');
   const [assignee, setAssignee] = useState('');
   const [busy, setBusy] = useState(false);
+  const [typeFilter, setTypeFilter] = useState('');
 
   const refresh = useCallback(async () => {
     try {
+      const casePath = typeFilter
+        ? `/api/v1/cases?case_type=${encodeURIComponent(typeFilter)}`
+        : '/api/v1/cases';
       const [nextCases, nextInbox] = await Promise.all([
-        fetchJson(apiBase, '/api/v1/cases'), fetchJson(apiBase, '/api/v1/inbox'),
+        fetchJson(apiBase, casePath), fetchJson(apiBase, '/api/v1/inbox'),
       ]);
       setCases(nextCases); setInbox(nextInbox); setError('');
     } catch (err) { setError(err.message || 'Case service unavailable'); }
-  }, [apiBase, fetchJson]);
+  }, [apiBase, fetchJson, typeFilter]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -40,6 +50,13 @@ export default function CasesWorkspace({ apiBase, fetchJson, onLocate }) {
   async function setStatus(status) {
     const updated = await fetchJson(apiBase, `/api/v1/cases/${selected.case_id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
+    });
+    setSelected({ ...selected, ...updated }); await refresh();
+  }
+
+  async function setCaseType(caseType) {
+    const updated = await fetchJson(apiBase, `/api/v1/cases/${selected.case_id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ case_type: caseType }),
     });
     setSelected({ ...selected, ...updated }); await refresh();
   }
@@ -90,12 +107,17 @@ export default function CasesWorkspace({ apiBase, fetchJson, onLocate }) {
       <button className="link-button" onClick={() => setSelected(null)}>← All cases</button>
       <p className="section-kicker">Case / {selected.case_id.slice(0, 8)}</p>
       <h3>{selected.title}</h3>
-      <div className="case-meta"><span>{selected.priority}</span><span>{selected.status}</span><span>{selected.assigned_to || 'unassigned'}</span></div>
+      <div className="case-meta"><span>{caseTypeLabel(selected.case_type)}</span><span>{selected.priority}</span><span>{selected.status}</span><span>{selected.assigned_to || 'unassigned'}</span></div>
       <p className="panel-copy">{selected.summary || 'No operational summary yet.'}</p>
       <div className="action-row">
         {['triage', 'active', 'monitoring', 'resolved'].map(status =>
           <button key={status} disabled={selected.status === status} onClick={() => setStatus(status)}>{status}</button>)}
       </div>
+      <label className="case-type-select">Type
+        <select value={selected.case_type || 'unspecified'} onChange={e => setCaseType(e.target.value)}>
+          {CASE_TYPES.map(type => <option key={type} value={type}>{caseTypeLabel(type)}</option>)}
+        </select>
+      </label>
       <div className="case-assignment"><input value={assignee} onChange={e => setAssignee(e.target.value)} placeholder="Operator subject / team"/><button onClick={updateAssignment}>Assign</button></div>
       <form className="case-note" onSubmit={addNote}><textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Add an operational note…" rows="3"/><button disabled={busy || !note.trim()}>Add note</button></form>
       <div className="case-attachments"><div className="panel-title-row"><p className="section-kicker">Attachments · {selected.attachments?.length || 0}</p><label className="upload-button">Add file<input type="file" onChange={uploadAttachment} disabled={busy}/></label></div>
@@ -107,9 +129,17 @@ export default function CasesWorkspace({ apiBase, fetchJson, onLocate }) {
       </li>)}</ul>
     </section> : <>
       <section className="panel-block">
-        <div className="panel-title-row"><div><p className="section-kicker">Operations</p><h3>Cases</h3></div><button onClick={refresh}>Refresh</button></div>
+        <div className="panel-title-row"><div><p className="section-kicker">Operations</p><h3>Cases</h3></div>
+          <div className="case-list-controls">
+            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+              <option value="">All types</option>
+              {CASE_TYPES.map(type => <option key={type} value={type}>{caseTypeLabel(type)}</option>)}
+            </select>
+            <button onClick={refresh}>Refresh</button>
+          </div>
+        </div>
         <ul className="case-list">{cases.map(item => <li key={item.case_id}>
-          <button onClick={() => openCase(item.case_id)}><span><strong>{item.title}</strong><small>{item.status} · {item.priority}</small></span><b>›</b></button>
+          <button onClick={() => openCase(item.case_id)}><span><strong>{item.title}</strong><small>{caseTypeLabel(item.case_type)} · {item.status} · {item.priority}</small></span><b>›</b></button>
         </li>)}</ul>
       </section>
       <section className="panel-block"><p className="section-kicker">Signal inbox · {inbox.length}</p><h3>Needs triage</h3>

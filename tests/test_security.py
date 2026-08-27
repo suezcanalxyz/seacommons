@@ -103,6 +103,7 @@ def test_case_lifecycle() -> None:
         "title": "Test distress case", "priority": "high", "lat": 35.1, "lon": 15.4
     })
     assert created.status_code == 201
+    assert created.json()["case_type"] == "distress_sar"  # default
     case_id = created.json()["case_id"]
     fetched = client.get(f"/api/v1/cases/{case_id}")
     assert fetched.status_code == 200
@@ -131,6 +132,31 @@ def test_case_lifecycle() -> None:
         assert command.json()["action"] == "case.telegram_note"
     finally:
         config.TELEGRAM_WEBHOOK_SECRET, config.TELEGRAM_OPERATIONS_CHAT_ID = old_secret, old_chat
+
+
+def test_case_type_taxonomy() -> None:
+    typed = client.post("/api/v1/cases", json={"title": "Pushback off Crete", "case_type": "pushback"})
+    assert typed.status_code == 201
+    typed_id = typed.json()["case_id"]
+    assert typed.json()["case_type"] == "pushback"
+
+    bad = client.post("/api/v1/cases", json={"title": "Bad type case", "case_type": "not_a_type"})
+    assert bad.status_code == 422
+
+    other = client.post("/api/v1/cases", json={"title": "Routine monitoring", "case_type": "monitoring"})
+    assert other.status_code == 201
+
+    only_pushback = client.get("/api/v1/cases?case_type=pushback").json()
+    ids = {row["case_id"] for row in only_pushback}
+    assert typed_id in ids
+    assert all(row["case_type"] == "pushback" for row in only_pushback)
+
+    reclassified = client.patch(f"/api/v1/cases/{typed_id}", json={"case_type": "shipwreck"})
+    assert reclassified.status_code == 200
+    assert reclassified.json()["case_type"] == "shipwreck"
+
+    bad_patch = client.patch(f"/api/v1/cases/{typed_id}", json={"case_type": "nope"})
+    assert bad_patch.status_code == 422
 
 
 def test_durable_job_queue_lifecycle() -> None:

@@ -121,6 +121,10 @@ class CaseDB(Base):
     organization_id = Column(String(36), ForeignKey("organizations.organization_id"), nullable=True, index=True)
     title = Column(String(256), nullable=False)
     status = Column(String(32), nullable=False, default="open", index=True)
+    case_type = Column(
+        String(32), nullable=False, default="distress_sar",
+        server_default="distress_sar", index=True,
+    )
     priority = Column(String(16), nullable=False, default="medium", index=True)
     sensitivity = Column(String(16), nullable=False, default="restricted")
     summary = Column(Text, default="")
