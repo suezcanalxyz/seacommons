@@ -592,6 +592,111 @@ Prefer small PRs.
 If uncertain about domain behaviour, stop and document the uncertainty instead of guessing.
 
 ========================================
+PHASE 14 — PROPOSED: NAVAL COMMUNICATIONS MONITORING
+========================================
+
+Status: design proposal, not started. This section scopes a requested
+capability — a general monitoring layer over live naval/maritime
+communications — so it can be reviewed before any code is written. It does
+not commit the project to building it.
+
+--- Goal ---
+
+Give operators a single view of the maritime-communications picture around
+an area of interest: who is broadcasting distress, safety and routing
+traffic, and how that corroborates or contradicts the OSINT/AIS incident
+feed SeaCommons already has.
+
+--- What already exists (do not rebuild) ---
+
+- AIS position/voyage traffic via AISStream (core/vessels/aisstream.py),
+  including an optional dedicated NGO/SAR-fleet subscription by MMSI.
+- OSINT distress ingestion (Alarm Phone / X / news) with canonical
+  incident lifecycle and public/private policy.
+- A hardware sensor node design with an RTL-SDR already in the BOM
+  (docs/BOM.md) — RF decode is within reach of the existing node.
+
+--- Candidate sources, roughly by effort ---
+
+1. AIS safety-related messages already in the AISStream feed but currently
+   ignored: AIS-SART / AIS-MOB / AIS-EPIRB (message types 1/14 with the
+   974xxxxxx MMSI range), safety-related broadcast (type 14) and
+   addressed safety (type 12). Lowest effort — same transport, same
+   parser file, no new provider.
+2. DSC (Digital Selective Calling) distress and safety on VHF ch70 / MF /
+   HF. Requires either an SDR + a DSC decoder on the sensor node, or an
+   online DSC aggregator feed if a lawful one is available in-region.
+3. NAVTEX (518 kHz) and other Maritime Safety Information (MSI) text —
+   navigational/meteorological/SAR warnings. SDR + decoder, or an online
+   MSI text feed. Text-only, geocodable by NAVAREA/subarea.
+4. Coast-guard / MRCC public situation broadcasts and press updates where
+   published as feeds (some MRCCs publish structured SAR bulletins).
+5. Out of scope for now: decoding voice ch16, and anything requiring
+   interception of non-broadcast or encrypted traffic.
+
+--- Architecture sketch ---
+
+    source connector (per protocol)
+        -> normalize to a canonical NavalCommsEvent
+        -> classify: distress / safety / routine / MSI
+        -> distress  -> existing incident pipeline (core/intel), same
+                        lifecycle, public/private policy and projection
+        -> non-distress -> a separate "comms" context stream, operator-only
+                           by default, never auto-published
+
+New code would live under a `core/comms/` subsystem parallel to
+`core/ingestion/` and `core/vessels/`, not inside them. Each connector is
+independently enable/disable via config, defaults off, and degrades
+cleanly when its source is unavailable (same contract as the AIS and
+intel connectors).
+
+--- Canonical model (to define in Phase 4 terms) ---
+
+    naval_comms_event: id, received_at, observed_at, protocol
+      (ais_sart | dsc | navtex | msi | mrcc_bulletin), category
+      (distress | urgency | safety | routine), station/MMSI (if any),
+      position or NAVAREA, free text, source_policy, verification_status.
+
+Reuse the existing LocationPrecision, VerificationStatus and publication
+policy vocabulary — a comms event that reaches Public Live must obey the
+same "distress-only, no fabricated coordinates, fail closed" rules as an
+OSINT incident.
+
+--- Invariants (must hold before anything ships) ---
+
+- A routine or safety broadcast must never appear on Public Live.
+- A DSC/SART position is a reported position only when the message
+  actually carried coordinates; a bare distress alert with no position
+  stays unpositioned.
+- A comms event that corroborates an existing incident links to it; it
+  does not create a duplicate incident.
+- Source-station identity is recorded but a raw MMSI is operator-only
+  unless it is a public SAR asset.
+- No connector records or rebroadcasts traffic it is not lawfully
+  permitted to receive in its deployment region; this is a
+  per-deployment configuration decision, documented, not a default.
+
+--- Suggested phasing ---
+
+  Phase 14a - AIS safety-related messages (SART/MOB/EPIRB, type 12/14)
+              from the existing AISStream feed. Smallest, highest-value
+              slice. Adds a NavalCommsEvent model + the AIS branch + tests.
+  Phase 14b - canonical NavalCommsEvent contract + the operator-only comms
+              context stream and a dedicated monitoring view.
+  Phase 14c - DSC ingestion (SDR-on-node decoder or a lawful online feed).
+  Phase 14d - NAVTEX / MSI text ingestion and geocoding by NAVAREA.
+  Phase 14e - MRCC/coast-guard structured bulletin connectors, per region.
+
+--- Open questions for a human decision ---
+
+- Which sources are lawful to receive and retain in the intended
+  deployment region(s)? This gates everything after 14a.
+- Does the comms stream get its own persistence and retention policy, or
+  reuse the intel event store?
+- Is there an existing in-region DSC/NAVTEX aggregator with an API, or is
+  SDR-on-node the only path?
+
+========================================
 IMPORTANT: DO NOT DO THESE THINGS
 ========================================
 
