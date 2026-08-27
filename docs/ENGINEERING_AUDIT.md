@@ -519,7 +519,7 @@ production deployment.
 
 | Roadmap item | Status | Implementation |
 |---|---|---|
-| PR 1 — Engineering baseline + CI gates | Complete | `427e674` |
+| PR 1 — Engineering baseline + CI gates | Complete | `427e674` + `ci/enforce-production-gates` |
 | PR 2 — Public/private boundary consolidation | Complete | `8ac1e0e` |
 | PR 3 — Realtime invariant tests | Complete | `ad3e4d2` |
 | PR 4 — Frontend domain contracts | Complete | `e213eb9` |
@@ -534,6 +534,12 @@ production deployment.
 The PR branches are intentionally small review units but currently form a
 partially stacked local history. Before remote merge, preserve their dependency
 order or rebase each branch onto the merged predecessor.
+
+The CI enforcement follow-up makes critical Ruff checks, canonical Live-domain
+mypy checks, declared-project `pip-audit`, both production npm audits and CodeQL
+blocking. The broader 125-error E/F Ruff baseline and 176-error full mypy
+baseline remain visible report-only; they cannot regress the hardened canonical
+boundary unnoticed, and can be reduced incrementally without blanket ignores.
 
 ## Exact Files Affected by PR #1
 

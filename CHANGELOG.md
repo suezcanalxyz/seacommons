@@ -16,6 +16,8 @@ Keep a Changelog structure; releases are identified by Git tags when published.
 - Canonical architecture, data-flow, security and realtime documentation.
 - Dependency update automation and report-only baseline security/lint/type CI
   gates, with a blocking clean Edge dependency audit.
+- Blocking critical Ruff, canonical-domain mypy, declared-project Python/npm
+  dependency audits and scheduled Python/JavaScript CodeQL analysis.
 - Repository ownership, contribution templates and architecture decision records.
 
 ### Changed
@@ -31,6 +33,8 @@ Keep a Changelog structure; releases are identified by Git tags when published.
   models.
 - Public Live publisher and Edge ingress validate payload vocabulary and reject
   private or contract-invalid events.
+- Updated frontend transitive dependencies to versions without known npm
+  advisories for DOMPurify, nanoid and PostCSS.
 
 ## 0.4.0 - 2026-07-15
 
