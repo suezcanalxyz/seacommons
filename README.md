@@ -34,6 +34,8 @@ canonical architecture documentation.
 | OpenDrift `Leeway` / `OceanDrift` trajectories with configurable forcing | **operational** |
 | Authenticated operational console (Live, Intel, drift, vessels, cases) | **operational** |
 | Live AIS, weather and marine-current feeds | **operational** (per-deployment keys) |
+| OSINT monitoring (X/Twitter, GDACS, NGO response registry, source connectors) | **operational** |
+| Case taxonomy, governance and connector review workflows | **operational** |
 | Live CMEMS / ERA5 forcing readers inside drift | **planned** |
 | Client-side (Pyodide) drift, immersive Unreal renderer | **experimental** |
 | Onboard hardware sensor node (infrasound / seismic / SDR) | **research** |

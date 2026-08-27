@@ -5,12 +5,20 @@ Keep a Changelog structure; releases are identified by Git tags when published.
 
 ## Unreleased
 
+## 0.6.0 - 2026-08-27
+
 ### Added
 
+- OSINT ingestion layer: X/Twitter monitor (`twikit_monitor.py`), GDACS
+  disaster-alert monitor, NGO response registry, and a source-connector
+  review workflow (registry, opportunity/source review states, verified
+  attachment), each with dedicated test coverage
+  (`test_twikit_monitor.py`, `test_ngo_response.py`, `test_connectors.py`).
 - Case taxonomy: an operational `case_type` (distress SAR, pushback, shipwreck,
   missing persons, interception, vessel incident, monitoring, unspecified),
   filterable in the case list and editable per case, with an additive-column
   backfill for databases created before it.
+- Governance routes and workflows for connector/source review.
 
 - Canonical backend, frontend, JSON Schema and Edge contracts for Live domain
   vocabulary, lifecycle, geometry precision and publication policy.
