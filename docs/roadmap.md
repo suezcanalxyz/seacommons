@@ -829,6 +829,21 @@ operational_use stays false below a threshold.
               ~5 day lag makes it unsuitable for forward operational SAR.
               ERA5 stays a candidate for long-lookback forensic backtrack
               only.
+              Access method (NWS SCN 25-81): the NOMADS OpenDAP / GrADS Data
+              Server endpoint (nomads.ncep.noaa.gov/dods/gfs_0p25) was
+              retired on 2026-02-23 -- it is gone, do not build on it. Use
+              instead, in order of preference:
+                1. NOAA Open Data (NODD) on AWS S3 -- anonymous, no rate
+                   limit: s3://noaa-gfs-bdp-pds/gfs.<YYYYMMDD>/<HH>/atmos/
+                   gfs.t<HH>z.pgrb2.0p25.f<FFF> plus the sibling .idx file
+                   for byte-range subsetting of just UGRD/VGRD at 10 m.
+                2. NOMADS grib filter (filter_gfs_0p25.pl) -- subset by
+                   variable/level/bbox server-side; respect the "one request
+                   per few seconds" guidance.
+              Read the GRIB2 subset with cfgrib/xarray and hand it to
+              OpenDrift's reader_grib, or reader_netCDF_CF_generic after a
+              cfgrib->netCDF step. Cache per (grid cell, cycle) like the
+              CMEMS slice already is.
   Phase 15d - daily analysis capacity. The scheduling already exists
               (core/scheduler._job_drift_pending, core/intel/drift_refresher
               re-runs every stale in-window distress drift), and every run
@@ -874,7 +889,9 @@ operational_use stays false below a threshold.
 - ARM 12 GB worker: not provisioned. 15d runs on the existing VM at low
   frequency; production is JOB_EXECUTION_MODE=inline (drift on the API
   process).
-- Gridded wind source (15c): GFS -- decided 2026-08-27.
+- Gridded wind source (15c): GFS -- decided 2026-08-27. Pull it from the
+  NODD AWS S3 bucket (noaa-gfs-bdp-pds), NOT the retired NOMADS OpenDAP
+  endpoint (gone since 2026-02-23, NWS SCN 25-81).
 - Should a case running its own drift override the intel event's
   auto-drift, or run alongside it? (still open)
 
