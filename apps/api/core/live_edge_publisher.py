@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -36,6 +36,9 @@ from core.domain.live_contracts import (
     validate_federated_event_input,
 )
 from core.intel.public_policy import is_blocked_source, is_explicitly_private
+
+if TYPE_CHECKING:
+    from core.intel.store import IntelEvent
 
 logger = logging.getLogger("seacommons.live_edge_publisher")
 

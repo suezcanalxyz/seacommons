@@ -69,6 +69,11 @@ testpaths = ["tests"]
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint]
+# Blocking critical-correctness baseline. The broader E/F cleanup remains
+# visible in CI and can be tightened incrementally.
+select = ["E9", "F63", "F7", "F82"]
+
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
