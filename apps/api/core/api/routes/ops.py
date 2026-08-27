@@ -259,3 +259,183 @@ async def ops_stats():
     _stats_cache = payload
     _stats_cache_ts = time.monotonic()
     return Response(content=payload, media_type="application/json")
+
+
+# ── Data injection + compute overview ────────────────────────────────────────
+
+_data_cache: bytes | None = None
+_data_cache_ts: float = 0.0
+_DATA_TTL = 20.0
+
+
+def _intel_breakdown() -> dict:
+    """What is actually in the intel record, straight from the DB."""
+    from datetime import timedelta
+
+    from sqlalchemy import func, select
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+
+    now = datetime.now(timezone.utc)
+    day_ago = (now - timedelta(hours=24)).isoformat()
+    week_ago = (now - timedelta(days=7)).isoformat()
+    with session_scope() as db:
+        total = db.execute(select(func.count()).select_from(IntelEventDB)).scalar_one()
+        positioned = db.execute(
+            select(func.count()).select_from(IntelEventDB).where(IntelEventDB.lat.isnot(None))
+        ).scalar_one()
+        last_24h = db.execute(
+            select(func.count()).select_from(IntelEventDB).where(IntelEventDB.timestamp_utc >= day_ago)
+        ).scalar_one()
+        last_7d = db.execute(
+            select(func.count()).select_from(IntelEventDB).where(IntelEventDB.timestamp_utc >= week_ago)
+        ).scalar_one()
+        by_type = dict(
+            db.execute(
+                select(IntelEventDB.type, func.count())
+                .where(IntelEventDB.timestamp_utc >= week_ago)
+                .group_by(IntelEventDB.type)
+            ).all()
+        )
+        by_source = dict(
+            db.execute(
+                select(IntelEventDB.source, func.count())
+                .where(IntelEventDB.timestamp_utc >= week_ago)
+                .group_by(IntelEventDB.source)
+            ).all()
+        )
+        newest = db.execute(select(func.max(IntelEventDB.timestamp_utc))).scalar_one()
+    return {
+        "total_events": int(total),
+        "positioned_events": int(positioned),
+        "unpositioned_events": int(total) - int(positioned),
+        "events_last_24h": int(last_24h),
+        "events_last_7d": int(last_7d),
+        "by_type_7d": {k: int(v) for k, v in by_type.items()},
+        "by_source_7d": {k: int(v) for k, v in by_source.items()},
+        "newest_event_utc": newest,
+    }
+
+
+def _drift_breakdown() -> dict:
+    """Drift jobs: how many, in what state, and how long they take."""
+    from sqlalchemy import func, select
+
+    from core.db.models import DriftResultDB
+    from core.db.session import session_scope
+
+    with session_scope() as db:
+        by_status = dict(
+            db.execute(select(DriftResultDB.status, func.count()).group_by(DriftResultDB.status)).all()
+        )
+        recent = db.execute(
+            select(DriftResultDB.metadata_json)
+            .order_by(DriftResultDB.created_at.desc())
+            .limit(20)
+        ).scalars().all()
+    forcing_mix: dict[str, int] = {}
+    model_mix: dict[str, int] = {}
+    for meta in recent:
+        meta = meta or {}
+        q = str(meta.get("forcing_quality") or "unknown")
+        forcing_mix[q] = forcing_mix.get(q, 0) + 1
+        m = str(meta.get("model") or "unknown")
+        model_mix[m] = model_mix.get(m, 0) + 1
+    return {
+        "by_status": {k: int(v) for k, v in by_status.items()},
+        "recent_forcing_quality": forcing_mix,
+        "recent_models": model_mix,
+    }
+
+
+@router.get("/api/v1/ops/data-status")
+async def data_status():
+    """One place to see what real data SeaCommons has flowing in and what it
+    costs to run: sources, intel volume, vessels, drift load, memory."""
+    global _data_cache, _data_cache_ts
+    if _data_cache is not None and (time.monotonic() - _data_cache_ts) < _DATA_TTL:
+        return Response(content=_data_cache, media_type="application/json")
+
+    from core.drift.opendrift_pool import pool_status
+
+    sources = []
+    try:
+        from core.intel.source_registry import source_registry
+
+        sources = source_registry.get_all()
+    except Exception:
+        sources = []
+
+    try:
+        client = get_client()
+        ngo_client = get_ngo_client()
+        ais = {
+            "connected": bool(client and client.connected),
+            "messages_total": client.messages_received if client else 0,
+            "ngo_fleet_connected": bool(ngo_client and ngo_client.connected),
+        }
+    except Exception:
+        ais = {"connected": False, "messages_total": 0}
+
+    try:
+        vessels = registry.stats()
+    except Exception:
+        vessels = {}
+
+    try:
+        from core.intel.engine import intel_engine
+
+        monitors = {"monitors_enabled": bool(config.INTEL_MONITORS_ENABLED), **intel_engine.status()}
+    except Exception:
+        monitors = {"monitors_enabled": bool(config.INTEL_MONITORS_ENABLED)}
+
+    loop = asyncio.get_event_loop()
+    try:
+        intel, drift = await asyncio.wait_for(
+            asyncio.gather(
+                loop.run_in_executor(None, _intel_breakdown),
+                loop.run_in_executor(None, _drift_breakdown),
+            ),
+            timeout=8.0,
+        )
+    except Exception:
+        intel, drift = {}, {}
+
+    result = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "ingestion": {
+            "ais": ais,
+            "vessels": vessels,
+            "sources": sources,
+            "monitors": monitors,
+            "image_ocr": _image_ocr_status(),
+            "forcing": {
+                "cmems_currents": bool(config.CMEMS_USERNAME and config.CMEMS_PASSWORD),
+                "open_meteo": "no_key_required",
+            },
+        },
+        "intel_record": intel,
+        "drift": {**drift, "engine": pool_status()},
+        "compute": {
+            "runtime_profile": config.RUNTIME_PROFILE,
+            "job_execution_mode": config.JOB_EXECUTION_MODE,
+            "available_ram_mb": _available_ram_mb(),
+            "database": "sqlite" if config.DATABASE_URL.startswith("sqlite") else "postgres",
+        },
+    }
+    payload = json.dumps(result, default=str).encode()
+    _data_cache = payload
+    _data_cache_ts = time.monotonic()
+    return Response(content=payload, media_type="application/json")
+
+
+def _available_ram_mb() -> int:
+    try:
+        with open("/proc/meminfo") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+    except Exception:
+        pass
+    return -1

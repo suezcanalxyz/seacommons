@@ -5,6 +5,13 @@ Keep a Changelog structure; releases are identified by Git tags when published.
 
 ## Unreleased
 
+### Added
+
+- `GET /api/v1/ops/data-status` — one place to see what real data SeaCommons
+  has flowing in and what it costs to run: ingestion sources, intel volume
+  by type/source, vessel counts, drift job load, and the single-slot drift
+  engine bottleneck. Documented in `docs/OPERATIONS_OVERVIEW.md`.
+
 ## 0.6.0 - 2026-08-27
 
 ### Added
