@@ -1,6 +1,6 @@
 # SeaCommons realtime architecture
 
-Status: canonical realtime design. Last reviewed: 2026-08-26.
+Status: canonical realtime design. Last reviewed: 2026-08-27.
 
 ## Two realtime planes
 
@@ -74,12 +74,23 @@ marks heartbeats offline after the configured maximum age. Backend Prometheus
 metrics expose durable worker heartbeats, intel source totals, API/worker sync
 attempts, consecutive failures and last successful sync time.
 
+The edge publisher is a separate process; set `LIVE_EDGE_METRICS_PORT` to have
+it expose its own `/metrics` (off by default). It publishes
+`seacommons_live_publish_cycles_total{outcome}`,
+`seacommons_live_publish_events_total{stage=collected|delivered|delivery_failed}`,
+`seacommons_live_outbox_depth{state=pending|retrying}`,
+`seacommons_live_publish_last_cycle_unixtime`,
+`seacommons_live_publish_last_delivery_unixtime` and
+`seacommons_live_edge_heartbeat_ok`.
+
 Operators should alert on:
 
 - consecutive intel DB sync failures greater than or equal to three;
 - no successful sync beyond the expected 30-second interval plus tolerance;
-- stale publisher heartbeat;
-- growing/retrying publisher outbox;
+- `seacommons_live_edge_heartbeat_ok` at 0, or no publisher cycle
+  (`...last_cycle_unixtime`) within a few poll intervals;
+- rising `seacommons_live_outbox_depth`, or `delivery_failed` climbing while
+  `delivered` is flat;
 - zero live workers when queued jobs exist.
 
 ## Recovery properties

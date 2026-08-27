@@ -14,6 +14,8 @@ __pycache__/
 *.sqlite3
 .claude/
 .codex-runlogs/
+application/
+.chrome-cdp-profile/
 .pytest_cache/
 .tmp/
 .oci-cli/
