@@ -34,6 +34,7 @@ from core.api.routes import alerts, drift, anomaly, forensic, integrations, ops,
 from core.api.routes import ingest, probability, weather, zones, intel, cases, governance, live, connectors
 from core.db.session import init_database
 from core.security import READ_ROLES, WRITE_ROLES, require_roles, validate_production_security
+from core.config_validation import validate_configuration
 from core.observability import configure_logging, metrics_middleware
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
@@ -44,6 +45,8 @@ logger = logging.getLogger("seacommons.api")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_production_security()
+    for _warning in validate_configuration():
+        logger.warning("Configuration: %s", _warning)
     logger.info(
         "Seacommons API starting up (RUNTIME_PROFILE=%s)",
         config.RUNTIME_PROFILE,

@@ -12,13 +12,18 @@
     "url": "https://github.com/suezcanalxyz/seacommons/issues"
   },
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "vite",
     "dev:full": "bash ../../scripts/run_dev.sh all",
     "build": "vite build",
     "build:unified": "vite build && node scripts/package-unified.mjs",
     "clean": "rm -rf dist",
-    "lint": "npm run typecheck",
+    "lint": "npm run lint:js && npm run typecheck",
+    "lint:js": "eslint src --quiet",
+    "lint:js:full": "eslint src --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:simulation && npm run test:live && npm run test:api && npm run test:map",
     "test:api": "node --test src/services/api/*.test.js",
@@ -36,7 +41,11 @@
     "vite": "^6.2.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.14.0",
+    "eslint": "^10.9.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^16.5.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

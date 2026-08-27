@@ -37,6 +37,33 @@ INTEL_SOURCE_EVENTS = Gauge(
     "seacommons_intel_source_events_last_hour",
     "Events received from all registered intel sources in the last hour",
 )
+LIVE_PUBLISH_CYCLES = Counter(
+    "seacommons_live_publish_cycles_total",
+    "Live edge publisher cycles by outcome",
+    ["outcome"],
+)
+LIVE_PUBLISH_EVENTS = Counter(
+    "seacommons_live_publish_events_total",
+    "Live edge payloads by pipeline stage",
+    ["stage"],  # collected | delivered | delivery_failed
+)
+LIVE_OUTBOX_DEPTH = Gauge(
+    "seacommons_live_outbox_depth",
+    "Live edge publisher outbox rows by state",
+    ["state"],  # pending | retrying
+)
+LIVE_PUBLISH_LAST_CYCLE = Gauge(
+    "seacommons_live_publish_last_cycle_unixtime",
+    "Unix timestamp of the last completed live edge publisher cycle",
+)
+LIVE_PUBLISH_LAST_DELIVERY = Gauge(
+    "seacommons_live_publish_last_delivery_unixtime",
+    "Unix timestamp of the last successful live edge delivery",
+)
+LIVE_EDGE_HEARTBEAT_OK = Gauge(
+    "seacommons_live_edge_heartbeat_ok",
+    "1 if the last live edge heartbeat POST succeeded, else 0",
+)
 
 
 class JsonFormatter(logging.Formatter):
@@ -111,3 +138,28 @@ def record_intel_sync_failure(consecutive_failures: int) -> None:
     """Record a failed API-side database sync without exposing exception details."""
     INTEL_SYNC_RUNS.labels("failure").inc()
     INTEL_SYNC_CONSECUTIVE_FAILURES.set(max(1, int(consecutive_failures)))
+
+
+def record_publisher_cycle(
+    *, outcome: str, collected: int, outbox_counts: dict[str, int]
+) -> None:
+    """Record one live edge publisher cycle and the current outbox backlog."""
+    LIVE_PUBLISH_CYCLES.labels(outcome if outcome in {"ok", "degraded"} else "degraded").inc()
+    if collected:
+        LIVE_PUBLISH_EVENTS.labels("collected").inc(max(0, int(collected)))
+    LIVE_OUTBOX_DEPTH.labels("pending").set(int(outbox_counts.get("pending", 0)))
+    LIVE_OUTBOX_DEPTH.labels("retrying").set(int(outbox_counts.get("retrying", 0)))
+    LIVE_PUBLISH_LAST_CYCLE.set_to_current_time()
+
+
+def record_publisher_delivery(*, delivered: bool) -> None:
+    """Record a single edge delivery attempt outcome."""
+    if delivered:
+        LIVE_PUBLISH_EVENTS.labels("delivered").inc()
+        LIVE_PUBLISH_LAST_DELIVERY.set_to_current_time()
+    else:
+        LIVE_PUBLISH_EVENTS.labels("delivery_failed").inc()
+
+
+def record_publisher_heartbeat(*, ok: bool) -> None:
+    LIVE_EDGE_HEARTBEAT_OK.set(1 if ok else 0)
