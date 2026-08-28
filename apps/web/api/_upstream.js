@@ -7,7 +7,9 @@
 // Filename starts with "_" so Vercel does not expose it as a route.
 
 const DEFAULTS = {
-  host: '79.72.46.166',
+  // Frankfurt A1 (instance-1159) operational API. Overridable with the
+  // SEACOMMONS_UPSTREAM_HOST / _PORT Vercel env vars.
+  host: '152.70.182.58',
   port: '80',
   apiVhost: 'api.seacommons.org',
   demoVhost: 'demo-api.seacommons.org',
