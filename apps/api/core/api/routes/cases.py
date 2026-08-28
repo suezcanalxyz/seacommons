@@ -34,6 +34,11 @@ CASE_TYPES = {
     "vessel_incident",
     "monitoring",
     "unspecified",
+    # Broader maritime-domain compartments (operator-only unless published).
+    "sanctions_watch",
+    "dark_rendezvous",
+    "subsea_infrastructure",
+    "piracy_incident",
 }
 DEFAULT_CASE_TYPE = "distress_sar"
 

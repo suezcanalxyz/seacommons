@@ -7,6 +7,15 @@ Keep a Changelog structure; releases are identified by Git tags when published.
 
 ### Added
 
+- Maritime-domain compartments (phase 1): every intel event now carries a
+  `maritime_domain` tag (`sar` · `sanctions` · `grey_zone` · `iuu_fishing` ·
+  `piracy` · `smuggling` · `environmental` · `safety`), inferred from event
+  type / AIS-anomaly subtype so legacy events resolve to `sar`. The operator
+  console gains a compartment filter. Public Live is unchanged: only `sar`
+  (and `piracy`) are eligible without an explicit publish, configurable via
+  `PUBLIC_MARITIME_DOMAINS`. New `case_type` values `sanctions_watch`,
+  `dark_rendezvous`, `subsea_infrastructure`, `piracy_incident`. See
+  `docs/COMPARTMENTS.md`.
 - `GET /api/v1/ops/data-status` — one place to see what real data SeaCommons
   has flowing in and what it costs to run: ingestion sources, intel volume
   by type/source, vessel counts, drift job load, and the single-slot drift

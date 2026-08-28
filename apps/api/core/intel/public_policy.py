@@ -25,9 +25,15 @@ privacy-absolute checks below -- see each caller's own criterion.
 
 from __future__ import annotations
 
+import os
 from typing import Any, Mapping
 
-from core.domain.live_contracts import BLOCKED_SOURCE_POLICIES, PublicationStatus
+from core.domain.live_contracts import (
+    BLOCKED_SOURCE_POLICIES,
+    DEFAULT_PUBLIC_MARITIME_DOMAINS,
+    MaritimeDomain,
+    PublicationStatus,
+)
 
 
 def is_explicitly_private(metadata: Mapping[str, Any]) -> bool:
@@ -45,3 +51,25 @@ def is_blocked_source(metadata: Mapping[str, Any]) -> bool:
     return source_policy in BLOCKED_SOURCE_POLICIES or any(
         blocked in transport for blocked in BLOCKED_SOURCE_POLICIES
     )
+
+
+def public_maritime_domains() -> frozenset[str]:
+    """Which maritime compartments the operator has allow-listed for the public
+    Live map. ``PUBLIC_MARITIME_DOMAINS`` (comma-separated) overrides the
+    default; ``sar`` is implicitly always included.
+    """
+    raw = os.environ.get("PUBLIC_MARITIME_DOMAINS", "").strip()
+    if not raw:
+        return DEFAULT_PUBLIC_MARITIME_DOMAINS
+    return frozenset(
+        {MaritimeDomain.SAR.value}
+        | {part.strip().lower() for part in raw.split(",") if part.strip()}
+    )
+
+
+def is_public_domain(domain: str | None) -> bool:
+    """True when a maritime compartment may appear on the public Live map without
+    a per-event publish decision. Unknown / unset -> treated as ``sar``.
+    """
+    resolved = (domain or MaritimeDomain.SAR.value).strip().lower()
+    return resolved in public_maritime_domains()

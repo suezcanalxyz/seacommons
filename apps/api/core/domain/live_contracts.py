@@ -36,6 +36,25 @@ class LiveSignalKind(StrEnum):
     CONTEXT = "context"
 
 
+class MaritimeDomain(StrEnum):
+    """Which maritime-awareness compartment an intel event belongs to.
+
+    ``sar`` is the primary operational lane (migrant and general distress) and
+    the only compartment published to the public Live map by default; every
+    other compartment is operator-only unless it appears in
+    ``PUBLIC_MARITIME_DOMAINS`` or the event is explicitly published.
+    """
+
+    SAR = "sar"
+    SANCTIONS = "sanctions"
+    GREY_ZONE = "grey_zone"
+    IUU_FISHING = "iuu_fishing"
+    PIRACY = "piracy"
+    SMUGGLING = "smuggling"
+    ENVIRONMENTAL = "environmental"
+    SAFETY = "safety"
+
+
 class Severity(StrEnum):
     CRITICAL = "critical"
     HIGH = "high"
@@ -97,6 +116,16 @@ BLOCKED_SOURCE_POLICIES = frozenset(
         SourcePolicy.SCRAPE.value,
         SourcePolicy.TWSCRAPE.value,
         SourcePolicy.UNOFFICIAL.value,
+    }
+)
+
+# Compartments eligible for the public Live map without an explicit per-event
+# publish decision. ``sar`` is always public (the primary lane). Operators may
+# widen this via the PUBLIC_MARITIME_DOMAINS env var (see core.intel.public_policy).
+DEFAULT_PUBLIC_MARITIME_DOMAINS = frozenset(
+    {
+        MaritimeDomain.SAR.value,
+        MaritimeDomain.PIRACY.value,
     }
 )
 
