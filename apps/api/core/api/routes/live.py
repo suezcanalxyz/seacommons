@@ -108,14 +108,25 @@ async def live_archives(limit: int = Query(40, ge=1, le=200)):
         seen.add(alert["event_id"])
 
     try:
+        from sqlalchemy import func, literal, or_
+
         with session_scope() as db:
+            # An intel auto-drift persists drift_results.event_id as
+            # "intel:<id>" (see core.intel.drift_service); the seeded SAR
+            # archives use the bare id. Match both.
             rows = (
                 db.query(DriftResultDB, IntelEventDB)
-                .join(IntelEventDB, IntelEventDB.id == DriftResultDB.event_id)
+                .join(
+                    IntelEventDB,
+                    or_(
+                        DriftResultDB.event_id == IntelEventDB.id,
+                        DriftResultDB.event_id == literal("intel:") + IntelEventDB.id,
+                    ),
+                )
                 .filter(DriftResultDB.status == "completed")
                 .filter(IntelEventDB.lat.isnot(None))
-                .order_by(IntelEventDB.timestamp_utc.desc())
-                .limit(limit * 3)
+                .order_by(func.coalesce(DriftResultDB.created_at, IntelEventDB.created_at).desc())
+                .limit(limit * 4)
                 .all()
             )
             for drift, ev in rows:
@@ -152,10 +163,32 @@ async def live_archive_geojson(event_id: str):
     from core.db.store import get_alert, get_drift
 
     alert = get_alert(event_id)
-    drift = get_drift(event_id)
+    drift = get_drift(event_id)  # seeded SAR archives: drift_id == event_id
+    if drift is None:
+        # An intel auto-drift row is keyed by job id; its event_id is
+        # "intel:<id>" (or the bare id). Take the newest completed one.
+        from core.db.models import DriftResultDB
+        from core.db.session import session_scope
+        from core.db.store import drift_to_dict
+        from sqlalchemy import func, or_
+
+        with session_scope() as db:
+            row = (
+                db.query(DriftResultDB)
+                .filter(
+                    DriftResultDB.status == "completed",
+                    or_(
+                        DriftResultDB.event_id == event_id,
+                        DriftResultDB.event_id == f"intel:{event_id}",
+                    ),
+                )
+                .order_by(func.coalesce(DriftResultDB.created_at, None).desc())
+                .first()
+            )
+            drift = drift_to_dict(row)
+
     alert_ok = alert is not None and alert.get("status") == "completed"
     drift_ok = bool(drift) and drift.get("status") == "completed"
-    # An OSINT distress archive has a completed drift but no alert row.
     if not drift_ok or (alert is not None and not alert_ok):
         raise HTTPException(status_code=404, detail="Archive not found")
     features = [
