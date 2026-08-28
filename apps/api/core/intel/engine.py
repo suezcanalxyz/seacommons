@@ -23,6 +23,7 @@ class IntelEngine:
         self._vessel_incidents: object | None = None
         self._ais_anomaly: object | None = None
         self._drift_refresh: object | None = None
+        self._mda_watch: object | None = None
         self._gdacs: object | None = None
         self._started = False
 
@@ -127,6 +128,14 @@ class IntelEngine:
             except Exception as exc:
                 logger.warning("IntelEngine: AIS anomaly detector failed to start: %s", exc)
 
+            try:
+                from core.mda.watch import mda_watch
+                mda_watch.start()
+                self._mda_watch = mda_watch
+                logger.info("IntelEngine: MDA watch (rendezvous / infra / gap / identity) started")
+            except Exception as exc:
+                logger.warning("IntelEngine: MDA watch failed to start: %s", exc)
+
         if gdacs_enabled:
             try:
                 from core.intel.gdacs_monitor import GDACSMonitor
@@ -145,6 +154,7 @@ class IntelEngine:
             self._track_store,
             self._vessel_incidents,
             self._ais_anomaly,
+            self._mda_watch,
             self._drift_refresh,
             self._gdacs,
         ):
@@ -175,6 +185,7 @@ class IntelEngine:
             "news": self._news is not None,
             "ais_spike": self._ais is not None,
             "track_store": self._track_store is not None,
+            "mda_watch": self._mda_watch is not None,
             "vessel_incidents": self._vessel_incidents is not None,
             "ais_anomaly": self._ais_anomaly is not None,
             "gdacs": self._gdacs is not None,
