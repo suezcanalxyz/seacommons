@@ -10,32 +10,22 @@ from fastapi import APIRouter, File, HTTPException, Query, Request, Response, Up
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from core.db.models import AuditLogDB, CaseAccessDB, CaseAttachmentDB, CaseDB, CaseSignalDB, CaseTimelineDB, IngestedSignalDB, MembershipDB
+from core.db.models import AuditLogDB, CaseAccessDB, CaseAttachmentDB, CaseDB, CaseIntelEventDB, CaseSignalDB, CaseTimelineDB, IngestedSignalDB, MembershipDB
 from core.db.session import session_scope
 from core.security import authenticate
 from core.audit import record
 from core.config import config
 from core import object_store
 from core.notifications import telegram, whatsapp
+from core.cases.service import (
+    CASE_TYPES,
+    DEFAULT_CASE_TYPE,
+    PRIORITIES,
+    STATUSES,
+    open_case,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["cases"])
-
-STATUSES = {"open", "triage", "active", "monitoring", "resolved", "closed"}
-PRIORITIES = {"low", "medium", "high", "critical"}
-# Coarse operational taxonomy so cases can be separated by the kind of event
-# they track, independently of their lifecycle status. "unspecified" exists
-# for cases created before the operator has classified them.
-CASE_TYPES = {
-    "distress_sar",
-    "pushback",
-    "shipwreck",
-    "missing_persons",
-    "interception",
-    "vessel_incident",
-    "monitoring",
-    "unspecified",
-}
-DEFAULT_CASE_TYPE = "distress_sar"
 
 
 class CaseCreate(BaseModel):
@@ -73,6 +63,39 @@ def _actor(request: Request) -> str:
 
 def _case(row: CaseDB) -> dict:
     return {c.name: getattr(row, c.name) for c in row.__table__.columns}
+
+
+def _resolve_intel_events(event_ids: list[str]) -> list[dict]:
+    """Compact view of the OSINT intel events linked to a case (in-memory first)."""
+    if not event_ids:
+        return []
+    from core.db.models import IntelEventDB
+    from core.intel.store import intel_store
+
+    resolved: dict[str, dict] = {}
+    for event_id in event_ids:
+        event = intel_store.get(event_id)
+        if event is not None:
+            resolved[event_id] = {
+                "id": event.id, "type": event.type, "severity": event.severity,
+                "title": event.title, "lat": event.lat, "lon": event.lon,
+                "timestamp_utc": event.timestamp_utc, "url": event.url,
+                "maritime_domain": event.maritime_domain(),
+                "metadata": event.metadata,
+            }
+    missing = [eid for eid in event_ids if eid not in resolved]
+    if missing:
+        with session_scope() as db:
+            for row in db.query(IntelEventDB).filter(IntelEventDB.id.in_(missing)).all():
+                meta = dict(row.meta or {})
+                resolved[row.id] = {
+                    "id": row.id, "type": row.type, "severity": row.severity,
+                    "title": row.title, "lat": row.lat, "lon": row.lon,
+                    "timestamp_utc": row.timestamp_utc, "url": row.url,
+                    "maritime_domain": meta.get("maritime_domain") or "sar",
+                    "metadata": meta,
+                }
+    return [resolved[eid] for eid in event_ids if eid in resolved]
 
 
 def _principal_org(request: Request) -> str | None:
@@ -146,7 +169,6 @@ def create_case(body: CaseCreate, request: Request) -> dict:
     if config.AUTH_ENABLED:
         if not principal or ("administrator" not in principal.roles and organization_id != _principal_org(request)):
             raise HTTPException(403, "Invalid organization")
-    case_id = str(uuid.uuid4())
     with session_scope() as db:
         if body.signal_id:
             signal = db.get(IngestedSignalDB, body.signal_id)
@@ -159,24 +181,21 @@ def create_case(body: CaseCreate, request: Request) -> dict:
                 and signal.organization_id != organization_id
             ):
                 raise HTTPException(403, "Signal belongs to another organization")
-        row = CaseDB(case_id=case_id, organization_id=organization_id, title=body.title, priority=body.priority,
-                     case_type=body.case_type,
-                     sensitivity=body.sensitivity, summary=body.summary, lat=body.lat,
-                     lon=body.lon, persons=body.persons, created_by=actor,
-                     retention_until=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=config.DEFAULT_RETENTION_DAYS))
-        db.add(row)
-        if body.signal_id:
-            db.add(CaseSignalDB(case_id=case_id, signal_id=body.signal_id, linked_by=actor))
-        db.add(CaseTimelineDB(entry_id=str(uuid.uuid4()), case_id=case_id,
-                              event_type="created", actor=actor, body="Case created"))
-        record(db, actor=actor, action="case.created", resource_type="case", resource_id=case_id,
-               data={"priority": body.priority, "signal_id": body.signal_id})
-        db.flush()
-        result = _case(row)
-    notice = f"SEACOMMONS · NEW CASE\n{body.title}\nPriority: {body.priority}\nCase: {case_id[:8]}"
-    telegram(notice)
-    whatsapp(notice)
-    return result
+        return open_case(
+            db,
+            title=body.title,
+            created_by=actor,
+            case_type=body.case_type,
+            priority=body.priority,
+            sensitivity=body.sensitivity,
+            summary=body.summary,
+            lat=body.lat,
+            lon=body.lon,
+            persons=body.persons,
+            organization_id=organization_id,
+            signal_id=body.signal_id,
+            audit_data={"priority": body.priority, "signal_id": body.signal_id},
+        )
 
 
 @router.get("/cases/{case_id}")
@@ -187,9 +206,12 @@ def get_case(case_id: str, request: Request) -> dict:
             raise HTTPException(404, "Case not found")
         _require_case_access(request, db, row)
         signals = db.execute(select(IngestedSignalDB).join(CaseSignalDB).where(CaseSignalDB.case_id == case_id)).scalars().all()
+        intel_links = db.execute(select(CaseIntelEventDB).where(CaseIntelEventDB.case_id == case_id).order_by(CaseIntelEventDB.linked_at.desc())).scalars().all()
+        intel_events = _resolve_intel_events([link.event_id for link in intel_links])
         timeline = db.execute(select(CaseTimelineDB).where(CaseTimelineDB.case_id == case_id).order_by(CaseTimelineDB.created_at.desc())).scalars().all()
         attachments = db.execute(select(CaseAttachmentDB).where(CaseAttachmentDB.case_id == case_id).order_by(CaseAttachmentDB.created_at.desc())).scalars().all()
         return {**_case(row), "signals": [s.payload for s in signals],
+                "intel_events": intel_events,
                 "timeline": [{c.name: getattr(t, c.name) for c in t.__table__.columns} for t in timeline],
                 "attachments": [{c.name: getattr(a, c.name) for c in a.__table__.columns if c.name != "object_key"} for a in attachments]}
 

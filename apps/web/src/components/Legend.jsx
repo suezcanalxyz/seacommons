@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 
+import { SIGNAL_CATEGORIES } from '../features/intel/categories.js';
+import { DOMAIN_COLORS } from './IntelDashboard.jsx';
+
 const INFO_ICON = (
   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="9" />
@@ -18,13 +21,19 @@ function Swatch({ shape, color, border }) {
   return <span style={style} />;
 }
 
-const ROWS = [
-  { shape: 'circle', color: '#ff3b3b', label: 'Active distress' },
-  { shape: 'circle', color: '#22c55e', label: 'Resolved' },
-  { shape: 'circle', color: '#9aa0ab', label: 'Archived' },
+// Base map furniture (not signal categories).
+const BASE_ROWS = [
+  { shape: 'circle', color: '#22c55e', label: 'Resolved incident' },
+  { shape: 'circle', color: '#9aa0ab', label: 'Archived incident' },
   { shape: 'circle', color: '#38bdf8', label: 'NGO SAR vessel' },
   { shape: 'square', color: '#ffb454', label: 'Oil / gas platform' },
   { shape: 'ring',   color: '#8bf0c5', label: 'Drift projection' },
+];
+
+const DOMAIN_ROWS = [
+  ['sanctions', 'Alert · sanctions / dark fleet'],
+  ['grey_zone', 'Alert · grey-zone / infrastructure'],
+  ['safety', 'Alert · vessel safety'],
 ];
 
 export default function Legend() {
@@ -42,8 +51,22 @@ export default function Legend() {
       </button>
       {open && (
         <div className="legend-panel">
-          <div className="legend-panel-title">Legend</div>
-          {ROWS.map((row) => (
+          <div className="legend-panel-title">OSINT signals</div>
+          {SIGNAL_CATEGORIES.filter((c) => c.key !== 'other').map((cat) => (
+            <div key={cat.key} className="legend-row">
+              <Swatch shape={cat.key === 'fused' ? 'ring' : 'circle'} color={cat.color} />
+              <span>{cat.label}</span>
+            </div>
+          ))}
+          <div className="legend-panel-title">Correlated alert domain</div>
+          {DOMAIN_ROWS.map(([key, label]) => (
+            <div key={key} className="legend-row">
+              <Swatch shape="ring" color={DOMAIN_COLORS[key]} />
+              <span>{label}</span>
+            </div>
+          ))}
+          <div className="legend-panel-title">Map</div>
+          {BASE_ROWS.map((row) => (
             <div key={row.label} className="legend-row">
               <Swatch shape={row.shape} color={row.color} />
               <span>{row.label}</span>

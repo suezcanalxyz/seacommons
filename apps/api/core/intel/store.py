@@ -20,9 +20,9 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
-from core.domain.live_contracts import VerificationStatus
+from core.domain.live_contracts import MaritimeDomain, VerificationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +106,39 @@ class IntelEvent:
         sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(self.severity, 2)
         return tier_rank * 10 + sev_rank
 
+    # ── Maritime-domain compartment ───────────────────────────────────────────
+    # Which maritime-awareness lane this event belongs to. ``sar`` (migrant and
+    # general distress) is the primary lane and the default; the other
+    # compartments are operator-only unless allow-listed in
+    # PUBLIC_MARITIME_DOMAINS. An explicit metadata["maritime_domain"] always
+    # wins; otherwise it is inferred from type / anomaly subtype so legacy
+    # events resolve to ``sar``.
+    _GREY_ZONE_ANOMALIES = frozenset(
+        {"dark_zone_entry", "zone_incursion", "cable_proximity"}
+    )
+    _SANCTIONS_ANOMALIES = frozenset(
+        {"sdn_match", "sanctioned_vessel", "ais_rendezvous", "impossible_speed", "gap"}
+    )
+    _DOMAIN_BY_TYPE = {
+        "piracy_incident": "piracy",
+        "gfw_event": "sanctions",
+        "vessel_incident": "safety",
+        "oil_spill": "environmental",
+    }
+
+    def maritime_domain(self) -> str:
+        explicit = self.metadata.get("maritime_domain")
+        if explicit:
+            return explicit
+        if self.type == "ais_anomaly":
+            anomaly_type = self.metadata.get("anomaly_type", "")
+            if anomaly_type in self._GREY_ZONE_ANOMALIES:
+                return MaritimeDomain.GREY_ZONE.value
+            if anomaly_type in self._SANCTIONS_ANOMALIES:
+                return MaritimeDomain.SANCTIONS.value
+            return MaritimeDomain.SANCTIONS.value
+        return self._DOMAIN_BY_TYPE.get(self.type, MaritimeDomain.SAR.value)
+
     def verification_status(self) -> str:
         """
         Evidence-first labelling (nextstep.txt): never present an asserted public
@@ -136,6 +169,7 @@ class IntelEvent:
                 "severity": self.severity,
                 "tier": self.tier(),
                 "priority": self.priority(),
+                "maritime_domain": self.maritime_domain(),
                 "verification_status": self.verification_status(),
                 "drift_ready": geo is not None and self.tier() == "operational",
                 "title": self.title,
@@ -184,6 +218,10 @@ class IntelStore:
         self._lock = threading.Lock()
         # (websocket_obj, asyncio_loop) — loop needed for thread-safe sends
         self._ws_clients: set[tuple[Any, asyncio.AbstractEventLoop]] = set()
+        # In-process observers notified after every successful add() — the
+        # single fan-out point the correlation/fusion engine hooks into
+        # (mirrors core.ingestion.router.subscribe for messaging signals).
+        self._subscribers: list[Callable[[IntelEvent], None]] = []
 
     # ── Write ─────────────────────────────────────────────────────────────────
 
@@ -241,7 +279,30 @@ class IntelStore:
 
         self._fire_broadcast(event)
         self._persist(event)
+        self._notify_subscribers(event)
         return True
+
+    # ── Observers ─────────────────────────────────────────────────────────────
+
+    def subscribe(self, fn: Callable[[IntelEvent], None]) -> None:
+        """Register a callback invoked (off-thread) after every new event is stored."""
+        with self._lock:
+            self._subscribers.append(fn)
+
+    def _notify_subscribers(self, event: IntelEvent) -> None:
+        with self._lock:
+            subs = list(self._subscribers)
+        if not subs:
+            return
+
+        def _run() -> None:
+            for fn in subs:
+                try:
+                    fn(event)
+                except Exception as exc:  # never let an observer break ingestion
+                    logger.warning("intel_store subscriber error: %s", exc)
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def load_from_db(self, limit: int = MAX_EVENTS, max_age_days: int = 30) -> int:
         """

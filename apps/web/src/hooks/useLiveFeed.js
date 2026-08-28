@@ -98,9 +98,9 @@ export function useLiveFeed({
             return [...incoming, ...withoutStale].slice(0, 300);
           });
           const properties = message.properties || {};
-          if (properties.type === 'distress'
+          if ((properties.type === 'distress' || properties.type === 'correlated_alert')
             && ['critical', 'high'].includes(properties.severity)) {
-            onCriticalDistressRef.current?.();
+            onCriticalDistressRef.current?.(properties);
           }
         } else if (!isPublicLiveHost
           && message.type === 'event_update'

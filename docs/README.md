@@ -12,6 +12,12 @@ the newest dated filename.
   drift flows.
 - [Security model](SECURITY_MODEL.md) — trust boundaries, authentication,
   webhook authenticity and public/private policy.
+- [Maritime-domain compartments](COMPARTMENTS.md) — the compartment taxonomy
+  (SAR, sanctions/dark-fleet, grey-zone, piracy, …), sources per compartment,
+  and each one's public/private posture.
+- [OSINT cross-source fusion](OSINT_FUSION.md) — the correlation engine that
+  turns independent signals into `correlated_alert` events + auto-opened cases,
+  its rules, the case bridge, and the operator alert rail.
 - [Realtime architecture](REALTIME_ARCHITECTURE.md) — delivery semantics,
   ordering, fallbacks and recovery.
 - [Testing strategy](TESTING.md) — the testing pyramid and the map from the ten

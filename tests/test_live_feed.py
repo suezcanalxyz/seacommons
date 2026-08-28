@@ -170,6 +170,43 @@ def test_explicit_private_status_overrides_approved_source_policy() -> None:
     assert _public_intel_feature(private_rss) is None
 
 
+def test_public_context_signal_surfaces_in_a_public_compartment() -> None:
+    # An official-RSS news item in the SAR compartment now appears on the public
+    # map as a context signal (kind="context"), without an explicit publish.
+    news = IntelEvent(
+        id="ctx-news-01",
+        type="news",
+        severity="medium",
+        lat=35.4,
+        lon=13.9,
+        title="Coastguard reports vessel movement off Zawiya",
+        source="Official NGO RSS",
+        metadata={"source_policy": "official_rss"},
+    )
+    feature = _public_intel_feature(news)
+    assert feature is not None
+    assert feature["properties"]["kind"] == "context"
+    assert feature["properties"]["type"] == "news"
+
+
+def test_correlated_alert_is_public_only_in_a_public_compartment() -> None:
+    base = dict(type="correlated_alert", severity="high", lat=35.0, lon=13.5,
+                title="MMSI 123: spoofing", source="SeaCommons fusion")
+    sanctions = IntelEvent(id="ca-sanc", metadata={"maritime_domain": "sanctions"}, **base)
+    sar = IntelEvent(id="ca-sar", metadata={"maritime_domain": "sar", "is_distress": True}, **base)
+    assert _public_intel_feature(sanctions) is None
+    assert _public_intel_feature(sar) is not None
+
+
+def test_unlabelled_context_stays_operator_only() -> None:
+    # No source_policy, not a derived type, not published -> still private.
+    bare = IntelEvent(
+        id="ctx-bare-01", type="news", severity="low", lat=35.0, lon=13.0,
+        title="Unlabelled article", source="somewhere",
+    )
+    assert _public_intel_feature(bare) is None
+
+
 def test_computed_sar_products_never_enter_received_signal_feed() -> None:
     derived = IntelEvent(
         id="sar-model-01",

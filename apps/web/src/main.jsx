@@ -8,6 +8,8 @@ import SimHistory from './components/SimHistory.jsx';
 import IntelDashboard from './components/IntelDashboard.jsx';
 import LayerToggles, { LAYER_GROUPS } from './components/LayerToggles.jsx';
 import Legend from './components/Legend.jsx';
+import AlertRail from './components/AlertRail.jsx';
+import { categoryColorExpression } from './features/intel/categories.js';
 import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
 import JobMonitor from './components/JobMonitor.jsx';
@@ -26,6 +28,36 @@ import {
   liveTrackingCandidates,
   mergeLiveDrifts,
 } from './simulation/liveTracking.js';
+
+// Short two-tone chime for a correlated OSINT alert. Web Audio only; silent
+// when the operator has muted alerts (localStorage) or the browser blocks
+// autoplay audio before a user gesture.
+function playAlertBeep() {
+  try {
+    if (window.localStorage.getItem('seacommons_alert_mute') === '1') return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(ctx.destination);
+    [880, 1245].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      const t0 = ctx.currentTime + i * 0.16;
+      osc.start(t0);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.15);
+      osc.stop(t0 + 0.16);
+    });
+    window.setTimeout(() => ctx.close(), 600);
+  } catch {
+    /* audio unavailable — the banner + rail still surface the alert */
+  }
+}
 
 // Real-world-scaled circle radius: interpolate exponentially with zoom so
 // `location_uncertainty_m` (meters) renders as an actually-to-scale area
@@ -67,7 +99,7 @@ const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'en
 // The public Live map only ever fetches data for these layer groups (see the
 // ngo-vessels/platforms effects and loadWeatherGridForMap's isPublicLiveHost
 // guard) — everything else stays hidden there regardless of the layer toggle.
-const PUBLIC_LIVE_LAYER_GROUPS = new Set(['nautical', 'intel', 'ngo_vessels', 'platforms']);
+const PUBLIC_LIVE_LAYER_GROUPS = new Set(['nautical', 'intel', 'fused', 'spikes', 'ngo_vessels', 'platforms']);
 const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
 const isPublicLiveHost = window.location.hostname === 'live.seacommons.org';
 const isLiveHost = LIVE_HOSTS.has(window.location.hostname);
@@ -497,13 +529,20 @@ function App() {
   const [activeScenario, setActiveScenario] = useState(null);
   const [activeSimId, setActiveSimId] = useState(null);
   const [intelDrifts, setIntelDrifts] = useState({ type: 'FeatureCollection', features: [] });
+  const [alertFlash, setAlertFlash] = useState(null);
+  const seenAlertIdsRef = useRef(null);
   const { intelEvents, setIntelEvents, intelConnected, intelMode } = useLiveFeed({
     apiBase,
     edgeBase: LIVE_EDGE_BASE,
     isPublicLiveHost,
-    onCriticalDistress: () => {
+    onCriticalDistress: (props) => {
       setActivePanel('osint');
       setSidebarOpen(true);
+      if (props?.type === 'correlated_alert') {
+        setAlertFlash(props);
+        playAlertBeep();
+        window.setTimeout(() => setAlertFlash(null), 8000);
+      }
     },
     onDriftUpdate: (message) => {
       setIntelDrifts((previous) => mergeIntelDriftUpdate(previous, message));
@@ -547,6 +586,29 @@ function App() {
       return changed ? next : prev;
     });
   }, [intelEvents, triggeringDrift]);
+
+  // Flash + chime when a NEW correlated_alert appears (the poll transport does
+  // not push per-event, so detect it from the feed array). The first pass just
+  // seeds the seen-set so existing alerts never re-fire on reload.
+  useEffect(() => {
+    if (isPublicLiveHost) return;
+    const ids = intelEvents
+      .filter((f) => f.properties?.type === 'correlated_alert')
+      .map((f) => f.properties?.id)
+      .filter(Boolean);
+    if (seenAlertIdsRef.current === null) {
+      seenAlertIdsRef.current = new Set(ids);
+      return;
+    }
+    const fresh = intelEvents.find((f) => f.properties?.type === 'correlated_alert'
+      && !seenAlertIdsRef.current.has(f.properties?.id));
+    ids.forEach((id) => seenAlertIdsRef.current.add(id));
+    if (fresh) {
+      setAlertFlash(fresh.properties);
+      playAlertBeep();
+      window.setTimeout(() => setAlertFlash(null), 8000);
+    }
+  }, [intelEvents, isPublicLiveHost]);
   const caseEventIdRef = useRef(null);
   const caseStatusRef = useRef('idle');
   const simParamsRef = useRef({});
@@ -1024,6 +1086,8 @@ function App() {
         map.addSource('proximity-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-events',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-distress',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('intel-fused',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('intel-spike',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-drifts',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-vessel-links', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('live-nearby-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -1310,8 +1374,14 @@ function App() {
           },
         });
 
-        // Intel event circles — exclude routine AIS loiter alerts from map
-        const _noAisFilter = ['!=', ['get', 'type'], 'ais_spike'];
+        // Intel event circles. AIS loiter/spike and the fusion engine's
+        // correlated alerts each render on their own dedicated layer/source
+        // (intel-spike / intel-fused) so they can be toggled and styled apart.
+        const _noAisFilter = ['all',
+          ['!=', ['get', 'type'], 'ais_spike'],
+          ['!=', ['get', 'type'], 'ais_anomaly'],
+          ['!=', ['get', 'type'], 'correlated_alert'],
+        ];
         map.addLayer({
           id: 'intel-events-halo', type: 'circle', source: 'intel-events',
           filter: _noAisFilter,
@@ -1329,14 +1399,62 @@ function App() {
           id: 'intel-events-layer', type: 'circle', source: 'intel-events',
           filter: _noAisFilter,
           paint: {
-            'circle-radius': 5,
-            'circle-color': ['match', ['get', 'severity'],
+            // fill = signal category (news / social / hazard / incident / iom / ngo …)
+            'circle-radius': ['match', ['get', 'type'],
+              ['vessel_incident', 'gdacs', 'iom_incident'], 6, 4.5],
+            'circle-color': categoryColorExpression(),
+            'circle-opacity': 0.92,
+            // stroke = severity, so both dimensions read at a glance
+            'circle-stroke-width': ['match', ['get', 'severity'],
+              'critical', 2.4, 'high', 1.8, 1.1],
+            'circle-stroke-color': ['match', ['get', 'severity'],
               'critical', '#ff3b3b',
               'high',     '#ff7b54',
               'medium',   '#ffe07d',
-                          '#8bf0c5'],
-            'circle-opacity': 0.9,
-            'circle-stroke-width': 1.2,
+                          '#04131a'],
+          },
+        });
+
+        // AIS spike / anomaly markers — small hollow rings, hidden by default.
+        // anomaly (spoofing / dark-zone) reads warmer than a routine loiter spike.
+        map.addLayer({
+          id: 'intel-spike-layer', type: 'circle', source: 'intel-spike',
+          layout: { visibility: 'none' },
+          paint: {
+            'circle-radius': ['match', ['get', 'type'], 'ais_anomaly', 5, 4],
+            'circle-color': ['match', ['get', 'type'],
+              'ais_anomaly', 'rgba(244,114,182,0.15)', 'rgba(96,165,250,0.12)'],
+            'circle-stroke-width': 1.5,
+            'circle-stroke-color': ['match', ['get', 'type'],
+              'ais_anomaly', '#f472b6', '#60a5fa'],
+          },
+        });
+
+        // Fusion engine: correlated OSINT alerts. Pulsing ring, colour by
+        // maritime domain, always on top.
+        const _domainColor = ['match', ['get', 'maritime_domain'],
+          'sanctions', '#f472b6',
+          'grey_zone', '#f59e0b',
+          'safety',    '#38bdf8',
+          'piracy',    '#a78bfa',
+                       '#ff3b3b'];
+        map.addLayer({
+          id: 'intel-fused-pulse', type: 'circle', source: 'intel-fused',
+          paint: {
+            'circle-radius': 8,
+            'circle-color': 'transparent',
+            'circle-stroke-color': _domainColor,
+            'circle-stroke-width': 2,
+            'circle-stroke-opacity': 0.5,
+          },
+        });
+        map.addLayer({
+          id: 'intel-fused-core', type: 'circle', source: 'intel-fused',
+          paint: {
+            'circle-radius': 6,
+            'circle-color': _domainColor,
+            'circle-opacity': 0.95,
+            'circle-stroke-width': 1.5,
             'circle-stroke-color': '#04131a',
           },
         });
@@ -1469,6 +1587,10 @@ function App() {
           map.setPaintProperty('intel-distress-pulse', 'circle-radius', r);
           map.setPaintProperty('intel-distress-pulse', 'circle-opacity', o);
           map.setPaintProperty('intel-distress-pulse', 'circle-stroke-opacity', Math.min(1, Math.max(0, 1 - t)));
+          if (map.getLayer('intel-fused-pulse')) {
+            map.setPaintProperty('intel-fused-pulse', 'circle-radius', 7 + 16 * t);
+            map.setPaintProperty('intel-fused-pulse', 'circle-stroke-opacity', 0.6 * (1 - t));
+          }
           pulseRaf = requestAnimationFrame(distressPulse);
         }
         pulseRaf = requestAnimationFrame(distressPulse);
@@ -1585,15 +1707,30 @@ function App() {
           className: 'intel-hover-popup',
         });
         map.on('mouseenter', 'intel-events-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+        const _hoverLabel = (feature, lat, lon) => {
+          const p = feature.properties || {};
+          const kind = (p.type || 'signal').replace(/_/g, ' ');
+          return `<strong>${kind}</strong><span>${lat.toFixed(4)}, ${lon.toFixed(4)}</span>`;
+        };
         map.on('mousemove', 'intel-events-layer', (event) => {
           const feature = event.features?.[0];
           if (!feature) return;
           const [lon, lat] = feature.geometry.coordinates;
-          intelHoverPopup
-            .setLngLat([lon, lat])
-            .setHTML(`<strong>${lat.toFixed(4)}, ${lon.toFixed(4)}</strong>`)
-            .addTo(map);
+          intelHoverPopup.setLngLat([lon, lat]).setHTML(_hoverLabel(feature, lat, lon)).addTo(map);
         });
+        for (const hid of ['intel-spike-layer', 'intel-fused-core']) {
+          map.on('mousemove', hid, (event) => {
+            const feature = event.features?.[0];
+            if (!feature) return;
+            const [lon, lat] = feature.geometry.coordinates;
+            const p = feature.properties || {};
+            const label = p.type === 'correlated_alert'
+              ? `<strong>${(p.alert_type || 'alert').replace(/_/g, ' ')}</strong><span>${p.maritime_domain || 'sar'}</span>`
+              : _hoverLabel(feature, lat, lon);
+            intelHoverPopup.setLngLat([lon, lat]).setHTML(label).addTo(map);
+          });
+          map.on('mouseleave', hid, () => intelHoverPopup.remove());
+        }
         map.on('mouseleave', 'intel-events-layer', () => {
           map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
           intelHoverPopup.remove();
@@ -1614,6 +1751,23 @@ function App() {
           }
           event.originalEvent?.stopPropagation?.();
         });
+        for (const fusedId of ['intel-fused-core', 'intel-spike-layer']) {
+          map.on('mouseenter', fusedId, () => { map.getCanvas().style.cursor = 'pointer'; });
+          map.on('mouseleave', fusedId, () => {
+            map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+          });
+          map.on('click', fusedId, (event) => {
+            const feature = event.features?.[0];
+            if (!feature) return;
+            const [lon, lat] = feature.geometry.coordinates;
+            map.flyTo({ center: [lon, lat], zoom: 8, duration: 800 });
+            setActivePanel('osint');
+            if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
+            setMapPanel({ type: 'intel', feature });
+            setConePanelHidden(false);
+            event.originalEvent?.stopPropagation?.();
+          });
+        }
         map.on('mouseenter', 'intel-drift-line', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'intel-drift-line', () => {
           map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
@@ -1793,9 +1947,10 @@ function App() {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     for (const group of LAYER_GROUPS) {
+      const on = group.defaultOff ? layerVis[group.key] === true : layerVis[group.key] !== false;
       const enabled = isPublicLiveHost
-        ? PUBLIC_LIVE_LAYER_GROUPS.has(group.key) && layerVis[group.key] !== false
-        : layerVis[group.key] !== false;
+        ? PUBLIC_LIVE_LAYER_GROUPS.has(group.key) && on
+        : on;
       const vis = enabled ? 'visible' : 'none';
       for (const id of group.layers) {
         if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
@@ -1805,7 +1960,11 @@ function App() {
   }, [layerVis, mapReady]);
 
   function toggleLayerGroup(key) {
-    setLayerVis((cur) => ({ ...cur, [key]: cur[key] === false }));
+    const group = LAYER_GROUPS.find((g) => g.key === key);
+    setLayerVis((cur) => {
+      const on = group?.defaultOff ? cur[key] === true : cur[key] !== false;
+      return { ...cur, [key]: !on };
+    });
   }
 
   // Intel events map layer — the backend's `kind` is "distress" (active),
@@ -1817,16 +1976,23 @@ function App() {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
     const positioned = intelEvents.filter((f) => f.geometry?.coordinates);
+    const typeOf = (f) => f.properties?.type;
+    const isSpike = (f) => typeOf(f) === 'ais_spike' || typeOf(f) === 'ais_anomaly';
+    const fused = positioned.filter((f) => typeOf(f) === 'correlated_alert');
+    const spikes = positioned.filter(isSpike);
+    const rest = positioned.filter((f) => typeOf(f) !== 'correlated_alert' && !isSpike(f));
     const isDistressTier = (f) => {
       const p = f.properties || {};
       return p.kind === 'distress' || p.kind === 'resolved' || p.kind === 'needs_review' || p.kind === 'archived'
         || p.tier === 'operational' || p.type === 'distress';
     };
-    const distress = positioned.filter(isDistressTier);
+    const distress = rest.filter(isDistressTier);
     const distressIds = new Set(distress.map((f) => f.properties?.id));
-    const others = positioned.filter((f) => !distressIds.has(f.properties?.id));
+    const others = rest.filter((f) => !distressIds.has(f.properties?.id));
     map.getSource('intel-events')?.setData({ type: 'FeatureCollection', features: others });
     map.getSource('intel-distress')?.setData({ type: 'FeatureCollection', features: distress });
+    map.getSource('intel-fused')?.setData({ type: 'FeatureCollection', features: fused });
+    map.getSource('intel-spike')?.setData({ type: 'FeatureCollection', features: spikes });
   }, [intelEvents, mapReady]);
 
   // Live nearby vessels: AIS positions around each active distress point,
@@ -2439,7 +2605,19 @@ function App() {
 
         {!play3D ? <LayerToggles visibility={layerVis} onToggle={toggleLayerGroup} /> : null}
         {!play3D ? <Legend /> : null}
+        {!play3D && !isPublicLiveHost ? (
+          <AlertRail
+            intelEvents={intelEvents}
+            onFocus={(lat, lon) => mapRef.current?.flyTo({ center: [Number(lon), Number(lat)], zoom: 8, duration: 800 })}
+            onOpenCase={() => setActivePanel('cases')}
+          />
+        ) : null}
 
+        {alertFlash ? (
+          <div className={`map-banner alert ${sidebarOpen ? 'sidebar-open' : ''}`}>
+            ⚡ Correlated alert · {(alertFlash.maritime_domain || 'sar')} · {(alertFlash.alert_type || '').replace(/_/g, ' ')}
+          </div>
+        ) : null}
         {error  ? <div className={`map-banner error ${sidebarOpen ? 'sidebar-open' : ''}`}>{error}</div> : null}
         {loading ? <div className={`map-banner ${sidebarOpen ? 'sidebar-open' : ''}`}>Connecting to backend…</div> : null}
 

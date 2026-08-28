@@ -7,6 +7,34 @@ Keep a Changelog structure; releases are identified by Git tags when published.
 
 ### Added
 
+- OSINT cross-source fusion engine (`core/intel/fusion.py`): every intel event
+  now fans out through a new `intel_store.subscribe` hook to a correlation
+  engine that runs rules over the recent-event window. A rule that fires emits
+  a `correlated_alert` intel event (so it reaches the map / feed / WebSocket /
+  DB), auto-opens a case linking the contributing events via the new
+  `case_intel_events` bridge, and fires a rate-limited notification
+  (`notify_alert`). v1 rules: multi-source SAR corroboration (folds in
+  `triangulation.evaluate`), dark-fleet / AIS spoofing (two distinct anomalies,
+  one MMSI, one window → `sanctions`), grey-zone infrastructure proximity (AIS
+  gap/loiter near an offshore platform or subsea corridor → `grey_zone`), and
+  single-source vessel-casualty / GDACS-hazard triggers (`safety`). The
+  operator console gains an **Alert rail**, a dedicated pulsing `correlated_alert`
+  map layer coloured by domain, a togglable AIS-anomaly layer (previously hidden
+  outright), a banner + chime on new critical alerts, and per-source OSINT
+  icons. `CorrelationEngine` (physical sensor fusion) is no longer a discarded
+  instance — its `on_threat` now surfaces a `correlated_alert`. New config:
+  `FUSION_ENABLED`, `FUSION_*` windows/radii, `FUSION_NOTIFY_COOLDOWN_S`.
+  `open_case()` extracted to `core/cases/service.py` so the route and the engine
+  share one path. `GET /api/v1/cases/{id}` now returns linked `intel_events`.
+- Maritime-domain compartments (phase 1): every intel event now carries a
+  `maritime_domain` tag (`sar` · `sanctions` · `grey_zone` · `iuu_fishing` ·
+  `piracy` · `smuggling` · `environmental` · `safety`), inferred from event
+  type / AIS-anomaly subtype so legacy events resolve to `sar`. The operator
+  console gains a compartment filter. Public Live is unchanged: only `sar`
+  (and `piracy`) are eligible without an explicit publish, configurable via
+  `PUBLIC_MARITIME_DOMAINS`. New `case_type` values `sanctions_watch`,
+  `dark_rendezvous`, `subsea_infrastructure`, `piracy_incident`. See
+  `docs/COMPARTMENTS.md`.
 - `GET /api/v1/ops/data-status` — one place to see what real data SeaCommons
   has flowing in and what it costs to run: ingestion sources, intel volume
   by type/source, vessel counts, drift job load, and the single-slot drift

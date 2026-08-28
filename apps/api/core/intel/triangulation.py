@@ -155,6 +155,7 @@ def evaluate(new_event: IntelEvent) -> Optional[dict[str, Any]]:
     summary: dict[str, Any] = {
         "verification_status": "multi_source_corroborated",
         "corroborating_sources": sorted(contributing.keys()),
+        "corroborating_event_ids": sorted(event.id for event in contributing.values()),
         "corroboration_confidence": confidence,
     }
     # Apply corroboration to every participating event. In particular, if an

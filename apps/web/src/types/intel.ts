@@ -5,6 +5,7 @@ import type {
   IncidentLifecycle,
   IntelTier,
   LocationPrecision,
+  MaritimeDomain,
   PublicThreadUpdate,
   VerificationStatus,
 } from './live';
@@ -15,6 +16,7 @@ export interface IntelEventProperties {
   severity: EventSeverity;
   tier: IntelTier;
   priority: number;
+  maritime_domain: MaritimeDomain;
   verification_status: VerificationStatus;
   drift_ready: boolean;
   title: string;

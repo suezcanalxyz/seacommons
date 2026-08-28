@@ -4,17 +4,33 @@ const ALARM_PHONE_SOURCE = 'Alarm Phone';
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
 const SEV_LABELS = ['critical', 'high', 'medium', 'low'];
 const TYPE_ICONS = {
-  distress:    '🆘',
-  twitter:     '𝕏',
-  mastodon:    '🐘',
-  whatsapp:    'WA',
-  telegram:    'TG',
-  partner:     'P',
-  news:        '📰',
-  iom_incident:'🔴',
-  ais_spike:   '📡',
-  ngo_activity:'🚢',
-  manual:      '✍️',
+  distress:        '🆘',
+  correlated_alert:'⚡',
+  twitter:         '𝕏',
+  mastodon:        '🐘',
+  bluesky:         '🦋',
+  whatsapp:        'WA',
+  telegram:        'TG',
+  partner:         'P',
+  news:            '📰',
+  iom_incident:    '🔴',
+  ais_spike:       '📡',
+  ais_anomaly:     '⚠️',
+  gdacs:           '🌍',
+  vessel_incident: '⚓',
+  ngo_activity:    '🚢',
+  manual:          '✍️',
+};
+
+export const DOMAIN_COLORS = {
+  sar:        '#ff3b3b',
+  sanctions:  '#f472b6',
+  grey_zone:  '#f59e0b',
+  safety:     '#38bdf8',
+  piracy:     '#a78bfa',
+  smuggling:  '#fb923c',
+  iuu_fishing:'#4ade80',
+  environmental: '#34d399',
 };
 
 function statusTone(s) {
@@ -295,6 +311,7 @@ export default function IntelDashboard({
   const [channelFilter, setChannelFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');   // 'all' | operational | news | signal
+  const [domainFilter, setDomainFilter] = useState('all');   // 'all' | sar | sanctions | grey_zone | ...
   const [viewMode, setViewMode] = useState('list');   // 'list' | 'timeline'
   const [showInject, setShowInject] = useState(false);
   const [injectSuccess, setInjectSuccess] = useState(false);
@@ -368,6 +385,9 @@ export default function IntelDashboard({
     if (intelFilter !== 'all') evs = evs.filter((f) => f.properties?.severity === intelFilter);
     if (channelFilter !== 'all') evs = evs.filter((f) => f.properties?.type === channelFilter);
     if (sourceFilter !== 'all') evs = evs.filter((f) => f.properties?.source === sourceFilter);
+    if (domainFilter !== 'all') {
+      evs = evs.filter((f) => (f.properties?.maritime_domain || 'sar') === domainFilter);
+    }
 
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -384,7 +404,14 @@ export default function IntelDashboard({
       Date.parse(right.properties?.timestamp_utc || 0)
       - Date.parse(left.properties?.timestamp_utc || 0)
     ));
-  }, [intelEvents, intelFilter, channelFilter, sourceFilter, tierFilter, showAisAlerts, search]);
+  }, [intelEvents, intelFilter, channelFilter, sourceFilter, tierFilter, domainFilter, showAisAlerts, search]);
+
+  // Maritime compartments actually present in the current event set (operator view).
+  const presentDomains = useMemo(() => {
+    const seen = new Set();
+    for (const f of intelEvents) seen.add(f.properties?.maritime_domain || 'sar');
+    return [...seen];
+  }, [intelEvents]);
 
   // Group the visible events by operational tier (operational pinned on top).
   const tierGroups = useMemo(() => {
@@ -818,6 +845,23 @@ export default function IntelDashboard({
             title="Show only Alarm Phone reports"
           >📞 Alarm Phone</button>
         </div>
+
+        {/* Maritime compartment filter — operator view, only when >1 present */}
+        {!publicMode && presentDomains.length > 1 && (
+          <div className="intel-filter-row" style={{ marginTop: 4 }}>
+            <button
+              className={`intel-filter-btn intel-filter-btn--channel ${domainFilter === 'all' ? 'is-active' : ''}`}
+              onClick={() => setDomainFilter('all')}
+            >all domains</button>
+            {presentDomains.map((d) => (
+              <button
+                key={d}
+                className={`intel-filter-btn intel-filter-btn--channel ${domainFilter === d ? 'is-active' : ''}`}
+                onClick={() => setDomainFilter((cur) => cur === d ? 'all' : d)}
+              >{d.replace(/_/g, ' ')}</button>
+            ))}
+          </div>
+        )}
 
         {/* Channel filter */}
         {channelTypes.length > 0 && (
