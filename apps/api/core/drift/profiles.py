@@ -126,6 +126,13 @@ _CASE_TYPE_TO_CLASS: dict[str, str] = {
     "vessel_incident": "general_cargo",
     "monitoring": "rubber_boat",
     "unspecified": "rubber_boat",
+    # Broader maritime-domain compartments. Most are monitoring-only (no auto
+    # drift); a dark ship-to-ship rendezvous is treated as a tanker for spill
+    # contingency drift.
+    "sanctions_watch": "rubber_boat",
+    "dark_rendezvous": "tanker",
+    "subsea_infrastructure": "rubber_boat",
+    "piracy_incident": "rubber_boat",
 }
 
 

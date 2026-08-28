@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
-from core.domain.live_contracts import VerificationStatus
+from core.domain.live_contracts import MaritimeDomain, VerificationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +106,39 @@ class IntelEvent:
         sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(self.severity, 2)
         return tier_rank * 10 + sev_rank
 
+    # ── Maritime-domain compartment ───────────────────────────────────────────
+    # Which maritime-awareness lane this event belongs to. ``sar`` (migrant and
+    # general distress) is the primary lane and the default; the other
+    # compartments are operator-only unless allow-listed in
+    # PUBLIC_MARITIME_DOMAINS. An explicit metadata["maritime_domain"] always
+    # wins; otherwise it is inferred from type / anomaly subtype so legacy
+    # events resolve to ``sar``.
+    _GREY_ZONE_ANOMALIES = frozenset(
+        {"dark_zone_entry", "zone_incursion", "cable_proximity"}
+    )
+    _SANCTIONS_ANOMALIES = frozenset(
+        {"sdn_match", "sanctioned_vessel", "ais_rendezvous", "impossible_speed", "gap"}
+    )
+    _DOMAIN_BY_TYPE = {
+        "piracy_incident": "piracy",
+        "gfw_event": "sanctions",
+        "vessel_incident": "safety",
+        "oil_spill": "environmental",
+    }
+
+    def maritime_domain(self) -> str:
+        explicit = self.metadata.get("maritime_domain")
+        if explicit:
+            return explicit
+        if self.type == "ais_anomaly":
+            anomaly_type = self.metadata.get("anomaly_type", "")
+            if anomaly_type in self._GREY_ZONE_ANOMALIES:
+                return MaritimeDomain.GREY_ZONE.value
+            if anomaly_type in self._SANCTIONS_ANOMALIES:
+                return MaritimeDomain.SANCTIONS.value
+            return MaritimeDomain.SANCTIONS.value
+        return self._DOMAIN_BY_TYPE.get(self.type, MaritimeDomain.SAR.value)
+
     def verification_status(self) -> str:
         """
         Evidence-first labelling (nextstep.txt): never present an asserted public
@@ -136,6 +169,7 @@ class IntelEvent:
                 "severity": self.severity,
                 "tier": self.tier(),
                 "priority": self.priority(),
+                "maritime_domain": self.maritime_domain(),
                 "verification_status": self.verification_status(),
                 "drift_ready": geo is not None and self.tier() == "operational",
                 "title": self.title,

@@ -27,6 +27,17 @@ export type EventSeverity = 'critical' | 'high' | 'low' | 'medium';
 export type IntelTier = 'news' | 'operational' | 'signal';
 export type SourceHealthStatus = 'active' | 'degraded' | 'offline' | 'pending';
 
+/** Maritime-awareness compartment an event belongs to. `sar` is the primary lane. */
+export type MaritimeDomain =
+  | 'environmental'
+  | 'grey_zone'
+  | 'iuu_fishing'
+  | 'piracy'
+  | 'safety'
+  | 'sanctions'
+  | 'sar'
+  | 'smuggling';
+
 export interface PublicThreadUpdate {
   tweet_id?: string | null;
   posted_at?: IsoDateTime | null;

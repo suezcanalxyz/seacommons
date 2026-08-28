@@ -295,6 +295,7 @@ export default function IntelDashboard({
   const [channelFilter, setChannelFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');   // 'all' | operational | news | signal
+  const [domainFilter, setDomainFilter] = useState('all');   // 'all' | sar | sanctions | grey_zone | ...
   const [viewMode, setViewMode] = useState('list');   // 'list' | 'timeline'
   const [showInject, setShowInject] = useState(false);
   const [injectSuccess, setInjectSuccess] = useState(false);
@@ -368,6 +369,9 @@ export default function IntelDashboard({
     if (intelFilter !== 'all') evs = evs.filter((f) => f.properties?.severity === intelFilter);
     if (channelFilter !== 'all') evs = evs.filter((f) => f.properties?.type === channelFilter);
     if (sourceFilter !== 'all') evs = evs.filter((f) => f.properties?.source === sourceFilter);
+    if (domainFilter !== 'all') {
+      evs = evs.filter((f) => (f.properties?.maritime_domain || 'sar') === domainFilter);
+    }
 
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -384,7 +388,14 @@ export default function IntelDashboard({
       Date.parse(right.properties?.timestamp_utc || 0)
       - Date.parse(left.properties?.timestamp_utc || 0)
     ));
-  }, [intelEvents, intelFilter, channelFilter, sourceFilter, tierFilter, showAisAlerts, search]);
+  }, [intelEvents, intelFilter, channelFilter, sourceFilter, tierFilter, domainFilter, showAisAlerts, search]);
+
+  // Maritime compartments actually present in the current event set (operator view).
+  const presentDomains = useMemo(() => {
+    const seen = new Set();
+    for (const f of intelEvents) seen.add(f.properties?.maritime_domain || 'sar');
+    return [...seen];
+  }, [intelEvents]);
 
   // Group the visible events by operational tier (operational pinned on top).
   const tierGroups = useMemo(() => {
@@ -818,6 +829,23 @@ export default function IntelDashboard({
             title="Show only Alarm Phone reports"
           >📞 Alarm Phone</button>
         </div>
+
+        {/* Maritime compartment filter — operator view, only when >1 present */}
+        {!publicMode && presentDomains.length > 1 && (
+          <div className="intel-filter-row" style={{ marginTop: 4 }}>
+            <button
+              className={`intel-filter-btn intel-filter-btn--channel ${domainFilter === 'all' ? 'is-active' : ''}`}
+              onClick={() => setDomainFilter('all')}
+            >all domains</button>
+            {presentDomains.map((d) => (
+              <button
+                key={d}
+                className={`intel-filter-btn intel-filter-btn--channel ${domainFilter === d ? 'is-active' : ''}`}
+                onClick={() => setDomainFilter((cur) => cur === d ? 'all' : d)}
+              >{d.replace(/_/g, ' ')}</button>
+            ))}
+          </div>
+        )}
 
         {/* Channel filter */}
         {channelTypes.length > 0 && (
