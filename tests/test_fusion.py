@@ -121,6 +121,41 @@ def test_grey_zone_proximity_to_platform_alerts() -> None:
     assert alerts[0].metadata["maritime_domain"] == "grey_zone"
 
 
+def test_vessel_incident_single_source_opens_safety_case() -> None:
+    ev = _add(
+        type="vessel_incident", severity="high", lat=35.4, lon=13.0,
+        title="Cargo aground off Lampedusa", source="AIS incidents",
+        metadata={"subtype": "aground"},
+    )
+    fusion.evaluate(ev)
+    alerts = _alerts()
+    assert len(alerts) == 1
+    assert alerts[0].metadata["alert_type"] == "vessel_casualty"
+
+    from core.db.models import CaseDB
+    from core.db.session import session_scope
+
+    with session_scope() as db:
+        cases = db.query(CaseDB).all()
+        assert len(cases) == 1
+        assert cases[0].case_type == "vessel_incident"
+
+
+def test_gdacs_high_severity_alerts_without_case() -> None:
+    ev = _add(
+        type="gdacs", severity="high", lat=36.0, lon=15.0,
+        title="Tropical storm — central Med", source="GDACS",
+        metadata={},
+    )
+    fusion.evaluate(ev)
+    assert len(_alerts()) == 1
+    from core.db.models import CaseDB
+    from core.db.session import session_scope
+
+    with session_scope() as db:
+        assert db.query(CaseDB).count() == 0
+
+
 def test_register_is_idempotent() -> None:
     fusion.register()
     fusion.register()

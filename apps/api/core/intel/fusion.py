@@ -123,7 +123,11 @@ def normalize(event: IntelEvent) -> Optional[FusionSignal]:
         return None
     meta = event.metadata or {}
     anomaly_type = str(
-        meta.get("anomaly_type") or meta.get("spike_type") or meta.get("subtype") or ""
+        meta.get("anomaly_type")
+        or meta.get("spike_type")
+        or meta.get("subtype")
+        or meta.get("ais_nav_status_kind")
+        or ""
     ).lower()
     mmsi = str(event.linked_mmsi or meta.get("mmsi") or meta.get("MMSI") or "").strip()
     imo = str(meta.get("imo") or meta.get("IMO") or "").strip()
@@ -267,10 +271,53 @@ def _rule_grey_zone(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert
     )
 
 
+_GROUNDING_SUBTYPES = {"aground", "grounding", "not_under_command", "disabled", "adrift"}
+
+
+def _rule_single_source(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]:
+    """Sources with no correlation partner still need a case: a serious vessel
+    incident, or a high-severity maritime natural-hazard alert near the AOI.
+    """
+    from core.intel.landmask import in_operational_region
+
+    if not in_operational_region(new.lat, new.lon):
+        return None
+
+    if new.kind == "vessel_incident" and new.anomaly_type in _GROUNDING_SUBTYPES:
+        return FusedAlert(
+            alert_type="vessel_casualty",
+            domain="safety",
+            severity=new.severity or "high",
+            confidence=0.7,
+            lat=new.lat, lon=new.lon, ts=new.ts,
+            contributing_event_ids=[new.event_id],
+            contributing_sources=[new.source],
+            summary=f"Vessel incident: {new.anomaly_type or 'casualty'} — {event.title[:120]}",
+            case_type="vessel_incident",
+            vessel_mmsi=new.mmsi,
+        )
+
+    if new.kind == "gdacs" and new.severity in {"high", "critical"}:
+        return FusedAlert(
+            alert_type="natural_hazard",
+            domain="safety",
+            severity=new.severity,
+            confidence=0.55,
+            lat=new.lat, lon=new.lon, ts=new.ts,
+            contributing_event_ids=[new.event_id],
+            contributing_sources=[new.source],
+            summary=f"GDACS {new.severity} hazard near the operational area — {event.title[:120]}",
+            open_case=False,
+            case_type="monitoring",
+        )
+    return None
+
+
 _RULES: list[Callable[[FusionSignal, IntelEvent], Optional[FusedAlert]]] = [
     _rule_sar_multisource,
     _rule_spoofing,
     _rule_grey_zone,
+    _rule_single_source,
 ]
 
 
