@@ -12,6 +12,8 @@ export const LAYER_GROUPS = [
   { key: 'ngo_vessels', label: 'NGO SAR fleet',  layers: ['vessels-ngo', 'vessels-ngo-stationary'] },
   { key: 'weather',     label: 'Weather grid',   layers: ['weather-vectors', 'weather-points'] },
   { key: 'intel',       label: 'OSINT events',   layers: ['intel-events-layer', 'intel-events-halo', 'intel-distress-core', 'intel-distress-pulse', 'intel-distress-area', 'intel-distress-polygon-fill', 'intel-distress-polygon-outline', 'intel-drift-cone', 'intel-drift-line', 'intel-drift-point', 'live-nearby-vessels-layer', 'live-nearby-vessels-halo', 'ngo-response-lines-layer', 'ngo-response-points-layer'] },
+  { key: 'fused',       label: 'Correlated alerts', layers: ['intel-fused-core', 'intel-fused-pulse'] },
+  { key: 'spikes',      label: 'AIS anomalies',  layers: ['intel-spike-layer'], defaultOff: true },
   { key: 'platforms',   label: 'Platforms',      layers: ['platforms-layer', 'platforms-halo'] },
   { key: 'alerts',      label: 'Past SAR cones', layers: ['alerts-cone', 'alerts-layer'] },
 ];
@@ -25,7 +27,8 @@ const LAYERS_ICON = (
 
 export default function LayerToggles({ visibility, onToggle }) {
   const [open, setOpen] = useState(false);
-  const offCount = LAYER_GROUPS.filter((g) => !visibility[g.key]).length;
+  const isOn = (g) => (g.defaultOff ? visibility[g.key] === true : visibility[g.key] !== false);
+  const offCount = LAYER_GROUPS.filter((g) => !isOn(g)).length;
 
   return (
     <div className="layer-control">
@@ -46,7 +49,7 @@ export default function LayerToggles({ visibility, onToggle }) {
             <label key={g.key} className="layer-row">
               <input
                 type="checkbox"
-                checked={visibility[g.key] !== false}
+                checked={isOn(g)}
                 onChange={() => onToggle(g.key)}
               />
               <span>{g.label}</span>

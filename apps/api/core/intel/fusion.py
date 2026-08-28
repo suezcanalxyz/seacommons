@@ -323,6 +323,8 @@ def _emit(alert: FusedAlert) -> None:
     case_id = None
     if alert.open_case:
         case_id = _open_case_for_alert(alert, alert_event.id)
+        if case_id:
+            intel_store.update_metadata(alert_event.id, metadata={"case_id": case_id})
 
     payload = {
         "id": alert_event.id, "alert_type": alert.alert_type, "domain": alert.domain,
@@ -371,6 +373,7 @@ def _open_case_for_alert(alert: FusedAlert, alert_event_id: str) -> Optional[str
                 timeline_note=f"Auto-opened by fusion engine ({alert.alert_type})",
                 audit_action="case.auto_created",
                 audit_data={"alert_type": alert.alert_type, "cluster_id": alert.cluster_id},
+                notify=False,  # _emit() sends a richer, cooldown-guarded notify_alert
             )
             return case["case_id"]
     except Exception as exc:

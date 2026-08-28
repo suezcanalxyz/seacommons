@@ -4,17 +4,33 @@ const ALARM_PHONE_SOURCE = 'Alarm Phone';
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
 const SEV_LABELS = ['critical', 'high', 'medium', 'low'];
 const TYPE_ICONS = {
-  distress:    '🆘',
-  twitter:     '𝕏',
-  mastodon:    '🐘',
-  whatsapp:    'WA',
-  telegram:    'TG',
-  partner:     'P',
-  news:        '📰',
-  iom_incident:'🔴',
-  ais_spike:   '📡',
-  ngo_activity:'🚢',
-  manual:      '✍️',
+  distress:        '🆘',
+  correlated_alert:'⚡',
+  twitter:         '𝕏',
+  mastodon:        '🐘',
+  bluesky:         '🦋',
+  whatsapp:        'WA',
+  telegram:        'TG',
+  partner:         'P',
+  news:            '📰',
+  iom_incident:    '🔴',
+  ais_spike:       '📡',
+  ais_anomaly:     '⚠️',
+  gdacs:           '🌍',
+  vessel_incident: '⚓',
+  ngo_activity:    '🚢',
+  manual:          '✍️',
+};
+
+export const DOMAIN_COLORS = {
+  sar:        '#ff3b3b',
+  sanctions:  '#f472b6',
+  grey_zone:  '#f59e0b',
+  safety:     '#38bdf8',
+  piracy:     '#a78bfa',
+  smuggling:  '#fb923c',
+  iuu_fishing:'#4ade80',
+  environmental: '#34d399',
 };
 
 function statusTone(s) {
