@@ -171,7 +171,7 @@ export default async function handler(req, res) {
     : resource === 'drifts'
       ? '/api/v1/live/drifts?limit=100'
       : resource === 'archives'
-        ? '/api/v1/live/archives?limit=8'
+        ? '/api/v1/live/archives?limit=60'
         : resource === 'archive' && safeEventId
           ? `/api/v1/live/archives/${safeEventId}/geojson`
           : `/api/v1/live/signals?limit=${requestedLimit}&days=${requestedDays}`;
