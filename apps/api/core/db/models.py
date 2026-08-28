@@ -71,6 +71,21 @@ class VesselTrackDB(Base):
     )
 
 
+class SanctionedVesselDB(Base):
+    """Aggregated sanctioned-vessel reference (OpenSanctions + OFAC SDN), rebuilt
+    daily by core.mda.identity.refresh_sanctions()."""
+    __tablename__ = "sanctioned_vessels"
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    source_list = Column(String(24), nullable=False, index=True)
+    name        = Column(String(200), default="")
+    name_upper  = Column(String(200), index=True)
+    imo         = Column(String(10), index=True)
+    mmsi        = Column(String(12), index=True)
+    program     = Column(String(160), default="")
+    listed_on   = Column(String(12))
+    updated_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class DriftResultDB(Base):
     """Computed drift trajectories — GeoJSON stored as JSON."""
     __tablename__ = "drift_results"
