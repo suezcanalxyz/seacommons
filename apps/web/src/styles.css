@@ -3324,6 +3324,15 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   border-top-color: #04131a;
   border-bottom-color: #04131a;
 }
+.intel-hover-popup .maplibregl-popup-content strong {
+  display: block;
+  text-transform: capitalize;
+  color: #e9f1ef;
+}
+.intel-hover-popup .maplibregl-popup-content span {
+  color: #8bf0c5;
+  opacity: 0.8;
+}
 
 /* ── Archive timeline (Play only) ─────────────────────────────────────────── */
 .archive-timeline {

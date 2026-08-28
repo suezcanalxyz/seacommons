@@ -9,6 +9,7 @@ import IntelDashboard from './components/IntelDashboard.jsx';
 import LayerToggles, { LAYER_GROUPS } from './components/LayerToggles.jsx';
 import Legend from './components/Legend.jsx';
 import AlertRail from './components/AlertRail.jsx';
+import { categoryColorExpression } from './features/intel/categories.js';
 import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
 import JobMonitor from './components/JobMonitor.jsx';
@@ -1378,6 +1379,7 @@ function App() {
         // (intel-spike / intel-fused) so they can be toggled and styled apart.
         const _noAisFilter = ['all',
           ['!=', ['get', 'type'], 'ais_spike'],
+          ['!=', ['get', 'type'], 'ais_anomaly'],
           ['!=', ['get', 'type'], 'correlated_alert'],
         ];
         map.addLayer({
@@ -1397,27 +1399,34 @@ function App() {
           id: 'intel-events-layer', type: 'circle', source: 'intel-events',
           filter: _noAisFilter,
           paint: {
-            'circle-radius': 5,
-            'circle-color': ['match', ['get', 'severity'],
+            // fill = signal category (news / social / hazard / incident / iom / ngo …)
+            'circle-radius': ['match', ['get', 'type'],
+              ['vessel_incident', 'gdacs', 'iom_incident'], 6, 4.5],
+            'circle-color': categoryColorExpression(),
+            'circle-opacity': 0.92,
+            // stroke = severity, so both dimensions read at a glance
+            'circle-stroke-width': ['match', ['get', 'severity'],
+              'critical', 2.4, 'high', 1.8, 1.1],
+            'circle-stroke-color': ['match', ['get', 'severity'],
               'critical', '#ff3b3b',
               'high',     '#ff7b54',
               'medium',   '#ffe07d',
-                          '#8bf0c5'],
-            'circle-opacity': 0.9,
-            'circle-stroke-width': 1.2,
-            'circle-stroke-color': '#04131a',
+                          '#04131a'],
           },
         });
 
-        // AIS spike / anomaly markers — small hollow diamonds, hidden by default
+        // AIS spike / anomaly markers — small hollow rings, hidden by default.
+        // anomaly (spoofing / dark-zone) reads warmer than a routine loiter spike.
         map.addLayer({
           id: 'intel-spike-layer', type: 'circle', source: 'intel-spike',
           layout: { visibility: 'none' },
           paint: {
-            'circle-radius': 4,
-            'circle-color': 'rgba(96,165,250,0.15)',
-            'circle-stroke-width': 1.4,
-            'circle-stroke-color': '#60a5fa',
+            'circle-radius': ['match', ['get', 'type'], 'ais_anomaly', 5, 4],
+            'circle-color': ['match', ['get', 'type'],
+              'ais_anomaly', 'rgba(244,114,182,0.15)', 'rgba(96,165,250,0.12)'],
+            'circle-stroke-width': 1.5,
+            'circle-stroke-color': ['match', ['get', 'type'],
+              'ais_anomaly', '#f472b6', '#60a5fa'],
           },
         });
 
@@ -1698,15 +1707,30 @@ function App() {
           className: 'intel-hover-popup',
         });
         map.on('mouseenter', 'intel-events-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+        const _hoverLabel = (feature, lat, lon) => {
+          const p = feature.properties || {};
+          const kind = (p.type || 'signal').replace(/_/g, ' ');
+          return `<strong>${kind}</strong><span>${lat.toFixed(4)}, ${lon.toFixed(4)}</span>`;
+        };
         map.on('mousemove', 'intel-events-layer', (event) => {
           const feature = event.features?.[0];
           if (!feature) return;
           const [lon, lat] = feature.geometry.coordinates;
-          intelHoverPopup
-            .setLngLat([lon, lat])
-            .setHTML(`<strong>${lat.toFixed(4)}, ${lon.toFixed(4)}</strong>`)
-            .addTo(map);
+          intelHoverPopup.setLngLat([lon, lat]).setHTML(_hoverLabel(feature, lat, lon)).addTo(map);
         });
+        for (const hid of ['intel-spike-layer', 'intel-fused-core']) {
+          map.on('mousemove', hid, (event) => {
+            const feature = event.features?.[0];
+            if (!feature) return;
+            const [lon, lat] = feature.geometry.coordinates;
+            const p = feature.properties || {};
+            const label = p.type === 'correlated_alert'
+              ? `<strong>${(p.alert_type || 'alert').replace(/_/g, ' ')}</strong><span>${p.maritime_domain || 'sar'}</span>`
+              : _hoverLabel(feature, lat, lon);
+            intelHoverPopup.setLngLat([lon, lat]).setHTML(label).addTo(map);
+          });
+          map.on('mouseleave', hid, () => intelHoverPopup.remove());
+        }
         map.on('mouseleave', 'intel-events-layer', () => {
           map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
           intelHoverPopup.remove();
@@ -1953,9 +1977,10 @@ function App() {
     if (!map || !mapReady || !map.isStyleLoaded()) return;
     const positioned = intelEvents.filter((f) => f.geometry?.coordinates);
     const typeOf = (f) => f.properties?.type;
+    const isSpike = (f) => typeOf(f) === 'ais_spike' || typeOf(f) === 'ais_anomaly';
     const fused = positioned.filter((f) => typeOf(f) === 'correlated_alert');
-    const spikes = positioned.filter((f) => typeOf(f) === 'ais_spike');
-    const rest = positioned.filter((f) => typeOf(f) !== 'correlated_alert' && typeOf(f) !== 'ais_spike');
+    const spikes = positioned.filter(isSpike);
+    const rest = positioned.filter((f) => typeOf(f) !== 'correlated_alert' && !isSpike(f));
     const isDistressTier = (f) => {
       const p = f.properties || {};
       return p.kind === 'distress' || p.kind === 'resolved' || p.kind === 'needs_review' || p.kind === 'archived'
