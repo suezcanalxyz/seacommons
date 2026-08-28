@@ -21,12 +21,26 @@ from core.domain.live_contracts import (
     validate_live_signal,
 )
 from core.intel.public_geometry import public_geometry_and_precision
-from core.intel.public_policy import is_blocked_source, is_explicitly_private
+from core.intel.public_policy import is_blocked_source, is_explicitly_private, is_public_domain
 from core.intel.store import IntelEvent
 
 logger = logging.getLogger(__name__)
 
 _PUBLIC_INTEL_TYPES = frozenset({"distress", "twitter", "mastodon", "ngo_activity"})
+# OSINT context types that may appear on the public map when their maritime
+# compartment is allow-listed (PUBLIC_MARITIME_DOMAINS). A sanctions / grey-zone
+# signal never surfaces on the default (sar, piracy) posture — only the SAR /
+# safety / environmental context does.
+_PUBLIC_CONTEXT_TYPES = frozenset(
+    {"news", "bluesky", "gdacs", "vessel_incident", "iom_incident",
+     "ais_spike", "ais_anomaly", "correlated_alert", "oil_spill"}
+)
+# Types SeaCommons computes from telemetry (AIS, sensor fusion) rather than
+# scrapes — they carry no source_policy but are safe to surface, still subject
+# to the domain + geometry gates below.
+_SEACOMMONS_DERIVED_TYPES = frozenset(
+    {"ais_spike", "ais_anomaly", "correlated_alert", "vessel_incident"}
+)
 _PUBLIC_METADATA = frozenset(
     {
         "category",
@@ -40,6 +54,12 @@ _PUBLIC_METADATA = frozenset(
         "incident_id",
         "is_distress",
         "maritime_domain",
+        "alert_type",
+        "confidence",
+        "contributing_sources",
+        "cluster_id",
+        "anomaly_type",
+        "spike_type",
         "last_source_seen_at",
         "location_uncertainty_m",
         "missing",
@@ -82,12 +102,19 @@ def _public_intel_feature(event: IntelEvent) -> dict[str, Any] | None:
     # direct-message channels rely on this guarantee).
     if is_explicitly_private(event.metadata):
         return None
+    domain_public = is_public_domain(event.maritime_domain())
+    is_derived = event.type in _SEACOMMONS_DERIVED_TYPES
     if (
         publication != PublicationStatus.PUBLISHED.value
         and source_policy not in APPROVED_SOURCE_POLICIES
+        and not (is_derived and domain_public)
     ):
         return None
-    if event.type not in _PUBLIC_INTEL_TYPES and publication != PublicationStatus.PUBLISHED.value:
+    type_eligible = (
+        event.type in _PUBLIC_INTEL_TYPES
+        or (event.type in _PUBLIC_CONTEXT_TYPES and domain_public)
+    )
+    if not type_eligible and publication != PublicationStatus.PUBLISHED.value:
         return None
     try:
         canonical_source_policy = (

@@ -35,7 +35,24 @@ from core.domain.live_contracts import (
     Visibility,
     validate_federated_event_input,
 )
-from core.intel.public_policy import is_blocked_source, is_explicitly_private
+from core.domain.live_contracts import APPROVED_SOURCE_POLICIES
+from core.intel.public_policy import (
+    is_blocked_source,
+    is_explicitly_private,
+    is_public_domain,
+)
+
+# OSINT context types eligible for the public edge feed when their maritime
+# compartment is allow-listed (mirrors core.live.projection._PUBLIC_CONTEXT_TYPES).
+_PUBLIC_CONTEXT_TYPES = frozenset(
+    {"news", "bluesky", "gdacs", "vessel_incident", "iom_incident",
+     "ais_spike", "ais_anomaly", "correlated_alert", "oil_spill"}
+)
+# Types SeaCommons computes from telemetry rather than scrapes — no source
+# policy, but safe to surface (still domain + geometry gated).
+_SEACOMMONS_DERIVED_TYPES = frozenset(
+    {"ais_spike", "ais_anomaly", "correlated_alert", "vessel_incident"}
+)
 from core.observability import (
     record_publisher_cycle,
     record_publisher_delivery,
@@ -259,7 +276,20 @@ def public_event_from_row(
     # was therefore dead: it never once evaluated True in production. Only
     # `is_distress` was ever actually gating inclusion.
     explicitly_public = publication_status == PublicationStatus.PUBLISHED.value
-    if not is_distress and not explicitly_public:
+    source_policy = str(metadata.get("source_policy") or "").lower()
+    # An OSINT context signal (news, GDACS, AIS, fusion alert) surfaces on the
+    # public map only when its compartment is allow-listed AND it either rode an
+    # approved transport or is a SeaCommons-derived product — an unlabelled
+    # context row still stays operator-only (same rule as core.live.projection).
+    domain_context_public = (
+        event_type in _PUBLIC_CONTEXT_TYPES
+        and is_public_domain(event.maritime_domain())
+        and (
+            source_policy in APPROVED_SOURCE_POLICIES
+            or event_type in _SEACOMMONS_DERIVED_TYPES
+        )
+    )
+    if not is_distress and not explicitly_public and not domain_context_public:
         return None
 
     from core.intel.public_geometry import public_geometry_and_precision

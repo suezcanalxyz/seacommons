@@ -140,21 +140,31 @@ def public_signal_collection(
     features = []
     for event in events:
         feature = _public_intel_feature(event)
-        if not feature or feature["properties"].get("kind") != "distress":
+        if not feature:
             continue
-        if not lifecycle.is_within_live_window(event, now=now):
-            # Hard cutoff: a distress marker's total life on Live is bounded,
-            # regardless of whether it was ever resolved. Older history lives
-            # in the archive/replay views, not the live pulsing map.
-            continue
-        state = lifecycle.distress_lifecycle(
-            event, now=now, same_source=by_source.get(event.source, [])
-        )
-        # Directly resolved incidents were filtered above. Cross-post matches
-        # may still project resolved; ambiguous replies project needs_review.
-        feature["properties"]["kind"] = LiveSignalKind.DISTRESS.value
-        feature["properties"]["incident_lifecycle"] = state
-        features.append(feature)
+        kind = feature["properties"].get("kind")
+        if kind == "distress" and event.type != "correlated_alert":
+            if not lifecycle.is_within_live_window(event, now=now):
+                # Hard cutoff: a distress marker's total life on Live is bounded,
+                # regardless of whether it was ever resolved. Older history lives
+                # in the archive/replay views, not the live pulsing map.
+                continue
+            state = lifecycle.distress_lifecycle(
+                event, now=now, same_source=by_source.get(event.source, [])
+            )
+            # Directly resolved incidents were filtered above. Cross-post matches
+            # may still project resolved; ambiguous replies project needs_review.
+            feature["properties"]["kind"] = LiveSignalKind.DISTRESS.value
+            feature["properties"]["incident_lifecycle"] = state
+            features.append(feature)
+        elif kind in ("context", "distress"):
+            # Broader OSINT context: news, AIS spikes/anomalies, GDACS, vessel
+            # incidents, correlated fusion alerts — eligibility (type + maritime
+            # compartment) is already decided in _public_intel_feature. Bounded
+            # by the same age window, no pulsing lifecycle.
+            if not lifecycle.is_within_live_window(event, now=now):
+                continue
+            features.append(feature)
     features.extend(_published_ingested_features(limit))
     if since:
         features = [
