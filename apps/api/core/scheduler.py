@@ -349,6 +349,7 @@ def _job_mda_daily() -> None:
         ("jamming", "core.mda.jamming:refresh"),
         ("gfw", "core.intel.gfw_monitor:poll_once"),
         ("viirs", "core.intel.viirs_monitor:poll_once"),
+        ("warfare", "core.mda.warfare:poll_once"),
     ):
         try:
             mod_name, fn_name = dotted.split(":")

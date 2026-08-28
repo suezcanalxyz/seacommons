@@ -409,11 +409,62 @@ def _rule_identity_fraud(new: FusionSignal, event: IntelEvent) -> Optional[Fused
     )
 
 
+_STRIKE_KINDS = {"conflict_event", "navwarning", "vessel_incident"}
+_STRIKE_ANOM = {"strike_warning", "conflict_event", "explosion", "fire",
+                "not_under_command", "aground", "missile_test"}
+
+
+def _rule_maritime_strike(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]:
+    """A vessel incident / conflict event / strike warning corroborated by two
+    other grey-zone signals nearby in space and time = a probable strike on
+    shipping (Black Sea, Red Sea, E. Med)."""
+    if new.kind not in _STRIKE_KINDS:
+        return None
+    if new.kind == "vessel_incident" and new.anomaly_type not in _STRIKE_ANOM:
+        return None
+    if new.lat is None or new.lon is None:
+        return None
+    window_s = 6 * 3600
+    corrob: list[FusionSignal] = []
+    kinds_seen: set[str] = set()
+    for other in _recent_signals(new.event_id):
+        if other.lat is None or other.kind == new.kind:
+            continue
+        if abs(other.ts - new.ts) > window_s:
+            continue
+        if haversine_km(new.lat, new.lon, other.lat, other.lon) > 120:
+            continue
+        if other.kind in ("conflict_event", "navwarning", "vessel_incident") \
+                or other.anomaly_type in ("seismic", "explosion") \
+                or (other.kind == "ais_anomaly" and other.anomaly_type in ("gap", "long_gap")):
+            if other.kind not in kinds_seen:
+                corrob.append(other)
+                kinds_seen.add(other.kind)
+    if len(corrob) < 2:
+        return None
+    ids = [new.event_id, *[c.event_id for c in corrob]]
+    return FusedAlert(
+        alert_type="maritime_strike",
+        domain="grey_zone",
+        severity="critical",
+        confidence=round(min(0.95, 0.55 + 0.15 * len(corrob)), 3),
+        lat=new.lat, lon=new.lon, ts=new.ts,
+        contributing_event_ids=ids,
+        contributing_sources=sorted({new.source, *[c.source for c in corrob]}),
+        summary=(f"Probable strike on shipping — {event.title[:120]} "
+                 f"(+{len(corrob)} corroborating signals)"),
+        open_case=True,
+        case_type="vessel_incident",
+        vessel_mmsi=new.mmsi,
+    )
+
+
 _RULES: list[Callable[[FusionSignal, IntelEvent], Optional[FusedAlert]]] = [
     _rule_sar_multisource,
     _rule_spoofing,
     _rule_dark_sts,
     _rule_identity_fraud,
+    _rule_maritime_strike,
     _rule_grey_zone,
     _rule_single_source,
 ]
@@ -558,6 +609,10 @@ def evaluate(event: IntelEvent) -> None:
             })
         except Exception as exc:  # pragma: no cover
             logger.debug("fusion: correlation-engine ingest skipped: %s", exc)
+    # Rules are ordered most-specific first; the first that fires for an event
+    # wins (a `maritime_strike` should not also raise a generic `vessel_casualty`
+    # for the same hull). A rule can still fire later for a *different* event of
+    # the same incident.
     for rule in _RULES:
         try:
             alert = rule(signal, event)
@@ -566,6 +621,7 @@ def evaluate(event: IntelEvent) -> None:
             continue
         if alert is not None:
             _emit(alert)
+            break
 
 
 _REGISTERED = False

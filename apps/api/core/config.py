@@ -150,6 +150,7 @@ class SuezCanalConfig(BaseSettings):
     ADSB_EXCHANGE_KEY: str = ""
     GPSJAM_URL: str = "https://gpsjam.org/geo.json"
     ACLED_KEY: str = ""
+    ACLED_EMAIL: str = ""
     MADRIGAL_URL: str = "https://madrigal.haystack.mit.edu"
     EMSC_WS: str = "wss://www.seismicportal.eu/standing_order/websocket"
     RUNTIME_PROFILE: str = "operational"
