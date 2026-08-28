@@ -3,7 +3,8 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Float, Integer, DateTime, JSON, Text, UniqueConstraint, ForeignKey, create_engine
+    BigInteger, Column, String, Float, Integer, DateTime, Index, JSON, Text,
+    UniqueConstraint, ForeignKey, create_engine
 )
 from sqlalchemy.orm import DeclarativeBase, Session
 
@@ -44,6 +45,30 @@ class AnomalyEvent(Base):
     lon           = Column(Float)
     data          = Column(JSON)
     created_at    = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class VesselTrackDB(Base):
+    """Time-series of AIS positions per MMSI — the primitive the dark-vessel
+    detectors (gap, rendezvous / STS, loiter, spoof-pattern, identity history)
+    are built on. Throttled to at most one row per MMSI per ~60 s at write time
+    and pruned to a rolling window (config VESSEL_TRACK_RETENTION_DAYS)."""
+    __tablename__ = "vessel_tracks"
+    id            = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    mmsi          = Column(String(16), nullable=False)
+    ts            = Column(DateTime, nullable=False)          # AIS-reported time
+    received_at   = Column(DateTime, nullable=False)          # our wall clock at receipt
+    lat           = Column(Float, nullable=False)
+    lon           = Column(Float, nullable=False)
+    sog           = Column(Float)                              # knots
+    cog           = Column(Float)                              # degrees
+    heading       = Column(Float)                              # degrees, None if 511
+    nav_status    = Column(Integer)
+    source        = Column(String(24), nullable=False, default="aisstream")
+
+    __table_args__ = (
+        Index("ix_vessel_tracks_mmsi_ts", "mmsi", "ts"),
+        Index("ix_vessel_tracks_ts", "ts"),
+    )
 
 
 class DriftResultDB(Base):

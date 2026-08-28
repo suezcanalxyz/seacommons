@@ -130,6 +130,11 @@ class SuezCanalConfig(BaseSettings):
     # reusing AISSTREAM_KEY here would just get the second connection dropped
     # — see core/vessels/aisstream.py. Leave unset to skip this subscription.
     AISSTREAM_NGO_KEY: str = ""
+    # AIS track history (core/vessels/track_store.py) — the primitive the
+    # dark-vessel / grey-zone MDA detectors run on.
+    VESSEL_TRACK_ENABLED: bool = True
+    VESSEL_TRACK_MIN_INTERVAL_S: int = 60     # at most one stored row per MMSI per this
+    VESSEL_TRACK_RETENTION_DAYS: int = 60
     ADSB_EXCHANGE_KEY: str = ""
     GPSJAM_URL: str = "https://gpsjam.org/geo.json"
     ACLED_KEY: str = ""
