@@ -73,6 +73,7 @@ class MdaWatch:
             "gap": self.scan_gaps(),
             "identity": self.scan_identity(),
             "mmsi_duplicate": self.scan_mmsi_duplicate(),
+            "spoofing": self.scan_spoofing(),
         }
         # prune emit-dedup + stale pairs
         now = time.time()
@@ -372,6 +373,73 @@ class MdaWatch:
             emitted += 1
         return emitted
 
+    # ── spoofing patterns ───────────────────────────────────────────────────
+
+    def scan_spoofing(self) -> int:
+        from core.mda.jamming import jamming
+        from core.vessels.track_store import track_store
+
+        now = datetime.now(timezone.utc)
+        rows = track_store.positions_between(now - timedelta(minutes=90), now, bbox=_MED_BLACK_SEA)
+        by_mmsi: dict[str, list[dict[str, Any]]] = {}
+        for r in rows:
+            by_mmsi.setdefault(r["mmsi"], []).append(r)
+        emitted = 0
+        for mmsi, pts in by_mmsi.items():
+            if len(pts) < 6:
+                continue
+            pts.sort(key=lambda r: r["ts"])
+            reason, extra = self._spoof_signature(pts)
+            if reason is None:
+                continue
+            if self._recently_emitted(f"spoof:{mmsi}", 6 * 3600):
+                continue
+            mid = pts[len(pts) // 2]
+            jam = jamming.in_jamming_zone(mid["lat"], mid["lon"])
+            atype = "position_jump" if reason == "teleport" else (
+                "circle_spoof" if reason == "circular" else "static_spoof")
+            intel_store.add(IntelEvent(
+                id=f"spoof:{mmsi}:{reason}",
+                type="ais_anomaly",
+                severity="high" if jam < 0.4 else "medium",
+                lat=round(mid["lat"], 5), lon=round(mid["lon"], 5),
+                title=f"AIS {reason} spoofing — {mmsi}",
+                text=f"MMSI {mmsi}: {reason} track signature ({extra})."
+                     + (" Active GNSS jamming in the area." if jam > 0.3 else ""),
+                source="mda", linked_mmsi=mmsi,
+                metadata={
+                    "anomaly_type": atype, "maritime_domain": "sanctions",
+                    "is_distress": False, "publication_status": "internal",
+                    "source_policy": "official_api", "verification_status": "derived",
+                    "coordinate_source": "ais_position", "spoof_reason": reason,
+                    "jamming_score": jam, "detail": extra,
+                },
+            ), dedup_key=f"spoof:{mmsi}:{reason}:{int(time.time() // 21600)}")
+            emitted += 1
+        return emitted
+
+    @staticmethod
+    def _spoof_signature(pts: list[dict[str, Any]]) -> tuple[Optional[str], str]:
+        # teleport: a single step implies an impossible speed
+        for a, b in zip(pts, pts[1:]):
+            dt = (_parse(b["ts"]) - _parse(a["ts"])).total_seconds()
+            if dt <= 0:
+                continue
+            kn = haversine_km(a["lat"], a["lon"], b["lat"], b["lon"]) / 1.852 / (dt / 3600)
+            if kn > 60 and haversine_km(a["lat"], a["lon"], b["lat"], b["lon"]) > 15:
+                return "teleport", f"{kn:.0f} kn between two fixes"
+        # frozen: >80% of fixes identical position while SOG > 1
+        first = (round(pts[0]["lat"], 4), round(pts[0]["lon"], 4))
+        same = sum(1 for p in pts if (round(p["lat"], 4), round(p["lon"], 4)) == first)
+        moving = sum(1 for p in pts if (p.get("sog") or 0) > 1.0)
+        if same / len(pts) > 0.8 and moving > len(pts) * 0.5:
+            return "frozen", f"{same}/{len(pts)} fixes identical while SOG>1"
+        # circular: least-squares circle fit, small residual, plausible radius
+        r_m, resid_ratio = _circle_fit([(p["lat"], p["lon"]) for p in pts])
+        if r_m and 40 <= r_m <= 3000 and resid_ratio < 0.12:
+            return "circular", f"ring radius ~{r_m:.0f} m"
+        return None, ""
+
     # ── helpers ──────────────────────────────────────────────────────────────
 
     def _recently_emitted(self, key: str, cooldown_s: float) -> bool:
@@ -380,6 +448,39 @@ class MdaWatch:
             return True
         self._emitted[key] = now
         return False
+
+
+def _circle_fit(latlon: list[tuple[float, float]]) -> tuple[Optional[float], float]:
+    """Kasa least-squares circle fit in a local metre frame. Returns
+    (radius_m, mean_residual / radius); radius None when degenerate.
+
+    Model: x^2 + y^2 = a*x + b*y + c  ->  centre (a/2, b/2), r = sqrt(c + a^2/4 + b^2/4).
+    """
+    if len(latlon) < 5:
+        return None, 1.0
+    try:
+        import numpy as np
+    except Exception:  # pragma: no cover
+        return None, 1.0
+    lat0 = sum(p[0] for p in latlon) / len(latlon)
+    lon0 = sum(p[1] for p in latlon) / len(latlon)
+    mlat = 111_320.0
+    mlon = 111_320.0 * math.cos(math.radians(lat0))
+    x = np.array([(p[1] - lon0) * mlon for p in latlon])
+    y = np.array([(p[0] - lat0) * mlat for p in latlon])
+    A = np.column_stack([x, y, np.ones_like(x)])
+    z = x * x + y * y
+    try:
+        a, b, c = np.linalg.lstsq(A, z, rcond=None)[0]
+    except Exception:  # pragma: no cover
+        return None, 1.0
+    cx, cy = a / 2.0, b / 2.0
+    inside = c + cx * cx + cy * cy
+    if inside <= 0:
+        return None, 1.0
+    r = math.sqrt(inside)
+    resid = float(np.mean(np.abs(np.hypot(x - cx, y - cy) - r)))
+    return r, resid / r if r > 0 else 1.0
 
 
 def _parse(v: Any) -> datetime:

@@ -99,6 +99,37 @@ def test_gap_scan_flags_silent_vessel(monkeypatch):
     assert _alerts("ais_anomaly")[0].metadata["anomaly_type"] == "gap"
 
 
+def test_spoofing_circular_track():
+    import math
+    w = MdaWatch()
+    for k in range(14):
+        ang = k / 14 * 2 * math.pi
+        dlat = 200 * math.sin(ang) / 111320
+        dlon = 200 * math.cos(ang) / (111320 * math.cos(math.radians(37)))
+        track_store.on_position("111000010", "SPOOF", 37.0 + dlat, 15.0 + dlon,
+                                sog=21.0, nav_status=0, received_at=datetime.now(timezone.utc))
+        track_store._last_write_epoch["111000010"] = 0.0
+    assert w.scan_spoofing() == 1
+    ev = _alerts("ais_anomaly")
+    assert ev[0].metadata["anomaly_type"] == "circle_spoof"
+
+
+def test_spoofing_teleport():
+    from datetime import timedelta
+    w = MdaWatch()
+    base = datetime.now(timezone.utc) - timedelta(minutes=15)
+    for i in range(6):
+        track_store.on_position("111000011", "JUMP", 35.0, 15.0, sog=10.0,
+                                nav_status=0, received_at=base + timedelta(seconds=i * 20))
+        track_store._last_write_epoch["111000011"] = 0.0
+    # one impossible jump 40 s after the last fix
+    track_store.on_position("111000011", "JUMP", 39.0, 20.0, sog=10.0,
+                            nav_status=0, received_at=base + timedelta(seconds=6 * 20 + 40))
+    track_store._last_write_epoch["111000011"] = 0.0
+    assert w.scan_spoofing() == 1
+    assert _alerts("ais_anomaly")[0].metadata["anomaly_type"] == "position_jump"
+
+
 def test_mmsi_duplicate():
     w = MdaWatch()
     # same MMSI, two clusters 300 km apart, many fixes
