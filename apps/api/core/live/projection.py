@@ -45,6 +45,9 @@ _PUBLIC_CONTEXT_TYPES = frozenset(
 _SEACOMMONS_DERIVED_TYPES = frozenset(
     {"ais_anomaly", "correlated_alert", "vessel_incident"}
 )
+# GDACS event types worth showing on a maritime SAR map (TC cyclone, EQ
+# earthquake / tsunami, FL flood, VO volcano) — excludes WF wildfire, DR drought.
+_MARITIME_GDACS_TYPES = frozenset({"TC", "EQ", "FL", "VO"})
 _PUBLIC_METADATA = frozenset(
     {
         "category",
@@ -119,6 +122,22 @@ def _public_intel_feature(event: IntelEvent) -> dict[str, Any] | None:
         or (event.type in _PUBLIC_CONTEXT_TYPES and domain_public)
     )
     if not type_eligible and publication != PublicationStatus.PUBLISHED.value:
+        return None
+    # Context noise filter: an OSINT context signal only reaches the public map
+    # when it carries elevated severity (or was explicitly published). Keeps
+    # green GDACS notifications and routine low-severity items off Live.
+    if (
+        event.type in _PUBLIC_CONTEXT_TYPES
+        and event.type not in ("correlated_alert",)
+        and (event.severity or "low").lower() == "low"
+        and publication != PublicationStatus.PUBLISHED.value
+    ):
+        return None
+    # GDACS: only genuinely SAR-relevant natural hazards (cyclone, coastal
+    # quake / tsunami, flood, volcano) — never wildfires / droughts inland.
+    if event.type == "gdacs" and str(
+        event.metadata.get("gdacs_event_type") or ""
+    ).upper() not in _MARITIME_GDACS_TYPES:
         return None
     try:
         canonical_source_policy = (

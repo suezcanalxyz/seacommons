@@ -54,6 +54,7 @@ _PUBLIC_CONTEXT_TYPES = frozenset(
 _SEACOMMONS_DERIVED_TYPES = frozenset(
     {"ais_anomaly", "correlated_alert", "vessel_incident"}
 )
+_MARITIME_GDACS_TYPES = frozenset({"TC", "EQ", "FL", "VO"})
 from core.observability import (
     record_publisher_cycle,
     record_publisher_delivery,
@@ -282,9 +283,19 @@ def public_event_from_row(
     # public map only when its compartment is allow-listed AND it either rode an
     # approved transport or is a SeaCommons-derived product — an unlabelled
     # context row still stays operator-only (same rule as core.live.projection).
+    context_severity_ok = (
+        event_type == "correlated_alert"
+        or (event.severity or "low").lower() != "low"
+        or explicitly_public
+    )
+    gdacs_relevant = event_type != "gdacs" or str(
+        metadata.get("gdacs_event_type") or ""
+    ).upper() in _MARITIME_GDACS_TYPES
     domain_context_public = (
         event_type in _PUBLIC_CONTEXT_TYPES
         and is_public_domain(event.maritime_domain())
+        and context_severity_ok
+        and gdacs_relevant
         and (
             source_policy in APPROVED_SOURCE_POLICIES
             or event_type in _SEACOMMONS_DERIVED_TYPES
