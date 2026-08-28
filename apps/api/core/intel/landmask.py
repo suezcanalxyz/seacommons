@@ -31,6 +31,30 @@ _COMPASS_STEPS = 16  # bearings tried at each radius ring
 _RADIUS_STEP_KM = 5.0
 _MAX_RADIUS_KM = 80.0
 
+# Every distress location this system plots is a boat in the Mediterranean, the
+# Black Sea, the Aegean, or the eastern-Atlantic migration routes (Gibraltar,
+# Western Sahara / Canary Islands). A coordinate outside this generous envelope
+# is a bad extraction (a stray number pair parsed out of tweet text, an OCR
+# misread, a gazetteer miss) — plotting it as a "distress" pin somewhere in the
+# Indian Ocean or mid-Atlantic is worse than showing nothing.
+_REGION_LAT = (26.0, 48.0)
+_REGION_LON = (-18.0, 43.0)
+
+
+def in_operational_region(lat: float, lon: float) -> bool:
+    """True if (lat, lon) is inside the maritime area SeaCommons covers.
+
+    Pure arithmetic — no landmask load — so it is safe to call from the
+    low-memory edge publisher on every event.
+    """
+    try:
+        return (
+            _REGION_LAT[0] <= float(lat) <= _REGION_LAT[1]
+            and _REGION_LON[0] <= float(lon) <= _REGION_LON[1]
+        )
+    except (TypeError, ValueError):
+        return False
+
 
 @functools.lru_cache(maxsize=1)
 def _mask():

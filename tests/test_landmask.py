@@ -49,8 +49,9 @@ def test_gazetteer_fallback_is_nudged_off_land(monkeypatch):
     # Real production case: "informed authorities in #Italy and #Malta"
     # resolves through the bare gazetteer branch to Malta's own centroid,
     # which sits on the island itself.
+    # geoextract binds nearest_sea_point at import — patch it where it is used.
     monkeypatch.setattr(
-        landmask, "nearest_sea_point", lambda lat, lon: (99.0, 99.0),
+        "core.intel.geoextract.nearest_sea_point", lambda lat, lon: (99.0, 99.0),
     )
     assert extract_coords("boat near #Malta in distress") == (99.0, 99.0)
 

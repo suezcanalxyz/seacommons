@@ -37,3 +37,6 @@ apps/unreal/**/Packaged/
 apps/unreal/**/Samples/PixelStreaming/WebServers/*
 !apps/unreal/**/Samples/PixelStreaming/WebServers/get_ps_servers.bat
 !apps/unreal/**/Samples/PixelStreaming/WebServers/get_ps_servers.sh
+
+# Local operational secrets — never committed
+secrets/

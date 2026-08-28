@@ -23,6 +23,23 @@ def pytest_sessionstart(session) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _landmask_off(monkeypatch) -> None:
+    """Default the sea-snap landmask to "unavailable" for every test.
+
+    ``roaring_landmask`` is a heavy optional dependency (it ships with the
+    drift stack, not with a minimal CI image). With it absent, ``is_on_land``
+    returns ``None`` and ``nearest_sea_point`` is a pure pass-through — which
+    is what most tests want: they assert an exact parsed/stored coordinate and
+    are not about sea-snapping. Tests that DO exercise the snap re-patch
+    ``core.intel.landmask.is_on_land`` themselves. Patching it here is enough:
+    ``nearest_sea_point`` consults ``is_on_land`` internally and short-circuits
+    to a pass-through when it returns ``None``, regardless of how callers
+    imported it.
+    """
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: None)
+
+
+@pytest.fixture(autouse=True)
 def isolated_database() -> None:
     """Give every test empty tables and prevent cross-test DB state."""
     from core.db.models import Base

@@ -105,7 +105,12 @@ def resolve_position(candidate: dict) -> tuple[float, float, str] | None:
 def apply_position(event_id: str, lat: float, lon: float, method: str) -> bool:
     from core.db.models import IntelEventDB
     from core.db.session import session_scope
+    from core.intel.landmask import in_operational_region, nearest_sea_point
 
+    if not in_operational_region(lat, lon):
+        logger.info("backfill: %s coordinate %.4f,%.4f out of region — skipped", event_id, lat, lon)
+        return False
+    lat, lon = nearest_sea_point(float(lat), float(lon))
     uncertainty = 1500 if method == "text" else 4000
     with session_scope() as db:
         row = db.query(IntelEventDB).filter(IntelEventDB.id == event_id).first()

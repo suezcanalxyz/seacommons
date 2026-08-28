@@ -13,6 +13,8 @@ import math
 import re
 from typing import Optional
 
+from core.intel.landmask import in_operational_region, nearest_sea_point
+
 # ── Mediterranean gazetteer ───────────────────────────────────────────────────
 # (lat, lon) centroids of places frequently mentioned in SAR/migration reports.
 # Sorted by specificity (more-specific entries shadow generic ones in matching).
@@ -487,7 +489,17 @@ _BEARINGS = {
 
 
 def extract_numeric_coords(text: str) -> Optional[tuple[float, float]]:
-    """Return only explicit numeric coordinates, never a place-name centroid."""
+    """Return only explicit numeric coordinates, never a place-name centroid.
+
+    The result is region-gated (``_valid``) and sea-snapped: a boat position
+    read out of text or off a map label must be inside the area SeaCommons
+    covers and in the water.
+    """
+    raw = _extract_numeric_coords_raw(text)
+    return nearest_sea_point(*raw) if raw is not None else None
+
+
+def _extract_numeric_coords_raw(text: str) -> Optional[tuple[float, float]]:
     # OCR commonly confuses digits for letters on the small text of a map
     # label. Only fold letters that are never a hemisphere marker (N/S/E/W)
     # or unit -- folding S->5 would corrupt a southern latitude.
@@ -588,9 +600,11 @@ def extract_coords(text: str) -> Optional[tuple[float, float]]:
     """
     numeric = extract_numeric_coords(text)
     if numeric:
-        return numeric
+        # An explicit readout is trusted, but an OCR/typo'd digit can still put
+        # a boat a few km inland — snap onto water (a no-op when already at sea).
+        return nearest_sea_point(*numeric)
 
-    relative = extract_relative_coords(text)
+    relative = extract_relative_coords(text)  # already sea-snapped internally
     if relative:
         return relative
 
@@ -603,7 +617,6 @@ def extract_coords(text: str) -> Optional[tuple[float, float]]:
     tl = text.lower()
     for place, coords in _PLACES_SORTED:
         if place in tl:
-            from core.intel.landmask import nearest_sea_point
             return nearest_sea_point(*coords)
 
     return None
@@ -691,7 +704,9 @@ def extract_relative_coords(text: str) -> Optional[tuple[float, float]]:
         lon_scale = max(0.2, math.cos(math.radians(lat)))
         estimated_lon = lon + east_km / (111.32 * lon_scale)
         if _valid(estimated_lat, estimated_lon):
-            return round(estimated_lat, 5), round(estimated_lon, 5)
+            # "20 km south of Crete" can land the computed point back on the
+            # island; the boat is offshore, so nudge onto water.
+            return nearest_sea_point(round(estimated_lat, 5), round(estimated_lon, 5))
         return None
 
     for place, origin in _PLACES_SORTED:
@@ -735,7 +750,16 @@ def extract_relative_coords(text: str) -> Optional[tuple[float, float]]:
 
 
 def _valid(lat: float, lon: float) -> bool:
-    return -90 <= lat <= 90 and -180 <= lon <= 180
+    """A coordinate is usable only if it is a real lat/lon AND inside the
+    maritime area SeaCommons covers. A pair parsed out of unrelated tweet text
+    (a date, a hashtag, an OCR misread) is almost always outside it — plotting
+    it as a distress position somewhere in the Indian Ocean is worse than
+    returning None and letting a weaker place-name match take over."""
+    return (
+        -90 <= lat <= 90
+        and -180 <= lon <= 180
+        and in_operational_region(lat, lon)
+    )
 
 
 def is_distress(text: str) -> bool:

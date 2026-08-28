@@ -361,4 +361,8 @@ def geolocate_pin_from_image(payload: bytes, *, executable: Optional[str] = None
     if nearest_km > _MAX_KM_FROM_NEAREST_LANDMARK:
         return None
 
-    return round(lat, 5), round(lon, 5)
+    # A linear pixel->geo fit off a handful of place labels can put the pin a
+    # few km inland; the boat is at sea, so nudge onto water.
+    from core.intel.landmask import nearest_sea_point
+
+    return nearest_sea_point(round(lat, 5), round(lon, 5))

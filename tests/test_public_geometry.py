@@ -55,3 +55,28 @@ def test_region_area_point_without_polygon_never_reads_as_reported() -> None:
 def test_reported_point_keeps_reported_or_derived() -> None:
     _geom, precision = public_geometry_and_precision(_event(coordinate_source="post_text"))
     assert precision == "reported_or_derived"
+
+
+def test_point_outside_the_operational_region_is_dropped() -> None:
+    # A stray number pair parsed out of unrelated tweet text (real prod case:
+    # a text-only tweet about activists in Cote d'Ivoire yielded -7, 44 in the
+    # Indian Ocean) must never be plotted as a distress position.
+    event = _event(coordinate_source="post_text")
+    event.lat, event.lon = -7.0, 44.0
+    geom, precision = public_geometry_and_precision(event)
+    assert geom is None
+    assert precision == "unpositioned"
+
+
+def test_on_land_point_is_snapped_to_water(monkeypatch) -> None:
+    # Every plotted location is a boat. A gazetteer / relative / pin estimate
+    # can land on a coastline; the projection must nudge it onto the sea.
+    monkeypatch.setattr(
+        "core.intel.landmask.is_on_land",
+        lambda lat, lon: abs(lat - 35.5) < 0.01 and abs(lon - 14.0) < 0.01,
+    )
+    geom, _precision = public_geometry_and_precision(_event(coordinate_source="place_centroid"))
+    assert geom["type"] == "Point"
+    snapped_lon, snapped_lat = geom["coordinates"]
+    assert (snapped_lat, snapped_lon) != (35.5, 14.0)
+    assert not (abs(snapped_lat - 35.5) < 0.01 and abs(snapped_lon - 14.0) < 0.01)

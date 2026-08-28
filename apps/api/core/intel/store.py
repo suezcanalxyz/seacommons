@@ -467,6 +467,15 @@ class IntelStore:
         metadata: dict[str, Any],
     ) -> bool:
         """Attach a location, upgrading an existing lower-quality estimate."""
+        # Every plotted location is a boat at sea. An OCR readout or a
+        # drop-pin pixel fit can land a few km inland; nudge onto water before
+        # it is stored or broadcast. No-op when already at sea / landmask off.
+        try:
+            from core.intel.landmask import nearest_sea_point
+
+            lat, lon = nearest_sea_point(float(lat), float(lon))
+        except Exception:  # pragma: no cover - never block an enrich on this
+            pass
         updated: Optional[IntelEvent] = None
         with self._lock:
             for event in self._events:
