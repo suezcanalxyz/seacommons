@@ -3219,3 +3219,79 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   border-top-color: #04131a;
   border-bottom-color: #04131a;
 }
+
+/* ── Archive timeline (Play only) ─────────────────────────────────────────── */
+.archive-timeline {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: min(880px, calc(100% - 32px));
+  background: var(--glass-bg-solid);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  padding: 10px 14px 12px;
+  z-index: 6;
+  backdrop-filter: blur(8px);
+}
+.archive-timeline.is-collapsed { padding-bottom: 10px; }
+.atl-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.atl-head strong { color: var(--ink-1); letter-spacing: 0.04em; text-transform: uppercase; font-size: 11px; }
+.atl-count { color: var(--ink-3); }
+.atl-active { margin-left: auto; color: var(--accent); font-family: var(--font-mono); font-size: 11px; }
+.atl-collapse {
+  margin-left: 8px;
+  background: none;
+  border: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-size: 11px;
+}
+.atl-active + .atl-collapse { margin-left: 8px; }
+.atl-strip {
+  position: relative;
+  height: 26px;
+  margin: 10px 0 4px;
+  border-bottom: 1px solid var(--glass-border);
+}
+.atl-tick {
+  position: absolute;
+  top: 4px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: rgba(139, 240, 197, 0.45);
+  border: 1px solid #0b1a1f;
+  cursor: pointer;
+  transition: transform 0.12s, background 0.12s;
+}
+.atl-tick:hover { transform: scale(1.5); background: var(--accent); }
+.atl-tick.is-active { background: #ffd166; transform: scale(1.7); box-shadow: 0 0 10px rgba(255, 209, 102, 0.5); }
+.atl-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.atl-play {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border-hi);
+  background: rgba(110, 231, 216, 0.12);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+.atl-controls input[type="range"] { flex: 1; accent-color: #ffd166; }
+.atl-time { font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); flex: 0 0 auto; }
+.atl-hint { margin-top: 8px; font-size: 11px; color: var(--ink-3); }

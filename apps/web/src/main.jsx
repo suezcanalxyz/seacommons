@@ -13,6 +13,7 @@ import CasesWorkspace from './components/CasesWorkspace.jsx';
 import JobMonitor from './components/JobMonitor.jsx';
 import PlayCesium from './components/PlayCesium.jsx';
 import UnrealPixelStream from './components/UnrealPixelStream.jsx';
+import ArchiveTimeline from './components/ArchiveTimeline.jsx';
 import ConnectorWorkspace from './components/ConnectorWorkspace.jsx';
 import { buildEnvironmentSnapshot, createScenario } from './simulation/contracts.js';
 import { loadStoredSimulations, storeScenario } from './simulation/scenarioStore.js';
@@ -2409,6 +2410,9 @@ function App() {
             streamUrl={UNREAL_PIXEL_STREAM_URL}
             scenario={activeScenario}
           />
+        ) : null}
+        {APP_PROFILE === 'demo' && !play3D ? (
+          <ArchiveTimeline mapRef={mapRef} mapReady={mapReady} apiBase={apiBase} />
         ) : null}
 
         <div className={`map-toolbar ${play3D ? 'is-3d' : ''}`}>
