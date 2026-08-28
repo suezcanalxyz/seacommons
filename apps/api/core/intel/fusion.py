@@ -229,16 +229,18 @@ def _rule_spoofing(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]
 
 
 def _nearest_infrastructure(lat: float, lon: float, max_km: float) -> Optional[dict]:
-    best: Optional[dict] = None
+    """Nearest subsea cable / pipeline / platform, from the MDA reference index
+    (real geometry from EMODnet / submarinecablemap, with a bundled fallback)."""
     try:
-        from core.api.routes.zones import _OIL_PLATFORMS
+        from core.mda.reference import reference
 
-        for p_lon, p_lat, name, country, _op, _ptype in _OIL_PLATFORMS:
-            dist = haversine_km(lat, lon, p_lat, p_lon)
-            if dist <= max_km and (best is None or dist < best["distance_km"]):
-                best = {"name": f"{name} platform ({country})", "distance_km": dist}
-    except Exception:  # pragma: no cover - static import
+        hit = reference.nearest_infrastructure(lat, lon, max_km=max_km)
+        if hit is not None:
+            return {"name": f"{hit.name} ({hit.kind})", "distance_km": hit.distance_km,
+                    "kind": hit.kind}
+    except Exception:  # pragma: no cover - fall back to the bundled corridors
         pass
+    best: Optional[dict] = None
     for name, waypoints in _SUBSEA_CORRIDORS:
         for i in range(len(waypoints) - 1):
             dist = _point_to_segment_km(lat, lon, waypoints[i], waypoints[i + 1])

@@ -1,0 +1,70 @@
+{
+  "meta": {
+    "note": "Bundled fallback reference geometry for the Mediterranean + Black Sea MDA engine. Approximate; refreshed from EMODnet / Marine Regions / submarinecablemap by core.mda.reference.refresh() when network is available.",
+    "generated": "2026-08-29"
+  },
+  "cables": [
+    {"name": "Melita-1 (Malta-Sicily)", "operator": "GO Malta", "waypoints": [[35.83, 14.54], [36.20, 14.60], [36.90, 15.00], [37.50, 15.09]]},
+    {"name": "Malta-Italy (Sicily) power interconnector", "operator": "Enemalta/Terna", "waypoints": [[35.92, 14.44], [36.40, 14.30], [37.00, 14.20], [37.11, 14.19]]},
+    {"name": "SEA-ME-WE-4 (Alexandria-Sicily)", "operator": "consortium", "waypoints": [[31.20, 29.92], [33.00, 25.00], [35.50, 18.00], [37.05, 15.20]]},
+    {"name": "SEA-ME-WE-5 (Egypt-Italy)", "operator": "consortium", "waypoints": [[31.26, 30.00], [33.50, 24.00], [36.20, 18.50], [40.60, 17.95]]},
+    {"name": "IMEWE (Alexandria-Marseille)", "operator": "consortium", "waypoints": [[31.20, 29.90], [34.00, 22.00], [37.50, 12.00], [41.00, 6.00], [43.30, 5.35]]},
+    {"name": "EllaLink (Fortaleza-Sines) Med approach", "operator": "EllaLink", "waypoints": [[36.50, -8.00], [37.30, -8.90], [37.95, -8.87]]},
+    {"name": "Aphrodite / Cyprus-Greece (EuroAsia approach)", "operator": "EuroAsia Interconnector", "waypoints": [[34.65, 32.40], [35.00, 30.00], [35.30, 27.00], [35.42, 26.20]]},
+    {"name": "Italy-Greece power interconnector (GRITA)", "operator": "Terna/IPTO", "waypoints": [[40.00, 18.40], [39.60, 19.50], [39.28, 20.00]]},
+    {"name": "Trans Adriatic cable corridor (Otranto)", "operator": "various", "waypoints": [[40.15, 18.50], [40.00, 19.00], [40.47, 19.45]]}
+  ],
+  "pipelines": [
+    {"name": "Greenstream (Mellitah-Gela)", "operator": "ENI/NOC", "product": "gas", "waypoints": [[32.90, 13.30], [34.20, 13.60], [35.80, 14.10], [37.07, 14.25]]},
+    {"name": "TransMed / Enrico Mattei (Cap Bon-Mazara)", "operator": "ENI/Sonatrach", "product": "gas", "waypoints": [[36.95, 11.10], [37.05, 11.80], [37.65, 12.59]]},
+    {"name": "TransMed Sicily-Calabria (Messina Strait)", "operator": "SNAM", "product": "gas", "waypoints": [[38.10, 15.55], [38.25, 15.63]]},
+    {"name": "MEDGAZ (Beni Saf-Almeria)", "operator": "Medgaz", "product": "gas", "waypoints": [[35.30, -1.35], [36.00, -2.10], [36.83, -2.45]]},
+    {"name": "EastMed (planned, Cyprus-Crete-Greece)", "operator": "IGI Poseidon", "product": "gas", "waypoints": [[34.00, 32.00], [34.60, 28.00], [35.30, 24.00], [37.00, 22.00]]}
+  ],
+  "platforms": [
+    [12.8833, 44.4333, "Cervia", "Italy"], [12.9667, 44.25, "Barbara", "Italy"],
+    [13.1, 43.9167, "Porto Corsini", "Italy"], [14.2, 43.4167, "Annamaria", "Italy"],
+    [15.5, 42.0, "Vega", "Italy"], [12.5667, 37.8167, "Perla", "Italy"],
+    [13.0, 37.5, "Argo", "Italy"], [13.2833, 32.8833, "Bouri", "Libya"],
+    [12.9167, 33.05, "Bouri NW", "Libya"], [9.45, 37.55, "Ashtart", "Tunisia"],
+    [11.0, 35.5, "Miskar", "Tunisia"], [28.6667, 31.5667, "Zohr", "Egypt"],
+    [28.0, 31.0, "Nooros", "Egypt"], [26.5167, 38.3333, "Prinos", "Greece"],
+    [33.5833, 34.25, "Aphrodite", "Cyprus"], [33.0, 34.0833, "Calypso", "Cyprus"],
+    [0.9167, 40.5167, "Amposta", "Spain"], [8.5667, 37.3167, "Skikda offshore", "Algeria"],
+    [15.1667, 45.1667, "Ivana", "Croatia"], [33.8667, 31.6667, "Leviathan", "Israel"],
+    [34.6667, 32.4167, "Tamar", "Israel"], [34.6, 32.6167, "Dalit", "Israel"]
+  ],
+  "sts_zones": [
+    {"name": "Laconian Gulf / Kalamata anchorage", "poly": [[36.35, 22.30], [36.80, 22.30], [36.80, 23.20], [36.35, 23.20]], "note": "primary E. Med dark-fleet STS zone for Russian crude"},
+    {"name": "Off Ceuta / Gibraltar approaches", "poly": [[35.70, -5.60], [36.05, -5.60], [36.05, -5.00], [35.70, -5.00]]},
+    {"name": "Malta bunkering / STS anchorage", "poly": [[35.70, 14.35], [35.98, 14.35], [35.98, 14.75], [35.70, 14.75]]},
+    {"name": "Augusta / E. Sicily", "poly": [[36.95, 15.20], [37.30, 15.20], [37.30, 15.60], [36.95, 15.60]]},
+    {"name": "Kerch Strait approaches (Black Sea)", "poly": [[44.60, 36.30], [45.30, 36.30], [45.30, 37.20], [44.60, 37.20]]},
+    {"name": "Novorossiysk / Yuzhnaya Ozereyevka roads", "poly": [[44.55, 37.60], [44.85, 37.60], [44.85, 38.05], [44.55, 38.05]]},
+    {"name": "Skaramangas / Piraeus outer anchorage", "poly": [[37.85, 23.45], [38.05, 23.45], [38.05, 23.70], [37.85, 23.70]]}
+  ],
+  "ports": [
+    [23.60, 37.94, "Piraeus", 12], [14.51, 35.90, "Valletta / Marsaxlokk", 10],
+    [15.90, 38.43, "Gioia Tauro", 8], [-5.44, 36.13, "Algeciras", 10],
+    [2.16, 41.35, "Barcelona", 8], [5.35, 43.30, "Marseille / Fos", 10],
+    [8.90, 44.40, "Genoa", 8], [13.77, 45.64, "Trieste", 8],
+    [29.87, 31.18, "Alexandria", 10], [32.31, 31.25, "Port Said", 10],
+    [28.68, 40.96, "Ambarli / Istanbul", 12], [28.63, 44.17, "Constanta", 10],
+    [37.80, 44.72, "Novorossiysk", 10], [33.05, 34.65, "Limassol", 8],
+    [35.00, 32.83, "Haifa", 8], [13.18, 32.90, "Tripoli (LY)", 8],
+    [20.07, 32.11, "Benghazi", 8], [10.30, 36.83, "Tunis / Rades", 8],
+    [3.06, 36.77, "Algiers", 8], [26.41, 40.14, "Canakkale / Dardanelles", 10]
+  ],
+  "chokepoints": [
+    {"id": "gibraltar", "name": "Strait of Gibraltar", "bbox": [-6.5, 35.5, -4.5, 36.5]},
+    {"id": "sicily", "name": "Sicilian Channel", "bbox": [10.5, 36.5, 12.5, 38.0]},
+    {"id": "messina", "name": "Strait of Messina", "bbox": [15.4, 37.9, 15.75, 38.35]},
+    {"id": "otranto", "name": "Strait of Otranto", "bbox": [18.2, 39.6, 19.6, 40.5]},
+    {"id": "dardanelles", "name": "Dardanelles", "bbox": [26.0, 40.0, 26.75, 40.5]},
+    {"id": "bosphorus", "name": "Bosphorus", "bbox": [28.9, 41.0, 29.2, 41.3]},
+    {"id": "kerch", "name": "Kerch Strait", "bbox": [36.3, 44.9, 36.7, 45.5]},
+    {"id": "suez", "name": "Suez Canal", "bbox": [32.0, 29.5, 33.0, 32.5]},
+    {"id": "bab_mandeb", "name": "Bab el-Mandeb", "bbox": [42.5, 11.5, 44.5, 13.5]},
+    {"id": "hormuz", "name": "Strait of Hormuz", "bbox": [55.5, 25.5, 59.0, 27.5]}
+  ]
+}
