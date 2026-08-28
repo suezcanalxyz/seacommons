@@ -138,6 +138,7 @@ def public_signal_collection(
     for event in events:
         by_source.setdefault(event.source, []).append(event)
     features = []
+    context_features: list[dict[str, Any]] = []
     for event in events:
         feature = _public_intel_feature(event)
         if not feature:
@@ -158,13 +159,20 @@ def public_signal_collection(
             feature["properties"]["incident_lifecycle"] = state
             features.append(feature)
         elif kind in ("context", "distress"):
-            # Broader OSINT context: news, AIS spikes/anomalies, GDACS, vessel
+            # Broader OSINT context: news, AIS anomalies, GDACS, vessel
             # incidents, correlated fusion alerts — eligibility (type + maritime
             # compartment) is already decided in _public_intel_feature. Bounded
-            # by the same age window, no pulsing lifecycle.
+            # by the same age window, no pulsing lifecycle. Kept in a separate
+            # bucket and capped so a chatty context source can never crowd a
+            # genuine distress report out of the window.
             if not lifecycle.is_within_live_window(event, now=now):
                 continue
-            features.append(feature)
+            context_features.append(feature)
+    context_features.sort(
+        key=lambda f: str(f["properties"].get("timestamp_utc") or ""), reverse=True
+    )
+    context_cap = max(0, min(limit - len(features), max(30, limit // 2)))
+    features.extend(context_features[:context_cap])
     features.extend(_published_ingested_features(limit))
     if since:
         features = [

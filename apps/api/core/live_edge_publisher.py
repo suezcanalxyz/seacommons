@@ -46,12 +46,13 @@ from core.intel.public_policy import (
 # compartment is allow-listed (mirrors core.live.projection._PUBLIC_CONTEXT_TYPES).
 _PUBLIC_CONTEXT_TYPES = frozenset(
     {"news", "bluesky", "gdacs", "vessel_incident", "iom_incident",
-     "ais_spike", "ais_anomaly", "correlated_alert", "oil_spill"}
+     "ais_anomaly", "correlated_alert", "oil_spill"}
 )
 # Types SeaCommons computes from telemetry rather than scrapes — no source
-# policy, but safe to surface (still domain + geometry gated).
+# policy, but safe to surface (still domain + geometry gated). ais_spike is
+# excluded on purpose: high-volume, low-signal, would swamp the public feed.
 _SEACOMMONS_DERIVED_TYPES = frozenset(
-    {"ais_spike", "ais_anomaly", "correlated_alert", "vessel_incident"}
+    {"ais_anomaly", "correlated_alert", "vessel_incident"}
 )
 from core.observability import (
     record_publisher_cycle,

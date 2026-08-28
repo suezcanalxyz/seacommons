@@ -99,7 +99,7 @@ const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'en
 // The public Live map only ever fetches data for these layer groups (see the
 // ngo-vessels/platforms effects and loadWeatherGridForMap's isPublicLiveHost
 // guard) — everything else stays hidden there regardless of the layer toggle.
-const PUBLIC_LIVE_LAYER_GROUPS = new Set(['nautical', 'intel', 'fused', 'spikes', 'ngo_vessels', 'platforms']);
+const PUBLIC_LIVE_LAYER_GROUPS = new Set(['nautical', 'intel', 'fused', 'ngo_vessels', 'platforms']);
 const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
 const isPublicLiveHost = window.location.hostname === 'live.seacommons.org';
 const isLiveHost = LIVE_HOSTS.has(window.location.hostname);

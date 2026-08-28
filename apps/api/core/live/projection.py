@@ -31,15 +31,19 @@ _PUBLIC_INTEL_TYPES = frozenset({"distress", "twitter", "mastodon", "ngo_activit
 # compartment is allow-listed (PUBLIC_MARITIME_DOMAINS). A sanctions / grey-zone
 # signal never surfaces on the default (sar, piracy) posture — only the SAR /
 # safety / environmental context does.
+# ais_spike (routine loiter / stop clusters) is deliberately excluded: it is
+# high-volume and low-signal, and would swamp the public feed. Only the
+# meaningful AIS derivative — ais_anomaly (spoofing / dark-zone / impossible
+# speed) — and the fused alert it may feed are eligible.
 _PUBLIC_CONTEXT_TYPES = frozenset(
     {"news", "bluesky", "gdacs", "vessel_incident", "iom_incident",
-     "ais_spike", "ais_anomaly", "correlated_alert", "oil_spill"}
+     "ais_anomaly", "correlated_alert", "oil_spill"}
 )
 # Types SeaCommons computes from telemetry (AIS, sensor fusion) rather than
 # scrapes — they carry no source_policy but are safe to surface, still subject
 # to the domain + geometry gates below.
 _SEACOMMONS_DERIVED_TYPES = frozenset(
-    {"ais_spike", "ais_anomaly", "correlated_alert", "vessel_incident"}
+    {"ais_anomaly", "correlated_alert", "vessel_incident"}
 )
 _PUBLIC_METADATA = frozenset(
     {
