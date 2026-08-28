@@ -77,28 +77,71 @@ async def live_drifts(limit: int = Query(100, ge=1, le=200)):
 
 
 @router.get("/archives")
-async def live_archives(limit: int = Query(8, ge=1, le=20)):
-    """Anonymised recent simulation index for Play."""
+async def live_archives(limit: int = Query(40, ge=1, le=200)):
+    """Anonymised incident index for the Play archive timeline.
+
+    Two kinds of archived incident carry a computed drift: SAR cases opened
+    through /api/v1/alert, and OSINT distress events (Alarm Phone, ...) whose
+    auto-drift completed. Both are surfaced here, newest first, with only the
+    coarse fields Play needs — never the source message or any identifier.
+    """
+    from core.db.models import DriftResultDB, IntelEventDB
+    from core.db.session import session_scope
     from core.db.store import list_alerts
 
-    archives = []
+    seen: set[str] = set()
+    archives: list[dict] = []
+
     for alert in list_alerts(limit=limit * 3):
-        event = alert.get("event") or {}
         if alert.get("status") != "completed":
             continue
-        archives.append(
-            {
-                "id": alert["event_id"],
-                "timestamp": event.get("timestamp"),
-                "lat": event.get("lat"),
-                "lon": event.get("lon"),
-                "vessel_type": event.get("vessel_type") or "case",
-                "persons": event.get("persons") or 1,
-            }
-        )
-        if len(archives) >= limit:
-            break
-    return {"archives": archives, "generated_at": datetime.now(timezone.utc).isoformat()}
+        event = alert.get("event") or {}
+        archives.append({
+            "id": alert["event_id"],
+            "timestamp": event.get("timestamp"),
+            "lat": event.get("lat"),
+            "lon": event.get("lon"),
+            "vessel_type": event.get("vessel_type") or "case",
+            "persons": event.get("persons") or 1,
+            "kind": "sar_case",
+        })
+        seen.add(alert["event_id"])
+
+    try:
+        with session_scope() as db:
+            rows = (
+                db.query(DriftResultDB, IntelEventDB)
+                .join(IntelEventDB, IntelEventDB.id == DriftResultDB.event_id)
+                .filter(DriftResultDB.status == "completed")
+                .filter(IntelEventDB.lat.isnot(None))
+                .order_by(IntelEventDB.timestamp_utc.desc())
+                .limit(limit * 3)
+                .all()
+            )
+            for drift, ev in rows:
+                if ev.id in seen:
+                    continue
+                meta = ev.meta or {}
+                if not (meta.get("is_distress") or ev.type in {"distress", "vessel_incident"}):
+                    continue
+                archives.append({
+                    "id": ev.id,
+                    "timestamp": ev.timestamp_utc,
+                    "lat": ev.lat,
+                    "lon": ev.lon,
+                    "vessel_type": meta.get("vessel_type") or "rubber_boat",
+                    "persons": meta.get("persons") or meta.get("people") or 1,
+                    "kind": "osint_distress",
+                })
+                seen.add(ev.id)
+    except Exception:  # pragma: no cover - archive listing is best-effort
+        pass
+
+    archives.sort(key=lambda a: str(a.get("timestamp") or ""), reverse=True)
+    return {
+        "archives": archives[:limit],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @router.get("/archives/{event_id}/geojson")
@@ -110,12 +153,10 @@ async def live_archive_geojson(event_id: str):
 
     alert = get_alert(event_id)
     drift = get_drift(event_id)
-    if (
-        alert is None
-        or alert.get("status") != "completed"
-        or not drift
-        or drift.get("status") != "completed"
-    ):
+    alert_ok = alert is not None and alert.get("status") == "completed"
+    drift_ok = bool(drift) and drift.get("status") == "completed"
+    # An OSINT distress archive has a completed drift but no alert row.
+    if not drift_ok or (alert is not None and not alert_ok):
         raise HTTPException(status_code=404, detail="Archive not found")
     features = [
         feature
