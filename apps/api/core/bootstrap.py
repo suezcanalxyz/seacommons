@@ -78,17 +78,23 @@ def start_background_sensors() -> None:
 
     try:
         from core.anomaly.correlation import CorrelationEngine
+        from core.intel import fusion as _fusion
+
         # No Redis is deployed (and nothing else in this codebase publishes to
         # the sensor pubsub channels it would subscribe to), so the Redis
         # loop just spun on "connection refused" forever. in_memory=True runs
         # its queue-based loop instead — functionally equivalent here since
         # there's no external publisher either way, minus the log noise.
-        engine = CorrelationEngine(in_memory=True)
+        engine = CorrelationEngine(in_memory=True, on_threat=_fusion.emit_physical_threat)
         import threading
         t = threading.Thread(target=engine.start, daemon=True)
         t.start()
+        # Register the OSINT fusion engine on the intel store and let it feed
+        # AIS anomalies into the sensor-fusion engine (vessel_spoofing_confirmed).
+        _fusion.set_correlation_engine(engine)
+        _fusion.register()
     except Exception as exc:
-        logger.warning("CorrelationEngine failed to start: %s", exc)
+        logger.warning("Correlation/fusion engine failed to start: %s", exc)
 
     if config.AISSTREAM_KEY:
         try:

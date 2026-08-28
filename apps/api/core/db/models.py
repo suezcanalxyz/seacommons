@@ -147,6 +147,25 @@ class CaseSignalDB(Base):
     linked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class CaseIntelEventDB(Base):
+    """Bridge between a case and the OSINT intel events that triggered / support it.
+
+    ``case_signals`` only links messaging-channel signals (``ingested_signals``);
+    OSINT events live in ``intel_events`` and had no path to a case. The
+    correlation/fusion engine writes rows here when it auto-opens a case, and
+    the operator can link more. No FK to ``intel_events`` — an intel event row
+    is persisted on a background thread and may not exist yet when the link is
+    made; the id is stable regardless.
+    """
+
+    __tablename__ = "case_intel_events"
+    case_id = Column(String(36), ForeignKey("cases.case_id", ondelete="CASCADE"), primary_key=True)
+    event_id = Column(String(32), primary_key=True)
+    role = Column(String(32), nullable=False, default="contributing")
+    linked_by = Column(String(256), nullable=False)
+    linked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class CaseTimelineDB(Base):
     __tablename__ = "case_timeline"
     entry_id = Column(String(36), primary_key=True)

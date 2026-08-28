@@ -20,7 +20,7 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from core.domain.live_contracts import MaritimeDomain, VerificationStatus
 
@@ -218,6 +218,10 @@ class IntelStore:
         self._lock = threading.Lock()
         # (websocket_obj, asyncio_loop) — loop needed for thread-safe sends
         self._ws_clients: set[tuple[Any, asyncio.AbstractEventLoop]] = set()
+        # In-process observers notified after every successful add() — the
+        # single fan-out point the correlation/fusion engine hooks into
+        # (mirrors core.ingestion.router.subscribe for messaging signals).
+        self._subscribers: list[Callable[[IntelEvent], None]] = []
 
     # ── Write ─────────────────────────────────────────────────────────────────
 
@@ -275,7 +279,30 @@ class IntelStore:
 
         self._fire_broadcast(event)
         self._persist(event)
+        self._notify_subscribers(event)
         return True
+
+    # ── Observers ─────────────────────────────────────────────────────────────
+
+    def subscribe(self, fn: Callable[[IntelEvent], None]) -> None:
+        """Register a callback invoked (off-thread) after every new event is stored."""
+        with self._lock:
+            self._subscribers.append(fn)
+
+    def _notify_subscribers(self, event: IntelEvent) -> None:
+        with self._lock:
+            subs = list(self._subscribers)
+        if not subs:
+            return
+
+        def _run() -> None:
+            for fn in subs:
+                try:
+                    fn(event)
+                except Exception as exc:  # never let an observer break ingestion
+                    logger.warning("intel_store subscriber error: %s", exc)
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def load_from_db(self, limit: int = MAX_EVENTS, max_age_days: int = 30) -> int:
         """

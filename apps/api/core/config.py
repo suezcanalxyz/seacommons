@@ -108,6 +108,15 @@ class SuezCanalConfig(BaseSettings):
     SAR_TRIANGULATION_RADIUS_KM: float = 15.0
     SAR_TRIANGULATION_WINDOW_MIN: float = 90.0
     SAR_TRIANGULATION_THRESHOLD: float = 0.55
+    # OSINT cross-source fusion (core.intel.fusion)
+    FUSION_ENABLED: bool = True
+    FUSION_NOTIFY_COOLDOWN_S: int = 1800
+    # dark-fleet / spoofing: two AIS anomalies, same MMSI, within this window
+    FUSION_SPOOFING_WINDOW_S: int = 21600
+    FUSION_SPOOFING_RADIUS_KM: float = 400.0
+    # grey-zone: an AIS gap/loiter within this range of subsea infra / a platform
+    FUSION_INFRA_PROXIMITY_KM: float = 12.0
+    FUSION_GREY_ZONE_WINDOW_S: int = 10800
     CMEMS_USERNAME: str = ""
     CMEMS_PASSWORD: str = ""
     CMEMS_CURRENT_DATASET: str = "cmems_mod_glo_phy-cur_anfc_0.083deg_P1D-m"
