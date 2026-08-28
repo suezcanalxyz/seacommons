@@ -27,6 +27,7 @@ sensor fusion); they share the weighting *pattern*, not the channels.
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable, Optional
@@ -97,8 +98,17 @@ class FusedAlert:
     cluster_id: str = field(default="")
 
     def __post_init__(self) -> None:
-        if not self.cluster_id:
-            self.cluster_id = f"{self.alert_type}:{cluster_key(self.lat, self.lon, self.ts)}"
+        if self.cluster_id:
+            return
+        # Prefer an identity that is stable no matter which signal of the set
+        # triggered the rule (so two near-simultaneous evaluations of the same
+        # incident collapse to one alert): the sorted contributing event ids,
+        # else a coarse place/time bucket.
+        if self.contributing_event_ids:
+            key = ",".join(sorted(self.contributing_event_ids))
+        else:
+            key = cluster_key(self.lat, self.lon, self.ts)
+        self.cluster_id = f"{self.alert_type}:{key}"
 
 
 # ── timestamps ────────────────────────────────────────────────────────────────
@@ -323,6 +333,9 @@ _RULES: list[Callable[[FusionSignal, IntelEvent], Optional[FusedAlert]]] = [
 
 # ── emission ──────────────────────────────────────────────────────────────────
 
+_EMIT_LOCK = threading.Lock()
+
+
 def _already_alerted(cluster_id: str) -> bool:
     for existing in intel_store.events(limit=300):
         if existing.type == ALERT_TYPE and existing.metadata.get("cluster_id") == cluster_id:
@@ -331,6 +344,11 @@ def _already_alerted(cluster_id: str) -> bool:
 
 
 def _emit(alert: FusedAlert) -> None:
+    with _EMIT_LOCK:
+        _emit_locked(alert)
+
+
+def _emit_locked(alert: FusedAlert) -> None:
     if _already_alerted(alert.cluster_id):
         logger.debug("fusion: cluster %s already alerted, skipping", alert.cluster_id)
         return
