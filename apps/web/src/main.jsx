@@ -9,7 +9,7 @@ import IntelDashboard from './components/IntelDashboard.jsx';
 import LayerToggles, { LAYER_GROUPS } from './components/LayerToggles.jsx';
 import Legend from './components/Legend.jsx';
 import AlertRail from './components/AlertRail.jsx';
-import { categoryColorExpression } from './features/intel/categories.js';
+import { categoryColorExpression, INTEL_MAP_CATEGORIES } from './features/intel/categories.js';
 import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
 import JobMonitor from './components/JobMonitor.jsx';
@@ -99,7 +99,10 @@ const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'en
 // The public Live map only ever fetches data for these layer groups (see the
 // ngo-vessels/platforms effects and loadWeatherGridForMap's isPublicLiveHost
 // guard) — everything else stays hidden there regardless of the layer toggle.
-const PUBLIC_LIVE_LAYER_GROUPS = new Set(['nautical', 'intel', 'fused', 'ngo_vessels', 'platforms']);
+const PUBLIC_LIVE_LAYER_GROUPS = new Set([
+  'nautical', 'sar', 'fused', 'ngo_vessels', 'platforms',
+  'intel_social', 'intel_news', 'intel_hazard', 'intel_incident', 'intel_iom', 'intel_ngo',
+]);
 const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
 const isPublicLiveHost = window.location.hostname === 'live.seacommons.org';
 const isLiveHost = LIVE_HOSTS.has(window.location.hostname);
@@ -554,11 +557,12 @@ function App() {
   const [showAisAlerts, setShowAisAlerts] = useState(false);
   const [showVesselLinks, setShowVesselLinks] = useState(false);
   const [layerVis, setLayerVis] = useState(() => {
+    const defaults = { vessels: true, ngo_vessels: true, weather: true, sar: true, fused: true, platforms: true, alerts: true };
     try {
       const saved = JSON.parse(window.localStorage.getItem('seacommons_layer_vis') || '{}');
-      return { vessels: true, ngo_vessels: true, weather: true, intel: true, platforms: true, alerts: true, ...saved };
+      return { ...defaults, ...saved };
     } catch {
-      return { vessels: true, ngo_vessels: true, weather: true, intel: true, platforms: true, alerts: true };
+      return defaults;
     }
   });
   const [triggeringDrift, setTriggeringDrift] = useState(() => new Set());
@@ -1382,36 +1386,44 @@ function App() {
           ['!=', ['get', 'type'], 'ais_anomaly'],
           ['!=', ['get', 'type'], 'correlated_alert'],
         ];
+        const _sevStrokeW = ['match', ['get', 'severity'], 'critical', 2.4, 'high', 1.8, 1.1];
+        const _sevStrokeC = ['match', ['get', 'severity'],
+          'critical', '#ff3b3b', 'high', '#ff7b54', 'medium', '#ffe07d', '#04131a'];
+        // One toggleable circle layer per OSINT signal category over the shared
+        // intel-events source, so the Layers panel lets the operator pick which
+        // signal types appear. `intel-events-layer` stays as the catch-all for
+        // any type not in a named category.
+        for (const cat of INTEL_MAP_CATEGORIES) {
+          const f = ['in', ['get', 'type'], ['literal', cat.types]];
+          map.addLayer({
+            id: `intel-cat-${cat.key}-halo`, type: 'circle', source: 'intel-events', filter: f,
+            paint: { 'circle-radius': 13, 'circle-color': cat.color, 'circle-opacity': 0.12, 'circle-blur': 0.8 },
+          });
+          map.addLayer({
+            id: `intel-cat-${cat.key}`, type: 'circle', source: 'intel-events', filter: f,
+            paint: {
+              'circle-radius': ['match', ['get', 'type'], ['vessel_incident', 'gdacs', 'iom_incident'], 6, 4.5],
+              'circle-color': cat.color,
+              'circle-opacity': 0.92,
+              'circle-stroke-width': _sevStrokeW,
+              'circle-stroke-color': _sevStrokeC,
+            },
+          });
+        }
+        const _namedTypes = INTEL_MAP_CATEGORIES.flatMap((c) => c.types);
+        const _otherFilter = ['all', _noAisFilter, ['!', ['in', ['get', 'type'], ['literal', _namedTypes]]]];
         map.addLayer({
-          id: 'intel-events-halo', type: 'circle', source: 'intel-events',
-          filter: _noAisFilter,
-          paint: {
-            'circle-radius': 14,
-            'circle-color': ['match', ['get', 'severity'],
-              'critical', 'rgba(255,59,59,0.18)',
-              'high',     'rgba(255,123,84,0.15)',
-              'medium',   'rgba(255,224,109,0.12)',
-                          'rgba(139,240,197,0.1)'],
-            'circle-blur': 0.8,
-          },
+          id: 'intel-events-halo', type: 'circle', source: 'intel-events', filter: _otherFilter,
+          paint: { 'circle-radius': 13, 'circle-color': 'rgba(139,240,197,0.1)', 'circle-blur': 0.8 },
         });
         map.addLayer({
-          id: 'intel-events-layer', type: 'circle', source: 'intel-events',
-          filter: _noAisFilter,
+          id: 'intel-events-layer', type: 'circle', source: 'intel-events', filter: _otherFilter,
           paint: {
-            // fill = signal category (news / social / hazard / incident / iom / ngo …)
-            'circle-radius': ['match', ['get', 'type'],
-              ['vessel_incident', 'gdacs', 'iom_incident'], 6, 4.5],
+            'circle-radius': 4.5,
             'circle-color': categoryColorExpression(),
             'circle-opacity': 0.92,
-            // stroke = severity, so both dimensions read at a glance
-            'circle-stroke-width': ['match', ['get', 'severity'],
-              'critical', 2.4, 'high', 1.8, 1.1],
-            'circle-stroke-color': ['match', ['get', 'severity'],
-              'critical', '#ff3b3b',
-              'high',     '#ff7b54',
-              'medium',   '#ffe07d',
-                          '#04131a'],
+            'circle-stroke-width': _sevStrokeW,
+            'circle-stroke-color': _sevStrokeC,
           },
         });
 
@@ -1706,65 +1718,46 @@ function App() {
           closeButton: false, closeOnClick: false, offset: 10,
           className: 'intel-hover-popup',
         });
-        map.on('mouseenter', 'intel-events-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
         const _hoverLabel = (feature, lat, lon) => {
           const p = feature.properties || {};
+          if (p.type === 'correlated_alert') {
+            return `<strong>${(p.alert_type || 'alert').replace(/_/g, ' ')}</strong><span>${p.maritime_domain || 'sar'}</span>`;
+          }
           const kind = (p.type || 'signal').replace(/_/g, ' ');
           return `<strong>${kind}</strong><span>${lat.toFixed(4)}, ${lon.toFixed(4)}</span>`;
         };
-        map.on('mousemove', 'intel-events-layer', (event) => {
-          const feature = event.features?.[0];
-          if (!feature) return;
-          const [lon, lat] = feature.geometry.coordinates;
-          intelHoverPopup.setLngLat([lon, lat]).setHTML(_hoverLabel(feature, lat, lon)).addTo(map);
-        });
-        for (const hid of ['intel-spike-layer', 'intel-fused-core']) {
-          map.on('mousemove', hid, (event) => {
+        // Every OSINT circle layer (per-category + catch-all + spike + fused)
+        // shares the same hover popup and click-to-open behaviour.
+        const _intelClickLayers = [
+          ...INTEL_MAP_CATEGORIES.map((c) => `intel-cat-${c.key}`),
+          'intel-events-layer', 'intel-spike-layer', 'intel-fused-core',
+        ];
+        for (const lid of _intelClickLayers) {
+          map.on('mouseenter', lid, () => { map.getCanvas().style.cursor = 'pointer'; });
+          map.on('mousemove', lid, (event) => {
             const feature = event.features?.[0];
             if (!feature) return;
             const [lon, lat] = feature.geometry.coordinates;
-            const p = feature.properties || {};
-            const label = p.type === 'correlated_alert'
-              ? `<strong>${(p.alert_type || 'alert').replace(/_/g, ' ')}</strong><span>${p.maritime_domain || 'sar'}</span>`
-              : _hoverLabel(feature, lat, lon);
-            intelHoverPopup.setLngLat([lon, lat]).setHTML(label).addTo(map);
+            intelHoverPopup.setLngLat([lon, lat]).setHTML(_hoverLabel(feature, lat, lon)).addTo(map);
           });
-          map.on('mouseleave', hid, () => intelHoverPopup.remove());
-        }
-        map.on('mouseleave', 'intel-events-layer', () => {
-          map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
-          intelHoverPopup.remove();
-        });
-        map.on('click', 'intel-events-layer', (event) => {
-          const feature = event.features?.[0];
-          if (!feature) return;
-          const [lon, lat] = feature.geometry.coordinates;
-          map.flyTo({ center: [lon, lat], zoom: 9, duration: 800 });
-          setActivePanel('osint');
-          // On mobile the sheet would cover the point we just flew to — keep map visible.
-          if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
-          setMapPanel({ type: 'intel', feature });
-          setConePanelHidden(false);
-          const props = feature.properties || {};
-          if (props.id && props.drift_status !== 'completed' && props.drift_status !== 'computing') {
-            triggerIntelDrift(props.id, lat, lon);
-          }
-          event.originalEvent?.stopPropagation?.();
-        });
-        for (const fusedId of ['intel-fused-core', 'intel-spike-layer']) {
-          map.on('mouseenter', fusedId, () => { map.getCanvas().style.cursor = 'pointer'; });
-          map.on('mouseleave', fusedId, () => {
+          map.on('mouseleave', lid, () => {
             map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+            intelHoverPopup.remove();
           });
-          map.on('click', fusedId, (event) => {
+          map.on('click', lid, (event) => {
             const feature = event.features?.[0];
             if (!feature) return;
             const [lon, lat] = feature.geometry.coordinates;
-            map.flyTo({ center: [lon, lat], zoom: 8, duration: 800 });
+            map.flyTo({ center: [lon, lat], zoom: 9, duration: 800 });
             setActivePanel('osint');
             if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
             setMapPanel({ type: 'intel', feature });
             setConePanelHidden(false);
+            const props = feature.properties || {};
+            if (lid === 'intel-events-layer' && props.id
+                && props.drift_status !== 'completed' && props.drift_status !== 'computing') {
+              triggerIntelDrift(props.id, lat, lon);
+            }
             event.originalEvent?.stopPropagation?.();
           });
         }
@@ -1844,7 +1837,8 @@ function App() {
           }
           if (isPublicLiveHost) return;
           const hit = map.queryRenderedFeatures(event.point, {
-            layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'vessels-stationary', 'vessels-ngo', 'vessels-ngo-stationary', 'proximity-vessels-layer', 'intel-events-layer'],
+            layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'vessels-stationary', 'vessels-ngo', 'vessels-ngo-stationary', 'proximity-vessels-layer', 'intel-events-layer', 'intel-fused-core', 'intel-spike-layer',
+              ...INTEL_MAP_CATEGORIES.map((c) => `intel-cat-${c.key}`)].filter((l) => map.getLayer(l)),
           });
           if (hit.length > 0) return;
 

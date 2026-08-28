@@ -17,6 +17,12 @@ export const SIGNAL_CATEGORIES = [
   { key: 'other',      label: 'Other signal',      color: '#8bf0c5', types: [] },
 ];
 
+// Categories that get their own toggleable map layer over the shared
+// `intel-events` source (distress / fused / ais have dedicated sources).
+export const INTEL_MAP_CATEGORIES = SIGNAL_CATEGORIES.filter(
+  (c) => !['distress', 'fused', 'ais', 'other'].includes(c.key) && c.types.length,
+);
+
 const _BY_TYPE = SIGNAL_CATEGORIES.reduce((acc, cat) => {
   for (const t of cat.types) acc[t] = cat.key;
   return acc;

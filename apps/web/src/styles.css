@@ -2402,6 +2402,14 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   cursor: pointer;
   user-select: none;
 }
+.layer-row.is-indent { padding-left: 14px; font-size: 10.5px; color: #b9cbc6; }
+.layer-panel-sub {
+  font-size: 8.5px;
+  color: #6f9b90;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  margin: 7px 0 3px;
+}
 
 .layer-row input {
   accent-color: #83f4df;

@@ -1,18 +1,28 @@
 import React, { useState } from 'react';
 
+import { INTEL_MAP_CATEGORIES } from '../features/intel/categories.js';
+
 /**
  * Map layer visibility control.
  * Each group maps to the MapLibre layer ids registered in main.jsx — toggling
  * sets `visibility` layout on every layer in the group (sources stay loaded,
  * so re-enabling is instant).
  */
+const INTEL_CATEGORY_GROUPS = INTEL_MAP_CATEGORIES.map((c) => ({
+  key: `intel_${c.key}`,
+  label: c.label,
+  indent: true,
+  layers: [`intel-cat-${c.key}`, `intel-cat-${c.key}-halo`],
+}));
+
 export const LAYER_GROUPS = [
   { key: 'nautical',    label: 'Nautical charts', layers: ['seamarks-layer'] },
   { key: 'vessels',     label: 'AIS vessels',    layers: ['vessels-layer', 'vessels-stationary'] },
   { key: 'ngo_vessels', label: 'NGO SAR fleet',  layers: ['vessels-ngo', 'vessels-ngo-stationary'] },
   { key: 'weather',     label: 'Weather grid',   layers: ['weather-vectors', 'weather-points'] },
-  { key: 'intel',       label: 'OSINT events',   layers: ['intel-events-layer', 'intel-events-halo', 'intel-distress-core', 'intel-distress-pulse', 'intel-distress-area', 'intel-distress-polygon-fill', 'intel-distress-polygon-outline', 'intel-drift-cone', 'intel-drift-line', 'intel-drift-point', 'live-nearby-vessels-layer', 'live-nearby-vessels-halo', 'ngo-response-lines-layer', 'ngo-response-points-layer'] },
+  { key: 'sar',         label: 'Distress & drift', layers: ['intel-events-layer', 'intel-events-halo', 'intel-distress-core', 'intel-distress-pulse', 'intel-distress-area', 'intel-distress-polygon-fill', 'intel-distress-polygon-outline', 'intel-drift-cone', 'intel-drift-line', 'intel-drift-point', 'live-nearby-vessels-layer', 'live-nearby-vessels-halo', 'ngo-response-lines-layer', 'ngo-response-points-layer'] },
   { key: 'fused',       label: 'Correlated alerts', layers: ['intel-fused-core', 'intel-fused-pulse'] },
+  ...INTEL_CATEGORY_GROUPS,
   { key: 'spikes',      label: 'AIS anomalies',  layers: ['intel-spike-layer'], defaultOff: true },
   { key: 'platforms',   label: 'Platforms',      layers: ['platforms-layer', 'platforms-halo'] },
   { key: 'alerts',      label: 'Past SAR cones', layers: ['alerts-cone', 'alerts-layer'] },
@@ -46,14 +56,17 @@ export default function LayerToggles({ visibility, onToggle }) {
         <div className="layer-panel">
           <div className="layer-panel-title">Layers</div>
           {LAYER_GROUPS.map((g) => (
-            <label key={g.key} className="layer-row">
-              <input
-                type="checkbox"
-                checked={isOn(g)}
-                onChange={() => onToggle(g.key)}
-              />
-              <span>{g.label}</span>
-            </label>
+            <React.Fragment key={g.key}>
+              {g.key === 'intel_social' && <div className="layer-panel-sub">OSINT signal types</div>}
+              <label className={`layer-row${g.indent ? ' is-indent' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={isOn(g)}
+                  onChange={() => onToggle(g.key)}
+                />
+                <span>{g.label}</span>
+              </label>
+            </React.Fragment>
           ))}
         </div>
       )}
