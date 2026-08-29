@@ -258,6 +258,16 @@ class MdaWatch:
             if self._recently_emitted(f"gap:{mmsi}", 6 * 3600):
                 continue
             jam = jamming.in_jamming_zone(last.lat, last.lon)
+            cue = None
+            if jam < 0.3:   # not just jamming — worth a satellite cross-cue
+                try:
+                    from core.mda.darkship_cue import build as _cue
+                    course = _last_course(track_store, mmsi)
+                    cue = _cue(lat=last.lat, lon=last.lon, course_deg=course,
+                               speed_kn=last.sog,
+                               gap_start=datetime.fromtimestamp(last.ts, tz=timezone.utc))
+                except Exception as exc:  # pragma: no cover
+                    logger.debug("darkship_cue failed: %s", exc)
             confidence = round(max(0.2, min(0.9, 0.4 + (time.time() - last.ts) / 14400) - 0.5 * jam), 3)
             severity = "high" if confidence >= 0.7 else "medium"
             intel_store.add(IntelEvent(
@@ -278,6 +288,7 @@ class MdaWatch:
                     "coordinate_source": "ais_position",
                     "silent_seconds": int(time.time() - last.ts),
                     "jamming_score": jam, "anomaly_confidence": confidence,
+                    "darkship_cue": cue,
                 },
             ), dedup_key=f"aisgap:{mmsi}:{int(time.time() // 21600)}")
             emitted += 1
@@ -448,6 +459,19 @@ class MdaWatch:
             return True
         self._emitted[key] = now
         return False
+
+
+def _last_course(track_store: Any, mmsi: str) -> Optional[float]:
+    from datetime import datetime as _dt
+    pts = track_store.track(mmsi, since=_dt.now(timezone.utc) - timedelta(hours=3), limit=20)
+    for p in reversed(pts):
+        if p.get("cog") is not None:
+            return float(p["cog"])
+    if len(pts) >= 2:
+        a, b = pts[-2], pts[-1]
+        from core.geo import bearing_deg
+        return bearing_deg(a["lat"], a["lon"], b["lat"], b["lon"])
+    return None
 
 
 def _circle_fit(latlon: list[tuple[float, float]]) -> tuple[Optional[float], float]:
