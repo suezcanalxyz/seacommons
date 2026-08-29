@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -112,22 +112,43 @@ class JammingIndex:
 
 
 def refresh() -> dict[str, Any]:
-    """Pull the current-day gpsjam GeoJSON. Best-effort."""
+    """Pull the most recent available gpsjam daily GeoJSON. Best-effort — the
+    site's URL scheme has changed over time so a few patterns are tried."""
     _DIR.mkdir(parents=True, exist_ok=True)
     try:
         import httpx
-
-        url = getattr(config, "GPSJAM_URL", "https://gpsjam.org/geo.json")
-        r = httpx.get(url, timeout=60, follow_redirects=True)
-        r.raise_for_status()
-        gj = r.json()
-        gj.setdefault("as_of", datetime.now(timezone.utc).date().isoformat())
-        _CURRENT.write_text(json.dumps(gj), encoding="utf-8")
-        jamming.load()
-        return {"cells": len(gj.get("features", [])), "as_of": gj["as_of"]}
-    except Exception as exc:
-        logger.info("jamming.refresh skipped: %s", exc)
+    except Exception as exc:  # pragma: no cover
         return {"error": str(exc)}
+
+    configured = getattr(config, "GPSJAM_URL", "") or ""
+    today = datetime.now(timezone.utc).date()
+    candidates = [configured] if configured and "{" not in configured else []
+    for back in range(0, 4):
+        d = (today - timedelta(days=back)).isoformat()
+        if configured and "{date}" in configured:
+            candidates.append(configured.format(date=d))
+        candidates += [
+            f"https://gpsjam.org/data/{d}-geojson.json",
+            f"https://gpsjam.org/data/{d}.geojson",
+        ]
+    candidates.append("https://gpsjam.org/geo.json")
+
+    for url in candidates:
+        try:
+            r = httpx.get(url, timeout=45, follow_redirects=True)
+            if r.status_code != 200:
+                continue
+            gj = r.json()
+            if not isinstance(gj, dict) or "features" not in gj:
+                continue
+            gj.setdefault("as_of", today.isoformat())
+            _CURRENT.write_text(json.dumps(gj), encoding="utf-8")
+            jamming.load()
+            return {"cells": len(gj.get("features", [])), "as_of": gj["as_of"], "url": url}
+        except Exception:
+            continue
+    logger.info("jamming.refresh: no gpsjam URL reachable")
+    return {"error": "no gpsjam URL reachable"}
 
 
 jamming = JammingIndex()
