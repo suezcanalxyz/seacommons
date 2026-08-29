@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
+import './ui/ui.css';
 import './suez-theme.css';
 import MapFloatingPanel from './components/ConePanel.jsx';
 import ScenarioModal from './components/ScenarioModal.jsx';

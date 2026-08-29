@@ -33,6 +33,20 @@
 
 * { box-sizing: border-box; }
 
+/* Honour the OS "reduce motion" setting across the whole console: neutralise
+   transitions, scroll animation and decorative keyframe loops (map interactions
+   stay fully functional — MapLibre/Cesium handle their own easing). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 html, body, #root {
   margin: 0;
   width: 100%;
