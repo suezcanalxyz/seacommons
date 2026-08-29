@@ -32,7 +32,13 @@ function DriftFigure() {
             <stop offset="0" stopColor="#c7dcf5" stopOpacity=".05" />
             <stop offset="1" stopColor="#c7dcf5" stopOpacity=".24" />
           </linearGradient>
+          <radialGradient id="scScene" cx="72%" cy="8%" r="90%">
+            <stop offset="0" stopColor="#111f3b" />
+            <stop offset="0.55" stopColor="#0a1324" />
+            <stop offset="1" stopColor="#060a14" />
+          </radialGradient>
         </defs>
+        <rect width="1200" height="300" fill="url(#scScene)" />
         <rect width="1200" height="300" fill="url(#scGrid)" />
         <path
           className="df-bathy"
@@ -40,6 +46,13 @@ function DriftFigure() {
         />
         <path className="df-cone df-cone--24" d="M110 246C230 190 400 100 610 66c150-24 360-18 480 14 108 62 40 150-110 190-230 62-540 74-980-24Z" />
         <path className="df-cone df-cone--12" d="M110 246c96-64 210-160 330-256 88-70 210-66 258 6 46 74-24 158-124 190-150 48-320 66-464 60Z" />
+        <g className="df-ambient">
+          <polygon transform="translate(940,58) rotate(38) scale(0.8)" points="0,-6 5,4.5 -5,4.5" />
+          <polygon transform="translate(1040,190) rotate(-64) scale(0.6)" points="0,-6 5,4.5 -5,4.5" />
+          <polygon transform="translate(210,60) rotate(150) scale(0.55)" points="0,-6 5,4.5 -5,4.5" />
+          <polygon transform="translate(700,250) rotate(96) scale(0.7)" points="0,-6 5,4.5 -5,4.5" />
+          <polygon transform="translate(1140,110) rotate(-20) scale(0.5)" points="0,-6 5,4.5 -5,4.5" />
+        </g>
         <g className="df-ensemble">
           <path d="M110 246c110-58 200-146 320-208 110-56 260-70 420-40" />
           <path d="M110 246c98-72 176-172 292-232 116-60 268-58 424-16" />

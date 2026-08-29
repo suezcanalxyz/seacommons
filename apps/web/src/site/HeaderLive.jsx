@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Ticker } from '../ui/index.js';
 import { fetchJson } from '../services/api/client.js';
 import { receivedSignalFeatures } from '../features/live/normalize.js';
 import { resolveSiteApiBase, LIVE_HOST_URL } from './liveApi.js';
 
 const POLL_MS = 20000;
+const MAX_ITEMS = 8;
 
 // Status-color mapping is fixed brand-wide (see ui/ui.css): rose = critical,
 // amber = unconfirmed/uncertain, sea = nominal. Never a per-module color.
@@ -15,9 +17,20 @@ function severityToken(properties) {
   return 'sea';
 }
 
-/** Compact live-signal indicator that sits inline in the header, replacing the static tagline. */
+function relativeTime(isoString) {
+  const then = Date.parse(isoString);
+  if (!Number.isFinite(then)) return '';
+  const minutes = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+/** Compact single-line live-signal ticker in the header, replacing the static tagline. */
 export default function HeaderLive() {
-  const [latest, setLatest] = useState(null); // undefined = none yet, null = confirmed empty
+  const [items, setItems] = useState(null); // null = loading, [] = confirmed empty
   const [failed, setFailed] = useState(false);
   const aliveRef = useRef(true);
 
@@ -29,10 +42,11 @@ export default function HeaderLive() {
       try {
         const data = await fetchJson(apiBase, '/api/v1/live/signals?limit=30&days=2', undefined, 6000);
         if (!aliveRef.current) return;
-        const [top] = receivedSignalFeatures(data.features)
+        const features = receivedSignalFeatures(data.features)
           .filter((f) => f.properties?.timestamp_utc)
-          .sort((a, b) => Date.parse(b.properties.timestamp_utc) - Date.parse(a.properties.timestamp_utc));
-        setLatest(top ?? null);
+          .sort((a, b) => Date.parse(b.properties.timestamp_utc) - Date.parse(a.properties.timestamp_utc))
+          .slice(0, MAX_ITEMS);
+        setItems(features);
         setFailed(false);
       } catch {
         if (!aliveRef.current) return;
@@ -48,20 +62,25 @@ export default function HeaderLive() {
     };
   }, []);
 
-  const properties = latest?.properties;
-  const status = failed
-    ? 'Live feed unavailable'
-    : latest === undefined
-      ? 'Connecting…'
-      : properties
-        ? properties.title
-        : 'No active signals';
+  const top = items?.[0]?.properties;
+  const dotState = failed ? 'idle' : top ? severityToken(top) : 'idle';
 
   return (
-    <a className="site-header__live" href={LIVE_HOST_URL} aria-label="Open Live — latest public signal">
-      <i className={`site-header__live-dot ${properties ? `is-${severityToken(properties)}` : 'is-idle'}`} aria-hidden="true" />
+    <a className="site-header__live" href={LIVE_HOST_URL} aria-label="Open Live — latest public signals">
+      <i className={`site-header__live-dot is-${dotState}`} aria-hidden="true" />
       <span className="site-header__live-label">Live</span>
-      <span className="site-header__live-status">{status}</span>
+      <span className="site-header__live-ticker">
+        {failed && <span className="site-header__live-status">Live feed unavailable</span>}
+        {!failed && items === null && <span className="site-header__live-status">Connecting…</span>}
+        {!failed && items?.length === 0 && <span className="site-header__live-status">No active signals</span>}
+        {!failed && items && items.length > 0 && (
+          <Ticker
+            duration={26}
+            separator="·"
+            items={items.map((f) => `${f.properties.title} — ${relativeTime(f.properties.timestamp_utc)}`)}
+          />
+        )}
+      </span>
     </a>
   );
 }

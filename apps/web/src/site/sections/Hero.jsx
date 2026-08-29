@@ -1,20 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { SplitText, Magnetic, ShinyText, Reveal } from '../../ui/index.js';
 import { useReducedMotion } from '../../ui/motion.js';
 
-function useUtcClock() {
-  const [t, setT] = useState('--:--:--');
-  useEffect(() => {
-    const tick = () => setT(new Date().toISOString().slice(11, 19));
-    tick();
-    const id = window.setInterval(tick, 1000);
-    return () => window.clearInterval(id);
-  }, []);
-  return t;
-}
-
 export default function Hero() {
-  const utc = useUtcClock();
   const reducedMotion = useReducedMotion();
   const videoRef = useRef(null);
 
@@ -41,12 +29,6 @@ export default function Hero() {
         <div className="hero__grid" />
         <div className="hero__vignette" />
       </div>
-
-      <Reveal className="hero__meta" y={12} duration={600}>
-        <p><span className="dot" /> Research prototype / 2026</p>
-        <p>Mediterranean test surface</p>
-        <p><span className="mono">UTC {utc}</span></p>
-      </Reveal>
 
       <div className="hero__copy">
         <p className="kicker"><ShinyText static>Observe · qualify · simulate · preserve</ShinyText></p>

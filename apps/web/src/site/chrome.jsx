@@ -1,6 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import HeaderLive from './HeaderLive.jsx';
 
+function useUtcClock() {
+  const [t, setT] = useState('--:--:--');
+  useEffect(() => {
+    const tick = () => setT(new Date().toISOString().slice(11, 19));
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  return t;
+}
+
 const NAV = [
   ['Environments', '#environments'],
   ['Research', '#research'],
@@ -23,6 +34,7 @@ export function Header() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const headerRef = useRef(null);
+  const utc = useUtcClock();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -44,6 +56,7 @@ export function Header() {
         <BrandMark />
         <span>SEA<br />COMMONS</span>
       </a>
+      <span className="site-header__clock mono">UTC {utc}</span>
       <HeaderLive />
 
       <button
@@ -100,7 +113,7 @@ export function Footer() {
       </div>
       <div className="site-footer__base">
         <span>SeaCommons / research prototype</span>
-        <span>Traceability by design</span>
+        <a href="https://suezcanal.xyz">Developed by suezcanal.xyz</a>
         <span>© 2026</span>
       </div>
     </footer>
