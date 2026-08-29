@@ -151,10 +151,13 @@ function guessApiBase() {
     if (saved) return saved.replace(/\/$/, '');
     return `${protocol}//${hostname}:8000`;
   }
-  if (hostname === 'console.seacommons.org' || hostname === 'engine.seacommons.org') return 'https://api.seacommons.org';
   if (hostname === 'demo.seacommons.org') return 'https://demo-api.seacommons.org';
-  // Other production deployments may provide a same-origin API proxy.
-  // Ignore stale localStorage entries that may point to a retired backend.
+  // Every other production host (including console/engine) goes through the
+  // same-origin Vercel proxy (apps/web/api/proxy.js), which reaches the real
+  // backend by its direct IP — api.seacommons.org's DNS record points at a
+  // dead address, so calling it cross-origin from the browser fails even
+  // though the backend itself is up. Ignore stale localStorage entries that
+  // may point to a retired backend.
   return origin;
 }
 

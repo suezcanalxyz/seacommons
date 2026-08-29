@@ -298,10 +298,21 @@ button:focus-visible {
   background-size: 64px 64px;
   mask-image: linear-gradient(to bottom, black, transparent 82%);
 }
+.hero__grain {
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
 .hero__vignette {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 0%, transparent 93%, var(--sc-ink-900) 100%);
+  background:
+    radial-gradient(120% 100% at 50% 42%, transparent 52%, rgba(6, 10, 20, 0.4) 100%),
+    linear-gradient(180deg, transparent 0%, transparent 80%, rgba(6, 10, 20, 0.55) 95%, var(--sc-ink-900) 100%);
 }
 /* Content sits above the background layer. Only bump z-index here — each
    child keeps its own `position` (static flow, or absolute for hud/index). */

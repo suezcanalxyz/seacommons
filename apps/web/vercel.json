@@ -38,6 +38,10 @@
       "destination": "/api/proxy?ready=1"
     },
     {
+      "source": "/status",
+      "destination": "/status.html"
+    },
+    {
       "source": "/",
       "has": [{ "type": "host", "value": "play.seacommons.org" }],
       "destination": "/console.html"

@@ -17,12 +17,14 @@ export default defineConfig(({mode}) => {
     },
     build: {
       rollupOptions: {
-        // Two entry documents from one build: the operational console
-        // (index.html -> renamed console.html by package-unified.mjs) and the
-        // public institutional site (site.html, served at seacommons.org).
+        // Entry documents from one build: the operational console
+        // (index.html -> renamed console.html by package-unified.mjs), the
+        // public institutional site (site.html, served at seacommons.org),
+        // and the API status page (status.html, at /status).
         input: {
           console: path.resolve(__dirname, 'index.html'),
           site: path.resolve(__dirname, 'site.html'),
+          status: path.resolve(__dirname, 'status.html'),
         },
       },
     },

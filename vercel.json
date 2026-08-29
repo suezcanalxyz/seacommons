@@ -12,6 +12,7 @@
     { "source": "/api/:path*", "destination": "/api/proxy?path=:path*" },
     { "source": "/health", "destination": "/api/proxy?health=1" },
     { "source": "/ready", "destination": "/api/proxy?ready=1" },
+    { "source": "/status", "destination": "/status.html" },
     {
       "source": "/",
       "has": [{ "type": "host", "value": "play.seacommons.org" }],

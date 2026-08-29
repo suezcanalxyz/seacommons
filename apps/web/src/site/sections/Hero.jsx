@@ -27,6 +27,7 @@ export default function Hero() {
           preload="auto"
         />
         <div className="hero__grid" />
+        <div className="hero__grain" />
         <div className="hero__vignette" />
       </div>
 
