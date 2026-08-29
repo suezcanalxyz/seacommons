@@ -1813,8 +1813,18 @@ function App() {
           closeButton: false, closeOnClick: false, offset: 10,
           className: 'intel-hover-popup',
         });
+        const _escapeHoverHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+          { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
         const _hoverLabel = (feature, lat, lon) => {
           const p = feature.properties || {};
+          // props.title carries the resolved "<name> — <what>" summary when
+          // the backend has one (vessel_incident/correlated_alert both do);
+          // fall back to the generic alert_type/domain or bare coordinates.
+          if (p.title) {
+            const sub = p.type === 'correlated_alert' ? (p.maritime_domain || 'sar') : `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+            return `<strong>${_escapeHoverHtml(p.title)}</strong><span>${_escapeHoverHtml(sub)}</span>`;
+          }
           if (p.type === 'correlated_alert') {
             return `<strong>${(p.alert_type || 'alert').replace(/_/g, ' ')}</strong><span>${p.maritime_domain || 'sar'}</span>`;
           }
