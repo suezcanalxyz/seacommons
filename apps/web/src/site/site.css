@@ -302,8 +302,8 @@ button:focus-visible {
   position: absolute;
   inset: 0;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-size: 180px 180px;
-  opacity: 0.05;
+  background-size: 200px 200px;
+  opacity: 0.025;
   mix-blend-mode: overlay;
   pointer-events: none;
 }
@@ -511,23 +511,6 @@ button:focus-visible {
   align-items: start;
 }
 .thesis__copy { display: grid; gap: 1.1rem; color: rgba(238, 244, 238, 0.8); line-height: 1.7; }
-.thesis blockquote {
-  grid-column: 1 / -1;
-  margin: clamp(1.6rem, 4vw, 2.6rem) 0 0;
-  padding: 1.5rem clamp(1.4rem, 3vw, 2.2rem);
-  border: 1px solid var(--sc-line-strong);
-  border-left: 3px solid var(--sc-brand);
-  border-radius: var(--sc-r-sm);
-  font: 500 1.06rem/1.5 var(--sc-font-sans);
-}
-.thesis blockquote span {
-  display: block;
-  margin-bottom: 0.6rem;
-  color: var(--sc-brand);
-  font: 500 0.6rem/1 var(--sc-font-mono);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
 @media (max-width: 900px) {
   .environments__head, .environments__grid, .statband, .thesis__layout { grid-template-columns: 1fr; }
 }
@@ -628,13 +611,21 @@ button:focus-visible {
 
 .systemview__views {
   display: grid;
-  gap: 1px;
-  background: var(--sc-line);
+  margin-top: clamp(2rem, 5vw, 3rem);
+}
+.evidence-panel {
+  margin: 0;
+  padding: 1.5rem 1.6rem;
+  max-width: 420px;
+  background: var(--sc-ink-850);
   border: 1px solid var(--sc-line);
   border-radius: var(--sc-r-md);
-  overflow: hidden;
 }
-.drift-figure, .evidence-panel { margin: 0; padding: 1.3rem; background: var(--sc-ink-850); }
+.drift-figure {
+  margin: 0;
+  padding: 0 clamp(0.2rem, 2vw, 0.6rem);
+  background: transparent;
+}
 .drift-figure figcaption {
   display: flex;
   justify-content: space-between;
@@ -667,12 +658,40 @@ button:focus-visible {
 .df-vessel--now { fill: var(--sc-brand); animation: sc-pulse 2.6s ease-in-out infinite; }
 .df-marker { fill: var(--sc-brand); filter: drop-shadow(0 0 4px var(--sc-brand-dim)); }
 .df-labels text { fill: rgba(238, 244, 238, 0.4); font: 8px var(--sc-font-mono); }
+.df-labels .df-labels__t { fill: var(--sc-paper); font-weight: 600; }
 @keyframes df-flow { to { stroke-dashoffset: -16; } }
 @media (prefers-reduced-motion: reduce) {
   .df-trace { animation: none; }
   .df-vessel--now { animation: none; }
   .df-marker { display: none; }
 }
+.drift-figure__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 1.4rem;
+  margin-top: -1px;
+  padding: 0.55rem clamp(0.6rem, 3vw, 1.2rem);
+  background: color-mix(in srgb, var(--sc-ink-850) 70%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--sc-line);
+  border-top: none;
+  border-radius: 0 0 var(--sc-r-md) var(--sc-r-md);
+  color: var(--sc-paper-faint);
+  font: 400 0.6rem/1 var(--sc-font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.drift-figure__status span { display: inline-flex; align-items: center; gap: 0.4rem; }
+.drift-figure__status b { color: var(--sc-paper); font-weight: 500; }
+.drift-figure__status-live { margin-left: auto; }
+.drift-figure__pulse {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--sc-sea);
+  animation: sc-pulse 2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) { .drift-figure__pulse { animation: none; } }
 .drift-figure__legend {
   display: flex;
   gap: 1.4rem;

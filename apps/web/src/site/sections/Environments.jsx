@@ -103,11 +103,6 @@ export default function Environments() {
               the safety of the people they describe.
             </p>
           </Reveal>
-          <Reveal as="blockquote" delay={200}>
-            <span>Research question</span>
-            How can heterogeneous maritime signals support timely action while remaining
-            explainable, correctable and safe?
-          </Reveal>
         </div>
       </div>
     </section>

@@ -66,15 +66,21 @@ function DriftFigure() {
           <polygon className="df-vessel df-vessel--now" transform="translate(830,16) rotate(-10)" points="0,-9 7,7 -7,7" />
         </g>
         <g className="df-labels">
-          <text x="86" y="278">T+00</text>
-          <text x="316" y="182">T+06</text>
-          <text x="536" y="114">T+12</text>
-          <text x="806" y="50">T+24</text>
+          <text x="86" y="272"><tspan className="df-labels__t" x="86">T+00</tspan><tspan x="86" dy="12">distress signal</tspan></text>
+          <text x="316" y="176"><tspan className="df-labels__t" x="316">T+06</tspan><tspan x="316" dy="12">cone / advisory</tspan></text>
+          <text x="536" y="108"><tspan className="df-labels__t" x="536">T+12</tspan><tspan x="536" dy="12">search spread</tspan></text>
+          <text x="806" y="44"><tspan className="df-labels__t" x="806">T+24</tspan><tspan x="806" dy="12">max envelope</tspan></text>
         </g>
         <circle className="df-marker" r="5">
           <animateMotion dur="9s" repeatCount="indefinite" path="M110 246c100-64 188-160 300-224 116-66 264-72 420-30" />
         </circle>
       </svg>
+      <div className="drift-figure__status" aria-hidden="true">
+        <span><i /> wind <b>18.2</b> kn</span>
+        <span><i /> current <b>0.8</b> kn</span>
+        <span><i /> wave <b>1.8</b> m</span>
+        <span className="drift-figure__status-live"><i className="drift-figure__pulse" /> drift simulation active</span>
+      </div>
       <div className="drift-figure__legend">
         <span><i className="ln" /> Median trajectory</span>
         <span><i className="en" /> Ensemble members</span>
@@ -109,8 +115,11 @@ export default function SystemView() {
         ))}
       </Reveal>
 
-      <Reveal className="systemview__views" stagger={120}>
+      <Reveal delay={60}>
         <DriftFigure />
+      </Reveal>
+
+      <Reveal className="systemview__views" stagger={120}>
         <SpotlightCard as="article" className="evidence-panel">
           <header><span>Evidence packet</span><span>SC-EV-00041</span></header>
           <div className="evidence-panel__wave" aria-hidden="true">
