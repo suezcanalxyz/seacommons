@@ -10,7 +10,7 @@ optional worker processes that share its database and domain code.
 
 | Surface | Code | Responsibility |
 |---|---|---|
-| Institutional site | `apps/site` | Static public information; no operational data |
+| Institutional site | `apps/web/src/site` | Public information site (`seacommons.org`); React, built with the console in one Vite multi-page build; no operational data |
 | Operational console | `apps/web` | React/Vite UI for Live, Intel, drift, vessels, cases and connectors |
 | API and workers | `apps/api` | Authentication, ingestion, domain policy, persistence, jobs and integrations |
 | Public Live edge | `apps/edge` | Privacy-filtered public snapshot and WebSocket distribution |

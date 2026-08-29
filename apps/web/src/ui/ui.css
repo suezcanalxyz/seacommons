@@ -1,0 +1,253 @@
+/* ============================================================================
+   SeaCommons shared design tokens + UI primitive styles.
+   Imported by both the institutional site (src/site) and the operator console.
+   Tokens are prefixed --sc-* so they never collide with the console's older
+   --accent / --ink-* set.
+   ========================================================================== */
+
+:root {
+  /* ── Surface ── */
+  --sc-ink-900: #04100d;
+  --sc-ink-850: #071613;
+  --sc-ink-800: #0a1c18;
+  --sc-ink-750: #0f2620;
+  --sc-ink-700: #143029;
+
+  /* ── Hairlines ── */
+  --sc-line: rgba(238, 244, 238, 0.1);
+  --sc-line-strong: rgba(238, 244, 238, 0.22);
+
+  /* ── Text ── */
+  --sc-paper: #eef4ee;
+  --sc-paper-dim: rgba(238, 244, 238, 0.64);
+  --sc-paper-faint: rgba(238, 244, 238, 0.4);
+
+  /* ── Brand ── */
+  --sc-lime: #c8ff3d;
+  --sc-lime-soft: rgba(200, 255, 61, 0.14);
+  --sc-lime-dim: rgba(200, 255, 61, 0.5);
+  --sc-sea: #6ee7d8;
+  --sc-blue: #7c8cff;
+  --sc-amber: #f2c14e;
+  --sc-rose: #ff7a8a;
+
+  /* ── Type ── */
+  --sc-font-sans: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --sc-font-mono: "JetBrains Mono", "Consolas", ui-monospace, monospace;
+
+  /* ── Shape / depth ── */
+  --sc-r-sm: 8px;
+  --sc-r-md: 12px;
+  --sc-r-lg: 18px;
+  --sc-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sc-shadow-2: 0 18px 50px -20px rgba(0, 0, 0, 0.7);
+  --sc-glow: 0 0 30px rgba(200, 255, 61, 0.16);
+
+  /* ── Motion ── */
+  --sc-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --sc-dur: 0.42s;
+}
+
+/* --------------------------------------------------------------------------
+   Reveal — CSS-transition scroll reveal
+   -------------------------------------------------------------------------- */
+.sc-reveal {
+  opacity: 0;
+  transform: translate3d(0, var(--reveal-y, 22px), 0);
+  transition:
+    opacity var(--reveal-duration, 720ms) var(--sc-ease) var(--reveal-delay, 0ms),
+    transform var(--reveal-duration, 720ms) var(--sc-ease) var(--reveal-delay, 0ms);
+  will-change: opacity, transform;
+}
+.sc-reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+.sc-reveal--stagger {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+.sc-reveal--stagger > * {
+  opacity: 0;
+  transform: translate3d(0, var(--reveal-y, 22px), 0);
+  transition:
+    opacity var(--reveal-duration, 720ms) var(--sc-ease),
+    transform var(--reveal-duration, 720ms) var(--sc-ease);
+}
+.sc-reveal--stagger.is-in > * {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sc-reveal,
+  .sc-reveal--stagger > * {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Spotlight card
+   -------------------------------------------------------------------------- */
+.sc-spotlight {
+  position: relative;
+  isolation: isolate;
+  --spot-x: 50%;
+  --spot-y: 50%;
+  --spot-opacity: 0;
+}
+.sc-spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  opacity: var(--spot-opacity);
+  transition: opacity 0.4s var(--sc-ease);
+  background: radial-gradient(
+    240px circle at var(--spot-x) var(--spot-y),
+    rgba(200, 255, 61, 0.14),
+    transparent 70%
+  );
+}
+
+/* --------------------------------------------------------------------------
+   Split text (word reveal)
+   -------------------------------------------------------------------------- */
+.sc-split [data-word] {
+  display: inline-block;
+  opacity: 0;
+  transform: translate3d(0, 0.42em, 0);
+  transition: opacity 0.6s var(--sc-ease), transform 0.6s var(--sc-ease);
+  will-change: opacity, transform;
+}
+.sc-split.is-in [data-word] {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sc-split [data-word] {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Shiny text
+   -------------------------------------------------------------------------- */
+.sc-shiny {
+  --shiny-duration: 5s;
+  background: linear-gradient(
+    100deg,
+    var(--sc-paper-dim) 0%,
+    var(--sc-paper-dim) 40%,
+    var(--sc-paper) 50%,
+    var(--sc-paper-dim) 60%,
+    var(--sc-paper-dim) 100%
+  );
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: sc-shiny-sweep var(--shiny-duration) linear infinite;
+}
+.sc-shiny.is-static {
+  animation: none;
+  background: none;
+  color: var(--sc-lime);
+  -webkit-background-clip: initial;
+  background-clip: initial;
+}
+@keyframes sc-shiny-sweep {
+  to {
+    background-position: -220% center;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Ticker / marquee
+   -------------------------------------------------------------------------- */
+.sc-ticker {
+  --ticker-duration: 38s;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.sc-ticker__track {
+  display: inline-flex;
+  animation: sc-ticker-scroll var(--ticker-duration) linear infinite;
+}
+.sc-ticker:hover .sc-ticker__track {
+  animation-play-state: paused;
+}
+.sc-ticker__row {
+  display: inline-flex;
+  align-items: center;
+}
+.sc-ticker__item {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.5rem;
+  font: 500 0.66rem/1 var(--sc-font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sc-paper-dim);
+}
+.sc-ticker__sep {
+  margin-left: 1rem;
+  color: var(--sc-lime-dim);
+  font-style: normal;
+}
+.sc-ticker.is-static {
+  white-space: normal;
+}
+.sc-ticker.is-static .sc-ticker__row {
+  flex-wrap: wrap;
+  gap: 0.4rem 0;
+}
+@keyframes sc-ticker-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Threads WebGL host
+   -------------------------------------------------------------------------- */
+.sc-threads {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sc-threads canvas {
+  mix-blend-mode: screen;
+}
+
+/* --------------------------------------------------------------------------
+   Tilt card
+   -------------------------------------------------------------------------- */
+.sc-tilt {
+  transition: transform 0.3s var(--sc-ease);
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+/* --------------------------------------------------------------------------
+   Global reduced-motion kill switch for anything CSS-animated in src/ui
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .sc-shiny {
+    animation: none;
+    background: none;
+    color: var(--sc-lime);
+    -webkit-text-fill-color: currentColor;
+  }
+  .sc-ticker__track {
+    animation: none;
+  }
+  .sc-tilt {
+    transition: none;
+  }
+}

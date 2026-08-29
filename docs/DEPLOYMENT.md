@@ -10,8 +10,7 @@ model, the required configuration and the rollout/rollback order.
 
 | Surface | Code | Where it runs | Critical for Public Live? |
 | --- | --- | --- | --- |
-| Institutional site | `apps/site` | Static host (Vercel / Cloudflare Pages) | No |
-| Operational console | `apps/web` | Static host; same-origin `/api` via `vercel.json` rewrites | Serves Live UI |
+| Institutional site + console | `apps/web` | Static host; one Vite multi-page build emits `site.html` (institutional) and `console.html` (Live/Play); same-origin `/api` via `vercel.json` rewrites | Serves Live UI |
 | API and workers | `apps/api` | Linux host (Docker Compose in production; systemd on a single VM for pilots/demos) | Yes — publishes to the edge |
 | Public Live edge | `apps/edge` | Cloudflare Worker + Durable Object | Yes — public distribution point |
 

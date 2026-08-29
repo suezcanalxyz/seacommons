@@ -15,6 +15,17 @@ export default defineConfig(({mode}) => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        // Two entry documents from one build: the operational console
+        // (index.html -> renamed console.html by package-unified.mjs) and the
+        // public institutional site (site.html, served at seacommons.org).
+        input: {
+          console: path.resolve(__dirname, 'index.html'),
+          site: path.resolve(__dirname, 'site.html'),
+        },
+      },
+    },
     server: {
       allowedHosts: ['live.seacommons.org', 'play.seacommons.org'],
       hmr: process.env.DISABLE_HMR !== 'true',
