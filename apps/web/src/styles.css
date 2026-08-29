@@ -3417,3 +3417,48 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .atl-controls input[type="range"] { flex: 1; accent-color: #ffd166; }
 .atl-time { font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); flex: 0 0 auto; }
 .atl-hint { margin-top: 8px; font-size: 11px; color: var(--ink-3); }
+
+/* ── MDA / dark-vessel console ────────────────────────────────────────────── */
+.mda-panel .mda-hint { font-size: 11px; color: var(--ink-3); margin: 6px 0; }
+.mda-vessel-lookup { display: flex; gap: 6px; }
+.mda-vessel-lookup input {
+  flex: 1; padding: 5px 8px; font-size: 12px; border-radius: var(--r-sm);
+  border: 1px solid var(--glass-border); background: rgba(255,255,255,0.04); color: var(--ink-1);
+}
+.mda-vessel-lookup button, .mda-mini-btn {
+  padding: 5px 10px; font-size: 11px; border-radius: var(--r-sm);
+  border: 1px solid var(--glass-border); background: rgba(255,255,255,0.06); color: var(--ink-1); cursor: pointer;
+}
+.mda-vessel-card { margin-top: 8px; padding: 8px; border-radius: var(--r-sm); background: rgba(255,255,255,0.03); font-size: 12px; }
+.mda-vessel-card strong { display: block; }
+.mda-vessel-card span { color: var(--ink-3); font-size: 11px; }
+.mda-risk { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.mda-risk-flag { font-size: 9px; text-transform: uppercase; letter-spacing: 0.03em;
+  background: rgba(239,68,68,0.18); color: #ffb3b3; border-radius: 999px; padding: 1px 6px; }
+.mda-sanctions { margin-top: 6px; font-size: 11px; color: #ff9d9d; }
+.mda-mini-btn { margin-top: 8px; }
+.mda-filter-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.mda-filter-row button {
+  font-size: 10px; padding: 3px 8px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--glass-border); background: rgba(255,255,255,0.04); color: var(--ink-2);
+}
+.mda-filter-row button.is-active { background: rgba(255,255,255,0.14); color: var(--ink-1); }
+.mda-list { list-style: none; margin: 0; padding: 0; }
+.mda-item { padding: 8px; border-radius: var(--r-sm); margin-bottom: 5px; background: rgba(255,255,255,0.03); }
+.mda-item-head { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.mda-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.mda-item-type { color: var(--ink-1); }
+.mda-sev { font-size: 8px; text-transform: uppercase; border-radius: 999px; padding: 1px 5px; }
+.mda-sev--critical { background: rgba(255,59,59,0.25); color: #ffb3b3; }
+.mda-sev--high { background: rgba(255,123,84,0.22); color: #ffcbb8; }
+.mda-sev--medium { background: rgba(255,224,109,0.18); color: #ffe9a8; }
+.mda-age { margin-left: auto; color: var(--ink-3); font-family: var(--font-mono); }
+.mda-item-title { font-size: 12px; color: var(--ink-1); margin: 4px 0; }
+.mda-sources, .mda-cue { font-size: 10px; color: var(--ink-3); }
+.mda-cue { color: #9fd8ff; margin-top: 3px; }
+.mda-item-actions { display: flex; gap: 6px; margin-top: 6px; }
+.mda-item-actions button {
+  font-size: 10px; padding: 3px 7px; border-radius: var(--r-sm); cursor: pointer;
+  border: 1px solid var(--glass-border); background: rgba(255,255,255,0.05); color: var(--ink-1);
+}
+.sidebar-tabs--4 { display: flex; gap: 4px; flex-wrap: wrap; }
