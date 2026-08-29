@@ -9,12 +9,12 @@
 
   --accent: var(--sc-brand);
   --accent-2: var(--sc-sea);
-  --accent-grad: linear-gradient(135deg, #33c7ff 0%, #6ee7d8 100%);
+  --accent-grad: linear-gradient(135deg, #c7dcf5 0%, #6ee7d8 100%);
 
   --glass-bg: rgba(6, 10, 20, 0.92);
   --glass-bg-solid: #080f1c;
   --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-border-hi: rgba(51, 199, 255, 0.36);
+  --glass-border-hi: rgba(199, 220, 245, 0.36);
 
   --ink-1: rgba(238, 244, 238, 0.94);
   --ink-2: rgba(170, 180, 190, 0.78);
@@ -86,8 +86,8 @@ button, input, select, textarea { font-family: inherit; }
   font-weight: 520;
 }
 .scenario-type-btn.is-active {
-  background: rgba(51, 199, 255, 0.15);
-  border-color: rgba(51, 199, 255, 0.55);
+  background: rgba(199, 220, 245, 0.15);
+  border-color: rgba(199, 220, 245, 0.55);
   color: rgba(238, 244, 238, 0.96);
   box-shadow: none;
 }
@@ -112,7 +112,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   color: rgba(170, 180, 190, 0.82);
 }
 .runtime-badge--demo { border-color: rgba(110, 231, 216, 0.4); color: rgba(130, 235, 220, 0.95); }
-.runtime-badge--live { border-color: rgba(51, 199, 255, 0.4); color: rgba(150, 220, 255, 0.95); }
+.runtime-badge--live { border-color: rgba(199, 220, 245, 0.4); color: rgba(215, 230, 248, 0.95); }
 
 .auth-screen {
   min-height: 100vh;
@@ -122,8 +122,8 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   background: #060a14;
   color: rgba(238, 244, 238, 0.92);
   background-image:
-    linear-gradient(rgba(51, 199, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(51, 199, 255, 0.035) 1px, transparent 1px);
+    linear-gradient(rgba(199, 220, 245, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(199, 220, 245, 0.035) 1px, transparent 1px);
   background-size: 48px 48px;
 }
 .auth-card {

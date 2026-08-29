@@ -8,7 +8,7 @@ const CARDS = [
     host: 'live.seacommons.org',
     name: 'LIVE',
     tone: 'lime',
-    body: 'A public console that aggregates maritime signals — vessel tracking, marine weather, distress reports and civil-monitoring feeds — into one timestamped record of source health and observed activity. Provenance and confidence travel with each entry; sources are never silently merged into a single asserted position. Positional and case-level detail is limited to authorised research and rescue-support teams under documented access conditions.',
+    body: 'Provenance-tracked signal aggregation. Case detail stays access-gated.',
     href: 'https://live.seacommons.org',
     cta: 'Open the console ↗',
   },
@@ -17,16 +17,16 @@ const CARDS = [
     host: 'play.seacommons.org',
     name: 'PLAY',
     tone: 'paper',
-    body: 'An interactive demonstrator that reconstructs a selected trace as a drift simulation, computed in the browser with CesiumJS from bounded or synthetic scenarios. It exposes the environmental fields, model parameters and uncertainty behind each trajectory, so a result can be inspected rather than taken on trust. PLAY does not use live distress data.',
+    body: 'Browser drift simulation from bounded or synthetic scenarios — inspectable, not asserted.',
     href: 'https://play.seacommons.org',
     cta: 'Open the demonstrator ↗',
   },
   {
-    tag: 'In development',
+    tag: 'Coming soon',
     host: 'Accredited access planned',
     name: 'ENGINE',
     tone: 'sea',
-    body: 'A companion Unreal Engine renderer for the same drift-scene record used by PLAY. Where PLAY favours accessibility, ENGINE favours physical fidelity: a calibrated sea state, weather and vessel response driven by the persisted wave height, period and direction, delivered through browser-based streaming. It renders the scene; it does not alter the underlying trajectory.',
+    body: 'Physically calibrated Unreal renderer for the same drift record.',
     href: null,
     cta: null,
   },
@@ -68,7 +68,7 @@ export default function Environments() {
             {c.href ? (
               <a className="env-card__link" href={c.href}>{c.cta}</a>
             ) : (
-              <span className="env-card__link is-muted">No public endpoint yet</span>
+              <span className="env-card__link is-muted">Coming soon</span>
             )}
           </SpotlightCard>
         ))}

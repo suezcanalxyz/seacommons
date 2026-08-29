@@ -15,7 +15,7 @@ export default function Engine() {
       <Reveal className="engine__copy">
         <p className="section-label section-label--light">
           <span>Engine / 006</span>
-          <span>Immersive renderer, in development</span>
+          <span>Coming soon</span>
         </p>
         <h2 className="display">A physically calibrated renderer for the same drift record.</h2>
         <p>

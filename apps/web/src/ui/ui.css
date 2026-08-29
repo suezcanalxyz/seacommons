@@ -26,9 +26,9 @@
      Fixed semantics — reused identically on site and console.
      Never swap these meanings per-component; module identity uses
      label/icon text, not a dedicated accent color. */
-  --sc-brand: #33c7ff;      /* brand / CTA only — never a status color */
-  --sc-brand-soft: rgba(51, 199, 255, 0.14);
-  --sc-brand-dim: rgba(51, 199, 255, 0.5);
+  --sc-brand: #c7dcf5;      /* brand / CTA only — never a status color */
+  --sc-brand-soft: rgba(199, 220, 245, 0.14);
+  --sc-brand-dim: rgba(199, 220, 245, 0.5);
   --sc-sea: #6ee7d8;        /* nominal / secondary / live-ok */
   --sc-blue: #7c8cff;       /* informational */
   --sc-amber: #f2c14e;      /* uncertainty / warning */
@@ -44,7 +44,7 @@
   --sc-r-lg: 18px;
   --sc-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --sc-shadow-2: 0 18px 50px -20px rgba(0, 0, 0, 0.7);
-  --sc-glow: 0 0 30px rgba(51, 199, 255, 0.16);
+  --sc-glow: 0 0 30px rgba(199, 220, 245, 0.16);
 
   /* ── Motion ── */
   --sc-ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -111,7 +111,7 @@
   transition: opacity 0.4s var(--sc-ease);
   background: radial-gradient(
     240px circle at var(--spot-x) var(--spot-y),
-    rgba(51, 199, 255, 0.14),
+    rgba(199, 220, 245, 0.14),
     transparent 70%
   );
 }

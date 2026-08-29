@@ -27,7 +27,7 @@ body {
   margin: 0;
   color: var(--sc-paper);
   background:
-    radial-gradient(1100px 620px at 78% -8%, rgba(51, 199, 255, 0.06), transparent 60%),
+    radial-gradient(1100px 620px at 78% -8%, rgba(199, 220, 245, 0.06), transparent 60%),
     radial-gradient(900px 600px at 0% 12%, rgba(110, 231, 216, 0.05), transparent 55%),
     var(--sc-ink-900);
   font-family: var(--sc-font-sans);
@@ -95,12 +95,13 @@ button:focus-visible {
   gap: 1.4rem;
   min-height: var(--header-h);
   padding: 0 var(--pad-x);
+  background: color-mix(in srgb, var(--sc-ink-900) 55%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
   border-bottom: 1px solid transparent;
-  transition: background 0.3s var(--sc-ease), border-color 0.3s var(--sc-ease), backdrop-filter 0.3s;
+  transition: background 0.3s var(--sc-ease), border-color 0.3s var(--sc-ease);
 }
 .site-header.is-scrolled {
   background: color-mix(in srgb, var(--sc-ink-850) 82%, transparent);
-  backdrop-filter: blur(14px) saturate(1.4);
   border-bottom-color: var(--sc-line);
 }
 
@@ -219,7 +220,7 @@ button:focus-visible {
   z-index: 0;
   overflow: hidden;
   background:
-    radial-gradient(150% 100% at 80% -6%, rgba(51, 199, 255, 0.12), transparent 46%),
+    radial-gradient(150% 100% at 80% -6%, rgba(199, 220, 245, 0.12), transparent 46%),
     radial-gradient(130% 90% at 6% 24%, rgba(110, 231, 216, 0.09), transparent 52%);
 }
 /* CSS fallback filaments — always present; the WebGL canvas (when it runs)
@@ -231,7 +232,7 @@ button:focus-visible {
   background: repeating-linear-gradient(
     178deg,
     transparent 0 38px,
-    rgba(51, 199, 255, 0.07) 38px 39px,
+    rgba(199, 220, 245, 0.07) 38px 39px,
     transparent 39px 84px
   );
   -webkit-mask-image: radial-gradient(120% 80% at 70% 20%, black, transparent 78%);
@@ -246,8 +247,9 @@ button:focus-visible {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.55;
-  filter: saturate(0.9) brightness(0.85);
+  object-position: center 78%;
+  opacity: 0.85;
+  filter: saturate(0.95);
 }
 .hero__grid {
   position: absolute;
@@ -262,7 +264,8 @@ button:focus-visible {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(6, 10, 20, 0.3) 0%, rgba(6, 10, 20, 0.55) 55%, var(--sc-ink-900) 100%),
+    linear-gradient(90deg, rgba(6, 10, 20, 0.8) 0%, rgba(6, 10, 20, 0.4) 42%, transparent 68%),
+    linear-gradient(180deg, transparent 55%, rgba(6, 10, 20, 0.25) 82%, rgba(6, 10, 20, 0.55) 100%),
     radial-gradient(120% 80% at 50% 0%, transparent 40%, var(--sc-ink-900) 100%);
 }
 /* Content sits above the background layer. Only bump z-index here — each
@@ -364,6 +367,9 @@ button:focus-visible {
   font: 500 0.52rem/1 var(--sc-font-mono);
   letter-spacing: 0.08em;
 }
+.hero__hud-trace { display: block; width: 100%; height: auto; padding: 0.5rem 0.4rem 0; }
+.hero__hud-mark { animation: sc-pulse 2.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .hero__hud-mark { animation: none; } }
 .hero__hud dl { padding: 0.8rem; display: grid; gap: 0.65rem; }
 .hero__hud dl > div { display: flex; justify-content: space-between; gap: 1rem; }
 .hero__hud dt {
@@ -419,17 +425,20 @@ button:focus-visible {
 @media (prefers-reduced-motion: reduce) { .hero__scroll span { animation: none; } }
 @media (max-width: 940px) { .hero__hud, .hero__index { display: none; } .hero__copy { width: 100%; } }
 
-/* ── Ticker strip ────────────────────────────────────────────────────────── */
 /* ── Live signal strip ───────────────────────────────────────────────────── */
+/* Attached directly under the header — same glass treatment, no seam. */
 .live-strip {
+  position: sticky;
+  top: var(--header-h);
+  z-index: 99;
   display: flex;
   align-items: center;
   gap: 1.4rem;
   flex-wrap: wrap;
-  border-top: 1px solid var(--sc-line);
+  background: color-mix(in srgb, var(--sc-ink-900) 55%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
   border-bottom: 1px solid var(--sc-line);
-  background: var(--sc-ink-850);
-  padding: 0.75rem clamp(1.2rem, 4vw, 3rem);
+  padding: 0.6rem clamp(1.2rem, 4vw, 3rem);
 }
 .live-strip__label {
   display: inline-flex;
@@ -768,7 +777,7 @@ button:focus-visible {
 .drift-figure__legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
 .drift-figure__legend .ln, .drift-figure__legend .ar { display: inline-block; width: 14px; height: 3px; }
 .drift-figure__legend .ln { background: var(--sc-brand); }
-.drift-figure__legend .ar { background: rgba(51, 199, 255, 0.28); }
+.drift-figure__legend .ar { background: rgba(199, 220, 245, 0.28); }
 
 .evidence-panel header {
   display: flex;

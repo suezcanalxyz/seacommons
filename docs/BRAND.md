@@ -53,11 +53,12 @@ no green, anywhere):
   `body` background), and every hardcoded panel/card background that used to
   match the old ramp by literal hex.
 - **Brand accent**: the token formerly named `--sc-lime` (`#c8ff3d`) is now
-  `--sc-brand` (`#33c7ff`, azure). Same role — CTA, wordmark, focus ring,
-  primary emphasis — never a status color. Every `var(--sc-lime*)` and every
-  hardcoded `rgba(200, 255, 61, …)` literal across `ui.css`, `site.css`,
-  `suez-theme.css`, `site.html`, `index.html` and the `Threads` WebGL color
-  prop was repointed to `--sc-brand` / `rgb(51, 199, 255)`.
+  `--sc-brand` (`#c7dcf5`, cold ice-blue-white — an azure/cyan mid-point was
+  tried first and rejected as too "neon tech"). Same role — CTA, wordmark,
+  focus ring, primary emphasis — never a status color. Every hardcoded color
+  literal derived from it (`ui.css`, `site.css`, `suez-theme.css`, `site.html`,
+  `index.html`, the `SystemView` drift-figure SVG gradient) points at this
+  value; keep it that way rather than re-hardcoding hex in new components.
 
 Card/tile border tones used for visual rhythm (e.g. `.wp-card--blue/lime/paper/amber`
 in Programme and MDA sections, `.env-card--lime/paper/sea` in Environments) keep
@@ -104,6 +105,31 @@ Hero, `SiteApp.jsx`) and shows the latest public distress signals from
 degrades to a neutral message on empty/error state, never a visible error or
 infinite spinner, and exposes no more than the existing privacy-filtered
 public payload.
+
+## Hero, header and Surfaces — second pass
+
+- **Hero background** is a looping video (`public/media/seacommons-hero-loop.mp4`)
+  instead of the WebGL `Threads` canvas. `object-position: center 78%` keeps the
+  vessels near the bottom of frame in view after `cover` cropping; the
+  `.hero__vignette` gradient darkens from the left (behind the text column) and
+  fades out toward the right, rather than a flat bottom band, so the video's
+  own content stays visible instead of being crushed under a uniform scrim.
+- **Hero HUD card** (`SIM / TRACE 0041`) now carries a small inline SVG —
+  triangle vessel markers along a dashed trajectory inside a widening
+  uncertainty cone, the same visual grammar as `SystemView`'s `DriftFigure` —
+  so the card's text (Origin/Window/Output) has a diagram to match, instead of
+  numbers alone.
+- **Main CTA** is "Open Live" → `live.seacommons.org` (previously "Enter the
+  public demo" → Play). Live is the flagship surface the hero sends people to.
+- **Environments cards** ("Surfaces / 001") dropped their long descriptive
+  paragraphs for one-line taglines, matching the terser register already used
+  by the Closing section's cards. ENGINE is explicitly labelled "Coming soon"
+  in both the Environments card and its own section label.
+- **Header + live signal strip** are visually one glass panel: the header is
+  always translucent/blurred (previously only after scrolling), and the live
+  strip sits `position: sticky` directly under it with the same
+  `backdrop-filter: blur(14px) saturate(1.4)` treatment and no seam border
+  between them.
 
 ## Logo
 

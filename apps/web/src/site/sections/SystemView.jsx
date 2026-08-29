@@ -29,8 +29,8 @@ function DriftFigure() {
             <path d="M 38 0 L 0 0 0 38" fill="none" stroke="currentColor" strokeWidth=".5" opacity=".25" />
           </pattern>
           <linearGradient id="scCone" x1="0" x2="1">
-            <stop offset="0" stopColor="#c8ff3d" stopOpacity=".06" />
-            <stop offset="1" stopColor="#c8ff3d" stopOpacity=".26" />
+            <stop offset="0" stopColor="#c7dcf5" stopOpacity=".06" />
+            <stop offset="1" stopColor="#c7dcf5" stopOpacity=".26" />
           </linearGradient>
         </defs>
         <rect width="760" height="460" fill="url(#scGrid)" />
