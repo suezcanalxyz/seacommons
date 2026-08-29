@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { SplitText, Magnetic, SpotlightCard, ShinyText, Reveal } from '../../ui/index.js';
+import { SplitText, Magnetic, ShinyText, Reveal } from '../../ui/index.js';
 import { useReducedMotion } from '../../ui/motion.js';
 
 function useUtcClock() {
@@ -73,36 +73,6 @@ export default function Hero() {
         </Reveal>
       </div>
 
-      <SpotlightCard as="aside" className="hero__hud" aria-label="Illustrative signal trace">
-        <div className="hero__hud-head">
-          <span>SIM / TRACE 0041</span>
-          <span>MODEL VIEW</span>
-        </div>
-        <svg className="hero__hud-trace" viewBox="0 0 240 96" role="img" aria-label="Illustrative vessel trajectory with widening uncertainty">
-          <defs>
-            <linearGradient id="heroCone" x1="0" x2="1">
-              <stop offset="0" stopColor="#c7dcf5" stopOpacity="0" />
-              <stop offset="1" stopColor="#c7dcf5" stopOpacity=".2" />
-            </linearGradient>
-          </defs>
-          <polygon points="18,76 222,-8 222,32" fill="url(#heroCone)" />
-          <path d="M18,76 C78,60 140,36 222,12" fill="none" stroke="var(--sc-brand-dim)" strokeWidth="1.2" strokeDasharray="1 5" strokeLinecap="round" />
-          <g fill="none" stroke="var(--sc-brand-dim)" strokeWidth="1.2">
-            <polygon transform="translate(18,76) rotate(-24)" points="0,-4 3.2,3 -3.2,3" />
-            <polygon transform="translate(92,53) rotate(-24)" points="0,-4 3.2,3 -3.2,3" />
-            <polygon transform="translate(158,30) rotate(-24)" points="0,-4 3.2,3 -3.2,3" />
-          </g>
-          <polygon className="hero__hud-mark" transform="translate(222,12) rotate(-24)" points="0,-5 4,4 -4,4" fill="var(--sc-brand)" stroke="none" />
-        </svg>
-        <dl>
-          <div><dt>Origin</dt><dd>35.511° N<br />12.604° E</dd></div>
-          <div><dt>Window</dt><dd>T + 24 H</dd></div>
-          <div><dt>Output</dt><dd>Ensemble<br />not certainty</dd></div>
-        </dl>
-        <p>Illustrative coordinates. No operational incident is represented.</p>
-      </SpotlightCard>
-
-      <div className="hero__index" aria-hidden="true">SC / 01</div>
       <a className="hero__scroll" href="#environments" aria-label="Scroll to environments">
         <span />
       </a>

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Header, Footer } from './chrome.jsx';
-import LiveSignalStrip from './LiveSignalStrip.jsx';
 import Hero from './sections/Hero.jsx';
 import Environments from './sections/Environments.jsx';
 import Programme from './sections/Programme.jsx';
@@ -38,7 +37,6 @@ export default function SiteApp() {
     <>
       <ScrollProgress />
       <Header />
-      <LiveSignalStrip />
       <main id="main">
         <Hero />
         <Environments />

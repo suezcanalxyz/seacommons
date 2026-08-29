@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Magnetic } from '../ui/index.js';
+import HeaderLive from './HeaderLive.jsx';
 
 const NAV = [
   ['Environments', '#environments'],
@@ -44,7 +44,7 @@ export function Header() {
         <BrandMark />
         <span>SEA<br />COMMONS</span>
       </a>
-      <p className="site-header__tag">Open maritime research infrastructure</p>
+      <HeaderLive />
 
       <button
         type="button"
@@ -63,11 +63,6 @@ export function Header() {
             {label}
           </a>
         ))}
-        <Magnetic>
-          <a className="site-nav__cta" href="https://play.seacommons.org">
-            Open Play <span aria-hidden="true">↗</span>
-          </a>
-        </Magnetic>
       </nav>
     </header>
   );
