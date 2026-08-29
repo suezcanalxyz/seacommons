@@ -23,9 +23,10 @@ apps/api/     FastAPI backend (Python 3.11+): routes, domain logic, workers, dri
               forensic pipeline, sensor ingestion, intel monitors — mostly undifferentiated
               inside one `core/` package.
 apps/web/     React 19 + Vite operational console (Cesium 3D globe + MapLibre), JS/JSX,
-              partial TypeScript config (tsconfig present, code still .jsx).
+              partial TypeScript config (tsconfig present, code still .jsx). Also builds the
+              institutional site: src/site/ (React), emitted as site.html by the same
+              multi-page Vite build.
 apps/edge/    Cloudflare Worker + Durable Object ("LiveRoom") — the public realtime relay.
-apps/site/    Static institutional site (plain HTML/CSS/JS), separate from the console.
 apps/unreal/  Unreal Engine "Immersive" pixel-streaming prototype — experimental, not part
               of the operational path.
 deploy/       Docker/nginx/systemd deployment manifests.
@@ -46,7 +47,7 @@ the API).
 - **Public Live** (edge worker, `apps/edge/src/live.js`): a deliberately narrower,
   privacy-filtered projection of a subset of intel events — no direct DB access, receives
   only what `core/api/routes/live.py` and `core/live_edge_publisher.py` choose to forward.
-- **Institutional site** (`apps/site/`): fully static, no backend dependency.
+- **Institutional site** (`apps/web/src/site/`): React, no backend dependency; ships in the console's Vite build as `site.html`.
 
 The boundary between "operational" and "public" is enforced in at least three independent
 places with three different rule sets: the FastAPI `authorization_gate` middleware

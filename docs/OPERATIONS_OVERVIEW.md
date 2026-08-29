@@ -11,7 +11,7 @@ most of this.
 
 | Piece | Host | Cost |
 | --- | --- | --- |
-| Institutional site + console (`apps/site`, `apps/web`) | Vercel static + serverless `/api` proxy | Free tier |
+| Institutional site + console (`apps/web`) | Vercel static + serverless `/api` proxy | Free tier |
 | Operational API + monitors + scheduler (`apps/api`) | Oracle Cloud "Always Free" VM (1 GB), systemd + uvicorn | Free |
 | Public demo API | same VM, second service (port 8101, 320 MB cap) | Free |
 | Public Live edge (`apps/edge`) | Cloudflare Worker + Durable Object | Free tier |
