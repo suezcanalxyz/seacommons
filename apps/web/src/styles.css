@@ -1622,9 +1622,25 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 }
 .intel-panel-toggles .intel-nearby-toggle,
 .intel-panel-toggles .intel-ngo-toggle,
-.intel-panel-toggles .intel-forensic-toggle {
+.intel-panel-toggles .intel-forensic-toggle,
+.intel-panel-toggles .intel-details-toggle {
   margin-top: 0;
 }
+
+.intel-details-toggle {
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fbbf24;
+}
+.intel-details-toggle:hover { background: rgba(251, 191, 36, 0.18); }
+.intel-details-panel { display: flex; flex-direction: column; gap: 6px; }
+.intel-details-row { display: flex; flex-wrap: wrap; gap: 4px 10px; color: #9fb6c4; }
+.intel-details-row strong { color: #dfeae7; text-transform: capitalize; }
 
 .intel-forensic-toggle {
   padding: 2px 6px;

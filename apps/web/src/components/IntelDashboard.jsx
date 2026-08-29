@@ -324,6 +324,13 @@ export default function IntelDashboard({
   const [forensicEventId, setForensicEventId] = useState(null);
   const [forensicRecord, setForensicRecord] = useState(null);
   const [forensicLoading, setForensicLoading] = useState(false);
+  // Category/corroboration/vessel-identity panel: open for any event type
+  // (not just distress) since this is exactly the "what does this mean and
+  // who else confirms it" info operators need for vessel_incident,
+  // correlated_alert, ais_anomaly etc.
+  const [detailsEventId, setDetailsEventId] = useState(null);
+  const [vesselDetail, setVesselDetail] = useState(null);
+  const [vesselDetailLoading, setVesselDetailLoading] = useState(false);
   const pollRef = useRef(null);
 
   // Poll source registry
@@ -467,6 +474,25 @@ export default function IntelDashboard({
 
   function toggleUpdates(eventId) {
     setUpdatesEventId((current) => (current === eventId ? null : eventId));
+  }
+
+  async function toggleDetails(eventId, mmsi) {
+    if (detailsEventId === eventId) {
+      setDetailsEventId(null);
+      return;
+    }
+    setDetailsEventId(eventId);
+    setVesselDetail(null);
+    if (!mmsi) return;
+    setVesselDetailLoading(true);
+    try {
+      const resp = await fetch(`${apiBase}/api/v1/mda/vessel/${mmsi}?hours=168`);
+      setVesselDetail(resp.ok ? await resp.json() : { error: true });
+    } catch {
+      setVesselDetail({ error: true });
+    } finally {
+      setVesselDetailLoading(false);
+    }
   }
 
   async function toggleForensic(eventId) {
@@ -638,9 +664,17 @@ export default function IntelDashboard({
         {p.text && (
           <p className="intel-text">{p.text.slice(0, 200)}{p.text.length > 200 ? '…' : ''}</p>
         )}
-        {isDistress && ((coords && !isArea && loadNearestVessels && lifecycle === 'active') || p.repost_count > 0 || !publicMode) && (
+        {((coords && !isArea && loadNearestVessels) || p.repost_count > 0 || !publicMode) && (
           <div className="intel-panel-toggles">
-            {coords && !isArea && loadNearestVessels && lifecycle === 'active' && (
+            <button
+              type="button"
+              className="intel-details-toggle"
+              onClick={(e) => { e.stopPropagation(); toggleDetails(p.id, p.linked_mmsi || p.mmsi); }}
+              title="Cosa significa questa categoria, chi la corrobora, identità della nave collegata"
+            >
+              {detailsEventId === p.id ? '▲ Dettagli' : '▼ Dettagli'}
+            </button>
+            {coords && !isArea && loadNearestVessels && (
               <button
                 type="button"
                 className="intel-nearby-toggle"
@@ -663,14 +697,53 @@ export default function IntelDashboard({
                 type="button"
                 className="intel-forensic-toggle"
                 onClick={(e) => { e.stopPropagation(); toggleForensic(p.id); }}
-                title="Record forense firmato (hash blake3 + firma ed25519) associato a questo evento"
+                title="Record forense firmato (hash blake3 + firma ed25519) associato a questo evento — oggi creato solo per eventi distress"
               >
                 {forensicEventId === p.id ? '▲ Forense' : '▼ Forense'}
               </button>
             )}
           </div>
         )}
-        {isDistress && forensicEventId === p.id && (
+        {detailsEventId === p.id && (
+          <div className="intel-ngo-panel intel-details-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="intel-details-row">
+              <strong>{icon} {p.type.replace(/_/g, ' ')}</strong>
+              <span>{descriptionOf(p.type)}</span>
+            </div>
+            {p.type === 'correlated_alert' && (
+              <div className="intel-details-row">
+                {Number.isFinite(Number(p.confidence)) && (
+                  <span>confidenza {(Number(p.confidence) * 100).toFixed(0)}%</span>
+                )}
+                {Array.isArray(p.contributing_sources) && p.contributing_sources.length > 0 && (
+                  <span>corroborato da: {p.contributing_sources.join(', ')}</span>
+                )}
+              </div>
+            )}
+            {(p.linked_mmsi || p.mmsi) && (
+              vesselDetailLoading ? (
+                <span className="intel-nearby-loading">Screening nave…</span>
+              ) : !vesselDetail || vesselDetail.error ? (
+                <span className="intel-nearby-loading">Nessun dato identità per MMSI {p.linked_mmsi || p.mmsi}.</span>
+              ) : (
+                <div className="mda-vessel-card">
+                  <strong>{vesselDetail.static?.name || vesselDetail.mmsi}</strong>
+                  <span>IMO {vesselDetail.static?.imo || '—'} · flag {vesselDetail.static?.flag || vesselDetail.identity?.mid_flag || '—'}
+                    {' · '}{vesselDetail.track_points?.length ?? 0} fix recenti</span>
+                  {vesselDetail.identity?.risk_flags?.length > 0 && (
+                    <div className="mda-risk">{vesselDetail.identity.risk_flags.map((f) => (
+                      <span key={f} className="mda-risk-flag">{f.replace(/_/g, ' ')}</span>
+                    ))}</div>
+                  )}
+                  {vesselDetail.identity?.sanctions?.length > 0 && (
+                    <div className="mda-sanctions">⚠ {vesselDetail.identity.sanctions[0].list}: {vesselDetail.identity.sanctions[0].program}</div>
+                  )}
+                </div>
+              )
+            )}
+          </div>
+        )}
+        {forensicEventId === p.id && (
           <div className="intel-ngo-panel intel-forensic-panel" onClick={(e) => e.stopPropagation()}>
             {forensicLoading ? (
               <span className="intel-nearby-loading">Verifica record forense…</span>
@@ -708,7 +781,7 @@ export default function IntelDashboard({
             )}
           </div>
         )}
-        {isDistress && updatesEventId === p.id && (
+        {updatesEventId === p.id && (
           <div className="intel-ngo-panel" onClick={(e) => e.stopPropagation()}>
             <ul className="intel-update-list">
               {(p.thread_reposts || []).map((r) => (
@@ -726,7 +799,7 @@ export default function IntelDashboard({
             </ul>
           </div>
         )}
-        {isDistress && !isArea && lifecycle === 'active' && vesselsForEventId === p.id && (
+        {!isArea && vesselsForEventId === p.id && (
           <div className="intel-nearby-vessels" onClick={(e) => e.stopPropagation()}>
             {vesselsLoading ? (
               <span className="intel-nearby-loading">Ricerca navi…</span>
