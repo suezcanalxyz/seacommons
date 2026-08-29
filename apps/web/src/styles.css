@@ -2469,6 +2469,9 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 
 .legend-panel {
   min-width: 168px;
+  max-width: 300px;
+  max-height: 70vh;
+  overflow-y: auto;
   padding: 8px 10px;
   background: rgba(4, 12, 17, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -2492,6 +2495,24 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   padding: 3px 0;
   font-size: 11px;
   color: #dfeae7;
+}
+.legend-row--defined {
+  align-items: flex-start;
+  padding: 5px 0;
+}
+.legend-row--defined > span:first-child {
+  margin-top: 3px;
+}
+.legend-row--defined > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.legend-row--defined strong { font-weight: 600; }
+.legend-row--defined small {
+  color: rgba(223, 234, 231, 0.6);
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════

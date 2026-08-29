@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { descriptionOf } from '../features/intel/categories.js';
+
 const ALARM_PHONE_SOURCE = 'Alarm Phone';
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
 const SEV_LABELS = ['critical', 'high', 'medium', 'low'];
@@ -526,7 +528,7 @@ export default function IntelDashboard({
       >
         <div className="intel-event-header">
           <span className={`intel-sev intel-sev--${p.severity || 'low'}`}>{p.severity || 'low'}</span>
-          <span className="intel-type-icon" title={p.type}>{icon}</span>
+          <span className="intel-type-icon" title={`${p.type.replace(/_/g, ' ')} — ${descriptionOf(p.type)}`}>{icon}</span>
           <span className={`intel-verif intel-verif--${verif}`} title={`Verification: ${verif.replace(/_/g, ' ')}`}>
             {VERIF_LABEL[verif] || verif.replace(/_/g, ' ')}
           </span>

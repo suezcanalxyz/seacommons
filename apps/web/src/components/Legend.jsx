@@ -31,9 +31,10 @@ const BASE_ROWS = [
 ];
 
 const DOMAIN_ROWS = [
-  ['sanctions', 'Alert · sanctions / dark fleet'],
-  ['grey_zone', 'Alert · grey-zone / infrastructure'],
-  ['safety', 'Alert · vessel safety'],
+  ['sar', 'Alert · search & rescue', 'A distress report corroborated by more than one source.'],
+  ['sanctions', 'Alert · sanctions / dark fleet', 'Spoofing, dark ship-to-ship transfer, or identity fraud tied to sanctions exposure.'],
+  ['grey_zone', 'Alert · grey-zone / infrastructure', 'Proximity to subsea cables/pipelines/platforms, or a warfare/grey-zone context match.'],
+  ['safety', 'Alert · vessel safety', 'A vessel casualty (collision, fire, damage) or a natural-hazard overlap with a vessel.'],
 ];
 
 export default function Legend() {
@@ -53,16 +54,22 @@ export default function Legend() {
         <div className="legend-panel">
           <div className="legend-panel-title">OSINT signals</div>
           {SIGNAL_CATEGORIES.filter((c) => c.key !== 'other').map((cat) => (
-            <div key={cat.key} className="legend-row">
+            <div key={cat.key} className="legend-row legend-row--defined" title={cat.description}>
               <Swatch shape={cat.key === 'fused' ? 'ring' : 'circle'} color={cat.color} />
-              <span>{cat.label}</span>
+              <span>
+                <strong>{cat.label}</strong>
+                <small>{cat.description}</small>
+              </span>
             </div>
           ))}
           <div className="legend-panel-title">Correlated alert domain</div>
-          {DOMAIN_ROWS.map(([key, label]) => (
-            <div key={key} className="legend-row">
+          {DOMAIN_ROWS.map(([key, label, description]) => (
+            <div key={key} className="legend-row legend-row--defined" title={description}>
               <Swatch shape="ring" color={DOMAIN_COLORS[key]} />
-              <span>{label}</span>
+              <span>
+                <strong>{label}</strong>
+                <small>{description}</small>
+              </span>
             </div>
           ))}
           <div className="legend-panel-title">Map</div>
