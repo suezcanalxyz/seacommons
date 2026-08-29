@@ -81,7 +81,7 @@ class AISAnomalyDetector:
 
     def _on_feed_position(
         self, mmsi: str, name: str, lat: float, lon: float,
-        sog: float | None, nav_status: int | None,
+        sog: float | None, nav_status: int | None = None, *_extra,
     ) -> None:
         if self._running:
             self.process_position(mmsi, name, lat, lon, sog or 0.0, "")

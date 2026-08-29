@@ -67,8 +67,40 @@ async def vessel_registry(since: Optional[str] = Query(default=None)):
 @router.get("/api/v1/vessels/stats")
 async def vessel_stats():
     from core.vessels.registry import registry
+    from core.vessels.track_store import track_store
 
-    return registry.stats()
+    return {**registry.stats(), "track_store": track_store.stats()}
+
+
+@router.get("/api/v1/vessels/{mmsi}/track")
+async def vessel_track(
+    mmsi: str,
+    hours: float = Query(default=48.0, ge=0.1, le=24 * 90),
+    limit: int = Query(default=5000, ge=1, le=50_000),
+):
+    """AIS position history for one MMSI as a GeoJSON LineString + points."""
+    from datetime import datetime, timedelta, timezone
+
+    from core.vessels.track_store import track_store
+
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    points = track_store.track(mmsi, since=since, limit=limit)
+    coords = [[p["lon"], p["lat"]] for p in points]
+    features = []
+    if len(coords) >= 2:
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": coords},
+            "properties": {"mmsi": mmsi, "points": len(coords)},
+        })
+    for p in points:
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [p["lon"], p["lat"]]},
+            "properties": p,
+        })
+    return {"type": "FeatureCollection", "features": features,
+            "meta": {"mmsi": mmsi, "points": len(points), "hours": hours}}
 
 
 @router.get("/api/v1/vessels/nearest")

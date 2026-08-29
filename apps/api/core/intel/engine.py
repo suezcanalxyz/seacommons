@@ -19,9 +19,11 @@ class IntelEngine:
         self._twikit: object | None = None
         self._news: object | None = None
         self._ais: object | None = None
+        self._track_store: object | None = None
         self._vessel_incidents: object | None = None
         self._ais_anomaly: object | None = None
         self._drift_refresh: object | None = None
+        self._mda_watch: object | None = None
         self._gdacs: object | None = None
         self._started = False
 
@@ -88,6 +90,14 @@ class IntelEngine:
 
         if ais_enabled:
             try:
+                from core.vessels.track_store import track_store
+                track_store.start()
+                self._track_store = track_store
+                logger.info("IntelEngine: AIS track store started")
+            except Exception as exc:
+                logger.warning("IntelEngine: AIS track store failed to start: %s", exc)
+
+            try:
                 from core.intel.ais_spike_detector import AISSpikeDetector
                 self._ais = AISSpikeDetector()
                 self._ais.start()  # type: ignore[attr-defined]
@@ -118,6 +128,14 @@ class IntelEngine:
             except Exception as exc:
                 logger.warning("IntelEngine: AIS anomaly detector failed to start: %s", exc)
 
+            try:
+                from core.mda.watch import mda_watch
+                mda_watch.start()
+                self._mda_watch = mda_watch
+                logger.info("IntelEngine: MDA watch (rendezvous / infra / gap / identity) started")
+            except Exception as exc:
+                logger.warning("IntelEngine: MDA watch failed to start: %s", exc)
+
         if gdacs_enabled:
             try:
                 from core.intel.gdacs_monitor import GDACSMonitor
@@ -133,8 +151,10 @@ class IntelEngine:
             self._twikit,
             self._news,
             self._ais,
+            self._track_store,
             self._vessel_incidents,
             self._ais_anomaly,
+            self._mda_watch,
             self._drift_refresh,
             self._gdacs,
         ):
@@ -164,6 +184,8 @@ class IntelEngine:
             "twitter_api": self._twitter is not None,
             "news": self._news is not None,
             "ais_spike": self._ais is not None,
+            "track_store": self._track_store is not None,
+            "mda_watch": self._mda_watch is not None,
             "vessel_incidents": self._vessel_incidents is not None,
             "ais_anomaly": self._ais_anomaly is not None,
             "gdacs": self._gdacs is not None,

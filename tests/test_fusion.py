@@ -156,6 +156,36 @@ def test_gdacs_high_severity_alerts_without_case() -> None:
         assert db.query(CaseDB).count() == 0
 
 
+def test_dark_sts_rendezvous_opens_sanctions_case() -> None:
+    ev = _add(
+        type="ais_rendezvous", severity="high", lat=36.5, lon=22.7,
+        title="Tanker STS rendezvous — A / B", source="mda", linked_mmsi="209111000",
+        metadata={"anomaly_type": "ais_rendezvous", "maritime_domain": "sanctions",
+                  "tanker": True, "dark": True, "sts_zone": "Laconian Gulf",
+                  "vessels": [{"mmsi": "209111000"}, {"mmsi": "636222000"}]},
+    )
+    fusion.evaluate(ev)
+    alerts = _alerts()
+    assert len(alerts) == 1
+    assert alerts[0].metadata["alert_type"] == "dark_sts"
+    from core.db.models import CaseDB
+    from core.db.session import session_scope
+    with session_scope() as db:
+        cases = db.query(CaseDB).all()
+        assert len(cases) == 1 and cases[0].case_type == "dark_rendezvous"
+
+
+def test_sanctioned_vessel_sighting_opens_case() -> None:
+    ev = _add(
+        type="vessel_identity", severity="high", lat=34.0, lon=18.0,
+        title="Sanctioned vessel: SHADOW STAR", source="mda", linked_mmsi="273999000",
+        metadata={"anomaly_type": "sdn_match", "maritime_domain": "sanctions"},
+    )
+    fusion.evaluate(ev)
+    assert len(_alerts()) == 1
+    assert _alerts()[0].metadata["alert_type"] == "sdn_match"
+
+
 def test_register_is_idempotent() -> None:
     fusion.register()
     fusion.register()

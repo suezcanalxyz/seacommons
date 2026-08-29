@@ -24,6 +24,9 @@ export const LAYER_GROUPS = [
   { key: 'fused',       label: 'Correlated alerts', layers: ['intel-fused-core', 'intel-fused-pulse'] },
   ...INTEL_CATEGORY_GROUPS,
   { key: 'spikes',      label: 'AIS anomalies',  layers: ['intel-spike-layer'], defaultOff: true },
+  { key: 'mda_anomaly', label: 'MDA · dark-vessel signals', layers: ['mda-anomaly-layer'], defaultOff: true },
+  { key: 'mda_infra',   label: 'MDA · cables / pipelines / STS zones', layers: ['mda-infra-lines', 'mda-infra-points', 'mda-sts-zones'], defaultOff: true },
+  { key: 'mda_jamming', label: 'MDA · GNSS jamming', layers: ['mda-jamming-fill'], defaultOff: true },
   { key: 'platforms',   label: 'Platforms',      layers: ['platforms-layer', 'platforms-halo'] },
   { key: 'alerts',      label: 'Past SAR cones', layers: ['alerts-cone', 'alerts-layer'] },
 ];

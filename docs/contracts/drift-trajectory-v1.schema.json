@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seacommons.org/contracts/drift-trajectory-v1.schema.json",
+  "title": "SeaCommons client-side drift trajectory v1",
+  "description": "A single deterministic WGS84 trajectory produced locally by the Pyodide drift kernel.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "geometry", "properties"],
+  "properties": {
+    "type": { "const": "Feature" },
+    "geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "coordinates"],
+      "properties": {
+        "type": { "const": "LineString" },
+        "coordinates": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              { "type": "number", "minimum": -180, "maximum": 180 },
+              { "type": "number", "minimum": -90, "maximum": 90 }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      }
+    },
+    "properties": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "engine",
+        "engine_version",
+        "model",
+        "vessel_type",
+        "forcing",
+        "timestamps_utc",
+        "speed_ms",
+        "operational_use"
+      ],
+      "properties": {
+        "schema_version": { "const": "org.seacommons.drift-trajectory/v1" },
+        "engine": { "const": "seacommons-pyodide" },
+        "engine_version": { "type": "string", "minLength": 1 },
+        "model": { "enum": ["leeway", "oceandrift"] },
+        "vessel_type": { "type": "string", "minLength": 1 },
+        "forcing": { "type": "string", "minLength": 1 },
+        "timestamps_utc": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "type": "string", "format": "date-time" }
+        },
+        "speed_ms": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "type": "number", "minimum": 0 }
+        },
+        "operational_use": { "const": false },
+        "leeway_object_key": { "type": "string", "minLength": 1 },
+        "leeway_side": { "enum": ["left", "right", "mean"] },
+        "wind_drift_factor": { "type": "number", "minimum": 0, "maximum": 0.2 }
+      }
+    }
+  }
+}

@@ -70,8 +70,8 @@ class FusionSignal:
     event_id: str
     kind: str
     anomaly_type: str
-    lat: float
-    lon: float
+    lat: Optional[float]
+    lon: Optional[float]
     ts: float  # epoch seconds
     mmsi: str = ""
     imo: str = ""
@@ -129,7 +129,9 @@ def normalize(event: IntelEvent) -> Optional[FusionSignal]:
     """Project an IntelEvent onto the fields the rules need. None → skip."""
     if event.type == ALERT_TYPE:
         return None  # never correlate an alert with itself
-    if event.lat is None or event.lon is None:
+    # vessel_identity events (a sanctions hit / duplicate MMSI) are worth
+    # correlating even without a position — everything else needs one.
+    if (event.lat is None or event.lon is None) and event.type != "vessel_identity":
         return None
     meta = event.metadata or {}
     anomaly_type = str(
@@ -145,8 +147,8 @@ def normalize(event: IntelEvent) -> Optional[FusionSignal]:
         event_id=event.id,
         kind=event.type,
         anomaly_type=anomaly_type,
-        lat=float(event.lat),
-        lon=float(event.lon),
+        lat=float(event.lat) if event.lat is not None else None,
+        lon=float(event.lon) if event.lon is not None else None,
         ts=_epoch(event.timestamp_utc),
         mmsi=mmsi,
         imo=imo,
@@ -229,16 +231,18 @@ def _rule_spoofing(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]
 
 
 def _nearest_infrastructure(lat: float, lon: float, max_km: float) -> Optional[dict]:
-    best: Optional[dict] = None
+    """Nearest subsea cable / pipeline / platform, from the MDA reference index
+    (real geometry from EMODnet / submarinecablemap, with a bundled fallback)."""
     try:
-        from core.api.routes.zones import _OIL_PLATFORMS
+        from core.mda.reference import reference
 
-        for p_lon, p_lat, name, country, _op, _ptype in _OIL_PLATFORMS:
-            dist = haversine_km(lat, lon, p_lat, p_lon)
-            if dist <= max_km and (best is None or dist < best["distance_km"]):
-                best = {"name": f"{name} platform ({country})", "distance_km": dist}
-    except Exception:  # pragma: no cover - static import
+        hit = reference.nearest_infrastructure(lat, lon, max_km=max_km)
+        if hit is not None:
+            return {"name": f"{hit.name} ({hit.kind})", "distance_km": hit.distance_km,
+                    "kind": hit.kind}
+    except Exception:  # pragma: no cover - fall back to the bundled corridors
         pass
+    best: Optional[dict] = None
     for name, waypoints in _SUBSEA_CORRIDORS:
         for i in range(len(waypoints) - 1):
             dist = _point_to_segment_km(lat, lon, waypoints[i], waypoints[i + 1])
@@ -323,9 +327,144 @@ def _rule_single_source(new: FusionSignal, event: IntelEvent) -> Optional[FusedA
     return None
 
 
+def _rule_dark_sts(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]:
+    """A ship-to-ship rendezvous (core/mda/watch.scan_rendezvous) — always an
+    alert; opens a sanctions case when it involves a tanker, a dark party, or
+    sits in a known STS zone."""
+    if new.kind != "ais_rendezvous":
+        return None
+    meta = event.metadata or {}
+    tanker = bool(meta.get("tanker"))
+    dark = bool(meta.get("dark"))
+    zone = meta.get("sts_zone")
+    vessels = meta.get("vessels") or []
+    ids = [new.event_id]
+    # fold in a matching sanctions / identity flag on either MMSI
+    mmsis = {v.get("mmsi") for v in vessels} | {new.mmsi}
+    sanctioned = False
+    for other in _recent_signals(new.event_id):
+        if other.kind == "vessel_identity" and other.mmsi in mmsis:
+            ids.append(other.event_id)
+            sanctioned = True
+    confidence = round(min(0.95, 0.5 + 0.15 * tanker + 0.15 * dark + 0.1 * bool(zone) + 0.2 * sanctioned), 3)
+    return FusedAlert(
+        alert_type="dark_sts" if dark else "sts_transfer",
+        domain="sanctions",
+        severity="high" if (tanker or dark or sanctioned) else "medium",
+        confidence=confidence,
+        lat=new.lat, lon=new.lon, ts=new.ts,
+        contributing_event_ids=ids,
+        contributing_sources=sorted({new.source} | {"mda"}),
+        summary=(f"{'Dark ' if dark else ''}ship-to-ship transfer"
+                 + (f" in {zone}" if zone else "") + f": {event.title[:120]}"),
+        open_case=bool(tanker or dark or zone or sanctioned),
+        case_type="dark_rendezvous",
+        vessel_mmsi=new.mmsi,
+    )
+
+
+def _rule_identity_fraud(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]:
+    """A sanctioned vessel sighting, a duplicate MMSI, or an identity anomaly
+    corroborated by a second signal on the same hull."""
+    if new.kind != "vessel_identity":
+        return None
+    meta = event.metadata or {}
+    atype = new.anomaly_type
+    if atype in ("sdn_match", "mmsi_duplicate"):
+        return FusedAlert(
+            alert_type=atype,
+            domain="sanctions",
+            severity="high",
+            confidence=0.9 if atype == "sdn_match" else 0.75,
+            lat=new.lat if new.lat is not None else 0.0,
+            lon=new.lon if new.lon is not None else 0.0,
+            ts=new.ts,
+            contributing_event_ids=[new.event_id],
+            contributing_sources=[new.source],
+            summary=event.title[:180],
+            open_case=True,
+            case_type="sanctions_watch",
+            vessel_mmsi=new.mmsi,
+        )
+    # a weaker identity anomaly needs a corroborating anomaly on the same MMSI
+    partners = [s for s in _recent_signals(new.event_id)
+                if s.mmsi and s.mmsi == new.mmsi
+                and s.kind in ("ais_anomaly", "ais_rendezvous")]
+    if not partners:
+        return None
+    return FusedAlert(
+        alert_type="identity_fraud",
+        domain="sanctions",
+        severity="high",
+        confidence=0.7,
+        lat=new.lat if new.lat is not None else partners[0].lat,
+        lon=new.lon if new.lon is not None else partners[0].lon,
+        ts=new.ts,
+        contributing_event_ids=[new.event_id, partners[0].event_id],
+        contributing_sources=sorted({new.source, partners[0].source}),
+        summary=f"Identity anomaly + {partners[0].anomaly_type} on MMSI {new.mmsi}",
+        open_case=True,
+        case_type="sanctions_watch",
+        vessel_mmsi=new.mmsi,
+    )
+
+
+_STRIKE_KINDS = {"conflict_event", "navwarning", "vessel_incident"}
+_STRIKE_ANOM = {"strike_warning", "conflict_event", "explosion", "fire",
+                "not_under_command", "aground", "missile_test"}
+
+
+def _rule_maritime_strike(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]:
+    """A vessel incident / conflict event / strike warning corroborated by two
+    other grey-zone signals nearby in space and time = a probable strike on
+    shipping (Black Sea, Red Sea, E. Med)."""
+    if new.kind not in _STRIKE_KINDS:
+        return None
+    if new.kind == "vessel_incident" and new.anomaly_type not in _STRIKE_ANOM:
+        return None
+    if new.lat is None or new.lon is None:
+        return None
+    window_s = 6 * 3600
+    corrob: list[FusionSignal] = []
+    kinds_seen: set[str] = set()
+    for other in _recent_signals(new.event_id):
+        if other.lat is None or other.kind == new.kind:
+            continue
+        if abs(other.ts - new.ts) > window_s:
+            continue
+        if haversine_km(new.lat, new.lon, other.lat, other.lon) > 120:
+            continue
+        if other.kind in ("conflict_event", "navwarning", "vessel_incident") \
+                or other.anomaly_type in ("seismic", "explosion") \
+                or (other.kind == "ais_anomaly" and other.anomaly_type in ("gap", "long_gap")):
+            if other.kind not in kinds_seen:
+                corrob.append(other)
+                kinds_seen.add(other.kind)
+    if len(corrob) < 2:
+        return None
+    ids = [new.event_id, *[c.event_id for c in corrob]]
+    return FusedAlert(
+        alert_type="maritime_strike",
+        domain="grey_zone",
+        severity="critical",
+        confidence=round(min(0.95, 0.55 + 0.15 * len(corrob)), 3),
+        lat=new.lat, lon=new.lon, ts=new.ts,
+        contributing_event_ids=ids,
+        contributing_sources=sorted({new.source, *[c.source for c in corrob]}),
+        summary=(f"Probable strike on shipping — {event.title[:120]} "
+                 f"(+{len(corrob)} corroborating signals)"),
+        open_case=True,
+        case_type="vessel_incident",
+        vessel_mmsi=new.mmsi,
+    )
+
+
 _RULES: list[Callable[[FusionSignal, IntelEvent], Optional[FusedAlert]]] = [
     _rule_sar_multisource,
     _rule_spoofing,
+    _rule_dark_sts,
+    _rule_identity_fraud,
+    _rule_maritime_strike,
     _rule_grey_zone,
     _rule_single_source,
 ]
@@ -424,11 +563,16 @@ def _open_case_for_alert(alert: FusedAlert, alert_event_id: str) -> Optional[str
                 logger.info("fusion: open case %s already covers cluster %s", existing[0], alert.cluster_id)
                 return existing[0]
             priority = "critical" if alert.confidence >= 0.8 else "high"
+            from core.cases.service import CASE_TYPES
+
+            case_type = (alert.case_type if alert.case_type in CASE_TYPES
+                         and alert.case_type != "unspecified"
+                         else _DOMAIN_CASE_TYPE.get(alert.domain, alert.case_type))
             case = open_case(
                 db,
                 title=f"[{alert.domain}] {alert.alert_type}: {alert.summary}"[:256],
                 created_by="fusion-engine",
-                case_type=_DOMAIN_CASE_TYPE.get(alert.domain, alert.case_type),
+                case_type=case_type,
                 priority=priority,
                 sensitivity="restricted",
                 summary=alert.summary,
@@ -465,6 +609,10 @@ def evaluate(event: IntelEvent) -> None:
             })
         except Exception as exc:  # pragma: no cover
             logger.debug("fusion: correlation-engine ingest skipped: %s", exc)
+    # Rules are ordered most-specific first; the first that fires for an event
+    # wins (a `maritime_strike` should not also raise a generic `vessel_casualty`
+    # for the same hull). A rule can still fire later for a *different* event of
+    # the same incident.
     for rule in _RULES:
         try:
             alert = rule(signal, event)
@@ -473,6 +621,7 @@ def evaluate(event: IntelEvent) -> None:
             continue
         if alert is not None:
             _emit(alert)
+            break
 
 
 _REGISTERED = False

@@ -16,8 +16,13 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+
+def _soon() -> datetime:
+    """A first-run time a couple of minutes out, so a slow pull never blocks boot."""
+    return datetime.now(timezone.utc) + timedelta(minutes=3)
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +329,45 @@ def _job_forensic_scan() -> None:
         logger.warning("Scheduler forensic_scan failed: %s", exc)
 
 
+def _job_mda_reference_refresh() -> None:
+    """Pull the authoritative open reference layers (EEZ / MPA / pipelines /
+    platforms). Best-effort — a no-op offline."""
+    try:
+        from core.mda.reference import reference
+
+        result = reference.refresh()
+        logger.info("MDA reference refresh: %s", result)
+    except Exception as exc:
+        logger.warning("Scheduler mda_reference_refresh failed: %s", exc)
+
+
+def _job_mda_daily() -> None:
+    """Daily MDA data pulls: sanctions lists, GPS-jamming zones, GFW events,
+    VIIRS detections, track-store prune. Each sub-step is best-effort."""
+    for label, dotted in (
+        ("sanctions", "core.mda.identity:refresh_sanctions"),
+        ("jamming", "core.mda.jamming:refresh"),
+        ("gfw", "core.intel.gfw_monitor:poll_once"),
+        ("viirs", "core.intel.viirs_monitor:poll_once"),
+        ("warfare", "core.mda.warfare:poll_once"),
+    ):
+        try:
+            mod_name, fn_name = dotted.split(":")
+            import importlib
+
+            fn = getattr(importlib.import_module(mod_name), fn_name, None)
+            if fn is not None:
+                fn()
+        except Exception as exc:
+            logger.info("MDA daily %s skipped: %s", label, exc)
+    try:
+        from core.vessels.track_store import track_store
+
+        track_store.prune()
+    except Exception as exc:
+        logger.info("MDA daily track prune skipped: %s", exc)
+
+
 # ── Scheduler lifecycle ───────────────────────────────────────────────────────
 
 def start() -> None:
@@ -362,11 +406,22 @@ def start() -> None:
                           id="forensic_scan",  replace_existing=True,
                           max_instances=1, misfire_grace_time=3600)
 
+        scheduler.add_job(_job_mda_reference_refresh, IntervalTrigger(days=14),
+                          id="mda_reference_refresh", replace_existing=True,
+                          max_instances=1, misfire_grace_time=3600,
+                          next_run_time=_soon())
+
+        scheduler.add_job(_job_mda_daily, IntervalTrigger(hours=24),
+                          id="mda_daily", replace_existing=True,
+                          max_instances=1, misfire_grace_time=3600,
+                          next_run_time=_soon())
+
         scheduler.start()
         _scheduler = scheduler
         logger.info(
             "Background scheduler started: refresh_news(30m), source_health(15m), "
-            "iom_incidents(1h), forensic_scan(6h) [drift: manual-only]"
+            "iom_incidents(1h), forensic_scan(6h), mda_reference(14d), mda_daily(24h) "
+            "[drift: manual-only]"
         )
 
 

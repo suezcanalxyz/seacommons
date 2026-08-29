@@ -9,6 +9,7 @@ import IntelDashboard from './components/IntelDashboard.jsx';
 import LayerToggles, { LAYER_GROUPS } from './components/LayerToggles.jsx';
 import Legend from './components/Legend.jsx';
 import AlertRail from './components/AlertRail.jsx';
+import MdaPanel from './components/MdaPanel.jsx';
 import { categoryColorExpression, INTEL_MAP_CATEGORIES } from './features/intel/categories.js';
 import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
@@ -858,6 +859,31 @@ function App() {
       .catch(() => {});
   }, [apiBase, isPublicLiveHost]);
 
+  // ── MDA / dark-vessel layers (operator only) ──────────────────────────────
+  const [mdaReference, setMdaReference] = useState({ type: 'FeatureCollection', features: [] });
+  const [mdaJamming, setMdaJamming] = useState({ type: 'FeatureCollection', features: [] });
+  const [mdaAnomalies, setMdaAnomalies] = useState([]);
+  useEffect(() => {
+    if (isPublicLiveHost) return undefined;
+    let alive = true;
+    const pull = async () => {
+      try {
+        const [ref, jam, anom] = await Promise.all([
+          fetchJson(apiBase, '/api/v1/mda/reference').catch(() => null),
+          fetchJson(apiBase, '/api/v1/mda/jamming').catch(() => null),
+          fetchJson(apiBase, '/api/v1/mda/anomalies?hours=72').catch(() => null),
+        ]);
+        if (!alive) return;
+        if (ref?.features) setMdaReference(ref);
+        if (jam?.features) setMdaJamming(jam);
+        if (Array.isArray(anom?.anomalies)) setMdaAnomalies(anom.anomalies);
+      } catch { /* offline */ }
+    };
+    pull();
+    const t = window.setInterval(pull, 90_000);
+    return () => { alive = false; window.clearInterval(t); };
+  }, [apiBase, isPublicLiveHost]);
+
   // ── Rehydrate case history from the DB (survives page refresh) ──────────────
   // GeoJSON is loaded lazily on "Show" to keep the initial payload small.
   useEffect(() => {
@@ -1088,6 +1114,9 @@ function App() {
         map.addSource('sar-case',          { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('proximity-lines',   { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('proximity-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('mda-reference',     { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('mda-jamming',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('mda-anomaly',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-events',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-distress',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-fused',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -1118,8 +1147,60 @@ function App() {
         });
 
         // ── Layer z-order (bottom → top) ─────────────────────────────────────
-        // weather → platforms → intel-drift (bg) → alerts → sar-case
+        // weather → MDA context → platforms → intel-drift (bg) → alerts → sar-case
         // → proximity → vessels → NGO → intel-drift-points → intel-events → sar-impact
+
+        // ── MDA / dark-vessel context layers (operator only, off by default) ──
+        map.addLayer({
+          id: 'mda-jamming-fill', type: 'fill', source: 'mda-jamming',
+          layout: { visibility: 'none' },
+          paint: {
+            'fill-color': '#a855f7',
+            'fill-opacity': ['interpolate', ['linear'], ['coalesce', ['get', 'score'], 0.3], 0.25, 0.06, 1, 0.22],
+          },
+        });
+        map.addLayer({
+          id: 'mda-infra-lines', type: 'line', source: 'mda-reference',
+          filter: ['in', ['get', 'kind'], ['literal', ['cable', 'pipeline']]],
+          layout: { visibility: 'none' },
+          paint: {
+            'line-color': ['match', ['get', 'kind'], 'cable', '#38bdf8', '#f59e0b'],
+            'line-width': 1.4, 'line-opacity': 0.7, 'line-dasharray': [3, 2],
+          },
+        });
+        map.addLayer({
+          id: 'mda-infra-points', type: 'circle', source: 'mda-reference',
+          filter: ['==', ['get', 'kind'], 'platform'],
+          layout: { visibility: 'none' },
+          paint: {
+            'circle-radius': 4, 'circle-color': 'rgba(250,204,21,0.15)',
+            'circle-stroke-color': '#facc15', 'circle-stroke-width': 1.2,
+          },
+        });
+        map.addLayer({
+          id: 'mda-sts-zones', type: 'fill', source: 'mda-reference',
+          filter: ['==', ['get', 'kind'], 'sts_zone'],
+          layout: { visibility: 'none' },
+          paint: { 'fill-color': '#f472b6', 'fill-opacity': 0.08, 'fill-outline-color': '#f472b6' },
+        });
+        map.addLayer({
+          id: 'mda-anomaly-layer', type: 'circle', source: 'mda-anomaly',
+          layout: { visibility: 'none' },
+          paint: {
+            'circle-radius': ['match', ['get', 'type'], 'correlated_alert', 7, 5],
+            'circle-color': ['match', ['get', 'type'],
+              'ais_rendezvous', '#f472b6',
+              'vessel_identity', '#ef4444',
+              'dark_candidate', '#4ade80',
+              'conflict_event', '#f97316',
+              'navwarning', '#eab308',
+              'correlated_alert', '#ffb347',
+              '#60a5fa'],
+            'circle-opacity': 0.95,
+            'circle-stroke-width': ['match', ['get', 'severity'], 'critical', 2.4, 'high', 1.6, 1],
+            'circle-stroke-color': '#04131a',
+          },
+        });
 
         // Oil/gas platforms — static infrastructure, rendered just above weather
         map.addLayer({
@@ -1730,7 +1811,7 @@ function App() {
         // shares the same hover popup and click-to-open behaviour.
         const _intelClickLayers = [
           ...INTEL_MAP_CATEGORIES.map((c) => `intel-cat-${c.key}`),
-          'intel-events-layer', 'intel-spike-layer', 'intel-fused-core',
+          'intel-events-layer', 'intel-spike-layer', 'intel-fused-core', 'mda-anomaly-layer',
         ];
         for (const lid of _intelClickLayers) {
           map.on('mouseenter', lid, () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -1988,6 +2069,25 @@ function App() {
     map.getSource('intel-fused')?.setData({ type: 'FeatureCollection', features: fused });
     map.getSource('intel-spike')?.setData({ type: 'FeatureCollection', features: spikes });
   }, [intelEvents, mapReady]);
+
+  // MDA layer data
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
+    map.getSource('mda-reference')?.setData(mdaReference);
+    map.getSource('mda-jamming')?.setData(mdaJamming);
+    map.getSource('mda-anomaly')?.setData({
+      type: 'FeatureCollection',
+      features: mdaAnomalies
+        .filter((a) => Number.isFinite(a.lat) && Number.isFinite(a.lon))
+        .map((a) => ({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [a.lon, a.lat] },
+          properties: { id: a.id, type: a.type, severity: a.severity, title: a.title,
+            anomaly_type: a.anomaly_type, mmsi: a.mmsi },
+        })),
+    });
+  }, [mdaReference, mdaJamming, mdaAnomalies, mapReady]);
 
   // Live nearby vessels: AIS positions around each active distress point,
   // refreshed on an interval. /api/v1/vessels/nearest reads an already-cached
@@ -2915,9 +3015,9 @@ function App() {
       <nav className="workspace-nav" aria-label="Operational views">
         <span className={`runtime-badge runtime-badge--${APP_PROFILE}`}>{APP_PROFILE}</span>
         <button className={!sidebarOpen ? 'is-active' : ''} onClick={() => setSidebarOpen(false)}>Map</button>
-        {['cases','live','osint','settings'].map((view) => (
+        {['cases','live','osint','mda','settings'].map((view) => (
           <button key={view} className={sidebarOpen && activePanel === view ? 'is-active' : ''} onClick={() => { setActivePanel(view); setSidebarOpen(true); }}>
-            {view === 'settings' ? 'Config' : view}
+            {view === 'settings' ? 'Config' : view === 'mda' ? 'MDA' : view}
           </button>
         ))}
       </nav>
@@ -2932,6 +3032,9 @@ function App() {
             <button className={activePanel === 'live'     ? 'is-active' : ''} onClick={() => setActivePanel('live')}>Live</button>
             <button className={activePanel === 'osint'    ? 'is-active' : ''} onClick={() => setActivePanel('osint')}>
               OSINT{intelEvents.length > 0 && <span className="tab-badge">{intelEvents.length}</span>}
+            </button>
+            <button className={activePanel === 'mda'      ? 'is-active' : ''} onClick={() => setActivePanel('mda')}>
+              MDA{mdaAnomalies.length > 0 && <span className="tab-badge">{mdaAnomalies.length}</span>}
             </button>
             <button className={activePanel === 'settings' ? 'is-active' : ''} onClick={() => setActivePanel('settings')}>Config</button>
           </div>
@@ -3011,6 +3114,16 @@ function App() {
               mapRef={mapRef}
               loadNearestVessels={loadNearestVessels}
               setSidebarOpen={setSidebarOpen}
+            />
+          ) : null}
+
+          {activePanel === 'mda' ? (
+            <MdaPanel
+              apiBase={apiBase}
+              fetchJson={fetchJson}
+              anomalies={mdaAnomalies}
+              onFocus={(lat, lon) => mapRef.current?.flyTo({ center: [Number(lon), Number(lat)], zoom: 8, duration: 800 })}
+              onOpenCase={() => setActivePanel('cases')}
             />
           ) : null}
 

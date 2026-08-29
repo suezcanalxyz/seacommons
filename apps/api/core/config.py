@@ -130,9 +130,30 @@ class SuezCanalConfig(BaseSettings):
     # reusing AISSTREAM_KEY here would just get the second connection dropped
     # — see core/vessels/aisstream.py. Leave unset to skip this subscription.
     AISSTREAM_NGO_KEY: str = ""
+    # AIS track history (core/vessels/track_store.py) — the primitive the
+    # dark-vessel / grey-zone MDA detectors run on.
+    VESSEL_TRACK_ENABLED: bool = True
+    VESSEL_TRACK_MIN_INTERVAL_S: int = 60     # at most one stored row per MMSI per this
+    VESSEL_TRACK_RETENTION_DAYS: int = 60
+    # MDA periodic scans (core/mda/watch.py) — rendezvous / STS, infra loitering,
+    # AIS gap, identity screening, duplicate-MMSI.
+    MDA_WATCH_ENABLED: bool = True
+    MDA_SCAN_INTERVAL_S: int = 300
+    MDA_RENDEZVOUS_WINDOW_MIN: float = 30
+    MDA_RENDEZVOUS_MAX_SEP_M: float = 600
+    MDA_RENDEZVOUS_MAX_SOG_KN: float = 2.0
+    MDA_RENDEZVOUS_MIN_DURATION_MIN: float = 30
+    MDA_INFRA_BUFFER_KM: float = 3.0
+    MDA_INFRA_LOITER_MAX_SOG_KN: float = 3.0
+    MDA_INFRA_LOITER_MIN_MIN: float = 45
+    MDA_GAP_MIN_S: float = 3600
     ADSB_EXCHANGE_KEY: str = ""
     GPSJAM_URL: str = "https://gpsjam.org/geo.json"
     ACLED_KEY: str = ""
+    ACLED_EMAIL: str = ""
+    GFW_API_TOKEN: str = ""
+    EOG_TOKEN: str = ""
+    WDPA_TOKEN: str = ""
     MADRIGAL_URL: str = "https://madrigal.haystack.mit.edu"
     EMSC_WS: str = "wss://www.seismicportal.eu/standing_order/websocket"
     RUNTIME_PROFILE: str = "operational"

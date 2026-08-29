@@ -76,7 +76,8 @@ class VesselIncidentMonitor:
         lat: float,
         lon: float,
         sog: float | None,
-        nav_status: int | None,
+        nav_status: int | None = None,
+        *_extra,
     ) -> None:
         if not self._running or not mmsi:
             return
