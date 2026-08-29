@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Header, TickerStrip, Footer } from './chrome.jsx';
+import { Header, Footer } from './chrome.jsx';
+import LiveSignalStrip from './LiveSignalStrip.jsx';
 import Hero from './sections/Hero.jsx';
 import Environments from './sections/Environments.jsx';
 import Programme from './sections/Programme.jsx';
 import SystemView from './sections/SystemView.jsx';
 import Engine from './sections/Engine.jsx';
+import MDA from './sections/MDA.jsx';
 import Governance from './sections/Governance.jsx';
 import Closing from './sections/Closing.jsx';
 
@@ -36,13 +38,14 @@ export default function SiteApp() {
     <>
       <ScrollProgress />
       <Header />
+      <LiveSignalStrip />
       <main id="main">
         <Hero />
-        <TickerStrip />
         <Environments />
         <Programme />
         <SystemView />
         <Engine />
+        <MDA />
         <Governance />
         <Closing />
       </main>

@@ -66,7 +66,7 @@ function isSoftwareRenderer(gl) {
   }
 }
 
-export default function Threads({ color = [0.78, 1.0, 0.24], amplitude = 0.16, count = 8, className = '' }) {
+export default function Threads({ color = [0.2, 0.78, 1.0], amplitude = 0.16, count = 8, className = '' }) {
   const hostRef = useRef(null);
 
   useEffect(() => {

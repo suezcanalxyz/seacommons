@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { Threads, SplitText, Magnetic, SpotlightCard, ShinyText, Reveal } from '../../ui/index.js';
+import React, { useEffect, useRef, useState } from 'react';
+import { SplitText, Magnetic, SpotlightCard, ShinyText, Reveal } from '../../ui/index.js';
+import { useReducedMotion } from '../../ui/motion.js';
 
 function useUtcClock() {
   const [t, setT] = useState('--:--:--');
@@ -14,10 +15,29 @@ function useUtcClock() {
 
 export default function Hero() {
   const utc = useUtcClock();
+  const reducedMotion = useReducedMotion();
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (reducedMotion) el.pause();
+    else el.play().catch(() => {});
+  }, [reducedMotion]);
+
   return (
     <section id="top" className="hero" aria-labelledby="hero-title">
       <div className="hero__bg" aria-hidden="true">
-        <Threads color={[0.78, 1, 0.24]} amplitude={0.14} count={9} />
+        <video
+          ref={videoRef}
+          className="hero__video"
+          src="/media/seacommons-hero-loop.mp4"
+          autoPlay={!reducedMotion}
+          muted
+          loop
+          playsInline
+          preload="auto"
+        />
         <div className="hero__grid" />
         <div className="hero__vignette" />
       </div>
@@ -29,7 +49,7 @@ export default function Hero() {
       </Reveal>
 
       <div className="hero__copy">
-        <p className="kicker"><ShinyText speed={6}>Observe · qualify · simulate · preserve</ShinyText></p>
+        <p className="kicker"><ShinyText static>Observe · qualify · simulate · preserve</ShinyText></p>
         <h1 id="hero-title" className="hero__title">
           <SplitText text="Uncertainty-aware fusion of fragmented" as="span" />
           <br />
@@ -46,11 +66,9 @@ export default function Hero() {
                 Enter the public demo <span aria-hidden="true">↗</span>
               </a>
             </Magnetic>
-            <Magnetic strength={0.18}>
-              <a className="btn btn--ghost" href="#research">
-                Read the research <span aria-hidden="true">↓</span>
-              </a>
-            </Magnetic>
+            <a className="btn btn--ghost" href="#research">
+              Read the research <span aria-hidden="true">↓</span>
+            </a>
           </div>
         </Reveal>
       </div>

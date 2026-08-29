@@ -6,11 +6,11 @@ import { useReducedMotion } from './motion.js';
  * (background-position); disabled under reduced motion, where it renders as a
  * flat accent-coloured string.
  */
-export default function ShinyText({ children, className = '', speed = 5 }) {
+export default function ShinyText({ children, className = '', speed = 5, static: forceStatic = false }) {
   const reduced = useReducedMotion();
   return (
     <span
-      className={`sc-shiny ${reduced ? 'is-static' : ''} ${className}`.trim()}
+      className={`sc-shiny ${reduced || forceStatic ? 'is-static' : ''} ${className}`.trim()}
       style={{ '--shiny-duration': `${speed}s` }}
     >
       {children}

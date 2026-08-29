@@ -13,7 +13,7 @@ const PRINCIPLES = ['Data minimisation', 'Purpose limitation', 'Human review', '
 export default function Governance() {
   return (
     <section id="governance" className="section governance">
-      <SectionLabel index="Governance / 007" title="Access follows sensitivity" />
+      <SectionLabel index="Governance / 008" title="Access follows sensitivity" />
       <div className="governance__grid">
         <Display id="governance-title">Open where safe.<br />Restricted where necessary.</Display>
         <Reveal className="tiers" stagger={90}>

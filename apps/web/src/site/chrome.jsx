@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Magnetic, Ticker } from '../ui/index.js';
+import { Magnetic } from '../ui/index.js';
 
 const NAV = [
   ['Environments', '#environments'],
   ['Research', '#research'],
   ['System', '#system'],
   ['Method', '#method'],
+  ['MDA', '#mda'],
   ['Governance', '#governance'],
 ];
 
@@ -69,25 +70,6 @@ export function Header() {
         </Magnetic>
       </nav>
     </header>
-  );
-}
-
-export function TickerStrip() {
-  return (
-    <div className="ticker-strip" aria-hidden="true">
-      <Ticker
-        duration={44}
-        items={[
-          'Mediterranean test surface',
-          'Provenance travels with every entry',
-          'Ensemble output — not certainty',
-          'Open source · AGPL-3.0',
-          'Human review boundary preserved',
-          'Sources are never silently merged',
-          'Research prototype / 2026',
-        ]}
-      />
-    </div>
   );
 }
 

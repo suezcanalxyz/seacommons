@@ -1866,10 +1866,11 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   border-radius: 2px;
 }
 
-.intel-sev--critical { background: rgba(255,59,59,0.2);   color: #ff7070; }
-.intel-sev--high     { background: rgba(255,123,84,0.2);  color: #ff9c7a; }
-.intel-sev--medium   { background: rgba(255,224,109,0.2); color: #ffe07d; }
-.intel-sev--low      { background: rgba(139,240,197,0.2); color: #8bf0c5; }
+/* Severity uses the brand-wide status tokens (ui/ui.css --sc-rose / --sc-amber / --sc-sea). */
+.intel-sev--critical { background: rgba(255, 122, 138, 0.25); color: var(--sc-rose); }
+.intel-sev--high     { background: rgba(255, 122, 138, 0.15); color: var(--sc-rose); }
+.intel-sev--medium   { background: rgba(242, 193, 78, 0.18);  color: var(--sc-amber); }
+.intel-sev--low      { background: rgba(110, 231, 216, 0.18); color: var(--sc-sea); }
 
 .intel-title {
   display: block;
@@ -2065,8 +2066,8 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 }
 .osint-stat strong { font-size: 16px; font-weight: 700; color: #e9f1ef; }
 .osint-stat span   { font-size: 9px;  color: #7a9a94; text-transform: uppercase; letter-spacing: 0.04em; }
-.osint-stat--critical strong { color: #ff7070; }
-.osint-stat--high     strong { color: #ff9c7a; }
+.osint-stat--critical strong { color: var(--sc-rose); }
+.osint-stat--high     strong { color: var(--sc-rose); }
 
 .osint-feed-header {
   display: flex;
@@ -3463,9 +3464,11 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .mda-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 .mda-item-type { color: var(--ink-1); }
 .mda-sev { font-size: 8px; text-transform: uppercase; border-radius: 999px; padding: 1px 5px; }
-.mda-sev--critical { background: rgba(255,59,59,0.25); color: #ffb3b3; }
-.mda-sev--high { background: rgba(255,123,84,0.22); color: #ffcbb8; }
-.mda-sev--medium { background: rgba(255,224,109,0.18); color: #ffe9a8; }
+/* Severity uses the brand-wide status tokens (ui/ui.css --sc-rose / --sc-amber) —
+   critical/high share the alert hue, medium is the uncertainty hue. */
+.mda-sev--critical { background: rgba(255, 122, 138, 0.25); color: var(--sc-rose); }
+.mda-sev--high { background: rgba(255, 122, 138, 0.15); color: var(--sc-rose); }
+.mda-sev--medium { background: rgba(242, 193, 78, 0.18); color: var(--sc-amber); }
 .mda-age { margin-left: auto; color: var(--ink-3); font-family: var(--font-mono); }
 .mda-item-title { font-size: 12px; color: var(--ink-1); margin: 4px 0; }
 .mda-sources, .mda-cue { font-size: 10px; color: var(--ink-3); }

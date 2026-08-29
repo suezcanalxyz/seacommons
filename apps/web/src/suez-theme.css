@@ -1,5 +1,5 @@
 /* SeaCommons console theme — aligned to the institutional-site brand.
-   Primary accent: lime (--sc-lime). Secondary: teal. Typography: Space Grotesk
+   Primary accent: azure (--sc-brand). Secondary: teal. Typography: Space Grotesk
    (loaded in index.html) + JetBrains Mono. Shared tokens come from ui/ui.css. */
 
 :root {
@@ -7,32 +7,32 @@
   --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Consolas", ui-monospace, monospace;
 
-  --accent: #c8ff3d;
-  --accent-2: #6ee7d8;
-  --accent-grad: linear-gradient(135deg, #c8ff3d 0%, #6ee7d8 100%);
+  --accent: var(--sc-brand);
+  --accent-2: var(--sc-sea);
+  --accent-grad: linear-gradient(135deg, #33c7ff 0%, #6ee7d8 100%);
 
-  --glass-bg: rgba(8, 22, 19, 0.92);
-  --glass-bg-solid: #07130f;
+  --glass-bg: rgba(6, 10, 20, 0.92);
+  --glass-bg-solid: #080f1c;
   --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-border-hi: rgba(200, 255, 61, 0.36);
+  --glass-border-hi: rgba(51, 199, 255, 0.36);
 
   --ink-1: rgba(238, 244, 238, 0.94);
-  --ink-2: rgba(170, 190, 180, 0.78);
-  --ink-3: rgba(120, 145, 135, 0.62);
+  --ink-2: rgba(170, 180, 190, 0.78);
+  --ink-3: rgba(120, 135, 145, 0.62);
 
   --r-sm: 4px;
   --r-md: 8px;
   --r-lg: 12px;
 }
 
-body { background: #04100d; color: var(--ink-1); }
+body { background: #060a14; color: var(--ink-1); }
 button, input, select, textarea { font-family: inherit; }
 
 .pill, .map-toggle, .workspace-nav, .overlay-card, .panel-block, .info-box,
 .scenario-modal, .map-floating-panel { border-radius: var(--r-md); }
 
 .pill, .map-toggle {
-  background: rgba(7, 19, 15, 0.9);
+  background: rgba(8, 15, 28, 0.9);
   border-color: rgba(255, 255, 255, 0.09);
   box-shadow: none;
   text-transform: uppercase;
@@ -43,7 +43,7 @@ button, input, select, textarea { font-family: inherit; }
 
 .workspace-nav {
   padding: 3px;
-  background: rgba(7, 19, 15, 0.94);
+  background: rgba(8, 15, 28, 0.94);
   border-color: rgba(255, 255, 255, 0.09);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.24);
 }
@@ -54,9 +54,9 @@ button, input, select, textarea { font-family: inherit; }
   border-radius: 999px;
   padding: 0.52rem 0.8rem;
 }
-.workspace-nav button.is-active { background: var(--accent); color: #05100e; }
+.workspace-nav button.is-active { background: var(--accent); color: #060a14; }
 
-.workspace-overlay { background: #05100e; }
+.workspace-overlay { background: #060a14; }
 .workspace-header { border-color: rgba(255, 255, 255, 0.08) !important; }
 .workspace-header h2 { font-size: clamp(1.7rem, 3vw, 3rem); letter-spacing: -0.045em; font-weight: 520; }
 .workspace-kicker, .section-kicker, .toolbar-kicker, .overlay-label {
@@ -65,36 +65,36 @@ button, input, select, textarea { font-family: inherit; }
   letter-spacing: 0.11em;
   color: var(--accent);
 }
-.workspace-close { border-radius: 50%; background: #0b1c18; }
+.workspace-close { border-radius: 50%; background: #0a1324; }
 
 .panel-block, .info-box {
-  background: #0a1c18;
+  background: #0a1324;
   border-color: rgba(255, 255, 255, 0.07);
   box-shadow: none;
 }
 
-.scenario-backdrop { background: rgba(4, 12, 10, 0.7); backdrop-filter: blur(8px); }
+.scenario-backdrop { background: rgba(4, 8, 14, 0.7); backdrop-filter: blur(8px); }
 .scenario-modal {
-  background: #0a1c18;
+  background: #0a1324;
   border-color: rgba(255, 255, 255, 0.1);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
 }
 .scenario-type-btn {
   border-radius: 999px;
-  background: #0b1c18;
+  background: #0a1324;
   border-color: rgba(255, 255, 255, 0.09);
   font-weight: 520;
 }
 .scenario-type-btn.is-active {
-  background: rgba(200, 255, 61, 0.15);
-  border-color: rgba(200, 255, 61, 0.55);
+  background: rgba(51, 199, 255, 0.15);
+  border-color: rgba(51, 199, 255, 0.55);
   color: rgba(238, 244, 238, 0.96);
   box-shadow: none;
 }
 
 .field-block input, .field-block select, input, select, textarea {
   border-radius: var(--r-sm);
-  background: #07130f;
+  background: #080f1c;
   border-color: rgba(255, 255, 255, 0.1);
 }
 button:disabled { cursor: not-allowed; opacity: 0.5; }
@@ -109,27 +109,27 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   font-weight: 650;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(170, 190, 180, 0.82);
+  color: rgba(170, 180, 190, 0.82);
 }
 .runtime-badge--demo { border-color: rgba(110, 231, 216, 0.4); color: rgba(130, 235, 220, 0.95); }
-.runtime-badge--live { border-color: rgba(200, 255, 61, 0.4); color: rgba(210, 255, 130, 0.95); }
+.runtime-badge--live { border-color: rgba(51, 199, 255, 0.4); color: rgba(150, 220, 255, 0.95); }
 
 .auth-screen {
   min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 1.25rem;
-  background: #04100d;
+  background: #060a14;
   color: rgba(238, 244, 238, 0.92);
   background-image:
-    linear-gradient(rgba(200, 255, 61, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(200, 255, 61, 0.035) 1px, transparent 1px);
+    linear-gradient(rgba(51, 199, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(51, 199, 255, 0.035) 1px, transparent 1px);
   background-size: 48px 48px;
 }
 .auth-card {
   width: min(560px, 100%);
   padding: clamp(1.5rem, 5vw, 3.5rem);
-  background: #0a1c18;
+  background: #0a1324;
   border: 1px solid rgba(255, 255, 255, 0.09);
   box-shadow: 0 30px 100px rgba(0, 0, 0, 0.34);
 }
@@ -137,20 +137,20 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .auth-wordmark span { color: var(--accent); }
 .auth-kicker { margin: 4rem 0 1rem; color: var(--accent); font-size: 0.58rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
 .auth-card h1 { margin: 0; font-size: clamp(2.7rem, 8vw, 5.3rem); font-weight: 520; line-height: 0.94; letter-spacing: -0.065em; }
-.auth-copy { margin: 1.7rem 0; color: rgba(170, 190, 180, 0.78); font-size: 1rem; line-height: 1.65; max-width: 48ch; }
+.auth-copy { margin: 1.7rem 0; color: rgba(170, 180, 190, 0.78); font-size: 1rem; line-height: 1.65; max-width: 48ch; }
 .auth-primary {
   width: 100%;
   padding: 0.9rem 1rem;
   border: 1px solid transparent;
   border-radius: 999px;
   background: var(--accent);
-  color: #05100e;
+  color: #060a14;
   font-weight: 650;
   cursor: pointer;
 }
 .auth-meta { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 1.25rem; }
-.auth-meta span { padding: 0.25rem 0.48rem; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 999px; color: rgba(170, 190, 180, 0.72); font-size: 0.52rem; letter-spacing: 0.08em; text-transform: uppercase; }
-.auth-help { margin: 2.5rem 0 0; padding-top: 1.2rem; border-top: 1px solid rgba(255, 255, 255, 0.08); color: rgba(120, 145, 135, 0.68); font-size: 0.68rem; line-height: 1.5; }
+.auth-meta span { padding: 0.25rem 0.48rem; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 999px; color: rgba(170, 180, 190, 0.72); font-size: 0.52rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.auth-help { margin: 2.5rem 0 0; padding-top: 1.2rem; border-top: 1px solid rgba(255, 255, 255, 0.08); color: rgba(120, 135, 145, 0.68); font-size: 0.68rem; line-height: 1.5; }
 .auth-error { padding: 0.75rem; border-left: 2px solid #f2c14e; background: rgba(242, 193, 78, 0.08); color: #ffe6b8; font-size: 0.75rem; }
 .auth-screen--loading { align-content: center; }
 .auth-loader { width: 24px; height: 24px; border: 2px solid rgba(255, 255, 255, 0.12); border-top-color: var(--accent); border-radius: 50%; animation: auth-spin 0.8s linear infinite; }

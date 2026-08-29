@@ -6,12 +6,12 @@
    ========================================================================== */
 
 :root {
-  /* ── Surface ── */
-  --sc-ink-900: #04100d;
-  --sc-ink-850: #071613;
-  --sc-ink-800: #0a1c18;
-  --sc-ink-750: #0f2620;
-  --sc-ink-700: #143029;
+  /* ── Surface (dark navy) ── */
+  --sc-ink-900: #060a14;
+  --sc-ink-850: #080f1c;
+  --sc-ink-800: #0a1324;
+  --sc-ink-750: #0e192f;
+  --sc-ink-700: #111f3b;
 
   /* ── Hairlines ── */
   --sc-line: rgba(238, 244, 238, 0.1);
@@ -22,14 +22,17 @@
   --sc-paper-dim: rgba(238, 244, 238, 0.64);
   --sc-paper-faint: rgba(238, 244, 238, 0.4);
 
-  /* ── Brand ── */
-  --sc-lime: #c8ff3d;
-  --sc-lime-soft: rgba(200, 255, 61, 0.14);
-  --sc-lime-dim: rgba(200, 255, 61, 0.5);
-  --sc-sea: #6ee7d8;
-  --sc-blue: #7c8cff;
-  --sc-amber: #f2c14e;
-  --sc-rose: #ff7a8a;
+  /* ── Brand / status ──
+     Fixed semantics — reused identically on site and console.
+     Never swap these meanings per-component; module identity uses
+     label/icon text, not a dedicated accent color. */
+  --sc-brand: #33c7ff;      /* brand / CTA only — never a status color */
+  --sc-brand-soft: rgba(51, 199, 255, 0.14);
+  --sc-brand-dim: rgba(51, 199, 255, 0.5);
+  --sc-sea: #6ee7d8;        /* nominal / secondary / live-ok */
+  --sc-blue: #7c8cff;       /* informational */
+  --sc-amber: #f2c14e;      /* uncertainty / warning */
+  --sc-rose: #ff7a8a;       /* critical / alert */
 
   /* ── Type ── */
   --sc-font-sans: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
@@ -41,7 +44,7 @@
   --sc-r-lg: 18px;
   --sc-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --sc-shadow-2: 0 18px 50px -20px rgba(0, 0, 0, 0.7);
-  --sc-glow: 0 0 30px rgba(200, 255, 61, 0.16);
+  --sc-glow: 0 0 30px rgba(51, 199, 255, 0.16);
 
   /* ── Motion ── */
   --sc-ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -108,7 +111,7 @@
   transition: opacity 0.4s var(--sc-ease);
   background: radial-gradient(
     240px circle at var(--spot-x) var(--spot-y),
-    rgba(200, 255, 61, 0.14),
+    rgba(51, 199, 255, 0.14),
     transparent 70%
   );
 }
@@ -157,7 +160,7 @@
 .sc-shiny.is-static {
   animation: none;
   background: none;
-  color: var(--sc-lime);
+  color: var(--sc-brand);
   -webkit-background-clip: initial;
   background-clip: initial;
 }
@@ -197,7 +200,7 @@
 }
 .sc-ticker__sep {
   margin-left: 1rem;
-  color: var(--sc-lime-dim);
+  color: var(--sc-brand-dim);
   font-style: normal;
 }
 .sc-ticker.is-static {
@@ -241,7 +244,7 @@
   .sc-shiny {
     animation: none;
     background: none;
-    color: var(--sc-lime);
+    color: var(--sc-brand);
     -webkit-text-fill-color: currentColor;
   }
   .sc-ticker__track {
