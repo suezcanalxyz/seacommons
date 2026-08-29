@@ -38,10 +38,11 @@ const LAYERS_ICON = (
   </svg>
 );
 
-export default function LayerToggles({ visibility, onToggle }) {
+export default function LayerToggles({ visibility, onToggle, allowed = null }) {
   const [open, setOpen] = useState(false);
+  const groups = allowed ? LAYER_GROUPS.filter((g) => allowed.has(g.key)) : LAYER_GROUPS;
   const isOn = (g) => (g.defaultOff ? visibility[g.key] === true : visibility[g.key] !== false);
-  const offCount = LAYER_GROUPS.filter((g) => !isOn(g)).length;
+  const offCount = groups.filter((g) => !isOn(g)).length;
 
   return (
     <div className="layer-control">
@@ -58,7 +59,7 @@ export default function LayerToggles({ visibility, onToggle }) {
       {open && (
         <div className="layer-panel">
           <div className="layer-panel-title">Layers</div>
-          {LAYER_GROUPS.map((g) => (
+          {groups.map((g) => (
             <React.Fragment key={g.key}>
               {g.key === 'intel_social' && <div className="layer-panel-sub">OSINT signal types</div>}
               <label className={`layer-row${g.indent ? ' is-indent' : ''}`}>

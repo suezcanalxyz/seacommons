@@ -2697,7 +2697,13 @@ function App() {
           </div>
         </div>
 
-        {!play3D ? <LayerToggles visibility={layerVis} onToggle={toggleLayerGroup} /> : null}
+        {!play3D ? (
+          <LayerToggles
+            visibility={layerVis}
+            onToggle={toggleLayerGroup}
+            allowed={isPublicLiveHost ? PUBLIC_LIVE_LAYER_GROUPS : null}
+          />
+        ) : null}
         {!play3D ? <Legend /> : null}
         {!play3D && !isPublicLiveHost ? (
           <AlertRail

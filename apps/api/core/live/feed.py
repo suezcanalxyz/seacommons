@@ -30,6 +30,14 @@ from core.live.projection import (
 
 logger = logging.getLogger(__name__)
 
+# Public-eligible intel types that must survive in-memory deque churn — read
+# straight from the DB in public_signal_collection so the high-volume MDA
+# analysis events cannot evict them.
+_PUBLIC_DURABLE_TYPES = frozenset({
+    "distress", "twitter", "mastodon", "bluesky", "ngo_activity", "news",
+    "gdacs", "vessel_incident", "iom_incident", "correlated_alert",
+})
+
 
 def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
     """
@@ -128,7 +136,18 @@ def public_signal_collection(
         max_age_days=days,
         limit=min(max(limit * 3, 300), 1500),
     )
+    # The bounded in-memory deque (600) is now shared with high-volume MDA
+    # analysis events (ais_anomaly / vessel_identity / correlated_alert, all
+    # operator-internal). They can evict older public distress reports from the
+    # deque, leaving the public feed empty. Back the public-eligible types with
+    # a direct DB read so churn cannot starve it.
+    durable_public = intel_store.persisted_events(
+        types=list(_PUBLIC_DURABLE_TYPES),
+        max_age_days=days,
+        limit=min(max(limit * 3, 300), 1500),
+    )
     by_id = {event.id: event for event in durable_alarm_phone}
+    by_id.update({event.id: event for event in durable_public})
     # In-memory objects contain the most recent metadata observations and must
     # win over the durable snapshot when both are present.
     by_id.update({event.id: event for event in memory_events})

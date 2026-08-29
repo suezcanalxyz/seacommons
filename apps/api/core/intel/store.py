@@ -852,6 +852,7 @@ class IntelStore:
         self,
         *,
         source: Optional[str] = None,
+        types: Optional[list[str]] = None,
         max_age_days: int = 30,
         limit: int = 1000,
     ) -> list[IntelEvent]:
@@ -865,6 +866,8 @@ class IntelStore:
                 query = db.query(IntelEventDB).filter(IntelEventDB.timestamp_utc >= cutoff)
                 if source:
                     query = query.filter(IntelEventDB.source == source)
+                if types:
+                    query = query.filter(IntelEventDB.type.in_(types))
                 rows = query.order_by(IntelEventDB.timestamp_utc.desc()).limit(limit).all()
                 return [
                     IntelEvent(
