@@ -72,19 +72,19 @@ def test_rendezvous_ignored_inside_a_port():
 
 
 def test_infra_loiter_near_pipeline():
+    from datetime import timedelta
     w = MdaWatch()
-    # on the Greenstream corridor, slow, several fixes over > 45 min
-    for i in range(6):
-        track_store.on_position("111000005", "SLOWSHIP", 35.80 + i * 0.001, 14.10, sog=1.5,
+    # on the Greenstream corridor, near-stationary, 8 fixes over > 90 min
+    for i in range(8):
+        track_store.on_position("111000005", "SLOWSHIP", 35.80 + i * 0.0005, 14.10, sog=0.8,
                                 nav_status=0, received_at=datetime.now(timezone.utc))
         track_store._last_write_epoch["111000005"] = 0.0
-    # widen the span by rewriting the earliest row's ts
     from core.db.models import VesselTrackDB
-    from datetime import timedelta
     from core.db.session import session_scope
     with session_scope() as db:
         rows = db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == "111000005").order_by(VesselTrackDB.ts).all()
-        rows[0].ts = datetime.now(timezone.utc) - timedelta(minutes=60)
+        for k, r in enumerate(rows):
+            r.ts = datetime.now(timezone.utc) - timedelta(minutes=130 - k * 15)
     assert w.scan_infra_loiter() == 1
     ev = _alerts("ais_anomaly")
     assert ev and ev[0].metadata["maritime_domain"] == "grey_zone"

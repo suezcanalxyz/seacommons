@@ -271,15 +271,29 @@ def _rule_grey_zone(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert
     hit = _nearest_infrastructure(new.lat, new.lon, config.FUSION_INFRA_PROXIMITY_KM)
     if hit is None:
         return None
+    # Cables and pipelines crisscross the whole Med — a lone "slow near a cable"
+    # is an alert, not a case. A case opens only with corroboration: the vessel
+    # also had an AIS gap, or a second infra-proximity flag for the same hull
+    # (a repeat pass / dwell), or it is a sanctioned / identity-flagged vessel.
+    corroborated = False
+    for other in _recent_signals(new.event_id):
+        if not other.mmsi or other.mmsi != new.mmsi:
+            continue
+        if (other.kind == "vessel_identity"
+                or (other.kind == "ais_anomaly"
+                    and other.anomaly_type in ("gap", "long_gap", "cable_proximity", "loiter"))):
+            corroborated = True
+            break
     return FusedAlert(
-        alert_type="infra_proximity",
+        alert_type="infrastructure_threat" if corroborated else "infra_proximity",
         domain="grey_zone",
-        severity="medium",
-        confidence=round(max(0.4, 0.75 - hit["distance_km"] / 40.0), 3),
+        severity="high" if corroborated else "medium",
+        confidence=round(max(0.4, 0.75 - hit["distance_km"] / 40.0) + 0.15 * corroborated, 3),
         lat=new.lat, lon=new.lon, ts=new.ts,
         contributing_event_ids=[new.event_id],
         contributing_sources=[new.source],
         summary=f"AIS {new.anomaly_type} within {hit['distance_km']:.1f} km of {hit['name']}",
+        open_case=corroborated,
         case_type="subsea_infrastructure",
         vessel_mmsi=new.mmsi,
     )
@@ -371,6 +385,12 @@ def _rule_identity_fraud(new: FusionSignal, event: IntelEvent) -> Optional[Fused
     meta = event.metadata or {}
     atype = new.anomaly_type
     if atype in ("sdn_match", "mmsi_duplicate"):
+        # A sanctioned vessel simply transiting the Med is expected — alert, but
+        # only open a case for a duplicate MMSI (a real fraud signal) or a
+        # sanctioned vessel that ALSO shows an anomaly (gap / STS / spoof).
+        corroborated = atype == "mmsi_duplicate" or any(
+            s.mmsi == new.mmsi and s.kind in ("ais_anomaly", "ais_rendezvous")
+            for s in _recent_signals(new.event_id))
         return FusedAlert(
             alert_type=atype,
             domain="sanctions",
@@ -382,7 +402,7 @@ def _rule_identity_fraud(new: FusionSignal, event: IntelEvent) -> Optional[Fused
             contributing_event_ids=[new.event_id],
             contributing_sources=[new.source],
             summary=event.title[:180],
-            open_case=True,
+            open_case=corroborated,
             case_type="sanctions_watch",
             vessel_mmsi=new.mmsi,
         )

@@ -143,9 +143,9 @@ class SuezCanalConfig(BaseSettings):
     MDA_RENDEZVOUS_MAX_SEP_M: float = 600
     MDA_RENDEZVOUS_MAX_SOG_KN: float = 2.0
     MDA_RENDEZVOUS_MIN_DURATION_MIN: float = 30
-    MDA_INFRA_BUFFER_KM: float = 3.0
-    MDA_INFRA_LOITER_MAX_SOG_KN: float = 3.0
-    MDA_INFRA_LOITER_MIN_MIN: float = 45
+    MDA_INFRA_BUFFER_KM: float = 2.0
+    MDA_INFRA_LOITER_MAX_SOG_KN: float = 1.5
+    MDA_INFRA_LOITER_MIN_MIN: float = 90
     MDA_GAP_MIN_S: float = 3600
     ADSB_EXCHANGE_KEY: str = ""
     GPSJAM_URL: str = "https://gpsjam.org/geo.json"

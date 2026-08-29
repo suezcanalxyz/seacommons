@@ -205,23 +205,33 @@ class MdaWatch:
         for r in rows:
             by_mmsi.setdefault(r["mmsi"], []).append(r)
 
+        from core.vessels.registry import registry
+        cache = getattr(registry, "_cache", {}) or {}
         emitted = 0
         for mmsi, track in by_mmsi.items():
             track.sort(key=lambda r: r["ts"])
             slow = [r for r in track if (r.get("sog") or 0.0) <= max_sog]
-            if len(slow) < 3:
+            if len(slow) < 4:
                 continue
             span_min = (_parse(slow[-1]["ts"]) - _parse(slow[0]["ts"])).total_seconds() / 60.0
             if span_min < min_dur_min:
                 continue
+            # must actually dwell, not just transit slowly through the buffer
+            lats = [r["lat"] for r in slow]
+            lons = [r["lon"] for r in slow]
+            dwell_km = haversine_km(min(lats), min(lons), max(lats), max(lons))
+            if dwell_km > 5.0:
+                continue
+            v = cache.get(mmsi, {})
+            st = v.get("ship_type")
+            if isinstance(st, int) and 30 <= st <= 32:   # fishing vessels work slowly everywhere
+                continue
             mid = slow[len(slow) // 2]
             hit = reference.nearest_infrastructure(mid["lat"], mid["lon"], max_km=buf_km)
-            if hit is None or hit.kind not in ("cable", "pipeline", "platform"):
+            if hit is None or hit.kind not in ("cable", "pipeline"):
                 continue
-            if self._recently_emitted(f"infra:{mmsi}:{hit.name}", 12 * 3600):
+            if self._recently_emitted(f"infra:{mmsi}:{hit.name}", 24 * 3600):
                 continue
-            from core.vessels.registry import registry
-            v = registry._cache.get(mmsi, {}) if hasattr(registry, "_cache") else {}
             intel_store.add(IntelEvent(
                 id=f"infraloiter:{mmsi}",
                 type="ais_anomaly",
