@@ -216,6 +216,22 @@ def get_case(case_id: str, request: Request) -> dict:
                 "attachments": [{c.name: getattr(a, c.name) for c in a.__table__.columns if c.name != "object_key"} for a in attachments]}
 
 
+@router.get("/cases/{case_id}/dossier")
+def case_dossier(case_id: str, request: Request) -> dict:
+    """Evidence dossier — the full traceable signal chain behind the case."""
+    with session_scope() as db:
+        row = db.get(CaseDB, case_id)
+        if row is None:
+            raise HTTPException(404, "Case not found")
+        _require_case_access(request, db, row)
+    from core.cases.dossier import build_dossier
+
+    dossier = build_dossier(case_id)
+    if dossier is None:
+        raise HTTPException(404, "Case not found")
+    return dossier
+
+
 @router.patch("/cases/{case_id}")
 def update_case(case_id: str, body: CaseUpdate, request: Request) -> dict:
     changes = body.model_dump(exclude_none=True)
