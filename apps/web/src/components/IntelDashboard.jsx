@@ -57,6 +57,18 @@ const TIERS = [
   { key: 'news',        label: 'News & reports', sub: 'Situational updates' },
   { key: 'signal',      label: 'Signals',     sub: 'AIS & movement telemetry' },
 ];
+// Vessel-name/type split for card titles. Every backend-composed title that
+// carries a resolved vessel name appends it last as " — NAME" (see
+// core/intel/vessel_incident_monitor.py:160 and fusion.py's alert.summary
+// convention) — split on the last occurrence so a name containing an en
+// dash elsewhere in the string still parses correctly.
+function parseTitleVessel(title) {
+  const t = String(title || '');
+  const idx = t.lastIndexOf(' — ');
+  if (idx === -1) return { label: t, name: null };
+  return { label: t.slice(0, idx), name: t.slice(idx + 3) };
+}
+
 const PUBLIC_TIERS = [
   { key: 'operational', label: 'Direct', sub: 'Published distress & partner reports' },
   { key: 'news', label: 'Public feeds', sub: 'Official API & first-party publications' },
@@ -545,6 +557,7 @@ export default function IntelDashboard({
     const verif = p.verification_status || 'unverified_public_source';
     const lifecycle = isDistress ? (eventLifecycle(p) || 'active') : null;
     const colorClass = lifecycleColorClass(p, isDistress);
+    const { label: titleLabel, name: vesselName } = parseTitleVessel(p.title);
 
     return (
       <li
@@ -552,30 +565,10 @@ export default function IntelDashboard({
         className={`intel-event intel-event--${colorClass}`}
         onClick={() => { flyTo(coords); if (coords) setSidebarOpen?.(false); }}
       >
-        <div className="intel-event-header">
+        <div className="intel-event-primary">
           <span className={`intel-sev intel-sev--${p.severity || 'low'}`}>{p.severity || 'low'}</span>
           <span className="intel-type-icon" title={`${p.type.replace(/_/g, ' ')} — ${descriptionOf(p.type)}`}>{icon}</span>
-          <span className={`intel-verif intel-verif--${verif}`} title={`Verification: ${verif.replace(/_/g, ' ')}`}>
-            {VERIF_LABEL[verif] || verif.replace(/_/g, ' ')}
-          </span>
-          {lifecycle && (
-            <span className={`intel-lifecycle intel-lifecycle--${lifecycle}`}>
-              {lifecycle === 'active' ? 'LIVE' : lifecycle === 'resolved' ? 'RISOLTO' : lifecycle === 'needs_review' ? 'DA VERIFICARE' : 'ARCHIVED'}
-            </span>
-          )}
-          {ts && (
-            <time title={ts.toISOString()}>
-              {ts.toLocaleString('it-IT', {
-                timeZone: 'Europe/Rome',
-                day: '2-digit',
-                month: 'short',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false,
-                timeZoneName: 'short',
-              })}
-            </time>
-          )}
+          <span className="intel-category-label">{p.type.replace(/_/g, ' ')}</span>
           {hasDrift ? (
             <button
               className="intel-drift-btn intel-drift-btn--ready"
@@ -607,7 +600,37 @@ export default function IntelDashboard({
             >Drift</button>
           ) : null}
         </div>
-        <strong className="intel-title">{p.title}</strong>
+        {vesselName ? (
+          <>
+            <strong className="intel-title intel-title--vessel">{vesselName}</strong>
+            <span className="intel-title-sub">{titleLabel}</span>
+          </>
+        ) : (
+          <strong className="intel-title">{p.title}</strong>
+        )}
+        <div className="intel-event-meta">
+          <span className={`intel-verif intel-verif--${verif}`} title={`Verification: ${verif.replace(/_/g, ' ')}`}>
+            {VERIF_LABEL[verif] || verif.replace(/_/g, ' ')}
+          </span>
+          {lifecycle && (
+            <span className={`intel-lifecycle intel-lifecycle--${lifecycle}`}>
+              {lifecycle === 'active' ? 'LIVE' : lifecycle === 'resolved' ? 'RISOLTO' : lifecycle === 'needs_review' ? 'DA VERIFICARE' : 'ARCHIVED'}
+            </span>
+          )}
+          {ts && (
+            <time title={ts.toISOString()}>
+              {ts.toLocaleString('it-IT', {
+                timeZone: 'Europe/Rome',
+                day: '2-digit',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+                timeZoneName: 'short',
+              })}
+            </time>
+          )}
+        </div>
         <span className="intel-source">
           <span>{p.source}</span>
           <span style={{ opacity: 0.45 }}>·</span>
@@ -674,34 +697,36 @@ export default function IntelDashboard({
             >
               {detailsEventId === p.id ? '▲ Dettagli' : '▼ Dettagli'}
             </button>
-            {coords && !isArea && loadNearestVessels && (
-              <button
-                type="button"
-                className="intel-nearby-toggle"
-                onClick={(e) => { e.stopPropagation(); toggleNearbyVessels(p.id, coords[1], coords[0]); }}
-              >
-                {vesselsForEventId === p.id ? '▲ Navi vicine' : '▼ Navi vicine'}
-              </button>
-            )}
-            {p.repost_count > 0 && (
-              <button
-                type="button"
-                className="intel-ngo-toggle"
-                onClick={(e) => { e.stopPropagation(); toggleUpdates(p.id); }}
-              >
-                {updatesEventId === p.id ? '▲ Updates' : `▼ Updates (${p.repost_count})`}
-              </button>
-            )}
-            {!publicMode && (
-              <button
-                type="button"
-                className="intel-forensic-toggle"
-                onClick={(e) => { e.stopPropagation(); toggleForensic(p.id); }}
-                title="Record forense firmato (hash blake3 + firma ed25519) associato a questo evento — oggi creato solo per eventi distress"
-              >
-                {forensicEventId === p.id ? '▲ Forense' : '▼ Forense'}
-              </button>
-            )}
+            <div className="intel-panel-toggles--secondary">
+              {coords && !isArea && loadNearestVessels && (
+                <button
+                  type="button"
+                  className="intel-nearby-toggle"
+                  onClick={(e) => { e.stopPropagation(); toggleNearbyVessels(p.id, coords[1], coords[0]); }}
+                >
+                  {vesselsForEventId === p.id ? '▲ Navi vicine' : '▼ Navi vicine'}
+                </button>
+              )}
+              {p.repost_count > 0 && (
+                <button
+                  type="button"
+                  className="intel-ngo-toggle"
+                  onClick={(e) => { e.stopPropagation(); toggleUpdates(p.id); }}
+                >
+                  {updatesEventId === p.id ? '▲ Updates' : `▼ Updates (${p.repost_count})`}
+                </button>
+              )}
+              {!publicMode && (
+                <button
+                  type="button"
+                  className="intel-forensic-toggle"
+                  onClick={(e) => { e.stopPropagation(); toggleForensic(p.id); }}
+                  title="Record forense firmato (hash blake3 + firma ed25519) associato a questo evento — oggi creato solo per eventi distress"
+                >
+                  {forensicEventId === p.id ? '▲ Forense' : '▼ Forense'}
+                </button>
+              )}
+            </div>
           </div>
         )}
         {detailsEventId === p.id && (

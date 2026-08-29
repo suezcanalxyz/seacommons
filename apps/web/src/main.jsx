@@ -1637,6 +1637,9 @@ function App() {
           className: 'intel-hover-popup',
         });
         const LIFECYCLE_LABEL = { resolved: 'Resolved', needs_review: 'Needs review', archived: 'Archived', active: 'Active' };
+        const _escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+          { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
         map.on('mouseenter', 'intel-distress-core', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mousemove', 'intel-distress-core', (event) => {
           const feature = event.features?.[0];
@@ -1644,9 +1647,16 @@ function App() {
           const [lon, lat] = feature.geometry.coordinates;
           const props = feature.properties || {};
           const label = LIFECYCLE_LABEL[props.incident_lifecycle] || 'Active';
+          // Vessel name / incident type when the backend title carries them
+          // (AIS-sourced vessel_incident events always do — "<kind>: <sub> —
+          // <NAME>"); lifecycle status becomes the secondary line instead of
+          // the only thing shown.
+          const html = props.title
+            ? `<strong>${_escapeHtml(props.title)}</strong><span>${label} · ${lat.toFixed(4)}, ${lon.toFixed(4)}</span>`
+            : `<strong>${label}</strong> · ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
           distressHoverPopup
             .setLngLat([lon, lat])
-            .setHTML(`<strong>${label}</strong> · ${lat.toFixed(4)}, ${lon.toFixed(4)}`)
+            .setHTML(html)
             .addTo(map);
         });
         map.on('mouseleave', 'intel-distress-core', () => {
