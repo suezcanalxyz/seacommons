@@ -69,6 +69,42 @@ function parseTitleVessel(title) {
   return { label: t.slice(0, idx), name: t.slice(idx + 3) };
 }
 
+// Normalizes a track_points list (already fetched for the Dettagli panel's
+// vessel dossier, oldest-first) into an SVG path so operators see recent
+// track shape at a glance instead of just the latest fix.
+function buildSparklinePath(points, w = 160, h = 48, pad = 5) {
+  const lats = points.map((p) => p.lat);
+  const lons = points.map((p) => p.lon);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLon = Math.min(...lons);
+  const maxLon = Math.max(...lons);
+  const spanLat = maxLat - minLat || 0.0001;
+  const spanLon = maxLon - minLon || 0.0001;
+  const toXY = (p) => [
+    pad + ((p.lon - minLon) / spanLon) * (w - 2 * pad),
+    h - pad - ((p.lat - minLat) / spanLat) * (h - 2 * pad),
+  ];
+  const coords = points.map(toXY);
+  const d = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  return { d, first: coords[0], last: coords[coords.length - 1] };
+}
+
+// Median speed over the fetched window vs. the latest fix — a cheap "is this
+// normal for this vessel" check reusing data we already have, no new
+// backend call. A big deviation from its own recent median is a stronger
+// signal than an absolute speed threshold picked in the abstract.
+function speedBaseline(points) {
+  const speeds = points.map((p) => p.sog).filter((v) => typeof v === 'number' && v >= 0);
+  if (speeds.length < 3) return null;
+  const sorted = [...speeds].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const latest = points[points.length - 1]?.sog;
+  if (typeof latest !== 'number') return null;
+  const deviates = median > 1 && Math.abs(latest - median) > median * 0.6;
+  return { median, latest, deviates };
+}
+
 const PUBLIC_TIERS = [
   { key: 'operational', label: 'Direct', sub: 'Published distress & partner reports' },
   { key: 'news', label: 'Public feeds', sub: 'Official API & first-party publications' },
@@ -765,6 +801,31 @@ export default function IntelDashboard({
                   <strong>{vesselDetail.static?.name || vesselDetail.mmsi}</strong>
                   <span>IMO {vesselDetail.static?.imo || '—'} · flag {vesselDetail.static?.flag || vesselDetail.identity?.mid_flag || '—'}
                     {' · '}{vesselDetail.track_points?.length ?? 0} fix recenti</span>
+                  {vesselDetail.track_points?.length >= 2 && (() => {
+                    const pts = vesselDetail.track_points;
+                    const { d, first, last } = buildSparklinePath(pts);
+                    const baseline = speedBaseline(pts);
+                    const hours = (new Date(pts[pts.length - 1].ts) - new Date(pts[0].ts)) / 3600000;
+                    return (
+                      <div className="mda-track-spark">
+                        <svg viewBox="0 0 160 48" width="160" height="48" className="mda-track-spark-svg">
+                          <path d={d} fill="none" stroke="var(--sc-blue)" strokeWidth="1.5" />
+                          <circle cx={first[0]} cy={first[1]} r="2.5" className="spark-start" />
+                          <circle cx={last[0]} cy={last[1]} r="3.5" className="spark-now" />
+                        </svg>
+                        <div className="mda-track-spark-meta">
+                          <span>{pts.length} posizioni · ultime {hours.toFixed(1)}h</span>
+                          {baseline && (
+                            <span className={baseline.deviates ? 'mda-speed-warn' : ''}>
+                              {baseline.deviates ? '⚠ ' : ''}
+                              velocità attuale {baseline.latest.toFixed(1)}kt · mediana {baseline.median.toFixed(1)}kt
+                              {baseline.deviates ? ' — scostamento dal comportamento abituale' : ''}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {vesselDetail.identity?.risk_flags?.length > 0 && (
                     <div className="mda-risk">{vesselDetail.identity.risk_flags.map((f) => (
                       <span key={f} className="mda-risk-flag">{f.replace(/_/g, ' ')}</span>

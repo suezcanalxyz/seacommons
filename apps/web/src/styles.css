@@ -3528,6 +3528,12 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   background: rgba(239,68,68,0.18); color: #ffb3b3; border-radius: 999px; padding: 1px 6px; }
 .mda-sanctions { margin-top: 6px; font-size: 11px; color: #ff9d9d; }
 .mda-mini-btn { margin-top: 8px; }
+.mda-track-spark { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.mda-track-spark-svg { flex: none; background: rgba(255,255,255,0.03); border-radius: var(--r-sm); }
+.mda-track-spark-svg .spark-start { fill: rgba(255,255,255,0.35); }
+.mda-track-spark-svg .spark-now { fill: var(--sc-blue); }
+.mda-track-spark-meta { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--ink-3); }
+.mda-speed-warn { color: var(--sc-amber); }
 .mda-filter-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
 .mda-filter-row button {
   font-size: 10px; padding: 3px 8px; border-radius: 999px; cursor: pointer;
