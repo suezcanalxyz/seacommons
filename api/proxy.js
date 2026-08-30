@@ -1,8 +1,12 @@
 import http from 'node:http';
 
-const UPSTREAM_HOST = '79.72.46.166';
+const UPSTREAM_HOST = '152.70.182.58';
 const ALLOWED_UPSTREAMS = new Set(['api.seacommons.org', 'demo-api.seacommons.org']);
-const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org']);
+const LIVE_HOSTS = new Set([
+  'live.seacommons.org',
+  'console.seacommons.org',
+  'api.seacommons.org',
+]);
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
   'keep-alive',
@@ -21,11 +25,15 @@ function first(value) {
 function upstreamPath(query) {
   if (first(query.health) === '1') return '/health';
   if (first(query.ready) === '1') return '/ready';
+  const rootPath = first(query.root);
+  if (rootPath === 'docs') return '/docs';
+  if (rootPath === 'redoc') return '/redoc';
+  if (rootPath === 'openapi') return '/openapi.json';
 
   const path = String(first(query.path) || '').replace(/^\/+/, '');
   const search = new URLSearchParams();
   for (const [name, value] of Object.entries(query)) {
-    if (name === 'path' || name === 'health' || name === 'ready') continue;
+    if (name === 'path' || name === 'health' || name === 'ready' || name === 'root') continue;
     for (const item of Array.isArray(value) ? value : [value]) {
       if (item !== undefined) search.append(name, String(item));
     }

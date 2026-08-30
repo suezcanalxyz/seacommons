@@ -13,7 +13,7 @@ const DEFAULTS = {
   port: '80',
   apiVhost: 'api.seacommons.org',
   demoVhost: 'demo-api.seacommons.org',
-  liveHosts: 'live.seacommons.org,console.seacommons.org',
+  liveHosts: 'live.seacommons.org,console.seacommons.org,api.seacommons.org',
 };
 
 export const UPSTREAM_HOST = process.env.SEACOMMONS_UPSTREAM_HOST || DEFAULTS.host;

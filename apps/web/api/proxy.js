@@ -26,11 +26,15 @@ function first(value) {
 function upstreamPath(query) {
   if (first(query.health) === '1') return '/health';
   if (first(query.ready) === '1') return '/ready';
+  const rootPath = first(query.root);
+  if (rootPath === 'docs') return '/docs';
+  if (rootPath === 'redoc') return '/redoc';
+  if (rootPath === 'openapi') return '/openapi.json';
 
   const path = String(first(query.path) || '').replace(/^\/+/, '');
   const search = new URLSearchParams();
   for (const [name, value] of Object.entries(query)) {
-    if (name === 'path' || name === 'health' || name === 'ready') continue;
+    if (name === 'path' || name === 'health' || name === 'ready' || name === 'root') continue;
     for (const item of Array.isArray(value) ? value : [value]) {
       if (item !== undefined) search.append(name, String(item));
     }

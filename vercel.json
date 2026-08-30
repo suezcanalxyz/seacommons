@@ -13,6 +13,10 @@
     { "source": "/health", "destination": "/api/proxy?health=1" },
     { "source": "/ready", "destination": "/api/proxy?ready=1" },
     { "source": "/status", "destination": "/status.html" },
+    { "source": "/docs", "has": [{ "type": "host", "value": "api.seacommons.org" }], "destination": "/api/proxy?root=docs" },
+    { "source": "/redoc", "has": [{ "type": "host", "value": "api.seacommons.org" }], "destination": "/api/proxy?root=redoc" },
+    { "source": "/openapi.json", "has": [{ "type": "host", "value": "api.seacommons.org" }], "destination": "/api/proxy?root=openapi" },
+    { "source": "/", "has": [{ "type": "host", "value": "api.seacommons.org" }], "destination": "/api/proxy?health=1" },
     {
       "source": "/",
       "has": [{ "type": "host", "value": "play.seacommons.org" }],
