@@ -45,6 +45,12 @@ class InfraHit:
     name: str
     distance_km: float
     detail: dict[str, Any] = field(default_factory=dict)
+    # distance_km is 0.0 both when the point sits exactly on a line/point
+    # geometry AND when it's anywhere inside an area geometry (sts_zone, mpa)
+    # -- those read very differently to a human ("within 0.0 km" vs.
+    # "inside"), so callers building user-facing text need this instead of
+    # inferring it from distance_km == 0.0.
+    inside: bool = False
 
 
 @dataclass
@@ -140,7 +146,7 @@ class ReferenceIndex:
             f = feats[int(idx)]
             d_km = _geom_distance_km(pt, f.geom, lat)
             if d_km <= max_km and (best is None or d_km < best.distance_km):
-                best = InfraHit(f.kind, f.name, round(d_km, 2), f.detail)
+                best = InfraHit(f.kind, f.name, round(d_km, 2), f.detail, inside=f.geom.contains(pt))
         return best
 
     def infrastructure_within(self, lat: float, lon: float, km: float) -> list[InfraHit]:
@@ -154,7 +160,7 @@ class ReferenceIndex:
             f = feats[int(idx)]
             d_km = _geom_distance_km(pt, f.geom, lat)
             if d_km <= km:
-                hits.append(InfraHit(f.kind, f.name, round(d_km, 2), f.detail))
+                hits.append(InfraHit(f.kind, f.name, round(d_km, 2), f.detail, inside=f.geom.contains(pt)))
         return sorted(hits, key=lambda h: h.distance_km)
 
     def in_sts_zone(self, lat: float, lon: float) -> Optional[str]:

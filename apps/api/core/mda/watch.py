@@ -306,6 +306,36 @@ class MdaWatch:
 
     # ── identity screening ──────────────────────────────────────────────────
 
+    @staticmethod
+    def _identity_fingerprint(result: dict[str, Any]) -> list:
+        sanctions = sorted(
+            (s.get("list", ""), s.get("program", "")) for s in (result.get("sanctions") or [])
+        )
+        return [sorted(result.get("risk_flags") or []), sanctions]
+
+    def _identity_status_changed(self, mmsi: str, result: dict[str, Any]) -> bool:
+        """True on first sighting of this MMSI's flagged status, or if it
+        changed since the last emitted vessel_identity event for it (new
+        sanctions program, escalation from a weak flag to sanctions_hit,
+        etc). id=f"vesselid:{mmsi}" is deterministic -- one row per vessel,
+        looked up directly rather than re-scanning the event stream."""
+        fingerprint = self._identity_fingerprint(result)
+        try:
+            from core.db.models import IntelEventDB
+            from core.db.session import session_scope
+
+            with session_scope() as db:
+                row = db.query(IntelEventDB).filter(
+                    IntelEventDB.id == f"vesselid:{mmsi}"
+                ).first()
+                if row is None:
+                    return True
+                previous = (row.meta or {}).get("identity_fingerprint")
+                return previous != fingerprint
+        except Exception as exc:  # pragma: no cover - fail open, same as before this change
+            logger.debug("identity fingerprint lookup failed for %s: %s", mmsi, exc)
+            return True
+
     def scan_identity(self) -> int:
         from core.mda.identity import screen
         from core.vessels.registry import registry
@@ -336,6 +366,15 @@ class MdaWatch:
                 continue
             if self._recently_emitted(f"ident:{mmsi}", 24 * 3600):
                 continue
+            # Sanctions/identity status is a persistent property of the
+            # vessel, not a recurring event -- re-alerting every 24h for as
+            # long as a known-sanctioned vessel keeps transiting the Med is
+            # exactly the "map noise" docs/prompt.md warns about. Only emit
+            # when this is either the first sighting or the flagged status
+            # actually changed (new list, new program, escalation from a
+            # weak flag to a real sanctions hit).
+            if not self._identity_status_changed(mmsi, result):
+                continue
             lat, lon = last_pos[mmsi]
             intel_store.add(IntelEvent(
                 id=f"vesselid:{mmsi}",
@@ -354,6 +393,7 @@ class MdaWatch:
                     "publication_status": "internal", "source_policy": "official_api",
                     "verification_status": "derived", "coordinate_source": "ais_position",
                     "identity": result,
+                    "identity_fingerprint": self._identity_fingerprint(result),
                 },
             ), dedup_key=f"vesselid:{mmsi}:{int(time.time() // 86400)}")
             emitted += 1

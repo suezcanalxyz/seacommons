@@ -239,7 +239,7 @@ def _nearest_infrastructure(lat: float, lon: float, max_km: float) -> Optional[d
         hit = reference.nearest_infrastructure(lat, lon, max_km=max_km)
         if hit is not None:
             return {"name": f"{hit.name} ({hit.kind})", "distance_km": hit.distance_km,
-                    "kind": hit.kind}
+                    "kind": hit.kind, "inside": hit.inside}
     except Exception:  # pragma: no cover - fall back to the bundled corridors
         pass
     best: Optional[dict] = None
@@ -247,7 +247,7 @@ def _nearest_infrastructure(lat: float, lon: float, max_km: float) -> Optional[d
         for i in range(len(waypoints) - 1):
             dist = _point_to_segment_km(lat, lon, waypoints[i], waypoints[i + 1])
             if dist <= max_km and (best is None or dist < best["distance_km"]):
-                best = {"name": name, "distance_km": dist}
+                best = {"name": name, "distance_km": dist, "inside": False}
     return best
 
 
@@ -292,7 +292,11 @@ def _rule_grey_zone(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert
         lat=new.lat, lon=new.lon, ts=new.ts,
         contributing_event_ids=[new.event_id],
         contributing_sources=[new.source],
-        summary=f"AIS {new.anomaly_type} within {hit['distance_km']:.1f} km of {hit['name']}",
+        summary=(
+            f"AIS {new.anomaly_type} inside {hit['name']}"
+            if hit.get("inside")
+            else f"AIS {new.anomaly_type} within {hit['distance_km']:.1f} km of {hit['name']}"
+        ),
         open_case=corroborated,
         case_type="subsea_infrastructure",
         vessel_mmsi=new.mmsi,
