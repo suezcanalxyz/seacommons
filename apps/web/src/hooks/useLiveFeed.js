@@ -96,6 +96,9 @@ export function useLiveFeed({
               ? receivedSignalFeatures(message.features)
               : Array.isArray(message.features) ? message.features : [],
           );
+          if (isPublicLiveHost && message.meta?.mode_counts) {
+            setLiveModeCounts(message.meta.mode_counts);
+          }
         } else if (message.type === 'Feature') {
           const incoming = isPublicLiveHost ? receivedSignalFeatures([message]) : [message];
           if (!incoming.length) return;
@@ -135,10 +138,7 @@ export function useLiveFeed({
           storeCachedEvents(isPublicLiveHost, features, liveMode);
           if (isPublicLiveHost) {
             const counts = data.meta?.mode_counts;
-            setLiveModeCounts((previous) => ({
-              ...previous,
-              ...(counts || { [liveMode]: features.length }),
-            }));
+            if (counts) setLiveModeCounts(counts);
           }
           setIntelConnected(true);
           setIntelMode((previous) => previous === 'ws' ? 'ws' : 'poll');
@@ -221,7 +221,6 @@ export function useLiveFeed({
       const features = alarmPhoneOnly(edgeSnapshotToFeatures(snapshot));
       setIntelEvents(features);
       storeCachedEvents(true, features, 'humanitarian');
-      setLiveModeCounts((previous) => ({ ...previous, humanitarian: features.length }));
       setIntelConnected(true);
       setIntelMode(transport);
       edgeLiveActiveRef.current = true;

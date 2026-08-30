@@ -1050,6 +1050,19 @@ def test_public_feed_modes_return_separate_signals_and_counts(monkeypatch) -> No
     assert security_feed["meta"]["mode_counts"] == expected_counts
 
 
+def test_ocr_suffix_dms_with_seconds_recovers_real_alarm_phone_format() -> None:
+    # Real screenshot OCR: hemispheres follow the seconds and Tesseract may
+    # render the minute separator as a colon or a space.
+    expected = (37.308694, 27.164194)
+    first = extract_numeric_coords("37°18:31.3°N\n27°09'51.1°E")
+    second = extract_numeric_coords("37°18 31.3 N\n27°09 51.1 E")
+    assert first is not None and second is not None
+    assert abs(first[0] - expected[0]) < 0.002
+    assert abs(first[1] - expected[1]) < 0.002
+    assert abs(second[0] - expected[0]) < 0.002
+    assert abs(second[1] - expected[1]) < 0.002
+
+
 def test_current_position_uses_elapsed_time_on_sampled_trajectory() -> None:
     trajectory = {
         "geometry": {"type": "LineString", "coordinates": [[14.0, 35.0], [15.0, 36.0]]},

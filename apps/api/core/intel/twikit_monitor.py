@@ -71,6 +71,7 @@ Security posture (must be preserved):
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import logging
 import os
@@ -95,6 +96,7 @@ from core.intel.geoextract import (
     is_resolved_distress,
     place_match_precision,
 )
+from core.intel.humanitarian import humanitarian_case_metadata
 from core.intel.ngo_registry import NGO_TWITTER_HANDLES
 from core.intel.store import IntelEvent, intel_store
 from core.intel.twitter_monitor import _make_title
@@ -580,11 +582,12 @@ class TwikitMonitor:
                 lat=coords[0],
                 lon=coords[1],
                 metadata={
-                    "coordinate_source": "media_ocr_text" if method == "text" else "media_pin_landmark",
+                    "coordinate_source": "media_ocr_text" if method.endswith("text") else "media_pin_landmark",
                     "coordinate_review_status": "machine_ocr_unverified",
                     "verification_status": "machine_extracted_unverified",
-                    "location_uncertainty_m": 1500 if method == "text" else 4000,
+                    "location_uncertainty_m": 1500 if method.endswith("text") else 4000,
                     "media_transport": "x_media_ocr",
+                    "ocr_engine": "easyocr" if method.startswith("easyocr") else "tesseract",
                     "ocr_attempted": True,
                     "media_count": len(urls),
                 },
@@ -678,7 +681,7 @@ class TwikitMonitor:
         media_count = len(media_urls)
         ocr_pending = False
         if distress and not text_coords and media_count:
-            if shutil.which("tesseract"):
+            if shutil.which("tesseract") or importlib.util.find_spec("easyocr") is not None:
                 ocr_pending = True
             else:
                 # The real GPS position is almost certainly in the images but the
@@ -762,6 +765,13 @@ class TwikitMonitor:
             timestamp_utc=timestamp_utc,
             metadata={
                 "tweet_id": str(tweet.id),
+                **humanitarian_case_metadata(
+                    combined_text,
+                    incident_id=str(tweet.id),
+                    source=handle,
+                    distress=distress,
+                    resolved=resolved,
+                ),
                 **({
                     "area_geojson": area_result.polygon,
                     "area_confidence": area_result.confidence,
@@ -982,34 +992,71 @@ class TwikitMonitor:
                 event = by_tweet_id.get(tweet_id)
                 if event is None:
                     continue
-                author_id = str(getattr(getattr(tweet, "user", None), "id", "") or "")
-                for reply in getattr(tweet, "replies", None) or []:
-                    reply_author_id = str(getattr(getattr(reply, "user", None), "id", "") or "")
-                    if not author_id or reply_author_id != author_id:
-                        continue
-                    reply_id = str(getattr(reply, "id", "") or "")
-                    if not reply_id:
-                        continue
-                    reply_text = str(getattr(reply, "text", "") or "").strip()
-                    record: dict[str, Any] = {
-                        "tweet_id": reply_id,
-                        "posted_at": self._timestamp(reply),
-                        "url": f"https://x.com/i/web/status/{reply_id}",
-                        "kind": "reply",
-                    }
-                    if reply_text:
-                        record["note"] = reply_text[:500]
-                    added = intel_store.append_thread_repost(event.id, record)
-                    if added:
-                        logger.info(
-                            "X (twikit) self-reply %s threaded onto incident %s",
-                            reply_id, event.id,
-                        )
+                replies = await self._reply_pages(getattr(tweet, "replies", None))
+                self._thread_own_replies(event, tweet, replies)
+
+        # Old but still active incidents fall outside the 40-item profile
+        # window. Fetch those originals directly and follow Twikit's reply
+        # cursor; otherwise a later resolution reply can remain invisible.
+        for tweet_id, event in by_tweet_id.items():
+            if tweet_id in seen_tweet_ids:
+                continue
+            try:
+                tweet = await client.get_tweet_by_id(tweet_id)
+            except Exception as exc:
+                logger.debug("X (twikit) reply check: tweet %s unavailable: %s", tweet_id, exc)
+                continue
+            seen_tweet_ids.add(tweet_id)
+            replies = await self._reply_pages(getattr(tweet, "replies", None))
+            self._thread_own_replies(event, tweet, replies)
         unresolved = [
             event for tweet_id, event in by_tweet_id.items()
             if tweet_id not in seen_tweet_ids and not has_own_reply_resolution(event)
         ]
         self._flag_unreachable_tweets(unresolved)
+
+    @staticmethod
+    async def _reply_pages(result: Any, *, max_pages: int = 4) -> list[Any]:
+        """Flatten the initial Twikit reply Result and its bounded cursors."""
+        replies = list(result or [])
+        page = result
+        for _ in range(max_pages - 1):
+            fetch_next = getattr(page, "next", None)
+            if not callable(fetch_next):
+                break
+            try:
+                page = await fetch_next()
+            except Exception:
+                break
+            if not page:
+                break
+            replies.extend(list(page))
+        return replies
+
+    def _thread_own_replies(self, event: IntelEvent, original: Any, replies: list[Any]) -> None:
+        author_id = str(getattr(getattr(original, "user", None), "id", "") or "")
+        for reply in replies:
+            reply_author_id = str(getattr(getattr(reply, "user", None), "id", "") or "")
+            if not author_id or reply_author_id != author_id:
+                continue
+            reply_id = str(getattr(reply, "id", "") or "")
+            if not reply_id:
+                continue
+            reply_text = str(getattr(reply, "text", "") or "").strip()
+            record: dict[str, Any] = {
+                "tweet_id": reply_id,
+                "posted_at": self._timestamp(reply),
+                "url": f"https://x.com/i/web/status/{reply_id}",
+                "kind": "reply",
+            }
+            if reply_text:
+                record["note"] = reply_text[:500]
+            added = intel_store.append_thread_repost(event.id, record)
+            if added:
+                logger.info(
+                    "X (twikit) self-reply %s threaded onto incident %s",
+                    reply_id, event.id,
+                )
 
     def _flag_unreachable_tweets(self, unresolved: list[IntelEvent]) -> None:
         """Alert once per incident when its own tweet vanished from the

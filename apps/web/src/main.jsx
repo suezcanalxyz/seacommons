@@ -11,7 +11,12 @@ import LayerToggles, { LAYER_GROUPS } from './components/LayerToggles.jsx';
 import Legend from './components/Legend.jsx';
 import AlertRail from './components/AlertRail.jsx';
 import MdaPanel from './components/MdaPanel.jsx';
-import { categoryColorExpression, INTEL_MAP_CATEGORIES } from './features/intel/categories.js';
+import {
+  categoryColorExpression,
+  classifyEventVisual,
+  EVENT_VISUAL_CATEGORIES,
+  INTEL_MAP_CATEGORIES,
+} from './features/intel/categories.js';
 import { mdaAnomalyColorExpression, mdaCategoryKey, MDA_ANOMALY_CATEGORIES } from './features/intel/mdaCategories.js';
 import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
@@ -103,11 +108,11 @@ const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'en
 // ngo-vessels/platforms effects and loadWeatherGridForMap's isPublicLiveHost
 // guard) — everything else stays hidden there regardless of the layer toggle.
 const PUBLIC_LIVE_HUMANITARIAN_LAYER_GROUPS = new Set([
-  'nautical', 'sar', 'fused', 'ngo_vessels', 'platforms',
+  'nautical', 'sar', 'fused', 'observed_tracks', 'drift_models', 'ngo_vessels', 'platforms',
   'intel_social', 'intel_news', 'intel_hazard', 'intel_incident', 'intel_iom', 'intel_ngo',
 ]);
 const PUBLIC_LIVE_SECURITY_LAYER_GROUPS = new Set([
-  'nautical', 'sar', 'fused', 'spikes', 'platforms',
+  'nautical', 'sar', 'fused', 'observed_tracks', 'drift_models', 'spikes', 'platforms',
 ]);
 const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
 const isPublicLiveHost = window.location.hostname === 'live.seacommons.org';
@@ -405,9 +410,20 @@ const OWM_KEY = import.meta.env.VITE_OWM_KEY;
 const UNREAL_PIXEL_STREAM_URL = String(import.meta.env.VITE_UNREAL_PIXEL_STREAM_URL || '').trim();
 
 function mapStyle() {
-  if (MAPTILER_KEY) {
-    return `https://api.maptiler.com/maps/hybrid/style.json?key=${MAPTILER_KEY}`;
-  }
+  const satellite = MAPTILER_KEY
+    ? {
+      type: 'raster',
+      url: `https://api.maptiler.com/tiles/satellite-v2/tiles.json?key=${MAPTILER_KEY}`,
+      tileSize: 256,
+      attribution: '&copy; MapTiler satellite imagery providers',
+    }
+    : {
+      type: 'raster',
+      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+    };
   return {
     version: 8,
     sources: {
@@ -417,8 +433,12 @@ function mapStyle() {
         tileSize: 256,
         attribution: '&copy; OpenStreetMap contributors',
       },
+      satellite,
     },
-    layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+    layers: [
+      { id: 'osm', type: 'raster', source: 'osm' },
+      { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: 'none' } },
+    ],
   };
 }
 
@@ -589,6 +609,13 @@ function App() {
   const [intelFilter, setIntelFilter] = useState('all');
   const [showAisAlerts, setShowAisAlerts] = useState(false);
   const [showVesselLinks, setShowVesselLinks] = useState(false);
+  const [baseMap, setBaseMap] = useState(() => {
+    try {
+      return window.localStorage.getItem('seacommons_base_map') === 'satellite' ? 'satellite' : 'standard';
+    } catch {
+      return 'standard';
+    }
+  });
   const [layerVis, setLayerVis] = useState(() => {
     const defaults = {
       vessels: true,
@@ -787,13 +814,9 @@ function App() {
 
   async function loadNearestVessels(lat, lon) {
     if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) return [];
-    if (isPublicLiveHost) {
-      setNearestVessels([]);
-      return [];
-    }
     const payload = await fetchJson(
       apiBase,
-      `/api/v1/vessels/nearest?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&limit=5`,
+      `/api/v1/vessels/nearest?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&limit=8`,
     );
     setNearestVessels(payload.vessels || []);
     return payload.vessels || [];
@@ -1197,6 +1220,7 @@ function App() {
         map.addSource('mda-jamming',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('mda-anomaly',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-events',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('intel-selected',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-distress',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-fused',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-spike',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -1315,35 +1339,14 @@ function App() {
         });
 
         // Grouped maritime-security cases are vessels, not generic alert dots.
-        // The triangle points along the latest observed AIS course; active
-        // episodes receive a softly animated triangular echo behind the core.
-        const _vesselEpisodeColor = ['match', ['get', 'maritime_domain'],
-          'sanctions', '#f472b6',
-          'grey_zone', '#f59e0b',
-          'safety', '#38bdf8',
-          '#8bf0c5'];
-        const _activeVesselEpisode = ['all',
-          ['!=', ['get', 'incident_lifecycle'], 'resolved'],
-          ['!=', ['get', 'incident_lifecycle'], 'archived'],
-        ];
-        map.addLayer({
-          id: 'intel-vessel-pulse', type: 'symbol', source: 'intel-vessels',
-          filter: _activeVesselEpisode,
-          layout: {
-            'icon-image': 'vessel-arrow',
-            'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.48, 10, 0.76, 14, 0.94],
-            'icon-rotate': ['coalesce', ['get', 'course'], 0],
-            'icon-rotation-alignment': 'map',
-            'icon-allow-overlap': true,
-            'icon-ignore-placement': true,
-          },
-          paint: {
-            'icon-color': _vesselEpisodeColor,
-            'icon-opacity': 0.28,
-            'icon-halo-color': _vesselEpisodeColor,
-            'icon-halo-width': 3,
-          },
-        });
+        // Keep the marker bare: the triangle shows the latest observed AIS
+        // course and the separate selection layer supplies the only glow.
+        // Icon halos around this hand-built SDF render as squares on some GPUs.
+        const _vesselEpisodeColor = ['match', ['get', 'visual_category']];
+        for (const category of EVENT_VISUAL_CATEGORIES) {
+          _vesselEpisodeColor.push(category.key, category.color);
+        }
+        _vesselEpisodeColor.push('#8bf0c5');
         map.addLayer({
           id: 'intel-vessel-core', type: 'symbol', source: 'intel-vessels',
           layout: {
@@ -1357,8 +1360,26 @@ function App() {
           paint: {
             'icon-color': _vesselEpisodeColor,
             'icon-opacity': 1,
-            'icon-halo-color': '#04131a',
-            'icon-halo-width': 1.8,
+          },
+        });
+
+        map.addLayer({
+          id: 'intel-selected-glow', type: 'circle', source: 'intel-selected',
+          paint: {
+            'circle-radius': 23,
+            'circle-color': ['coalesce', ['get', 'visual_color'], '#a9ffda'],
+            'circle-opacity': 0.22,
+            'circle-blur': 0.72,
+          },
+        });
+        map.addLayer({
+          id: 'intel-selected-ring', type: 'circle', source: 'intel-selected',
+          paint: {
+            'circle-radius': 15,
+            'circle-color': 'rgba(0,0,0,0)',
+            'circle-stroke-width': 2.5,
+            'circle-stroke-color': ['coalesce', ['get', 'visual_color'], '#a9ffda'],
+            'circle-stroke-opacity': 0.95,
           },
         });
 
@@ -1835,9 +1856,9 @@ function App() {
             map.setPaintProperty('intel-fused-pulse', 'circle-radius', 7 + 16 * t);
             map.setPaintProperty('intel-fused-pulse', 'circle-stroke-opacity', 0.6 * (1 - t));
           }
-          if (map.getLayer('intel-vessel-pulse')) {
-            const wave = 0.14 + 0.26 * (0.5 + 0.5 * Math.sin(t * Math.PI * 2));
-            map.setPaintProperty('intel-vessel-pulse', 'icon-opacity', wave);
+          if (map.getLayer('intel-selected-glow')) {
+            map.setPaintProperty('intel-selected-glow', 'circle-radius', 19 + 13 * t);
+            map.setPaintProperty('intel-selected-glow', 'circle-opacity', 0.32 * (1 - t));
           }
           pulseRaf = requestAnimationFrame(distressPulse);
         }
@@ -2194,6 +2215,14 @@ function App() {
     map.getSource('proximity-lines')?.setData(lfc);
   }, [nearestVessels, selectedLat, selectedLon, mapReady]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (map.getLayer('osm')) map.setLayoutProperty('osm', 'visibility', baseMap === 'standard' ? 'visible' : 'none');
+    if (map.getLayer('satellite')) map.setLayoutProperty('satellite', 'visibility', baseMap === 'satellite' ? 'visible' : 'none');
+    try { window.localStorage.setItem('seacommons_base_map', baseMap); } catch { /* quota */ }
+  }, [baseMap, mapReady]);
+
   // Layer group visibility — applied to every MapLibre layer in the group
   useEffect(() => {
     const map = mapRef.current;
@@ -2235,12 +2264,22 @@ function App() {
     const isVesselEpisode = (f) => String(f.properties?.episode_id || f.properties?.id || '').startsWith('vessel-episode:');
     const vesselEpisodes = positioned.filter(isVesselEpisode).map((feature) => {
       const properties = feature.properties || {};
+      const visual = classifyEventVisual(properties);
       const points = Array.isArray(properties.observed_track) ? properties.observed_track : [];
       const latest = points[points.length - 1] || {};
       const course = Number.isFinite(Number(latest.cog))
         ? Number(latest.cog)
         : observedTrackCourse(points);
-      return { ...feature, properties: { ...properties, course } };
+      return {
+        ...feature,
+        properties: {
+          ...properties,
+          course,
+          visual_category: visual.key,
+          visual_color: visual.color,
+          visual_label: visual.label,
+        },
+      };
     });
     const nonVessel = positioned.filter((feature) => !isVesselEpisode(feature));
     const isSpike = (f) => typeOf(f) === 'ais_spike' || typeOf(f) === 'ais_anomaly';
@@ -2377,6 +2416,38 @@ function App() {
     if (!map || !mapReady || !map.isStyleLoaded()) return;
     map.getSource('intel-drifts')?.setData(displayedIntelDrifts);
   }, [displayedIntelDrifts, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const source = map?.getSource('intel-selected');
+    if (!map || !source || !mapReady || !map.isStyleLoaded()) return;
+    const feature = resolvedMapPanel?.type === 'intel' && !conePanelHidden ? resolvedMapPanel.feature : null;
+    let coordinates = feature?.geometry?.type === 'Point' ? feature.geometry.coordinates : null;
+    if (!coordinates && feature?.geometry?.type === 'Polygon') {
+      const ring = feature.geometry.coordinates?.[0] || [];
+      if (ring.length) {
+        const sum = ring.reduce((acc, point) => [acc[0] + Number(point[0]), acc[1] + Number(point[1])], [0, 0]);
+        coordinates = [sum[0] / ring.length, sum[1] / ring.length];
+      }
+    }
+    if (!feature || !coordinates) {
+      source.setData({ type: 'FeatureCollection', features: [] });
+      return;
+    }
+    const visual = classifyEventVisual(feature.properties || {});
+    source.setData({
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates },
+        properties: {
+          id: feature.properties?.id,
+          visual_category: visual.key,
+          visual_color: visual.color,
+        },
+      }],
+    });
+  }, [conePanelHidden, mapReady, resolvedMapPanel]);
 
   // Intel → vessel correlation lines (manual toggle only)
   useEffect(() => {
@@ -2839,10 +2910,6 @@ function App() {
     return { total: intelEvents.length, by_type, by_sev };
   }, [intelEvents]);
 
-  const liveSourceCount = useMemo(
-    () => new Set(intelEvents.map((feature) => feature.properties?.source).filter(Boolean)).size,
-    [intelEvents],
-  );
   const isOnSim = APP_PROFILE === 'demo' && (activePanel === 'sim' || selectionMode);
   const simulationRunning = caseStatus.startsWith('starting') || caseStatus.startsWith('queued') || caseStatus.startsWith('computing');
 
@@ -2905,6 +2972,8 @@ function App() {
           <LayerToggles
             visibility={layerVis}
             onToggle={toggleLayerGroup}
+            baseMap={baseMap}
+            onBaseMapChange={setBaseMap}
             allowed={isPublicLiveHost
               ? liveMode === 'security'
                 ? PUBLIC_LIVE_SECURITY_LAYER_GROUPS
@@ -2975,6 +3044,7 @@ function App() {
         ) : null}
 
         {/* Cone detail panel — right side, appears when clicking a drift cone or a signal marker */}
+        {mapPanel?.type === 'intel' && !conePanelHidden && <div className="intel-report-map-overlay" aria-hidden="true" />}
         {['cone', 'trajectory', 'intel'].includes(mapPanel?.type) && !conePanelHidden && (
           <MapFloatingPanel
             panel={resolvedMapPanel}
@@ -3197,10 +3267,6 @@ function App() {
                   <strong>{liveModeCounts.security ?? '—'}</strong>
                 </div>
                 <div>
-                  <span>SOURCES</span>
-                  <strong>{liveSourceCount}</strong>
-                </div>
-                <div>
                   <span>TRANSPORT</span>
                   <strong>{intelMode === 'ws' ? 'WS' : intelMode === 'poll' ? 'REST' : 'SYNC'}</strong>
                 </div>
@@ -3214,7 +3280,6 @@ function App() {
             <div className="live-feed-panel__body">
               <IntelDashboard
                 apiBase={apiBase}
-                liveEdgeBase={LIVE_EDGE_BASE}
                 publicMode
                 intelEvents={intelEvents}
                 intelStats={intelStats}
@@ -3331,7 +3396,6 @@ function App() {
           {activePanel === 'osint' ? (
             <IntelDashboard
               apiBase={apiBase}
-              liveEdgeBase={LIVE_EDGE_BASE}
               publicMode={isPublicLiveHost}
               intelEvents={intelEvents}
               intelStats={intelStats}

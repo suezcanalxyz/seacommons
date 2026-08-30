@@ -10,11 +10,13 @@ collector.
 from __future__ import annotations
 
 import io
+import importlib.util
 import json
 import math
 import re
 import shutil
 import subprocess
+import threading
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -29,6 +31,74 @@ _HEADERS = {
     "User-Agent": "SeaCommonsIntel/2.0 (+https://seacommons.org)",
     "Accept": "text/html,application/xhtml+xml",
 }
+_EASYOCR_READER: Any = None
+_EASYOCR_FAILED = False
+_EASYOCR_LOCK = threading.Lock()
+
+
+def _easyocr_image(payload: bytes) -> tuple[Optional[tuple[float, float]], list[dict], bool]:
+    """Canonical neural OCR pass; returns coordinate + positioned text boxes.
+
+    EasyOCR is primary because it detects small text regions before reading
+    them. Tesseract remains the explicit legacy fallback for hosts where the
+    model package/weights are unavailable.
+    """
+    global _EASYOCR_READER, _EASYOCR_FAILED
+    if _EASYOCR_FAILED:
+        return None, [], False
+    try:
+        import easyocr
+        import numpy as np
+        from PIL import Image, ImageOps
+    except Exception:
+        return None, [], False
+    try:
+        with _EASYOCR_LOCK:
+            if _EASYOCR_READER is None:
+                _EASYOCR_READER = easyocr.Reader(["en"], gpu=False, verbose=False)
+        with Image.open(io.BytesIO(payload)) as source:
+            image = np.asarray(ImageOps.exif_transpose(source).convert("RGB"))
+        results = _EASYOCR_READER.readtext(
+            image,
+            detail=1,
+            paragraph=False,
+            min_size=8,
+            text_threshold=0.45,
+            low_text=0.25,
+            canvas_size=3200,
+            mag_ratio=1.5,
+        )
+    except Exception:
+        _EASYOCR_FAILED = True
+        return None, [], True
+
+    texts: list[str] = []
+    boxes: list[dict] = []
+    for index, item in enumerate(results):
+        if not isinstance(item, (list, tuple)) or len(item) < 3:
+            continue
+        polygon, raw_text, confidence = item[0], str(item[1] or "").strip(), float(item[2] or 0)
+        if not raw_text or confidence < 0.20:
+            continue
+        texts.append(raw_text)
+        try:
+            xs = [float(point[0]) for point in polygon]
+            ys = [float(point[1]) for point in polygon]
+        except (TypeError, ValueError, IndexError):
+            continue
+        boxes.append({
+            "text": raw_text,
+            "left": round(min(xs)),
+            "top": round(min(ys)),
+            "width": max(1, round(max(xs) - min(xs))),
+            "height": max(1, round(max(ys) - min(ys))),
+            "block": "easyocr",
+            "par": "1",
+            "line": str(index + 1),
+            "word": 1,
+        })
+    combined = "\n".join(texts)
+    return extract_numeric_coords(combined), boxes, True
 
 
 def x_id_timestamp(tweet_id: str) -> str:
@@ -210,7 +280,7 @@ def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool, str]:
     or "none".
     """
     executable = shutil.which("tesseract")
-    if not executable:
+    if not executable and importlib.util.find_spec("easyocr") is None:
         return None, False, "none"
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in _ALLOWED_MEDIA_HOSTS:
@@ -227,6 +297,10 @@ def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool, str]:
         payload = response.read(_MAX_IMAGE_BYTES + 1)
     if len(payload) > _MAX_IMAGE_BYTES:
         return None, False, "none"
+
+    easy_coordinate, easy_boxes, easy_attempted = _easyocr_image(payload)
+    if easy_coordinate is not None:
+        return easy_coordinate, True, "easyocr_text"
 
     from PIL import Image, ImageFilter, ImageOps
 
@@ -320,9 +394,13 @@ def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool, str]:
     try:
         from core.intel.map_pin_geolocate import geolocate_pin_from_image
 
-        pin_coord = geolocate_pin_from_image(payload, executable=executable)
+        pin_coord = geolocate_pin_from_image(
+            payload,
+            executable=executable,
+            word_boxes=easy_boxes or None,
+        )
     except Exception:
         pin_coord = None
     if pin_coord is not None:
-        return pin_coord, True, "pin_landmark"
-    return None, attempted, "none"
+        return pin_coord, True, "easyocr_pin_landmark" if easy_boxes else "tesseract_pin_landmark"
+    return None, attempted or easy_attempted, "none"

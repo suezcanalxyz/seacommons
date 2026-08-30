@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
-import { descriptionOf } from '../features/intel/categories.js';
+import { classifyEventVisual, descriptionOf, eventAnomalyLabel } from '../features/intel/categories.js';
 
 const HORIZON = {
   cone_6h:  '6 h drift zone',
@@ -268,8 +268,6 @@ function ConeView({ panel }) {
   );
 }
 
-const INTEL_KIND_COLOR = { distress: '#ff3b3b', resolved: '#22c55e', needs_review: '#f59e0b', archived: '#9aa0ab' };
-
 const AIS_NAV_STATUS = {
   0: 'under way using engine',
   1: 'at anchor',
@@ -282,6 +280,45 @@ const AIS_NAV_STATUS = {
 
 function normalizeEventId(value) {
   return String(value || '').replace(/^intel:/, '');
+}
+
+function shipTypeLabel(value) {
+  if (value == null || value === '' || String(value).toLowerCase() === 'unknown') return 'Unknown';
+  const code = Number(value);
+  if (!Number.isFinite(code)) return String(value).replace(/_/g, ' ');
+  let label = 'Other vessel';
+  if (code >= 20 && code <= 29) label = 'Wing in ground';
+  else if (code === 30) label = 'Fishing';
+  else if (code === 31) label = 'Towing';
+  else if (code === 32) label = 'Towing (large tow)';
+  else if (code === 33) label = 'Dredging / underwater operations';
+  else if (code === 34) label = 'Diving operations';
+  else if (code === 35) label = 'Military operations';
+  else if (code === 36) label = 'Sailing vessel';
+  else if (code === 37) label = 'Pleasure craft';
+  else if (code >= 40 && code <= 49) label = 'High-speed craft';
+  else if (code === 50) label = 'Pilot vessel';
+  else if (code === 51) label = 'Search and rescue vessel';
+  else if (code === 52) label = 'Tug';
+  else if (code === 53) label = 'Port tender';
+  else if (code === 54) label = 'Anti-pollution vessel';
+  else if (code === 55) label = 'Law-enforcement vessel';
+  else if (code === 58) label = 'Medical transport';
+  else if (code === 59) label = 'Non-combatant ship';
+  else if (code >= 60 && code <= 69) label = 'Passenger ship';
+  else if (code >= 70 && code <= 79) label = 'Cargo ship';
+  else if (code >= 80 && code <= 89) label = 'Tanker';
+  return `${label} (${code})`;
+}
+
+function ageLabel(value) {
+  const timestamp = Date.parse(value || '');
+  if (!Number.isFinite(timestamp)) return null;
+  const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60_000));
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h ago`;
+  return `${Math.round(hours / 24)} d ago`;
 }
 
 function featurePosition(feature) {
@@ -361,7 +398,14 @@ function TrackGraphic({ feature, driftFeature, dossier }) {
   );
 }
 
-function EvidenceSources({ props }) {
+function marineTrafficMapUrl(props, feature) {
+  const mmsi = props.linked_mmsi || props.mmsi;
+  const coordinates = featurePosition(feature);
+  if (!mmsi || !coordinates) return null;
+  return `https://www.marinetraffic.com/en/ais/embed/zoom:10/centery:${Number(coordinates[1]).toFixed(5)}/centerx:${Number(coordinates[0]).toFixed(5)}/maptype:4/shownames:true/mmsi:${mmsi}/shipid:0`;
+}
+
+function EvidenceSources({ props, feature }) {
   const records = Array.isArray(props.source_records) && props.source_records.length
     ? props.source_records
     : [{
@@ -377,17 +421,26 @@ function EvidenceSources({ props }) {
     <details className="intel-evidence-sources" open={sources.length === 1}>
       <summary>Evidence sources ({sources.length})</summary>
       <div className="intel-evidence-sources__list">
-        {sources.map((record, index) => (
+        {sources.map((record, index) => {
+          const isMarineTraffic = /marinetraffic/i.test(`${record.source || ''} ${record.url || ''}`);
+          const mmsi = props.linked_mmsi || props.mmsi;
+          const resolvedUrl = isMarineTraffic ? marineTrafficMapUrl(props, feature) : record.url;
+          return (
           <article key={`${record.source}-${record.url}-${index}`}>
             <div>
-              <strong>{record.source || 'Source'}</strong>
+              <strong>{isMarineTraffic ? 'MarineTraffic AIS' : record.source || 'Source'}</strong>
               <span>{String(record.verification_status || 'provenance recorded').replace(/_/g, ' ')}</span>
             </div>
             <p>{record.title || 'Maritime observation'}</p>
             {record.timestamp_utc && <time>{new Date(record.timestamp_utc).toLocaleString('it-IT')}</time>}
-            {record.url && <a href={record.url} target="_blank" rel="noopener noreferrer">Open original ↗</a>}
+            {resolvedUrl && (
+              <a href={resolvedUrl} target="_blank" rel="noopener noreferrer">
+                {isMarineTraffic ? `Open MarineTraffic map · MMSI ${mmsi}` : 'Open original'} ↗
+              </a>
+            )}
           </article>
-        ))}
+          );
+        })}
       </div>
     </details>
   );
@@ -399,7 +452,7 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
   const [dossier, setDossier] = useState(null);
   const [dossierLoading, setDossierLoading] = useState(false);
   const [nearbyVessels, setNearbyVessels] = useState([]);
-  const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [nearbyStatus, setNearbyStatus] = useState('idle');
   const [forensic, setForensic] = useState(null);
   const driftFeature = useMemo(() => {
     const features = Array.isArray(intelDrifts?.features) ? intelDrifts.features : [];
@@ -434,13 +487,22 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
     let alive = true;
     if (!loadNearestVessels || !coords) {
       setNearbyVessels([]);
+      setNearbyStatus('idle');
       return undefined;
     }
-    setNearbyLoading(true);
+    setNearbyStatus('loading');
     loadNearestVessels(coords[1], coords[0])
-      .then((vessels) => { if (alive) setNearbyVessels(vessels || []); })
-      .catch(() => { if (alive) setNearbyVessels([]); })
-      .finally(() => { if (alive) setNearbyLoading(false); });
+      .then((vessels) => {
+        if (!alive) return;
+        const others = (vessels || []).filter((vessel) => !mmsi || String(vessel.mmsi) !== String(mmsi));
+        setNearbyVessels(others);
+        setNearbyStatus(others.length ? 'ready' : 'empty');
+      })
+      .catch(() => {
+        if (!alive) return;
+        setNearbyVessels([]);
+        setNearbyStatus('error');
+      });
     return () => { alive = false; };
   // A new canonical event id is the only reason to repeat this point lookup.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -466,25 +528,28 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
 
   const lifecycle = props.incident_lifecycle
     || (['resolved', 'needs_review', 'archived'].includes(props.kind) ? props.kind : 'active');
-  const color = lifecycle === 'archived'
-    ? INTEL_KIND_COLOR.archived
-    : lifecycle === 'resolved'
-    ? INTEL_KIND_COLOR.resolved
-    : lifecycle === 'needs_review' || props.severity === 'medium'
-      ? INTEL_KIND_COLOR.needs_review
-      : ['critical', 'high'].includes(props.severity) || props.sanctions_matched
-        ? INTEL_KIND_COLOR.distress
-        : INTEL_KIND_COLOR.resolved;
+  const visual = classifyEventVisual(props);
+  const color = visual.color;
   const when = props.timestamp_utc || props.source_timestamp_utc;
-  const eventType = (
-    (Array.isArray(props.anomaly_types) && props.anomaly_types[0])
-    || props.anomaly_type
-    || props.ais_nav_status_kind
-    || props.alert_type
-    || props.type
-    || 'maritime signal'
-  ).replace(/_/g, ' ');
+  const eventType = eventAnomalyLabel(props);
   const sanctions = dossier?.identity?.sanctions || [];
+  const isHumanitarian = Boolean(
+    props.humanitarian_case_id
+    || (props.maritime_domain === 'sar' && (props.is_distress || props.kind === 'distress'))
+  );
+  const isAlarmPhone = /alarm[ _-]?phone/i.test(`${props.source || ''} ${props.verification_status || ''}`);
+  const confidence = props.confidence ?? props.anomaly_confidence;
+  const evidenceLevel = props.evidence_level
+    || (isHumanitarian ? props.verification_level || 'public source report' : 'derived from maritime data');
+  const speedSamples = (dossier?.track_points || [])
+    .map((point) => Number(point.sog))
+    .filter((speed) => Number.isFinite(speed) && speed >= 0);
+  const explicitSpeed = props.latest_sog == null || props.latest_sog === '' ? null : Number(props.latest_sog);
+  const latestSpeed = Number.isFinite(explicitSpeed) ? explicitSpeed : speedSamples.at(-1);
+  const averageSpeed = speedSamples.length
+    ? speedSamples.reduce((sum, speed) => sum + speed, 0) / speedSamples.length
+    : null;
+  const maximumSpeed = speedSamples.length ? Math.max(...speedSamples) : null;
 
   return (
     <>
@@ -494,6 +559,7 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
           <strong>{props.vessel_name || props.ship_name || dossier?.static?.name || props.title || 'Maritime signal'}</strong>
         </div>
         {props.text && <p className="intel-report-summary">{props.text}</p>}
+        <Row label="Category" value={visual.label} color={color} />
         <Row label="Event" value={eventType} />
         <Row label="Status" value={lifecycle} color={color} />
         {props.verification_status && <Row label="Verification" value={String(props.verification_status).replace(/_/g, ' ')} />}
@@ -506,21 +572,53 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
         <TrackGraphic feature={panel.feature} driftFeature={driftFeature} dossier={dossier} />
       </div>
 
-      <div className="cone-section">
+      {(!isHumanitarian || mmsi) && <div className="cone-section">
         <SectionLabel>Professional vessel identity</SectionLabel>
         <Row label="Name" value={dossier?.static?.name || props.vessel_name || props.ship_name || '—'} />
         <Row label="MMSI" value={mmsi || '—'} mono />
         <Row label="IMO" value={dossier?.static?.imo || props.imo || '—'} mono />
         <Row label="Flag" value={dossier?.static?.flag || dossier?.identity?.mid_flag || props.flag || '—'} />
-        {props.ship_type != null && <Row label="AIS ship type" value={props.ship_type} />}
+        <Row label="Vessel type" value={shipTypeLabel(dossier?.static?.ship_type ?? props.ship_type)} />
+        {dossier?.static?.destination && <Row label="AIS destination" value={dossier.static.destination} />}
         {props.latest_nav_status != null && <Row label="Navigation" value={AIS_NAV_STATUS[props.latest_nav_status] || `status ${props.latest_nav_status}`} />}
-        {Number.isFinite(Number(props.latest_sog)) && <Row label="Speed" value={`${Number(props.latest_sog).toFixed(1)} kn`} />}
+        <Row
+          label="Latest AIS speed"
+          value={Number.isFinite(latestSpeed)
+            ? `${latestSpeed.toFixed(1)} kn${latestSpeed <= 0.1 ? ' · stationary fix' : ''}`
+            : 'Not available'}
+        />
+        {Number.isFinite(averageSpeed) && <Row label="Track average" value={`${averageSpeed.toFixed(1)} kn`} />}
+        {Number.isFinite(maximumSpeed) && <Row label="Track maximum" value={`${maximumSpeed.toFixed(1)} kn`} />}
         {dossierLoading && <div className="intel-report-loading">Loading vessel registry and sanctions…</div>}
-      </div>
+      </div>}
 
       <div className="cone-section">
-        <SectionLabel>Why this was flagged</SectionLabel>
-        <p className="intel-report-note">{props.detection_reason || props.detail || descriptionOf(props.type)}</p>
+        <SectionLabel>{isHumanitarian ? 'Humanitarian case' : 'Why this was flagged'}</SectionLabel>
+        {isHumanitarian ? (
+          <>
+            <Row label="Case" value={props.humanitarian_case_id || props.incident_id || props.id} mono />
+            <Row label="Situation" value={String(props.humanitarian_case_type || eventType).replace(/_/g, ' ')} />
+            <Row
+              label="People reported"
+              value={props.people_reported != null
+                ? `${props.people_precision === 'approximate' ? '~' : ''}${props.people_reported}`
+                : 'Not stated'}
+            />
+            <Row label="Case status" value={props.humanitarian_status || lifecycle} color={color} />
+            <Row label="Position precision" value={String(props.location_precision || props.coordinate_review_status || 'unknown').replace(/_/g, ' ')} />
+            <Row
+              label="Source assessment"
+              value={isAlarmPhone ? 'Direct humanitarian source · operator curated' : String(props.verification_level || props.verification_status || 'single public source').replace(/_/g, ' ')}
+            />
+            <p className="intel-report-note">
+              {isAlarmPhone
+                ? 'Alarm Phone is treated as a direct, specialised humanitarian source. The report remains distinct from official authority confirmation.'
+                : 'This records what the cited humanitarian source reported; conflicting or later updates remain visible in the timeline.'}
+            </p>
+          </>
+        ) : (
+          <p className="intel-report-note">{props.detection_reason || props.detail || descriptionOf(props.type)}</p>
+        )}
         {props.infrastructure && (
           <div className="intel-report-warning">
             <strong>Infrastructure proximity context</strong>
@@ -549,18 +647,45 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
         )}
       </div>
 
-      {(nearbyLoading || nearbyVessels.length > 0) && (
+      {coords && loadNearestVessels && (
         <div className="cone-section">
           <SectionLabel>Nearest AIS vessels</SectionLabel>
-          {nearbyLoading ? <div className="intel-report-loading">Searching recent AIS positions…</div> : nearbyVessels.slice(0, 5).map((vessel) => (
+          {nearbyStatus === 'loading' && <div className="intel-report-loading">Searching recent AIS positions…</div>}
+          {nearbyStatus === 'empty' && <p className="intel-report-note">No other recent AIS vessel found near this position.</p>}
+          {nearbyStatus === 'error' && <p className="intel-report-warning">AIS proximity service is currently unavailable.</p>}
+          {nearbyStatus === 'ready' && nearbyVessels.slice(0, 5).map((vessel) => (
             <Row
               key={vessel.mmsi || `${vessel.lat}-${vessel.lon}`}
-              label={vessel.ship_name || vessel.mmsi || 'Vessel'}
-              value={Number.isFinite(Number(vessel.distance_nm)) ? `${Number(vessel.distance_nm).toFixed(1)} nm` : '—'}
+              label={`${vessel.ship_name || vessel.mmsi || 'Vessel'} · ${shipTypeLabel(vessel.type)}`}
+              value={[
+                Number.isFinite(Number(vessel.distance_nm)) ? `${Number(vessel.distance_nm).toFixed(1)} nm` : null,
+                ageLabel(vessel.last_seen),
+              ].filter(Boolean).join(' · ') || '—'}
             />
           ))}
+          {isHumanitarian && nearbyStatus === 'ready' && (
+            <p className="intel-report-note">Proximity only: no nearby vessel is labelled as responder, involved party, or responsible without explicit corroborating evidence.</p>
+          )}
         </div>
       )}
+
+      {mmsi && <div className="cone-section">
+        <SectionLabel>Recent port calls</SectionLabel>
+        {dossierLoading && <div className="intel-report-loading">Reconstructing calls from AIS history…</div>}
+        {!dossierLoading && (dossier?.recent_port_calls || []).length === 0 && (
+          <p className="intel-report-note">No AIS-derived port call in the selected history window.</p>
+        )}
+        {(dossier?.recent_port_calls || []).map((call, index) => (
+          <Row
+            key={`${call.port}-${call.arrived_at || index}`}
+            label={call.port}
+            value={`${call.arrived_at ? new Date(call.arrived_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : 'time unavailable'} · AIS-derived`}
+          />
+        ))}
+        {(dossier?.recent_port_calls || []).length > 0 && (
+          <p className="intel-report-note">Derived from slow or moored AIS fixes inside a port approach area; not an official port authority record.</p>
+        )}
+      </div>}
 
       {(props.sanctions_matched || sanctions.length > 0) && (
         <div className="cone-section">
@@ -591,18 +716,46 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
         </div>
       )}
 
-      {forensic && (
+      {Array.isArray(props.thread_reposts) && props.thread_reposts.length > 0 && (
         <div className="cone-section">
-          <SectionLabel>Forensic record</SectionLabel>
-          <Row label="Signature" value={forensic.verify?.valid ? 'valid' : 'invalid'} color={forensic.verify?.valid ? '#22c55e' : '#ef4444'} />
-          <Row label="Classification" value={forensic.classification} />
-          <Row label="Confidence" value={Number.isFinite(Number(forensic.confidence)) ? `${(Number(forensic.confidence) * 100).toFixed(0)}%` : '—'} />
-          <Row label="Hash" value={forensic.hash_blake3 ? `${String(forensic.hash_blake3).slice(0, 18)}…` : '—'} mono />
+          <SectionLabel>Case timeline</SectionLabel>
+          <ol className="intel-report-updates">
+            {props.thread_reposts.map((update) => (
+              <li key={`${update.tweet_id}-${update.posted_at}`}>
+                <time>{update.posted_at ? new Date(update.posted_at).toLocaleString('it-IT') : '—'}</time>
+                <span>{update.note || String(update.kind || 'source update').replace(/_/g, ' ')}</span>
+                {update.url && <a href={update.url} target="_blank" rel="noopener noreferrer">Open update ↗</a>}
+              </li>
+            ))}
+          </ol>
         </div>
       )}
 
+      <div className="cone-section">
+        <SectionLabel>Evidence & forensic assessment</SectionLabel>
+        <Row label="Observation" value={props.detection_reason || props.detail || eventType} />
+        <Row label="Interpretation" value={isHumanitarian ? 'Reported humanitarian situation' : descriptionOf(props.type)} />
+        <Row label="Evidence level" value={String(evidenceLevel).replace(/_/g, ' ')} />
+        <Row
+          label="Confidence"
+          value={Number.isFinite(Number(confidence))
+            ? `${Number(confidence) <= 1 ? (Number(confidence) * 100).toFixed(0) : Number(confidence).toFixed(0)}%`
+            : 'Not quantified'}
+        />
+        <Row label="Collection" value={String(props.ocr_engine || props.coordinate_source || (mmsi ? 'AIS telemetry' : props.platform || 'public source')).replace(/_/g, ' ')} />
+        <Row label="Validation" value={String(props.verification_status || 'provenance recorded').replace(/_/g, ' ')} />
+        {forensic && (
+          <>
+            <Row label="Signature" value={forensic.verify?.valid ? 'valid' : 'invalid'} color={forensic.verify?.valid ? '#22c55e' : '#ef4444'} />
+            <Row label="Classification" value={forensic.classification} />
+            <Row label="Packet confidence" value={Number.isFinite(Number(forensic.confidence)) ? `${(Number(forensic.confidence) * 100).toFixed(0)}%` : '—'} />
+            <Row label="Hash" value={forensic.hash_blake3 ? `${String(forensic.hash_blake3).slice(0, 18)}…` : '—'} mono />
+          </>
+        )}
+      </div>
+
       <div className="cone-section" style={{ borderBottom: 'none' }}>
-        <EvidenceSources props={props} />
+        <EvidenceSources props={props} feature={panel.feature} />
       </div>
     </>
   );

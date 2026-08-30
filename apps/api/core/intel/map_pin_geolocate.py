@@ -75,7 +75,10 @@ def _blob_from_mask(mask, width: int, height: int) -> Optional[tuple[int, int]]:
     if count < 0.20 * box_w * box_h:
         return None
     center_x = int(round(float(xs.mean())))
-    tip_y = int(ys.max())  # a teardrop pin's point is its bottom tip
+    # Circular incident markers encode their position at the centre; a tall
+    # teardrop pin encodes it at the bottom tip.
+    aspect = box_h / max(1, box_w)
+    tip_y = int(round(float(ys.mean()))) if 0.8 <= aspect <= 1.25 else int(ys.max())
     return center_x, tip_y
 
 
@@ -104,6 +107,8 @@ def _detect_marker_pixel(image) -> Optional[tuple[int, int]]:
         (b > 150) & (r < 120) & (g < 150) & (b - r > 55) & (b - g > 25),
         # amber / orange marker
         (r > 180) & (g > 90) & (g < 190) & (b < 100) & (r - b > 90) & (r - g > 25),
+        # bright yellow circular incident marker
+        (r > 205) & (g > 205) & (b < 135) & (r - b > 80) & (g - b > 80),
     ):
         tip = _blob_from_mask(np.asarray(mask), width, height)
         if tip is not None:
@@ -300,12 +305,17 @@ def _fit_axis(pixel_values: list[float], geo_values: list[float]) -> Optional[tu
     return float(slope), float(intercept)
 
 
-def geolocate_pin_from_image(payload: bytes, *, executable: Optional[str] = None) -> Optional[tuple[float, float]]:
+def geolocate_pin_from_image(
+    payload: bytes,
+    *,
+    executable: Optional[str] = None,
+    word_boxes: Optional[list[dict]] = None,
+) -> Optional[tuple[float, float]]:
     """Best-effort: recover the pin's real-world position from a plain map
     screenshot with no printed coordinates, using visible place labels as
     calibration points. Returns None on any missing precondition."""
     command = executable or shutil.which("tesseract")
-    if not command:
+    if not command and not word_boxes:
         return None
 
     from PIL import Image, ImageOps
@@ -317,11 +327,11 @@ def geolocate_pin_from_image(payload: bytes, *, executable: Optional[str] = None
             pin = _detect_marker_pixel(image)
             if pin is None:
                 return None
-            word_boxes = _ocr_word_boxes(image, executable=command)
+            detected_word_boxes = word_boxes or _ocr_word_boxes(image, executable=command)
     except Exception:
         return None
 
-    landmarks = _match_landmarks(word_boxes)
+    landmarks = _match_landmarks(detected_word_boxes)
     if len(landmarks) < _MIN_LANDMARK_MATCHES:
         return None
 

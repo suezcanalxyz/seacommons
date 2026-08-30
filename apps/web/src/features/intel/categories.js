@@ -27,6 +27,94 @@ export const SIGNAL_CATEGORIES = [
     description: 'Does not match a known category yet.' },
 ];
 
+// Operational presentation taxonomy for grouped vessel episodes. Unlike the
+// broad maritime domain, this describes what the signal actually says. It is
+// shared by the map triangle, compact log, report header and legend.
+export const EVENT_VISUAL_CATEGORIES = [
+  { key: 'navigation_casualty', label: 'Unable to manoeuvre / aground', color: '#ff4d5e' },
+  { key: 'spoofing', label: 'AIS spoofing / impossible movement', color: '#c084fc' },
+  { key: 'ais_gap', label: 'AIS gap / dark activity', color: '#fb923c' },
+  { key: 'loitering', label: 'Loitering / abnormal dwell', color: '#facc15' },
+  { key: 'rendezvous', label: 'Rendezvous / ship-to-ship', color: '#f97316' },
+  { key: 'sanctions', label: 'Sanctions match', color: '#f472b6' },
+  { key: 'infrastructure', label: 'Infrastructure proximity', color: '#22d3ee' },
+  { key: 'identity', label: 'Identity / flag anomaly', color: '#60a5fa' },
+  { key: 'piracy', label: 'Piracy / security incident', color: '#ef4444' },
+  { key: 'environmental', label: 'Environmental hazard', color: '#34d399' },
+  { key: 'needs_review', label: 'Needs operator review', color: '#f59e0b' },
+  { key: 'resolved', label: 'Resolved', color: '#22c55e' },
+  { key: 'archived', label: 'Archived', color: '#9aa0ab' },
+  { key: 'context', label: 'Maritime context', color: '#8bf0c5' },
+];
+
+const _VISUAL_BY_KEY = EVENT_VISUAL_CATEGORIES.reduce((acc, category) => {
+  acc[category.key] = category;
+  return acc;
+}, {});
+
+function eventTokens(properties = {}) {
+  const anomalyTypes = Array.isArray(properties.anomaly_types) ? properties.anomaly_types : [];
+  return [
+    ...anomalyTypes,
+    properties.anomaly_type,
+    properties.ais_nav_status_kind,
+    properties.alert_type,
+    properties.type,
+    properties.title,
+    properties.text,
+    properties.detection_reason,
+    properties.detail,
+  ].filter(Boolean).join(' ').toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+export function classifyEventVisual(properties = {}) {
+  const lifecycle = properties.incident_lifecycle
+    || (['resolved', 'needs_review', 'archived'].includes(properties.kind) ? properties.kind : null);
+  if (lifecycle === 'resolved') return _VISUAL_BY_KEY.resolved;
+  if (lifecycle === 'archived') return _VISUAL_BY_KEY.archived;
+
+  const tokens = eventTokens(properties);
+  const navStatus = Number(properties.latest_nav_status);
+  if (/circle_spoof|circular_spoof|spoofing|teleport|impossible_speed|impossible_movement|gnss_manipulation/.test(tokens)) {
+    return _VISUAL_BY_KEY.spoofing;
+  }
+  if (/ais_gap|dark_vessel|dark_activity|signal_gap|transponder_off|(^|_)gap($|_)/.test(tokens)) return _VISUAL_BY_KEY.ais_gap;
+  if (/loiter|abnormal_dwell|stationary_anomaly/.test(tokens)) return _VISUAL_BY_KEY.loitering;
+  if (/rendezvous|ship_to_ship|\bsts\b|proximity_pair/.test(tokens)) return _VISUAL_BY_KEY.rendezvous;
+  if (properties.sanctions_matched || properties.maritime_domain === 'sanctions' || /sanction/.test(tokens)) return _VISUAL_BY_KEY.sanctions;
+  if (properties.infrastructure || /pipeline|cable|infrastructure|platform_proximity/.test(tokens)) return _VISUAL_BY_KEY.infrastructure;
+  if (/identity|flag_hopping|mmsi_mismatch|imo_mismatch|false_flag/.test(tokens)) return _VISUAL_BY_KEY.identity;
+  if ([2, 3, 6].includes(navStatus)
+      || /not_under_command|unable_to_man(?:oeu|eu)vre|restricted_man(?:oeu|eu)vrability|aground|engine_failure|mechanical_failure|disabled_vessel/.test(tokens)) {
+    return _VISUAL_BY_KEY.navigation_casualty;
+  }
+  if (properties.maritime_domain === 'piracy' || /piracy|hijack|armed_robbery/.test(tokens)) return _VISUAL_BY_KEY.piracy;
+  if (properties.maritime_domain === 'environmental' || /pollution|oil_spill|environmental/.test(tokens)) return _VISUAL_BY_KEY.environmental;
+  if (lifecycle === 'needs_review' || properties.severity === 'medium') return _VISUAL_BY_KEY.needs_review;
+  if (['critical', 'high'].includes(properties.severity)) return _VISUAL_BY_KEY.navigation_casualty;
+  return _VISUAL_BY_KEY.context;
+}
+
+export function eventAnomalyLabel(properties = {}) {
+  const raw = (Array.isArray(properties.anomaly_types) && properties.anomaly_types[0])
+    || properties.anomaly_type
+    || properties.ais_nav_status_kind
+    || properties.alert_type
+    || properties.type
+    || 'maritime signal';
+  const labels = {
+    circle_spoof: 'circular spoofing',
+    circular_spoofing: 'circular spoofing',
+    not_under_command: 'unable to manoeuvre',
+    restricted_manoeuvrability: 'restricted manoeuvrability',
+    restricted_maneuverability: 'restricted manoeuvrability',
+    gap: 'AIS gap',
+    ais_gap: 'AIS gap',
+    rendezvous: 'ship-to-ship rendezvous',
+  };
+  return labels[raw] || String(raw).replace(/_/g, ' ');
+}
+
 // Categories that get their own toggleable map layer over the shared
 // `intel-events` source (distress / fused / ais have dedicated sources).
 export const INTEL_MAP_CATEGORIES = SIGNAL_CATEGORIES.filter(

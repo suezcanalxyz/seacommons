@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 
-import { SIGNAL_CATEGORIES } from '../features/intel/categories.js';
+import { EVENT_VISUAL_CATEGORIES, SIGNAL_CATEGORIES } from '../features/intel/categories.js';
 import { MDA_ANOMALY_CATEGORIES } from '../features/intel/mdaCategories.js';
-import { DOMAIN_COLORS } from './IntelDashboard.jsx';
 
 const INFO_ICON = (
   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -31,13 +30,6 @@ const BASE_ROWS = [
   { shape: 'ring',   color: '#8bf0c5', label: 'Drift projection' },
 ];
 
-const DOMAIN_ROWS = [
-  ['sar', 'Alert · search & rescue', 'A distress report corroborated by more than one source.'],
-  ['sanctions', 'Alert · sanctions / dark fleet', 'Spoofing, dark ship-to-ship transfer, or identity fraud tied to sanctions exposure.'],
-  ['grey_zone', 'Alert · grey-zone / infrastructure', 'Proximity to subsea cables/pipelines/platforms, or a warfare/grey-zone context match.'],
-  ['safety', 'Alert · vessel safety', 'A vessel casualty (collision, fire, damage) or a natural-hazard overlap with a vessel.'],
-];
-
 export default function Legend() {
   const [open, setOpen] = useState(false);
   return (
@@ -63,13 +55,12 @@ export default function Legend() {
               </span>
             </div>
           ))}
-          <div className="legend-panel-title">Correlated alert domain</div>
-          {DOMAIN_ROWS.map(([key, label, description]) => (
-            <div key={key} className="legend-row legend-row--defined" title={description}>
-              <Swatch shape="ring" color={DOMAIN_COLORS[key]} />
+          <div className="legend-panel-title">Vessel event categories</div>
+          {EVENT_VISUAL_CATEGORIES.filter((category) => !['resolved', 'archived', 'context'].includes(category.key)).map((category) => (
+            <div key={category.key} className="legend-row legend-row--defined">
+              <Swatch shape="ring" color={category.color} />
               <span>
-                <strong>{label}</strong>
-                <small>{description}</small>
+                <strong>{category.label}</strong>
               </span>
             </div>
           ))}

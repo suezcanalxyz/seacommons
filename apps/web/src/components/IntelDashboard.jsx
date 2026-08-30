@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { classifyEventVisual, eventAnomalyLabel } from '../features/intel/categories.js';
+
 const ALARM_PHONE_SOURCE = 'Alarm Phone';
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
 const SEV_LABELS = ['critical', 'high', 'medium', 'low'];
@@ -32,22 +34,6 @@ export const DOMAIN_COLORS = {
   iuu_fishing:'#4ade80',
   environmental: '#34d399',
 };
-
-function statusTone(s) {
-  if (s === 'active' || s === 'healthy')  return '#22c55e';
-  if (s === 'degraded') return '#f59e0b';
-  if (s === 'offline' || s === 'unavailable') return '#ef4444';
-  return '#6b7280';
-}
-
-function relativeTime(isoStr) {
-  if (!isoStr) return '—';
-  const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000);
-  if (diff < 60)   return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
 
 // Operational tiers (mirrors IntelEvent.tier() on the backend).
 const TIERS = [
@@ -102,58 +88,6 @@ function polygonCentroid(polygonCoords) {
   let sumLat = 0;
   for (const [lon, lat] of ring) { sumLon += lon; sumLat += lat; }
   return [sumLon / ring.length, sumLat / ring.length];
-}
-
-// ── Source Health Bar ─────────────────────────────────────────────────────────
-function SourceHealthBar({ sources, loaded = false }) {
-  if (!loaded) {
-    return (
-      <div className="intel-sources-row intel-sources-row--empty">
-        <span style={{ color: '#4a7a6e', fontSize: 11 }}>Source registry loading…</span>
-      </div>
-    );
-  }
-  if (!sources || sources.length === 0) {
-    return (
-      <div className="intel-sources-row intel-sources-row--empty">
-        <span style={{ color: '#78998f', fontSize: 11 }}>No approved collector is configured.</span>
-      </div>
-    );
-  }
-  return (
-    <div className="intel-source-health-list">
-      {sources.map((src) => {
-        const handles = Array.isArray(src.handles) ? src.handles : [];
-        return (
-          <div key={src.name} className="intel-source-health-card">
-            <div className="intel-source-chip" title={`Last poll: ${src.last_poll_at ? relativeTime(src.last_poll_at) : 'never'}\nPipeline: ${src.pipeline_status || src.status}\nSources: ${src.source_status || 'unknown'}`}>
-              <span className="intel-source-dot" style={{ background: statusTone(src.status) }} />
-              <span className="intel-source-chip-name">{src.name}</span>
-              {Number(src.configured) > 0 && (
-                <span className="intel-source-chip-count">{src.reachable || 0}/{src.configured}</span>
-              )}
-              {src.events_last_hour > 0 && (
-                <span className="intel-source-chip-count">{src.events_last_hour}/h</span>
-              )}
-            </div>
-            <div className="intel-source-health-meta">
-              pipeline {src.pipeline_status || src.status} · sources {src.source_status || 'unknown'}
-            </div>
-            {handles.length > 0 && (
-              <div className="intel-source-handles" aria-label={`${src.name} source availability`}>
-                {handles.map((handle) => (
-                  <span key={handle.name} title={`Last poll: ${handle.last_poll_at ? relativeTime(handle.last_poll_at) : 'never'}`}>
-                    <i style={{ background: statusTone(handle.status) }} />
-                    @{handle.name} · {handle.status}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 // ── Manual Injection Form ─────────────────────────────────────────────────────
@@ -296,7 +230,6 @@ function groupByHour(events) {
 // ── Main component ───────────────────────────────────────────────────────────
 export default function IntelDashboard({
   apiBase,
-  liveEdgeBase = '',
   publicMode = false,
   intelEvents,
   intelStats,
@@ -310,8 +243,6 @@ export default function IntelDashboard({
   selectedEventId,
   onOpenReport,
 }) {
-  const [sources, setSources] = useState([]);
-  const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [search, setSearch] = useState('');
   const [channelFilter, setChannelFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
@@ -321,7 +252,6 @@ export default function IntelDashboard({
   const [showInject, setShowInject] = useState(false);
   const [injectSuccess, setInjectSuccess] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(false);
-  const pollRef = useRef(null);
   const selectedRowRef = useRef(null);
 
   useEffect(() => {
@@ -335,88 +265,6 @@ export default function IntelDashboard({
     setTierFilter('all');
     setDomainFilter('all');
   }, [liveMode, publicMode]);
-
-  // Poll source registry
-  useEffect(() => {
-    let alive = true;
-    async function loadSources() {
-      async function requestJson(base, endpoint) {
-        const controller = new AbortController();
-        const timeout = window.setTimeout(() => controller.abort(), 4000);
-        try {
-          const response = await fetch(`${base}${endpoint}`, { signal: controller.signal });
-          if (!response.ok) throw new Error(`source health HTTP ${response.status}`);
-          return await response.json();
-        } finally {
-          window.clearTimeout(timeout);
-        }
-      }
-      try {
-        const endpoint = publicMode ? '/api/v1/live/sources' : '/api/v1/intel/sources';
-        const data = await requestJson(apiBase, endpoint);
-        if (alive) setSources(data.sources || []);
-      } catch {
-        // The edge only knows publisher/node health, not individual handles.
-        // Use it strictly as an availability fallback when Oracle cannot answer.
-        if (publicMode && liveEdgeBase) {
-          try {
-            const data = await requestJson(liveEdgeBase, '/v1/live/status');
-            if (alive) {
-              const edgeSources = Array.isArray(data.sources) && data.sources.length
-                ? data.sources.map((source) => ({
-                name: source.source || source.name || 'collector',
-                type: source.node || 'edge',
-                status: source.status || 'degraded',
-                last_poll_at: source.received_at || source.observed_at || null,
-                events_last_hour: 0,
-                total_events: 0,
-                consecutive_errors: source.status === 'active' ? 0 : 1,
-              }))
-              : [{
-                name: 'Cloudflare Live relay',
-                type: 'edge',
-                status: data.status === 'live'
-                  ? 'active'
-                  : data.status === 'degraded' ? 'degraded' : 'offline',
-                last_poll_at: data.last_heartbeat_at || data.updated_at || null,
-                events_last_hour: 0,
-                total_events: Number(data.event_count) || 0,
-                consecutive_errors: data.status === 'live' ? 0 : 1,
-              }];
-              setSources(edgeSources);
-            }
-          } catch {
-            // Preserve the last known source-health state.
-          }
-        }
-      }
-      if (alive) setSourcesLoaded(true);
-      if (alive) pollRef.current = window.setTimeout(loadSources, 30000);
-    }
-    loadSources();
-    return () => {
-      alive = false;
-      window.clearTimeout(pollRef.current);
-    };
-  }, [apiBase, liveEdgeBase, publicMode]);
-
-  const visibleSources = useMemo(() => {
-    if (!publicMode || liveMode !== 'humanitarian') return sources;
-    return sources
-      .map((source) => {
-        const handles = (source.handles || []).filter((handle) => (
-          String(handle.name || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'alarmphone'
-        ));
-        return {
-          ...source,
-          handles,
-          configured: handles.length,
-          reachable: handles.filter((handle) => ['healthy', 'active'].includes(handle.status)).length,
-        };
-      })
-      .filter((source) => source.handles.length > 0
-        || String(source.name || '').toLowerCase().replace(/[^a-z0-9]/g, '').includes('alarmphone'));
-  }, [liveMode, publicMode, sources]);
 
   // Filtered + searched events
   const filteredEvents = useMemo(() => {
@@ -499,30 +347,13 @@ export default function IntelDashboard({
       : feat.geometry?.coordinates;
     const eventId = String(p.id || p.title || '');
     const isSelected = eventId === String(selectedEventId || '');
-    const lifecycle = eventLifecycle(p);
-    const isUrgent = p.sanctions_matched
-      || ['critical', 'high'].includes(p.severity)
-      || (eventTier(p) === 'operational' && lifecycle !== 'resolved' && lifecycle !== 'archived');
-    const tone = lifecycle === 'resolved'
-      ? 'green'
-      : isUrgent
-        ? 'red'
-        : lifecycle === 'needs_review' || p.severity === 'medium'
-          ? 'yellow'
-          : 'green';
+    const visual = classifyEventVisual(p);
     const parsedTitle = parseTitleVessel(p.title);
     const vesselName = p.vessel_name
       || p.ship_name
       || parsedTitle.name
       || (p.linked_mmsi || p.mmsi ? `MMSI ${p.linked_mmsi || p.mmsi}` : p.title || 'Unknown vessel');
-    const anomaly = (
-      (Array.isArray(p.anomaly_types) && p.anomaly_types[0])
-      || p.anomaly_type
-      || p.ais_nav_status_kind
-      || p.alert_type
-      || p.type
-      || 'maritime signal'
-    ).replace(/_/g, ' ');
+    const anomaly = eventAnomalyLabel(p);
     const position = Array.isArray(coords) && coords.length >= 2
       ? `${Number(coords[1]).toFixed(4)}, ${Number(coords[0]).toFixed(4)}`
       : 'position unavailable';
@@ -542,7 +373,12 @@ export default function IntelDashboard({
           }}
           title={p.timestamp_utc ? new Date(p.timestamp_utc).toLocaleString('it-IT') : p.title}
         >
-          <i className={`intel-log-dot intel-log-dot--${tone}`} aria-label={tone} />
+          <i
+            className="intel-log-dot"
+            style={{ color: visual.color, background: visual.color }}
+            aria-label={visual.label}
+            title={visual.label}
+          />
           <strong>{vesselName}</strong>
           <span>{anomaly}</span>
           <code>{position}</code>
@@ -553,25 +389,14 @@ export default function IntelDashboard({
   return (
     <div className="panel-stack">
 
-      {/* Source health */}
-      <section className="panel-block" style={{ paddingBottom: 8 }}>
-        <div className="osint-feed-header" style={{ marginBottom: 6 }}>
-          <span className="section-kicker" style={{ margin: 0 }}>Source health</span>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <span
-              className={intelMode === 'ws' ? 'intel-connected' : intelMode === 'poll' ? 'intel-connected-poll' : 'intel-offline'}
-              title={intelMode === 'ws' ? 'Live WebSocket' : intelMode === 'poll' ? 'Polling every 30s' : 'Connecting…'}
-            >●</span>
-            {!publicMode ? (
-              <button className="intel-inject-trigger" onClick={() => setShowInject(true)} title="Inject manual event">
-                + Manual
-              </button>
-            ) : null}
-          </div>
-        </div>
-        <SourceHealthBar sources={visibleSources} loaded={sourcesLoaded} />
-        {injectSuccess && <p style={{ color: '#22c55e', fontSize: 11, margin: '4px 0 0' }}>Event saved and broadcast.</p>}
-      </section>
+      {!publicMode && (
+        <section className="panel-block intel-operator-actions">
+          <button className="intel-inject-trigger" onClick={() => setShowInject(true)} title="Inject manual event">
+            + Manual event
+          </button>
+          {injectSuccess && <p style={{ color: '#22c55e', fontSize: 11, margin: 0 }}>Event saved and broadcast.</p>}
+        </section>
+      )}
 
       {/* Stats row */}
       <section className="panel-block" style={{ paddingTop: 0, paddingBottom: 8 }}>

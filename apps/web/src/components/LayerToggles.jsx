@@ -16,12 +16,14 @@ const INTEL_CATEGORY_GROUPS = INTEL_MAP_CATEGORIES.map((c) => ({
 }));
 
 export const LAYER_GROUPS = [
-  { key: 'nautical',    label: 'Nautical charts', layers: ['seamarks-layer'] },
+  { key: 'nautical',    label: 'Nautical overlay · OpenSeaMap', layers: ['seamarks-layer'] },
   { key: 'vessels',     label: 'AIS vessels',    layers: ['vessels-layer', 'vessels-stationary'] },
   { key: 'ngo_vessels', label: 'NGO SAR fleet',  layers: ['vessels-ngo', 'vessels-ngo-stationary'] },
   { key: 'weather',     label: 'Weather grid',   layers: ['weather-vectors', 'weather-points'] },
-  { key: 'sar',         label: 'Distress & drift', layers: ['intel-events-layer', 'intel-events-halo', 'intel-distress-core', 'intel-distress-pulse', 'intel-distress-area', 'intel-distress-polygon-fill', 'intel-distress-polygon-outline', 'intel-drift-cone', 'intel-drift-line', 'intel-drift-point', 'live-nearby-vessels-layer', 'live-nearby-vessels-halo', 'ngo-response-lines-layer', 'ngo-response-points-layer'] },
-  { key: 'fused',       label: 'Correlated alerts', layers: ['intel-fused-core', 'intel-fused-pulse', 'intel-vessel-core', 'intel-vessel-pulse', 'intel-observed-track-line'] },
+  { key: 'sar',         label: 'Distress signals', layers: ['intel-events-layer', 'intel-events-halo', 'intel-distress-core', 'intel-distress-pulse', 'intel-distress-area', 'intel-distress-polygon-fill', 'intel-distress-polygon-outline', 'live-nearby-vessels-layer', 'live-nearby-vessels-halo', 'ngo-response-lines-layer', 'ngo-response-points-layer'] },
+  { key: 'fused',       label: 'Correlated alerts', layers: ['intel-fused-core', 'intel-fused-pulse', 'intel-vessel-core', 'intel-vessel-pulse'] },
+  { key: 'observed_tracks', label: 'Observed AIS trajectories', layers: ['intel-observed-track-line'] },
+  { key: 'drift_models', label: 'Drift forecasts', layers: ['intel-drift-cone', 'intel-drift-line', 'intel-drift-point'] },
   ...INTEL_CATEGORY_GROUPS,
   { key: 'spikes',      label: 'AIS anomalies',  layers: ['intel-spike-layer'], defaultOff: true },
   { key: 'mda_anomaly', label: 'MDA · dark-vessel signals', layers: ['mda-anomaly-layer'], defaultOff: true },
@@ -38,7 +40,14 @@ const LAYERS_ICON = (
   </svg>
 );
 
-export default function LayerToggles({ visibility, onToggle, allowed = null, labelOverrides = null }) {
+export default function LayerToggles({
+  visibility,
+  onToggle,
+  allowed = null,
+  labelOverrides = null,
+  baseMap = 'standard',
+  onBaseMapChange,
+}) {
   const [open, setOpen] = useState(false);
   const groups = allowed ? LAYER_GROUPS.filter((g) => allowed.has(g.key)) : LAYER_GROUPS;
   const isOn = (g) => (g.defaultOff ? visibility[g.key] === true : visibility[g.key] !== false);
@@ -59,6 +68,20 @@ export default function LayerToggles({ visibility, onToggle, allowed = null, lab
       {open && (
         <div className="layer-panel">
           <div className="layer-panel-title">Layers</div>
+          <div className="layer-panel-sub">Base map</div>
+          <div className="layer-basemap-options" role="group" aria-label="Base map">
+            <button
+              type="button"
+              className={baseMap === 'standard' ? 'is-active' : ''}
+              onClick={() => onBaseMapChange?.('standard')}
+            >Standard</button>
+            <button
+              type="button"
+              className={baseMap === 'satellite' ? 'is-active' : ''}
+              onClick={() => onBaseMapChange?.('satellite')}
+            >Satellite</button>
+          </div>
+          <div className="layer-panel-sub">Overlays</div>
           {groups.map((g) => (
             <React.Fragment key={g.key}>
               {g.key === 'intel_social' && <div className="layer-panel-sub">OSINT signal types</div>}

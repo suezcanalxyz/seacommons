@@ -97,16 +97,16 @@ NGO_TWITTER_HANDLES = [
     "alarm_phone",       # Alarm Phone — public distress and SAR reports
     "MSF_Sea",           # MSF Sea Rescue
     "openarms_fund",     # Open Arms
-    "sosmediterranee",   # SOS Méditerranée
+    "SOSMedIntl",        # SOS Méditerranée international
     "seawatchcrew",      # Sea Watch crew reports
     "SOShumanity",       # SOS Humanity
-    "SeaEye4",           # Sea-Eye
+    "seaeyeorg",         # Sea-Eye
     "ResQship",          # ResQship
-    "emergencyita",      # Emergency ONG
+    "emergency_ong",     # Emergency ONG
     "watchthemed",       # Watch The Med (civilian monitoring network)
     "InfoMigrants",      # InfoMigrants (multilingual news)
-    "IOM_Italy",         # IOM Italy
-    "UNHCR_Italia",      # UNHCR Italy
+    "UNmigration",       # IOM / UN Migration
+    "UNHCRItalia",       # UNHCR Italy
 ]
 
 _MMSI_SET = set(NGO_VESSELS.keys())

@@ -39,8 +39,16 @@ def _image_ocr_status() -> dict:
         has_numpy = True
     except Exception:
         has_numpy = False
+    try:
+        import easyocr  # noqa: F401
+
+        easyocr_available = True
+    except Exception:
+        easyocr_available = False
     return {
-        "available": bool(tesseract) and pillow,
+        "available": pillow and (easyocr_available or bool(tesseract)),
+        "primary_engine": "easyocr" if easyocr_available else "tesseract" if tesseract else None,
+        "easyocr": easyocr_available,
         "tesseract": bool(tesseract),
         "tesseract_path": tesseract or None,
         "pillow": pillow,

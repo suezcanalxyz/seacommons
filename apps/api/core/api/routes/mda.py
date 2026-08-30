@@ -126,7 +126,62 @@ def build_vessel_dossier(mmsi: str, *, hours: float, track_limit: int = 5000) ->
             }] if len(track) >= 2 else []),
         },
         "track_points": track,
+        "recent_port_calls": _derive_recent_port_calls(track),
     }
+
+
+def _derive_recent_port_calls(track: list[dict], *, limit: int = 8) -> list[dict]:
+    """Conservatively infer port stays from AIS fixes inside known approaches.
+
+    These are explicitly model-derived calls, not official port-authority
+    records. A group is retained only if at least one fix is slow, anchored,
+    or moored; a fast transit through an approach polygon is discarded.
+    """
+    from core.mda.reference import reference
+
+    groups: list[dict] = []
+    current: dict | None = None
+    for point in track:
+        try:
+            lat, lon = float(point["lat"]), float(point["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        port = reference.in_port_or_anchorage(lat, lon)
+        if not port:
+            if current is not None:
+                current["departed_at"] = point.get("ts")
+                if current.pop("_qualified", False):
+                    groups.append(current)
+                current = None
+            continue
+        try:
+            slow = point.get("sog") is not None and float(point["sog"]) <= 2.0
+        except (TypeError, ValueError):
+            slow = False
+        try:
+            stationary_status = int(point.get("nav_status")) in {1, 5}
+        except (TypeError, ValueError):
+            stationary_status = False
+        if current is None or current["port"] != port:
+            if current is not None and current.pop("_qualified", False):
+                groups.append(current)
+            current = {
+                "port": port,
+                "arrived_at": point.get("ts"),
+                "departed_at": None,
+                "last_seen_at": point.get("ts"),
+                "ais_fixes": 1,
+                "evidence_level": "derived",
+                "method": "ais_port_approach",
+                "_qualified": slow or stationary_status,
+            }
+        else:
+            current["last_seen_at"] = point.get("ts")
+            current["ais_fixes"] += 1
+            current["_qualified"] = current["_qualified"] or slow or stationary_status
+    if current is not None and current.pop("_qualified", False):
+        groups.append(current)
+    return list(reversed(groups[-limit:]))
 
 
 @router.get("/chokepoints")

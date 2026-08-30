@@ -471,6 +471,16 @@ _RE_OCR_DMM_PREFIX = re.compile(
     r"([0-9OQ@]{1,2}[.,][0-9OQ@]+)",
     re.I,
 )
+_RE_OCR_DMS_SUFFIX = re.compile(
+    r"([0-9OQ@]{1,2})\s*[°º]\s*"
+    r"([0-9OQ@]{1,2})\s*['’′:\s]\s*"
+    r"([0-9OQ@]{1,2}(?:[.,][0-9OQ@]+)?)\s*[°º\"”″]?\s*([NS])"
+    r"[^0-9NSEW]{0,24}"
+    r"([0-9OQ@]{1,3})\s*[°º]\s*"
+    r"([0-9OQ@]{1,2})\s*['’′:\s]\s*"
+    r"([0-9OQ@]{1,2}(?:[.,][0-9OQ@]+)?)\s*[°º\"”″]?\s*([EW])",
+    re.I,
+)
 _RELATIVE_DISTANCE = r"(\d{1,3}(?:\.\d+)?)\s*(km|kilomet(?:er|re)s?|nm|nautical miles?)"
 _RELATIVE_DIRECTION = (
     r"(north|south|east|west|north[ -]?east|north[ -]?west|"
@@ -508,6 +518,19 @@ def _extract_numeric_coords_raw(text: str) -> Optional[tuple[float, float]]:
         "I": "1", "|": "1", "!": "1",
         "Z": "2", "B": "8",
     }))
+    dms_suffix = _RE_OCR_DMS_SUFFIX.search(ocr_text)
+    if dms_suffix:
+        lat_minutes, lat_seconds = float(dms_suffix.group(2)), float(dms_suffix.group(3).replace(",", "."))
+        lon_minutes, lon_seconds = float(dms_suffix.group(6)), float(dms_suffix.group(7).replace(",", "."))
+        if lat_minutes < 60 and lon_minutes < 60 and lat_seconds < 60 and lon_seconds < 60:
+            lat = float(dms_suffix.group(1)) + lat_minutes / 60 + lat_seconds / 3600
+            lon = float(dms_suffix.group(5)) + lon_minutes / 60 + lon_seconds / 3600
+            if dms_suffix.group(4) == "S":
+                lat = -lat
+            if dms_suffix.group(8) == "W":
+                lon = -lon
+            if _valid(lat, lon):
+                return round(lat, 6), round(lon, 6)
     dmm_match = _RE_OCR_DMM_PREFIX.search(ocr_text)
     if dmm_match:
         lat_minutes = float(dmm_match.group(3).replace(",", "."))

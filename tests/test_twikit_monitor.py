@@ -555,6 +555,45 @@ def test_self_reply_thread_with_stranger_reply_interleaved_is_still_threaded(mon
     assert threaded_ids == {"3031", "3033"}
 
 
+def test_old_incident_fetches_direct_reply_cursor_until_resolution(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    monitor = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("3080", "MAYDAY 24 people in distress south of Crete 34.5N 25.0E")
+    monitor._ingest(original, handle="alarm_phone")
+
+    class _Page(list):
+        def __init__(self, values, next_page=None):
+            super().__init__(values)
+            self._next_page = next_page
+
+        async def next(self):
+            page, self._next_page = self._next_page, None
+            return page
+
+    class _Commenter:
+        id = "111111"
+        screen_name = "public_commenter"
+
+    resolution = _FakeTweet("3082", "All 24 people were rescued and are safe.", user=_FakeUser())
+    first_page = _Page(
+        [_FakeTweet("3081", "Public comment", user=_Commenter())],
+        _Page([resolution]),
+    )
+    refetched = _FakeTweet("3080", original.text, user=_FakeUser(), replies=first_page)
+
+    class _DirectClient(_FakeClient):
+        async def get_tweet_by_id(self, tweet_id: str):
+            assert tweet_id == "3080"
+            return refetched
+
+    client = _DirectClient({"alarm_phone": _FakeTimelineUser(_FakeUser.id, [])})
+    asyncio.run(monitor._check_self_replies(client))
+
+    posts = store.events()[0].metadata.get("thread_reposts") or []
+    assert [post["tweet_id"] for post in posts] == ["3082"]
+
+
 def _age_event(store: IntelStore, event_id: str, hours_old: float) -> None:
     from datetime import UTC, datetime, timedelta
     event = store.get(event_id)

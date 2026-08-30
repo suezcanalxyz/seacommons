@@ -37,6 +37,7 @@ dependencies = [
 
 [project.optional-dependencies]
 sdr = ["pyrtlsdr>=0.3"]
+ocr = ["easyocr==1.7.2"]
 tid = [
     "missile-tid @ git+https://github.com/tylerni7/missile-tid.git",
     "cartopy>=0.22",
@@ -52,7 +53,7 @@ dev = [
     "jsonschema>=4.23",
     "pip-audit>=2.7",
 ]
-full = ["suezcanal[sdr,tid,dev]"]
+full = ["suezcanal[sdr,ocr,tid,dev]"]
 
 [build-system]
 requires = ["setuptools>=70"]

@@ -101,6 +101,14 @@ _PUBLIC_METADATA = frozenset(
         "spike_type",
         "last_source_seen_at",
         "location_uncertainty_m",
+        "humanitarian_case_id",
+        "humanitarian_case_type",
+        "humanitarian_status",
+        "people_reported",
+        "people_precision",
+        "verification_level",
+        "source_count",
+        "ocr_engine",
         "missing",
         "ocr_attempted",
         "platform",
@@ -216,6 +224,24 @@ def _public_intel_feature(
     # Always publish the resolved compartment. This also prevents a legacy raw
     # metadata value from overwriting a compatibility reclassification below.
     metadata["maritime_domain"] = resolved_domain
+    if (
+        resolved_domain == "sar"
+        and event.metadata.get("is_distress")
+        and event.metadata.get("tweet_id")
+        and "humanitarian_case_id" not in metadata
+    ):
+        from core.intel.humanitarian import humanitarian_case_metadata
+
+        metadata.update(humanitarian_case_metadata(
+            event.text,
+            incident_id=str(event.metadata["tweet_id"]),
+            source=str(event.metadata.get("tracked_account") or event.source),
+            distress=True,
+            resolved=(
+                str(event.metadata.get("report_kind") or "") == "resolved"
+                or lifecycle.has_own_reply_resolution(event)
+            ),
+        ))
     if event.is_vessel_mobility_incident():
         # Legacy fusion alerts pre-date the dedicated vessel-incident monitor.
         # Give them the same contract so they coalesce by MMSI and gain the

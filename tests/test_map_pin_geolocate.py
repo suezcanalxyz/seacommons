@@ -15,7 +15,7 @@ from core.intel.map_pin_geolocate import (
 def test_detect_marker_pixel_finds_non_red_markers() -> None:
     from PIL import Image
 
-    for colour in ((214, 40, 40), (26, 115, 232), (240, 150, 30)):
+    for colour in ((214, 40, 40), (26, 115, 232), (240, 150, 30), (250, 245, 35)):
         img = Image.new("RGB", (400, 300), (238, 232, 220))  # light basemap
         for y in range(150, 168):
             for x in range(200 - (167 - y), 200 + (167 - y) + 1):  # teardrop-ish
