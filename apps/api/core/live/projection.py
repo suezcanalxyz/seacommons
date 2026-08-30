@@ -161,6 +161,16 @@ def _public_intel_feature(
     resolved_domain = str(event.maritime_domain() or "sar").strip().lower()
     domain_public = resolved_domain in domains
     is_derived = event.type in _SEACOMMONS_DERIVED_TYPES
+    linked_mmsi = str(event.linked_mmsi or event.metadata.get("mmsi") or "").strip()
+    if (
+        event.type == "correlated_alert"
+        and event.metadata.get("alert_type") in {"infra_proximity", "infrastructure_threat"}
+        and not (len(linked_mmsi) == 9 and linked_mmsi.isdigit())
+    ):
+        # Anonymous GFW loiter detections cannot support professional vessel
+        # identity or an AIS trajectory. Keep them as operator research cues,
+        # never present them as public vessel cases.
+        return None
     if (
         publication != PublicationStatus.PUBLISHED.value
         and source_policy not in APPROVED_SOURCE_POLICIES
@@ -217,7 +227,7 @@ def _public_intel_feature(
     # MMSI/IMO/name/flag are professional vessel identifiers broadcast in AIS
     # or drawn from the local public registry.  Keeping them on every linked
     # alert is what lets the client join updates into one vessel episode.
-    mmsi = str(event.linked_mmsi or event.metadata.get("mmsi") or "").strip()
+    mmsi = linked_mmsi
     if len(mmsi) == 9 and mmsi.isdigit():
         metadata["linked_mmsi"] = mmsi
         metadata["mmsi"] = mmsi

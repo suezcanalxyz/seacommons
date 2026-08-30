@@ -240,6 +240,24 @@ def test_correlated_alert_is_public_only_in_a_public_compartment() -> None:
     assert _public_intel_feature(sar) is not None
 
 
+def test_anonymous_infrastructure_cue_stays_operator_only() -> None:
+    event = IntelEvent(
+        id="anonymous-gfw-infra",
+        type="correlated_alert",
+        severity="medium",
+        lat=35.8,
+        lon=14.1,
+        title="AIS loiter within 1.3 km of Greenstream pipeline",
+        source="SeaCommons fusion",
+        metadata={
+            "alert_type": "infra_proximity",
+            "maritime_domain": "grey_zone",
+            "contributing_sources": ["GFW"],
+        },
+    )
+    assert _public_intel_feature(event, allowed_domains=frozenset({"grey_zone"})) is None
+
+
 def test_legacy_nuc_alert_gets_security_episode_and_drift_contract() -> None:
     event = IntelEvent(
         id="legacy-olga",
