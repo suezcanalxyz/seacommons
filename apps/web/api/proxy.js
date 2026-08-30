@@ -60,6 +60,15 @@ function requestHeaders(headers, upstreamVirtualHost) {
   forwarded.host = upstreamVirtualHost;
   forwarded['x-forwarded-host'] = headers.host || 'seacommons.vercel.app';
   forwarded['x-forwarded-proto'] = 'https';
+  // Server-side only — the browser never sees this. Interim compensating
+  // control while the backend has no OIDC provider deployed yet: without
+  // it, every operator-only route (case data, intel writes, forensic
+  // records) is reachable by anyone who curls the API IP directly, since
+  // AUTH_ENABLED is fail-open by design for local dev. Unset in Vercel env
+  // (or on the backend) disables the check entirely.
+  if (process.env.SEACOMMONS_INTERNAL_PROXY_SECRET) {
+    forwarded['x-seacommons-internal'] = process.env.SEACOMMONS_INTERNAL_PROXY_SECRET;
+  }
   return forwarded;
 }
 

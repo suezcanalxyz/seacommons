@@ -179,6 +179,17 @@ async def authorization_gate(request, call_next):
         and path.startswith("/api/v1/live/")
     )
     try:
+        if not public and config.INTERNAL_PROXY_SECRET:
+            # AUTH_ENABLED is fail-open by design (core.security.authenticate
+            # returns an administrator Principal when it's False, for local
+            # dev). Until OIDC is actually deployed, this is the only thing
+            # standing between the open internet and every operator-only
+            # route — require_roles below would silently let anyone through.
+            import hmac as _hmac_lib
+
+            supplied = request.headers.get("x-seacommons-internal", "")
+            if not _hmac_lib.compare_digest(supplied, config.INTERNAL_PROXY_SECRET):
+                return JSONResponse(status_code=401, content={"detail": "Authentication required"})
         if not public:
             if path.startswith(("/api/v1/admin", "/api/v1/governance")):
                 require_roles(request, {"administrator"})

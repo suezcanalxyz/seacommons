@@ -47,6 +47,14 @@ class SuezCanalConfig(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     DATABASE_URL: str = "postgresql://suez:canal@localhost:5432/suezcanal"
     AUTH_ENABLED: bool = False
+    # Interim compensating control while OIDC isn't deployed yet (AUTH_ENABLED
+    # is fail-open by design for local dev — see core.security.authenticate).
+    # When set, the authorization_gate middleware requires every non-public
+    # request to carry this value in X-SeaCommons-Internal, which only the
+    # Vercel same-origin proxy (apps/web/api/proxy.js) attaches server-side —
+    # the browser never sees it. Unset (the default) disables the check
+    # entirely, so local dev is unaffected.
+    INTERNAL_PROXY_SECRET: str = ""
     OIDC_ISSUER: str = ""
     OIDC_AUDIENCE: str = "seacommons-api"
     OIDC_JWKS_URL: str = ""
