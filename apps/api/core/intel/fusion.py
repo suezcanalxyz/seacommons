@@ -320,7 +320,11 @@ def _rule_single_source(new: FusionSignal, event: IntelEvent) -> Optional[FusedA
             lat=new.lat, lon=new.lon, ts=new.ts,
             contributing_event_ids=[new.event_id],
             contributing_sources=[new.source],
-            summary=f"Vessel incident: {new.anomaly_type or 'casualty'} — {event.title[:120]}",
+            # event.title is already plain-language ("Vessel unable to
+            # manoeuvre — NAME") — don't re-prepend the raw technical
+            # anomaly_type in front of it, that just duplicates the same
+            # information in jargon.
+            summary=event.title[:150],
             case_type="vessel_incident",
             vessel_mmsi=new.mmsi,
         )

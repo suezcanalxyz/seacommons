@@ -39,6 +39,14 @@ _INCIDENT_STATUS: dict[int, tuple[str, str, bool, bool, int, float]] = {
     6: ("aground", "high", True, True, 2, 180.0),
     2: ("not_under_command", "medium", False, False, 3, 600.0),
 }
+# Plain-language label for the raw `kind` — this is what operators (and the
+# public feed) actually read; the technical AIS nav-status name stays in
+# metadata (ais_nav_status_kind) for anyone who wants it.
+_KIND_LABEL = {
+    "aground": "Vessel ran aground",
+    "not_under_command": "Vessel unable to manoeuvre",
+    "distress_beacon": "Distress beacon activated",
+}
 _BEACON_STATUS = 14
 _BEACON_MMSI_PREFIXES = ("970", "972", "974")
 _BEACON_SOURCE = {"970": "ais_sart", "972": "ais_mob", "974": "ais_epirb"}
@@ -178,10 +186,11 @@ class VesselIncidentMonitor:
             pass
         in_jamming_zone = jam_score >= 0.3
 
-        title = f"AIS: {kind.replace('_', ' ')}"
+        plain_label = _KIND_LABEL.get(kind, kind.replace('_', ' '))
+        title = plain_label
         if name:
             title += f" — {name}"
-        text = f"{name or 'Vessel'} (MMSI {mmsi}) broadcast {kind.replace('_', ' ')} over AIS."
+        text = f"{name or 'Vessel'} (MMSI {mmsi}): {plain_label.lower()}, reported via AIS."
         # Explicit, reproducible reasoning — the exact rule and values that
         # fired, not just the resulting label. Anyone can check this against
         # the thresholds in this file's own _INCIDENT_STATUS table.
