@@ -34,6 +34,19 @@ def test_explicit_metadata_domain_wins() -> None:
     assert event.maritime_domain() == "smuggling"
 
 
+def test_legacy_nuc_fusion_alert_is_maritime_security() -> None:
+    event = _event(
+        type="correlated_alert",
+        title="Vessel unable to manoeuvre — ST. OLGA",
+        metadata={
+            "alert_type": "vessel_casualty",
+            "maritime_domain": "safety",
+            "contributing": ["aisinc:352001914:not_under_command"],
+        },
+    )
+    assert event.maritime_domain() == MaritimeDomain.GREY_ZONE.value
+
+
 @pytest.mark.parametrize(
     "anomaly_type,expected",
     [

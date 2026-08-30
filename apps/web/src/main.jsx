@@ -502,6 +502,28 @@ function createVesselArrowImage(size = 48) {
   return { width: size, height: size, data: new Uint8Array(idata.data.buffer) };
 }
 
+/** True course from the last two distinct observed AIS positions. */
+function observedTrackCourse(points) {
+  if (!Array.isArray(points) || points.length < 2) return 0;
+  const end = points[points.length - 1];
+  let start = null;
+  for (let index = points.length - 2; index >= 0; index -= 1) {
+    const candidate = points[index];
+    if (Number(candidate?.lat) !== Number(end?.lat) || Number(candidate?.lon) !== Number(end?.lon)) {
+      start = candidate;
+      break;
+    }
+  }
+  if (!start) return 0;
+  const lat1 = Number(start.lat) * Math.PI / 180;
+  const lat2 = Number(end.lat) * Math.PI / 180;
+  const deltaLon = (Number(end.lon) - Number(start.lon)) * Math.PI / 180;
+  const y = Math.sin(deltaLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2)
+    - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(isPublicLiveHost);
   const [activePanel, setActivePanel] = useState(
@@ -1158,6 +1180,7 @@ function App() {
         map.addSource('intel-distress',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-fused',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-spike',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('intel-vessels',     { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-observed-tracks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-drifts',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-vessel-links', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -1268,6 +1291,54 @@ function App() {
               'sanctions', '#f472b6', '#38bdf8'],
             'line-width': 2.4,
             'line-opacity': 0.86,
+          },
+        });
+
+        // Grouped maritime-security cases are vessels, not generic alert dots.
+        // The triangle points along the latest observed AIS course; active
+        // episodes receive a softly animated triangular echo behind the core.
+        const _vesselEpisodeColor = ['match', ['get', 'maritime_domain'],
+          'sanctions', '#f472b6',
+          'grey_zone', '#f59e0b',
+          'safety', '#38bdf8',
+          '#8bf0c5'];
+        const _activeVesselEpisode = ['all',
+          ['!=', ['get', 'incident_lifecycle'], 'resolved'],
+          ['!=', ['get', 'incident_lifecycle'], 'archived'],
+        ];
+        map.addLayer({
+          id: 'intel-vessel-pulse', type: 'symbol', source: 'intel-vessels',
+          filter: _activeVesselEpisode,
+          layout: {
+            'icon-image': 'vessel-arrow',
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.48, 10, 0.76, 14, 0.94],
+            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
+          paint: {
+            'icon-color': _vesselEpisodeColor,
+            'icon-opacity': 0.28,
+            'icon-halo-color': _vesselEpisodeColor,
+            'icon-halo-width': 3,
+          },
+        });
+        map.addLayer({
+          id: 'intel-vessel-core', type: 'symbol', source: 'intel-vessels',
+          layout: {
+            'icon-image': 'vessel-arrow',
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.34, 10, 0.58, 14, 0.74],
+            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
+          paint: {
+            'icon-color': _vesselEpisodeColor,
+            'icon-opacity': 1,
+            'icon-halo-color': '#04131a',
+            'icon-halo-width': 1.8,
           },
         });
 
@@ -1744,6 +1815,10 @@ function App() {
             map.setPaintProperty('intel-fused-pulse', 'circle-radius', 7 + 16 * t);
             map.setPaintProperty('intel-fused-pulse', 'circle-stroke-opacity', 0.6 * (1 - t));
           }
+          if (map.getLayer('intel-vessel-pulse')) {
+            const wave = 0.14 + 0.26 * (0.5 + 0.5 * Math.sin(t * Math.PI * 2));
+            map.setPaintProperty('intel-vessel-pulse', 'icon-opacity', wave);
+          }
           pulseRaf = requestAnimationFrame(distressPulse);
         }
         pulseRaf = requestAnimationFrame(distressPulse);
@@ -1888,7 +1963,7 @@ function App() {
         // shares the same hover popup and click-to-open behaviour.
         const _intelClickLayers = [
           ...INTEL_MAP_CATEGORIES.map((c) => `intel-cat-${c.key}`),
-          'intel-events-layer', 'intel-spike-layer', 'intel-fused-core', 'mda-anomaly-layer',
+          'intel-events-layer', 'intel-spike-layer', 'intel-fused-core', 'intel-vessel-core', 'mda-anomaly-layer',
         ];
         for (const lid of _intelClickLayers) {
           map.on('mouseenter', lid, () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -1912,7 +1987,7 @@ function App() {
             setMapPanel({ type: 'intel', feature });
             setConePanelHidden(false);
             const props = feature.properties || {};
-            if (lid === 'intel-events-layer' && props.id && props.drift_eligible
+            if ((lid === 'intel-events-layer' || lid === 'intel-vessel-core') && props.id && props.drift_eligible
                 && props.drift_status !== 'completed' && props.drift_status !== 'computing') {
               triggerIntelDrift(
                 props.drift_event_id || props.id,
@@ -2000,7 +2075,7 @@ function App() {
           }
           if (isPublicLiveHost) return;
           const hit = map.queryRenderedFeatures(event.point, {
-            layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'vessels-stationary', 'vessels-ngo', 'vessels-ngo-stationary', 'proximity-vessels-layer', 'intel-events-layer', 'intel-fused-core', 'intel-spike-layer',
+            layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'vessels-stationary', 'vessels-ngo', 'vessels-ngo-stationary', 'proximity-vessels-layer', 'intel-events-layer', 'intel-fused-core', 'intel-vessel-core', 'intel-spike-layer',
               ...INTEL_MAP_CATEGORIES.map((c) => `intel-cat-${c.key}`)].filter((l) => map.getLayer(l)),
           });
           if (hit.length > 0) return;
@@ -2137,10 +2212,21 @@ function App() {
     if (!map || !mapReady || !map.isStyleLoaded()) return;
     const positioned = intelEvents.filter((f) => f.geometry?.coordinates);
     const typeOf = (f) => f.properties?.type;
+    const isVesselEpisode = (f) => String(f.properties?.episode_id || f.properties?.id || '').startsWith('vessel-episode:');
+    const vesselEpisodes = positioned.filter(isVesselEpisode).map((feature) => {
+      const properties = feature.properties || {};
+      const points = Array.isArray(properties.observed_track) ? properties.observed_track : [];
+      const latest = points[points.length - 1] || {};
+      const course = Number.isFinite(Number(latest.cog))
+        ? Number(latest.cog)
+        : observedTrackCourse(points);
+      return { ...feature, properties: { ...properties, course } };
+    });
+    const nonVessel = positioned.filter((feature) => !isVesselEpisode(feature));
     const isSpike = (f) => typeOf(f) === 'ais_spike' || typeOf(f) === 'ais_anomaly';
-    const fused = positioned.filter((f) => typeOf(f) === 'correlated_alert');
-    const spikes = positioned.filter(isSpike);
-    const rest = positioned.filter((f) => typeOf(f) !== 'correlated_alert' && !isSpike(f));
+    const fused = nonVessel.filter((f) => typeOf(f) === 'correlated_alert');
+    const spikes = nonVessel.filter(isSpike);
+    const rest = nonVessel.filter((f) => typeOf(f) !== 'correlated_alert' && !isSpike(f));
     const isDistressTier = (f) => {
       const p = f.properties || {};
       return p.kind === 'distress' || p.kind === 'resolved' || p.kind === 'needs_review' || p.kind === 'archived'
@@ -2153,6 +2239,7 @@ function App() {
     map.getSource('intel-distress')?.setData({ type: 'FeatureCollection', features: distress });
     map.getSource('intel-fused')?.setData({ type: 'FeatureCollection', features: fused });
     map.getSource('intel-spike')?.setData({ type: 'FeatureCollection', features: spikes });
+    map.getSource('intel-vessels')?.setData({ type: 'FeatureCollection', features: vesselEpisodes });
     const observedTracks = intelEvents.flatMap((feature) => {
       const p = feature.properties || {};
       const points = Array.isArray(p.observed_track) ? p.observed_track : [];

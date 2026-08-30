@@ -48,6 +48,22 @@ _COORDINATE_SOURCE_RANK = {
 MAX_EVENTS = 600
 DEDUP_WINDOW = 2000  # max unique hashes kept in memory
 
+# Source+URL identifies an editorial item (article, post, bulletin), but it is
+# not an event identity for machine telemetry. AIS findings for one vessel
+# intentionally share its public details URL and must remain separate episodes.
+_URL_DEDUP_TYPES = frozenset(
+    {
+        "distress",
+        "twitter",
+        "mastodon",
+        "bluesky",
+        "news",
+        "ngo_activity",
+        "gdacs",
+        "iom_incident",
+    }
+)
+
 
 @dataclass
 class IntelEvent:
@@ -138,7 +154,42 @@ class IntelEvent:
         "oil_spill": "environmental",
     }
 
+    def is_vessel_mobility_incident(self) -> bool:
+        """Recognise current and legacy NUC/disabled/adrift vessel events."""
+        kind = str(
+            self.metadata.get("ais_nav_status_kind")
+            or self.metadata.get("anomaly_type")
+            or ""
+        ).lower()
+        if kind in {"not_under_command", "disabled", "adrift"}:
+            return True
+        if self.type != "correlated_alert":
+            return False
+        evidence = " ".join(
+            (
+                str(self.title or ""),
+                str(self.metadata.get("alert_type") or ""),
+                json.dumps(self.metadata.get("contributing") or [], default=str),
+                json.dumps(self.metadata.get("contributing_sources") or [], default=str),
+            )
+        ).lower()
+        return any(
+            marker in evidence
+            for marker in (
+                "unable to manoeuvre",
+                "unable to maneuver",
+                "not_under_command",
+                "not under command",
+                "disabled vessel",
+                "vessel adrift",
+            )
+        )
+
     def maritime_domain(self) -> str:
+        # Older fusion records labelled every vessel casualty as ``safety``.
+        # Correct NUC history at projection time without rewriting the DB.
+        if self.is_vessel_mobility_incident():
+            return MaritimeDomain.GREY_ZONE.value
         explicit = self.metadata.get("maritime_domain")
         if explicit:
             return explicit
@@ -249,7 +300,7 @@ class IntelStore:
         url_duplicate: Optional[IntelEvent] = None
         metadata_changed = False
         with self._lock:
-            if event.url:
+            if event.url and event.type in _URL_DEDUP_TYPES:
                 source_key = _normalised_source(event.source)
                 url_duplicate = next(
                     (
@@ -489,7 +540,27 @@ class IntelStore:
             from core.db.session import session_scope
             from core.db.models import IntelEventDB
             with session_scope() as db:
-                if event.url:
+                existing_by_id = db.query(IntelEventDB).filter(
+                    IntelEventDB.id == event.id
+                ).first()
+                if existing_by_id is not None:
+                    # Deterministic IDs are updateable machine episodes.
+                    existing_by_id.timestamp_utc = event.timestamp_utc
+                    existing_by_id.type = event.type
+                    existing_by_id.severity = event.severity
+                    existing_by_id.lat = event.lat
+                    existing_by_id.lon = event.lon
+                    existing_by_id.title = event.title[:255]
+                    existing_by_id.text = event.text
+                    existing_by_id.url = event.url[:511]
+                    existing_by_id.source = event.source
+                    existing_by_id.linked_mmsi = event.linked_mmsi
+                    merged = {**dict(existing_by_id.meta or {}), **event.metadata}
+                    existing_by_id.meta = merged
+                    event.metadata = merged
+                    db.flush()
+                    return
+                if event.url and event.type in _URL_DEDUP_TYPES:
                     # Persistent dedup: in-memory _seen is empty after a restart,
                     # so a feed item that was already ingested (same source+url,
                     # e.g. an RSS article or tweet re-fetched at boot) would

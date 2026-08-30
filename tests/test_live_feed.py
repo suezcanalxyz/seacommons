@@ -234,6 +234,35 @@ def test_correlated_alert_is_public_only_in_a_public_compartment() -> None:
     assert _public_intel_feature(sar) is not None
 
 
+def test_legacy_nuc_alert_gets_security_episode_and_drift_contract() -> None:
+    event = IntelEvent(
+        id="legacy-olga",
+        type="correlated_alert",
+        severity="medium",
+        lat=41.41,
+        lon=29.43,
+        title="Vessel unable to manoeuvre — ST. OLGA",
+        source="SeaCommons fusion",
+        linked_mmsi="352001914",
+        metadata={
+            "alert_type": "vessel_casualty",
+            "maritime_domain": "safety",
+            "contributing": ["aisinc:352001914:not_under_command"],
+        },
+    )
+
+    feature = _public_intel_feature(
+        event, allowed_domains=frozenset({"grey_zone"})
+    )
+
+    assert feature is not None
+    properties = feature["properties"]
+    assert properties["maritime_domain"] == "grey_zone"
+    assert properties["ais_nav_status_kind"] == "not_under_command"
+    assert properties["drift_eligible"] is True
+    assert properties["drift_vessel_type"] == "cargo"
+
+
 def test_unlabelled_context_stays_operator_only() -> None:
     # No source_policy, not a derived type, not published -> still private.
     bare = IntelEvent(
@@ -670,6 +699,36 @@ def test_intel_store_merges_same_source_url_into_canonical_event(monkeypatch) ->
     assert merged is canonical
     assert merged.metadata["tracked_account"] == "alarm_phone"
     assert merged.metadata["source_policy"] == "official_site_embed"
+
+
+def test_intel_store_keeps_distinct_machine_events_with_same_vessel_url(monkeypatch) -> None:
+    store = IntelStore()
+    monkeypatch.setattr(store, "_persist", lambda _event: None)
+    url = "https://www.marinetraffic.com/en/ais/details/ships/mmsi:352001914"
+    gap = IntelEvent(
+        id="aisgap:352001914",
+        type="ais_anomaly",
+        severity="medium",
+        title="AIS gap — ST. OLGA",
+        text="Gap",
+        url=url,
+        source="ais",
+        linked_mmsi="352001914",
+    )
+    nuc = IntelEvent(
+        id="aisinc:352001914:nuc",
+        type="vessel_incident",
+        severity="medium",
+        title="Vessel unable to manoeuvre — ST. OLGA",
+        text="NUC",
+        url=url,
+        source="ais",
+        linked_mmsi="352001914",
+    )
+
+    assert store.add(gap) is True
+    assert store.add(nuc) is True
+    assert {event.id for event in store.events()} == {gap.id, nuc.id}
 
 
 def test_db_duplicate_repoints_live_event_to_canonical_id() -> None:

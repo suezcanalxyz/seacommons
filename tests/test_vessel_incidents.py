@@ -128,6 +128,6 @@ def test_sustained_incident_updates_the_same_episode_and_track(monitor) -> None:
 
     assert len(monitor._added) == 1
     event_id, update = monitor._updated_calls[-1]
-    assert event_id == "aisinc:352001914:not_under_command"
+    assert event_id == "aisinc:352001914:nuc"
     assert (update["lat"], update["lon"]) == (41.34, 29.16)
     assert update["incident_lifecycle"] == "active"

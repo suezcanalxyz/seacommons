@@ -56,6 +56,16 @@ _EPISODE_UPDATE_INTERVAL_S = 5 * 60
 _STATE_TTL_S = 12 * 3600
 
 
+def _event_id(mmsi: str, kind: str) -> str:
+    """Deterministic machine ID that fits IntelEventDB.id (32 chars)."""
+    suffix = {
+        "not_under_command": "nuc",
+        "distress_beacon": "beacon",
+        "aground": "aground",
+    }.get(kind, kind[:12])
+    return f"aisinc:{mmsi}:{suffix}"
+
+
 class VesselIncidentMonitor:
     def __init__(self) -> None:
         self._running = False
@@ -114,7 +124,7 @@ class VesselIncidentMonitor:
                     if rule is not None:
                         kind = rule[0]
                         intel_store.update_vessel_episode(
-                            f"aisinc:{mmsi}:{kind}",
+                            _event_id(mmsi, kind),
                             lat=lat,
                             lon=lon,
                             timestamp_utc=datetime.now(timezone.utc).isoformat(),
@@ -189,7 +199,7 @@ class VesselIncidentMonitor:
                 if now - self._updated.get(key, 0.0) >= _EPISODE_UPDATE_INTERVAL_S:
                     self._updated[key] = now
                     intel_store.update_vessel_episode(
-                        f"aisinc:{mmsi}:{kind}",
+                        _event_id(mmsi, kind),
                         lat=lat,
                         lon=lon,
                         timestamp_utc=datetime.now(timezone.utc).isoformat(),
@@ -234,7 +244,7 @@ class VesselIncidentMonitor:
         if in_jamming_zone:
             text += " Position falls inside a known GNSS jamming zone — treat this as a stronger signal than an isolated report."
         event = IntelEvent(
-            id=f"aisinc:{mmsi}:{kind}",
+            id=_event_id(mmsi, kind),
             type="distress" if is_distress else "vessel_incident",
             severity=severity,
             lat=lat,
@@ -274,14 +284,27 @@ class VesselIncidentMonitor:
                     **({"nav_status": int(nav_status)} if nav_status is not None else {}),
                 }],
                 "drift_eligible": kind in {"not_under_command", "disabled", "adrift"},
-                "drift_event_id": f"intel:aisinc:{mmsi}:{kind}",
+                "drift_event_id": f"intel:{_event_id(mmsi, kind)}",
                 "drift_vessel_type": "cargo",
                 "jamming_score": round(jam_score, 2),
                 "in_jamming_zone": in_jamming_zone,
                 **({"detection_reason": rule_reason} if rule_reason else {}),
             },
         )
-        if intel_store.add(event, dedup_key=f"aisinc:{mmsi}:{kind}"):
+        added = intel_store.add(event, dedup_key=_event_id(mmsi, kind))
+        if not added:
+            # The stable episode may have been preloaded after restart. Update
+            # it now instead of waiting for the periodic five-minute tick.
+            intel_store.update_vessel_episode(
+                _event_id(mmsi, kind),
+                lat=lat,
+                lon=lon,
+                timestamp_utc=event.timestamp_utc,
+                sog=sog,
+                nav_status=nav_status,
+                incident_lifecycle="active",
+            )
+        if added:
             logger.warning(
                 "vessel incident: %s mmsi=%s at %.4f,%.4f (publish=%s)",
                 kind, mmsi, lat, lon, auto_publish,

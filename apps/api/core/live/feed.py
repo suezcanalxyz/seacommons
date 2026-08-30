@@ -242,7 +242,24 @@ def public_signal_collection(
             # Detailed AIS tracks are the expensive part.  One bounded batch
             # enriches the newest episodes; older cases still retain the line
             # between their own observed alert/update points.
-            track_candidates = primary[:150]
+            # Mobility incidents need their recent AIS path even when their
+            # first alert is older than a busy anomaly burst. Fill the rest of
+            # the bounded batch with the newest vessel episodes.
+            candidate_pool = [
+                feature
+                for feature in primary
+                if bool((feature.get("properties") or {}).get("drift_eligible"))
+            ] + primary
+            track_candidates = []
+            candidate_ids: set[str] = set()
+            for feature in candidate_pool:
+                feature_id = str((feature.get("properties") or {}).get("id") or "")
+                if not feature_id or feature_id in candidate_ids:
+                    continue
+                candidate_ids.add(feature_id)
+                track_candidates.append(feature)
+                if len(track_candidates) >= 150:
+                    break
             vessel_mmsis = {
                 str((feature.get("properties") or {}).get("linked_mmsi") or "")
                 for feature in track_candidates

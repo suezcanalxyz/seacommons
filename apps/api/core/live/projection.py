@@ -194,6 +194,17 @@ def _public_intel_feature(
     except ValueError:
         severity = Severity.LOW.value
     metadata = {key: event.metadata[key] for key in _PUBLIC_METADATA if key in event.metadata}
+    # Always publish the resolved compartment. This also prevents a legacy raw
+    # metadata value from overwriting a compatibility reclassification below.
+    metadata["maritime_domain"] = resolved_domain
+    if event.is_vessel_mobility_incident():
+        # Legacy fusion alerts pre-date the dedicated vessel-incident monitor.
+        # Give them the same contract so they coalesce by MMSI and gain the
+        # observed AIS path plus an optional cargo-vessel drift forecast.
+        metadata.setdefault("ais_nav_status_kind", "not_under_command")
+        metadata.setdefault("drift_eligible", True)
+        metadata.setdefault("drift_event_id", f"intel:{event.id}")
+        metadata.setdefault("drift_vessel_type", "cargo")
     # MMSI/IMO/name/flag are professional vessel identifiers broadcast in AIS
     # or drawn from the local public registry.  Keeping them on every linked
     # alert is what lets the client join updates into one vessel episode.
