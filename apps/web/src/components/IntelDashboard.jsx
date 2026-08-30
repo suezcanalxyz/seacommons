@@ -673,29 +673,29 @@ export default function IntelDashboard({
           <span>{(p.type || '').replace(/_/g, ' ')}</span>
           {coords && !isArea && (
             <span style={{ opacity: 0.45 }}>
-              · {p.coordinate_source === 'place_centroid' ? 'zona' : 'segnalata'}{' '}
+              · {p.coordinate_source === 'place_centroid' ? 'area' : 'reported'}{' '}
               {coords[1]?.toFixed(3)}, {coords[0]?.toFixed(3)}
             </span>
           )}
           {isArea && (
             <span style={{ opacity: 0.45 }}>
-              · area in mare{p.area_weather_narrowed ? ' (ristretta da dati meteo)' : ''}
+              · sea area{p.area_weather_narrowed ? ' (narrowed by weather data)' : ''}
             </span>
           )}
           {!coords && (
             <span
               className="intel-no-location"
-              title="La fonte non ha pubblicato una posizione verificabile: nessun punto viene inventato sulla mappa."
+              title="The source did not publish a verifiable position: no point is invented on the map."
             >
-              · posizione non pubblicata
+              · no published position
             </span>
           )}
           {p.location_precision === 'area_low_confidence' && (
             <span
               className="intel-low-confidence"
-              title="L'area è troppo ampia per essere una pista di ricerca utile — informazioni insufficienti per restringerla ulteriormente."
+              title="The area is too wide to be a useful search lead — not enough information to narrow it further."
             >
-              ⚠ info insufficienti
+              ⚠ insufficient info
             </span>
           )}
           {p.reply_count > 0 && p.url && (
@@ -714,7 +714,7 @@ export default function IntelDashboard({
         </span>
         {currentCoords && (
           <span className="intel-source" style={{ color: '#ffe06d' }}>
-            Stimata ora · {currentCoords[1]?.toFixed(4)}, {currentCoords[0]?.toFixed(4)}
+            Estimated now · {currentCoords[1]?.toFixed(4)}, {currentCoords[0]?.toFixed(4)}
             {Number.isFinite(Number(currentEstimate.properties?.elapsed_hours))
               ? ` · ${Number(currentEstimate.properties.elapsed_hours).toFixed(1)}h`
               : ''}
@@ -729,9 +729,9 @@ export default function IntelDashboard({
               type="button"
               className="intel-details-toggle"
               onClick={(e) => { e.stopPropagation(); toggleDetails(p.id, p.linked_mmsi || p.mmsi); }}
-              title="Cosa significa questa categoria, chi la corrobora, identità della nave collegata"
+              title="What this category means, who corroborates it, identity of the linked vessel"
             >
-              {detailsEventId === p.id ? '▲ Dettagli' : '▼ Dettagli'}
+              {detailsEventId === p.id ? '▲ Details' : '▼ Details'}
             </button>
             <div className="intel-panel-toggles--secondary">
               {coords && !isArea && loadNearestVessels && (
@@ -740,7 +740,7 @@ export default function IntelDashboard({
                   className="intel-nearby-toggle"
                   onClick={(e) => { e.stopPropagation(); toggleNearbyVessels(p.id, coords[1], coords[0]); }}
                 >
-                  {vesselsForEventId === p.id ? '▲ Navi vicine' : '▼ Navi vicine'}
+                  {vesselsForEventId === p.id ? '▲ Nearby vessels' : '▼ Nearby vessels'}
                 </button>
               )}
               {p.repost_count > 0 && (
@@ -757,9 +757,9 @@ export default function IntelDashboard({
                   type="button"
                   className="intel-forensic-toggle"
                   onClick={(e) => { e.stopPropagation(); toggleForensic(p.id); }}
-                  title="Record forense firmato (hash blake3 + firma ed25519) associato a questo evento — oggi creato solo per eventi distress"
+                  title="Signed forensic record (blake3 hash + ed25519 signature) tied to this event — today only created for distress events"
                 >
-                  {forensicEventId === p.id ? '▲ Forense' : '▼ Forense'}
+                  {forensicEventId === p.id ? '▲ Forensic' : '▼ Forensic'}
                 </button>
               )}
             </div>
@@ -773,34 +773,34 @@ export default function IntelDashboard({
             </div>
             {(p.detection_reason || p.detail) && (
               <div className="intel-details-row">
-                <span>⚙ perché è stato segnalato: {p.detection_reason || p.detail}</span>
+                <span>⚙ why it was flagged: {p.detection_reason || p.detail}</span>
               </div>
             )}
             {p.type === 'correlated_alert' && (
               <div className="intel-details-row">
                 {Number.isFinite(Number(p.confidence)) && (
-                  <span>confidenza {(Number(p.confidence) * 100).toFixed(0)}%</span>
+                  <span>confidence {(Number(p.confidence) * 100).toFixed(0)}%</span>
                 )}
                 {Array.isArray(p.contributing_sources) && p.contributing_sources.length > 0 && (
-                  <span>corroborato da: {p.contributing_sources.join(', ')}</span>
+                  <span>corroborated by: {p.contributing_sources.join(', ')}</span>
                 )}
               </div>
             )}
             {p.in_jamming_zone && (
               <div className="intel-details-row intel-details-row--warn">
-                <span>📡 posizione dentro una zona nota di jamming GNSS (score {p.jamming_score}) — segnale più forte del solito, non isolato</span>
+                <span>📡 position falls inside a known GNSS jamming zone (score {p.jamming_score}) — signal stronger than usual, not isolated</span>
               </div>
             )}
             {(p.linked_mmsi || p.mmsi) && (
               vesselDetailLoading ? (
-                <span className="intel-nearby-loading">Screening nave…</span>
+                <span className="intel-nearby-loading">Screening vessel…</span>
               ) : !vesselDetail || vesselDetail.error ? (
-                <span className="intel-nearby-loading">Nessun dato identità per MMSI {p.linked_mmsi || p.mmsi}.</span>
+                <span className="intel-nearby-loading">No identity data for MMSI {p.linked_mmsi || p.mmsi}.</span>
               ) : (
                 <div className="mda-vessel-card">
                   <strong>{vesselDetail.static?.name || vesselDetail.mmsi}</strong>
                   <span>IMO {vesselDetail.static?.imo || '—'} · flag {vesselDetail.static?.flag || vesselDetail.identity?.mid_flag || '—'}
-                    {' · '}{vesselDetail.track_points?.length ?? 0} fix recenti</span>
+                    {' · '}{vesselDetail.track_points?.length ?? 0} recent fixes</span>
                   {vesselDetail.track_points?.length >= 2 && (() => {
                     const pts = vesselDetail.track_points;
                     const { d, first, last } = buildSparklinePath(pts);
@@ -814,12 +814,12 @@ export default function IntelDashboard({
                           <circle cx={last[0]} cy={last[1]} r="3.5" className="spark-now" />
                         </svg>
                         <div className="mda-track-spark-meta">
-                          <span>{pts.length} posizioni · ultime {hours.toFixed(1)}h</span>
+                          <span>{pts.length} positions · last {hours.toFixed(1)}h</span>
                           {baseline && (
                             <span className={baseline.deviates ? 'mda-speed-warn' : ''}>
                               {baseline.deviates ? '⚠ ' : ''}
-                              velocità attuale {baseline.latest.toFixed(1)}kt · mediana {baseline.median.toFixed(1)}kt
-                              {baseline.deviates ? ' — scostamento dal comportamento abituale' : ''}
+                              current speed {baseline.latest.toFixed(1)}kt · median {baseline.median.toFixed(1)}kt
+                              {baseline.deviates ? ' — deviates from usual behavior' : ''}
                             </span>
                           )}
                         </div>
@@ -842,25 +842,25 @@ export default function IntelDashboard({
         {forensicEventId === p.id && (
           <div className="intel-ngo-panel intel-forensic-panel" onClick={(e) => e.stopPropagation()}>
             {forensicLoading ? (
-              <span className="intel-nearby-loading">Verifica record forense…</span>
+              <span className="intel-nearby-loading">Verifying forensic record…</span>
             ) : !forensicRecord ? (
-              <span className="intel-nearby-loading">Nessun record forense per questo evento.</span>
+              <span className="intel-nearby-loading">No forensic record for this event.</span>
             ) : (
               <>
                 <div className="intel-forensic-row">
                   <span className={`intel-forensic-badge ${forensicRecord.verify?.valid ? 'is-valid' : 'is-invalid'}`}>
-                    {forensicRecord.verify?.valid ? '✓ firma valida' : '✗ firma non valida'}
+                    {forensicRecord.verify?.valid ? '✓ valid signature' : '✗ invalid signature'}
                   </span>
                   <span>{forensicRecord.classification}</span>
-                  <span>confidenza {(Number(forensicRecord.confidence) * 100).toFixed(0)}%</span>
+                  <span>confidence {(Number(forensicRecord.confidence) * 100).toFixed(0)}%</span>
                 </div>
                 <div className="intel-forensic-row">
-                  <span>posizione: {forensicRecord.position?.lat?.toFixed?.(4)}, {forensicRecord.position?.lon?.toFixed?.(4)}</span>
-                  <span>fonte: {forensicRecord.position?.source}</span>
+                  <span>position: {forensicRecord.position?.lat?.toFixed?.(4)}, {forensicRecord.position?.lon?.toFixed?.(4)}</span>
+                  <span>source: {forensicRecord.position?.source}</span>
                 </div>
                 {forensicRecord.contributing_sensors?.length > 0 && (
                   <div className="intel-forensic-row">
-                    sensori: {forensicRecord.contributing_sensors.join(', ')}
+                    sensors: {forensicRecord.contributing_sensors.join(', ')}
                   </div>
                 )}
                 <div className="intel-forensic-hash" title={forensicRecord.hash_blake3}>
@@ -903,7 +903,7 @@ export default function IntelDashboard({
               <ul>
                 {nearbyVessels.map((vessel) => (
                   <li key={vessel.mmsi || `${vessel.lat},${vessel.lon}`}>
-                    <span className="intel-nearby-name">{vessel.ship_name || vessel.mmsi || 'Nave'}</span>
+                    <span className="intel-nearby-name">{vessel.ship_name || vessel.mmsi || 'Vessel'}</span>
                     <span className="intel-nearby-dist">{vessel.distance_nm?.toFixed(1)} nm</span>
                     {Number.isFinite(vessel.speed) && (
                       <span className="intel-nearby-speed">{vessel.speed.toFixed(1)} kn</span>
@@ -912,7 +912,7 @@ export default function IntelDashboard({
                 ))}
               </ul>
             ) : (
-              <span className="intel-nearby-loading">Nessuna nave AIS nelle vicinanze</span>
+              <span className="intel-nearby-loading">No AIS vessels nearby</span>
             )}
           </div>
         )}

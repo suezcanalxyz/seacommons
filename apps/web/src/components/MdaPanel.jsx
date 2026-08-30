@@ -1,19 +1,10 @@
 import React, { useMemo, useState } from 'react';
 
-const TYPE_LABEL = {
-  ais_rendezvous: 'STS rendezvous',
-  vessel_identity: 'Identity / sanctions',
-  ais_anomaly: 'AIS anomaly',
-  dark_candidate: 'Dark candidate (VIIRS)',
-  conflict_event: 'Conflict event',
-  navwarning: 'Nav warning',
-  correlated_alert: 'Correlated alert',
-};
-const TYPE_COLOR = {
-  ais_rendezvous: '#f472b6', vessel_identity: '#ef4444', ais_anomaly: '#60a5fa',
-  dark_candidate: '#4ade80', conflict_event: '#f97316', navwarning: '#eab308',
-  correlated_alert: '#ffb347',
-};
+import { MDA_ANOMALY_CATEGORIES, MDA_ANOMALY_DEFAULT, mdaCategoryKey } from '../features/intel/mdaCategories.js';
+
+function categoryInfo(key) {
+  return MDA_ANOMALY_CATEGORIES[key] || MDA_ANOMALY_DEFAULT;
+}
 
 function rel(iso) {
   if (!iso) return '';
@@ -37,12 +28,17 @@ export default function MdaPanel({ apiBase, fetchJson, anomalies = [], onFocus, 
 
   const types = useMemo(() => {
     const c = {};
-    for (const a of anomalies) c[a.type] = (c[a.type] || 0) + 1;
+    for (const a of anomalies) {
+      const key = mdaCategoryKey(a.type, a.anomaly_type) || a.type;
+      c[key] = (c[key] || 0) + 1;
+    }
     return c;
   }, [anomalies]);
 
   const shown = useMemo(() => {
-    const list = filter === 'all' ? anomalies : anomalies.filter((a) => a.type === filter);
+    const list = filter === 'all'
+      ? anomalies
+      : anomalies.filter((a) => (mdaCategoryKey(a.type, a.anomaly_type) || a.type) === filter);
     return [...list].sort((a, b) => new Date(b.timestamp_utc) - new Date(a.timestamp_utc));
   }, [anomalies, filter]);
 
@@ -110,18 +106,20 @@ export default function MdaPanel({ apiBase, fetchJson, anomalies = [], onFocus, 
           </button>
           {Object.entries(types).map(([t, n]) => (
             <button key={t} className={filter === t ? 'is-active' : ''} onClick={() => setFilter(t)}
-              style={{ borderColor: TYPE_COLOR[t] }}>
-              {TYPE_LABEL[t] || t} {n}
+              style={{ borderColor: categoryInfo(t).color }}>
+              {categoryInfo(t).tag} {n}
             </button>
           ))}
         </div>
         {shown.length === 0 && <p className="mda-hint">No dark-vessel signals in the last 72 h.</p>}
         <ul className="mda-list">
-          {shown.map((a) => (
+          {shown.map((a) => {
+            const cat = categoryInfo(mdaCategoryKey(a.type, a.anomaly_type) || a.type);
+            return (
             <li key={a.id} className="mda-item">
               <div className="mda-item-head">
-                <span className="mda-dot" style={{ background: TYPE_COLOR[a.type] || '#60a5fa' }} />
-                <span className="mda-item-type">{TYPE_LABEL[a.type] || a.type}</span>
+                <span className="mda-dot" style={{ background: cat.color }} />
+                <span className="mda-item-type">{cat.tag}</span>
                 {a.severity && <span className={`mda-sev mda-sev--${a.severity}`}>{a.severity}</span>}
                 <span className="mda-age">{rel(a.timestamp_utc)}</span>
               </div>
@@ -145,7 +143,8 @@ export default function MdaPanel({ apiBase, fetchJson, anomalies = [], onFocus, 
                 )}
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       </section>
     </div>

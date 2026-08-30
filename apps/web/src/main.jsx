@@ -12,6 +12,7 @@ import Legend from './components/Legend.jsx';
 import AlertRail from './components/AlertRail.jsx';
 import MdaPanel from './components/MdaPanel.jsx';
 import { categoryColorExpression, INTEL_MAP_CATEGORIES } from './features/intel/categories.js';
+import { mdaAnomalyColorExpression, mdaCategoryKey, MDA_ANOMALY_CATEGORIES } from './features/intel/mdaCategories.js';
 import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
 import JobMonitor from './components/JobMonitor.jsx';
@@ -1214,14 +1215,7 @@ function App() {
           layout: { visibility: 'none' },
           paint: {
             'circle-radius': ['match', ['get', 'type'], 'correlated_alert', 7, 5],
-            'circle-color': ['match', ['get', 'type'],
-              'ais_rendezvous', '#f472b6',
-              'vessel_identity', '#ef4444',
-              'dark_candidate', '#4ade80',
-              'conflict_event', '#f97316',
-              'navwarning', '#eab308',
-              'correlated_alert', '#ffb347',
-              '#60a5fa'],
+            'circle-color': mdaAnomalyColorExpression(),
             'circle-opacity': 0.95,
             'circle-stroke-width': ['match', ['get', 'severity'], 'critical', 2.4, 'high', 1.6, 1],
             'circle-stroke-color': '#04131a',
@@ -1844,7 +1838,14 @@ function App() {
           // the backend has one (vessel_incident/correlated_alert both do);
           // fall back to the generic alert_type/domain or bare coordinates.
           if (p.title) {
-            const sub = p.type === 'correlated_alert' ? (p.maritime_domain || 'sar') : `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+            // MDA anomaly features carry `category` (see mdaCategoryKey) --
+            // show its short tag ("AIS circolare", "Sanzionata", ...)
+            // instead of raw coordinates, same idea as the correlated_alert
+            // domain label below.
+            const mdaInfo = p.category ? MDA_ANOMALY_CATEGORIES[p.category] : null;
+            const sub = mdaInfo ? mdaInfo.tag
+              : p.type === 'correlated_alert' ? (p.maritime_domain || 'sar')
+              : `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
             return `<strong>${_escapeHoverHtml(p.title)}</strong><span>${_escapeHoverHtml(sub)}</span>`;
           }
           if (p.type === 'correlated_alert') {
@@ -2130,7 +2131,8 @@ function App() {
           type: 'Feature',
           geometry: { type: 'Point', coordinates: [a.lon, a.lat] },
           properties: { id: a.id, type: a.type, severity: a.severity, title: a.title,
-            anomaly_type: a.anomaly_type, mmsi: a.mmsi },
+            anomaly_type: a.anomaly_type, mmsi: a.mmsi,
+            category: mdaCategoryKey(a.type, a.anomaly_type) },
         })),
     });
   }, [mdaReference, mdaJamming, mdaAnomalies, mapReady]);

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 
 import { SIGNAL_CATEGORIES } from '../features/intel/categories.js';
+import { MDA_ANOMALY_CATEGORIES } from '../features/intel/mdaCategories.js';
 import { DOMAIN_COLORS } from './IntelDashboard.jsx';
 
 const INFO_ICON = (
@@ -69,6 +70,16 @@ export default function Legend() {
               <span>
                 <strong>{label}</strong>
                 <small>{description}</small>
+              </span>
+            </div>
+          ))}
+          <div className="legend-panel-title">MDA · dark-vessel signals</div>
+          {Object.entries(MDA_ANOMALY_CATEGORIES).map(([key, cat]) => (
+            <div key={key} className="legend-row legend-row--defined" title={cat.description}>
+              <Swatch shape="circle" color={cat.color} />
+              <span>
+                <strong>{cat.tag}</strong>
+                <small>{cat.description}</small>
               </span>
             </div>
           ))}
