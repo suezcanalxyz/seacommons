@@ -37,17 +37,42 @@ def collect_mda_anomalies(hours: float, kind: str) -> dict:
     from core.intel.store import intel_store
 
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    out = []
+    candidates = []
+    covered_ids: set[str] = set()
     for e in intel_store.events(limit=600):
         if e.type not in _MDA_TYPES:
             continue
-        if kind != "all" and e.type != kind:
-            continue
         if (e.timestamp_utc or "") < cutoff:
             continue
+        candidates.append(e)
+        if e.type == "correlated_alert":
+            covered_ids.update(e.metadata.get("contributing") or [])
+
+    by_id = {c.id: c for c in candidates}
+    out = []
+    for e in candidates:
+        if kind != "all" and e.type != kind:
+            continue
+        # A correlated_alert already represents its contributing raw
+        # finding(s) with the same evidentiary content (same vessel, same
+        # position) -- showing both as separate map points reads as a
+        # duplicate. Keep only the richer correlated_alert when one exists.
+        if e.type != "correlated_alert" and e.id in covered_ids:
+            continue
+        lat, lon = e.lat, e.lon
+        if e.type == "correlated_alert" and (lat is None or lon is None):
+            # A sanctions hit can correlate without a position (see
+            # normalize() above); if a contributing raw event has since
+            # picked up a real position, backfill it here rather than
+            # plotting nothing.
+            for cid in (e.metadata.get("contributing") or []):
+                src = by_id.get(cid)
+                if src is not None and src.lat is not None and src.lon is not None:
+                    lat, lon = src.lat, src.lon
+                    break
         out.append({
             "id": e.id, "type": e.type, "severity": e.severity,
-            "lat": e.lat, "lon": e.lon, "title": e.title,
+            "lat": lat, "lon": lon, "title": e.title,
             "mmsi": e.linked_mmsi or None,
             "timestamp_utc": e.timestamp_utc,
             "anomaly_type": e.metadata.get("anomaly_type"),
