@@ -745,6 +745,11 @@ export default function IntelDashboard({
                 )}
               </div>
             )}
+            {p.in_jamming_zone && (
+              <div className="intel-details-row intel-details-row--warn">
+                <span>📡 posizione dentro una zona nota di jamming GNSS (score {p.jamming_score}) — segnale più forte del solito, non isolato</span>
+              </div>
+            )}
             {(p.linked_mmsi || p.mmsi) && (
               vesselDetailLoading ? (
                 <span className="intel-nearby-loading">Screening nave…</span>

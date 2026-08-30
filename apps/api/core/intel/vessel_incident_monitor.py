@@ -157,9 +157,27 @@ class VesselIncidentMonitor:
                 return
             self._emitted[key] = now
 
+        # A nav-status report inside a known GNSS jamming zone reads very
+        # differently from an isolated one: "not under command" next to
+        # active jamming is far more likely a real navigation failure than
+        # the usual benign cause. Best-effort — the jamming layer may be
+        # empty (no recent data) and always returns 0.0 in that case, same
+        # threshold (0.3) core/mda/watch.py uses for "worth flagging".
+        jam_score = 0.0
+        try:
+            from core.mda.jamming import jamming as _jamming
+
+            jam_score = _jamming.in_jamming_zone(lat, lon)
+        except Exception:
+            pass
+        in_jamming_zone = jam_score >= 0.3
+
         title = f"AIS: {kind.replace('_', ' ')}"
         if name:
             title += f" — {name}"
+        text = f"{name or 'Vessel'} (MMSI {mmsi}) broadcast {kind.replace('_', ' ')} over AIS."
+        if in_jamming_zone:
+            text += " Position falls inside a known GNSS jamming zone — treat this as a stronger signal than an isolated report."
         event = IntelEvent(
             id=f"aisinc:{mmsi}:{kind}",
             type="distress" if is_distress else "vessel_incident",
@@ -167,7 +185,7 @@ class VesselIncidentMonitor:
             lat=lat,
             lon=lon,
             title=title[:200],
-            text=f"{name or 'Vessel'} (MMSI {mmsi}) broadcast {kind.replace('_', ' ')} over AIS.",
+            text=text,
             url=f"https://www.marinetraffic.com/en/ais/details/ships/mmsi:{mmsi}",
             source=source,
             linked_mmsi=mmsi,
@@ -184,6 +202,8 @@ class VesselIncidentMonitor:
                 # A beacon rides a liferaft/person; a grounding is the ship.
                 "case_type": "distress_sar" if kind == "distress_beacon" else "vessel_incident",
                 "ais_nav_status_kind": kind,
+                "jamming_score": round(jam_score, 2),
+                "in_jamming_zone": in_jamming_zone,
             },
         )
         if intel_store.add(event, dedup_key=f"aisinc:{mmsi}:{kind}"):

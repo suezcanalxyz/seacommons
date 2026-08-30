@@ -1641,6 +1641,7 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .intel-details-panel { display: flex; flex-direction: column; gap: 6px; }
 .intel-details-row { display: flex; flex-wrap: wrap; gap: 4px 10px; color: #9fb6c4; }
 .intel-details-row strong { color: #dfeae7; text-transform: capitalize; }
+.intel-details-row--warn { color: #fbbf24; }
 
 .intel-forensic-toggle {
   padding: 2px 6px;
