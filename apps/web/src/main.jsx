@@ -2983,6 +2983,8 @@ function App() {
             apiBase={apiBase}
             publicMode={isPublicLiveHost}
             intelDrifts={displayedIntelDrifts}
+            loadNearestVessels={loadNearestVessels}
+            onTriggerIntelDrift={triggerIntelDrift}
           />
         )}
         {['cone', 'trajectory', 'intel'].includes(mapPanel?.type) && conePanelHidden && (

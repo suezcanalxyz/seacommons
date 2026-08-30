@@ -393,11 +393,14 @@ function EvidenceSources({ props }) {
   );
 }
 
-function IntelView({ panel, apiBase, publicMode, intelDrifts }) {
+function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels, onTriggerIntelDrift }) {
   const props = panel.feature?.properties || {};
   const mmsi = props.linked_mmsi || props.mmsi;
   const [dossier, setDossier] = useState(null);
   const [dossierLoading, setDossierLoading] = useState(false);
+  const [nearbyVessels, setNearbyVessels] = useState([]);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [forensic, setForensic] = useState(null);
   const driftFeature = useMemo(() => {
     const features = Array.isArray(intelDrifts?.features) ? intelDrifts.features : [];
     const eventId = normalizeEventId(props.drift_event_id || props.id);
@@ -426,6 +429,41 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts }) {
     return () => { alive = false; };
   }, [apiBase, mmsi, publicMode]);
 
+  const coords = featurePosition(panel.feature);
+  useEffect(() => {
+    let alive = true;
+    if (!loadNearestVessels || !coords) {
+      setNearbyVessels([]);
+      return undefined;
+    }
+    setNearbyLoading(true);
+    loadNearestVessels(coords[1], coords[0])
+      .then((vessels) => { if (alive) setNearbyVessels(vessels || []); })
+      .catch(() => { if (alive) setNearbyVessels([]); })
+      .finally(() => { if (alive) setNearbyLoading(false); });
+    return () => { alive = false; };
+  // A new canonical event id is the only reason to repeat this point lookup.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.id]);
+
+  useEffect(() => {
+    let alive = true;
+    if (publicMode || !props.id) {
+      setForensic(null);
+      return undefined;
+    }
+    const rawId = String(props.id).replace(/^intel:/, '');
+    Promise.all([
+      fetch(`${apiBase}/api/v1/forensic/${rawId}`),
+      fetch(`${apiBase}/api/v1/forensic/${rawId}/verify`),
+    ]).then(async ([recordResponse, verifyResponse]) => {
+      const record = recordResponse.ok ? await recordResponse.json() : null;
+      const verify = verifyResponse.ok ? await verifyResponse.json() : null;
+      if (alive) setForensic(record ? { ...record, verify } : null);
+    }).catch(() => { if (alive) setForensic(null); });
+    return () => { alive = false; };
+  }, [apiBase, props.id, publicMode]);
+
   const lifecycle = props.incident_lifecycle
     || (['resolved', 'needs_review', 'archived'].includes(props.kind) ? props.kind : 'active');
   const color = lifecycle === 'archived'
@@ -438,7 +476,6 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts }) {
         ? INTEL_KIND_COLOR.distress
         : INTEL_KIND_COLOR.resolved;
   const when = props.timestamp_utc || props.source_timestamp_utc;
-  const coords = featurePosition(panel.feature);
   const eventType = (
     (Array.isArray(props.anomaly_types) && props.anomaly_types[0])
     || props.anomaly_type
@@ -495,7 +532,35 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts }) {
           </div>
         )}
         {props.status_note && <p className="intel-report-note">{props.status_note}</p>}
+        {!driftFeature && coords && props.drift_eligible && onTriggerIntelDrift && (
+          <button
+            type="button"
+            className="intel-report-action"
+            disabled={props.drift_status === 'computing'}
+            onClick={() => onTriggerIntelDrift(
+              props.drift_event_id || props.id,
+              coords[1],
+              coords[0],
+              props.drift_vessel_type,
+            )}
+          >
+            {props.drift_status === 'computing' ? 'Computing drift…' : 'Generate drift forecast'}
+          </button>
+        )}
       </div>
+
+      {(nearbyLoading || nearbyVessels.length > 0) && (
+        <div className="cone-section">
+          <SectionLabel>Nearest AIS vessels</SectionLabel>
+          {nearbyLoading ? <div className="intel-report-loading">Searching recent AIS positions…</div> : nearbyVessels.slice(0, 5).map((vessel) => (
+            <Row
+              key={vessel.mmsi || `${vessel.lat}-${vessel.lon}`}
+              label={vessel.ship_name || vessel.mmsi || 'Vessel'}
+              value={Number.isFinite(Number(vessel.distance_nm)) ? `${Number(vessel.distance_nm).toFixed(1)} nm` : '—'}
+            />
+          ))}
+        </div>
+      )}
 
       {(props.sanctions_matched || sanctions.length > 0) && (
         <div className="cone-section">
@@ -523,6 +588,16 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts }) {
               </li>
             ))}
           </ol>
+        </div>
+      )}
+
+      {forensic && (
+        <div className="cone-section">
+          <SectionLabel>Forensic record</SectionLabel>
+          <Row label="Signature" value={forensic.verify?.valid ? 'valid' : 'invalid'} color={forensic.verify?.valid ? '#22c55e' : '#ef4444'} />
+          <Row label="Classification" value={forensic.classification} />
+          <Row label="Confidence" value={Number.isFinite(Number(forensic.confidence)) ? `${(Number(forensic.confidence) * 100).toFixed(0)}%` : '—'} />
+          <Row label="Hash" value={forensic.hash_blake3 ? `${String(forensic.hash_blake3).slice(0, 18)}…` : '—'} mono />
         </div>
       )}
 
@@ -576,7 +651,16 @@ function TrajectoryView({ panel }) {
   );
 }
 
-export default function MapFloatingPanel({ panel, onClose, onComputeDrift, apiBase, publicMode, intelDrifts }) {
+export default function MapFloatingPanel({
+  panel,
+  onClose,
+  onComputeDrift,
+  apiBase,
+  publicMode,
+  intelDrifts,
+  loadNearestVessels,
+  onTriggerIntelDrift,
+}) {
   if (!panel) return null;
 
   const title = panel.type === 'trajectory'
@@ -614,7 +698,14 @@ export default function MapFloatingPanel({ panel, onClose, onComputeDrift, apiBa
         <TrajectoryView panel={panel} />
       )}
       {panel.type === 'intel' && (
-        <IntelView panel={panel} apiBase={apiBase} publicMode={publicMode} intelDrifts={intelDrifts} />
+        <IntelView
+          panel={panel}
+          apiBase={apiBase}
+          publicMode={publicMode}
+          intelDrifts={intelDrifts}
+          loadNearestVessels={loadNearestVessels}
+          onTriggerIntelDrift={onTriggerIntelDrift}
+        />
       )}
     </div>
   );
