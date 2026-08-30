@@ -20,6 +20,7 @@ from core.domain.live_contracts import (
     VerificationStatus,
     validate_live_signal,
 )
+from core.intel import lifecycle
 from core.intel.public_geometry import public_geometry_and_precision
 from core.intel.public_policy import is_blocked_source, is_explicitly_private, is_public_domain
 from core.intel.store import IntelEvent
@@ -172,6 +173,23 @@ def _public_intel_feature(event: IntelEvent) -> dict[str, Any] | None:
             }
             for r in thread_reposts
         ]
+    # SeaCommons-derived MDA events (spoofing, sanctions, vessel incidents)
+    # never went through core.intel.lifecycle's distress state machine --
+    # they had no incident_lifecycle at all and sat "active" forever, even
+    # a week later. There's no reply-thread to detect resolution from (no
+    # human posts an update when a vessel resumes normal AIS behaviour), so
+    # this only tracks staleness, same ARCHIVE_AFTER_HOURS threshold as
+    # distress markers: unrefreshed past that window is no longer worth
+    # highlighting as current, though it stays visible and searchable.
+    lifecycle_state = None
+    if is_derived:
+        observed = lifecycle.parse_utc(event.timestamp_utc)
+        if observed is not None:
+            age_hours = (datetime.now(UTC) - observed).total_seconds() / 3600
+            lifecycle_state = (
+                "archived" if age_hours >= lifecycle.ARCHIVE_AFTER_HOURS else "active"
+            )
+
     geometry, location_precision = public_geometry_and_precision(event)
     feature = {
         "type": "Feature",
@@ -202,6 +220,7 @@ def _public_intel_feature(event: IntelEvent) -> dict[str, Any] | None:
             "source_timestamp_utc": event.timestamp_utc,
             "received_at": event.metadata.get("first_source_seen_at") or event.timestamp_utc,
             "location_precision": location_precision,
+            **({"incident_lifecycle": lifecycle_state} if lifecycle_state else {}),
             **metadata,
         },
     }
