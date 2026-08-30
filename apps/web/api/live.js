@@ -115,23 +115,30 @@ function sourceFallback(summary) {
     ['Telegram intake', 'telegram', configured.telegram],
     ['Partner webhook', 'partner', configured.partner],
   ];
-  const sources = definitions.map(([name, type, active]) => ({
+  const sources = definitions.map(([name, type, isConfigured]) => ({
     name,
     type,
-    status: active ? 'active' : 'offline',
-    last_poll_at: active ? summary?.generated_at || null : null,
+    // Compatibility data only proves configuration, never runtime reachability.
+    status: isConfigured ? 'pending' : 'offline',
+    pipeline_status: isConfigured ? 'pending' : 'offline',
+    source_status: 'unknown',
+    configured: Number(isConfigured),
+    reachable: 0,
+    handles: [],
+    last_poll_at: null,
     events_last_hour: 0,
     total_events: 0,
     consecutive_errors: 0,
   }));
-  const active = sources.filter((source) => source.status === 'active').length;
+  const active = 0;
   return {
     sources,
     summary: {
       total: sources.length,
       active,
       degraded: 0,
-      offline: sources.length - active,
+      offline: sources.filter((source) => source.status === 'offline').length,
+      pending: sources.filter((source) => source.status === 'pending').length,
     },
     channels: {
       twitter: configured.twitter,

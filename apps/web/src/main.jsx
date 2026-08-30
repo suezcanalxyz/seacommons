@@ -102,14 +102,12 @@ const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'en
 // The public Live map only ever fetches data for these layer groups (see the
 // ngo-vessels/platforms effects and loadWeatherGridForMap's isPublicLiveHost
 // guard) — everything else stays hidden there regardless of the layer toggle.
-const PUBLIC_LIVE_LAYER_GROUPS = new Set([
+const PUBLIC_LIVE_HUMANITARIAN_LAYER_GROUPS = new Set([
   'nautical', 'sar', 'fused', 'ngo_vessels', 'platforms',
   'intel_social', 'intel_news', 'intel_hazard', 'intel_incident', 'intel_iom', 'intel_ngo',
-  // Sanctioned-vessel identity hits + AIS spoofing/rendezvous findings --
-  // both derived from already-public sanctions lists and public AIS
-  // broadcasts (see live.py's /mda-anomalies docstring). Off by default,
-  // same as the operator console, just toggleable here too.
-  'mda_anomaly',
+]);
+const PUBLIC_LIVE_SECURITY_LAYER_GROUPS = new Set([
+  'nautical', 'sar', 'fused', 'spikes', 'platforms',
 ]);
 const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
 const isPublicLiveHost = window.location.hostname === 'live.seacommons.org';
@@ -544,11 +542,13 @@ function App() {
   const [activeSimId, setActiveSimId] = useState(null);
   const [intelDrifts, setIntelDrifts] = useState({ type: 'FeatureCollection', features: [] });
   const [alertFlash, setAlertFlash] = useState(null);
+  const [liveMode, setLiveMode] = useState('humanitarian');
   const seenAlertIdsRef = useRef(null);
-  const { intelEvents, setIntelEvents, intelConnected, intelMode } = useLiveFeed({
+  const { intelEvents, setIntelEvents, intelConnected, intelMode, liveModeCounts } = useLiveFeed({
     apiBase,
     edgeBase: LIVE_EDGE_BASE,
     isPublicLiveHost,
+    liveMode,
     onCriticalDistress: (props) => {
       setActivePanel('osint');
       setSidebarOpen(true);
@@ -568,7 +568,16 @@ function App() {
   const [showAisAlerts, setShowAisAlerts] = useState(false);
   const [showVesselLinks, setShowVesselLinks] = useState(false);
   const [layerVis, setLayerVis] = useState(() => {
-    const defaults = { vessels: true, ngo_vessels: true, weather: true, sar: true, fused: true, platforms: true, alerts: true };
+    const defaults = {
+      vessels: true,
+      ngo_vessels: true,
+      weather: true,
+      sar: true,
+      fused: true,
+      spikes: isPublicLiveHost,
+      platforms: true,
+      alerts: true,
+    };
     try {
       const saved = JSON.parse(window.localStorage.getItem('seacommons_layer_vis') || '{}');
       return { ...defaults, ...saved };
@@ -870,12 +879,8 @@ function App() {
   }, [apiBase, isPublicLiveHost]);
 
   // ── MDA / dark-vessel layers ───────────────────────────────────────────────
-  // Anomalies (sanctioned-vessel identity + AIS spoofing/rendezvous findings)
-  // are public on live.seacommons.org too -- both are derived from already-
-  // public sanctions lists and public AIS broadcasts (see live.py's
-  // /mda-anomalies docstring). Reference geometry (cables/pipelines/STS
-  // zones) and jamming-zone polygons stay operator-only for now -- separate
-  // layers, not part of this request.
+  // The operator MDA workspace keeps its specialist API. Public Live receives
+  // security signals through the canonical mode-aware Live feed instead.
   const [mdaReference, setMdaReference] = useState({ type: 'FeatureCollection', features: [] });
   const [mdaJamming, setMdaJamming] = useState({ type: 'FeatureCollection', features: [] });
   const [mdaAnomalies, setMdaAnomalies] = useState([]);
@@ -898,8 +903,9 @@ function App() {
     return () => { alive = false; window.clearInterval(t); };
   }, [apiBase, isPublicLiveHost]);
   useEffect(() => {
+    if (isPublicLiveHost) return undefined;
     let alive = true;
-    const path = isPublicLiveHost ? '/api/v1/live/mda-anomalies' : '/api/v1/mda/anomalies';
+    const path = '/api/v1/mda/anomalies';
     const pull = async () => {
       try {
         const anom = await fetchJson(apiBase, `${path}?hours=72`).catch(() => null);
@@ -983,6 +989,10 @@ function App() {
     window.localStorage.setItem('seacommons_tz_port', localSettings.timezeroPort);
     window.localStorage.setItem('seacommons_tz_enabled', localSettings.timezeroEnabled);
   }, [localSettings]);
+
+  useEffect(() => {
+    liveSignalsFramedRef.current = false;
+  }, [liveMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2068,10 +2078,13 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
+    const publicGroups = liveMode === 'security'
+      ? PUBLIC_LIVE_SECURITY_LAYER_GROUPS
+      : PUBLIC_LIVE_HUMANITARIAN_LAYER_GROUPS;
     for (const group of LAYER_GROUPS) {
       const on = group.defaultOff ? layerVis[group.key] === true : layerVis[group.key] !== false;
       const enabled = isPublicLiveHost
-        ? PUBLIC_LIVE_LAYER_GROUPS.has(group.key) && on
+        ? publicGroups.has(group.key) && on
         : on;
       const vis = enabled ? 'visible' : 'none';
       for (const id of group.layers) {
@@ -2079,7 +2092,7 @@ function App() {
       }
     }
     try { window.localStorage.setItem('seacommons_layer_vis', JSON.stringify(layerVis)); } catch { /* quota */ }
-  }, [layerVis, mapReady]);
+  }, [layerVis, mapReady, liveMode]);
 
   function toggleLayerGroup(key) {
     const group = LAYER_GROUPS.find((g) => g.key === key);
@@ -2679,14 +2692,6 @@ function App() {
     () => new Set(intelEvents.map((feature) => feature.properties?.source).filter(Boolean)).size,
     [intelEvents],
   );
-  const liveDistressCount = useMemo(
-    () => intelEvents.filter((feature) => {
-      const properties = feature.properties || {};
-      return properties.kind === 'distress' || properties.type === 'distress';
-    }).length,
-    [intelEvents],
-  );
-
   const isOnSim = APP_PROFILE === 'demo' && (activePanel === 'sim' || selectionMode);
   const simulationRunning = caseStatus.startsWith('starting') || caseStatus.startsWith('queued') || caseStatus.startsWith('computing');
 
@@ -2749,7 +2754,14 @@ function App() {
           <LayerToggles
             visibility={layerVis}
             onToggle={toggleLayerGroup}
-            allowed={isPublicLiveHost ? PUBLIC_LIVE_LAYER_GROUPS : null}
+            allowed={isPublicLiveHost
+              ? liveMode === 'security'
+                ? PUBLIC_LIVE_SECURITY_LAYER_GROUPS
+                : PUBLIC_LIVE_HUMANITARIAN_LAYER_GROUPS
+              : null}
+            labelOverrides={isPublicLiveHost && liveMode === 'security'
+              ? { sar: 'Maritime-security signals', fused: 'Correlated security alerts' }
+              : null}
           />
         ) : null}
         {!play3D ? <Legend /> : null}
@@ -3005,18 +3017,32 @@ function App() {
                 </div>
                 <button type="button" onClick={() => setSidebarOpen(false)} aria-label="Collapse live feed">−</button>
               </div>
+              <div className="live-mode-switch" role="group" aria-label="Live feed mode">
+                <button
+                  type="button"
+                  className={liveMode === 'humanitarian' ? 'is-active' : ''}
+                  aria-pressed={liveMode === 'humanitarian'}
+                  onClick={() => setLiveMode('humanitarian')}
+                >Humanitarian</button>
+                <button
+                  type="button"
+                  className={liveMode === 'security' ? 'is-active' : ''}
+                  aria-pressed={liveMode === 'security'}
+                  onClick={() => setLiveMode('security')}
+                >Maritime security</button>
+              </div>
               <div className="live-feed-panel__metrics">
+                <div className={liveMode === 'humanitarian' ? 'is-active' : ''}>
+                  <span>HUMANITARIAN</span>
+                  <strong>{liveModeCounts.humanitarian ?? '—'}</strong>
+                </div>
+                <div className={liveMode === 'security' ? 'is-active' : ''}>
+                  <span>SECURITY</span>
+                  <strong>{liveModeCounts.security ?? '—'}</strong>
+                </div>
                 <div>
                   <span>SOURCES</span>
                   <strong>{liveSourceCount}</strong>
-                </div>
-                <div>
-                  <span>PUBLISHED</span>
-                  <strong>{intelEvents.length}</strong>
-                </div>
-                <div>
-                  <span>DISTRESS</span>
-                  <strong>{liveDistressCount}</strong>
                 </div>
                 <div>
                   <span>TRANSPORT</span>
@@ -3040,13 +3066,13 @@ function App() {
                 intelFilter={intelFilter}
                 setIntelFilter={setIntelFilter}
                 intelMode={intelMode}
+                liveMode={liveMode}
                 showAisAlerts={showAisAlerts}
                 setShowAisAlerts={setShowAisAlerts}
                 triggeringDrift={triggeringDrift}
                 triggerIntelDrift={triggerIntelDrift}
                 mapRef={mapRef}
                 loadNearestVessels={loadNearestVessels}
-                mdaAnomalies={mdaAnomalies}
                 setSidebarOpen={(open) => {
                   if (window.matchMedia('(max-width: 820px)').matches) setSidebarOpen(open);
                 }}

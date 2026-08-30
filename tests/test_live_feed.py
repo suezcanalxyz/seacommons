@@ -864,6 +864,58 @@ def test_live_feed_merges_durable_alarm_phone_events_after_memory_eviction(
     assert collection["meta"]["durable_alarm_phone_candidates"] == 1
 
 
+def test_public_feed_modes_return_separate_signals_and_counts(monkeypatch) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    humanitarian = IntelEvent(
+        id="mode-humanitarian-01",
+        timestamp_utc=now,
+        type="distress",
+        severity="high",
+        lat=34.8,
+        lon=14.2,
+        title="Reported maritime distress",
+        source="Alarm Phone",
+        metadata={
+            "is_distress": True,
+            "maritime_domain": "sar",
+            "source_policy": "official_site_embed",
+        },
+    )
+    security = IntelEvent(
+        id="mode-security-01",
+        timestamp_utc=now,
+        type="ais_anomaly",
+        severity="high",
+        lat=35.1,
+        lon=14.5,
+        title="AIS identity anomaly",
+        source="SeaCommons MDA",
+        metadata={"maritime_domain": "grey_zone"},
+    )
+    monkeypatch.setattr(
+        "core.live.feed.intel_store.events",
+        lambda **_kwargs: [humanitarian, security],
+    )
+    monkeypatch.setattr(
+        "core.live.feed.intel_store.persisted_events",
+        lambda **_kwargs: [],
+    )
+    monkeypatch.setattr("core.live.feed._published_ingested_features", lambda _limit: [])
+
+    humanitarian_feed = public_signal_collection(limit=50, mode="humanitarian")
+    security_feed = public_signal_collection(limit=50, mode="security")
+
+    assert [feature["properties"]["id"] for feature in humanitarian_feed["features"]] == [
+        "intel:mode-humanitarian-01"
+    ]
+    assert [feature["properties"]["id"] for feature in security_feed["features"]] == [
+        "intel:mode-security-01"
+    ]
+    expected_counts = {"humanitarian": 1, "security": 1}
+    assert humanitarian_feed["meta"]["mode_counts"] == expected_counts
+    assert security_feed["meta"]["mode_counts"] == expected_counts
+
+
 def test_current_position_uses_elapsed_time_on_sampled_trajectory() -> None:
     trajectory = {
         "geometry": {"type": "LineString", "coordinates": [[14.0, 35.0], [15.0, 36.0]]},
@@ -982,6 +1034,16 @@ def test_live_routes_remain_public_when_internal_reads_require_auth() -> None:
         source_payload = public_sources.json()
         assert source_payload["collector"]["browser_independent"] is True
         assert all(source["type"] != "ais" for source in source_payload["sources"])
+        assert all(
+            {
+                "pipeline_status",
+                "source_status",
+                "configured",
+                "reachable",
+                "handles",
+            }.issubset(source)
+            for source in source_payload["sources"]
+        )
         assert public_ngo.status_code == 200
         assert public_ngo.json()["type"] == "FeatureCollection"
         assert public_platforms.status_code == 200
@@ -990,3 +1052,25 @@ def test_live_routes_remain_public_when_internal_reads_require_auth() -> None:
         assert internal_ngo.status_code == 401
     finally:
         config.AUTH_ENABLED = previous
+
+
+def test_legacy_public_mda_anomaly_route_is_removed() -> None:
+    assert client.get("/api/v1/live/mda-anomalies").status_code == 404
+
+
+def test_live_websocket_uses_the_requested_mode(monkeypatch) -> None:
+    requested_modes: list[str] = []
+
+    def collection(**kwargs):
+        requested_modes.append(kwargs["mode"])
+        return {
+            "type": "FeatureCollection",
+            "features": [],
+            "meta": {"mode": kwargs["mode"]},
+        }
+
+    monkeypatch.setattr("core.api.routes.live.public_signal_collection", collection)
+    with client.websocket_connect("/api/v1/live/stream?mode=security") as websocket:
+        assert websocket.receive_json()["meta"]["mode"] == "security"
+
+    assert requested_modes == ["security"]

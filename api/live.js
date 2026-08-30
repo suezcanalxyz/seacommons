@@ -116,23 +116,30 @@ function sourceFallback(summary) {
     ['Telegram intake', 'telegram', configured.telegram],
     ['Partner webhook', 'partner', configured.partner],
   ];
-  const sources = definitions.map(([name, type, active]) => ({
+  const sources = definitions.map(([name, type, isConfigured]) => ({
     name,
     type,
-    status: active ? 'active' : 'offline',
-    last_poll_at: active ? summary?.generated_at || null : null,
+    // Compatibility data only proves configuration, never runtime reachability.
+    status: isConfigured ? 'pending' : 'offline',
+    pipeline_status: isConfigured ? 'pending' : 'offline',
+    source_status: 'unknown',
+    configured: Number(isConfigured),
+    reachable: 0,
+    handles: [],
+    last_poll_at: null,
     events_last_hour: 0,
     total_events: 0,
     consecutive_errors: 0,
   }));
-  const active = sources.filter((source) => source.status === 'active').length;
+  const active = 0;
   return {
     sources,
     summary: {
       total: sources.length,
       active,
       degraded: 0,
-      offline: sources.length - active,
+      offline: sources.filter((source) => source.status === 'offline').length,
+      pending: sources.filter((source) => source.status === 'pending').length,
     },
     channels: {
       twitter: configured.twitter,
@@ -167,6 +174,8 @@ export default async function handler(req, res) {
     : '';
   const requestedLimit = Math.min(500, Math.max(1, Number.parseInt(req.query.limit, 10) || 500));
   const requestedDays = Math.min(365, Math.max(1, Number.parseInt(req.query.days, 10) || 30));
+  const requestedMode = Array.isArray(req.query.mode) ? req.query.mode[0] : req.query.mode;
+  const safeMode = ['humanitarian', 'security', 'all'].includes(requestedMode) ? requestedMode : 'humanitarian';
   const upstreamPath = resource === 'sources'
     ? '/api/v1/live/sources'
     : resource === 'drifts'
@@ -175,7 +184,7 @@ export default async function handler(req, res) {
         ? '/api/v1/live/archives?limit=8'
         : resource === 'archive' && safeEventId
           ? `/api/v1/live/archives/${safeEventId}/geojson`
-          : `/api/v1/live/signals?limit=${requestedLimit}&days=${requestedDays}`;
+          : `/api/v1/live/signals?limit=${requestedLimit}&days=${requestedDays}&mode=${safeMode}`;
   try {
     const upstream = await requestJson(upstreamPath);
     if (upstream.status === 200 && upstream.data) {

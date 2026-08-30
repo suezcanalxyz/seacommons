@@ -77,6 +77,10 @@ class NewsMonitor:
 
         source_registry.register("IOM Missing Migrants", "archive")
         source_registry.register("Official NGO RSS", "rss")
+        source_registry.register_targets(
+            "Official NGO RSS",
+            [feed["label"] for feed in RSS_FEEDS],
+        )
         self._running = True
         self._thread = threading.Thread(
             target=self._loop,
@@ -177,6 +181,7 @@ class NewsMonitor:
         new_count = 0
         errors: list[str] = []
         for feed in RSS_FEEDS:
+            feed_new_count = 0
             try:
                 request = urllib.request.Request(feed["url"], headers=_HEADERS)
                 with urllib.request.urlopen(request, timeout=15) as response:
@@ -184,13 +189,27 @@ class NewsMonitor:
                 for item in items:
                     if self._ingest_rss_item(item, feed["label"]):
                         new_count += 1
+                        feed_new_count += 1
+                source_registry.record_target_poll(
+                    "Official NGO RSS",
+                    feed["label"],
+                    events_found=feed_new_count,
+                )
             except Exception as exc:
                 errors.append(f"{feed['label']}: {exc}")
+                source_registry.record_target_poll(
+                    "Official NGO RSS",
+                    feed["label"],
+                    error=str(exc),
+                )
                 logger.debug("Official RSS %s failed: %s", feed["label"], exc)
         source_registry.record_poll(
             "Official NGO RSS",
             events_found=new_count,
-            error="; ".join(errors) if errors else None,
+            # A partial outage is source availability degradation, not a dead
+            # collector pipeline. Only mark the pipeline failed when every
+            # configured feed failed in this cycle.
+            error="; ".join(errors) if len(errors) == len(RSS_FEEDS) else None,
         )
 
     def _ingest_rss_item(self, item: dict[str, str], source: str) -> bool:

@@ -38,7 +38,7 @@ const LAYERS_ICON = (
   </svg>
 );
 
-export default function LayerToggles({ visibility, onToggle, allowed = null }) {
+export default function LayerToggles({ visibility, onToggle, allowed = null, labelOverrides = null }) {
   const [open, setOpen] = useState(false);
   const groups = allowed ? LAYER_GROUPS.filter((g) => allowed.has(g.key)) : LAYER_GROUPS;
   const isOn = (g) => (g.defaultOff ? visibility[g.key] === true : visibility[g.key] !== false);
@@ -68,7 +68,7 @@ export default function LayerToggles({ visibility, onToggle, allowed = null }) {
                   checked={isOn(g)}
                   onChange={() => onToggle(g.key)}
                 />
-                <span>{g.label}</span>
+                <span>{labelOverrides?.[g.key] || g.label}</span>
               </label>
             </React.Fragment>
           ))}

@@ -104,3 +104,28 @@ Deferring the full mode-switch endpoint unification (Phase 3) and the
 per-handle source-health rework (Phase 4) to a follow-up — both are larger,
 higher-risk changes that deserve their own focused pass rather than being
 rushed alongside everything else done today.
+
+## Phase 3/4 follow-up — completed 2026-08-30
+
+Public Live now has one server-filtered truth: `GET /api/v1/live/signals`
+with `mode=humanitarian|security|all`. The selected UI mode drives the REST
+query, feed cards, map-layer groups, filters and mode-specific cache. Response
+metadata carries separate `humanitarian` and `security` counts, so the header
+does not infer the inactive count from the currently rendered list.
+
+`GET /api/v1/live/sources` now distinguishes collector-pipeline health from
+target availability. Multi-source collectors publish `configured`,
+`reachable` and per-target states; partial X-handle or NGO-RSS failure makes
+the source degraded while leaving a functioning pipeline active.
+
+### Legacy disposition
+
+| Legacy path | Classification | Action |
+| --- | --- | --- |
+| `/api/v1/live/signals` | canonical | KEEP; mode-aware public contract |
+| Public consumer of `/api/v1/live/mda-anomalies` | duplicate internal truth | MIGRATE to canonical signals feed |
+| `/api/v1/live/mda-anomalies` | unused legacy public endpoint | DELETE; operator `/api/v1/mda/anomalies` remains |
+| `mdaAnomalyToFeature()` UI adapter | dead compatibility adapter | DELETE |
+| Simultaneous Humanitarian/Security feed sections | superseded presentation | DELETE; replaced by top-level switch |
+| Channel-only source status | incomplete health model | MIGRATE to pipeline + per-target availability |
+| Vercel “configured = active” fallback | misleading magic fallback | DELETE behavior; report `pending/unknown` |

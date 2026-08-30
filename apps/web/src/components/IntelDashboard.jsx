@@ -36,9 +36,9 @@ export const DOMAIN_COLORS = {
 };
 
 function statusTone(s) {
-  if (s === 'active')  return '#22c55e';
+  if (s === 'active' || s === 'healthy')  return '#22c55e';
   if (s === 'degraded') return '#f59e0b';
-  if (s === 'offline') return '#ef4444';
+  if (s === 'offline' || s === 'unavailable') return '#ef4444';
   return '#6b7280';
 }
 
@@ -111,52 +111,6 @@ const PUBLIC_TIERS = [
   { key: 'signal', label: 'Partner ops', sub: 'Trusted operational observations' },
 ];
 
-// Humanitarian/SAR vs security-&-compliance (dark fleet, sanctions,
-// spoofing) split, requested explicitly: the two must never blur together
-// in the same undifferentiated list. Security types + domains are the
-// smaller, well-defined set (core/mda/*, fusion.py's sanctions/grey_zone
-// domains) -- everything else defaults to humanitarian, which is the
-// correct fallback for any new/unclassified type (distress, social
-// reports, GDACS, IOM).
-const _SECURITY_TYPES = new Set([
-  'ais_anomaly', 'vessel_identity', 'dark_candidate', 'ais_rendezvous',
-  'conflict_event', 'ais_spike',
-]);
-const _SECURITY_DOMAINS = new Set(['sanctions', 'grey_zone']);
-function eventSection(p) {
-  if (_SECURITY_TYPES.has(p.type) || _SECURITY_DOMAINS.has(p.maritime_domain)) return 'security';
-  return 'humanitarian';
-}
-
-// mdaAnomalies (from GET /api/v1/live/mda-anomalies) is a flat dict shape,
-// not a GeoJSON Feature -- adapt it to what renderEvent() expects. Public
-// Live's default feed (mode=humanitarian) never includes this content by
-// design (see core/intel/public_policy.py's domain allow-list), so on the
-// public host the Security & Compliance section would otherwise always be
-// empty; the map layer already proved this exact data live and correct.
-function mdaAnomalyToFeature(a) {
-  return {
-    type: 'Feature',
-    geometry: Number.isFinite(a.lat) && Number.isFinite(a.lon)
-      ? { type: 'Point', coordinates: [a.lon, a.lat] }
-      : null,
-    properties: {
-      id: a.id,
-      type: a.type,
-      severity: a.severity,
-      title: a.title,
-      timestamp_utc: a.timestamp_utc,
-      linked_mmsi: a.mmsi,
-      mmsi: a.mmsi,
-      maritime_domain: a.maritime_domain,
-      anomaly_type: a.anomaly_type,
-      verification_status: 'derived',
-      source: 'mda',
-      ...(a.metadata || {}),
-    },
-  };
-}
-
 function eventTier(p) {
   // Backend supplies `tier`; fall back to type-based inference for cached/legacy events.
   if (p.tier) return p.tier;
@@ -225,16 +179,37 @@ function SourceHealthBar({ sources, loaded = false }) {
     );
   }
   return (
-    <div className="intel-sources-row">
-      {sources.map((src) => (
-        <div key={src.name} className="intel-source-chip" title={`Last poll: ${src.last_poll_at ? relativeTime(src.last_poll_at) : 'never'}\nEvents/h: ${src.events_last_hour}\nErrors: ${src.consecutive_errors}${src.last_error ? '\n' + src.last_error : ''}`}>
-          <span className="intel-source-dot" style={{ background: statusTone(src.status) }} />
-          <span className="intel-source-chip-name">{src.name}</span>
-          {src.events_last_hour > 0 && (
-            <span className="intel-source-chip-count">{src.events_last_hour}/h</span>
-          )}
-        </div>
-      ))}
+    <div className="intel-source-health-list">
+      {sources.map((src) => {
+        const handles = Array.isArray(src.handles) ? src.handles : [];
+        return (
+          <div key={src.name} className="intel-source-health-card">
+            <div className="intel-source-chip" title={`Last poll: ${src.last_poll_at ? relativeTime(src.last_poll_at) : 'never'}\nPipeline: ${src.pipeline_status || src.status}\nSources: ${src.source_status || 'unknown'}`}>
+              <span className="intel-source-dot" style={{ background: statusTone(src.status) }} />
+              <span className="intel-source-chip-name">{src.name}</span>
+              {Number(src.configured) > 0 && (
+                <span className="intel-source-chip-count">{src.reachable || 0}/{src.configured}</span>
+              )}
+              {src.events_last_hour > 0 && (
+                <span className="intel-source-chip-count">{src.events_last_hour}/h</span>
+              )}
+            </div>
+            <div className="intel-source-health-meta">
+              pipeline {src.pipeline_status || src.status} · sources {src.source_status || 'unknown'}
+            </div>
+            {handles.length > 0 && (
+              <div className="intel-source-handles" aria-label={`${src.name} source availability`}>
+                {handles.map((handle) => (
+                  <span key={handle.name} title={`Last poll: ${handle.last_poll_at ? relativeTime(handle.last_poll_at) : 'never'}`}>
+                    <i style={{ background: statusTone(handle.status) }} />
+                    @{handle.name} · {handle.status}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -387,6 +362,7 @@ export default function IntelDashboard({
   intelFilter,
   setIntelFilter,
   intelMode,
+  liveMode = 'humanitarian',
   showAisAlerts,
   setShowAisAlerts,
   triggeringDrift,
@@ -394,7 +370,6 @@ export default function IntelDashboard({
   mapRef,
   setSidebarOpen,
   loadNearestVessels,
-  mdaAnomalies = [],
 }) {
   const [sources, setSources] = useState([]);
   // "Navi vicine" expansion: local to this component so it never fights
@@ -428,24 +403,42 @@ export default function IntelDashboard({
   const [vesselDetailLoading, setVesselDetailLoading] = useState(false);
   const pollRef = useRef(null);
 
+  useEffect(() => {
+    if (!publicMode) return;
+    setChannelFilter('all');
+    setSourceFilter('all');
+    setTierFilter('all');
+    setDomainFilter('all');
+  }, [liveMode, publicMode]);
+
   // Poll source registry
   useEffect(() => {
     let alive = true;
     async function loadSources() {
-      try {
-        const useEdgeStatus = publicMode && Boolean(liveEdgeBase);
-        const endpoint = useEdgeStatus ? '/v1/live/status' : publicMode ? '/api/v1/live/sources' : '/api/v1/intel/sources';
+      async function requestJson(base, endpoint) {
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 4000);
-        const resp = await fetch(`${useEdgeStatus ? liveEdgeBase : apiBase}${endpoint}`, {
-          signal: controller.signal,
-        });
-        window.clearTimeout(timeout);
-        if (resp.ok) {
-          const data = await resp.json();
-          if (alive && useEdgeStatus) {
-            const edgeSources = Array.isArray(data.sources) && data.sources.length
-              ? data.sources.map((source) => ({
+        try {
+          const response = await fetch(`${base}${endpoint}`, { signal: controller.signal });
+          if (!response.ok) throw new Error(`source health HTTP ${response.status}`);
+          return await response.json();
+        } finally {
+          window.clearTimeout(timeout);
+        }
+      }
+      try {
+        const endpoint = publicMode ? '/api/v1/live/sources' : '/api/v1/intel/sources';
+        const data = await requestJson(apiBase, endpoint);
+        if (alive) setSources(data.sources || []);
+      } catch {
+        // The edge only knows publisher/node health, not individual handles.
+        // Use it strictly as an availability fallback when Oracle cannot answer.
+        if (publicMode && liveEdgeBase) {
+          try {
+            const data = await requestJson(liveEdgeBase, '/v1/live/status');
+            if (alive) {
+              const edgeSources = Array.isArray(data.sources) && data.sources.length
+                ? data.sources.map((source) => ({
                 name: source.source || source.name || 'collector',
                 type: source.node || 'edge',
                 status: source.status || 'degraded',
@@ -465,12 +458,13 @@ export default function IntelDashboard({
                 total_events: Number(data.event_count) || 0,
                 consecutive_errors: data.status === 'live' ? 0 : 1,
               }];
-            setSources(edgeSources);
-          } else if (alive) {
-            setSources(data.sources || []);
+              setSources(edgeSources);
+            }
+          } catch {
+            // Preserve the last known source-health state.
           }
         }
-      } catch { /* silent */ }
+      }
       if (alive) setSourcesLoaded(true);
       if (alive) pollRef.current = window.setTimeout(loadSources, 30000);
     }
@@ -994,7 +988,8 @@ export default function IntelDashboard({
       <section className="panel-block" style={{ paddingTop: 0, paddingBottom: 8 }}>
         <div className="osint-stats-row">
           <div className="osint-stat">
-            <strong>{intelStats.total}</strong><span>events</span>
+            <strong>{intelStats.total}</strong>
+            <span>{publicMode ? liveMode === 'security' ? 'security' : 'humanitarian' : 'events'}</span>
           </div>
           <div className="osint-stat osint-stat--critical">
             <strong>{intelStats.by_sev?.critical || 0}</strong><span>critical</span>
@@ -1057,11 +1052,13 @@ export default function IntelDashboard({
               title="Toggle AIS loitering alerts"
             >AIS</button>
           ) : null}
-          <button
-            className={`intel-filter-btn ${sourceFilter === ALARM_PHONE_SOURCE ? 'is-active' : ''}`}
-            onClick={() => setSourceFilter((cur) => cur === ALARM_PHONE_SOURCE ? 'all' : ALARM_PHONE_SOURCE)}
-            title="Show only Alarm Phone reports"
-          >📞 Alarm Phone</button>
+          {(!publicMode || liveMode === 'humanitarian') && (
+            <button
+              className={`intel-filter-btn ${sourceFilter === ALARM_PHONE_SOURCE ? 'is-active' : ''}`}
+              onClick={() => setSourceFilter((cur) => cur === ALARM_PHONE_SOURCE ? 'all' : ALARM_PHONE_SOURCE)}
+              title="Show only Alarm Phone reports"
+            >📞 Alarm Phone</button>
+          )}
         </div>
 
         {/* Maritime compartment filter — operator view, only when >1 present */}
@@ -1120,8 +1117,10 @@ export default function IntelDashboard({
                 {publicMode && intelMode !== 'offline' && tierFilter === 'all' && intelFilter === 'all' && channelFilter === 'all' && !search ? (
                   <div className="intel-live-empty">
                     <i />
-                    <strong>No live signal received</strong>
-                    <span>Listening to official APIs and explicitly published partner channels.</span>
+                    <strong>No {liveMode === 'security' ? 'maritime-security' : 'humanitarian'} signal received</strong>
+                    <span>{liveMode === 'security'
+                      ? 'Listening for AIS, identity and dark-vessel anomalies.'
+                      : 'Listening to official APIs and explicitly published partner channels.'}</span>
                   </div>
                 ) : intelMode !== 'offline'
                   ? `No events${tierFilter !== 'all' || intelFilter !== 'all' || channelFilter !== 'all' || search ? ' matching filters' : ''}`
@@ -1150,20 +1149,9 @@ export default function IntelDashboard({
                     <span className="intel-tier-head-sub">{t.sub}</span>
                     <span className="intel-tier-head-count">{live.length}</span>
                   </div>
-                  {[
-                    { key: 'humanitarian', label: '🕊 Humanitarian & SAR', items: live.filter((f) => eventSection(f.properties || {}) === 'humanitarian') },
-                    { key: 'security', label: '🛡 Security & Compliance', items: live.filter((f) => eventSection(f.properties || {}) === 'security') },
-                  ].map((sec) => sec.items.length > 0 && (
-                    <div key={sec.key} className={`intel-section intel-section--${sec.key}`}>
-                      <div className="intel-section-head">
-                        <span className="intel-section-head-label">{sec.label}</span>
-                        <span className="intel-section-head-count">{sec.items.length}</span>
-                      </div>
-                      <ul className="intel-list" style={{ margin: 0 }}>
-                        {sec.items.map(renderEvent)}
-                      </ul>
-                    </div>
-                  ))}
+                  <ul className="intel-list" style={{ margin: 0 }}>
+                    {live.map(renderEvent)}
+                  </ul>
                   {isOperational && archived.length > 0 && (
                     <div className="intel-archive-block">
                       <button
@@ -1200,23 +1188,6 @@ export default function IntelDashboard({
                 </ul>
               </div>
             ))}
-          </div>
-        )}
-        {publicMode && viewMode === 'list' && mdaAnomalies.length > 0 && (
-          // Public Live's default feed excludes Security domains by design
-          // (see mdaAnomalyToFeature's comment) -- the map layer's own data
-          // is the one place this content already flows correctly, reused
-          // here so the sidebar isn't structurally empty for this section.
-          <div className="intel-tier-group intel-tier-group--mda">
-            <div className="intel-section intel-section--security">
-              <div className="intel-section-head">
-                <span className="intel-section-head-label">🛡 Security & Compliance</span>
-                <span className="intel-section-head-count">{mdaAnomalies.length}</span>
-              </div>
-              <ul className="intel-list" style={{ margin: 0 }}>
-                {mdaAnomalies.slice(0, 100).map(mdaAnomalyToFeature).map(renderEvent)}
-              </ul>
-            </div>
           </div>
         )}
       </section>

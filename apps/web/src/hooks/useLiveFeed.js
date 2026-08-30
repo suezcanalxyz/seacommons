@@ -10,13 +10,13 @@ import {
 const PUBLIC_CACHE_KEY = 'seacommons_live_signal_cache_v2';
 const OPERATOR_CACHE_KEY = 'seacommons_intel_cache';
 
-function cacheKey(isPublicLiveHost) {
-  return isPublicLiveHost ? PUBLIC_CACHE_KEY : OPERATOR_CACHE_KEY;
+function cacheKey(isPublicLiveHost, liveMode = 'humanitarian') {
+  return isPublicLiveHost ? `${PUBLIC_CACHE_KEY}_${liveMode}` : OPERATOR_CACHE_KEY;
 }
 
-function loadCachedEvents(isPublicLiveHost) {
+function loadCachedEvents(isPublicLiveHost, liveMode = 'humanitarian') {
   try {
-    const cached = window.localStorage.getItem(cacheKey(isPublicLiveHost));
+    const cached = window.localStorage.getItem(cacheKey(isPublicLiveHost, liveMode));
     if (!cached) return [];
     const parsed = JSON.parse(cached);
     if (!Array.isArray(parsed)) return [];
@@ -28,9 +28,9 @@ function loadCachedEvents(isPublicLiveHost) {
   }
 }
 
-function storeCachedEvents(isPublicLiveHost, features) {
+function storeCachedEvents(isPublicLiveHost, features, liveMode = 'humanitarian') {
   try {
-    window.localStorage.setItem(cacheKey(isPublicLiveHost), JSON.stringify(features));
+    window.localStorage.setItem(cacheKey(isPublicLiveHost, liveMode), JSON.stringify(features));
   } catch {
     // The live in-memory state remains authoritative when storage is unavailable/full.
   }
@@ -41,12 +41,14 @@ export function useLiveFeed({
   apiBase,
   edgeBase,
   isPublicLiveHost,
+  liveMode = 'humanitarian',
   onCriticalDistress,
   onDriftUpdate,
 }) {
   const [intelEvents, setIntelEvents] = useState(
-    () => loadCachedEvents(isPublicLiveHost),
+    () => loadCachedEvents(isPublicLiveHost, liveMode),
   );
+  const [liveModeCounts, setLiveModeCounts] = useState({ humanitarian: null, security: null });
   const [intelConnected, setIntelConnected] = useState(false);
   const [intelMode, setIntelMode] = useState('offline');
   const edgeLiveActiveRef = useRef(false);
@@ -58,15 +60,21 @@ export function useLiveFeed({
     onDriftUpdateRef.current = onDriftUpdate;
   }, [onCriticalDistress, onDriftUpdate]);
 
+  useEffect(() => {
+    if (isPublicLiveHost) setIntelEvents(loadCachedEvents(true, liveMode));
+  }, [isPublicLiveHost, liveMode]);
+
   // VM-hosted Intel/Live transport: polling starts immediately and WebSocket
   // takes over when a direct backend origin supports upgrades.
   useEffect(() => {
-    if (isPublicLiveHost && edgeBase) return undefined;
+    if (isPublicLiveHost && edgeBase && liveMode === 'humanitarian') return undefined;
     const wsBase = apiBase.replace(/^http/, 'ws');
     const feedPath = isPublicLiveHost
-      ? '/api/v1/live/signals?limit=500&days=30'
+      ? `/api/v1/live/signals?limit=500&days=30&mode=${encodeURIComponent(liveMode)}`
       : '/api/v1/intel?limit=200&days=30';
-    const streamPath = isPublicLiveHost ? '/api/v1/live/stream' : '/ws/intel';
+    const streamPath = isPublicLiveHost
+      ? `/api/v1/live/stream?mode=${encodeURIComponent(liveMode)}`
+      : '/ws/intel';
     const pollIntervalMs = isPublicLiveHost ? 10000 : 30000;
     let ws = null;
     let pollTimer = null;
@@ -121,7 +129,14 @@ export function useLiveFeed({
             ? receivedSignalFeatures(data.features)
             : data.features;
           setIntelEvents(features);
-          storeCachedEvents(isPublicLiveHost, features);
+          storeCachedEvents(isPublicLiveHost, features, liveMode);
+          if (isPublicLiveHost) {
+            const counts = data.meta?.mode_counts;
+            setLiveModeCounts((previous) => ({
+              ...previous,
+              ...(counts || { [liveMode]: features.length }),
+            }));
+          }
           setIntelConnected(true);
           setIntelMode((previous) => previous === 'ws' ? 'ws' : 'poll');
         }
@@ -184,16 +199,17 @@ export function useLiveFeed({
       window.clearTimeout(pollTimer);
       ws?.close();
     };
-  }, [apiBase, edgeBase, isPublicLiveHost]);
+  }, [apiBase, edgeBase, isPublicLiveHost, liveMode]);
 
   // Public Live is edge-first. Oracle is a rate-limited backup only after
   // repeated edge failures; cached edge state stays visible during failure.
   useEffect(() => {
-    if (!isPublicLiveHost || !edgeBase) return undefined;
+    if (!isPublicLiveHost || !edgeBase || liveMode !== 'humanitarian') return undefined;
     let alive = true;
     let ws = null;
     let pollTimer = null;
     let reconnectTimer = null;
+    let countTimer = null;
     let consecutiveFailures = 0;
     let lastBackupAttempt = 0;
 
@@ -201,7 +217,8 @@ export function useLiveFeed({
       if (!alive || !edgeSnapshotIsUsable(snapshot)) return false;
       const features = edgeSnapshotToFeatures(snapshot);
       setIntelEvents(features);
-      storeCachedEvents(true, features);
+      storeCachedEvents(true, features, 'humanitarian');
+      setLiveModeCounts((previous) => ({ ...previous, humanitarian: features.length }));
       setIntelConnected(true);
       setIntelMode(transport);
       edgeLiveActiveRef.current = true;
@@ -216,19 +233,36 @@ export function useLiveFeed({
       try {
         const data = await fetchJson(
           apiBase,
-          '/api/v1/live/signals?limit=500&days=30',
+          '/api/v1/live/signals?limit=500&days=30&mode=humanitarian',
           undefined,
           3000,
         );
         if (!alive || !Array.isArray(data.features)) return;
         const features = receivedSignalFeatures(data.features);
         setIntelEvents(features);
-        storeCachedEvents(true, features);
+        storeCachedEvents(true, features, 'humanitarian');
+        if (data.meta?.mode_counts) setLiveModeCounts(data.meta.mode_counts);
         setIntelConnected(true);
         setIntelMode('poll');
       } catch {
         // Preserve the last valid cached edge snapshot.
       }
+    }
+
+    async function refreshModeCounts() {
+      window.clearTimeout(countTimer);
+      try {
+        const data = await fetchJson(
+          apiBase,
+          '/api/v1/live/signals?limit=500&days=30&mode=all',
+          undefined,
+          5000,
+        );
+        if (alive && data.meta?.mode_counts) setLiveModeCounts(data.meta.mode_counts);
+      } catch {
+        // The current edge snapshot remains usable even when count enrichment fails.
+      }
+      if (alive) countTimer = window.setTimeout(refreshModeCounts, 60000);
     }
 
     async function pollSnapshot() {
@@ -282,6 +316,7 @@ export function useLiveFeed({
     }
 
     pollSnapshot();
+    refreshModeCounts();
     connectWebSocket();
 
     return () => {
@@ -289,14 +324,16 @@ export function useLiveFeed({
       edgeLiveActiveRef.current = false;
       window.clearTimeout(pollTimer);
       window.clearTimeout(reconnectTimer);
+      window.clearTimeout(countTimer);
       ws?.close();
     };
-  }, [apiBase, edgeBase, isPublicLiveHost]);
+  }, [apiBase, edgeBase, isPublicLiveHost, liveMode]);
 
   return {
     intelEvents,
     setIntelEvents,
     intelConnected,
     intelMode,
+    liveModeCounts,
   };
 }

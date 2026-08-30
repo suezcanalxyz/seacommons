@@ -217,6 +217,7 @@ class TwikitMonitor:
         from core.intel.source_registry import source_registry
 
         source_registry.register(_SOURCE_NAME, "twitter")
+        source_registry.register_targets(_SOURCE_NAME, self._accounts)
         self._next_poll_ts = {handle: time.monotonic() for handle in self._accounts}
         # A short delay, not the full interval: a reply can land on an
         # already-tracked incident at any time, independent of when this
@@ -277,10 +278,17 @@ class TwikitMonitor:
             failed = 0
             if due:
                 for handle in due:
+                    handle_new_count = 0
                     try:
                         for tweet in await self._fetch_account(client, handle):
                             if self._ingest(tweet, handle):
                                 new_count += 1
+                                handle_new_count += 1
+                        source_registry.record_target_poll(
+                            _SOURCE_NAME,
+                            handle,
+                            events_found=handle_new_count,
+                        )
                         self._next_poll_ts[handle] = time.monotonic() + self._interval_for(handle)
                     except asyncio.CancelledError:
                         raise
@@ -298,6 +306,11 @@ class TwikitMonitor:
                         # -reinstated account or a one-off API hiccup should not
                         # wedge this handle into the same failure forever.
                         self._users.pop(handle, None)
+                        source_registry.record_target_poll(
+                            _SOURCE_NAME,
+                            handle,
+                            error=str(exc),
+                        )
                         logger.warning("X (twikit) poll error for @%s: %s", handle, exc)
             error = "poll failed" if due and failed == len(due) else None
             # A failed timeline poll and the reply scan consume separate X

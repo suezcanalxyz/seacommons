@@ -19,7 +19,7 @@ from core.domain.live_contracts import (
     validate_live_signal,
 )
 from core.intel import lifecycle
-from core.intel.public_policy import domains_for_mode
+from core.intel.public_policy import SECURITY_MARITIME_DOMAINS, domains_for_mode
 from core.intel.store import IntelEvent, intel_store
 from core.live.projection import (
     _approximate_public_point,
@@ -136,7 +136,7 @@ def public_signal_collection(
     since: str | None = None,
     mode: str = "humanitarian",
 ) -> dict[str, Any]:
-    allowed_domains = domains_for_mode(mode)
+    selected_mode = mode if mode in {"humanitarian", "security", "all"} else "humanitarian"
     memory_events = intel_store.events(limit=min(limit * 2, 600), max_age_days=days)
     durable_alarm_phone = intel_store.persisted_events(
         source="Alarm Phone",
@@ -163,10 +163,24 @@ def public_signal_collection(
     by_source: dict[str, list[IntelEvent]] = {}
     for event in events:
         by_source.setdefault(event.source, []).append(event)
-    features = []
-    context_features: list[dict[str, Any]] = []
+    mode_features: dict[str, list[dict[str, Any]]] = {
+        "humanitarian": [],
+        "security": [],
+    }
+    mode_context: dict[str, list[dict[str, Any]]] = {
+        "humanitarian": [],
+        "security": [],
+    }
     for event in events:
-        feature = _public_intel_feature(event, allowed_domains=allowed_domains)
+        event_mode = (
+            "security"
+            if event.maritime_domain() in SECURITY_MARITIME_DOMAINS
+            else "humanitarian"
+        )
+        feature = _public_intel_feature(
+            event,
+            allowed_domains=domains_for_mode(event_mode),
+        )
         if not feature:
             continue
         kind = feature["properties"].get("kind")
@@ -183,7 +197,7 @@ def public_signal_collection(
             # may still project resolved; ambiguous replies project needs_review.
             feature["properties"]["kind"] = LiveSignalKind.DISTRESS.value
             feature["properties"]["incident_lifecycle"] = state
-            features.append(feature)
+            mode_features[event_mode].append(feature)
         elif kind in ("context", "distress"):
             # Broader OSINT context: news, AIS anomalies, GDACS, vessel
             # incidents, correlated fusion alerts — eligibility (type + maritime
@@ -193,27 +207,51 @@ def public_signal_collection(
             # genuine distress report out of the window.
             if not lifecycle.is_within_live_window(event, now=now):
                 continue
-            context_features.append(feature)
-    context_features.sort(
-        key=lambda f: str(f["properties"].get("timestamp_utc") or ""), reverse=True
-    )
-    context_cap = max(0, min(limit - len(features), max(30, limit // 2)))
-    features.extend(context_features[:context_cap])
-    features.extend(_published_ingested_features(limit))
-    if since:
-        features = [
-            feature
-            for feature in features
-            if str(feature["properties"].get("timestamp_utc") or "") > since
-        ]
-    # Live is a timeline: newest source timestamp always wins. Severity remains
-    # a visual attribute and filter, never a second sort that can place an old
-    # critical item above a newly received report.
-    features.sort(
-        key=lambda f: str(f["properties"].get("timestamp_utc") or ""),
-        reverse=True,
-    )
-    features = features[:limit]
+            mode_context[event_mode].append(feature)
+
+    published_ingested = _published_ingested_features(limit)
+
+    def finalize(mode_name: str) -> list[dict[str, Any]]:
+        primary = list(mode_features[mode_name])
+        context = mode_context[mode_name]
+        context.sort(
+            key=lambda f: str(f["properties"].get("timestamp_utc") or ""),
+            reverse=True,
+        )
+        context_cap = max(0, min(limit - len(primary), max(30, limit // 2)))
+        primary.extend(context[:context_cap])
+        if mode_name == "humanitarian":
+            primary.extend(published_ingested)
+        if since:
+            primary = [
+                feature
+                for feature in primary
+                if str(feature["properties"].get("timestamp_utc") or "") > since
+            ]
+        # Live is a timeline: newest source timestamp always wins. Severity
+        # remains a visual attribute and filter, never a second sort.
+        primary.sort(
+            key=lambda f: str(f["properties"].get("timestamp_utc") or ""),
+            reverse=True,
+        )
+        return primary
+
+    features_by_mode = {
+        mode_name: finalize(mode_name)
+        for mode_name in ("humanitarian", "security")
+    }
+    mode_counts = {
+        mode_name: len(mode_features)
+        for mode_name, mode_features in features_by_mode.items()
+    }
+    if selected_mode == "all":
+        features = sorted(
+            features_by_mode["humanitarian"] + features_by_mode["security"],
+            key=lambda f: str(f["properties"].get("timestamp_utc") or ""),
+            reverse=True,
+        )[:limit]
+    else:
+        features = features_by_mode[selected_mode][:limit]
 
     return {
         "type": "FeatureCollection",
@@ -221,6 +259,8 @@ def public_signal_collection(
         "meta": {
             "schema": "org.seacommons.live-feed/v1",
             "total": len(features),
+            "mode": selected_mode,
+            "mode_counts": mode_counts,
             "memory_candidates": len(memory_events),
             "durable_alarm_phone_candidates": len(durable_alarm_phone),
             "with_coords": sum(1 for feature in features if feature.get("geometry") is not None),

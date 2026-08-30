@@ -271,6 +271,27 @@ async def live_sources():
                 "events_last_hour": observed["events_last_hour"] if observed else 0,
                 "total_events": observed["total_events"] if observed else 0,
                 "consecutive_errors": observed["consecutive_errors"] if observed else 0,
+                "pipeline_status": observed.get("pipeline_status", observed["status"])
+                if observed
+                else ("pending" if configured else "offline"),
+                "source_status": observed.get("source_status", "unknown")
+                if observed
+                else "unknown",
+                "configured": observed.get("configured", int(configured))
+                if observed
+                else int(configured),
+                "reachable": observed.get("reachable", 0) if observed else 0,
+                "handles": [
+                    {
+                        "name": handle["name"],
+                        "status": handle["status"],
+                        "last_poll_at": handle["last_poll_at"],
+                        "total_events": handle["total_events"],
+                    }
+                    for handle in observed.get("handles", [])
+                ]
+                if observed
+                else [],
             }
         )
     for observed in registry_sources.values():
@@ -283,6 +304,19 @@ async def live_sources():
                 "events_last_hour": observed["events_last_hour"],
                 "total_events": observed["total_events"],
                 "consecutive_errors": observed["consecutive_errors"],
+                "pipeline_status": observed.get("pipeline_status", observed["status"]),
+                "source_status": observed.get("source_status", "unknown"),
+                "configured": observed.get("configured", 0),
+                "reachable": observed.get("reachable", 0),
+                "handles": [
+                    {
+                        "name": handle["name"],
+                        "status": handle["status"],
+                        "last_poll_at": handle["last_poll_at"],
+                        "total_events": handle["total_events"],
+                    }
+                    for handle in observed.get("handles", [])
+                ],
             }
         )
     active = sum(1 for source in sources if source["status"] == "active")
@@ -293,11 +327,14 @@ async def live_sources():
             "active": active,
             "degraded": sum(1 for source in sources if source["status"] == "degraded"),
             "offline": sum(1 for source in sources if source["status"] == "offline"),
+            "pending": sum(1 for source in sources if source["status"] == "pending"),
         },
         "channels": {
             "twitter": bool(config.TWITTER_BEARER_TOKEN),
             "twitter_alarm_phone": any(
-                source["name"] == "X / Twitter (twikit)" and source["status"] == "active"
+                source["name"] == "X / Twitter (twikit)"
+                and source["status"] in {"active", "degraded"}
+                and source["reachable"] > 0
                 for source in sources
             ),
             "whatsapp": whatsapp_ready,
@@ -330,21 +367,6 @@ async def live_ngo_vessels():
     return ngo_vessel_geojson()
 
 
-@router.get("/mda-anomalies")
-async def live_mda_anomalies(hours: int = Query(default=48, ge=1, le=720),
-                              kind: str = Query(default="all")):
-    """Public projection of dark-vessel / grey-zone findings: sanctioned-
-    vessel identity hits (official OFAC/OpenSanctions lists, already public)
-    and AIS-signal integrity anomalies (spoofing patterns, rendezvous,
-    infrastructure loitering — derived entirely from public AIS broadcasts).
-    Same data as the authenticated operator route, deliberately: this is the
-    evidentiary transparency the platform is built to provide, not something
-    to withhold from the public map."""
-    from core.api.routes.mda import collect_mda_anomalies
-
-    return collect_mda_anomalies(hours, kind)
-
-
 @router.get("/platforms")
 async def live_platforms():
     """Public projection of Mediterranean oil/gas platform positions
@@ -356,13 +378,14 @@ async def live_platforms():
 
 
 @router.websocket("/stream")
-async def live_stream(websocket: WebSocket):
+async def live_stream(websocket: WebSocket, mode: str = "humanitarian"):
     """Public WebSocket snapshot stream; the browser falls back to REST polling."""
+    selected_mode = mode if mode in {"humanitarian", "security", "all"} else "humanitarian"
     await websocket.accept()
     previous_digest = ""
     try:
         while True:
-            snapshot = public_signal_collection(limit=500, days=30)
+            snapshot = public_signal_collection(limit=500, days=30, mode=selected_mode)
             payload = json.dumps(
                 {
                     "type": "snapshot",
