@@ -449,11 +449,18 @@ function EvidenceSources({ props, feature }) {
 function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels, onTriggerIntelDrift }) {
   const props = panel.feature?.properties || {};
   const mmsi = props.linked_mmsi || props.mmsi;
+  const isHumanitarian = Boolean(
+    props.humanitarian_case_id
+    || (props.maritime_domain === 'sar' && (props.is_distress || props.kind === 'distress'))
+  );
+  const isAlarmPhone = /alarm[ _-]?phone/i.test(`${props.source || ''} ${props.verification_status || ''}`);
   const [dossier, setDossier] = useState(null);
   const [dossierLoading, setDossierLoading] = useState(false);
   const [nearbyVessels, setNearbyVessels] = useState([]);
   const [nearbyStatus, setNearbyStatus] = useState('idle');
   const [forensic, setForensic] = useState(null);
+  const [sarAnalysis, setSarAnalysis] = useState(null);
+  const [sarStatus, setSarStatus] = useState('idle');
   const driftFeature = useMemo(() => {
     const features = Array.isArray(intelDrifts?.features) ? intelDrifts.features : [];
     const eventId = normalizeEventId(props.drift_event_id || props.id);
@@ -483,6 +490,40 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
   }, [apiBase, mmsi, publicMode]);
 
   const coords = featurePosition(panel.feature);
+  useEffect(() => {
+    let alive = true;
+    if (!isHumanitarian || !coords) {
+      setSarAnalysis(null);
+      setSarStatus('idle');
+      return undefined;
+    }
+    const query = new URLSearchParams({
+      lat: String(coords[1]),
+      lon: String(coords[0]),
+      persons: String(Math.max(1, Number(props.people_reported) || 1)),
+      vessel_type: String(props.drift_vessel_type || 'rubber_boat'),
+    });
+    if (driftFeature?.geometry?.type === 'LineString') {
+      query.set('traj', JSON.stringify(driftFeature.geometry.coordinates));
+    }
+    setSarStatus('loading');
+    fetch(`${apiBase}/api/v1/zones/classify?${query.toString()}`)
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (!alive) return;
+        setSarAnalysis(data);
+        setSarStatus(data ? 'ready' : 'unavailable');
+      })
+      .catch(() => {
+        if (!alive) return;
+        setSarAnalysis(null);
+        setSarStatus('unavailable');
+      });
+    return () => { alive = false; };
+  // Coordinates and trajectory belong to the canonical incident id.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiBase, props.id, driftFeature]);
+
   useEffect(() => {
     let alive = true;
     if (!loadNearestVessels || !coords) {
@@ -533,11 +574,6 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
   const when = props.timestamp_utc || props.source_timestamp_utc;
   const eventType = eventAnomalyLabel(props);
   const sanctions = dossier?.identity?.sanctions || [];
-  const isHumanitarian = Boolean(
-    props.humanitarian_case_id
-    || (props.maritime_domain === 'sar' && (props.is_distress || props.kind === 'distress'))
-  );
-  const isAlarmPhone = /alarm[ _-]?phone/i.test(`${props.source || ''} ${props.verification_status || ''}`);
   const confidence = props.confidence ?? props.anomaly_confidence;
   const evidenceLevel = props.evidence_level
     || (isHumanitarian ? props.verification_level || 'public source report' : 'derived from maritime data');
@@ -731,28 +767,97 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
         </div>
       )}
 
-      <div className="cone-section">
-        <SectionLabel>Evidence & forensic assessment</SectionLabel>
-        <Row label="Observation" value={props.detection_reason || props.detail || eventType} />
-        <Row label="Interpretation" value={isHumanitarian ? 'Reported humanitarian situation' : descriptionOf(props.type)} />
-        <Row label="Evidence level" value={String(evidenceLevel).replace(/_/g, ' ')} />
-        <Row
-          label="Confidence"
-          value={Number.isFinite(Number(confidence))
-            ? `${Number(confidence) <= 1 ? (Number(confidence) * 100).toFixed(0) : Number(confidence).toFixed(0)}%`
-            : 'Not quantified'}
-        />
-        <Row label="Collection" value={String(props.ocr_engine || props.coordinate_source || (mmsi ? 'AIS telemetry' : props.platform || 'public source')).replace(/_/g, ' ')} />
-        <Row label="Validation" value={String(props.verification_status || 'provenance recorded').replace(/_/g, ' ')} />
-        {forensic && (
-          <>
-            <Row label="Signature" value={forensic.verify?.valid ? 'valid' : 'invalid'} color={forensic.verify?.valid ? '#22c55e' : '#ef4444'} />
-            <Row label="Classification" value={forensic.classification} />
-            <Row label="Packet confidence" value={Number.isFinite(Number(forensic.confidence)) ? `${(Number(forensic.confidence) * 100).toFixed(0)}%` : '—'} />
-            <Row label="Hash" value={forensic.hash_blake3 ? `${String(forensic.hash_blake3).slice(0, 18)}…` : '—'} mono />
-          </>
-        )}
-      </div>
+      {isHumanitarian ? (
+        <div className="cone-section">
+          <SectionLabel>Humanitarian forensic report</SectionLabel>
+          <Row
+            label="Source record"
+            value={isAlarmPhone
+              ? 'Alarm Phone · direct specialised humanitarian report'
+              : `${props.source || 'Humanitarian source'} · provenance recorded`}
+          />
+          <Row label="Reported event" value={String(props.humanitarian_case_type || eventType).replace(/_/g, ' ')} />
+          <Row label="Operational status" value={String(props.humanitarian_status || lifecycle).replace(/_/g, ' ')} color={color} />
+          <Row
+            label="Position evidence"
+            value={String(props.ocr_engine || props.coordinate_source || 'source-stated position').replace(/_/g, ' ')}
+          />
+          <Row label="Position precision" value={String(props.location_precision || props.coordinate_review_status || 'unknown').replace(/_/g, ' ')} />
+          {sarStatus === 'loading' && <div className="intel-report-loading">Classifying SAR responsibility…</div>}
+          {sarStatus === 'unavailable' && <p className="intel-report-warning">SAR-zone classification is temporarily unavailable.</p>}
+          {sarAnalysis?.primary_mrcc && (
+            <>
+              <Row
+                label="Primary SAR coordination"
+                value={`${sarAnalysis.primary_mrcc.name || 'Unknown'}${sarAnalysis.primary_mrcc.zone ? ` · ${sarAnalysis.primary_mrcc.zone}` : ''}`}
+              />
+              {sarAnalysis.primary_mrcc.tel && <Row label="MRCC contact" value={sarAnalysis.primary_mrcc.tel} mono />}
+            </>
+          )}
+          {sarAnalysis?.origin_zones?.length > 0 && (
+            <div className="intel-forensic-zones">
+              <SectionLabel>SAR zones at reported position</SectionLabel>
+              {sarAnalysis.origin_zones.map((zone) => <ZoneBadge key={zone.id} zone={zone} />)}
+            </div>
+          )}
+          {sarAnalysis?.trajectory_zones?.some((zone) => !sarAnalysis.origin_zones?.some((origin) => origin.id === zone.id)) && (
+            <div className="intel-forensic-zones">
+              <SectionLabel>SAR zones intersected by modelled drift</SectionLabel>
+              {sarAnalysis.trajectory_zones
+                .filter((zone) => !sarAnalysis.origin_zones?.some((origin) => origin.id === zone.id))
+                .map((zone) => <ZoneBadge key={zone.id} zone={zone} />)}
+            </div>
+          )}
+          <Row
+            label="AIS proximity check"
+            value={nearbyStatus === 'ready'
+              ? `${nearbyVessels.length} recent nearby vessel${nearbyVessels.length === 1 ? '' : 's'} examined`
+              : nearbyStatus === 'empty' ? 'No recent nearby AIS vessel' : 'Pending or unavailable'}
+          />
+          <Row label="Vessel attribution" value="None assigned from proximity alone" />
+          <p className="intel-report-note">
+            SAR-zone mapping identifies the authority expected to coordinate a response at the reported position. It does not by itself prove that an authority or nearby vessel received the alert, failed to act, or bears legal responsibility.
+          </p>
+          {sarAnalysis?.legal_notes?.length > 0 && (
+            <details className="intel-evidence-sources">
+              <summary>Applicable SAR framework ({sarAnalysis.legal_notes.length})</summary>
+              <div className="intel-evidence-sources__list">
+                {sarAnalysis.legal_notes.map((note) => <LegalNote key={note} note={note} />)}
+              </div>
+            </details>
+          )}
+          {forensic && (
+            <>
+              <Row label="Evidence packet" value={forensic.verify?.valid ? 'signature valid' : 'signature invalid'} color={forensic.verify?.valid ? '#22c55e' : '#ef4444'} />
+              <Row label="Classification" value={forensic.classification} />
+              <Row label="Hash" value={forensic.hash_blake3 ? `${String(forensic.hash_blake3).slice(0, 18)}…` : '—'} mono />
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="cone-section">
+          <SectionLabel>Evidence & forensic assessment</SectionLabel>
+          <Row label="Observation" value={props.detection_reason || props.detail || eventType} />
+          <Row label="Interpretation" value={descriptionOf(props.type)} />
+          <Row label="Evidence level" value={String(evidenceLevel).replace(/_/g, ' ')} />
+          <Row
+            label="Confidence"
+            value={Number.isFinite(Number(confidence))
+              ? `${Number(confidence) <= 1 ? (Number(confidence) * 100).toFixed(0) : Number(confidence).toFixed(0)}%`
+              : 'Not quantified'}
+          />
+          <Row label="Collection" value={String(props.ocr_engine || props.coordinate_source || (mmsi ? 'AIS telemetry' : props.platform || 'public source')).replace(/_/g, ' ')} />
+          <Row label="Validation" value={String(props.verification_status || 'provenance recorded').replace(/_/g, ' ')} />
+          {forensic && (
+            <>
+              <Row label="Signature" value={forensic.verify?.valid ? 'valid' : 'invalid'} color={forensic.verify?.valid ? '#22c55e' : '#ef4444'} />
+              <Row label="Classification" value={forensic.classification} />
+              <Row label="Packet confidence" value={Number.isFinite(Number(forensic.confidence)) ? `${(Number(forensic.confidence) * 100).toFixed(0)}%` : '—'} />
+              <Row label="Hash" value={forensic.hash_blake3 ? `${String(forensic.hash_blake3).slice(0, 18)}…` : '—'} mono />
+            </>
+          )}
+        </div>
+      )}
 
       <div className="cone-section" style={{ borderBottom: 'none' }}>
         <EvidenceSources props={props} feature={panel.feature} />
