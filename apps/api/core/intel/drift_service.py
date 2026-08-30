@@ -73,8 +73,6 @@ def _run_intel_drift_inner(
         # Seed the drift ensemble over the report's actual position
         # uncertainty, not a fixed 150 m -- a boat located only to a named
         # SAR zone must not produce a falsely confident start.
-        from core.intel.store import intel_store
-
         event = intel_store.get(event_id)
         if event is not None:
             uncertainty = event.metadata.get("location_uncertainty_m")

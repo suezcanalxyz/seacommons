@@ -143,7 +143,6 @@ def test_drift_scheduler_treats_an_existing_completed_job_as_idempotent(
         "acquire_drift_slot",
         lambda: (_ for _ in ()).throw(AssertionError("slot should not be acquired")),
     )
-
     assert (
         drift_service.schedule_intel_drift(
             "intel:existing",
@@ -155,3 +154,43 @@ def test_drift_scheduler_treats_an_existing_completed_job_as_idempotent(
         )
         is True
     )
+
+
+def test_drift_engine_startup_failure_is_persisted(monkeypatch) -> None:
+    import core.db.store as db_store
+    import core.drift.engine as drift_engine
+
+    updates = []
+
+    class _FailingStore:
+        def get(self, _event_id):
+            return None
+
+        def update_metadata(self, event_id, *, metadata):
+            updates.append((event_id, metadata))
+
+        def broadcast_event_update(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setattr(drift_service, "intel_store", _FailingStore())
+    monkeypatch.setattr(db_store, "create_drift_job", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(db_store, "fail_drift_job", lambda *_args, **_kwargs: None)
+
+    class _BrokenEngine:
+        def __init__(self):
+            raise PermissionError("cache unavailable")
+
+    monkeypatch.setattr(drift_engine, "DriftEngine", _BrokenEngine)
+
+    drift_service._run_intel_drift_inner(
+        "failed-start",
+        35.5,
+        14.1,
+        12,
+        "rubber_boat",
+        "2026-08-26T10:00:00+00:00",
+    )
+
+    assert updates[-1][0] == "failed-start"
+    assert updates[-1][1]["drift_status"] == "failed"
+    assert "cache unavailable" in updates[-1][1]["drift_error"]
