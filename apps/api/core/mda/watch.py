@@ -313,10 +313,19 @@ class MdaWatch:
 
         cache = getattr(registry, "_cache", {}) or {}
         now = datetime.now(timezone.utc)
-        recent = {r["mmsi"] for r in track_store.positions_between(
-            now - timedelta(hours=6), now, bbox=_MED_BLACK_SEA, limit=100_000)}
+        rows = track_store.positions_between(
+            now - timedelta(hours=6), now, bbox=_MED_BLACK_SEA, limit=100_000)
+        # track_store._last is an in-memory, per-process cache of live AIS
+        # messages — empty right after a restart even though these rows (from
+        # the DB) prove the vessel has a recent position. Take the latest fix
+        # per MMSI from the rows we already fetched instead of a second,
+        # unreliable lookup — every match previously shipped with
+        # lat/lon = None and simply couldn't be plotted.
+        last_pos: dict[str, tuple[float, float]] = {}
+        for r in rows:  # ordered ts ascending -- later rows overwrite, so this ends up latest-wins
+            last_pos[r["mmsi"]] = (r["lat"], r["lon"])
         emitted = 0
-        for mmsi in list(recent)[:2000]:
+        for mmsi in list(last_pos)[:2000]:
             v = cache.get(mmsi, {})
             result = screen(mmsi=mmsi, imo=v.get("imo"), name=v.get("ship_name") or "",
                             flag=v.get("flag") or "")
@@ -327,9 +336,7 @@ class MdaWatch:
                 continue
             if self._recently_emitted(f"ident:{mmsi}", 24 * 3600):
                 continue
-            last = track_store._last.get(mmsi)
-            lat = last.lat if last else None
-            lon = last.lon if last else None
+            lat, lon = last_pos[mmsi]
             intel_store.add(IntelEvent(
                 id=f"vesselid:{mmsi}",
                 type="vessel_identity",
