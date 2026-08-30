@@ -222,17 +222,30 @@ def public_signal_collection(
             key=lambda f: str(f["properties"].get("timestamp_utc") or ""),
             reverse=True,
         )
-        context_cap = max(0, min(limit - len(primary), max(30, limit // 2)))
-        primary.extend(context[:context_cap])
         if mode_name == "humanitarian":
+            context_cap = max(0, min(limit - len(primary), max(30, limit // 2)))
+            primary.extend(context[:context_cap])
             primary.extend(published_ingested)
         else:
             # Maritime traffic is vessel-centric: raw anomaly, incident and
             # fusion records for one MMSI become one episode that receives
-            # updates and carries an observed AIS trace.
+            # updates.  Group BEFORE applying a display cap; otherwise a burst
+            # of duplicate raw signals can evict a valid vessel episode.
+            raw_security = [*primary, *context]
+            primary = coalesce_security_vessel_episodes(raw_security)
+            primary.sort(
+                key=lambda feature: str(
+                    (feature.get("properties") or {}).get("timestamp_utc") or ""
+                ),
+                reverse=True,
+            )
+            # Detailed AIS tracks are the expensive part.  One bounded batch
+            # enriches the newest episodes; older cases still retain the line
+            # between their own observed alert/update points.
+            track_candidates = primary[:150]
             vessel_mmsis = {
                 str((feature.get("properties") or {}).get("linked_mmsi") or "")
-                for feature in primary
+                for feature in track_candidates
             }
             try:
                 from core.vessels.track_store import track_store
@@ -240,13 +253,28 @@ def public_signal_collection(
                 track_history = track_store.recent_tracks(
                     vessel_mmsis,
                     since=now - timedelta(hours=24),
-                    limit_per_mmsi=120,
+                    limit_per_mmsi=60,
                 )
             except Exception:  # pragma: no cover - feed remains useful without track DB
                 track_history = {}
-            primary = coalesce_security_vessel_episodes(
-                primary, track_history=track_history
-            )
+            if track_history:
+                enriched = coalesce_security_vessel_episodes(
+                    [
+                        feature
+                        for feature in raw_security
+                        if str((feature.get("properties") or {}).get("linked_mmsi") or "")
+                        in vessel_mmsis
+                    ],
+                    track_history=track_history,
+                )
+                enriched_by_id = {
+                    (feature.get("properties") or {}).get("id"): feature
+                    for feature in enriched
+                }
+                primary = [
+                    enriched_by_id.get((feature.get("properties") or {}).get("id"), feature)
+                    for feature in primary
+                ]
         if since:
             primary = [
                 feature
