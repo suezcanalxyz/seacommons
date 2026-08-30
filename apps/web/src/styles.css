@@ -1848,6 +1848,32 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 }
 .intel-tier-group--operational .intel-tier-head-label { color: #ff8a7a; }
 
+/* ── Humanitarian vs security-&-compliance split — never blur the two ── */
+.intel-section { border-left: 3px solid transparent; }
+.intel-section--humanitarian { border-left-color: rgba(52, 211, 153, 0.55); background: rgba(52, 211, 153, 0.025); }
+.intel-section--security { border-left-color: rgba(192, 38, 212, 0.55); background: rgba(192, 38, 212, 0.03); }
+.intel-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 4px;
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.intel-section-head-label { flex: 1; }
+.intel-section-head-count {
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
 /* ── Verification badge ── */
 .intel-verif {
   font-size: 8px;

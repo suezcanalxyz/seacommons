@@ -111,6 +111,23 @@ const PUBLIC_TIERS = [
   { key: 'signal', label: 'Partner ops', sub: 'Trusted operational observations' },
 ];
 
+// Humanitarian/SAR vs security-&-compliance (dark fleet, sanctions,
+// spoofing) split, requested explicitly: the two must never blur together
+// in the same undifferentiated list. Security types + domains are the
+// smaller, well-defined set (core/mda/*, fusion.py's sanctions/grey_zone
+// domains) -- everything else defaults to humanitarian, which is the
+// correct fallback for any new/unclassified type (distress, social
+// reports, GDACS, IOM).
+const _SECURITY_TYPES = new Set([
+  'ais_anomaly', 'vessel_identity', 'dark_candidate', 'ais_rendezvous',
+  'conflict_event', 'ais_spike',
+]);
+const _SECURITY_DOMAINS = new Set(['sanctions', 'grey_zone']);
+function eventSection(p) {
+  if (_SECURITY_TYPES.has(p.type) || _SECURITY_DOMAINS.has(p.maritime_domain)) return 'security';
+  return 'humanitarian';
+}
+
 function eventTier(p) {
   // Backend supplies `tier`; fall back to type-based inference for cached/legacy events.
   if (p.tier) return p.tier;
@@ -1103,9 +1120,20 @@ export default function IntelDashboard({
                     <span className="intel-tier-head-sub">{t.sub}</span>
                     <span className="intel-tier-head-count">{live.length}</span>
                   </div>
-                  <ul className="intel-list" style={{ margin: 0 }}>
-                    {live.map(renderEvent)}
-                  </ul>
+                  {[
+                    { key: 'humanitarian', label: '🕊 Humanitarian & SAR', items: live.filter((f) => eventSection(f.properties || {}) === 'humanitarian') },
+                    { key: 'security', label: '🛡 Security & Compliance', items: live.filter((f) => eventSection(f.properties || {}) === 'security') },
+                  ].map((sec) => sec.items.length > 0 && (
+                    <div key={sec.key} className={`intel-section intel-section--${sec.key}`}>
+                      <div className="intel-section-head">
+                        <span className="intel-section-head-label">{sec.label}</span>
+                        <span className="intel-section-head-count">{sec.items.length}</span>
+                      </div>
+                      <ul className="intel-list" style={{ margin: 0 }}>
+                        {sec.items.map(renderEvent)}
+                      </ul>
+                    </div>
+                  ))}
                   {isOperational && archived.length > 0 && (
                     <div className="intel-archive-block">
                       <button
@@ -1116,7 +1144,7 @@ export default function IntelDashboard({
                       >
                         <span className={`intel-archive-chevron${archivedOpen ? ' is-open' : ''}`}>▾</span>
                         <span className="intel-archive-label">Archived</span>
-                        <span className="intel-archive-sub">gli archivi restano nel feed</span>
+                        <span className="intel-archive-sub">archived items stay in the feed</span>
                         <span className="intel-tier-head-count">{archived.length}</span>
                       </button>
                       {archivedOpen && (
