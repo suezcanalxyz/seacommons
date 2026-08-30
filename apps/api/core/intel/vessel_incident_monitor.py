@@ -126,6 +126,8 @@ class VesselIncidentMonitor:
             mmsi, name or "", lat, lon,
             kind=kind, source="ais", severity=severity,
             is_distress=is_distress, auto_publish=auto_publish,
+            reports=episode["count"], sustained_s=round(now - episode["first_seen"]),
+            min_reports=min_reports, min_span_s=min_span_s,
         )
 
     @staticmethod
@@ -149,6 +151,10 @@ class VesselIncidentMonitor:
         severity: str,
         is_distress: bool,
         auto_publish: bool,
+        reports: int | None = None,
+        sustained_s: int | None = None,
+        min_reports: int | None = None,
+        min_span_s: float | None = None,
     ) -> None:
         now = time.time()
         key = (mmsi, kind)
@@ -176,6 +182,16 @@ class VesselIncidentMonitor:
         if name:
             title += f" — {name}"
         text = f"{name or 'Vessel'} (MMSI {mmsi}) broadcast {kind.replace('_', ' ')} over AIS."
+        # Explicit, reproducible reasoning — the exact rule and values that
+        # fired, not just the resulting label. Anyone can check this against
+        # the thresholds in this file's own _INCIDENT_STATUS table.
+        rule_reason = None
+        if reports is not None and sustained_s is not None:
+            rule_reason = (
+                f"Flagged after {reports} report(s) over {sustained_s}s "
+                f"(rule: ≥{min_reports} reports and ≥{int(min_span_s)}s sustained)."
+            )
+            text += f" {rule_reason}"
         if in_jamming_zone:
             text += " Position falls inside a known GNSS jamming zone — treat this as a stronger signal than an isolated report."
         event = IntelEvent(
@@ -204,6 +220,7 @@ class VesselIncidentMonitor:
                 "ais_nav_status_kind": kind,
                 "jamming_score": round(jam_score, 2),
                 "in_jamming_zone": in_jamming_zone,
+                **({"detection_reason": rule_reason} if rule_reason else {}),
             },
         )
         if intel_store.add(event, dedup_key=f"aisinc:{mmsi}:{kind}"):

@@ -735,6 +735,11 @@ export default function IntelDashboard({
               <strong>{icon} {p.type.replace(/_/g, ' ')}</strong>
               <span>{descriptionOf(p.type)}</span>
             </div>
+            {(p.detection_reason || p.detail) && (
+              <div className="intel-details-row">
+                <span>⚙ perché è stato segnalato: {p.detection_reason || p.detail}</span>
+              </div>
+            )}
             {p.type === 'correlated_alert' && (
               <div className="intel-details-row">
                 {Number.isFinite(Number(p.confidence)) && (
