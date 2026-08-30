@@ -159,6 +159,7 @@ def run(*, apply: bool, limit: int, with_drift: bool) -> dict:
                             candidate.get("persons"), candidate.get("vessel_type") or "rubber_boat",
                             candidate.get("timestamp_utc") or datetime.now(timezone.utc).isoformat(),
                             force=True,
+                            background=False,
                         ):
                             drifted += 1
                             status += " [drift queued]"

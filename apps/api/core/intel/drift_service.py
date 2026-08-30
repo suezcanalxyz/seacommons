@@ -145,6 +145,7 @@ def schedule_intel_drift(
     observed_at: str,
     *,
     force: bool = False,
+    background: bool = True,
 ) -> bool:
     """Start one durable-linked drift if the shared model slot is available.
 
@@ -168,11 +169,14 @@ def schedule_intel_drift(
         },
     )
     try:
-        threading.Thread(
-            target=_run_intel_drift,
-            args=(normalized_id, lat, lon, persons, vessel_type, observed_at),
-            daemon=True,
-        ).start()
+        args = (normalized_id, lat, lon, persons, vessel_type, observed_at)
+        if background:
+            threading.Thread(target=_run_intel_drift, args=args, daemon=True).start()
+        else:
+            # CLI/backfill callers must keep the process alive until the model
+            # has persisted its result; a daemon thread would be discarded as
+            # soon as the command exits.
+            _run_intel_drift(*args)
     except Exception:
         release_drift_slot()
         intel_store.update_metadata(normalized_id, metadata={"drift_status": "failed"})

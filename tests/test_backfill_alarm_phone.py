@@ -75,8 +75,9 @@ def test_run_apply_writes_and_can_drift(monkeypatch) -> None:
     monkeypatch.setattr(bf, "apply_position", lambda *a: True)
     drift_calls: list = []
     import core.intel.drift_service as ds
-    monkeypatch.setattr(ds, "schedule_intel_drift", lambda *a, **k: (drift_calls.append(a), True)[1])
+    monkeypatch.setattr(ds, "schedule_intel_drift", lambda *a, **k: (drift_calls.append((a, k)), True)[1])
 
     summary = bf.run(apply=True, limit=10, with_drift=True)
     assert summary["applied"] == 1 and summary["drifts_queued"] == 1
-    assert drift_calls[0][0] == "e1"
+    assert drift_calls[0][0][0] == "e1"
+    assert drift_calls[0][1]["background"] is False
