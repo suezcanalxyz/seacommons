@@ -24,6 +24,7 @@ def _image_ocr_status() -> dict:
     If tesseract or Pillow is missing on the host, every such coordinate is
     silently lost -- this surfaces that instead of it being invisible.
     """
+    import importlib.util
     import shutil
 
     tesseract = shutil.which("tesseract")
@@ -39,12 +40,12 @@ def _image_ocr_status() -> dict:
         has_numpy = True
     except Exception:
         has_numpy = False
-    try:
-        import easyocr  # noqa: F401
-
-        easyocr_available = True
-    except Exception:
-        easyocr_available = False
+    # Do not import Torch on every status poll.  EasyOCR's full import is
+    # intentionally heavy on ARM CPU hosts and can transiently fail while a
+    # recognition job has the model loaded.  The worker performs the real
+    # import when OCR is requested; status reports whether that installed
+    # engine is discoverable in this exact interpreter environment.
+    easyocr_available = importlib.util.find_spec("easyocr") is not None
     return {
         "available": pillow and (easyocr_available or bool(tesseract)),
         "primary_engine": "easyocr" if easyocr_available else "tesseract" if tesseract else None,
