@@ -1737,7 +1737,7 @@ function App() {
           const props = feature.properties || {};
           liveVesselPopup
             .setLngLat([lon, lat])
-            .setHTML(`<strong>${props.ship_name || 'Vessel'}</strong><br/>${props.distance_km ?? '?'} km from distress`)
+            .setHTML(`<strong>${_escapeHtml(props.ship_name || 'Vessel')}</strong><br/>${_escapeHtml(props.distance_km ?? '?')} km from distress`)
             .addTo(map);
         });
         map.on('mouseleave', 'live-nearby-vessels-layer', () => {
@@ -1783,11 +1783,11 @@ function App() {
           ngoResponsePopup
             .setLngLat([lon, lat])
             .setHTML(
-              `<strong>${props.name || 'NGO vessel'}</strong>` +
-              (props.org ? `<br/>${props.org}` : '') +
+              `<strong>${_escapeHtml(props.name || 'NGO vessel')}</strong>` +
+              (props.org ? `<br/>${_escapeHtml(props.org)}` : '') +
               `<br/>${props.heading_toward ? '→ heading toward' : 'not heading toward'}` +
               (props.eta_h != null ? `<br/>ETA ~${Number(props.eta_h).toFixed(1)}h` : '') +
-              `<br/>${props.distance_nm} nm`
+              `<br/>${_escapeHtml(props.distance_nm)} nm`
             )
             .addTo(map);
         });
