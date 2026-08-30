@@ -22,7 +22,11 @@ from core.domain.live_contracts import (
 )
 from core.intel import lifecycle
 from core.intel.public_geometry import public_geometry_and_precision
-from core.intel.public_policy import is_blocked_source, is_explicitly_private, is_public_domain
+from core.intel.public_policy import (
+    is_blocked_source,
+    is_explicitly_private,
+    public_maritime_domains,
+)
 from core.intel.store import IntelEvent
 
 logger = logging.getLogger(__name__)
@@ -38,13 +42,20 @@ _PUBLIC_INTEL_TYPES = frozenset({"distress", "twitter", "mastodon", "ngo_activit
 # speed) — and the fused alert it may feed are eligible.
 _PUBLIC_CONTEXT_TYPES = frozenset(
     {"news", "bluesky", "gdacs", "vessel_incident", "iom_incident",
-     "ais_anomaly", "correlated_alert", "oil_spill"}
+     "ais_anomaly", "correlated_alert", "oil_spill",
+     # vessel_identity (sanctions/identity findings) and dark_candidate
+     # (satellite-vs-AIS mismatch) are Security-mode content -- eligible
+     # here, actually reachable only when mode=security opens their domain
+     # (sanctions/grey_zone) via domains_for_mode(). Humanitarian mode's
+     # allow-list never includes those domains, so this addition changes
+     # nothing for the existing default feed.
+     "vessel_identity", "dark_candidate"}
 )
 # Types SeaCommons computes from telemetry (AIS, sensor fusion) rather than
 # scrapes — they carry no source_policy but are safe to surface, still subject
 # to the domain + geometry gates below.
 _SEACOMMONS_DERIVED_TYPES = frozenset(
-    {"ais_anomaly", "correlated_alert", "vessel_incident"}
+    {"ais_anomaly", "correlated_alert", "vessel_incident", "vessel_identity", "dark_candidate"}
 )
 # GDACS event types worth showing on a maritime SAR map (TC cyclone, EQ
 # earthquake / tsunami, FL flood, VO volcano) — excludes WF wildfire, DR drought.
@@ -91,8 +102,17 @@ def _safe_public_url(value: str) -> str:
     return value if parsed.scheme in {"http", "https"} and bool(parsed.netloc) else ""
 
 
-def _public_intel_feature(event: IntelEvent) -> dict[str, Any] | None:
-    """Convert an internal event to the stable public signal contract."""
+def _public_intel_feature(
+    event: IntelEvent, *, allowed_domains: frozenset[str] | None = None
+) -> dict[str, Any] | None:
+    """Convert an internal event to the stable public signal contract.
+
+    allowed_domains defaults to the humanitarian posture (PUBLIC_MARITIME_
+    DOMAINS, e.g. sar/piracy/safety) for full backward compatibility with
+    every existing caller. Live-mode callers (see feed.py's `mode` param)
+    pass a different set to open sanctions/grey_zone content instead,
+    without touching the default behaviour.
+    """
     if (
         event.type == "sar_model"
         or (event.title or "").strip().lower() == "computed sar drift product"
@@ -110,7 +130,9 @@ def _public_intel_feature(event: IntelEvent) -> dict[str, Any] | None:
     # direct-message channels rely on this guarantee).
     if is_explicitly_private(event.metadata):
         return None
-    domain_public = is_public_domain(event.maritime_domain())
+    domains = allowed_domains if allowed_domains is not None else public_maritime_domains()
+    resolved_domain = str(event.maritime_domain() or "sar").strip().lower()
+    domain_public = resolved_domain in domains
     is_derived = event.type in _SEACOMMONS_DERIVED_TYPES
     if (
         publication != PublicationStatus.PUBLISHED.value

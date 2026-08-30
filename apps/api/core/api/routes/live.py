@@ -24,9 +24,18 @@ async def live_signals(
     limit: int = Query(300, ge=1, le=500),
     days: int = Query(30, ge=1, le=365),
     since: Optional[str] = Query(None),
+    mode: str = Query(
+        "humanitarian",
+        pattern="^(humanitarian|security|all)$",
+        description=(
+            "humanitarian (default, unchanged behaviour): distress/SAR/safety "
+            "content. security: sanctions/spoofing/dark-fleet content the "
+            "humanitarian posture excludes by design. all: both."
+        ),
+    ),
 ):
     """Public map-ready signal feed. No private inbound content is returned."""
-    return public_signal_collection(limit=limit, days=days, since=since)
+    return public_signal_collection(limit=limit, days=days, since=since, mode=mode)
 
 
 @router.get("/signals/{event_id}/response")

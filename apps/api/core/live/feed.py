@@ -19,6 +19,7 @@ from core.domain.live_contracts import (
     validate_live_signal,
 )
 from core.intel import lifecycle
+from core.intel.public_policy import domains_for_mode
 from core.intel.store import IntelEvent, intel_store
 from core.live.projection import (
     _approximate_public_point,
@@ -32,10 +33,14 @@ logger = logging.getLogger(__name__)
 
 # Public-eligible intel types that must survive in-memory deque churn — read
 # straight from the DB in public_signal_collection so the high-volume MDA
-# analysis events cannot evict them.
+# analysis events cannot evict them. Includes Security-mode types
+# (ais_anomaly/vessel_identity/dark_candidate) unconditionally: cheap to
+# over-fetch, and mode=humanitarian still drops them at the domain gate in
+# _public_intel_feature, so this doesn't change that mode's output.
 _PUBLIC_DURABLE_TYPES = frozenset({
     "distress", "twitter", "mastodon", "bluesky", "ngo_activity", "news",
     "gdacs", "vessel_incident", "iom_incident", "correlated_alert",
+    "ais_anomaly", "vessel_identity", "dark_candidate",
 })
 
 
@@ -129,7 +134,9 @@ def public_signal_collection(
     limit: int = 300,
     days: int = 30,
     since: str | None = None,
+    mode: str = "humanitarian",
 ) -> dict[str, Any]:
+    allowed_domains = domains_for_mode(mode)
     memory_events = intel_store.events(limit=min(limit * 2, 600), max_age_days=days)
     durable_alarm_phone = intel_store.persisted_events(
         source="Alarm Phone",
@@ -159,7 +166,7 @@ def public_signal_collection(
     features = []
     context_features: list[dict[str, Any]] = []
     for event in events:
-        feature = _public_intel_feature(event)
+        feature = _public_intel_feature(event, allowed_domains=allowed_domains)
         if not feature:
             continue
         kind = feature["properties"].get("kind")

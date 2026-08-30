@@ -73,3 +73,37 @@ def is_public_domain(domain: str | None) -> bool:
     """
     resolved = (domain or MaritimeDomain.SAR.value).strip().lower()
     return resolved in public_maritime_domains()
+
+
+# The humanitarian allow-list (public_maritime_domains(), env-configurable)
+# deliberately never includes these -- that's what makes them Security
+# content instead of default-public. Fixed, not env-configurable: unlike the
+# humanitarian allow-list (which an operator may legitimately want to widen,
+# e.g. adding "environmental"), Security's scope is a fixed complement so a
+# stray env var can't accidentally leak sanctions data into the default feed.
+SECURITY_MARITIME_DOMAINS = frozenset(
+    {
+        MaritimeDomain.SANCTIONS.value,
+        MaritimeDomain.GREY_ZONE.value,
+        MaritimeDomain.IUU_FISHING.value,
+        MaritimeDomain.SMUGGLING.value,
+    }
+)
+
+
+def domains_for_mode(mode: str) -> frozenset[str]:
+    """Maritime compartments eligible for a Live feed `mode`.
+
+    'humanitarian' (default) is the existing public allow-list, unchanged --
+    every caller that doesn't pass a mode keeps today's exact behaviour.
+    'security' is content the humanitarian allow-list deliberately excludes.
+    'all' is the union, for a caller that wants everything eligible for
+    public projection at once (still gated by every other check in
+    _public_intel_feature -- this only widens which domain is acceptable).
+    """
+    mode = (mode or "humanitarian").strip().lower()
+    if mode == "security":
+        return SECURITY_MARITIME_DOMAINS
+    if mode == "all":
+        return public_maritime_domains() | SECURITY_MARITIME_DOMAINS
+    return public_maritime_domains()
