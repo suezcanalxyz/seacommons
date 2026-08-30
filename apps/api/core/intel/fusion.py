@@ -86,8 +86,8 @@ class FusedAlert:
     domain: str
     severity: str
     confidence: float
-    lat: float
-    lon: float
+    lat: Optional[float]
+    lon: Optional[float]
     ts: float
     contributing_event_ids: list[str]
     contributing_sources: list[str]
@@ -400,8 +400,12 @@ def _rule_identity_fraud(new: FusionSignal, event: IntelEvent) -> Optional[Fused
             domain="sanctions",
             severity="high",
             confidence=0.9 if atype == "sdn_match" else 0.75,
-            lat=new.lat if new.lat is not None else 0.0,
-            lon=new.lon if new.lon is not None else 0.0,
+            # None, never 0.0 -- (0, 0) is a real point off the Gulf of
+            # Guinea, not "no position yet". collect_mda_anomalies() backfills
+            # from a contributing raw event's position when one becomes
+            # available instead.
+            lat=new.lat,
+            lon=new.lon,
             ts=new.ts,
             contributing_event_ids=[new.event_id],
             contributing_sources=[new.source],
