@@ -32,7 +32,6 @@ _HEADERS = {
     "Accept": "text/html,application/xhtml+xml",
 }
 _EASYOCR_READER: Any = None
-_EASYOCR_FAILED = False
 _EASYOCR_LOCK = threading.Lock()
 
 
@@ -43,9 +42,7 @@ def _easyocr_image(payload: bytes) -> tuple[Optional[tuple[float, float]], list[
     them. Tesseract remains the explicit legacy fallback for hosts where the
     model package/weights are unavailable.
     """
-    global _EASYOCR_READER, _EASYOCR_FAILED
-    if _EASYOCR_FAILED:
-        return None, [], False
+    global _EASYOCR_READER
     try:
         import easyocr
         import numpy as np
@@ -53,23 +50,33 @@ def _easyocr_image(payload: bytes) -> tuple[Optional[tuple[float, float]], list[
     except Exception:
         return None, [], False
     try:
+        with Image.open(io.BytesIO(payload)) as source:
+            image = np.asarray(ImageOps.exif_transpose(source).convert("RGB"))
+    except Exception:
+        return None, [], True
+    try:
+        # Reader inference is not thread-safe and Twikit can enqueue several
+        # images during its startup catch-up poll.  Serialising both model
+        # creation and readtext prevents transient failures/large parallel
+        # Torch allocations from disabling the primary OCR path.
         with _EASYOCR_LOCK:
             if _EASYOCR_READER is None:
                 _EASYOCR_READER = easyocr.Reader(["en"], gpu=False, verbose=False)
-        with Image.open(io.BytesIO(payload)) as source:
-            image = np.asarray(ImageOps.exif_transpose(source).convert("RGB"))
-        results = _EASYOCR_READER.readtext(
-            image,
-            detail=1,
-            paragraph=False,
-            min_size=8,
-            text_threshold=0.45,
-            low_text=0.25,
-            canvas_size=3200,
-            mag_ratio=1.5,
-        )
+            results = _EASYOCR_READER.readtext(
+                image,
+                detail=1,
+                paragraph=False,
+                min_size=8,
+                text_threshold=0.45,
+                low_text=0.25,
+                canvas_size=3200,
+                mag_ratio=1.5,
+            )
     except Exception:
-        _EASYOCR_FAILED = True
+        # A corrupt/unsupported image or transient inference error must not
+        # permanently disable EasyOCR for every later incident in the process.
+        # Import/model construction failures are retried on the next image;
+        # Tesseract remains the compatibility fallback for this one.
         return None, [], True
 
     texts: list[str] = []

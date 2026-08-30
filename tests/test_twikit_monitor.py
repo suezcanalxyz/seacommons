@@ -2,8 +2,13 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
+import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
 
@@ -1196,3 +1201,36 @@ def test_media_ocr_failure_keeps_fallback_and_drifts(tmp_path, monkeypatch):
     assert evt.metadata["coordinate_source"] == "region_area"
     assert evt.lat is not None
     assert drift_calls and drift_calls[-1][1] == evt.lat and drift_calls[-1][2] == evt.lon
+
+
+def test_easyocr_inference_is_serialized(monkeypatch):
+    from PIL import Image
+
+    from core.intel import x_media_utils as media
+
+    active = 0
+    maximum_active = 0
+    counter_lock = threading.Lock()
+
+    class _Reader:
+        def readtext(self, *_args, **_kwargs):
+            nonlocal active, maximum_active
+            with counter_lock:
+                active += 1
+                maximum_active = max(maximum_active, active)
+            time.sleep(0.02)
+            with counter_lock:
+                active -= 1
+            return []
+
+    reader = _Reader()
+    monkeypatch.setitem(sys.modules, "easyocr", SimpleNamespace(Reader=lambda *_args, **_kwargs: reader))
+    monkeypatch.setattr(media, "_EASYOCR_READER", None)
+    payload = io.BytesIO()
+    Image.new("RGB", (40, 30), "white").save(payload, format="PNG")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(media._easyocr_image, [payload.getvalue(), payload.getvalue()]))
+
+    assert maximum_active == 1
+    assert all(attempted for _coordinate, _boxes, attempted in results)
