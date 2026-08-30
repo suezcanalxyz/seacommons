@@ -684,6 +684,26 @@ function App() {
     ),
     [intelDrifts, browserLiveDrifts, intelEvents, liveEstimateClock],
   );
+  const selectedIntelEventId = mapPanel?.type === 'intel'
+    ? mapPanel.feature?.properties?.id
+    : null;
+  const resolvedMapPanel = useMemo(() => {
+    if (mapPanel?.type !== 'intel') return mapPanel;
+    const selectedId = String(mapPanel.feature?.properties?.id || '').replace(/^intel:/, '');
+    const canonicalFeature = intelEvents.find((feature) => (
+      String(feature.properties?.id || '').replace(/^intel:/, '') === selectedId
+    ));
+    return canonicalFeature ? { ...mapPanel, feature: canonicalFeature } : mapPanel;
+  }, [intelEvents, mapPanel]);
+
+  function openIntelReport(feature) {
+    const coordinates = feature?.geometry?.type === 'Point' ? feature.geometry.coordinates : null;
+    if (coordinates && mapRef.current) {
+      mapRef.current.flyTo({ center: coordinates, zoom: 9, duration: 800 });
+    }
+    setMapPanel({ type: 'intel', feature });
+    setConePanelHidden(false);
+  }
 
   useEffect(() => {
     if (mapPanel?.type === 'cone') setConePanelHidden(false);
@@ -2957,9 +2977,12 @@ function App() {
         {/* Cone detail panel — right side, appears when clicking a drift cone or a signal marker */}
         {['cone', 'trajectory', 'intel'].includes(mapPanel?.type) && !conePanelHidden && (
           <MapFloatingPanel
-            panel={mapPanel}
+            panel={resolvedMapPanel}
             onClose={() => setConePanelHidden(true)}
             onComputeDrift={null}
+            apiBase={apiBase}
+            publicMode={isPublicLiveHost}
+            intelDrifts={displayedIntelDrifts}
           />
         )}
         {['cone', 'trajectory', 'intel'].includes(mapPanel?.type) && conePanelHidden && (
@@ -3192,7 +3215,6 @@ function App() {
                 liveEdgeBase={LIVE_EDGE_BASE}
                 publicMode
                 intelEvents={intelEvents}
-                intelDrifts={displayedIntelDrifts}
                 intelStats={intelStats}
                 intelFilter={intelFilter}
                 setIntelFilter={setIntelFilter}
@@ -3200,13 +3222,9 @@ function App() {
                 liveMode={liveMode}
                 showAisAlerts={showAisAlerts}
                 setShowAisAlerts={setShowAisAlerts}
-                triggeringDrift={triggeringDrift}
-                triggerIntelDrift={triggerIntelDrift}
                 mapRef={mapRef}
-                loadNearestVessels={loadNearestVessels}
-                setSidebarOpen={(open) => {
-                  if (window.matchMedia('(max-width: 820px)').matches) setSidebarOpen(open);
-                }}
+                selectedEventId={selectedIntelEventId}
+                onOpenReport={openIntelReport}
               />
             </div>
           </aside>
@@ -3314,18 +3332,15 @@ function App() {
               liveEdgeBase={LIVE_EDGE_BASE}
               publicMode={isPublicLiveHost}
               intelEvents={intelEvents}
-              intelDrifts={displayedIntelDrifts}
               intelStats={intelStats}
               intelFilter={intelFilter}
               setIntelFilter={setIntelFilter}
               intelMode={intelMode}
               showAisAlerts={showAisAlerts}
               setShowAisAlerts={setShowAisAlerts}
-              triggeringDrift={triggeringDrift}
-              triggerIntelDrift={triggerIntelDrift}
               mapRef={mapRef}
-              loadNearestVessels={loadNearestVessels}
-              setSidebarOpen={setSidebarOpen}
+              selectedEventId={selectedIntelEventId}
+              onOpenReport={openIntelReport}
             />
           ) : null}
 

@@ -1,7 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { descriptionOf } from '../features/intel/categories.js';
-
 const ALARM_PHONE_SOURCE = 'Alarm Phone';
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
 const SEV_LABELS = ['critical', 'high', 'medium', 'low'];
@@ -33,27 +31,6 @@ export const DOMAIN_COLORS = {
   smuggling:  '#fb923c',
   iuu_fishing:'#4ade80',
   environmental: '#34d399',
-};
-
-const AIS_NAV_STATUS = {
-  0: 'under way using engine',
-  1: 'at anchor',
-  2: 'not under command',
-  3: 'restricted manoeuvrability',
-  5: 'moored',
-  6: 'aground',
-  8: 'under way sailing',
-};
-
-const shipTypeLabel = (value) => {
-  const code = Number(value);
-  if (!Number.isFinite(code)) return String(value || '');
-  if (code >= 70 && code <= 79) return `cargo (${code})`;
-  if (code >= 80 && code <= 89) return `tanker (${code})`;
-  if (code >= 60 && code <= 69) return `passenger (${code})`;
-  if (code >= 30 && code <= 39) return `special craft (${code})`;
-  if (code === 52) return `tug (${code})`;
-  return `AIS type ${code}`;
 };
 
 function statusTone(s) {
@@ -88,42 +65,6 @@ function parseTitleVessel(title) {
   const idx = t.lastIndexOf(' — ');
   if (idx === -1) return { label: t, name: null };
   return { label: t.slice(0, idx), name: t.slice(idx + 3) };
-}
-
-// Normalizes a track_points list (already fetched for the Dettagli panel's
-// vessel dossier, oldest-first) into an SVG path so operators see recent
-// track shape at a glance instead of just the latest fix.
-function buildSparklinePath(points, w = 160, h = 48, pad = 5) {
-  const lats = points.map((p) => p.lat);
-  const lons = points.map((p) => p.lon);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLon = Math.min(...lons);
-  const maxLon = Math.max(...lons);
-  const spanLat = maxLat - minLat || 0.0001;
-  const spanLon = maxLon - minLon || 0.0001;
-  const toXY = (p) => [
-    pad + ((p.lon - minLon) / spanLon) * (w - 2 * pad),
-    h - pad - ((p.lat - minLat) / spanLat) * (h - 2 * pad),
-  ];
-  const coords = points.map(toXY);
-  const d = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-  return { d, first: coords[0], last: coords[coords.length - 1] };
-}
-
-// Median speed over the fetched window vs. the latest fix — a cheap "is this
-// normal for this vessel" check reusing data we already have, no new
-// backend call. A big deviation from its own recent median is a stronger
-// signal than an absolute speed threshold picked in the abstract.
-function speedBaseline(points) {
-  const speeds = points.map((p) => p.sog).filter((v) => typeof v === 'number' && v >= 0);
-  if (speeds.length < 3) return null;
-  const sorted = [...speeds].sort((a, b) => a - b);
-  const median = sorted[Math.floor(sorted.length / 2)];
-  const latest = points[points.length - 1]?.sog;
-  if (typeof latest !== 'number') return null;
-  const deviates = median > 1 && Math.abs(latest - median) > median * 0.6;
-  return { median, latest, deviates };
 }
 
 const PUBLIC_TIERS = [
@@ -161,90 +102,6 @@ function polygonCentroid(polygonCoords) {
   let sumLat = 0;
   for (const [lon, lat] of ring) { sumLon += lon; sumLat += lat; }
   return [sumLon / ring.length, sumLat / ring.length];
-}
-
-// Card color class driven by lifecycle: red active, green resolved, gray
-// archived (same palette as the map's LIFECYCLE_* expressions).
-function lifecycleColorClass(p, isDistress) {
-  if (!isDistress) return 'context';
-  const state = eventLifecycle(p);
-  if (state === 'resolved') return 'resolved';
-  if (state === 'needs_review') return 'needs-review';
-  if (state === 'archived') return 'archived';
-  return 'distress';
-}
-
-const VERIF_LABEL = {
-  unverified_public_source: 'unverified',
-  operator_asserted: 'operator',
-  derived: 'derived',
-  confirmed: 'confirmed',
-  user_reported: 'reported',
-  partner_reported: 'partner',
-  multi_source_corroborated: 'corroborated',
-  ais_transponder: 'AIS transponder',
-  modelled_spatiotemporal: 'model forecast',
-};
-
-function TrajectoryOverview({ observedTrack, driftFeature, onMap }) {
-  const observed = Array.isArray(observedTrack)
-    ? observedTrack.filter((point) => Number.isFinite(Number(point?.lat)) && Number.isFinite(Number(point?.lon)))
-    : [];
-  const forecast = driftFeature?.geometry?.type === 'LineString'
-    ? driftFeature.geometry.coordinates
-      .map((point) => ({ lon: Number(point?.[0]), lat: Number(point?.[1]) }))
-      .filter((point) => Number.isFinite(point.lon) && Number.isFinite(point.lat))
-    : [];
-  if (observed.length < 2 && forecast.length < 2) return null;
-  const rows = [
-    observed.length >= 2 && { key: 'observed', label: 'AIS trajectory', note: `${observed.length} observed fixes`, points: observed },
-    forecast.length >= 2 && { key: 'forecast', label: 'Drift forecast', note: 'modelled, not observed', points: forecast },
-  ].filter(Boolean);
-  return (
-    <section className="intel-trajectory-overview" onClick={(event) => event.stopPropagation()}>
-      <div className="intel-trajectory-overview__head">
-        <div><strong>Movement & drift</strong><span>Current position and path evidence</span></div>
-        <button type="button" onClick={onMap}>Open map</button>
-      </div>
-      {rows.map((row) => {
-        const { d, first, last } = buildSparklinePath(row.points, 300, 70, 7);
-        return (
-          <div className={`intel-trajectory-row intel-trajectory-row--${row.key}`} key={row.key}>
-            <div className="intel-trajectory-row__label"><strong>{row.label}</strong><span>{row.note}</span></div>
-            <svg viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label={`${row.label}: ${row.note}`}>
-              <path d={d} fill="none" />
-              <circle cx={first[0]} cy={first[1]} r="3" className="trajectory-start" />
-              <circle cx={last[0]} cy={last[1]} r="4" className="trajectory-now" />
-            </svg>
-          </div>
-        );
-      })}
-    </section>
-  );
-}
-
-function EvidenceSources({ records, fallback }) {
-  const input = Array.isArray(records) && records.length > 0 ? records : [fallback];
-  const sources = input.filter((record) => record?.source || record?.url);
-  if (sources.length === 0) return null;
-  return (
-    <details className="intel-evidence-sources" onClick={(event) => event.stopPropagation()}>
-      <summary>Sources ({sources.length})</summary>
-      <div className="intel-evidence-sources__list">
-        {sources.map((record, index) => (
-          <article key={`${record.source}-${record.url}-${index}`}>
-            <div>
-              <strong>{record.source || 'Source'}</strong>
-              <span>{VERIF_LABEL[record.verification_status] || String(record.verification_status || 'provenance recorded').replace(/_/g, ' ')}</span>
-            </div>
-            <p>{record.title || 'Maritime observation'}</p>
-            {record.timestamp_utc && <time>{new Date(record.timestamp_utc).toLocaleString('it-IT')}</time>}
-            {record.url && <a href={record.url} target="_blank" rel="noopener noreferrer">Open original ↗</a>}
-          </article>
-        ))}
-      </div>
-    </details>
-  );
 }
 
 // ── Source Health Bar ─────────────────────────────────────────────────────────
@@ -442,7 +299,6 @@ export default function IntelDashboard({
   liveEdgeBase = '',
   publicMode = false,
   intelEvents,
-  intelDrifts,
   intelStats,
   intelFilter,
   setIntelFilter,
@@ -450,19 +306,11 @@ export default function IntelDashboard({
   liveMode = 'humanitarian',
   showAisAlerts,
   setShowAisAlerts,
-  triggeringDrift,
-  triggerIntelDrift,
   mapRef,
-  setSidebarOpen,
-  loadNearestVessels,
+  selectedEventId,
+  onOpenReport,
 }) {
   const [sources, setSources] = useState([]);
-  // "Navi vicine" expansion: local to this component so it never fights
-  // Play's own use of the same shared loadNearestVessels/nearestVessels
-  // state in main.jsx — each click here fetches and stores its own result.
-  const [vesselsForEventId, setVesselsForEventId] = useState(null);
-  const [nearbyVessels, setNearbyVessels] = useState([]);
-  const [vesselsLoading, setVesselsLoading] = useState(false);
   const [sourcesLoaded, setSourcesLoaded] = useState(false);
   const [search, setSearch] = useState('');
   const [channelFilter, setChannelFilter] = useState('all');
@@ -473,20 +321,12 @@ export default function IntelDashboard({
   const [showInject, setShowInject] = useState(false);
   const [injectSuccess, setInjectSuccess] = useState(false);
   const [archivedOpen, setArchivedOpen] = useState(false);
-  const [updatesEventId, setUpdatesEventId] = useState(null);
-  // Forensic record expansion: internal-only (/api/v1/forensic requires
-  // auth) -- fetched on demand per event, same lazy pattern as Navi vicine.
-  const [forensicEventId, setForensicEventId] = useState(null);
-  const [forensicRecord, setForensicRecord] = useState(null);
-  const [forensicLoading, setForensicLoading] = useState(false);
-  // Category/corroboration/vessel-identity panel: open for any event type
-  // (not just distress) since this is exactly the "what does this mean and
-  // who else confirms it" info operators need for vessel_incident,
-  // correlated_alert, ais_anomaly etc.
-  const [detailsEventId, setDetailsEventId] = useState(null);
-  const [vesselDetail, setVesselDetail] = useState(null);
-  const [vesselDetailLoading, setVesselDetailLoading] = useState(false);
   const pollRef = useRef(null);
+  const selectedRowRef = useRef(null);
+
+  useEffect(() => {
+    selectedRowRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [selectedEventId]);
 
   useEffect(() => {
     if (!publicMode) return;
@@ -601,11 +441,15 @@ export default function IntelDashboard({
         );
       });
     }
+    const selected = intelEvents.find((feature) => (
+      String(feature.properties?.id || '') === String(selectedEventId || '')
+    ));
+    if (selected && !evs.some((feature) => feature === selected)) evs.push(selected);
     return [...evs].sort((left, right) => (
       Date.parse(right.properties?.timestamp_utc || 0)
       - Date.parse(left.properties?.timestamp_utc || 0)
     ));
-  }, [intelEvents, intelFilter, channelFilter, sourceFilter, tierFilter, domainFilter, showAisAlerts, search]);
+  }, [intelEvents, intelFilter, channelFilter, sourceFilter, tierFilter, domainFilter, showAisAlerts, search, selectedEventId]);
 
   // Maritime compartments actually present in the current event set (operator view).
   const presentDomains = useMemo(() => {
@@ -648,503 +492,64 @@ export default function IntelDashboard({
     }
   }
 
-  async function toggleNearbyVessels(eventId, lat, lon) {
-    if (vesselsForEventId === eventId) {
-      setVesselsForEventId(null);
-      return;
-    }
-    setVesselsForEventId(eventId);
-    setNearbyVessels([]);
-    setVesselsLoading(true);
-    try {
-      const vessels = await loadNearestVessels?.(lat, lon);
-      setNearbyVessels(vessels || []);
-    } finally {
-      setVesselsLoading(false);
-    }
-  }
-
-  function toggleUpdates(eventId) {
-    setUpdatesEventId((current) => (current === eventId ? null : eventId));
-  }
-
-  async function toggleDetails(eventId, mmsi) {
-    if (detailsEventId === eventId) {
-      setDetailsEventId(null);
-      return;
-    }
-    setDetailsEventId(eventId);
-    setVesselDetail(null);
-    if (!mmsi) return;
-    setVesselDetailLoading(true);
-    try {
-      const path = publicMode
-        ? `/api/v1/live/vessels/${mmsi}/context?hours=168`
-        : `/api/v1/mda/vessel/${mmsi}?hours=168`;
-      const resp = await fetch(`${apiBase}${path}`);
-      setVesselDetail(resp.ok ? await resp.json() : { error: true });
-    } catch {
-      setVesselDetail({ error: true });
-    } finally {
-      setVesselDetailLoading(false);
-    }
-  }
-
-  async function toggleForensic(eventId) {
-    if (forensicEventId === eventId) {
-      setForensicEventId(null);
-      return;
-    }
-    setForensicEventId(eventId);
-    setForensicRecord(null);
-    setForensicLoading(true);
-    try {
-      const rawId = String(eventId).replace(/^intel:/, '');
-      const [recordResp, verifyResp] = await Promise.all([
-        fetch(`${apiBase}/api/v1/forensic/${rawId}`),
-        fetch(`${apiBase}/api/v1/forensic/${rawId}/verify`),
-      ]);
-      const record = recordResp.ok ? await recordResp.json() : null;
-      const verify = verifyResp.ok ? await verifyResp.json() : null;
-      setForensicRecord(record ? { ...record, verify } : null);
-    } catch {
-      setForensicRecord(null);
-    } finally {
-      setForensicLoading(false);
-    }
-  }
-
   function renderEvent(feat) {
     const p = feat.properties || {};
-    const isArea = feat.geometry?.type === 'Polygon';
-    // Average of the exterior ring's vertices -- good enough for "fly here"
-    // / display purposes, not a true area-weighted centroid.
-    const coords = isArea ? polygonCentroid(feat.geometry.coordinates) : feat.geometry?.coordinates;
-    const ts = p.timestamp_utc ? new Date(p.timestamp_utc) : null;
-    const driftLinkId = p.drift_event_id || p.id;
-    const driftFeat = intelDrifts.features.find(
-      (f) => String(f.properties?.intel_event_id || '').replace(/^intel:/, '')
-        === String(driftLinkId || '').replace(/^intel:/, '')
-        && f.geometry?.type === 'LineString',
-    );
-    const currentEstimate = intelDrifts.features.find(
-      (f) => String(f.properties?.intel_event_id || '').replace(/^intel:/, '')
-        === String(driftLinkId || '').replace(/^intel:/, '')
-        && f.properties?.type === 'current_estimate'
-        && f.geometry?.type === 'Point',
-    );
-    const currentCoords = currentEstimate?.geometry?.coordinates;
-    const hasDrift = p.drift_status === 'completed' || Boolean(driftFeat);
-    const tier = eventTier(p);
-    const isDistress = tier === 'operational';
-    const canModelDrift = isDistress || Boolean(p.drift_eligible);
-    const icon = TYPE_ICONS[p.type] || '•';
-    const verif = p.verification_status || 'unverified_public_source';
-    const lifecycle = isDistress ? (eventLifecycle(p) || 'active') : null;
-    const colorClass = lifecycleColorClass(p, isDistress);
-    const { label: titleLabel, name: vesselName } = parseTitleVessel(p.title);
-    const observedTrack = Array.isArray(p.observed_track) ? p.observed_track : [];
+    const coords = feat.geometry?.type === 'Polygon'
+      ? polygonCentroid(feat.geometry.coordinates)
+      : feat.geometry?.coordinates;
+    const eventId = String(p.id || p.title || '');
+    const isSelected = eventId === String(selectedEventId || '');
+    const lifecycle = eventLifecycle(p);
+    const isUrgent = p.sanctions_matched
+      || ['critical', 'high'].includes(p.severity)
+      || (eventTier(p) === 'operational' && lifecycle !== 'resolved' && lifecycle !== 'archived');
+    const tone = lifecycle === 'resolved'
+      ? 'green'
+      : isUrgent
+        ? 'red'
+        : lifecycle === 'needs_review' || p.severity === 'medium'
+          ? 'yellow'
+          : 'green';
+    const parsedTitle = parseTitleVessel(p.title);
+    const vesselName = p.vessel_name
+      || p.ship_name
+      || parsedTitle.name
+      || (p.linked_mmsi || p.mmsi ? `MMSI ${p.linked_mmsi || p.mmsi}` : p.title || 'Unknown vessel');
+    const anomaly = (
+      (Array.isArray(p.anomaly_types) && p.anomaly_types[0])
+      || p.anomaly_type
+      || p.ais_nav_status_kind
+      || p.alert_type
+      || p.type
+      || 'maritime signal'
+    ).replace(/_/g, ' ');
+    const position = Array.isArray(coords) && coords.length >= 2
+      ? `${Number(coords[1]).toFixed(4)}, ${Number(coords[0]).toFixed(4)}`
+      : 'position unavailable';
 
     return (
       <li
-        key={p.id || p.title}
-        className={`intel-event intel-event--${colorClass}`}
-        onClick={() => { flyTo(coords); if (coords) setSidebarOpen?.(false); }}
+        key={eventId}
+        ref={isSelected ? selectedRowRef : null}
+        className={`intel-log-row${isSelected ? ' is-selected' : ''}`}
       >
-        <div className="intel-event-primary">
-          <span className={`intel-sev intel-sev--${p.severity || 'low'}`}>{p.severity || 'low'}</span>
-          <span className="intel-type-icon" title={`${p.type.replace(/_/g, ' ')} — ${descriptionOf(p.type)}`}>{icon}</span>
-          <span className="intel-category-label">{p.type.replace(/_/g, ' ')}</span>
-          {hasDrift ? (
-            <button
-              className="intel-drift-btn intel-drift-btn--ready"
-              onClick={(e) => {
-                e.stopPropagation();
-                const target = currentCoords || (driftFeat
-                  ? driftFeat.geometry.coordinates[Math.floor(driftFeat.geometry.coordinates.length / 2)]
-                  : coords);
-                flyTo(target);
-                setSidebarOpen?.(false);
-              }}
-            >Map</button>
-          ) : coords && (p.drift_status === 'computing' || triggeringDrift?.has(driftLinkId)) ? (
-            <button className="intel-drift-btn intel-drift-btn--computing" disabled>…</button>
-          ) : coords && canModelDrift && p.drift_status === 'failed' ? (
-            <button
-              className="intel-drift-btn intel-drift-btn--retry"
-              onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(driftLinkId, coords[1], coords[0], p.drift_vessel_type); }}
-            >Retry</button>
-          ) : publicMode && coords && canModelDrift && !p.drift_eligible && !isArea ? (
-            <button className="intel-drift-btn intel-drift-btn--computing" disabled>Auto</button>
-          ) : coords && canModelDrift && !isArea && p.drift_status !== 'completed' ? (
-            // A leeway simulation needs one defensible starting point --
-            // an area report's centroid is just the middle of a whole
-            // uncertain zone, not a real position to drift from.
-            <button
-              className="intel-drift-btn intel-drift-btn--trigger"
-              onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(driftLinkId, coords[1], coords[0], p.drift_vessel_type); }}
-            >Forecast</button>
-          ) : null}
-        </div>
-        {vesselName ? (
-          <>
-            <strong className="intel-title intel-title--vessel">{vesselName}</strong>
-            <span className="intel-title-sub">{titleLabel}</span>
-          </>
-        ) : (
-          <strong className="intel-title">{p.title}</strong>
-        )}
-        <div className="intel-event-meta">
-          <span className={`intel-verif intel-verif--${verif}`} title={`Verification: ${verif.replace(/_/g, ' ')}`}>
-            {VERIF_LABEL[verif] || verif.replace(/_/g, ' ')}
-          </span>
-          {lifecycle && (
-            <span className={`intel-lifecycle intel-lifecycle--${lifecycle}`}>
-              {lifecycle === 'active' ? 'LIVE' : lifecycle === 'resolved' ? 'RISOLTO' : lifecycle === 'needs_review' ? 'DA VERIFICARE' : 'ARCHIVED'}
-            </span>
-          )}
-          {ts && (
-            <time title={ts.toISOString()}>
-              {ts.toLocaleString('it-IT', {
-                timeZone: 'Europe/Rome',
-                day: '2-digit',
-                month: 'short',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false,
-                timeZoneName: 'short',
-              })}
-            </time>
-          )}
-        </div>
-        {(p.linked_mmsi || p.mmsi) && (
-          <span className="intel-source intel-vessel-identity">
-            <strong>MMSI {p.linked_mmsi || p.mmsi}</strong>
-            {p.imo && <span>· IMO {p.imo}</span>}
-            {p.flag && <span>· {p.flag}</span>}
-            {p.ship_type != null && <span>· {shipTypeLabel(p.ship_type)}</span>}
-            {p.latest_nav_status != null && (
-              <span>· {AIS_NAV_STATUS[p.latest_nav_status] || `nav status ${p.latest_nav_status}`}</span>
-            )}
-            {Number.isFinite(Number(p.latest_sog)) && <span>· {Number(p.latest_sog).toFixed(1)} kn</span>}
-            {p.sanctions_matched && <span className="mda-risk-flag">SANCTIONED</span>}
-          </span>
-        )}
-        {p.episode_id && (
-          <span className="intel-source">
-            Episode · {p.signal_count || 1} signals · {p.episode_update_count || 1} updates
-            {Array.isArray(p.observed_track) && p.observed_track.length > 1
-              ? ` · AIS track ${p.observed_track.length} fixes`
-              : ''}
-          </span>
-        )}
-        <TrajectoryOverview
-          observedTrack={observedTrack}
-          driftFeature={driftFeat}
-          onMap={() => {
-            flyTo(currentCoords || coords);
-            setSidebarOpen?.(false);
+        <button
+          type="button"
+          aria-current={isSelected ? 'true' : undefined}
+          onClick={() => {
+            flyTo(coords);
+            onOpenReport?.(feat);
           }}
-        />
-        <span className="intel-source">
-          <span>{(p.type || '').replace(/_/g, ' ')}</span>
-          {coords && !isArea && (
-            <span style={{ opacity: 0.45 }}>
-              · {p.coordinate_source === 'place_centroid' ? 'area' : 'reported'}{' '}
-              {coords[1]?.toFixed(3)}, {coords[0]?.toFixed(3)}
-            </span>
-          )}
-          {isArea && (
-            <span style={{ opacity: 0.45 }}>
-              · sea area{p.area_weather_narrowed ? ' (narrowed by weather data)' : ''}
-            </span>
-          )}
-          {!coords && (
-            <span
-              className="intel-no-location"
-              title="The source did not publish a verifiable position: no point is invented on the map."
-            >
-              · no published position
-            </span>
-          )}
-          {p.location_precision === 'area_low_confidence' && (
-            <span
-              className="intel-low-confidence"
-              title="The area is too wide to be a useful search lead — not enough information to narrow it further."
-            >
-              ⚠ insufficient info
-            </span>
-          )}
-          {p.reply_count > 0 && p.url && (
-            <a
-              className="intel-reply-link"
-              href={p.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              title="Reply text isn't fetched (would need the paid X API) — open the thread on X to read updates"
-            >💬 {p.reply_count} {p.reply_count === 1 ? 'reply' : 'replies'}</a>
-          )}
-        </span>
-        <EvidenceSources
-          records={p.source_records}
-          fallback={{
-            source: p.source,
-            title: p.title,
-            url: p.url,
-            timestamp_utc: p.timestamp_utc,
-            verification_status: p.verification_status,
-          }}
-        />
-        {currentCoords && (
-          <span className="intel-source" style={{ color: '#ffe06d' }}>
-            Estimated now · {currentCoords[1]?.toFixed(4)}, {currentCoords[0]?.toFixed(4)}
-            {Number.isFinite(Number(currentEstimate.properties?.elapsed_hours))
-              ? ` · ${Number(currentEstimate.properties.elapsed_hours).toFixed(1)}h`
-              : ''}
-          </span>
-        )}
-        {p.text && (
-          <p className="intel-text">{p.text.slice(0, 200)}{p.text.length > 200 ? '…' : ''}</p>
-        )}
-        {((coords && !isArea && loadNearestVessels) || p.repost_count > 0 || !publicMode) && (
-          <div className="intel-panel-toggles">
-            <button
-              type="button"
-              className="intel-details-toggle"
-              onClick={(e) => { e.stopPropagation(); toggleDetails(p.id, p.linked_mmsi || p.mmsi); }}
-              title="What this category means, who corroborates it, identity of the linked vessel"
-            >
-              {detailsEventId === p.id ? '▲ Details' : '▼ Details'}
-            </button>
-            <div className="intel-panel-toggles--secondary">
-              {coords && !isArea && loadNearestVessels && (
-                <button
-                  type="button"
-                  className="intel-nearby-toggle"
-                  onClick={(e) => { e.stopPropagation(); toggleNearbyVessels(p.id, coords[1], coords[0]); }}
-                >
-                  {vesselsForEventId === p.id ? '▲ Nearby vessels' : '▼ Nearby vessels'}
-                </button>
-              )}
-              {p.repost_count > 0 && (
-                <button
-                  type="button"
-                  className="intel-ngo-toggle"
-                  onClick={(e) => { e.stopPropagation(); toggleUpdates(p.id); }}
-                >
-                  {updatesEventId === p.id ? '▲ Updates' : `▼ Updates (${p.repost_count})`}
-                </button>
-              )}
-              {!publicMode && (
-                <button
-                  type="button"
-                  className="intel-forensic-toggle"
-                  onClick={(e) => { e.stopPropagation(); toggleForensic(p.id); }}
-                  title="Signed forensic record (blake3 hash + ed25519 signature) tied to this event — today only created for distress events"
-                >
-                  {forensicEventId === p.id ? '▲ Forensic' : '▼ Forensic'}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-        {detailsEventId === p.id && (
-          <div className="intel-ngo-panel intel-details-panel" onClick={(e) => e.stopPropagation()}>
-            <div className="intel-details-row">
-              <strong>{icon} {p.type.replace(/_/g, ' ')}</strong>
-              <span>{descriptionOf(p.type)}</span>
-            </div>
-            {(p.detection_reason || p.detail) && (
-              <div className="intel-details-row">
-                <span>⚙ why it was flagged: {p.detection_reason || p.detail}</span>
-              </div>
-            )}
-            {p.type === 'correlated_alert' && (
-              <div className="intel-details-row">
-                {Number.isFinite(Number(p.confidence)) && (
-                  <span>confidence {(Number(p.confidence) * 100).toFixed(0)}%</span>
-                )}
-              </div>
-            )}
-            {p.infrastructure && (
-              <div className="intel-details-row intel-details-row--warn">
-                <strong>AIS infrastructure proximity</strong>
-                <span>
-                  {Number.isFinite(Number(p.loiter_minutes)) ? `${Math.round(Number(p.loiter_minutes))} min dwell · ` : ''}
-                  {Number.isFinite(Number(p.infrastructure.distance_km)) ? `${Number(p.infrastructure.distance_km).toFixed(1)} km from ` : ''}
-                  {p.infrastructure.name || p.infrastructure.kind}.
-                </span>
-                <span>Proximity and loitering are anomaly context, not evidence of interference or intent.</span>
-              </div>
-            )}
-            {p.in_jamming_zone && (
-              <div className="intel-details-row intel-details-row--warn">
-                <span>📡 position falls inside a known GNSS jamming zone (score {p.jamming_score}) — signal stronger than usual, not isolated</span>
-              </div>
-            )}
-            {p.status_note && (
-              <div className="intel-details-row">
-                <span>✓ {p.status_note}</span>
-              </div>
-            )}
-            {Array.isArray(p.updates) && p.updates.length > 0 && (
-              <div className="intel-details-row">
-                <strong>Episode updates</strong>
-                {p.updates.slice(0, 6).map((update) => (
-                  <span key={`${update.id}-${update.timestamp_utc}`}>
-                    {update.timestamp_utc ? new Date(update.timestamp_utc).toLocaleString('it-IT') : '—'}
-                    {' · '}{String(update.anomaly_type || update.type || 'signal').replace(/_/g, ' ')}
-                  </span>
-                ))}
-              </div>
-            )}
-            {p.nearby_humanitarian_count > 0 && (
-              <div className="intel-details-row intel-details-row--warn">
-                <strong>Nearby humanitarian context</strong>
-                <span>Proximity only — it does not establish a relationship with this vessel.</span>
-                {(p.nearby_humanitarian || []).map((item) => (
-                  <span key={item.id}>{item.distance_nm} nm · {item.title}</span>
-                ))}
-              </div>
-            )}
-            {(p.linked_mmsi || p.mmsi) && (
-              vesselDetailLoading ? (
-                <span className="intel-nearby-loading">Screening vessel…</span>
-              ) : !vesselDetail || vesselDetail.error ? (
-                <span className="intel-nearby-loading">No identity data for MMSI {p.linked_mmsi || p.mmsi}.</span>
-              ) : (
-                <div className="mda-vessel-card">
-                  <strong>{vesselDetail.static?.name || vesselDetail.mmsi}</strong>
-                  <span>IMO {vesselDetail.static?.imo || '—'} · flag {vesselDetail.static?.flag || vesselDetail.identity?.mid_flag || '—'}
-                    {' · '}{vesselDetail.track_points?.length ?? 0} recent fixes</span>
-                  {vesselDetail.track_points?.length >= 2 && (() => {
-                    const pts = vesselDetail.track_points;
-                    const { d, first, last } = buildSparklinePath(pts);
-                    const baseline = speedBaseline(pts);
-                    const hours = (new Date(pts[pts.length - 1].ts) - new Date(pts[0].ts)) / 3600000;
-                    return (
-                      <div className="mda-track-spark">
-                        <svg viewBox="0 0 160 48" width="160" height="48" className="mda-track-spark-svg">
-                          <path d={d} fill="none" stroke="var(--sc-blue)" strokeWidth="1.5" />
-                          <circle cx={first[0]} cy={first[1]} r="2.5" className="spark-start" />
-                          <circle cx={last[0]} cy={last[1]} r="3.5" className="spark-now" />
-                        </svg>
-                        <div className="mda-track-spark-meta">
-                          <span>{pts.length} positions · last {hours.toFixed(1)}h</span>
-                          {baseline && (
-                            <span className={baseline.deviates ? 'mda-speed-warn' : ''}>
-                              {baseline.deviates ? '⚠ ' : ''}
-                              current speed {baseline.latest.toFixed(1)}kt · median {baseline.median.toFixed(1)}kt
-                              {baseline.deviates ? ' — deviates from usual behavior' : ''}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  {vesselDetail.identity?.risk_flags?.length > 0 && (
-                    <div className="mda-risk">{vesselDetail.identity.risk_flags.map((f) => (
-                      <span key={f} className="mda-risk-flag">{f.replace(/_/g, ' ')}</span>
-                    ))}</div>
-                  )}
-                  {vesselDetail.identity?.sanctions?.map((sanction, index) => (
-                    <div className="mda-sanctions" key={`${sanction.list}-${sanction.imo || sanction.mmsi || index}`}>
-                      <strong>⚠ {sanction.list}{sanction.program ? ` · ${sanction.program}` : ''}</strong>
-                      <span>{sanction.reason}</span>
-                      <span>{sanction.description}</span>
-                      {sanction.listed_on && <span>listed {sanction.listed_on}</span>}
-                      {sanction.source_url && (
-                        <a href={sanction.source_url} target="_blank" rel="noopener noreferrer">official/list source ↗</a>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )
-            )}
-          </div>
-        )}
-        {forensicEventId === p.id && (
-          <div className="intel-ngo-panel intel-forensic-panel" onClick={(e) => e.stopPropagation()}>
-            {forensicLoading ? (
-              <span className="intel-nearby-loading">Verifying forensic record…</span>
-            ) : !forensicRecord ? (
-              <span className="intel-nearby-loading">No forensic record for this event.</span>
-            ) : (
-              <>
-                <div className="intel-forensic-row">
-                  <span className={`intel-forensic-badge ${forensicRecord.verify?.valid ? 'is-valid' : 'is-invalid'}`}>
-                    {forensicRecord.verify?.valid ? '✓ valid signature' : '✗ invalid signature'}
-                  </span>
-                  <span>{forensicRecord.classification}</span>
-                  <span>confidence {(Number(forensicRecord.confidence) * 100).toFixed(0)}%</span>
-                </div>
-                <div className="intel-forensic-row">
-                  <span>position: {forensicRecord.position?.lat?.toFixed?.(4)}, {forensicRecord.position?.lon?.toFixed?.(4)}</span>
-                  <span>source: {forensicRecord.position?.source}</span>
-                </div>
-                {forensicRecord.contributing_sensors?.length > 0 && (
-                  <div className="intel-forensic-row">
-                    sensors: {forensicRecord.contributing_sensors.join(', ')}
-                  </div>
-                )}
-                <div className="intel-forensic-hash" title={forensicRecord.hash_blake3}>
-                  hash: {String(forensicRecord.hash_blake3 || '').slice(0, 24)}…
-                </div>
-                <a
-                  className="intel-source-link"
-                  href={`${apiBase}/api/v1/forensic/export?format=json`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                >Esporta record →</a>
-              </>
-            )}
-          </div>
-        )}
-        {updatesEventId === p.id && (
-          <div className="intel-ngo-panel" onClick={(e) => e.stopPropagation()}>
-            <ul className="intel-update-list">
-              {(p.thread_reposts || []).map((r) => (
-                <li key={r.tweet_id}>
-                  <span className="intel-update-kind">
-                    {r.kind === 'quote' ? 'quote' : r.kind === 'reply' ? 'reply' : 'repost'}
-                  </span>
-                  <span>{relativeTime(r.posted_at)}</span>
-                  {r.note && <p className="intel-update-note">{r.note}</p>}
-                  {r.url && (
-                    <a href={r.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>↗</a>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {!isArea && vesselsForEventId === p.id && (
-          <div className="intel-nearby-vessels" onClick={(e) => e.stopPropagation()}>
-            {vesselsLoading ? (
-              <span className="intel-nearby-loading">Ricerca navi…</span>
-            ) : nearbyVessels.length ? (
-              <ul>
-                {nearbyVessels.map((vessel) => (
-                  <li key={vessel.mmsi || `${vessel.lat},${vessel.lon}`}>
-                    <span className="intel-nearby-name">{vessel.ship_name || vessel.mmsi || 'Vessel'}</span>
-                    <span className="intel-nearby-dist">{vessel.distance_nm?.toFixed(1)} nm</span>
-                    {Number.isFinite(vessel.speed) && (
-                      <span className="intel-nearby-speed">{vessel.speed.toFixed(1)} kn</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <span className="intel-nearby-loading">No AIS vessels nearby</span>
-            )}
-          </div>
-        )}
+          title={p.timestamp_utc ? new Date(p.timestamp_utc).toLocaleString('it-IT') : p.title}
+        >
+          <i className={`intel-log-dot intel-log-dot--${tone}`} aria-label={tone} />
+          <strong>{vesselName}</strong>
+          <span>{anomaly}</span>
+          <code>{position}</code>
+        </button>
       </li>
     );
   }
-
   return (
     <div className="panel-stack">
 
