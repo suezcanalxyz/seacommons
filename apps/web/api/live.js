@@ -166,6 +166,8 @@ export default async function handler(req, res) {
     : '';
   const requestedLimit = Math.min(500, Math.max(1, Number.parseInt(req.query.limit, 10) || 500));
   const requestedDays = Math.min(365, Math.max(1, Number.parseInt(req.query.days, 10) || 30));
+  const requestedMode = Array.isArray(req.query.mode) ? req.query.mode[0] : req.query.mode;
+  const safeMode = ['humanitarian', 'security', 'all'].includes(requestedMode) ? requestedMode : 'humanitarian';
   const upstreamPath = resource === 'sources'
     ? '/api/v1/live/sources'
     : resource === 'drifts'
@@ -174,7 +176,7 @@ export default async function handler(req, res) {
         ? '/api/v1/live/archives?limit=60'
         : resource === 'archive' && safeEventId
           ? `/api/v1/live/archives/${safeEventId}/geojson`
-          : `/api/v1/live/signals?limit=${requestedLimit}&days=${requestedDays}`;
+          : `/api/v1/live/signals?limit=${requestedLimit}&days=${requestedDays}&mode=${safeMode}`;
   try {
     const upstream = await requestJson(upstreamPath);
     if (upstream.status === 200 && upstream.data) {
