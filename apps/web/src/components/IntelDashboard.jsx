@@ -128,6 +128,35 @@ function eventSection(p) {
   return 'humanitarian';
 }
 
+// mdaAnomalies (from GET /api/v1/live/mda-anomalies) is a flat dict shape,
+// not a GeoJSON Feature -- adapt it to what renderEvent() expects. Public
+// Live's default feed (mode=humanitarian) never includes this content by
+// design (see core/intel/public_policy.py's domain allow-list), so on the
+// public host the Security & Compliance section would otherwise always be
+// empty; the map layer already proved this exact data live and correct.
+function mdaAnomalyToFeature(a) {
+  return {
+    type: 'Feature',
+    geometry: Number.isFinite(a.lat) && Number.isFinite(a.lon)
+      ? { type: 'Point', coordinates: [a.lon, a.lat] }
+      : null,
+    properties: {
+      id: a.id,
+      type: a.type,
+      severity: a.severity,
+      title: a.title,
+      timestamp_utc: a.timestamp_utc,
+      linked_mmsi: a.mmsi,
+      mmsi: a.mmsi,
+      maritime_domain: a.maritime_domain,
+      anomaly_type: a.anomaly_type,
+      verification_status: 'derived',
+      source: 'mda',
+      ...(a.metadata || {}),
+    },
+  };
+}
+
 function eventTier(p) {
   // Backend supplies `tier`; fall back to type-based inference for cached/legacy events.
   if (p.tier) return p.tier;
@@ -365,6 +394,7 @@ export default function IntelDashboard({
   mapRef,
   setSidebarOpen,
   loadNearestVessels,
+  mdaAnomalies = [],
 }) {
   const [sources, setSources] = useState([]);
   // "Navi vicine" expansion: local to this component so it never fights
@@ -1170,6 +1200,23 @@ export default function IntelDashboard({
                 </ul>
               </div>
             ))}
+          </div>
+        )}
+        {publicMode && viewMode === 'list' && mdaAnomalies.length > 0 && (
+          // Public Live's default feed excludes Security domains by design
+          // (see mdaAnomalyToFeature's comment) -- the map layer's own data
+          // is the one place this content already flows correctly, reused
+          // here so the sidebar isn't structurally empty for this section.
+          <div className="intel-tier-group intel-tier-group--mda">
+            <div className="intel-section intel-section--security">
+              <div className="intel-section-head">
+                <span className="intel-section-head-label">🛡 Security & Compliance</span>
+                <span className="intel-section-head-count">{mdaAnomalies.length}</span>
+              </div>
+              <ul className="intel-list" style={{ margin: 0 }}>
+                {mdaAnomalies.slice(0, 100).map(mdaAnomalyToFeature).map(renderEvent)}
+              </ul>
+            </div>
           </div>
         )}
       </section>

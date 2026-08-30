@@ -3046,6 +3046,7 @@ function App() {
                 triggerIntelDrift={triggerIntelDrift}
                 mapRef={mapRef}
                 loadNearestVessels={loadNearestVessels}
+                mdaAnomalies={mdaAnomalies}
                 setSidebarOpen={(open) => {
                   if (window.matchMedia('(max-width: 820px)').matches) setSidebarOpen(open);
                 }}
