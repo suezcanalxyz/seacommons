@@ -725,16 +725,16 @@ function App() {
     setWeatherVectors(weatherGridToVectors(payload));
   }
 
-  async function triggerIntelDrift(eventId, lat, lon) {
+  async function triggerIntelDrift(eventId, lat, lon, vesselType = 'rubber_boat') {
     setTriggeringDrift((prev) => new Set([...prev, eventId]));
     try {
       await fetchJson(apiBase, '/api/v1/intel/auto-drift', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ intel_event_id: eventId, lat, lon, vessel_type: 'rubber_boat' }),
+        body: JSON.stringify({ intel_event_id: eventId, lat, lon, vessel_type: vesselType || 'rubber_boat' }),
       }, 8000);
       setIntelEvents((prev) => prev.map((f) =>
-        f.properties?.id === eventId
+        (f.properties?.id === eventId || f.properties?.drift_event_id === eventId)
           ? { ...f, properties: { ...f.properties, drift_status: 'computing' } }
           : f
       ));
@@ -1158,6 +1158,7 @@ function App() {
         map.addSource('intel-distress',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-fused',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-spike',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('intel-observed-tracks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-drifts',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-vessel-links', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('live-nearby-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -1253,6 +1254,20 @@ function App() {
             'circle-opacity': 0.88,
             'circle-stroke-width': 1.5,
             'circle-stroke-color': '#0d1f26',
+          },
+        });
+
+        // Solid line = positions actually observed through AIS.  Dashed lines
+        // below remain model forecasts, so observation and inference cannot be
+        // mistaken for one another.
+        map.addLayer({
+          id: 'intel-observed-track-line', type: 'line', source: 'intel-observed-tracks',
+          filter: ['==', '$type', 'LineString'],
+          paint: {
+            'line-color': ['match', ['get', 'maritime_domain'],
+              'sanctions', '#f472b6', '#38bdf8'],
+            'line-width': 2.4,
+            'line-opacity': 0.86,
           },
         });
 
@@ -1699,9 +1714,14 @@ function App() {
           setMapPanel({ type: 'intel', feature });
           setConePanelHidden(false);
           const props = feature.properties || {};
-          if (!isPublicLiveHost && props.id
+          if (!isPublicLiveHost && props.id && props.drift_eligible
               && props.drift_status !== 'completed' && props.drift_status !== 'computing') {
-            triggerIntelDrift(props.id, lat, lon);
+            triggerIntelDrift(
+              props.drift_event_id || props.id,
+              lat,
+              lon,
+              props.drift_vessel_type,
+            );
           }
           event.originalEvent?.stopPropagation?.();
         });
@@ -1892,9 +1912,14 @@ function App() {
             setMapPanel({ type: 'intel', feature });
             setConePanelHidden(false);
             const props = feature.properties || {};
-            if (lid === 'intel-events-layer' && props.id
+            if (lid === 'intel-events-layer' && props.id && props.drift_eligible
                 && props.drift_status !== 'completed' && props.drift_status !== 'computing') {
-              triggerIntelDrift(props.id, lat, lon);
+              triggerIntelDrift(
+                props.drift_event_id || props.id,
+                lat,
+                lon,
+                props.drift_vessel_type,
+              );
             }
             event.originalEvent?.stopPropagation?.();
           });
@@ -2128,6 +2153,25 @@ function App() {
     map.getSource('intel-distress')?.setData({ type: 'FeatureCollection', features: distress });
     map.getSource('intel-fused')?.setData({ type: 'FeatureCollection', features: fused });
     map.getSource('intel-spike')?.setData({ type: 'FeatureCollection', features: spikes });
+    const observedTracks = intelEvents.flatMap((feature) => {
+      const p = feature.properties || {};
+      const points = Array.isArray(p.observed_track) ? p.observed_track : [];
+      const coordinates = points
+        .map((point) => [Number(point.lon), Number(point.lat)])
+        .filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
+      if (coordinates.length < 2) return [];
+      return [{
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates },
+        properties: {
+          episode_id: p.episode_id || p.id,
+          mmsi: p.linked_mmsi || p.mmsi,
+          maritime_domain: p.maritime_domain,
+          track_kind: 'observed_ais',
+        },
+      }];
+    });
+    map.getSource('intel-observed-tracks')?.setData({ type: 'FeatureCollection', features: observedTracks });
   }, [intelEvents, mapReady]);
 
   // MDA layer data

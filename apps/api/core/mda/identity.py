@@ -143,11 +143,44 @@ def _sanctions_lookup(*, mmsi: Any = None, imo: Any = None, name: str = "") -> l
     try:
         with session_scope() as db:
             rows = db.query(SanctionedVesselDB).filter(or_(*conds)).limit(10).all()
-            return [
-                {"list": r.source_list, "name": r.name, "imo": r.imo, "mmsi": r.mmsi,
-                 "program": r.program, "listed_on": r.listed_on}
-                for r in rows
-            ]
+            results = []
+            for row in rows:
+                matched_on = []
+                if mmsi_s and row.mmsi == mmsi_s:
+                    matched_on.append("mmsi")
+                if imo_s and row.imo == imo_s:
+                    matched_on.append("imo")
+                if name_s and row.name_upper == name_s:
+                    matched_on.append("name")
+                program = (row.program or "").strip()
+                source_url = (
+                    "https://sanctionslistservice.ofac.treas.gov/"
+                    if row.source_list == "OFAC_SDN"
+                    else _OPENSANCTIONS_URL
+                )
+                results.append(
+                    {
+                        "list": row.source_list,
+                        "name": row.name,
+                        "imo": row.imo,
+                        "mmsi": row.mmsi,
+                        "program": program,
+                        "listed_on": row.listed_on,
+                        "matched_on": matched_on,
+                        "reason": (
+                            f"Listed under sanctions programme {program}."
+                            if program
+                            else f"Vessel record is present in {row.source_list}."
+                        ),
+                        "description": (
+                            f"Identity matched on {', '.join(matched_on) or 'vessel name'}. "
+                            "This describes the list match; it does not by itself prove "
+                            "that the current AIS behaviour is unlawful."
+                        ),
+                        "source_url": source_url,
+                    }
+                )
+            return results
     except Exception:
         return []
 
@@ -206,7 +239,9 @@ def _load_opensanctions() -> list[dict[str, Any]]:
         out.append({
             "source_list": "OpenSanctions", "name": name,
             "name_upper": name.upper(), "imo": imo or None, "mmsi": mmsi or None,
-            "program": (row.get("sanctions") or row.get("topics") or "")[:120],
+            "program": (
+                row.get("program_ids") or row.get("sanctions") or row.get("topics") or ""
+            )[:120],
             "listed_on": (row.get("first_seen") or "")[:10] or None,
             "updated_at": datetime.now(timezone.utc),
         })

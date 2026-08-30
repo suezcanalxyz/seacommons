@@ -52,6 +52,7 @@ _BEACON_MMSI_PREFIXES = ("970", "972", "974")
 _BEACON_SOURCE = {"970": "ais_sart", "972": "ais_mob", "974": "ais_epirb"}
 _NORMAL_STATUS = frozenset({0, 1, 5, 8})
 _EMIT_COOLDOWN_S = 6 * 3600
+_EPISODE_UPDATE_INTERVAL_S = 5 * 60
 _STATE_TTL_S = 12 * 3600
 
 
@@ -62,6 +63,7 @@ class VesselIncidentMonitor:
         self._episodes: dict[str, dict] = {}
         # (mmsi, kind) -> unix time of last emit
         self._emitted: dict[tuple[str, str], float] = {}
+        self._updated: dict[tuple[str, str], float] = {}
         self._lock = threading.Lock()
         self._last_prune = 0.0
 
@@ -106,7 +108,20 @@ class VesselIncidentMonitor:
             return
         with self._lock:
             if nav_status in _NORMAL_STATUS:
-                self._episodes.pop(mmsi, None)
+                previous = self._episodes.pop(mmsi, None)
+                if previous is not None:
+                    rule = _INCIDENT_STATUS.get(previous["status"])
+                    if rule is not None:
+                        kind = rule[0]
+                        intel_store.update_vessel_episode(
+                            f"aisinc:{mmsi}:{kind}",
+                            lat=lat,
+                            lon=lon,
+                            timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                            sog=sog,
+                            nav_status=nav_status,
+                            incident_lifecycle="resolved",
+                        )
                 return
             rule = _INCIDENT_STATUS.get(nav_status)
             if rule is None:
@@ -134,6 +149,7 @@ class VesselIncidentMonitor:
             mmsi, name or "", lat, lon,
             kind=kind, source="ais", severity=severity,
             is_distress=is_distress, auto_publish=auto_publish,
+            sog=sog, nav_status=nav_status,
             reports=episode["count"], sustained_s=round(now - episode["first_seen"]),
             min_reports=min_reports, min_span_s=min_span_s,
         )
@@ -159,6 +175,8 @@ class VesselIncidentMonitor:
         severity: str,
         is_distress: bool,
         auto_publish: bool,
+        sog: float | None = None,
+        nav_status: int | None = None,
         reports: int | None = None,
         sustained_s: int | None = None,
         min_reports: int | None = None,
@@ -168,8 +186,20 @@ class VesselIncidentMonitor:
         key = (mmsi, kind)
         with self._lock:
             if now - self._emitted.get(key, 0.0) < _EMIT_COOLDOWN_S:
+                if now - self._updated.get(key, 0.0) >= _EPISODE_UPDATE_INTERVAL_S:
+                    self._updated[key] = now
+                    intel_store.update_vessel_episode(
+                        f"aisinc:{mmsi}:{kind}",
+                        lat=lat,
+                        lon=lon,
+                        timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                        sog=sog,
+                        nav_status=nav_status,
+                        incident_lifecycle="active",
+                    )
                 return
             self._emitted[key] = now
+            self._updated[key] = now
 
         # A nav-status report inside a known GNSS jamming zone reads very
         # differently from an isolated one: "not under command" next to
@@ -221,12 +251,31 @@ class VesselIncidentMonitor:
                 "verification_status": "ais_transponder",
                 "is_distress": is_distress,
                 "publication_status": "published" if auto_publish else "internal",
+                "maritime_domain": (
+                    "grey_zone" if kind == "not_under_command"
+                    else "safety" if kind == "aground"
+                    else "sar"
+                ),
                 "report_kind": "distress" if is_distress else "vessel_incident",
                 "coordinate_source": "ais_position",
                 "location_uncertainty_m": 300,
                 # A beacon rides a liferaft/person; a grounding is the ship.
                 "case_type": "distress_sar" if kind == "distress_beacon" else "vessel_incident",
                 "ais_nav_status_kind": kind,
+                "vessel_name": name or None,
+                "episode_update_count": 1,
+                "first_observed_at": datetime.fromtimestamp(now, tz=timezone.utc).isoformat(),
+                "last_observed_at": datetime.fromtimestamp(now, tz=timezone.utc).isoformat(),
+                "observed_track": [{
+                    "lon": round(float(lon), 6),
+                    "lat": round(float(lat), 6),
+                    "ts": datetime.fromtimestamp(now, tz=timezone.utc).isoformat(),
+                    **({"sog": round(float(sog), 2)} if sog is not None else {}),
+                    **({"nav_status": int(nav_status)} if nav_status is not None else {}),
+                }],
+                "drift_eligible": kind in {"not_under_command", "disabled", "adrift"},
+                "drift_event_id": f"intel:aisinc:{mmsi}:{kind}",
+                "drift_vessel_type": "cargo",
                 "jamming_score": round(jam_score, 2),
                 "in_jamming_zone": in_jamming_zone,
                 **({"detection_reason": rule_reason} if rule_reason else {}),
@@ -247,6 +296,9 @@ class VesselIncidentMonitor:
             }
             self._emitted = {
                 k: t for k, t in self._emitted.items() if now - t < _EMIT_COOLDOWN_S * 2
+            }
+            self._updated = {
+                k: t for k, t in self._updated.items() if now - t < _EMIT_COOLDOWN_S * 2
             }
 
 

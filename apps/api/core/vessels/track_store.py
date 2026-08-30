@@ -212,6 +212,63 @@ class TrackStore:
             logger.warning("TrackStore.track failed: %s", exc)
             return []
 
+    def recent_tracks(
+        self,
+        mmsis: set[str],
+        *,
+        since: datetime,
+        limit_per_mmsi: int = 120,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Load bounded recent histories for many vessels in one DB query."""
+        clean = sorted({str(m) for m in mmsis if str(m).isdigit() and len(str(m)) == 9})
+        if not clean:
+            return {}
+        try:
+            from sqlalchemy import func
+
+            from core.db.models import VesselTrackDB
+            from core.db.session import session_scope
+
+            with session_scope() as db:
+                ranked = db.query(
+                    VesselTrackDB.mmsi.label("mmsi"),
+                    VesselTrackDB.ts.label("ts"),
+                    VesselTrackDB.lat.label("lat"),
+                    VesselTrackDB.lon.label("lon"),
+                    VesselTrackDB.sog.label("sog"),
+                    VesselTrackDB.cog.label("cog"),
+                    VesselTrackDB.heading.label("heading"),
+                    VesselTrackDB.nav_status.label("nav_status"),
+                    VesselTrackDB.source.label("source"),
+                    func.row_number().over(
+                        partition_by=VesselTrackDB.mmsi,
+                        order_by=VesselTrackDB.ts.desc(),
+                    ).label("rank"),
+                ).filter(
+                    VesselTrackDB.mmsi.in_(clean),
+                    VesselTrackDB.ts >= since,
+                ).subquery()
+                rows = db.query(ranked).filter(
+                    ranked.c.rank <= max(2, min(int(limit_per_mmsi), 240))
+                ).order_by(ranked.c.mmsi.asc(), ranked.c.ts.asc()).all()
+                grouped: dict[str, list[dict[str, Any]]] = {}
+                for row in rows:
+                    grouped.setdefault(row.mmsi, []).append({
+                        "mmsi": row.mmsi,
+                        "ts": row.ts.isoformat() if row.ts else None,
+                        "lat": row.lat,
+                        "lon": row.lon,
+                        "sog": row.sog,
+                        "cog": row.cog,
+                        "heading": row.heading,
+                        "nav_status": row.nav_status,
+                        "source": row.source,
+                    })
+                return grouped
+        except Exception as exc:  # pragma: no cover
+            logger.warning("TrackStore.recent_tracks failed: %s", exc)
+            return {}
+
     def positions_between(self, t0: datetime, t1: datetime, *,
                           bbox: Optional[tuple[float, float, float, float]] = None,
                           limit: int = 200_000) -> list[dict[str, Any]]:

@@ -42,10 +42,10 @@ def test_explicit_metadata_domain_wins() -> None:
         ("cable_proximity", MaritimeDomain.GREY_ZONE.value),
         ("sdn_match", MaritimeDomain.SANCTIONS.value),
         ("sanctioned_vessel", MaritimeDomain.SANCTIONS.value),
-        ("ais_rendezvous", MaritimeDomain.SANCTIONS.value),
-        ("impossible_speed", MaritimeDomain.SANCTIONS.value),
-        ("gap", MaritimeDomain.SANCTIONS.value),
-        ("something_new", MaritimeDomain.SANCTIONS.value),  # unknown anomaly -> sanctions
+        ("ais_rendezvous", MaritimeDomain.GREY_ZONE.value),
+        ("impossible_speed", MaritimeDomain.GREY_ZONE.value),
+        ("gap", MaritimeDomain.GREY_ZONE.value),
+        ("something_new", MaritimeDomain.GREY_ZONE.value),
     ],
 )
 def test_ais_anomaly_subtype_maps_to_compartment(anomaly_type, expected) -> None:

@@ -69,6 +69,7 @@ _PUBLIC_METADATA = frozenset(
         "dead",
         "distress_classification",
         "drift_status",
+        "drift_job_id",
         "first_source_seen_at",
         "incident_id",
         "is_distress",
@@ -78,6 +79,23 @@ _PUBLIC_METADATA = frozenset(
         "contributing_sources",
         "cluster_id",
         "anomaly_type",
+        "ais_nav_status_kind",
+        "anomaly_confidence",
+        "detection_reason",
+        "detail",
+        "drift_eligible",
+        "drift_event_id",
+        "drift_vessel_type",
+        "episode_update_count",
+        "first_observed_at",
+        "in_jamming_zone",
+        "jamming_score",
+        "last_observed_at",
+        "observed_track",
+        "vessel_name",
+        "imo",
+        "ship_type",
+        "flag",
         "spike_type",
         "last_source_seen_at",
         "location_uncertainty_m",
@@ -176,6 +194,29 @@ def _public_intel_feature(
     except ValueError:
         severity = Severity.LOW.value
     metadata = {key: event.metadata[key] for key in _PUBLIC_METADATA if key in event.metadata}
+    # MMSI/IMO/name/flag are professional vessel identifiers broadcast in AIS
+    # or drawn from the local public registry.  Keeping them on every linked
+    # alert is what lets the client join updates into one vessel episode.
+    mmsi = str(event.linked_mmsi or event.metadata.get("mmsi") or "").strip()
+    if len(mmsi) == 9 and mmsi.isdigit():
+        metadata["linked_mmsi"] = mmsi
+        metadata["mmsi"] = mmsi
+        try:
+            from core.vessels.registry import registry
+            from core.mda.identity import mmsi_flag
+
+            vessel = (getattr(registry, "_cache", {}) or {}).get(mmsi, {})
+            identity_fields = {
+                "vessel_name": vessel.get("ship_name"),
+                "imo": vessel.get("imo"),
+                "ship_type": vessel.get("ship_type"),
+                "flag": vessel.get("flag") or mmsi_flag(mmsi),
+            }
+            for key, value in identity_fields.items():
+                if value not in (None, "") and key not in metadata:
+                    metadata[key] = value
+        except Exception:  # pragma: no cover - registry enrichment is best effort
+            pass
     # Unlike the event's own `text` (stripped everywhere on public Live,
     # since it may originate from a private WhatsApp/SMS caller who never
     # consented to publication), a thread_reposts `note` only ever comes from
@@ -204,7 +245,10 @@ def _public_intel_feature(
     # distress markers: unrefreshed past that window is no longer worth
     # highlighting as current, though it stays visible and searchable.
     lifecycle_state = None
-    if is_derived:
+    explicit_lifecycle = str(event.metadata.get("incident_lifecycle") or "").lower()
+    if explicit_lifecycle in {"active", "resolved", "needs_review", "archived"}:
+        lifecycle_state = explicit_lifecycle
+    elif is_derived:
         observed = lifecycle.parse_utc(event.timestamp_utc)
         if observed is not None:
             age_hours = (datetime.now(UTC) - observed).total_seconds() / 3600

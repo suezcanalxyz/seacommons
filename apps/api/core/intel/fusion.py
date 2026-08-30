@@ -214,7 +214,7 @@ def _rule_spoofing(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]
         confidence = round(min(0.95, 0.45 + 0.2 * len(evidence)), 3)
         return FusedAlert(
             alert_type="spoofing",
-            domain="sanctions",
+            domain="grey_zone",
             severity="high",
             confidence=confidence,
             lat=new.lat, lon=new.lon, ts=new.ts,
@@ -224,7 +224,7 @@ def _rule_spoofing(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]
                 f"MMSI {new.mmsi}: {other.anomaly_type} + {new.anomaly_type} "
                 f"within {int(window // 3600)}h"
             ),
-            case_type="sanctions_watch",
+            case_type="monitoring",
             vessel_mmsi=new.mmsi,
         )
     return None
@@ -304,6 +304,62 @@ def _rule_grey_zone(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert
 
 
 _GROUNDING_SUBTYPES = {"aground", "grounding", "not_under_command", "disabled", "adrift"}
+_MOBILITY_INCIDENTS = {"not_under_command", "disabled", "adrift"}
+_MOVEMENT_ANOMALIES = {
+    "gap", "long_gap", "position_jump", "impossible_speed",
+    "circle_spoof", "static_spoof", "loiter",
+}
+
+
+def _rule_vessel_mobility_episode(
+    new: FusionSignal, event: IntelEvent
+) -> Optional[FusedAlert]:
+    """Join a reported manoeuvrability problem to movement evidence.
+
+    The result says that two signals belong to the same MMSI; it does not claim
+    that an AIS gap caused an emergency or that the vessel is deliberately
+    hiding.
+    """
+    if not new.mmsi:
+        return None
+    is_incident = new.kind == "vessel_incident" and new.anomaly_type in _MOBILITY_INCIDENTS
+    is_movement = new.kind == "ais_anomaly" and new.anomaly_type in _MOVEMENT_ANOMALIES
+    if not (is_incident or is_movement):
+        return None
+    partners = []
+    for other in _recent_signals(new.event_id):
+        if other.mmsi != new.mmsi or abs(other.ts - new.ts) > 12 * 3600:
+            continue
+        counterpart = (
+            other.kind == "ais_anomaly" and other.anomaly_type in _MOVEMENT_ANOMALIES
+            if is_incident
+            else other.kind == "vessel_incident" and other.anomaly_type in _MOBILITY_INCIDENTS
+        )
+        if counterpart:
+            partners.append(other)
+    if not partners:
+        return None
+    partner = min(partners, key=lambda item: abs(item.ts - new.ts))
+    incident = new if is_incident else partner
+    movement = partner if is_incident else new
+    return FusedAlert(
+        alert_type="vessel_mobility_anomaly",
+        domain="grey_zone",
+        severity="high",
+        confidence=0.78,
+        lat=new.lat,
+        lon=new.lon,
+        ts=new.ts,
+        contributing_event_ids=[new.event_id, partner.event_id],
+        contributing_sources=sorted({new.source, partner.source}),
+        summary=(
+            f"MMSI {new.mmsi}: {incident.anomaly_type.replace('_', ' ')} "
+            f"with AIS {movement.anomaly_type.replace('_', ' ')} within 12h"
+        ),
+        open_case=True,
+        case_type="vessel_incident",
+        vessel_mmsi=new.mmsi,
+    )
 
 
 def _rule_single_source(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]:
@@ -316,9 +372,10 @@ def _rule_single_source(new: FusionSignal, event: IntelEvent) -> Optional[FusedA
         return None
 
     if new.kind == "vessel_incident" and new.anomaly_type in _GROUNDING_SUBTYPES:
+        mobility_security = new.anomaly_type in _MOBILITY_INCIDENTS
         return FusedAlert(
             alert_type="vessel_casualty",
-            domain="safety",
+            domain="grey_zone" if mobility_security else "safety",
             severity=new.severity or "high",
             confidence=0.7,
             lat=new.lat, lon=new.lon, ts=new.ts,
@@ -371,7 +428,7 @@ def _rule_dark_sts(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]
     confidence = round(min(0.95, 0.5 + 0.15 * tanker + 0.15 * dark + 0.1 * bool(zone) + 0.2 * sanctioned), 3)
     return FusedAlert(
         alert_type="dark_sts" if dark else "sts_transfer",
-        domain="sanctions",
+        domain="sanctions" if sanctioned else "grey_zone",
         severity="high" if (tanker or dark or sanctioned) else "medium",
         confidence=confidence,
         lat=new.lat, lon=new.lon, ts=new.ts,
@@ -380,7 +437,7 @@ def _rule_dark_sts(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]
         summary=(f"{'Dark ' if dark else ''}ship-to-ship transfer"
                  + (f" in {zone}" if zone else "") + f": {event.title[:120]}"),
         open_case=bool(tanker or dark or zone or sanctioned),
-        case_type="dark_rendezvous",
+        case_type="sanctions_watch" if sanctioned else "dark_rendezvous",
         vessel_mmsi=new.mmsi,
     )
 
@@ -497,6 +554,7 @@ _RULES: list[Callable[[FusionSignal, IntelEvent], Optional[FusedAlert]]] = [
     _rule_dark_sts,
     _rule_identity_fraud,
     _rule_maritime_strike,
+    _rule_vessel_mobility_episode,
     _rule_grey_zone,
     _rule_single_source,
 ]

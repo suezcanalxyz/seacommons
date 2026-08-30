@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -77,6 +78,22 @@ async def live_signal_response(event_id: str, request: Request):
         return analyze_ngo_response(event, related_signals=related_signals)
     except ValueError:
         raise HTTPException(status_code=422, detail="Signal has no position")
+
+
+@router.get("/vessels/{mmsi}/context")
+async def live_vessel_context(
+    mmsi: str,
+    request: Request,
+    hours: float = Query(default=168.0, ge=1, le=24 * 30),
+):
+    """Public-AIS identity, observed track and sanctions-list explanation."""
+    from core.api.ratelimit import rate_limit
+    from core.api.routes.mda import build_vessel_dossier
+
+    rate_limit(request, max_per_minute=30, scope="live-vessel-context")
+    if re.fullmatch(r"\d{9}", mmsi) is None:
+        raise HTTPException(status_code=422, detail="MMSI must contain exactly 9 digits")
+    return build_vessel_dossier(mmsi, hours=hours, track_limit=240)
 
 
 @router.get("/drifts")

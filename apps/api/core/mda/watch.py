@@ -292,7 +292,10 @@ class MdaWatch:
                 source="mda", linked_mmsi=mmsi,
                 metadata={
                     "anomaly_type": "long_gap" if (time.time() - last.ts) > 6 * 3600 else "gap",
-                    "maritime_domain": "sanctions" if jam < 0.3 else "grey_zone",
+                    # A reporting gap is a traffic anomaly.  It becomes
+                    # sanctions context only when identity screening finds a
+                    # real list match on this vessel.
+                    "maritime_domain": "grey_zone",
                     "is_distress": False, "publication_status": "internal",
                     "source_policy": "official_api", "verification_status": "ais_transponder",
                     "coordinate_source": "ais_position",
@@ -476,7 +479,7 @@ class MdaWatch:
                      + (" Active GNSS jamming in the area." if jam > 0.3 else ""),
                 source="mda", linked_mmsi=mmsi,
                 metadata={
-                    "anomaly_type": atype, "maritime_domain": "sanctions",
+                    "anomaly_type": atype, "maritime_domain": "grey_zone",
                     "is_distress": False, "publication_status": "internal",
                     "source_policy": "official_api", "verification_status": "derived",
                     "coordinate_source": "ais_position", "spoof_reason": reason,

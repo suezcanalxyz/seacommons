@@ -58,7 +58,7 @@ def test_dark_fleet_spoofing_pair_opens_alert_and_case() -> None:
     assert len(alerts) == 1
     alert = alerts[0]
     assert alert.metadata["alert_type"] == "spoofing"
-    assert alert.metadata["maritime_domain"] == "sanctions"
+    assert alert.metadata["maritime_domain"] == "grey_zone"
     assert len(alert.metadata["contributing"]) == 2
     assert second.id in alert.metadata["contributing"]
 
@@ -68,7 +68,7 @@ def test_dark_fleet_spoofing_pair_opens_alert_and_case() -> None:
     with session_scope() as db:
         cases = db.query(CaseDB).all()
         assert len(cases) == 1
-        assert cases[0].case_type == "sanctions_watch"
+        assert cases[0].case_type == "monitoring"
         links = db.query(CaseIntelEventDB).filter(CaseIntelEventDB.case_id == cases[0].case_id).all()
         assert {link.event_id for link in links} >= {second.id}
 
@@ -105,6 +105,33 @@ def test_single_anomaly_does_not_alert() -> None:
     )
     fusion.evaluate(ev)
     assert _alerts() == []
+
+
+def test_not_under_command_and_gap_become_one_mobility_alert() -> None:
+    now = datetime.now(timezone.utc)
+    _add(
+        type="ais_anomaly", severity="medium", lat=41.33, lon=29.14,
+        title="AIS gap — ST. OLGA", source="ais", linked_mmsi="352001914",
+        timestamp_utc=(now - timedelta(hours=1)).isoformat(),
+        metadata={"anomaly_type": "gap", "maritime_domain": "grey_zone"},
+    )
+    incident = _add(
+        type="vessel_incident", severity="medium", lat=41.34, lon=29.15,
+        title="Vessel unable to manoeuvre — ST. OLGA", source="ais",
+        linked_mmsi="352001914",
+        metadata={"ais_nav_status_kind": "not_under_command", "maritime_domain": "grey_zone"},
+    )
+
+    fusion.evaluate(incident)
+
+    assert len(_alerts()) == 1
+    alert = _alerts()[0]
+    assert alert.metadata["alert_type"] == "vessel_mobility_anomaly"
+    assert alert.metadata["maritime_domain"] == "grey_zone"
+    assert set(alert.metadata["contributing"]) == {
+        next(e.id for e in intel_store.events(limit=20) if e.title == "AIS gap — ST. OLGA"),
+        incident.id,
+    }
 
 
 def test_grey_zone_proximity_to_platform_alerts() -> None:

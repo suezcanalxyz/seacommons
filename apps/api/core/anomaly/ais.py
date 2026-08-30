@@ -236,8 +236,16 @@ class AISAnomalyDetector:
                         "report_kind": "ais_anomaly",
                         "coordinate_source": "ais_position",
                         "anomaly_type": event.anomaly_type,
+                        "maritime_domain": (
+                            "sanctions" if event.anomaly_type == "sdn_match" else "grey_zone"
+                        ),
                         "anomaly_confidence": event.confidence,
                         "anomaly_evidence": event.evidence,
+                        "vessel_name": event.vessel_name or None,
+                        "detection_reason": (
+                            f"AIS-derived {label}; confidence {event.confidence:.0%}. "
+                            "This is an indicator, not proof of intent."
+                        ),
                     },
                 ),
                 dedup_key=f"aisanom:{event.mmsi}:{event.anomaly_type}",

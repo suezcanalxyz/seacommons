@@ -2170,6 +2170,13 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   gap: 5px;
   margin-top: 4px;
 }
+.intel-vessel-identity {
+  padding: 4px 6px;
+  border: 1px solid rgba(56, 189, 248, 0.16);
+  border-radius: 5px;
+  background: rgba(56, 189, 248, 0.05);
+  color: #9ccfe2;
+}
 .intel-source-health-card {
   padding: 4px;
   border: 1px solid rgba(255,255,255,0.07);
@@ -3585,7 +3592,19 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .mda-risk { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .mda-risk-flag { font-size: 9px; text-transform: uppercase; letter-spacing: 0.03em;
   background: rgba(239,68,68,0.18); color: #ffb3b3; border-radius: 999px; padding: 1px 6px; }
-.mda-sanctions { margin-top: 6px; font-size: 11px; color: #ff9d9d; }
+.mda-sanctions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 6px;
+  border-left: 2px solid #f472b6;
+  background: rgba(244,114,182,0.07);
+  font-size: 11px;
+  color: #ffb5cf;
+}
+.mda-sanctions span { color: #d7a8b9; }
+.mda-sanctions a { color: #7dd3fc; }
 .mda-mini-btn { margin-top: 8px; }
 .mda-track-spark { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .mda-track-spark-svg { flex: none; background: rgba(255,255,255,0.03); border-radius: var(--r-sm); }

@@ -57,6 +57,42 @@ def test_public_projection_excludes_sensitive_content() -> None:
     assert feature["properties"]["publication_status"] == "published"
 
 
+def test_public_projection_keeps_professional_vessel_identifier(monkeypatch) -> None:
+    from core.vessels.registry import registry
+
+    monkeypatch.setattr(
+        registry,
+        "_cache",
+        {
+            "352001914": {
+                "ship_name": "ST. OLGA",
+                "imo": "9493224",
+                "ship_type": 79,
+                "flag": None,
+            }
+        },
+    )
+    event = IntelEvent(
+        id="olga-gap",
+        type="ais_anomaly",
+        severity="medium",
+        lat=41.33,
+        lon=29.14,
+        title="AIS gap — ST. OLGA",
+        source="ais",
+        linked_mmsi="352001914",
+        metadata={"source_policy": "official_api", "maritime_domain": "grey_zone"},
+    )
+
+    feature = _public_intel_feature(event, allowed_domains=frozenset({"grey_zone"}))
+
+    assert feature is not None
+    assert feature["properties"]["linked_mmsi"] == "352001914"
+    assert feature["properties"]["vessel_name"] == "ST. OLGA"
+    assert feature["properties"]["imo"] == "9493224"
+    assert feature["properties"]["flag"] == "PA"
+
+
 def test_public_projection_exposes_repost_thread_including_its_own_note() -> None:
     # Unlike the event's own `text` (may originate from a private caller who
     # never consented to publication), a thread_reposts note only ever comes
@@ -1052,6 +1088,24 @@ def test_live_routes_remain_public_when_internal_reads_require_auth() -> None:
         assert internal_ngo.status_code == 401
     finally:
         config.AUTH_ENABLED = previous
+
+
+def test_public_vessel_context_route_is_sanitized_and_validates_mmsi(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "core.api.routes.mda.build_vessel_dossier",
+        lambda mmsi, hours, track_limit: {
+            "mmsi": mmsi,
+            "static": {"name": "ST. OLGA", "imo": "9493224"},
+            "identity": {"sanctions": []},
+            "track_points": [{"lon": 29.14, "lat": 41.33}],
+        },
+    )
+
+    response = client.get("/api/v1/live/vessels/352001914/context?hours=24")
+
+    assert response.status_code == 200
+    assert response.json()["static"]["imo"] == "9493224"
+    assert client.get("/api/v1/live/vessels/not-an-mmsi/context").status_code == 422
 
 
 def test_legacy_public_mda_anomaly_route_is_removed() -> None:

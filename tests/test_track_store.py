@@ -69,6 +69,23 @@ def test_positions_between_bbox(store):
     assert {h["mmsi"] for h in hits} == {"111000666"}
 
 
+def test_recent_tracks_batches_and_limits_each_mmsi(store):
+    now = datetime.now(timezone.utc)
+    for index in range(4):
+        _pos(store, "111001111", 35.0 + index / 100, 18.0, nav=index % 2, recv=now + timedelta(minutes=index))
+        _pos(store, "222002222", 36.0 + index / 100, 19.0, nav=index % 2, recv=now + timedelta(minutes=index))
+
+    tracks = store.recent_tracks(
+        {"111001111", "222002222"},
+        since=now - timedelta(minutes=1),
+        limit_per_mmsi=2,
+    )
+
+    assert set(tracks) == {"111001111", "222002222"}
+    assert all(len(points) == 2 for points in tracks.values())
+    assert tracks["111001111"][-1]["lat"] == 35.03
+
+
 def test_prune(store):
     old = datetime.now(timezone.utc) - timedelta(days=90)
     _pos(store, "111000888", 35.0, 18.0, recv=old)

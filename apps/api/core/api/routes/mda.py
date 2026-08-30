@@ -95,6 +95,10 @@ async def anomalies(hours: int = Query(default=48, ge=1, le=720),
 
 @router.get("/vessel/{mmsi}")
 async def vessel_dossier(mmsi: str, hours: float = Query(default=72.0, ge=1, le=24 * 90)):
+    return build_vessel_dossier(mmsi, hours=hours)
+
+
+def build_vessel_dossier(mmsi: str, *, hours: float, track_limit: int = 5000) -> dict:
     from core.mda.identity import screen
     from core.vessels.registry import registry
     from core.vessels.track_store import track_store
@@ -102,6 +106,9 @@ async def vessel_dossier(mmsi: str, hours: float = Query(default=72.0, ge=1, le=
     v = (getattr(registry, "_cache", {}) or {}).get(mmsi, {})
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
     track = track_store.track(mmsi, since=since, limit=5000)
+    if track_limit >= 2 and len(track) > track_limit:
+        scale = (len(track) - 1) / (track_limit - 1)
+        track = [track[round(index * scale)] for index in range(track_limit)]
     return {
         "mmsi": mmsi,
         "static": {"name": v.get("ship_name"), "imo": v.get("imo"),

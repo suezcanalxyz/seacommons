@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from core.domain.live_contracts import (
@@ -27,6 +27,10 @@ from core.live.projection import (
     _is_publishable_live_drift,
     _public_drift_feature,
     _public_intel_feature,
+)
+from core.live.vessel_episodes import (
+    add_nearby_humanitarian_context,
+    coalesce_security_vessel_episodes,
 )
 
 logger = logging.getLogger(__name__)
@@ -222,6 +226,27 @@ def public_signal_collection(
         primary.extend(context[:context_cap])
         if mode_name == "humanitarian":
             primary.extend(published_ingested)
+        else:
+            # Maritime traffic is vessel-centric: raw anomaly, incident and
+            # fusion records for one MMSI become one episode that receives
+            # updates and carries an observed AIS trace.
+            vessel_mmsis = {
+                str((feature.get("properties") or {}).get("linked_mmsi") or "")
+                for feature in primary
+            }
+            try:
+                from core.vessels.track_store import track_store
+
+                track_history = track_store.recent_tracks(
+                    vessel_mmsis,
+                    since=now - timedelta(hours=24),
+                    limit_per_mmsi=120,
+                )
+            except Exception:  # pragma: no cover - feed remains useful without track DB
+                track_history = {}
+            primary = coalesce_security_vessel_episodes(
+                primary, track_history=track_history
+            )
         if since:
             primary = [
                 feature
@@ -240,6 +265,9 @@ def public_signal_collection(
         mode_name: finalize(mode_name)
         for mode_name in ("humanitarian", "security")
     }
+    add_nearby_humanitarian_context(
+        features_by_mode["security"], features_by_mode["humanitarian"]
+    )
     mode_counts = {
         mode_name: len(mode_features)
         for mode_name, mode_features in features_by_mode.items()
@@ -290,7 +318,9 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
     for event in drift_events.values():
         by_source.setdefault(event.source, []).append(event)
     for event in drift_events.values():
-        public_event = _public_intel_feature(event)
+        public_event = _public_intel_feature(
+            event, allowed_domains=domains_for_mode("all")
+        )
         job_id = event.metadata.get("drift_job_id")
         if public_event is None:
             continue
@@ -298,7 +328,8 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         # an active-looking pulsing drift cone still on the map reads as
         # "still adrift, still searching", which is exactly wrong for a
         # case that's already been rescued or gone stale.
-        state = lifecycle.distress_lifecycle(
+        explicit_state = str(event.metadata.get("incident_lifecycle") or "").lower()
+        state = explicit_state or lifecycle.distress_lifecycle(
             event,
             now=now,
             same_source=by_source.get(event.source, []),

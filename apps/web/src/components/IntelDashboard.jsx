@@ -35,6 +35,27 @@ export const DOMAIN_COLORS = {
   environmental: '#34d399',
 };
 
+const AIS_NAV_STATUS = {
+  0: 'under way using engine',
+  1: 'at anchor',
+  2: 'not under command',
+  3: 'restricted manoeuvrability',
+  5: 'moored',
+  6: 'aground',
+  8: 'under way sailing',
+};
+
+const shipTypeLabel = (value) => {
+  const code = Number(value);
+  if (!Number.isFinite(code)) return String(value || '');
+  if (code >= 70 && code <= 79) return `cargo (${code})`;
+  if (code >= 80 && code <= 89) return `tanker (${code})`;
+  if (code >= 60 && code <= 69) return `passenger (${code})`;
+  if (code >= 30 && code <= 39) return `special craft (${code})`;
+  if (code === 52) return `tug (${code})`;
+  return `AIS type ${code}`;
+};
+
 function statusTone(s) {
   if (s === 'active' || s === 'healthy')  return '#22c55e';
   if (s === 'degraded') return '#f59e0b';
@@ -575,7 +596,10 @@ export default function IntelDashboard({
     if (!mmsi) return;
     setVesselDetailLoading(true);
     try {
-      const resp = await fetch(`${apiBase}/api/v1/mda/vessel/${mmsi}?hours=168`);
+      const path = publicMode
+        ? `/api/v1/live/vessels/${mmsi}/context?hours=168`
+        : `/api/v1/mda/vessel/${mmsi}?hours=168`;
+      const resp = await fetch(`${apiBase}${path}`);
       setVesselDetail(resp.ok ? await resp.json() : { error: true });
     } catch {
       setVesselDetail({ error: true });
@@ -615,14 +639,15 @@ export default function IntelDashboard({
     // / display purposes, not a true area-weighted centroid.
     const coords = isArea ? polygonCentroid(feat.geometry.coordinates) : feat.geometry?.coordinates;
     const ts = p.timestamp_utc ? new Date(p.timestamp_utc) : null;
+    const driftLinkId = p.drift_event_id || p.id;
     const driftFeat = intelDrifts.features.find(
       (f) => String(f.properties?.intel_event_id || '').replace(/^intel:/, '')
-        === String(p.id || '').replace(/^intel:/, '')
+        === String(driftLinkId || '').replace(/^intel:/, '')
         && f.geometry?.type === 'LineString',
     );
     const currentEstimate = intelDrifts.features.find(
       (f) => String(f.properties?.intel_event_id || '').replace(/^intel:/, '')
-        === String(p.id || '').replace(/^intel:/, '')
+        === String(driftLinkId || '').replace(/^intel:/, '')
         && f.properties?.type === 'current_estimate'
         && f.geometry?.type === 'Point',
     );
@@ -630,6 +655,7 @@ export default function IntelDashboard({
     const hasDrift = p.drift_status === 'completed' || Boolean(driftFeat);
     const tier = eventTier(p);
     const isDistress = tier === 'operational';
+    const canModelDrift = isDistress || Boolean(p.drift_eligible);
     const icon = TYPE_ICONS[p.type] || '•';
     const verif = p.verification_status || 'unverified_public_source';
     const lifecycle = isDistress ? (eventLifecycle(p) || 'active') : null;
@@ -658,23 +684,23 @@ export default function IntelDashboard({
                 setSidebarOpen?.(false);
               }}
             >Map</button>
-          ) : coords && (p.drift_status === 'computing' || triggeringDrift?.has(p.id)) ? (
+          ) : coords && (p.drift_status === 'computing' || triggeringDrift?.has(driftLinkId)) ? (
             <button className="intel-drift-btn intel-drift-btn--computing" disabled>…</button>
-          ) : coords && p.drift_status === 'failed' ? (
+          ) : coords && canModelDrift && p.drift_status === 'failed' ? (
             <button
               className="intel-drift-btn intel-drift-btn--retry"
-              onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(p.id, coords[1], coords[0]); }}
+              onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(driftLinkId, coords[1], coords[0], p.drift_vessel_type); }}
             >Retry</button>
-          ) : publicMode && coords && !isArea ? (
+          ) : publicMode && coords && canModelDrift && !p.drift_eligible && !isArea ? (
             <button className="intel-drift-btn intel-drift-btn--computing" disabled>Auto</button>
-          ) : coords && !isArea && p.drift_status !== 'completed' ? (
+          ) : coords && canModelDrift && !isArea && p.drift_status !== 'completed' ? (
             // A leeway simulation needs one defensible starting point --
             // an area report's centroid is just the middle of a whole
             // uncertain zone, not a real position to drift from.
             <button
               className="intel-drift-btn intel-drift-btn--trigger"
-              onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(p.id, coords[1], coords[0]); }}
-            >Drift</button>
+              onClick={(e) => { e.stopPropagation(); triggerIntelDrift?.(driftLinkId, coords[1], coords[0], p.drift_vessel_type); }}
+            >Forecast</button>
           ) : null}
         </div>
         {vesselName ? (
@@ -708,6 +734,27 @@ export default function IntelDashboard({
             </time>
           )}
         </div>
+        {(p.linked_mmsi || p.mmsi) && (
+          <span className="intel-source intel-vessel-identity">
+            <strong>MMSI {p.linked_mmsi || p.mmsi}</strong>
+            {p.imo && <span>· IMO {p.imo}</span>}
+            {p.flag && <span>· {p.flag}</span>}
+            {p.ship_type != null && <span>· {shipTypeLabel(p.ship_type)}</span>}
+            {p.latest_nav_status != null && (
+              <span>· {AIS_NAV_STATUS[p.latest_nav_status] || `nav status ${p.latest_nav_status}`}</span>
+            )}
+            {Number.isFinite(Number(p.latest_sog)) && <span>· {Number(p.latest_sog).toFixed(1)} kn</span>}
+            {p.sanctions_matched && <span className="mda-risk-flag">SANCTIONED</span>}
+          </span>
+        )}
+        {p.episode_id && (
+          <span className="intel-source">
+            Episode · {p.signal_count || 1} signals · {p.episode_update_count || 1} updates
+            {Array.isArray(p.observed_track) && p.observed_track.length > 1
+              ? ` · AIS track ${p.observed_track.length} fixes`
+              : ''}
+          </span>
+        )}
         <span className="intel-source">
           <span>{p.source}</span>
           <span style={{ opacity: 0.45 }}>·</span>
@@ -832,6 +879,31 @@ export default function IntelDashboard({
                 <span>📡 position falls inside a known GNSS jamming zone (score {p.jamming_score}) — signal stronger than usual, not isolated</span>
               </div>
             )}
+            {p.status_note && (
+              <div className="intel-details-row">
+                <span>✓ {p.status_note}</span>
+              </div>
+            )}
+            {Array.isArray(p.updates) && p.updates.length > 0 && (
+              <div className="intel-details-row">
+                <strong>Episode updates</strong>
+                {p.updates.slice(0, 6).map((update) => (
+                  <span key={`${update.id}-${update.timestamp_utc}`}>
+                    {update.timestamp_utc ? new Date(update.timestamp_utc).toLocaleString('it-IT') : '—'}
+                    {' · '}{String(update.anomaly_type || update.type || 'signal').replace(/_/g, ' ')}
+                  </span>
+                ))}
+              </div>
+            )}
+            {p.nearby_humanitarian_count > 0 && (
+              <div className="intel-details-row intel-details-row--warn">
+                <strong>Nearby humanitarian context</strong>
+                <span>Proximity only — it does not establish a relationship with this vessel.</span>
+                {(p.nearby_humanitarian || []).map((item) => (
+                  <span key={item.id}>{item.distance_nm} nm · {item.title}</span>
+                ))}
+              </div>
+            )}
             {(p.linked_mmsi || p.mmsi) && (
               vesselDetailLoading ? (
                 <span className="intel-nearby-loading">Screening vessel…</span>
@@ -872,9 +944,17 @@ export default function IntelDashboard({
                       <span key={f} className="mda-risk-flag">{f.replace(/_/g, ' ')}</span>
                     ))}</div>
                   )}
-                  {vesselDetail.identity?.sanctions?.length > 0 && (
-                    <div className="mda-sanctions">⚠ {vesselDetail.identity.sanctions[0].list}: {vesselDetail.identity.sanctions[0].program}</div>
-                  )}
+                  {vesselDetail.identity?.sanctions?.map((sanction, index) => (
+                    <div className="mda-sanctions" key={`${sanction.list}-${sanction.imo || sanction.mmsi || index}`}>
+                      <strong>⚠ {sanction.list}{sanction.program ? ` · ${sanction.program}` : ''}</strong>
+                      <span>{sanction.reason}</span>
+                      <span>{sanction.description}</span>
+                      {sanction.listed_on && <span>listed {sanction.listed_on}</span>}
+                      {sanction.source_url && (
+                        <a href={sanction.source_url} target="_blank" rel="noopener noreferrer">official/list source ↗</a>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )
             )}

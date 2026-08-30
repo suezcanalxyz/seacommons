@@ -24,10 +24,17 @@ def monitor(monkeypatch):
     monkeypatch.setattr(vim.time, "time", clock)
     added: list = []
     monkeypatch.setattr(vim.intel_store, "add", lambda event, dedup_key="": (added.append(event), True)[1])
+    updated: list = []
+    monkeypatch.setattr(
+        vim.intel_store,
+        "update_vessel_episode",
+        lambda event_id, **kwargs: (updated.append((event_id, kwargs)), True)[1],
+    )
     m = vim.VesselIncidentMonitor()
     m._running = True
     m._clock = clock  # test handle
     m._added = added  # test handle
+    m._updated_calls = updated  # test handle
     return m
 
 
@@ -67,6 +74,8 @@ def test_not_under_command_is_operator_review_not_auto_published(monitor) -> Non
     assert monitor._added[0].type == "vessel_incident"
     assert monitor._added[0].metadata["publication_status"] == "internal"
     assert monitor._added[0].metadata["is_distress"] is False
+    assert monitor._added[0].metadata["maritime_domain"] == "grey_zone"
+    assert monitor._added[0].metadata["drift_eligible"] is True
 
 
 def test_restricted_manoeuvrability_is_ignored(monitor) -> None:
@@ -106,3 +115,19 @@ def test_emit_cooldown_suppresses_a_repeat(monitor) -> None:
     monitor._clock.advance(200)
     monitor.on_position("202020202", "", 35.0, 14.0, 0.0, 6)
     assert len(monitor._added) == 1      # not re-emitted
+
+
+def test_sustained_incident_updates_the_same_episode_and_track(monitor) -> None:
+    for _ in range(3):
+        monitor.on_position("352001914", "ST. OLGA", 41.33, 29.14, 0.2, 2)
+        monitor._clock.advance(400)
+    assert len(monitor._added) == 1
+
+    monitor._clock.advance(301)
+    monitor.on_position("352001914", "ST. OLGA", 41.34, 29.16, 0.1, 2)
+
+    assert len(monitor._added) == 1
+    event_id, update = monitor._updated_calls[-1]
+    assert event_id == "aisinc:352001914:not_under_command"
+    assert (update["lat"], update["lon"]) == (41.34, 29.16)
+    assert update["incident_lifecycle"] == "active"

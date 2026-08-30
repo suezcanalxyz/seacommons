@@ -59,3 +59,6 @@ def test_screen_sanctions_hit(monkeypatch):
     r = screen(mmsi="273999999", name="whatever", flag="RU")
     assert "sanctions_hit" in r["risk_flags"]
     assert r["sanctions"][0]["list"] == "OFAC_SDN"
+    assert r["sanctions"][0]["matched_on"] == ["mmsi"]
+    assert "RUSSIA-EO14024" in r["sanctions"][0]["reason"]
+    assert r["sanctions"][0]["source_url"].startswith("https://")

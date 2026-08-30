@@ -114,10 +114,22 @@ class IntelEvent:
     # wins; otherwise it is inferred from type / anomaly subtype so legacy
     # events resolve to ``sar``.
     _GREY_ZONE_ANOMALIES = frozenset(
-        {"dark_zone_entry", "zone_incursion", "cable_proximity"}
+        {
+            "ais_rendezvous",
+            "circle_spoof",
+            "dark_zone_entry",
+            "gap",
+            "impossible_speed",
+            "long_gap",
+            "loiter",
+            "position_jump",
+            "static_spoof",
+            "zone_incursion",
+            "cable_proximity",
+        }
     )
     _SANCTIONS_ANOMALIES = frozenset(
-        {"sdn_match", "sanctioned_vessel", "ais_rendezvous", "impossible_speed", "gap"}
+        {"sdn_match", "sanctioned_vessel"}
     )
     _DOMAIN_BY_TYPE = {
         "piracy_incident": "piracy",
@@ -136,7 +148,9 @@ class IntelEvent:
                 return MaritimeDomain.GREY_ZONE.value
             if anomaly_type in self._SANCTIONS_ANOMALIES:
                 return MaritimeDomain.SANCTIONS.value
-            return MaritimeDomain.SANCTIONS.value
+            # An unknown AIS-derived behaviour is maritime-security context,
+            # not evidence that the vessel is sanctioned.
+            return MaritimeDomain.GREY_ZONE.value
         return self._DOMAIN_BY_TYPE.get(self.type, MaritimeDomain.SAR.value)
 
     def verification_status(self) -> str:
@@ -655,6 +669,89 @@ class IntelStore:
         ).start()
         self._fire_broadcast(updated)
         return True
+
+    def update_vessel_episode(
+        self,
+        event_id: str,
+        *,
+        lat: float,
+        lon: float,
+        timestamp_utc: str,
+        sog: Optional[float] = None,
+        nav_status: Optional[int] = None,
+        incident_lifecycle: Optional[str] = None,
+    ) -> bool:
+        """Move a stable vessel incident forward instead of adding a new dot."""
+        normalized = event_id.removeprefix("intel:")
+        updated: Optional[IntelEvent] = None
+        with self._lock:
+            for event in self._events:
+                if event.id != normalized:
+                    continue
+                observation = {
+                    "lon": round(float(lon), 6),
+                    "lat": round(float(lat), 6),
+                    "ts": timestamp_utc,
+                    **({"sog": round(float(sog), 2)} if sog is not None else {}),
+                    **({"nav_status": int(nav_status)} if nav_status is not None else {}),
+                }
+                track = [p for p in (event.metadata.get("observed_track") or []) if isinstance(p, dict)]
+                if not track or (
+                    track[-1].get("lon"), track[-1].get("lat"), track[-1].get("ts")
+                ) != (observation["lon"], observation["lat"], observation["ts"]):
+                    track.append(observation)
+                event.metadata["observed_track"] = track[-120:]
+                event.metadata["episode_update_count"] = int(
+                    event.metadata.get("episode_update_count") or 1
+                ) + 1
+                event.metadata.setdefault("first_observed_at", event.timestamp_utc)
+                event.metadata["last_observed_at"] = timestamp_utc
+                if incident_lifecycle:
+                    event.metadata["incident_lifecycle"] = incident_lifecycle
+                event.lat = float(lat)
+                event.lon = float(lon)
+                event.timestamp_utc = timestamp_utc
+                updated = event
+                break
+        if updated is None:
+            return False
+        threading.Thread(
+            target=self._persist_vessel_episode_sync,
+            args=(
+                normalized,
+                updated.lat,
+                updated.lon,
+                updated.timestamp_utc,
+                dict(updated.metadata),
+            ),
+            daemon=True,
+        ).start()
+        self._fire_broadcast(updated)
+        return True
+
+    def _persist_vessel_episode_sync(
+        self,
+        event_id: str,
+        lat: float,
+        lon: float,
+        timestamp_utc: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        try:
+            from core.db.models import IntelEventDB
+            from core.db.session import session_scope
+
+            with session_scope() as db:
+                row = db.query(IntelEventDB).filter(IntelEventDB.id == event_id).first()
+                if row is None:
+                    return
+                row.lat = lat
+                row.lon = lon
+                row.timestamp_utc = timestamp_utc
+                row.meta = metadata
+                db.flush()
+        except Exception as exc:
+            logger.debug("Intel DB vessel episode update skipped: %s", exc)
 
     def _persist_metadata_sync(
         self,
