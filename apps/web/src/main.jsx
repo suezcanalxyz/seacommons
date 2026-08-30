@@ -104,6 +104,11 @@ const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'en
 const PUBLIC_LIVE_LAYER_GROUPS = new Set([
   'nautical', 'sar', 'fused', 'ngo_vessels', 'platforms',
   'intel_social', 'intel_news', 'intel_hazard', 'intel_incident', 'intel_iom', 'intel_ngo',
+  // Sanctioned-vessel identity hits + AIS spoofing/rendezvous findings --
+  // both derived from already-public sanctions lists and public AIS
+  // broadcasts (see live.py's /mda-anomalies docstring). Off by default,
+  // same as the operator console, just toggleable here too.
+  'mda_anomaly',
 ]);
 const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
 const isPublicLiveHost = window.location.hostname === 'live.seacommons.org';
@@ -863,7 +868,13 @@ function App() {
       .catch(() => {});
   }, [apiBase, isPublicLiveHost]);
 
-  // ── MDA / dark-vessel layers (operator only) ──────────────────────────────
+  // ── MDA / dark-vessel layers ───────────────────────────────────────────────
+  // Anomalies (sanctioned-vessel identity + AIS spoofing/rendezvous findings)
+  // are public on live.seacommons.org too -- both are derived from already-
+  // public sanctions lists and public AIS broadcasts (see live.py's
+  // /mda-anomalies docstring). Reference geometry (cables/pipelines/STS
+  // zones) and jamming-zone polygons stay operator-only for now -- separate
+  // layers, not part of this request.
   const [mdaReference, setMdaReference] = useState({ type: 'FeatureCollection', features: [] });
   const [mdaJamming, setMdaJamming] = useState({ type: 'FeatureCollection', features: [] });
   const [mdaAnomalies, setMdaAnomalies] = useState([]);
@@ -872,15 +883,26 @@ function App() {
     let alive = true;
     const pull = async () => {
       try {
-        const [ref, jam, anom] = await Promise.all([
+        const [ref, jam] = await Promise.all([
           fetchJson(apiBase, '/api/v1/mda/reference').catch(() => null),
           fetchJson(apiBase, '/api/v1/mda/jamming').catch(() => null),
-          fetchJson(apiBase, '/api/v1/mda/anomalies?hours=72').catch(() => null),
         ]);
         if (!alive) return;
         if (ref?.features) setMdaReference(ref);
         if (jam?.features) setMdaJamming(jam);
-        if (Array.isArray(anom?.anomalies)) setMdaAnomalies(anom.anomalies);
+      } catch { /* offline */ }
+    };
+    pull();
+    const t = window.setInterval(pull, 90_000);
+    return () => { alive = false; window.clearInterval(t); };
+  }, [apiBase, isPublicLiveHost]);
+  useEffect(() => {
+    let alive = true;
+    const path = isPublicLiveHost ? '/api/v1/live/mda-anomalies' : '/api/v1/mda/anomalies';
+    const pull = async () => {
+      try {
+        const anom = await fetchJson(apiBase, `${path}?hours=72`).catch(() => null);
+        if (alive && Array.isArray(anom?.anomalies)) setMdaAnomalies(anom.anomalies);
       } catch { /* offline */ }
     };
     pull();

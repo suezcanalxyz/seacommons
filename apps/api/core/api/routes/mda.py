@@ -27,9 +27,13 @@ async def jamming_zones():
     return jamming.to_geojson()
 
 
-@router.get("/anomalies")
-async def anomalies(hours: int = Query(default=48, ge=1, le=720),
-                    kind: str = Query(default="all")):
+def collect_mda_anomalies(hours: float, kind: str) -> dict:
+    """Shared by both the authenticated operator route below and the public
+    live-map projection (core/api/routes/live.py) — same data either way.
+    Every field here is already public-interest (official sanctions-list
+    hits, AIS-signal integrity flags derived from public broadcasts), so
+    there is nothing to strip for the public projection; see live.py's
+    docstring for the reasoning."""
     from core.intel.store import intel_store
 
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
@@ -56,6 +60,12 @@ async def anomalies(hours: int = Query(default=48, ge=1, le=720),
         })
     out.sort(key=lambda x: str(x["timestamp_utc"]), reverse=True)
     return {"count": len(out), "anomalies": out}
+
+
+@router.get("/anomalies")
+async def anomalies(hours: int = Query(default=48, ge=1, le=720),
+                    kind: str = Query(default="all")):
+    return collect_mda_anomalies(hours, kind)
 
 
 @router.get("/vessel/{mmsi}")

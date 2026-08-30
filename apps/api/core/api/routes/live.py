@@ -321,6 +321,21 @@ async def live_ngo_vessels():
     return ngo_vessel_geojson()
 
 
+@router.get("/mda-anomalies")
+async def live_mda_anomalies(hours: int = Query(default=48, ge=1, le=720),
+                              kind: str = Query(default="all")):
+    """Public projection of dark-vessel / grey-zone findings: sanctioned-
+    vessel identity hits (official OFAC/OpenSanctions lists, already public)
+    and AIS-signal integrity anomalies (spoofing patterns, rendezvous,
+    infrastructure loitering — derived entirely from public AIS broadcasts).
+    Same data as the authenticated operator route, deliberately: this is the
+    evidentiary transparency the platform is built to provide, not something
+    to withhold from the public map."""
+    from core.api.routes.mda import collect_mda_anomalies
+
+    return collect_mda_anomalies(hours, kind)
+
+
 @router.get("/platforms")
 async def live_platforms():
     """Public projection of Mediterranean oil/gas platform positions
