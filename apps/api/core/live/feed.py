@@ -252,13 +252,14 @@ def public_signal_collection(
             ] + primary
             track_candidates = []
             candidate_ids: set[str] = set()
+            track_budget = min(150, max(20, limit))
             for feature in candidate_pool:
                 feature_id = str((feature.get("properties") or {}).get("id") or "")
                 if not feature_id or feature_id in candidate_ids:
                     continue
                 candidate_ids.add(feature_id)
                 track_candidates.append(feature)
-                if len(track_candidates) >= 150:
+                if len(track_candidates) >= track_budget:
                     break
             vessel_mmsis = {
                 str((feature.get("properties") or {}).get("linked_mmsi") or "")

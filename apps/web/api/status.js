@@ -63,7 +63,7 @@ function requestJson({
   });
 }
 
-function originRequest(path) {
+function originRequest(path, timeoutMs = 5000) {
   return requestJson({
     transport: 'http',
     hostname: UPSTREAM_HOST,
@@ -74,6 +74,7 @@ function originRequest(path) {
       'x-forwarded-host': 'status.seacommons.org',
       'x-forwarded-proto': 'https',
     },
+    timeoutMs,
   });
 }
 
@@ -105,7 +106,9 @@ export async function buildStatusSnapshot() {
     publicApiRequest(),
     originRequest('/health'),
     originRequest('/ready'),
-    originRequest('/api/v1/live/signals?limit=500&days=30&mode=all'),
+    // Counts are computed before the response limit. A small payload keeps
+    // this health probe cheap while still validating both mode pipelines.
+    originRequest('/api/v1/live/signals?limit=20&days=30&mode=all', 10000),
     originRequest('/api/v1/live/sources'),
     edgeRequest(),
   ]);
