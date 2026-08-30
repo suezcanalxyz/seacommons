@@ -47,6 +47,12 @@ _PUBLIC_DURABLE_TYPES = frozenset({
     "ais_anomaly", "vessel_identity", "dark_candidate",
 })
 
+# Candidate and count computation must not depend on the response page size.
+# The route itself caps returned features at 500; use that same fixed window
+# for both modes, then apply ``limit``/``since`` only to the selected payload.
+_LIVE_WINDOW_LIMIT = 500
+_LIVE_DURABLE_SCAN_LIMIT = 1500
+
 
 def _is_alarm_phone_event(event: IntelEvent) -> bool:
     values = {
@@ -153,11 +159,11 @@ def public_signal_collection(
     mode: str = "humanitarian",
 ) -> dict[str, Any]:
     selected_mode = mode if mode in {"humanitarian", "security", "all"} else "humanitarian"
-    memory_events = intel_store.events(limit=min(limit * 2, 600), max_age_days=days)
+    memory_events = intel_store.events(limit=600, max_age_days=days)
     durable_alarm_phone = intel_store.persisted_events(
         source="Alarm Phone",
         max_age_days=days,
-        limit=min(max(limit * 3, 300), 1500),
+        limit=_LIVE_DURABLE_SCAN_LIMIT,
     )
     # The bounded in-memory deque (600) is now shared with high-volume MDA
     # analysis events (ais_anomaly / vessel_identity / correlated_alert, all
@@ -167,7 +173,7 @@ def public_signal_collection(
     durable_public = intel_store.persisted_events(
         types=list(_PUBLIC_DURABLE_TYPES),
         max_age_days=days,
-        limit=min(max(limit * 3, 300), 1500),
+        limit=_LIVE_DURABLE_SCAN_LIMIT,
     )
     by_id = {event.id: event for event in durable_alarm_phone}
     by_id.update({event.id: event for event in durable_public})
@@ -235,7 +241,7 @@ def public_signal_collection(
             reverse=True,
         )
         if mode_name == "humanitarian":
-            context_cap = max(0, min(limit - len(primary), max(30, limit // 2)))
+            context_cap = max(0, min(_LIVE_WINDOW_LIMIT - len(primary), _LIVE_WINDOW_LIMIT // 2))
             primary.extend(context[:context_cap])
         else:
             # Maritime traffic is vessel-centric: raw anomaly, incident and
@@ -263,7 +269,7 @@ def public_signal_collection(
             ] + primary
             track_candidates = []
             candidate_ids: set[str] = set()
-            track_budget = min(150, max(20, limit))
+            track_budget = 150
             for feature in candidate_pool:
                 feature_id = str((feature.get("properties") or {}).get("id") or "")
                 if not feature_id or feature_id in candidate_ids:
@@ -304,12 +310,6 @@ def public_signal_collection(
                     enriched_by_id.get((feature.get("properties") or {}).get("id"), feature)
                     for feature in primary
                 ]
-        if since:
-            primary = [
-                feature
-                for feature in primary
-                if str(feature["properties"].get("timestamp_utc") or "") > since
-            ]
         # Live is a timeline: newest source timestamp always wins. Severity
         # remains a visual attribute and filter, never a second sort.
         primary.sort(
@@ -334,9 +334,16 @@ def public_signal_collection(
             features_by_mode["humanitarian"] + features_by_mode["security"],
             key=lambda f: str(f["properties"].get("timestamp_utc") or ""),
             reverse=True,
-        )[:limit]
+        )
     else:
-        features = features_by_mode[selected_mode][:limit]
+        features = features_by_mode[selected_mode]
+    if since:
+        features = [
+            feature
+            for feature in features
+            if str(feature["properties"].get("timestamp_utc") or "") > since
+        ]
+    features = features[:limit]
 
     return {
         "type": "FeatureCollection",

@@ -1026,9 +1026,23 @@ def test_public_feed_modes_return_separate_signals_and_counts(monkeypatch) -> No
             "source_policy": "official_site_embed",
         },
     )
+    humanitarian_context = IntelEvent(
+        id="mode-humanitarian-context-01",
+        timestamp_utc=now,
+        type="twitter",
+        severity="medium",
+        lat=34.7,
+        lon=14.1,
+        title="Alarm Phone humanitarian update",
+        source="Alarm Phone",
+        metadata={
+            "maritime_domain": "sar",
+            "source_policy": "official_site_embed",
+        },
+    )
     monkeypatch.setattr(
         "core.live.feed.intel_store.events",
-        lambda **_kwargs: [humanitarian, other_humanitarian, security],
+        lambda **_kwargs: [humanitarian, other_humanitarian, security, humanitarian_context],
     )
     monkeypatch.setattr(
         "core.live.feed.intel_store.persisted_events",
@@ -1038,16 +1052,27 @@ def test_public_feed_modes_return_separate_signals_and_counts(monkeypatch) -> No
 
     humanitarian_feed = public_signal_collection(limit=50, mode="humanitarian")
     security_feed = public_signal_collection(limit=50, mode="security")
+    small_feed = public_signal_collection(limit=1, mode="humanitarian")
+    incremental_feed = public_signal_collection(
+        limit=1,
+        mode="humanitarian",
+        since="9999-01-01T00:00:00+00:00",
+    )
 
-    assert [feature["properties"]["id"] for feature in humanitarian_feed["features"]] == [
-        "intel:mode-humanitarian-01"
-    ]
+    assert {feature["properties"]["id"] for feature in humanitarian_feed["features"]} == {
+        "intel:mode-humanitarian-01",
+        "intel:mode-humanitarian-context-01",
+    }
     assert [feature["properties"]["id"] for feature in security_feed["features"]] == [
         "intel:mode-security-01"
     ]
-    expected_counts = {"humanitarian": 1, "security": 1}
+    expected_counts = {"humanitarian": 2, "security": 1}
     assert humanitarian_feed["meta"]["mode_counts"] == expected_counts
     assert security_feed["meta"]["mode_counts"] == expected_counts
+    assert small_feed["meta"]["mode_counts"] == expected_counts
+    assert incremental_feed["meta"]["mode_counts"] == expected_counts
+    assert len(small_feed["features"]) == 1
+    assert incremental_feed["features"] == []
 
 
 def test_ocr_suffix_dms_with_seconds_recovers_real_alarm_phone_format() -> None:
