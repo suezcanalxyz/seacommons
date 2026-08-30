@@ -149,6 +149,30 @@ def coalesce_security_vessel_episodes(
             (p for p in reversed(item_props) if p.get("drift_eligible")),
             None,
         )
+        infrastructure_source = next(
+            (p for p in reversed(item_props) if isinstance(p.get("infrastructure"), dict)),
+            None,
+        )
+        source_records: list[dict[str, Any]] = []
+        seen_sources: set[tuple[str, str, str]] = set()
+        for p in reversed(item_props):
+            source_record = {
+                "source": str(p.get("source") or "SeaCommons analysis"),
+                "title": str(p.get("title") or "Maritime signal"),
+                "url": str(p.get("url") or ""),
+                "timestamp_utc": p.get("timestamp_utc"),
+                "type": p.get("type"),
+                "verification_status": p.get("verification_status"),
+            }
+            source_key = (
+                source_record["source"],
+                source_record["url"],
+                source_record["title"],
+            )
+            if source_key in seen_sources:
+                continue
+            seen_sources.add(source_key)
+            source_records.append(source_record)
         updates = [
             {
                 "id": p.get("id"),
@@ -194,6 +218,7 @@ def coalesce_security_vessel_episodes(
                 "contributing_sources": sorted(
                     {str(p.get("source")) for p in item_props if p.get("source")}
                 ),
+                "source_records": source_records[:12],
                 "observed_track": track,
                 "track_kind": "observed_ais",
                 "track_last_seen": track[-1].get("ts") if track else None,
@@ -201,6 +226,14 @@ def coalesce_security_vessel_episodes(
                 "latest_nav_status": track[-1].get("nav_status") if track else None,
                 "updates": updates,
                 "drift_eligible": bool(drift_source),
+                **(
+                    {
+                        "infrastructure": infrastructure_source.get("infrastructure"),
+                        "loiter_minutes": infrastructure_source.get("loiter_minutes"),
+                    }
+                    if infrastructure_source
+                    else {}
+                ),
                 **(
                     {
                         "drift_event_id": drift_source.get("id"),

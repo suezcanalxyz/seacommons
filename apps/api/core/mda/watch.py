@@ -240,7 +240,8 @@ class MdaWatch:
                 title=f"Loitering near {hit.name} — {v.get('ship_name') or mmsi}",
                 text=(f"MMSI {mmsi} at <{max_sog:.0f} kn for ~{int(span_min)} min within "
                       f"{hit.distance_km:.1f} km of {hit.name} ({hit.kind})."),
-                source="mda", linked_mmsi=mmsi,
+                url=f"https://www.marinetraffic.com/en/ais/details/ships/mmsi:{mmsi}",
+                source="SeaCommons AIS analysis", linked_mmsi=mmsi,
                 metadata={
                     "anomaly_type": "cable_proximity" if hit.kind == "cable" else "loiter",
                     "maritime_domain": "grey_zone", "is_distress": False,
@@ -248,6 +249,11 @@ class MdaWatch:
                     "verification_status": "ais_transponder", "coordinate_source": "ais_position",
                     "infrastructure": {"kind": hit.kind, "name": hit.name, "distance_km": hit.distance_km},
                     "loiter_minutes": round(span_min, 1),
+                    "detection_reason": (
+                        f"AIS dwell: {len(slow)} slow fixes over {int(span_min)} minutes, "
+                        f"within {hit.distance_km:.1f} km of {hit.name}; proximity is "
+                        "anomaly context, not evidence of interference."
+                    ),
                 },
             ), dedup_key=f"infraloiter:{mmsi}:{int(time.time() // 43200)}")
             logger.warning("MDA: %s loitering near %s (%s, %.1fkm, %dmin)",

@@ -48,6 +48,18 @@ _PUBLIC_DURABLE_TYPES = frozenset({
 })
 
 
+def _is_alarm_phone_event(event: IntelEvent) -> bool:
+    values = {
+        str(event.source or ""),
+        str(event.metadata.get("tracked_account") or ""),
+        str(event.metadata.get("source_handle") or ""),
+    }
+    return any(
+        "".join(ch for ch in value.lower() if ch.isalnum()) == "alarmphone"
+        for value in values
+    )
+
+
 def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
     """
     Project user/partner signals only after an explicit publication decision.
@@ -181,6 +193,8 @@ def public_signal_collection(
             if event.maritime_domain() in SECURITY_MARITIME_DOMAINS
             else "humanitarian"
         )
+        if event_mode == "humanitarian" and not _is_alarm_phone_event(event):
+            continue
         feature = _public_intel_feature(
             event,
             allowed_domains=domains_for_mode(event_mode),
@@ -213,8 +227,6 @@ def public_signal_collection(
                 continue
             mode_context[event_mode].append(feature)
 
-    published_ingested = _published_ingested_features(limit)
-
     def finalize(mode_name: str) -> list[dict[str, Any]]:
         primary = list(mode_features[mode_name])
         context = mode_context[mode_name]
@@ -225,7 +237,6 @@ def public_signal_collection(
         if mode_name == "humanitarian":
             context_cap = max(0, min(limit - len(primary), max(30, limit // 2)))
             primary.extend(context[:context_cap])
-            primary.extend(published_ingested)
         else:
             # Maritime traffic is vessel-centric: raw anomaly, incident and
             # fusion records for one MMSI become one episode that receives

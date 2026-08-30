@@ -22,7 +22,10 @@ function loadCachedEvents(isPublicLiveHost, liveMode = 'humanitarian') {
     if (!Array.isArray(parsed)) return [];
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const recent = parsed.filter((event) => (event?.properties?.timestamp_utc || '') >= cutoff);
-    return isPublicLiveHost ? receivedSignalFeatures(recent) : recent;
+    const normalized = isPublicLiveHost ? receivedSignalFeatures(recent) : recent;
+    return isPublicLiveHost && liveMode === 'humanitarian'
+      ? alarmPhoneOnly(normalized)
+      : normalized;
   } catch {
     return [];
   }
@@ -70,7 +73,7 @@ export function useLiveFeed({
     if (isPublicLiveHost && edgeBase && liveMode === 'humanitarian') return undefined;
     const wsBase = apiBase.replace(/^http/, 'ws');
     const feedPath = isPublicLiveHost
-      ? `/api/v1/live/signals?limit=500&days=30&mode=${encodeURIComponent(liveMode)}`
+      ? `/api/v1/live/signals?limit=150&days=30&mode=${encodeURIComponent(liveMode)}`
       : '/api/v1/intel?limit=200&days=30';
     const streamPath = isPublicLiveHost
       ? `/api/v1/live/stream?mode=${encodeURIComponent(liveMode)}`
@@ -215,7 +218,7 @@ export function useLiveFeed({
 
     function applySnapshot(snapshot, transport = 'poll') {
       if (!alive || !edgeSnapshotIsUsable(snapshot)) return false;
-      const features = edgeSnapshotToFeatures(snapshot);
+      const features = alarmPhoneOnly(edgeSnapshotToFeatures(snapshot));
       setIntelEvents(features);
       storeCachedEvents(true, features, 'humanitarian');
       setLiveModeCounts((previous) => ({ ...previous, humanitarian: features.length }));
@@ -233,7 +236,7 @@ export function useLiveFeed({
       try {
         const data = await fetchJson(
           apiBase,
-          '/api/v1/live/signals?limit=500&days=30&mode=humanitarian',
+          '/api/v1/live/signals?limit=150&days=30&mode=humanitarian',
           undefined,
           3000,
         );
@@ -254,7 +257,7 @@ export function useLiveFeed({
       try {
         const data = await fetchJson(
           apiBase,
-          '/api/v1/live/signals?limit=500&days=30&mode=all',
+          '/api/v1/live/signals?limit=20&days=30&mode=all',
           undefined,
           5000,
         );
@@ -336,4 +339,10 @@ export function useLiveFeed({
     intelMode,
     liveModeCounts,
   };
+}
+
+function alarmPhoneOnly(features) {
+  return features.filter((feature) => (
+    String(feature?.properties?.source || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'alarmphone'
+  ));
 }

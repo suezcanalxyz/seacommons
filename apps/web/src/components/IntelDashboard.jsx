@@ -181,7 +181,71 @@ const VERIF_LABEL = {
   confirmed: 'confirmed',
   user_reported: 'reported',
   partner_reported: 'partner',
+  multi_source_corroborated: 'corroborated',
+  ais_transponder: 'AIS transponder',
+  modelled_spatiotemporal: 'model forecast',
 };
+
+function TrajectoryOverview({ observedTrack, driftFeature, onMap }) {
+  const observed = Array.isArray(observedTrack)
+    ? observedTrack.filter((point) => Number.isFinite(Number(point?.lat)) && Number.isFinite(Number(point?.lon)))
+    : [];
+  const forecast = driftFeature?.geometry?.type === 'LineString'
+    ? driftFeature.geometry.coordinates
+      .map((point) => ({ lon: Number(point?.[0]), lat: Number(point?.[1]) }))
+      .filter((point) => Number.isFinite(point.lon) && Number.isFinite(point.lat))
+    : [];
+  if (observed.length < 2 && forecast.length < 2) return null;
+  const rows = [
+    observed.length >= 2 && { key: 'observed', label: 'AIS trajectory', note: `${observed.length} observed fixes`, points: observed },
+    forecast.length >= 2 && { key: 'forecast', label: 'Drift forecast', note: 'modelled, not observed', points: forecast },
+  ].filter(Boolean);
+  return (
+    <section className="intel-trajectory-overview" onClick={(event) => event.stopPropagation()}>
+      <div className="intel-trajectory-overview__head">
+        <div><strong>Movement & drift</strong><span>Current position and path evidence</span></div>
+        <button type="button" onClick={onMap}>Open map</button>
+      </div>
+      {rows.map((row) => {
+        const { d, first, last } = buildSparklinePath(row.points, 300, 70, 7);
+        return (
+          <div className={`intel-trajectory-row intel-trajectory-row--${row.key}`} key={row.key}>
+            <div className="intel-trajectory-row__label"><strong>{row.label}</strong><span>{row.note}</span></div>
+            <svg viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label={`${row.label}: ${row.note}`}>
+              <path d={d} fill="none" />
+              <circle cx={first[0]} cy={first[1]} r="3" className="trajectory-start" />
+              <circle cx={last[0]} cy={last[1]} r="4" className="trajectory-now" />
+            </svg>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function EvidenceSources({ records, fallback }) {
+  const input = Array.isArray(records) && records.length > 0 ? records : [fallback];
+  const sources = input.filter((record) => record?.source || record?.url);
+  if (sources.length === 0) return null;
+  return (
+    <details className="intel-evidence-sources" onClick={(event) => event.stopPropagation()}>
+      <summary>Sources ({sources.length})</summary>
+      <div className="intel-evidence-sources__list">
+        {sources.map((record, index) => (
+          <article key={`${record.source}-${record.url}-${index}`}>
+            <div>
+              <strong>{record.source || 'Source'}</strong>
+              <span>{VERIF_LABEL[record.verification_status] || String(record.verification_status || 'provenance recorded').replace(/_/g, ' ')}</span>
+            </div>
+            <p>{record.title || 'Maritime observation'}</p>
+            {record.timestamp_utc && <time>{new Date(record.timestamp_utc).toLocaleString('it-IT')}</time>}
+            {record.url && <a href={record.url} target="_blank" rel="noopener noreferrer">Open original ↗</a>}
+          </article>
+        ))}
+      </div>
+    </details>
+  );
+}
 
 // ── Source Health Bar ─────────────────────────────────────────────────────────
 function SourceHealthBar({ sources, loaded = false }) {
@@ -496,6 +560,24 @@ export default function IntelDashboard({
     };
   }, [apiBase, liveEdgeBase, publicMode]);
 
+  const visibleSources = useMemo(() => {
+    if (!publicMode || liveMode !== 'humanitarian') return sources;
+    return sources
+      .map((source) => {
+        const handles = (source.handles || []).filter((handle) => (
+          String(handle.name || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'alarmphone'
+        ));
+        return {
+          ...source,
+          handles,
+          configured: handles.length,
+          reachable: handles.filter((handle) => ['healthy', 'active'].includes(handle.status)).length,
+        };
+      })
+      .filter((source) => source.handles.length > 0
+        || String(source.name || '').toLowerCase().replace(/[^a-z0-9]/g, '').includes('alarmphone'));
+  }, [liveMode, publicMode, sources]);
+
   // Filtered + searched events
   const filteredEvents = useMemo(() => {
     let evs = showAisAlerts ? intelEvents : intelEvents.filter((f) => f.properties?.type !== 'ais_spike');
@@ -661,6 +743,7 @@ export default function IntelDashboard({
     const lifecycle = isDistress ? (eventLifecycle(p) || 'active') : null;
     const colorClass = lifecycleColorClass(p, isDistress);
     const { label: titleLabel, name: vesselName } = parseTitleVessel(p.title);
+    const observedTrack = Array.isArray(p.observed_track) ? p.observed_track : [];
 
     return (
       <li
@@ -755,9 +838,15 @@ export default function IntelDashboard({
               : ''}
           </span>
         )}
+        <TrajectoryOverview
+          observedTrack={observedTrack}
+          driftFeature={driftFeat}
+          onMap={() => {
+            flyTo(currentCoords || coords);
+            setSidebarOpen?.(false);
+          }}
+        />
         <span className="intel-source">
-          <span>{p.source}</span>
-          <span style={{ opacity: 0.45 }}>·</span>
           <span>{(p.type || '').replace(/_/g, ' ')}</span>
           {coords && !isArea && (
             <span style={{ opacity: 0.45 }}>
@@ -796,10 +885,17 @@ export default function IntelDashboard({
               title="Reply text isn't fetched (would need the paid X API) — open the thread on X to read updates"
             >💬 {p.reply_count} {p.reply_count === 1 ? 'reply' : 'replies'}</a>
           )}
-          {p.url && (
-            <a className="intel-source-link" href={p.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>↗</a>
-          )}
         </span>
+        <EvidenceSources
+          records={p.source_records}
+          fallback={{
+            source: p.source,
+            title: p.title,
+            url: p.url,
+            timestamp_utc: p.timestamp_utc,
+            verification_status: p.verification_status,
+          }}
+        />
         {currentCoords && (
           <span className="intel-source" style={{ color: '#ffe06d' }}>
             Estimated now · {currentCoords[1]?.toFixed(4)}, {currentCoords[0]?.toFixed(4)}
@@ -869,9 +965,17 @@ export default function IntelDashboard({
                 {Number.isFinite(Number(p.confidence)) && (
                   <span>confidence {(Number(p.confidence) * 100).toFixed(0)}%</span>
                 )}
-                {Array.isArray(p.contributing_sources) && p.contributing_sources.length > 0 && (
-                  <span>corroborated by: {p.contributing_sources.join(', ')}</span>
-                )}
+              </div>
+            )}
+            {p.infrastructure && (
+              <div className="intel-details-row intel-details-row--warn">
+                <strong>AIS infrastructure proximity</strong>
+                <span>
+                  {Number.isFinite(Number(p.loiter_minutes)) ? `${Math.round(Number(p.loiter_minutes))} min dwell · ` : ''}
+                  {Number.isFinite(Number(p.infrastructure.distance_km)) ? `${Number(p.infrastructure.distance_km).toFixed(1)} km from ` : ''}
+                  {p.infrastructure.name || p.infrastructure.kind}.
+                </span>
+                <span>Proximity and loitering are anomaly context, not evidence of interference or intent.</span>
               </div>
             )}
             {p.in_jamming_zone && (
@@ -1060,7 +1164,7 @@ export default function IntelDashboard({
             ) : null}
           </div>
         </div>
-        <SourceHealthBar sources={sources} loaded={sourcesLoaded} />
+        <SourceHealthBar sources={visibleSources} loaded={sourcesLoaded} />
         {injectSuccess && <p style={{ color: '#22c55e', fontSize: 11, margin: '4px 0 0' }}>Event saved and broadcast.</p>}
       </section>
 
@@ -1132,7 +1236,7 @@ export default function IntelDashboard({
               title="Toggle AIS loitering alerts"
             >AIS</button>
           ) : null}
-          {(!publicMode || liveMode === 'humanitarian') && (
+          {!publicMode && (
             <button
               className={`intel-filter-btn ${sourceFilter === ALARM_PHONE_SOURCE ? 'is-active' : ''}`}
               onClick={() => setSourceFilter((cur) => cur === ALARM_PHONE_SOURCE ? 'all' : ALARM_PHONE_SOURCE)}

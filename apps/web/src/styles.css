@@ -1643,6 +1643,44 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .intel-details-row strong { color: #dfeae7; text-transform: capitalize; }
 .intel-details-row--warn { color: #fbbf24; }
 
+.intel-trajectory-overview {
+  margin: 8px 0 6px;
+  padding: 8px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 8px;
+  background: linear-gradient(145deg, rgba(8, 27, 36, 0.96), rgba(8, 18, 25, 0.82));
+}
+.intel-trajectory-overview__head,
+.intel-trajectory-row__label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.intel-trajectory-overview__head > div { display: flex; flex-direction: column; min-width: 0; }
+.intel-trajectory-overview__head strong { color: #e4f5f7; font-size: 11px; }
+.intel-trajectory-overview__head span,
+.intel-trajectory-row__label span { color: #76949f; font-size: 9px; }
+.intel-trajectory-overview__head button {
+  border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 5px;
+  background: rgba(56, 189, 248, 0.08); color: #8edcff; font-size: 9px; padding: 3px 6px; cursor: pointer;
+}
+.intel-trajectory-row { margin-top: 7px; }
+.intel-trajectory-row__label strong { color: #b9d4dd; font-size: 9px; text-transform: uppercase; letter-spacing: .04em; }
+.intel-trajectory-row svg { display: block; width: 100%; height: 56px; margin-top: 3px; border-radius: 5px; background: rgba(255,255,255,.025); }
+.intel-trajectory-row path { vector-effect: non-scaling-stroke; stroke-width: 2; }
+.intel-trajectory-row--observed path { stroke: #38bdf8; }
+.intel-trajectory-row--forecast path { stroke: #ffe06d; stroke-dasharray: 5 4; }
+.intel-trajectory-row .trajectory-start { fill: #6d7f87; }
+.intel-trajectory-row--observed .trajectory-now { fill: #38bdf8; }
+.intel-trajectory-row--forecast .trajectory-now { fill: #ffe06d; }
+
+.intel-evidence-sources { margin: 5px 0; border: 1px solid rgba(255,255,255,.08); border-radius: 6px; background: rgba(255,255,255,.025); }
+.intel-evidence-sources summary { padding: 5px 7px; color: #a9c3cc; font-size: 10px; cursor: pointer; }
+.intel-evidence-sources__list { display: grid; gap: 5px; padding: 0 6px 6px; }
+.intel-evidence-sources article { padding: 6px; border-radius: 5px; background: rgba(2, 12, 17, .55); }
+.intel-evidence-sources article > div { display: flex; justify-content: space-between; gap: 8px; }
+.intel-evidence-sources article strong { color: #dcecef; font-size: 10px; }
+.intel-evidence-sources article span,
+.intel-evidence-sources article time { color: #718d97; font-size: 9px; }
+.intel-evidence-sources article p { margin: 3px 0; color: #a9bbc2; font-size: 10px; line-height: 1.3; }
+.intel-evidence-sources article a { color: #7dd3fc; font-size: 9px; }
+
 .intel-forensic-toggle {
   padding: 2px 6px;
   font-size: 10px;

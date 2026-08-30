@@ -207,8 +207,8 @@ def test_explicit_private_status_overrides_approved_source_policy() -> None:
 
 
 def test_public_context_signal_surfaces_in_a_public_compartment() -> None:
-    # An official-RSS news item in the SAR compartment now appears on the public
-    # map as a context signal (kind="context"), without an explicit publish.
+    # Provenance alone does not verify an article's claims. A corroborated news
+    # item can appear; the otherwise identical unverified item cannot.
     news = IntelEvent(
         id="ctx-news-01",
         type="news",
@@ -217,12 +217,18 @@ def test_public_context_signal_surfaces_in_a_public_compartment() -> None:
         lon=13.9,
         title="Coastguard reports vessel movement off Zawiya",
         source="Official NGO RSS",
-        metadata={"source_policy": "official_rss"},
+        metadata={
+            "source_policy": "official_rss",
+            "verification_status": "multi_source_corroborated",
+        },
     )
     feature = _public_intel_feature(news)
     assert feature is not None
     assert feature["properties"]["kind"] == "context"
     assert feature["properties"]["type"] == "news"
+
+    news.metadata.pop("verification_status")
+    assert _public_intel_feature(news) is None
 
 
 def test_correlated_alert_is_public_only_in_a_public_compartment() -> None:
@@ -987,9 +993,24 @@ def test_public_feed_modes_return_separate_signals_and_counts(monkeypatch) -> No
         source="SeaCommons MDA",
         metadata={"maritime_domain": "grey_zone"},
     )
+    other_humanitarian = IntelEvent(
+        id="mode-other-ngo-01",
+        timestamp_utc=now,
+        type="distress",
+        severity="high",
+        lat=34.9,
+        lon=14.3,
+        title="Other NGO distress report",
+        source="MSF Sea",
+        metadata={
+            "is_distress": True,
+            "maritime_domain": "sar",
+            "source_policy": "official_site_embed",
+        },
+    )
     monkeypatch.setattr(
         "core.live.feed.intel_store.events",
-        lambda **_kwargs: [humanitarian, security],
+        lambda **_kwargs: [humanitarian, other_humanitarian, security],
     )
     monkeypatch.setattr(
         "core.live.feed.intel_store.persisted_events",

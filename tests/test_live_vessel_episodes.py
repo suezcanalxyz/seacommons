@@ -32,6 +32,7 @@ def test_one_vessel_becomes_one_episode_with_current_point_and_track() -> None:
         type="vessel_incident", linked_mmsi="352001914",
         ais_nav_status_kind="not_under_command", maritime_domain="grey_zone",
         title="Vessel unable to manoeuvre — ST. OLGA", drift_eligible=True,
+        url="https://example.test/olga",
     )
 
     result = coalesce_security_vessel_episodes(
@@ -54,6 +55,7 @@ def test_one_vessel_becomes_one_episode_with_current_point_and_track() -> None:
     assert episode["properties"]["drift_event_id"] == "intel:nuc"
     assert episode["properties"]["incident_lifecycle"] == "resolved"
     assert episode["properties"]["latest_nav_status"] == 0
+    assert episode["properties"]["source_records"][0]["url"] == "https://example.test/olga"
 
 
 def test_real_sanctions_match_enriches_episode_domain() -> None:

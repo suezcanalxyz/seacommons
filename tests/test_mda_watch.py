@@ -89,6 +89,8 @@ def test_infra_loiter_near_pipeline():
     ev = _alerts("ais_anomaly")
     assert ev and ev[0].metadata["maritime_domain"] == "grey_zone"
     assert ev[0].metadata["infrastructure"]["kind"] == "pipeline"
+    assert "not evidence of interference" in ev[0].metadata["detection_reason"]
+    assert ev[0].url.endswith("mmsi:111000005")
 
 
 def test_gap_scan_flags_silent_vessel(monkeypatch):

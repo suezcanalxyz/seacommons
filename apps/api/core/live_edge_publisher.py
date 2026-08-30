@@ -259,6 +259,16 @@ def public_event_from_row(
 
     event = _event_from_row(row)
     metadata = event.metadata
+    source_key = "".join(ch for ch in str(event.source or "").lower() if ch.isalnum())
+    handle_key = "".join(
+        ch
+        for ch in str(metadata.get("tracked_account") or "").lower()
+        if ch.isalnum()
+    )
+    if "alarmphone" not in {source_key, handle_key}:
+        # Humanitarian Live is deliberately a single-source product. Other
+        # organisations remain operator context and are never mixed into it.
+        return None
     event_type = event.type
     # Operator-only marker (same semantics as the VM's public live feed):
     # news/archive channels (e.g. official RSS) mark their rows "private" so an

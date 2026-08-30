@@ -89,8 +89,10 @@ _PUBLIC_METADATA = frozenset(
         "episode_update_count",
         "first_observed_at",
         "in_jamming_zone",
+        "infrastructure",
         "jamming_score",
         "last_observed_at",
+        "loiter_minutes",
         "observed_track",
         "vessel_name",
         "imo",
@@ -136,6 +138,13 @@ def _public_intel_feature(
         or (event.title or "").strip().lower() == "computed sar drift product"
     ):
         # Model outputs belong to Play/Engine, never to the received-signal feed.
+        return None
+    if event.type == "news" and event.verification_status() not in {
+        VerificationStatus.MULTI_SOURCE_CORROBORATED.value,
+        "confirmed",
+    }:
+        # A published URL proves provenance, not the claims in the article.
+        # Live only carries news with an explicit corroboration decision.
         return None
     publication = str(event.metadata.get("publication_status") or "").lower()
     source_policy = str(event.metadata.get("source_policy") or "").lower()

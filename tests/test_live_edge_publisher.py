@@ -48,6 +48,12 @@ def test_public_distress_event_mapping_is_versioned() -> None:
     assert event["properties"]["incident_lifecycle"] == "active"
 
 
+def test_humanitarian_edge_rejects_non_alarm_phone_sources() -> None:
+    row = distress_row()
+    row.source = "another_ngo"
+    assert public_event_from_row(row, "node", now=_NOW, same_source=[]) is None
+
+
 def test_thread_reposts_and_repost_count_reach_the_edge_payload() -> None:
     # Without this the public Live host's "Updates" panel is silently empty
     # for every event, since the edge (tried first there, ahead of the VM's
