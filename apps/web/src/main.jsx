@@ -118,15 +118,39 @@ const PUBLIC_LIVE_LAYER_GROUPS = new Set([
   'nautical', 'sar', 'fused', 'observed_tracks', 'drift_models', 'ngo_vessels', 'platforms', 'spikes',
   'intel_social', 'intel_news', 'intel_hazard', 'intel_incident', 'intel_iom', 'intel_ngo',
 ]);
-// Signals selector rows: one per SIGNAL_CATEGORIES entry with a dedicated map
-// layer group ('other' has none, so it is not user-toggleable). Order matches
-// operational priority: distress first, AIS anomalies last.
-const SIGNALS_TOGGLE_CATEGORIES = [
-  { key: 'distress', label: 'Distress', groupKey: 'sar' },
-  { key: 'fused', label: 'Correlated alert', groupKey: 'fused' },
-  ...INTEL_MAP_CATEGORIES.map((c) => ({ key: c.key, label: c.label, groupKey: `intel_${c.key}` })),
-  { key: 'ais', label: 'AIS anomaly', groupKey: 'spikes' },
+// Signals selector: two macro groups (the original Humanitarian/Maritime
+// Security split), each block-tickable and independently expandable to its
+// own SIGNAL_CATEGORIES-level sub-toggles. vessel_incident ("unable to
+// manoeuvre" etc.) sits under Humanitarian as safety context, not Security —
+// see docs/prompt.md phase 4. Correlated alerts in this deployment are
+// overwhelmingly sanctions/grey-zone (STS rendezvous, cable proximity,
+// sanctioned-vessel matches), so that one sits under Security.
+const SIGNALS_MACRO_GROUPS = [
+  {
+    key: 'humanitarian',
+    label: 'Humanitarian',
+    categories: [
+      { key: 'distress', label: 'Distress', groupKey: 'sar' },
+      { key: 'incident', label: 'Vessel incident', groupKey: 'intel_incident' },
+      { key: 'hazard', label: 'Natural hazard (GDACS)', groupKey: 'intel_hazard' },
+      { key: 'iom', label: 'IOM missing migrants', groupKey: 'intel_iom' },
+      { key: 'social', label: 'Social post', groupKey: 'intel_social' },
+      { key: 'news', label: 'News / RSS', groupKey: 'intel_news' },
+      { key: 'ngo', label: 'NGO activity', groupKey: 'intel_ngo' },
+    ],
+  },
+  {
+    key: 'security',
+    label: 'Maritime Security',
+    categories: [
+      { key: 'fused', label: 'Correlated alert', groupKey: 'fused' },
+      { key: 'ais', label: 'AIS anomaly', groupKey: 'spikes' },
+    ],
+  },
 ];
+// Flat list every other consumer (activeSignalCategories, per-category
+// counts, "All") already works against — one shape, not two.
+const SIGNALS_TOGGLE_CATEGORIES = SIGNALS_MACRO_GROUPS.flatMap((g) => g.categories);
 const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
 const isPublicLiveHost = window.location.hostname === 'live.seacommons.org';
 const isLiveHost = LIVE_HOSTS.has(window.location.hostname);
@@ -630,6 +654,7 @@ function App() {
   const [liveEstimateClock, setLiveEstimateClock] = useState(Date.now());
   const [intelFilter, setIntelFilter] = useState('all');
   const [signalsExpanded, setSignalsExpanded] = useState(false);
+  const [expandedMacros, setExpandedMacros] = useState(() => new Set());
   const [showAisAlerts, setShowAisAlerts] = useState(false);
   const [showVesselLinks, setShowVesselLinks] = useState(false);
   const [baseMap, setBaseMap] = useState(() => {
@@ -2286,6 +2311,28 @@ function App() {
     });
   }
 
+  // Macro group ("Humanitarian" / "Maritime Security") block tick — on/off
+  // for every sub-category underneath in one click.
+  function toggleMacroSignals(macroKey) {
+    const macro = SIGNALS_MACRO_GROUPS.find((g) => g.key === macroKey);
+    if (!macro) return;
+    const allOn = macro.categories.every((c) => isLayerGroupOn(c.groupKey));
+    setLayerVis((cur) => {
+      const next = { ...cur };
+      for (const c of macro.categories) next[c.groupKey] = !allOn;
+      return next;
+    });
+  }
+
+  function toggleMacroExpanded(macroKey) {
+    setExpandedMacros((cur) => {
+      const next = new Set(cur);
+      if (next.has(macroKey)) next.delete(macroKey);
+      else next.add(macroKey);
+      return next;
+    });
+  }
+
   // Live per-category counts for the Signals selector — recomputed on every
   // intelEvents update (WS push / poll), independent of which categories are
   // currently toggled on, so switching one off never zeroes its own count.
@@ -3331,45 +3378,82 @@ function App() {
                   ><i /></button>
                 </div>
                 {signalsExpanded && (
-                  <div className="signals-selector__list" role="group" aria-label="Signal categories">
-                    {SIGNALS_TOGGLE_CATEGORIES.map((cat) => (
-                      <a
-                        key={cat.key}
-                        href={`#${cat.key}`}
-                        className={`signals-selector__link ${isLayerGroupOn(cat.groupKey) ? 'is-active' : ''}`}
-                        aria-pressed={isLayerGroupOn(cat.groupKey)}
-                        onClick={(event) => { event.preventDefault(); toggleLayerGroup(cat.groupKey); }}
-                      >
-                        <span className="signals-selector__box" aria-hidden="true" />
-                        {cat.label}
-                        <span className="signals-selector__count">{signalCategoryCounts[cat.key] || 0}</span>
-                      </a>
-                    ))}
-                    {/* Alarm Phone: a source, not a type -- a refinement within
-                        Distress, not a fifth SIGNAL_CATEGORIES entry. */}
-                    <a
-                      href="#alarm_phone"
-                      className={`signals-selector__link signals-selector__link--nested ${isLayerGroupOn('alarm_phone') ? 'is-active' : ''}`}
-                      aria-pressed={isLayerGroupOn('alarm_phone')}
-                      onClick={(event) => { event.preventDefault(); toggleLayerGroup('alarm_phone'); }}
-                    >
-                      <span className="signals-selector__box" aria-hidden="true" />
-                      Alarm Phone
-                      <span className="signals-selector__count">{alarmPhoneCount}</span>
-                    </a>
-                    {/* Sanctions/identity findings (vessel_identity) and any
-                        other type SIGNAL_CATEGORIES doesn't name yet -- no
-                        dedicated toggle, always shown, listed so the
-                        category counts add up to "All" instead of leaving an
-                        unexplained gap. */}
-                    <span
-                      className="signals-selector__link is-active is-static"
-                      title="No dedicated toggle -- always shown"
-                    >
-                      <span className="signals-selector__box" aria-hidden="true" />
-                      Other
-                      <span className="signals-selector__count">{signalCategoryCounts.other || 0}</span>
-                    </span>
+                  <div className="signals-selector__macros" role="group" aria-label="Signal categories">
+                    {SIGNALS_MACRO_GROUPS.map((macro) => {
+                      const macroOn = macro.categories.every((c) => isLayerGroupOn(c.groupKey));
+                      const macroCount = macro.categories.reduce(
+                        (sum, c) => sum + (signalCategoryCounts[c.key] || 0), 0,
+                      ) + (macro.key === 'security' ? (signalCategoryCounts.other || 0) : 0);
+                      const macroExpanded = expandedMacros.has(macro.key);
+                      return (
+                        <div key={macro.key} className="signals-selector__macro">
+                          <div className="signals-selector__row">
+                            <a
+                              href={`#${macro.key}`}
+                              className={`signals-selector__link signals-selector__link--macro ${macroOn ? 'is-active' : ''}`}
+                              aria-pressed={macroOn}
+                              onClick={(event) => { event.preventDefault(); toggleMacroSignals(macro.key); }}
+                            >
+                              <span className="signals-selector__box" aria-hidden="true" />
+                              {macro.label}
+                              <span className="signals-selector__count">{macroCount}</span>
+                            </a>
+                            <button
+                              type="button"
+                              className={`signals-selector__chevron ${macroExpanded ? 'is-open' : ''}`}
+                              aria-expanded={macroExpanded}
+                              aria-label={macroExpanded ? `Collapse ${macro.label}` : `Expand ${macro.label}`}
+                              onClick={() => toggleMacroExpanded(macro.key)}
+                            ><i /></button>
+                          </div>
+                          {macroExpanded && (
+                            <div className="signals-selector__list">
+                              {macro.categories.map((cat) => (
+                                <a
+                                  key={cat.key}
+                                  href={`#${cat.key}`}
+                                  className={`signals-selector__link signals-selector__link--nested ${isLayerGroupOn(cat.groupKey) ? 'is-active' : ''}`}
+                                  aria-pressed={isLayerGroupOn(cat.groupKey)}
+                                  onClick={(event) => { event.preventDefault(); toggleLayerGroup(cat.groupKey); }}
+                                >
+                                  <span className="signals-selector__box" aria-hidden="true" />
+                                  {cat.label}
+                                  <span className="signals-selector__count">{signalCategoryCounts[cat.key] || 0}</span>
+                                </a>
+                              ))}
+                              {/* Alarm Phone: a source, not a type -- a
+                                  refinement within Distress. */}
+                              {macro.key === 'humanitarian' && (
+                                <a
+                                  href="#alarm_phone"
+                                  className={`signals-selector__link signals-selector__link--nested2 ${isLayerGroupOn('alarm_phone') ? 'is-active' : ''}`}
+                                  aria-pressed={isLayerGroupOn('alarm_phone')}
+                                  onClick={(event) => { event.preventDefault(); toggleLayerGroup('alarm_phone'); }}
+                                >
+                                  <span className="signals-selector__box" aria-hidden="true" />
+                                  Alarm Phone
+                                  <span className="signals-selector__count">{alarmPhoneCount}</span>
+                                </a>
+                              )}
+                              {/* Sanctions/identity findings (vessel_identity)
+                                  and any other type SIGNAL_CATEGORIES doesn't
+                                  name yet -- no dedicated toggle, always
+                                  shown, listed so counts add up. */}
+                              {macro.key === 'security' && (
+                                <span
+                                  className="signals-selector__link signals-selector__link--nested is-active is-static"
+                                  title="No dedicated toggle -- always shown"
+                                >
+                                  <span className="signals-selector__box" aria-hidden="true" />
+                                  Other
+                                  <span className="signals-selector__count">{signalCategoryCounts.other || 0}</span>
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

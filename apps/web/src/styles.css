@@ -1427,7 +1427,10 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   bottom: auto;
   width: min(var(--live-panel-width), 100vw);
   z-index: 1150;
-  background: rgba(3, 10, 14, 0.2);
+  /* Opaque enough to read over any basemap (satellite included) -- the
+     18px blur alone read as "too light" against bright imagery, not as a
+     deliberate glass effect. */
+  background: rgba(3, 10, 14, 0.88);
   border: none;
   border-left: 1px solid rgba(56, 189, 248, 0.28);
   backdrop-filter: blur(18px) saturate(1.15);
@@ -1443,7 +1446,7 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 }
 
 .cone-panel--intel .cone-panel-header {
-  background: rgba(3, 10, 14, 0.24);
+  background: rgba(3, 10, 14, 0.92);
   backdrop-filter: blur(16px);
 }
 
@@ -3040,8 +3043,8 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   color: #e9f7f1;
   /* Glass background borrowed from .cone-panel--intel (the right-side detail
      panel) -- same frosted-glass recipe, kept as one named look instead of
-     two divergent panel styles. */
-  background: rgba(3, 10, 14, 0.2);
+     two divergent panel styles. Opaque enough to read over any basemap. */
+  background: rgba(3, 10, 14, 0.88);
   backdrop-filter: blur(18px) saturate(1.15);
   border-right: 1px solid rgba(56, 189, 248, 0.28);
   box-shadow: 0 20px 54px rgba(0, 0, 0, 0.52), inset 0 0 48px rgba(3, 10, 14, 0.2);
@@ -3227,14 +3230,42 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   margin-left: 14px;
   opacity: .88;
 }
+.signals-selector__link--nested2 {
+  margin-left: 28px;
+  opacity: .8;
+}
 .signals-selector__link.is-static {
   cursor: default;
   opacity: .7;
 }
-.signals-selector__link--nested::before {
+.signals-selector__link--nested::before,
+.signals-selector__link--nested2::before {
   content: '↳';
   margin-right: -2px;
   color: rgba(225,242,237,.35);
+}
+/* Macro rows (Humanitarian / Maritime Security): checkbox block-tick like
+   every sub-category, not the underlined-link treatment of the top "All"
+   trigger -- .signals-selector__row's underline rule targets any link
+   inside it, so cancel it specifically here. */
+.signals-selector__row .signals-selector__link--macro {
+  text-decoration: none;
+  font-size: 10px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.signals-selector__macros {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+.signals-selector__macro + .signals-selector__macro {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255,255,255,.05);
 }
 .signals-selector__chevron {
   display: flex;
