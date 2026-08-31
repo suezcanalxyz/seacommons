@@ -285,7 +285,14 @@ export default function IntelDashboard({
     if (tierFilter !== 'all') evs = evs.filter((f) => eventTier(f.properties || {}) === tierFilter);
     if (intelFilter !== 'all') evs = evs.filter((f) => f.properties?.severity === intelFilter);
     if (channelFilter !== 'all') evs = evs.filter((f) => f.properties?.type === channelFilter);
-    if (sourceFilter !== 'all') evs = evs.filter((f) => f.properties?.source === sourceFilter);
+    if (sourceFilter === ALARM_PHONE_SOURCE) {
+      // The account's source string varies by ingester/tweet (display name
+      // "Alarm Phone" vs handle "alarm_phone") -- match either, same as the
+      // public Signals selector's Alarm Phone toggle.
+      evs = evs.filter((f) => isAlarmPhoneSource(f.properties?.source));
+    } else if (sourceFilter !== 'all') {
+      evs = evs.filter((f) => f.properties?.source === sourceFilter);
+    }
     if (domainFilter !== 'all') {
       evs = evs.filter((f) => (f.properties?.maritime_domain || 'sar') === domainFilter);
     }

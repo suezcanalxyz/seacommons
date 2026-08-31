@@ -160,8 +160,12 @@ def public_signal_collection(
 ) -> dict[str, Any]:
     selected_mode = mode if mode in {"humanitarian", "security", "all"} else "humanitarian"
     memory_events = intel_store.events(limit=600, max_age_days=days)
+    # twikit_monitor writes source=author or handle per tweet -- the account's
+    # display name ("Alarm Phone") when the tweet carried one, its handle
+    # ("alarm_phone") otherwise. Both are real, current values for the same
+    # logical source; an exact match on one silently drops the other.
     durable_alarm_phone = intel_store.persisted_events(
-        source="Alarm Phone",
+        source_in=["Alarm Phone", "alarm_phone"],
         max_age_days=days,
         limit=_LIVE_DURABLE_SCAN_LIMIT,
     )

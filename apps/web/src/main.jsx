@@ -3357,6 +3357,19 @@ function App() {
                       Alarm Phone
                       <span className="signals-selector__count">{alarmPhoneCount}</span>
                     </a>
+                    {/* Sanctions/identity findings (vessel_identity) and any
+                        other type SIGNAL_CATEGORIES doesn't name yet -- no
+                        dedicated toggle, always shown, listed so the
+                        category counts add up to "All" instead of leaving an
+                        unexplained gap. */}
+                    <span
+                      className="signals-selector__link is-active is-static"
+                      title="No dedicated toggle -- always shown"
+                    >
+                      <span className="signals-selector__box" aria-hidden="true" />
+                      Other
+                      <span className="signals-selector__count">{signalCategoryCounts.other || 0}</span>
+                    </span>
                   </div>
                 )}
               </div>

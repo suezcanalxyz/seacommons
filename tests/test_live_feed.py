@@ -17,7 +17,7 @@ from core.intel.geoextract import (
     is_resolved_distress,
 )
 from core.intel.news_monitor import RSS_FEEDS
-from core.intel.store import IntelEvent, IntelStore
+from core.intel.store import IntelEvent, IntelStore, intel_store
 from core.intel.twitter_monitor import TwitterMonitor
 from core.intel.x_media_utils import consensus_ocr_coordinate
 from core.live.feed import public_signal_collection
@@ -981,6 +981,48 @@ def test_live_feed_merges_durable_alarm_phone_events_after_memory_eviction(
         "intel:alarm-durable-01"
     ]
     assert collection["meta"]["durable_alarm_phone_candidates"] == 1
+
+
+def test_durable_alarm_phone_read_matches_both_real_source_spellings() -> None:
+    """Regression: persisted_events(source="Alarm Phone") was an exact,
+    case-sensitive DB match. core.intel.twikit_monitor writes source=author
+    or handle per tweet -- "Alarm Phone" (display name) when the tweet
+    carried one, "alarm_phone" (handle) otherwise -- both real, current
+    production values for the same account. The old exact match silently
+    dropped every "alarm_phone"-sourced row from the durable safety net that
+    exists specifically so high-volume MDA churn in the shared in-memory
+    deque can never starve the public feed of real distress reports. This
+    exercises the actual SQL filter -- no persisted_events mock -- so it
+    would have caught the bug the mocked test above cannot."""
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+
+    with intel_store._lock:
+        intel_store._events.clear()
+        intel_store._seen.clear()
+
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id="durlower1", timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            type="twitter", severity="low", lat=41.55, lon=26.52,
+            title="Alarm Phone: distress in Evros", text="9 people",
+            url="https://x.com/i/web/status/durlower1", source="alarm_phone",
+            meta={"source_policy": "operator_published", "publication_status": "published",
+                  "is_distress": True, "tweet_id": "durlower1", "tracked_account": "alarm_phone"},
+        ))
+        db.add(IntelEventDB(
+            id="durupper1", timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            type="twitter", severity="low", lat=35.5, lon=12.6,
+            title="Alarm Phone: distress off Lampedusa", text="13 people",
+            url="https://x.com/i/web/status/durupper1", source="Alarm Phone",
+            meta={"source_policy": "operator_published", "publication_status": "published",
+                  "is_distress": True, "tweet_id": "durupper1", "tracked_account": "alarm_phone"},
+        ))
+
+    collection = public_signal_collection(limit=50, days=1)
+    ids = {feature["properties"]["id"] for feature in collection["features"]}
+    assert "intel:durlower1" in ids
+    assert "intel:durupper1" in ids
 
 
 def test_public_feed_modes_return_separate_signals_and_counts(monkeypatch) -> None:

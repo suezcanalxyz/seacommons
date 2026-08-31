@@ -3227,6 +3227,10 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   margin-left: 14px;
   opacity: .88;
 }
+.signals-selector__link.is-static {
+  cursor: default;
+  opacity: .7;
+}
 .signals-selector__link--nested::before {
   content: '↳';
   margin-right: -2px;

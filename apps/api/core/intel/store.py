@@ -1020,11 +1020,21 @@ class IntelStore:
         self,
         *,
         source: Optional[str] = None,
+        source_in: Optional[list[str]] = None,
         types: Optional[list[str]] = None,
         max_age_days: int = 30,
         limit: int = 1000,
     ) -> list[IntelEvent]:
-        """Read durable events independently from the bounded in-memory deque."""
+        """Read durable events independently from the bounded in-memory deque.
+
+        `source` is an exact match; a collector's own `source=` string is not
+        guaranteed to be spelled one way everywhere (e.g. the Alarm Phone
+        twikit ingester writes "alarm_phone", an older RSS ingester writes
+        "Alarm Phone" -- both real values seen in production). Pass
+        `source_in` with every known variant when the caller cares about a
+        logical source regardless of which ingester wrote it; `source`
+        remains for a caller that genuinely wants one exact string.
+        """
         try:
             from core.db.models import IntelEventDB
             from core.db.session import session_scope
@@ -1034,6 +1044,8 @@ class IntelStore:
                 query = db.query(IntelEventDB).filter(IntelEventDB.timestamp_utc >= cutoff)
                 if source:
                     query = query.filter(IntelEventDB.source == source)
+                if source_in:
+                    query = query.filter(IntelEventDB.source.in_(source_in))
                 if types:
                     query = query.filter(IntelEventDB.type.in_(types))
                 rows = query.order_by(IntelEventDB.timestamp_utc.desc()).limit(limit).all()
