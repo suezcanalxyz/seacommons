@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { categoryOf, classifyEventVisual, eventAnomalyLabel } from '../features/intel/categories.js';
+import { categoryOf, classifyEventVisual, eventAnomalyLabel, isAlarmPhoneSource } from '../features/intel/categories.js';
 
 const ALARM_PHONE_SOURCE = 'Alarm Phone';
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -238,6 +238,7 @@ export default function IntelDashboard({
   intelMode,
   liveMode = 'humanitarian',
   activeSignalCategories,
+  alarmPhoneOn = true,
   showAisAlerts,
   setShowAisAlerts,
   mapRef,
@@ -277,6 +278,9 @@ export default function IntelDashboard({
     if (activeSignalCategories) {
       evs = evs.filter((f) => activeSignalCategories.has(categoryOf(f.properties?.type)));
     }
+    if (!alarmPhoneOn) {
+      evs = evs.filter((f) => !isAlarmPhoneSource(f.properties?.source));
+    }
 
     if (tierFilter !== 'all') evs = evs.filter((f) => eventTier(f.properties || {}) === tierFilter);
     if (intelFilter !== 'all') evs = evs.filter((f) => f.properties?.severity === intelFilter);
@@ -305,7 +309,7 @@ export default function IntelDashboard({
       Date.parse(right.properties?.timestamp_utc || 0)
       - Date.parse(left.properties?.timestamp_utc || 0)
     ));
-  }, [intelEvents, intelFilter, channelFilter, sourceFilter, tierFilter, domainFilter, showAisAlerts, activeSignalCategories, search, selectedEventId]);
+  }, [intelEvents, intelFilter, channelFilter, sourceFilter, tierFilter, domainFilter, showAisAlerts, activeSignalCategories, alarmPhoneOn, search, selectedEventId]);
 
   // Maritime compartments actually present in the current event set (operator view).
   const presentDomains = useMemo(() => {

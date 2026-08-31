@@ -17,6 +17,7 @@ import {
   classifyEventVisual,
   EVENT_VISUAL_CATEGORIES,
   INTEL_MAP_CATEGORIES,
+  isAlarmPhoneSource,
 } from './features/intel/categories.js';
 import { mdaAnomalyColorExpression, mdaCategoryKey, MDA_ANOMALY_CATEGORIES } from './features/intel/mdaCategories.js';
 import { AuthGate } from './auth.jsx';
@@ -2307,6 +2308,10 @@ function App() {
     }
     return counts;
   }, [intelEvents]);
+  const alarmPhoneCount = useMemo(
+    () => intelEvents.filter((f) => isAlarmPhoneSource(f?.properties?.source)).length,
+    [intelEvents],
+  );
 
   // 'other' has no dedicated toggle (see SIGNALS_TOGGLE_CATEGORIES) and stays
   // visible regardless of the selector, same as its map layer (bundled into
@@ -2328,7 +2333,20 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
-    const positioned = intelEvents.filter((f) => f.geometry?.coordinates);
+    let positioned = intelEvents.filter((f) => f.geometry?.coordinates);
+    // Signals selector (public Live only) — same category gate as the feed
+    // cards, applied to the map so the two never disagree. Alarm Phone is a
+    // source-level refinement within the distress category, not a type of
+    // its own, so it is checked separately from activeSignalCategories.
+    if (isPublicLiveHost) {
+      const alarmPhoneOn = isLayerGroupOn('alarm_phone');
+      positioned = positioned.filter((f) => {
+        const props = f.properties || {};
+        if (!activeSignalCategories.has(categoryOf(props.type))) return false;
+        if (!alarmPhoneOn && isAlarmPhoneSource(props.source)) return false;
+        return true;
+      });
+    }
     const typeOf = (f) => f.properties?.type;
     const isVesselEpisode = (f) => String(f.properties?.episode_id || f.properties?.id || '').startsWith('vessel-episode:');
     const vesselEpisodes = positioned.filter(isVesselEpisode).map((feature) => {
@@ -2387,7 +2405,7 @@ function App() {
       }];
     });
     map.getSource('intel-observed-tracks')?.setData({ type: 'FeatureCollection', features: observedTracks });
-  }, [intelEvents, mapReady]);
+  }, [intelEvents, mapReady, activeSignalCategories, layerVis.alarm_phone]);
 
   // MDA layer data
   useEffect(() => {
@@ -3332,8 +3350,24 @@ function App() {
                         className={`signals-selector__link ${isLayerGroupOn(cat.groupKey) ? 'is-active' : ''}`}
                         aria-pressed={isLayerGroupOn(cat.groupKey)}
                         onClick={(event) => { event.preventDefault(); toggleLayerGroup(cat.groupKey); }}
-                      >{cat.label}<span className="signals-selector__count">{signalCategoryCounts[cat.key] || 0}</span></a>
+                      >
+                        <span className="signals-selector__box" aria-hidden="true" />
+                        {cat.label}
+                        <span className="signals-selector__count">{signalCategoryCounts[cat.key] || 0}</span>
+                      </a>
                     ))}
+                    {/* Alarm Phone: a source, not a type -- a refinement within
+                        Distress, not a fifth SIGNAL_CATEGORIES entry. */}
+                    <a
+                      href="#alarm_phone"
+                      className={`signals-selector__link signals-selector__link--nested ${isLayerGroupOn('alarm_phone') ? 'is-active' : ''}`}
+                      aria-pressed={isLayerGroupOn('alarm_phone')}
+                      onClick={(event) => { event.preventDefault(); toggleLayerGroup('alarm_phone'); }}
+                    >
+                      <span className="signals-selector__box" aria-hidden="true" />
+                      Alarm Phone
+                      <span className="signals-selector__count">{alarmPhoneCount}</span>
+                    </a>
                   </div>
                 )}
               </div>
@@ -3354,6 +3388,7 @@ function App() {
                 intelMode={intelMode}
                 liveMode={liveMode}
                 activeSignalCategories={activeSignalCategories}
+                alarmPhoneOn={isLayerGroupOn('alarm_phone')}
                 showAisAlerts={showAisAlerts}
                 setShowAisAlerts={setShowAisAlerts}
                 mapRef={mapRef}

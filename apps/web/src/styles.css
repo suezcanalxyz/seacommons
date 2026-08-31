@@ -3187,21 +3187,50 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   text-transform: uppercase;
 }
 .signals-selector__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: rgba(225,242,237,.55);
   font: 9px var(--font-mono);
   letter-spacing: .04em;
-  text-decoration: underline;
-  text-decoration-color: rgba(225,242,237,.22);
-  text-underline-offset: 3px;
   cursor: pointer;
   background: none;
   border: 0;
   padding: 0;
+  text-decoration: none;
 }
-.signals-selector__link:hover { color: #ecfff7; text-decoration-color: rgba(236,255,247,.5); }
-.signals-selector__link.is-active {
-  color: var(--live-accent);
-  text-decoration-color: var(--live-accent);
+.signals-selector__link:hover { color: #ecfff7; }
+.signals-selector__link.is-active { color: var(--live-accent); }
+/* The trigger row's "All" link (no .signals-selector__box sibling) keeps the
+   underline treatment; category rows below get a checkbox instead. */
+.signals-selector__row .signals-selector__link {
+  text-decoration: underline;
+  text-decoration-color: rgba(225,242,237,.22);
+  text-underline-offset: 3px;
+}
+.signals-selector__row .signals-selector__link:hover { text-decoration-color: rgba(236,255,247,.5); }
+.signals-selector__row .signals-selector__link.is-active { text-decoration-color: var(--live-accent); }
+.signals-selector__box {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgba(225,242,237,.4);
+  border-radius: 2px;
+  background: transparent;
+}
+.signals-selector__link.is-active .signals-selector__box {
+  background: var(--live-accent);
+  border-color: var(--live-accent);
+  box-shadow: inset 0 0 0 2px rgba(3,10,14,.9);
+}
+.signals-selector__link--nested {
+  margin-left: 14px;
+  opacity: .88;
+}
+.signals-selector__link--nested::before {
+  content: '↳';
+  margin-right: -2px;
+  color: rgba(225,242,237,.35);
 }
 .signals-selector__chevron {
   display: flex;

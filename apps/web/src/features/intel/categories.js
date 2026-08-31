@@ -135,6 +135,15 @@ export function categoryOf(type) {
   return _BY_TYPE[type] || 'other';
 }
 
+// Alarm Phone is a source, not a `type` -- its reports normalize to
+// type=distress (or, pre-classification, type=twitter) alongside IOM/NGO/
+// other operational sources. The Signals selector exposes it as its own
+// toggle nested under Distress rather than folding it into the 'distress'
+// SIGNAL_CATEGORIES entry.
+export function isAlarmPhoneSource(source) {
+  return /alarm.?phone/i.test(String(source || ''));
+}
+
 const _CAT_BY_KEY = SIGNAL_CATEGORIES.reduce((acc, cat) => {
   acc[cat.key] = cat;
   return acc;
