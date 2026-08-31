@@ -677,7 +677,16 @@ function App() {
     };
     try {
       const saved = JSON.parse(window.localStorage.getItem('seacommons_layer_vis') || '{}');
-      return { ...defaults, ...saved };
+      const merged = { ...defaults, ...saved };
+      // The NGO fleet is core Humanitarian-layer content on the public site,
+      // not an optional layer -- a browser that has ever saved ngo_vessels:
+      // false (e.g. from a session before this key existed, or an unrelated
+      // toggle that happened to persist the whole object at a moment this
+      // one was off) must not silently suppress it forever. Public Live
+      // always starts with it on; the Layers panel can still turn it off
+      // for the rest of that session.
+      if (isPublicLiveHost) merged.ngo_vessels = true;
+      return merged;
     } catch {
       return defaults;
     }

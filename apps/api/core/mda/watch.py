@@ -226,6 +226,8 @@ class MdaWatch:
             st = v.get("ship_type")
             if isinstance(st, int) and 30 <= st <= 32:   # fishing vessels work slowly everywhere
                 continue
+            if st == 52:   # tugs work slowly near port infrastructure by design
+                continue
             mid = slow[len(slow) // 2]
             hit = reference.nearest_infrastructure(mid["lat"], mid["lon"], max_km=buf_km)
             if hit is None or hit.kind not in ("cable", "pipeline", "sts_zone"):
@@ -287,6 +289,7 @@ class MdaWatch:
     # ── deliberate AIS gap (jamming-aware) ───────────────────────────────────
 
     def scan_gaps(self) -> int:
+        from core.intel import confidence as confidence_mod
         from core.mda.jamming import jamming
         from core.vessels.registry import registry
         from core.vessels.track_store import track_store
@@ -340,6 +343,18 @@ class MdaWatch:
                 )
                 if not result.get("sanctions"):
                     continue
+            # AIS ship_type 52 = tug. Port tugs sit idle waiting for the next
+            # job and go dark between assignments -- observed live: Genoa
+            # tug traffic showing the same false-gap pattern as fishing
+            # vessels do. Same exemption.
+            if ship_type == 52:
+                from core.mda.identity import screen
+                result = screen(
+                    mmsi=mmsi, imo=v.get("imo"),
+                    name=v.get("ship_name") or "", flag=v.get("flag") or "",
+                )
+                if not result.get("sanctions"):
+                    continue
             jam = jamming.in_jamming_zone(last.lat, last.lon)
             cue = None
             if jam < 0.3:   # not just jamming — worth a satellite cross-cue
@@ -353,6 +368,21 @@ class MdaWatch:
                     logger.debug("darkship_cue failed: %s", exc)
             confidence = round(max(0.2, min(0.9, 0.4 + (time.time() - last.ts) / 14400) - 0.5 * jam), 3)
             severity = "high" if confidence >= 0.7 else "medium"
+            # Shadow-mode confidence model (docs/prompt.md phase 9/11): a
+            # second, traceable score computed alongside the inline formula
+            # above. Stored, not cut over -- severity/publication behaviour
+            # here is still driven entirely by `confidence`/`severity` above,
+            # unchanged. Lets the two be compared before anything switches.
+            silent_s = time.time() - last.ts
+            gap_rule = "ais_gap_long" if silent_s > 6 * 3600 else "ais_gap"
+            confidence_v2 = confidence_mod.combine(
+                gap_rule,
+                rule_strength=confidence_mod.rule_strength(gap_rule),
+                source_reliability=confidence_mod.source_reliability("official_api"),
+                observation_freshness=confidence_mod.observation_freshness(silent_s),
+                coverage_quality=confidence_mod.coverage_quality(jam),
+                location_precision=confidence_mod.location_precision_score("ais_position"),
+            )
             intel_store.add(IntelEvent(
                 id=f"aisgap:{mmsi}",
                 type="ais_anomaly",
@@ -374,6 +404,7 @@ class MdaWatch:
                     "coordinate_source": "ais_position",
                     "silent_seconds": int(time.time() - last.ts),
                     "jamming_score": jam, "anomaly_confidence": confidence,
+                    "confidence_v2": confidence_v2.as_metadata(),
                     "darkship_cue": cue,
                 },
             ), dedup_key=f"aisgap:{mmsi}:{int(time.time() // 21600)}")
@@ -520,6 +551,7 @@ class MdaWatch:
     # ── spoofing patterns ───────────────────────────────────────────────────
 
     def scan_spoofing(self) -> int:
+        from core.intel import confidence as confidence_mod
         from core.mda.jamming import jamming
         from core.vessels.registry import registry
         from core.vessels.track_store import track_store
@@ -577,12 +609,39 @@ class MdaWatch:
                     )
                     if not result.get("sanctions"):
                         continue
+                # AIS ship_type 52 = tug. Repeated short manoeuvres assisting
+                # ships in/out of port, then idling near the breakwater
+                # between jobs, draws the same near-static/tight-ring
+                # signature -- observed live in Genoa traffic.
+                elif ship_type == 52:
+                    from core.mda.identity import screen
+                    result = screen(
+                        mmsi=mmsi, imo=v.get("imo"),
+                        name=v.get("ship_name") or "", flag=v.get("flag") or "",
+                    )
+                    if not result.get("sanctions"):
+                        continue
             if self._recently_emitted(f"spoof:{mmsi}", 6 * 3600):
                 continue
             mid = pts[len(pts) // 2]
             jam = jamming.in_jamming_zone(mid["lat"], mid["lon"])
             atype = "position_jump" if reason == "teleport" else (
                 "circle_spoof" if reason == "circular" else "static_spoof")
+            # Shadow-mode confidence model (docs/prompt.md phase 9/11) --
+            # this detector had no confidence value at all before, only
+            # severity from jamming alone. Stored alongside severity, not
+            # driving it yet.
+            spoof_rule = {"teleport": "spoof_teleport", "circular": "spoof_circular",
+                          "frozen": "spoof_frozen"}.get(reason, "spoof_frozen")
+            duration_s = max(0.0, (_parse(pts[-1]["ts"]) - _parse(pts[0]["ts"])).total_seconds())
+            confidence_v2 = confidence_mod.combine(
+                spoof_rule,
+                rule_strength=confidence_mod.rule_strength(spoof_rule),
+                source_reliability=confidence_mod.source_reliability("derived"),
+                persistence=confidence_mod.persistence(len(pts), duration_s),
+                coverage_quality=confidence_mod.coverage_quality(jam),
+                location_precision=confidence_mod.location_precision_score("ais_position"),
+            )
             intel_store.add(IntelEvent(
                 id=f"spoof:{mmsi}:{reason}",
                 type="ais_anomaly",
@@ -598,6 +657,7 @@ class MdaWatch:
                     "source_policy": "official_api", "verification_status": "derived",
                     "coordinate_source": "ais_position", "spoof_reason": reason,
                     "jamming_score": jam, "detail": extra,
+                    "confidence_v2": confidence_v2.as_metadata(),
                 },
             ), dedup_key=f"spoof:{mmsi}:{reason}:{int(time.time() // 21600)}")
             emitted += 1

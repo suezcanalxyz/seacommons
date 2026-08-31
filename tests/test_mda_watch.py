@@ -267,6 +267,55 @@ def test_gap_scan_still_flags_sanctioned_fishing_vessel():
     assert w.scan_gaps() == 1
 
 
+def test_gap_scan_ignores_tug():
+    """Ship_type 52 (tug) idling near the breakwater between jobs is normal
+    port-tug work, not an anomaly -- observed live in Genoa traffic."""
+    from core.vessels.registry import registry
+
+    w = MdaWatch()
+    registry.upsert("111000022", ship_type=52, ship_name="GENOA TUG 3")
+    _feed("111000022", 44.40, 8.93, sog=3.0)   # Genoa
+    track_store._last["111000022"].ts = time.time() - 5400
+    assert w.scan_gaps() == 0
+    assert not _alerts("ais_anomaly")
+
+
+def test_gap_scan_still_flags_sanctioned_tug():
+    from core.db.models import SanctionedVesselDB
+    from core.db.session import engine, session_scope
+    from core.vessels.registry import registry
+
+    SanctionedVesselDB.__table__.create(bind=engine(), checkfirst=True)
+    with session_scope() as db:
+        db.add(SanctionedVesselDB(source_list="OFAC_SDN", name="SHADOW TUG",
+                                  name_upper="SHADOW TUG", imo=None, mmsi="111000023",
+                                  program="RUSSIA-EO14024"))
+
+    w = MdaWatch()
+    registry.upsert("111000023", ship_type=52, ship_name="SHADOW TUG")
+    _feed("111000023", 44.40, 8.93, sog=3.0)
+    track_store._last["111000023"].ts = time.time() - 5400
+    assert w.scan_gaps() == 1
+
+
+def test_spoofing_circular_ignores_tug_working_the_breakwater():
+    import math
+
+    from core.vessels.registry import registry
+
+    w = MdaWatch()
+    registry.upsert("111000024", ship_type=52, ship_name="GENOA TUG 3")
+    for k in range(14):
+        ang = k / 14 * 2 * math.pi
+        dlat = 200 * math.sin(ang) / 111320
+        dlon = 200 * math.cos(ang) / (111320 * math.cos(math.radians(44.40)))
+        track_store.on_position("111000024", "GENOA TUG 3", 44.40 + dlat, 8.93 + dlon,
+                                sog=1.0, nav_status=0, received_at=datetime.now(timezone.utc))
+        track_store._last_write_epoch["111000024"] = 0.0
+    assert w.scan_spoofing() == 0
+    assert not _alerts("ais_anomaly")
+
+
 def test_spoofing_circular_track():
     import math
     w = MdaWatch()

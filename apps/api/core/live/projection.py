@@ -81,6 +81,8 @@ _PUBLIC_METADATA = frozenset(
         "anomaly_type",
         "ais_nav_status_kind",
         "anomaly_confidence",
+        "confidence_v2",
+        "sanctions_matched",
         "detection_reason",
         "detail",
         "drift_eligible",
