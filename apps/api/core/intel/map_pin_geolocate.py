@@ -140,14 +140,21 @@ def _ocr_pass(image, *, executable: str, block_prefix: str) -> list[dict]:
     scaled.save(buf, format="PNG")
     scale = 2
 
+    # Same one-Tesseract-job-at-a-time discipline as x_media_utils.py's
+    # _TESSERACT_LOCK -- this module's own subprocess calls were the other
+    # unbounded source of concurrent tesseract processes on the pilot VM's
+    # 2 vCPUs, alongside ocr_png_coordinate's sweep.
+    from core.intel.x_media_utils import _TESSERACT_LOCK
+
     try:
-        result = subprocess.run(
-            [executable, "stdin", "stdout", "--psm", "6", "-l", "eng", "tsv"],
-            input=buf.getvalue(),
-            capture_output=True,
-            check=False,
-            timeout=20,
-        )
+        with _TESSERACT_LOCK:
+            result = subprocess.run(
+                [executable, "stdin", "stdout", "--psm", "6", "-l", "eng", "tsv"],
+                input=buf.getvalue(),
+                capture_output=True,
+                check=False,
+                timeout=20,
+            )
     except (OSError, subprocess.TimeoutExpired):
         return []
     if result.returncode != 0:

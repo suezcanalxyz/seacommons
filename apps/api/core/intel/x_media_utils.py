@@ -33,6 +33,14 @@ _HEADERS = {
 }
 _EASYOCR_READER: Any = None
 _EASYOCR_LOCK = threading.Lock()
+# Each media OCR job runs in its own background thread (twikit_monitor's
+# _schedule_media_ocr) and tesseract runs as external subprocesses -- with no
+# cap, several images landing at once each spawn their own 6-variant sweep in
+# parallel. Verified live: on the pilot VM's 2 vCPUs this pushed
+# /api/v1/live/signals response time from ~4s to 9-22s (CPU contention, not
+# the DB -- the query itself is sub-millisecond). Same one-at-a-time
+# discipline _EASYOCR_LOCK already applies to the neural OCR pass.
+_TESSERACT_LOCK = threading.Lock()
 
 
 def _easyocr_image(payload: bytes) -> tuple[Optional[tuple[float, float]], list[dict], bool]:
@@ -253,18 +261,19 @@ def ocr_png_coordinate(
         ("3", False), ("6", False), ("11", False),
         ("6", True), ("7", True), ("11", True),
     )
-    for page_mode, restrict in variants:
-        cmd = [command, "stdin", "stdout", "--psm", page_mode, "--oem", "1", "-l", "eng"]
-        if restrict:
-            cmd += ["-c", f"tessedit_char_whitelist={_COORD_WHITELIST}"]
-        try:
-            result = subprocess.run(
-                cmd, input=processed_png, capture_output=True, check=False, timeout=20
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            continue
-        if result.returncode == 0:
-            texts.append(result.stdout.decode("utf-8", errors="replace")[:20_000])
+    with _TESSERACT_LOCK:
+        for page_mode, restrict in variants:
+            cmd = [command, "stdin", "stdout", "--psm", page_mode, "--oem", "1", "-l", "eng"]
+            if restrict:
+                cmd += ["-c", f"tessedit_char_whitelist={_COORD_WHITELIST}"]
+            try:
+                result = subprocess.run(
+                    cmd, input=processed_png, capture_output=True, check=False, timeout=20
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if result.returncode == 0:
+                texts.append(result.stdout.decode("utf-8", errors="replace")[:20_000])
     consensus = consensus_ocr_coordinate(texts)
     if consensus is not None:
         return consensus, True
