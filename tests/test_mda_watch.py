@@ -93,6 +93,60 @@ def test_infra_loiter_near_pipeline():
     assert ev[0].url.endswith("mmsi:111000005")
 
 
+def _loiter_in_malta_sts(mmsi: str, name: str) -> None:
+    """8 near-stationary fixes over >90 min inside the bundled Malta
+    bunkering/STS anchorage polygon (35.7-35.98N, 14.35-14.75E)."""
+    from datetime import timedelta
+
+    for i in range(8):
+        track_store.on_position(mmsi, name, 35.85 + i * 0.0005, 14.55, sog=0.8,
+                                nav_status=0, received_at=datetime.now(timezone.utc))
+        track_store._last_write_epoch[mmsi] = 0.0
+    from core.db.models import VesselTrackDB
+    from core.db.session import session_scope
+    with session_scope() as db:
+        rows = db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == mmsi).order_by(VesselTrackDB.ts).all()
+        for k, r in enumerate(rows):
+            r.ts = datetime.now(timezone.utc) - timedelta(minutes=130 - k * 15)
+
+
+def test_infra_loiter_ignores_ordinary_vessel_in_sts_zone():
+    """Idling in a bunkering/STS anchorage is what the zone is for -- not
+    itself an anomaly for a vessel with no sanctions match."""
+    from core.vessels.registry import registry
+
+    w = MdaWatch()
+    registry.upsert("111000020", ship_type=80, ship_name="ORDINARY TANKER")
+    _loiter_in_malta_sts("111000020", "ORDINARY TANKER")
+    assert w.scan_infra_loiter() == 0
+    assert not _alerts("ais_anomaly")
+
+
+def test_infra_loiter_flags_sanctioned_vessel_in_sts_zone():
+    """A confirmed sanctions match idling at a known bunkering/STS hub is a
+    classic evasion pattern -- surfaced even without a paired rendezvous
+    vessel for scan_rendezvous to catch."""
+    from core.db.models import SanctionedVesselDB
+    from core.db.session import engine, session_scope
+    from core.vessels.registry import registry
+
+    SanctionedVesselDB.__table__.create(bind=engine(), checkfirst=True)
+    with session_scope() as db:
+        db.add(SanctionedVesselDB(source_list="OFAC_SDN", name="SHADOW TANKER",
+                                  name_upper="SHADOW TANKER", imo=None, mmsi="111000021",
+                                  program="RUSSIA-EO14024"))
+
+    w = MdaWatch()
+    registry.upsert("111000021", ship_type=80, ship_name="SHADOW TANKER")
+    _loiter_in_malta_sts("111000021", "SHADOW TANKER")
+    assert w.scan_infra_loiter() == 1
+    ev = _alerts("ais_anomaly")
+    assert ev[0].metadata["anomaly_type"] == "sanctions_bunkering_loiter"
+    assert ev[0].metadata["maritime_domain"] == "sanctions"
+    assert ev[0].metadata["sanctions_matched"] is True
+    assert ev[0].metadata["infrastructure"]["kind"] == "sts_zone"
+
+
 def test_gap_scan_flags_silent_vessel(monkeypatch):
     w = MdaWatch()
     _feed("111000006", 34.0, 20.0, sog=12.0)
@@ -177,6 +231,39 @@ def test_gap_scan_still_flags_sanctioned_passenger_ferry_near_port():
     registry.upsert("111000016", ship_type=60, ship_name="SHADOW FERRY")
     _feed("111000016", 37.94, 23.60, sog=5.0)   # Piraeus
     track_store._last["111000016"].ts = time.time() - 5400
+    assert w.scan_gaps() == 1
+
+
+def test_gap_scan_ignores_fishing_vessel():
+    """Ship_type 30 (fishing) going dark far from any port is the vessel
+    actually fishing -- scan_infra_loiter already exempts this ship_type
+    blanket ('fishing vessels work slowly everywhere'); a gap gets the
+    same treatment."""
+    from core.vessels.registry import registry
+
+    w = MdaWatch()
+    registry.upsert("111000018", ship_type=30, ship_name="F/V LUCKY STAR")
+    _feed("111000018", 37.00, 18.00, sog=4.0)   # open water, no port nearby
+    track_store._last["111000018"].ts = time.time() - 5400
+    assert w.scan_gaps() == 0
+    assert not _alerts("ais_anomaly")
+
+
+def test_gap_scan_still_flags_sanctioned_fishing_vessel():
+    from core.db.models import SanctionedVesselDB
+    from core.db.session import engine, session_scope
+    from core.vessels.registry import registry
+
+    SanctionedVesselDB.__table__.create(bind=engine(), checkfirst=True)
+    with session_scope() as db:
+        db.add(SanctionedVesselDB(source_list="OFAC_SDN", name="SHADOW TRAWLER",
+                                  name_upper="SHADOW TRAWLER", imo=None, mmsi="111000019",
+                                  program="RUSSIA-EO14024"))
+
+    w = MdaWatch()
+    registry.upsert("111000019", ship_type=30, ship_name="SHADOW TRAWLER")
+    _feed("111000019", 37.00, 18.00, sog=4.0)
+    track_store._last["111000019"].ts = time.time() - 5400
     assert w.scan_gaps() == 1
 
 

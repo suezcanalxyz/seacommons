@@ -228,27 +228,50 @@ class MdaWatch:
                 continue
             mid = slow[len(slow) // 2]
             hit = reference.nearest_infrastructure(mid["lat"], mid["lon"], max_km=buf_km)
-            if hit is None or hit.kind not in ("cable", "pipeline"):
+            if hit is None or hit.kind not in ("cable", "pipeline", "sts_zone"):
                 continue
+            # A vessel idling in a bunkering / STS anchorage is not itself
+            # unusual -- that is what the zone is for. It becomes worth
+            # surfacing when the vessel loitering there is a confirmed
+            # sanctions match: a classic evasion pattern (refuel/transfer at
+            # a grey-zone hub instead of a port call), cross-referenced here
+            # even without a second vessel for scan_rendezvous to pair it
+            # with. cable/pipeline proximity stays unconditional -- that is
+            # infrastructure-safety context regardless of who the vessel is.
+            sanctioned = False
+            if hit.kind == "sts_zone":
+                from core.mda.identity import screen
+                result = screen(mmsi=mmsi, imo=v.get("imo"),
+                                name=v.get("ship_name") or "", flag=v.get("flag") or "")
+                sanctioned = bool(result.get("sanctions"))
+                if not sanctioned:
+                    continue
             if self._recently_emitted(f"infra:{mmsi}:{hit.name}", 24 * 3600):
                 continue
             intel_store.add(IntelEvent(
                 id=f"infraloiter:{mmsi}",
                 type="ais_anomaly",
-                severity="high" if hit.kind in ("cable", "pipeline") else "medium",
+                severity="high",
                 lat=round(mid["lat"], 5), lon=round(mid["lon"], 5),
-                title=f"Loitering near {hit.name} — {v.get('ship_name') or mmsi}",
+                title=(f"Sanctioned vessel loitering in {hit.name} — {v.get('ship_name') or mmsi}"
+                       if sanctioned else f"Loitering near {hit.name} — {v.get('ship_name') or mmsi}"),
                 text=(f"MMSI {mmsi} at <{max_sog:.0f} kn for ~{int(span_min)} min within "
-                      f"{hit.distance_km:.1f} km of {hit.name} ({hit.kind})."),
+                      f"{hit.distance_km:.1f} km of {hit.name} ({hit.kind})."
+                      + (" Vessel is a confirmed sanctions match." if sanctioned else "")),
                 url=f"https://www.marinetraffic.com/en/ais/details/ships/mmsi:{mmsi}",
                 source="SeaCommons AIS analysis", linked_mmsi=mmsi,
                 metadata={
-                    "anomaly_type": "cable_proximity" if hit.kind == "cable" else "loiter",
-                    "maritime_domain": "grey_zone", "is_distress": False,
+                    "anomaly_type": (
+                        "sanctions_bunkering_loiter" if sanctioned
+                        else "cable_proximity" if hit.kind == "cable" else "loiter"
+                    ),
+                    "maritime_domain": "sanctions" if sanctioned else "grey_zone",
+                    "is_distress": False,
                     "publication_status": "internal", "source_policy": "official_api",
                     "verification_status": "ais_transponder", "coordinate_source": "ais_position",
                     "infrastructure": {"kind": hit.kind, "name": hit.name, "distance_km": hit.distance_km},
                     "loiter_minutes": round(span_min, 1),
+                    "sanctions_matched": sanctioned,
                     "detection_reason": (
                         f"AIS dwell: {len(slow)} slow fixes over {int(span_min)} minutes, "
                         f"within {hit.distance_km:.1f} km of {hit.name}; proximity is "
@@ -297,6 +320,19 @@ class MdaWatch:
             # this only withholds passenger-vessel results from this feed)
             # until it has its own destination separate from this one.
             if isinstance(ship_type, int) and 60 <= ship_type <= 69:
+                from core.mda.identity import screen
+                result = screen(
+                    mmsi=mmsi, imo=v.get("imo"),
+                    name=v.get("ship_name") or "", flag=v.get("flag") or "",
+                )
+                if not result.get("sanctions"):
+                    continue
+            # AIS ship_type 30-32 = fishing vessel. Fishing boats routinely
+            # work slowly or go dark far from any port while actually
+            # fishing -- scan_infra_loiter already exempts this ship_type
+            # blanket ("fishing vessels work slowly everywhere"); a gap is
+            # the same normal-work pattern, not an anomaly.
+            if isinstance(ship_type, int) and 30 <= ship_type <= 32:
                 from core.mda.identity import screen
                 result = screen(
                     mmsi=mmsi, imo=v.get("imo"),
@@ -523,6 +559,17 @@ class MdaWatch:
                 # scan_gaps above (detection unchanged, just not surfaced
                 # here until it has its own destination).
                 elif isinstance(ship_type, int) and 60 <= ship_type <= 69:
+                    from core.mda.identity import screen
+                    result = screen(
+                        mmsi=mmsi, imo=v.get("imo"),
+                        name=v.get("ship_name") or "", flag=v.get("flag") or "",
+                    )
+                    if not result.get("sanctions"):
+                        continue
+                # AIS ship_type 30-32 = fishing vessel. A trawler working a
+                # ground draws exactly the "circular" signature -- repeated
+                # tight loops/passes are how trawling works, not spoofing.
+                elif isinstance(ship_type, int) and 30 <= ship_type <= 32:
                     from core.mda.identity import screen
                     result = screen(
                         mmsi=mmsi, imo=v.get("imo"),

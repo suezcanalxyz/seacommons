@@ -1594,10 +1594,14 @@ function App() {
           id: 'vessels-ngo-stationary', type: 'circle', source: 'vessels-ngo',
           filter: _stationFilter,
           paint: {
-            'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 4, 10, 6, 14, 8],
+            // A known, named humanitarian fleet is never more than ~20
+            // vessels -- worth a floor size that reads at any zoom, not
+            // scaled down to the same near-invisible dot a generic AIS
+            // contact gets.
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 5, 10, 7, 14, 9],
             'circle-color': '#00e8c8',
-            'circle-opacity': 0.85,
-            'circle-stroke-width': 1.2,
+            'circle-opacity': 0.95,
+            'circle-stroke-width': 1.6,
             'circle-stroke-color': '#021318',
           },
         });
@@ -2020,6 +2024,19 @@ function App() {
             'circle-stroke-color': ['match', ['get', 'type'], 'origin_point', '#ffffff', '#ff7b54'],
           },
         });
+
+        // NGO fleet was added earlier in this sequence (before intel-fused /
+        // intel-spike, which draw hundreds of security dots on a busy day)
+        // -- later-added layers paint on top in MapLibre, so a genuinely
+        // small teal dot could end up buried under anomaly clutter at the
+        // same pixel. moveLayer with no beforeId brings a layer to the very
+        // top of whatever exists at call time; doing it last here, after
+        // every other addLayer in this setup, guarantees the NGO fleet is
+        // always the top-most vessel marker regardless of how much security
+        // noise is on screen.
+        for (const ngoLayerId of ['vessels-ngo-stationary', 'vessels-ngo']) {
+          if (map.getLayer(ngoLayerId)) map.moveLayer(ngoLayerId);
+        }
 
         // Hover popup — shows the event's coordinates without needing to open the sidebar.
         const intelHoverPopup = new maplibregl.Popup({
