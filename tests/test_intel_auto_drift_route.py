@@ -43,6 +43,38 @@ def test_auto_drift_rejects_maritime_security_event():
             )
 
 
+def test_auto_drift_rejects_piracy_event():
+    """docs/deep-research-report (2).md's follow-up finding: "not security"
+    is not the same test as "is humanitarian". piracy is in the default
+    public/humanitarian maritime-domain allow-list (domains_for_mode
+    ("humanitarian") includes it), so the earlier fix (reject only
+    SECURITY_MARITIME_DOMAINS) would still have let a piracy-domain event
+    through. The positive HUMANITARIAN_DRIFT_DOMAINS gate must not."""
+    event = IntelEvent(
+        id="auto-drift-piracy-01",
+        type="piracy_incident",
+        severity="high",
+        lat=35.0,
+        lon=14.0,
+        title="Boarding reported",
+        source="SeaCommons MDA",
+        metadata={"source_policy": "official_api"},
+    )
+    assert intel_store.add(event) is True
+    try:
+        resp = client.post(
+            "/api/v1/intel/auto-drift",
+            json={"intel_event_id": "auto-drift-piracy-01", "lat": 35.0, "lon": 14.0},
+        )
+        assert resp.status_code == 400
+    finally:
+        with intel_store._lock:
+            intel_store._events = type(intel_store._events)(
+                (e for e in intel_store._events if e.id != event.id),
+                maxlen=intel_store._events.maxlen,
+            )
+
+
 def test_auto_drift_accepts_humanitarian_event(monkeypatch):
     event = IntelEvent(
         id="auto-drift-humanitarian-01",

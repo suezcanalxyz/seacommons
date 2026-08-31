@@ -90,6 +90,17 @@ SECURITY_MARITIME_DOMAINS = frozenset(
     }
 )
 
+# SeaCommons Drift is a humanitarian SAR model only (docs/deep-research-
+# report.md #17 hard requirement; docs/deep-research-report (2).md's follow-up
+# audit on top of the fix that first narrowed drift eligibility -- "not
+# security" is not the same test as "is humanitarian"). public_maritime_
+# domains() is env-widenable and includes "piracy" by default, so gating
+# drift on domains_for_mode("humanitarian") would still let a piracy-domain
+# event carry a drift cone. Deliberately its own fixed, non-env-configurable
+# single-value set -- same reasoning as SECURITY_MARITIME_DOMAINS above, just
+# a positive allow-list instead of a negative one.
+HUMANITARIAN_DRIFT_DOMAINS = frozenset({MaritimeDomain.SAR.value})
+
 
 def domains_for_mode(mode: str) -> frozenset[str]:
     """Maritime compartments eligible for a Live feed `mode`.

@@ -1319,6 +1319,56 @@ def test_drift_never_shown_for_maritime_security_domain(monkeypatch) -> None:
     assert collection["features"] == []
 
 
+def test_drift_never_shown_for_piracy_domain(monkeypatch) -> None:
+    """docs/deep-research-report (2).md's follow-up finding: "not security"
+    is not "is humanitarian". piracy is in the default public/humanitarian
+    maritime-domain allow-list, so gating drift on domains_for_mode
+    ("humanitarian") -- as the first fix did -- would still let a
+    piracy-domain event through. HUMANITARIAN_DRIFT_DOMAINS (SAR only) must
+    not."""
+    from datetime import timezone
+
+    from core.live.feed import public_drift_collection
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    piracy_event = IntelEvent(
+        id="drift-piracy",
+        type="piracy_incident",
+        severity="high",
+        lat=35.0,
+        lon=14.0,
+        title="Boarding reported",
+        source="SeaCommons MDA",
+        timestamp_utc=now_iso,
+        metadata={
+            "source_policy": "official_api",
+            "drift_job_id": "job-piracy",
+        },
+    )
+    monkeypatch.setattr(
+        "core.live.feed.intel_store.persisted_events", lambda **_kwargs: []
+    )
+    monkeypatch.setattr(
+        "core.live.feed.intel_store.events", lambda **_kwargs: [piracy_event]
+    )
+    fake_drift = {
+        "trajectory": {
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": [[14.0, 35.0], [14.1, 35.1]]},
+            "properties": {},
+        },
+        "cone_24h": None,
+        "impact_point": {},
+        "metadata": {"published": True},
+    }
+    monkeypatch.setattr("core.db.store.get_drift", lambda job_id: fake_drift)
+    monkeypatch.setattr("core.db.store.list_drift_jobs_for_event", lambda event_id: [])
+    monkeypatch.setattr("core.live.feed._is_publishable_live_drift", lambda drift: True)
+
+    collection = public_drift_collection(limit=50)
+    assert collection["features"] == []
+
+
 def test_user_signal_is_private_by_default() -> None:
     signal = DistressSignal(
         source_channel="whatsapp",

@@ -19,7 +19,11 @@ from core.domain.live_contracts import (
     validate_live_signal,
 )
 from core.intel import lifecycle
-from core.intel.public_policy import SECURITY_MARITIME_DOMAINS, domains_for_mode
+from core.intel.public_policy import (
+    HUMANITARIAN_DRIFT_DOMAINS,
+    SECURITY_MARITIME_DOMAINS,
+    domains_for_mode,
+)
 from core.intel.store import IntelEvent, intel_store
 from core.live.projection import (
     _approximate_public_point,
@@ -385,11 +389,13 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         by_source.setdefault(event.source, []).append(event)
     for event in drift_events.values():
         # SeaCommons Drift is a humanitarian SAR model only (docs/deep-research-
-        # report.md #17, hard requirement) -- never project it for a
-        # maritime-security domain (sanctions/grey_zone/iuu_fishing/smuggling),
-        # regardless of how a drift_job_id ended up on the event.
+        # report.md #17, hard requirement). A positive allow-list, not
+        # domains_for_mode("humanitarian") -- that set is env-widenable and
+        # includes "piracy" by default, so "not security" alone would still
+        # let a piracy-domain event carry a drift cone (docs/deep-research-
+        # report (2).md's follow-up finding on this exact gate).
         public_event = _public_intel_feature(
-            event, allowed_domains=domains_for_mode("humanitarian")
+            event, allowed_domains=HUMANITARIAN_DRIFT_DOMAINS
         )
         job_id = event.metadata.get("drift_job_id")
         if public_event is None:
