@@ -393,6 +393,15 @@ _CONCLUDED_OUTCOME_PATTERNS = tuple(
         r"\bsopravvissuti\s+(?:sono\s+stati\s+)?trovati\b",
         r"\brisultano\s+(?:ancora\s+)?dispersi\b",
         r"\bcorpi\s+(?:sono\s+stati\s+)?recuperati\b",
+        # A common Alarm Phone follow-up phrasing that the "were/was found"
+        # pattern above misses: "we have now learned that the people have
+        # been found and taken to a reception centre" (present-perfect, not
+        # simple past). Real production case: a still-"needs_review" case
+        # whose only textual reply was exactly this, never landing on
+        # resolved. "reception centre" alone is also matched since Alarm
+        # Phone sometimes reports that outcome without repeating "found".
+        r"\b(?:have|has)\s+been\s+found\b",
+        r"\btaken\s+to\s+a\s+reception\s+(?:centre|center)\b",
     )
 )
 

@@ -10,6 +10,7 @@ from core.intel.geoextract import (
     extract_coords,
     extract_numeric_coords,
     extract_relative_coords,
+    is_concluded_incident,
 )
 
 
@@ -23,6 +24,27 @@ def test_numeric_coords_outside_the_region_are_rejected() -> None:
 
 def test_numeric_coords_inside_the_region_pass() -> None:
     assert extract_numeric_coords("Position: 35.10N 013.50E") == (35.1, 13.5)
+
+
+def test_concluded_incident_recognises_present_perfect_found_and_reception_centre() -> None:
+    # Real prod case: a reply threaded onto an active case ("@HCoastGuard We
+    # have now learned that the people have been found and taken to a
+    # reception centre. We wish them the best for their future in Europe!")
+    # left the incident stuck on needs_review because neither existing
+    # pattern matches present-perfect "have been found" (only "were/was
+    # found") nor "taken to a reception centre" at all.
+    assert is_concluded_incident(
+        "We have now learned that the people have been found and taken to "
+        "a reception centre. We wish them the best for their future in Europe!"
+    ) is True
+
+
+def test_ongoing_incident_still_overrides_present_perfect_found() -> None:
+    # The broadened "found" pattern must not defeat the existing ongoing-
+    # danger override — the same guard is_resolved_distress documents.
+    assert is_concluded_incident(
+        "They have been found by the police. Since then we have no news."
+    ) is False
     # Canary Islands / Atlantic route stays in.
     lat, lon = extract_numeric_coords("N 28° 30' / W 015° 00'")
     assert abs(lat - 28.5) < 0.01 and abs(lon + 15.0) < 0.01

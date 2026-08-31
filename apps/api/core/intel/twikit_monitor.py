@@ -976,7 +976,7 @@ class TwikitMonitor:
         return False
 
     async def _check_self_replies(self, client) -> None:
-        """Thread delayed self-reply updates onto still-active incidents.
+        """Thread delayed reply updates (any author) onto still-active incidents.
 
         Verified live: a tracked account's own reply to its own earlier
         tweet ("Rescued to #Lampedusa! ...") never appears via
@@ -995,9 +995,14 @@ class TwikitMonitor:
         does not have this gap, so re-walking each tracked account's recent
         timeline (already fetched every poll anyway) is used instead.
 
-        Only replies from the SAME author as the original are threaded —
-        replies from other accounts are public commentary, not an
-        operational update, and are left alone.
+        Threads EVERY reply on the tracked tweet, not just same-author ones
+        (explicit user follow-up: "i reply sono agli stessi tweet quindi
+        vanno ricontrollati ogni tot" -- a real-time cross-account reply is
+        already caught in _ingest()/_thread_reply(), but a case can stay
+        "active" for days and a cross-account reply arriving on an
+        already-processed old tweet needs this periodic re-walk to ever be
+        seen at all, same as a delayed self-reply). Correlated evidence, not
+        confirmation either way -- see _thread_own_replies.
 
         Also self-audits: any still-unresolved candidate whose own tweet
         does not turn up in its account's fetched timeline — old enough that
@@ -1082,11 +1087,18 @@ class TwikitMonitor:
         return replies
 
     def _thread_own_replies(self, event: IntelEvent, original: Any, replies: list[Any]) -> None:
-        author_id = str(getattr(getattr(original, "user", None), "id", "") or "")
+        """Thread every reply found under `original` onto `event`.
+
+        Not restricted to the original author (docs/deep-research-report.md
+        #5/#7/#21 + explicit user follow-up) -- a cross-account reply on an
+        old already-tracked tweet is exactly as strong a hard-graph link as
+        one on a fresh tweet (X's own in_reply_to edge), it just wasn't
+        visible until this periodic re-walk fetched it. Same no-new-marker
+        contract, same "correlated evidence, not confirmation" posture as
+        _thread_reply (real-time path) -- neither ever mutates the parent's
+        severity from reply content.
+        """
         for reply in replies:
-            reply_author_id = str(getattr(getattr(reply, "user", None), "id", "") or "")
-            if not author_id or reply_author_id != author_id:
-                continue
             reply_id = str(getattr(reply, "id", "") or "")
             if not reply_id:
                 continue
@@ -1102,7 +1114,7 @@ class TwikitMonitor:
             added = intel_store.append_thread_repost(event.id, record)
             if added:
                 logger.info(
-                    "X (twikit) self-reply %s threaded onto incident %s",
+                    "X (twikit) reply %s threaded onto incident %s (periodic re-check)",
                     reply_id, event.id,
                 )
 

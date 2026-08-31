@@ -534,25 +534,37 @@ def test_self_reply_threads_as_update_onto_active_incident(monkeypatch, tmp_path
     assert broadcasts == [event_id]
 
 
-def test_reply_from_a_different_account_is_not_threaded(monkeypatch, tmp_path):
+def test_reply_from_a_different_account_is_threaded_too(monkeypatch, tmp_path):
+    """A cross-account reply found on the periodic re-walk is threaded the
+    same way a same-author one is (docs/deep-research-report.md #5/#7/#21 +
+    explicit user follow-up: "i reply sono agli stessi tweet quindi vanno
+    ricontrollati ogni tot"). It is still correlated evidence, not
+    confirmation -- the parent's own severity/lifecycle fields are untouched
+    by this call; only the lifecycle *projection* (core.intel.lifecycle)
+    reads the threaded note dynamically."""
     store = IntelStore()
     monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
     m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
     original = _FakeTweet("3010", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
     m._ingest(original, handle="alarm_phone")
     event_id = store.events()[0].id
+    parent_severity = store.get(event_id).severity
 
     class _OtherUser:
         screen_name = "random_account"
         id = "111111"
 
-    stranger_reply = _FakeTweet("3011", "This happens all the time", user=_OtherUser())
+    stranger_reply = _FakeTweet("3011", "We are heading there now.", user=_OtherUser())
     refetched = _FakeTweet("3010", original.text, user=_FakeUser(), replies=[stranger_reply])
     client = _FakeClient({"alarm_phone": _FakeTimelineUser(_FakeUser.id, [refetched])})
 
     asyncio.run(m._check_self_replies(client))
 
-    assert not (store.get(event_id).metadata.get("thread_reposts") or [])
+    posts = store.get(event_id).metadata.get("thread_reposts") or []
+    assert len(posts) == 1
+    assert posts[0]["tweet_id"] == "3011"
+    assert posts[0]["kind"] == "reply"
+    assert store.get(event_id).severity == parent_severity
 
 
 def test_self_reply_check_is_idempotent(monkeypatch, tmp_path):
@@ -573,11 +585,11 @@ def test_self_reply_check_is_idempotent(monkeypatch, tmp_path):
     assert len(store.get(event_id).metadata.get("thread_reposts") or []) == 1
 
 
-def test_self_reply_thread_with_stranger_reply_interleaved_is_still_threaded(monkeypatch, tmp_path):
+def test_reply_thread_with_stranger_reply_interleaved_all_thread(monkeypatch, tmp_path):
     # Real production case (Alarm Phone, 38 people south of Crete): the
     # timeline's own reply-thread module mixes a stranger's reply in between
-    # two of the author's own replies; only the two self-replies should be
-    # threaded, regardless of their position in the list.
+    # two of the author's own replies. All three thread onto the incident
+    # (correlated evidence, any author), regardless of position in the list.
     store = IntelStore()
     monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
     m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
@@ -603,7 +615,7 @@ def test_self_reply_thread_with_stranger_reply_interleaved_is_still_threaded(mon
 
     posts = store.get(event_id).metadata.get("thread_reposts") or []
     threaded_ids = {p["tweet_id"] for p in posts}
-    assert threaded_ids == {"3031", "3033"}
+    assert threaded_ids == {"3031", "3032", "3033"}
 
 
 def test_old_incident_fetches_direct_reply_cursor_until_resolution(monkeypatch, tmp_path):
@@ -641,8 +653,11 @@ def test_old_incident_fetches_direct_reply_cursor_until_resolution(monkeypatch, 
     client = _DirectClient({"alarm_phone": _FakeTimelineUser(_FakeUser.id, [])})
     asyncio.run(monitor._check_self_replies(client))
 
+    # The cursor must be followed all the way to page 2 to find the
+    # resolution reply -- both replies thread (any author), proving the
+    # pagination walk did not stop after the first page.
     posts = store.events()[0].metadata.get("thread_reposts") or []
-    assert [post["tweet_id"] for post in posts] == ["3082"]
+    assert {post["tweet_id"] for post in posts} == {"3081", "3082"}
 
 
 def _age_event(store: IntelStore, event_id: str, hours_old: float) -> None:
