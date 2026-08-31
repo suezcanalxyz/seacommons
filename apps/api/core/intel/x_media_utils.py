@@ -278,13 +278,49 @@ def ocr_png_coordinate(
     return (next(iter(candidates)) if len(candidates) == 1 else None), True
 
 
+def _tesseract_cross_check(payload: bytes, executable: str) -> Optional[tuple[float, float]]:
+    """One cheap Tesseract read used only to validate an EasyOCR coordinate.
+
+    Not a blind search — the caller already has a candidate. A single scaled/
+    sharpened full-image pass through the same multi-PSM consensus
+    (ocr_png_coordinate) is enough to confirm or dispute it, far cheaper than
+    the popup-detection + multi-crop sweep _ocr_photo runs only when EasyOCR
+    found nothing at all.
+    """
+    from PIL import Image, ImageFilter, ImageOps
+
+    try:
+        with Image.open(io.BytesIO(payload)) as source:
+            image = ImageOps.exif_transpose(source).convert("L")
+            scale = min(4, max(1, math.ceil(2400 / max(1, image.width))))
+            if scale > 1:
+                image = image.resize(
+                    (image.width * scale, image.height * scale), Image.Resampling.LANCZOS
+                )
+            image = ImageOps.autocontrast(image).filter(ImageFilter.SHARPEN)
+            output = io.BytesIO()
+            image.save(output, format="PNG", optimize=True)
+    except Exception:
+        return None
+    coordinate, _attempted = ocr_png_coordinate(output.getvalue(), executable=executable)
+    return coordinate
+
+
 def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool, str]:
     """Download one bounded public image and run three local Tesseract passes.
 
-    Returns (coordinate, attempted, method) — method is "text" for a printed
-    coordinate readout, "pin_landmark" for a plain map screenshot geolocated
-    from its drop-pin plus visible place labels (see map_pin_geolocate.py),
-    or "none".
+    Returns (coordinate, attempted, method):
+      - "easyocr_tesseract_consensus" — EasyOCR's read, cross-checked and
+        confirmed by an independent Tesseract pass (tight uncertainty).
+      - "easyocr_text_disputed" — EasyOCR's read, but a Tesseract cross-check
+        landed on a materially different coordinate (wide uncertainty,
+        needs_review) — never silently trust one engine over a disagreement.
+      - "easyocr_text" — EasyOCR's read, Tesseract unavailable or found
+        nothing to compare against (unchanged legacy behaviour).
+      - "text" — printed coordinate readout from the Tesseract-only path.
+      - "pin_landmark" — a plain map screenshot geolocated from its drop-pin
+        plus visible place labels (see map_pin_geolocate.py).
+      - "none".
     """
     executable = shutil.which("tesseract")
     if not executable and importlib.util.find_spec("easyocr") is None:
@@ -307,6 +343,20 @@ def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool, str]:
 
     easy_coordinate, easy_boxes, easy_attempted = _easyocr_image(payload)
     if easy_coordinate is not None:
+        if executable:
+            try:
+                cross_check = _tesseract_cross_check(payload, executable)
+            except Exception:
+                cross_check = None
+            if cross_check is not None:
+                agree = (
+                    abs(cross_check[0] - easy_coordinate[0]) <= 0.03
+                    and abs(cross_check[1] - easy_coordinate[1]) <= 0.03
+                )
+                return (
+                    easy_coordinate, True,
+                    "easyocr_tesseract_consensus" if agree else "easyocr_text_disputed",
+                )
         return easy_coordinate, True, "easyocr_text"
 
     from PIL import Image, ImageFilter, ImageOps

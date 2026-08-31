@@ -1041,6 +1041,72 @@ def test_media_ocr_upgrades_position_and_drifts(tmp_path, monkeypatch):
     assert drift_calls[-1][1] == 35.5 and drift_calls[-1][2] == 24.9
 
 
+def test_media_ocr_consensus_between_engines_gets_tight_uncertainty(tmp_path, monkeypatch):
+    """User follow-up: "fix humanitarian tesseract piu preciso" -- when
+    EasyOCR's coordinate is cross-checked and confirmed by an independent
+    Tesseract pass, the stored uncertainty must reflect that real agreement
+    (tight), not the old flat single-engine constant."""
+    drift_calls: list = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+        drift_calls=drift_calls,
+    )
+    monkeypatch.setattr(
+        "core.intel.twikit_monitor._ocr_photo",
+        lambda url: ((35.5, 24.9), True, "easyocr_tesseract_consensus"),
+    )
+    tweet = _FakeTweet(
+        "3013",
+        "🆘 38 lives at risk south of #Crete! #Greece",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg")],
+    )
+    m._ingest(tweet, handle="alarm_phone")
+    evt = store.events()[0]
+    m._apply_media_ocr(evt.id, ["https://pbs.twimg.com/media/map.jpg"])
+    evt = store.get(evt.id)
+    assert evt.lat == 35.5 and evt.lon == 24.9
+    assert evt.metadata["coordinate_source"] == "media_ocr_consensus"
+    assert evt.metadata["location_uncertainty_m"] == 400
+    assert evt.metadata["coordinate_review_status"] == "machine_ocr_consensus_verified"
+    assert drift_calls, "drift must fire with the confirmed position"
+
+
+def test_media_ocr_disputed_between_engines_gets_wide_uncertainty_and_review(tmp_path, monkeypatch):
+    """When EasyOCR and the Tesseract cross-check land on materially
+    different coordinates, the disagreement must never be silently resolved
+    by trusting whichever engine happened to run -- wide uncertainty and an
+    explicit needs-review status instead."""
+    drift_calls: list = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+        drift_calls=drift_calls,
+    )
+    monkeypatch.setattr(
+        "core.intel.twikit_monitor._ocr_photo",
+        lambda url: ((35.5, 24.9), True, "easyocr_text_disputed"),
+    )
+    tweet = _FakeTweet(
+        "3014",
+        "🆘 38 lives at risk south of #Crete! #Greece",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg")],
+    )
+    m._ingest(tweet, handle="alarm_phone")
+    evt = store.events()[0]
+    m._apply_media_ocr(evt.id, ["https://pbs.twimg.com/media/map.jpg"])
+    evt = store.get(evt.id)
+    assert evt.lat == 35.5 and evt.lon == 24.9
+    assert evt.metadata["coordinate_source"] == "media_ocr_text"
+    assert evt.metadata["location_uncertainty_m"] == 3500
+    assert evt.metadata["coordinate_review_status"] == "machine_ocr_disputed_needs_review"
+    # Position is still stored (better than nothing) and still drifts --
+    # disputed just means lower confidence, not discarded.
+    assert drift_calls
+
+
 def test_media_pin_landmark_fallback_upgrades_position_with_wider_uncertainty(tmp_path, monkeypatch):
     """A map screenshot with only a pin (no printed coordinates) should still
     upgrade the event's position via map_pin_geolocate, tagged distinctly
