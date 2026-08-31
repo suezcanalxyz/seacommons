@@ -458,6 +458,7 @@ class AISSpikeDetector:
             metadata=meta,
         )
         added = intel_store.add(event)
+        print(f"CI-DEBUG _emit added={added} content_hash={event.content_hash()} id={event.id}")
         if added:
             logger.info("AIS spike [%s] %s @ %.3f,%.3f", spike_type, name or mmsi, lat, lon)
             from core.intel.triangulation import evaluate as evaluate_triangulation

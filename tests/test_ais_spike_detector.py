@@ -111,7 +111,11 @@ def test_emit_rescue_cluster_flags_possible_response_near_active_distress():
         spike_type="rescue_cluster", mmsi=_OCEAN_VIKING, name="Ocean Viking",
         lat=35.51, lon=12.61, severity="high", detail="Rescue cluster: 2 vessels within 3nm",
     )
-    events = [e for e in intel_store.events(limit=10) if e.type == "ais_spike"]
+    all_events = list(intel_store.events(limit=200))
+    events = [e for e in all_events if e.type == "ais_spike"]
+    if len(events) != 1:
+        print(f"CI-DEBUG all_events={[(e.type, e.id, e.timestamp_utc) for e in all_events]}")
+        print(f"CI-DEBUG raw_deque_len={len(intel_store._events)} seen_len={len(intel_store._seen)}")
     assert len(events) == 1
     ev = events[0]
     assert ev.severity == "critical"
@@ -125,6 +129,11 @@ def test_emit_rescue_cluster_without_nearby_distress_is_unflagged():
         spike_type="rescue_cluster", mmsi=_OCEAN_VIKING, name="Ocean Viking",
         lat=35.51, lon=12.61, severity="high", detail="Rescue cluster: 2 vessels within 3nm",
     )
-    ev = [e for e in intel_store.events(limit=10) if e.type == "ais_spike"][0]
+    all_events = list(intel_store.events(limit=200))
+    matches = [e for e in all_events if e.type == "ais_spike"]
+    if not matches:
+        print(f"CI-DEBUG all_events={[(e.type, e.id, e.timestamp_utc) for e in all_events]}")
+        print(f"CI-DEBUG raw_deque_len={len(intel_store._events)} seen_len={len(intel_store._seen)}")
+    ev = matches[0]
     assert "possible_response_to" not in ev.metadata
     assert ev.severity == "high"
