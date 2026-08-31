@@ -649,6 +649,24 @@ class TwikitMonitor:
                 # operational info (e.g. "confirmed rescued").
                 return self._thread_repost(tweet, handle, quoted, kind="quote")
 
+        # A direct reply to an already-tracked incident is a case update, not
+        # a new independent incident (docs/deep-research-report.md #5/#7/#21:
+        # "reply: very strong case linkage" / "correlation_status = linked").
+        # Cross-account, unlike _check_self_replies below which only threads
+        # an account's replies to its OWN earlier tweet -- this is the hard
+        # graph relationship (X's own in_reply_to edge), so it never needs
+        # the probabilistic scoring reserved for content that has no shared
+        # tweet/thread at all. Deliberately does NOT touch the parent's
+        # lifecycle/severity from the reply's content -- unlike a self-reply,
+        # an arbitrary replying account's claim ("rescued!") is not
+        # confirmation; it only becomes visible correlated evidence on the
+        # incident's timeline.
+        in_reply_to_id = str(getattr(tweet, "in_reply_to", "") or "")
+        if in_reply_to_id and quoted is None:
+            reply_parent = intel_store.find_by_tweet_id(in_reply_to_id)
+            if reply_parent is not None:
+                return self._thread_reply(tweet, handle, reply_parent)
+
         own_text = str(getattr(tweet, "text", "") or "")
         quoted_text = str(getattr(quoted, "text", "") or "") if quoted is not None else ""
         # The real distress content (and its GPS map screenshot) often lives
@@ -922,6 +940,36 @@ class TwikitMonitor:
                 "X (twikit) %s %s by @%s threaded onto incident %s (no new event)",
                 kind,
                 repost_id,
+                handle,
+                parent.id,
+            )
+        return False
+
+    def _thread_reply(self, reply: Any, handle: str, parent: IntelEvent) -> bool:
+        """A direct reply to an already-tracked incident is a case update.
+
+        Threaded onto the parent's record exactly like a quote (no new
+        marker, no re-broadcast, no independent lifecycle) -- the reply's own
+        text becomes the operational note, since (unlike a quote) there is no
+        separate quoted body to combine it with.
+        """
+        reply_id = str(getattr(reply, "id", "") or "")
+        if not reply_id:
+            return False
+        record: dict[str, Any] = {
+            "tweet_id": reply_id,
+            "posted_at": self._timestamp(reply),
+            "url": f"https://x.com/i/web/status/{reply_id}",
+            "kind": "reply",
+        }
+        note = str(getattr(reply, "text", "") or "").strip()
+        if note:
+            record["note"] = note[:500]
+        added = intel_store.append_thread_repost(parent.id, record)
+        if added:
+            logger.info(
+                "X (twikit) reply %s by @%s threaded onto incident %s (no new event)",
+                reply_id,
                 handle,
                 parent.id,
             )

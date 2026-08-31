@@ -439,6 +439,52 @@ def test_repost_of_untracked_original_falls_back_to_ingest(monkeypatch, tmp_path
     assert events[0].metadata["is_distress"] is True
 
 
+def test_cross_account_reply_to_tracked_incident_threads_without_new_event(monkeypatch, tmp_path):
+    """docs/deep-research-report.md #5/#7/#21: a direct reply is a hard graph
+    relationship ("very strong case linkage") -- it must thread onto the
+    parent incident as a correlated update, not spawn an independent one,
+    regardless of whether the replying account is the same as the parent's."""
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    original = _FakeTweet("4001", "MAYDAY 20 people boat sinking off Lampedusa 35.5N 12.6E")
+    assert m._ingest(original, handle="alarm_phone") is True
+    parent = store.events()[0]
+
+    class _NGOUser:
+        screen_name = "seawatchcrew"
+        id = "222222"
+
+    reply = _FakeTweet("4002", "We are heading to the reported position now.", user=_NGOUser())
+    reply.in_reply_to = "4001"
+    assert m._ingest(reply, handle="seawatchcrew") is False
+
+    events = store.events()
+    assert len(events) == 1
+    assert events[0].id == parent.id
+    posts = events[0].metadata.get("thread_reposts") or []
+    assert len(posts) == 1
+    assert posts[0]["tweet_id"] == "4002"
+    assert posts[0]["kind"] == "reply"
+    assert "heading to the reported position" in posts[0]["note"]
+    # A cross-account reply is correlated evidence, not confirmation -- it
+    # must never silently flip the parent's own severity/lifecycle.
+    assert events[0].severity == parent.severity
+
+
+def test_reply_to_untracked_tweet_falls_back_to_normal_ingest(monkeypatch, tmp_path):
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    reply = _FakeTweet("4011", "MAYDAY 12 people boat in distress 34.0N 13.0E")
+    reply.in_reply_to = "9999999"  # never ingested, so no tracked parent exists
+    assert m._ingest(reply, handle="alarm_phone") is True
+    events = store.events()
+    assert len(events) == 1
+    assert events[0].metadata["tweet_id"] == "4011"
+    assert events[0].metadata["is_distress"] is True
+
+
 class _FakeTimelineUser:
     """Mimics twikit's User.get_tweets("Tweets", ...) — the only call
     _check_self_replies makes, per tracked handle."""
