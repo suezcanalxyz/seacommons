@@ -384,8 +384,12 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
     for event in drift_events.values():
         by_source.setdefault(event.source, []).append(event)
     for event in drift_events.values():
+        # SeaCommons Drift is a humanitarian SAR model only (docs/deep-research-
+        # report.md #17, hard requirement) -- never project it for a
+        # maritime-security domain (sanctions/grey_zone/iuu_fishing/smuggling),
+        # regardless of how a drift_job_id ended up on the event.
         public_event = _public_intel_feature(
-            event, allowed_domains=domains_for_mode("all")
+            event, allowed_domains=domains_for_mode("humanitarian")
         )
         job_id = event.metadata.get("drift_job_id")
         if public_event is None:

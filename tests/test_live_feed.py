@@ -1271,6 +1271,54 @@ def test_drift_not_shown_for_resolved_or_archived_incidents(monkeypatch) -> None
     assert "drift-resolved" not in event_ids
 
 
+def test_drift_never_shown_for_maritime_security_domain(monkeypatch) -> None:
+    """docs/deep-research-report.md #17, hard requirement: SeaCommons Drift is
+    a humanitarian SAR model only. A security-domain event must never project
+    a drift feature, even if it somehow carries a completed drift_job_id."""
+    from datetime import timezone
+
+    from core.live.feed import public_drift_collection
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    security_event = IntelEvent(
+        id="drift-security",
+        type="ais_anomaly",
+        severity="high",
+        lat=35.0,
+        lon=14.0,
+        title="AIS spoofing near sanctioned vessel",
+        source="SeaCommons MDA",
+        timestamp_utc=now_iso,
+        metadata={
+            "anomaly_type": "sanctioned_vessel",
+            "source_policy": "official_api",
+            "drift_job_id": "job-security",
+        },
+    )
+    monkeypatch.setattr(
+        "core.live.feed.intel_store.persisted_events", lambda **_kwargs: []
+    )
+    monkeypatch.setattr(
+        "core.live.feed.intel_store.events", lambda **_kwargs: [security_event]
+    )
+    fake_drift = {
+        "trajectory": {
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": [[14.0, 35.0], [14.1, 35.1]]},
+            "properties": {},
+        },
+        "cone_24h": None,
+        "impact_point": {},
+        "metadata": {"published": True},
+    }
+    monkeypatch.setattr("core.db.store.get_drift", lambda job_id: fake_drift)
+    monkeypatch.setattr("core.db.store.list_drift_jobs_for_event", lambda event_id: [])
+    monkeypatch.setattr("core.live.feed._is_publishable_live_drift", lambda drift: True)
+
+    collection = public_drift_collection(limit=50)
+    assert collection["features"] == []
+
+
 def test_user_signal_is_private_by_default() -> None:
     signal = DistressSignal(
         source_channel="whatsapp",

@@ -294,6 +294,19 @@ async def intel_auto_drift(body: AutoDriftRequest, request: Request):
     rate_limit(request, max_per_minute=6, scope="intel-drift")
     normalized_id = body.intel_event_id.removeprefix("intel:")
     stored = intel_store.get(normalized_id)
+    if stored is not None:
+        from core.intel.public_policy import SECURITY_MARITIME_DOMAINS
+
+        if stored.maritime_domain() in SECURITY_MARITIME_DOMAINS:
+            # SeaCommons Drift is a humanitarian SAR model only (docs/deep-
+            # research-report.md #17, hard requirement) -- a maritime-security
+            # event (sanctions/grey_zone/iuu_fishing/smuggling) must never get
+            # a drift cone, however the request reached this public endpoint.
+            raise HTTPException(
+                status_code=400,
+                detail="Drift is a humanitarian SAR model; it does not apply "
+                "to maritime-security events.",
+            )
     lat = stored.lat if stored and stored.lat is not None else body.lat
     lon = stored.lon if stored and stored.lon is not None else body.lon
     observed_at = stored.timestamp_utc if stored else datetime.now(timezone.utc).isoformat()
