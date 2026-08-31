@@ -117,6 +117,7 @@ class GDACSMonitor:
         title = item.get("title", "")[:200] or f"GDACS {event_type} alert"
 
         event = IntelEvent(
+            id=dedup,
             type="gdacs",
             severity=severity,
             lat=lat_f,
