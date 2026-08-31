@@ -128,3 +128,18 @@ def test_emit_rescue_cluster_without_nearby_distress_is_unflagged():
     ev = [e for e in intel_store.events(limit=10) if e.type == "ais_spike"][0]
     assert "possible_response_to" not in ev.metadata
     assert ev.severity == "high"
+
+
+def test_emit_respects_cooldown_even_when_process_just_booted(monkeypatch):
+    """Regression guard for the CI-only flake: a never-before-seen cooldown
+    key must never be treated as "just emitted at t=0" -- that made the very
+    first emission of any spike type vanish on a freshly booted process where
+    time.monotonic() itself starts near zero (e.g. a fresh CI runner)."""
+    import core.intel.ais_spike_detector as mod
+    monkeypatch.setattr(mod.time, "monotonic", lambda: 12.0)  # < emit_cooldown_s
+    d = AISSpikeDetector()
+    d._emit(
+        spike_type="rescue_cluster", mmsi=_OCEAN_VIKING, name="Ocean Viking",
+        lat=35.51, lon=12.61, severity="high", detail="Rescue cluster: 2 vessels within 3nm",
+    )
+    assert len([e for e in intel_store.events(limit=10) if e.type == "ais_spike"]) == 1

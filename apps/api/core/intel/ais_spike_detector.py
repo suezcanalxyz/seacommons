@@ -419,7 +419,12 @@ class AISSpikeDetector:
     ) -> None:
         cooldown_key = f"{spike_type}:{mmsi}"
         now = time.monotonic()
-        if self._emitted.get(cooldown_key, 0) + self._emit_cooldown_s > now:
+        last_emit = self._emitted.get(cooldown_key)
+        # A missing key means "never emitted" -- must never collide with a
+        # freshly booted process, where time.monotonic() itself starts near
+        # zero and a `0` default would make the very first emission look
+        # like it happened at t=0 and is still within the cooldown window.
+        if last_emit is not None and last_emit + self._emit_cooldown_s > now:
             return
         self._emitted[cooldown_key] = now
 
