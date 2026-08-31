@@ -75,10 +75,34 @@ def _ensure_additive_columns(eng=None) -> None:
             conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN {column} {ddl}'))
 
 
+def _ensure_indexes(eng=None) -> None:
+    """create_all() never adds an index to a table that already existed.
+
+    Same gap as _ensure_additive_columns, for indexes: an index=True added
+    to a model column after the table was first created in production never
+    actually reaches the database. Verified live: intel_events had zero
+    indexes despite three index=True columns (timestamp_utc/type/severity)
+    -- a full 33k-row scan on every persisted_events() call, twice per
+    /api/v1/live/signals poll, 3-7s+ response times that occasionally
+    exceeded the frontend's fetch timeout and flashed the public Live map
+    to "0 signals" / "Connecting to live feed...".
+    """
+    from sqlalchemy import inspect
+
+    eng = eng or engine()
+    existing_tables = set(inspect(eng).get_table_names())
+    for table in Base.metadata.tables.values():
+        if table.name not in existing_tables:
+            continue  # create_all() just created this table fresh, indexes included
+        for index in table.indexes:
+            index.create(bind=eng, checkfirst=True)
+
+
 def init_database() -> None:
     (_API_ROOT / "core" / "data").mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine())
     _ensure_additive_columns()
+    _ensure_indexes()
 
 
 @contextmanager

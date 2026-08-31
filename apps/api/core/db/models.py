@@ -130,7 +130,7 @@ class IntelEventDB(Base):
     title         = Column(String(256), nullable=False)
     text          = Column(Text,        default="")
     url           = Column(String(512), default="")
-    source        = Column(String(64),  nullable=False)
+    source        = Column(String(64),  nullable=False, index=True)
     linked_mmsi   = Column(String(16),  default="")
     meta          = Column(JSON,        default=dict)
     created_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
