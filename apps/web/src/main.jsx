@@ -606,9 +606,9 @@ function App() {
     if (!isPublicLiveHost) return 'humanitarian';
     try {
       const saved = JSON.parse(window.localStorage.getItem('seacommons_layer_vis') || '{}');
-      return saved.spikes === false ? 'humanitarian' : 'all';
+      return saved.spikes === true ? 'all' : 'humanitarian';
     } catch {
-      return 'all';
+      return 'humanitarian';
     }
   });
   const seenAlertIdsRef = useRef(null);
@@ -650,7 +650,10 @@ function App() {
       weather: true,
       sar: true,
       fused: true,
-      spikes: isPublicLiveHost,
+      // AIS anomaly / spoofing is security-domain noise by default -- opt in
+      // per session rather than swamping a quiet humanitarian map with
+      // hundreds of vessel triangles. See the Signals selector.
+      spikes: false,
       platforms: true,
       alerts: true,
     };
@@ -2253,7 +2256,7 @@ function App() {
   // initializer above for why.
   useEffect(() => {
     if (!isPublicLiveHost) return;
-    setLiveMode(layerVis.spikes === false ? 'humanitarian' : 'all');
+    setLiveMode(layerVis.spikes === true ? 'all' : 'humanitarian');
   }, [isPublicLiveHost, layerVis.spikes]);
 
   // Layer group visibility — applied to every MapLibre layer in the group
