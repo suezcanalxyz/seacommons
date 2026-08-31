@@ -290,6 +290,24 @@ class MdaWatch:
                 )
                 if not result.get("sanctions"):
                     continue
+            # AIS ship_type 60-69 = passenger vessel (ferries included). Unlike
+            # pleasure craft this is NOT exempted everywhere -- a ferry gone
+            # fully dark in open water is still worth flagging. But scheduled
+            # ferries switch AIS off routinely during port turnaround, and
+            # that specific, high-frequency, port-adjacent pattern was
+            # swamping the security layer with the vessel's own normal
+            # timetable. Exempt only when the last position was inside a
+            # known port/anchorage approach.
+            if isinstance(ship_type, int) and 60 <= ship_type <= 69:
+                from core.mda.reference import reference
+                if reference.in_port_or_anchorage(last.lat, last.lon):
+                    from core.mda.identity import screen
+                    result = screen(
+                        mmsi=mmsi, imo=v.get("imo"),
+                        name=v.get("ship_name") or "", flag=v.get("flag") or "",
+                    )
+                    if not result.get("sanctions"):
+                        continue
             jam = jamming.in_jamming_zone(last.lat, last.lon)
             cue = None
             if jam < 0.3:   # not just jamming — worth a satellite cross-cue
@@ -504,6 +522,23 @@ class MdaWatch:
                     )
                     if not result.get("sanctions"):
                         continue
+                # AIS ship_type 60-69 = passenger vessel. A scheduled ferry's
+                # repeated berthing/turning manoeuvre at its own terminal
+                # produces the same near-static or tight-ring signature --
+                # exempt only inside a known port/anchorage, same reasoning
+                # as scan_gaps: this is the vessel's own routine, not
+                # everywhere a passenger ship goes quiet or circles.
+                elif isinstance(ship_type, int) and 60 <= ship_type <= 69:
+                    mid = pts[len(pts) // 2]
+                    from core.mda.reference import reference
+                    if reference.in_port_or_anchorage(mid["lat"], mid["lon"]):
+                        from core.mda.identity import screen
+                        result = screen(
+                            mmsi=mmsi, imo=v.get("imo"),
+                            name=v.get("ship_name") or "", flag=v.get("flag") or "",
+                        )
+                        if not result.get("sanctions"):
+                            continue
             if self._recently_emitted(f"spoof:{mmsi}", 6 * 3600):
                 continue
             mid = pts[len(pts) // 2]

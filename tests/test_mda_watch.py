@@ -136,6 +136,51 @@ def test_gap_scan_still_flags_sanctioned_pleasure_craft():
     assert _alerts("ais_anomaly")[0].metadata["anomaly_type"] == "gap"
 
 
+def test_gap_scan_ignores_passenger_ferry_near_port():
+    """Ship_type 60 (passenger) going quiet at its own terminal (Piraeus) is
+    the scheduled turnaround, not an anomaly -- unlike pleasure craft this is
+    NOT exempted everywhere, only inside a known port/anchorage."""
+    from core.vessels.registry import registry
+
+    w = MdaWatch()
+    registry.upsert("111000014", ship_type=60, ship_name="BLUE STAR")
+    _feed("111000014", 37.94, 23.60, sog=5.0)   # Piraeus
+    track_store._last["111000014"].ts = time.time() - 5400
+    assert w.scan_gaps() == 0
+    assert not _alerts("ais_anomaly")
+
+
+def test_gap_scan_still_flags_passenger_ferry_far_from_port():
+    """The port exemption must not become a blanket passenger-ship
+    exemption -- a ferry gone fully dark in open water still alerts."""
+    from core.vessels.registry import registry
+
+    w = MdaWatch()
+    registry.upsert("111000015", ship_type=60, ship_name="OPEN FERRY")
+    _feed("111000015", 37.00, 18.00, sog=5.0)   # mid-Ionian, far from any bundled port
+    track_store._last["111000015"].ts = time.time() - 5400
+    assert w.scan_gaps() == 1
+    assert _alerts("ais_anomaly")[0].metadata["anomaly_type"] == "gap"
+
+
+def test_gap_scan_still_flags_sanctioned_passenger_ferry_near_port():
+    from core.db.models import SanctionedVesselDB
+    from core.db.session import engine, session_scope
+    from core.vessels.registry import registry
+
+    SanctionedVesselDB.__table__.create(bind=engine(), checkfirst=True)
+    with session_scope() as db:
+        db.add(SanctionedVesselDB(source_list="OFAC_SDN", name="SHADOW FERRY",
+                                  name_upper="SHADOW FERRY", imo=None, mmsi="111000016",
+                                  program="RUSSIA-EO14024"))
+
+    w = MdaWatch()
+    registry.upsert("111000016", ship_type=60, ship_name="SHADOW FERRY")
+    _feed("111000016", 37.94, 23.60, sog=5.0)   # Piraeus
+    track_store._last["111000016"].ts = time.time() - 5400
+    assert w.scan_gaps() == 1
+
+
 def test_spoofing_circular_track():
     import math
     w = MdaWatch()
@@ -168,6 +213,27 @@ def test_spoofing_circular_ignores_pleasure_craft_swinging_at_anchor():
         track_store.on_position("111000012", "WINDSWEPT", 37.0 + dlat, 15.0 + dlon,
                                 sog=0.4, nav_status=1, received_at=datetime.now(timezone.utc))
         track_store._last_write_epoch["111000012"] = 0.0
+    assert w.scan_spoofing() == 0
+    assert not _alerts("ais_anomaly")
+
+
+def test_spoofing_circular_ignores_passenger_ferry_at_its_own_terminal():
+    """A scheduled ferry's repeated berthing manoeuvre at Piraeus draws the
+    same ring signature -- exempt only there, not everywhere a passenger
+    ship circles (see the far-from-port gap test for the counter-case)."""
+    import math
+
+    from core.vessels.registry import registry
+
+    w = MdaWatch()
+    registry.upsert("111000017", ship_type=60, ship_name="BLUE HORIZON")
+    for k in range(14):
+        ang = k / 14 * 2 * math.pi
+        dlat = 200 * math.sin(ang) / 111320
+        dlon = 200 * math.cos(ang) / (111320 * math.cos(math.radians(37.94)))
+        track_store.on_position("111000017", "BLUE HORIZON", 37.94 + dlat, 23.60 + dlon,
+                                sog=1.0, nav_status=0, received_at=datetime.now(timezone.utc))
+        track_store._last_write_epoch["111000017"] = 0.0
     assert w.scan_spoofing() == 0
     assert not _alerts("ais_anomaly")
 

@@ -1073,13 +1073,17 @@ function App() {
   }, [apiBase]);
 
   useEffect(() => {
-    if (isPublicDemoHost || isPublicLiveHost) {
+    if (isPublicDemoHost) {
       setNgoVessels({ type: 'FeatureCollection', features: [] });
       return undefined;
     }
-    // AIS positions are public data either way; the public host just reads
-    // them through /api/v1/live/ (unauthenticated) instead of the
-    // operator-only /api/v1/intel/ngo (requires a session).
+    // AIS positions are public data either way; the public Live host reads
+    // them through /api/v1/live/ngo-vessels (unauthenticated) instead of the
+    // operator-only /api/v1/intel/ngo (requires a session). This effect used
+    // to bail out to an empty FeatureCollection for isPublicLiveHost too --
+    // the comment already described the intended unauthenticated path, the
+    // guard above it just never let the code reach it. The NGO fleet was
+    // never once fetched on live.seacommons.org as a result.
     const path = isPublicLiveHost ? '/api/v1/live/ngo-vessels' : '/api/v1/intel/ngo';
     let alive = true;
     async function loadNgoVessels() {
