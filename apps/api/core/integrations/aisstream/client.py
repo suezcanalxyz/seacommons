@@ -89,7 +89,15 @@ def _handle_message(msg: dict, store, registry=None) -> None:
     meta = msg.get("MetaData", {})
     message = msg.get("Message", {})
 
-    mmsi = str(meta.get("MMSI", "unknown"))
+    # A missing MMSI must never fall back to a shared placeholder identity --
+    # every message lacking one would otherwise collapse onto the same
+    # "unknown" vessel record, overwriting each other's position/track.
+    # (core.vessels.aisstream, the client this project actually runs,
+    # already discards these messages the same way.)
+    raw_mmsi = meta.get("MMSI")
+    if not raw_mmsi:
+        return
+    mmsi = str(raw_mmsi)
     ship_name = meta.get("ShipName", "").strip() or mmsi
     lat = meta.get("latitude")
     lon = meta.get("longitude")

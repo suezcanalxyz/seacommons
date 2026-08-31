@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { classifyEventVisual, eventAnomalyLabel } from '../features/intel/categories.js';
+import { categoryOf, classifyEventVisual, eventAnomalyLabel } from '../features/intel/categories.js';
 
 const ALARM_PHONE_SOURCE = 'Alarm Phone';
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -237,6 +237,7 @@ export default function IntelDashboard({
   setIntelFilter,
   intelMode,
   liveMode = 'humanitarian',
+  activeSignalCategories,
   showAisAlerts,
   setShowAisAlerts,
   mapRef,
@@ -270,6 +271,13 @@ export default function IntelDashboard({
   const filteredEvents = useMemo(() => {
     let evs = showAisAlerts ? intelEvents : intelEvents.filter((f) => f.properties?.type !== 'ais_spike');
 
+    // Signals selector — per-category toggle (public Live panel). Mirrors
+    // exactly what the map's per-category layers show, so the feed cards and
+    // the map never disagree about what is currently visible.
+    if (activeSignalCategories) {
+      evs = evs.filter((f) => activeSignalCategories.has(categoryOf(f.properties?.type)));
+    }
+
     if (tierFilter !== 'all') evs = evs.filter((f) => eventTier(f.properties || {}) === tierFilter);
     if (intelFilter !== 'all') evs = evs.filter((f) => f.properties?.severity === intelFilter);
     if (channelFilter !== 'all') evs = evs.filter((f) => f.properties?.type === channelFilter);
@@ -297,7 +305,7 @@ export default function IntelDashboard({
       Date.parse(right.properties?.timestamp_utc || 0)
       - Date.parse(left.properties?.timestamp_utc || 0)
     ));
-  }, [intelEvents, intelFilter, channelFilter, sourceFilter, tierFilter, domainFilter, showAisAlerts, search, selectedEventId]);
+  }, [intelEvents, intelFilter, channelFilter, sourceFilter, tierFilter, domainFilter, showAisAlerts, activeSignalCategories, search, selectedEventId]);
 
   // Maritime compartments actually present in the current event set (operator view).
   const presentDomains = useMemo(() => {
@@ -403,7 +411,7 @@ export default function IntelDashboard({
         <div className="osint-stats-row">
           <div className="osint-stat">
             <strong>{intelStats.total}</strong>
-            <span>{publicMode ? liveMode === 'security' ? 'security' : 'humanitarian' : 'events'}</span>
+            <span>{publicMode ? (liveMode === 'all' ? 'signals' : 'humanitarian') : 'events'}</span>
           </div>
           <div className="osint-stat osint-stat--critical">
             <strong>{intelStats.by_sev?.critical || 0}</strong><span>critical</span>
@@ -531,9 +539,9 @@ export default function IntelDashboard({
                 {publicMode && intelMode !== 'offline' && tierFilter === 'all' && intelFilter === 'all' && channelFilter === 'all' && !search ? (
                   <div className="intel-live-empty">
                     <i />
-                    <strong>No {liveMode === 'security' ? 'maritime-security' : 'humanitarian'} signal received</strong>
-                    <span>{liveMode === 'security'
-                      ? 'Listening for AIS, identity and dark-vessel anomalies.'
+                    <strong>No {liveMode === 'all' ? '' : 'humanitarian '}signal received</strong>
+                    <span>{liveMode === 'all'
+                      ? 'Listening to official APIs, partner channels and AIS anomaly detection.'
                       : 'Listening to official APIs and explicitly published partner channels.'}</span>
                   </div>
                 ) : intelMode !== 'offline'

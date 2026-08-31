@@ -101,6 +101,41 @@ def test_gap_scan_flags_silent_vessel(monkeypatch):
     assert _alerts("ais_anomaly")[0].metadata["anomaly_type"] == "gap"
 
 
+def test_gap_scan_ignores_pleasure_craft_at_anchor():
+    """Ship_type 37 (pleasure craft) swinging AIS off at anchor near a marina
+    is normal leisure behaviour, not a reporting anomaly -- must not alert
+    unless the vessel is a confirmed sanctions match."""
+    from core.vessels.registry import registry
+
+    w = MdaWatch()
+    registry.upsert("111000008", ship_type=37, ship_name="SUNSEEKER")
+    _feed("111000008", 36.0, 14.5, sog=3.0)
+    track_store._last["111000008"].ts = time.time() - 5400   # 90 min silent
+    assert w.scan_gaps() == 0
+    assert not _alerts("ais_anomaly")
+
+
+def test_gap_scan_still_flags_sanctioned_pleasure_craft():
+    """The same pleasure-craft exemption must not shield an actual sanctions
+    match -- 'eliminate false positives, not sanctioned yachts'."""
+    from core.db.models import SanctionedVesselDB
+    from core.db.session import engine, session_scope
+    from core.vessels.registry import registry
+
+    SanctionedVesselDB.__table__.create(bind=engine(), checkfirst=True)
+    with session_scope() as db:
+        db.add(SanctionedVesselDB(source_list="OFAC_SDN", name="ROYAL STAR",
+                                  name_upper="ROYAL STAR", imo=None, mmsi="111000009",
+                                  program="RUSSIA-EO14024"))
+
+    w = MdaWatch()
+    registry.upsert("111000009", ship_type=37, ship_name="ROYAL STAR")
+    _feed("111000009", 36.0, 14.5, sog=3.0)
+    track_store._last["111000009"].ts = time.time() - 5400
+    assert w.scan_gaps() == 1
+    assert _alerts("ais_anomaly")[0].metadata["anomaly_type"] == "gap"
+
+
 def test_spoofing_circular_track():
     import math
     w = MdaWatch()
@@ -114,6 +149,27 @@ def test_spoofing_circular_track():
     assert w.scan_spoofing() == 1
     ev = _alerts("ais_anomaly")
     assert ev[0].metadata["anomaly_type"] == "circle_spoof"
+
+
+def test_spoofing_circular_ignores_pleasure_craft_swinging_at_anchor():
+    """The same ring signature a real spoofer draws is what a boat swinging
+    on its anchor chain near a marina produces -- must not alert a
+    non-sanctioned pleasure craft on this signature alone."""
+    import math
+
+    from core.vessels.registry import registry
+
+    w = MdaWatch()
+    registry.upsert("111000012", ship_type=36, ship_name="WINDSWEPT")
+    for k in range(14):
+        ang = k / 14 * 2 * math.pi
+        dlat = 200 * math.sin(ang) / 111320
+        dlon = 200 * math.cos(ang) / (111320 * math.cos(math.radians(37)))
+        track_store.on_position("111000012", "WINDSWEPT", 37.0 + dlat, 15.0 + dlon,
+                                sog=0.4, nav_status=1, received_at=datetime.now(timezone.utc))
+        track_store._last_write_epoch["111000012"] = 0.0
+    assert w.scan_spoofing() == 0
+    assert not _alerts("ais_anomaly")
 
 
 def test_spoofing_teleport():

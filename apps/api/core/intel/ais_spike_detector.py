@@ -51,6 +51,30 @@ LOITER_MIN_S       = 45 * 60    # stopped > 45 min in open water = loiter
 SEARCH_BEARING_DELTA = 60.0     # NGO course change > this = search pattern
 SEARCH_SPEED_MAX_KN  = 5.0
 
+# ── Circular search-pattern fit (track history, not just 2 samples) ──────────
+# A genuine expanding-square / sector search box leaves the same geometric
+# signature the AIS spoof detector flags (core.mda.watch._circle_fit): a
+# tight, near-closed ring. Fitting the recent track catches a real search
+# pattern the single-sample bearing-delta check above misses between polls;
+# on a known NGO/coastguard hull the same signature reads as "searching",
+# not "spoofed".
+SEARCH_TRACK_WINDOW_MIN = 90
+SEARCH_TRACK_MIN_FIXES  = 5
+SEARCH_CIRCLE_MIN_M     = 150.0
+SEARCH_CIRCLE_MAX_M     = 4000.0
+SEARCH_CIRCLE_MAX_RESID = 0.20   # looser than the spoof detector's 0.12 --
+                                  # a worked search box is not a perfect ring
+
+# ── Cross-check against active humanitarian distress cases ───────────────────
+# Context only -- never proof of an actual response. See
+# core.live.vessel_episodes.add_nearby_humanitarian_context for the same
+# non-causal "nearby, not confirmed" pattern applied to the public feed.
+RESPONSE_CROSSCHECK_RADIUS_NM = 30.0
+RESPONSE_CROSSCHECK_MAX_AGE_DAYS = 2
+_DISTRESS_TYPES = frozenset({"distress", "iom_incident"})
+_RESOLVED_LIFECYCLES = frozenset({"resolved", "archived"})
+_RESCUE_RELEVANT_SPIKES = frozenset({"sudden_stop", "ngo_search_pattern", "rescue_cluster"})
+
 # ── Known SAR hotspot zones (simple lat/lon/radius) ───────────────────────────
 SAR_HOTSPOTS: list[dict[str, Any]] = [
     {"name": "Central Med / Lampedusa",   "lat": 35.50, "lon": 12.60, "radius_nm": 80},
@@ -101,6 +125,55 @@ def _in_hotspot(lat: float, lon: float) -> Optional[str]:
         if _haversine_nm(lat, lon, hs["lat"], hs["lon"]) <= hs["radius_nm"]:
             return hs["name"]
     return None
+
+
+def _ngo_circular_pattern(mmsi: str) -> Optional[tuple[float, str]]:
+    """Fit the vessel's last SEARCH_TRACK_WINDOW_MIN of track. Returns
+    (radius_m, detail) when it looks like a worked search box (a tight,
+    near-closed ring), else None."""
+    try:
+        from datetime import timedelta
+
+        from core.mda.watch import _circle_fit
+        from core.vessels.track_store import track_store
+
+        pts = track_store.track(
+            mmsi,
+            since=datetime.now(timezone.utc) - timedelta(minutes=SEARCH_TRACK_WINDOW_MIN),
+            limit=200,
+        )
+        if len(pts) < SEARCH_TRACK_MIN_FIXES:
+            return None
+        r_m, resid = _circle_fit([(p["lat"], p["lon"]) for p in pts])
+        if r_m and SEARCH_CIRCLE_MIN_M <= r_m <= SEARCH_CIRCLE_MAX_M and resid < SEARCH_CIRCLE_MAX_RESID:
+            return r_m, f"ring radius ~{r_m:.0f} m over {len(pts)} fixes in {SEARCH_TRACK_WINDOW_MIN} min"
+    except Exception as exc:  # pragma: no cover
+        logger.debug("_ngo_circular_pattern(%s) failed: %s", mmsi, exc)
+    return None
+
+
+def _nearby_active_distress(lat: float, lon: float) -> Optional[dict[str, Any]]:
+    """Nearest ACTIVE distress/IOM-incident intel event within
+    RESPONSE_CROSSCHECK_RADIUS_NM, or None. Context only -- proximity is never
+    proof that a vessel is responding to it."""
+    try:
+        best: Optional[dict[str, Any]] = None
+        for ev in intel_store.events(limit=300, max_age_days=RESPONSE_CROSSCHECK_MAX_AGE_DAYS):
+            if ev.type not in _DISTRESS_TYPES and not ev.metadata.get("is_distress"):
+                continue
+            if str(ev.metadata.get("incident_lifecycle") or "active") in _RESOLVED_LIFECYCLES:
+                continue
+            if ev.lat is None or ev.lon is None:
+                continue
+            dist = _haversine_nm(lat, lon, ev.lat, ev.lon)
+            if dist > RESPONSE_CROSSCHECK_RADIUS_NM:
+                continue
+            if best is None or dist < best["distance_nm"]:
+                best = {"case_id": ev.id, "title": (ev.title or "")[:120], "distance_nm": round(dist, 1)}
+        return best
+    except Exception as exc:  # pragma: no cover
+        logger.debug("_nearby_active_distress failed: %s", exc)
+        return None
 
 
 def _in_port(lat: float, lon: float) -> bool:
@@ -237,8 +310,24 @@ class AISSpikeDetector:
                 # ── Rule 3: NGO search pattern ─────────────────────────────────
                 if is_ngo(mmsi):
                     delta = _bearing_delta(prev["course"], v["course"])
-                    if (delta >= SEARCH_BEARING_DELTA
-                            and STOP_THRESHOLD_KN < v["speed"] <= SEARCH_SPEED_MAX_KN):
+                    zigzag = (delta >= SEARCH_BEARING_DELTA
+                              and STOP_THRESHOLD_KN < v["speed"] <= SEARCH_SPEED_MAX_KN)
+                    # The 2-sample bearing check above only ever sees the two
+                    # most recent 5-min polls -- too coarse to catch a real
+                    # search box unfolding between them. Fit the actual track.
+                    circular = (
+                        _ngo_circular_pattern(mmsi)
+                        if STOP_THRESHOLD_KN < v["speed"] <= SEARCH_SPEED_MAX_KN else None
+                    )
+                    if zigzag or circular:
+                        detail = (
+                            f"{v['name'] or mmsi} ({get_ngo_info(mmsi)['org']}) "
+                            f"executing search pattern"
+                        )
+                        if circular:
+                            detail += f" — {circular[1]}"
+                        elif zigzag:
+                            detail += f" — bearing Δ {delta:.0f}° at {v['speed']:.1f} kn"
                         self._emit(
                             spike_type="ngo_search_pattern",
                             mmsi=mmsi,
@@ -246,12 +335,9 @@ class AISSpikeDetector:
                             lat=v["lat"],
                             lon=v["lon"],
                             severity="high",
-                            detail=(
-                                f"{v['name'] or mmsi} ({get_ngo_info(mmsi)['org']}) "
-                                f"executing search pattern — bearing Δ {delta:.0f}° "
-                                f"at {v['speed']:.1f} kn"
-                            ),
+                            detail=detail,
                             ngo_info=get_ngo_info(mmsi),
+                            metadata={"pattern": "circular" if circular else "course_change"},
                         )
 
             # Update state
@@ -343,6 +429,21 @@ class AISSpikeDetector:
             meta["vessel_role"] = ngo_info.get("role", "")
         if metadata:
             meta.update(metadata)
+
+        # Cross-check against active distress cases: proximity + rescue-like
+        # motion is context for "possible response", never proof of one --
+        # same non-causal framing as add_nearby_humanitarian_context.
+        if spike_type in _RESCUE_RELEVANT_SPIKES:
+            nearby = _nearby_active_distress(lat, lon)
+            if nearby is not None:
+                meta["possible_response_to"] = nearby
+                detail = (
+                    f"{detail} — {nearby['distance_nm']} nm from an active distress "
+                    f"report ({nearby['title'] or nearby['case_id']}); possible response, "
+                    f"not confirmed."
+                )
+                if severity not in ("critical",):
+                    severity = "critical"
 
         event = IntelEvent(
             type="ais_spike",

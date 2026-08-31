@@ -265,14 +265,31 @@ class MdaWatch:
 
     def scan_gaps(self) -> int:
         from core.mda.jamming import jamming
+        from core.vessels.registry import registry
         from core.vessels.track_store import track_store
 
         min_gap = float(getattr(config, "MDA_GAP_MIN_S", 3600))
         candidates = track_store.silent_since(min_silent_s=min_gap, min_speed_kn=2.0)
+        cache = getattr(registry, "_cache", {}) or {}
         emitted = 0
         for mmsi, last in candidates:
             if self._recently_emitted(f"gap:{mmsi}", 6 * 3600):
                 continue
+            # AIS ship_type 36/37 = sailing / pleasure craft. These routinely
+            # switch off AIS overnight at anchor near a marina -- that is
+            # normal leisure behaviour, not a reporting anomaly, and must not
+            # be reported as one unless the vessel itself is a sanctions
+            # match (see core.mda.identity.screen).
+            v = cache.get(mmsi, {})
+            ship_type = v.get("ship_type")
+            if isinstance(ship_type, int) and ship_type in (36, 37):
+                from core.mda.identity import screen
+                result = screen(
+                    mmsi=mmsi, imo=v.get("imo"),
+                    name=v.get("ship_name") or "", flag=v.get("flag") or "",
+                )
+                if not result.get("sanctions"):
+                    continue
             jam = jamming.in_jamming_zone(last.lat, last.lon)
             cue = None
             if jam < 0.3:   # not just jamming — worth a satellite cross-cue
@@ -454,6 +471,7 @@ class MdaWatch:
 
     def scan_spoofing(self) -> int:
         from core.mda.jamming import jamming
+        from core.vessels.registry import registry
         from core.vessels.track_store import track_store
 
         now = datetime.now(timezone.utc)
@@ -461,6 +479,7 @@ class MdaWatch:
         by_mmsi: dict[str, list[dict[str, Any]]] = {}
         for r in rows:
             by_mmsi.setdefault(r["mmsi"], []).append(r)
+        cache = getattr(registry, "_cache", {}) or {}
         emitted = 0
         for mmsi, pts in by_mmsi.items():
             if len(pts) < 6:
@@ -469,6 +488,22 @@ class MdaWatch:
             reason, extra = self._spoof_signature(pts)
             if reason is None:
                 continue
+            if reason in ("frozen", "circular"):
+                # A pleasure/sailing craft (ship_type 36/37) swinging on its
+                # anchor near a marina produces exactly this signature --
+                # near-static or a small drift circle. Real, not spoofed.
+                # Same exemption as scan_gaps: only a confirmed sanctions
+                # match overrides it.
+                v = cache.get(mmsi, {})
+                ship_type = v.get("ship_type")
+                if isinstance(ship_type, int) and ship_type in (36, 37):
+                    from core.mda.identity import screen
+                    result = screen(
+                        mmsi=mmsi, imo=v.get("imo"),
+                        name=v.get("ship_name") or "", flag=v.get("flag") or "",
+                    )
+                    if not result.get("sanctions"):
+                        continue
             if self._recently_emitted(f"spoof:{mmsi}", 6 * 3600):
                 continue
             mid = pts[len(pts) // 2]

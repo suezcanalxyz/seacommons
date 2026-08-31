@@ -1419,28 +1419,27 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 
 /* ── Cone panel ── */
 .cone-panel {
-  position: absolute;
-  bottom: 12px;
-  right: 10px;
-  width: 290px;
-  z-index: 35;
-  background: var(--glass-bg-solid);
-  border: 1px solid rgba(255, 224, 109, 0.22);
-  backdrop-filter: blur(20px);
-  border-radius: var(--r-md);
-  max-height: calc(100dvh - 200px);
+  /* Full-height right panel, mirroring .live-feed-panel on the left instead
+     of a small floating box. */
+  position: fixed;
+  inset: 0 0 0 auto;
+  right: 0;
+  bottom: auto;
+  width: min(var(--live-panel-width), 100vw);
+  z-index: 1150;
+  background: rgba(3, 10, 14, 0.2);
+  border: none;
+  border-left: 1px solid rgba(56, 189, 248, 0.28);
+  backdrop-filter: blur(18px) saturate(1.15);
+  border-radius: 0;
+  max-height: none;
   overflow-y: auto;
   overflow-x: hidden;
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.52), inset 0 0 48px rgba(3, 10, 14, 0.2);
 }
 
 .cone-panel--intel {
-  width: min(390px, calc(100vw - 24px));
-  max-height: calc(100dvh - 92px);
-  border-color: rgba(56, 189, 248, 0.28);
-  background: rgba(3, 10, 14, 0.2);
-  backdrop-filter: blur(18px) saturate(1.15);
-  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.52), inset 0 0 48px rgba(3, 10, 14, 0.2);
+  border-left-color: rgba(56, 189, 248, 0.28);
 }
 
 .cone-panel--intel .cone-panel-header {
@@ -2896,6 +2895,7 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 
   /* Drift cone becomes a full-width bottom sheet, flush above the tab bar */
   .cone-panel {
+    top: auto;
     left: 0;
     right: 0;
     width: 100%;
@@ -3038,11 +3038,13 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   display: flex;
   flex-direction: column;
   color: #e9f7f1;
-  background:
-    linear-gradient(145deg, rgba(8,25,31,.98), rgba(3,12,17,.97) 58%, rgba(5,16,24,.98)),
-    repeating-linear-gradient(0deg, transparent 0 23px, rgba(169,255,218,.025) 24px);
-  border-right: 1px solid rgba(169,255,218,.22);
-  box-shadow: 28px 0 64px rgba(0,0,0,.32);
+  /* Glass background borrowed from .cone-panel--intel (the right-side detail
+     panel) -- same frosted-glass recipe, kept as one named look instead of
+     two divergent panel styles. */
+  background: rgba(3, 10, 14, 0.2);
+  backdrop-filter: blur(18px) saturate(1.15);
+  border-right: 1px solid rgba(56, 189, 248, 0.28);
+  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.52), inset 0 0 48px rgba(3, 10, 14, 0.2);
   transform: translateX(-100%);
   transition: transform .38s cubic-bezier(.22,.82,.2,1);
   overflow: hidden;
@@ -3076,7 +3078,6 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 }
 .live-feed-panel__eyebrow,
 .live-feed-panel__title,
-.live-feed-panel__metrics,
 .live-feed-panel__continuity {
   display: flex;
   align-items: center;
@@ -3166,55 +3167,79 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   color: #a9ffda;
   background: rgba(131,244,223,.12);
 }
-.live-mode-switch {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  margin-bottom: 10px;
-  border: 1px solid rgba(255,255,255,.11);
-  background: rgba(0,0,0,.18);
+/* Signals selector — replaces the old binary humanitarian/security switch.
+   No boxed buttons: "Signals" label + underlined links ("All" + one per
+   category). The chevron never opens a floating popover -- the category
+   list expands inline, in normal document flow, pushing the metrics row and
+   feed body down. Every category stays independently toggleable so
+   humanitarian and security signals can be visible together, which is the
+   whole point (it's what makes the nearby-signal cross-check visible). */
+.signals-selector { margin-bottom: 10px; }
+.signals-selector__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
-.live-mode-switch button {
-  min-height: 34px;
-  padding: 7px 8px;
-  border: 0;
-  color: rgba(225,242,237,.48);
-  background: transparent;
+.signals-selector__label {
+  color: rgba(225,242,237,.4);
   font: 8px var(--font-mono);
-  letter-spacing: .075em;
+  letter-spacing: .09em;
   text-transform: uppercase;
+}
+.signals-selector__link {
+  color: rgba(225,242,237,.55);
+  font: 9px var(--font-mono);
+  letter-spacing: .04em;
+  text-decoration: underline;
+  text-decoration-color: rgba(225,242,237,.22);
+  text-underline-offset: 3px;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.signals-selector__link:hover { color: #ecfff7; text-decoration-color: rgba(236,255,247,.5); }
+.signals-selector__link.is-active {
+  color: var(--live-accent);
+  text-decoration-color: var(--live-accent);
+}
+.signals-selector__chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
   cursor: pointer;
 }
-.live-mode-switch button + button { border-left: 1px solid rgba(255,255,255,.09); }
-.live-mode-switch button.is-active {
-  color: #ecfff7;
-  background: rgba(139,240,197,.12);
-  box-shadow: inset 0 -2px 0 var(--live-accent);
+.signals-selector__chevron i {
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid rgba(225,242,237,.5);
+  border-bottom: 1px solid rgba(225,242,237,.5);
+  transform: rotate(45deg);
+  transition: transform .18s ease;
 }
-.live-feed-panel__metrics {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  border: 1px solid rgba(255,255,255,.08);
-  background: rgba(0,0,0,.16);
+.signals-selector__chevron.is-open i { transform: rotate(-135deg); }
+.signals-selector__chevron:hover i { border-color: #ecfff7; }
+.signals-selector__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255,255,255,.08);
 }
-.live-feed-panel__metrics > div {
-  min-width: 0;
-  padding: 9px 10px 8px;
-  border-right: 1px solid rgba(255,255,255,.08);
-}
-.live-feed-panel__metrics > div:last-child { border: 0; }
-.live-feed-panel__metrics > div.is-active { background: rgba(139,240,197,.06); }
-.live-feed-panel__metrics span,
-.live-feed-panel__metrics strong { display: block; }
-.live-feed-panel__metrics span {
+.signals-selector__count {
+  margin-left: 5px;
   color: rgba(225,242,237,.4);
-  font: 7px var(--font-mono);
-  letter-spacing: .08em;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
 }
-.live-feed-panel__metrics strong {
-  margin-top: 5px;
-  color: var(--live-accent);
-  font: 12px var(--font-mono);
-}
+.signals-selector__link.is-active .signals-selector__count { color: var(--live-accent); }
 .live-feed-panel__continuity {
   gap: 7px;
   padding-top: 9px;

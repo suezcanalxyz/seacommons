@@ -13,6 +13,7 @@ import AlertRail from './components/AlertRail.jsx';
 import MdaPanel from './components/MdaPanel.jsx';
 import {
   categoryColorExpression,
+  categoryOf,
   classifyEventVisual,
   EVENT_VISUAL_CATEGORIES,
   INTEL_MAP_CATEGORIES,
@@ -106,14 +107,25 @@ const PUBLIC_DEMO_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org']
 const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'engine.seacommons.org']);
 // The public Live map only ever fetches data for these layer groups (see the
 // ngo-vessels/platforms effects and loadWeatherGridForMap's isPublicLiveHost
-// guard) — everything else stays hidden there regardless of the layer toggle.
-const PUBLIC_LIVE_HUMANITARIAN_LAYER_GROUPS = new Set([
-  'nautical', 'sar', 'fused', 'observed_tracks', 'drift_models', 'ngo_vessels', 'platforms',
+// guard) — everything else (raw AIS vessel markers, weather, MDA-only layers,
+// past-SAR-cone archive) stays hidden there regardless of the layer toggle.
+// Humanitarian and Security used to be two exclusive bundles the mode switch
+// swapped between; the per-category Signals selector now shows/hides each of
+// these individually, so the allow-list is their union -- always available,
+// never gated by a mode.
+const PUBLIC_LIVE_LAYER_GROUPS = new Set([
+  'nautical', 'sar', 'fused', 'observed_tracks', 'drift_models', 'ngo_vessels', 'platforms', 'spikes',
   'intel_social', 'intel_news', 'intel_hazard', 'intel_incident', 'intel_iom', 'intel_ngo',
 ]);
-const PUBLIC_LIVE_SECURITY_LAYER_GROUPS = new Set([
-  'nautical', 'sar', 'fused', 'observed_tracks', 'drift_models', 'spikes', 'platforms',
-]);
+// Signals selector rows: one per SIGNAL_CATEGORIES entry with a dedicated map
+// layer group ('other' has none, so it is not user-toggleable). Order matches
+// operational priority: distress first, AIS anomalies last.
+const SIGNALS_TOGGLE_CATEGORIES = [
+  { key: 'distress', label: 'Distress', groupKey: 'sar' },
+  { key: 'fused', label: 'Correlated alert', groupKey: 'fused' },
+  ...INTEL_MAP_CATEGORIES.map((c) => ({ key: c.key, label: c.label, groupKey: `intel_${c.key}` })),
+  { key: 'ais', label: 'AIS anomaly', groupKey: 'spikes' },
+];
 const isPublicDemoHost = PUBLIC_DEMO_HOSTS.has(window.location.hostname);
 const isPublicLiveHost = window.location.hostname === 'live.seacommons.org';
 const isLiveHost = LIVE_HOSTS.has(window.location.hostname);
@@ -584,9 +596,22 @@ function App() {
   const [activeSimId, setActiveSimId] = useState(null);
   const [intelDrifts, setIntelDrifts] = useState({ type: 'FeatureCollection', features: [] });
   const [alertFlash, setAlertFlash] = useState(null);
-  const [liveMode, setLiveMode] = useState('humanitarian');
+  // Fetch mode is derived from the AIS-anomaly ('spikes') Signals toggle, not
+  // chosen directly by the user: humanitarian-only stays on the resilient
+  // edge-first path (core/live_edge_publisher.py); as soon as AIS anomalies
+  // are switched on, the VM's mode=all covers every category at once. See the
+  // effect below that keeps this in sync with layerVis.spikes.
+  const [liveMode, setLiveMode] = useState(() => {
+    if (!isPublicLiveHost) return 'humanitarian';
+    try {
+      const saved = JSON.parse(window.localStorage.getItem('seacommons_layer_vis') || '{}');
+      return saved.spikes === false ? 'humanitarian' : 'all';
+    } catch {
+      return 'all';
+    }
+  });
   const seenAlertIdsRef = useRef(null);
-  const { intelEvents, setIntelEvents, intelConnected, intelMode, liveModeCounts } = useLiveFeed({
+  const { intelEvents, setIntelEvents, intelConnected, intelMode } = useLiveFeed({
     apiBase,
     edgeBase: LIVE_EDGE_BASE,
     isPublicLiveHost,
@@ -607,6 +632,7 @@ function App() {
   const [browserLiveDrifts, setBrowserLiveDrifts] = useState({ type: 'FeatureCollection', features: [] });
   const [liveEstimateClock, setLiveEstimateClock] = useState(Date.now());
   const [intelFilter, setIntelFilter] = useState('all');
+  const [signalsExpanded, setSignalsExpanded] = useState(false);
   const [showAisAlerts, setShowAisAlerts] = useState(false);
   const [showVesselLinks, setShowVesselLinks] = useState(false);
   const [baseMap, setBaseMap] = useState(() => {
@@ -1168,7 +1194,6 @@ function App() {
         map.on(ev, stopSpin);
       }
 
-      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
       map.addControl(new maplibregl.GeolocateControl({
         positionOptions: { enableHighAccuracy: true },
         trackUserLocation: true,
@@ -2223,17 +2248,21 @@ function App() {
     try { window.localStorage.setItem('seacommons_base_map', baseMap); } catch { /* quota */ }
   }, [baseMap, mapReady]);
 
+  // Fetch mode follows the AIS-anomaly Signals toggle -- see the liveMode
+  // initializer above for why.
+  useEffect(() => {
+    if (!isPublicLiveHost) return;
+    setLiveMode(layerVis.spikes === false ? 'humanitarian' : 'all');
+  }, [isPublicLiveHost, layerVis.spikes]);
+
   // Layer group visibility — applied to every MapLibre layer in the group
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const publicGroups = liveMode === 'security'
-      ? PUBLIC_LIVE_SECURITY_LAYER_GROUPS
-      : PUBLIC_LIVE_HUMANITARIAN_LAYER_GROUPS;
     for (const group of LAYER_GROUPS) {
       const on = group.defaultOff ? layerVis[group.key] === true : layerVis[group.key] !== false;
       const enabled = isPublicLiveHost
-        ? publicGroups.has(group.key) && on
+        ? PUBLIC_LIVE_LAYER_GROUPS.has(group.key) && on
         : on;
       const vis = enabled ? 'visible' : 'none';
       for (const id of group.layers) {
@@ -2241,7 +2270,12 @@ function App() {
       }
     }
     try { window.localStorage.setItem('seacommons_layer_vis', JSON.stringify(layerVis)); } catch { /* quota */ }
-  }, [layerVis, mapReady, liveMode]);
+  }, [layerVis, mapReady]);
+
+  function isLayerGroupOn(key) {
+    const group = LAYER_GROUPS.find((g) => g.key === key);
+    return group?.defaultOff ? layerVis[key] === true : layerVis[key] !== false;
+  }
 
   function toggleLayerGroup(key) {
     const group = LAYER_GROUPS.find((g) => g.key === key);
@@ -2250,6 +2284,41 @@ function App() {
       return { ...cur, [key]: !on };
     });
   }
+
+  // Signals selector "All" link — select-all, or deselect-all when every
+  // category is already on.
+  function toggleAllSignals() {
+    const allOn = SIGNALS_TOGGLE_CATEGORIES.every((c) => isLayerGroupOn(c.groupKey));
+    setLayerVis((cur) => {
+      const next = { ...cur };
+      for (const c of SIGNALS_TOGGLE_CATEGORIES) next[c.groupKey] = !allOn;
+      return next;
+    });
+  }
+
+  // Live per-category counts for the Signals selector — recomputed on every
+  // intelEvents update (WS push / poll), independent of which categories are
+  // currently toggled on, so switching one off never zeroes its own count.
+  const signalCategoryCounts = useMemo(() => {
+    const counts = {};
+    for (const feature of intelEvents) {
+      const key = categoryOf(feature?.properties?.type);
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+  }, [intelEvents]);
+
+  // 'other' has no dedicated toggle (see SIGNALS_TOGGLE_CATEGORIES) and stays
+  // visible regardless of the selector, same as its map layer (bundled into
+  // the always-relevant 'sar' group).
+  const activeSignalCategories = useMemo(() => {
+    const active = new Set(['other']);
+    for (const c of SIGNALS_TOGGLE_CATEGORIES) {
+      if (isLayerGroupOn(c.groupKey)) active.add(c.key);
+    }
+    return active;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layerVis]);
 
   // Intel events map layer — the backend's `kind` is "distress" (active),
   // "resolved" or "archived" (all three still distress-tier, pulsing, colored
@@ -2974,14 +3043,7 @@ function App() {
             onToggle={toggleLayerGroup}
             baseMap={baseMap}
             onBaseMapChange={setBaseMap}
-            allowed={isPublicLiveHost
-              ? liveMode === 'security'
-                ? PUBLIC_LIVE_SECURITY_LAYER_GROUPS
-                : PUBLIC_LIVE_HUMANITARIAN_LAYER_GROUPS
-              : null}
-            labelOverrides={isPublicLiveHost && liveMode === 'security'
-              ? { sar: 'Maritime-security signals', fused: 'Correlated security alerts' }
-              : null}
+            allowed={isPublicLiveHost ? PUBLIC_LIVE_LAYER_GROUPS : null}
           />
         ) : null}
         {!play3D ? <Legend /> : null}
@@ -3243,33 +3305,37 @@ function App() {
                 </div>
                 <button type="button" onClick={() => setSidebarOpen(false)} aria-label="Collapse live feed">−</button>
               </div>
-              <div className="live-mode-switch" role="group" aria-label="Live feed mode">
-                <button
-                  type="button"
-                  className={liveMode === 'humanitarian' ? 'is-active' : ''}
-                  aria-pressed={liveMode === 'humanitarian'}
-                  onClick={() => setLiveMode('humanitarian')}
-                >Humanitarian</button>
-                <button
-                  type="button"
-                  className={liveMode === 'security' ? 'is-active' : ''}
-                  aria-pressed={liveMode === 'security'}
-                  onClick={() => setLiveMode('security')}
-                >Maritime security</button>
-              </div>
-              <div className="live-feed-panel__metrics">
-                <div className={liveMode === 'humanitarian' ? 'is-active' : ''}>
-                  <span>HUMANITARIAN</span>
-                  <strong>{liveModeCounts.humanitarian ?? '—'}</strong>
+              <div className="signals-selector">
+                <div className="signals-selector__row">
+                  <span className="signals-selector__label">Signals</span>
+                  <a
+                    href="#all"
+                    className={`signals-selector__link ${
+                      SIGNALS_TOGGLE_CATEGORIES.every((c) => isLayerGroupOn(c.groupKey)) ? 'is-active' : ''
+                    }`}
+                    onClick={(event) => { event.preventDefault(); toggleAllSignals(); }}
+                  >All<span className="signals-selector__count">{intelEvents.length}</span></a>
+                  <button
+                    type="button"
+                    className={`signals-selector__chevron ${signalsExpanded ? 'is-open' : ''}`}
+                    aria-expanded={signalsExpanded}
+                    aria-label={signalsExpanded ? 'Collapse signal categories' : 'Expand signal categories'}
+                    onClick={() => setSignalsExpanded((open) => !open)}
+                  ><i /></button>
                 </div>
-                <div className={liveMode === 'security' ? 'is-active' : ''}>
-                  <span>SECURITY</span>
-                  <strong>{liveModeCounts.security ?? '—'}</strong>
-                </div>
-                <div>
-                  <span>TRANSPORT</span>
-                  <strong>{intelMode === 'ws' ? 'WS' : intelMode === 'poll' ? 'REST' : 'SYNC'}</strong>
-                </div>
+                {signalsExpanded && (
+                  <div className="signals-selector__list" role="group" aria-label="Signal categories">
+                    {SIGNALS_TOGGLE_CATEGORIES.map((cat) => (
+                      <a
+                        key={cat.key}
+                        href={`#${cat.key}`}
+                        className={`signals-selector__link ${isLayerGroupOn(cat.groupKey) ? 'is-active' : ''}`}
+                        aria-pressed={isLayerGroupOn(cat.groupKey)}
+                        onClick={(event) => { event.preventDefault(); toggleLayerGroup(cat.groupKey); }}
+                      >{cat.label}<span className="signals-selector__count">{signalCategoryCounts[cat.key] || 0}</span></a>
+                    ))}
+                  </div>
+                )}
               </div>
               <p className="live-feed-panel__continuity">
                 <span />
@@ -3287,6 +3353,7 @@ function App() {
                 setIntelFilter={setIntelFilter}
                 intelMode={intelMode}
                 liveMode={liveMode}
+                activeSignalCategories={activeSignalCategories}
                 showAisAlerts={showAisAlerts}
                 setShowAisAlerts={setShowAisAlerts}
                 mapRef={mapRef}
