@@ -54,18 +54,6 @@ _LIVE_WINDOW_LIMIT = 500
 _LIVE_DURABLE_SCAN_LIMIT = 1500
 
 
-def _is_alarm_phone_event(event: IntelEvent) -> bool:
-    values = {
-        str(event.source or ""),
-        str(event.metadata.get("tracked_account") or ""),
-        str(event.metadata.get("source_handle") or ""),
-    }
-    return any(
-        "".join(ch for ch in value.lower() if ch.isalnum()) == "alarmphone"
-        for value in values
-    )
-
-
 def _published_ingested_features(limit: int) -> list[dict[str, Any]]:
     """
     Project user/partner signals only after an explicit publication decision.
@@ -203,8 +191,6 @@ def public_signal_collection(
             if event.maritime_domain() in SECURITY_MARITIME_DOMAINS
             else "humanitarian"
         )
-        if event_mode == "humanitarian" and not _is_alarm_phone_event(event):
-            continue
         feature = _public_intel_feature(
             event,
             allowed_domains=domains_for_mode(event_mode),

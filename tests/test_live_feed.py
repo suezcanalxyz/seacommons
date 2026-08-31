@@ -1075,6 +1075,10 @@ def test_mode_all_reserves_humanitarian_features_from_security_flood() -> None:
 
 
 def test_public_feed_modes_return_separate_signals_and_counts(monkeypatch) -> None:
+    """Humanitarian eligibility is domain + policy based, not source based --
+    a distress report from a non-Alarm-Phone source (MSF Sea here) with an
+    approved source_policy must survive mode="humanitarian" on equal footing
+    with Alarm Phone. Alarm Phone is a privileged source, not a gate."""
     now = datetime.now(timezone.utc).isoformat()
     humanitarian = IntelEvent(
         id="mode-humanitarian-01",
@@ -1152,12 +1156,13 @@ def test_public_feed_modes_return_separate_signals_and_counts(monkeypatch) -> No
 
     assert {feature["properties"]["id"] for feature in humanitarian_feed["features"]} == {
         "intel:mode-humanitarian-01",
+        "intel:mode-other-ngo-01",
         "intel:mode-humanitarian-context-01",
     }
     assert [feature["properties"]["id"] for feature in security_feed["features"]] == [
         "intel:mode-security-01"
     ]
-    expected_counts = {"humanitarian": 2, "security": 1}
+    expected_counts = {"humanitarian": 3, "security": 1}
     assert humanitarian_feed["meta"]["mode_counts"] == expected_counts
     assert security_feed["meta"]["mode_counts"] == expected_counts
     assert small_feed["meta"]["mode_counts"] == expected_counts
