@@ -597,20 +597,16 @@ function App() {
   const [activeSimId, setActiveSimId] = useState(null);
   const [intelDrifts, setIntelDrifts] = useState({ type: 'FeatureCollection', features: [] });
   const [alertFlash, setAlertFlash] = useState(null);
-  // Fetch mode is derived from the AIS-anomaly ('spikes') Signals toggle, not
-  // chosen directly by the user: humanitarian-only stays on the resilient
-  // edge-first path (core/live_edge_publisher.py); as soon as AIS anomalies
-  // are switched on, the VM's mode=all covers every category at once. See the
-  // effect below that keeps this in sync with layerVis.spikes.
-  const [liveMode, setLiveMode] = useState(() => {
-    if (!isPublicLiveHost) return 'humanitarian';
-    try {
-      const saved = JSON.parse(window.localStorage.getItem('seacommons_layer_vis') || '{}');
-      return saved.spikes === true ? 'all' : 'humanitarian';
-    } catch {
-      return 'humanitarian';
-    }
-  });
+  // Always fetch the full mode=all set on the public host: the Signals
+  // selector's category toggles (activeSignalCategories, below) control what
+  // is actually *shown*, independent of how much the client has fetched.
+  // Tying the fetch itself to a category toggle (an earlier version of this)
+  // meant switching to a narrower default view also starved every other
+  // category down to whatever the edge-only humanitarian snapshot happened
+  // to carry -- a handful of items on a quiet day, reading as "nothing on
+  // the map" even though categories the user still wanted (hazard, IOM,
+  // NGO, fused...) had plenty of eligible content sitting on the VM.
+  const [liveMode] = useState(() => (isPublicLiveHost ? 'all' : 'humanitarian'));
   const seenAlertIdsRef = useRef(null);
   const { intelEvents, setIntelEvents, intelConnected, intelMode } = useLiveFeed({
     apiBase,
@@ -650,10 +646,7 @@ function App() {
       weather: true,
       sar: true,
       fused: true,
-      // AIS anomaly / spoofing is security-domain noise by default -- opt in
-      // per session rather than swamping a quiet humanitarian map with
-      // hundreds of vessel triangles. See the Signals selector.
-      spikes: false,
+      spikes: true,
       platforms: true,
       alerts: true,
     };
@@ -2251,13 +2244,6 @@ function App() {
     if (map.getLayer('satellite')) map.setLayoutProperty('satellite', 'visibility', baseMap === 'satellite' ? 'visible' : 'none');
     try { window.localStorage.setItem('seacommons_base_map', baseMap); } catch { /* quota */ }
   }, [baseMap, mapReady]);
-
-  // Fetch mode follows the AIS-anomaly Signals toggle -- see the liveMode
-  // initializer above for why.
-  useEffect(() => {
-    if (!isPublicLiveHost) return;
-    setLiveMode(layerVis.spikes === true ? 'all' : 'humanitarian');
-  }, [isPublicLiveHost, layerVis.spikes]);
 
   // Layer group visibility — applied to every MapLibre layer in the group
   useEffect(() => {
