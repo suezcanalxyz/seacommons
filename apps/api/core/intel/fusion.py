@@ -26,6 +26,7 @@ sensor fusion); they share the weighting *pattern*, not the channels.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import threading
 from dataclasses import dataclass, field
@@ -577,6 +578,25 @@ def _emit(alert: FusedAlert) -> None:
         _emit_locked(alert)
 
 
+def _alert_id(cluster_id: str) -> str:
+    """Deterministic, DB-column-length id from a cluster_id.
+
+    A correlated_alert built with the default random id (as before this
+    fix) relied solely on the bounded in-memory dedup checks below --
+    _seen caps at DEDUP_WINDOW entries and _already_alerted only scans the
+    last 300 events, both far smaller than the event volume a busy MDA
+    scan cycle produces. Once either window rolled past a cluster's last
+    alert, the *same* rendezvous/proximity/sanctions cluster was treated
+    as new and re-inserted as a fresh row -- e.g. one recurring STS pair
+    alone produced 94k+ correlated_alert rows in two days in production.
+    A deterministic id makes core.intel.store._persist_sync's existing
+    "deterministic IDs are updateable machine episodes" upsert collapse
+    every re-emission of the same cluster onto one DB row, independent of
+    event volume or process uptime.
+    """
+    return "fus:" + hashlib.sha256(cluster_id.encode()).hexdigest()[:12]
+
+
 def _emit_locked(alert: FusedAlert) -> None:
     if _already_alerted(alert.cluster_id):
         logger.debug("fusion: cluster %s already alerted, skipping", alert.cluster_id)
@@ -596,6 +616,7 @@ def _emit_locked(alert: FusedAlert) -> None:
     if alert.vessel_mmsi:
         metadata["mmsi"] = alert.vessel_mmsi
     alert_event = IntelEvent(
+        id=_alert_id(alert.cluster_id),
         type=ALERT_TYPE,
         severity=alert.severity,
         lat=alert.lat,

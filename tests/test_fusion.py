@@ -202,6 +202,41 @@ def test_dark_sts_rendezvous_opens_sanctions_case() -> None:
         assert len(cases) == 1 and cases[0].case_type == "dark_rendezvous"
 
 
+def test_recurring_cluster_upserts_one_db_row_after_dedup_window_rolls() -> None:
+    """Regression: a correlated_alert used to get a random id, so once the
+    bounded in-memory dedup (intel_store._seen, capped at DEDUP_WINDOW; and
+    _already_alerted's 300-event lookback) rolled past a cluster's earlier
+    alert -- which high event volume does routinely in production -- the
+    *same* recurring cluster (e.g. one STS pair) was re-inserted as a brand
+    new row instead of updating in place. Observed in production: one STS
+    pair alone produced 94k+ correlated_alert rows in two days."""
+    ev = _add(
+        type="ais_rendezvous", severity="high", lat=36.5, lon=22.7,
+        title="Tanker STS rendezvous — A / B", source="mda", linked_mmsi="209111000",
+        metadata={"anomaly_type": "ais_rendezvous", "maritime_domain": "sanctions",
+                  "tanker": True, "sts_zone": "Laconian Gulf",
+                  "vessels": [{"mmsi": "209111000"}, {"mmsi": "636222000"}]},
+    )
+    fusion.evaluate(ev)
+    first_id = _alerts()[0].id
+
+    # Simulate the bounded dedup windows having rolled past this cluster --
+    # the actual production trigger is high event volume between recurrences,
+    # not a restart, but the effect on these two structures is the same.
+    with intel_store._lock:
+        intel_store._seen.clear()
+        intel_store._events.clear()
+
+    fusion.evaluate(ev)  # the same underlying rendezvous, re-evaluated
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    with session_scope() as db:
+        rows = db.query(IntelEventDB).filter(IntelEventDB.type == fusion.ALERT_TYPE).all()
+        assert len(rows) == 1
+        assert rows[0].id == first_id
+
+
 def test_sanctioned_vessel_sighting_opens_case() -> None:
     ev = _add(
         type="vessel_identity", severity="high", lat=34.0, lon=18.0,
