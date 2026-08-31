@@ -11,9 +11,25 @@ Field semantics:
   org    — operating organisation
   flag   — current flag state (ISO 3166-1 alpha-3)
   role   — SAR / SAR-support / coastguard / surveillance
+  operator_type — civil_ngo | state_authority (docs/deep-research-report.md
+                  #28, docs/deep-research-report (2).md's "Civil SAR
+                  Registry": a state coastguard/navy vessel must never be
+                  presented to a viewer as an "NGO", however useful it is
+                  to treat it as a known SAR responder internally)
   imo    — IMO number (where known)
   callsign — AIS callsign (where known)
   status — active | retired | unverified
+
+is_ngo(mmsi) intentionally stays broader than "civil NGO" -- it means "known
+SAR responder registry membership", and every detector that calls it (AIS
+spike rescue-cluster grouping, NGO search-pattern rule, distress-response
+intercept scoring) is correct to also weight a coastguard vessel the same
+way a civil NGO vessel is weighted; narrowing it would silently regress
+those. Use is_civil_ngo(mmsi) instead wherever "NGO" is a public identity
+claim about the vessel, not just "responder worth tracking" -- currently
+only ngo_vessel_geojson()'s vessel_class/org labelling, the one place both
+audits found a coastguard vessel rendered on a public/operator panel
+tagged exactly like a civil NGO asset.
 """
 from __future__ import annotations
 
@@ -79,6 +95,16 @@ NGO_VESSELS: dict[str, dict[str, Any]] = {
                   "imo": "4594920", "status": "unverified"},
 }
 
+# operator_type is derived from role rather than hand-set per entry above --
+# every current "coastguard"-role record is a state asset, and deriving it
+# means a future entry can't be added with role="coastguard" while still
+# defaulting to civil_ngo by omission.
+for _info in NGO_VESSELS.values():
+    _info.setdefault(
+        "operator_type",
+        "state_authority" if _info.get("role") == "coastguard" else "civil_ngo",
+    )
+
 # ── Vessels to monitor but with unconfirmed MMSI (kept out of NGO_VESSELS so
 #    they never cause a false NGO tag). Tracked manually / via registry name. ──
 UNCONFIRMED_MMSI: dict[str, dict[str, Any]] = {
@@ -113,7 +139,21 @@ _MMSI_SET = set(NGO_VESSELS.keys())
 
 
 def is_ngo(mmsi: str) -> bool:
+    """Known SAR responder registry membership -- civil NGO AND coastguard.
+
+    Deliberately broad: every caller (rescue-cluster grouping, the NGO
+    search-pattern rule, distress-response intercept scoring) treats a
+    coastguard vessel as just as meaningful a responder as a civil NGO one.
+    Use is_civil_ngo() where "NGO" is a public identity claim, not a
+    responder-relevance check.
+    """
     return str(mmsi) in _MMSI_SET
+
+
+def is_civil_ngo(mmsi: str) -> bool:
+    """True only for a civil NGO asset -- never a state coastguard/navy one."""
+    info = NGO_VESSELS.get(str(mmsi))
+    return info is not None and info.get("operator_type") == "civil_ngo"
 
 
 def get_ngo_info(mmsi: str) -> dict[str, Any] | None:
@@ -144,6 +184,7 @@ def ngo_vessel_geojson() -> dict[str, Any]:
             continue
         info = get_ngo_info(mmsi) or {}
         seen_mmsi.add(mmsi)
+        operator_type = info.get("operator_type", "civil_ngo")
         ngo_features.append({
             **feat,
             "properties": {
@@ -151,7 +192,12 @@ def ngo_vessel_geojson() -> dict[str, Any]:
                 "intel_type": "ngo_vessel",
                 "org": info.get("org", ""),
                 "role": info.get("role", ""),
-                "vessel_class": "ngo",
+                "operator_type": operator_type,
+                # A state coastguard/navy asset must never render as "ngo" --
+                # docs/deep-research-report.md #28, docs/deep-research-report
+                # (2).md's Civil SAR Registry finding. "ngo" kept unchanged
+                # for civil_ngo (existing value, no known consumer breaks).
+                "vessel_class": "ngo" if operator_type == "civil_ngo" else "coastguard",
             },
         })
 
@@ -159,6 +205,7 @@ def ngo_vessel_geojson() -> dict[str, Any]:
     for mmsi, info in NGO_VESSELS.items():
         if mmsi in seen_mmsi:
             continue
+        operator_type = info.get("operator_type", "civil_ngo")
         ngo_features.append({
             "type": "Feature",
             "geometry": None,
@@ -170,15 +217,21 @@ def ngo_vessel_geojson() -> dict[str, Any]:
                 "flag": info.get("flag", ""),
                 "intel_type": "ngo_vessel",
                 "ais_status": "offline",
-                "vessel_class": "ngo",
+                "operator_type": operator_type,
+                "vessel_class": "ngo" if operator_type == "civil_ngo" else "coastguard",
             },
         })
 
+    civil_ngo_count = sum(
+        1 for info in NGO_VESSELS.values() if info.get("operator_type") == "civil_ngo"
+    )
     return {
         "type": "FeatureCollection",
         "features": ngo_features,
         "meta": {
             "total_registered": len(NGO_VESSELS),
+            "civil_ngo_registered": civil_ngo_count,
+            "state_authority_registered": len(NGO_VESSELS) - civil_ngo_count,
             "live_ais": len(seen_mmsi),
             "offline": len(NGO_VESSELS) - len(seen_mmsi),
         },
