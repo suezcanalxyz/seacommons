@@ -334,8 +334,20 @@ def public_signal_collection(
         for mode_name, mode_features in features_by_mode.items()
     }
     if selected_mode == "all":
+        # A flat merge-then-truncate starves humanitarian content: security
+        # fires far more often (MDA scans every few minutes; a genuine
+        # distress report is rare), so a plain recency sort can push every
+        # humanitarian feature past `limit` even though mode_counts still
+        # reports it as eligible -- observed in production: a published,
+        # is_distress=true Alarm Phone report was absent from `features`
+        # while mode_counts.humanitarian correctly said 1. Reserve every
+        # currently-eligible humanitarian feature first (this mode's whole
+        # volume is small; it will not itself starve security), then fill
+        # the remainder of the page with the newest security features.
+        humanitarian_reserved = features_by_mode["humanitarian"][:limit]
+        security_budget = max(0, limit - len(humanitarian_reserved))
         features = sorted(
-            features_by_mode["humanitarian"] + features_by_mode["security"],
+            humanitarian_reserved + features_by_mode["security"][:security_budget],
             key=lambda f: str(f["properties"].get("timestamp_utc") or ""),
             reverse=True,
         )
@@ -375,7 +387,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
     drift_events = {
         event.id: event
         for event in intel_store.persisted_events(
-            source="Alarm Phone", max_age_days=30, limit=min(limit * 5, 1000)
+            source_in=["Alarm Phone", "alarm_phone"], max_age_days=30, limit=min(limit * 5, 1000)
         )
     }
     drift_events.update(

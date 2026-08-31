@@ -1025,6 +1025,55 @@ def test_durable_alarm_phone_read_matches_both_real_source_spellings() -> None:
     assert "intel:durupper1" in ids
 
 
+def test_mode_all_reserves_humanitarian_features_from_security_flood() -> None:
+    """Regression: mode=all used to merge humanitarian + security then
+    truncate to `limit` by a flat recency sort. Security fires far more
+    often than a genuine humanitarian report, so a burst of newer security
+    features could push every humanitarian feature past the cut -- observed
+    in production: mode_counts.humanitarian correctly said 1 while
+    `features` contained zero humanitarian items. Reserve every eligible
+    humanitarian feature first; security fills whatever budget remains."""
+    with intel_store._lock:
+        intel_store._events.clear()
+        intel_store._seen.clear()
+
+    base = datetime.now(timezone.utc)
+    humanitarian = IntelEvent(
+        id="floodtest-hum-01",
+        timestamp_utc=(base - timedelta(minutes=30)).isoformat(),
+        type="distress",
+        severity="high",
+        lat=34.8,
+        lon=14.2,
+        title="Reported maritime distress",
+        source="Alarm Phone",
+        metadata={"is_distress": True, "maritime_domain": "sar",
+                  "source_policy": "official_site_embed"},
+    )
+    assert intel_store.add(humanitarian) is True
+
+    limit = 5
+    for i in range(limit + 10):
+        security = IntelEvent(
+            id=f"floodtest-sec-{i:02d}",
+            timestamp_utc=(base - timedelta(minutes=i)).isoformat(),
+            type="ais_anomaly",
+            severity="high",
+            lat=35.1,
+            lon=14.5,
+            title=f"AIS identity anomaly {i}",
+            source="SeaCommons MDA",
+            metadata={"maritime_domain": "grey_zone"},
+        )
+        assert intel_store.add(security) is True
+
+    collection = public_signal_collection(limit=limit, days=1, mode="all")
+    assert collection["meta"]["mode_counts"]["humanitarian"] == 1
+    ids = {feature["properties"]["id"] for feature in collection["features"]}
+    assert "intel:floodtest-hum-01" in ids
+    assert len(collection["features"]) == limit
+
+
 def test_public_feed_modes_return_separate_signals_and_counts(monkeypatch) -> None:
     now = datetime.now(timezone.utc).isoformat()
     humanitarian = IntelEvent(
