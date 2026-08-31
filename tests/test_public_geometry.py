@@ -68,6 +68,23 @@ def test_point_outside_the_operational_region_is_dropped() -> None:
     assert precision == "unpositioned"
 
 
+def test_land_point_too_far_from_sea_to_snap_is_dropped(monkeypatch) -> None:
+    # Regression: a genuinely land-based report (e.g. an Evros river/border
+    # pushback -- Alarm Phone reports those alongside sea rescues) is more
+    # than nearest_sea_point's bounded search radius from open water. It
+    # gives up and returns the point unchanged (logged, not raised) rather
+    # than snapping it onto an unrelated coastline far away. Observed live:
+    # a report at 41.55, 26.53 (deep inland Thrace) plotted exactly there as
+    # a "boat" marker. That must be dropped, not shown as a false position.
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: True)
+    monkeypatch.setattr("core.intel.landmask.nearest_sea_point", lambda lat, lon: (lat, lon))
+    event = _event(coordinate_source="post_text")
+    event.lat, event.lon = 41.55253, 26.52697
+    geom, precision = public_geometry_and_precision(event)
+    assert geom is None
+    assert precision == "unpositioned"
+
+
 def test_on_land_point_is_snapped_to_water(monkeypatch) -> None:
     # Every plotted location is a boat. A gazetteer / relative / pin estimate
     # can land on a coastline; the projection must nudge it onto the sea.

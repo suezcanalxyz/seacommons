@@ -138,8 +138,7 @@ def test_gap_scan_still_flags_sanctioned_pleasure_craft():
 
 def test_gap_scan_ignores_passenger_ferry_near_port():
     """Ship_type 60 (passenger) going quiet at its own terminal (Piraeus) is
-    the scheduled turnaround, not an anomaly -- unlike pleasure craft this is
-    NOT exempted everywhere, only inside a known port/anchorage."""
+    the scheduled turnaround, not an anomaly."""
     from core.vessels.registry import registry
 
     w = MdaWatch()
@@ -150,17 +149,17 @@ def test_gap_scan_ignores_passenger_ferry_near_port():
     assert not _alerts("ais_anomaly")
 
 
-def test_gap_scan_still_flags_passenger_ferry_far_from_port():
-    """The port exemption must not become a blanket passenger-ship
-    exemption -- a ferry gone fully dark in open water still alerts."""
+def test_gap_scan_ignores_passenger_ferry_in_open_water_too():
+    """Passenger vessels are withheld from Live entirely for now (detection
+    unchanged, not surfaced here) -- not just near a known port."""
     from core.vessels.registry import registry
 
     w = MdaWatch()
     registry.upsert("111000015", ship_type=60, ship_name="OPEN FERRY")
     _feed("111000015", 37.00, 18.00, sog=5.0)   # mid-Ionian, far from any bundled port
     track_store._last["111000015"].ts = time.time() - 5400
-    assert w.scan_gaps() == 1
-    assert _alerts("ais_anomaly")[0].metadata["anomaly_type"] == "gap"
+    assert w.scan_gaps() == 0
+    assert not _alerts("ais_anomaly")
 
 
 def test_gap_scan_still_flags_sanctioned_passenger_ferry_near_port():
@@ -218,9 +217,9 @@ def test_spoofing_circular_ignores_pleasure_craft_swinging_at_anchor():
 
 
 def test_spoofing_circular_ignores_passenger_ferry_at_its_own_terminal():
-    """A scheduled ferry's repeated berthing manoeuvre at Piraeus draws the
-    same ring signature -- exempt only there, not everywhere a passenger
-    ship circles (see the far-from-port gap test for the counter-case)."""
+    """A scheduled ferry's repeated berthing manoeuvre draws the same ring
+    signature a spoofed track would -- passenger vessels are withheld from
+    Live entirely for now (see the gap tests for the non-port case too)."""
     import math
 
     from core.vessels.registry import registry

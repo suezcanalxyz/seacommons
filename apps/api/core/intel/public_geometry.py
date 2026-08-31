@@ -50,6 +50,17 @@ def public_geometry_and_precision(event: IntelEvent) -> tuple[dict | None, str]:
     # onto the nearest water. No-op when the point is already at sea or the
     # landmask is unavailable.
     lat, lon = landmask.nearest_sea_point(lat, lon)
+    if landmask.is_on_land(lat, lon) is True:
+        # nearest_sea_point searches only a bounded radius and gives up
+        # rather than snapping a real inland report onto an unrelated
+        # coastline far away. A report that is still on land after that is
+        # not a vessel whose pin needs nudging -- it is a genuinely
+        # land-based incident (e.g. an Evros river/border pushback, which
+        # Alarm Phone reports alongside sea rescues). This model has no
+        # honest way to represent that as a boat position; plotting one
+        # anyway is a false "boat at sea" marker. Drop it instead of
+        # fabricating a location.
+        return None, LocationPrecision.UNPOSITIONED.value
 
     coordinate_source = str(event.metadata.get("coordinate_source") or "")
     if coordinate_source == "place_centroid":
