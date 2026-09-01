@@ -1,567 +1,1250 @@
-# SeaCommons Live Fixes Roadmap
+# SeaCommons Live Stabilization / `fixes.md`
 
-> **For agentic workers:** implement one phase at a time. Do not combine unrelated phases in one change. Every phase requires a regression test, a focused commit, and verification on the public Live host before moving on.
+> **Status:** canonical implementation roadmap after the 1 Sep 2026 deep audit.
+>
+> **Operational baseline:** parent code around `7d0bb2235a35b95bf979adc7b3c87d86b4bea88f`; previous roadmap commit `86a51131ee26379f7132a19b3088cd21f4cde8d8`.
+>
+> **Primary goal:** stabilize the current Live release before adding new features. Humanitarian and maritime-security signals must be correctly ingested, stored, classified, geolocated, correlated, projected and rendered without turning uncertain evidence into false precision.
 
-**Goal:** make `live.seacommons.org` trustworthy, readable and operationally coherent, with Humanitarian data treated as first-class content rather than as a thin overlay on top of generic AIS/MDA data.
+## Non-negotiable invariants
 
-**Baseline:** this plan starts from the 31 Aug 2026 production fixes that added physical DB indexes for `intel_events`, serialized Tesseract execution, corrected civil NGO vs state-authority identity, introduced EasyOCR/Tesseract cross-checking, and added the two-level Humanitarian / Maritime Security signal selector. Do not regress those fixes.
+These rules are the acceptance boundary for every phase:
 
-## Global constraints
+```text
+source credibility != location credibility
+coordinate extracted != coordinate verified
+coordinate verified != maritime-operational coordinate
+maritime-operational coordinate != automatic Drift eligibility
+Alarm Phone source != active SAR incident
+transport path (VM / edge) != product semantics
+AIS offline != vessel absent from SAR registry
+HTTP failure != empty dataset
+geometry=null != generic "position unavailable"
+```
 
-- Humanitarian distress is the primary product lane. Security/MDA volume must never crowd it out.
-- Never fabricate coordinates. Missing, regional or disputed locations must stay visibly uncertain.
-- A coordinate marked `disputed` or `needs_review` must never silently trigger public SAR Drift.
-- Civil NGO vessels and state SAR authorities are separate public identities even when both are useful responder context internally.
-- Preserve the public privacy boundary: no private raw message text, sender identifiers or provider delivery identifiers on Live.
-- Do not solve CPU pressure by increasing VM size before fixing unbounded work or inefficient queries.
-- Mobile Safari is a first-class acceptance target.
-- Do not broadly rewrite `main.jsx` while fixing one concern. Extract focused components only where the phase needs them.
-- Existing durable records matter: fixes must work after restart and must not depend only on the 600-item in-memory deque.
-
-## Execution summary
-
-| Phase | Priority | Deliverable |
-| --- | --- | --- |
-| 0 | P0 | Stable Live latency and bounded OCR work |
-| 1 | P0 | Humanitarian cards with visible time and truthful location state |
-| 2 | P0 | Complete NGO/SAR fleet surface and correct vessel identity |
-| 3 | P0/P1 | Safe geolocation confidence and Drift gating |
-| 4 | P1 | Controlled repair of existing Humanitarian records |
-| 5 | P1 | Explicit Humanitarian vs Maritime Security compartment mapping |
-| 6 | P1 | Source-time, lifecycle and correlation hardening |
-| 7 | P1/P2 | Mobile Live hierarchy and viewport cleanup |
-| 8 | P2 | Migrations, end-to-end tests and deploy smoke checks |
+A reliable source does not automatically make an OCR coordinate reliable. A reliable coordinate does not automatically make a post an active maritime distress. An active maritime distress does not automatically authorize Drift.
 
 ---
 
-# Phase 0 — Stabilize Live before adding behavior
+# 1. Deep-audit findings
 
-**Priority:** P0
+Each finding is classified as **CONFIRMED BUG**, **STRUCTURAL RISK**, **DOCUMENTATION MISMATCH**, or **RECOMMENDED HARDENING**.
 
-## 0.1 Verify the `0 SIGNALS` regression is closed
+## F-01 — disputed OCR can still trigger Drift
 
-**Observed bug:** fresh public loads intermittently showed `0 SIGNALS` / `Connecting to live feed...` even when the DB contained valid events.
+**Classification:** CONFIRMED BUG  
+**Priority:** P0 / critical
 
-**Known root cause:** production `intel_events` had no physical indexes although SQLAlchemy models declared `index=True`; Live polling therefore performed full-table scans and sometimes exceeded the frontend timeout.
+**Code:** `apps/api/core/intel/twikit_monitor.py`, `_apply_media_ocr()` and `_auto_drift_if_live()`; current audited range approximately `557-655`.
 
-**Files**
-- `apps/api/core/db/models.py`
-- `apps/api/core/db/session.py`
-- `apps/api/core/intel/store.py`
-- public Live fetch hook used by `apps/web/src/main.jsx`
+Current behavior:
 
-**Concrete work**
-- Keep `_ensure_indexes()` at startup as the emergency compatibility path.
-- Verify production indexes exist for `timestamp_utc`, `type`, `severity`, `source`.
-- Run `EXPLAIN ANALYZE` against the actual `persisted_events()` query shapes.
-- Add composite indexes only if the plan shows a measurable benefit. Primary candidates: `(source, timestamp_utc)` and `(type, timestamp_utc)`.
-- Add lightweight duration logging for `/api/v1/live/signals` and `/api/v1/live/ngo-vessels`.
-- The frontend must distinguish `request failed / retrying` from a legitimate empty FeatureCollection.
+```python
+elif method == "easyocr_text_disputed":
+    coordinate_source = "media_ocr_text"
+    uncertainty_m = 3500
+    review_status = "machine_ocr_disputed_needs_review"
+...
+upgraded = intel_store.enrich_location(...)
+...
+intel_store.update_metadata(event_id, metadata={"drift_status": "superseded"})
+self._auto_drift_if_live(event_id, force=True)
+```
 
-**Acceptance criteria**
-- 20 consecutive public `/api/v1/live/signals` requests complete below the existing 12 s fetch timeout.
-- Median response under normal load is below 3 s on the pilot VM.
-- A fresh private-browser load never displays `0 SIGNALS` when the endpoint returns events.
-- A transient timeout produces a degraded/retrying state, not a false empty state.
+`_auto_drift_if_live()` currently checks that auto-Drift is enabled, that `lat/lon` exist and that an existing run is not already complete. It does **not** check `coordinate_review_status`, `location_uncertainty_m`, semantic event type or whether the point is safe for operational modelling.
 
-**Do not regress:** durable DB-backed events must remain visible even after they fall out of the in-memory deque.
+**Consequence:** an EasyOCR/Tesseract disagreement can become a model origin. `force=True` currently bypasses the existing drift-status dedup and therefore makes the upgrade path especially dangerous.
 
-## 0.2 Replace unbounded OCR threads with a bounded queue
+**Required fix:** introduce a single `is_auto_drift_eligible(event)` gate. `force=True` may bypass recomputation/dedup, never evidence-quality policy.
 
-**Observed bug:** EasyOCR/Tesseract cross-checking created simultaneous heavy OCR sweeps, saturating the 2-vCPU VM and slowing Live requests.
+Minimum allow-list:
 
-**Current mitigation:** Tesseract execution is serialized with a lock.
+```python
+AUTO_DRIFT_LOCATION_STATES = {
+    "reported_exact",
+    "machine_ocr_consensus_verified",
+    "human_verified",
+}
+```
 
-**Remaining bug:** `_schedule_media_ocr()` can still create an unbounded number of waiting daemon threads.
+Minimum reject conditions:
 
-**Files**
-- `apps/api/core/intel/twikit_monitor.py`
-- `apps/api/core/intel/x_media_utils.py`
-- `apps/api/core/intel/map_pin_geolocate.py`
+```text
+coordinate_review_status contains disputed / needs_review
+location_status != positioned
+uncertainty above configured maximum
+non-SAR maritime domain
+non-operational humanitarian case
+resolved / archived incident
+land / non-maritime event
+```
 
-**Concrete work**
-- Use one bounded executor/queue for heavy media OCR.
-- Default `max_workers=1` on the pilot VM; allow an explicit environment override for larger hosts.
-- Bound pending heavy OCR jobs to 16. Reject/defer additional stale jobs instead of growing memory/thread count indefinitely.
-- Deduplicate queued work by canonical source-post + media identifier.
-- Keep the current EasyOCR/Tesseract locks as defense in depth until the executor path is proven.
-- Expose queue depth, dropped/deferred count and last OCR duration in operator diagnostics.
-
-**Tests**
-- enqueue an 8-image burst and assert one heavy worker executes at a time;
-- duplicate media is processed once;
-- queue overflow follows the explicit defer/drop policy;
-- Live signal retrieval remains independent of OCR queue completion.
-
-**Suggested commit:** `fix(perf): bound humanitarian media OCR queue`
+**Regression proof:** a fixture with `machine_ocr_disputed_needs_review` must persist the evidence but produce exactly zero Drift requests.
 
 ---
 
-# Phase 1 — Make Humanitarian event cards truthful and readable
+## F-02 — OCR work is serialized but queueing is still unbounded
 
-**Priority:** P0
+**Classification:** CONFIRMED BUG / STRUCTURAL RISK  
+**Priority:** P0 / critical
 
-## 1.1 Show event time directly in the left Live panel
+**Code:** `apps/api/core/intel/twikit_monitor.py::_schedule_media_ocr()`.
 
-**Observed bug:** event timestamps exist and are used for sorting, but mobile cards show only title/type/position. The timestamp currently survives mainly in an HTML `title` attribute, which is ineffective on touch devices.
+Current code:
 
-**Files**
-- `apps/web/src/components/IntelDashboard.jsx`
-- related Live panel CSS
+```python
+threading.Thread(
+    target=self._apply_media_ocr,
+    args=(event_id, urls),
+    daemon=True,
+    name=f"intel-x-ocr-{tweet_id[-8:]}",
+).start()
+```
 
-**Concrete work**
-- Add visible event time to every Live row.
-- Use `source_timestamp_utc` when available; otherwise `timestamp_utc`.
-- Never substitute `received_at` as the event time. `received_at` is ingestion diagnostics only.
-- Mobile compact format: `20:04 CEST · 8 min ago`.
-- Detail format: `31 Aug 2026 · 20:04 CEST`; UTC may be shown secondarily.
-- Use one formatter for list, timeline and report views.
+The recent `_TESSERACT_LOCK` correctly prevents concurrent Tesseract execution, but a burst still creates one waiting daemon thread per event.
 
-**Tests**
-- valid ISO timestamp renders visible time;
-- missing/invalid timestamp renders `time unavailable`;
-- ordering remains newest source event time first.
+**Consequence:** thread count and memory can grow during media bursts even though Tesseract itself is serialized. This can again degrade Uvicorn/Live latency.
 
-**Acceptance criteria:** every visible Alarm Phone / distress row exposes its event time without hover or opening the detail panel.
+**Required fix:** replace per-event threads with a bounded queue / fixed executor. Initial VM-safe target:
 
-## 1.2 Replace generic `position unavailable` with semantic location state
+```env
+MEDIA_OCR_WORKERS=1
+MEDIA_OCR_QUEUE_MAXSIZE=16
+```
 
-**Observed bug:** the UI collapses every geometry-null case into the same string even though public metadata already describes why a location is uncertain or absent.
-
-**Files**
-- `apps/web/src/components/IntelDashboard.jsx`
-- `apps/api/core/live/projection.py` only if an already-safe metadata field is missing from the public projection
-
-**Concrete work:** add one location-presentation helper with these minimum outputs:
-
-- `POSITION · 35.8303, -0.6897 · ±400 m`
-- `REGION ONLY · <region>`
-- `LOCATION · OCR PROCESSING`
-- `LOCATION · OCR NOT EXTRACTED`
-- `LOCATION · OCR DISPUTED · REVIEW REQUIRED`
-- `LOCATION · UNPOSITIONED`
-
-Use, when available:
-- `coordinate_source`
-- `coordinate_review_status`
-- `location_uncertainty_m`
-- `location_precision`
-- `ocr_attempted`
-- `ocr_engine`
-- `region`
-
-Do not expose raw OCR text, internal stack errors or private source material.
-
-**Acceptance criteria:** no public distress card renders the undifferentiated text `position unavailable`.
-
-## 1.3 Use a distress-specific card hierarchy
-
-**Observed bug:** Alarm Phone is rendered through the same vessel-oriented row used by vessel/security episodes, producing rows that read like source/channel telemetry instead of Humanitarian incidents.
-
-**Concrete work:** for `kind=distress` / operational tier, render in this order:
-
-1. source + lifecycle badge (`ALARM PHONE · ACTIVE`),
-2. visible event time,
-3. public title / short description,
-4. reported people count when available,
-5. semantic location status,
-6. source link.
-
-Use vessel-oriented rows only for actual vessel episodes.
-
-**Acceptance criteria:** a non-vessel Alarm Phone event never falls back to `Unknown vessel` and never looks like an AIS vessel card.
-
-**Suggested commit:** `fix(live): make humanitarian event cards time and location aware`
+Jobs must deduplicate by event/post/media identity. Queue-full must become an explicit recoverable `deferred_queue_full` state, not silent loss.
 
 ---
 
-# Phase 2 — Make the NGO / SAR fleet a real Live product surface
+## F-03 — OCR consensus is measured in degrees but presented in metres
 
-**Priority:** P0
+**Classification:** CONFIRMED BUG  
+**Priority:** P0/P1 / critical correctness
 
-## 2.1 Preserve the full registry in frontend state
+**Code:** `apps/api/core/intel/x_media_utils.py`.
 
-**Observed bug:** `/api/v1/live/ngo-vessels` returns the full known responder registry, including offline `geometry=null` vessels, but `main.jsx` immediately keeps only positioned features.
+Current code:
 
-**Root cause:** one state object is serving two responsibilities: registry/panel data and map-renderable geometry.
+```python
+cluster = _largest_agreeing_cluster(candidates, tol=0.03)
+```
 
-**Files**
-- `apps/web/src/main.jsx`
-- `apps/api/core/intel/ngo_registry.py`
+and EasyOCR/Tesseract cross-check:
 
-**Concrete work**
-- Store the complete endpoint response as `ngoFleet`.
-- Derive `ngoMapFeatures` only at the MapLibre source boundary with `geometry?.coordinates` filtering.
-- Never delete an offline registry entry because it cannot currently be plotted.
-- Keep endpoint meta (`total_registered`, `civil_ngo_registered`, `state_authority_registered`, `live_ais`, `offline`) intact in frontend state.
+```python
+agree = (
+    abs(cross_check[0] - easy_coordinate[0]) <= 0.03
+    and abs(cross_check[1] - easy_coordinate[1]) <= 0.03
+)
+```
 
-**Acceptance criteria:** an offline Ocean Viking / Humanity 1 remains visible in the fleet UI while producing no fake marker.
+The caller then assigns:
 
-## 2.2 Add a Humanitarian Fleet surface
+```text
+machine_ocr_consensus_verified
+location_uncertainty_m = 400
+```
 
-Create a focused component, preferably `apps/web/src/components/HumanitarianFleet.jsx`.
+`0.03°` is kilometre-scale, and longitude degrees vary with latitude.
 
-The compact public status should expose:
+**Required fix:** compare candidates with haversine/geodesic distance in metres. Persist `ocr_interengine_distance_m` and the threshold used. Initial conservative threshold may be 400-500 m, then calibrated against the regression corpus.
 
-`HUMANITARIAN FLEET`
-`14 CIVIL NGO · N LIVE AIS · N OFFLINE`
-
-Each civil NGO row shows:
-- vessel name,
-- organisation,
-- AIS state,
-- speed when live,
-- last update/last seen when available.
-
-State assets are grouped separately as `STATE SAR`; they are never included in the civil NGO count.
-
-**Interaction boundary**
-- The left Live panel carries the compact fleet status/list.
-- Selecting a vessel opens the existing right/floating detail surface.
-- Do not turn the left incident feed into a full vessel inspector.
-
-## 2.3 Give selected NGO vessels their real identity
-
-**Observed bug:** selecting Mare Jonio currently produces a generic vessel overlay such as `52 · 0 kn · 247536000` even though `org`, `role`, `operator_type` and `vessel_class` are already known.
-
-**Civil NGO detail must show**
-- `MARE JONIO`
-- `Mediterranea Saving Humans`
-- `CIVIL NGO SAR`
-- AIS status
-- speed
-- MMSI
-- last update
-
-**State asset detail must show** `STATE SAR AUTHORITY`, never `NGO`.
-
-**Tests**
-- a civil NGO is never presented only as a generic AIS vessel;
-- a coastguard/state asset is never labelled NGO;
-- an offline civil NGO remains listed without map geometry.
-
-**Suggested commit:** `feat(live): expose complete humanitarian SAR fleet`
+Never assign an uncertainty smaller than the evidence supports.
 
 ---
 
-# Phase 3 — Fix Humanitarian geolocation and Drift gating
+## F-04 — source-only location ranking can promote lower-quality evidence
 
-**Priority:** P0/P1
-
-## 3.1 Block auto-Drift from disputed or weak locations
-
-**Observed risk:** EasyOCR/Tesseract disagreement can be stored as `machine_ocr_disputed_needs_review`, while the approximate coordinate is retained and can supersede a weaker location. That location must not automatically become an authoritative-looking Drift product.
-
-**Files**
-- Humanitarian media enrichment path in `apps/api/core/intel/twikit_monitor.py`
-- auto-drift trigger path
-- `apps/api/core/live/feed.py`
-- dedicated tests
-
-**Concrete rule:** add one canonical `is_humanitarian_location_drift_eligible(...)` gate used by every auto-drift entry point.
-
-Auto-Drift is allowed only for:
-- trusted reported coordinates;
-- cross-engine OCR consensus;
-- independently corroborated coordinates;
-- explicit operator-approved coordinates.
-
-Auto-Drift is forbidden when any of these is true:
-- review status is `disputed` / `needs_review`;
-- the location is only region/centroid geometry;
-- the point fails operational-region or sea validation;
-- `location_uncertainty_m > 1500` unless explicitly operator-approved.
-
-A disputed marker may still be displayed as uncertain context if public policy permits it. The uncertainty must never be converted into an active Drift cone automatically.
-
-**Tests:** disputed OCR retained as a location cue but no drift job; verified coordinate produces drift job; operator approval overrides the uncertainty threshold intentionally.
-
-## 3.2 Replace degree-based OCR agreement with geodesic agreement
-
-**Observed issue:** a tolerance around `0.03°` is kilometre-scale, yet a successful consensus can be presented with uncertainty of only hundreds of metres.
-
-**Concrete rule**
-- Compare EasyOCR/Tesseract candidates by haversine/geodesic distance in metres.
-- `<= 500 m`: eligible for `machine_ocr_consensus_verified`.
-- `> 500 m`: `machine_ocr_disputed_needs_review`.
-- Store `ocr_interengine_distance_m`.
-- Verified OCR uncertainty is `max(parser_precision_floor_m, 400, ocr_interengine_distance_m)`; never claim precision better than evidence supports.
-- Screenshot/map-pin geolocation keeps its own conservative precision floor and must not inherit printed-coordinate precision.
-
-**Acceptance criteria:** OCR readings kilometres apart can never yield `machine_ocr_consensus_verified` or `±400 m`.
-
-## 3.3 Preserve location provenance through upgrades
-
-When an event progresses `region-only -> OCR point -> reviewed/corroborated point`, preserve:
-- previous coordinate source,
-- new coordinate source,
-- review status,
-- uncertainty,
-- update time.
-
-A simple bounded `location_history` metadata array is sufficient; do not create a new relational subsystem only for this phase.
-
-Keep the existing rule that a newly verified point removes stale `area_geojson` that would otherwise override the point after restart.
-
-**Suggested commit:** `fix(humanitarian): gate drift on verified location quality`
-
----
-
-# Phase 4 — Repair existing Humanitarian data, not only future events
-
+**Classification:** STRUCTURAL RISK  
 **Priority:** P1
 
-New ingestion fixes are insufficient while recent persisted Alarm Phone rows remain unpositioned or carry stale metadata.
+**Code:** `apps/api/core/intel/store.py`.
 
-## 4.1 Add a controlled reprocessing command/job
+Current ranking:
 
-**Target:** recent Humanitarian/Alarm Phone durable events with one or more of:
-- no geometry,
-- `ocr_attempted=false`,
-- legacy OCR metadata,
-- disputed coordinate,
-- stale region-only location,
-- missing lifecycle/thread enrichment.
+```python
+_COORDINATE_SOURCE_RANK = {
+    "none": 0,
+    "place_centroid": 1,
+    "relative_place_offset": 2,
+    "media_pin_landmark": 3,
+    "media_ocr_consensus": 4,
+    "media_ocr_text": 4,
+    "post_text": 5,
+}
+```
 
-**Requirements**
-- dry-run is the default;
-- explicit `--apply` for writes;
-- configurable age window and batch size;
-- default batch size 50;
-- idempotent updates;
-- never rewrite source timestamps;
-- never downgrade a higher-ranked verified coordinate;
-- bounded OCR queue from Phase 0 is reused;
-- report before/after counts.
+`enrich_location()` compares only source rank:
 
-**Report**
-- scanned,
-- newly positioned,
-- still unpositioned,
-- disputed,
-- consensus verified,
-- lifecycle changed,
-- newly drift-eligible,
-- skipped because a better coordinate already exists.
+```python
+if new_rank <= previous_rank:
+    return False
+```
 
-## 4.2 Verify durable projection after reprocessing
+The comparison does not incorporate review status, uncertainty, inter-engine disagreement or human verification.
 
-Repaired rows must project from the database even if absent from the 600-item memory deque.
+**Consequence:** two `media_ocr_*` observations with very different evidence quality are effectively peers; future ranking changes can also promote a disputed coordinate over better evidence.
 
-**Acceptance criteria:** process restart preserves repaired locations and lifecycle state.
-
-**Suggested commit:** `feat(humanitarian): add idempotent recent-event reprocessing`
+**Required fix:** introduce a first-class `LocationEvidence` quality comparator based on review status + uncertainty + source. A disputed coordinate can be stored for review but must never supersede a verified coordinate.
 
 ---
 
-# Phase 5 — Make Humanitarian / Maritime Security classification explicit
+## F-05 — the historical Alarm Phone backfill has already diverged from live OCR semantics
 
+**Classification:** CONFIRMED BUG / DOCUMENTATION MISMATCH  
+**Priority:** P0 before any production backfill
+
+**Code:** `apps/api/core/intel/backfill_alarm_phone.py`.
+
+Current backfill interprets the OCR method using string heuristics:
+
+```python
+is_text = method.endswith("text")
+ocr_engine = "easyocr" if method.startswith("easyocr") else "tesseract"
+uncertainty = 1500 if is_text else 4000
+...
+"coordinate_review_status": "machine_ocr_unverified"
+```
+
+This is no longer equivalent to the live path because methods now include `easyocr_tesseract_consensus` and `easyocr_text_disputed`.
+
+Worse, `run(..., with_drift=True)` can call:
+
+```python
+schedule_intel_drift(..., force=True, background=False)
+```
+
+without applying the review-quality gate.
+
+**Immediate rule:** do not run `python -m core.intel.backfill_alarm_phone --apply --drift` until Phase 1 is merged.
+
+**Required fix:** live ingestion and backfill must consume the same `LocationEvidence` object and the same Drift eligibility function.
+
+---
+
+## F-06 — edge humanitarian semantics differ from VM humanitarian semantics
+
+**Classification:** CONFIRMED BUG / STRUCTURAL RISK  
+**Priority:** P0
+
+**Code:** `apps/web/src/hooks/useLiveFeed.js`, `apps/api/core/live/feed.py`, edge publisher/normalizer.
+
+The public browser still applies an Alarm-Phone-only policy to edge/cache humanitarian snapshots:
+
+```js
+return isPublicLiveHost && liveMode === 'humanitarian'
+  ? alarmPhoneOnly(normalized)
+  : normalized;
+```
+
+and:
+
+```js
+const features = alarmPhoneOnly(edgeSnapshotToFeatures(snapshot));
+```
+
+while the VM feed builds humanitarian/security from public policy/domain eligibility.
+
+**Consequence:** what counts as "Humanitarian Live" depends on transport. A valid non-Alarm-Phone humanitarian source can disappear only because the browser is using edge.
+
+**Required fix:** canonical eligibility must live in backend policy. VM and edge publish the same product semantics; browser normalization must not implement a second source policy.
+
+**Acceptance proof:** for a fixed fixture set and timestamp window:
+
+```text
+humanitarian incident IDs from VM == humanitarian incident IDs from edge
+```
+
+---
+
+## F-07 — `else humanitarian` misclassifies maritime domains
+
+**Classification:** CONFIRMED BUG  
 **Priority:** P1
 
-## 5.1 Remove complement-based mode classification
+**Code:** `apps/api/core/live/feed.py`.
 
-**Observed bug:** the current feed effectively behaves as `security if domain in SECURITY_MARITIME_DOMAINS else humanitarian`. Because `piracy` is public but not in the fixed security set, it can fall into Humanitarian.
+Current code:
 
-**Files**
-- `apps/api/core/intel/public_policy.py`
-- `apps/api/core/live/feed.py`
-- frontend category helpers only if required by the backend contract change
-- contract tests
+```python
+event_mode = (
+    "security"
+    if event.maritime_domain() in SECURITY_MARITIME_DOMAINS
+    else "humanitarian"
+)
+```
 
-**Concrete mapping:** define fixed mode-domain sets and use them everywhere.
+The public default domain set includes `piracy`, while `SECURITY_MARITIME_DOMAINS` does not currently include piracy. Therefore "not in security set" becomes "humanitarian".
 
-`HUMANITARIAN_FEED_DOMAINS`
-- `sar`
-- `safety`
-- `environmental`
+**Required fix:** positive allow-lists for both compartments. Never infer humanitarian by complement.
 
-`MARITIME_SECURITY_FEED_DOMAINS`
-- `piracy`
-- `sanctions`
-- `grey_zone`
-- `iuu_fishing`
-- `smuggling`
+Target:
 
-No domain is assigned by `else humanitarian`. An unknown domain is not silently published into either mode; log/drop it until explicitly mapped.
-
-## 5.2 Keep Drift stricter than public mode visibility
-
-`HUMANITARIAN_DRIFT_DOMAINS` remains exactly `{sar}`. Safety/environmental visibility does not make those events SAR Drift candidates.
-
-**Tests**
-- piracy -> security;
-- vessel safety incident -> humanitarian context;
-- environmental maritime incident -> humanitarian context;
-- sanctions/grey-zone/IUU/smuggling -> security;
-- unknown domain -> neither mode;
-- only SAR passes the Humanitarian Drift domain gate.
-
-**Acceptance criteria:** piracy never contributes to the Humanitarian macro count and never generates a Humanitarian Drift cone.
-
-**Suggested commit:** `fix(live): make maritime mode classification explicit`
+```text
+sar -> humanitarian
+piracy -> security
+sanctions -> security
+grey_zone -> security
+iuu_fishing -> security
+smuggling -> security
+safety -> explicit decision, no fallback
+environmental -> explicit decision, no fallback
+unknown -> no operational compartment
+```
 
 ---
 
-# Phase 6 — Lifecycle, source time and correlation quality
+## F-08 — current `IntelEvent` type/domain taxonomy is too implicit for long-term storage
 
+**Classification:** STRUCTURAL RISK  
 **Priority:** P1
 
-## 6.1 Make source event time canonical
+**Code:** `apps/api/core/intel/store.py::IntelEvent`.
 
-For public cards and lifecycle:
-- `source_timestamp_utc` = source post/report time when known;
-- `received_at` = first SeaCommons ingestion time;
-- sorting uses source time;
-- visible card time uses source time;
-- ingestion delay is diagnostics only.
+Current primary fields are generic:
 
-Reprocessing must never replace source time with reprocessing time.
+```text
+type
+severity
+source
+lat/lon
+linked_mmsi
+metadata JSON
+```
 
-## 6.2 Treat one Alarm Phone thread as one incident
+`tier()` is derived from type + `metadata.is_distress`; `maritime_domain()` is partly derived from type/anomaly and partly stored in metadata. Humanitarian case subtype, lifecycle, location status and review quality are mostly metadata.
 
-Verify the whole path:
-- original distress post opens incident;
-- own-account reply/update attaches to the same incident;
-- repost/echo does not create another marker;
-- explicit rescue/resolution language changes lifecycle;
-- ambiguous updates become `needs_review` rather than falsely resolved;
-- unresolved items archive after the configured live window.
+This is flexible but makes migrations, analytics, indexes and historical reprocessing harder. It also permits source/type/domain/lifecycle semantics to drift between ingestion paths.
 
-## 6.3 Correlate nearby SAR vessels without claiming causality
-
-If an NGO/state SAR vessel is geographically near a distress event, expose it only as context:
-- distance,
-- AIS observation time,
-- responder identity.
-
-Never label it `responding`, `rescuing`, `intercepting` or equivalent unless an authoritative source supports that claim.
-
-**Suggested commit:** `fix(humanitarian): harden incident time and lifecycle correlation`
+**Required fix:** keep the flexible metadata envelope, but make the canonical classification fields explicit and schema-versioned. See Phase 2.
 
 ---
 
-# Phase 7 — Mobile Live UI cleanup
+## F-09 — `enrich_location()` snaps any candidate toward sea before evidence validation
 
-**Priority:** P1/P2
+**Classification:** STRUCTURAL RISK  
+**Priority:** P1
 
-## 7.1 Preserve useful map context when panels open
+**Code:** `apps/api/core/intel/store.py::enrich_location()`.
 
-On mobile:
-- opening the Live feed must not auto-fit the entire global signal set;
-- default/public framing stays within the Mediterranean operating area;
-- selecting an event or fleet vessel may intentionally focus the map;
-- closing/reopening panels preserves the previous useful camera state.
+Current behavior calls:
 
-## 7.2 Keep critical Humanitarian fields above the fold
+```python
+lat, lon = nearest_sea_point(float(lat), float(lon))
+```
 
-Small-screen row priority:
-1. status/source,
-2. event time,
-3. short title,
-4. location state,
-5. people count / verification where available.
+before storing an enriched point.
 
-Move secondary channel jargon and low-value metadata into the detail panel.
+This is useful for small coastline errors in maritime reports, but is unsafe as a generic location-enrichment behavior because the same humanitarian source can report land incidents (Evros, Lesvos beach/forest cases, reception centres, pushbacks).
 
-## 7.3 Validate mobile control overlap
-
-Test Safari/iPhone CSS widths 390 px, 402 px and 430 px:
-- Live toggle,
-- layer control,
-- SAR reopen button,
-- selected vessel overlay,
-- left Live panel,
-- right/floating detail panel.
-
-No critical control may obscure another.
-
-**Suggested commit:** `fix(web): tighten mobile public Live hierarchy`
+**Required fix:** land-to-sea snapping must be conditional on semantic event class + evidence type. Preserve the raw extracted coordinate separately. A terrestrial humanitarian event must never be transformed into a maritime boat marker merely because it came from Alarm Phone.
 
 ---
 
-# Phase 8 — Production hardening and migration discipline
+## F-10 — screenshot provenance is not strong enough for an operational trust boundary
 
-**Priority:** P2
+**Classification:** RECOMMENDED HARDENING with P1 safety value
 
-## 8.1 Introduce real DB migrations
+Current OCR metadata records method/engine/count, but the operational chain should bind extracted coordinates to the exact source media and source post.
 
-Runtime `_ensure_indexes()` is an emergency compatibility fix, not a long-term schema-management strategy.
+**Required fields:**
 
-Introduce Alembic before the next non-additive production schema change. The initial migration must baseline the existing production schema without recreating tables or dropping data.
+```text
+source_post_id
+source_post_url
+media_url
+media_sha256
+media_index
+ocr_candidate_raw_text / bounded raw span
+ocr_candidate_parser
+ocr_engine
+ocr_pass_id / layout
+ocr_coordinate_raw
+ocr_coordinate_normalized
+ocr_interengine_distance_m
+coordinate_review_status
+location_uncertainty_m
+location_observed_at
+```
 
-## 8.2 Add end-to-end public Live contract tests
+Do not store excessive/private content; raw OCR provenance should be bounded to the coordinate span or forensic packet.
 
-Minimum scenarios:
-1. active Alarm Phone distress with verified point;
-2. Alarm Phone distress with no coordinates;
-3. OCR disputed location;
-4. resolved Alarm Phone thread;
-5. civil NGO with live AIS;
-6. civil NGO offline in registry;
-7. state SAR vessel;
-8. Maritime Security AIS anomaly;
-9. piracy-domain event;
-10. durable Humanitarian event outside the memory deque after restart.
-
-Assert backend projection and frontend-visible semantics where practical.
-
-## 8.3 Add deployment smoke checks
-
-After each deployment verify:
-- `/api/v1/live/signals?mode=all` returns a valid contract;
-- `/api/v1/live/ngo-vessels` returns registry metadata;
-- public page does not render zero when the endpoint is non-zero;
-- a known live NGO vessel is identified as a civil NGO when present;
-- an offline NGO remains in the fleet list;
-- a geometry-null distress renders a semantic location state;
-- timestamp is visible on mobile;
-- disputed OCR never exposes an active auto-Drift cone;
-- piracy is in Maritime Security, not Humanitarian.
-
-**Suggested commit:** `test(live): add public humanitarian smoke coverage`
+This prevents a coordinate from an old/quoted screenshot being silently attributed to the wrong current incident.
 
 ---
 
-# Recommended execution order
+## F-11 — pin-only screenshots must not become fake exact positions
 
-Do not execute all phases in one agent pass.
+**Classification:** RECOMMENDED HARDENING  
+**Priority:** P1
 
-1. **Phase 0** — performance and bounded workload.
-2. **Phase 1** — timestamp, location semantics and distress card.
-3. **Phase 2** — complete NGO/SAR fleet state and selected-vessel identity.
-4. **Phase 3** — OCR precision and Drift safety gate.
-5. **Phase 4** — repair existing data only after the new location rules are stable.
-6. **Phase 5** — explicit Humanitarian/Security compartment mapping.
-7. **Phase 6** — lifecycle/time/correlation hardening.
-8. **Phase 7** — mobile polish after information architecture is stable.
-9. **Phase 8** — migrations, E2E and deploy hardening.
+Alarm Phone examples include maps with a pin but no printed coordinates. `map_pin_geolocate.py` can estimate a location from the pin and visible map labels.
 
-# Commit discipline
+That is useful evidence but is not equivalent to DMS/DMM text.
 
-Each phase ends with its own verification checkpoint. Never submit one large `fix live` commit.
+**Required policy:**
 
-Recommended commit sequence:
-- `fix(perf): bound humanitarian media OCR queue`
-- `fix(live): make humanitarian event cards time and location aware`
-- `feat(live): expose complete humanitarian SAR fleet`
-- `fix(humanitarian): gate drift on verified location quality`
-- `feat(humanitarian): add idempotent recent-event reprocessing`
-- `fix(live): make maritime mode classification explicit`
-- `fix(humanitarian): harden incident time and lifecycle correlation`
-- `fix(web): tighten mobile public Live hierarchy`
-- `test(live): add public humanitarian smoke coverage`
+```text
+printed coordinate + validated parser + quality pass -> exact/derived point
+pin + map landmark fit -> approximate point/area with conservative uncertainty
+region text only -> region polygon/area
+pin without adequate calibration -> unpositioned/needs_review
+```
 
-# Definition of done
+A pin-only result cannot be labelled as exact and cannot auto-Drift unless a separate quality threshold specifically validates it.
 
-The roadmap is complete only when a fresh mobile user can open `live.seacommons.org` and answer all of these from the interface without knowing SeaCommons internals:
+---
 
-- What happened?
-- When did it happen?
-- Where is it, or why is the position uncertain?
-- Is the incident active, resolved, under review or archived?
-- Which source reported it?
-- Is a displayed vessel a civil NGO, a state SAR authority or a generic AIS vessel?
-- Which NGO vessels are part of the monitored fleet even when currently offline?
-- Which information is observed/reported and which is modelled?
+## F-12 — frontend hides event time and collapses all missing locations
 
-If any answer requires hidden hover text, guessing from marker colour, or treating a model output as observed fact, the corresponding phase is not done.
+**Classification:** CONFIRMED BUG  
+**Priority:** P1
+
+**Code:** `apps/web/src/components/IntelDashboard.jsx::renderEvent()`.
+
+Current rendering derives:
+
+```js
+const position = Array.isArray(coords) && coords.length >= 2
+  ? `${Number(coords[1]).toFixed(4)}, ${Number(coords[0]).toFixed(4)}`
+  : 'position unavailable';
+```
+
+The timestamp is currently mainly available as a button `title` tooltip. This is effectively hidden on touch devices.
+
+**Required fix:** timestamp must be visible in every humanitarian row; null geometry must map to a semantic status (`OCR PROCESSING`, `OCR DISPUTED`, `REGION ONLY`, `NOT EXTRACTED`, `WITHHELD`).
+
+---
+
+## F-13 — NGO registry state is destroyed before the UI can show offline vessels
+
+**Classification:** CONFIRMED BUG  
+**Priority:** P1
+
+**Code:** `apps/web/src/main.jsx`, NGO fetch effect.
+
+Current frontend filters to positioned vessels before storing state:
+
+```js
+const positioned = {
+  ...data,
+  features: data.features.filter((f) => f.geometry?.coordinates),
+};
+setNgoVessels(positioned);
+```
+
+Backend `ngo_vessel_geojson()` intentionally returns registered but currently offline vessels with `geometry:null` and metadata including `org`, `role`, `operator_type`, `vessel_class`.
+
+**Required fix:** preserve full `sarFleet`; derive `sarMapFeatures` only at the map-source boundary.
+
+---
+
+## F-14 — DB indexes were repaired, but runtime DDL is not a migration strategy
+
+**Classification:** CONFIRMED HISTORICAL BUG + STRUCTURAL RISK  
+**Priority:** P1
+
+The production `intel_events` table previously had no physical indexes despite ORM `index=True`; startup `_ensure_indexes()` was added as emergency repair. Keep it during stabilization, but introduce Alembic before the next schema evolution.
+
+Composite indexes must be justified by the actual `persisted_events()` workload, especially recent `source + timestamp` and `type + timestamp` queries.
+
+---
+
+# 2. Alarm Phone screenshot trust boundary
+
+The attached real-world examples define the minimum regression corpus. The pipeline must handle all of these without assuming that every Alarm Phone post is an active maritime distress.
+
+## Coordinate-bearing images
+
+Representative formats:
+
+```text
+N 34° 13'   E 012° 53'
+N 34° 16.292'   E 011° 56.538'
+37°18'31.3"N   27°09'51.1"E
+N 33°52.664'   E 013°10.555'
+41°33'09.1"N   26°31'37.1"E
+```
+
+Required parsing tests:
+
+- DMS, DMM, decimal degrees;
+- hemisphere prefix/suffix;
+- spaces/no spaces;
+- Unicode/ascii degree/minute/second marks;
+- OCR `O/0`, `I/1`, punctuation confusion only when correction is unambiguous;
+- coordinate order and sign;
+- valid geographic ranges;
+- expected operational region;
+- consistency with textual region when the post names Central Med / Malta SAR / Farmakonisi / Lesvos / Evros.
+
+A parser correction must preserve the raw OCR span so reviewers can see what was changed.
+
+## Pin-only image
+
+Example: Malta SAR screenshot with a visible yellow pin and no readable numeric coordinate.
+
+Expected result:
+
+```text
+location_status = region_only / approximate / needs_review
+NOT exact solely because a pin is visible
+NO automatic Drift unless the landmark-fit quality gate explicitly passes
+```
+
+## Lifecycle follow-up
+
+Examples:
+
+```text
+"the people have been found and taken to a reception centre"
+"the people have arrived in the reception camp on Lesvos"
+```
+
+These must update the same incident rather than create a second active marker.
+
+## Humanitarian but not active maritime distress
+
+Examples in the attached feed include:
+
+- advocacy / memorial posts;
+- missing-person route alerts;
+- interception / pushback reports;
+- land incidents near Evros;
+- rescue/resolution follow-ups;
+- posts referring to an NGO vessel such as Humanity 1;
+- translated/near-duplicate posts.
+
+`source=Alarm Phone` must therefore be separate from `humanitarian_case_type` and `lifecycle`.
+
+---
+
+# 3. Canonical data model after stabilization
+
+The database must not rely on one overloaded `type` plus ad-hoc metadata to answer operational questions.
+
+## 3.1 Preserve existing event envelope
+
+Keep the current durable fields for compatibility:
+
+```text
+id
+timestamp_utc
+type
+severity
+lat
+lon
+title
+text
+url
+source
+linked_mmsi
+meta
+```
+
+## 3.2 Add canonical classification fields through migration
+
+Recommended schema additions, after inventorying production:
+
+```text
+source_timestamp_utc     timestamp with timezone
+received_at              timestamp with timezone
+maritime_domain          enum/string, indexed
+operational_tier         enum/string, indexed
+humanitarian_case_type   enum/string nullable, indexed
+incident_lifecycle       enum/string nullable, indexed
+location_status          enum/string nullable
+coordinate_review_status enum/string nullable
+location_uncertainty_m   float nullable
+schema_version           integer/not-null
+```
+
+Do not remove the JSON metadata envelope; it remains the provenance/extension area.
+
+## 3.3 Canonical humanitarian case taxonomy
+
+Initial taxonomy must be finite and explicit:
+
+```text
+distress              active/urgent maritime distress
+missing               people overdue / no contact
+interception          interception/return event
+pushback              pushback allegation/report
+rescue_update         rescue operation update, non-originating incident
+resolution            follow-up that resolves an existing incident
+land_humanitarian     land/border humanitarian case
+advocacy              non-operational public communication
+unknown_humanitarian  review lane, never auto-Drift
+```
+
+This is distinct from source and from `maritime_domain`.
+
+## 3.4 Example canonical row
+
+```json
+{
+  "source": "alarm_phone",
+  "type": "distress",
+  "humanitarian_case_type": "distress",
+  "maritime_domain": "sar",
+  "operational_tier": "operational",
+  "incident_lifecycle": "active",
+  "source_timestamp_utc": "2026-08-21T03:31:00Z",
+  "received_at": "2026-08-21T03:33:14Z",
+  "location_status": "positioned",
+  "coordinate_review_status": "machine_ocr_consensus_verified",
+  "location_uncertainty_m": 430,
+  "lat": 34.27153,
+  "lon": 11.94230
+}
+```
+
+A land Evros case may instead be:
+
+```json
+{
+  "source": "alarm_phone",
+  "humanitarian_case_type": "land_humanitarian",
+  "maritime_domain": null,
+  "operational_tier": "news",
+  "incident_lifecycle": "active",
+  "location_status": "withheld_from_maritime_map",
+  "lat": 41.55253,
+  "lon": 26.52703
+}
+```
+
+It remains a humanitarian record without becoming a boat/Drift origin.
+
+---
+
+# 4. Phased implementation
+
+## Phase 0 — freeze unsafe behavior and stabilize runtime
+
+**Must complete before historical reprocessing.**
+
+### P0.1 Drift evidence gate
+
+Files:
+
+```text
+apps/api/core/intel/twikit_monitor.py
+apps/api/core/intel/drift_service.py or shared policy module
+apps/api/core/intel/store.py
+```
+
+Implement `is_auto_drift_eligible(event)` once and call it from every auto/backfill Drift path.
+
+Required tests:
+
+```text
+disputed OCR -> persist, no Drift
+unverified OCR -> no automatic Drift
+region-only -> no Drift
+land humanitarian -> no Drift
+resolved incident -> no Drift
+verified SAR exact point -> Drift allowed
+force=True -> cannot bypass evidence gate
+```
+
+Suggested commit:
+
+`fix(humanitarian): gate auto drift on verified location evidence`
+
+### P0.2 bounded OCR queue
+
+Replace `_schedule_media_ocr()` per-event `threading.Thread()` with one bounded queue/executor.
+
+Required metrics:
+
+```text
+ocr_queue_depth
+ocr_queue_oldest_job_seconds
+ocr_queue_rejected_total
+ocr_job_duration_seconds
+ocr_consensus_total
+ocr_disputed_total
+ocr_no_coordinate_total
+ocr_drift_rejected_total
+```
+
+Suggested commit:
+
+`fix(perf): bound humanitarian media OCR work`
+
+### P0.3 Live transport semantics
+
+Unify public eligibility in backend policy. Edge and VM must project the same humanitarian incident set. Remove `alarmPhoneOnly()` from the browser only after edge publisher parity is proven.
+
+Suggested commit:
+
+`fix(live): make edge and vm share humanitarian eligibility`
+
+### P0.4 explicit feed connection state
+
+Frontend state must distinguish:
+
+```text
+loading
+live
+stale
+retrying
+offline
+empty
+```
+
+`empty` means a successful canonical response with zero events. Timeout/network failure must preserve last-good snapshot and show degradation.
+
+Suggested commit:
+
+`fix(live): distinguish empty feed from transport failure`
+
+### P0.5 DB query proof
+
+Keep emergency physical indexes. Capture `EXPLAIN (ANALYZE, BUFFERS)` for real `persisted_events()` shapes before adding composites.
+
+Candidates:
+
+```sql
+(source, timestamp_utc DESC)
+(type, timestamp_utc DESC)
+```
+
+Do not delete single-column indexes until real query plans justify it.
+
+---
+
+## Phase 1 — make screenshot geolocation evidence-safe
+
+### P1.1 `LocationEvidence`
+
+Create one shared model for live ingestion and backfill.
+
+Suggested fields:
+
+```python
+@dataclass(frozen=True)
+class LocationEvidence:
+    lat: float | None
+    lon: float | None
+    source: str
+    review_status: str
+    uncertainty_m: float | None
+    raw_coordinate_text: str | None
+    normalized_coordinate_text: str | None
+    engine: str | None
+    pass_id: str | None
+    media_sha256: str | None
+    source_post_id: str | None
+    media_index: int | None
+    interengine_distance_m: float | None
+```
+
+Suggested commit:
+
+`refactor(humanitarian): centralize location evidence semantics`
+
+### P1.2 geodesic OCR consensus
+
+Replace every `0.03°` agreement test with metric distance. Store distance + threshold. Add DMS/DMM regression fixtures from the attached Alarm Phone patterns.
+
+Suggested commit:
+
+`fix(ocr): validate coordinate consensus in metres`
+
+### P1.3 evidence-aware upgrade comparator
+
+Replace source-only `_COORDINATE_SOURCE_RANK` decisions with a comparator that includes review status and uncertainty.
+
+Rules:
+
+```text
+human_verified > reported_exact > OCR consensus > OCR unverified > OCR disputed > pin estimate > region
+verified can replace disputed
+disputed cannot replace verified
+same quality only replaces if evidence is demonstrably better/newer
+```
+
+### P1.4 semantic land/sea handling
+
+Preserve the raw extracted coordinate. Only apply `nearest_sea_point()` when the case is explicitly maritime and the displacement is within a conservative threshold.
+
+Never sea-snap Evros/land-humanitarian incidents.
+
+### P1.5 pin-only state
+
+Pin/landmark estimation is approximate evidence with explicit uncertainty. If calibration cannot meet the threshold, return `needs_review` / region-only rather than an exact public point.
+
+---
+
+## Phase 2 — canonical taxonomy + database migration
+
+### P2.1 freeze enums/taxonomy in one module
+
+Define canonical enums for:
+
+```text
+MaritimeDomain
+HumanitarianCaseType
+IncidentLifecycle
+OperationalTier
+LocationStatus
+CoordinateReviewStatus
+VerificationStatus
+```
+
+No ingestion path may invent ad-hoc alternative values.
+
+Suggested commit:
+
+`refactor(domain): centralize live humanitarian taxonomy`
+
+### P2.2 introduce Alembic
+
+Inventory production first. Create a non-destructive baseline, stamp production only after schema equivalence is checked, then add canonical fields and composite indexes in explicit migrations.
+
+Keep `_ensure_indexes()` for one compatibility release, then retire runtime DDL after every environment is at migration head.
+
+Suggested commits:
+
+```text
+build(db): introduce alembic current-schema baseline
+migrate(db): add canonical live classification fields
+migrate(db): add recent-event composite indexes
+```
+
+### P2.3 dual-write then backfill
+
+For one release, write canonical fields both to explicit columns and metadata where existing consumers require metadata. Do not migrate historical rows until new ingestion tests pass.
+
+### P2.4 storage acceptance
+
+A SQL query must be able to answer without parsing arbitrary JSON:
+
+```text
+all active humanitarian distress cases
+all interception cases
+all land humanitarian cases
+all security piracy cases
+all events with disputed location
+all resolved Alarm Phone incidents
+all events by source time window
+```
+
+---
+
+## Phase 3 — incident lifecycle, duplicates and correlation
+
+### P3.1 source != incident
+
+Alarm Phone is a source. The classifier must distinguish distress, missing, interception, pushback, land humanitarian, resolution and advocacy.
+
+### P3.2 thread linkage first
+
+Strong linkage order:
+
+```text
+direct reply / quoted tracked incident / explicit tweet ID
+> stable canonical source+URL identity
+> strong incident correlation
+> weak spatial/text similarity
+```
+
+Do not merge two groups merely because they are both in Central Med on the same day.
+
+### P3.3 lifecycle regression corpus
+
+Tests must include:
+
+```text
+"found and taken to a reception centre" -> resolves parent
+"arrived in the reception camp" -> resolves parent or explicit review state
+"still drifting / boat sinking" -> remains/reopens active
+resolved reply followed by newer danger update -> reopen if same incident
+advocacy/memorial -> no operational incident
+Evros land pushback -> humanitarian record, no maritime marker/Drift
+translated duplicate -> one canonical incident
+```
+
+### P3.4 interception/responder context
+
+Humanity 1 / Mare Jonio / coastguard proximity may be stored as contextual evidence. Do not claim `responding`, `rescuing` or causal involvement unless an authoritative source says so.
+
+Suggested commit:
+
+`fix(humanitarian): harden case typing lifecycle and thread correlation`
+
+---
+
+## Phase 4 — Live UI and Civil SAR fleet
+
+### P4.1 humanitarian event presentation
+
+Create a dedicated distress/humanitarian presentation path instead of rendering Alarm Phone through a vessel-oriented row.
+
+Minimum visible mobile card:
+
+```text
+ALARM PHONE · ACTIVE                 20:04 CEST
+8 min ago
+
+~37 PEOPLE IN URGENT DISTRESS
+Central Mediterranean
+
+POSITION · 34.2715, 11.9423 · ±430 m
+SOURCE · Alarm Phone / X
+```
+
+Or, when evidence is not exact:
+
+```text
+LOCATION · OCR PROCESSING
+LOCATION · OCR DISPUTED · REVIEW REQUIRED
+REGION ONLY · CENTRAL MEDITERRANEAN
+LOCATION · NOT EXTRACTED
+LOCATION · WITHHELD
+```
+
+Remove the generic `position unavailable` path from humanitarian UI.
+
+Suggested commit:
+
+`fix(live): expose humanitarian time lifecycle and location quality`
+
+### P4.2 preserve full fleet state
+
+Use:
+
+```text
+sarFleet = complete endpoint response
+sarMapFeatures = only features with geometry
+```
+
+The panel can therefore show Ocean Viking/Humanity 1/etc. even when AIS-offline without fabricating map markers.
+
+### P4.3 Civil NGO vs State SAR
+
+Public grouping:
+
+```text
+CIVIL SAR NGOs
+STATE SAR AUTHORITIES
+```
+
+Selected vessel details must show organization + operator type. Mare Jonio should not appear as only `52 · 0 kn · MMSI`.
+
+Suggested commit:
+
+`feat(live): expose complete civil and state sar fleet`
+
+### P4.4 mobile acceptance
+
+On the iPhone-sized viewport used in the supplied screenshots:
+
+```text
+event time visible without hover
+location quality visible
+no exact point for disputed evidence
+tap centers map only when publishable geometry exists
+fleet list includes AIS-offline registry entries
+selected NGO shows organization and operator class
+no overlapping critical controls
+```
+
+---
+
+## Phase 5 — safe historical repair
+
+Only run after Phases 0-3 are deployed and tested.
+
+Required order:
+
+```text
+Drift gate
+-> shared LocationEvidence
+-> geodesic consensus
+-> semantic land/sea handling
+-> canonical taxonomy
+-> lifecycle regression
+-> backfill dry-run
+-> manually audit sample
+-> apply without Drift
+-> audit again
+-> optional Drift only for events passing is_auto_drift_eligible()
+```
+
+Backfill must be idempotent and must never downgrade higher-quality evidence.
+
+Required report:
+
+```text
+scanned
+already_good
+newly_positioned_exact
+newly_positioned_approximate
+region_only
+still_unpositioned
+disputed
+land_humanitarian
+lifecycle_changed
+duplicate_merged
+drift_eligible
+drift_rejected
+```
+
+Suggested commit:
+
+`feat(humanitarian): add canonical safe alarm phone reprocessing`
+
+---
+
+## Phase 6 — production proof, monitoring and release gate
+
+### Required metrics
+
+```text
+live_signals_request_duration_seconds
+live_signals_request_errors_total
+live_signals_response_events
+live_edge_snapshot_age_seconds
+live_vm_edge_incident_set_mismatch
+db_query_duration_seconds{query="persisted_events"}
+process_threads
+ocr_queue_depth
+ocr_queue_oldest_job_seconds
+ocr_disputed_total
+ocr_drift_rejected_total
+```
+
+### Critical invariants to alert on
+
+```text
+disputed OCR -> Drift count > 0                  CRITICAL
+VM/edge humanitarian incident-set mismatch       CRITICAL
+thread count grows with OCR burst                 CRITICAL
+public exact geometry for disputed location       CRITICAL
+piracy classified humanitarian                    CRITICAL
+```
+
+### Release smoke corpus
+
+At minimum:
+
+1. active Alarm Phone distress + verified DMM coordinate;
+2. active Alarm Phone distress + verified DMS coordinate;
+3. screenshot with pin only;
+4. OCR disagreement;
+5. Central Med region-only text;
+6. Farmakonisi-style resolution reply;
+7. Lesvos-style resolution reply;
+8. Evros land humanitarian coordinate;
+9. interception involving a Civil SAR vessel;
+10. advocacy/memorial Alarm Phone post;
+11. translated/duplicate Alarm Phone post;
+12. live civil NGO AIS record;
+13. offline civil NGO registry record;
+14. state SAR record;
+15. piracy/security event;
+16. restart with durable event outside the in-memory 600-event deque.
+
+---
+
+# 5. Counter-proof: how to know `fixes.md` actually fixed the product
+
+This section is deliberately binary. Do not declare the roadmap complete because unit tests are green; prove the user-visible and DB outcomes.
+
+## Question A — "Humanitarian sarà fixato?"
+
+**YES only if all of these are true:**
+
+```text
+[ ] Alarm Phone is treated as source, not automatic active distress
+[ ] humanitarian_case_type is canonical and persisted
+[ ] direct replies/follow-ups attach to the same incident
+[ ] advocacy does not create an active SAR marker
+[ ] land humanitarian cases do not become boats
+[ ] interception/pushback/missing are distinguishable from fresh distress
+[ ] disputed OCR persists for review but never auto-Drifts
+[ ] edge and VM return the same humanitarian eligibility
+[ ] transport failure never becomes fake empty humanitarian feed
+```
+
+If any checkbox fails, Humanitarian is not considered fixed.
+
+## Question B — "Vedrò punti precisi?"
+
+**YES, when the source actually contains enough evidence. Not every screenshot should become a precise point.**
+
+Expected outcomes:
+
+```text
+printed DMS/DMM + validated parser + evidence-quality pass
+    -> precise public point + uncertainty
+
+EasyOCR + Tesseract metric consensus
+    -> precise/derived point + measured uncertainty
+
+one engine only
+    -> unverified / conservative point or review according to policy
+
+engines disagree
+    -> NO precise public point, REVIEW REQUIRED, NO Drift
+
+pin only + strong landmark calibration
+    -> approximate point/area + large uncertainty
+
+pin only + weak calibration
+    -> region-only / unpositioned
+
+text says Central Med / Malta SAR only
+    -> region area, never fake exact coordinate
+
+Evros/land coordinate
+    -> stored humanitarian location but not maritime marker/Drift
+```
+
+The success criterion is therefore not "every event has a dot". It is "every dot has defensible provenance and uncertainty".
+
+## Question C — "Il database sarà ben strutturato?"
+
+**YES only after Phase 2 migration + query proof.**
+
+Required proof:
+
+```text
+[ ] Alembic is migration authority
+[ ] production schema is at migration head
+[ ] canonical classification columns exist
+[ ] source timestamp and received timestamp are distinguishable
+[ ] maritime_domain is explicit/indexable
+[ ] humanitarian_case_type is explicit/indexable
+[ ] incident_lifecycle is explicit/indexable
+[ ] location/review state is queryable without decoding arbitrary JSON
+[ ] provenance remains available in metadata/forensic records
+[ ] query plans use appropriate indexes for recent source/type scans
+[ ] restart preserves repaired classifications and locations
+```
+
+Do not remove the JSON metadata envelope; the goal is structured canonical fields plus extensible provenance.
+
+## Question D — "Categorie e tipologie saranno correttamente storate?"
+
+**YES only if this separation survives ingestion, DB, projection and frontend:**
+
+```text
+source                Alarm Phone / IOM / partner / AIS / etc.
+event type            twitter / distress / ais_anomaly / etc. transport/domain event type
+humanitarian case     distress / missing / interception / pushback / land / advocacy / resolution
+maritime domain       sar / piracy / sanctions / grey_zone / iuu / smuggling / ...
+operational tier      operational / news / signal
+lifecycle             active / resolved / needs_review / archived
+verification          public-source / partner / corroborated / derived / ...
+location status       positioned / region_only / processing / disputed / withheld / unpositioned
+```
+
+A test must read the stored DB row and the public feature and prove that these meanings have not collapsed into one another.
+
+## Question E — "Gli screenshot Alarm Phone allegati saranno coperti?"
+
+**YES only when regression fixtures cover:**
+
+```text
+N 34° 16.292' E 011° 56.538'
+37°18'31.3"N 27°09'51.1"E
+N 33°52.664' E 013°10.555'
+41°33'09.1"N 26°31'37.1"E
+pin without coordinate text
+Central Med / Malta SAR region-only text
+resolution reply
+interception update
+land Evros case
+translated duplicate
+advocacy/memorial post
+```
+
+For each fixture test both classification and geolocation; a parser-only test is insufficient.
+
+---
+
+# 6. Commit boundaries
+
+Do not implement all fixes in one agent pass.
+
+Recommended order:
+
+```text
+1. fix(humanitarian): gate auto drift on verified location evidence
+2. fix(perf): bound humanitarian media OCR work
+3. fix(live): make edge and vm share humanitarian eligibility
+4. fix(live): distinguish empty feed from transport failure
+5. refactor(humanitarian): centralize location evidence semantics
+6. fix(ocr): validate coordinate consensus in metres
+7. fix(humanitarian): make location upgrades evidence aware
+8. refactor(domain): centralize live humanitarian taxonomy
+9. build(db): introduce alembic current-schema baseline
+10. migrate(db): add canonical live classification fields
+11. migrate(db): add recent-event composite indexes
+12. fix(humanitarian): harden case typing lifecycle and thread correlation
+13. fix(live): expose humanitarian time lifecycle and location quality
+14. feat(live): expose complete civil and state sar fleet
+15. feat(humanitarian): add canonical safe alarm phone reprocessing
+16. test(live): add end-to-end stabilization smoke corpus
+```
+
+Each commit requires its own regression test and verification checkpoint.
+
+---
+
+# 7. Final release gate
+
+This version is **not stable** until every item below is proven on a fresh deployment:
+
+```text
+[ ] disputed OCR -> 0 auto-Drift
+[ ] `force=True` cannot bypass location policy
+[ ] OCR agreement uses geodesic metres, not degree deltas
+[ ] live and backfill share identical LocationEvidence semantics
+[ ] source-post/media provenance is persisted for OCR-derived coordinates
+[ ] pin-only input does not create fake exact coordinates
+[ ] Evros/land input creates 0 maritime Drift and 0 fake boat marker
+[ ] DMS/DMM Alarm Phone fixtures parse correctly
+[ ] follow-up resolution updates the original incident
+[ ] translated/duplicate posts do not create duplicate incidents
+[ ] advocacy does not enter the active SAR lane
+[ ] OCR queue/thread count remains bounded during burst
+[ ] public Live remains responsive during OCR burst
+[ ] connection failure never renders as a legitimate zero-event state
+[ ] VM and edge agree on humanitarian incident eligibility
+[ ] browser has no independent Alarm-Phone-only product policy
+[ ] piracy is never humanitarian
+[ ] canonical taxonomy is persisted in DB
+[ ] Alembic owns schema evolution
+[ ] recent source/type queries use verified query plans/indexes
+[ ] event source time is visible on mobile
+[ ] generic `position unavailable` is absent from humanitarian UI
+[ ] location uncertainty/review state is visible
+[ ] complete Civil SAR registry survives AIS offline state
+[ ] map receives only fleet entries with geometry
+[ ] Civil NGO and State SAR identities remain distinct
+[ ] selected Mare Jonio/other NGO shows organization + operator class
+[ ] restart preserves durable events, classifications, lifecycle and repaired locations
+```
+
+## Definition of done
+
+A fresh mobile user must be able to open `live.seacommons.org` and answer, without reading code or guessing marker colours:
+
+```text
+What happened?
+When did it happen?
+What kind of humanitarian/maritime case is it?
+Is it active, resolved, under review or archived?
+Which source reported it?
+Where is it — and how precise/reliable is that location?
+If there is no point, why is it absent?
+Is a displayed vessel Civil NGO, State SAR or generic AIS?
+Is a trajectory/cone observed data or a model output?
+```
+
+If the UI shows a precise dot or Drift cone that cannot be traced back to defensible Location Evidence, the release fails this document even if all services are technically online.
