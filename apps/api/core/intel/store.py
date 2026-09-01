@@ -31,19 +31,9 @@ def _normalised_source(value: str) -> str:
     """Stable identity for harmless source spelling variants."""
     return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
 
-_COORDINATE_SOURCE_RANK = {
-    "none": 0,
-    "place_centroid": 1,
-    "relative_place_offset": 2,
-    # A plain map screenshot with no printed coordinates, geolocated from its
-    # drop-pin pixel position plus visible place labels (map_pin_geolocate.py)
-    # — better than a bare centroid guess, but less precise than an actual
-    # printed readout.
-    "media_pin_landmark": 3,
-    "media_ocr_consensus": 4,
-    "media_ocr_text": 4,
-    "post_text": 5,
-}
+# Location-upgrade decisions live in core.intel.location_evidence
+# (metadata_quality / location_quality): evidence quality -- review status,
+# then source, then tighter uncertainty -- not source rank alone (F-04).
 
 MAX_EVENTS = 600
 DEDUP_WINDOW = 2000  # max unique hashes kept in memory
@@ -628,13 +618,12 @@ class IntelStore:
                 if event.id != event_id:
                     continue
                 if event.lat is not None or event.lon is not None:
-                    previous_rank = _COORDINATE_SOURCE_RANK.get(
-                        str(event.metadata.get("coordinate_source") or "none"), 0
-                    )
-                    new_rank = _COORDINATE_SOURCE_RANK.get(
-                        str(metadata.get("coordinate_source") or "none"), 0
-                    )
-                    if new_rank <= previous_rank:
+                    # docs/fixes.md F-04: compare evidence quality, not source
+                    # rank alone -- a disputed / lone-engine coordinate can be
+                    # stored for review but must never supersede a verified one.
+                    from core.intel.location_evidence import metadata_quality
+
+                    if metadata_quality(metadata) <= metadata_quality(event.metadata):
                         return False
                 event.lat = lat
                 event.lon = lon
@@ -683,13 +672,9 @@ class IntelStore:
                     return
                 merged = dict(row.meta or {})
                 if row.lat is not None or row.lon is not None:
-                    previous_rank = _COORDINATE_SOURCE_RANK.get(
-                        str(merged.get("coordinate_source") or "none"), 0
-                    )
-                    new_rank = _COORDINATE_SOURCE_RANK.get(
-                        str(metadata.get("coordinate_source") or "none"), 0
-                    )
-                    if new_rank <= previous_rank:
+                    from core.intel.location_evidence import metadata_quality
+
+                    if metadata_quality(metadata) <= metadata_quality(merged):
                         return
                 row.lat = lat
                 row.lon = lon

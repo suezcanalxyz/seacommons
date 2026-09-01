@@ -12,7 +12,7 @@ concerns are defined.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 
 @dataclass(frozen=True)
@@ -54,7 +54,7 @@ class LocationEvidence:
                 meta[key] = value
         return meta
 
-    def quality(self) -> tuple[int, int, float]:
+    def quality(self) -> tuple[int, float]:
         return location_quality(
             self.coordinate_source, self.review_status, self.uncertainty_m
         )
@@ -117,48 +117,80 @@ def ocr_result_label(method: str) -> str:
 
 
 # ── Evidence-quality ordering (docs/fixes.md F-04) ───────────────────────────
-# Review status dominates: a disputed / lone-engine coordinate can be stored
-# for review but must never *supersede* a verified one, regardless of source.
-_REVIEW_RANK: dict[str, int] = {
-    "human_verified": 5,
-    "reported_exact": 5,
-    "not_required": 4,
-    "machine_ocr_consensus_verified": 3,
-    "machine_ocr_unverified": 1,
-    "machine_ocr_disputed_needs_review": 0,
-}
-_SOURCE_RANK: dict[str, int] = {
+# One ordered ladder, high to low:
+#   human_verified / reported_exact  (9)
+#   coordinate read from post text / navtext / AIS   (8)
+#   EasyOCR + Tesseract consensus    (6)
+#   lone-engine OCR text read        (5)
+#   OCR engines disagree (disputed)  (4)
+#   map-pin landmark estimate        (3)
+#   relative place offset            (2)
+#   place centroid / region area     (1)
+#   nothing                          (0)
+# A disputed / lone-engine coordinate can be stored for review but never
+# *supersedes* a verified one.
+_SOURCE_ONLY_RANK: dict[str, int] = {
     "": 0,
     "none": 0,
     "place_centroid": 1,
     "region_area": 1,
     "relative_place_offset": 2,
     "media_pin_landmark": 3,
-    "media_ocr_consensus": 4,
-    "media_ocr_text": 4,
-    "navtext": 5,
-    "ais_position": 6,
-    "post_text": 6,
+    "media_ocr_text": 5,
+    "media_ocr_consensus": 6,
+    "navtext": 8,
+    "ais_position": 8,
+    "post_text": 8,
 }
-_DEFAULT_REVIEW_RANK = 2
-_DEFAULT_SOURCE_RANK = 2
+
+
+_COARSE_SOURCES = frozenset(
+    {"", "none", "region_area", "place_centroid", "relative_place_offset"}
+)
+
+
+def _evidence_rank(source: str, review: str) -> int:
+    if review in ("human_verified", "reported_exact"):
+        return 9
+    if review == "not_required":
+        # "no OCR review needed" means text coordinates -- never a coarse
+        # place/region fallback that some legacy rows also tagged this way.
+        return _SOURCE_ONLY_RANK.get(source, 4) if source in _COARSE_SOURCES else 8
+    if review == "machine_ocr_consensus_verified":
+        return 6
+    if review == "machine_ocr_unverified":
+        return 3 if source == "media_pin_landmark" else 5
+    if "disputed" in review or "needs_review" in review:
+        return 4
+    # No / unknown review status -> rank on the source's inherent coarseness.
+    return _SOURCE_ONLY_RANK.get(source, 4)
 
 
 def location_quality(
     coordinate_source: str | None,
     review_status: str | None,
     uncertainty_m: float | None = None,
-) -> tuple[int, int, float]:
+) -> tuple[int, float]:
     """A sortable quality key -- higher is better evidence.
 
-    Ordered by (review-status rank, source rank, tighter uncertainty). The
-    review-status term comes first so no coarser-but-"higher-source" reading
-    can ever replace a verified coordinate.
+    ``(evidence rank, tighter uncertainty)``. The rank is the single ladder
+    above; a tighter uncertainty only breaks ties within the same rank.
     """
-    review = _REVIEW_RANK.get(str(review_status or "").lower(), _DEFAULT_REVIEW_RANK)
-    source = _SOURCE_RANK.get(str(coordinate_source or "none").lower(), _DEFAULT_SOURCE_RANK)
+    source = str(coordinate_source or "none").lower()
+    review = str(review_status or "").lower()
+    rank = _evidence_rank(source, review)
     try:
         neg_uncertainty = -float(uncertainty_m) if uncertainty_m is not None else -1e12
     except (TypeError, ValueError):
         neg_uncertainty = -1e12
-    return (review, source, neg_uncertainty)
+    return (rank, neg_uncertainty)
+
+
+def metadata_quality(meta: Mapping[str, Any] | None) -> tuple[int, float]:
+    """location_quality() read from an IntelEvent.metadata mapping."""
+    meta = meta or {}
+    return location_quality(
+        meta.get("coordinate_source"),
+        meta.get("coordinate_review_status"),
+        meta.get("location_uncertainty_m"),
+    )

@@ -848,9 +848,11 @@ class TwikitMonitor:
                     "location_suppressed_reason": "non_operational_context",
                 } if not distress else {}),
                 "coordinate_review_status": (
-                    "machine_ocr_unverified"
+                    "not_required"
+                    if coordinate_source in {"post_text", "navtext"}
+                    else "machine_ocr_unverified"
                     if coordinate_source == "media_ocr_text"
-                    else "not_required"
+                    else "not_applicable"
                 ),
                 # Credit the specific tracked X/Twitter account by name rather than
                 # bucketing it under a generic trust tier — e.g. "alarm_phone_twitter",

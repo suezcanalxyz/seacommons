@@ -10,6 +10,7 @@ from core.intel.location_evidence import (
     LocationEvidence,
     evidence_from_ocr_method,
     location_quality,
+    metadata_quality,
     ocr_result_label,
 )
 
@@ -71,6 +72,28 @@ def test_tighter_uncertainty_breaks_a_same_status_tie():
     tight = location_quality("media_ocr_text", "machine_ocr_unverified", 800)
     loose = location_quality("media_ocr_text", "machine_ocr_unverified", 4000)
     assert loose < tight
+
+
+def test_any_real_ocr_read_outranks_a_region_fallback():
+    region = location_quality("region_area", None)
+    centroid = location_quality("place_centroid", None)
+    unverified_ocr = location_quality("media_ocr_text", "machine_ocr_unverified", 1500)
+    pin = location_quality("media_pin_landmark", "machine_ocr_unverified", 4000)
+    assert region == centroid
+    assert region < pin < unverified_ocr
+
+
+def test_metadata_quality_reads_the_event_metadata_keys():
+    verified = metadata_quality({
+        "coordinate_source": "media_ocr_consensus",
+        "coordinate_review_status": "machine_ocr_consensus_verified",
+        "location_uncertainty_m": 400,
+    })
+    disputed = metadata_quality({
+        "coordinate_source": "media_ocr_text",
+        "coordinate_review_status": "machine_ocr_disputed_needs_review",
+    })
+    assert disputed < verified
 
 
 def test_ocr_result_label():
