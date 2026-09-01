@@ -148,6 +148,16 @@ class IntelEventDB(Base):
     coordinate_review_status = Column(String(40))
     location_uncertainty_m   = Column(Float)
 
+    # docs/fixes.md F-14 / Phase 2.2: persisted_events() and the edge
+    # publisher's collect() all filter a recent time window by source or type
+    # and sort by timestamp_utc desc. Composite indexes serve the filter and
+    # the sort in one; the single-column indexes above stay (F-14: do not drop
+    # them until query plans justify it).
+    __table_args__ = (
+        Index("ix_intel_events_source_ts", "source", "timestamp_utc"),
+        Index("ix_intel_events_type_ts", "type", "timestamp_utc"),
+    )
+
 
 class IngestedSignalDB(Base):
     """Canonical inbound signal; external delivery key makes webhooks idempotent."""
