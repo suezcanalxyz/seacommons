@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 from typing import Any
 
 from core.domain.live_contracts import HumanitarianCaseType
@@ -60,6 +61,59 @@ def _case_type(text: str, *, distress: bool, resolved: bool) -> str:
     ):
         return HumanitarianCaseType.DISTRESS.value
     return HumanitarianCaseType.UNKNOWN_HUMANITARIAN.value
+
+
+def canonical_classification(event: Any, *, same_source: Any = ()) -> dict[str, Any]:
+    """Recompute the canonical IntelEventDB classification columns for a
+    stored event, using the SAME helpers live ingestion / the public feed
+    use -- no second taxonomy (docs/prompt.md sec 3 / Phase 2).
+
+    Returns the seven canonical fields: maritime_domain, operational_tier,
+    humanitarian_case_type, incident_lifecycle, location_status,
+    coordinate_review_status, location_uncertainty_m. Never touches lat/lon.
+    """
+    from core.intel import lifecycle
+    from core.intel.geoextract import is_direct_distress_call, is_resolved_distress
+    from core.intel.location_evidence import (
+        canonical_review_status,
+        location_status_for,
+    )
+
+    meta = getattr(event, "metadata", {}) or {}
+    text = str(getattr(event, "text", "") or getattr(event, "title", "") or "")
+    is_distress = bool(meta.get("is_distress")) or is_direct_distress_call(text)
+    resolved = is_resolved_distress(text) or str(meta.get("report_kind") or "") == "resolved"
+
+    case_type = _case_type(text, distress=is_distress, resolved=resolved)
+    incident_lifecycle = lifecycle.distress_lifecycle(
+        event, now=datetime.now(UTC), same_source=list(same_source)
+    )
+    review = canonical_review_status(
+        meta.get("coordinate_source"), meta.get("coordinate_review_status")
+    )
+    uncertainty = meta.get("location_uncertainty_m")
+    try:
+        uncertainty = float(uncertainty) if uncertainty is not None else None
+    except (TypeError, ValueError):
+        uncertainty = None
+
+    location_status = location_status_for(
+        lat=getattr(event, "lat", None),
+        lon=getattr(event, "lon", None),
+        coordinate_source=meta.get("coordinate_source"),
+        coordinate_review_status=review,
+        has_area_geometry=bool(meta.get("area_geojson")),
+        is_land=case_type == HumanitarianCaseType.LAND_HUMANITARIAN.value,
+    )
+    return {
+        "maritime_domain": event.maritime_domain(),
+        "operational_tier": event.tier(),
+        "humanitarian_case_type": case_type,
+        "incident_lifecycle": incident_lifecycle,
+        "location_status": location_status,
+        "coordinate_review_status": review,
+        "location_uncertainty_m": uncertainty,
+    }
 
 
 def humanitarian_case_metadata(
