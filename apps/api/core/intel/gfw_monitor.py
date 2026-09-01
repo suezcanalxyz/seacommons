@@ -70,7 +70,7 @@ def poll_once() -> int:
             vessels = [v.get("ship", {}).get("mmsi") or v.get("mmsi")
                        for v in (e.get("vessels") or [])]
             added = intel_store.add(IntelEvent(
-                id=eid[:32],
+                id=eid,
                 type="ais_rendezvous" if gfw_type == "encounter" else "ais_anomaly",
                 severity=sev, lat=float(lat), lon=float(lon),
                 title=f"GFW {gfw_type} — {', '.join(str(v) for v in vessels if v) or 'vessel'}",

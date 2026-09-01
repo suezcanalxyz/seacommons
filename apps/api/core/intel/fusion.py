@@ -666,7 +666,7 @@ def _open_case_for_alert(alert: FusedAlert, alert_event_id: str) -> Optional[str
             existing = (
                 db.query(CaseIntelEventDB.case_id)
                 .join(CaseDB, CaseDB.case_id == CaseIntelEventDB.case_id)
-                .filter(CaseIntelEventDB.event_id.in_([i[:32] for i in linked_ids]))
+                .filter(CaseIntelEventDB.event_id.in_(linked_ids))
                 .filter(CaseDB.status.in_(OPEN_STATUSES))
                 .first()
             )

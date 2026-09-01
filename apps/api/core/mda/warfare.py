@@ -83,7 +83,7 @@ def poll_acled() -> int:
             continue
         eid = f"acled:{row.get('data_id') or row.get('event_id_cnty')}"
         added = intel_store.add(IntelEvent(
-            id=eid[:32], type="conflict_event",
+            id=eid, type="conflict_event",
             severity="high" if _STRIKE_KW.search(text) else "medium",
             lat=lat, lon=lon,
             title=f"ACLED: {row.get('sub_event_type') or row.get('event_type')} — {row.get('country')}",
@@ -136,7 +136,7 @@ def poll_navwarnings() -> int:
         zones.append({"kind": kind, "lat": lat, "lon": lon, "id": wid,
                       "points": polys, "text": str(w.get("text", ""))[:400]})
         added = intel_store.add(IntelEvent(
-            id=wid[:32], type="navwarning",
+            id=wid, type="navwarning",
             severity="high" if kind in ("strike_warning", "missile_test") else "medium",
             lat=lat, lon=lon,
             title=f"NAVWARN {w.get('navArea')} {w.get('msgNumber')}/{w.get('msgYear')} — {kind}",
