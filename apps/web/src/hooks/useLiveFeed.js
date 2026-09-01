@@ -22,10 +22,11 @@ function loadCachedEvents(isPublicLiveHost, liveMode = 'humanitarian') {
     if (!Array.isArray(parsed)) return [];
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const recent = parsed.filter((event) => (event?.properties?.timestamp_utc || '') >= cutoff);
-    const normalized = isPublicLiveHost ? receivedSignalFeatures(recent) : recent;
-    return isPublicLiveHost && liveMode === 'humanitarian'
-      ? alarmPhoneOnly(normalized)
-      : normalized;
+    // Humanitarian eligibility is decided once, in backend policy
+    // (core.live.projection._public_intel_feature), and applied identically by
+    // the VM feed and the edge publisher. The browser must not layer a second
+    // source policy on top (docs/fixes.md F-06).
+    return isPublicLiveHost ? receivedSignalFeatures(recent) : recent;
   } catch {
     return [];
   }
@@ -218,7 +219,7 @@ export function useLiveFeed({
 
     function applySnapshot(snapshot, transport = 'poll') {
       if (!alive || !edgeSnapshotIsUsable(snapshot)) return false;
-      const features = alarmPhoneOnly(edgeSnapshotToFeatures(snapshot));
+      const features = edgeSnapshotToFeatures(snapshot);
       setIntelEvents(features);
       storeCachedEvents(true, features, 'humanitarian');
       setIntelConnected(true);
@@ -338,10 +339,4 @@ export function useLiveFeed({
     intelMode,
     liveModeCounts,
   };
-}
-
-function alarmPhoneOnly(features) {
-  return features.filter((feature) => (
-    String(feature?.properties?.source || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'alarmphone'
-  ));
 }

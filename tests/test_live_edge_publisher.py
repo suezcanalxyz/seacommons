@@ -17,7 +17,16 @@ _NOW = datetime(2026, 8, 2, 12, 30, tzinfo=timezone.utc)
 
 
 def distress_row(*, timestamp_utc="2026-08-02T12:00:00+00:00", text="Public source report", **meta_overrides):
-    meta = {"is_distress": True, "confidence": 0.72, "location_uncertainty_m": 5000}
+    meta = {
+        "is_distress": True,
+        "confidence": 0.72,
+        "location_uncertainty_m": 5000,
+        # A real tracked-account distress event carries an explicit publication
+        # decision -- the edge now applies the exact VM eligibility rule, which
+        # requires one (docs/fixes.md F-06).
+        "source_policy": "operator_published",
+        "publication_status": "published",
+    }
     meta.update(meta_overrides)
     return SimpleNamespace(
         id="evt-1",
@@ -48,9 +57,19 @@ def test_public_distress_event_mapping_is_versioned() -> None:
     assert event["properties"]["incident_lifecycle"] == "active"
 
 
-def test_humanitarian_edge_rejects_non_alarm_phone_sources() -> None:
+def test_humanitarian_edge_accepts_any_verified_humanitarian_source() -> None:
+    """docs/fixes.md F-06: Humanitarian Live is domain + policy based, not
+    Alarm-Phone-only. A published distress report from any tracked NGO reaches
+    the edge exactly as it reaches the VM's mode=humanitarian feed."""
     row = distress_row()
-    row.source = "another_ngo"
+    row.source = "sea_watch"
+    event = public_event_from_row(row, "node", now=_NOW, same_source=[])
+    assert event is not None
+    assert event["properties"]["incident_lifecycle"] == "active"
+
+
+def test_maritime_security_domain_never_reaches_the_humanitarian_edge() -> None:
+    row = distress_row(maritime_domain="sanctions")
     assert public_event_from_row(row, "node", now=_NOW, same_source=[]) is None
 
 
@@ -197,6 +216,76 @@ def test_explicit_publication_without_is_distress_flag_is_exported() -> None:
     row = distress_row(is_distress=False, publication_status="published")
     row.type = "ngo_activity"
     assert public_event_from_row(row, "node", now=_NOW, same_source=[]) is not None
+
+
+def test_edge_and_vm_agree_on_the_humanitarian_incident_set() -> None:
+    """docs/fixes.md F-06 acceptance proof: for a fixed set of events, the
+    humanitarian incident IDs the edge publishes == the ones the VM's
+    mode=humanitarian feed returns. Neither path may apply its own source
+    policy."""
+    from core.intel.store import IntelEvent, intel_store
+    from core.live.feed import public_signal_collection
+
+    now = datetime.now(timezone.utc)
+    recent = (now - timedelta(hours=1)).isoformat()
+    events = [
+        IntelEvent(
+            id="par-ap", type="twitter", severity="critical", lat=35.0, lon=14.0,
+            title="Alarm Phone distress", text="Boat in distress, 30 people",
+            source="Alarm Phone", timestamp_utc=recent,
+            metadata={"is_distress": True, "source_policy": "operator_published",
+                      "publication_status": "published", "tracked_account": "alarm_phone"},
+        ),
+        IntelEvent(
+            id="par-sw", type="twitter", severity="high", lat=34.5, lon=13.0,
+            title="Sea-Watch distress", text="Sighted an overcrowded boat",
+            source="Sea-Watch", timestamp_utc=recent,
+            metadata={"is_distress": True, "source_policy": "operator_published",
+                      "publication_status": "published", "tracked_account": "seawatch"},
+        ),
+        IntelEvent(
+            id="par-sec", type="ais_anomaly", severity="high", lat=35.2, lon=14.2,
+            title="Sanctioned vessel", source="SeaCommons MDA",
+            timestamp_utc=recent,
+            metadata={"anomaly_type": "sanctioned_vessel", "source_policy": "official_api"},
+        ),
+        IntelEvent(
+            id="par-priv", type="twitter", severity="high", lat=33.0, lon=12.0,
+            title="Private caller", text="distress", source="whatsapp",
+            timestamp_utc=recent,
+            metadata={"is_distress": True, "publication_status": "private"},
+        ),
+    ]
+    for event in events:
+        intel_store.add(event)
+    try:
+        vm = public_signal_collection(mode="humanitarian", days=30)
+        vm_ids = {
+            str(f["properties"]["id"]).removeprefix("intel:")
+            for f in vm["features"]
+        }
+
+        edge_ids = set()
+        for event in events:
+            row = SimpleNamespace(
+                id=event.id, type=event.type, severity=event.severity,
+                lat=event.lat, lon=event.lon, title=event.title, text=event.text,
+                url="", source=event.source, linked_mmsi="",
+                timestamp_utc=event.timestamp_utc, meta=event.metadata,
+            )
+            payload = public_event_from_row(row, "node", now=now, same_source=[])
+            if payload is not None and not payload["properties"].get("expired"):
+                edge_ids.add(payload["properties"]["incident_id"])
+
+        assert vm_ids == edge_ids
+        assert "par-ap" in vm_ids and "par-sw" in vm_ids
+        assert "par-sec" not in vm_ids and "par-priv" not in vm_ids
+    finally:
+        with intel_store._lock:
+            intel_store._events = type(intel_store._events)(
+                (e for e in intel_store._events if not e.id.startswith("par-")),
+                maxlen=intel_store._events.maxlen,
+            )
 
 
 def test_non_public_context_event_is_not_exported() -> None:
