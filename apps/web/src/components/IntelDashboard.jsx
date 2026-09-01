@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { categoryOf, classifyEventVisual, eventAnomalyLabel, isAlarmPhoneSource } from '../features/intel/categories.js';
+import { locationLabel, relativeTime } from '../features/live/eventPresentation.js';
 
 const ALARM_PHONE_SOURCE = 'Alarm Phone';
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -373,9 +374,12 @@ export default function IntelDashboard({
       || parsedTitle.name
       || (p.linked_mmsi || p.mmsi ? `MMSI ${p.linked_mmsi || p.mmsi}` : p.title || 'Unknown vessel');
     const anomaly = eventAnomalyLabel(p);
-    const position = Array.isArray(coords) && coords.length >= 2
-      ? `${Number(coords[1]).toFixed(4)}, ${Number(coords[0]).toFixed(4)}`
-      : 'position unavailable';
+    // F-12: report time visible in every row; a missing coordinate reads as a
+    // reason (OCR PROCESSING / OCR DISPUTED / REGION ONLY / WITHHELD / NOT
+    // EXTRACTED), never a bare "position unavailable".
+    const reported = relativeTime(p.timestamp_utc);
+    const location = locationLabel(p, coords);
+    const hasPoint = location.tone === 'ok' || location.tone === 'review';
 
     return (
       <li
@@ -387,7 +391,7 @@ export default function IntelDashboard({
           type="button"
           aria-current={isSelected ? 'true' : undefined}
           onClick={() => {
-            flyTo(coords);
+            if (hasPoint) flyTo(coords);
             onOpenReport?.(feat);
           }}
           title={p.timestamp_utc ? new Date(p.timestamp_utc).toLocaleString('it-IT') : p.title}
@@ -400,7 +404,8 @@ export default function IntelDashboard({
           />
           <strong>{vesselName}</strong>
           <span>{anomaly}</span>
-          <code>{position}</code>
+          {reported && <span className="intel-log-time">{reported}</span>}
+          <code className={`intel-log-loc intel-log-loc--${location.tone}`}>{location.text}</code>
         </button>
       </li>
     );
