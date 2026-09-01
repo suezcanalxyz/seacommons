@@ -5,6 +5,8 @@
 > **Operational baseline:** parent code around `7d0bb2235a35b95bf979adc7b3c87d86b4bea88f`; previous roadmap commit `86a51131ee26379f7132a19b3088cd21f4cde8d8`.
 >
 > **Primary goal:** stabilize the current Live release before adding new features. Humanitarian and maritime-security signals must be correctly ingested, stored, classified, geolocated, correlated, projected and rendered without turning uncertain evidence into false precision.
+>
+> **Implementation status (branch `fix/p0-drift-evidence-gate`):** all 16 commit boundaries in section 6 landed, one commit each with its own regression tests. Full backend + web suites green. Alembic is the schema authority (`0001`-`0003`); the runtime DDL backfills stay for one compatibility release. Remaining before the release gate can be signed off: production schema stamp, the production-like smoke run on real current data, and the operator-facing diagnostics/metrics surfaces (roadmap items beyond section 6).
 
 ## Non-negotiable invariants
 
@@ -1198,36 +1200,38 @@ Each commit requires its own regression test and verification checkpoint.
 
 # 7. Final release gate
 
-This version is **not stable** until every item below is proven on a fresh deployment:
+This version is **not stable** until every item below is proven on a fresh deployment.
+`[x]` = covered by an automated regression test on `fix/p0-drift-evidence-gate`;
+`[ ]` = still needs the production-like smoke run / manual proof.
 
 ```text
-[ ] disputed OCR -> 0 auto-Drift
-[ ] `force=True` cannot bypass location policy
-[ ] OCR agreement uses geodesic metres, not degree deltas
-[ ] live and backfill share identical LocationEvidence semantics
-[ ] source-post/media provenance is persisted for OCR-derived coordinates
-[ ] pin-only input does not create fake exact coordinates
-[ ] Evros/land input creates 0 maritime Drift and 0 fake boat marker
-[ ] DMS/DMM Alarm Phone fixtures parse correctly
-[ ] follow-up resolution updates the original incident
+[x] disputed OCR -> 0 auto-Drift
+[x] `force=True` cannot bypass location policy
+[x] OCR agreement uses geodesic metres, not degree deltas
+[x] live and backfill share identical LocationEvidence semantics
+[x] source-post/media provenance is persisted for OCR-derived coordinates
+[x] pin-only input does not create fake exact coordinates
+[x] Evros/land input creates 0 maritime Drift and 0 fake boat marker
+[x] DMS/DMM Alarm Phone fixtures parse correctly
+[x] follow-up resolution updates the original incident
 [ ] translated/duplicate posts do not create duplicate incidents
-[ ] advocacy does not enter the active SAR lane
-[ ] OCR queue/thread count remains bounded during burst
+[x] advocacy does not enter the active SAR lane
+[x] OCR queue/thread count remains bounded during burst
 [ ] public Live remains responsive during OCR burst
-[ ] connection failure never renders as a legitimate zero-event state
-[ ] VM and edge agree on humanitarian incident eligibility
-[ ] browser has no independent Alarm-Phone-only product policy
-[ ] piracy is never humanitarian
-[ ] canonical taxonomy is persisted in DB
-[ ] Alembic owns schema evolution
-[ ] recent source/type queries use verified query plans/indexes
-[ ] event source time is visible on mobile
-[ ] generic `position unavailable` is absent from humanitarian UI
-[ ] location uncertainty/review state is visible
-[ ] complete Civil SAR registry survives AIS offline state
-[ ] map receives only fleet entries with geometry
-[ ] Civil NGO and State SAR identities remain distinct
-[ ] selected Mare Jonio/other NGO shows organization + operator class
+[x] connection failure never renders as a legitimate zero-event state
+[x] VM and edge agree on humanitarian incident eligibility
+[x] browser has no independent Alarm-Phone-only product policy
+[x] piracy is never humanitarian
+[x] canonical taxonomy is persisted in DB
+[x] Alembic owns schema evolution
+[x] recent source/type queries use verified query plans/indexes
+[x] event source time is visible on mobile
+[x] generic `position unavailable` is absent from humanitarian UI
+[x] location uncertainty/review state is visible
+[x] complete Civil SAR registry survives AIS offline state
+[x] map receives only fleet entries with geometry
+[x] Civil NGO and State SAR identities remain distinct
+[x] selected Mare Jonio/other NGO shows organization + operator class
 [ ] restart preserves durable events, classifications, lifecycle and repaired locations
 ```
 

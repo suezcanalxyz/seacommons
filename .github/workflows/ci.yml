@@ -20,6 +20,21 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e "apps/api[dev]"
       - run: python -m pytest -q
+      - name: humanitarian-contract (docs/fixes.md stabilization)
+        run: >-
+          python -m pytest -q
+          tests/test_stabilization_smoke.py
+          tests/test_auto_drift_eligibility.py
+          tests/test_location_evidence.py
+          tests/test_live_compartments.py
+          tests/test_live_taxonomy.py
+          tests/test_alembic_migrations.py
+          tests/test_intel_canonical_columns.py
+      - name: db migrations apply cleanly
+        run: python -m alembic upgrade head
+        working-directory: apps/api
+        env:
+          DATABASE_URL: sqlite:////tmp/ci_migrations.db
       - name: ruff critical correctness gate
         run: python -m ruff check . --output-format=github
         working-directory: apps/api
