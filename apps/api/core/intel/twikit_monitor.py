@@ -556,6 +556,10 @@ class TwikitMonitor:
 
     def _apply_media_ocr(self, event_id: str, urls: list[str]) -> None:
         """Run in a pool worker: OCR, upgrade the stored position, drift."""
+        from core.intel.location_evidence import (
+            evidence_from_ocr_method,
+            ocr_result_label,
+        )
         from core.observability import record_ocr_result
 
         try:
@@ -580,43 +584,18 @@ class TwikitMonitor:
                 "media OCR: %s -> %.5f,%.5f via %s for %s",
                 "coordinate", coords[0], coords[1], method, event_id,
             )
-            # Uncertainty/review status reflect actual cross-engine agreement,
-            # not just which method eventually returned a coordinate --
-            # "tesseract piu preciso" per the user: a lone engine's read stays
-            # at the old conservative constants, two engines agreeing earns a
-            # tight uncertainty, and a disagreement is flagged wide + for
-            # review instead of silently trusting whichever engine ran first.
-            if method == "easyocr_tesseract_consensus":
-                coordinate_source = "media_ocr_consensus"
-                uncertainty_m = 400
-                review_status = "machine_ocr_consensus_verified"
-                record_ocr_result("consensus")
-            elif method == "easyocr_text_disputed":
-                coordinate_source = "media_ocr_text"
-                uncertainty_m = 3500
-                review_status = "machine_ocr_disputed_needs_review"
-                record_ocr_result("disputed")
-            elif method.endswith("text"):
-                coordinate_source = "media_ocr_text"
-                uncertainty_m = 1500
-                review_status = "machine_ocr_unverified"
-                record_ocr_result("text_unverified")
-            else:
-                coordinate_source = "media_pin_landmark"
-                uncertainty_m = 4000
-                review_status = "machine_ocr_unverified"
-                record_ocr_result("pin_landmark")
+            # OCR-method -> evidence semantics live in one place now
+            # (core.intel.location_evidence), shared with the historical
+            # backfill so the two can never drift apart again (F-04 / F-05).
+            evidence = evidence_from_ocr_method(method, coords[0], coords[1])
+            record_ocr_result(ocr_result_label(method))
             upgraded = intel_store.enrich_location(
                 event_id,
                 lat=coords[0],
                 lon=coords[1],
                 metadata={
-                    "coordinate_source": coordinate_source,
-                    "coordinate_review_status": review_status,
-                    "verification_status": "machine_extracted_unverified",
-                    "location_uncertainty_m": uncertainty_m,
+                    **evidence.as_metadata(),
                     "media_transport": "x_media_ocr",
-                    "ocr_engine": "easyocr" if method.startswith("easyocr") else "tesseract",
                     "ocr_attempted": True,
                     "media_count": len(urls),
                 },

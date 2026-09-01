@@ -111,20 +111,17 @@ def apply_position(event_id: str, lat: float, lon: float, method: str) -> bool:
         logger.info("backfill: %s coordinate %.4f,%.4f out of region — skipped", event_id, lat, lon)
         return False
     lat, lon = nearest_sea_point(float(lat), float(lon))
-    is_text = method.endswith("text")
-    ocr_engine = "easyocr" if method.startswith("easyocr") else "tesseract"
-    uncertainty = 1500 if is_text else 4000
+    # Same OCR-method -> evidence semantics the live path uses (F-04 / F-05).
+    from core.intel.location_evidence import evidence_from_ocr_method
+
+    evidence = evidence_from_ocr_method(method, lat, lon)
     with session_scope() as db:
         row = db.query(IntelEventDB).filter(IntelEventDB.id == event_id).first()
         if row is None:
             return False
         merged = dict(row.meta or {})
         merged.update({
-            "coordinate_source": f"media_{'ocr_text' if is_text else 'pin_landmark'}_backfill",
-            "coordinate_review_status": "machine_ocr_unverified",
-            "verification_status": "machine_extracted_unverified",
-            "location_uncertainty_m": uncertainty,
-            "ocr_engine": ocr_engine,
+            **evidence.as_metadata(),
             "backfilled_at": datetime.now(timezone.utc).isoformat(),
         })
         # a real point supersedes any stale search polygon
@@ -146,9 +143,9 @@ def _backfill_drift_eligible(candidate: dict, lat: float, lon: float, method: st
     calls for until the shared LocationEvidence work (Phase 1) lands.
     """
     from core.intel.drift_service import is_auto_drift_eligible
+    from core.intel.location_evidence import evidence_from_ocr_method
     from core.intel.store import IntelEvent
 
-    is_text = method.endswith("text")
     probe = IntelEvent(
         id=str(candidate["id"]),
         type="twitter",
@@ -157,10 +154,7 @@ def _backfill_drift_eligible(candidate: dict, lat: float, lon: float, method: st
         metadata={
             "is_distress": True,
             "incident_lifecycle": candidate.get("lifecycle") or "active",
-            "coordinate_source": (
-                f"media_{'ocr_text' if is_text else 'pin_landmark'}_backfill"
-            ),
-            "coordinate_review_status": "machine_ocr_unverified",
+            **evidence_from_ocr_method(method, lat, lon).as_metadata(),
         },
     )
     eligible, _reason = is_auto_drift_eligible(probe)
