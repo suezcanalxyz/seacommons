@@ -618,7 +618,14 @@ class IntelStore:
                     **event.canonical_columns(),
                 ))
         except Exception as exc:
-            logger.debug("Intel DB persist skipped: %s", exc)
+            # WARNING, not DEBUG: this is invisible at default production log
+            # level otherwise, and this exact silence has already hidden two
+            # real incidents in this codebase (missing intel_events indexes;
+            # a swallowed auto-drift request failure). A fresh cause here --
+            # e.g. the API deployed before `alembic upgrade head` ran, so
+            # intel_events is missing a canonical_columns() column -- must be
+            # loud, since it means durable persistence is silently broken.
+            logger.warning("Intel DB persist skipped for event %s: %s", event.id, exc)
 
     def enrich_location(
         self,
