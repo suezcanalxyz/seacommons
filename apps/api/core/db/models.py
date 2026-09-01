@@ -13,10 +13,22 @@ class Base(DeclarativeBase):
     pass
 
 
+# docs/prompt.md P0: one lossless width for every column that stores an intel
+# event identity. Generated ids like ``spoof:247384100:circular`` overflowed
+# the old 16-char intel_events.id; the 16 / 32 / 36 spread across the linked
+# tables also meant a cross-table lookup could silently miss. Never hash or
+# slice an identity to fit -- widen the column.
+EVENT_ID_MAX_LENGTH = 64
+
+
+def _event_id_column(**kwargs: object) -> "Column[str]":
+    return Column(String(EVENT_ID_MAX_LENGTH), **kwargs)
+
+
 class ForensicEvent(Base):
     """Append-only forensic log — one row per signed event."""
     __tablename__ = "forensic_events"
-    event_id         = Column(String(36), primary_key=True)
+    event_id         = _event_id_column(primary_key=True)
     timestamp_utc    = Column(String(32), nullable=False)
     classification   = Column(String(64), nullable=False, index=True)
     confidence       = Column(Float, nullable=False)
@@ -36,7 +48,7 @@ class ForensicEvent(Base):
 class AnomalyEvent(Base):
     """All detected anomalies from any sensor channel."""
     __tablename__ = "anomaly_events"
-    event_id      = Column(String(36), primary_key=True)
+    event_id      = _event_id_column(primary_key=True)
     timestamp_utc = Column(String(32), nullable=False)
     anomaly_type  = Column(String(64), nullable=False, index=True)
     sensor_source = Column(String(32), nullable=False, index=True)
@@ -90,7 +102,7 @@ class DriftResultDB(Base):
     """Computed drift trajectories — GeoJSON stored as JSON."""
     __tablename__ = "drift_results"
     drift_id      = Column(String(36), primary_key=True)
-    event_id      = Column(String(36), index=True)
+    event_id      = _event_id_column(index=True)
     domain        = Column(String(32))
     lat           = Column(Float)
     lon           = Column(Float)
@@ -107,7 +119,7 @@ class DriftResultDB(Base):
 class AlertEvent(Base):
     """Distress alerts from /api/v1/alert."""
     __tablename__ = "alert_events"
-    event_id      = Column(String(36), primary_key=True)
+    event_id      = _event_id_column(primary_key=True)
     timestamp_utc = Column(String(32), nullable=False)
     lat           = Column(Float)
     lon           = Column(Float)
@@ -121,7 +133,7 @@ class AlertEvent(Base):
 class IntelEventDB(Base):
     """Lightweight log of intel events from all scraping channels."""
     __tablename__ = "intel_events"
-    id            = Column(String(16),  primary_key=True)
+    id            = _event_id_column(primary_key=True)
     timestamp_utc = Column(String(32),  nullable=False, index=True)
     type          = Column(String(32),  nullable=False, index=True)
     severity      = Column(String(16),  nullable=False, index=True)
@@ -223,7 +235,7 @@ class CaseIntelEventDB(Base):
 
     __tablename__ = "case_intel_events"
     case_id = Column(String(36), ForeignKey("cases.case_id", ondelete="CASCADE"), primary_key=True)
-    event_id = Column(String(32), primary_key=True)
+    event_id = _event_id_column(primary_key=True)
     role = Column(String(32), nullable=False, default="contributing")
     linked_by = Column(String(256), nullable=False)
     linked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

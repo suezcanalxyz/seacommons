@@ -66,7 +66,7 @@ def poll_once() -> int:
         mpa = reference.in_mpa(lat, lon)
         eid = f"vbd:{row.get('id') or f'{lat:.4f}_{lon:.4f}_{day}'}"
         added = intel_store.add(IntelEvent(
-            id=eid[:32], type="dark_candidate",
+            id=eid, type="dark_candidate",
             severity="high" if mpa else "medium", lat=lat, lon=lon,
             title=f"VIIRS lit boat, no AIS{' — inside ' + mpa if mpa else ''}",
             text=(f"A lit vessel detected by VIIRS at night on {day} with no AIS "

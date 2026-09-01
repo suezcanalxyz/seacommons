@@ -57,10 +57,22 @@ def test_upgrade_head_matches_the_model_metadata(tmp_path):
 
 
 def test_downgrade_then_upgrade_is_clean(tmp_path):
+    # 0004 (lossless event ids) is deliberately widening-only -- its downgrade
+    # raises rather than truncate identifiers. The reversible span is base..0003.
     url = f"sqlite:///{tmp_path / 'roundtrip.db'}"
     cfg = _config(url)
-    alembic_command.upgrade(cfg, "head")
+    alembic_command.upgrade(cfg, "0003_intel_composite_idx")
     alembic_command.downgrade(cfg, "base")
     assert _schema(create_engine(url)) == {}
     alembic_command.upgrade(cfg, "head")
     assert "intel_events" in _schema(create_engine(url))
+
+
+def test_lossless_event_id_downgrade_is_blocked(tmp_path):
+    import pytest
+
+    url = f"sqlite:///{tmp_path / 'block.db'}"
+    cfg = _config(url)
+    alembic_command.upgrade(cfg, "head")
+    with pytest.raises(Exception, match="widening-only"):
+        alembic_command.downgrade(cfg, "0003_intel_composite_idx")

@@ -107,7 +107,7 @@ def open_case(
         db.add(
             CaseIntelEventDB(
                 case_id=case_id,
-                event_id=str(event_id)[:32],
+                event_id=str(event_id),
                 role="contributing",
                 linked_by=created_by,
             )
