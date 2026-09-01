@@ -295,20 +295,18 @@ async def intel_auto_drift(body: AutoDriftRequest, request: Request):
     normalized_id = body.intel_event_id.removeprefix("intel:")
     stored = intel_store.get(normalized_id)
     if stored is not None:
-        from core.intel.public_policy import HUMANITARIAN_DRIFT_DOMAINS
+        from core.intel.drift_service import is_auto_drift_eligible
 
-        if stored.maritime_domain() not in HUMANITARIAN_DRIFT_DOMAINS:
-            # SeaCommons Drift is a humanitarian SAR model only (docs/deep-
-            # research-report.md #17, hard requirement). A positive gate, not
-            # "not security" -- domains_for_mode("humanitarian") is env-
-            # widenable and includes "piracy" by default, so a "not security"
-            # check alone would still let a piracy-domain event through
-            # (docs/deep-research-report (2).md's follow-up finding).
-            raise HTTPException(
-                status_code=400,
-                detail="Drift is a humanitarian SAR model; it does not apply "
-                "to non-humanitarian maritime events.",
-            )
+        # SeaCommons Drift is a humanitarian SAR model seeded from verified
+        # location evidence only (docs/deep-research-report.md #17 hard
+        # requirement; docs/fixes.md F-01). One positive gate covers domain
+        # (not "not security" -- piracy is in the env-widenable public
+        # allow-list), lifecycle, land/sea, and coordinate review quality, so
+        # an anonymous caller cannot spin up a drift for a security event or
+        # from a disputed/unverified OCR coordinate just by supplying an id.
+        eligible, reason = is_auto_drift_eligible(stored)
+        if not eligible:
+            raise HTTPException(status_code=400, detail=f"Drift not eligible: {reason}")
     lat = stored.lat if stored and stored.lat is not None else body.lat
     lon = stored.lon if stored and stored.lon is not None else body.lon
     observed_at = stored.timestamp_utc if stored else datetime.now(timezone.utc).isoformat()

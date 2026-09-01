@@ -75,6 +75,42 @@ def test_auto_drift_rejects_piracy_event():
             )
 
 
+def test_auto_drift_rejects_disputed_ocr_coordinate():
+    """docs/fixes.md F-01: a coordinate flagged as a machine-OCR disagreement
+    must never become a drift model origin, even for a humanitarian SAR event
+    and even when the caller supplies a clean lat/lon in the request body."""
+    event = IntelEvent(
+        id="auto-drift-disputed-01",
+        type="twitter",
+        severity="high",
+        lat=34.2,
+        lon=12.0,
+        title="Distress reported south of Crete",
+        source="alarm_phone",
+        metadata={
+            "is_distress": True,
+            "source_policy": "operator_published",
+            "coordinate_source": "media_ocr_text",
+            "coordinate_review_status": "machine_ocr_disputed_needs_review",
+            "location_uncertainty_m": 3500,
+        },
+    )
+    assert intel_store.add(event) is True
+    try:
+        resp = client.post(
+            "/api/v1/intel/auto-drift",
+            json={"intel_event_id": "auto-drift-disputed-01", "lat": 34.2, "lon": 12.0},
+        )
+        assert resp.status_code == 400
+        assert "disputed" in resp.json()["detail"]
+    finally:
+        with intel_store._lock:
+            intel_store._events = type(intel_store._events)(
+                (e for e in intel_store._events if e.id != event.id),
+                maxlen=intel_store._events.maxlen,
+            )
+
+
 def test_auto_drift_accepts_humanitarian_event(monkeypatch):
     event = IntelEvent(
         id="auto-drift-humanitarian-01",
@@ -84,7 +120,14 @@ def test_auto_drift_accepts_humanitarian_event(monkeypatch):
         lon=14.0,
         title="Distress report",
         source="alarm_phone",
-        metadata={"is_distress": True, "source_policy": "official_api"},
+        metadata={
+            "is_distress": True,
+            "source_policy": "official_api",
+            # A coordinate parsed straight from the post text -- the canonical
+            # drift-eligible location evidence (docs/fixes.md F-01).
+            "coordinate_source": "post_text",
+            "coordinate_review_status": "not_required",
+        },
     )
     assert intel_store.add(event) is True
     monkeypatch.setattr("core.api.routes.intel.schedule_intel_drift", lambda *a, **k: True)

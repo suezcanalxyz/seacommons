@@ -137,6 +137,36 @@ def apply_position(event_id: str, lat: float, lon: float, method: str) -> bool:
     return True
 
 
+def _backfill_drift_eligible(candidate: dict, lat: float, lon: float, method: str) -> bool:
+    """Whether a backfilled position may seed a drift (docs/fixes.md F-01/F-05).
+
+    Live ingestion and backfill must share one drift eligibility policy. A
+    backfilled image-derived coordinate is always ``machine_ocr_unverified``,
+    so this currently rejects every backfill drift -- exactly the freeze F-05
+    calls for until the shared LocationEvidence work (Phase 1) lands.
+    """
+    from core.intel.drift_service import is_auto_drift_eligible
+    from core.intel.store import IntelEvent
+
+    is_text = method.endswith("text")
+    probe = IntelEvent(
+        id=str(candidate["id"]),
+        type="twitter",
+        lat=lat,
+        lon=lon,
+        metadata={
+            "is_distress": True,
+            "incident_lifecycle": candidate.get("lifecycle") or "active",
+            "coordinate_source": (
+                f"media_{'ocr_text' if is_text else 'pin_landmark'}_backfill"
+            ),
+            "coordinate_review_status": "machine_ocr_unverified",
+        },
+    )
+    eligible, _reason = is_auto_drift_eligible(probe)
+    return eligible
+
+
 def run(*, apply: bool, limit: int, with_drift: bool) -> dict:
     candidates = find_candidates(limit)
     resolved = 0
@@ -150,7 +180,9 @@ def run(*, apply: bool, limit: int, with_drift: bool) -> dict:
             resolved += 1
             if apply and apply_position(candidate["id"], lat, lon, method):
                 status += " [applied]"
-                if with_drift:
+                if with_drift and not _backfill_drift_eligible(candidate, lat, lon, method):
+                    status += " [drift skipped: unverified backfill position]"
+                elif with_drift:
                     try:
                         from core.intel.drift_service import schedule_intel_drift
 

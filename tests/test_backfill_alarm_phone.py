@@ -66,10 +66,14 @@ def test_run_is_dry_by_default(monkeypatch) -> None:
     assert applied == []
 
 
-def test_run_apply_writes_and_can_drift(monkeypatch) -> None:
+def test_run_apply_writes_but_freezes_drift_for_unverified_backfill(monkeypatch) -> None:
+    """docs/fixes.md F-05: a backfilled image-derived position is always
+    `machine_ocr_unverified`, so it is written back but must not seed a drift
+    until live ingestion and backfill share one LocationEvidence policy."""
     monkeypatch.setattr(bf, "find_candidates", lambda limit: [
         {"id": "e1", "tweet_id": "1", "quoted_tweet_id": "", "media_urls": [],
-         "timestamp_utc": "2026-08-01T00:00:00Z", "title": "boat", "persons": 12, "vessel_type": "rubber_boat"},
+         "timestamp_utc": "2026-08-01T00:00:00Z", "title": "boat", "persons": 12,
+         "vessel_type": "rubber_boat", "lifecycle": "active"},
     ])
     monkeypatch.setattr(bf, "resolve_position", lambda c: (35.5, 14.1, "pin_landmark"))
     monkeypatch.setattr(bf, "apply_position", lambda *a: True)
@@ -78,6 +82,5 @@ def test_run_apply_writes_and_can_drift(monkeypatch) -> None:
     monkeypatch.setattr(ds, "schedule_intel_drift", lambda *a, **k: (drift_calls.append((a, k)), True)[1])
 
     summary = bf.run(apply=True, limit=10, with_drift=True)
-    assert summary["applied"] == 1 and summary["drifts_queued"] == 1
-    assert drift_calls[0][0][0] == "e1"
-    assert drift_calls[0][1]["background"] is False
+    assert summary["applied"] == 1 and summary["drifts_queued"] == 0
+    assert drift_calls == []

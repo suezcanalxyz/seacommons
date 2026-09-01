@@ -651,6 +651,19 @@ class TwikitMonitor:
             return
         if stored.metadata.get("drift_status") in {"computing", "completed"} and not force:
             return
+        # Pre-flight the F-01 evidence gate here too: a disputed / unverified /
+        # region-only OCR result must produce exactly zero drift requests, not
+        # a request the route then rejects.
+        from core.intel.drift_service import is_auto_drift_eligible
+
+        eligible, reason = is_auto_drift_eligible(stored)
+        if not eligible:
+            logger.info("X (twikit) auto-drift not eligible for %s: %s", event_id, reason)
+            intel_store.update_metadata(
+                event_id,
+                metadata={"drift_status": "ineligible", "drift_ineligible_reason": reason},
+            )
+            return
         try:
             request_auto_drift(stored.id, stored.lat, stored.lon, vessel_type="rubber_boat")
         except Exception as exc:
@@ -915,10 +928,9 @@ class TwikitMonitor:
             # An area result has no single defensible starting point at all —
             # a leeway simulation from its centroid would imply a false
             # precision the polygon itself exists specifically to avoid.
-            try:
-                request_auto_drift(event.id, event.lat, event.lon, vessel_type="rubber_boat")
-            except Exception as exc:
-                logger.debug("X (twikit) auto-drift deferred for %s: %s", event.id, exc)
+            # Route through the gated helper so the same F-01 evidence policy
+            # applies to this inline path.
+            self._auto_drift_if_live(event.id, force=False)
         return added
 
     def _thread_repost(

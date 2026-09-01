@@ -1015,7 +1015,10 @@ def test_no_ocr_when_tesseract_missing(tmp_path, monkeypatch):
     assert evt.metadata["coordinate_source"] == "region_area"
 
 
-def test_media_ocr_upgrades_position_and_drifts(tmp_path, monkeypatch):
+def test_media_ocr_single_engine_upgrades_position_but_does_not_drift(tmp_path, monkeypatch):
+    """docs/fixes.md F-01: a lone-engine OCR read is stored (better than the
+    fallback area) but is `machine_ocr_unverified` -- it must never originate a
+    drift model. The event stays public; only the drift is withheld."""
     drift_calls: list = []
     m, store = _ocr_gated_monitor(
         tmp_path,
@@ -1037,8 +1040,7 @@ def test_media_ocr_upgrades_position_and_drifts(tmp_path, monkeypatch):
     assert evt.metadata["coordinate_source"] == "media_ocr_text"
     assert evt.metadata["ocr_attempted"] is True
     assert evt.metadata["media_transport"] == "x_media_ocr"
-    assert drift_calls, "drift must fire with the OCR position"
-    assert drift_calls[-1][1] == 35.5 and drift_calls[-1][2] == 24.9
+    assert drift_calls == [], "unverified single-engine OCR must not auto-drift"
 
 
 def test_media_ocr_consensus_between_engines_gets_tight_uncertainty(tmp_path, monkeypatch):
@@ -1102,9 +1104,10 @@ def test_media_ocr_disputed_between_engines_gets_wide_uncertainty_and_review(tmp
     assert evt.metadata["coordinate_source"] == "media_ocr_text"
     assert evt.metadata["location_uncertainty_m"] == 3500
     assert evt.metadata["coordinate_review_status"] == "machine_ocr_disputed_needs_review"
-    # Position is still stored (better than nothing) and still drifts --
-    # disputed just means lower confidence, not discarded.
-    assert drift_calls
+    # docs/fixes.md F-01 (headline case): the disputed position is persisted
+    # for review, but an EasyOCR/Tesseract disagreement must never become a
+    # drift model origin -- exactly zero drift requests.
+    assert drift_calls == []
 
 
 def test_media_pin_landmark_fallback_upgrades_position_with_wider_uncertainty(tmp_path, monkeypatch):
@@ -1134,7 +1137,9 @@ def test_media_pin_landmark_fallback_upgrades_position_with_wider_uncertainty(tm
     assert evt.lat == 35.19 and evt.lon == 25.72
     assert evt.metadata["coordinate_source"] == "media_pin_landmark"
     assert evt.metadata["location_uncertainty_m"] == 4000
-    assert drift_calls, "drift must fire with the pin-geolocated position"
+    # docs/fixes.md F-11: a pin-only estimate is approximate evidence, not a
+    # printed coordinate -- it cannot auto-drift without a dedicated quality gate.
+    assert drift_calls == []
 
 
 def test_precise_place_match_uses_tighter_uncertainty_radius(tmp_path, monkeypatch):
@@ -1306,7 +1311,10 @@ def test_failed_handle_waits_for_its_poll_interval_before_retry():
     assert m._next_poll_ts["missing"] >= before + 299
 
 
-def test_media_ocr_failure_keeps_fallback_and_drifts(tmp_path, monkeypatch):
+def test_media_ocr_failure_keeps_fallback_area_but_does_not_drift(tmp_path, monkeypatch):
+    """OCR could not read a coordinate, so the event keeps its provisional
+    sea-area fallback. docs/fixes.md F-01: a region-only position has no
+    defensible single starting point -- it stays in the feed, no drift."""
     drift_calls: list = []
     m, store = _ocr_gated_monitor(
         tmp_path,
@@ -1327,7 +1335,7 @@ def test_media_ocr_failure_keeps_fallback_and_drifts(tmp_path, monkeypatch):
     assert evt.metadata["ocr_attempted"] is True
     assert evt.metadata["coordinate_source"] == "region_area"
     assert evt.lat is not None
-    assert drift_calls and drift_calls[-1][1] == evt.lat and drift_calls[-1][2] == evt.lon
+    assert drift_calls == []
 
 
 def test_easyocr_inference_is_serialized(monkeypatch):
