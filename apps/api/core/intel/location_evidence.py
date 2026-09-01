@@ -199,3 +199,53 @@ def metadata_quality(meta: Mapping[str, Any] | None) -> tuple[int, float]:
         meta.get("coordinate_review_status"),
         meta.get("location_uncertainty_m"),
     )
+
+
+# ── Canonical review-status / location-status derivation ─────────────────────
+_COARSE_COORD_SOURCES = frozenset(
+    {"", "none", "region_area", "place_centroid", "relative_place_offset"}
+)
+
+
+def canonical_review_status(coordinate_source: str | None, stored: str | None) -> str | None:
+    """The coordinate_review_status a row *should* carry.
+
+    A coarse place/region fallback tagged ``not_required`` (which means "text
+    coordinates, no OCR review") is corrected to ``not_applicable`` -- the
+    same fix live ingestion applies (docs/fixes.md F-04, twikit_monitor).
+    """
+    source = str(coordinate_source or "").lower()
+    review = str(stored or "").lower()
+    if source in _COARSE_COORD_SOURCES:
+        if review in ("", _CRS.NOT_REQUIRED.value):
+            return _CRS.NOT_APPLICABLE.value
+    return stored or None
+
+
+def location_status_for(
+    *,
+    lat: float | None,
+    lon: float | None,
+    coordinate_source: str | None,
+    coordinate_review_status: str | None,
+    has_area_geometry: bool = False,
+    is_land: bool = False,
+) -> str:
+    """The one LocationStatus computer (docs/fixes.md Question D).
+
+    positioned | region_only | disputed | withheld_from_maritime_map |
+    unpositioned
+    """
+    review = str(coordinate_review_status or "").lower()
+    source = str(coordinate_source or "").lower()
+    if is_land:
+        return "withheld_from_maritime_map"
+    if "disputed" in review or "needs_review" in review:
+        return "disputed"
+    if has_area_geometry or source == "region_area":
+        return "region_only"
+    if lat is None or lon is None:
+        return "unpositioned"
+    if source in ("place_centroid", "relative_place_offset", "", "none"):
+        return "region_only"
+    return "positioned"
