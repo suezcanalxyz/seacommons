@@ -555,10 +555,13 @@ class TwikitMonitor:
         return None, True, "none"
 
     def _apply_media_ocr(self, event_id: str, urls: list[str]) -> None:
-        """Run in a background thread: OCR, upgrade the stored position, drift."""
+        """Run in a pool worker: OCR, upgrade the stored position, drift."""
+        from core.observability import record_ocr_result
+
         try:
             coords, attempted, method = self._ocr_tweet_media(event_id, urls)
             if coords is None:
+                record_ocr_result("no_coordinate")
                 # Visible in prod logs: was OCR even possible, and did it run
                 # but fail to read a coordinate? (Alarm Phone posts the
                 # position as a map screenshot -- a silent miss here is a
@@ -587,18 +590,22 @@ class TwikitMonitor:
                 coordinate_source = "media_ocr_consensus"
                 uncertainty_m = 400
                 review_status = "machine_ocr_consensus_verified"
+                record_ocr_result("consensus")
             elif method == "easyocr_text_disputed":
                 coordinate_source = "media_ocr_text"
                 uncertainty_m = 3500
                 review_status = "machine_ocr_disputed_needs_review"
+                record_ocr_result("disputed")
             elif method.endswith("text"):
                 coordinate_source = "media_ocr_text"
                 uncertainty_m = 1500
                 review_status = "machine_ocr_unverified"
+                record_ocr_result("text_unverified")
             else:
                 coordinate_source = "media_pin_landmark"
                 uncertainty_m = 4000
                 review_status = "machine_ocr_unverified"
+                record_ocr_result("pin_landmark")
             upgraded = intel_store.enrich_location(
                 event_id,
                 lat=coords[0],
@@ -630,12 +637,20 @@ class TwikitMonitor:
             logger.debug("X (twikit) media OCR enrichment failed for %s: %s", event_id, exc)
 
     def _schedule_media_ocr(self, tweet_id: str, event_id: str, urls: list[str]) -> None:
-        threading.Thread(
-            target=self._apply_media_ocr,
-            args=(event_id, urls),
-            daemon=True,
-            name=f"intel-x-ocr-{tweet_id[-8:]}",
-        ).start()
+        # docs/fixes.md F-02: one bounded pool, deduped by event identity --
+        # a media burst can no longer pile up unbounded waiting threads.
+        from core.intel.media_ocr_queue import media_ocr_queue
+
+        urls_snapshot = list(urls)
+        outcome = media_ocr_queue.submit(
+            f"x-ocr:{event_id}",
+            lambda: self._apply_media_ocr(event_id, urls_snapshot),
+        )
+        if outcome in {"deferred_queue_full", "dropped"}:
+            intel_store.update_metadata(
+                event_id,
+                metadata={"ocr_queue_state": outcome, "ocr_attempted": False},
+            )
 
     def _auto_drift_if_live(self, event_id: str, *, force: bool = False) -> None:
         """Auto-drift for a new live episode, unless one already ran (or is running).
@@ -659,6 +674,9 @@ class TwikitMonitor:
         eligible, reason = is_auto_drift_eligible(stored)
         if not eligible:
             logger.info("X (twikit) auto-drift not eligible for %s: %s", event_id, reason)
+            from core.observability import record_ocr_drift_rejected
+
+            record_ocr_drift_rejected()
             intel_store.update_metadata(
                 event_id,
                 metadata={"drift_status": "ineligible", "drift_ineligible_reason": reason},

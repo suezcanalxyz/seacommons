@@ -64,6 +64,57 @@ LIVE_EDGE_HEARTBEAT_OK = Gauge(
     "seacommons_live_edge_heartbeat_ok",
     "1 if the last live edge heartbeat POST succeeded, else 0",
 )
+OCR_QUEUE_DEPTH = Gauge(
+    "seacommons_intel_ocr_queue_depth",
+    "Media-OCR jobs pending or in flight in the bounded pool",
+)
+OCR_QUEUE_OLDEST = Gauge(
+    "seacommons_intel_ocr_queue_oldest_job_seconds",
+    "Age of the oldest queued media-OCR job",
+)
+OCR_QUEUE_REJECTED = Counter(
+    "seacommons_intel_ocr_queue_rejected_total",
+    "Media-OCR jobs the bounded pool could not accept immediately",
+    ["reason"],  # deferred | dropped
+)
+OCR_JOB_DURATION = Histogram(
+    "seacommons_intel_ocr_job_duration_seconds",
+    "Wall time of one media-OCR job",
+)
+OCR_RESULTS = Counter(
+    "seacommons_intel_ocr_results_total",
+    "Media-OCR job outcomes",
+    ["result"],  # consensus | disputed | text_unverified | pin_landmark | no_coordinate
+)
+OCR_DRIFT_REJECTED = Counter(
+    "seacommons_intel_ocr_drift_rejected_total",
+    "Auto-drift requests withheld because the location evidence failed the F-01 gate",
+)
+
+
+def record_ocr_result(result: str) -> None:
+    try:
+        OCR_RESULTS.labels(result).inc()
+    except Exception:  # pragma: no cover - metrics must never break ingestion
+        pass
+
+
+def record_ocr_drift_rejected() -> None:
+    try:
+        OCR_DRIFT_REJECTED.inc()
+    except Exception:  # pragma: no cover
+        pass
+
+
+def refresh_ocr_queue_gauges() -> None:
+    try:
+        from core.intel.media_ocr_queue import media_ocr_queue
+
+        stats = media_ocr_queue.stats()
+        OCR_QUEUE_DEPTH.set(stats["depth"] + stats.get("deferred", 0.0))
+        OCR_QUEUE_OLDEST.set(stats["oldest_job_seconds"])
+    except Exception:  # pragma: no cover - a scrape must not fail on this
+        pass
 
 
 class JsonFormatter(logging.Formatter):
@@ -112,6 +163,7 @@ def refresh_operational_gauges() -> None:
             WorkerHeartbeatDB.last_seen_at >= now - timedelta(seconds=60))).scalar_one()
         WORKERS.set(alive)
     refresh_source_health_gauges()
+    refresh_ocr_queue_gauges()
 
 
 def refresh_source_health_gauges() -> None:
