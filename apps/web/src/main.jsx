@@ -22,6 +22,7 @@ import {
 import { mdaAnomalyColorExpression, mdaCategoryKey, MDA_ANOMALY_CATEGORIES } from './features/intel/mdaCategories.js';
 import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
+import CivilSarFleetPanel from './components/CivilSarFleetPanel.jsx';
 import JobMonitor from './components/JobMonitor.jsx';
 import PlayCesium from './components/PlayCesium.jsx';
 import UnrealPixelStream from './components/UnrealPixelStream.jsx';
@@ -593,6 +594,12 @@ function App() {
   const [stats, setStats] = useState(null);
   const [vessels, setVessels] = useState({ type: 'FeatureCollection', features: [] });
   const [ngoVessels, setNgoVessels] = useState({ type: 'FeatureCollection', features: [] });
+  // Map layers only ever receive fleet features that have a real position;
+  // the fleet panel gets the complete registry (F-13).
+  const sarMapFeatures = useMemo(() => ({
+    type: 'FeatureCollection',
+    features: (ngoVessels.features || []).filter((f) => f.geometry?.coordinates),
+  }), [ngoVessels]);
   const [platforms, setPlatforms] = useState({ type: 'FeatureCollection', features: [] });
   const [alerts, setAlerts] = useState({ type: 'FeatureCollection', features: [] });
   const [caseGeojson, setCaseGeojson] = useState({ type: 'FeatureCollection', features: [] });
@@ -1100,9 +1107,11 @@ function App() {
       try {
         const data = await fetchJson(apiBase, path);
         if (alive && data.features) {
-          // Only keep positioned vessels (geometry != null)
-          const positioned = { ...data, features: data.features.filter((f) => f.geometry?.coordinates) };
-          setNgoVessels(positioned);
+          // docs/fixes.md F-13: keep the WHOLE fleet response (including
+          // registered vessels currently AIS-offline, geometry:null). The
+          // map source is filtered to positioned features at its own
+          // boundary (sarMapFeatures); the fleet panel needs them all.
+          setNgoVessels(data);
         }
       } catch { /* ignore */ }
       if (alive) window.setTimeout(loadNgoVessels, 120_000);
@@ -2215,7 +2224,7 @@ function App() {
         map.getSource('weather-points')?.setData(weatherGrid);
         map.getSource('weather-vectors')?.setData(weatherVectors);
         map.getSource('vessels')?.setData(vessels);
-        map.getSource('vessels-ngo')?.setData(ngoVessels);
+        map.getSource('vessels-ngo')?.setData(sarMapFeatures);
         map.getSource('platforms')?.setData(platforms);
         map.getSource('alerts')?.setData(alerts);
 
@@ -2262,8 +2271,8 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
-    map.getSource('vessels-ngo')?.setData(ngoVessels);
-  }, [ngoVessels, mapReady]);
+    map.getSource('vessels-ngo')?.setData(sarMapFeatures);
+  }, [sarMapFeatures, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -3512,6 +3521,20 @@ function App() {
                 selectedEventId={selectedIntelEventId}
                 onOpenReport={openIntelReport}
               />
+              {liveMode !== 'security' && (
+                <CivilSarFleetPanel
+                  fleet={ngoVessels}
+                  onSelectVessel={(mmsi) => {
+                    const feature = (ngoVessels.features || []).find(
+                      (f) => String(f.properties?.mmsi || '') === String(mmsi),
+                    );
+                    const coords = feature?.geometry?.coordinates;
+                    if (coords && mapRef?.current) {
+                      mapRef.current.flyTo({ center: coords, zoom: 9, duration: 800 });
+                    }
+                  }}
+                />
+              )}
             </div>
           </aside>
           <button
