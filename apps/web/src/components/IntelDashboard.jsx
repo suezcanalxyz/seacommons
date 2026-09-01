@@ -235,7 +235,7 @@ export default function IntelDashboard({
   intelStats,
   intelFilter,
   setIntelFilter,
-  intelMode,
+  feedStatus = 'live',
   liveMode = 'humanitarian',
   activeSignalCategories,
   alarmPhoneOn = true,
@@ -547,17 +547,33 @@ export default function IntelDashboard({
           filteredEvents.length === 0 ? (
             <ul className="intel-list">
               <li className="intel-empty">
-                {publicMode && intelMode !== 'offline' && tierFilter === 'all' && intelFilter === 'all' && channelFilter === 'all' && !search ? (
-                  <div className="intel-live-empty">
-                    <i />
-                    <strong>No {liveMode === 'all' ? '' : 'humanitarian '}signal received</strong>
-                    <span>{liveMode === 'all'
-                      ? 'Listening to official APIs, partner channels and AIS anomaly detection.'
-                      : 'Listening to official APIs and explicitly published partner channels.'}</span>
-                  </div>
-                ) : intelMode !== 'offline'
-                  ? `No events${tierFilter !== 'all' || intelFilter !== 'all' || channelFilter !== 'all' || search ? ' matching filters' : ''}`
-                  : 'Connecting to live feed…'}
+                {(() => {
+                  const filtersActive = tierFilter !== 'all' || intelFilter !== 'all'
+                    || channelFilter !== 'all' || !!search;
+                  // A successful response with zero events is NOT the same as a
+                  // dropped connection or the initial connect (docs/fixes.md
+                  // Phase 0.4).
+                  if (filtersActive) return 'No events matching filters';
+                  if (feedStatus === 'loading') return 'Connecting to live feed…';
+                  if (feedStatus === 'offline') {
+                    return 'Live feed unavailable — reconnecting.';
+                  }
+                  if (feedStatus === 'stale' || feedStatus === 'retrying') {
+                    return 'Connection interrupted — reconnecting.';
+                  }
+                  if (publicMode) {
+                    return (
+                      <div className="intel-live-empty">
+                        <i />
+                        <strong>No {liveMode === 'all' ? '' : 'humanitarian '}signal received</strong>
+                        <span>{liveMode === 'all'
+                          ? 'Listening to official APIs, partner channels and AIS anomaly detection.'
+                          : 'Listening to official APIs and explicitly published partner channels.'}</span>
+                      </div>
+                    );
+                  }
+                  return 'No events';
+                })()}
               </li>
             </ul>
           ) : (

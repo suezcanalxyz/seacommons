@@ -32,6 +32,7 @@ import { loadStoredSimulations, storeScenario } from './simulation/scenarioStore
 import { computeDriftInWorker } from './simulation/workerClient.js';
 import { fetchJson } from './services/api/client.js';
 import { useLiveFeed } from './hooks/useLiveFeed.js';
+import { FEED_STATUS_LABEL, FEED_STATUS_TONE } from './features/live/feedStatus.js';
 import { mergeIntelDriftUpdate } from './features/live/normalize.js';
 import {
   decorateLiveTracking,
@@ -632,7 +633,7 @@ function App() {
   // NGO, fused...) had plenty of eligible content sitting on the VM.
   const [liveMode] = useState(() => (isPublicLiveHost ? 'all' : 'humanitarian'));
   const seenAlertIdsRef = useRef(null);
-  const { intelEvents, setIntelEvents, intelConnected, intelMode } = useLiveFeed({
+  const { intelEvents, setIntelEvents, feedStatus } = useLiveFeed({
     apiBase,
     edgeBase: LIVE_EDGE_BASE,
     isPublicLiveHost,
@@ -2751,11 +2752,11 @@ function App() {
     return [
       { label: 'AIS',      value: summary.traffic?.registry?.active_30m ?? '—', tone: 'ok' },
       { label: 'Signals',  value: intelEvents.length || stats?.signals?.recent_event_count || 0, tone: 'info' },
-      { label: 'Feed',     value: intelMode === 'ws' ? 'stream' : intelMode === 'poll' ? 'live' : 'sync', tone: intelConnected ? 'ok' : 'info' },
+      { label: 'Feed',     value: FEED_STATUS_LABEL[feedStatus] || 'sync', tone: FEED_STATUS_TONE[feedStatus] || 'info' },
       { label: 'Alerts',   value: openAlerts,                                    tone: openAlerts > 0 ? 'warn' : 'default' },
       { label: 'Forensics',value: stats?.sar?.forensic_packets ?? '—',           tone: 'default' },
     ];
-  }, [summary, stats, intelEvents.length, intelMode, intelConnected]);
+  }, [summary, stats, intelEvents.length, feedStatus]);
 
   const serviceRows = useMemo(() => {
     if (!summary) return [];
@@ -3501,7 +3502,7 @@ function App() {
                 intelStats={intelStats}
                 intelFilter={intelFilter}
                 setIntelFilter={setIntelFilter}
-                intelMode={intelMode}
+                feedStatus={feedStatus}
                 liveMode={liveMode}
                 activeSignalCategories={activeSignalCategories}
                 alarmPhoneOn={isLayerGroupOn('alarm_phone')}
@@ -3619,7 +3620,7 @@ function App() {
               intelStats={intelStats}
               intelFilter={intelFilter}
               setIntelFilter={setIntelFilter}
-              intelMode={intelMode}
+              feedStatus={feedStatus}
               showAisAlerts={showAisAlerts}
               setShowAisAlerts={setShowAisAlerts}
               mapRef={mapRef}
