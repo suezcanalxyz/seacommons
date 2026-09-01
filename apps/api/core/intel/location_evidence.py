@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from core.domain.live_contracts import CoordinateReviewStatus as _CRS
+
 
 @dataclass(frozen=True)
 class LocationEvidence:
@@ -62,12 +64,15 @@ class LocationEvidence:
 
 # ── OCR method -> evidence semantics (the one definition) ─────────────────────
 _OCR_METHOD_EVIDENCE: dict[str, tuple[str, float, str, bool]] = {
-    # method                       coordinate_source      uncertainty  review_status                     review_required
-    "easyocr_tesseract_consensus": ("media_ocr_consensus", 400.0, "machine_ocr_consensus_verified", False),
-    "easyocr_text_disputed":       ("media_ocr_text", 3500.0, "machine_ocr_disputed_needs_review", True),
+    "easyocr_tesseract_consensus": (
+        "media_ocr_consensus", 400.0, _CRS.MACHINE_OCR_CONSENSUS_VERIFIED.value, False,
+    ),
+    "easyocr_text_disputed": (
+        "media_ocr_text", 3500.0, _CRS.MACHINE_OCR_DISPUTED_NEEDS_REVIEW.value, True,
+    ),
 }
-_OCR_TEXT_FALLBACK = ("media_ocr_text", 1500.0, "machine_ocr_unverified", True)
-_OCR_PIN_FALLBACK = ("media_pin_landmark", 4000.0, "machine_ocr_unverified", True)
+_OCR_TEXT_FALLBACK = ("media_ocr_text", 1500.0, _CRS.MACHINE_OCR_UNVERIFIED.value, True)
+_OCR_PIN_FALLBACK = ("media_pin_landmark", 4000.0, _CRS.MACHINE_OCR_UNVERIFIED.value, True)
 
 
 def evidence_from_ocr_method(
@@ -150,15 +155,15 @@ _COARSE_SOURCES = frozenset(
 
 
 def _evidence_rank(source: str, review: str) -> int:
-    if review in ("human_verified", "reported_exact"):
+    if review in (_CRS.HUMAN_VERIFIED.value, _CRS.REPORTED_EXACT.value):
         return 9
-    if review == "not_required":
+    if review == _CRS.NOT_REQUIRED.value:
         # "no OCR review needed" means text coordinates -- never a coarse
         # place/region fallback that some legacy rows also tagged this way.
         return _SOURCE_ONLY_RANK.get(source, 4) if source in _COARSE_SOURCES else 8
-    if review == "machine_ocr_consensus_verified":
+    if review == _CRS.MACHINE_OCR_CONSENSUS_VERIFIED.value:
         return 6
-    if review == "machine_ocr_unverified":
+    if review == _CRS.MACHINE_OCR_UNVERIFIED.value:
         return 3 if source == "media_pin_landmark" else 5
     if "disputed" in review or "needs_review" in review:
         return 4
