@@ -261,8 +261,9 @@ def test_edge_and_vm_agree_on_the_humanitarian_incident_set() -> None:
     try:
         vm = public_signal_collection(mode="humanitarian", days=30)
         vm_ids = {
-            str(f["properties"]["id"]).removeprefix("intel:")
+            ident
             for f in vm["features"]
+            if (ident := str(f["properties"]["id"]).removeprefix("intel:")).startswith("par-")
         }
 
         edge_ids = set()
