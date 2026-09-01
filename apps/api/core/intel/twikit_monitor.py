@@ -541,18 +541,20 @@ class TwikitMonitor:
 
     def _ocr_tweet_media(
         self, tweet_id: str, urls: list[str]
-    ) -> tuple[Optional[tuple[float, float]], bool, str]:
+    ) -> tuple[Optional[tuple[float, float]], bool, str, dict[str, Any]]:
         """OCR the tweet's images until one yields a coordinate pair."""
         if not urls:
-            return None, False, "none"
+            return None, False, "none", {}
         for url in urls:
             try:
-                candidate, attempted, method = _ocr_photo(url)
+                result = _ocr_photo(url)
+                candidate, attempted, method = result[0], result[1], result[2]
+                diagnostics = result[3] if len(result) > 3 else {}
                 if candidate is not None:
-                    return candidate, attempted, method
+                    return candidate, attempted, method, diagnostics
             except Exception as exc:
                 logger.debug("X (twikit) media OCR failed for %s (%s): %s", tweet_id, url, exc)
-        return None, True, "none"
+        return None, True, "none", {}
 
     def _apply_media_ocr(self, event_id: str, urls: list[str]) -> None:
         """Run in a pool worker: OCR, upgrade the stored position, drift."""
@@ -563,7 +565,7 @@ class TwikitMonitor:
         from core.observability import record_ocr_result
 
         try:
-            coords, attempted, method = self._ocr_tweet_media(event_id, urls)
+            coords, attempted, method, ocr_diag = self._ocr_tweet_media(event_id, urls)
             if coords is None:
                 record_ocr_result("no_coordinate")
                 # Visible in prod logs: was OCR even possible, and did it run
@@ -587,7 +589,12 @@ class TwikitMonitor:
             # OCR-method -> evidence semantics live in one place now
             # (core.intel.location_evidence), shared with the historical
             # backfill so the two can never drift apart again (F-04 / F-05).
-            evidence = evidence_from_ocr_method(method, coords[0], coords[1])
+            evidence = evidence_from_ocr_method(
+                method,
+                coords[0],
+                coords[1],
+                interengine_distance_m=ocr_diag.get("interengine_distance_m"),
+            )
             record_ocr_result(ocr_result_label(method))
             upgraded = intel_store.enrich_location(
                 event_id,

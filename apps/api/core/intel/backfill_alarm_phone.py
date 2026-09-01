@@ -93,10 +93,11 @@ def resolve_position(candidate: dict) -> tuple[float, float, str] | None:
 
     for url in urls[:6]:
         try:
-            coord, _attempted, method = _ocr_photo(url)
+            result = _ocr_photo(url)
         except Exception as exc:
             logger.debug("backfill OCR failed for %s: %s", url, exc)
             continue
+        coord, method = result[0], result[2]
         if coord is not None:
             return coord[0], coord[1], method
     return None
