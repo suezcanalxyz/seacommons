@@ -101,6 +101,29 @@ SECURITY_MARITIME_DOMAINS = frozenset(
 # a positive allow-list instead of a negative one.
 HUMANITARIAN_DRIFT_DOMAINS = frozenset({MaritimeDomain.SAR.value})
 
+# docs/fixes.md F-07: which operational compartment a maritime domain belongs
+# to must be a POSITIVE decision, never "not in the security set -> assume
+# humanitarian" (that let piracy fall into humanitarian, since piracy is in
+# the env-widenable public allow-list but not SECURITY_MARITIME_DOMAINS).
+HUMANITARIAN_COMPARTMENT_DOMAINS = frozenset({MaritimeDomain.SAR.value})
+SECURITY_COMPARTMENT_DOMAINS = SECURITY_MARITIME_DOMAINS | frozenset(
+    {MaritimeDomain.PIRACY.value}
+)
+
+
+def compartment_for_domain(domain: str | None) -> str | None:
+    """The operational compartment for a maritime domain, or ``None``.
+
+    ``None`` for ``safety`` / ``environmental`` / unknown -- those require an
+    explicit classification decision and never fall back to a compartment.
+    """
+    resolved = str(domain or "").strip().lower()
+    if resolved in HUMANITARIAN_COMPARTMENT_DOMAINS:
+        return "humanitarian"
+    if resolved in SECURITY_COMPARTMENT_DOMAINS:
+        return "security"
+    return None
+
 
 def domains_for_mode(mode: str) -> frozenset[str]:
     """Maritime compartments eligible for a Live feed `mode`.
@@ -114,7 +137,7 @@ def domains_for_mode(mode: str) -> frozenset[str]:
     """
     mode = (mode or "humanitarian").strip().lower()
     if mode == "security":
-        return SECURITY_MARITIME_DOMAINS
+        return SECURITY_COMPARTMENT_DOMAINS
     if mode == "all":
-        return public_maritime_domains() | SECURITY_MARITIME_DOMAINS
+        return public_maritime_domains() | SECURITY_COMPARTMENT_DOMAINS
     return public_maritime_domains()

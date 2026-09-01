@@ -40,6 +40,16 @@ def _landmask_off(monkeypatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _reset_media_ocr_queue() -> None:
+    """Drop the shared bounded OCR pool's backlog between tests."""
+    from core.intel.media_ocr_queue import media_ocr_queue
+
+    media_ocr_queue.reset()
+    yield
+    media_ocr_queue.reset()
+
+
+@pytest.fixture(autouse=True)
 def isolated_database() -> None:
     """Give every test empty tables and prevent cross-test DB state."""
     from core.db.models import Base

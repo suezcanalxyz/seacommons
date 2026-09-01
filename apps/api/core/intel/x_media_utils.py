@@ -13,6 +13,7 @@ import io
 import importlib.util
 import json
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -27,6 +28,26 @@ from core.intel.geoextract import extract_numeric_coords
 _X_EPOCH_MS = 1_288_834_974_657
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
 _ALLOWED_MEDIA_HOSTS = frozenset({"pbs.twimg.com"})
+
+# docs/fixes.md F-03: OCR agreement is a physical distance, not a degree
+# delta. 0.03 deg of latitude is ~3.3 km and a degree of longitude shrinks
+# toward the poles, so the old test both overstated agreement and varied with
+# latitude. Compare candidates geodesically in metres instead, and persist the
+# measured distance + the threshold used. Conservative starting values, env-
+# tunable, to be calibrated against the regression corpus.
+OCR_CONSENSUS_MAX_DISTANCE_M = float(os.getenv("OCR_CONSENSUS_MAX_DISTANCE_M", "500"))
+OCR_CROSS_ENGINE_MAX_DISTANCE_M = float(
+    os.getenv("OCR_CROSS_ENGINE_MAX_DISTANCE_M", "500")
+)
+
+
+def haversine_m(a: tuple[float, float], b: tuple[float, float]) -> float:
+    """Great-circle distance between two (lat, lon) points, in metres."""
+    lat1, lon1 = math.radians(a[0]), math.radians(a[1])
+    lat2, lon2 = math.radians(b[0]), math.radians(b[1])
+    d_lat, d_lon = lat2 - lat1, lon2 - lon1
+    h = math.sin(d_lat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(d_lon / 2) ** 2
+    return 2 * 6_371_000.0 * math.asin(min(1.0, math.sqrt(h)))
 _HEADERS = {
     "User-Agent": "SeaCommonsIntel/2.0 (+https://seacommons.org)",
     "Accept": "text/html,application/xhtml+xml",
@@ -205,17 +226,17 @@ def fetch_tweet_photos(tweet_id: str, *, timeout: float = 12.0) -> list[str]:
 def consensus_ocr_coordinate(texts: list[str]) -> Optional[tuple[float, float]]:
     """Accept an OCR location only when two independent layout passes agree.
 
-    Clusters the per-pass candidates (within ~0.03 deg) rather than testing
-    exact pairs, so one bad digit in a third pass no longer blocks a clear
-    two-pass agreement; returns the median of the largest cluster once it
-    holds at least two candidates.
+    Clusters the per-pass candidates by geodesic proximity (F-03: metres, not
+    a degree delta) rather than testing exact pairs, so one bad digit in a
+    third pass no longer blocks a clear two-pass agreement; returns the median
+    of the largest cluster once it holds at least two candidates.
     """
     candidates = [
         candidate
         for text in texts
         if (candidate := extract_numeric_coords(text)) is not None
     ]
-    cluster = _largest_agreeing_cluster(candidates, tol=0.03)
+    cluster = _largest_agreeing_cluster(candidates, tol_m=OCR_CONSENSUS_MAX_DISTANCE_M)
     if len(cluster) >= 2:
         lats = sorted(c[0] for c in cluster)
         lons = sorted(c[1] for c in cluster)
@@ -225,15 +246,11 @@ def consensus_ocr_coordinate(texts: list[str]) -> Optional[tuple[float, float]]:
 
 
 def _largest_agreeing_cluster(
-    candidates: list[tuple[float, float]], *, tol: float
+    candidates: list[tuple[float, float]], *, tol_m: float
 ) -> list[tuple[float, float]]:
     best: list[tuple[float, float]] = []
     for anchor in candidates:
-        group = [
-            other
-            for other in candidates
-            if abs(other[0] - anchor[0]) <= tol and abs(other[1] - anchor[1]) <= tol
-        ]
+        group = [other for other in candidates if haversine_m(other, anchor) <= tol_m]
         if len(group) > len(best):
             best = group
     return best
@@ -315,10 +332,14 @@ def _tesseract_cross_check(payload: bytes, executable: str) -> Optional[tuple[fl
     return coordinate
 
 
-def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool, str]:
+def _ocr_photo(
+    url: str,
+) -> tuple[Optional[tuple[float, float]], bool, str, dict[str, Any]]:
     """Download one bounded public image and run three local Tesseract passes.
 
-    Returns (coordinate, attempted, method):
+    Returns (coordinate, attempted, method, diagnostics). ``diagnostics`` may
+    carry ``interengine_distance_m`` / ``consensus_threshold_m`` for the
+    EasyOCR<->Tesseract cross-check (F-03).
       - "easyocr_tesseract_consensus" — EasyOCR's read, cross-checked and
         confirmed by an independent Tesseract pass (tight uncertainty).
       - "easyocr_text_disputed" — EasyOCR's read, but a Tesseract cross-check
@@ -333,10 +354,10 @@ def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool, str]:
     """
     executable = shutil.which("tesseract")
     if not executable and importlib.util.find_spec("easyocr") is None:
-        return None, False, "none"
+        return None, False, "none", {}
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in _ALLOWED_MEDIA_HOSTS:
-        return None, False, "none"
+        return None, False, "none", {}
 
     request = urllib.request.Request(
         url,
@@ -345,10 +366,10 @@ def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool, str]:
     with urllib.request.urlopen(request, timeout=15) as response:
         content_type = str(response.headers.get("Content-Type") or "").lower()
         if not content_type.startswith("image/"):
-            return None, False, "none"
+            return None, False, "none", {}
         payload = response.read(_MAX_IMAGE_BYTES + 1)
     if len(payload) > _MAX_IMAGE_BYTES:
-        return None, False, "none"
+        return None, False, "none", {}
 
     easy_coordinate, easy_boxes, easy_attempted = _easyocr_image(payload)
     if easy_coordinate is not None:
@@ -358,15 +379,17 @@ def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool, str]:
             except Exception:
                 cross_check = None
             if cross_check is not None:
-                agree = (
-                    abs(cross_check[0] - easy_coordinate[0]) <= 0.03
-                    and abs(cross_check[1] - easy_coordinate[1]) <= 0.03
-                )
+                distance_m = haversine_m(cross_check, easy_coordinate)
+                agree = distance_m <= OCR_CROSS_ENGINE_MAX_DISTANCE_M
                 return (
                     easy_coordinate, True,
                     "easyocr_tesseract_consensus" if agree else "easyocr_text_disputed",
+                    {
+                        "interengine_distance_m": round(distance_m, 1),
+                        "consensus_threshold_m": OCR_CROSS_ENGINE_MAX_DISTANCE_M,
+                    },
                 )
-        return easy_coordinate, True, "easyocr_text"
+        return easy_coordinate, True, "easyocr_text", {}
 
     from PIL import Image, ImageFilter, ImageOps
 
@@ -451,7 +474,7 @@ def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool, str]:
             )
             attempted = attempted or did_attempt
             if coordinate is not None:
-                return coordinate, attempted, "text"
+                return coordinate, attempted, "text", {}
 
     # No printed coordinate readout anywhere in the image — the screenshot
     # may still carry a plain drop-pin with no text at all (see module
@@ -468,5 +491,10 @@ def _ocr_photo(url: str) -> tuple[Optional[tuple[float, float]], bool, str]:
     except Exception:
         pin_coord = None
     if pin_coord is not None:
-        return pin_coord, True, "easyocr_pin_landmark" if easy_boxes else "tesseract_pin_landmark"
-    return None, attempted or easy_attempted, "none"
+        return (
+            pin_coord,
+            True,
+            "easyocr_pin_landmark" if easy_boxes else "tesseract_pin_landmark",
+            {},
+        )
+    return None, attempted or easy_attempted, "none", {}

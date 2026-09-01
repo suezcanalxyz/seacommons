@@ -22,6 +22,7 @@ import {
 import { mdaAnomalyColorExpression, mdaCategoryKey, MDA_ANOMALY_CATEGORIES } from './features/intel/mdaCategories.js';
 import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
+import CivilSarFleetPanel from './components/CivilSarFleetPanel.jsx';
 import JobMonitor from './components/JobMonitor.jsx';
 import PlayCesium from './components/PlayCesium.jsx';
 import UnrealPixelStream from './components/UnrealPixelStream.jsx';
@@ -32,6 +33,7 @@ import { loadStoredSimulations, storeScenario } from './simulation/scenarioStore
 import { computeDriftInWorker } from './simulation/workerClient.js';
 import { fetchJson } from './services/api/client.js';
 import { useLiveFeed } from './hooks/useLiveFeed.js';
+import { FEED_STATUS_LABEL, FEED_STATUS_TONE } from './features/live/feedStatus.js';
 import { mergeIntelDriftUpdate } from './features/live/normalize.js';
 import {
   decorateLiveTracking,
@@ -592,6 +594,12 @@ function App() {
   const [stats, setStats] = useState(null);
   const [vessels, setVessels] = useState({ type: 'FeatureCollection', features: [] });
   const [ngoVessels, setNgoVessels] = useState({ type: 'FeatureCollection', features: [] });
+  // Map layers only ever receive fleet features that have a real position;
+  // the fleet panel gets the complete registry (F-13).
+  const sarMapFeatures = useMemo(() => ({
+    type: 'FeatureCollection',
+    features: (ngoVessels.features || []).filter((f) => f.geometry?.coordinates),
+  }), [ngoVessels]);
   const [platforms, setPlatforms] = useState({ type: 'FeatureCollection', features: [] });
   const [alerts, setAlerts] = useState({ type: 'FeatureCollection', features: [] });
   const [caseGeojson, setCaseGeojson] = useState({ type: 'FeatureCollection', features: [] });
@@ -632,7 +640,7 @@ function App() {
   // NGO, fused...) had plenty of eligible content sitting on the VM.
   const [liveMode] = useState(() => (isPublicLiveHost ? 'all' : 'humanitarian'));
   const seenAlertIdsRef = useRef(null);
-  const { intelEvents, setIntelEvents, intelConnected, intelMode } = useLiveFeed({
+  const { intelEvents, setIntelEvents, feedStatus } = useLiveFeed({
     apiBase,
     edgeBase: LIVE_EDGE_BASE,
     isPublicLiveHost,
@@ -1099,9 +1107,11 @@ function App() {
       try {
         const data = await fetchJson(apiBase, path);
         if (alive && data.features) {
-          // Only keep positioned vessels (geometry != null)
-          const positioned = { ...data, features: data.features.filter((f) => f.geometry?.coordinates) };
-          setNgoVessels(positioned);
+          // docs/fixes.md F-13: keep the WHOLE fleet response (including
+          // registered vessels currently AIS-offline, geometry:null). The
+          // map source is filtered to positioned features at its own
+          // boundary (sarMapFeatures); the fleet panel needs them all.
+          setNgoVessels(data);
         }
       } catch { /* ignore */ }
       if (alive) window.setTimeout(loadNgoVessels, 120_000);
@@ -2214,7 +2224,7 @@ function App() {
         map.getSource('weather-points')?.setData(weatherGrid);
         map.getSource('weather-vectors')?.setData(weatherVectors);
         map.getSource('vessels')?.setData(vessels);
-        map.getSource('vessels-ngo')?.setData(ngoVessels);
+        map.getSource('vessels-ngo')?.setData(sarMapFeatures);
         map.getSource('platforms')?.setData(platforms);
         map.getSource('alerts')?.setData(alerts);
 
@@ -2261,8 +2271,8 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
-    map.getSource('vessels-ngo')?.setData(ngoVessels);
-  }, [ngoVessels, mapReady]);
+    map.getSource('vessels-ngo')?.setData(sarMapFeatures);
+  }, [sarMapFeatures, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2751,11 +2761,11 @@ function App() {
     return [
       { label: 'AIS',      value: summary.traffic?.registry?.active_30m ?? '—', tone: 'ok' },
       { label: 'Signals',  value: intelEvents.length || stats?.signals?.recent_event_count || 0, tone: 'info' },
-      { label: 'Feed',     value: intelMode === 'ws' ? 'stream' : intelMode === 'poll' ? 'live' : 'sync', tone: intelConnected ? 'ok' : 'info' },
+      { label: 'Feed',     value: FEED_STATUS_LABEL[feedStatus] || 'sync', tone: FEED_STATUS_TONE[feedStatus] || 'info' },
       { label: 'Alerts',   value: openAlerts,                                    tone: openAlerts > 0 ? 'warn' : 'default' },
       { label: 'Forensics',value: stats?.sar?.forensic_packets ?? '—',           tone: 'default' },
     ];
-  }, [summary, stats, intelEvents.length, intelMode, intelConnected]);
+  }, [summary, stats, intelEvents.length, feedStatus]);
 
   const serviceRows = useMemo(() => {
     if (!summary) return [];
@@ -3501,7 +3511,7 @@ function App() {
                 intelStats={intelStats}
                 intelFilter={intelFilter}
                 setIntelFilter={setIntelFilter}
-                intelMode={intelMode}
+                feedStatus={feedStatus}
                 liveMode={liveMode}
                 activeSignalCategories={activeSignalCategories}
                 alarmPhoneOn={isLayerGroupOn('alarm_phone')}
@@ -3511,6 +3521,20 @@ function App() {
                 selectedEventId={selectedIntelEventId}
                 onOpenReport={openIntelReport}
               />
+              {liveMode !== 'security' && (
+                <CivilSarFleetPanel
+                  fleet={ngoVessels}
+                  onSelectVessel={(mmsi) => {
+                    const feature = (ngoVessels.features || []).find(
+                      (f) => String(f.properties?.mmsi || '') === String(mmsi),
+                    );
+                    const coords = feature?.geometry?.coordinates;
+                    if (coords && mapRef?.current) {
+                      mapRef.current.flyTo({ center: coords, zoom: 9, duration: 800 });
+                    }
+                  }}
+                />
+              )}
             </div>
           </aside>
           <button
@@ -3619,7 +3643,7 @@ function App() {
               intelStats={intelStats}
               intelFilter={intelFilter}
               setIntelFilter={setIntelFilter}
-              intelMode={intelMode}
+              feedStatus={feedStatus}
               showAisAlerts={showAisAlerts}
               setShowAisAlerts={setShowAisAlerts}
               mapRef={mapRef}

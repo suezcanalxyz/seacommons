@@ -71,6 +71,7 @@ def find_candidates(limit: int = 200) -> list[Any]:
                 "coordinate_source": meta.get("coordinate_source"),
                 "timestamp_utc": row.timestamp_utc,
                 "title": (row.title or "")[:80],
+                "text": (row.text or "")[:500],
                 "lifecycle": meta.get("incident_lifecycle"),
                 "persons": meta.get("persons"),
                 "vessel_type": meta.get("vessel_type"),
@@ -93,89 +94,216 @@ def resolve_position(candidate: dict) -> tuple[float, float, str] | None:
 
     for url in urls[:6]:
         try:
-            coord, _attempted, method = _ocr_photo(url)
+            result = _ocr_photo(url)
         except Exception as exc:
             logger.debug("backfill OCR failed for %s: %s", url, exc)
             continue
+        coord, method = result[0], result[2]
         if coord is not None:
             return coord[0], coord[1], method
     return None
 
 
-def apply_position(event_id: str, lat: float, lon: float, method: str) -> bool:
+def _outcome_for_method(method: str) -> str:
+    """Map the OCR method to a Phase-5 report bucket."""
+    from core.intel.location_evidence import evidence_from_ocr_method
+
+    evidence = evidence_from_ocr_method(method, None, None)
+    review = evidence.review_status
+    if "disputed" in review:
+        return "disputed"
+    if evidence.coordinate_source == "media_ocr_consensus":
+        return "newly_positioned_exact"
+    return "newly_positioned_approximate"
+
+
+def _is_land_case(candidate: dict) -> bool:
+    from core.intel.humanitarian import _case_type
+
+    title = candidate.get("title") or ""
+    return _case_type(title, distress=False, resolved=False) == "land_humanitarian"
+
+
+def _lifecycle_would_change(candidate: dict) -> bool:
+    from core.intel import lifecycle
+    from core.intel.store import IntelEvent
+
+    stored = str(candidate.get("lifecycle") or "").lower()
+    if not stored:
+        return False
+    probe = IntelEvent(
+        id=str(candidate["id"]),
+        type="twitter",
+        title=candidate.get("title") or "",
+        text=candidate.get("text") or "",
+        timestamp_utc=candidate.get("timestamp_utc") or "",
+    )
+    recomputed = lifecycle.distress_lifecycle(
+        probe, now=datetime.now(timezone.utc), same_source=[]
+    )
+    return recomputed != stored
+
+
+def apply_position(event_id: str, lat: float, lon: float, method: str) -> str:
+    """Write an image-derived position back, unless it would downgrade the
+    stored evidence. Idempotent: a re-run of an already-backfilled row is a
+    no-op. Returns a Phase-5 outcome bucket.
+    """
     from core.db.models import IntelEventDB
     from core.db.session import session_scope
     from core.intel.landmask import in_operational_region, nearest_sea_point
+    from core.intel.location_evidence import evidence_from_ocr_method, metadata_quality
 
     if not in_operational_region(lat, lon):
         logger.info("backfill: %s coordinate %.4f,%.4f out of region — skipped", event_id, lat, lon)
-        return False
+        return "still_unpositioned"
     lat, lon = nearest_sea_point(float(lat), float(lon))
-    is_text = method.endswith("text")
-    ocr_engine = "easyocr" if method.startswith("easyocr") else "tesseract"
-    uncertainty = 1500 if is_text else 4000
+    evidence = evidence_from_ocr_method(method, lat, lon)
+    new_meta = evidence.as_metadata()
+
     with session_scope() as db:
         row = db.query(IntelEventDB).filter(IntelEventDB.id == event_id).first()
         if row is None:
-            return False
-        merged = dict(row.meta or {})
-        merged.update({
-            "coordinate_source": f"media_{'ocr_text' if is_text else 'pin_landmark'}_backfill",
-            "coordinate_review_status": "machine_ocr_unverified",
-            "verification_status": "machine_extracted_unverified",
-            "location_uncertainty_m": uncertainty,
-            "ocr_engine": ocr_engine,
+            return "still_unpositioned"
+        existing = dict(row.meta or {})
+        # Never downgrade higher-quality evidence (F-04); a re-run over an
+        # equal-or-better position is a no-op.
+        if row.lat is not None and metadata_quality(new_meta) <= metadata_quality(existing):
+            return "already_good"
+        merged = {
+            **existing,
+            **new_meta,
             "backfilled_at": datetime.now(timezone.utc).isoformat(),
-        })
-        # a real point supersedes any stale search polygon
+        }
         for key in ("area_geojson", "area_confidence", "area_weather_narrowed"):
             merged.pop(key, None)
         row.lat = float(lat)
         row.lon = float(lon)
         row.meta = merged
+        row.coordinate_review_status = new_meta.get("coordinate_review_status")
+        row.location_uncertainty_m = new_meta.get("location_uncertainty_m")
         db.flush()
-    return True
+    return _outcome_for_method(method)
+
+
+def _backfill_drift_eligible(candidate: dict, lat: float, lon: float, method: str) -> bool:
+    """Whether a backfilled position may seed a drift (docs/fixes.md F-01/F-05).
+
+    Live ingestion and backfill must share one drift eligibility policy. A
+    backfilled image-derived coordinate is always ``machine_ocr_unverified``,
+    so this currently rejects every backfill drift -- exactly the freeze F-05
+    calls for until the shared LocationEvidence work (Phase 1) lands.
+    """
+    from core.intel.drift_service import is_auto_drift_eligible
+    from core.intel.location_evidence import evidence_from_ocr_method
+    from core.intel.store import IntelEvent
+
+    probe = IntelEvent(
+        id=str(candidate["id"]),
+        type="twitter",
+        lat=lat,
+        lon=lon,
+        metadata={
+            "is_distress": True,
+            "incident_lifecycle": candidate.get("lifecycle") or "active",
+            **evidence_from_ocr_method(method, lat, lon).as_metadata(),
+        },
+    )
+    eligible, _reason = is_auto_drift_eligible(probe)
+    return eligible
+
+
+_REPORT_KEYS = (
+    "scanned",
+    "already_good",
+    "newly_positioned_exact",
+    "newly_positioned_approximate",
+    "region_only",
+    "still_unpositioned",
+    "disputed",
+    "land_humanitarian",
+    "lifecycle_changed",
+    "duplicate_merged",
+    "drift_eligible",
+    "drift_rejected",
+)
+# Buckets that mean "a position was written" (or would be, in a dry run).
+_APPLIED_OUTCOMES = frozenset(
+    {"newly_positioned_exact", "newly_positioned_approximate", "disputed"}
+)
 
 
 def run(*, apply: bool, limit: int, with_drift: bool) -> dict:
+    """docs/fixes.md Phase 5: idempotent, never-downgrade reprocessing with a
+    full outcome report. Run dry (default), audit, then --apply, audit again,
+    then optionally --drift (only events passing is_auto_drift_eligible)."""
     candidates = find_candidates(limit)
-    resolved = 0
-    drifted = 0
-    for candidate in candidates:
-        position = resolve_position(candidate)
-        status = "no-image-coordinate"
-        if position is not None:
-            lat, lon, method = position
-            status = f"{lat:.5f},{lon:.5f} via {method}"
-            resolved += 1
-            if apply and apply_position(candidate["id"], lat, lon, method):
-                status += " [applied]"
-                if with_drift:
-                    try:
-                        from core.intel.drift_service import schedule_intel_drift
+    report = {key: 0 for key in _REPORT_KEYS}
+    report["scanned"] = len(candidates)
 
-                        if schedule_intel_drift(
-                            candidate["id"], lat, lon,
-                            candidate.get("persons"), candidate.get("vessel_type") or "rubber_boat",
-                            candidate.get("timestamp_utc") or datetime.now(timezone.utc).isoformat(),
-                            force=True,
-                            background=False,
-                        ):
-                            drifted += 1
-                            status += " [drift queued]"
-                    except Exception as exc:
-                        logger.warning("backfill drift failed for %s: %s", candidate["id"], exc)
-        logger.info(
-            "%-14s %s  %s  -> %s",
-            candidate["id"][:14], candidate["timestamp_utc"], candidate["title"], status,
+    for candidate in candidates:
+        if _lifecycle_would_change(candidate):
+            report["lifecycle_changed"] += 1
+
+        if _is_land_case(candidate):
+            report["land_humanitarian"] += 1
+            _log(candidate, "land humanitarian -> no maritime position")
+            continue
+
+        position = resolve_position(candidate)
+        if position is None:
+            bucket = (
+                "region_only"
+                if str(candidate.get("coordinate_source") or "") == "region_area"
+                else "still_unpositioned"
+            )
+            report[bucket] += 1
+            _log(candidate, f"no image coordinate -> {bucket}")
+            continue
+
+        lat, lon, method = position
+        if apply:
+            outcome = apply_position(candidate["id"], lat, lon, method)
+        else:
+            from core.intel.landmask import in_operational_region
+
+            outcome = _outcome_for_method(method) if in_operational_region(lat, lon) else "still_unpositioned"
+        report[outcome] = report.get(outcome, 0) + 1
+
+        if outcome in _APPLIED_OUTCOMES:
+            if _backfill_drift_eligible(candidate, lat, lon, method):
+                report["drift_eligible"] += 1
+                if apply and with_drift:
+                    _queue_drift(candidate, lat, lon)
+            else:
+                report["drift_rejected"] += 1
+        _log(candidate, f"{lat:.5f},{lon:.5f} via {method} -> {outcome}")
+
+    report["dry_run"] = not apply
+    return report
+
+
+def _log(candidate: dict, status: str) -> None:
+    logger.info(
+        "%-14s %s  %s  -> %s",
+        str(candidate["id"])[:14], candidate.get("timestamp_utc"),
+        (candidate.get("title") or "")[:48], status,
+    )
+
+
+def _queue_drift(candidate: dict, lat: float, lon: float) -> None:
+    try:
+        from core.intel.drift_service import schedule_intel_drift
+
+        schedule_intel_drift(
+            candidate["id"], lat, lon,
+            candidate.get("persons"), candidate.get("vessel_type") or "rubber_boat",
+            candidate.get("timestamp_utc") or datetime.now(timezone.utc).isoformat(),
+            force=True,
+            background=False,
         )
-    return {
-        "candidates": len(candidates),
-        "resolved": resolved,
-        "applied": resolved if apply else 0,
-        "drifts_queued": drifted,
-        "dry_run": not apply,
-    }
+    except Exception as exc:
+        logger.warning("backfill drift failed for %s: %s", candidate["id"], exc)
 
 
 def main() -> None:

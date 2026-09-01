@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from core.domain.live_contracts import HumanitarianCaseType
 from core.intel.geoextract import is_ongoing_incident, is_resolved_distress
 
 _PEOPLE = re.compile(
@@ -15,22 +16,50 @@ _PEOPLE = re.compile(
 
 
 def _case_type(text: str, *, distress: bool, resolved: bool) -> str:
+    """Classify into the canonical HumanitarianCaseType vocabulary.
+
+    docs/fixes.md Phase 2.1 / sec 3.3: a finite, explicit set -- no ad-hoc
+    strings. Unclassifiable non-distress reports go to the review lane.
+    """
     value = re.sub(r"\s+", " ", text or "").lower()
-    if re.search(r"\b(shipwreck|capsiz(?:e|ed|ing)|sank|sunk)\b", value):
-        return "shipwreck"
-    if re.search(r"\b(missing|where are they|loss of contact|lost contact)\b", value):
-        return "missing_persons"
-    if re.search(r"\b(intercept(?:ed|ion)|pushback)\b", value):
-        return "interception"
-    if re.search(r"\b(medical evacuation|medevac|medical emergency)\b", value):
-        return "medical_evacuation"
-    if re.search(r"\b(disembark(?:ed|ation)|port of safety|safe port)\b", value):
-        return "disembarkation"
-    if resolved or re.search(r"\b(rescued|rescue completed|arrived safely|all safe)\b", value):
-        return "rescue_completed"
+    if re.search(r"\b(pushback|pushed back|forced back|forced return)\b", value):
+        return HumanitarianCaseType.PUSHBACK.value
+    if re.search(r"\b(intercept(?:ed|ion)|pulled back|libyan coast ?guard)\b", value):
+        return HumanitarianCaseType.INTERCEPTION.value
+    if re.search(
+        r"\b(missing|where are they|loss of contact|lost contact|overdue|no contact)\b",
+        value,
+    ):
+        return HumanitarianCaseType.MISSING.value
+    if re.search(r"\b(evros|border|reception cent(?:re|er)|reception camp|forest|land border)\b", value):
+        return HumanitarianCaseType.LAND_HUMANITARIAN.value
+    if resolved or re.search(
+        r"\b(rescued|rescue completed|arrived safely|all safe|disembark(?:ed|ation)"
+        r"|port of safety|safe port|brought to safety)\b",
+        value,
+    ):
+        return HumanitarianCaseType.RESOLUTION.value
+    if re.search(
+        r"\b(rescue under ?way|rescue operation|proceeding (?:to|toward)|visual contact"
+        r"|rhib launched|on scene)\b",
+        value,
+    ):
+        return HumanitarianCaseType.RESCUE_UPDATE.value
     if distress:
-        return "distress_report"
-    return "humanitarian_update"
+        return HumanitarianCaseType.DISTRESS.value
+    if re.search(
+        r"\b(remember(?:ing)?|memorial|anniversary|commemorat|we demand|outrageous|shame"
+        r"|one year on|victims of)\b",
+        value,
+    ):
+        return HumanitarianCaseType.ADVOCACY.value
+    if re.search(
+        r"\b(shipwreck|capsiz(?:e|ed|ing)|sank|sunk|sinking|in distress|taking on water"
+        r"|medical (?:evacuation|emergency)|medevac)\b",
+        value,
+    ):
+        return HumanitarianCaseType.DISTRESS.value
+    return HumanitarianCaseType.UNKNOWN_HUMANITARIAN.value
 
 
 def humanitarian_case_metadata(

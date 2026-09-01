@@ -541,24 +541,33 @@ class TwikitMonitor:
 
     def _ocr_tweet_media(
         self, tweet_id: str, urls: list[str]
-    ) -> tuple[Optional[tuple[float, float]], bool, str]:
+    ) -> tuple[Optional[tuple[float, float]], bool, str, dict[str, Any]]:
         """OCR the tweet's images until one yields a coordinate pair."""
         if not urls:
-            return None, False, "none"
+            return None, False, "none", {}
         for url in urls:
             try:
-                candidate, attempted, method = _ocr_photo(url)
+                result = _ocr_photo(url)
+                candidate, attempted, method = result[0], result[1], result[2]
+                diagnostics = result[3] if len(result) > 3 else {}
                 if candidate is not None:
-                    return candidate, attempted, method
+                    return candidate, attempted, method, diagnostics
             except Exception as exc:
                 logger.debug("X (twikit) media OCR failed for %s (%s): %s", tweet_id, url, exc)
-        return None, True, "none"
+        return None, True, "none", {}
 
     def _apply_media_ocr(self, event_id: str, urls: list[str]) -> None:
-        """Run in a background thread: OCR, upgrade the stored position, drift."""
+        """Run in a pool worker: OCR, upgrade the stored position, drift."""
+        from core.intel.location_evidence import (
+            evidence_from_ocr_method,
+            ocr_result_label,
+        )
+        from core.observability import record_ocr_result
+
         try:
-            coords, attempted, method = self._ocr_tweet_media(event_id, urls)
+            coords, attempted, method, ocr_diag = self._ocr_tweet_media(event_id, urls)
             if coords is None:
+                record_ocr_result("no_coordinate")
                 # Visible in prod logs: was OCR even possible, and did it run
                 # but fail to read a coordinate? (Alarm Phone posts the
                 # position as a map screenshot -- a silent miss here is a
@@ -577,39 +586,23 @@ class TwikitMonitor:
                 "media OCR: %s -> %.5f,%.5f via %s for %s",
                 "coordinate", coords[0], coords[1], method, event_id,
             )
-            # Uncertainty/review status reflect actual cross-engine agreement,
-            # not just which method eventually returned a coordinate --
-            # "tesseract piu preciso" per the user: a lone engine's read stays
-            # at the old conservative constants, two engines agreeing earns a
-            # tight uncertainty, and a disagreement is flagged wide + for
-            # review instead of silently trusting whichever engine ran first.
-            if method == "easyocr_tesseract_consensus":
-                coordinate_source = "media_ocr_consensus"
-                uncertainty_m = 400
-                review_status = "machine_ocr_consensus_verified"
-            elif method == "easyocr_text_disputed":
-                coordinate_source = "media_ocr_text"
-                uncertainty_m = 3500
-                review_status = "machine_ocr_disputed_needs_review"
-            elif method.endswith("text"):
-                coordinate_source = "media_ocr_text"
-                uncertainty_m = 1500
-                review_status = "machine_ocr_unverified"
-            else:
-                coordinate_source = "media_pin_landmark"
-                uncertainty_m = 4000
-                review_status = "machine_ocr_unverified"
+            # OCR-method -> evidence semantics live in one place now
+            # (core.intel.location_evidence), shared with the historical
+            # backfill so the two can never drift apart again (F-04 / F-05).
+            evidence = evidence_from_ocr_method(
+                method,
+                coords[0],
+                coords[1],
+                interengine_distance_m=ocr_diag.get("interengine_distance_m"),
+            )
+            record_ocr_result(ocr_result_label(method))
             upgraded = intel_store.enrich_location(
                 event_id,
                 lat=coords[0],
                 lon=coords[1],
                 metadata={
-                    "coordinate_source": coordinate_source,
-                    "coordinate_review_status": review_status,
-                    "verification_status": "machine_extracted_unverified",
-                    "location_uncertainty_m": uncertainty_m,
+                    **evidence.as_metadata(),
                     "media_transport": "x_media_ocr",
-                    "ocr_engine": "easyocr" if method.startswith("easyocr") else "tesseract",
                     "ocr_attempted": True,
                     "media_count": len(urls),
                 },
@@ -630,12 +623,20 @@ class TwikitMonitor:
             logger.debug("X (twikit) media OCR enrichment failed for %s: %s", event_id, exc)
 
     def _schedule_media_ocr(self, tweet_id: str, event_id: str, urls: list[str]) -> None:
-        threading.Thread(
-            target=self._apply_media_ocr,
-            args=(event_id, urls),
-            daemon=True,
-            name=f"intel-x-ocr-{tweet_id[-8:]}",
-        ).start()
+        # docs/fixes.md F-02: one bounded pool, deduped by event identity --
+        # a media burst can no longer pile up unbounded waiting threads.
+        from core.intel.media_ocr_queue import media_ocr_queue
+
+        urls_snapshot = list(urls)
+        outcome = media_ocr_queue.submit(
+            f"x-ocr:{event_id}",
+            lambda: self._apply_media_ocr(event_id, urls_snapshot),
+        )
+        if outcome in {"deferred_queue_full", "dropped"}:
+            intel_store.update_metadata(
+                event_id,
+                metadata={"ocr_queue_state": outcome, "ocr_attempted": False},
+            )
 
     def _auto_drift_if_live(self, event_id: str, *, force: bool = False) -> None:
         """Auto-drift for a new live episode, unless one already ran (or is running).
@@ -650,6 +651,22 @@ class TwikitMonitor:
         if stored is None or stored.lat is None or stored.lon is None:
             return
         if stored.metadata.get("drift_status") in {"computing", "completed"} and not force:
+            return
+        # Pre-flight the F-01 evidence gate here too: a disputed / unverified /
+        # region-only OCR result must produce exactly zero drift requests, not
+        # a request the route then rejects.
+        from core.intel.drift_service import is_auto_drift_eligible
+
+        eligible, reason = is_auto_drift_eligible(stored)
+        if not eligible:
+            logger.info("X (twikit) auto-drift not eligible for %s: %s", event_id, reason)
+            from core.observability import record_ocr_drift_rejected
+
+            record_ocr_drift_rejected()
+            intel_store.update_metadata(
+                event_id,
+                metadata={"drift_status": "ineligible", "drift_ineligible_reason": reason},
+            )
             return
         try:
             request_auto_drift(stored.id, stored.lat, stored.lon, vessel_type="rubber_boat")
@@ -831,9 +848,11 @@ class TwikitMonitor:
                     "location_suppressed_reason": "non_operational_context",
                 } if not distress else {}),
                 "coordinate_review_status": (
-                    "machine_ocr_unverified"
+                    "not_required"
+                    if coordinate_source in {"post_text", "navtext"}
+                    else "machine_ocr_unverified"
                     if coordinate_source == "media_ocr_text"
-                    else "not_required"
+                    else "not_applicable"
                 ),
                 # Credit the specific tracked X/Twitter account by name rather than
                 # bucketing it under a generic trust tier — e.g. "alarm_phone_twitter",
@@ -915,10 +934,9 @@ class TwikitMonitor:
             # An area result has no single defensible starting point at all —
             # a leeway simulation from its centroid would imply a false
             # precision the polygon itself exists specifically to avoid.
-            try:
-                request_auto_drift(event.id, event.lat, event.lon, vessel_type="rubber_boat")
-            except Exception as exc:
-                logger.debug("X (twikit) auto-drift deferred for %s: %s", event.id, exc)
+            # Route through the gated helper so the same F-01 evidence policy
+            # applies to this inline path.
+            self._auto_drift_if_live(event.id, force=False)
         return added
 
     def _thread_repost(

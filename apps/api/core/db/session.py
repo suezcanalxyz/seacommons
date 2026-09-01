@@ -90,12 +90,45 @@ def _ensure_indexes(eng=None) -> None:
     from sqlalchemy import inspect
 
     eng = eng or engine()
-    existing_tables = set(inspect(eng).get_table_names())
+    inspector = inspect(eng)
+    existing_tables = set(inspector.get_table_names())
     for table in Base.metadata.tables.values():
         if table.name not in existing_tables:
             continue  # create_all() just created this table fresh, indexes included
+        present = {col["name"] for col in inspector.get_columns(table.name)}
         for index in table.indexes:
-            index.create(bind=eng, checkfirst=True)
+            # An index on a column the running database does not have yet
+            # (a model column awaiting its Alembic migration) is skipped, not
+            # a hard error -- the migration creates both together.
+            if {col.name for col in index.columns} <= present:
+                index.create(bind=eng, checkfirst=True)
+
+
+def alembic_config():
+    """The project's Alembic config, URL bound to the live database.
+
+    docs/fixes.md Phase 2.2: Alembic is the schema-evolution authority.
+    ``init_database`` still uses create_all + the runtime backfills for one
+    compatibility release; new deploys and CI can drive migrations with this.
+    """
+    from alembic.config import Config
+
+    cfg = Config(str(_API_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(_API_ROOT / "core" / "db" / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", database_url().replace("%", "%%"))
+    return cfg
+
+
+def alembic_upgrade(revision: str = "head") -> None:
+    from alembic import command
+
+    command.upgrade(alembic_config(), revision)
+
+
+def alembic_stamp(revision: str = "head") -> None:
+    from alembic import command
+
+    command.stamp(alembic_config(), revision)
 
 
 def init_database() -> None:

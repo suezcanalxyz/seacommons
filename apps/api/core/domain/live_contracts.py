@@ -68,6 +68,56 @@ class IntelTier(StrEnum):
     SIGNAL = "signal"
 
 
+# docs/fixes.md Phase 2.1: the operational tier of a humanitarian record is
+# the same three-value vocabulary the intel feed already uses. Alias, not a
+# second enum, so a value can never mean different things on the two.
+OperationalTier = IntelTier
+
+
+class HumanitarianCaseType(StrEnum):
+    """Canonical, finite humanitarian case taxonomy (docs/fixes.md sec 3.3).
+
+    Distinct from ``source`` and from ``MaritimeDomain``. No ingestion path may
+    invent an alternative value; unclassifiable reports use
+    ``UNKNOWN_HUMANITARIAN`` (a review lane, never auto-Drift).
+    """
+
+    DISTRESS = "distress"                # active/urgent maritime distress
+    MISSING = "missing"                  # people overdue / no contact
+    INTERCEPTION = "interception"        # interception / return event
+    PUSHBACK = "pushback"                # pushback allegation / report
+    RESCUE_UPDATE = "rescue_update"      # rescue-operation update, non-originating
+    RESOLUTION = "resolution"            # follow-up that resolves an existing incident
+    LAND_HUMANITARIAN = "land_humanitarian"  # land / border humanitarian case
+    ADVOCACY = "advocacy"               # non-operational public communication
+    UNKNOWN_HUMANITARIAN = "unknown_humanitarian"  # review lane, never auto-Drift
+
+
+class LocationStatus(StrEnum):
+    """Where a public humanitarian record's position stands (docs/fixes.md
+    Question D)."""
+
+    POSITIONED = "positioned"
+    REGION_ONLY = "region_only"
+    PROCESSING = "processing"          # image received, coordinate extraction in progress
+    DISPUTED = "disputed"             # OCR engines disagree
+    WITHHELD_FROM_MARITIME_MAP = "withheld_from_maritime_map"  # e.g. a land event
+    UNPOSITIONED = "unpositioned"
+
+
+class CoordinateReviewStatus(StrEnum):
+    """Trust level of an extracted coordinate. The single vocabulary shared by
+    ingestion, backfill, the drift gate and the evidence comparator."""
+
+    NOT_REQUIRED = "not_required"                # coordinate read from post text
+    NOT_APPLICABLE = "not_applicable"            # coarse place/region fallback, nothing to review
+    MACHINE_OCR_UNVERIFIED = "machine_ocr_unverified"
+    MACHINE_OCR_CONSENSUS_VERIFIED = "machine_ocr_consensus_verified"
+    MACHINE_OCR_DISPUTED_NEEDS_REVIEW = "machine_ocr_disputed_needs_review"
+    HUMAN_VERIFIED = "human_verified"
+    REPORTED_EXACT = "reported_exact"
+
+
 class LocationPrecision(StrEnum):
     UNPOSITIONED = "unpositioned"
     APPROXIMATE = "approximate"

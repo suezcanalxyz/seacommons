@@ -46,13 +46,35 @@ def test_ocr_photo_confirms_when_tesseract_agrees_with_easyocr(monkeypatch):
         x_media_utils, "_tesseract_cross_check", lambda payload, executable: (35.501, 24.899)
     )
 
-    coord, attempted, method = x_media_utils._ocr_photo(
+    coord, attempted, method, diag = x_media_utils._ocr_photo(
         "https://pbs.twimg.com/media/map.jpg"
     )
 
     assert coord == (35.500, 24.900)
     assert attempted is True
     assert method == "easyocr_tesseract_consensus"
+    # docs/fixes.md F-03: the measured inter-engine distance and the threshold
+    # used are persisted, in metres.
+    assert diag["interengine_distance_m"] < x_media_utils.OCR_CROSS_ENGINE_MAX_DISTANCE_M
+    assert diag["consensus_threshold_m"] == x_media_utils.OCR_CROSS_ENGINE_MAX_DISTANCE_M
+
+
+def test_ocr_photo_disputes_a_kilometre_scale_disagreement_that_degree_delta_missed(monkeypatch):
+    """0.03 deg latitude is ~3.3 km -- the old tolerance called this "agreement".
+    A ~1.5 km gap between the two engines is a dispute, not a consensus."""
+    monkeypatch.setattr(x_media_utils.shutil, "which", lambda name: "/usr/bin/tesseract")
+    _patch_download(monkeypatch)
+    monkeypatch.setattr(
+        x_media_utils, "_easyocr_image", lambda payload: ((35.500, 24.900), [], True)
+    )
+    monkeypatch.setattr(
+        x_media_utils, "_tesseract_cross_check", lambda payload, executable: (35.513, 24.900)
+    )
+    coord, _attempted, method, diag = x_media_utils._ocr_photo(
+        "https://pbs.twimg.com/media/map.jpg"
+    )
+    assert method == "easyocr_text_disputed"
+    assert 1200 < diag["interengine_distance_m"] < 1600
 
 
 def test_ocr_photo_flags_dispute_when_tesseract_disagrees_with_easyocr(monkeypatch):
@@ -61,12 +83,12 @@ def test_ocr_photo_flags_dispute_when_tesseract_disagrees_with_easyocr(monkeypat
     monkeypatch.setattr(
         x_media_utils, "_easyocr_image", lambda payload: ((35.5, 24.9), [], True)
     )
-    # Materially different coordinate -- well outside the 0.03 deg tolerance.
+    # Materially different coordinate -- ~90 km, well outside the metric tolerance.
     monkeypatch.setattr(
         x_media_utils, "_tesseract_cross_check", lambda payload, executable: (36.2, 25.6)
     )
 
-    coord, attempted, method = x_media_utils._ocr_photo(
+    coord, attempted, method, diag = x_media_utils._ocr_photo(
         "https://pbs.twimg.com/media/map.jpg"
     )
 
@@ -82,7 +104,7 @@ def test_ocr_photo_keeps_legacy_method_when_tesseract_finds_nothing(monkeypatch)
     )
     monkeypatch.setattr(x_media_utils, "_tesseract_cross_check", lambda payload, executable: None)
 
-    coord, attempted, method = x_media_utils._ocr_photo(
+    coord, attempted, method, diag = x_media_utils._ocr_photo(
         "https://pbs.twimg.com/media/map.jpg"
     )
 
@@ -108,7 +130,7 @@ def test_ocr_photo_skips_cross_check_when_tesseract_binary_missing(monkeypatch):
 
     monkeypatch.setattr(x_media_utils, "_tesseract_cross_check", _boom)
 
-    coord, attempted, method = x_media_utils._ocr_photo(
+    coord, attempted, method, diag = x_media_utils._ocr_photo(
         "https://pbs.twimg.com/media/map.jpg"
     )
 
@@ -130,7 +152,7 @@ def test_ocr_photo_survives_a_broken_cross_check(monkeypatch):
 
     monkeypatch.setattr(x_media_utils, "_tesseract_cross_check", _raise)
 
-    coord, attempted, method = x_media_utils._ocr_photo(
+    coord, attempted, method, diag = x_media_utils._ocr_photo(
         "https://pbs.twimg.com/media/map.jpg"
     )
 

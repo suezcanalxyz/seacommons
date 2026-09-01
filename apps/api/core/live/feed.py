@@ -21,7 +21,7 @@ from core.domain.live_contracts import (
 from core.intel import lifecycle
 from core.intel.public_policy import (
     HUMANITARIAN_DRIFT_DOMAINS,
-    SECURITY_MARITIME_DOMAINS,
+    compartment_for_domain,
     domains_for_mode,
 )
 from core.intel.store import IntelEvent, intel_store
@@ -190,11 +190,11 @@ def public_signal_collection(
         "security": [],
     }
     for event in events:
-        event_mode = (
-            "security"
-            if event.maritime_domain() in SECURITY_MARITIME_DOMAINS
-            else "humanitarian"
-        )
+        # F-07: positive allow-lists, never humanitarian-by-complement.
+        # safety / environmental / unknown -> no operational compartment.
+        event_mode = compartment_for_domain(event.maritime_domain())
+        if event_mode is None:
+            continue
         feature = _public_intel_feature(
             event,
             allowed_domains=domains_for_mode(event_mode),

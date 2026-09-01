@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { edgeSnapshotIsUsable } from '../simulation/liveTracking.js';
 import { fetchJson } from '../services/api/client.js';
+import { deriveFeedStatus } from '../features/live/feedStatus.js';
 import {
   edgeSnapshotToFeatures,
   receivedSignalFeatures,
@@ -22,10 +23,11 @@ function loadCachedEvents(isPublicLiveHost, liveMode = 'humanitarian') {
     if (!Array.isArray(parsed)) return [];
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const recent = parsed.filter((event) => (event?.properties?.timestamp_utc || '') >= cutoff);
-    const normalized = isPublicLiveHost ? receivedSignalFeatures(recent) : recent;
-    return isPublicLiveHost && liveMode === 'humanitarian'
-      ? alarmPhoneOnly(normalized)
-      : normalized;
+    // Humanitarian eligibility is decided once, in backend policy
+    // (core.live.projection._public_intel_feature), and applied identically by
+    // the VM feed and the edge publisher. The browser must not layer a second
+    // source policy on top (docs/fixes.md F-06).
+    return isPublicLiveHost ? receivedSignalFeatures(recent) : recent;
   } catch {
     return [];
   }
@@ -54,9 +56,39 @@ export function useLiveFeed({
   const [liveModeCounts, setLiveModeCounts] = useState({ humanitarian: null, security: null });
   const [intelConnected, setIntelConnected] = useState(false);
   const [intelMode, setIntelMode] = useState('offline');
+  // docs/fixes.md F-06 / Phase 0.4: a successful empty response, a transient
+  // failure that still has a snapshot, and a hard outage must be distinct.
+  const [feedStatus, setFeedStatus] = useState('loading');
   const edgeLiveActiveRef = useRef(false);
+  const everSucceededRef = useRef(false);
+  const consecutiveFailuresRef = useRef(0);
+  const eventCountRef = useRef(intelEvents.length);
   const onCriticalDistressRef = useRef(onCriticalDistress);
   const onDriftUpdateRef = useRef(onDriftUpdate);
+
+  useEffect(() => {
+    eventCountRef.current = intelEvents.length;
+  }, [intelEvents]);
+
+  function markFeedSuccess(featureCount) {
+    everSucceededRef.current = true;
+    consecutiveFailuresRef.current = 0;
+    setFeedStatus(deriveFeedStatus({
+      everSucceeded: true,
+      transportHealthy: true,
+      lastResponseEmpty: featureCount === 0,
+    }));
+  }
+
+  function markFeedFailure() {
+    consecutiveFailuresRef.current += 1;
+    setFeedStatus(deriveFeedStatus({
+      everSucceeded: everSucceededRef.current,
+      transportHealthy: false,
+      consecutiveFailures: consecutiveFailuresRef.current,
+      haveCachedEvents: eventCountRef.current > 0,
+    }));
+  }
 
   useEffect(() => {
     onCriticalDistressRef.current = onCriticalDistress;
@@ -65,6 +97,11 @@ export function useLiveFeed({
 
   useEffect(() => {
     if (isPublicLiveHost) setIntelEvents(loadCachedEvents(true, liveMode));
+    // Switching compartment restarts the transport lifecycle -- until the
+    // first response for the new mode lands, the feed is loading, not empty.
+    everSucceededRef.current = false;
+    consecutiveFailuresRef.current = 0;
+    setFeedStatus('loading');
   }, [isPublicLiveHost, liveMode]);
 
   // VM-hosted Intel/Live transport: polling starts immediately and WebSocket
@@ -91,11 +128,11 @@ export function useLiveFeed({
         const message = JSON.parse(event.data);
         if (message.type === 'ping') return;
         if (message.type === 'snapshot') {
-          setIntelEvents(
-            isPublicLiveHost
-              ? receivedSignalFeatures(message.features)
-              : Array.isArray(message.features) ? message.features : [],
-          );
+          const snapshotFeatures = isPublicLiveHost
+            ? receivedSignalFeatures(message.features)
+            : Array.isArray(message.features) ? message.features : [];
+          setIntelEvents(snapshotFeatures);
+          markFeedSuccess(snapshotFeatures.length);
           if (isPublicLiveHost && message.meta?.mode_counts) {
             setLiveModeCounts(message.meta.mode_counts);
           }
@@ -142,11 +179,13 @@ export function useLiveFeed({
           }
           setIntelConnected(true);
           setIntelMode((previous) => previous === 'ws' ? 'ws' : 'poll');
+          markFeedSuccess(features.length);
         }
       } catch {
         if (!alive || edgeLiveActiveRef.current) return;
         setIntelConnected(false);
         setIntelMode((previous) => previous === 'ws' ? 'ws' : 'offline');
+        markFeedFailure();
       }
     }
 
@@ -218,11 +257,12 @@ export function useLiveFeed({
 
     function applySnapshot(snapshot, transport = 'poll') {
       if (!alive || !edgeSnapshotIsUsable(snapshot)) return false;
-      const features = alarmPhoneOnly(edgeSnapshotToFeatures(snapshot));
+      const features = edgeSnapshotToFeatures(snapshot);
       setIntelEvents(features);
       storeCachedEvents(true, features, 'humanitarian');
       setIntelConnected(true);
       setIntelMode(transport);
+      markFeedSuccess(features.length);
       edgeLiveActiveRef.current = true;
       consecutiveFailures = 0;
       return true;
@@ -246,6 +286,7 @@ export function useLiveFeed({
         if (data.meta?.mode_counts) setLiveModeCounts(data.meta.mode_counts);
         setIntelConnected(true);
         setIntelMode('poll');
+        markFeedSuccess(features.length);
       } catch {
         // Preserve the last valid cached edge snapshot.
       }
@@ -279,6 +320,7 @@ export function useLiveFeed({
         edgeLiveActiveRef.current = false;
         setIntelConnected(false);
         setIntelMode('offline');
+        markFeedFailure();
         if (consecutiveFailures >= 3) await loadOracleBackup();
       }
       if (alive) pollTimer = window.setTimeout(pollSnapshot, 10000);
@@ -336,12 +378,7 @@ export function useLiveFeed({
     setIntelEvents,
     intelConnected,
     intelMode,
+    feedStatus,
     liveModeCounts,
   };
-}
-
-function alarmPhoneOnly(features) {
-  return features.filter((feature) => (
-    String(feature?.properties?.source || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'alarmphone'
-  ));
 }

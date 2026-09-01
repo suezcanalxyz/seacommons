@@ -50,34 +50,103 @@ def test_candidate_filters() -> None:
     assert not bf._is_weak_position(_Row("alarm_phone", {"coordinate_source": "post_text"}, lat=35.0, lon=14.0))
 
 
+def _cand(**over):
+    base = {
+        "id": "e1", "tweet_id": "1", "quoted_tweet_id": "", "media_urls": [],
+        "timestamp_utc": "2026-08-01T00:00:00Z", "title": "boat in distress",
+        "text": "", "coordinate_source": "region_area", "lifecycle": "active",
+        "persons": 12, "vessel_type": "rubber_boat",
+    }
+    base.update(over)
+    return base
+
+
 def test_run_is_dry_by_default(monkeypatch) -> None:
     monkeypatch.setattr(bf, "find_candidates", lambda limit: [
-        {"id": "e1", "tweet_id": "1", "quoted_tweet_id": "", "media_urls": [],
-         "timestamp_utc": "2026-08-01T00:00:00Z", "title": "boat", "persons": None, "vessel_type": None},
-        {"id": "e2", "tweet_id": "2", "quoted_tweet_id": "", "media_urls": [],
-         "timestamp_utc": "2026-08-02T00:00:00Z", "title": "boat2", "persons": None, "vessel_type": None},
+        _cand(id="e1"),
+        _cand(id="e2", title="boat2"),
     ])
     monkeypatch.setattr(bf, "resolve_position", lambda c: (35.5, 14.1, "text") if c["id"] == "e1" else None)
+    monkeypatch.setattr(bf, "in_operational_region", lambda *a: True, raising=False)
+    monkeypatch.setattr("core.intel.landmask.in_operational_region", lambda *a: True)
     applied: list = []
-    monkeypatch.setattr(bf, "apply_position", lambda *a: applied.append(a))
+    monkeypatch.setattr(bf, "apply_position", lambda *a: applied.append(a) or "x")
 
-    summary = bf.run(apply=False, limit=10, with_drift=False)
-    assert summary == {"candidates": 2, "resolved": 1, "applied": 0, "drifts_queued": 0, "dry_run": True}
-    assert applied == []
+    report = bf.run(apply=False, limit=10, with_drift=False)
+    assert report["scanned"] == 2
+    assert report["dry_run"] is True
+    assert report["newly_positioned_approximate"] == 1
+    assert report["region_only"] == 1
+    assert applied == []  # dry run never writes
 
 
-def test_run_apply_writes_and_can_drift(monkeypatch) -> None:
-    monkeypatch.setattr(bf, "find_candidates", lambda limit: [
-        {"id": "e1", "tweet_id": "1", "quoted_tweet_id": "", "media_urls": [],
-         "timestamp_utc": "2026-08-01T00:00:00Z", "title": "boat", "persons": 12, "vessel_type": "rubber_boat"},
-    ])
+def test_run_apply_freezes_drift_for_unverified_backfill(monkeypatch) -> None:
+    """docs/fixes.md F-05: a backfilled unverified position is written back but
+    must not seed a drift (only events passing is_auto_drift_eligible do)."""
+    monkeypatch.setattr(bf, "find_candidates", lambda limit: [_cand()])
     monkeypatch.setattr(bf, "resolve_position", lambda c: (35.5, 14.1, "pin_landmark"))
-    monkeypatch.setattr(bf, "apply_position", lambda *a: True)
+    monkeypatch.setattr(bf, "apply_position", lambda *a: "newly_positioned_approximate")
     drift_calls: list = []
     import core.intel.drift_service as ds
     monkeypatch.setattr(ds, "schedule_intel_drift", lambda *a, **k: (drift_calls.append((a, k)), True)[1])
 
-    summary = bf.run(apply=True, limit=10, with_drift=True)
-    assert summary["applied"] == 1 and summary["drifts_queued"] == 1
-    assert drift_calls[0][0][0] == "e1"
-    assert drift_calls[0][1]["background"] is False
+    report = bf.run(apply=True, limit=10, with_drift=True)
+    assert report["newly_positioned_approximate"] == 1
+    assert report["drift_eligible"] == 0 and report["drift_rejected"] == 1
+    assert drift_calls == []
+
+
+def test_report_has_every_phase5_bucket(monkeypatch) -> None:
+    monkeypatch.setattr(bf, "find_candidates", lambda limit: [])
+    report = bf.run(apply=False, limit=1, with_drift=False)
+    for key in bf._REPORT_KEYS:
+        assert key in report
+
+
+def test_land_humanitarian_candidate_gets_no_maritime_position(monkeypatch) -> None:
+    monkeypatch.setattr(bf, "find_candidates", lambda limit: [
+        _cand(title="Group found near Evros and taken to a reception centre"),
+    ])
+    calls: list = []
+    monkeypatch.setattr(bf, "resolve_position", lambda c: calls.append(c) or (35.5, 14.1, "text"))
+    report = bf.run(apply=True, limit=10, with_drift=True)
+    assert report["land_humanitarian"] == 1
+    assert calls == []  # never even tries to geolocate a land case
+
+
+def test_apply_position_never_downgrades_and_is_idempotent(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    row = SimpleNamespace(
+        id="e1", lat=34.0, lon=12.0,
+        meta={"coordinate_source": "post_text", "coordinate_review_status": "not_required"},
+        coordinate_review_status=None, location_uncertainty_m=None,
+    )
+
+    class _Session:
+        def query(self, *_a):
+            return self
+
+        def filter(self, *_a):
+            return self
+
+        def first(self):
+            return row
+
+        def flush(self):
+            pass
+
+    import contextlib
+
+    @contextlib.contextmanager
+    def _scope():
+        yield _Session()
+
+    monkeypatch.setattr("core.db.session.session_scope", _scope)
+    monkeypatch.setattr("core.intel.landmask.in_operational_region", lambda *a: True)
+    monkeypatch.setattr("core.intel.landmask.nearest_sea_point", lambda a, b: (a, b))
+
+    # A pin-landmark read must not replace a stored verified text coordinate.
+    outcome = bf.apply_position("e1", 35.0, 13.0, "pin_landmark")
+    assert outcome == "already_good"
+    assert row.lat == 34.0 and row.lon == 12.0

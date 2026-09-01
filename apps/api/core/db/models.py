@@ -134,6 +134,29 @@ class IntelEventDB(Base):
     linked_mmsi   = Column(String(16),  default="")
     meta          = Column(JSON,        default=dict)
     created_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+    # ── Canonical live classification (docs/fixes.md Phase 2.2 / 3.2) ──────────
+    # Dual-written alongside `meta` for one release. All nullable / defaulted so
+    # the migration is safe on a populated table; store the enum *.value string.
+    schema_version           = Column(Integer,     nullable=False, server_default="1")
+    source_timestamp_utc     = Column(String(32))
+    received_at              = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+    maritime_domain          = Column(String(32),  index=True)
+    operational_tier         = Column(String(16),  index=True)
+    humanitarian_case_type   = Column(String(32),  index=True)
+    incident_lifecycle       = Column(String(16),  index=True)
+    location_status          = Column(String(32))
+    coordinate_review_status = Column(String(40))
+    location_uncertainty_m   = Column(Float)
+
+    # docs/fixes.md F-14 / Phase 2.2: persisted_events() and the edge
+    # publisher's collect() all filter a recent time window by source or type
+    # and sort by timestamp_utc desc. Composite indexes serve the filter and
+    # the sort in one; the single-column indexes above stay (F-14: do not drop
+    # them until query plans justify it).
+    __table_args__ = (
+        Index("ix_intel_events_source_ts", "source", "timestamp_utc"),
+        Index("ix_intel_events_type_ts", "type", "timestamp_utc"),
+    )
 
 
 class IngestedSignalDB(Base):

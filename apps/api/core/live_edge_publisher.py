@@ -30,31 +30,16 @@ import httpx
 
 from core.domain.live_contracts import (
     FEDERATED_EVENT_SCHEMA,
-    PublicationStatus,
     VerificationStatus,
     Visibility,
     validate_federated_event_input,
 )
-from core.domain.live_contracts import APPROVED_SOURCE_POLICIES
-from core.intel.public_policy import (
-    is_blocked_source,
-    is_explicitly_private,
-    is_public_domain,
-)
 
-# OSINT context types eligible for the public edge feed when their maritime
-# compartment is allow-listed (mirrors core.live.projection._PUBLIC_CONTEXT_TYPES).
-_PUBLIC_CONTEXT_TYPES = frozenset(
-    {"news", "bluesky", "gdacs", "vessel_incident", "iom_incident",
-     "ais_anomaly", "correlated_alert", "oil_spill"}
-)
-# Types SeaCommons computes from telemetry rather than scrapes — no source
-# policy, but safe to surface (still domain + geometry gated). ais_spike is
-# excluded on purpose: high-volume, low-signal, would swamp the public feed.
-_SEACOMMONS_DERIVED_TYPES = frozenset(
-    {"ais_anomaly", "correlated_alert", "vessel_incident"}
-)
-_MARITIME_GDACS_TYPES = frozenset({"TC", "EQ", "FL", "VO"})
+# Eligibility for the public edge feed (type, publication policy, maritime
+# compartment, context-noise filtering, GDACS relevance, news corroboration)
+# is decided by the one canonical function core.live.projection.
+# _public_intel_feature -- the exact rule the VM's mode=humanitarian feed
+# applies. The edge deliberately keeps no second copy (docs/fixes.md F-06).
 from core.observability import (
     record_publisher_cycle,
     record_publisher_delivery,
@@ -259,60 +244,29 @@ def public_event_from_row(
 
     event = _event_from_row(row)
     metadata = event.metadata
-    source_key = "".join(ch for ch in str(event.source or "").lower() if ch.isalnum())
-    handle_key = "".join(
-        ch
-        for ch in str(metadata.get("tracked_account") or "").lower()
-        if ch.isalnum()
-    )
-    if "alarmphone" not in {source_key, handle_key}:
-        # Humanitarian Live is deliberately a single-source product. Other
-        # organisations remain operator context and are never mixed into it.
-        return None
     event_type = event.type
-    # Operator-only marker (same semantics as the VM's public live feed):
-    # news/archive channels (e.g. official RSS) mark their rows "private" so an
-    # NGO article that merely mentions distress vocabulary can never surface on
-    # the public live map.
-    publication_status = str(metadata.get("publication_status") or "").lower()
-    if is_explicitly_private(metadata):
+
+    # docs/fixes.md F-06: humanitarian eligibility is ONE canonical decision.
+    # The edge no longer implements its own source policy (previously an
+    # Alarm-Phone-only gate) -- it delegates to the exact function the VM's
+    # /api/v1/live/signals?mode=humanitarian feed uses, so "what counts as
+    # Humanitarian Live" can never depend on whether the browser is served
+    # from the edge or the VM.
+    from core.intel.public_policy import SECURITY_MARITIME_DOMAINS, domains_for_mode
+    from core.live.projection import _public_intel_feature
+
+    if event.maritime_domain() in SECURITY_MARITIME_DOMAINS:
+        # The public edge is the humanitarian compartment only; the VM buckets
+        # these into `security` and excludes them from mode=humanitarian.
         return None
-    # Defense in depth, same as the VM path: a blocked source policy (legacy
-    # scraper rows, unofficial transport) must never reach the public map even
-    # if `publication_status`/`is_distress` were ever set incorrectly upstream.
-    if is_blocked_source(metadata):
-        return None
-    is_distress = bool(metadata.get("is_distress")) or event_type in {"distress", "iom_incident"}
-    # NOTE: previously checked a "publication_state" key that no producer in
-    # this codebase ever sets (a typo for publication_status) — this branch
-    # was therefore dead: it never once evaluated True in production. Only
-    # `is_distress` was ever actually gating inclusion.
-    explicitly_public = publication_status == PublicationStatus.PUBLISHED.value
-    source_policy = str(metadata.get("source_policy") or "").lower()
-    # An OSINT context signal (news, GDACS, AIS, fusion alert) surfaces on the
-    # public map only when its compartment is allow-listed AND it either rode an
-    # approved transport or is a SeaCommons-derived product — an unlabelled
-    # context row still stays operator-only (same rule as core.live.projection).
-    context_severity_ok = (
-        event_type == "correlated_alert"
-        or (event.severity or "low").lower() != "low"
-        or explicitly_public
+    vm_feature = _public_intel_feature(
+        event, allowed_domains=domains_for_mode("humanitarian")
     )
-    gdacs_relevant = event_type != "gdacs" or str(
-        metadata.get("gdacs_event_type") or ""
-    ).upper() in _MARITIME_GDACS_TYPES
-    domain_context_public = (
-        event_type in _PUBLIC_CONTEXT_TYPES
-        and is_public_domain(event.maritime_domain())
-        and context_severity_ok
-        and gdacs_relevant
-        and (
-            source_policy in APPROVED_SOURCE_POLICIES
-            or event_type in _SEACOMMONS_DERIVED_TYPES
-        )
-    )
-    if not is_distress and not explicitly_public and not domain_context_public:
+    if vm_feature is None:
         return None
+    # kind == "distress" iff event.tier() == "operational" -- the same signal
+    # the VM feed's distress lifecycle / window handling keys off.
+    is_distress = vm_feature["properties"].get("kind") == "distress"
 
     from core.intel.public_geometry import public_geometry_and_precision
 

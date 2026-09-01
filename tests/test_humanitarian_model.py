@@ -10,7 +10,7 @@ def test_alarm_phone_case_preserves_approximate_people_count() -> None:
         distress=True,
     )
     assert case["humanitarian_case_id"] == "HUM-X-2093662092645548206"
-    assert case["humanitarian_case_type"] == "distress_report"
+    assert case["humanitarian_case_type"] == "distress"
     assert case["humanitarian_status"] == "ongoing"
     assert case["people_reported"] == 30
     assert case["people_precision"] == "approximate"
@@ -25,7 +25,7 @@ def test_humanitarian_resolution_is_an_outcome_not_a_new_distress() -> None:
         distress=False,
         resolved=True,
     )
-    assert case["humanitarian_case_type"] == "rescue_completed"
+    assert case["humanitarian_case_type"] == "resolution"
     assert case["humanitarian_status"] == "resolved"
     assert case["people_reported"] == 47
     assert case["people_precision"] == "exact"

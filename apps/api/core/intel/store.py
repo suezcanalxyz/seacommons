@@ -31,19 +31,9 @@ def _normalised_source(value: str) -> str:
     """Stable identity for harmless source spelling variants."""
     return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
 
-_COORDINATE_SOURCE_RANK = {
-    "none": 0,
-    "place_centroid": 1,
-    "relative_place_offset": 2,
-    # A plain map screenshot with no printed coordinates, geolocated from its
-    # drop-pin pixel position plus visible place labels (map_pin_geolocate.py)
-    # — better than a bare centroid guess, but less precise than an actual
-    # printed readout.
-    "media_pin_landmark": 3,
-    "media_ocr_consensus": 4,
-    "media_ocr_text": 4,
-    "post_text": 5,
-}
+# Location-upgrade decisions live in core.intel.location_evidence
+# (metadata_quality / location_quality): evidence quality -- review status,
+# then source, then tighter uncertainty -- not source rank alone (F-04).
 
 MAX_EVENTS = 600
 DEDUP_WINDOW = 2000  # max unique hashes kept in memory
@@ -252,6 +242,31 @@ class IntelEvent:
         """Stable dedup key based on source + core content."""
         raw = f"{self.source}:{self.title}:{self.text[:120]}"
         return hashlib.blake2s(raw.encode(), digest_size=8).hexdigest()
+
+    # ── Canonical classification (docs/fixes.md Phase 2.2 / 2.3) ──────────────
+    def canonical_columns(self) -> dict[str, Any]:
+        """The explicit IntelEventDB classification columns, derived from the
+        same logic the projection uses. Dual-written next to ``meta`` for one
+        release so a SQL query can answer operational questions without
+        decoding arbitrary JSON.
+        """
+        meta = self.metadata
+        uncertainty = meta.get("location_uncertainty_m")
+        try:
+            uncertainty = float(uncertainty) if uncertainty is not None else None
+        except (TypeError, ValueError):
+            uncertainty = None
+        return {
+            "schema_version": 1,
+            "source_timestamp_utc": meta.get("source_timestamp_utc") or self.timestamp_utc,
+            "maritime_domain": self.maritime_domain(),
+            "operational_tier": self.tier(),
+            "humanitarian_case_type": meta.get("humanitarian_case_type"),
+            "incident_lifecycle": meta.get("incident_lifecycle"),
+            "location_status": meta.get("location_status"),
+            "coordinate_review_status": meta.get("coordinate_review_status"),
+            "location_uncertainty_m": uncertainty,
+        }
 
 
 def event_feature_with_lifecycle(
@@ -600,9 +615,17 @@ class IntelStore:
                     source=event.source,
                     linked_mmsi=event.linked_mmsi,
                     meta=event.metadata,
+                    **event.canonical_columns(),
                 ))
         except Exception as exc:
-            logger.debug("Intel DB persist skipped: %s", exc)
+            # WARNING, not DEBUG: this is invisible at default production log
+            # level otherwise, and this exact silence has already hidden two
+            # real incidents in this codebase (missing intel_events indexes;
+            # a swallowed auto-drift request failure). A fresh cause here --
+            # e.g. the API deployed before `alembic upgrade head` ran, so
+            # intel_events is missing a canonical_columns() column -- must be
+            # loud, since it means durable persistence is silently broken.
+            logger.warning("Intel DB persist skipped for event %s: %s", event.id, exc)
 
     def enrich_location(
         self,
@@ -628,13 +651,12 @@ class IntelStore:
                 if event.id != event_id:
                     continue
                 if event.lat is not None or event.lon is not None:
-                    previous_rank = _COORDINATE_SOURCE_RANK.get(
-                        str(event.metadata.get("coordinate_source") or "none"), 0
-                    )
-                    new_rank = _COORDINATE_SOURCE_RANK.get(
-                        str(metadata.get("coordinate_source") or "none"), 0
-                    )
-                    if new_rank <= previous_rank:
+                    # docs/fixes.md F-04: compare evidence quality, not source
+                    # rank alone -- a disputed / lone-engine coordinate can be
+                    # stored for review but must never supersede a verified one.
+                    from core.intel.location_evidence import metadata_quality
+
+                    if metadata_quality(metadata) <= metadata_quality(event.metadata):
                         return False
                 event.lat = lat
                 event.lon = lon
@@ -683,13 +705,9 @@ class IntelStore:
                     return
                 merged = dict(row.meta or {})
                 if row.lat is not None or row.lon is not None:
-                    previous_rank = _COORDINATE_SOURCE_RANK.get(
-                        str(merged.get("coordinate_source") or "none"), 0
-                    )
-                    new_rank = _COORDINATE_SOURCE_RANK.get(
-                        str(metadata.get("coordinate_source") or "none"), 0
-                    )
-                    if new_rank <= previous_rank:
+                    from core.intel.location_evidence import metadata_quality
+
+                    if metadata_quality(metadata) <= metadata_quality(merged):
                         return
                 row.lat = lat
                 row.lon = lon
@@ -704,6 +722,15 @@ class IntelStore:
                     merged.pop("area_confidence", None)
                     merged.pop("area_weather_narrowed", None)
                 row.meta = merged
+                # Keep the dual-written classification columns in step with the
+                # metadata they mirror (Phase 2.3).
+                if "coordinate_review_status" in metadata:
+                    row.coordinate_review_status = metadata["coordinate_review_status"]
+                if merged.get("location_uncertainty_m") is not None:
+                    try:
+                        row.location_uncertainty_m = float(merged["location_uncertainty_m"])
+                    except (TypeError, ValueError):
+                        pass
                 db.flush()
         except Exception as exc:
             logger.debug("Intel DB location enrichment skipped: %s", exc)
@@ -840,6 +867,17 @@ class IntelStore:
                 row.meta = metadata
                 if linked_mmsi:
                     row.linked_mmsi = linked_mmsi
+                # Dual-write the classification columns that live in metadata
+                # (Phase 2.3). Only overwrite when the new metadata carries a
+                # value, so an unrelated corroboration update never nulls them.
+                for meta_key, column in (
+                    ("humanitarian_case_type", "humanitarian_case_type"),
+                    ("incident_lifecycle", "incident_lifecycle"),
+                    ("location_status", "location_status"),
+                    ("coordinate_review_status", "coordinate_review_status"),
+                ):
+                    if metadata.get(meta_key) is not None:
+                        setattr(row, column, metadata[meta_key])
                 db.flush()
         except Exception as exc:
             logger.debug("Intel DB metadata update skipped: %s", exc)

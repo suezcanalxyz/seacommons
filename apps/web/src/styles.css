@@ -1723,8 +1723,30 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .intel-log-row strong { color: #edf8f4; font-size: 10.5px; }
 .intel-log-row span { color: #9fb6c4; font-size: 9.5px; text-transform: capitalize; }
 .intel-log-row code { color: #6f9297; font: 8.5px/1.2 var(--font-mono); }
+/* F-12: report time and a semantic location status are always visible. */
+.intel-log-time { color: #7f99a4; font-size: 9px; flex-shrink: 0; }
+.intel-log-loc--ok { color: #8fb0b6; }
+.intel-log-loc--pending { color: #f6c453; }
+.intel-log-loc--review { color: #ff8a5c; }
+.intel-log-loc--none { color: #6f8288; font-style: italic; }
 .intel-log-dot { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
 .intel-log-dot--red { color: #ff5151; background: #ff5151; }
+
+/* F-13: the complete civil + state SAR fleet, offline vessels included. */
+.sar-fleet-panel { border-top: 1px solid rgba(120, 160, 175, 0.18); margin-top: 6px; }
+.sar-fleet-panel-head { display: flex; justify-content: space-between; color: #cfe6ec; font-size: 10.5px; font-weight: 600; padding: 6px 0 4px; }
+.sar-fleet-panel-head span { color: #7f99a4; font-weight: 400; }
+.sar-fleet-group-head { display: flex; justify-content: space-between; color: #8fb0b6; font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; padding: 5px 0 2px; }
+.sar-fleet-list { list-style: none; margin: 0; padding: 0; }
+.sar-fleet-asset { display: flex; align-items: baseline; gap: 6px; width: 100%; background: none; border: 0; padding: 3px 0; text-align: left; cursor: pointer; }
+.sar-fleet-asset[disabled] { cursor: default; opacity: 0.72; }
+.sar-fleet-asset strong { color: #edf8f4; font-size: 10px; }
+.sar-fleet-org { color: #9fb6c4; font-size: 8.5px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sar-fleet-status { font-size: 8px; font-weight: 700; letter-spacing: 0.05em; flex-shrink: 0; }
+.sar-fleet-status--live { color: #46e39c; }
+.sar-fleet-status--stale { color: #f6c453; }
+.sar-fleet-status--offline { color: #6f8288; }
+.sar-fleet-status--unverified-identity { color: #ff8a5c; }
 .intel-log-dot--yellow { color: #f6c453; background: #f6c453; }
 .intel-log-dot--green { color: #46e39c; background: #46e39c; }
 
