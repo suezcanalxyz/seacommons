@@ -90,12 +90,18 @@ def _ensure_indexes(eng=None) -> None:
     from sqlalchemy import inspect
 
     eng = eng or engine()
-    existing_tables = set(inspect(eng).get_table_names())
+    inspector = inspect(eng)
+    existing_tables = set(inspector.get_table_names())
     for table in Base.metadata.tables.values():
         if table.name not in existing_tables:
             continue  # create_all() just created this table fresh, indexes included
+        present = {col["name"] for col in inspector.get_columns(table.name)}
         for index in table.indexes:
-            index.create(bind=eng, checkfirst=True)
+            # An index on a column the running database does not have yet
+            # (a model column awaiting its Alembic migration) is skipped, not
+            # a hard error -- the migration creates both together.
+            if {col.name for col in index.columns} <= present:
+                index.create(bind=eng, checkfirst=True)
 
 
 def alembic_config():

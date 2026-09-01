@@ -41,6 +41,19 @@ def test_upgrade_head_matches_the_model_metadata(tmp_path):
 
     assert migrated == reference
     assert "intel_events" in migrated
+    # Phase 2.2 canonical classification columns landed via 0002.
+    assert {
+        "schema_version", "maritime_domain", "operational_tier",
+        "humanitarian_case_type", "incident_lifecycle", "location_status",
+        "coordinate_review_status", "location_uncertainty_m",
+    } <= migrated["intel_events"]
+
+    migrated_indexes = {
+        idx["name"]
+        for idx in inspect(create_engine(migrated_url)).get_indexes("intel_events")
+    }
+    assert "ix_intel_events_humanitarian_case_type" in migrated_indexes
+    assert "ix_intel_events_incident_lifecycle" in migrated_indexes
 
 
 def test_downgrade_then_upgrade_is_clean(tmp_path):

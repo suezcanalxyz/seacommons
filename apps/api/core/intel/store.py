@@ -243,6 +243,31 @@ class IntelEvent:
         raw = f"{self.source}:{self.title}:{self.text[:120]}"
         return hashlib.blake2s(raw.encode(), digest_size=8).hexdigest()
 
+    # ── Canonical classification (docs/fixes.md Phase 2.2 / 2.3) ──────────────
+    def canonical_columns(self) -> dict[str, Any]:
+        """The explicit IntelEventDB classification columns, derived from the
+        same logic the projection uses. Dual-written next to ``meta`` for one
+        release so a SQL query can answer operational questions without
+        decoding arbitrary JSON.
+        """
+        meta = self.metadata
+        uncertainty = meta.get("location_uncertainty_m")
+        try:
+            uncertainty = float(uncertainty) if uncertainty is not None else None
+        except (TypeError, ValueError):
+            uncertainty = None
+        return {
+            "schema_version": 1,
+            "source_timestamp_utc": meta.get("source_timestamp_utc") or self.timestamp_utc,
+            "maritime_domain": self.maritime_domain(),
+            "operational_tier": self.tier(),
+            "humanitarian_case_type": meta.get("humanitarian_case_type"),
+            "incident_lifecycle": meta.get("incident_lifecycle"),
+            "location_status": meta.get("location_status"),
+            "coordinate_review_status": meta.get("coordinate_review_status"),
+            "location_uncertainty_m": uncertainty,
+        }
+
 
 def event_feature_with_lifecycle(
     event: IntelEvent,
@@ -590,6 +615,7 @@ class IntelStore:
                     source=event.source,
                     linked_mmsi=event.linked_mmsi,
                     meta=event.metadata,
+                    **event.canonical_columns(),
                 ))
         except Exception as exc:
             logger.debug("Intel DB persist skipped: %s", exc)
@@ -689,6 +715,15 @@ class IntelStore:
                     merged.pop("area_confidence", None)
                     merged.pop("area_weather_narrowed", None)
                 row.meta = merged
+                # Keep the dual-written classification columns in step with the
+                # metadata they mirror (Phase 2.3).
+                if "coordinate_review_status" in metadata:
+                    row.coordinate_review_status = metadata["coordinate_review_status"]
+                if merged.get("location_uncertainty_m") is not None:
+                    try:
+                        row.location_uncertainty_m = float(merged["location_uncertainty_m"])
+                    except (TypeError, ValueError):
+                        pass
                 db.flush()
         except Exception as exc:
             logger.debug("Intel DB location enrichment skipped: %s", exc)
@@ -825,6 +860,17 @@ class IntelStore:
                 row.meta = metadata
                 if linked_mmsi:
                     row.linked_mmsi = linked_mmsi
+                # Dual-write the classification columns that live in metadata
+                # (Phase 2.3). Only overwrite when the new metadata carries a
+                # value, so an unrelated corroboration update never nulls them.
+                for meta_key, column in (
+                    ("humanitarian_case_type", "humanitarian_case_type"),
+                    ("incident_lifecycle", "incident_lifecycle"),
+                    ("location_status", "location_status"),
+                    ("coordinate_review_status", "coordinate_review_status"),
+                ):
+                    if metadata.get(meta_key) is not None:
+                        setattr(row, column, metadata[meta_key])
                 db.flush()
         except Exception as exc:
             logger.debug("Intel DB metadata update skipped: %s", exc)
