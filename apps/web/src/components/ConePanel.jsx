@@ -9,19 +9,10 @@ const HORIZON = {
   cone_24h: '24 h drift zone',
 };
 
-const OBLIGATION_COLOR = {
-  critical: '#ff3b3b',
-  high:     '#ff7b54',
-  medium:   '#ffe07d',
-  low:      '#8bf0c5',
-};
-
-const RISK_COLOR = {
-  critical: '#ff3b3b',
-  high:     '#f97316',
-  medium:   '#ffe07d',
-  low:      '#8bf0c5',
-};
+// SeaCommons classifies; it does not score. No LOW/MEDIUM/HIGH/CRITICAL risk
+// rating is presented. Panels carry measured / scientific quantities only,
+// rendered in one neutral accent.
+const MEASURED_ACCENT = '#8bf0c5';
 
 function SectionLabel({ children }) {
   return (
@@ -46,7 +37,7 @@ function Row({ label, value, color, mono }) {
 }
 
 function ZoneBadge({ zone }) {
-  const col = OBLIGATION_COLOR[zone.obligation_level] || '#8bf0c5';
+  const col = MEASURED_ACCENT;
   return (
     <div style={{
       padding: '4px 8px', marginBottom: 4, borderRadius: 3,
@@ -146,7 +137,7 @@ function ConeView({ panel }) {
   const survivalPct = law
     ? Math.min(100, (law.survival.estimated_survival_hours / (law.duration_h || 24)) * 100)
     : null;
-  const survivalColor = law ? (RISK_COLOR[law.survival.risk_level] || '#8bf0c5') : '#8bf0c5';
+  const survivalColor = MEASURED_ACCENT;
 
   return (
     <>
@@ -187,7 +178,6 @@ function ConeView({ panel }) {
           {sim.scenarioType && <Row label="Emergency" value={sim.scenarioType.replace(/_/g, ' ')} />}
           {sim.vesselType  && <Row label="Vessel"    value={sim.vesselType.replace(/_/g, ' ')} />}
           {sim.persons     && <Row label="Persons"   value={sim.persons} />}
-          {sim.riskLevel   && <Row label="Risk"      value={sim.riskLevel} />}
           {sim.lat && <Row label="Origin" value={`${Number(sim.lat).toFixed(4)}, ${Number(sim.lon).toFixed(4)}`} mono />}
         </div>
       )}
@@ -195,20 +185,14 @@ function ConeView({ panel }) {
       {/* ── Survival estimate ── */}
       {law?.survival && (
         <div className="cone-section">
-          <SectionLabel>Survival estimate</SectionLabel>
-          <Row
-            label="Risk level"
-            value={law.survival.risk_level.toUpperCase()}
-            color={RISK_COLOR[law.survival.risk_level]}
-          />
+          <SectionLabel>Survival estimate (heuristic — not a validated model)</SectionLabel>
           <Row label="Est. survival window" value={`${law.survival.estimated_survival_hours} h`} />
           {survivalPct !== null && (
             <SurvivalBar pct={survivalPct} color={survivalColor} />
           )}
           <Row label="Sea state" value={`Bf ${law.survival.beaufort} — ${law.survival.sea_state}`} />
           <Row label="Wave height" value={`${law.survival.wave_height_m} m`} />
-          <Row label="Capsizing risk" value={`${law.survival.capsizing_risk_pct}%`}
-            color={law.survival.capsizing_risk_pct > 60 ? '#ff3b3b' : undefined} />
+          <Row label="Capsizing likelihood (heuristic)" value={`${law.survival.capsizing_risk_pct}%`} />
           {law.warnings?.length > 0 && (
             <div style={{ marginTop: 4 }}>
               {law.warnings.map((w, i) => (
@@ -449,11 +433,14 @@ function EvidenceSources({ props, feature }) {
 function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels, onTriggerIntelDrift }) {
   const props = panel.feature?.properties || {};
   const mmsi = props.linked_mmsi || props.mmsi;
+  const visual = classifyEventVisual(props);
+  const isAlarmPhone = /alarm[ _-]?phone/i.test(`${props.source || ''} ${props.verification_status || ''}`)
+    || visual.key === 'humanitarian_alarm_phone';
   const isHumanitarian = Boolean(
     props.humanitarian_case_id
+    || isAlarmPhone
     || (props.maritime_domain === 'sar' && (props.is_distress || props.kind === 'distress'))
   );
-  const isAlarmPhone = /alarm[ _-]?phone/i.test(`${props.source || ''} ${props.verification_status || ''}`);
   const [dossier, setDossier] = useState(null);
   const [dossierLoading, setDossierLoading] = useState(false);
   const [nearbyVessels, setNearbyVessels] = useState([]);
@@ -569,7 +556,6 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
 
   const lifecycle = props.incident_lifecycle
     || (['resolved', 'needs_review', 'archived'].includes(props.kind) ? props.kind : 'active');
-  const visual = classifyEventVisual(props);
   const color = visual.color;
   const when = props.timestamp_utc || props.source_timestamp_utc;
   const eventType = eventAnomalyLabel(props);
@@ -599,7 +585,6 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
         <Row label="Event" value={eventType} />
         <Row label="Status" value={lifecycle} color={color} />
         {props.verification_status && <Row label="Verification" value={String(props.verification_status).replace(/_/g, ' ')} />}
-        {props.severity && <Row label="Severity" value={props.severity} />}
         <Row label="Reported" value={when ? new Date(when).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—'} />
         {coords && <Row label="Coordinates" value={`${Number(coords[1]).toFixed(5)}, ${Number(coords[0]).toFixed(5)}`} mono />}
       </div>
@@ -608,7 +593,7 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
         <TrackGraphic feature={panel.feature} driftFeature={driftFeature} dossier={dossier} />
       </div>
 
-      {(!isHumanitarian || mmsi) && <div className="cone-section">
+      {!isAlarmPhone && (!isHumanitarian || mmsi) && <div className="cone-section">
         <SectionLabel>Professional vessel identity</SectionLabel>
         <Row label="Name" value={dossier?.static?.name || props.vessel_name || props.ship_name || '—'} />
         <Row label="MMSI" value={mmsi || '—'} mono />

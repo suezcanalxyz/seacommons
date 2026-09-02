@@ -295,9 +295,24 @@ def public_event_from_row(
     # above) or anything else from thread_reposts.
     thread_reposts = metadata.get("thread_reposts")
     repost_count = metadata.get("repost_count")
+    from core.domain.visual_category import visual_category_fields
+
+    category = visual_category_fields(
+        source=event.source,
+        event_type=event.type,
+        maritime_domain=event.maritime_domain(),
+        humanitarian_case_type=metadata.get("humanitarian_case_type"),
+        metadata=metadata,
+    )
     properties = {
         "incident_id": incident_id,
         "severity": event.severity,
+        "visual_category": category["visual_category"],
+        "visual_color": category["visual_color"],
+        "category_label": category["category_label"],
+        "maritime_domain": event.maritime_domain(),
+        "humanitarian_case_type": metadata.get("humanitarian_case_type"),
+        "location_status": metadata.get("location_status"),
         "title": event.title,
         # Same public contract as the VM feed: raw source/caller text stays
         # private; verified public self-reply notes are projected separately.

@@ -129,6 +129,33 @@ test('normalizes a public event with an explicit live expiry', async () => {
   assert.ok(event.expires_at_ms >= before + 3_599_000);
 });
 
+test('edge transport preserves the semantic category and origin metadata', async () => {
+  // Product policy §13: the edge must not strip category / coordinate source /
+  // uncertainty / origin id. It passes provider properties through verbatim.
+  const event = await normalizeEvent({
+    type: 'distress_observation',
+    source: 'Alarm Phone',
+    node: 'oracle-collector-1',
+    observed_at: '2026-08-02T12:00:00Z',
+    geometry: { type: 'Point', coordinates: [14.5, 35.5] },
+    properties: {
+      incident_id: 'ap-42',
+      visual_category: 'humanitarian_alarm_phone',
+      visual_color: '#ff3b3b',
+      maritime_domain: 'sar',
+      humanitarian_case_type: 'distress',
+      coordinate_source: 'media_ocr_text',
+      radius_m: 1500,
+      incident_lifecycle: 'needs_review',
+    },
+  }, null, 3600);
+  assert.equal(event.properties.visual_category, 'humanitarian_alarm_phone');
+  assert.equal(event.properties.visual_color, '#ff3b3b');
+  assert.equal(event.properties.coordinate_source, 'media_ocr_text');
+  assert.equal(event.properties.humanitarian_case_type, 'distress');
+  assert.equal(event.properties.incident_id, 'ap-42');
+});
+
 test('exports the canonical lifecycle and precision vocabulary', () => {
   assert.deepEqual(INCIDENT_LIFECYCLES, ['active', 'resolved', 'needs_review', 'archived']);
   assert.deepEqual(LOCATION_PRECISIONS, [

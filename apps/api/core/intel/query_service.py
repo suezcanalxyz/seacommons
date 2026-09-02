@@ -167,6 +167,15 @@ def intel_drift_collection() -> dict:
         drift = get_drift(job_id)
         if not drift or drift.get("status") != "completed":
             continue
+        from core.domain.visual_category import visual_category_fields
+
+        category = visual_category_fields(
+            source=event.source,
+            event_type=event.type,
+            maritime_domain=event.maritime_domain(),
+            humanitarian_case_type=event.metadata.get("humanitarian_case_type"),
+            metadata=event.metadata,
+        )
         for feature in (drift.get("trajectory"), drift.get("cone_24h")):
             if feature:
                 projected = dict(feature)
@@ -176,7 +185,10 @@ def intel_drift_collection() -> dict:
                         "intel_event_id": event.id,
                         "intel_title": event.title[:80],
                         "intel_source": event.source,
-                        "intel_severity": event.severity,
+                        "origin_category": category["visual_category"],
+                        "visual_category": category["visual_category"],
+                        "visual_color": category["visual_color"],
+                        "category_label": category["category_label"],
                         "auto_drift": True,
                     }
                 )

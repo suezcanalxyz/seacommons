@@ -134,6 +134,20 @@ def test_land_point_too_far_from_sea_to_snap_is_dropped(monkeypatch) -> None:
     assert precision == "unpositioned"
 
 
+def test_land_humanitarian_alarm_phone_point_stays_visible(monkeypatch) -> None:
+    # Product policy §1 / §11-B: a land Alarm Phone incident (Evros border,
+    # detention, pushback on land) is NOT removed just because it is on land.
+    # It is shown at its reported coordinate as a land humanitarian point --
+    # red, no maritime drift. (drift eligibility is blocked separately.)
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: True)
+    monkeypatch.setattr("core.intel.landmask.nearest_sea_point", lambda lat, lon: (lat, lon))
+    event = _event(coordinate_source="post_text", humanitarian_case_type="land_humanitarian")
+    event.lat, event.lon = 41.55253, 26.52697
+    geom, precision = public_geometry_and_precision(event)
+    assert geom == {"type": "Point", "coordinates": [26.52697, 41.55253]}
+    assert precision == "approximate"
+
+
 def test_on_land_point_is_snapped_to_water(monkeypatch) -> None:
     # Every plotted location is a boat. A gazetteer / relative / pin estimate
     # can land on a coastline; the projection must nudge it onto the sea.

@@ -1252,3 +1252,74 @@ Is a trajectory/cone observed data or a model output?
 ```
 
 If the UI shows a precise dot or Drift cone that cannot be traced back to defensible Location Evidence, the release fails this document even if all services are technically online.
+
+---
+
+# F-13 — SeaCommons classifies, it does not score (category-based visual taxonomy)
+
+**Branch:** `fix/humanitarian-category-drift` (base `c0f526877afd`).
+**Full write-up + production trace:** `docs/current_work.md`.
+
+## New product invariant
+
+```text
+CATEGORY          -> visual identity / colour
+LIFECYCLE         -> temporal / status presentation (outline, opacity, badge)
+EVIDENCE QUALITY  -> confidence / uncertainty
+DRIFT ELIGIBILITY -> whether modelling is allowed
+severity          -> none of the above (DB-compatibility column only, Stage 1)
+```
+
+* Alarm Phone category = **red** — maritime point, land point, region area,
+  drift origin and drift trajectory/cone alike. Lifecycle never changes it; a
+  resolved Alarm Phone is not green.
+* Land Alarm Phone = **visible** red land-humanitarian point, **no maritime
+  drift**.
+* Sea Alarm Phone specific point = **automatic drift**, persisted, exposed on
+  `/api/v1/live/drifts`, rendered.
+* Region-only Alarm Phone = **visible area, no drift**.
+
+## Confirmed bugs fixed
+
+| # | Bug | Fix |
+| --- | --- | --- |
+| F-13a | `/api/v1/live/drifts` returned `[]` for every current Alarm Phone maritime incident — `public_drift_collection` gated on `state == "active"`, but real incidents are `needs_review` / `resolved` | withhold the cone only for `resolved` / `archived`; also require `is_auto_drift_eligible()` so a stale region-only `drift_result` cannot paint a trajectory |
+| F-13b | Public Live ran a second in-browser scientific drift model and threw away the persisted VM result (`setIntelDrifts({features:[]})`) | one pipeline: backend/worker computes, frontend visualizes; browser drift is now only the user-triggered simulation |
+| F-13c | Land Alarm Phone incidents dropped from the map (`public_geometry_and_precision` removed any on-land coordinate) | `land_humanitarian` cases plot at their reported coordinate; maritime drift still blocked by the eligibility gate |
+| F-13d | Colour driven by lifecycle (green/amber/grey) and `intel_severity` (map + drift layers); `classifyEventVisual` fell back to `severity`; `ConePanel` showed `RISK_COLOR` + `Risk level: HIGH`; context publication gated on `severity == "low"` | canonical `core.domain.visual_category` taxonomy; colour = `visual_category`; lifecycle = opacity + outline dash; panel shows measured quantities + a `Category` row; context publication is corroboration-based |
+| F-13e | `sar-case-*` simulation layers in no `LAYER_GROUPS` entry — un-toggleable, outside the public allow-list | new `simulation` layer group; simulation features tagged `trajectory_kind: user_simulation` |
+| F-13f | Public Live still styled OSINT markers by `severity`: `intel-cat-*` and `intel-events-layer` took `circle-stroke-width` / `circle-stroke-color` from a `['match', ['get', 'severity'], ...]` ramp; `intel-vessel-links-layer` `line-color` and `mda-anomaly-layer` `circle-stroke-width` did the same | marker outline is now a static contrast stroke (`#04131a`, width `1.1`); the correlation line inherits the linked signal's `visual_color`; MDA anomaly stroke width is constant |
+| F-13g | The report panel showed a full "Professional vessel identity" block (MMSI / IMO / flag) and the feed row headlined `MMSI <n>` for a humanitarian Alarm Phone case that happened to carry a `linked_mmsi` | `ConePanel` hides the vessel-identity block for an Alarm Phone / `humanitarian_alarm_phone` signal; `IntelDashboard` never falls back to a bare MMSI headline for a humanitarian row (uses the incident title / "Distress report"). Backend still emits `linked_mmsi` for vessel-episode joins — stripping it there is a separate product call. Also removed a duplicate `Category` row in the panel header. |
+
+## Regression tests added
+
+`tests/test_visual_category.py`, `tests/test_public_geometry.py`
+(`land_humanitarian` visible), `tests/test_live_feed.py`
+(`needs_review` keeps drift; region-only does not; drift carries category not
+severity; context publication ignores severity),
+`apps/web/src/features/live/eventVisual.test.js` (Alarm Phone always red;
+`classifyEventVisual` never falls back to severity),
+`apps/web/src/simulation/liveTracking.test.js` (`needs_review` keeps the
+persisted drift), `apps/edge/src/live.test.js` (edge preserves category +
+origin metadata).
+
+## Suite results on the branch
+
+```
+backend:  544 passed
+web:      simulation 26 / live 26 / api 3 / map 5  (all pass)
+edge:     10 passed
+lint + typecheck + vite build: green
+```
+
+## Not done here (needs operator decision — see docs/current_work.md)
+
+* Whether a **resolved** Alarm Phone stays on the public map (conflicts with
+  the tested `lifecycle.is_within_live_window` invariant).
+* Cleaning the stuck `drift_results` row `intel:aa91d1a0` (`status =
+  computing`) — a production DB row mutation.
+* Stage 2 severity removal: decouple the remaining internal ingestion /
+  alerting thresholds, then remove `LiveSignalProperties.severity` and drop
+  `intel_events.severity` via a reversible Alembic migration after a complete
+  reader/writer audit.
+* Land-coordinate privacy confirmation for border/detention cases.

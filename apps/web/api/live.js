@@ -50,17 +50,29 @@ function alertFallback() {
 function driftFallback(payload) {
   const features = (payload?.features || [])
     .filter((feature) => ['LineString', 'Polygon', 'Point'].includes(feature?.geometry?.type))
-    .map((feature) => ({
-      type: 'Feature',
-      geometry: feature.geometry,
-      properties: {
-        type: feature.properties?.type || null,
-        intel_severity: 'medium',
-        intel_source: 'SeaCommons engine',
-        auto_drift: true,
-        compatibility_mode: true,
-      },
-    }));
+    .map((feature) => {
+      const props = feature.properties || {};
+      return {
+        type: 'Feature',
+        geometry: feature.geometry,
+        // Preserve the identity + semantic category the upstream feature
+        // carries (product policy §13: the edge transport must not strip the
+        // drift id, origin event id, category or uncertainty). Colour is a
+        // pure function of category, never a severity.
+        properties: {
+          type: props.type || null,
+          intel_event_id: props.intel_event_id || null,
+          origin_category: props.origin_category || props.visual_category || null,
+          visual_category: props.visual_category || props.origin_category || null,
+          visual_color: props.visual_color || null,
+          category_label: props.category_label || null,
+          radius_m: props.radius_m ?? null,
+          intel_source: props.intel_source || 'SeaCommons engine',
+          auto_drift: true,
+          compatibility_mode: true,
+        },
+      };
+    });
   return {
     type: 'FeatureCollection',
     features,

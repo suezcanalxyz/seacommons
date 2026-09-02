@@ -126,3 +126,30 @@ test('removes server and browser drifts as soon as an incident is resolved', () 
   );
   assert.deepEqual(merged.features, []);
 });
+
+test('keeps the persisted operational drift for a needs_review incident', () => {
+  // needs_review is an OPEN lifecycle state — the search is not over, so the
+  // persisted backend drift keeps rendering (matches core.live.feed).
+  const needsReviewSignal = {
+    ...signal,
+    properties: { ...signal.properties, incident_lifecycle: 'needs_review' },
+  };
+  const serverTrajectory = {
+    ...trajectory,
+    properties: {
+      ...trajectory.properties,
+      intel_event_id: 'x123',
+      visual_category: 'humanitarian_alarm_phone',
+      visual_color: '#ff3b3b',
+    },
+  };
+  const merged = mergeLiveDrifts(
+    { type: 'FeatureCollection', features: [serverTrajectory] },
+    null,
+    [needsReviewSignal],
+    new Date('2026-08-01T10:00:00Z'),
+  );
+  const lines = merged.features.filter((f) => f.geometry.type === 'LineString');
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].properties.visual_color, '#ff3b3b');
+});

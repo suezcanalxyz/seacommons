@@ -30,7 +30,14 @@ export const SIGNAL_CATEGORIES = [
 // Operational presentation taxonomy for grouped vessel episodes. Unlike the
 // broad maritime domain, this describes what the signal actually says. It is
 // shared by the map triangle, compact log, report header and legend.
+// Canonical semantic visual taxonomy. Mirror of
+// apps/api/core/domain/visual_category.py — colour is a pure function of
+// semantic CATEGORY, never severity / OCR confidence / lifecycle.
 export const EVENT_VISUAL_CATEGORIES = [
+  { key: 'humanitarian_alarm_phone', label: 'Alarm Phone (humanitarian)', color: '#ff3b3b' },
+  { key: 'civil_sar', label: 'Civil SAR / NGO', color: '#4ade80' },
+  { key: 'state_sar', label: 'State SAR / Coast Guard', color: '#38bdf8' },
+  { key: 'distress', label: 'Maritime distress', color: '#ff3b3b' },
   { key: 'navigation_casualty', label: 'Unable to manoeuvre / aground', color: '#ff4d5e' },
   { key: 'spoofing', label: 'AIS spoofing / impossible movement', color: '#c084fc' },
   { key: 'ais_gap', label: 'AIS gap / dark activity', color: '#fb923c' },
@@ -67,11 +74,26 @@ function eventTokens(properties = {}) {
   ].filter(Boolean).join(' ').toLowerCase().replace(/[\s-]+/g, '_');
 }
 
+/**
+ * Semantic visual category for a signal / vessel episode / drift feature.
+ *
+ * CATEGORY determines visual identity. It is NEVER inferred from `severity`
+ * or a LOW/MEDIUM/HIGH/CRITICAL rating, and lifecycle never changes the
+ * category (a resolved Alarm Phone is still red — lifecycle is communicated
+ * separately through outline / opacity / badge).
+ */
 export function classifyEventVisual(properties = {}) {
-  const lifecycle = properties.incident_lifecycle
-    || (['resolved', 'needs_review', 'archived'].includes(properties.kind) ? properties.kind : null);
-  if (lifecycle === 'resolved') return _VISUAL_BY_KEY.resolved;
-  if (lifecycle === 'archived') return _VISUAL_BY_KEY.archived;
+  // Alarm Phone is red because of its category/source role: maritime point,
+  // land point, region area, drift origin and drift trajectory/cone alike.
+  if (isAlarmPhoneSource(properties.source)
+      || properties.origin_category === 'humanitarian_alarm_phone'
+      || properties.visual_category === 'humanitarian_alarm_phone') {
+    return _VISUAL_BY_KEY.humanitarian_alarm_phone;
+  }
+  // Trust an explicit canonical category assigned by the backend contract.
+  if (properties.visual_category && _VISUAL_BY_KEY[properties.visual_category]) {
+    return _VISUAL_BY_KEY[properties.visual_category];
+  }
 
   const tokens = eventTokens(properties);
   const navStatus = Number(properties.latest_nav_status);
@@ -90,8 +112,15 @@ export function classifyEventVisual(properties = {}) {
   }
   if (properties.maritime_domain === 'piracy' || /piracy|hijack|armed_robbery/.test(tokens)) return _VISUAL_BY_KEY.piracy;
   if (properties.maritime_domain === 'environmental' || /pollution|oil_spill|environmental/.test(tokens)) return _VISUAL_BY_KEY.environmental;
-  if (lifecycle === 'needs_review' || properties.severity === 'medium') return _VISUAL_BY_KEY.needs_review;
-  if (['critical', 'high'].includes(properties.severity)) return _VISUAL_BY_KEY.navigation_casualty;
+
+  // Humanitarian / SAR distress — red, by category, not severity.
+  const humanitarianCaseType = String(properties.humanitarian_case_type || '').toLowerCase();
+  if ((humanitarianCaseType && !['advocacy', 'unknown_humanitarian'].includes(humanitarianCaseType))
+      || properties.kind === 'distress'
+      || properties.type === 'distress'
+      || (properties.maritime_domain === 'sar' && properties.is_distress)) {
+    return _VISUAL_BY_KEY.distress;
+  }
   return _VISUAL_BY_KEY.context;
 }
 
