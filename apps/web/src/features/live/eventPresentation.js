@@ -65,3 +65,33 @@ export function locationLabel(properties = {}, coords = null) {
   }
   return { text: 'POSITION NOT EXTRACTED', tone: 'none' };
 }
+
+/**
+ * Case-specific assessment view (docs/prompt.md PHASE 1, audit IN-1..IN-4).
+ *
+ * `properties.event_assessment` is the backend EventAssessment
+ * (core/intel/assessment.py). Returns a normalized display model, or `null`
+ * when no assessment is attached -- the panel then falls back to the static
+ * `descriptionOf(type)` category note.
+ */
+export function assessmentView(properties = {}) {
+  const a = properties && properties.event_assessment;
+  if (!a || typeof a !== 'object') return null;
+  const rawConfidence = Number(a.confidence);
+  const confidencePct = Number.isFinite(rawConfidence)
+    ? Math.round((rawConfidence <= 1 ? rawConfidence * 100 : rawConfidence))
+    : null;
+  const list = (value) => (Array.isArray(value) ? value.filter((x) => typeof x === 'string' && x) : []);
+  return {
+    observation: typeof a.observation === 'string' ? a.observation : '',
+    interpretation: typeof a.interpretation === 'string' ? a.interpretation : '',
+    evidenceLevel: String(a.evidence_level || '').replace(/_/g, ' '),
+    confidencePct,
+    supporting: list(a.supporting_evidence),
+    contradicting: list(a.contradicting_evidence),
+    caveats: list(a.caveats),
+    recommendedAction: typeof a.recommended_action === 'string' ? a.recommended_action : null,
+    ruleIds: list(a.rule_ids),
+    version: typeof a.classification_version === 'string' ? a.classification_version : null,
+  };
+}

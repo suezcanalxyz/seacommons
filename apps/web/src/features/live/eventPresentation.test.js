@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { locationLabel, relativeTime } from './eventPresentation.js';
+import { assessmentView, locationLabel, relativeTime } from './eventPresentation.js';
 
 const NOW = Date.parse('2026-09-01T12:00:00Z');
 
@@ -45,4 +45,38 @@ test('missing coordinate reads as a reason, not "position unavailable"', () => {
   assert.equal(locationLabel({ media_transport: 'x_media_ocr' }, null).text, 'OCR PROCESSING');
   assert.equal(locationLabel({ coordinate_source: 'region_area' }, null).text, 'REGION ONLY');
   assert.equal(locationLabel({}, null).text, 'POSITION NOT EXTRACTED');
+});
+
+test('assessmentView returns null when no assessment is attached', () => {
+  assert.equal(assessmentView({}), null);
+  assert.equal(assessmentView({ event_assessment: 'nope' }), null);
+});
+
+test('assessmentView normalizes the backend EventAssessment', () => {
+  const view = assessmentView({
+    event_assessment: {
+      observation: 'AIS navigation status 2 persisted across 4 reports over 13 minutes, speed 0.3 kn.',
+      interpretation: 'The vessel is reporting itself as not under command...',
+      evidence_level: 'sustained_observation',
+      confidence: 0.62,
+      supporting_evidence: ['sustained: 4 reports over 13 minutes'],
+      contradicting_evidence: [],
+      caveats: ['AIS navigation status is reported by the vessel; the operational cause is not independently confirmed.'],
+      recommended_action: 'Monitor as vessel safety context.',
+      rule_ids: ['ais_nav_status:2'],
+      classification_version: 'assessment/v1',
+    },
+  });
+  assert.equal(view.evidenceLevel, 'sustained observation');
+  assert.equal(view.confidencePct, 62);
+  assert.equal(view.supporting.length, 1);
+  assert.match(view.caveats[0], /not independently confirmed/);
+  assert.equal(view.recommendedAction, 'Monitor as vessel safety context.');
+});
+
+test('two different assessments produce different interpretations', () => {
+  const brief = assessmentView({ event_assessment: { interpretation: 'A', observation: 'x', evidence_level: 'single_observation', confidence: 0.2 } });
+  const sustained = assessmentView({ event_assessment: { interpretation: 'B', observation: 'y', evidence_level: 'sustained_observation', confidence: 0.7 } });
+  assert.notEqual(brief.interpretation, sustained.interpretation);
+  assert.ok(sustained.confidencePct > brief.confidencePct);
 });

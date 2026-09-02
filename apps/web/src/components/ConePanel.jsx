@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import { classifyEventVisual, descriptionOf, eventAnomalyLabel } from '../features/intel/categories.js';
+import { assessmentView } from '../features/live/eventPresentation.js';
 
 const HORIZON = {
   cone_6h:  '6 h drift zone',
@@ -560,8 +561,12 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
   const when = props.timestamp_utc || props.source_timestamp_utc;
   const eventType = eventAnomalyLabel(props);
   const sanctions = dossier?.identity?.sanctions || [];
-  const confidence = props.confidence ?? props.anomaly_confidence;
-  const evidenceLevel = props.evidence_level
+  const assessment = assessmentView(props);
+  const confidence = assessment?.confidencePct != null
+    ? assessment.confidencePct / 100
+    : props.confidence ?? props.anomaly_confidence;
+  const evidenceLevel = assessment?.evidenceLevel
+    || props.evidence_level
     || (isHumanitarian ? props.verification_level || 'public source report' : 'derived from maritime data');
   const speedSamples = (dossier?.track_points || [])
     .map((point) => Number(point.sog))
@@ -636,6 +641,15 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
                 ? 'Alarm Phone is treated as a direct, specialised humanitarian source. The report remains distinct from official authority confirmation.'
                 : 'This records what the cited humanitarian source reported; conflicting or later updates remain visible in the timeline.'}
             </p>
+          </>
+        ) : assessment ? (
+          <>
+            {assessment.observation && <p className="intel-report-note"><strong>Observed:</strong> {assessment.observation}</p>}
+            <p className="intel-report-note">{assessment.interpretation || descriptionOf(props.type)}</p>
+            {assessment.caveats.map((caveat) => (
+              <p key={caveat} className="intel-report-note"><em>{caveat}</em></p>
+            ))}
+            <p className="intel-report-note intel-report-note--muted">Category: {descriptionOf(props.type)}</p>
           </>
         ) : (
           <p className="intel-report-note">{props.detection_reason || props.detail || descriptionOf(props.type)}</p>
@@ -822,8 +836,15 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
       ) : (
         <div className="cone-section">
           <SectionLabel>Evidence & forensic assessment</SectionLabel>
-          <Row label="Observation" value={props.detection_reason || props.detail || eventType} />
-          <Row label="Interpretation" value={descriptionOf(props.type)} />
+          <Row label="Observation" value={assessment?.observation || props.detection_reason || props.detail || eventType} />
+          <Row label="Interpretation" value={assessment?.interpretation || descriptionOf(props.type)} />
+          {assessment && <Row label="Category" value={descriptionOf(props.type)} />}
+          {assessment?.contradicting?.length > 0 && (
+            <Row label="Contradicting" value={assessment.contradicting.join('; ')} />
+          )}
+          {assessment?.recommendedAction && (
+            <Row label="Recommended" value={assessment.recommendedAction} />
+          )}
           <Row label="Evidence level" value={String(evidenceLevel).replace(/_/g, ' ')} />
           <Row
             label="Confidence"

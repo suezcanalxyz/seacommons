@@ -112,3 +112,30 @@ test('replaces stale drift features when an operator event update arrives', () =
   assert.equal(result.features[1].properties.intel_title, 'Updated drift');
   assert.equal(result.features[1].properties.version, undefined);
 });
+
+test('carries event_assessment across the edge transport (PHASE 1 parity)', () => {
+  const feature = edgeEventToFeature(edgeEvent({
+    properties: {
+      incident_id: 'incident-1',
+      incident_lifecycle: 'active',
+      event_assessment: {
+        observation: 'Speed changed from 8.2 kn to 0.2 kn over 5 fixes.',
+        interpretation: 'An abrupt stop was detected...',
+        evidence_level: 'sustained_observation',
+        confidence: 0.55,
+      },
+    },
+  }));
+  assert.equal(
+    feature.properties.event_assessment.interpretation,
+    'An abrupt stop was detected...',
+  );
+  assert.equal(feature.properties.event_assessment.evidence_level, 'sustained_observation');
+});
+
+test('drops a non-object event_assessment', () => {
+  const feature = edgeEventToFeature(edgeEvent({
+    properties: { incident_id: 'incident-1', incident_lifecycle: 'active', event_assessment: 'nope' },
+  }));
+  assert.equal(feature.properties.event_assessment, undefined);
+});

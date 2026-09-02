@@ -92,6 +92,10 @@ export function edgeEventToFeature(event) {
         ? { repost_count: repostCount }
         : {}),
       ...(Array.isArray(props.thread_reposts) ? { thread_reposts: props.thread_reposts } : {}),
+      // Case-specific assessment (core/intel/assessment.py). Carried across the
+      // edge transport so the panel renders the same interpretation on
+      // live.seacommons.org as on the VM (audit IN-1..IN-4, prompt.md PHASE 1).
+      ...(isRecord(props.event_assessment) ? { event_assessment: props.event_assessment } : {}),
       ...(typeof props.area_weather_narrowed === 'boolean'
         ? { area_weather_narrowed: props.area_weather_narrowed }
         : {}),
