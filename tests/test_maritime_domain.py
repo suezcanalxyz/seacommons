@@ -34,7 +34,9 @@ def test_explicit_metadata_domain_wins() -> None:
     assert event.maritime_domain() == "smuggling"
 
 
-def test_legacy_nuc_fusion_alert_is_maritime_security() -> None:
+def test_bare_nuc_fusion_alert_is_safety_context() -> None:
+    # docs/prompt.md PHASE 4: a nav-status-only fusion alert is safety
+    # context; grey_zone requires an independent security signal.
     event = _event(
         type="correlated_alert",
         title="Vessel unable to manoeuvre — ST. OLGA",
@@ -42,6 +44,19 @@ def test_legacy_nuc_fusion_alert_is_maritime_security() -> None:
             "alert_type": "vessel_casualty",
             "maritime_domain": "safety",
             "contributing": ["aisinc:352001914:not_under_command"],
+        },
+    )
+    assert event.maritime_domain() == MaritimeDomain.SAFETY.value
+
+
+def test_nuc_fusion_alert_with_jamming_is_grey_zone() -> None:
+    event = _event(
+        type="correlated_alert",
+        title="Vessel unable to manoeuvre + GNSS jamming — ST. OLGA",
+        metadata={
+            "alert_type": "vessel_casualty",
+            "maritime_domain": "safety",
+            "contributing": ["aisinc:352001914:not_under_command", "jamming_zone_overlap"],
         },
     )
     assert event.maritime_domain() == MaritimeDomain.GREY_ZONE.value

@@ -66,16 +66,82 @@ def test_aground_emits_only_once_sustained(monitor) -> None:
     assert event.metadata["case_type"] == "vessel_incident"
 
 
-def test_not_under_command_is_operator_review_not_auto_published(monitor) -> None:
+def test_not_under_command_is_safety_context_not_security(monitor) -> None:
+    # docs/prompt.md PHASE 4: a nav-status self-report is safety context, not
+    # grey_zone, and does not on its own carry a drift model.
     for _ in range(3):
         monitor.on_position("444555666", "TANKER B", 33.0, 15.0, 0.0, 2)
         monitor._clock.advance(400)
     assert len(monitor._added) == 1
+    meta = monitor._added[0].metadata
     assert monitor._added[0].type == "vessel_incident"
-    assert monitor._added[0].metadata["publication_status"] == "internal"
-    assert monitor._added[0].metadata["is_distress"] is False
-    assert monitor._added[0].metadata["maritime_domain"] == "grey_zone"
-    assert monitor._added[0].metadata["drift_eligible"] is True
+    assert meta["publication_status"] == "internal"
+    assert meta["is_distress"] is False
+    assert meta["maritime_domain"] == "safety"
+    assert monitor._added[0].maritime_domain() == "safety"
+    assert meta["kind"] == "context"
+    assert meta["drift_eligible"] is False
+    assert meta["event_assessment"]["evidence_level"] == "sustained_observation"
+
+
+def test_not_under_command_in_a_jamming_zone_is_corroborated_grey_zone(monitor, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "core.mda.jamming.jamming.in_jamming_zone", lambda lat, lon: 0.9, raising=False
+    )
+    for _ in range(3):
+        monitor.on_position("444555777", "CARGO C", 33.0, 15.0, 0.0, 2)
+        monitor._clock.advance(400)
+    meta = monitor._added[0].metadata
+    assert meta["in_jamming_zone"] is True
+    assert meta["maritime_domain"] == "grey_zone"
+    assert monitor._added[0].maritime_domain() == "grey_zone"
+
+
+def test_sustained_nuc_reaches_humanitarian_live_as_safety_context() -> None:
+    # docs/prompt.md PHASE 4 / PHASE 12: a sustained not-under-command report
+    # is visible in Humanitarian Live as non-distress safety context.
+    from core.intel.store import IntelEvent, intel_store
+    from core.live.feed import public_signal_collection
+
+    event = IntelEvent(
+        id="vim-nuc-live-1",
+        type="vessel_incident",
+        severity="medium",
+        lat=34.5,
+        lon=13.0,
+        title="Vessel unable to manoeuvre — TANKER Z",
+        source="ais",
+        linked_mmsi="219000001",
+        timestamp_utc="2026-08-30T00:00:00+00:00",
+        metadata={
+            "source_policy": "official_api",
+            "verification_status": "ais_transponder",
+            "is_distress": False,
+            "publication_status": "internal",
+            "ais_nav_status_kind": "not_under_command",
+            "maritime_domain": "safety",
+            "kind": "context",
+        },
+    )
+    assert intel_store.add(event) is True
+    try:
+        hum = public_signal_collection(mode="humanitarian", days=60)
+        feats = {str(f["properties"]["id"]): f for f in hum["features"]}
+        assert "intel:vim-nuc-live-1" in feats
+        props = feats["intel:vim-nuc-live-1"]["properties"]
+        assert props["kind"] == "context"
+        assert props.get("safety_context") is True
+        sec = {
+            str(f["properties"]["id"])
+            for f in public_signal_collection(mode="security", days=60)["features"]
+        }
+        assert "intel:vim-nuc-live-1" not in sec
+    finally:
+        with intel_store._lock:
+            intel_store._events = type(intel_store._events)(
+                (e for e in intel_store._events if e.id != "vim-nuc-live-1"),
+                maxlen=intel_store._events.maxlen,
+            )
 
 
 def test_restricted_manoeuvrability_is_ignored(monitor) -> None:

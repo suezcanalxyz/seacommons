@@ -175,11 +175,39 @@ class IntelEvent:
             )
         )
 
+    _SECURITY_CORROBORATION = frozenset({
+        "gnss_jamming", "jamming", "spoofing", "impossible_movement",
+        "impossible_speed", "infrastructure", "infra_proximity", "cable_proximity",
+    })
+
+    def _has_security_corroboration(self) -> bool:
+        """An independent security signal beside a vessel's nav-status report
+        (docs/prompt.md PHASE 4): GNSS jamming, spoofing, impossible movement,
+        an infrastructure correlation."""
+        meta = self.metadata
+        if meta.get("security_corroboration") or meta.get("in_jamming_zone") is True:
+            return True
+        corr = meta.get("corroboration")
+        values = corr if isinstance(corr, (list, tuple, set)) else ([corr] if corr else [])
+        if any(str(v).lower() in self._SECURITY_CORROBORATION for v in values):
+            return True
+        if self.type == "correlated_alert":
+            blob = " ".join((
+                str(self.title or ""),
+                json.dumps(meta.get("contributing") or [], default=str),
+                json.dumps(meta.get("contributing_sources") or [], default=str),
+            )).lower()
+            return any(m in blob for m in ("jamming", "spoof", "impossible", "infrastructure", "cable"))
+        return False
+
     def maritime_domain(self) -> str:
-        # Older fusion records labelled every vessel casualty as ``safety``.
-        # Correct NUC history at projection time without rewriting the DB.
         if self.is_vessel_mobility_incident():
-            return MaritimeDomain.GREY_ZONE.value
+            # docs/prompt.md PHASE 4 (audit NUC-1): a vessel's own AIS
+            # navigation-status report is *safety* context by default. It
+            # only becomes grey_zone with independent corroboration.
+            if self._has_security_corroboration():
+                return MaritimeDomain.GREY_ZONE.value
+            return MaritimeDomain.SAFETY.value
         explicit = self.metadata.get("maritime_domain")
         if explicit:
             return explicit

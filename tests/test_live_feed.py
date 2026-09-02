@@ -276,7 +276,9 @@ def test_anonymous_infrastructure_cue_stays_operator_only() -> None:
     assert _public_intel_feature(event, allowed_domains=frozenset({"grey_zone"})) is None
 
 
-def test_legacy_nuc_alert_gets_security_episode_and_drift_contract() -> None:
+def test_bare_nuc_alert_is_safety_context_not_a_security_drift_contract() -> None:
+    # docs/prompt.md PHASE 4: a nav-status-only alert projects as safety
+    # context, not a grey_zone security case, and carries no drift contract.
     event = IntelEvent(
         id="legacy-olga",
         type="correlated_alert",
@@ -292,17 +294,16 @@ def test_legacy_nuc_alert_gets_security_episode_and_drift_contract() -> None:
             "contributing": ["aisinc:352001914:not_under_command"],
         },
     )
+    assert event.maritime_domain() == "safety"
 
     feature = _public_intel_feature(
-        event, allowed_domains=frozenset({"grey_zone"})
+        event, allowed_domains=frozenset({"sar", "safety"})
     )
-
     assert feature is not None
     properties = feature["properties"]
-    assert properties["maritime_domain"] == "grey_zone"
+    assert properties["maritime_domain"] == "safety"
     assert properties["ais_nav_status_kind"] == "not_under_command"
-    assert properties["drift_eligible"] is True
-    assert properties["drift_vessel_type"] == "cargo"
+    assert properties.get("drift_eligible") is not True
 
 
 def test_unlabelled_context_stays_operator_only() -> None:

@@ -56,6 +56,23 @@ _EPISODE_UPDATE_INTERVAL_S = 5 * 60
 _STATE_TTL_S = 12 * 3600
 
 
+def _nuc_assessment_metadata(
+    reports: int | None, sustained_s: int | None, sog: float | None, in_jamming_zone: bool
+) -> dict:
+    """Case-specific EventAssessment for a not-under-command report (PHASE 1)."""
+    try:
+        from core.intel.assessment import assess_not_under_command
+
+        return assess_not_under_command(
+            reports=int(reports or 0),
+            span_s=float(sustained_s or 0),
+            speed_kn=float(sog or 0.0),
+            gnss_jamming=bool(in_jamming_zone),
+        ).as_metadata()
+    except Exception:  # pragma: no cover - never block an emit on the assessment
+        return {}
+
+
 def _event_id(mmsi: str, kind: str) -> str:
     """Deterministic machine ID that fits IntelEventDB.id (32 chars)."""
     suffix = {
@@ -261,11 +278,17 @@ class VesselIncidentMonitor:
                 "verification_status": "ais_transponder",
                 "is_distress": is_distress,
                 "publication_status": "published" if auto_publish else "internal",
+                # docs/prompt.md PHASE 4 (audit NUC-1/NUC-5): a nav-status
+                # self-report is safety context; it is only grey_zone when an
+                # independent security signal (here: an active GNSS jamming
+                # zone) corroborates it. IntelEvent.maritime_domain() derives
+                # the same thing from in_jamming_zone.
                 "maritime_domain": (
-                    "grey_zone" if kind == "not_under_command"
-                    else "safety" if kind == "aground"
+                    "grey_zone" if (kind == "not_under_command" and in_jamming_zone)
+                    else "safety" if kind in {"not_under_command", "aground"}
                     else "sar"
                 ),
+                **({"kind": "context"} if not is_distress else {}),
                 "report_kind": "distress" if is_distress else "vessel_incident",
                 "coordinate_source": "ais_position",
                 "location_uncertainty_m": 300,
@@ -283,12 +306,20 @@ class VesselIncidentMonitor:
                     **({"sog": round(float(sog), 2)} if sog is not None else {}),
                     **({"nav_status": int(nav_status)} if nav_status is not None else {}),
                 }],
-                "drift_eligible": kind in {"not_under_command", "disabled", "adrift"},
+                # A bare navigation-status observation must not, on its own,
+                # spawn a drift model (audit NUC-4). Only an explicitly
+                # disabled/adrift report keeps the flag.
+                "drift_eligible": kind in {"disabled", "adrift"},
                 "drift_event_id": f"intel:{_event_id(mmsi, kind)}",
                 "drift_vessel_type": "cargo",
                 "jamming_score": round(jam_score, 2),
                 "in_jamming_zone": in_jamming_zone,
                 **({"detection_reason": rule_reason} if rule_reason else {}),
+                **(
+                    _nuc_assessment_metadata(reports, sustained_s, sog, in_jamming_zone)
+                    if kind == "not_under_command"
+                    else {}
+                ),
             },
         )
         added = intel_store.add(event, dedup_key=_event_id(mmsi, kind))
