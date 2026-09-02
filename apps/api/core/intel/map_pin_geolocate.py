@@ -8,7 +8,8 @@ only ever finds a position when one is printed as text, so those images
 silently fall back to a rough place-name/region centroid.
 
 This module recovers a real position from the image itself:
-  1. Detect the pin marker's pixel position (colour-based blob detection).
+  1. Detect the pin marker's pixel position (colour + HSV-shape detectors,
+     ranked candidates -- see core.intel.image_pin).
   2. OCR the full image for word-level bounding boxes.
   3. Match words (and adjacent-word phrases) against a small, precise
      gazetteer of unambiguous coastal towns/islands.
@@ -56,64 +57,19 @@ def _normalize_label(text: str) -> str:
     return re.sub(r"[^a-z ]", "", stripped.lower()).strip()
 
 
-def _blob_from_mask(mask, width: int, height: int) -> Optional[tuple[int, int]]:
-    """A single compact, isolated marker blob from a boolean mask; its tip."""
-    import numpy as np
-
-    count = int(mask.sum())
-    if count < 10 or count > 0.02 * width * height:
-        return None
-    ys, xs = np.nonzero(mask)
-    box_w = int(xs.max() - xs.min()) + 1
-    box_h = int(ys.max() - ys.min()) + 1
-    # A single pin icon is small and compact; a large/sparse bounding box
-    # means multiple unrelated elements were picked up.
-    if box_w > 0.1 * width or box_h > 0.14 * height:
-        return None
-    # Fill ratio: a real marker fills a good fraction of its bounding box;
-    # scattered specks do not.
-    if count < 0.20 * box_w * box_h:
-        return None
-    center_x = int(round(float(xs.mean())))
-    # Circular incident markers encode their position at the centre; a tall
-    # teardrop pin encodes it at the bottom tip.
-    aspect = box_h / max(1, box_w)
-    tip_y = int(round(float(ys.mean()))) if 0.8 <= aspect <= 1.25 else int(ys.max())
-    return center_x, tip_y
-
-
 def _detect_marker_pixel(image) -> Optional[tuple[int, int]]:
     """Find a single compact drop-pin / circle marker; None if none/ambiguous.
 
-    Alarm Phone's map screenshots come from several tools, so the marker is
-    not always Google-red. Try, in order: the classic map red, then a
-    high-saturation blue and an amber/orange marker, then a dark
-    high-contrast teardrop. Each candidate must still be small, compact and
-    isolated (see _blob_from_mask) so a basemap accent can't pass.
+    Delegates to `image_pin`, which runs the colour masks and a
+    colour-independent HSV shape detector, ranks every blob and only returns
+    a pin when one candidate is unambiguously the marker (docs/prompt.md §6).
     """
-    import numpy as np
+    from core.intel.image_pin import detect_pin
 
-    rgb = image.convert("RGB")
-    pixels = np.asarray(rgb)
-    r = pixels[:, :, 0].astype(int)
-    g = pixels[:, :, 1].astype(int)
-    b = pixels[:, :, 2].astype(int)
-    height, width = r.shape
-
-    for mask in (
-        # classic map-pin red
-        (r > 150) & (g < 110) & (b < 110) & (r - g > 60) & (r - b > 60),
-        # saturated blue marker (compactness check rejects the water body)
-        (b > 150) & (r < 120) & (g < 150) & (b - r > 55) & (b - g > 25),
-        # amber / orange marker
-        (r > 180) & (g > 90) & (g < 190) & (b < 100) & (r - b > 90) & (r - g > 25),
-        # bright yellow circular incident marker
-        (r > 205) & (g > 205) & (b < 135) & (r - b > 80) & (g - b > 80),
-    ):
-        tip = _blob_from_mask(np.asarray(mask), width, height)
-        if tip is not None:
-            return tip
-    return None
+    tip = detect_pin(image)
+    if tip is None:
+        return None
+    return int(round(tip[0])), int(round(tip[1]))
 
 
 def _ocr_pass(image, *, executable: str, block_prefix: str) -> list[dict]:

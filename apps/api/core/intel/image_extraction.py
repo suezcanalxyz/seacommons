@@ -160,6 +160,24 @@ def _distress_terms_from_text(text: str) -> list[str]:
     return sorted({term for term in DISTRESS_KW if term in lowered})
 
 
+def _attach_pin_candidates(result, payload) -> None:
+    """Record every ranked pin candidate (docs/prompt.md §6) for diagnostics,
+    independent of whether a landmark fit later succeeds."""
+    try:
+        from PIL import Image, ImageOps
+
+        from core.intel.image_pin import detect_pins, select_pin
+
+        with Image.open(io.BytesIO(payload)) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+        candidates = detect_pins(image)
+    except Exception:
+        return
+    result.pin_candidates = [c.as_dict() for c in candidates[:6]]
+    if select_pin(candidates) is not None:
+        result.pin_detected = True
+
+
 def _attach_pin_fit(result, payload, executable, easy_boxes) -> None:
     """Populate the Web-Mercator fit diagnostics for a pin-landmark result."""
     try:
@@ -228,6 +246,8 @@ def extract_from_bytes(
             _attach_pin_fit(result, payload, executable, easy_boxes)
     else:
         result.failure_reasons.append("no_coordinate" if attempted else "ocr_not_attempted")
+
+    _attach_pin_candidates(result, payload)
 
     result.place_names = _place_names_from_text(detected_text)
     if not result.landmarks_detected:  # a pin fit may already have set these
