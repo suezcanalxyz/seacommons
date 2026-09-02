@@ -73,7 +73,12 @@ RESPONSE_CROSSCHECK_RADIUS_NM = 30.0
 RESPONSE_CROSSCHECK_MAX_AGE_DAYS = 2
 _DISTRESS_TYPES = frozenset({"distress", "iom_incident"})
 _RESOLVED_LIFECYCLES = frozenset({"resolved", "archived"})
-_RESCUE_RELEVANT_SPIKES = frozenset({"sudden_stop", "ngo_search_pattern", "rescue_cluster"})
+_RESCUE_RELEVANT_SPIKES = frozenset(
+    {"sudden_stop", "ngo_search_pattern", "rescue_cluster", "possible_rescue_cluster"}
+)
+# A cluster's mutual distance must fall by at least this much between scans to
+# count as convergence rather than two vessels that merely happen to be close.
+CLUSTER_CONVERGENCE_NM = 0.1
 
 # ── Known SAR hotspot zones (simple lat/lon/radius) ───────────────────────────
 SAR_HOTSPOTS: list[dict[str, Any]] = [
@@ -252,6 +257,14 @@ class AISSpikeDetector:
             vessels.append(v)
 
         now_mono = time.monotonic()
+        # Snapshot the previous positions BEFORE the state-update loop below
+        # overwrites them -- the cluster check needs current-vs-previous to
+        # tell convergence from mere proximity (audit SP-2).
+        prev_positions = {
+            m: (s["lat"], s["lon"])
+            for m, s in self._prev.items()
+            if s.get("lat") is not None and s.get("lon") is not None
+        }
 
         # ── Rule 1: Sudden stop ────────────────────────────────────────────────
         for v in vessels:
@@ -350,58 +363,161 @@ class AISSpikeDetector:
             }
 
         # ── Rule 2: Rescue cluster ────────────────────────────────────────────
-        self._check_clusters(vessels)
+        self._check_clusters(vessels, prev_positions)
 
         # Prune stale spike cooldowns
         cutoff = now_mono - self._emit_cooldown_s
         self._emitted = {k: v for k, v in self._emitted.items() if v > cutoff}
 
-    def _check_clusters(self, vessels: list[dict[str, Any]]) -> None:
-        """Find groups of 2+ vessels within CLUSTER_RADIUS_NM."""
-        positioned = [v for v in vessels if v.get("lat") and v.get("lon")]
-        ngo_in_group: set[str] = set()
+    def _check_clusters(
+        self,
+        vessels: list[dict[str, Any]],
+        prev_positions: dict[str, tuple[float, float]] | None = None,
+    ) -> None:
+        """Groups of 2+ vessels within CLUSTER_RADIUS_NM.
 
+        Only a group with *fresh* positions that is measurably *converging*
+        (mean mutual distance falling scan-over-scan), is under way, and is
+        not sitting in a port/anchorage is called a ``rescue_cluster``.
+        Everything weaker is a ``possible_rescue_cluster`` -- proximity is
+        never named convergence (audit SP-1/SP-2/SP-6, prompt.md PHASE 7A).
+        """
+        from datetime import UTC, datetime
+
+        prev_positions = prev_positions or {}
+        now = datetime.now(UTC)
+
+        def _age_s(v: dict[str, Any]) -> float | None:
+            raw = str(v.get("last_seen") or "")
+            if not raw:
+                return None
+            try:
+                seen = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            if seen.tzinfo is None:
+                seen = seen.replace(tzinfo=UTC)
+            return (now - seen).total_seconds()
+
+        positioned = []
+        for v in vessels:
+            if not (v.get("lat") and v.get("lon")):
+                continue
+            age = _age_s(v)
+            # An unparseable / missing last_seen is treated as stale -- a
+            # rescue cluster needs current positions (CLUSTER_AGE_S).
+            if age is None or age > CLUSTER_AGE_S:
+                continue
+            v = {**v, "_age_s": age}
+            positioned.append(v)
+
+        seen_groups: set[frozenset[str]] = set()
         for i, v1 in enumerate(positioned):
-            nearby = []
-            for j, v2 in enumerate(positioned):
-                if i >= j:
-                    continue
-                dist = _haversine_nm(v1["lat"], v1["lon"], v2["lat"], v2["lon"])
-                if dist <= CLUSTER_RADIUS_NM:
-                    nearby.append((v2, dist))
-
+            nearby = [
+                (v2, _haversine_nm(v1["lat"], v1["lon"], v2["lat"], v2["lon"]))
+                for j, v2 in enumerate(positioned)
+                if i < j
+                and _haversine_nm(v1["lat"], v1["lon"], v2["lat"], v2["lon"]) <= CLUSTER_RADIUS_NM
+            ]
             if not nearby:
                 continue
-
             group = [v1] + [v for v, _ in nearby]
+            key = frozenset(v["mmsi"] for v in group)
+            if key in seen_groups:
+                continue
+            seen_groups.add(key)
+
             ngo_vessels = [v for v in group if is_ngo(v["mmsi"])]
             if not ngo_vessels:
-                continue  # only flag clusters that include known NGO/CG vessels
+                continue  # only flag clusters that include a known NGO/CG vessel
 
+            # ── proximity vs convergence ─────────────────────────────────────
+            def _mean_pairwise(points: list[tuple[float, float]]) -> float | None:
+                dists = [
+                    _haversine_nm(points[a][0], points[a][1], points[b][0], points[b][1])
+                    for a in range(len(points))
+                    for b in range(a + 1, len(points))
+                ]
+                return sum(dists) / len(dists) if dists else None
+
+            now_points = [(v["lat"], v["lon"]) for v in group]
+            then_points = [prev_positions[v["mmsi"]] for v in group if v["mmsi"] in prev_positions]
+            d_now = _mean_pairwise(now_points)
+            d_then = _mean_pairwise(then_points) if len(then_points) >= 2 else None
+            if d_then is None:
+                converging: bool | None = None
+                closing_nm = None
+            else:
+                closing_nm = round(d_then - d_now, 2)
+                converging = closing_nm >= CLUSTER_CONVERGENCE_NM
+
+            centroid_lat = sum(p[0] for p in now_points) / len(now_points)
+            centroid_lon = sum(p[1] for p in now_points) / len(now_points)
+            in_port = _in_port(centroid_lat, centroid_lon)
+            moving = any(v.get("speed", 0) > STOP_THRESHOLD_KN for v in group)
             hotspot = _in_hotspot(v1["lat"], v1["lon"])
+            distress = _nearby_active_distress(centroid_lat, centroid_lon)
+            oldest_age = max(v["_age_s"] for v in group)
+
+            strong = bool(
+                converging and moving and not in_port and (hotspot or distress is not None)
+            )
+            spike_type = "rescue_cluster" if strong else "possible_rescue_cluster"
+            if strong:
+                severity = "critical" if hotspot else "high"
+            else:
+                severity = "medium"
+
             ngo_names = ", ".join(
-                get_ngo_info(v["mmsi"])["name"] for v in ngo_vessels
+                (get_ngo_info(v["mmsi"]) or {}).get("name") or v["mmsi"] for v in ngo_vessels
             )
             all_names = ", ".join(v.get("name") or v["mmsi"] for v in group[:4])
+            verb = "converging" if converging else (
+                "not converging" if converging is False else "convergence unknown"
+            )
+            detail = (
+                f"{len(group)} vessels within {CLUSTER_RADIUS_NM:.0f} nm, {verb}"
+                + (f" (closing {closing_nm:+.1f} nm)" if closing_nm is not None else "")
+                + f" — NGO: {ngo_names} — vessels: {all_names}"
+                + (" — in a port/anchorage" if in_port else "")
+                + (f" — near active distress {distress['case_id']}" if distress else "")
+            )
 
-            severity = "critical" if hotspot else "high"
+            try:
+                from core.intel.assessment import assess_rescue_cluster
+
+                assessment = assess_rescue_cluster(
+                    vessels=len(group),
+                    min_distance_nm=round(min(d for _v, d in nearby), 2),
+                    ngo_or_cg_present=True,
+                    positions_max_age_s=round(oldest_age, 0),
+                    converging=bool(converging),
+                    closing_rate_kn=None,
+                    active_distress_within_nm=distress["distance_nm"] if distress else None,
+                ).as_metadata()
+            except Exception:  # pragma: no cover
+                assessment = {}
+
             self._emit(
-                spike_type="rescue_cluster",
+                spike_type=spike_type,
                 mmsi=ngo_vessels[0]["mmsi"],
                 name=ngo_vessels[0].get("name", ""),
-                lat=v1["lat"],
-                lon=v1["lon"],
+                lat=centroid_lat,
+                lon=centroid_lon,
                 severity=severity,
-                detail=(
-                    f"Rescue cluster: {len(group)} vessels within "
-                    f"{CLUSTER_RADIUS_NM:.0f}nm — NGO: {ngo_names} — "
-                    f"vessels: {all_names}"
-                    + (f" — zone: {hotspot}" if hotspot else "")
-                ),
+                detail=detail,
                 ngo_info=get_ngo_info(ngo_vessels[0]["mmsi"]),
-                metadata={"cluster_size": len(group), "vessel_names": all_names},
+                metadata={
+                    "cluster_size": len(group),
+                    "vessel_names": all_names,
+                    "converging": converging,
+                    "closing_nm": closing_nm,
+                    "positions_max_age_s": round(oldest_age, 0),
+                    "in_port_or_anchorage": in_port,
+                    "near_active_distress": distress["case_id"] if distress else None,
+                    **assessment,
+                },
             )
-            ngo_in_group.update(v["mmsi"] for v in ngo_vessels)
 
     # ── Emit helper ───────────────────────────────────────────────────────────
 
