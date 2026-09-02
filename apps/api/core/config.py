@@ -210,6 +210,13 @@ class SuezCanalConfig(BaseSettings):
     # under `humanitarian_recognition_shadow` without changing public output.
     ALERT_RECOGNITION_V2: bool = False
     ALERT_RECOGNITION_V2_SHADOW: bool = False
+    # AIS spike detector calibration (docs/prompt.md PHASE 7B/7C, audit SP-*).
+    # A single-sample speed drop is only a cue (possible_sudden_stop); a
+    # sudden_stop needs the stop to persist for this many scans and seconds
+    # without the vessel moving off. vessel_loiter is suppressed outright when
+    # the AIS nav status says the vessel is anchored / moored / aground.
+    AIS_SUDDEN_STOP_MIN_SAMPLES: int = 2
+    AIS_SUDDEN_STOP_PERSISTENCE_S: int = 300
     # When the twikit object exposes no usable media, fall back to the public
     # syndication CDN to resolve the tweet's photos (docs/prompt.md §2, MA-2).
     # Off in the test suite (kept hermetic); on in production.

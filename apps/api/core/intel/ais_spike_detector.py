@@ -7,7 +7,11 @@ Detection rules (all generate IntelEvents with type="ais_spike"):
 
   1. SUDDEN_STOP
      Vessel with last_speed > SPEED_THRESHOLD_KN drops to < STOP_THRESHOLD_KN
-     while in open water (not inside a port bbox).
+     while in open water (not inside a port bbox) and not reporting an
+     anchored/moored/aground AIS nav status. A single-sample transition emits
+     `possible_sudden_stop` (a cue); it is promoted to `sudden_stop` only once
+     the stop has held AIS_SUDDEN_STOP_MIN_SAMPLES scans / _PERSISTENCE_S
+     seconds without the vessel moving off its stop point.
      Confidence boosted if position is within a known SAR hotspot.
 
   2. RESCUE_CLUSTER
@@ -22,7 +26,9 @@ Detection rules (all generate IntelEvents with type="ais_spike"):
 
   4. VESSEL_LOITER
      A vessel stops for > LOITER_MIN_S in open water near a known hotspot.
-     Not applicable to anchored vessels (speed < 0.1 for > 6 h in same cell).
+     Suppressed when the vessel's AIS nav status is anchored / moored /
+     aground; when nav status is absent the loiter still emits but is marked
+     `nav_status_known: false`.
 
 Runs in a background daemon thread; polls registry every POLL_INTERVAL_S.
 State (previous speeds/courses/positions) kept in-memory.
@@ -79,6 +85,34 @@ _RESCUE_RELEVANT_SPIKES = frozenset(
 # A cluster's mutual distance must fall by at least this much between scans to
 # count as convergence rather than two vessels that merely happen to be close.
 CLUSTER_CONVERGENCE_NM = 0.1
+
+# AIS navigational status codes that themselves explain a stationary vessel --
+# an anchored / moored / aground vessel is not a "sudden stop" casualty and is
+# not "loitering". Codes: 1 at anchor, 5 moored, 6 aground.
+_ANCHORED_NAV_STATUS = frozenset({1, 5})
+_AGROUND_NAV_STATUS = 6
+_STATIONARY_NAV_STATUS = _ANCHORED_NAV_STATUS | {_AGROUND_NAV_STATUS}
+
+# A one-sample speed drop is a cue, not an alert (audit SP-6, prompt.md
+# PHASE 7B). Promote possible_sudden_stop -> sudden_stop only once the stop has
+# held this many scans / seconds without the vessel moving off its stop point.
+_STOP_SETTLE_DISPLACEMENT_NM = 0.25  # ~460 m -- still "stopped", not drifting away
+
+
+def _sudden_stop_min_samples() -> int:
+    try:
+        from core.config import config as _cfg
+        return int(_cfg.AIS_SUDDEN_STOP_MIN_SAMPLES)
+    except Exception:
+        return 2
+
+
+def _sudden_stop_persistence_s() -> float:
+    try:
+        from core.config import config as _cfg
+        return float(_cfg.AIS_SUDDEN_STOP_PERSISTENCE_S)
+    except Exception:
+        return 300.0
 
 # ── Known SAR hotspot zones (simple lat/lon/radius) ───────────────────────────
 SAR_HOTSPOTS: list[dict[str, Any]] = [
@@ -244,13 +278,17 @@ class AISSpikeDetector:
             coords = (feat.get("geometry") or {}).get("coordinates", [None, None])
             if not coords or coords[0] is None or coords[1] is None:
                 continue
+            # registry.get_geojson emits `speed`/`course`; some callers and the
+            # test fixtures use `last_speed`/`last_course` -- accept either.
+            nav_raw = props.get("nav_status")
             v: dict[str, Any] = {
                 "mmsi":        str(props.get("mmsi", "")),
                 "name":        props.get("ship_name", ""),
                 "lat":         float(coords[1]),
                 "lon":         float(coords[0]),
-                "speed":       float(props.get("last_speed", 0) or 0),
-                "course":      float(props.get("last_course", 0) or 0),
+                "speed":       float(props.get("last_speed", props.get("speed", 0)) or 0),
+                "course":      float(props.get("last_course", props.get("course", 0)) or 0),
+                "nav_status":  int(nav_raw) if nav_raw is not None else None,
                 "last_seen":   str(props.get("last_seen", "")),
                 "destination": str(props.get("destination", "") or ""),
             }
@@ -271,38 +309,81 @@ class AISSpikeDetector:
             mmsi = v["mmsi"]
             prev = self._prev.get(mmsi)
 
+            # Stop-tracking state carried across scans (audit SP-6): a stop is
+            # only promoted from a cue to an alert once it has held.
+            stop_fields: dict[str, Any] = {}
+
             if prev:
                 was_underway = prev["speed"] >= SPEED_THRESHOLD_KN
                 now_stopped  = v["speed"] <= STOP_THRESHOLD_KN
+                nav_status   = v.get("nav_status")
+                # The vessel's own AIS status already explains a stationary
+                # hull -- anchored / moored / aground is not a casualty and not
+                # loitering (prompt.md PHASE 7B/7C, audit SP-3).
+                stationary_by_status = nav_status in _STATIONARY_NAV_STATUS
+                open_water = not _in_port(v["lat"], v["lon"])
 
-                if was_underway and now_stopped:
-                    if not _in_port(v["lat"], v["lon"]):
-                        hotspot = _in_hotspot(v["lat"], v["lon"])
-                        severity = "high" if hotspot else "medium"
-                        if is_ngo(mmsi):
-                            severity = "high"
-                        self._emit(
-                            spike_type="sudden_stop",
-                            mmsi=mmsi,
-                            name=v["name"],
-                            lat=v["lat"],
-                            lon=v["lon"],
-                            severity=severity,
-                            detail=(
-                                f"Vessel {v['name'] or mmsi} stopped "
-                                f"(was {prev['speed']:.1f} kn → {v['speed']:.1f} kn)"
-                                + (f" in {hotspot}" if hotspot else "")
-                            ),
-                            ngo_info=get_ngo_info(mmsi),
+                if now_stopped and open_water and not stationary_by_status:
+                    stop_since = prev.get("stop_since")
+                    if stop_since is None and was_underway:
+                        # Fresh transition: a single-sample cue, never a
+                        # high-confidence alert on its own.
+                        stop_since = now_mono
+                        stop_fields = {
+                            "stop_since": stop_since,
+                            "stop_lat": v["lat"],
+                            "stop_lon": v["lon"],
+                            "stop_prev_speed": prev["speed"],
+                            "stop_samples": 1,
+                        }
+                        self._emit_sudden_stop(
+                            v, mmsi, promoted=False,
+                            prev_speed=prev["speed"], samples=1,
+                            persistence_s=0.0, displacement_nm=0.0,
+                            nav_status=nav_status,
                         )
+                    elif stop_since is not None:
+                        samples = int(prev.get("stop_samples", 1)) + 1
+                        persistence_s = now_mono - stop_since
+                        displacement_nm = _haversine_nm(
+                            prev.get("stop_lat", v["lat"]), prev.get("stop_lon", v["lon"]),
+                            v["lat"], v["lon"],
+                        )
+                        stop_fields = {
+                            "stop_since": stop_since,
+                            "stop_lat": prev.get("stop_lat", v["lat"]),
+                            "stop_lon": prev.get("stop_lon", v["lon"]),
+                            "stop_prev_speed": prev.get("stop_prev_speed", prev["speed"]),
+                            "stop_samples": samples,
+                        }
+                        settled = displacement_nm <= _STOP_SETTLE_DISPLACEMENT_NM
+                        if (
+                            not prev.get("stop_promoted")
+                            and samples >= _sudden_stop_min_samples()
+                            and persistence_s >= _sudden_stop_persistence_s()
+                            and settled
+                        ):
+                            self._emit_sudden_stop(
+                                v, mmsi, promoted=True,
+                                prev_speed=stop_fields["stop_prev_speed"],
+                                samples=samples, persistence_s=persistence_s,
+                                displacement_nm=displacement_nm, nav_status=nav_status,
+                            )
+                            stop_fields["stop_promoted"] = True
+                        else:
+                            stop_fields["stop_promoted"] = prev.get("stop_promoted", False)
+                # else: moving again, in port, or nav-status stationary -- drop
+                # any stop state (stop_fields left empty).
 
-                # Track loiter start
-                if v["speed"] <= STOP_THRESHOLD_KN and not _in_port(v["lat"], v["lon"]):
+                # Track loiter start -- only when the vessel is not reporting
+                # itself anchored / moored / aground.
+                if now_stopped and open_water and not stationary_by_status:
                     if not prev.get("loiter_start"):
                         prev["loiter_start"] = now_mono
                     elif now_mono - prev["loiter_start"] >= LOITER_MIN_S:
                         hotspot = _in_hotspot(v["lat"], v["lon"])
                         if hotspot:
+                            nav_known = nav_status is not None
                             self._emit(
                                 spike_type="vessel_loiter",
                                 mmsi=mmsi,
@@ -314,9 +395,17 @@ class AISSpikeDetector:
                                     f"Vessel {v['name'] or mmsi} loitering "
                                     f"{(now_mono - prev['loiter_start'])/60:.0f} min "
                                     f"in {hotspot}"
+                                    + ("" if nav_known
+                                       else " (AIS nav status unknown — cannot rule out anchoring)")
                                 ),
                                 ngo_info=get_ngo_info(mmsi),
+                                metadata={
+                                    "nav_status": nav_status,
+                                    "nav_status_known": nav_known,
+                                    "anchored_excluded": True,
+                                },
                             )
+                    stop_fields["loiter_start"] = prev.get("loiter_start")
                 elif "loiter_start" in prev:
                     del prev["loiter_start"]
 
@@ -353,14 +442,21 @@ class AISSpikeDetector:
                             metadata={"pattern": "circular" if circular else "course_change"},
                         )
 
-            # Update state
-            self._prev[mmsi] = {
+            # Update state. stop_fields carries the stop-tracking keys
+            # (stop_since / stop_samples / stop_promoted / loiter_start) when
+            # the vessel is still stopped; an empty stop_fields means the
+            # vessel is moving again and the stop state is dropped.
+            new_state: dict[str, Any] = {
                 "speed":  v["speed"],
                 "course": v["course"],
                 "lat":    v["lat"],
                 "lon":    v["lon"],
-                "loiter_start": self._prev.get(mmsi, {}).get("loiter_start"),
+                "nav_status": v.get("nav_status"),
             }
+            if "loiter_start" not in stop_fields:
+                stop_fields["loiter_start"] = self._prev.get(mmsi, {}).get("loiter_start")
+            new_state.update(stop_fields)
+            self._prev[mmsi] = new_state
 
         # ── Rule 2: Rescue cluster ────────────────────────────────────────────
         self._check_clusters(vessels, prev_positions)
@@ -368,6 +464,68 @@ class AISSpikeDetector:
         # Prune stale spike cooldowns
         cutoff = now_mono - self._emit_cooldown_s
         self._emitted = {k: v for k, v in self._emitted.items() if v > cutoff}
+
+    def _emit_sudden_stop(
+        self,
+        v: dict[str, Any],
+        mmsi: str,
+        *,
+        promoted: bool,
+        prev_speed: float,
+        samples: int,
+        persistence_s: float,
+        displacement_nm: float,
+        nav_status: int | None,
+    ) -> None:
+        """A single-sample speed drop emits `possible_sudden_stop` (a cue); the
+        same stop, once it has held (`samples`/`persistence_s`) without the
+        vessel moving off, emits `sudden_stop` (audit SP-6)."""
+        hotspot = _in_hotspot(v["lat"], v["lon"])
+        spike_type = "sudden_stop" if promoted else "possible_sudden_stop"
+        if promoted:
+            severity = "high" if (hotspot or is_ngo(mmsi)) else "medium"
+        else:
+            severity = "medium"
+        detail = (
+            f"Vessel {v['name'] or mmsi} "
+            + ("stopped" if not promoted else f"stopped and held {persistence_s / 60:.0f} min")
+            + f" (was {prev_speed:.1f} kn → {v['speed']:.1f} kn)"
+            + (f" in {hotspot}" if hotspot else "")
+            + ("" if promoted else " — single-sample cue, awaiting persistence")
+        )
+        try:
+            from core.intel.assessment import assess_sudden_stop
+
+            assessment = assess_sudden_stop(
+                prev_speed_kn=prev_speed,
+                cur_speed_kn=v["speed"],
+                samples=samples,
+                persistence_s=persistence_s,
+                in_port_zone=False,
+                in_anchorage=nav_status in _ANCHORED_NAV_STATUS,
+                nav_status=nav_status,
+                track_displacement_m=displacement_nm * 1852.0,
+            ).as_metadata()
+        except Exception:  # pragma: no cover
+            assessment = {}
+        self._emit(
+            spike_type=spike_type,
+            mmsi=mmsi,
+            name=v["name"],
+            lat=v["lat"],
+            lon=v["lon"],
+            severity=severity,
+            detail=detail,
+            ngo_info=get_ngo_info(mmsi),
+            metadata={
+                "stop_samples": samples,
+                "stop_persistence_s": round(persistence_s),
+                "stop_displacement_nm": round(displacement_nm, 2),
+                "nav_status": nav_status,
+                "promoted_from_cue": promoted,
+                **assessment,
+            },
+        )
 
     def _check_clusters(
         self,
