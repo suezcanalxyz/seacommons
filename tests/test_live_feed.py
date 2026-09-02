@@ -1025,6 +1025,43 @@ def test_durable_alarm_phone_read_matches_both_real_source_spellings() -> None:
     assert "intel:durupper1" in ids
 
 
+def test_load_from_db_seeds_dedup_keys_for_capped_out_alarm_phone_incidents() -> None:
+    """docs/fixes.md sec 2: the `limit` most-recent rows load_from_db pulls can
+    be only a few hours of AIS churn. A still-tracked ~20 h old Alarm Phone
+    incident falls outside it, so its dedup key was never seeded -- and the X
+    monitor's next catch-up poll then raised a *second* marker for one boat.
+    load_from_db now seeds the dedup keys for every recent humanitarian-source
+    row regardless of the cap."""
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.store import IntelStore
+
+    store = IntelStore()
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id="capped-ap-1", timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            type="twitter", severity="high", lat=34.27, lon=11.94,
+            title="Alarm Phone: distress in the Central Med", text="~37 people",
+            url="https://x.com/i/web/status/2094849490314486246", source="alarm_phone",
+            meta={"is_distress": True, "tweet_id": "2094849490314486246",
+                  "tracked_account": "alarm_phone"},
+        ))
+
+    # limit=0 forces the "capped out" situation: the main recency query loads
+    # nothing, so only the humanitarian-source seeding pass can catch it.
+    store.load_from_db(limit=0, max_age_days=1)
+
+    assert "x:2094849490314486246" in store._seen
+    from core.intel.store import IntelEvent
+    reingest = IntelEvent(
+        id="fresh-uuid", type="twitter", lat=35.0, lon=15.0,
+        title="Alarm Phone: distress in the Central Med",
+        text="~37 people", url="https://x.com/i/web/status/2094849490314486246",
+        metadata={"tweet_id": "2094849490314486246"},
+    )
+    assert store.add(reingest, dedup_key="x:2094849490314486246") is False
+
+
 def test_mode_all_reserves_humanitarian_features_from_security_flood() -> None:
     """Regression: mode=all used to merge humanitarian + security then
     truncate to `limit` by a flat recency sort. Security fires far more

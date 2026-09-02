@@ -395,6 +395,7 @@ class IntelStore:
             from core.db.models import IntelEventDB
             events_to_add: list[IntelEvent] = []
             cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+            dedup_only: list[IntelEvent] = []
             with session_scope() as db:
                 rows = (
                     db.query(IntelEventDB)
@@ -420,6 +421,33 @@ class IntelStore:
                         linked_mmsi=row.linked_mmsi or "",
                         metadata=dict(row.meta or {}),
                     ))
+                # The `limit` most-recent rows can be only a few hours of AIS
+                # churn, dropping a still-tracked Alarm Phone distress incident
+                # from this set. When the X monitor's catch-up poll then
+                # re-sees that incident's tweet its dedup key is not in
+                # `_seen`, so a second marker (fresh id, place-name fallback
+                # position) is raised for one boat. Seed the dedup keys for
+                # every recent humanitarian-source row regardless of the cap --
+                # these do not need a slot in the bounded deque, only a key in
+                # `_seen` so re-ingestion is recognised.
+                loaded_ids = {row.id for row in rows}
+                for row in (
+                    db.query(IntelEventDB)
+                    .filter(
+                        IntelEventDB.timestamp_utc >= cutoff,
+                        IntelEventDB.source.in_(["Alarm Phone", "alarm_phone", "alarmphone"]),
+                    )
+                    .order_by(IntelEventDB.timestamp_utc.desc())
+                    .limit(500)
+                    .all()
+                ):
+                    if row.id in loaded_ids:
+                        continue
+                    dedup_only.append(IntelEvent(
+                        id=row.id, timestamp_utc=row.timestamp_utc, type=row.type or "",
+                        title=row.title or "", text=row.text or "", url=row.url or "",
+                        source=row.source or "", metadata=dict(row.meta or {}),
+                    ))
             loaded = 0
             for ev in events_to_add:
                 keys = {ev.content_hash()}
@@ -431,7 +459,16 @@ class IntelStore:
                         self._seen.update(keys)
                         self._events.appendleft(ev)
                         loaded += 1
-            logger.info("intel_store: loaded %d events from DB", loaded)
+            with self._lock:
+                for ev in dedup_only:
+                    self._seen.add(ev.content_hash())
+                    tweet_id = str(ev.metadata.get("tweet_id") or "")
+                    if tweet_id:
+                        self._seen.add(f"x:{tweet_id}")
+            logger.info(
+                "intel_store: loaded %d events from DB (+%d dedup-only humanitarian keys)",
+                loaded, len(dedup_only),
+            )
             return loaded
         except Exception as exc:
             logger.warning("intel_store: DB reload skipped: %s", exc)
@@ -1053,6 +1090,49 @@ class IntelStore:
         normalized = event_id.removeprefix("intel:")
         with self._lock:
             return next((event for event in self._events if event.id == normalized), None)
+
+    def get_durable(self, event_id: str) -> Optional[IntelEvent]:
+        """`get()`, but fall back to the DB row when the event has been
+        evicted from the bounded in-memory deque.
+
+        A ~20 h old Alarm Phone distress incident is routinely pushed out of
+        the 600-slot deque by AIS churn. Callers that must still reason about
+        it (the auto-drift F-01 gate, its report timestamp) got ``None`` and
+        silently skipped the check; this keeps them correct.
+        """
+        found = self.get(event_id)
+        if found is not None:
+            return found
+        normalized = event_id.removeprefix("intel:")
+        try:
+            from core.db.models import IntelEventDB
+            from core.db.session import session_scope
+
+            with session_scope() as db:
+                row = (
+                    db.query(IntelEventDB)
+                    .filter(IntelEventDB.id == normalized)
+                    .first()
+                )
+                if row is None:
+                    return None
+                return IntelEvent(
+                    id=row.id,
+                    timestamp_utc=row.timestamp_utc,
+                    type=row.type or "",
+                    severity=row.severity or "",
+                    lat=row.lat,
+                    lon=row.lon,
+                    title=row.title or "",
+                    text=row.text or "",
+                    url=row.url or "",
+                    source=row.source or "",
+                    linked_mmsi=row.linked_mmsi or "",
+                    metadata=dict(row.meta or {}),
+                )
+        except Exception as exc:  # pragma: no cover - DB fallback is best-effort
+            logger.warning("intel_store.get_durable(%s) DB fallback failed: %s", normalized, exc)
+            return None
 
     def persisted_events(
         self,
