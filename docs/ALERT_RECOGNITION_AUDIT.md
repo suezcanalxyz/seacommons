@@ -384,6 +384,23 @@ Optional LLM second-stage (`docs/prompt.md` Phase 10) is **not** in this
 plan — deterministic corpus must exist and pass first; it would be a later,
 separate, abstention-capable, never-auto-publish addition.
 
+### Implementation progress
+
+| PR | State |
+| --- | --- |
+| 1 — evaluation corpus + runner | *this branch* — landed. `tests/fixtures/alert_recognition/{humanitarian,ais_status,ais_behaviour,ais_integrity}.jsonl` (labelled `input` / `expected` classification, lifecycle, entities, publication, confidence range, notes; hard negatives and contrastive negatives in every file) + `tests/fixtures/alert_recognition/__init__.py` (`load_corpus`, `score` → per-class precision/recall/F1/FP/FN + publication/lifecycle/confidence accuracy, `run` to score any classifier). No classifier wired yet — that is PR 2+. |
+| 2 — `EventAssessment` + `assess_*` | pending |
+| 3 — web render `EventAssessment` | pending |
+| 4 — `HumanitarianAssessment` V2 | pending |
+| 5 — canonical `mode_policy` + safety-context tier | pending |
+| 6 — restore `not_under_command` as safety context | pending |
+| 7 — split AIS taxonomy | pending |
+| 8 — `rescue_cluster` freshness + convergence | pending |
+| 9 — `sudden_stop` → cue + persistence | pending |
+| 10 — coverage-aware gap | pending |
+| 11 — traceable confidence model on every alert | pending |
+| 12 — `ALERT_RECOGNITION_V2` shadow-mode + cutover | gated on corpus |
+
 ---
 
 ## 9. Invariants
