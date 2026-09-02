@@ -24,6 +24,7 @@ export const LAYER_GROUPS = [
   { key: 'fused',       label: 'Correlated alerts', layers: ['intel-fused-core', 'intel-fused-pulse', 'intel-vessel-core', 'intel-vessel-pulse'] },
   { key: 'observed_tracks', label: 'Observed AIS trajectories', layers: ['intel-observed-track-line'] },
   { key: 'drift_models', label: 'Drift forecasts', layers: ['intel-drift-cone', 'intel-drift-line', 'intel-drift-point'] },
+  { key: 'simulation', label: 'Manual simulation', layers: ['sar-case-cone', 'sar-case-line', 'sar-case-traj-arrows', 'sar-case-points'] },
   ...INTEL_CATEGORY_GROUPS,
   { key: 'spikes',      label: 'AIS anomalies',  layers: ['intel-spike-layer'], defaultOff: true },
   { key: 'mda_anomaly', label: 'MDA · dark-vessel signals', layers: ['mda-anomaly-layer'], defaultOff: true },

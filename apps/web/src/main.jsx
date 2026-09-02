@@ -117,7 +117,7 @@ const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'en
 // these individually, so the allow-list is their union -- always available,
 // never gated by a mode.
 const PUBLIC_LIVE_LAYER_GROUPS = new Set([
-  'nautical', 'sar', 'fused', 'observed_tracks', 'drift_models', 'ngo_vessels', 'platforms', 'spikes',
+  'nautical', 'sar', 'fused', 'observed_tracks', 'drift_models', 'simulation', 'ngo_vessels', 'platforms', 'spikes',
   'intel_social', 'intel_news', 'intel_hazard', 'intel_incident', 'intel_iom', 'intel_ngo',
 ]);
 // Signals selector: two macro groups (the original Humanitarian/Maritime
@@ -175,14 +175,21 @@ const LIVE_EDGE_BASE = String(import.meta.env.VITE_LIVE_EDGE_BASE || '').replace
 function enrichCaseGeo(geojson, lat, lon) {
   // Idempotent: replaying an already-enriched collection must not duplicate the origin marker.
   if (geojson.features?.some((f) => f.properties?.type === 'origin_point')) return geojson;
+  // Provenance (product policy §3): a user-run simulation is tagged so it can
+  // never be confused with a persisted operational Alarm Phone drift
+  // (`auto_drift: true`), even though both render on the map.
+  const tagged = (geojson.features || []).map((feature) => ({
+    ...feature,
+    properties: { ...(feature.properties || {}), trajectory_kind: 'user_simulation', auto_drift: false },
+  }));
   return {
     ...geojson,
     features: [
-      ...geojson.features,
+      ...tagged,
       {
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [Number(lon), Number(lat)] },
-        properties: { type: 'origin_point' },
+        properties: { type: 'origin_point', trajectory_kind: 'user_simulation' },
       },
     ],
   };
