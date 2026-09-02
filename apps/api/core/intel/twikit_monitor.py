@@ -82,7 +82,6 @@ from datetime import UTC, datetime
 from typing import Any, Optional
 
 from core.config import config
-from core.intel.x_media_utils import _ocr_photo
 from core.intel.auto_drift_client import request_auto_drift
 from core.intel.area_extract import extract_area
 from core.intel.forensic_link import attach_forensic_packet
@@ -139,8 +138,19 @@ _PRIORITY_DEFAULT = "alarm_phone"
 _DEFAULT_ACCOUNTS = list(NGO_TWITTER_HANDLES)
 # Alarm Phone (and the other tracked SAR NGOs) publish the actual GPS position
 # as a map screenshot, not in the tweet text. Same host allow-list as the
-# shared OCR path (x_media_utils._ocr_photo).
+# shared media path (x_media_utils / x_media).
 _ALLOWED_MEDIA_HOSTS = frozenset({"pbs.twimg.com"})
+
+
+def _analyze_tweet_image(url: str, *, context_places: tuple[str, ...] = ()):
+    """Structured image understanding for one media URL (docs/prompt.md §4).
+
+    A one-line seam over ``image_extraction.extract_from_url`` so tests can
+    substitute a canned ``ImageExtractionResult`` without a live OCR run.
+    """
+    from core.intel.image_extraction import extract_from_url
+
+    return extract_from_url(url, context_places=context_places)
 
 
 class TwikitMonitor:
@@ -473,21 +483,30 @@ class TwikitMonitor:
         return resolution.urls
 
     def _ocr_tweet_media(
-        self, tweet_id: str, urls: list[str]
+        self, tweet_id: str, urls: list[str], *, context_places: tuple[str, ...] = ()
     ) -> tuple[Optional[tuple[float, float]], bool, str, dict[str, Any]]:
-        """OCR the tweet's images until one yields a coordinate pair."""
+        """Analyse the tweet's images until one yields a coordinate pair.
+
+        Structured image understanding runs through
+        ``image_extraction.extract_from_url`` (docs/prompt.md §4); this returns
+        the legacy 4-tuple, and the winning / last result's observability
+        fields ride along in the diagnostics dict under ``image_assessment``.
+        """
         if not urls:
             return None, False, "none", {}
+        last_assessment: dict[str, Any] = {}
         for url in urls:
             try:
-                result = _ocr_photo(url)
-                candidate, attempted, method = result[0], result[1], result[2]
-                diagnostics = result[3] if len(result) > 3 else {}
-                if candidate is not None:
-                    return candidate, attempted, method, diagnostics
+                result = _analyze_tweet_image(url, context_places=context_places)
             except Exception as exc:
                 logger.debug("X (twikit) media OCR failed for %s (%s): %s", tweet_id, url, exc)
-        return None, True, "none", {}
+                continue
+            last_assessment = result.as_metadata()
+            candidate, attempted, method, diagnostics = result.legacy_tuple()
+            if candidate is not None:
+                diagnostics["image_assessment"] = last_assessment
+                return candidate, attempted, method, diagnostics
+        return None, True, "none", {"image_assessment": last_assessment}
 
     def _apply_media_ocr(self, event_id: str, urls: list[str]) -> None:
         """Run in a pool worker: OCR, upgrade the stored position, drift."""
@@ -511,8 +530,12 @@ class TwikitMonitor:
                     "media OCR: no coordinate for %s (images=%d, tesseract=%s, attempted=%s)",
                     event_id, len(urls), bool(shutil.which("tesseract")), attempted,
                 )
-                if attempted:
-                    intel_store.update_metadata(event_id, metadata={"ocr_attempted": True})
+                image_assessment = ocr_diag.get("image_assessment") or {}
+                if attempted or image_assessment:
+                    intel_store.update_metadata(
+                        event_id,
+                        metadata={"ocr_attempted": bool(attempted), **image_assessment},
+                    )
                 self._auto_drift_if_live(event_id, force=False)
                 return
             logger.info(
@@ -535,6 +558,7 @@ class TwikitMonitor:
                 lon=coords[1],
                 metadata={
                     **evidence.as_metadata(),
+                    **(ocr_diag.get("image_assessment") or {}),
                     "media_transport": "x_media_ocr",
                     "ocr_attempted": True,
                     "media_count": len(urls),
@@ -589,13 +613,25 @@ class TwikitMonitor:
         urls_snapshot = list(urls)
 
         def run_shadow() -> None:
-            coords, attempted, method, _diagnostics = self._ocr_tweet_media(
+            coords, attempted, method, diagnostics = self._ocr_tweet_media(
                 event_id, urls_snapshot
             )
             result = "shadow_coordinate" if coords is not None else (
                 "shadow_no_coordinate" if attempted else "shadow_not_attempted"
             )
             record_ocr_result(result)
+            # docs/prompt.md §3 (SC-4): shadow mode is only useful if its
+            # output is queryable. Persist the structured assessment under a
+            # dedicated key -- never the public location/evidence fields.
+            shadow_payload: dict[str, Any] = {
+                "image_assessment_shadow": {
+                    "result": result,
+                    "method": method,
+                    "coordinate": list(coords) if coords else None,
+                    **(diagnostics.get("image_assessment") or {}),
+                }
+            }
+            intel_store.update_metadata(event_id, metadata=shadow_payload)
             logger.info(
                 "media OCR shadow: event=%s images=%d attempted=%s result=%s method=%s",
                 event_id, len(urls_snapshot), attempted, result, method,

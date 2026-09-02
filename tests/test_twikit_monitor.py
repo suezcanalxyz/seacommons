@@ -12,8 +12,21 @@ from types import SimpleNamespace
 
 import pytest
 
+from core.intel.image_extraction import ImageExtractionResult
 from core.intel.store import IntelStore
 from core.intel.twikit_monitor import TwikitMonitor
+
+
+def _image_result(coordinate, method, *, attempted=True, diagnostics=None):
+    """A canned ImageExtractionResult for _analyze_tweet_image patches."""
+    result = ImageExtractionResult(
+        selected_coordinate=coordinate,
+        coordinate_method=method,
+        ocr_attempted=attempted,
+    )
+    if diagnostics:
+        result.diagnostics.update(diagnostics)
+    return result
 
 
 @pytest.fixture(autouse=True)
@@ -1141,7 +1154,8 @@ def test_media_ocr_single_engine_sea_coordinate_upgrades_and_drifts(tmp_path, mo
         lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
         drift_calls=drift_calls,
     )
-    monkeypatch.setattr("core.intel.twikit_monitor._ocr_photo", lambda url: ((35.5, 24.9), True, "text"))
+    monkeypatch.setattr("core.intel.twikit_monitor._analyze_tweet_image",
+                        lambda url, **kw: _image_result((35.5, 24.9), "text"))
     tweet = _FakeTweet(
         "3010",
         "🆘 38 lives at risk south of #Crete! #Greece",
@@ -1173,8 +1187,8 @@ def test_media_ocr_consensus_between_engines_gets_tight_uncertainty(tmp_path, mo
         drift_calls=drift_calls,
     )
     monkeypatch.setattr(
-        "core.intel.twikit_monitor._ocr_photo",
-        lambda url: ((35.5, 24.9), True, "easyocr_tesseract_consensus"),
+        "core.intel.twikit_monitor._analyze_tweet_image",
+        lambda url, **kw: _image_result((35.5, 24.9), "easyocr_tesseract_consensus"),
     )
     tweet = _FakeTweet(
         "3013",
@@ -1206,8 +1220,8 @@ def test_media_ocr_disputed_between_engines_gets_wide_uncertainty_and_review(tmp
         drift_calls=drift_calls,
     )
     monkeypatch.setattr(
-        "core.intel.twikit_monitor._ocr_photo",
-        lambda url: ((35.5, 24.9), True, "easyocr_text_disputed"),
+        "core.intel.twikit_monitor._analyze_tweet_image",
+        lambda url, **kw: _image_result((35.5, 24.9), "easyocr_text_disputed"),
     )
     tweet = _FakeTweet(
         "3014",
@@ -1243,8 +1257,8 @@ def test_media_pin_landmark_fallback_upgrades_position_with_wider_uncertainty(tm
         drift_calls=drift_calls,
     )
     monkeypatch.setattr(
-        "core.intel.twikit_monitor._ocr_photo",
-        lambda url: ((34.9, 25.2), True, "pin_landmark"),
+        "core.intel.twikit_monitor._analyze_tweet_image",
+        lambda url, **kw: _image_result((34.9, 25.2), "pin_landmark"),
     )
     tweet = _FakeTweet(
         "3012",
@@ -1441,7 +1455,8 @@ def test_media_ocr_failure_keeps_fallback_area_but_does_not_drift(tmp_path, monk
         lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
         drift_calls=drift_calls,
     )
-    monkeypatch.setattr("core.intel.twikit_monitor._ocr_photo", lambda url: (None, True, "none"))
+    monkeypatch.setattr("core.intel.twikit_monitor._analyze_tweet_image",
+                        lambda url, **kw: _image_result(None, "none"))
     tweet = _FakeTweet(
         "3011",
         "🆘 38 lives at risk south of #Crete! #Greece",
