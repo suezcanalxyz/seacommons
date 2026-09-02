@@ -246,6 +246,12 @@ def location_status_for(
         return "withheld_from_maritime_map"
     if "disputed" in review or "needs_review" in review:
         return "disputed"
+    # A real extracted point (OCR text/consensus, pin-landmark fit, coordinate
+    # read from the post) is `positioned` even if a now-stale area_geojson is
+    # still attached -- the polygon was only the pre-extraction fallback. Same
+    # rule the public geometry projection uses (core.intel.public_geometry).
+    if lat is not None and lon is not None and source not in COARSE_COORDINATE_SOURCES:
+        return "positioned"
     if has_area_geometry or source == "region_area":
         return "region_only"
     if lat is None or lon is None:
