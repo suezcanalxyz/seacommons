@@ -56,7 +56,10 @@ export default function Legend() {
             </div>
           ))}
           <div className="legend-panel-title">Vessel event categories</div>
-          {EVENT_VISUAL_CATEGORIES.filter((category) => !['resolved', 'archived', 'context'].includes(category.key)).map((category) => (
+          {EVENT_VISUAL_CATEGORIES.filter((category) => ![
+            'resolved', 'archived', 'context', 'needs_review',
+            'humanitarian_alarm_phone', 'distress',
+          ].includes(category.key)).map((category) => (
             <div key={category.key} className="legend-row legend-row--defined">
               <Swatch shape="ring" color={category.color} />
               <span>
