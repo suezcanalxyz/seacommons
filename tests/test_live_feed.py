@@ -231,6 +231,24 @@ def test_public_context_signal_surfaces_in_a_public_compartment() -> None:
     assert _public_intel_feature(news) is None
 
 
+def test_context_publication_does_not_depend_on_severity() -> None:
+    # Product policy §4: severity must not decide publication. A high-severity
+    # uncorroborated, unpublished news item is still chatter and stays off the
+    # public map; a low-"severity" corroborated one still surfaces.
+    base = dict(
+        type="news", lat=35.4, lon=13.9, title="Report off Zawiya",
+        source="Official NGO RSS",
+    )
+    loud = IntelEvent(id="ctx-loud", severity="critical", metadata={"source_policy": "official_rss"}, **base)
+    assert _public_intel_feature(loud) is None
+    quiet = IntelEvent(
+        id="ctx-quiet", severity="low",
+        metadata={"source_policy": "official_rss", "verification_status": "multi_source_corroborated"},
+        **base,
+    )
+    assert _public_intel_feature(quiet) is not None
+
+
 def test_correlated_alert_is_public_only_in_a_public_compartment() -> None:
     base = dict(type="correlated_alert", severity="high", lat=35.0, lon=13.5,
                 title="MMSI 123: spoofing", source="SeaCommons fusion")

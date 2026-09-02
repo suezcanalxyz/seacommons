@@ -197,14 +197,21 @@ def _public_intel_feature(
     )
     if not type_eligible and publication != PublicationStatus.PUBLISHED.value:
         return None
-    # Context noise filter: an OSINT context signal only reaches the public map
-    # when it carries elevated severity (or was explicitly published). Keeps
-    # green GDACS notifications and routine low-severity items off Live.
+    # Feed-volume filter for non-operational OSINT *chatter* — secondary news,
+    # social posts, generic GDACS notifications. It reaches the public map only
+    # when explicitly published or multi-source corroborated. This is a volume
+    # control on secondary reporting, NOT a risk score on maritime
+    # intelligence: SeaCommons classifies by category, it does not score
+    # (product policy §4). SeaCommons-derived context (ais_anomaly, vessel
+    # identity, dark candidate, oil spill, IOM, vessel incident) is the signal
+    # itself and passes on its category + domain + type gates alone.
     if (
-        event.type in _PUBLIC_CONTEXT_TYPES
-        and event.type not in ("correlated_alert",)
-        and (event.severity or "low").lower() == "low"
+        event.type in {"news", "bluesky", "gdacs"}
         and publication != PublicationStatus.PUBLISHED.value
+        and event.verification_status() not in {
+            VerificationStatus.MULTI_SOURCE_CORROBORATED.value,
+            "confirmed",
+        }
     ):
         return None
     # GDACS: only genuinely SAR-relevant natural hazards (cyclone, coastal
