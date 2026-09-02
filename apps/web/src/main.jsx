@@ -1317,7 +1317,7 @@ function App() {
             'circle-radius': ['match', ['get', 'type'], 'correlated_alert', 7, 5],
             'circle-color': mdaAnomalyColorExpression(),
             'circle-opacity': 0.95,
-            'circle-stroke-width': ['match', ['get', 'severity'], 'critical', 2.4, 'high', 1.6, 1],
+            'circle-stroke-width': 1.4,
             'circle-stroke-color': '#04131a',
           },
         });
@@ -1631,8 +1631,9 @@ function App() {
           id: 'intel-vessel-links-layer', type: 'line', source: 'intel-vessel-links',
           layout: { visibility: 'none' },
           paint: {
-            'line-color': ['match', ['get', 'severity'],
-              'critical', '#ff3b3b', 'high', '#ff7b54', 'medium', '#ffe06d', '#8bf0c5'],
+            // Correlation line inherits the linked signal's category colour,
+            // never a severity ramp.
+            'line-color': ['coalesce', ['get', 'visual_color'], '#8bf0c5'],
             'line-width': 1.5,
             'line-opacity': 0.7,
             'line-dasharray': [3, 3],
@@ -1647,9 +1648,12 @@ function App() {
           ['!=', ['get', 'type'], 'ais_anomaly'],
           ['!=', ['get', 'type'], 'correlated_alert'],
         ];
-        const _sevStrokeW = ['match', ['get', 'severity'], 'critical', 2.4, 'high', 1.8, 1.1];
-        const _sevStrokeC = ['match', ['get', 'severity'],
-          'critical', '#ff3b3b', 'high', '#ff7b54', 'medium', '#ffe07d', '#04131a'];
+        // SeaCommons classifies, it does not score: the marker outline is a
+        // static contrast stroke, never a severity ramp. Category drives colour;
+        // lifecycle drives opacity + outline dash; evidence quality drives the
+        // uncertainty geometry — none of them is `severity`.
+        const _markerStrokeW = 1.1;
+        const _markerStrokeC = '#04131a';
         // One toggleable circle layer per OSINT signal category over the shared
         // intel-events source, so the Layers panel lets the operator pick which
         // signal types appear. `intel-events-layer` stays as the catch-all for
@@ -1666,8 +1670,8 @@ function App() {
               'circle-radius': ['match', ['get', 'type'], ['vessel_incident', 'gdacs', 'iom_incident'], 6, 4.5],
               'circle-color': cat.color,
               'circle-opacity': 0.92,
-              'circle-stroke-width': _sevStrokeW,
-              'circle-stroke-color': _sevStrokeC,
+              'circle-stroke-width': _markerStrokeW,
+              'circle-stroke-color': _markerStrokeC,
             },
           });
         }
@@ -1683,8 +1687,8 @@ function App() {
             'circle-radius': 4.5,
             'circle-color': categoryColorExpression(),
             'circle-opacity': 0.92,
-            'circle-stroke-width': _sevStrokeW,
-            'circle-stroke-color': _sevStrokeC,
+            'circle-stroke-width': _markerStrokeW,
+            'circle-stroke-color': _markerStrokeC,
           },
         });
 
@@ -2594,7 +2598,11 @@ function App() {
       features.push({
         type: 'Feature',
         geometry: { type: 'LineString', coordinates: [evCoords, vesselCoords] },
-        properties: { severity: p.severity, mmsi: p.linked_mmsi, title: p.title },
+        properties: {
+          visual_color: classifyEventVisual(p).color,
+          mmsi: p.linked_mmsi,
+          title: p.title,
+        },
       });
     }
     map.getSource('intel-vessel-links')?.setData({ type: 'FeatureCollection', features });

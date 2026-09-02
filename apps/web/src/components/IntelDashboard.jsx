@@ -369,10 +369,20 @@ export default function IntelDashboard({
     const isSelected = eventId === String(selectedEventId || '');
     const visual = classifyEventVisual(p);
     const parsedTitle = parseTitleVessel(p.title);
+    // A humanitarian distress report is about people, not a vessel identity:
+    // never headline it with a bare MMSI.
+    const isHumanitarianRow = visual.key === 'humanitarian_alarm_phone'
+      || visual.key === 'distress'
+      || isAlarmPhoneSource(p.source)
+      || Boolean(p.humanitarian_case_type);
     const vesselName = p.vessel_name
       || p.ship_name
       || parsedTitle.name
-      || (p.linked_mmsi || p.mmsi ? `MMSI ${p.linked_mmsi || p.mmsi}` : p.title || 'Unknown vessel');
+      || (!isHumanitarianRow && (p.linked_mmsi || p.mmsi)
+        ? `MMSI ${p.linked_mmsi || p.mmsi}`
+        : null)
+      || p.title
+      || (isHumanitarianRow ? 'Distress report' : 'Unknown vessel');
     const anomaly = eventAnomalyLabel(p);
     // F-12: report time visible in every row; a missing coordinate reads as a
     // reason (OCR PROCESSING / OCR DISPUTED / REGION ONLY / WITHHELD / NOT

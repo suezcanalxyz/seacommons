@@ -433,11 +433,14 @@ function EvidenceSources({ props, feature }) {
 function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels, onTriggerIntelDrift }) {
   const props = panel.feature?.properties || {};
   const mmsi = props.linked_mmsi || props.mmsi;
+  const visual = classifyEventVisual(props);
+  const isAlarmPhone = /alarm[ _-]?phone/i.test(`${props.source || ''} ${props.verification_status || ''}`)
+    || visual.key === 'humanitarian_alarm_phone';
   const isHumanitarian = Boolean(
     props.humanitarian_case_id
+    || isAlarmPhone
     || (props.maritime_domain === 'sar' && (props.is_distress || props.kind === 'distress'))
   );
-  const isAlarmPhone = /alarm[ _-]?phone/i.test(`${props.source || ''} ${props.verification_status || ''}`);
   const [dossier, setDossier] = useState(null);
   const [dossierLoading, setDossierLoading] = useState(false);
   const [nearbyVessels, setNearbyVessels] = useState([]);
@@ -553,7 +556,6 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
 
   const lifecycle = props.incident_lifecycle
     || (['resolved', 'needs_review', 'archived'].includes(props.kind) ? props.kind : 'active');
-  const visual = classifyEventVisual(props);
   const color = visual.color;
   const when = props.timestamp_utc || props.source_timestamp_utc;
   const eventType = eventAnomalyLabel(props);
@@ -583,7 +585,6 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
         <Row label="Event" value={eventType} />
         <Row label="Status" value={lifecycle} color={color} />
         {props.verification_status && <Row label="Verification" value={String(props.verification_status).replace(/_/g, ' ')} />}
-        {visual?.label && <Row label="Category" value={visual.label} color={color} />}
         <Row label="Reported" value={when ? new Date(when).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—'} />
         {coords && <Row label="Coordinates" value={`${Number(coords[1]).toFixed(5)}, ${Number(coords[0]).toFixed(5)}`} mono />}
       </div>
@@ -592,7 +593,7 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
         <TrackGraphic feature={panel.feature} driftFeature={driftFeature} dossier={dossier} />
       </div>
 
-      {(!isHumanitarian || mmsi) && <div className="cone-section">
+      {!isAlarmPhone && (!isHumanitarian || mmsi) && <div className="cone-section">
         <SectionLabel>Professional vessel identity</SectionLabel>
         <Row label="Name" value={dossier?.static?.name || props.vessel_name || props.ship_name || '—'} />
         <Row label="MMSI" value={mmsi || '—'} mono />
