@@ -127,15 +127,24 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
     if sea_land and sea_land != "SEA":
         return False, f"sea_land_class={sea_land} (not SEA)"
 
-    location_status = str(meta.get("location_status") or "").lower()
-    if location_status in _NON_MARITIME_LOCATION_STATES:
-        return False, f"location_status={location_status}"
-
     review = str(meta.get("coordinate_review_status") or "").lower()
     if "disputed" in review or "needs_review" in review:
         return False, f"coordinate_review_status={review}"
 
     coord_source = str(meta.get("coordinate_source") or "").lower()
+
+    location_status = str(meta.get("location_status") or "").lower()
+    if location_status in _NON_MARITIME_LOCATION_STATES:
+        # `region_only` / `unpositioned` set alongside a real extracted point
+        # is a stale label from a lingering area_geojson -- the landmask
+        # sea-check below is the authority for a point source. The genuinely
+        # non-maritime states (withheld, processing, disputed) still block.
+        stale_region_label = (
+            location_status in {"region_only", "unpositioned"}
+            and coord_source in _TRUSTED_COORD_SOURCES
+        )
+        if not stale_region_label:
+            return False, f"location_status={location_status}"
     trusted = review in _TRUSTED_REVIEW_STATES or coord_source in _TRUSTED_COORD_SOURCES
     if not trusted or coord_source in _BLOCKED_COORD_SOURCES:
         return False, (
