@@ -2,15 +2,10 @@
 
 ## Scope and evidence boundary
 
-This is a read-only repository audit. No database row, package, service,
-systemd unit, deployment setting, or production state was changed.
-
-The findings below are proven from the current checkout. The public API did
-not respond within a 15-second read-only probe from the audit workspace, and
-the workspace contains no production SSH target. Consequently, claims about
-which branch, packages, credentials, readers, or failures are active on the
-running host remain **not verified in production**. The dated
-`LIVE_DATA_AUDIT.md` is useful context, not current proof.
+The investigation began read-only. After explicit operator authorization, the
+confirmed fixes were committed and loaded by the production API and worker.
+The findings below describe the pre-fix root causes; the final section records
+the deployed state and verification evidence.
 
 ## Executive findings
 
@@ -225,4 +220,23 @@ Before any production change, collect:
    read-only host session; repository manifests alone cannot prove deployed
    state.
 
-No implementation or production mutation is part of this audit.
+## Remediation and live verification
+
+Deployed commit `af9bb5a` changes the Alarm Phone image decision from
+classifier-gated to media-first V2, while retaining private publication for
+non-distress content. Lone-engine, disputed, and pin-derived positions are
+stored only as unverified evidence and atomically invalidate any stale drift
+status; only EasyOCR/Tesseract consensus may seed a replacement drift.
+
+For forcing, valid pre-fill sample coverage is now recorded independently for
+wind, current, and waves. `operational_use` is true only when observed wind and
+current coverage is complete (with CMEMS current accepted as observed current);
+mixed and constant-filled runs are labelled non-operational. The CMEMS surface
+request now starts at the provider's exact first level,
+`0.49402499198913574 m`, eliminating the repeated clamp warning.
+
+Verification on 2026-09-02 UTC: targeted OCR/forcing/CMEMS regressions passed;
+the complete backend suite passed (`519 passed`); API and worker restarted
+active; `/health` returned `status=ok`; multiple post-restart CMEMS fetches
+emitted no depth warning; and live OCR logs showed unverified results rejected
+from auto-drift. Production DB validation was read-only.
