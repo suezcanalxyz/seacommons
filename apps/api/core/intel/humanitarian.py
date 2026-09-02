@@ -10,8 +10,17 @@ from core.domain.live_contracts import HumanitarianCaseType
 from core.intel.geoextract import is_ongoing_incident, is_resolved_distress
 
 _PEOPLE = re.compile(
-    r"(?:(?P<approx>~|about|around|approximately|approx\.?|ca\.?)\s*)?"
-    r"(?P<count>\d{1,4})\s*(?:people|persons|passengers|migrants|survivors)\b",
+    r"(?:(?P<approx>~|≈|about|around|approximately|approx\.?|ca\.?|environ|circa|env\.?)\s*)?"
+    r"(?P<count>\d{1,4})\s*"
+    # English, then French / Italian / Spanish / German -- Alarm Phone posts
+    # the same alert in several languages and the head-count must resolve the
+    # same way in each (docs/prompt.md: "Support at least English, Italian,
+    # French").
+    r"(?:people|persons|passengers|migrants|survivors"
+    r"|personnes?|passagers?|rescapée?s?"
+    r"|persone|passeggeri"
+    r"|personas?|pasajeros?"
+    r"|menschen|personen)\b",
     re.I,
 )
 

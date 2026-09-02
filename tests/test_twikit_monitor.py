@@ -171,6 +171,54 @@ def test_ingest_marks_distress_and_geo(tmp_path, monkeypatch):
     assert evt.metadata["verification_status"] == "alarm_phone_twitter"
 
 
+def test_french_retranslation_folds_onto_the_english_incident(tmp_path, monkeypatch):
+    """docs/fixes.md sec 2 / sec 7: Alarm Phone posts EN + FR minutes apart.
+    The second copy threads onto the first -- one marker for one boat."""
+    from datetime import datetime, timezone
+
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+
+    english = _FakeTweet(
+        "5001",
+        "\U0001f198 We alerted the authorities to 127 people who left Banjul, #Gambia, on August 7.",
+    )
+    english.created_at_datetime = now_iso
+    french = _FakeTweet(
+        "5002",
+        "\U0001f198 Nous avons alerté les autorités à propos de 127 personnes "
+        "parties de Banjul, #Gambie le 7 août.",
+    )
+    french.created_at_datetime = now_iso
+
+    assert m._ingest(english, handle="alarm_phone") is True
+    assert m._ingest(french, handle="alarm_phone") is False  # folded, no new event
+    events = store.events()
+    assert len(events) == 1
+    thread = events[0].metadata.get("thread_reposts") or []
+    assert [r["kind"] for r in thread] == ["translation"]
+    assert thread[0]["tweet_id"] == "5002"
+
+
+def test_distinct_incidents_from_the_same_account_are_not_folded(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+
+    a = _FakeTweet("5003", "\U0001f198 15 people missing near #Oran, #Algeria.")
+    a.created_at_datetime = now_iso
+    b = _FakeTweet("5004", "\U0001f198 30 people in distress near #Farmakonisi, #Greece.")
+    b.created_at_datetime = now_iso
+    assert m._ingest(a, handle="alarm_phone") is True
+    assert m._ingest(b, handle="alarm_phone") is True
+    assert len(store.events()) == 2
+
+
 def test_ingest_marks_resolved_posts_as_not_distress(tmp_path, monkeypatch):
     store = IntelStore()
     monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)

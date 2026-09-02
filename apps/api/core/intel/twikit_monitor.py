@@ -769,6 +769,16 @@ class TwikitMonitor:
             for url in self._tweet_media_urls(quoted, tweet_id=str(quoted.id)):
                 if url not in media_urls:
                     media_urls.append(url)
+
+        # A translated / same-language re-issue of an incident already tracked
+        # (Alarm Phone posts EN + FR minutes apart, and a text-only alert then
+        # one carrying the map) must thread onto that incident, not raise a
+        # second marker for one boat (docs/fixes.md sec 2 / sec 7). Skipped for
+        # a quote/reply -- those are already routed above by their hard edge.
+        if quoted is None and not in_reply_to_id:
+            twin = self._translation_twin(combined_text, handle, distress)
+            if twin is not None:
+                return self._thread_translation(tweet, twin, own_text, media_urls)
         media_count = len(media_urls)
         ocr_pending = False
         ocr_shadow_pending = False
@@ -1039,6 +1049,76 @@ class TwikitMonitor:
                 handle,
                 parent.id,
             )
+        return False
+
+    def _translation_twin(
+        self, combined_text: str, handle: str, distress: bool
+    ) -> Optional[IntelEvent]:
+        """The already-stored incident this post is a re-issue of, if any."""
+        try:
+            from core.intel.translation_dedup import find_translation_twin
+
+            recent = intel_store.events(type_filter="twitter", max_age_days=1)
+            return find_translation_twin(
+                combined_text,
+                handle=handle,
+                distress=distress,
+                now=datetime.now(UTC),
+                candidates=recent,
+            )
+        except Exception as exc:  # never let dedup block ingestion
+            logger.debug("X (twikit) translation-twin check failed: %s", exc)
+            return None
+
+    def _thread_translation(
+        self,
+        tweet: Any,
+        parent: IntelEvent,
+        own_text: str,
+        media_urls: list[str],
+    ) -> bool:
+        """Fold a translated / near-duplicate re-post onto its canonical incident.
+
+        No new marker. If this copy carries the map screenshot and the parent
+        is still on a place-name fallback, hand the media to the parent so the
+        one surviving incident gets the real position (docs/fixes.md sec 2).
+        """
+        tweet_id = str(getattr(tweet, "id", "") or "")
+        if not tweet_id:
+            return False
+        record: dict[str, Any] = {
+            "tweet_id": tweet_id,
+            "posted_at": self._timestamp(tweet),
+            "url": f"https://x.com/i/web/status/{tweet_id}",
+            "kind": "translation",
+        }
+        note = str(own_text or "").strip()
+        if note:
+            record["note"] = note[:500]
+        intel_store.append_thread_repost(parent.id, record)
+
+        parent_source = str(parent.metadata.get("coordinate_source") or "")
+        parent_has_point = parent_source in {
+            "post_text", "media_ocr_text", "media_ocr_consensus", "media_pin_landmark",
+        }
+        if media_urls and not parent_has_point:
+            known = list(parent.metadata.get("media_urls") or [])
+            merged = known + [u for u in media_urls if u not in known]
+            intel_store.update_metadata(parent.id, metadata={"media_urls": merged[:6]})
+            if (
+                config.ALARM_PHONE_IMAGE_V2_ENABLED
+                and (
+                    shutil.which("tesseract")
+                    or importlib.util.find_spec("easyocr") is not None
+                )
+            ):
+                self._schedule_media_ocr(tweet_id, parent.id, media_urls)
+        logger.info(
+            "X (twikit) %s folded onto incident %s as a translated duplicate "
+            "(no new marker)",
+            tweet_id,
+            parent.id,
+        )
         return False
 
     def _thread_reply(self, reply: Any, handle: str, parent: IntelEvent) -> bool:
