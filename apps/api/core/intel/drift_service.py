@@ -329,7 +329,11 @@ def schedule_intel_drift(
     respects the global model slot; a busy engine returns False.
     """
     normalized_id = event_id.removeprefix("intel:")
-    event = intel_store.get(normalized_id)
+    # get_durable, not get: a ~20 h old Alarm Phone distress incident is
+    # routinely evicted from the bounded in-memory deque by AIS churn, and the
+    # plain get() then returned None -- which silently skipped the F-01
+    # eligibility gate below and let any lat/lon through.
+    event = intel_store.get_durable(normalized_id)
     if event and event.metadata.get("drift_status") in {"computing", "completed"} and not force:
         return True
     # F-01 evidence gate -- authoritative chokepoint. Runs after the idempotency

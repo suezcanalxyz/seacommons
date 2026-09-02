@@ -161,6 +161,8 @@ def test_force_cannot_bypass_the_evidence_gate(monkeypatch):
         def get(self, _id):
             return event
 
+        get_durable = get
+
         def update_metadata(self, _id, *, metadata):
             event.metadata.update(metadata)
 

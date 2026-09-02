@@ -111,6 +111,54 @@ def test_auto_drift_rejects_disputed_ocr_coordinate():
             )
 
 
+def test_auto_drift_gates_an_event_evicted_from_the_in_memory_deque():
+    """A ~20 h old Alarm Phone incident is routinely pushed out of the
+    600-slot in-memory deque by AIS churn. The route used to `get()` it, get
+    None, and skip the F-01 gate entirely -- so a caller's raw lat/lon went
+    straight to the drift engine. get_durable() reloads it from the DB row so
+    the gate still runs."""
+    event = IntelEvent(
+        id="auto-drift-evicted-01",
+        type="twitter",
+        severity="high",
+        lat=34.2,
+        lon=12.0,
+        title="Distress south of Gavdos - evicted-incident regression",
+        text="A boat is drifting; the two OCR engines read different coordinates.",
+        source="alarm_phone",
+        url="https://x.com/i/web/status/auto-drift-evicted-01",
+        metadata={
+            "is_distress": True,
+            "source_policy": "operator_published",
+            "coordinate_source": "media_ocr_text",
+            "coordinate_review_status": "machine_ocr_disputed_needs_review",
+            "location_uncertainty_m": 3500,
+        },
+    )
+    assert intel_store.add(event) is True  # persists to the test DB
+    # Evict it from memory, exactly as the deque would under load.
+    with intel_store._lock:
+        intel_store._events = type(intel_store._events)(
+            (e for e in intel_store._events if e.id != event.id),
+            maxlen=intel_store._events.maxlen,
+        )
+    assert intel_store.get("auto-drift-evicted-01") is None
+    resp = client.post(
+        "/api/v1/intel/auto-drift",
+        json={"intel_event_id": "auto-drift-evicted-01", "lat": 34.2, "lon": 12.0},
+    )
+    assert resp.status_code == 400
+    assert "disputed" in resp.json()["detail"]
+
+
+def test_auto_drift_rejects_a_completely_unknown_event_id():
+    resp = client.post(
+        "/api/v1/intel/auto-drift",
+        json={"intel_event_id": "no-such-event-anywhere", "lat": 35.0, "lon": 14.0},
+    )
+    assert resp.status_code == 404
+
+
 def test_auto_drift_accepts_humanitarian_event(monkeypatch):
     event = IntelEvent(
         id="auto-drift-humanitarian-01",

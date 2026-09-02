@@ -23,6 +23,9 @@ class _EventStore:
     def get(self, event_id):
         return next((event for event in self._items if event.id == event_id), None)
 
+    def get_durable(self, event_id):
+        return self.get(event_id)
+
 
 class _SourceRegistry:
     def __init__(self):
@@ -165,6 +168,8 @@ def test_drift_engine_startup_failure_is_persisted(monkeypatch) -> None:
     class _FailingStore:
         def get(self, _event_id):
             return None
+
+        get_durable = get
 
         def update_metadata(self, event_id, *, metadata):
             updates.append((event_id, metadata))

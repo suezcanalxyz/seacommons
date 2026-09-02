@@ -293,7 +293,11 @@ async def intel_auto_drift(body: AutoDriftRequest, request: Request):
     """
     rate_limit(request, max_per_minute=6, scope="intel-drift")
     normalized_id = body.intel_event_id.removeprefix("intel:")
-    stored = intel_store.get(normalized_id)
+    # get_durable, not get: an Alarm Phone distress incident older than a few
+    # hours is routinely evicted from the in-memory deque, and get() then
+    # returned None -- which skipped the F-01 gate entirely and let an
+    # anonymous caller's raw lat/lon through.
+    stored = intel_store.get_durable(normalized_id)
     if stored is not None:
         from core.intel.drift_service import is_auto_drift_eligible
 
@@ -307,9 +311,13 @@ async def intel_auto_drift(body: AutoDriftRequest, request: Request):
         eligible, reason = is_auto_drift_eligible(stored)
         if not eligible:
             raise HTTPException(status_code=400, detail=f"Drift not eligible: {reason}")
-    lat = stored.lat if stored and stored.lat is not None else body.lat
-    lon = stored.lon if stored and stored.lon is not None else body.lon
-    observed_at = stored.timestamp_utc if stored else datetime.now(timezone.utc).isoformat()
+    else:
+        # No such event anywhere -- never seed a drift from a caller-supplied
+        # id + lat/lon that matches nothing.
+        raise HTTPException(status_code=404, detail="Unknown intel event")
+    lat = stored.lat if stored.lat is not None else body.lat
+    lon = stored.lon if stored.lon is not None else body.lon
+    observed_at = stored.timestamp_utc or datetime.now(timezone.utc).isoformat()
     if not schedule_intel_drift(
         normalized_id,
         lat,
