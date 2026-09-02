@@ -389,7 +389,7 @@ separate, abstention-capable, never-auto-publish addition.
 | PR | State |
 | --- | --- |
 | 1 — evaluation corpus + runner | *this branch* — landed. `tests/fixtures/alert_recognition/{humanitarian,ais_status,ais_behaviour,ais_integrity}.jsonl` (labelled `input` / `expected` classification, lifecycle, entities, publication, confidence range, notes; hard negatives and contrastive negatives in every file) + `tests/fixtures/alert_recognition/__init__.py` (`load_corpus`, `score` → per-class precision/recall/F1/FP/FN + publication/lifecycle/confidence accuracy, `run` to score any classifier). No classifier wired yet — that is PR 2+. |
-| 2 — `EventAssessment` + `assess_*` | pending |
+| 2 — `EventAssessment` + `assess_*` | *this branch* — landed. `core/intel/assessment.py`: `EventAssessment` (observation / interpretation / evidence_level / confidence + components / supporting + contradicting evidence / caveats / recommended_action / rule_ids / classification_version) plus pure `assess_not_under_command`, `assess_sudden_stop`, `assess_rescue_cluster`, `assess_ais_gap`, `assess_humanitarian` and an `assess(kind, facts)` dispatcher. Each interpretation is built from the event's own numbers — two same-type events with different evidence read differently. Not yet wired into the detectors (PRs 6/8/9/10) or the panel (PR 3). |
 | 3 — web render `EventAssessment` | pending |
 | 4 — `HumanitarianAssessment` V2 | pending |
 | 5 — canonical `mode_policy` + safety-context tier | pending |
