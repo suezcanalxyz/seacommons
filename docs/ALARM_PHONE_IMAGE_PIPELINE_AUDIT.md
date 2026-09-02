@@ -345,6 +345,24 @@ the F-01 drift gate's strictness.
 
 ---
 
+## 7a. Implementation progress
+
+| PR | Commit | State |
+| --- | --- | --- |
+| 1 — synthetic fixtures + ground truth | `669640a` | landed |
+| 2 — `resolve_x_media` + diagnostics | `127b587` | landed |
+| 3 — `ImageExtractionResult` + `extract_from_url` | `318ead3` | landed (also folded in PR 4's per-image diagnostics persist + a first-cut `classify_image_kind`) |
+| 4 — `image_kind` classifier (dedicated module) | — | first-cut only, inside `image_extraction.classify_image_kind`; a dedicated refined classifier is still pending |
+| 5 — decouple image analysis from the caption distress classifier | *this branch* | landed. `_tracked_image_accounts()` wires `ALARM_PHONE_IMAGE_V2_ACCOUNTS` into the `_ingest` OCR gate and the shadow branch. Default (`""`) keeps today's behaviour — only the two Alarm Phone handles. Operators add relay handles (and may run them through `ALARM_PHONE_IMAGE_V2_SHADOW`) until the PR 12 benchmark signs the recall change off. |
+| 6 — Web-Mercator landmark fit + RANSAC + residual/error | `6765a37` | landed. Also gave `geolocate_pin_from_image` a `sea_snap` opt-out (partial PR 11). |
+| 7 — shape-based pin detector + ranked candidates | — | pending |
+| 8 — confidence model + evidence-sized uncertainty | — | pending (`image_extraction` still uses a per-method-family constant) |
+| 9 — tweet context as validation constraint | — | pending (`context_places` is threaded through `extract_from_bytes` but only recorded as `context_place_overlap`, not yet a confidence input) |
+| 10 — structured people/vessel/needs extraction | — | pending |
+| 11 — conditional sea-snap in the pin path | — | partial (see PR 6) |
+| 12 — `--benchmark` V1/V2 comparison report | — | pending |
+| 13 — promote V2 out of shadow | — | gated on PR 12 |
+
 ## 8. Invariants this work must not break
 
 - Disputed / low-confidence OCR → **0** auto-drift (F-01). A wider OCR gate

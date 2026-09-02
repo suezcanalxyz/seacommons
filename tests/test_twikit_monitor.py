@@ -1061,6 +1061,61 @@ def test_non_alarm_phone_non_distress_media_never_schedules_ocr(tmp_path, monkey
     assert scheduled == []
 
 
+def test_configured_relay_account_gets_image_analysis_on_non_distress_caption(
+    tmp_path, monkeypatch
+):
+    """docs/prompt.md §3 (audit SC-2): a relay handle listed in
+    ALARM_PHONE_IMAGE_V2_ACCOUNTS is analysed like an Alarm Phone map post
+    even though its caption never classified as a direct distress call."""
+    scheduled: list = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+        scheduled=scheduled,
+    )
+    monkeypatch.setattr("core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_ENABLED", True)
+    monkeypatch.setattr("core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_SHADOW", False)
+    monkeypatch.setattr(
+        "core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_ACCOUNTS",
+        "@SosMedFrance, aegean_boat",
+    )
+    tweet = _FakeTweet(
+        "3007-relay",
+        "Nouvelle position ⬇️",
+        media=[_FakeMedia("https://pbs.twimg.com/media/relay.jpg")],
+    )
+
+    assert m._ingest(tweet, handle="sosmedfrance") is True
+
+    evt = store.events()[0]
+    assert evt.metadata["is_distress"] is False
+    assert evt.metadata["media_transport"] == "x_media_ocr"
+    assert len(scheduled) == 1
+
+
+def test_unconfigured_relay_account_non_distress_media_never_schedules_ocr(
+    tmp_path, monkeypatch
+):
+    scheduled: list = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+        scheduled=scheduled,
+    )
+    monkeypatch.setattr("core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_ENABLED", True)
+    monkeypatch.setattr("core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_ACCOUNTS", "")
+    tweet = _FakeTweet(
+        "3007-noconf",
+        "Nouvelle position ⬇️",
+        media=[_FakeMedia("https://pbs.twimg.com/media/relay.jpg")],
+    )
+    assert m._ingest(tweet, handle="sosmedfrance") is True
+    assert store.events()[0].metadata["media_transport"] == "none"
+    assert scheduled == []
+
+
 def test_alarm_phone_shadow_analyzes_non_distress_media_without_public_mutation(tmp_path, monkeypatch):
     shadow_jobs: list[tuple[str, str, list[str]]] = []
     m, store = _ocr_gated_monitor(

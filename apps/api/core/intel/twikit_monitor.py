@@ -141,6 +141,23 @@ _DEFAULT_ACCOUNTS = list(NGO_TWITTER_HANDLES)
 # shared media path (x_media_utils / x_media).
 _ALLOWED_MEDIA_HOSTS = frozenset({"pbs.twimg.com"})
 
+# Handles whose map/coordinate images are analysed even when the caption did
+# not classify as a direct distress call (docs/prompt.md §3, audit SC-1/SC-2).
+# The two Alarm Phone spellings are always in; operators add relays that post
+# Alarm-Phone-style maps via ALARM_PHONE_IMAGE_V2_ACCOUNTS.
+_ALARM_PHONE_HANDLES = frozenset({"alarm_phone", "alarmphone"})
+
+
+def _tracked_image_accounts() -> frozenset[str]:
+    extra = {
+        part.strip().lstrip("@").lower()
+        for part in str(
+            getattr(config, "ALARM_PHONE_IMAGE_V2_ACCOUNTS", "") or ""
+        ).split(",")
+        if part.strip()
+    }
+    return _ALARM_PHONE_HANDLES | extra
+
 
 def _analyze_tweet_image(url: str, *, context_places: tuple[str, ...] = ()):
     """Structured image understanding for one media URL (docs/prompt.md §4).
@@ -758,9 +775,9 @@ class TwikitMonitor:
         ocr_available = bool(
             shutil.which("tesseract") or importlib.util.find_spec("easyocr") is not None
         )
+        handle_tracked_for_images = handle.lower() in _tracked_image_accounts()
         alarm_phone_image_v2 = (
-            handle.lower() in {"alarm_phone", "alarmphone"}
-            and config.ALARM_PHONE_IMAGE_V2_ENABLED
+            handle_tracked_for_images and config.ALARM_PHONE_IMAGE_V2_ENABLED
         )
         if (distress or alarm_phone_image_v2) and not text_coords and media_count:
             if ocr_available:
@@ -779,7 +796,7 @@ class TwikitMonitor:
         elif (
             media_count
             and not text_coords
-            and handle.lower() in {"alarm_phone", "alarmphone"}
+            and handle_tracked_for_images
             and config.ALARM_PHONE_IMAGE_V2_SHADOW
             and ocr_available
         ):
