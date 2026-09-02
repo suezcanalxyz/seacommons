@@ -142,10 +142,16 @@ export function currentEstimateFeature(trajectory, eventTimestamp, now = new Dat
   };
 }
 
+// Drift is withheld only once the search is over (resolved / archived). A
+// `needs_review` incident is still open — a human must confirm the outcome —
+// so its persisted operational drift keeps rendering, matching the backend
+// feed gate (core.live.feed._DRIFT_HIDDEN_LIFECYCLES).
+const DRIFT_HIDDEN_LIFECYCLES = new Set(['resolved', 'archived']);
+
 export function mergeLiveDrifts(serverCollection, browserCollection, events, now = new Date()) {
   const inactiveEventIds = new Set(
     (Array.isArray(events) ? events : [])
-      .filter((feature) => incidentLifecycle(feature?.properties || {}) !== 'active')
+      .filter((feature) => DRIFT_HIDDEN_LIFECYCLES.has(incidentLifecycle(feature?.properties || {})))
       .map(eventId),
   );
   const belongsToActiveIncident = (feature) => !inactiveEventIds.has(

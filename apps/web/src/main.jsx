@@ -35,11 +35,7 @@ import { fetchJson } from './services/api/client.js';
 import { useLiveFeed } from './hooks/useLiveFeed.js';
 import { FEED_STATUS_LABEL, FEED_STATUS_TONE } from './features/live/feedStatus.js';
 import { mergeIntelDriftUpdate } from './features/live/normalize.js';
-import {
-  decorateLiveTracking,
-  liveTrackingCandidates,
-  mergeLiveDrifts,
-} from './simulation/liveTracking.js';
+import { mergeLiveDrifts } from './simulation/liveTracking.js';
 
 // Short two-tone chime for a correlated OSINT alert. Web Audio only; silent
 // when the operator has muted alerts (localStorage) or the browser blocks
@@ -91,20 +87,24 @@ const _PRECISE_POINT_FILTER = ['all',
   ['<=', ['coalesce', ['get', 'location_uncertainty_m'], 0], 20000],
 ];
 
-// Distress lifecycle colors: red (active/unresolved), green (resolved/known
-// outcome), amber (verified update needs review), gray (archived/stale). All pulse —
-// only the fill/stroke color differs, driven by `incident_lifecycle` (see
-// core/api/routes/live.py) so the map never has to guess status itself.
-const LIFECYCLE_CORE_COLOR = ['match', ['get', 'incident_lifecycle'],
-  'resolved', '#22c55e', 'needs_review', '#f59e0b', 'archived', '#9aa0ab', '#ff3b3b'];
-const LIFECYCLE_PULSE_FILL = ['match', ['get', 'incident_lifecycle'],
-  'resolved', 'rgba(34,197,94,0.35)', 'needs_review', 'rgba(245,158,11,0.35)', 'archived', 'rgba(154,160,171,0.35)', 'rgba(255,59,59,0.35)'];
-const LIFECYCLE_PULSE_STROKE = ['match', ['get', 'incident_lifecycle'],
-  'resolved', 'rgba(34,197,94,0.9)', 'needs_review', 'rgba(245,158,11,0.9)', 'archived', 'rgba(154,160,171,0.9)', 'rgba(255,80,80,0.9)'];
-const LIFECYCLE_AREA_FILL = ['match', ['get', 'incident_lifecycle'],
-  'resolved', 'rgba(34,197,94,0.10)', 'needs_review', 'rgba(245,158,11,0.10)', 'archived', 'rgba(154,160,171,0.08)', 'rgba(255,59,59,0.10)'];
-const LIFECYCLE_AREA_STROKE = ['match', ['get', 'incident_lifecycle'],
-  'resolved', 'rgba(34,197,94,0.4)', 'needs_review', 'rgba(245,158,11,0.5)', 'archived', 'rgba(154,160,171,0.35)', 'rgba(255,80,80,0.4)'];
+// CATEGORY determines colour; LIFECYCLE is only secondary styling.
+// Humanitarian distress — Alarm Phone included — keeps its category colour
+// (red) in EVERY lifecycle state. A resolved Alarm Phone does NOT turn green:
+// "resolved" reads as a dimmer fill + a solid (non-dashed) outline + a badge.
+// `visual_color` is the backend-assigned canonical category colour; the
+// fallback is red because this source only ever carries humanitarian distress.
+const LIFECYCLE_CORE_COLOR = ['coalesce', ['get', 'visual_color'], '#ff3b3b'];
+const LIFECYCLE_PULSE_FILL = ['coalesce', ['get', 'visual_color'], '#ff3b3b'];
+const LIFECYCLE_PULSE_STROKE = ['coalesce', ['get', 'visual_color'], '#ff3b3b'];
+const LIFECYCLE_AREA_FILL = ['coalesce', ['get', 'visual_color'], '#ff3b3b'];
+const LIFECYCLE_AREA_STROKE = ['coalesce', ['get', 'visual_color'], '#ff3b3b'];
+// Lifecycle -> secondary styling only (opacity + outline dash), never hue.
+const LIFECYCLE_FILL_OPACITY = ['match', ['get', 'incident_lifecycle'],
+  'resolved', 0.16, 'archived', 0.10, 'needs_review', 0.34, 0.4];
+const LIFECYCLE_STROKE_OPACITY = ['match', ['get', 'incident_lifecycle'],
+  'resolved', 0.7, 'archived', 0.5, 0.92];
+const LIFECYCLE_OUTLINE_DASH = ['match', ['get', 'incident_lifecycle'],
+  'resolved', ['literal', [1, 0]], 'archived', ['literal', [1, 0]], ['literal', [3, 2]]];
 
 const PUBLIC_DEMO_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org']);
 const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'engine.seacommons.org']);
@@ -658,7 +658,6 @@ function App() {
       setIntelDrifts((previous) => mergeIntelDriftUpdate(previous, message));
     },
   });
-  const [browserLiveDrifts, setBrowserLiveDrifts] = useState({ type: 'FeatureCollection', features: [] });
   const [liveEstimateClock, setLiveEstimateClock] = useState(Date.now());
   const [intelFilter, setIntelFilter] = useState('all');
   const [signalsExpanded, setSignalsExpanded] = useState(false);
@@ -750,7 +749,6 @@ function App() {
   const caseEventIdRef = useRef(null);
   const caseStatusRef = useRef('idle');
   const simParamsRef = useRef({});
-  const liveTrackingRunsRef = useRef(new Map());
   const [form, setForm] = useState({
     lat: APP_PROFILE === 'demo' ? '35.52' : '',
     lon: APP_PROFILE === 'demo' ? '14.08' : '',
@@ -770,11 +768,11 @@ function App() {
   const displayedIntelDrifts = useMemo(
     () => mergeLiveDrifts(
       intelDrifts,
-      browserLiveDrifts,
+      null,
       intelEvents,
       new Date(liveEstimateClock),
     ),
-    [intelDrifts, browserLiveDrifts, intelEvents, liveEstimateClock],
+    [intelDrifts, intelEvents, liveEstimateClock],
   );
   const selectedIntelEventId = mapPanel?.type === 'intel'
     ? mapPanel.feature?.properties?.id
@@ -907,62 +905,12 @@ function App() {
     caseStatusRef.current = caseStatus;
   }, [caseStatus]);
 
-  // Alarm Phone live tracking runs independently in the browser. It consumes
-  // hourly historical/current weather and marine fields, so an old report is
-  // never advanced using a present-only field relabelled as historical data.
-  useEffect(() => {
-    if (!isPublicLiveHost) return undefined;
-    const candidates = liveTrackingCandidates(intelEvents, new Date(), 48).slice(0, 12);
-    for (const signal of candidates) {
-      const properties = signal.properties || {};
-      const coordinates = signal.geometry.coordinates;
-      const id = String(properties.id || signal.id || '').replace(/^intel:/, '');
-      const runKey = `${id}:${coordinates[0]}:${coordinates[1]}:${properties.timestamp_utc}`;
-      const previousRun = liveTrackingRunsRef.current.get(runKey);
-      if (previousRun === 'running' || previousRun === 'completed') continue;
-      if (Number.isFinite(previousRun) && Date.now() - previousRun < 5 * 60_000) continue;
-      liveTrackingRunsRef.current.set(runKey, 'running');
-      (async () => {
-        try {
-          const environment = await fetchOpenMeteoEnvironment(coordinates[1], coordinates[0]);
-          const snapshot = buildEnvironmentSnapshot(environment, coordinates[1], coordinates[0]);
-          const elapsedHours = Math.max(
-            0,
-            (Date.now() - Date.parse(properties.timestamp_utc)) / 3_600_000,
-          );
-          const result = await computeDriftInWorker({
-            scenario: {
-              scenario_id: `live-${id}`,
-              observed_at: properties.timestamp_utc,
-              origin: { lat: Number(coordinates[1]), lon: Number(coordinates[0]) },
-              subject: { kind: 'rubber_boat', persons: 1 },
-            },
-            environmentSnapshot: snapshot,
-            options: {
-              duration_hours: Math.min(72, Math.max(24, Math.ceil(elapsedHours) + 12)),
-              particles: 64,
-            },
-          });
-          const decorated = decorateLiveTracking(result, signal);
-          setBrowserLiveDrifts((previous) => ({
-            type: 'FeatureCollection',
-            features: [
-              ...(previous.features || []).filter(
-                (feature) => String(feature.properties?.intel_event_id || '').replace(/^intel:/, '') !== id,
-              ),
-              ...decorated.features,
-            ],
-          }));
-          liveTrackingRunsRef.current.set(runKey, 'completed');
-        } catch {
-          // A provider/network failure is retried after five minutes. No
-          // synthetic or straight-line fallback is drawn on the map.
-          liveTrackingRunsRef.current.set(runKey, Date.now());
-        }
-      })();
-    }
-    return undefined;
-  }, [intelEvents]);
+  // Product policy §2: there is ONE authoritative Drift pipeline —
+  // BACKEND / WORKER = authoritative scientific Drift, FRONTEND = visualization
+  // only. Public Live no longer runs a competing in-browser drift model for
+  // Alarm Phone incidents; it consumes the persisted operational drift from
+  // /api/v1/live/drifts (see the polling effect below). Browser drift remains
+  // ONLY as the explicitly user-triggered simulation tool (runSarCaseAt).
 
   useEffect(() => {
     if (!isPublicLiveHost) return undefined;
@@ -974,18 +922,15 @@ function App() {
   useEffect(() => {
     let alive = true;
     let driftTimer = null;
-    if (isPublicLiveHost) {
-      // Public Live calculates active, geolocated drifts in the browser.
-      // Oracle remains a backup and is not polled every 30 seconds.
-      setIntelDrifts({ type: 'FeatureCollection', features: [] });
-      return undefined;
-    }
+    // Public Live consumes the backend/edge persisted operational Drift; the
+    // authenticated console consumes the operator drift projection. Neither
+    // clears the source — a transient fetch failure keeps the last good frame.
     async function loadDrifts() {
       try {
         const path = isPublicLiveHost ? '/api/v1/live/drifts' : '/api/v1/intel/drifts';
         const data = await fetchJson(apiBase, path);
         if (alive && data.features) setIntelDrifts(data);
-      } catch { /* ignore */ }
+      } catch { /* ignore — keep the last good drift frame */ }
       if (alive) {
         driftTimer = window.setTimeout(loadDrifts, isPublicLiveHost ? 30_000 : 120_000);
       }
@@ -1454,28 +1399,26 @@ function App() {
         });
 
         // Intel auto-drift background cones & lines (faintest, furthest back)
+        // Drift colour inherits its origin signal's semantic category
+        // (visual_color) — Alarm Phone drift is red because the origin is
+        // Alarm Phone, never because of a severity. Uncertainty is encoded
+        // through fill opacity / line width, not hue.
+        const _DRIFT_COLOR = ['coalesce', ['get', 'visual_color'], '#ff3b3b'];
         map.addLayer({
           id: 'intel-drift-cone', type: 'fill', source: 'intel-drifts',
           filter: ['==', '$type', 'Polygon'],
           paint: {
-            'fill-color': ['match', ['get', 'intel_severity'],
-              'critical', isPublicLiveHost ? 'rgba(255,59,59,0.15)' : 'rgba(255,59,59,0.08)',
-              'high',     isPublicLiveHost ? 'rgba(255,123,84,0.14)' : 'rgba(255,123,84,0.07)',
-                          isPublicLiveHost ? 'rgba(92,255,215,0.12)' : 'rgba(139,240,197,0.05)'],
-            'fill-outline-color': ['match', ['get', 'intel_severity'],
-              'critical', isPublicLiveHost ? 'rgba(255,90,74,0.62)' : 'rgba(255,59,59,0.28)',
-              'high',     isPublicLiveHost ? 'rgba(255,150,100,0.58)' : 'rgba(255,123,84,0.22)',
-                          isPublicLiveHost ? 'rgba(92,255,215,0.52)' : 'rgba(139,240,197,0.18)'],
+            'fill-color': _DRIFT_COLOR,
+            'fill-opacity': isPublicLiveHost ? 0.14 : 0.07,
+            'fill-outline-color': _DRIFT_COLOR,
           },
         });
         map.addLayer({
           id: 'intel-drift-line', type: 'line', source: 'intel-drifts',
           filter: ['==', '$type', 'LineString'],
           paint: {
-            'line-color': ['match', ['get', 'intel_severity'],
-              'critical', isPublicLiveHost ? 'rgba(255,72,62,0.94)' : 'rgba(255,59,59,0.55)',
-              'high',     isPublicLiveHost ? 'rgba(255,132,84,0.92)' : 'rgba(255,123,84,0.50)',
-                          isPublicLiveHost ? 'rgba(92,255,215,0.88)' : 'rgba(139,240,197,0.40)'],
+            'line-color': _DRIFT_COLOR,
+            'line-opacity': isPublicLiveHost ? 0.92 : 0.5,
             'line-width': isPublicLiveHost ? 2.4 : 1.5,
             'line-dasharray': [3, 3],
           },
@@ -1649,8 +1592,7 @@ function App() {
           filter: ['all', ['==', ['geometry-type'], 'Point'], ['!=', ['get', 'type'], 'current_estimate']],
           paint: {
             'circle-radius': 4,
-            'circle-color': ['match', ['get', 'intel_severity'],
-              'critical', '#ff3b3b', 'high', '#ff7b54', '#8bf0c5'],
+            'circle-color': ['coalesce', ['get', 'visual_color'], '#ff3b3b'],
             'circle-opacity': 0.78,
             'circle-stroke-width': 1,
             'circle-stroke-color': '#04131a',
@@ -1795,7 +1737,7 @@ function App() {
           filter: ['==', ['geometry-type'], 'Polygon'],
           paint: {
             'fill-color': LIFECYCLE_AREA_FILL,
-            'fill-opacity': ['match', ['get', 'location_precision'], 'area_low_confidence', 0.5, 1.0],
+            'fill-opacity': ['*', ['match', ['get', 'location_precision'], 'area_low_confidence', 0.5, 1.0], LIFECYCLE_FILL_OPACITY, 0.3],
           },
         });
         map.addLayer({
@@ -1804,6 +1746,7 @@ function App() {
           paint: {
             'line-color': LIFECYCLE_AREA_STROKE,
             'line-width': 1.5,
+            'line-opacity': LIFECYCLE_STROKE_OPACITY,
             'line-dasharray': ['match', ['get', 'location_precision'], 'area_low_confidence', ['literal', [2, 2]], ['literal', [1, 0]]],
           },
         });
@@ -1823,7 +1766,9 @@ function App() {
           paint: {
             'circle-radius': METERS_TO_PX_RADIUS,
             'circle-color': LIFECYCLE_AREA_FILL,
+            'circle-opacity': ['*', LIFECYCLE_FILL_OPACITY, 0.3],
             'circle-stroke-color': LIFECYCLE_AREA_STROKE,
+            'circle-stroke-opacity': LIFECYCLE_STROKE_OPACITY,
             'circle-stroke-width': 1,
           },
         });
@@ -1844,8 +1789,9 @@ function App() {
           paint: {
             'circle-radius': 8,
             'circle-color': LIFECYCLE_PULSE_FILL,
-            'circle-opacity': 0.45,
+            'circle-opacity': ['*', 0.45, LIFECYCLE_FILL_OPACITY, 2.5],
             'circle-stroke-color': LIFECYCLE_PULSE_STROKE,
+            'circle-stroke-opacity': LIFECYCLE_STROKE_OPACITY,
             'circle-stroke-width': 1.5,
           },
         });
@@ -1854,7 +1800,9 @@ function App() {
           filter: _PRECISE_POINT_FILTER,
           paint: {
             'circle-radius': 5,
+            // Category colour, always. A resolved Alarm Phone stays red.
             'circle-color': LIFECYCLE_CORE_COLOR,
+            'circle-opacity': ['match', ['get', 'incident_lifecycle'], 'archived', 0.6, 'resolved', 0.8, 1],
             'circle-stroke-width': 1.5,
             'circle-stroke-color': '#fff4bf',
           },

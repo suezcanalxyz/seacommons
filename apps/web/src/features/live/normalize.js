@@ -70,6 +70,21 @@ export function edgeEventToFeature(event) {
       received_at: typeof event.received_at === 'string' ? event.received_at : event.observed_at,
       location_precision: locationPrecision,
       ...(radius !== null ? { location_uncertainty_m: radius } : {}),
+      // Canonical semantic category (colour is a pure function of this, never
+      // severity). Carried across the edge transport so live.seacommons.org
+      // and the VM feed classify a signal identically.
+      ...(typeof props.visual_category === 'string'
+        ? { visual_category: props.visual_category } : {}),
+      ...(typeof props.visual_color === 'string'
+        ? { visual_color: props.visual_color } : {}),
+      ...(typeof props.category_label === 'string'
+        ? { category_label: props.category_label } : {}),
+      ...(typeof props.maritime_domain === 'string'
+        ? { maritime_domain: props.maritime_domain } : {}),
+      ...(typeof props.humanitarian_case_type === 'string'
+        ? { humanitarian_case_type: props.humanitarian_case_type } : {}),
+      ...(typeof props.location_status === 'string'
+        ? { location_status: props.location_status } : {}),
       ...(typeof props.coordinate_source === 'string'
         ? { coordinate_source: props.coordinate_source }
         : {}),
