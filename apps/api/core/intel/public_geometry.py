@@ -58,18 +58,29 @@ def public_geometry_and_precision(event: IntelEvent) -> tuple[dict | None, str]:
     # on a coastline even though the report is unambiguously offshore; nudge it
     # onto the nearest water. No-op when the point is already at sea or the
     # landmask is unavailable.
-    lat, lon = landmask.nearest_sea_point(lat, lon)
-    if landmask.is_on_land(lat, lon) is True:
+    snapped_lat, snapped_lon = landmask.nearest_sea_point(lat, lon)
+    if landmask.is_on_land(snapped_lat, snapped_lon) is True:
         # nearest_sea_point searches only a bounded radius and gives up
         # rather than snapping a real inland report onto an unrelated
         # coastline far away. A report that is still on land after that is
-        # not a vessel whose pin needs nudging -- it is a genuinely
-        # land-based incident (e.g. an Evros river/border pushback, which
-        # Alarm Phone reports alongside sea rescues). This model has no
-        # honest way to represent that as a boat position; plotting one
-        # anyway is a false "boat at sea" marker. Drop it instead of
-        # fabricating a location.
+        # a genuinely land-based incident (e.g. an Evros river/border
+        # pushback, which Alarm Phone reports alongside sea rescues).
+        hct = str(event.metadata.get("humanitarian_case_type") or "").lower()
+        if hct == "land_humanitarian":
+            # Product policy §1 / §11-B: a land Alarm Phone incident stays
+            # visible. It is shown at its reported (un-snapped) coordinate as
+            # a land humanitarian point -- red, no maritime drift -- never
+            # removed and never nudged to sea. Land is a visibility
+            # condition, not a reason to delete the humanitarian event.
+            return (
+                {"type": "Point", "coordinates": [lon, lat]},
+                LocationPrecision.APPROXIMATE.value,
+            )
+        # For a maritime case, a coordinate still on land after the snap is a
+        # bad extraction (a stray number pair, an OCR misread). Plotting a
+        # "boat at sea" marker there is false; drop it.
         return None, LocationPrecision.UNPOSITIONED.value
+    lat, lon = snapped_lat, snapped_lon
 
     if coordinate_source == "place_centroid":
         precision = LocationPrecision.REGIONAL_CENTROID.value
