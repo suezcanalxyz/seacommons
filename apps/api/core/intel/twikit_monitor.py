@@ -160,7 +160,9 @@ def _tracked_image_accounts() -> frozenset[str]:
     return _ALARM_PHONE_HANDLES | extra
 
 
-def _analyze_tweet_image(url: str, *, context_places: tuple[str, ...] = ()):
+def _analyze_tweet_image(
+    url: str, *, context_places: tuple[str, ...] = (), sea_snap: bool = True
+):
     """Structured image understanding for one media URL (docs/prompt.md §4).
 
     A one-line seam over ``image_extraction.extract_from_url`` so tests can
@@ -168,7 +170,7 @@ def _analyze_tweet_image(url: str, *, context_places: tuple[str, ...] = ()):
     """
     from core.intel.image_extraction import extract_from_url
 
-    return extract_from_url(url, context_places=context_places)
+    return extract_from_url(url, context_places=context_places, sea_snap=sea_snap)
 
 
 class TwikitMonitor:
@@ -501,7 +503,12 @@ class TwikitMonitor:
         return resolution.urls
 
     def _ocr_tweet_media(
-        self, tweet_id: str, urls: list[str], *, context_places: tuple[str, ...] = ()
+        self,
+        tweet_id: str,
+        urls: list[str],
+        *,
+        context_places: tuple[str, ...] = (),
+        sea_snap: bool = True,
     ) -> tuple[Optional[tuple[float, float]], bool, str, dict[str, Any]]:
         """Analyse the tweet's images until one yields a coordinate pair.
 
@@ -515,7 +522,9 @@ class TwikitMonitor:
         last_assessment: dict[str, Any] = {}
         for url in urls:
             try:
-                result = _analyze_tweet_image(url, context_places=context_places)
+                result = _analyze_tweet_image(
+                    url, context_places=context_places, sea_snap=sea_snap
+                )
             except Exception as exc:
                 logger.debug("X (twikit) media OCR failed for %s (%s): %s", tweet_id, url, exc)
                 continue
@@ -534,6 +543,19 @@ class TwikitMonitor:
             return ()
         return tuple(event.metadata.get("context_place_names") or ())
 
+    def _event_sea_snap(self, event_id: str) -> bool:
+        """False for a land humanitarian case (Evros, a reception centre) so
+        its pin is not dragged into the water (docs/fixes.md F-09, audit
+        LM-6). Defaults True -- every other distress location is a boat."""
+        event = intel_store.get(event_id)
+        if event is None:
+            return True
+        meta = event.metadata
+        return (
+            meta.get("humanitarian_case_type") != "land_humanitarian"
+            and meta.get("location_status") != "withheld_from_maritime_map"
+        )
+
     def _apply_media_ocr(self, event_id: str, urls: list[str]) -> None:
         """Run in a pool worker: OCR, upgrade the stored position, drift."""
         from core.intel.location_evidence import (
@@ -544,7 +566,10 @@ class TwikitMonitor:
 
         try:
             coords, attempted, method, ocr_diag = self._ocr_tweet_media(
-                event_id, urls, context_places=self._event_context_places(event_id)
+                event_id,
+                urls,
+                context_places=self._event_context_places(event_id),
+                sea_snap=self._event_sea_snap(event_id),
             )
             if coords is None:
                 record_ocr_result("no_coordinate")
@@ -646,6 +671,7 @@ class TwikitMonitor:
                 event_id,
                 urls_snapshot,
                 context_places=self._event_context_places(event_id),
+                sea_snap=self._event_sea_snap(event_id),
             )
             result = "shadow_coordinate" if coords is not None else (
                 "shadow_no_coordinate" if attempted else "shadow_not_attempted"

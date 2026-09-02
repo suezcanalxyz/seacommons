@@ -357,10 +357,14 @@ def _download_bounded_image(url: str) -> Optional[bytes]:
 
 
 def _extract_coordinate_from_bytes(
-    payload: bytes, *, executable: Optional[str] = None
+    payload: bytes, *, executable: Optional[str] = None, sea_snap: bool = True
 ) -> tuple[Optional[tuple[float, float]], bool, str, dict[str, Any]]:
     """The OCR core: EasyOCR read + Tesseract cross-check, else the Tesseract
-    multi-band sweep, else pin+landmark geolocation. See ``_ocr_photo``."""
+    multi-band sweep, else pin+landmark geolocation. See ``_ocr_photo``.
+
+    ``sea_snap`` is forwarded to the pin-landmark path: a land humanitarian
+    case (Evros, a reception centre) must not have its pin dragged into the
+    water (docs/fixes.md F-09 parity, audit LM-6)."""
     executable = executable if executable is not None else shutil.which("tesseract")
     easy_coordinate, easy_boxes, easy_attempted = _easyocr_image(payload)
     if easy_coordinate is not None:
@@ -478,6 +482,7 @@ def _extract_coordinate_from_bytes(
             payload,
             executable=executable,
             word_boxes=easy_boxes or None,
+            sea_snap=sea_snap,
         )
     except Exception:
         pin_coord = None

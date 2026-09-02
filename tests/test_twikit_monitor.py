@@ -1177,6 +1177,27 @@ def test_alarm_phone_image_v2_schedules_non_distress_media_for_private_enrichmen
     assert len(scheduled) == 1
 
 
+def test_event_sea_snap_is_false_only_for_a_land_humanitarian_case(tmp_path, monkeypatch):
+    """docs/fixes.md F-09 (audit LM-6): _apply_media_ocr must not sea-snap a
+    land humanitarian pin."""
+    m, store = _ocr_gated_monitor(
+        tmp_path, monkeypatch, lambda name: "/usr/bin/tesseract" if name == "tesseract" else None
+    )
+    sea = _FakeTweet("4001", "🆘 Boat adrift south of #Crete, ~40 people!",
+                     media=[_FakeMedia("https://pbs.twimg.com/media/a.jpg")])
+    land = _FakeTweet(
+        "4002",
+        "Group in danger near the #Evros forest at the land border, no shelter",
+        media=[_FakeMedia("https://pbs.twimg.com/media/b.jpg")],
+    )
+    assert m._ingest(sea, handle="alarm_phone") is True
+    assert m._ingest(land, handle="alarm_phone") is True
+    by_tweet = {e.metadata["tweet_id"]: e for e in store.events()}
+    assert m._event_sea_snap(by_tweet["4001"].id) is True
+    assert by_tweet["4002"].metadata["humanitarian_case_type"] == "land_humanitarian"
+    assert m._event_sea_snap(by_tweet["4002"].id) is False
+
+
 def test_caption_place_names_are_stored_for_image_context(tmp_path, monkeypatch):
     """docs/prompt.md §8: the caption's gazetteer place names are persisted so
     _apply_media_ocr can validate an image coordinate against them."""

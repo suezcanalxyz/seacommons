@@ -210,6 +210,44 @@ def test_geolocate_pin_from_image_refuses_a_fit_far_from_every_matched_landmark(
     assert geolocate_pin_from_image(buf.getvalue()) is None
 
 
+def _synthetic_pin_map():
+    from tests.fixtures.alarm_phone_images import (
+        _LANDMARKS,
+        _MAP_VIEWPORT,
+        _render_landmark_map,
+    )
+
+    payload = _render_landmark_map(pin_latlon=(35.02, 12.18), pin_color_name="red")
+    boxes = []
+    for i, (name, (lat, lon)) in enumerate(_LANDMARKS.items(), start=1):
+        px, py = _MAP_VIEWPORT.to_pixel(lat, lon)
+        boxes.append({
+            "text": name, "left": px - 40, "top": py - 6, "width": 80, "height": 12,
+            "block": "1", "par": "1", "line": str(i), "word": 1,
+        })
+    return payload, boxes
+
+
+def test_sea_snap_flag_controls_landmask_nudge(monkeypatch) -> None:
+    """docs/fixes.md F-09 parity (audit LM-6): a land humanitarian case passes
+    sea_snap=False and the pin keeps its reported position."""
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/tesseract")
+    payload, boxes = _synthetic_pin_map()
+
+    calls: list = []
+    monkeypatch.setattr(
+        "core.intel.landmask.nearest_sea_point",
+        lambda lat, lon, **kw: calls.append((lat, lon)) or (lat + 9.0, lon + 9.0),
+    )
+
+    snapped = geolocate_pin_from_image(payload, word_boxes=boxes, sea_snap=True)
+    assert snapped is not None and calls  # the nudge ran
+
+    calls.clear()
+    kept = geolocate_pin_from_image(payload, word_boxes=boxes, sea_snap=False)
+    assert kept is not None and not calls  # the nudge was skipped
+
+
 def test_geolocate_pin_from_image_refuses_single_landmark(monkeypatch) -> None:
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/tesseract")
     monkeypatch.setattr(

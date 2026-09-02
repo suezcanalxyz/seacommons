@@ -28,7 +28,7 @@ def _mock_engines(monkeypatch, *, easy_coord, easy_texts, coord_tuple):
     monkeypatch.setattr(
         x_media_utils,
         "_extract_coordinate_from_bytes",
-        lambda payload, *, executable=None: coord_tuple,
+        lambda payload, *, executable=None, sea_snap=True: coord_tuple,
     )
 
 

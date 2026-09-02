@@ -236,6 +236,7 @@ def extract_from_bytes(
     *,
     executable: Optional[str] = None,
     context_places: tuple[str, ...] = (),
+    sea_snap: bool = True,
 ) -> ImageExtractionResult:
     result = ImageExtractionResult()
     result.evidence["image_sha256"] = hashlib.sha256(payload).hexdigest()
@@ -259,7 +260,7 @@ def extract_from_bytes(
 
     executable = executable if executable is not None else shutil.which("tesseract")
     coordinate, attempted, method, diag = x_media_utils._extract_coordinate_from_bytes(
-        payload, executable=executable
+        payload, executable=executable, sea_snap=sea_snap
     )
     if executable and method.startswith(("text", "easyocr_tesseract", "easyocr_text_disputed")):
         result.ocr_engines.append("tesseract")
@@ -357,11 +358,11 @@ def extract_from_bytes(
 
 
 def extract_from_url(
-    url: str, *, context_places: tuple[str, ...] = ()
+    url: str, *, context_places: tuple[str, ...] = (), sea_snap: bool = True
 ) -> ImageExtractionResult:
     payload = x_media_utils._download_bounded_image(url)
     if payload is None:
         result = ImageExtractionResult()
         result.failure_reasons.append("download_failed_or_disallowed")
         return result
-    return extract_from_bytes(payload, context_places=context_places)
+    return extract_from_bytes(payload, context_places=context_places, sea_snap=sea_snap)
