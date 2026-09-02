@@ -13,20 +13,29 @@ from __future__ import annotations
 
 from core.domain.live_contracts import LocationPrecision
 from core.intel import landmask
+from core.intel.location_evidence import COARSE_COORDINATE_SOURCES
 from core.intel.store import IntelEvent
 
 
 def public_geometry_and_precision(event: IntelEvent) -> tuple[dict | None, str]:
     """(geojson_geometry, location_precision) for the public feed.
 
-    A stored area_geojson (see core.intel.area_extract) always wins over
-    the plain lat/lon fallback -- the polygon is more information than the
-    single point derived alongside it (event.lat/lon hold the polygon's own
-    centroid, kept only for anything that still needs a single reference
-    point, e.g. distance sorting).
+    A stored area_geojson (see core.intel.area_extract) wins over the plain
+    lat/lon fallback *only while the coordinate is coarse* -- a named-region
+    search polygon is more information than its own centroid.
+
+    Once the event carries a real extracted position (an OCR'd map
+    coordinate, a drop-pin fit, a coordinate read out of the post text), that
+    point is the better information and must be shown, even if a now-stale
+    area_geojson is still attached to the row: a lingering hashtag-derived
+    polygon otherwise keeps hiding the actual location an Alarm Phone map
+    screenshot contained (real prod bug -- events with a correct
+    ``media_ocr_text`` coordinate rendered as a fuzzy "Central Med" region).
     """
     area = event.metadata.get("area_geojson")
-    if area:
+    coordinate_source = str(event.metadata.get("coordinate_source") or "").lower()
+    coordinate_is_coarse = coordinate_source in COARSE_COORDINATE_SOURCES
+    if area and (coordinate_is_coarse or event.lat is None or event.lon is None):
         confidence = str(event.metadata.get("area_confidence") or LocationPrecision.AREA)
         try:
             precision = LocationPrecision(confidence).value
@@ -62,14 +71,13 @@ def public_geometry_and_precision(event: IntelEvent) -> tuple[dict | None, str]:
         # fabricating a location.
         return None, LocationPrecision.UNPOSITIONED.value
 
-    coordinate_source = str(event.metadata.get("coordinate_source") or "")
     if coordinate_source == "place_centroid":
         precision = LocationPrecision.REGIONAL_CENTROID.value
     elif coordinate_source == "region_area":
-        # The point here is the centroid of a named-region search area; the
-        # polygon (handled above) is the real geometry. Reaching this branch
-        # means the polygon was lost somewhere upstream -- fail safe and never
-        # present a region centroid as a reported position.
+        # The point here is the centroid of a named-region search area. If a
+        # polygon is attached it was already returned above; reaching here
+        # means it was lost upstream -- fail safe and never present a region
+        # centroid as a reported position.
         precision = LocationPrecision.APPROXIMATE.value
     else:
         precision = LocationPrecision.REPORTED_OR_DERIVED.value

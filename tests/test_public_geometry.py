@@ -28,6 +28,55 @@ def test_area_geojson_wins_and_carries_its_confidence() -> None:
     assert precision == "area_low_confidence"
 
 
+def test_extracted_point_beats_a_stale_area_polygon() -> None:
+    # Real production bug: an Alarm Phone map screenshot whose printed
+    # coordinate OCR read correctly (media_ocr_text) still rendered as a
+    # fuzzy hashtag-derived "Central Med" polygon, because a leftover
+    # area_geojson from the pre-OCR bare-place fallback kept winning. Once a
+    # real position exists it must be shown; the polygon no longer wins.
+    polygon = {
+        "type": "Polygon",
+        "coordinates": [[[14.0, 35.0], [25.0, 35.0], [25.0, 36.0], [14.0, 35.0]]],
+    }
+    event = _event(
+        coordinate_source="media_ocr_text",
+        coordinate_review_status="machine_ocr_unverified",
+        location_uncertainty_m=1500,
+        area_geojson=polygon,
+        area_confidence="area_low_confidence",
+    )
+    event.lat, event.lon = 34.271533, 11.9423
+    geom, precision = public_geometry_and_precision(event)
+    assert geom == {"type": "Point", "coordinates": [11.9423, 34.271533]}
+    assert precision == "reported_or_derived"
+
+
+def test_stale_area_still_shown_while_the_coordinate_is_only_a_region() -> None:
+    # The polygon must keep winning for a genuinely coarse coordinate --
+    # its lat/lon is just the polygon's own centroid.
+    polygon = {
+        "type": "Polygon",
+        "coordinates": [[[14.0, 35.0], [15.0, 35.0], [15.0, 36.0], [14.0, 35.0]]],
+    }
+    geom, precision = public_geometry_and_precision(
+        _event(coordinate_source="region_area", area_geojson=polygon)
+    )
+    assert geom == polygon
+    assert precision == "area"
+
+
+def test_area_polygon_is_the_fallback_when_the_extracted_point_is_missing() -> None:
+    polygon = {
+        "type": "Polygon",
+        "coordinates": [[[14.0, 35.0], [15.0, 35.0], [15.0, 36.0], [14.0, 35.0]]],
+    }
+    event = _event(coordinate_source="media_ocr_text", area_geojson=polygon)
+    event.lat = None
+    event.lon = None
+    geom, _precision = public_geometry_and_precision(event)
+    assert geom == polygon
+
+
 def test_missing_coordinates_stay_unpositioned() -> None:
     event = _event(coordinate_source="none")
     event.lat = None

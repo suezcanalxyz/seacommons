@@ -149,9 +149,13 @@ _SOURCE_ONLY_RANK: dict[str, int] = {
 }
 
 
-_COARSE_SOURCES = frozenset(
+# A "coarse" coordinate source only knows a region, not a position: its
+# lat/lon is a centroid, so a named-area search polygon (when one exists) is
+# the better public geometry. Every other source is a real extracted point.
+COARSE_COORDINATE_SOURCES = frozenset(
     {"", "none", "region_area", "place_centroid", "relative_place_offset"}
 )
+_COARSE_SOURCES = COARSE_COORDINATE_SOURCES
 
 
 def _evidence_rank(source: str, review: str) -> int:
