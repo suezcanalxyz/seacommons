@@ -105,10 +105,30 @@ def _region_validity(lat: float | None, lon: float | None) -> float:
     return 1.0 if in_operational_region(lat, lon) else 0.0
 
 
-def _context_agreement(context_overlap: list[str] | None) -> float:
-    # docs/prompt.md §8: caption place names *validate* an image coordinate,
-    # they never move it. Overlap is a bounded bonus; absence is not a penalty.
-    return 0.9 if context_overlap else 0.5
+# A coordinate this close to a caption-named place is corroborated by it; this
+# far from every caption-named place contradicts the caption.
+_CONTEXT_NEAR_KM = 120.0
+_CONTEXT_FAR_KM = 400.0
+
+
+def _context_agreement(
+    context_overlap: list[str] | None,
+    context_proximity_km: float | None,
+    has_context: bool,
+) -> float:
+    # docs/prompt.md §8 / audit CX-2: caption place names *validate* an image
+    # coordinate, they never move it. Name overlap or geographic proximity is
+    # a bounded bonus; a coordinate far from every caption place is a bounded
+    # penalty; no caption context at all is neutral.
+    if context_overlap:
+        return 0.9
+    if context_proximity_km is not None:
+        if context_proximity_km <= _CONTEXT_NEAR_KM:
+            return 0.75
+        if context_proximity_km >= _CONTEXT_FAR_KM:
+            return 0.35
+        return 0.55
+    return 0.5
 
 
 def combined_confidence(components: ConfidenceComponents, method_family: str) -> float:
@@ -124,6 +144,8 @@ def score_coordinate(
     interengine_distance_m: float | None = None,
     easy_boxes: list[dict] | None = None,
     context_overlap: list[str] | None = None,
+    context_proximity_km: float | None = None,
+    has_context: bool = False,
     pin_solver_confidence: float | None = None,
     landmask_validity: float = 0.6,
 ) -> ConfidenceComponents:
@@ -135,6 +157,8 @@ def score_coordinate(
         engine_agreement=_engine_agreement(method_family, interengine_distance_m),
         ocr_confidence=_ocr_confidence(easy_boxes or []),
         region_validity=_region_validity(lat, lon),
-        context_agreement=_context_agreement(context_overlap),
+        context_agreement=_context_agreement(
+            context_overlap, context_proximity_km, has_context or bool(context_overlap)
+        ),
         landmask_validity=landmask_validity,
     )

@@ -69,6 +69,20 @@ def test_context_overlap_is_a_bounded_bonus_not_a_penalty():
     assert without.context_agreement == 0.5  # absence is neutral
 
 
+def test_coordinate_near_caption_place_is_corroborated():
+    near = score_coordinate(
+        "ocr_consensus", lat=35.0, lon=13.0, context_proximity_km=40.0, has_context=True
+    )
+    assert near.context_agreement >= 0.7
+
+
+def test_coordinate_far_from_every_caption_place_is_penalised_but_bounded():
+    far = score_coordinate(
+        "ocr_consensus", lat=35.0, lon=13.0, context_proximity_km=900.0, has_context=True
+    )
+    assert 0.3 <= far.context_agreement < 0.5
+
+
 def test_components_serialise():
     d = ConfidenceComponents(parser_validity=0.9).as_dict()
     assert set(d) == {

@@ -1177,6 +1177,23 @@ def test_alarm_phone_image_v2_schedules_non_distress_media_for_private_enrichmen
     assert len(scheduled) == 1
 
 
+def test_caption_place_names_are_stored_for_image_context(tmp_path, monkeypatch):
+    """docs/prompt.md §8: the caption's gazetteer place names are persisted so
+    _apply_media_ocr can validate an image coordinate against them."""
+    m, store = _ocr_gated_monitor(
+        tmp_path, monkeypatch, lambda name: "/usr/bin/tesseract" if name == "tesseract" else None
+    )
+    tweet = _FakeTweet(
+        "3009",
+        "🆘 Boat in distress off #Lampedusa, ~40 people, engine failure! #Malta",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg")],
+    )
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    names = store.events()[0].metadata.get("context_place_names")
+    assert names and "lampedusa" in names
+    assert m._event_context_places(store.events()[0].id) == tuple(names)
+
+
 def test_no_ocr_when_tesseract_missing(tmp_path, monkeypatch):
     scheduled: list = []
     monkeypatch.setattr(

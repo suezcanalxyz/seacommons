@@ -91,6 +91,7 @@ from core.intel.geoextract import (
     extract_coords,
     extract_numeric_coords,
     extract_relative_coords,
+    find_all_place_matches,
     is_direct_distress_call,
     is_resolved_distress,
     place_match_precision,
@@ -525,6 +526,14 @@ class TwikitMonitor:
                 return candidate, attempted, method, diagnostics
         return None, True, "none", {"image_assessment": last_assessment}
 
+    def _event_context_places(self, event_id: str) -> tuple[str, ...]:
+        """The caption place names stored on the event (docs/prompt.md §8) --
+        used to validate, never move, an image-derived coordinate."""
+        event = intel_store.get(event_id)
+        if event is None:
+            return ()
+        return tuple(event.metadata.get("context_place_names") or ())
+
     def _apply_media_ocr(self, event_id: str, urls: list[str]) -> None:
         """Run in a pool worker: OCR, upgrade the stored position, drift."""
         from core.intel.location_evidence import (
@@ -534,7 +543,9 @@ class TwikitMonitor:
         from core.observability import record_ocr_result
 
         try:
-            coords, attempted, method, ocr_diag = self._ocr_tweet_media(event_id, urls)
+            coords, attempted, method, ocr_diag = self._ocr_tweet_media(
+                event_id, urls, context_places=self._event_context_places(event_id)
+            )
             if coords is None:
                 record_ocr_result("no_coordinate")
                 # Visible in prod logs: was OCR even possible, and did it run
@@ -632,7 +643,9 @@ class TwikitMonitor:
 
         def run_shadow() -> None:
             coords, attempted, method, diagnostics = self._ocr_tweet_media(
-                event_id, urls_snapshot
+                event_id,
+                urls_snapshot,
+                context_places=self._event_context_places(event_id),
             )
             result = "shadow_coordinate" if coords is not None else (
                 "shadow_no_coordinate" if attempted else "shadow_not_attempted"
@@ -854,6 +867,10 @@ class TwikitMonitor:
             else None
         )
 
+        caption_place_names = [
+            name for name, _c, _t in find_all_place_matches(combined_text)
+        ][:10]
+
         # Prefer the tracked account's own words for the title/display text;
         # fall back to the combined text only when the caption alone is too
         # thin to summarize (e.g. a bare "🆘" quoting a full report).
@@ -930,6 +947,10 @@ class TwikitMonitor:
                     else "none"
                 ),
                 "ocr_attempted": False,
+                # docs/prompt.md §8: the caption's gazetteer place names, kept
+                # so image analysis can *validate* (never move) an image-derived
+                # coordinate against them.
+                **({"context_place_names": caption_place_names} if caption_place_names else {}),
                 "provenance": "twikit_account_timeline",
                 "tracked_account": handle,
                 "quoted_tweet_id": str(quoted.id) if quoted is not None else None,

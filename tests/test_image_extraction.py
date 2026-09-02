@@ -82,6 +82,43 @@ def test_extract_records_a_coordinate_candidate_and_confidence(monkeypatch):
     assert result.evidence["image_sha256"]
 
 
+def test_caption_context_validates_but_never_moves_the_coordinate(monkeypatch):
+    """docs/prompt.md §8: caption place names change the confidence, never the
+    coordinate. A run with matching context and one without must select the
+    exact same lat/lon."""
+    def _run(context):
+        _mock_engines(
+            monkeypatch,
+            easy_coord=(35.02, 12.18),
+            easy_texts=["N 35 01.200", "E 012 10.800"],
+            coord_tuple=((35.02, 12.18), True, "easyocr_tesseract_consensus", {
+                "interengine_distance_m": 80.0, "consensus_threshold_m": 500.0,
+            }),
+        )
+        return extract_from_bytes(render_case("pin_only_red"), context_places=context)
+
+    near = _run(("lampedusa",))       # ~40 km away
+    none = _run(())
+    assert near.selected_coordinate == none.selected_coordinate == (35.02, 12.18)
+    assert near.coordinate_confidence >= none.coordinate_confidence
+    assert near.diagnostics["context_proximity_km"] < 120
+
+
+def test_caption_far_from_coordinate_lowers_confidence(monkeypatch):
+    _mock_engines(
+        monkeypatch,
+        easy_coord=(35.02, 12.18),
+        easy_texts=["N 35 01.200", "E 012 10.800"],
+        coord_tuple=((35.02, 12.18), True, "easyocr_tesseract_consensus", {
+            "interengine_distance_m": 80.0, "consensus_threshold_m": 500.0,
+        }),
+    )
+    # caption names a far-away place; the coordinate is not moved, only doubted
+    far = extract_from_bytes(render_case("pin_only_red"), context_places=("lesvos",))
+    assert far.selected_coordinate == (35.02, 12.18)
+    assert far.confidence_components["context_agreement"] < 0.5
+
+
 def test_out_of_region_coordinate_fails_closed(monkeypatch):
     """A coordinate outside the operational envelope (here mid-Indian-Ocean)
     is dropped -- selected_coordinate None, method 'none', reason recorded --

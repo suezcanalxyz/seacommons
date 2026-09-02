@@ -277,8 +277,27 @@ def extract_from_bytes(
     context_overlap = (
         sorted(set(context_places) & set(result.place_names)) if context_places else []
     )
+    # docs/prompt.md §8: the caption's place names only *validate* the image
+    # coordinate -- proximity is a bounded bonus, distance a bounded penalty.
+    # The coordinate itself is never moved toward the caption centroid.
+    context_proximity_km: Optional[float] = None
+    if context_places and result.selected_coordinate is not None:
+        from core.intel.geoextract import find_all_place_matches
+        from core.intel.x_media_utils import haversine_m
+
+        centroids = [c for _n, c, _t in find_all_place_matches(" ".join(context_places))]
+        if centroids:
+            context_proximity_km = round(
+                min(
+                    haversine_m(result.selected_coordinate, centroid) / 1000.0
+                    for centroid in centroids
+                ),
+                1,
+            )
     if context_places:
         result.diagnostics["context_place_overlap"] = context_overlap
+        if context_proximity_km is not None:
+            result.diagnostics["context_proximity_km"] = context_proximity_km
 
     # Traceable confidence (docs/prompt.md §5): six named components combined,
     # with region_validity as a hard multiplier.
@@ -293,6 +312,8 @@ def extract_from_bytes(
         interengine_distance_m=result.diagnostics.get("interengine_distance_m"),
         easy_boxes=easy_boxes,
         context_overlap=context_overlap,
+        context_proximity_km=context_proximity_km,
+        has_context=bool(context_places),
         pin_solver_confidence=result.diagnostics.get("pin_solver_confidence"),
     )
     result.confidence_components = components.as_dict()
