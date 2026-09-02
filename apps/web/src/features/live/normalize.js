@@ -144,7 +144,11 @@ export function mergeIntelDriftUpdate(collection, message) {
         ...(isRecord(feature.properties) ? feature.properties : {}),
         intel_event_id: message.id,
         intel_title: drift.title,
-        intel_severity: drift.severity,
+        // Drift colour inherits its origin signal's category, never a severity.
+        origin_category: drift.origin_category ?? drift.visual_category,
+        visual_category: drift.visual_category ?? drift.origin_category,
+        visual_color: drift.visual_color,
+        category_label: drift.category_label,
         intel_source: drift.source,
         auto_drift: true,
       },

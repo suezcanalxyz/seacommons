@@ -26,6 +26,20 @@ def _soon() -> datetime:
 
 logger = logging.getLogger(__name__)
 
+
+def _drift_category_fields(event) -> dict:
+    """Canonical visual category for a drift's WS push, from its origin signal."""
+    from core.domain.visual_category import visual_category_fields
+
+    meta = getattr(event, "metadata", {}) or {}
+    return visual_category_fields(
+        source=getattr(event, "source", ""),
+        event_type=getattr(event, "type", ""),
+        maritime_domain=event.maritime_domain() if hasattr(event, "maritime_domain") else None,
+        humanitarian_case_type=meta.get("humanitarian_case_type"),
+        metadata=meta,
+    )
+
 _scheduler = None
 _scheduler_lock = threading.Lock()
 
@@ -137,8 +151,9 @@ def _compute_drift_for_event(event) -> None:
                 "impact_point": result.impact_point,
                 "origin": {"lat": event.lat, "lon": event.lon},
                 "title": event.title[:80],
-                "severity": event.severity,
                 "source": event.source,
+                # Drift colour inherits the origin signal's category, no severity.
+                **_drift_category_fields(event),
             },
         })
         logger.info("Scheduled drift completed: event=%s job=%s", event.id, job_id)

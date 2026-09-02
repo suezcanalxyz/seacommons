@@ -87,7 +87,10 @@ export function decorateLiveTracking(result, signal) {
         intel_event_id: id,
         intel_title: String(properties.title || 'Alarm Phone signal').slice(0, 80),
         intel_source: String(properties.source || 'Alarm Phone').slice(0, 64),
-        intel_severity: properties.severity || 'high',
+        // Category, not severity. A browser simulation of an Alarm Phone
+        // incident inherits the red Alarm Phone category.
+        visual_category: properties.visual_category || 'humanitarian_alarm_phone',
+        visual_color: properties.visual_color || '#ff3b3b',
         auto_drift: true,
         publication_status: 'published',
         trajectory_kind: 'model_forecast',
