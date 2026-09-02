@@ -12,6 +12,13 @@ from core.config import config
 
 logger = logging.getLogger(__name__)
 
+# The configured global physics datasets start at 0.49402499 m. Asking the
+# Copernicus client for 0.0 m produces a warning on every poll before it clamps
+# the request. Keep the explicit rounded provider level shared by point and
+# batch reads; _sample_value still selects the first returned depth coordinate,
+# so small provider-coordinate precision changes do not affect sampling.
+_CMEMS_SURFACE_DEPTH_M = 0.49402499198913574
+
 
 def cmems_enabled() -> bool:
     return bool(config.CMEMS_USERNAME and config.CMEMS_PASSWORD)
@@ -47,7 +54,7 @@ def fetch_current_point(lat: float, lon: float) -> dict[str, Any] | None:
             maximum_longitude=norm_lon + pad,
             minimum_latitude=lat - pad,
             maximum_latitude=lat + pad,
-            minimum_depth=0.0,
+            minimum_depth=_CMEMS_SURFACE_DEPTH_M,
             maximum_depth=1.0,
             start_datetime=start,
             end_datetime=end,
@@ -105,7 +112,7 @@ def fetch_ocean_batch(
             maximum_longitude=max(lons) + pad,
             minimum_latitude=min(lats) - pad,
             maximum_latitude=max(lats) + pad,
-            minimum_depth=0.0,
+            minimum_depth=_CMEMS_SURFACE_DEPTH_M,
             maximum_depth=1.0,
             start_datetime=start,
             end_datetime=end,
@@ -120,7 +127,7 @@ def fetch_ocean_batch(
             maximum_longitude=max(lons) + pad,
             minimum_latitude=min(lats) - pad,
             maximum_latitude=max(lats) + pad,
-            minimum_depth=0.0,
+            minimum_depth=_CMEMS_SURFACE_DEPTH_M,
             maximum_depth=1.0,
             start_datetime=start,
             end_datetime=end,

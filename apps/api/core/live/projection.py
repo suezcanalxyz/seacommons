@@ -475,7 +475,10 @@ def _is_publishable_live_drift(drift: dict[str, Any]) -> bool:
     return bool(
         drift.get("status") == "completed"
         and str(metadata.get("model") or "").startswith("OpenDrift ")
-        and metadata.get("forcing_quality") == "spatiotemporal"
+        and metadata.get("forcing_quality") in {
+            "spatiotemporal",  # persisted legacy runs
+            "observed-spatiotemporal",
+        }
         and metadata.get("operational_use") is True
         and len(coordinates) >= 2
         and len(properties.get("timestamps_utc") or []) == len(coordinates)

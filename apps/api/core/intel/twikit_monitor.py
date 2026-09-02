@@ -595,6 +595,9 @@ class TwikitMonitor:
                 coords[1],
                 interengine_distance_m=ocr_diag.get("interengine_distance_m"),
             )
+            verified_for_drift = (
+                evidence.review_status == "machine_ocr_consensus_verified"
+            )
             record_ocr_result(ocr_result_label(method))
             upgraded = intel_store.enrich_location(
                 event_id,
@@ -605,6 +608,16 @@ class TwikitMonitor:
                     "media_transport": "x_media_ocr",
                     "ocr_attempted": True,
                     "media_count": len(urls),
+                    # Persist location and drift disposition atomically. A
+                    # process restart between two asynchronous metadata writes
+                    # must never leave an old completed drift attached to a
+                    # newly stored unverified OCR coordinate.
+                    "drift_status": "superseded" if verified_for_drift else "ineligible",
+                    **({
+                        "drift_ineligible_reason": (
+                            "OCR location evidence is not independently verified"
+                        ),
+                    } if not verified_for_drift else {}),
                 },
             )
             if not upgraded:
@@ -612,10 +625,19 @@ class TwikitMonitor:
                 # do not clobber it, but still ensure a drift is requested.
                 self._auto_drift_if_live(event_id, force=False)
                 return
-            # The event now carries the OCR'd position. If a drift was already
-            # started from the weaker fallback position, unblock and recompute.
-            intel_store.update_metadata(event_id, metadata={"drift_status": "superseded"})
-            self._auto_drift_if_live(event_id, force=True)
+            # Only independent OCR consensus can replace a prior drift origin.
+            # Lone-engine/disputed/pin estimates remain visible for review but
+            # atomically invalidate any stale completed status.
+            if verified_for_drift:
+                self._auto_drift_if_live(event_id, force=True)
+            else:
+                from core.observability import record_ocr_drift_rejected
+
+                record_ocr_drift_rejected()
+                logger.info(
+                    "X (twikit) auto-drift not eligible for %s: unverified OCR",
+                    event_id,
+                )
             upgraded_event = intel_store.get(event_id)
             if upgraded_event is not None:
                 attach_forensic_packet(upgraded_event)
@@ -637,6 +659,30 @@ class TwikitMonitor:
                 event_id,
                 metadata={"ocr_queue_state": outcome, "ocr_attempted": False},
             )
+
+    def _schedule_media_ocr_shadow(self, tweet_id: str, event_id: str, urls: list[str]) -> None:
+        """Analyze media without enriching, publishing, notifying, or drifting."""
+        from core.intel.media_ocr_queue import media_ocr_queue
+        from core.observability import record_ocr_result
+
+        urls_snapshot = list(urls)
+
+        def run_shadow() -> None:
+            coords, attempted, method, _diagnostics = self._ocr_tweet_media(
+                event_id, urls_snapshot
+            )
+            result = "shadow_coordinate" if coords is not None else (
+                "shadow_no_coordinate" if attempted else "shadow_not_attempted"
+            )
+            record_ocr_result(result)
+            logger.info(
+                "media OCR shadow: event=%s images=%d attempted=%s result=%s method=%s",
+                event_id, len(urls_snapshot), attempted, result, method,
+            )
+
+        outcome = media_ocr_queue.submit(f"x-ocr-shadow:{event_id}", run_shadow)
+        if outcome in {"deferred_queue_full", "dropped"}:
+            logger.warning("media OCR shadow queue: event=%s state=%s", event_id, outcome)
 
     def _auto_drift_if_live(self, event_id: str, *, force: bool = False) -> None:
         """Auto-drift for a new live episode, unless one already ran (or is running).
@@ -737,8 +783,16 @@ class TwikitMonitor:
                     media_urls.append(url)
         media_count = len(media_urls)
         ocr_pending = False
-        if distress and not text_coords and media_count:
-            if shutil.which("tesseract") or importlib.util.find_spec("easyocr") is not None:
+        ocr_shadow_pending = False
+        ocr_available = bool(
+            shutil.which("tesseract") or importlib.util.find_spec("easyocr") is not None
+        )
+        alarm_phone_image_v2 = (
+            handle.lower() in {"alarm_phone", "alarmphone"}
+            and config.ALARM_PHONE_IMAGE_V2_ENABLED
+        )
+        if (distress or alarm_phone_image_v2) and not text_coords and media_count:
+            if ocr_available:
                 ocr_pending = True
             else:
                 # The real GPS position is almost certainly in the images but the
@@ -751,6 +805,14 @@ class TwikitMonitor:
                     tweet.id,
                     media_count,
                 )
+        elif (
+            media_count
+            and not text_coords
+            and handle.lower() in {"alarm_phone", "alarmphone"}
+            and config.ALARM_PHONE_IMAGE_V2_SHADOW
+            and ocr_available
+        ):
+            ocr_shadow_pending = True
         media_coords: Optional[tuple[float, float]] = None
         relative_coords = (
             extract_relative_coords(combined_text)
@@ -867,7 +929,11 @@ class TwikitMonitor:
                 # Kept so a later re-process (core.intel.backfill_alarm_phone)
                 # never has to resolve the tweet again.
                 **({"media_urls": media_urls[:6]} if media_urls else {}),
-                "media_transport": "x_media_ocr" if ocr_pending else "none",
+                "media_transport": (
+                    "x_media_ocr" if ocr_pending
+                    else "x_media_ocr_shadow" if ocr_shadow_pending
+                    else "none"
+                ),
                 "ocr_attempted": False,
                 "provenance": "twikit_account_timeline",
                 "tracked_account": handle,
@@ -887,6 +953,8 @@ class TwikitMonitor:
             # background thread, then upgrade the stored position and drift on
             # the corrected coordinates (never block the 45 s poll loop).
             self._schedule_media_ocr(str(tweet.id), event.id, media_urls)
+        elif ocr_shadow_pending and added:
+            self._schedule_media_ocr_shadow(str(tweet.id), event.id, media_urls)
         elif not added:
             # Duplicate content_hash — `event` above was never stored, so its
             # id is a throwaway UUID; recover the real stored event first.

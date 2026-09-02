@@ -7,10 +7,22 @@ from uuid import uuid4
 
 import pytest
 
-
 _TEST_DATABASE = Path(tempfile.gettempdir()) / f"seacommons_pytest_{uuid4().hex}.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DATABASE.as_posix()}"
-os.environ.setdefault("RUNTIME_PROFILE", "operational")
+os.environ["RUNTIME_PROFILE"] = "operational"
+# The production checkout may be tested from a shell that inherits service
+# configuration.  Keep the suite hermetic: tests must never authenticate to,
+# read from, or write to live infrastructure unless a test opts in explicitly.
+for _production_setting in (
+    "DRIFT_WORKER_URL",
+    "DRIFT_WORKER_SECRET",
+    "TWIKIT_ENABLED",
+    "TWIKIT_COOKIES_FILE",
+    "OBJECT_STORAGE_ENDPOINT",
+    "OBJECT_STORAGE_ACCESS_KEY",
+    "OBJECT_STORAGE_SECRET_KEY",
+):
+    os.environ[_production_setting] = "false" if _production_setting == "TWIKIT_ENABLED" else ""
 os.environ["SEACOMMONS_FORENSIC_SYNC"] = "true"
 os.environ["SEACOMMONS_INTEL_PERSIST_SYNC"] = "true"
 

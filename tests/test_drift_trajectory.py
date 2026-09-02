@@ -159,3 +159,27 @@ def test_live_only_publishes_spatiotemporal_opendrift_with_speed_samples() -> No
         },
     }
     assert _is_publishable_live_drift(degraded) is False
+
+
+def test_live_publishes_new_observed_quality_but_rejects_mixed_forcing() -> None:
+    trajectory = {
+        "geometry": {"coordinates": [[14.0, 35.0], [14.01, 35.01]]},
+        "properties": {"timestamps_utc": ["a", "b"], "speed_ms": [0.1, 0.1]},
+    }
+    drift = {
+        "status": "completed",
+        "trajectory": trajectory,
+        "metadata": {
+            "model": "OpenDrift Leeway",
+            "forcing_quality": "observed-spatiotemporal",
+            "operational_use": True,
+        },
+    }
+    assert _is_publishable_live_drift(drift) is True
+
+    drift["metadata"] = {
+        "model": "OpenDrift Leeway",
+        "forcing_quality": "mixed",
+        "operational_use": False,
+    }
+    assert _is_publishable_live_drift(drift) is False

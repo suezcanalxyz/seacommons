@@ -982,7 +982,7 @@ def test_text_coords_win_over_media_no_ocr(tmp_path, monkeypatch):
     assert scheduled == []
 
 
-def test_non_distress_media_never_schedules_ocr(tmp_path, monkeypatch):
+def test_non_alarm_phone_non_distress_media_never_schedules_ocr(tmp_path, monkeypatch):
     scheduled: list = []
     m, store = _ocr_gated_monitor(
         tmp_path,
@@ -995,13 +995,77 @@ def test_non_distress_media_never_schedules_ocr(tmp_path, monkeypatch):
         "Operational update from the rescue vessel position update 35.5N 12.6E",
         media=[_FakeMedia("https://pbs.twimg.com/media/update.jpg")],
     )
-    assert m._ingest(tweet, handle="alarm_phone") is True
+    assert m._ingest(tweet, handle="rescue_ship") is True
     assert store.events()[0].metadata["media_transport"] == "none"
     assert scheduled == []
 
 
+def test_alarm_phone_shadow_analyzes_non_distress_media_without_public_mutation(tmp_path, monkeypatch):
+    shadow_jobs: list[tuple[str, str, list[str]]] = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+    )
+    monkeypatch.setattr("core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_SHADOW", True)
+    monkeypatch.setattr("core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_ENABLED", False)
+    monkeypatch.setattr(
+        TwikitMonitor,
+        "_schedule_media_ocr_shadow",
+        lambda self, tweet_id, event_id, urls: shadow_jobs.append(
+            (tweet_id, event_id, list(urls))
+        ),
+    )
+    tweet = _FakeTweet(
+        "3007-shadow",
+        "Operational update from the rescue vessel",
+        media=[_FakeMedia("https://pbs.twimg.com/media/update.jpg")],
+    )
+
+    assert m._ingest(tweet, handle="alarm_phone") is True
+
+    evt = store.events()[0]
+    assert evt.metadata["is_distress"] is False
+    assert evt.metadata["publication_status"] == "private"
+    assert evt.metadata["coordinate_source"] == "none"
+    assert evt.lat is None and evt.lon is None
+    assert evt.metadata["media_transport"] == "x_media_ocr_shadow"
+    assert len(shadow_jobs) == 1
+
+
+def test_alarm_phone_image_v2_schedules_non_distress_media_for_private_enrichment(
+    tmp_path, monkeypatch
+):
+    scheduled: list[tuple[str, str, list[str]]] = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+        scheduled=scheduled,
+    )
+    monkeypatch.setattr("core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_ENABLED", True)
+    monkeypatch.setattr("core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_SHADOW", False)
+    tweet = _FakeTweet(
+        "3007-v2",
+        "Operational update from the rescue vessel",
+        media=[_FakeMedia("https://pbs.twimg.com/media/update.jpg")],
+    )
+
+    assert m._ingest(tweet, handle="alarm_phone") is True
+
+    evt = store.events()[0]
+    assert evt.metadata["is_distress"] is False
+    assert evt.metadata["publication_status"] == "private"
+    assert evt.lat is None and evt.lon is None
+    assert evt.metadata["media_transport"] == "x_media_ocr"
+    assert len(scheduled) == 1
+
+
 def test_no_ocr_when_tesseract_missing(tmp_path, monkeypatch):
     scheduled: list = []
+    monkeypatch.setattr(
+        "core.intel.twikit_monitor.importlib.util.find_spec", lambda name: None
+    )
     m, store = _ocr_gated_monitor(tmp_path, monkeypatch, lambda name: None, scheduled=scheduled)
     tweet = _FakeTweet(
         "3008",
@@ -1040,6 +1104,7 @@ def test_media_ocr_single_engine_upgrades_position_but_does_not_drift(tmp_path, 
     assert evt.metadata["coordinate_source"] == "media_ocr_text"
     assert evt.metadata["ocr_attempted"] is True
     assert evt.metadata["media_transport"] == "x_media_ocr"
+    assert evt.metadata["drift_status"] == "ineligible"
     assert drift_calls == [], "unverified single-engine OCR must not auto-drift"
 
 
@@ -1072,6 +1137,7 @@ def test_media_ocr_consensus_between_engines_gets_tight_uncertainty(tmp_path, mo
     assert evt.metadata["coordinate_source"] == "media_ocr_consensus"
     assert evt.metadata["location_uncertainty_m"] == 400
     assert evt.metadata["coordinate_review_status"] == "machine_ocr_consensus_verified"
+    assert evt.metadata["drift_status"] == "superseded"
     assert drift_calls, "drift must fire with the confirmed position"
 
 
@@ -1104,6 +1170,7 @@ def test_media_ocr_disputed_between_engines_gets_wide_uncertainty_and_review(tmp
     assert evt.metadata["coordinate_source"] == "media_ocr_text"
     assert evt.metadata["location_uncertainty_m"] == 3500
     assert evt.metadata["coordinate_review_status"] == "machine_ocr_disputed_needs_review"
+    assert evt.metadata["drift_status"] == "ineligible"
     # docs/fixes.md F-01 (headline case): the disputed position is persisted
     # for review, but an EasyOCR/Tesseract disagreement must never become a
     # drift model origin -- exactly zero drift requests.

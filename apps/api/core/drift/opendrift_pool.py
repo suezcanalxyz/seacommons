@@ -387,6 +387,13 @@ def _fetch_grid(
             except Exception as exc:
                 logger.debug("Grid point (%d,%d) failed: %s", i, j, exc)
 
+    total_samples = float(sample_count * n * n)
+    coverage = {
+        "wind": float(np.count_nonzero(np.isfinite(wind_x) & np.isfinite(wind_y))) / total_samples,
+        "current": float(np.count_nonzero(np.isfinite(u_curr) & np.isfinite(v_curr))) / total_samples,
+        "waves": float(np.count_nonzero(np.isfinite(stokes_x) & np.isfinite(stokes_y))) / total_samples,
+    }
+
     # Fill NaN cells (land-masked or failed) from the centre point.
     # If the centre itself is NaN (whole region has no marine data), use the
     # fallback values derived from the weather API rather than zero.
@@ -431,6 +438,7 @@ def _fetch_grid(
         "stokes_y": stokes_y,
         "has_waves": has_waves,
         "n_hours": sample_count,
+        "coverage": coverage,
     }
 
 
@@ -930,6 +938,8 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
 
     readers_added: list[str] = []
     grid_reader_added = False
+    grid: dict[str, Any] = {}
+    cmems_reader = None
     stokes_enabled = False
     landmask_added = False
 
@@ -1095,10 +1105,14 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
         else "1.0deg-OpenMeteo-grid" if any("GridReader" in reader for reader in readers_added)
         else "constant"
     )
-    forcing_quality = (
-        "spatiotemporal"
-        if forcing_resolution != "constant"
-        else "degraded-constant"
+    from core.drift.forcing import classify_forcing_quality
+
+    grid_coverage = grid.get("coverage", {}) if grid_reader_added else {}
+    forcing_quality, operational_use = classify_forcing_quality(
+        wind_coverage=float(grid_coverage.get("wind", 0.0)),
+        current_coverage=float(grid_coverage.get("current", 0.0)),
+        cmems_current=cmems_reader is not None,
+        grid_reader=grid_reader_added,
     )
 
     return {
@@ -1124,7 +1138,7 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
             "duration_h": duration_h,
             "model": "OpenDrift OceanDrift" if model_name == "oceandrift" else "OpenDrift Leeway",
             "object_class": object_class or None,
-            "operational_use": forcing_quality == "spatiotemporal",
+            "operational_use": operational_use,
             "stokes_drift": stokes_enabled,
             "landmask": "global_landmask" if landmask_added else None,
             "seed_radius_m": float(payload.get("seed_radius_m", 150)),
@@ -1139,6 +1153,7 @@ def _run_leeway_inner(payload: dict[str, Any]) -> dict[str, Any]:
             "readers": readers_added,
             "forcing_resolution": forcing_resolution,
             "forcing_quality": forcing_quality,
+            "forcing_coverage": grid_coverage,
             "trajectory_distance_m": trajectory_properties["distance_m"],
             "mean_drift_speed_ms": trajectory_properties["mean_speed_ms"],
             "max_drift_speed_ms": trajectory_properties["max_speed_ms"],
