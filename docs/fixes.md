@@ -1214,7 +1214,7 @@ This version is **not stable** until every item below is proven on a fresh deplo
 [x] Evros/land input creates 0 maritime Drift and 0 fake boat marker
 [x] DMS/DMM Alarm Phone fixtures parse correctly
 [x] follow-up resolution updates the original incident
-[ ] translated/duplicate posts do not create duplicate incidents
+[x] translated/duplicate posts do not create duplicate incidents
 [x] advocacy does not enter the active SAR lane
 [x] OCR queue/thread count remains bounded during burst
 [ ] public Live remains responsive during OCR burst
