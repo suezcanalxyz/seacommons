@@ -60,12 +60,17 @@ def test_verified_text_coordinate_is_drift_eligible():
     assert ok, reason
 
 
-# 3. pin-only screenshot -> approximate, NOT drift eligible
-def test_pin_only_screenshot_is_not_drift_eligible():
+# 3. pin-only screenshot -> approximate position, drift eligible at sea (policy /2)
+def test_pin_only_screenshot_at_sea_is_drift_eligible():
     ev = evidence_from_ocr_method("pin_landmark", 34.2, 12.0)
-    event = _distress("smoke-3", "distress south of Crete", lat=34.2, lon=12.0, **ev.as_metadata())
-    ok, _ = is_auto_drift_eligible(event)
-    assert ok is False
+    event = IntelEvent(
+        id="smoke-3", type="twitter", severity="critical",
+        title="distress south of Crete", text="distress south of Crete",
+        source="Alarm Phone", timestamp_utc=_recent(), lat=34.2, lon=12.0,
+        metadata={"is_distress": True, "tracked_account": "alarm_phone", **ev.as_metadata()},
+    )
+    ok, reason = is_auto_drift_eligible(event)
+    assert ok is True, reason
 
 
 # 4. OCR disagreement -> disputed, persisted, zero drift

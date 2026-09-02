@@ -192,18 +192,19 @@ def test_run_canonicalizes_and_reprocesses(monkeypatch) -> None:
     monkeypatch.setattr(bf, "resolve_position", lambda c: (35.4, 24.9, "text"))
     monkeypatch.setattr("core.intel.landmask.in_operational_region", lambda *a: True)
     monkeypatch.setattr("core.intel.landmask.nearest_sea_point", lambda a, b: (a, b))
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda a, b: False)
 
     report = bf.run(apply=True, limit=10, with_drift=False)
     assert report["scanned"] == 1
     assert report["canonicalized"] == 1
     assert report["newly_positioned_approximate"] == 1
-    assert report["drift_eligible"] == 0  # unverified -> gate rejects
+    assert report["drift_eligible"] == 1  # policy /2: OCR sea coordinate is a drift origin
     r = _row("ap-both")
     assert r.humanitarian_case_type == "distress"
     assert (r.lat, r.lon) == (35.4, 24.9)
 
 
-def test_run_apply_freezes_drift_for_unverified_backfill(monkeypatch) -> None:
+def test_run_apply_drifts_a_sea_coordinate_recovered_by_backfill(monkeypatch) -> None:
     _add_row(
         id="ap-drift",
         source="alarm_phone",
@@ -213,13 +214,14 @@ def test_run_apply_freezes_drift_for_unverified_backfill(monkeypatch) -> None:
     monkeypatch.setattr(bf, "resolve_position", lambda c: (35.5, 14.1, "pin_landmark"))
     monkeypatch.setattr("core.intel.landmask.in_operational_region", lambda *a: True)
     monkeypatch.setattr("core.intel.landmask.nearest_sea_point", lambda a, b: (a, b))
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda a, b: False)
     drift_calls: list = []
     import core.intel.drift_service as ds
     monkeypatch.setattr(ds, "schedule_intel_drift", lambda *a, **k: (drift_calls.append(a), True)[1])
 
     report = bf.run(apply=True, limit=10, with_drift=True)
-    assert report["drift_eligible"] == 0 and report["drift_rejected"] == 1
-    assert drift_calls == []
+    assert report["drift_eligible"] == 1 and report["drift_rejected"] == 0
+    assert len(drift_calls) == 1
 
 
 def test_apply_position_never_downgrades_and_is_idempotent() -> None:

@@ -57,24 +57,45 @@ def test_disputed_ocr_is_rejected():
     assert not ok and "disputed" in reason
 
 
-def test_unverified_single_engine_ocr_is_rejected():
+def test_single_engine_ocr_coordinate_at_sea_is_eligible():
+    # Policy /2 (operator decision): an Alarm Phone distress map coordinate
+    # that OCR read and that lands in the sea is a drift origin even from one
+    # engine -- weaker evidence, wide radius, still a real position.
     ok, reason = is_auto_drift_eligible(
         _distress(
             coordinate_source="media_ocr_text",
             coordinate_review_status="machine_ocr_unverified",
+            location_uncertainty_m=1500,
         )
     )
-    assert not ok
+    assert ok, reason
 
 
-def test_pin_landmark_estimate_is_rejected():
+def test_pin_landmark_estimate_at_sea_is_eligible():
     ok, reason = is_auto_drift_eligible(
         _distress(
             coordinate_source="media_pin_landmark",
             coordinate_review_status="machine_ocr_unverified",
+            location_uncertainty_m=4000,
         )
     )
-    assert not ok
+    assert ok, reason
+
+
+def test_ocr_coordinate_on_land_is_rejected(monkeypatch):
+    # The "coordinate in the sea" gate: an OCR'd coordinate that resolves to
+    # land (an Evros / land-border Alarm Phone case) is never a drift origin,
+    # whatever its OCR provenance.
+    monkeypatch.setattr("core.intel.landmask.nearest_sea_point", lambda lat, lon: (lat, lon))
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: True)
+    ok, reason = is_auto_drift_eligible(
+        _distress(
+            coordinate_source="media_ocr_text",
+            coordinate_review_status="machine_ocr_unverified",
+            location_uncertainty_m=1500,
+        )
+    )
+    assert not ok and "land" in reason
 
 
 def test_region_only_position_is_rejected():

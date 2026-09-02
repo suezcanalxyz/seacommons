@@ -18,26 +18,50 @@ logger = logging.getLogger(__name__)
 
 # ── Auto-drift evidence eligibility ───────────────────────────────────────────
 # docs/fixes.md F-01 (P0/critical): a drift model must never originate from
-# disputed / unverified / non-maritime location evidence. `force=True` (an
-# OCR-upgrade recompute or a refresher re-run) may bypass the once-only dedup
-# guard but NEVER this policy. One gate, called from every auto/backfill drift
-# path (this module's schedule_intel_drift chokepoint, plus the public
-# auto-drift route for an explainable 400, plus twikit's pre-flight check so a
-# disputed OCR produces exactly zero drift requests).
-AUTO_DRIFT_POLICY_VERSION = "auto-drift-eligibility/1"
+# disputed or non-maritime location evidence, and `force=True` (an OCR-upgrade
+# recompute or a refresher re-run) may bypass the once-only dedup guard but
+# NEVER this policy. One gate, called from every auto/backfill drift path (this
+# module's schedule_intel_drift chokepoint, plus the public auto-drift route
+# for an explainable 400, plus twikit's pre-flight check).
+#
+# Policy /2 (operator decision, 2026-09): an Alarm Phone distress case whose
+# coordinate is a real extracted point (OCR'd off the map screenshot, read
+# from the post text, or a drop-pin landmark fit) and lands in the sea inside
+# the operational region IS a drift origin, even from a single OCR engine. A
+# lone-engine read is weaker evidence than a cross-engine consensus and its
+# uncertainty stays wide, but it is still a specific position a leeway model
+# can honestly start from. What stays blocked: engines that materially
+# disagree (disputed / needs_review), a coordinate on land, a region-only
+# centroid, a resolved/archived incident, a non-SAR domain, or an uncertainty
+# above the configured ceiling.
+AUTO_DRIFT_POLICY_VERSION = "auto-drift-eligibility/2"
 
 # Coordinate review states trusted enough to seed an operational leeway model.
 _TRUSTED_REVIEW_STATES = frozenset(
     {
         "not_required",  # coordinate parsed from post text, no OCR involved
         "machine_ocr_consensus_verified",  # EasyOCR + an independent Tesseract pass agree
+        "machine_ocr_unverified",  # single OCR engine -- an extracted point, wide radius
         "human_verified",
         "reported_exact",
     }
 )
-# Coordinate provenances trustworthy even without an explicit review status.
-_TRUSTED_COORD_SOURCES = frozenset({"post_text", "navtext", "ais_position"})
-# Provenances explicitly too coarse / unverified to originate a drift.
+# Coordinate provenances that are a real extracted point (not a named-region
+# centroid), trustworthy to originate a drift once the sea + range checks pass.
+_TRUSTED_COORD_SOURCES = frozenset(
+    {
+        "post_text",
+        "navtext",
+        "ais_position",
+        "media_ocr_consensus",
+        "media_ocr_text",
+        "media_ocr_text_backfill",
+        "media_pin_landmark",
+        "media_pin_landmark_backfill",
+    }
+)
+# Provenances that only know a named region -- their lat/lon is a centroid, so
+# a leeway simulation from it would imply a precision the report never had.
 _BLOCKED_COORD_SOURCES = frozenset(
     {
         "",
@@ -47,10 +71,6 @@ _BLOCKED_COORD_SOURCES = frozenset(
         "relative_place_offset",
         "post_text_or_maritime_place",
         "maritime_place",
-        "media_pin_landmark",
-        "media_ocr_text",
-        "media_ocr_text_backfill",
-        "media_pin_landmark_backfill",
     }
 )
 _NON_MARITIME_LOCATION_STATES = frozenset(
@@ -119,9 +139,33 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
     trusted = review in _TRUSTED_REVIEW_STATES or coord_source in _TRUSTED_COORD_SOURCES
     if not trusted or coord_source in _BLOCKED_COORD_SOURCES:
         return False, (
-            "location evidence not verified for operational modelling "
+            "location evidence is only a named region, not an extracted point "
             f"(review={review or 'none'}, source={coord_source or 'none'})"
         )
+
+    # The real "coordinate in the sea" gate: whatever the OCR provenance, a
+    # point on land (an Evros / land-border Alarm Phone case) is a
+    # humanitarian record, never a maritime drift origin. Independent of the
+    # sea_land_class / location_status metadata above so a missing tag can
+    # never let a land coordinate through.
+    lat = getattr(event, "lat", None)
+    if lat is None:
+        lat = meta.get("lat")
+    lon = getattr(event, "lon", None)
+    if lon is None:
+        lon = meta.get("lon")
+    if lat is None or lon is None:
+        return False, "no coordinate to originate a drift"
+    try:
+        from core.intel import landmask
+
+        if not landmask.in_operational_region(float(lat), float(lon)):
+            return False, "coordinate is outside the operational region"
+        sea_lat, sea_lon = landmask.nearest_sea_point(float(lat), float(lon))
+        if landmask.is_on_land(sea_lat, sea_lon) is True:
+            return False, "coordinate is on land, not a maritime position"
+    except Exception:  # pragma: no cover - landmask must never crash the gate
+        pass
 
     uncertainty = meta.get("location_uncertainty_m")
     try:

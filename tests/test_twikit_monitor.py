@@ -1079,10 +1079,13 @@ def test_no_ocr_when_tesseract_missing(tmp_path, monkeypatch):
     assert evt.metadata["coordinate_source"] == "region_area"
 
 
-def test_media_ocr_single_engine_upgrades_position_but_does_not_drift(tmp_path, monkeypatch):
-    """docs/fixes.md F-01: a lone-engine OCR read is stored (better than the
-    fallback area) but is `machine_ocr_unverified` -- it must never originate a
-    drift model. The event stays public; only the drift is withheld."""
+def test_media_ocr_single_engine_sea_coordinate_upgrades_and_drifts(tmp_path, monkeypatch):
+    """Auto-drift policy /2 (operator decision): a lone-engine OCR read that
+    lands in the sea is stored (better than the fallback area) AND originates
+    a drift. It is weaker evidence than a cross-engine consensus -- the stored
+    uncertainty stays wide and the review status stays `machine_ocr_unverified`
+    -- but it is a real position a leeway model can start from. Only a
+    disputed read or a land coordinate is turned away (see the tests below)."""
     drift_calls: list = []
     m, store = _ocr_gated_monitor(
         tmp_path,
@@ -1102,10 +1105,11 @@ def test_media_ocr_single_engine_upgrades_position_but_does_not_drift(tmp_path, 
     evt = store.get(evt.id)
     assert evt.lat == 35.5 and evt.lon == 24.9
     assert evt.metadata["coordinate_source"] == "media_ocr_text"
+    assert evt.metadata["coordinate_review_status"] == "machine_ocr_unverified"
     assert evt.metadata["ocr_attempted"] is True
     assert evt.metadata["media_transport"] == "x_media_ocr"
-    assert evt.metadata["drift_status"] == "ineligible"
-    assert drift_calls == [], "unverified single-engine OCR must not auto-drift"
+    assert evt.metadata["drift_status"] == "superseded"
+    assert drift_calls, "a single-engine OCR sea coordinate must auto-drift (policy /2)"
 
 
 def test_media_ocr_consensus_between_engines_gets_tight_uncertainty(tmp_path, monkeypatch):
@@ -1178,9 +1182,11 @@ def test_media_ocr_disputed_between_engines_gets_wide_uncertainty_and_review(tmp
 
 
 def test_media_pin_landmark_fallback_upgrades_position_with_wider_uncertainty(tmp_path, monkeypatch):
-    """A map screenshot with only a pin (no printed coordinates) should still
-    upgrade the event's position via map_pin_geolocate, tagged distinctly
-    from a text-OCR read and with a wider uncertainty radius."""
+    """A map screenshot with only a pin (no printed coordinates) upgrades the
+    event's position via map_pin_geolocate, tagged distinctly from a text-OCR
+    read and with a wider uncertainty radius. Policy /2: a pin-landmark fit in
+    the sea is an approximate but real position -- it auto-drifts, with the
+    wide 4 km radius carried into the model."""
     drift_calls: list = []
     m, store = _ocr_gated_monitor(
         tmp_path,
@@ -1190,7 +1196,7 @@ def test_media_pin_landmark_fallback_upgrades_position_with_wider_uncertainty(tm
     )
     monkeypatch.setattr(
         "core.intel.twikit_monitor._ocr_photo",
-        lambda url: ((35.19, 25.72), True, "pin_landmark"),
+        lambda url: ((34.9, 25.2), True, "pin_landmark"),
     )
     tweet = _FakeTweet(
         "3012",
@@ -1201,12 +1207,10 @@ def test_media_pin_landmark_fallback_upgrades_position_with_wider_uncertainty(tm
     evt = store.events()[0]
     m._apply_media_ocr(evt.id, ["https://pbs.twimg.com/media/map.jpg"])
     evt = store.get(evt.id)
-    assert evt.lat == 35.19 and evt.lon == 25.72
+    assert evt.lat == 34.9 and evt.lon == 25.2
     assert evt.metadata["coordinate_source"] == "media_pin_landmark"
     assert evt.metadata["location_uncertainty_m"] == 4000
-    # docs/fixes.md F-11: a pin-only estimate is approximate evidence, not a
-    # printed coordinate -- it cannot auto-drift without a dedicated quality gate.
-    assert drift_calls == []
+    assert drift_calls, "a pin-landmark sea coordinate must auto-drift (policy /2)"
 
 
 def test_precise_place_match_uses_tighter_uncertainty_radius(tmp_path, monkeypatch):

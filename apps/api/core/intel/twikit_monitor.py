@@ -595,9 +595,6 @@ class TwikitMonitor:
                 coords[1],
                 interengine_distance_m=ocr_diag.get("interengine_distance_m"),
             )
-            verified_for_drift = (
-                evidence.review_status == "machine_ocr_consensus_verified"
-            )
             record_ocr_result(ocr_result_label(method))
             upgraded = intel_store.enrich_location(
                 event_id,
@@ -608,16 +605,15 @@ class TwikitMonitor:
                     "media_transport": "x_media_ocr",
                     "ocr_attempted": True,
                     "media_count": len(urls),
-                    # Persist location and drift disposition atomically. A
-                    # process restart between two asynchronous metadata writes
-                    # must never leave an old completed drift attached to a
-                    # newly stored unverified OCR coordinate.
-                    "drift_status": "superseded" if verified_for_drift else "ineligible",
-                    **({
-                        "drift_ineligible_reason": (
-                            "OCR location evidence is not independently verified"
-                        ),
-                    } if not verified_for_drift else {}),
+                    # The image just moved the position; any drift that ran off
+                    # the earlier fallback point is stale. Mark it superseded
+                    # atomically with the new coordinate so a process restart
+                    # between the two async writes can never leave an old
+                    # completed drift pinned to the new position. Whether a
+                    # fresh drift actually runs is decided next, by the one
+                    # F-01 eligibility gate (a disputed read / land coordinate
+                    # is turned away there, and marked ineligible).
+                    "drift_status": "superseded",
                 },
             )
             if not upgraded:
@@ -625,19 +621,11 @@ class TwikitMonitor:
                 # do not clobber it, but still ensure a drift is requested.
                 self._auto_drift_if_live(event_id, force=False)
                 return
-            # Only independent OCR consensus can replace a prior drift origin.
-            # Lone-engine/disputed/pin estimates remain visible for review but
-            # atomically invalidate any stale completed status.
-            if verified_for_drift:
-                self._auto_drift_if_live(event_id, force=True)
-            else:
-                from core.observability import record_ocr_drift_rejected
-
-                record_ocr_drift_rejected()
-                logger.info(
-                    "X (twikit) auto-drift not eligible for %s: unverified OCR",
-                    event_id,
-                )
+            # Recompute the drift from the corrected position. The gate decides
+            # eligibility: a single-engine OCR coordinate that lands in the sea
+            # is a valid origin (policy /2); a disputed read or a land
+            # coordinate is rejected and recorded, not silently dropped.
+            self._auto_drift_if_live(event_id, force=True)
             upgraded_event = intel_store.get(event_id)
             if upgraded_event is not None:
                 attach_forensic_packet(upgraded_event)
