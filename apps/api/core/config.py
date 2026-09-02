@@ -199,6 +199,14 @@ class SuezCanalConfig(BaseSettings):
     # mode records technical outcomes only and never changes public semantics.
     ALARM_PHONE_IMAGE_V2_ENABLED: bool = True
     ALARM_PHONE_IMAGE_V2_SHADOW: bool = False
+    # X/Twitter accounts (besides the Alarm Phone handles) whose map/coordinate
+    # images are analysed even when the caption did not classify as distress
+    # (docs/prompt.md §3). Comma-separated handles, lower-case, no @.
+    ALARM_PHONE_IMAGE_V2_ACCOUNTS: str = ""
+    # When the twikit object exposes no usable media, fall back to the public
+    # syndication CDN to resolve the tweet's photos (docs/prompt.md §2, MA-2).
+    # Off in the test suite (kept hermetic); on in production.
+    X_MEDIA_SYNDICATION_FALLBACK: bool = True
     # Shared-secret auth for an operator's own external script pushing
     # already-parsed text reports into the intel pipeline (e.g. a personal
     # tool reading some feed the operator runs themselves) — see

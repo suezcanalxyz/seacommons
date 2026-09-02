@@ -435,109 +435,42 @@ class TwikitMonitor:
         return None
 
     @staticmethod
-    def _tweet_media_urls(tweet: Any, *, tweet_id: str = "") -> list[str]:
-        """Best-effort extraction of https://pbs.twimg.com/ media from a tweet.
+    def _tweet_media_urls(
+        tweet: Any, *, tweet_id: str = "", quoted_tweet: Any = None
+    ) -> list[str]:
+        """Resolved, allow-listed, original-resolution image URLs for a tweet.
 
-        Twikit (twifork) exposes each media entity as a typed object whose
-        image URL lives on the ``media_url`` / ``source_url`` properties (the
-        raw ``media_url_https`` key is not an attribute), while older shapes
-        expose ``media_url_https`` directly or keep the raw ``extended_entities``
-        dict, and some map-tool posts attach the screenshot as a link-preview
-        card (``tweet.card``) rather than native media. Try every shape so an
-        API change never silently disables image-based geolocation. Same host
-        allow-list as the OCR path.
-
-        Logs a diagnosable warning — listing exactly which raw shapes were
-        present and empty — whenever nothing at all is found, and separately
-        when candidate URLs were found but none matched the host allow-list,
-        so a real extraction gap (as opposed to "this tweet has no image")
-        shows up in logs instead of silently falling back to a rough
-        centroid.
+        Thin wrapper over ``core.intel.x_media.resolve_x_media`` (docs/prompt.md
+        §2) -- the canonical acquisition path: every known twikit object shape
+        (typed ``.media`` / ``.extended_entities`` / ``.entities`` / link-preview
+        ``.card``) for the tweet and its quoted tweet, host allow-list applied
+        *before* the cap, ``pbs.twimg.com`` photos normalised to ``name=orig``,
+        and -- only when the object shapes come up empty -- the public
+        syndication CDN.  Logs the same diagnosable warning / debug line as
+        before so a real extraction gap still shows up in logs.
         """
-        urls: list[str] = []
-        shapes_tried: list[str] = []
-        try:
-            media = getattr(tweet, "media", None) or []
-            shapes_tried.append(f"media[{len(media)}]")
-            for item in media:
-                url = str(
-                    getattr(item, "source_url", "")
-                    or getattr(item, "media_url", "")
-                    or getattr(item, "media_url_https", "")
-                    or getattr(item, "url", "")
-                    or ""
-                )
-                if url:
-                    urls.append(url)
-        except Exception as exc:
-            shapes_tried.append(f"media[error:{exc}]")
-        if not urls:
-            try:
-                extended = getattr(tweet, "extended_entities", None) or {}
-                extended_media = extended.get("media") or []
-                shapes_tried.append(f"extended_entities[{len(extended_media)}]")
-                for item in extended_media:
-                    url = str(item.get("media_url_https") or item.get("url") or "")
-                    if url:
-                        urls.append(url)
-            except Exception as exc:
-                shapes_tried.append(f"extended_entities[error:{exc}]")
-        if not urls:
-            try:
-                entities = getattr(tweet, "entities", None) or {}
-                entities_media = entities.get("media") or []
-                shapes_tried.append(f"entities[{len(entities_media)}]")
-                for item in entities_media:
-                    url = str(item.get("media_url_https") or item.get("url") or "")
-                    if url:
-                        urls.append(url)
-            except Exception as exc:
-                shapes_tried.append(f"entities[error:{exc}]")
-        if not urls:
-            # Map-tool posts (Alarm Phone's screenshot generator, some NGO
-            # dashboards) can attach the image as a link-preview card rather
-            # than native tweet media, particularly when posted through a
-            # third-party scheduling tool.
-            try:
-                card = getattr(tweet, "card", None)
-                if card is not None:
-                    card_url = str(
-                        getattr(card, "thumbnail_url", "")
-                        or getattr(card, "image_url", "")
-                        or ""
-                    )
-                    shapes_tried.append(f"card[{'1' if card_url else '0'}]")
-                    if card_url:
-                        urls.append(card_url)
-                else:
-                    shapes_tried.append("card[absent]")
-            except Exception as exc:
-                shapes_tried.append(f"card[error:{exc}]")
+        from core.intel.x_media import resolve_x_media
 
-        allowed = []
-        for url in urls[:4]:
-            try:
-                from urllib.parse import urlparse
-                parsed = urlparse(url)
-                if parsed.scheme == "https" and parsed.hostname in _ALLOWED_MEDIA_HOSTS:
-                    allowed.append(url)
-            except Exception:
-                continue
-
-        if not allowed:
-            if urls:
+        resolution = resolve_x_media(
+            tweet,
+            tweet_id or str(getattr(tweet, "id", "")),
+            quoted_tweet,
+            allow_syndication=config.X_MEDIA_SYNDICATION_FALLBACK,
+        )
+        if not resolution.candidates:
+            if resolution.failure_reason == "candidates_failed_host_allowlist":
                 logger.warning(
-                    "X (twikit) tweet %s: %d candidate media URL(s) found but none "
+                    "X (twikit) tweet %s: candidate media URL(s) found but none "
                     "matched the allowed host (%s); shapes tried: %s",
-                    tweet_id, len(urls), sorted(_ALLOWED_MEDIA_HOSTS), shapes_tried,
+                    tweet_id, sorted(_ALLOWED_MEDIA_HOSTS), resolution.shapes_tried,
                 )
             else:
                 logger.debug(
                     "X (twikit) tweet %s: no media found in any known shape (%s) — "
                     "this tweet likely has no attached image",
-                    tweet_id, shapes_tried,
+                    tweet_id, resolution.shapes_tried,
                 )
-        return allowed
+        return resolution.urls
 
     def _ocr_tweet_media(
         self, tweet_id: str, urls: list[str]
@@ -764,11 +697,15 @@ class TwikitMonitor:
         # as a map screenshot. Priority: explicit text coords > OCR of attached
         # images > declared relative offset > place-name centroid.
         text_coords = extract_numeric_coords(combined_text) if distress else None
-        media_urls = self._tweet_media_urls(tweet, tweet_id=str(tweet.id))
-        if quoted is not None:
-            for url in self._tweet_media_urls(quoted, tweet_id=str(quoted.id)):
-                if url not in media_urls:
-                    media_urls.append(url)
+        from core.intel.x_media import resolve_x_media
+
+        media_resolution = resolve_x_media(
+            tweet,
+            str(tweet.id),
+            quoted,
+            allow_syndication=config.X_MEDIA_SYNDICATION_FALLBACK,
+        )
+        media_urls = media_resolution.urls
 
         # A translated / same-language re-issue of an incident already tracked
         # (Alarm Phone posts EN + FR minutes apart, and a text-only alert then
@@ -924,6 +861,12 @@ class TwikitMonitor:
                 ),
                 "location_uncertainty_m": location_uncertainty_m,
                 "media_count": media_count,
+                # docs/prompt.md §2/§10: how media acquisition went — which
+                # object shape each image came from, which shapes were probed
+                # and empty, whether a real gap (candidates found but blocked)
+                # or simply no image. A silent centroid fallback is now
+                # queryable, not just a log line.
+                **media_resolution.as_diagnostics(),
                 # Kept so a later re-process (core.intel.backfill_alarm_phone)
                 # never has to resolve the tweet again.
                 **({"media_urls": media_urls[:6]} if media_urls else {}),

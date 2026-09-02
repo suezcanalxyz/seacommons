@@ -907,7 +907,7 @@ def test_tweet_media_urls_extended_entities_fallback(tmp_path):
         "🆘 38 lives at risk south of #Crete! #Greece",
         extended_entities={"media": [{"media_url_https": "https://pbs.twimg.com/media/map.png"}]},
     )
-    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/map.png"]
+    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/map.png?name=orig"]
 
 
 def test_tweet_media_urls_entities_fallback(tmp_path):
@@ -917,7 +917,7 @@ def test_tweet_media_urls_entities_fallback(tmp_path):
     m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
     tweet = _FakeTweet("3002", "🆘 38 lives at risk south of #Crete! #Greece")
     tweet.entities = {"media": [{"media_url_https": "https://pbs.twimg.com/media/entities.png"}]}
-    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/entities.png"]
+    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/entities.png?name=orig"]
 
 
 def test_tweet_media_urls_card_fallback(tmp_path):
@@ -930,7 +930,7 @@ def test_tweet_media_urls_card_fallback(tmp_path):
         thumbnail_url = "https://pbs.twimg.com/media/card.jpg"
 
     tweet.card = _FakeCard()
-    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/card.jpg"]
+    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/card.jpg?name=orig"]
 
 
 def test_tweet_media_urls_returns_empty_when_every_shape_is_absent(tmp_path, caplog):

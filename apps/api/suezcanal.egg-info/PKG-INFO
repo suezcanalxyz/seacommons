@@ -1,0 +1,54 @@
+Metadata-Version: 2.4
+Name: suezcanal
+Version: 1.0.0
+Summary: SuezCanal.xyz — Open-source maritime SAR and threat awareness platform
+License: AGPL-3.0-or-later
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.111
+Requires-Dist: uvicorn[standard]>=0.29
+Requires-Dist: pydantic>=2.7
+Requires-Dist: pydantic-settings>=2.2
+Requires-Dist: sqlalchemy[asyncio]>=2.0
+Requires-Dist: alembic>=1.13
+Requires-Dist: aiosqlite>=0.20
+Requires-Dist: httpx>=0.27
+Requires-Dist: websockets>=12.0
+Requires-Dist: redis>=5.0
+Requires-Dist: pynacl>=1.5
+Requires-Dist: blake3>=0.3
+Requires-Dist: click>=8.1
+Requires-Dist: rich>=13.7
+Requires-Dist: python-dateutil>=2.9
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: requests>=2.31
+Requires-Dist: PyJWT[crypto]>=2.8
+Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: minio>=7.2
+Requires-Dist: prometheus-client>=0.21
+Requires-Dist: copernicusmarine>=2.3.0
+Requires-Dist: xarray>=2025.0.0
+Requires-Dist: opendrift>=1.14.9
+Requires-Dist: Pillow>=10.0
+Requires-Dist: apscheduler>=3.10
+Requires-Dist: psycopg[binary]>=3.2
+Requires-Dist: twifork>=2.3.5
+Provides-Extra: sdr
+Requires-Dist: pyrtlsdr>=0.3; extra == "sdr"
+Provides-Extra: ocr
+Requires-Dist: easyocr==1.7.2; extra == "ocr"
+Provides-Extra: tid
+Requires-Dist: missile-tid @ git+https://github.com/tylerni7/missile-tid.git ; extra == "tid"
+Requires-Dist: cartopy>=0.22; extra == "tid"
+Requires-Dist: shapely>=2.0; extra == "tid"
+Requires-Dist: pycurl>=7.45; extra == "tid"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Requires-Dist: ruff>=0.4; extra == "dev"
+Requires-Dist: mypy>=1.10; extra == "dev"
+Requires-Dist: jsonschema>=4.23; extra == "dev"
+Requires-Dist: pip-audit>=2.7; extra == "dev"
+Provides-Extra: full
+Requires-Dist: suezcanal[dev,ocr,sdr,tid]; extra == "full"

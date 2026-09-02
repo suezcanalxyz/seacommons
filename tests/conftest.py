@@ -25,6 +25,9 @@ for _production_setting in (
     os.environ[_production_setting] = "false" if _production_setting == "TWIKIT_ENABLED" else ""
 os.environ["SEACOMMONS_FORENSIC_SYNC"] = "true"
 os.environ["SEACOMMONS_INTEL_PERSIST_SYNC"] = "true"
+# The syndication-CDN media fallback makes a real HTTP call; a test that wants
+# it monkeypatches core.intel.x_media.fetch_tweet_photos and flips this flag.
+os.environ["X_MEDIA_SYNDICATION_FALLBACK"] = "false"
 
 
 def pytest_sessionstart(session) -> None:
