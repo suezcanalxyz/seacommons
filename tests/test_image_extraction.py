@@ -61,6 +61,13 @@ def test_extract_keeps_place_names_and_distress_terms(monkeypatch):
     assert result.selected_coordinate is None
     assert "no_coordinate" in result.failure_reasons
     assert result.as_metadata()["selected_method"] == "none"
+    # docs/prompt.md §9: structured non-coordinate candidates, each with a span
+    people = {p["kind"]: p for p in result.people_counts}
+    assert people["aboard"]["count"] == 47
+    assert {f["kind"] for f in result.vessel_conditions} >= {"engine_failure", "taking_water"}
+    meta = result.as_metadata()
+    assert meta["image_people_counts"][0]["raw"]
+    assert "image_vessel_conditions" in meta
 
 
 def test_extract_records_a_coordinate_candidate_and_confidence(monkeypatch):

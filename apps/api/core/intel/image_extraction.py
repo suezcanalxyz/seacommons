@@ -61,6 +61,8 @@ class ImageExtractionResult:
     confidence_components: dict[str, float] = field(default_factory=dict)
     place_names: list[str] = field(default_factory=list)
     people_counts: list[dict[str, Any]] = field(default_factory=list)
+    vessel_conditions: list[dict[str, Any]] = field(default_factory=list)
+    needs: list[dict[str, Any]] = field(default_factory=list)
     distress_terms: list[str] = field(default_factory=list)
     pin_detected: bool = False
     pin_candidates: list[dict[str, Any]] = field(default_factory=list)
@@ -104,6 +106,9 @@ class ImageExtractionResult:
             "coordinate_candidate_count": len(self.coordinate_candidates),
             "pin_detected": self.pin_detected,
             "landmark_count": len(self.landmarks_detected),
+            **({"image_people_counts": self.people_counts[:12]} if self.people_counts else {}),
+            **({"image_vessel_conditions": self.vessel_conditions[:8]} if self.vessel_conditions else {}),
+            **({"image_needs": self.needs[:8]} if self.needs else {}),
             "selected_method": self.coordinate_method,
             "selected_method_family": self.coordinate_method_family,
             "coordinate_confidence": self.coordinate_confidence,
@@ -170,6 +175,21 @@ def _distress_terms_from_text(text: str) -> list[str]:
 
     lowered = text.lower()
     return sorted({term for term in DISTRESS_KW if term in lowered})
+
+
+def _text_fields_from_text(text: str) -> tuple[list[dict], list[dict], list[dict]]:
+    """People / vessel-condition / needs candidates from OCR text (§9)."""
+    from core.intel.image_text_fields import (
+        extract_needs,
+        extract_people,
+        extract_vessel_conditions,
+    )
+
+    return (
+        [span.as_dict() for span in extract_people(text)],
+        [f.as_dict() for f in extract_vessel_conditions(text)],
+        [f.as_dict() for f in extract_needs(text)],
+    )
 
 
 def _attach_pin_candidates(result, payload) -> None:
@@ -266,6 +286,9 @@ def extract_from_bytes(
     if not result.landmarks_detected:  # a pin fit may already have set these
         result.landmarks_detected = list(result.place_names)
     result.distress_terms = _distress_terms_from_text(detected_text)
+    result.people_counts, result.vessel_conditions, result.needs = _text_fields_from_text(
+        detected_text
+    )
 
     result.image_kind = classify_image_kind(
         payload,
