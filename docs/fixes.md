@@ -1323,3 +1323,21 @@ lint + typecheck + vite build: green
   `intel_events.severity` via a reversible Alembic migration after a complete
   reader/writer audit.
 * Land-coordinate privacy confirmation for border/detention cases.
+
+## Phase 0 verification (2026-09-02)
+
+Only the following Phase 0 work is marked demonstrated on the current branch:
+
+```text
+[x] alert-recognition audit exists and matches HEAD 6765a37
+[x] existing humanitarian/image audit work was not repeated
+[x] backend suite: 592 passed, 1 skipped
+[x] web suites: 45 passed
+[x] edge suite: 12 passed
+[x] web lint, typecheck and build pass
+```
+
+This verification does not mark the Phase 1–13 behavioural changes complete.
+In particular, no new EventAssessment, Humanitarian Recognition V2,
+coverage-aware AIS gap model, or production cutover is claimed by this Phase 0
+commit.

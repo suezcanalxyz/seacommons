@@ -211,3 +211,25 @@ cd apps/web && npm ci && npm run build
 ```
 
 No Alembic migration in this branch (Stage 1 is code-only).
+
+## Phase 0 continuation — alert-recognition audit verification (2026-09-02)
+
+The Phase 0 audit in `docs/ALERT_RECOGNITION_AUDIT.md` was checked against
+the current HEAD (`6765a37`) after the local image-pipeline commits. The
+alert-recognition paths covered by that audit are unchanged by those commits;
+the audit therefore remains an accurate baseline and no Phase 1 behaviour
+change is being claimed here. The image audit remains in
+`docs/ALARM_PHONE_IMAGE_PIPELINE_AUDIT.md` and is not repeated.
+
+Verification performed locally:
+
+```text
+backend: 592 passed, 1 skipped
+web: npm test — 45 passed (11 simulation, 26 live, 3 api, 5 map)
+edge: npm test — 12 passed
+web: lint, typecheck, vite build — passed (existing chunk-size warning only)
+```
+
+The repository now includes `tests/__init__.py` so the documented root
+pytest invocation can import repository-local fixtures reliably. No production
+database, service, edge deployment, or runtime state was changed.
