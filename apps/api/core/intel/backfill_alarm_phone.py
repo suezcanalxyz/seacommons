@@ -437,13 +437,90 @@ def _queue_drift(candidate: dict, lat: float, lon: float) -> None:
         logger.warning("backfill drift failed for %s: %s", candidate["id"], exc)
 
 
+def run_benchmark(directory: str, *, limit: int) -> str:
+    """V1 vs V2 image-pipeline comparison over local ground-truth JSON files
+    (docs/prompt.md §11 / §12). No database access, no writes.
+
+    Each ``<directory>/*.json`` carries: ``tweet_id`` (and/or ``media_urls``),
+    ``image_type``, ``has_coordinate_text``, ``has_pin``,
+    ``expected_coordinate`` ([lat, lon] or null), ``tolerance_km``.
+    Third-party images are never committed -- media is resolved live from the
+    public syndication CDN at run time (docs/prompt.md §11).
+    """
+    import glob
+    import json
+    import os
+
+    from core.intel.image_benchmark import BenchmarkItem, evaluate
+    from core.intel.x_media_utils import _download_bounded_image, fetch_tweet_photos
+
+    paths = sorted(glob.glob(os.path.join(directory, "*.json")))[:limit]
+    if not paths:
+        return f"no ground-truth files in {directory}/*.json"
+
+    items: list[BenchmarkItem] = []
+    media_wanted = media_resolved = 0
+    for path in paths:
+        with open(path, encoding="utf-8") as handle:
+            truth = json.load(handle)
+        media_wanted += 1
+        urls = list(truth.get("media_urls") or [])
+        if not urls and truth.get("tweet_id"):
+            try:
+                urls = fetch_tweet_photos(str(truth["tweet_id"]))
+            except Exception as exc:  # pragma: no cover - network
+                logger.debug("benchmark media resolve failed for %s: %s", path, exc)
+        payload = None
+        for url in urls[:6]:
+            payload = _download_bounded_image(url)
+            if payload is not None:
+                break
+        if payload is None:
+            logger.info("benchmark: no media for %s", os.path.basename(path))
+            continue
+        media_resolved += 1
+        expected = truth.get("expected_coordinate")
+        items.append(
+            BenchmarkItem(
+                name=os.path.splitext(os.path.basename(path))[0],
+                image_bytes=payload,
+                image_kind=truth.get("image_type"),
+                has_coordinate_text=bool(truth.get("has_coordinate_text")),
+                has_pin=bool(truth.get("has_pin")),
+                expected_coordinate=tuple(expected) if expected else None,
+                tolerance_km=float(truth.get("tolerance_km", 25.0)),
+            )
+        )
+
+    report = evaluate(items)
+    header = (
+        f"media retrieval recall  {media_resolved}/{media_wanted}"
+        f"  ({media_resolved / media_wanted:.0%})\n"
+    )
+    return header + report.format_text()
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="write back (default: dry run)")
     parser.add_argument("--drift", action="store_true", help="gated drift for repositioned events")
     parser.add_argument("--limit", type=int, default=200)
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="V1/V2 image-pipeline comparison over local ground truth (no DB writes)",
+    )
+    parser.add_argument(
+        "--benchmark-dir",
+        default="benchmark/alarm_phone",
+        help="directory of ground-truth JSON files (default: benchmark/alarm_phone)",
+    )
     args = parser.parse_args()
+
+    if args.benchmark:
+        logger.info(run_benchmark(args.benchmark_dir, limit=args.limit))
+        return
 
     from core.db.session import init_database
 

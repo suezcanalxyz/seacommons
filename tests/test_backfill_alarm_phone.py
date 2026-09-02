@@ -167,6 +167,49 @@ def test_dry_run_never_writes() -> None:
             dict(after.meta)) == snap
 
 
+def test_benchmark_mode_reads_json_resolves_media_and_writes_nothing(tmp_path, monkeypatch) -> None:
+    """docs/prompt.md §12: --benchmark runs V1/V2 over local ground truth and
+    touches no database."""
+    import json
+
+    from tests.fixtures.alarm_phone_images import CASES_BY_NAME
+
+    case = CASES_BY_NAME["pin_only_red"]
+    (tmp_path / "case1.json").write_text(json.dumps({
+        "tweet_id": "111",
+        "image_type": "map_screenshot",
+        "has_coordinate_text": False,
+        "has_pin": True,
+        "expected_coordinate": list(case.expected_coordinate),
+        "tolerance_km": 25.0,
+    }))
+
+    monkeypatch.setattr(
+        "core.intel.x_media_utils.fetch_tweet_photos",
+        lambda tweet_id: ["https://pbs.twimg.com/media/x.jpg"],
+    )
+    monkeypatch.setattr(
+        "core.intel.x_media_utils._download_bounded_image", lambda url: case.render()
+    )
+    evaluated = {}
+
+    def _fake_evaluate(items, **kw):
+        evaluated["items"] = items
+        return _FakeReport()
+
+    monkeypatch.setattr("core.intel.image_benchmark.evaluate", _fake_evaluate)
+
+    text = bf.run_benchmark(str(tmp_path), limit=10)
+    assert "media retrieval recall  1/1" in text
+    assert len(evaluated["items"]) == 1
+    assert evaluated["items"][0].has_pin is True
+
+
+class _FakeReport:
+    def format_text(self) -> str:
+        return "V1/V2 disagreements: 0"
+
+
 # ── F. no permanently-zero misleading report bucket ──────────────────────
 def test_report_buckets_are_honest() -> None:
     from core.db.session import session_scope
