@@ -252,16 +252,18 @@ def public_event_from_row(
     # /api/v1/live/signals?mode=humanitarian feed uses, so "what counts as
     # Humanitarian Live" can never depend on whether the browser is served
     # from the edge or the VM.
-    from core.intel.public_policy import SECURITY_MARITIME_DOMAINS, domains_for_mode
+    from core.intel.public_policy import domains_for_mode
+    from core.live import mode_policy
     from core.live.projection import _public_intel_feature
 
-    if event.maritime_domain() in SECURITY_MARITIME_DOMAINS:
-        # The public edge is the humanitarian compartment only; the VM buckets
-        # these into `security` and excludes them from mode=humanitarian.
+    # docs/prompt.md PHASE 5: the exact same canonical decision the VM feed
+    # makes -- the edge no longer re-implements the compartment check.
+    if not mode_policy.eligible_for_mode(event, "humanitarian"):
         return None
-    vm_feature = _public_intel_feature(
-        event, allowed_domains=domains_for_mode("humanitarian")
-    )
+    allowed = domains_for_mode("humanitarian")
+    if mode_policy.is_safety_context(event):
+        allowed = allowed | mode_policy.SAFETY_CONTEXT_DOMAINS
+    vm_feature = _public_intel_feature(event, allowed_domains=allowed)
     if vm_feature is None:
         return None
     # kind == "distress" iff event.tier() == "operational" -- the same signal

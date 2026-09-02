@@ -22,9 +22,9 @@ from core.domain.visual_category import visual_category_fields
 from core.intel import lifecycle
 from core.intel.public_policy import (
     HUMANITARIAN_DRIFT_DOMAINS,
-    compartment_for_domain,
     domains_for_mode,
 )
+from core.live import mode_policy
 
 # Lifecycle states for which a live, active-looking drift cone would misread as
 # "still adrift, still searching". The point/marker stays visible via the
@@ -199,19 +199,30 @@ def public_signal_collection(
         "security": [],
     }
     for event in events:
-        # F-07: positive allow-lists, never humanitarian-by-complement.
-        # safety / environmental / unknown -> no operational compartment.
-        event_mode = compartment_for_domain(event.maritime_domain())
+        # docs/prompt.md PHASE 5: one canonical mode decision, shared with the
+        # edge publisher. Positive allow-lists only (F-07). A maritime-safety
+        # self-report (not_under_command / aground / distress beacon) rides in
+        # the humanitarian feed as non-distress context, never security.
+        event_mode = mode_policy.mode_for_event(event)
         if event_mode is None:
             continue
-        feature = _public_intel_feature(
-            event,
-            allowed_domains=domains_for_mode(event_mode),
-        )
+        safety_context = mode_policy.is_safety_context(event)
+        allowed = domains_for_mode(event_mode)
+        if safety_context:
+            allowed = allowed | mode_policy.SAFETY_CONTEXT_DOMAINS
+        feature = _public_intel_feature(event, allowed_domains=allowed)
         if not feature:
             continue
         kind = feature["properties"].get("kind")
-        if kind == "distress" and event.type != "correlated_alert":
+        if safety_context:
+            # Safety context is a distinct non-distress bucket: it never
+            # pulses as a distress marker and is capped like other context.
+            if not lifecycle.is_within_live_window(event, now=now):
+                continue
+            feature["properties"]["kind"] = LiveSignalKind.CONTEXT.value
+            feature["properties"]["safety_context"] = True
+            mode_context[event_mode].append(feature)
+        elif kind == "distress" and event.type != "correlated_alert":
             if not lifecycle.is_within_live_window(event, now=now):
                 # Hard cutoff: a distress marker's total life on Live is bounded,
                 # regardless of whether it was ever resolved. Older history lives
