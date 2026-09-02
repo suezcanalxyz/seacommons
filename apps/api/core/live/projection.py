@@ -20,6 +20,7 @@ from core.domain.live_contracts import (
     VerificationStatus,
     validate_live_signal,
 )
+from core.domain.visual_category import visual_category_fields
 from core.intel import lifecycle
 from core.intel.public_geometry import public_geometry_and_precision
 from core.intel.public_policy import (
@@ -318,6 +319,16 @@ def _public_intel_feature(
             )
 
     geometry, location_precision = public_geometry_and_precision(event)
+    # Canonical semantic visual taxonomy. Colour/identity is a pure function of
+    # category — never severity, OCR confidence or lifecycle. Alarm Phone is
+    # always `humanitarian_alarm_phone` (red).
+    category = visual_category_fields(
+        source=event.source,
+        event_type=event.type,
+        maritime_domain=resolved_domain,
+        humanitarian_case_type=metadata.get("humanitarian_case_type"),
+        metadata=event.metadata,
+    )
     feature = {
         "type": "Feature",
         "id": f"intel:{event.id}",
@@ -326,6 +337,7 @@ def _public_intel_feature(
             "schema": LIVE_SIGNAL_SCHEMA,
             "id": f"intel:{event.id}",
             "type": event.type,
+            **category,
             "kind": (
                 LiveSignalKind.DISTRESS.value
                 if event.tier() == "operational"
@@ -375,7 +387,7 @@ def _public_drift_feature(
     event_id: str,
     title: str,
     source: str,
-    severity: str,
+    category: dict[str, str],
     metadata: dict[str, Any],
 ) -> dict[str, Any]:
     properties = feature.get("properties") or {}
@@ -401,7 +413,11 @@ def _public_drift_feature(
             "intel_event_id": event_id,
             "intel_title": title[:80],
             "intel_source": source[:64],
-            "intel_severity": severity,
+            # Drift colour inherits its origin signal's category. No severity.
+            "origin_category": category.get("visual_category"),
+            "visual_category": category.get("visual_category"),
+            "visual_color": category.get("visual_color"),
+            "category_label": category.get("category_label"),
             "auto_drift": True,
             "publication_status": PublicationStatus.PUBLISHED.value,
             "trajectory_kind": "model_forecast",

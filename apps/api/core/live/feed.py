@@ -18,12 +18,21 @@ from core.domain.live_contracts import (
     VerificationStatus,
     validate_live_signal,
 )
+from core.domain.visual_category import visual_category_fields
 from core.intel import lifecycle
 from core.intel.public_policy import (
     HUMANITARIAN_DRIFT_DOMAINS,
     compartment_for_domain,
     domains_for_mode,
 )
+
+# Lifecycle states for which a live, active-looking drift cone would misread as
+# "still adrift, still searching". The point/marker stays visible via the
+# signal feed; only the trajectory/cone is withheld once the search is over.
+# `needs_review` is an OPEN state — a human still has to confirm the outcome —
+# so its persisted operational drift stays on the public map. Mirrors
+# `core.intel.drift_service._DRIFT_BLOCKING_LIFECYCLES`.
+_DRIFT_HIDDEN_LIFECYCLES = frozenset({"resolved", "archived"})
 from core.intel.store import IntelEvent, intel_store
 from core.live.projection import (
     _approximate_public_point,
@@ -410,7 +419,16 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
             now=now,
             same_source=by_source.get(event.source, []),
         )
-        if state != "active":
+        if state in _DRIFT_HIDDEN_LIFECYCLES:
+            continue
+        # Only a real extracted maritime point is a drift origin. A region-only
+        # Alarm Phone incident keeps its red search area (signal feed) but must
+        # never carry a fabricated trajectory/cone, even if a stale drift_result
+        # row from before an OCR upgrade still exists (product policy §1, §11-C).
+        from core.intel.drift_service import is_auto_drift_eligible
+
+        eligible, _reason = is_auto_drift_eligible(event)
+        if not eligible:
             continue
         if not job_id:
             jobs = list_drift_jobs_for_event(f"intel:{event.id}")
@@ -422,6 +440,15 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         if not drift or not _is_publishable_live_drift(drift):
             continue
         metadata = drift.get("metadata") or {}
+        # The drift inherits its origin signal's semantic category (Alarm Phone
+        # drift is red because the origin is Alarm Phone), never a severity.
+        category = visual_category_fields(
+            source=event.source,
+            event_type=event.type,
+            maritime_domain=event.maritime_domain(),
+            humanitarian_case_type=event.metadata.get("humanitarian_case_type"),
+            metadata=event.metadata,
+        )
         drift_count += 1
         for feature in (drift.get("trajectory"), drift.get("cone_24h")):
             if feature:
@@ -431,7 +458,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
                         event_id=event.id,
                         title=event.title,
                         source=event.source,
-                        severity=event.severity,
+                        category=category,
                         metadata=metadata,
                     )
                 )
@@ -446,7 +473,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
                     event_id=event.id,
                     title=event.title,
                     source=event.source,
-                    severity=event.severity,
+                    category=category,
                     metadata=metadata,
                 )
             )
@@ -457,7 +484,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
                     event_id=event.id,
                     title=event.title,
                     source=event.source,
-                    severity=event.severity,
+                    category=category,
                     metadata=metadata,
                 )
             )

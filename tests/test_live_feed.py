@@ -1261,6 +1261,10 @@ def test_drift_not_shown_for_resolved_or_archived_incidents(monkeypatch) -> None
             "is_distress": True,
             "source_policy": "official_api",
             "drift_job_id": "job-active",
+            "coordinate_source": "media_ocr_text",
+            "coordinate_review_status": "machine_ocr_unverified",
+            "location_status": "positioned",
+            "maritime_domain": "sar",
         },
     )
     resolved_event = IntelEvent(
@@ -1276,6 +1280,10 @@ def test_drift_not_shown_for_resolved_or_archived_incidents(monkeypatch) -> None
             "is_distress": True,
             "source_policy": "official_api",
             "drift_job_id": "job-resolved",
+            "coordinate_source": "media_ocr_text",
+            "coordinate_review_status": "machine_ocr_unverified",
+            "location_status": "positioned",
+            "maritime_domain": "sar",
         },
     )
     monkeypatch.setattr(
@@ -1306,6 +1314,87 @@ def test_drift_not_shown_for_resolved_or_archived_incidents(monkeypatch) -> None
     event_ids = {f["properties"]["intel_event_id"] for f in collection["features"]}
     assert "drift-active" in event_ids
     assert "drift-resolved" not in event_ids
+
+
+def test_needs_review_alarm_phone_point_keeps_operational_drift(monkeypatch) -> None:
+    """Product policy §2/§11-A: every eligible Alarm Phone maritime point's
+    persisted operational drift reaches public Live. `needs_review` is an OPEN
+    lifecycle state (a human still has to confirm the outcome), NOT a reason to
+    hide the trajectory. The drift also inherits the red Alarm Phone category,
+    never a severity."""
+    from datetime import timezone
+
+    from core.live.feed import public_drift_collection
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    event = IntelEvent(
+        id="ap-needs-review",
+        type="distress",
+        severity="low",  # severity must not matter
+        lat=35.0,
+        lon=14.0,
+        title="30 people adrift",
+        source="alarm_phone",
+        timestamp_utc=now_iso,
+        metadata={
+            "is_distress": True,
+            "source_policy": "official_api",
+            "drift_job_id": "job-nr",
+            "incident_lifecycle": "needs_review",
+            "coordinate_source": "media_ocr_text",
+            "coordinate_review_status": "machine_ocr_unverified",
+            "location_status": "positioned",
+            "maritime_domain": "sar",
+            "humanitarian_case_type": "distress",
+        },
+    )
+    region_only = IntelEvent(
+        id="ap-region-only",
+        type="distress",
+        severity="high",
+        lat=35.0,
+        lon=14.0,
+        title="Boat somewhere in the Maltese SAR zone",
+        source="alarm_phone",
+        timestamp_utc=now_iso,
+        metadata={
+            "is_distress": True,
+            "source_policy": "official_api",
+            "drift_job_id": "job-ro",
+            "incident_lifecycle": "active",
+            "coordinate_source": "region_area",
+            "location_status": "region_only",
+            "maritime_domain": "sar",
+        },
+    )
+    monkeypatch.setattr(
+        "core.live.feed.intel_store.persisted_events", lambda **_kwargs: []
+    )
+    monkeypatch.setattr(
+        "core.live.feed.intel_store.events", lambda **_kwargs: [event, region_only]
+    )
+    fake_drift = {
+        "trajectory": {
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": [[14.0, 35.0], [14.1, 35.1]]},
+            "properties": {},
+        },
+        "cone_24h": None,
+        "impact_point": {},
+        "metadata": {"published": True},
+    }
+    monkeypatch.setattr("core.db.store.get_drift", lambda job_id: fake_drift)
+    monkeypatch.setattr("core.db.store.list_drift_jobs_for_event", lambda event_id: [])
+    monkeypatch.setattr("core.live.feed._is_publishable_live_drift", lambda drift: True)
+
+    collection = public_drift_collection(limit=50)
+    by_id = {f["properties"]["intel_event_id"]: f["properties"] for f in collection["features"]}
+    assert "ap-needs-review" in by_id
+    assert "ap-region-only" not in by_id  # §11-C: no fabricated trajectory
+    props = by_id["ap-needs-review"]
+    assert props["visual_category"] == "humanitarian_alarm_phone"
+    assert props["visual_color"] == "#ff3b3b"
+    assert "intel_severity" not in props
 
 
 def test_drift_never_shown_for_maritime_security_domain(monkeypatch) -> None:
