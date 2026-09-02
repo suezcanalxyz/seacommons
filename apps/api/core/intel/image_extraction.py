@@ -160,6 +160,25 @@ def _distress_terms_from_text(text: str) -> list[str]:
     return sorted({term for term in DISTRESS_KW if term in lowered})
 
 
+def _attach_pin_fit(result, payload, executable, easy_boxes) -> None:
+    """Populate the Web-Mercator fit diagnostics for a pin-landmark result."""
+    try:
+        from core.intel.map_pin_geolocate import geolocate_pin_detailed
+
+        solution = geolocate_pin_detailed(
+            payload, executable=executable, word_boxes=easy_boxes or None
+        )
+    except Exception:
+        solution = None
+    if solution is None:
+        return
+    result.landmarks_used = list(solution.landmarks_used)
+    result.landmarks_detected = list(solution.landmarks_detected)
+    result.fit_residual_px = solution.fit_residual_px
+    result.estimated_position_error_m = solution.estimated_position_error_m
+    result.pin_candidates.append({"confidence": solution.confidence, "detector": "landmark_fit"})
+
+
 # ── orchestrator ────────────────────────────────────────────────────────────
 def extract_from_bytes(
     payload: bytes,
@@ -205,11 +224,14 @@ def extract_from_bytes(
             CoordinateCandidate(coordinate[0], coordinate[1], method, source_kind)
         )
         result.pin_detected = source_kind == "pin_landmark"
+        if source_kind == "pin_landmark":
+            _attach_pin_fit(result, payload, executable, easy_boxes)
     else:
         result.failure_reasons.append("no_coordinate" if attempted else "ocr_not_attempted")
 
     result.place_names = _place_names_from_text(detected_text)
-    result.landmarks_detected = list(result.place_names)
+    if not result.landmarks_detected:  # a pin fit may already have set these
+        result.landmarks_detected = list(result.place_names)
     result.distress_terms = _distress_terms_from_text(detected_text)
 
     result.image_kind = classify_image_kind(

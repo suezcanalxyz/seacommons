@@ -317,10 +317,13 @@ def geolocate_pin_from_image(
     *,
     executable: Optional[str] = None,
     word_boxes: Optional[list[dict]] = None,
+    sea_snap: bool = True,
 ) -> Optional[tuple[float, float]]:
     """Best-effort: recover the pin's real-world position from a plain map
     screenshot with no printed coordinates, using visible place labels as
-    calibration points. Returns None on any missing precondition."""
+    calibration points via a Web-Mercator fit (docs/prompt.md §7). Returns
+    None on any missing precondition. ``sea_snap`` nudges a maritime result
+    onto water; pass False for a land humanitarian case."""
     command = executable or shutil.which("tesseract")
     if not command and not word_boxes:
         return None
@@ -338,48 +341,66 @@ def geolocate_pin_from_image(
     except Exception:
         return None
 
-    landmarks = _match_landmarks(detected_word_boxes)
-    if len(landmarks) < _MIN_LANDMARK_MATCHES:
+    solution = _solve(_match_landmarks(detected_word_boxes), pin, image.size)
+    if solution is None:
         return None
 
-    # Robust to one OCR-misplaced label: with >= 4 matches, drop the single
-    # landmark whose position is the worst fit if it is a clear outlier.
-    if len(landmarks) >= 4:
-        landmarks = _drop_worst_landmark(landmarks)
-
-    pixel_xs = [px for _, px, _ in landmarks]
-    pixel_ys = [py for _, _, py in landmarks]
-    lons = [PRECISE_PLACES[name][1] for name, _, _ in landmarks]
-    lats = [PRECISE_PLACES[name][0] for name, _, _ in landmarks]
-
-    if max(pixel_xs) - min(pixel_xs) < _MIN_PIXEL_SPREAD or max(pixel_ys) - min(pixel_ys) < _MIN_PIXEL_SPREAD:
-        return None
-
-    x_fit = _fit_axis(pixel_xs, lons)
-    y_fit = _fit_axis(pixel_ys, lats)
-    if x_fit is None or y_fit is None:
-        return None
-
-    slope_x, intercept_x = x_fit
-    slope_y, intercept_y = y_fit
-    if abs(slope_x) < 1e-9 or abs(slope_y) < 1e-9:
-        return None
-
-    pin_x, pin_y = pin
-    lon = (pin_x - intercept_x) / slope_x
-    lat = (pin_y - intercept_y) / slope_y
-
-    if not (_LAT_RANGE[0] <= lat <= _LAT_RANGE[1] and _LON_RANGE[0] <= lon <= _LON_RANGE[1]):
-        return None
     nearest_km = min(
-        _haversine_km(lat, lon, PRECISE_PLACES[name][0], PRECISE_PLACES[name][1])
-        for name, _, _ in landmarks
+        _haversine_km(
+            solution.lat, solution.lon, PRECISE_PLACES[name][0], PRECISE_PLACES[name][1]
+        )
+        for name in solution.landmarks_used
     )
     if nearest_km > _MAX_KM_FROM_NEAREST_LANDMARK:
         return None
 
-    # A linear pixel->geo fit off a handful of place labels can put the pin a
-    # few km inland; the boat is at sea, so nudge onto water.
+    if not sea_snap:
+        return solution.lat, solution.lon
+    # A pixel->geo fit off a handful of place labels can put the pin a few km
+    # inland; a maritime pin is at sea, so nudge onto water. Conditional so a
+    # land humanitarian case is never dragged into the water (docs/fixes.md
+    # F-09 parity -- the caller passes sea_snap=False for those).
     from core.intel.landmask import nearest_sea_point
 
-    return nearest_sea_point(round(lat, 5), round(lon, 5))
+    return nearest_sea_point(solution.lat, solution.lon)
+
+
+def _solve(matched: list[tuple[str, float, float]], pin: tuple[int, int], image_size):
+    """Adapt _match_landmarks output to the Web-Mercator solver."""
+    from core.intel.image_geolocate import Landmark, solve_pin_position
+
+    landmarks = [
+        Landmark(name, px, py, PRECISE_PLACES[name][0], PRECISE_PLACES[name][1])
+        for name, px, py in matched
+        if name in PRECISE_PLACES
+    ]
+    if len(landmarks) < _MIN_LANDMARK_MATCHES:
+        return None
+    return solve_pin_position(pin, landmarks, image_size=image_size)
+
+
+def geolocate_pin_detailed(
+    payload: bytes,
+    *,
+    executable: Optional[str] = None,
+    word_boxes: Optional[list[dict]] = None,
+):
+    """Same as ``geolocate_pin_from_image`` but returns the full
+    ``GeolocationSolution`` (residual, extrapolation, error estimate,
+    confidence, landmarks) -- for the structured image pipeline."""
+    command = executable or shutil.which("tesseract")
+    if not command and not word_boxes:
+        return None
+    from PIL import Image, ImageOps
+
+    Image.MAX_IMAGE_PIXELS = 25_000_000
+    try:
+        with Image.open(io.BytesIO(payload)) as source:
+            image = ImageOps.exif_transpose(source)
+            pin = _detect_marker_pixel(image)
+            if pin is None:
+                return None
+            boxes = word_boxes or _ocr_word_boxes(image, executable=command)
+            return _solve(_match_landmarks(boxes), pin, image.size)
+    except Exception:
+        return None
