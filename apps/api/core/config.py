@@ -203,6 +203,13 @@ class SuezCanalConfig(BaseSettings):
     # images are analysed even when the caption did not classify as distress
     # (docs/prompt.md §3). Comma-separated handles, lower-case, no @.
     ALARM_PHONE_IMAGE_V2_ACCOUNTS: str = ""
+    # Humanitarian Recognition V2 (docs/prompt.md PHASE 2): the richer
+    # deterministic EN/IT/FR incident-type + lifecycle + entity extractor.
+    # ALERT_RECOGNITION_V2 makes it authoritative for humanitarian_case_metadata;
+    # ALERT_RECOGNITION_V2_SHADOW runs it alongside V1 and records the delta
+    # under `humanitarian_recognition_shadow` without changing public output.
+    ALERT_RECOGNITION_V2: bool = False
+    ALERT_RECOGNITION_V2_SHADOW: bool = False
     # When the twikit object exposes no usable media, fall back to the public
     # syndication CDN to resolve the tweet's photos (docs/prompt.md §2, MA-2).
     # Off in the test suite (kept hermetic); on in production.

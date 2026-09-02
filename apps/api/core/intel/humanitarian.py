@@ -144,7 +144,7 @@ def humanitarian_case_metadata(
     else:
         status = "reported"
     direct_source = str(source).lower().lstrip("@") == "alarm_phone"
-    return {
+    meta = {
         "humanitarian_case_id": f"HUM-X-{incident_id}",
         "humanitarian_case_type": _case_type(text, distress=distress, resolved=resolved),
         "humanitarian_status": status,
@@ -153,3 +153,44 @@ def humanitarian_case_metadata(
         "verification_level": "direct_humanitarian_source" if direct_source else "single_public_source",
         "source_count": 1,
     }
+    meta.update(_recognition_v2_overlay(text, source=source, distress=distress))
+    return meta
+
+
+def _recognition_v2_overlay(text: str, *, source: str, distress: bool) -> dict[str, Any]:
+    """Humanitarian Recognition V2 (docs/prompt.md PHASE 2), gated by config.
+
+    - ``ALERT_RECOGNITION_V2_SHADOW``: attach ``humanitarian_recognition_shadow``
+      (the V2 assessment + the V1/V2 case-type delta), change nothing else.
+    - ``ALERT_RECOGNITION_V2``: additionally let V2 own ``humanitarian_case_type``
+      and the finer ``humanitarian_incident_type`` while keeping every legacy
+      key above intact.
+    """
+    try:
+        from core.config import config
+
+        shadow = bool(getattr(config, "ALERT_RECOGNITION_V2_SHADOW", False))
+        authoritative = bool(getattr(config, "ALERT_RECOGNITION_V2", False))
+        if not (shadow or authoritative):
+            return {}
+        from core.intel.humanitarian_recognition import recognize
+
+        assessment = recognize(text, source=source, direct_distress=distress)
+    except Exception:  # pragma: no cover - never break ingestion on the overlay
+        return {}
+
+    overlay: dict[str, Any] = {}
+    if shadow:
+        overlay["humanitarian_recognition_shadow"] = assessment.as_metadata()[
+            "humanitarian_assessment"
+        ]
+    if authoritative:
+        overlay["humanitarian_incident_type"] = assessment.incident_type
+        overlay["humanitarian_recognition"] = assessment.as_metadata()["humanitarian_assessment"]
+        # keep the canonical taxonomy value if V2's finer type is not one of it
+        from core.domain.live_contracts import HumanitarianCaseType
+
+        canonical = {t.value for t in HumanitarianCaseType}
+        if assessment.incident_type in canonical:
+            overlay["humanitarian_case_type"] = assessment.incident_type
+    return overlay
