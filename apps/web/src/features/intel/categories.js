@@ -9,10 +9,12 @@ export const SIGNAL_CATEGORIES = [
     description: 'A distress beacon (AIS-SART/MOB/EPIRB) or a corroborated SAR report. Auto-published — treat as real until stood down.' },
   { key: 'fused',      label: 'Correlated alert',  color: '#ffb347', types: ['correlated_alert'],
     description: 'Multiple independent sources agree on the same event (spoofing, dark rendezvous, infrastructure proximity, identity fraud...). Never opened from one source alone.' },
-  { key: 'ais',        label: 'AIS anomaly / spike', color: '#60a5fa', types: ['ais_spike', 'ais_anomaly'],
-    description: 'A transponder pattern that does not look like normal navigation — circular track, teleport jump, or a signal frozen in place. Flags identity questions, not identity conclusions.' },
-  { key: 'incident',   label: 'Vessel incident',   color: '#fb923c', types: ['vessel_incident'],
-    description: 'A vessel\'s own AIS navigational-status report: aground, or "not under command" (cannot manoeuvre). Not under command is frequently set for benign reasons — always needs operator review before acting on it.' },
+  { key: 'behavioural_cue', label: 'AIS behavioural cue', color: '#60a5fa', types: ['ais_spike'],
+    description: 'A motion pattern inferred from the track — an abrupt stop, loitering, a zig-zag search, or vessels clustering. A cue for review, not a conclusion; the specific pattern is named on each event.' },
+  { key: 'signal_anomaly', label: 'AIS signal anomaly', color: '#38bdf8', types: ['ais_anomaly'],
+    description: 'A transponder / reception integrity issue — a silence gap, an impossible speed, a dark-zone entry, or a duplicate identity. Flags identity and coverage questions, not identity conclusions.' },
+  { key: 'incident',   label: 'AIS vessel status',  color: '#fb923c', types: ['vessel_incident'],
+    description: 'A navigational status the vessel itself broadcast: aground, or "not under command" (unable to manoeuvre). Reported by the vessel over AIS — the operational cause is not independently confirmed.' },
   { key: 'hazard',     label: 'Natural hazard (GDACS)', color: '#f59e0b', types: ['gdacs'],
     description: 'Environmental/weather hazard from the GDACS global disaster feed — context, not a vessel-specific signal.' },
   { key: 'iom',        label: 'IOM missing migrants', color: '#b91c1c', types: ['iom_incident'],
@@ -137,17 +139,44 @@ export function eventAnomalyLabel(properties = {}) {
     not_under_command: 'unable to manoeuvre',
     restricted_manoeuvrability: 'restricted manoeuvrability',
     restricted_maneuverability: 'restricted manoeuvrability',
+    aground: 'aground',
+    distress_beacon: 'distress beacon',
     gap: 'AIS gap',
     ais_gap: 'AIS gap',
+    vessel_gap: 'AIS gap',
+    coverage_gap: 'AIS coverage outage',
+    source_outage: 'AIS coverage outage',
+    impossible_speed: 'impossible speed',
+    dark_zone_entry: 'dark-zone entry',
+    identity_anomaly: 'identity anomaly',
+    // behavioural cues — never surfaced as the word "spike"
+    sudden_stop: 'sudden stop',
+    possible_sudden_stop: 'possible sudden stop',
+    vessel_loiter: 'loitering',
+    loitering: 'loitering',
+    ngo_search_pattern: 'search pattern',
+    rescue_cluster: 'vessel cluster',
+    possible_rescue_cluster: 'possible vessel cluster',
     rendezvous: 'ship-to-ship rendezvous',
   };
   return labels[raw] || String(raw).replace(/_/g, ' ');
 }
 
+// The human-facing AIS taxonomy group for an event type / subtype
+// (docs/prompt.md PHASE 6). Never returns "spike".
+export function aisTaxonomyGroup(type) {
+  if (type === 'vessel_incident') return 'vessel_status';
+  if (type === 'ais_spike') return 'behavioural_cue';
+  if (type === 'ais_anomaly') return 'signal_anomaly';
+  if (type === 'correlated_alert') return 'fused_alert';
+  return null;
+}
+
 // Categories that get their own toggleable map layer over the shared
 // `intel-events` source (distress / fused / ais have dedicated sources).
 export const INTEL_MAP_CATEGORIES = SIGNAL_CATEGORIES.filter(
-  (c) => !['distress', 'fused', 'ais', 'other'].includes(c.key) && c.types.length,
+  (c) => !['distress', 'fused', 'behavioural_cue', 'signal_anomaly', 'other'].includes(c.key)
+    && c.types.length,
 );
 
 const _BY_TYPE = SIGNAL_CATEGORIES.reduce((acc, cat) => {

@@ -55,3 +55,23 @@ def test_enum_value_sets_are_stable():
         "machine_ocr_disputed_needs_review"
     )
     assert LocationStatus.WITHHELD_FROM_MARITIME_MAP.value == "withheld_from_maritime_map"
+
+
+def test_ais_taxonomy_group_splits_the_flat_ais_bucket():
+    """docs/prompt.md PHASE 6 / audit TX-1: vessel status, behavioural cue and
+    signal anomaly are separate; 'spike' is never a group name."""
+    from core.domain.live_contracts import AisTaxonomyGroup, ais_taxonomy_group
+
+    assert ais_taxonomy_group("vessel_incident") == AisTaxonomyGroup.VESSEL_STATUS
+    assert ais_taxonomy_group("ais_spike") == AisTaxonomyGroup.BEHAVIOURAL_CUE
+    assert ais_taxonomy_group("ais_anomaly") == AisTaxonomyGroup.SIGNAL_ANOMALY
+    assert ais_taxonomy_group("correlated_alert") == AisTaxonomyGroup.FUSED_ALERT
+    assert ais_taxonomy_group("twitter") is None
+    assert all("spike" not in g.value for g in AisTaxonomyGroup)
+
+
+def test_sudden_stop_maps_to_a_visual_category():
+    from core.domain.visual_category import classify_visual_category
+
+    cat = classify_visual_category(event_type="ais_spike", metadata={"anomaly_type": "sudden_stop"})
+    assert cat == "loitering"

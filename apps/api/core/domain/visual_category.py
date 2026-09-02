@@ -131,7 +131,7 @@ def classify_visual_category(
         return "spoofing"
     if re.search(r"ais_gap|dark_vessel|dark_activity|signal_gap|transponder_off|(^|_)gap($|_)", tokens):
         return "ais_gap"
-    if re.search(r"loiter|abnormal_dwell|stationary_anomaly", tokens):
+    if re.search(r"loiter|abnormal_dwell|stationary_anomaly|sudden_stop|abrupt_stop", tokens):
         return "loitering"
     if re.search(r"rendezvous|ship_to_ship|(^|_)sts(_|$)|proximity_pair", tokens):
         return "rendezvous"

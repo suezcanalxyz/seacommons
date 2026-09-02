@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { classifyEventVisual, eventAnomalyLabel } from '../intel/categories.js';
+import { SIGNAL_CATEGORIES, aisTaxonomyGroup, classifyEventVisual, eventAnomalyLabel } from '../intel/categories.js';
 
 test('classifies unable-to-manoeuvre reports as red navigation casualties', () => {
   const event = {
@@ -84,4 +84,27 @@ test('keeps operational categories visually distinct', () => {
     colors.add(category.color);
   }
   assert.equal(colors.size, cases.length);
+});
+
+test('the specific AIS subtype is named, never "spike"', () => {
+  assert.equal(eventAnomalyLabel({ anomaly_type: 'sudden_stop' }), 'sudden stop');
+  assert.equal(eventAnomalyLabel({ anomaly_type: 'possible_rescue_cluster' }), 'possible vessel cluster');
+  assert.equal(eventAnomalyLabel({ anomaly_type: 'coverage_gap' }), 'AIS coverage outage');
+  assert.equal(eventAnomalyLabel({ anomaly_type: 'impossible_speed' }), 'impossible speed');
+  assert.equal(eventAnomalyLabel({ type: 'ais_spike', anomaly_type: 'ngo_search_pattern' }), 'search pattern');
+});
+
+test('aisTaxonomyGroup splits vessel-status / behavioural-cue / signal-anomaly', () => {
+  assert.equal(aisTaxonomyGroup('vessel_incident'), 'vessel_status');
+  assert.equal(aisTaxonomyGroup('ais_spike'), 'behavioural_cue');
+  assert.equal(aisTaxonomyGroup('ais_anomaly'), 'signal_anomaly');
+  assert.equal(aisTaxonomyGroup('correlated_alert'), 'fused_alert');
+  assert.equal(aisTaxonomyGroup('twitter'), null);
+});
+
+test('no SIGNAL_CATEGORIES legend row says "spike"', () => {
+  for (const cat of SIGNAL_CATEGORIES) {
+    assert.ok(!/spike/i.test(cat.label), cat.key);
+    assert.ok(!/spike/i.test(cat.description || ''), cat.key);
+  }
 });

@@ -133,7 +133,7 @@ const SIGNALS_MACRO_GROUPS = [
     label: 'Humanitarian',
     categories: [
       { key: 'distress', label: 'Distress', groupKey: 'sar' },
-      { key: 'incident', label: 'Vessel incident', groupKey: 'intel_incident' },
+      { key: 'incident', label: 'AIS vessel status', groupKey: 'intel_incident' },
       { key: 'hazard', label: 'Natural hazard (GDACS)', groupKey: 'intel_hazard' },
       { key: 'iom', label: 'IOM missing migrants', groupKey: 'intel_iom' },
       { key: 'social', label: 'Social post', groupKey: 'intel_social' },
@@ -146,7 +146,8 @@ const SIGNALS_MACRO_GROUPS = [
     label: 'Maritime Security',
     categories: [
       { key: 'fused', label: 'Correlated alert', groupKey: 'fused' },
-      { key: 'ais', label: 'AIS anomaly', groupKey: 'spikes' },
+      { key: 'behavioural_cue', label: 'AIS behavioural cue', groupKey: 'spikes' },
+      { key: 'signal_anomaly', label: 'AIS signal anomaly', groupKey: 'spikes' },
     ],
   },
 ];

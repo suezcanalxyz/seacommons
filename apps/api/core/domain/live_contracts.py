@@ -152,6 +152,39 @@ class VerificationStatus(StrEnum):
     MODELLED_LIVE_FIELDS = "modelled_live_fields"
 
 
+class AisTaxonomyGroup(StrEnum):
+    """Human-facing grouping for AIS-derived signals (docs/prompt.md PHASE 6,
+    audit TX-1/TX-2). Never surface "spike" as the category name -- the UI
+    shows the specific subtype under one of these groups.
+
+    * ``vessel_status``  -- a navigational status the vessel broadcast
+      (not_under_command, aground, distress_beacon).
+    * ``behavioural_cue`` -- a motion pattern inferred from the track
+      (sudden_stop, loitering, ngo_search_pattern, rescue_cluster).
+    * ``signal_anomaly`` -- transponder / reception integrity
+      (gap, coverage_gap, impossible_speed, dark_zone_entry, identity_anomaly).
+    * ``fused_alert``    -- multi-source agreement (correlated_alert).
+    """
+
+    VESSEL_STATUS = "vessel_status"
+    BEHAVIOURAL_CUE = "behavioural_cue"
+    SIGNAL_ANOMALY = "signal_anomaly"
+    FUSED_ALERT = "fused_alert"
+
+
+_AIS_GROUP_BY_TYPE = {
+    "vessel_incident": AisTaxonomyGroup.VESSEL_STATUS,
+    "ais_spike": AisTaxonomyGroup.BEHAVIOURAL_CUE,
+    "ais_anomaly": AisTaxonomyGroup.SIGNAL_ANOMALY,
+    "correlated_alert": AisTaxonomyGroup.FUSED_ALERT,
+}
+
+
+def ais_taxonomy_group(event_type: str) -> AisTaxonomyGroup | None:
+    """The AIS taxonomy group for an event type, or None for a non-AIS type."""
+    return _AIS_GROUP_BY_TYPE.get(str(event_type or ""))
+
+
 APPROVED_SOURCE_POLICIES = frozenset(
     {
         SourcePolicy.OFFICIAL_API.value,
