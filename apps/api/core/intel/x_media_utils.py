@@ -124,6 +124,7 @@ def _easyocr_image(payload: bytes) -> tuple[Optional[tuple[float, float]], list[
             continue
         boxes.append({
             "text": raw_text,
+            "confidence": round(confidence, 3),
             "left": round(min(xs)),
             "top": round(min(ys)),
             "width": max(1, round(max(xs) - min(xs))),

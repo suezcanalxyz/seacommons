@@ -82,6 +82,26 @@ def test_extract_records_a_coordinate_candidate_and_confidence(monkeypatch):
     assert result.evidence["image_sha256"]
 
 
+def test_out_of_region_coordinate_fails_closed(monkeypatch):
+    """A coordinate outside the operational envelope (here mid-Indian-Ocean)
+    is dropped -- selected_coordinate None, method 'none', reason recorded --
+    so the caller keeps its fallback rather than plot a wrong distress pin
+    (docs/prompt.md §5 / §13)."""
+    _mock_engines(
+        monkeypatch,
+        easy_coord=(-8.0, 78.0),
+        easy_texts=["S 08 00.000", "E 078 00.000"],
+        coord_tuple=((-8.0, 78.0), True, "easyocr_tesseract_consensus", {
+            "interengine_distance_m": 40.0, "consensus_threshold_m": 500.0,
+        }),
+    )
+    result = extract_from_bytes(render_case("coordinate_popup_dmm"))
+    assert result.selected_coordinate is None
+    assert result.coordinate_method == "none"
+    assert "coordinate_out_of_operational_region" in result.failure_reasons
+    assert result.coordinate_confidence == 0.0
+
+
 def test_disputed_read_gets_near_zero_confidence(monkeypatch):
     _mock_engines(
         monkeypatch,

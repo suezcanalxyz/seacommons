@@ -81,6 +81,7 @@ def evidence_from_ocr_method(
     lon: float | None,
     *,
     engine: str | None = None,
+    estimated_position_error_m: float | None = None,
     **extra: Any,
 ) -> LocationEvidence:
     """Build a LocationEvidence from an _ocr_photo() method string.
@@ -88,6 +89,11 @@ def evidence_from_ocr_method(
     Mirrors the historical live-ingestion mapping exactly; a lone-engine text
     read stays at the conservative constant, two engines agreeing earns the
     tight radius, a disagreement is wide + needs review.
+
+    ``estimated_position_error_m`` (from the pin-landmark Web-Mercator fit)
+    only ever *widens* the uncertainty -- the per-method constant is a floor,
+    never a ceiling (docs/fixes.md F-03: never assign an uncertainty smaller
+    than the evidence supports).
     """
     key = (method or "").lower()
     if key in _OCR_METHOD_EVIDENCE:
@@ -96,6 +102,11 @@ def evidence_from_ocr_method(
         source, uncertainty, review, review_required = _OCR_TEXT_FALLBACK
     else:
         source, uncertainty, review, review_required = _OCR_PIN_FALLBACK
+    if estimated_position_error_m is not None:
+        try:
+            uncertainty = max(uncertainty, float(estimated_position_error_m))
+        except (TypeError, ValueError):
+            pass
     resolved_engine = engine or ("easyocr" if key.startswith("easyocr") else "tesseract")
     return LocationEvidence(
         lat=lat,

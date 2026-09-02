@@ -567,6 +567,7 @@ class TwikitMonitor:
                 coords[0],
                 coords[1],
                 interengine_distance_m=ocr_diag.get("interengine_distance_m"),
+                estimated_position_error_m=ocr_diag.get("estimated_position_error_m"),
             )
             record_ocr_result(ocr_result_label(method))
             upgraded = intel_store.enrich_location(

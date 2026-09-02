@@ -86,7 +86,12 @@ class ImageExtractionResult:
                 key: value
                 for key, value in self.diagnostics.items()
                 if key in {"interengine_distance_m", "consensus_threshold_m"}
-            },
+            }
+            | (
+                {"estimated_position_error_m": self.estimated_position_error_m}
+                if self.estimated_position_error_m is not None
+                else {}
+            ),
         )
 
     def as_metadata(self) -> dict[str, Any]:
@@ -101,7 +106,14 @@ class ImageExtractionResult:
             "landmark_count": len(self.landmarks_detected),
             "selected_method": self.coordinate_method,
             "selected_method_family": self.coordinate_method_family,
+            "coordinate_confidence": self.coordinate_confidence,
+            "coordinate_confidence_components": self.confidence_components,
             "image_place_names": self.place_names[:12],
+            **(
+                {"estimated_position_error_m": self.estimated_position_error_m}
+                if self.estimated_position_error_m is not None
+                else {}
+            ),
             **({"image_failure_reasons": self.failure_reasons} if self.failure_reasons else {}),
         }
 
@@ -194,6 +206,7 @@ def _attach_pin_fit(result, payload, executable, easy_boxes) -> None:
     result.landmarks_detected = list(solution.landmarks_detected)
     result.fit_residual_px = solution.fit_residual_px
     result.estimated_position_error_m = solution.estimated_position_error_m
+    result.diagnostics["pin_solver_confidence"] = solution.confidence
     result.pin_candidates.append({"confidence": solution.confidence, "detector": "landmark_fit"})
 
 
@@ -261,22 +274,41 @@ def extract_from_bytes(
         has_coordinate=coordinate is not None,
     )
 
-    # Placeholder confidence (real model in a later PR): printed / consensus
-    # reads are trusted; a disputed read never is.
-    family = result.coordinate_method_family
-    result.coordinate_confidence = {
-        "printed_text": 0.9,
-        "ocr_consensus": 0.85,
-        "ocr_single_engine": 0.5,
-        "pin_landmark": 0.4,
-        "ocr_disputed": 0.1,
-        "none": 0.0,
-    }[family]
-    result.confidence_components = {"method_family": result.coordinate_confidence}
-
+    context_overlap = (
+        sorted(set(context_places) & set(result.place_names)) if context_places else []
+    )
     if context_places:
-        overlap = sorted(set(context_places) & set(result.place_names))
-        result.diagnostics["context_place_overlap"] = overlap
+        result.diagnostics["context_place_overlap"] = context_overlap
+
+    # Traceable confidence (docs/prompt.md §5): six named components combined,
+    # with region_validity as a hard multiplier.
+    from core.intel.image_confidence import combined_confidence, score_coordinate
+
+    lat = result.selected_coordinate[0] if result.selected_coordinate else None
+    lon = result.selected_coordinate[1] if result.selected_coordinate else None
+    components = score_coordinate(
+        result.coordinate_method_family,
+        lat=lat,
+        lon=lon,
+        interengine_distance_m=result.diagnostics.get("interengine_distance_m"),
+        easy_boxes=easy_boxes,
+        context_overlap=context_overlap,
+        pin_solver_confidence=result.diagnostics.get("pin_solver_confidence"),
+    )
+    result.confidence_components = components.as_dict()
+    result.coordinate_confidence = combined_confidence(components, result.coordinate_method_family)
+
+    # Fail closed: a coordinate outside the operational envelope is a bad
+    # extraction (stray number pair, OCR misread, wrong landmark). A wrong
+    # coordinate is worse than none -- drop it and keep the fallback the
+    # caller already had (docs/prompt.md §5 / §13, audit invariant 4).
+    if result.selected_coordinate is not None and components.region_validity == 0.0:
+        result.failure_reasons.append("coordinate_out_of_operational_region")
+        result.selected_coordinate = None
+        result.coordinate_candidates = []
+        result.coordinate_method = "none"
+        result.coordinate_method_family = "none"
+
     return result
 
 
