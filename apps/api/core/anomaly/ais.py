@@ -3,6 +3,7 @@
 from __future__ import annotations
 import json
 import logging
+import math
 import os
 import threading
 import time
@@ -31,16 +32,38 @@ _MAX_SPEED: dict[str, float] = {
     "tug": 15, "sailing": 18, "default": 50,
 }
 
+# A vessel silence is only a vessel-specific `gap` when the AIS reception
+# around it stayed healthy. If the nearby traffic went quiet at the same time
+# it is a `coverage_gap` (a reception / source outage), never described as
+# intentional dark activity and never escalated per vessel (audit GP-1/GP-5,
+# prompt.md PHASE 8).
+_GAP_NEIGHBOUR_RADIUS_NM = 40.0
+_GAP_FRESH_S = 15 * 60          # a neighbour seen this recently is "still reporting"
+_GAP_HISTORY_S = 6 * 3600       # a neighbour seen within this window "was reporting"
+_GAP_MIN_NEIGHBOURS = 3         # need this many to judge coverage at all
+
+
+def _haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 3440.065
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlon / 2) ** 2)
+    return r * 2 * math.asin(math.sqrt(max(0.0, a)))
+
 
 class AISAnomalyEvent(BaseModel):
     event_id: str
     timestamp_utc: str
-    anomaly_type: str  # gap | impossible_speed | mmsi_duplicate | dark_zone_entry | sdn_match
+    # gap | coverage_gap | impossible_speed | mmsi_duplicate | dark_zone_entry | sdn_match
+    anomaly_type: str
     mmsi: str
     vessel_name: str = ""
     position: dict
     confidence: float
     evidence: dict
+    assessment: dict = {}
     source: str = "ais"
 
 
@@ -112,15 +135,85 @@ class AISAnomalyDetector:
                 if seen.get("speed", 0) < 1.0 or self._in_dark_zone(seen["lat"], seen["lon"]):
                     continue
                 seen["gap_emitted"] = True
-                self._emit(AISAnomalyEvent(
-                    event_id=str(uuid.uuid4()),
-                    timestamp_utc=datetime.now(timezone.utc).isoformat(),
-                    anomaly_type="gap",
-                    mmsi=mmsi, vessel_name=seen.get("name", ""),
-                    position={"lat": seen["lat"], "lon": seen["lon"]},
-                    confidence=min(0.85, 0.4 + silent_s / 7200),
-                    evidence={"silent_seconds": round(silent_s), "sweep": True},
-                ))
+                event = self._build_gap_event(mmsi, seen, silent_s, now)
+                if event is not None:
+                    self._emit(event)
+
+    def _coverage_around(
+        self, lat: float, lon: float, exclude_mmsi: str, now: float
+    ) -> tuple[int, int]:
+        """(neighbours that were reporting within _GAP_HISTORY_S,
+        neighbours still reporting within _GAP_FRESH_S) inside
+        _GAP_NEIGHBOUR_RADIUS_NM of (lat, lon)."""
+        before = after = 0
+        for m, s in self._last_seen.items():
+            if m == exclude_mmsi or s.get("lat") is None or s.get("lon") is None:
+                continue
+            if _haversine_nm(lat, lon, s["lat"], s["lon"]) > _GAP_NEIGHBOUR_RADIUS_NM:
+                continue
+            age = now - s["ts"]
+            if age < _GAP_HISTORY_S:
+                before += 1
+            if age < _GAP_FRESH_S:
+                after += 1
+        return before, after
+
+    def _build_gap_event(
+        self, mmsi: str, seen: dict, silent_s: float, now: float
+    ) -> Optional["AISAnomalyEvent"]:
+        """A silence is a vessel `gap` only when nearby AIS coverage stayed
+        healthy; otherwise it is a `coverage_gap` (a reception outage)."""
+        from datetime import datetime, timezone
+
+        lat, lon = seen["lat"], seen["lon"]
+        before, after = self._coverage_around(lat, lon, mmsi, now)
+        ratio = (after / before) if before else None
+        coverage_collapsed = before >= _GAP_MIN_NEIGHBOURS and after == 0
+
+        try:
+            from core.intel.assessment import assess_ais_gap
+
+            assessment = assess_ais_gap(
+                silence_s=silent_s,
+                last_speed_kn=seen.get("speed", 0.0),
+                in_dark_zone=self._in_dark_zone(lat, lon),
+                nearby_vessels_before=before,
+                nearby_vessels_after=after,
+                local_reporting_ratio=ratio,
+            ).as_metadata()
+        except Exception:  # pragma: no cover
+            assessment = {}
+
+        evidence = {
+            "silent_seconds": round(silent_s),
+            "sweep": True,
+            "nearby_vessels_before": before,
+            "nearby_vessels_after": after,
+            "local_reporting_ratio": round(ratio, 3) if ratio is not None else None,
+        }
+        if coverage_collapsed:
+            return AISAnomalyEvent(
+                event_id=str(uuid.uuid4()),
+                timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                anomaly_type="coverage_gap",
+                mmsi=mmsi, vessel_name=seen.get("name", ""),
+                position={"lat": lat, "lon": lon},
+                confidence=0.4,
+                evidence=evidence,
+                assessment=assessment,
+            )
+        # Vessel-specific gap: more confident when we can see healthy coverage.
+        conf = min(0.85, 0.4 + silent_s / 7200) * (1.0 if after else 0.7)
+        return AISAnomalyEvent(
+            event_id=str(uuid.uuid4()),
+            timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            anomaly_type="gap",
+            mmsi=mmsi, vessel_name=seen.get("name", ""),
+            position={"lat": lat, "lon": lon},
+            confidence=round(conf, 3),
+            evidence=evidence,
+            assessment=assessment,
+        )
 
     def process_position(
         self, mmsi: str, name: str, lat: float, lon: float, speed: float, vessel_type: str
@@ -188,8 +281,19 @@ class AISAnomalyDetector:
 
     _EMIT_COOLDOWN_S = 3 * 3600
 
+    @staticmethod
+    def _grid_cell(lat: float, lon: float) -> str:
+        return f"{round(lat)}:{round(lon)}"
+
     def _emit(self, event: AISAnomalyEvent) -> None:
-        key = (event.mmsi, event.anomaly_type)
+        # A coverage outage is regional, not per-vessel: collapse every silent
+        # vessel in the same ~1° cell onto one cooldown key so a feed-wide
+        # reception drop never becomes N vessel events (audit invariant).
+        if event.anomaly_type == "coverage_gap":
+            key = ("coverage_gap", self._grid_cell(
+                event.position.get("lat", 0.0), event.position.get("lon", 0.0)))
+        else:
+            key = (event.mmsi, event.anomaly_type)
         now = time.time()
         if now - self._emitted.get(key, 0.0) < self._EMIT_COOLDOWN_S:
             return
@@ -213,19 +317,53 @@ class AISAnomalyDetector:
             from core.intel.store import IntelEvent, intel_store
 
             label = event.anomaly_type.replace("_", " ")
+            is_coverage = event.anomaly_type == "coverage_gap"
+            # A reception outage is regional context, not a per-vessel dark
+            # signal -- one event per ~1° cell, and never "grey zone".
+            if is_coverage:
+                cell = AISAnomalyDetector._grid_cell(
+                    event.position.get("lat", 0.0), event.position.get("lon", 0.0))
+                ev_id = f"aisanom:coverage:{cell}"
+                title = "AIS coverage outage (reception gap in the area)"
+                text = (
+                    f"AIS reception around {event.position.get('lat'):.2f}, "
+                    f"{event.position.get('lon'):.2f} dropped for nearby traffic, not "
+                    "just one vessel. This is a source/coverage outage, not intentional "
+                    "dark activity."
+                )
+                domain = "safety"
+                severity = "low"
+                reason = (
+                    "Nearby AIS traffic went silent at the same time -- classified as a "
+                    "reception outage, not a vessel-specific gap."
+                )
+            else:
+                ev_id = f"aisanom:{event.mmsi}:{event.anomaly_type}"
+                title = f"AIS anomaly: {label}" + (
+                    f" — {event.vessel_name}" if event.vessel_name else "")
+                text = f"MMSI {event.mmsi}: {label} (confidence {event.confidence:.0%})."
+                domain = "sanctions" if event.anomaly_type == "sdn_match" else "grey_zone"
+                severity = "high" if event.anomaly_type == "sdn_match" else "medium"
+                reason = (
+                    f"AIS-derived {label}; confidence {event.confidence:.0%}. "
+                    "This is an indicator, not proof of intent."
+                )
             intel_store.add(
                 IntelEvent(
-                    id=f"aisanom:{event.mmsi}:{event.anomaly_type}",
+                    id=ev_id,
                     type="ais_anomaly",
-                    severity="high" if event.anomaly_type == "sdn_match" else "medium",
+                    severity=severity,
                     lat=event.position.get("lat"),
                     lon=event.position.get("lon"),
-                    title=f"AIS anomaly: {label}"
-                    + (f" — {event.vessel_name}" if event.vessel_name else ""),
-                    text=f"MMSI {event.mmsi}: {label} (confidence {event.confidence:.0%}).",
-                    url=f"https://www.marinetraffic.com/en/ais/details/ships/mmsi:{event.mmsi}",
+                    title=title,
+                    text=text,
+                    url=(
+                        ""
+                        if is_coverage
+                        else f"https://www.marinetraffic.com/en/ais/details/ships/mmsi:{event.mmsi}"
+                    ),
                     source="ais",
-                    linked_mmsi=event.mmsi,
+                    linked_mmsi=None if is_coverage else event.mmsi,
                     timestamp_utc=event.timestamp_utc,
                     metadata={
                         "source_policy": "official_api",
@@ -233,22 +371,18 @@ class AISAnomalyDetector:
                         "verification_status": "ais_transponder",
                         "is_distress": False,
                         "publication_status": "internal",
-                        "report_kind": "ais_anomaly",
+                        "report_kind": "coverage_outage" if is_coverage else "ais_anomaly",
                         "coordinate_source": "ais_position",
                         "anomaly_type": event.anomaly_type,
-                        "maritime_domain": (
-                            "sanctions" if event.anomaly_type == "sdn_match" else "grey_zone"
-                        ),
+                        "maritime_domain": domain,
                         "anomaly_confidence": event.confidence,
                         "anomaly_evidence": event.evidence,
                         "vessel_name": event.vessel_name or None,
-                        "detection_reason": (
-                            f"AIS-derived {label}; confidence {event.confidence:.0%}. "
-                            "This is an indicator, not proof of intent."
-                        ),
+                        "detection_reason": reason,
+                        **(event.assessment or {}),
                     },
                 ),
-                dedup_key=f"aisanom:{event.mmsi}:{event.anomaly_type}",
+                dedup_key=ev_id,
             )
         except Exception:
             logger.debug("AIS anomaly -> intel event failed", exc_info=True)
