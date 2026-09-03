@@ -743,6 +743,53 @@ class TwikitMonitor:
         except Exception as exc:
             logger.debug("twikit_monitor: source_observation record skipped for %s: %s", tweet.id, exc)
 
+    def _record_media_source_observations(
+        self, media_urls: list[str], *, tweet_id: str, handle: str, observed_at: str,
+    ) -> None:
+        """docs/fixes.md M1.2: a durable SourceObservation per attached
+        media item (the 8th, final M1.2 source -- the raw evidence an
+        Alarm Phone/tracked-account map-screenshot image *is*, distinct
+        from the tweet's own text captured by _record_source_observation
+        above). This is the RAW OBSERVATION layer only: the media URL the
+        source actually attached, not what OCR later extracts from it --
+        OCR is a DETERMINISTIC FEATURE/EXTRACTION step downstream in the
+        canonical flow and stays exactly where it already runs
+        (_apply_media_ocr), untouched by this.
+
+        Idempotent by (source_name, media URL): the same image re-served
+        under a repost/quote resolves to one observation, not a duplicate
+        -- unlike the parent tweet's source_id (the tweet id), a media URL
+        is itself the source's own stable identifier for that asset.
+        Batched into one session per tweet (typically 1-4 images).
+        Best-effort and strictly additive: never touches OCR, threading,
+        or classification below.
+        """
+        if not media_urls:
+            return
+        try:
+            from core.db.session import session_scope
+            from core.intel.source_observation import record_observation
+
+            with session_scope() as db:
+                for url in media_urls:
+                    record_observation(
+                        db,
+                        service="humanitarian",
+                        lane="review",
+                        observation_type="media_attachment",
+                        source_name=handle,
+                        source_policy="official_api",
+                        source_id=url[:256],
+                        observed_at=observed_at,
+                        raw_payload=url,
+                        source_url=url,
+                        subject_refs=[f"tweet:{tweet_id}"],
+                    )
+        except Exception as exc:
+            logger.debug(
+                "twikit_monitor: media source_observation record skipped for %s: %s", tweet_id, exc
+            )
+
     def _ingest(self, tweet: Any, handle: str) -> bool:
         self._record_source_observation(tweet, handle)
         original = getattr(tweet, "retweeted_tweet", None)
@@ -806,6 +853,9 @@ class TwikitMonitor:
             for url in self._tweet_media_urls(quoted, tweet_id=str(quoted.id)):
                 if url not in media_urls:
                     media_urls.append(url)
+        self._record_media_source_observations(
+            media_urls, tweet_id=str(tweet.id), handle=handle, observed_at=self._timestamp(tweet),
+        )
 
         # A translated / same-language re-issue of an incident already tracked
         # (Alarm Phone posts EN + FR minutes apart, and a text-only alert then
