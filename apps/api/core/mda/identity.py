@@ -214,7 +214,53 @@ def refresh_sanctions() -> dict[str, Any]:
         db.query(SanctionedVesselDB).delete(synchronize_session=False)
         db.bulk_insert_mappings(SanctionedVesselDB, rows)
     logger.info("refresh_sanctions: %d vessel entries loaded", len(rows))
+    _record_sanctions_observations(rows)
     return {"loaded": len(rows)}
+
+
+def _record_sanctions_observations(rows: list[dict[str, Any]]) -> None:
+    """docs/fixes.md M1.2: a durable SourceObservation per sanctioned-
+    vessel listing row -- the exact "official-list match" evidence M6's
+    (not yet built) hypothesis engine will need to cite: "sanctions-
+    evasion hypothesis requires an official-list/entity link plus
+    behavioural evidence; a sanctions list match alone publishes only the
+    official-list fact, never 'evasion'". One batched transaction (this
+    runs after a bulk list refresh, not per streamed event like the other
+    adapters -- opening a session per row here would be hundreds to
+    thousands of round trips for one refresh). Idempotent per row by
+    (source_list, best available identifier): a re-refresh of an unchanged
+    listing does not grow the table. Best-effort and strictly additive --
+    never touches or replaces the sanctioned_vessels bulk-replace write
+    path above, which stays authoritative regardless of whether this
+    succeeds.
+    """
+    try:
+        from core.db.session import session_scope
+        from core.intel.source_observation import record_observation
+
+        with session_scope() as db:
+            for row in rows:
+                identifier = row.get("imo") or row.get("mmsi") or row.get("name_upper") or ""
+                if not identifier:
+                    continue
+                record_observation(
+                    db,
+                    service="maritime",
+                    lane="intelligence",
+                    observation_type="sanctions_list_match",
+                    source_name=str(row.get("source_list") or "sanctions_list"),
+                    source_policy="official_open",
+                    source_id=identifier,
+                    observed_at=(
+                        row["updated_at"].isoformat()
+                        if hasattr(row.get("updated_at"), "isoformat")
+                        else str(row.get("updated_at") or datetime.now(timezone.utc).isoformat())
+                    ),
+                    raw_payload=json.dumps(row, default=str, sort_keys=True),
+                    provenance={"program": row.get("program") or "", "listed_on": row.get("listed_on")},
+                )
+    except Exception as exc:
+        logger.info("refresh_sanctions: source_observation batch skipped: %s", exc)
 
 
 def _load_opensanctions() -> list[dict[str, Any]]:
