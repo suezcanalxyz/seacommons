@@ -159,7 +159,7 @@ def public_signal_collection(
     since: str | None = None,
     mode: str = "humanitarian",
 ) -> dict[str, Any]:
-    selected_mode = mode if mode in {"humanitarian", "security", "all"} else "humanitarian"
+    selected_mode = mode if mode in {"humanitarian", "security", "safety", "all"} else "humanitarian"
     memory_events = intel_store.events(limit=600, max_age_days=days)
     # twikit_monitor writes source=author or handle per tweet -- the account's
     # display name ("Alarm Phone") when the tweet carried one, its handle
@@ -193,15 +193,29 @@ def public_signal_collection(
     mode_features: dict[str, list[dict[str, Any]]] = {
         "humanitarian": [],
         "security": [],
+        "safety": [],
     }
     mode_context: dict[str, list[dict[str, Any]]] = {
         "humanitarian": [],
         "security": [],
+        "safety": [],
     }
     for event in events:
         # F-07: positive allow-lists, never humanitarian-by-complement.
-        # safety / environmental / unknown -> no operational compartment.
-        event_mode = compartment_for_domain(event.maritime_domain())
+        # environmental / unknown -> no operational compartment (still
+        # fails closed). docs/fixes.md P0.1/P6.4: Maritime Safety
+        # (not_under_command/aground/restricted_manoeuvrability) is its
+        # own visible compartment -- compartment_for_domain() only knows
+        # humanitarian/security, so it is checked explicitly here rather
+        # than folded into that fixed complement (which would make it
+        # Security, the exact A-01/A-02 defect) or left unhandled (which
+        # silently drops it from every mode, the state it was actually in
+        # before this fix).
+        resolved_domain = event.maritime_domain()
+        if resolved_domain == "safety":
+            event_mode = "safety"
+        else:
+            event_mode = compartment_for_domain(resolved_domain)
         if event_mode is None:
             continue
         feature = _public_intel_feature(
@@ -243,7 +257,12 @@ def public_signal_collection(
             key=lambda f: str(f["properties"].get("timestamp_utc") or ""),
             reverse=True,
         )
-        if mode_name == "humanitarian":
+        if mode_name in ("humanitarian", "safety"):
+            # docs/fixes.md A-04/A-05: coalesce_security_vessel_episodes()
+            # (the `else` branch below) rewrites domain to sanctions/
+            # grey_zone as part of building a security episode -- exactly
+            # wrong for Safety content. Safety uses the same simple,
+            # recency-sorted cap as Humanitarian instead.
             context_cap = max(0, min(_LIVE_WINDOW_LIMIT - len(primary), _LIVE_WINDOW_LIMIT // 2))
             primary.extend(context[:context_cap])
         else:
@@ -323,7 +342,7 @@ def public_signal_collection(
 
     features_by_mode = {
         mode_name: finalize(mode_name)
-        for mode_name in ("humanitarian", "security")
+        for mode_name in ("humanitarian", "security", "safety")
     }
     add_nearby_humanitarian_context(
         features_by_mode["security"], features_by_mode["humanitarian"]

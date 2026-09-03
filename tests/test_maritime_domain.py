@@ -34,8 +34,23 @@ def test_explicit_metadata_domain_wins() -> None:
     assert event.maritime_domain() == "smuggling"
 
 
-def test_legacy_nuc_fusion_alert_is_maritime_security() -> None:
-    event = _event(
+def test_explicit_safety_on_a_nuc_shaped_event_is_trusted_not_overridden() -> None:
+    """docs/fixes.md A-02: an explicit maritime_domain always wins, even for
+    a NUC/disabled/adrift-shaped event. This used to check
+    is_vessel_mobility_incident() BEFORE the explicit field and force
+    grey_zone regardless -- silently discarding every "safety" value PR #62
+    writes and reintroducing the exact bug it fixed. Both a raw
+    vessel_incident (vessel_incident_monitor.py) and a correlated_alert
+    (fusion.py, which also sets maritime_domain explicitly) must be
+    trusted as-is."""
+    raw = _event(
+        type="vessel_incident",
+        title="Vessel unable to manoeuvre — TANKER B",
+        metadata={"ais_nav_status_kind": "not_under_command", "maritime_domain": "safety"},
+    )
+    assert raw.maritime_domain() == MaritimeDomain.SAFETY.value
+
+    fusion_alert = _event(
         type="correlated_alert",
         title="Vessel unable to manoeuvre — ST. OLGA",
         metadata={
@@ -43,6 +58,20 @@ def test_legacy_nuc_fusion_alert_is_maritime_security() -> None:
             "maritime_domain": "safety",
             "contributing": ["aisinc:352001914:not_under_command"],
         },
+    )
+    assert fusion_alert.maritime_domain() == MaritimeDomain.SAFETY.value
+
+
+def test_truly_legacy_nuc_record_without_an_explicit_domain_still_corrects_to_grey_zone() -> None:
+    """Only a record with NO maritime_domain key at all (predating both
+    vessel_incident_monitor.py's and fusion.py's explicit writes) falls
+    through to the historical is_vessel_mobility_incident() correction --
+    older fusion records labelled every vessel casualty "safety", which was
+    wrong for a NUC/disabled/adrift subject specifically."""
+    event = _event(
+        type="vessel_incident",
+        title="Vessel unable to manoeuvre — OLD RECORD",
+        metadata={"ais_nav_status_kind": "not_under_command"},  # no maritime_domain key
     )
     assert event.maritime_domain() == MaritimeDomain.GREY_ZONE.value
 

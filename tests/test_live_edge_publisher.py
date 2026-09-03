@@ -73,6 +73,20 @@ def test_maritime_security_domain_never_reaches_the_humanitarian_edge() -> None:
     assert public_event_from_row(row, "node", now=_NOW, same_source=[]) is None
 
 
+def test_maritime_safety_domain_never_reaches_the_humanitarian_edge() -> None:
+    """docs/fixes.md P0.1: Maritime Safety (NUC/aground/restricted
+    manoeuvrability) became its own VM mode (mode=safety), distinct from
+    mode=humanitarian -- DEFAULT_PUBLIC_MARITIME_DOMAINS now includes
+    "safety" for that VM mode's own domain filter, which would otherwise
+    also let it leak into the edge's humanitarian-only feed and break
+    VM/edge parity. The edge has no separate safety mode (yet); it must
+    stay excluded here, same as security."""
+    row = distress_row(
+        maritime_domain="safety", ais_nav_status_kind="not_under_command", is_distress=False
+    )
+    assert public_event_from_row(row, "node", now=_NOW, same_source=[]) is None
+
+
 def test_thread_reposts_and_repost_count_reach_the_edge_payload() -> None:
     # Without this the public Live host's "Updates" panel is silently empty
     # for every event, since the edge (tried first there, ahead of the VM's

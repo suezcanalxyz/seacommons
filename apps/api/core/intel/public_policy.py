@@ -125,12 +125,19 @@ def compartment_for_domain(domain: str | None) -> str | None:
     return None
 
 
+_SAFETY_DOMAIN = frozenset({MaritimeDomain.SAFETY.value})
+
+
 def domains_for_mode(mode: str) -> frozenset[str]:
     """Maritime compartments eligible for a Live feed `mode`.
 
     'humanitarian' (default) is the existing public allow-list, unchanged --
     every caller that doesn't pass a mode keeps today's exact behaviour.
     'security' is content the humanitarian allow-list deliberately excludes.
+    'safety' (docs/fixes.md P0.1/P6.4) is its own fixed, non-env-configurable
+    single-value set -- same reasoning as SECURITY_MARITIME_DOMAINS/
+    HUMANITARIAN_DRIFT_DOMAINS above: Maritime Safety must stay visible
+    regardless of how an operator narrows PUBLIC_MARITIME_DOMAINS.
     'all' is the union, for a caller that wants everything eligible for
     public projection at once (still gated by every other check in
     _public_intel_feature -- this only widens which domain is acceptable).
@@ -138,6 +145,8 @@ def domains_for_mode(mode: str) -> frozenset[str]:
     mode = (mode or "humanitarian").strip().lower()
     if mode == "security":
         return SECURITY_COMPARTMENT_DOMAINS
+    if mode == "safety":
+        return _SAFETY_DOMAIN
     if mode == "all":
-        return public_maritime_domains() | SECURITY_COMPARTMENT_DOMAINS
+        return public_maritime_domains() | SECURITY_COMPARTMENT_DOMAINS | _SAFETY_DOMAIN
     return public_maritime_domains()

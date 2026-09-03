@@ -276,7 +276,12 @@ def test_anonymous_infrastructure_cue_stays_operator_only() -> None:
     assert _public_intel_feature(event, allowed_domains=frozenset({"grey_zone"})) is None
 
 
-def test_legacy_nuc_alert_gets_security_episode_and_drift_contract() -> None:
+def test_nuc_fusion_alert_is_safety_never_drift_eligible() -> None:
+    """docs/fixes.md A-02: this fixture's own metadata sets
+    maritime_domain=safety explicitly (fusion.py sets it from the alert's
+    domain, "safety" since PR #62) -- it must be trusted, not overridden to
+    grey_zone, and must never gain cargo-Drift eligibility regardless of
+    whether the record predates PR #62's producer-side drift_eligible=False."""
     event = IntelEvent(
         id="legacy-olga",
         type="correlated_alert",
@@ -294,15 +299,15 @@ def test_legacy_nuc_alert_gets_security_episode_and_drift_contract() -> None:
     )
 
     feature = _public_intel_feature(
-        event, allowed_domains=frozenset({"grey_zone"})
+        event, allowed_domains=frozenset({"safety"})
     )
 
     assert feature is not None
     properties = feature["properties"]
-    assert properties["maritime_domain"] == "grey_zone"
+    assert properties["maritime_domain"] == "safety"
     assert properties["ais_nav_status_kind"] == "not_under_command"
-    assert properties["drift_eligible"] is True
-    assert properties["drift_vessel_type"] == "cargo"
+    assert properties["drift_eligible"] is False
+    assert properties.get("drift_vessel_type") != "cargo"
 
 
 def test_unlabelled_context_stays_operator_only() -> None:
@@ -1217,13 +1222,64 @@ def test_public_feed_modes_return_separate_signals_and_counts(monkeypatch) -> No
     assert [feature["properties"]["id"] for feature in security_feed["features"]] == [
         "intel:mode-security-01"
     ]
-    expected_counts = {"humanitarian": 3, "security": 1}
+    expected_counts = {"humanitarian": 3, "security": 1, "safety": 0}
     assert humanitarian_feed["meta"]["mode_counts"] == expected_counts
     assert security_feed["meta"]["mode_counts"] == expected_counts
     assert small_feed["meta"]["mode_counts"] == expected_counts
     assert incremental_feed["meta"]["mode_counts"] == expected_counts
     assert len(small_feed["features"]) == 1
     assert incremental_feed["features"] == []
+
+
+def test_safety_mode_shows_nuc_and_never_leaks_into_humanitarian_or_security(monkeypatch) -> None:
+    """docs/fixes.md A-01/A-02/P0.1: a NUC event (service=maritime,
+    lane=safety per PR #62) must be visible under mode="safety", and must
+    NOT appear under "humanitarian" or "security" -- it was previously
+    silently dropped from every mode (compartment_for_domain("safety") is
+    None) after briefly being wrongly bucketed as security pre-#62."""
+    now = datetime.now(timezone.utc).isoformat()
+    nuc = IntelEvent(
+        id="mode-safety-nuc-01",
+        timestamp_utc=now,
+        type="vessel_incident",
+        severity="medium",
+        lat=35.2,
+        lon=14.0,
+        title="Vessel unable to manoeuvre",
+        source="ais",
+        linked_mmsi="209888000",
+        metadata={
+            "ais_nav_status_kind": "not_under_command",
+            "maritime_domain": "safety",
+            "service": "maritime",
+            "lane": "safety",
+            "is_distress": False,
+            "drift_eligible": False,
+            "publication_status": "published",
+            "source_policy": "official_api",
+        },
+    )
+    monkeypatch.setattr(
+        "core.live.feed.intel_store.events", lambda **_kwargs: [nuc]
+    )
+    monkeypatch.setattr(
+        "core.live.feed.intel_store.persisted_events", lambda **_kwargs: []
+    )
+    monkeypatch.setattr("core.live.feed._published_ingested_features", lambda _limit: [])
+
+    safety_feed = public_signal_collection(limit=50, mode="safety")
+    humanitarian_feed = public_signal_collection(limit=50, mode="humanitarian")
+    security_feed = public_signal_collection(limit=50, mode="security")
+
+    safety_ids = {f["properties"]["id"] for f in safety_feed["features"]}
+    assert "intel:mode-safety-nuc-01" in safety_ids
+    assert safety_feed["meta"]["mode_counts"]["safety"] == 1
+    assert humanitarian_feed["features"] == []
+    assert security_feed["features"] == []
+    assert humanitarian_feed["meta"]["mode_counts"]["safety"] == 1  # counted, not shown
+    for feature in safety_feed["features"]:
+        assert feature["properties"]["maritime_domain"] == "safety"
+        assert feature["properties"]["drift_eligible"] is False
 
 
 def test_ocr_suffix_dms_with_seconds_recovers_real_alarm_phone_format() -> None:
