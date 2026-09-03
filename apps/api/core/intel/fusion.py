@@ -304,63 +304,24 @@ def _rule_grey_zone(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert
     )
 
 
+# A self-reported navigational status (not_under_command / aground /
+# restricted_manoeuvrability -- "disabled"/"adrift" are the same observation
+# under other names used upstream) is a Maritime Safety observation, never
+# a Maritime Intelligence hypothesis (docs/fixes.md Global Constraints,
+# core.intel.service_taxonomy). It still gets its own single-source
+# vessel_casualty case below (an operator legitimately wants to review a
+# sustained NUC report) -- what changed is that _rule_single_source no
+# longer tags that case grey_zone, and there used to be a second rule here
+# (_rule_vessel_mobility_episode) that correlated a nav-status report with
+# an unrelated AIS movement anomaly (a gap, a position jump, ...) on the
+# same MMSI into a single "vessel_mobility_anomaly" grey_zone alert from
+# nav-status evidence alone. That was removed: fusing a benign self-report
+# with an independent, equally-benign-until-proven-otherwise movement signal
+# is exactly the single-signal promotion to intelligence docs/fixes.md
+# prohibits, not the multi-source corroboration _rule_maritime_strike (below)
+# legitimately requires before treating the same nav-status kinds as
+# corroborating evidence for a much rarer, already evidence-gated hypothesis.
 _GROUNDING_SUBTYPES = {"aground", "grounding", "not_under_command", "disabled", "adrift"}
-_MOBILITY_INCIDENTS = {"not_under_command", "disabled", "adrift"}
-_MOVEMENT_ANOMALIES = {
-    "gap", "long_gap", "position_jump", "impossible_speed",
-    "circle_spoof", "static_spoof", "loiter",
-}
-
-
-def _rule_vessel_mobility_episode(
-    new: FusionSignal, event: IntelEvent
-) -> Optional[FusedAlert]:
-    """Join a reported manoeuvrability problem to movement evidence.
-
-    The result says that two signals belong to the same MMSI; it does not claim
-    that an AIS gap caused an emergency or that the vessel is deliberately
-    hiding.
-    """
-    if not new.mmsi:
-        return None
-    is_incident = new.kind == "vessel_incident" and new.anomaly_type in _MOBILITY_INCIDENTS
-    is_movement = new.kind == "ais_anomaly" and new.anomaly_type in _MOVEMENT_ANOMALIES
-    if not (is_incident or is_movement):
-        return None
-    partners = []
-    for other in _recent_signals(new.event_id):
-        if other.mmsi != new.mmsi or abs(other.ts - new.ts) > 12 * 3600:
-            continue
-        counterpart = (
-            other.kind == "ais_anomaly" and other.anomaly_type in _MOVEMENT_ANOMALIES
-            if is_incident
-            else other.kind == "vessel_incident" and other.anomaly_type in _MOBILITY_INCIDENTS
-        )
-        if counterpart:
-            partners.append(other)
-    if not partners:
-        return None
-    partner = min(partners, key=lambda item: abs(item.ts - new.ts))
-    incident = new if is_incident else partner
-    movement = partner if is_incident else new
-    return FusedAlert(
-        alert_type="vessel_mobility_anomaly",
-        domain="grey_zone",
-        severity="high",
-        confidence=0.78,
-        lat=new.lat,
-        lon=new.lon,
-        ts=new.ts,
-        contributing_event_ids=[new.event_id, partner.event_id],
-        contributing_sources=sorted({new.source, partner.source}),
-        summary=(
-            f"MMSI {new.mmsi}: {incident.anomaly_type.replace('_', ' ')} "
-            f"with AIS {movement.anomaly_type.replace('_', ' ')} within 12h"
-        ),
-        open_case=True,
-        case_type="vessel_incident",
-        vessel_mmsi=new.mmsi,
-    )
 
 
 def _rule_single_source(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]:
@@ -373,10 +334,13 @@ def _rule_single_source(new: FusionSignal, event: IntelEvent) -> Optional[FusedA
         return None
 
     if new.kind == "vessel_incident" and new.anomaly_type in _GROUNDING_SUBTYPES:
-        mobility_security = new.anomaly_type in _MOBILITY_INCIDENTS
+        # docs/fixes.md M-04: a self-reported nav status (not_under_command /
+        # disabled / adrift, same as aground/grounding) is Maritime Safety,
+        # never Maritime Intelligence -- this used to be "grey_zone" for the
+        # mobility subtypes specifically.
         return FusedAlert(
             alert_type="vessel_casualty",
-            domain="grey_zone" if mobility_security else "safety",
+            domain="safety",
             severity=new.severity or "high",
             confidence=0.7,
             lat=new.lat, lon=new.lon, ts=new.ts,
@@ -555,7 +519,6 @@ _RULES: list[Callable[[FusionSignal, IntelEvent], Optional[FusedAlert]]] = [
     _rule_dark_sts,
     _rule_identity_fraud,
     _rule_maritime_strike,
-    _rule_vessel_mobility_episode,
     _rule_grey_zone,
     _rule_single_source,
 ]

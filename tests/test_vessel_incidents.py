@@ -64,6 +64,10 @@ def test_aground_emits_only_once_sustained(monitor) -> None:
     assert event.type == "distress"      # a grounding is operational
     assert event.metadata["ais_nav_status_kind"] == "aground"
     assert event.metadata["case_type"] == "vessel_incident"
+    assert event.metadata["maritime_domain"] == "safety"
+    assert event.metadata["drift_eligible"] is False
+    assert event.metadata["service"] == "maritime"
+    assert event.metadata["lane"] == "safety"
 
 
 def test_not_under_command_is_operator_review_not_auto_published(monitor) -> None:
@@ -71,18 +75,41 @@ def test_not_under_command_is_operator_review_not_auto_published(monitor) -> Non
         monitor.on_position("444555666", "TANKER B", 33.0, 15.0, 0.0, 2)
         monitor._clock.advance(400)
     assert len(monitor._added) == 1
-    assert monitor._added[0].type == "vessel_incident"
-    assert monitor._added[0].metadata["publication_status"] == "internal"
-    assert monitor._added[0].metadata["is_distress"] is False
-    assert monitor._added[0].metadata["maritime_domain"] == "grey_zone"
-    assert monitor._added[0].metadata["drift_eligible"] is True
+    event = monitor._added[0]
+    assert event.type == "vessel_incident"
+    assert event.metadata["publication_status"] == "internal"
+    assert event.metadata["is_distress"] is False
+    # docs/fixes.md M-04 / Task 0.2: a self-reported nav status is Maritime
+    # Safety, never a Maritime Intelligence hypothesis and never cargo-Drift
+    # eligible -- this used to assert the opposite (grey_zone / True).
+    assert event.metadata["maritime_domain"] == "safety"
+    assert event.metadata["drift_eligible"] is False
+    assert event.metadata["service"] == "maritime"
+    assert event.metadata["lane"] == "safety"
+    from core.intel.service_taxonomy import classify_service
+
+    result = classify_service(event)
+    assert (result.service, result.lane, result.publishable) == ("maritime", "safety", True)
 
 
-def test_restricted_manoeuvrability_is_ignored(monitor) -> None:
-    for _ in range(6):
+def test_restricted_manoeuvrability_is_recorded_as_safety_context(monitor) -> None:
+    """No longer ignored -- but not auto-published either, and explicitly
+    NOT distinguished from a dredger/cable-layer's routine continuous
+    broadcast yet (docs/fixes.md Task 0.2 known gap -- see the monitor's own
+    module docstring). A lone sustained report is still weak evidence."""
+    for _ in range(3):
         monitor.on_position("777888999", "DREDGER", 32.0, 16.0, 2.0, 3)
-        monitor._clock.advance(600)
-    assert monitor._added == []
+        monitor._clock.advance(400)
+    assert len(monitor._added) == 1
+    event = monitor._added[0]
+    assert event.type == "vessel_incident"
+    assert event.metadata["ais_nav_status_kind"] == "restricted_manoeuvrability"
+    assert event.metadata["publication_status"] == "internal"
+    assert event.metadata["is_distress"] is False
+    assert event.metadata["maritime_domain"] == "safety"
+    assert event.metadata["drift_eligible"] is False
+    assert event.metadata["service"] == "maritime"
+    assert event.metadata["lane"] == "safety"
 
 
 def test_returning_to_normal_status_resets_the_episode(monitor) -> None:
