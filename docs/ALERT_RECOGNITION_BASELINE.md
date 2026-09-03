@@ -10,24 +10,21 @@ The exact numbers below are locked in as a regression guard by
 `tests/test_alert_recognition_scorer.py` -- if a future change intentionally
 moves them, update that test in the same PR, not silently.
 
-## Finding: `is_distress()` has 3 confirmed false positives
+## Update 2026-09-03: the 3 false positives below are fixed
 
-`core.intel.geoextract.is_distress()` is a bare substring match against
-`DISTRESS_KW`. The corpus (`tests/fixtures/alert_recognition/humanitarian.jsonl`)
-confirms three of `docs/prompt.md`'s named hard-negative failure modes are
-real, today, in production code:
+The original baseline (PR #64) found 3 confirmed false positives in
+`is_distress()`. All three are now fixed (see
+`apps/api/core/intel/geoextract.py`):
 
-| id | input (truncated) | why it false-positives |
+| id | input (truncated) | fix |
 |---|---|---|
-| `hum-neg-001` | "SOS Mediterranee published its annual report..." | the org's name contains the literal keyword `sos` -- the exact case `docs/prompt.md` names |
-| `hum-neg-003` | "...funding package for search and rescue operations..." | `rescue operation` (singular) is a substring of `rescue operations` (plural) |
-| `hum-neg-004` | "Last year's shipwreck anniversary was marked with a vigil..." | bare `shipwreck` keyword matches a retrospective/memorial mention |
+| `hum-neg-001` | "SOS Mediterranee published its annual report..." | `is_distress()` now reuses `_SOS_MARKER_RE`, which already excluded this exact org-name shape for the stricter `is_direct_distress_call()` -- the two functions had drifted out of sync |
+| `hum-neg-003` | "...funding package for search and rescue operations..." | `rescue operation` removed from `DISTRESS_KW` -- too weak/ambiguous as a bare trigger; no positive fixture relied on it |
+| `hum-neg-004` | "Last year's shipwreck anniversary was marked with a vigil..." | new shared `_RETROSPECTIVE_COMMEMORATION_RE` exclusion (anniversary/memorial/vigil/commemorate), applied to **both** `is_distress()` and `is_direct_distress_call()` -- the stricter function had the identical defect, confirmed independently while fixing this (`is_direct_distress_call("...shipwreck anniversary...")` was also `True` before the fix) |
 
-**Not fixed by this PR** -- PR-4 in this session's series is corpus +
-scorer + baseline only. A fix (word-boundary matching, negative-context
-exclusion, or folding these into the existing `is_resolved_distress()` /
-`is_direct_distress_call()` distinction) is follow-up work, to be measured
-against this same corpus per `docs/prompt.md`'s own rule.
+`is_distress()` now scores `1.00` precision / `1.00` recall / `1.00` F1 on
+`humanitarian.jsonl` (0 FP, 0 FN) -- see full report below. Additional
+direct unit tests for both functions: `tests/test_geoextract.py`.
 
 ## Full report
 
@@ -38,9 +35,7 @@ against this same corpus per `docs/prompt.md`'s own rule.
 
 | class | precision | recall | F1 | FP | FN |
 |---|---|---|---|---|---|
-| is_distress | 0.67 | 1.00 | 0.80 | 3 | 0 |
-
-False positives (is_distress): hum-neg-001, hum-neg-003, hum-neg-004
+| is_distress | 1.00 | 1.00 | 1.00 | 0 | 0 |
 
 ## ais_status.jsonl (10 fixtures)
 

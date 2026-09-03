@@ -11,6 +11,8 @@ from core.intel.geoextract import (
     extract_numeric_coords,
     extract_relative_coords,
     is_concluded_incident,
+    is_direct_distress_call,
+    is_distress,
 )
 
 
@@ -73,3 +75,29 @@ def test_relative_offset_is_sea_snapped(monkeypatch) -> None:
     result = extract_relative_coords("rubber boat 20 km south of Crete")
     assert result is not None
     assert len(seen) >= 2  # a snap search ran
+
+
+def test_is_distress_excludes_the_ngo_org_name_not_a_real_call() -> None:
+    # Real false-positive case (docs/ALERT_RECOGNITION_BASELINE.md): the
+    # bare "sos" keyword matched the org's own name in an RSS-style post.
+    assert is_distress("SOS Mediterranee published its annual report on Mediterranean crossings") is False
+    # A genuine standalone SOS is unaffected.
+    assert is_distress("🆘 30 people in a rubber boat, urgent rescue needed") is True
+
+
+def test_is_distress_no_longer_triggers_on_bare_rescue_operation() -> None:
+    # docs/ALERT_RECOGNITION_BASELINE.md: too weak/ambiguous alone --
+    # matched abstract policy language, not a live incident.
+    assert is_distress("funding package for search and rescue operations in the central Mediterranean") is False
+
+
+def test_distress_functions_exclude_retrospective_commemoration() -> None:
+    # docs/ALERT_RECOGNITION_BASELINE.md: an anniversary/vigil/memorial is
+    # not a new incident report -- both is_distress() and the stricter
+    # is_direct_distress_call() independently false-positived on this shape
+    # (the "shipwreck" keyword ignoring tense/context).
+    text = "Last year's shipwreck anniversary was marked with a vigil in Lampedusa"
+    assert is_distress(text) is False
+    assert is_direct_distress_call(text) is False
+    # A live shipwreck report is unaffected.
+    assert is_direct_distress_call("Shipwreck in the WesternMed. We were alerted by relatives.") is True
