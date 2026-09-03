@@ -8,8 +8,8 @@ lists -- required before any detector threshold is touched (this session's
 priority order; docs/prompt.md: "Do not claim an improvement unless the
 evaluation corpus demonstrates it").
 
-v0 scope: two of the four fixture files are actually scored today, against
-functions that already exist as pure, callable classifiers:
+v0 scope: three of the four fixture files are actually scored today,
+against functions that already exist as pure, callable classifiers:
 
   humanitarian.jsonl  -> core.intel.geoextract.is_distress(text)
                        -> core.intel.humanitarian_recognition.assess(text)
@@ -17,15 +17,20 @@ functions that already exist as pure, callable classifiers:
                           people-count/publication accuracy, a second,
                           independent report over the same corpus)
   ais_status.jsonl    -> core.intel.service_taxonomy.classify_service(metadata)
+  ais_behaviour.jsonl -> core.intel.ais_behaviour_replay.classify(input)
+                          (docs/fixes.md M4.1 -- sudden_stop/rescue_cluster/
+                          ngo_search_pattern only; vessel_loiter has no
+                          fixture/classifier yet and is reported as its
+                          own unscored_count within an otherwise-scored
+                          report, not silently dropped)
 
-``ais_behaviour.jsonl`` and ``ais_integrity.jsonl`` are present (full
-schema, hard negatives from docs/prompt.md/fixes.md included) but not yet
-scored -- AISSpikeDetector's sudden_stop/rescue_cluster/gap logic is
-stateful and time-series-driven, not a pure ``classify(input) -> label``
-function this scorer can call in isolation yet (docs/fixes.md Phase 7/8).
-Each row in those two files is reported as ``not_yet_scored`` rather than
-silently skipped, so the report is honest about what it did and did not
-measure.
+``ais_integrity.jsonl`` is present (full schema, hard negatives from
+docs/prompt.md/fixes.md included) but not yet scored -- its gap/
+impossible_speed/dark_zone_entry kinds are docs/fixes.md M4.2/M4.3
+territory (coverage-baseline reasoning should inform the gap classifier
+before it's built, not be guessed at ahead of that milestone). Reported
+as ``not_yet_scored`` rather than silently skipped, so the report is
+honest about what it did and did not measure.
 
 Run: ``python -m core.intel.alert_recognition_scorer``
 """
@@ -212,6 +217,47 @@ def score_ais_status() -> FileReport:
     return report
 
 
+def score_ais_behaviour() -> FileReport:
+    """docs/fixes.md M4.1: score core.intel.ais_behaviour_replay.classify()
+    against ais_behaviour.jsonl -- unscored until this module existed (see
+    its own docstring for why). Two dimensions the fixture schema actually
+    carries: classification-label accuracy (the "publication decision" --
+    alertable or not, and as what) and whether the returned confidence
+    falls inside the fixture's expected range.
+
+    A row whose ``kind`` this v0 classifier doesn't implement yet
+    (vessel_loiter) is reported as its own unscored_count, not silently
+    dropped or forced through as a guess.
+    """
+    from core.intel.ais_behaviour_replay import classify
+
+    rows = _load_jsonl("ais_behaviour.jsonl")
+    report = FileReport(filename="ais_behaviour.jsonl", scored=True, total=len(rows))
+    label_cls = _record(report.classes, "classification")
+    confidence_cls = _record(report.classes, "confidence_in_range")
+
+    for row in rows:
+        try:
+            label, confidence = classify(row["input"])
+        except KeyError:
+            report.unscored_count += 1
+            continue
+        row_id = row["id"]
+        if label == row["expected_classification"]:
+            label_cls.true_positives += 1
+        else:
+            label_cls.false_negatives += 1
+            label_cls.fn_ids.append(row_id)
+
+        lo, hi = row["expected_confidence_range"]
+        if lo <= confidence <= hi:
+            confidence_cls.true_positives += 1
+        else:
+            confidence_cls.false_negatives += 1
+            confidence_cls.fn_ids.append(row_id)
+    return report
+
+
 def _unscored_report(filename: str) -> FileReport:
     rows = _load_jsonl(filename)
     return FileReport(filename=filename, scored=False, total=len(rows), unscored_count=len(rows))
@@ -221,8 +267,9 @@ _SCORERS: dict[str, Callable[[], FileReport]] = {
     "humanitarian.jsonl": score_humanitarian,
     "humanitarian.jsonl (recognition v2)": score_humanitarian_recognition,
     "ais_status.jsonl": score_ais_status,
+    "ais_behaviour.jsonl": score_ais_behaviour,
 }
-_UNSCORED_FILES = ["ais_behaviour.jsonl", "ais_integrity.jsonl"]
+_UNSCORED_FILES = ["ais_integrity.jsonl"]
 
 
 def run_all() -> list[FileReport]:
@@ -248,6 +295,11 @@ def render_report(reports: list[FileReport]) -> str:
             f1 = f"{cls.f1:.2f}" if cls.f1 is not None else "n/a"
             lines.append(f"| {label} | {p} | {r} | {f1} | {cls.false_positives} | {cls.false_negatives} |")
         lines.append("")
+        if report.unscored_count:
+            lines.append(
+                f"{report.unscored_count} fixture(s) skipped -- kind not yet implemented by the classifier."
+            )
+            lines.append("")
         for label, cls in sorted(report.classes.items()):
             if cls.fp_ids:
                 lines.append(f"False positives ({label}): {', '.join(cls.fp_ids)}")
