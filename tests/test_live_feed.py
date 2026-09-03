@@ -310,6 +310,67 @@ def test_nuc_fusion_alert_is_safety_never_drift_eligible() -> None:
     assert properties.get("drift_vessel_type") != "cargo"
 
 
+def test_nuc_event_projects_a_case_specific_assessment_block() -> None:
+    """docs/fixes.md M0.2: EventAssessment reaches the public projection as
+    a nested `assessment` object -- not descriptionOf(type) generic prose."""
+    event = IntelEvent(
+        id="nuc-assessment-01",
+        type="vessel_incident",
+        severity="medium",
+        lat=35.2,
+        lon=14.0,
+        title="Vessel unable to manoeuvre",
+        source="ais",
+        linked_mmsi="209888000",
+        metadata={
+            "ais_nav_status_kind": "not_under_command",
+            "maritime_domain": "safety",
+            "is_distress": False,
+            "drift_eligible": False,
+            "publication_status": "published",
+            "source_policy": "official_api",
+            "detection_reason": "Flagged after 4 report(s) over 780s (rule: ≥3 reports and ≥600s sustained).",
+            "in_jamming_zone": False,
+        },
+    )
+
+    feature = _public_intel_feature(event, allowed_domains=frozenset({"safety"}))
+
+    assert feature is not None
+    assessment = feature["properties"].get("assessment")
+    assert assessment is not None
+    assert assessment["observation"] == (
+        "Flagged after 4 report(s) over 780s (rule: ≥3 reports and ≥600s sustained)."
+    )
+    assert "not under command" in assessment["interpretation"]
+    assert assessment["evidence_level"] == "observed"
+    assert assessment["classification_version"]
+    assert assessment["rule_ids"] == ["not_under_command_sustained"]
+
+
+def test_event_with_no_assessor_omits_the_assessment_block_entirely() -> None:
+    """No generic fallback: an event kind assessment.py has no assessor for
+    (e.g. plain news) must not carry an `assessment` key at all."""
+    event = IntelEvent(
+        id="no-assessor-01",
+        type="news",
+        severity="medium",
+        lat=35.2,
+        lon=14.0,
+        title="Coastguard reports vessel movement",
+        source="Official NGO RSS",
+        metadata={
+            "source_policy": "official_rss",
+            "verification_status": "multi_source_corroborated",
+        },
+    )
+
+    feature = _public_intel_feature(event)
+
+    assert feature is not None
+    assert "assessment" not in feature["properties"]
+
+
 def test_unlabelled_context_stays_operator_only() -> None:
     # No source_policy, not a derived type, not published -> still private.
     bare = IntelEvent(

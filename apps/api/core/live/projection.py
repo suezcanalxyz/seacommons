@@ -22,6 +22,7 @@ from core.domain.live_contracts import (
 )
 from core.domain.visual_category import visual_category_fields
 from core.intel import lifecycle
+from core.intel.assessment import build_assessment
 from core.intel.public_geometry import public_geometry_and_precision
 from core.intel.public_policy import (
     is_blocked_source,
@@ -331,6 +332,32 @@ def _public_intel_feature(
                 "archived" if age_hours >= lifecycle.ARCHIVE_AFTER_HOURS else "active"
             )
 
+    # docs/fixes.md M0.2: case-specific EventAssessment, projected as a
+    # nested `assessment` object so ConePanel can stop using
+    # descriptionOf(props.type) as the event-specific Interpretation.
+    # build_assessment() returns None for a kind it has no assessor for
+    # (v0 scope: not_under_command/aground/restricted_manoeuvrability) --
+    # that event omits the block entirely rather than inventing generic
+    # prose (docs/fixes.md M0.2 required behaviour).
+    assessment = build_assessment(event)
+    assessment_block = (
+        {
+            "observation": assessment.observation,
+            "interpretation": assessment.interpretation,
+            "evidence_level": assessment.evidence_level,
+            "confidence": assessment.confidence,
+            "confidence_basis": assessment.confidence_basis,
+            "supporting_evidence": assessment.supporting_evidence,
+            "contradicting_evidence": assessment.contradicting_evidence,
+            "caveats": assessment.caveats,
+            "recommended_action": assessment.recommended_action,
+            "rule_ids": assessment.rule_ids,
+            "classification_version": assessment.classification_version,
+        }
+        if assessment is not None
+        else None
+    )
+
     geometry, location_precision = public_geometry_and_precision(event)
     # Canonical semantic visual taxonomy. Colour/identity is a pure function of
     # category — never severity, OCR confidence or lifecycle. Alarm Phone is
@@ -373,6 +400,7 @@ def _public_intel_feature(
             "received_at": event.metadata.get("first_source_seen_at") or event.timestamp_utc,
             "location_precision": location_precision,
             **({"incident_lifecycle": lifecycle_state} if lifecycle_state else {}),
+            **({"assessment": assessment_block} if assessment_block is not None else {}),
             **metadata,
         },
     }
