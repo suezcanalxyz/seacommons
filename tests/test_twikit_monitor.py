@@ -191,6 +191,61 @@ def test_ingest_records_a_source_observation_independent_of_classification(monke
         assert "Operational update" in row.raw_payload_hash or row.raw_payload_hash  # a real hash
 
 
+def test_ingest_records_a_media_source_observation_per_attached_image(monkeypatch, tmp_path):
+    """docs/fixes.md M1.2 (8th, final source): a tweet carrying an image
+    (Alarm Phone's map screenshots) gets a SourceObservation per attached
+    media URL, distinct from and in addition to the tweet-text
+    source_post observation. Idempotent by (handle, media URL): the same
+    image re-served in a replay still yields exactly one row."""
+    from core.db.models import SourceObservationDB
+    from core.db.session import session_scope
+    from core.intel.source_observation import observation_id
+
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    media_url = "https://pbs.twimg.com/media/map.jpg?name=orig"
+    tweet = _FakeTweet(
+        "555000333", "Boat in distress, position in the attached map.",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg")],
+    )
+
+    m._ingest(tweet, handle="alarm_phone")
+    m._ingest(tweet, handle="alarm_phone")  # replay: must not duplicate
+
+    obs_id = observation_id("alarm_phone", media_url)
+    with session_scope() as db:
+        rows = db.query(SourceObservationDB).filter(
+            SourceObservationDB.observation_type == "media_attachment",
+            SourceObservationDB.source_name == "alarm_phone",
+        ).all()
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.observation_id == obs_id
+        assert row.source_id == media_url
+        assert row.service == "humanitarian"
+        assert row.lane == "review"
+        assert row.source_url == media_url
+        assert row.subject_refs == ["tweet:555000333"]
+
+
+def test_ingest_without_media_records_no_media_source_observation(monkeypatch, tmp_path):
+    from core.db.models import SourceObservationDB
+    from core.db.session import session_scope
+
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet("555000444", "Text-only operational update, nothing attached.")
+
+    m._ingest(tweet, handle="alarm_phone")
+
+    with session_scope() as db:
+        assert db.query(SourceObservationDB).filter(
+            SourceObservationDB.observation_type == "media_attachment",
+        ).count() == 0
+
+
 def test_ingest_still_classifies_normally_if_source_observation_write_fails(monkeypatch, tmp_path):
     """The observation write is best-effort and must never block real
     tweet processing -- a broken DB session must not stop _ingest from
