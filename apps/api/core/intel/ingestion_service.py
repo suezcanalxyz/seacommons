@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from core.domain.live_contracts import PublicationStatus, SourcePolicy, VerificationStatus
 from core.intel.geoextract import (
     classify_severity,
@@ -13,6 +15,50 @@ from core.intel.geoextract import (
 )
 from core.intel.source_registry import source_registry
 from core.intel.store import IntelEvent, intel_store
+
+logger = logging.getLogger(__name__)
+
+
+def _record_source_observation(
+    *, source_name: str, source_id: str, source_policy: str, raw_payload: str,
+    observed_at: str, source_url: str = "", lat: float | None = None, lon: float | None = None,
+) -> None:
+    """docs/fixes.md M1.2: a durable SourceObservation for an operator-
+    supplied report (console manual entry or an operator's own external
+    script feed). Best-effort and strictly additive: never raises into
+    the caller, never alters what gets stored/published. The existing
+    intel_store.add() write path remains authoritative until a parity
+    comparison (a later PR) proves this envelope is equivalent.
+    """
+    if not source_id:
+        # No stable delivery key -- e.g. store_external_event() with no
+        # source_id supplied doesn't dedupe its own IntelEvent either in
+        # that case; recording an observation would have nothing genuine
+        # to be idempotent by.
+        return
+    try:
+        from datetime import datetime, timezone
+
+        from core.db.session import session_scope
+        from core.intel.source_observation import record_observation
+
+        with session_scope() as db:
+            record_observation(
+                db,
+                service="humanitarian",
+                lane="review",
+                observation_type="source_post",
+                source_name=source_name,
+                source_policy=source_policy,
+                source_id=source_id,
+                observed_at=observed_at or datetime.now(timezone.utc).isoformat(),
+                raw_payload=raw_payload,
+                source_url=source_url,
+                lat=lat,
+                lon=lon,
+            )
+    except Exception as exc:
+        logger.debug("ingestion_service: source_observation record skipped for %s: %s", source_id, exc)
 
 
 def store_manual_event(
@@ -42,6 +88,24 @@ def store_manual_event(
     )
     stored = intel_store.add(event)
     source_registry.record_poll("Manual", events_found=1 if stored else 0)
+    if stored:
+        from datetime import datetime, timezone
+
+        _record_source_observation(
+            source_name="Manual",
+            # A console entry carries no external delivery key -- the
+            # generated event id is the closest stable identity, and
+            # unlike a replayed feed item a second manual submission with
+            # identical text is a genuinely new operator action, not a
+            # redelivery, so a fresh id each time is correct here.
+            source_id=event.id,
+            source_policy="operator_asserted",
+            raw_payload=f"{title}\n{text}",
+            observed_at=datetime.now(timezone.utc).isoformat(),
+            source_url=url,
+            lat=lat,
+            lon=lon,
+        )
     return event if stored else None
 
 
@@ -93,6 +157,16 @@ def store_external_event(
     dedup_key = f"external:{source}:{source_id}" if source_id else ""
     added = intel_store.add(event, dedup_key=dedup_key)
     source_registry.record_poll(source_name, events_found=1 if added else 0)
+    _record_source_observation(
+        source_name=source_name,
+        source_id=source_id,
+        source_policy="operator_asserted",
+        raw_payload=f"{title}\n{text}",
+        observed_at=timestamp_utc or "",
+        source_url=url,
+        lat=coords[0] if coords else None,
+        lon=coords[1] if coords else None,
+    )
     if added and distress:
         from core.intel.triangulation import evaluate as evaluate_triangulation
 
