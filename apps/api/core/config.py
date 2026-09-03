@@ -125,6 +125,14 @@ class SuezCanalConfig(BaseSettings):
     # grey-zone: an AIS gap/loiter within this range of subsea infra / a platform
     FUSION_INFRA_PROXIMITY_KM: float = 12.0
     FUSION_GREY_ZONE_WINDOW_S: int = 10800
+    # Case correlation: before auto-opening a new case, look back this many
+    # days for an already-OPEN case of the same case_type covering the same
+    # vessel (matched by MMSI) or, lacking one -- most humanitarian SAR
+    # reports have no AIS -- the same area. A follow-up post about an
+    # existing incident days later then updates that case instead of
+    # forking a duplicate one (docs/fixes.md).
+    FUSION_CASE_RELINK_WINDOW_DAYS: float = 7.0
+    FUSION_CASE_RELINK_RADIUS_KM: float = 50.0
     CMEMS_USERNAME: str = ""
     CMEMS_PASSWORD: str = ""
     CMEMS_CURRENT_DATASET: str = "cmems_mod_glo_phy-cur_anfc_0.083deg_P1D-m"

@@ -140,3 +140,65 @@ def open_case(
         telegram(notice)
         whatsapp(notice)
     return result
+
+
+def link_intel_events(
+    db,
+    *,
+    case_id: str,
+    intel_event_ids: Iterable[str],
+    linked_by: str,
+    role: str = "contributing",
+    timeline_note: Optional[str] = None,
+    audit_action: str = "case.intel_linked",
+    audit_data: Optional[dict] = None,
+) -> list[str]:
+    """Attach intel events to an already-open case, instead of opening a new one.
+
+    Used when a new signal turns out to be a later update to an existing
+    incident rather than a new one -- see
+    ``core.intel.fusion._find_relinkable_case``. Caller owns the transaction
+    (``db``); this flushes but does not commit. Returns the event ids that
+    were actually added (skips ones already linked to this case).
+    """
+    already = {
+        row.event_id
+        for row in db.query(CaseIntelEventDB.event_id).filter(
+            CaseIntelEventDB.case_id == case_id
+        )
+    }
+    added: list[str] = []
+    for event_id in dict.fromkeys(str(e) for e in intel_event_ids):
+        if event_id in already:
+            continue
+        db.add(
+            CaseIntelEventDB(
+                case_id=case_id,
+                event_id=event_id,
+                role=role,
+                linked_by=linked_by,
+            )
+        )
+        added.append(event_id)
+    if not added:
+        return added
+    if timeline_note:
+        db.add(
+            CaseTimelineDB(
+                entry_id=str(uuid.uuid4()),
+                case_id=case_id,
+                event_type="intel_linked",
+                actor=linked_by,
+                body=timeline_note,
+            )
+        )
+    record(
+        db,
+        actor=linked_by,
+        action=audit_action,
+        resource_type="case",
+        resource_id=case_id,
+        data=audit_data or {"event_ids": added},
+    )
+    db.flush()
+    return added

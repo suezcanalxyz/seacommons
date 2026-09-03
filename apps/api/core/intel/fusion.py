@@ -30,7 +30,7 @@ import hashlib
 import logging
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from core.config import config
@@ -655,13 +655,62 @@ def _emit_locked(alert: FusedAlert) -> None:
         logger.warning("fusion: notify_alert failed: %s", exc)
 
 
+def _find_relinkable_case(db, alert: FusedAlert, case_type: str) -> Optional[str]:
+    """An already-OPEN case that this alert's incident is a later update to.
+
+    ``_open_case_for_alert``'s primary lookup only matches events belonging
+    to *this* cluster (``alert.contributing_event_ids``), so a follow-up
+    signal about the same vessel or incident days later -- a fresh
+    cluster_id, no overlapping event ids -- always missed it and forked a
+    duplicate case. Match by MMSI when the alert has one (dark-fleet /
+    sanctions / mobility domains); otherwise by proximity, since most
+    humanitarian SAR reports (a dinghy, no AIS) carry no MMSI.
+    """
+    from core.cases.service import OPEN_STATUSES
+    from core.db.models import CaseDB, CaseIntelEventDB, IntelEventDB
+
+    window_start = datetime.fromtimestamp(alert.ts, tz=timezone.utc) - timedelta(
+        days=config.FUSION_CASE_RELINK_WINDOW_DAYS
+    )
+    query = (
+        db.query(CaseDB)
+        .filter(CaseDB.case_type == case_type)
+        .filter(CaseDB.status.in_(OPEN_STATUSES))
+        .filter(CaseDB.created_at >= window_start.replace(tzinfo=None))
+    )
+
+    if alert.vessel_mmsi:
+        match = (
+            query.join(CaseIntelEventDB, CaseIntelEventDB.case_id == CaseDB.case_id)
+            .join(IntelEventDB, IntelEventDB.id == CaseIntelEventDB.event_id)
+            .filter(IntelEventDB.linked_mmsi == alert.vessel_mmsi)
+            .order_by(CaseDB.created_at.desc())
+            .first()
+        )
+        return match.case_id if match else None
+
+    if alert.lat is None or alert.lon is None:
+        return None
+    radius_km = config.FUSION_CASE_RELINK_RADIUS_KM
+    best: Optional[CaseDB] = None
+    best_km = radius_km
+    for case in query.filter(CaseDB.lat.isnot(None), CaseDB.lon.isnot(None)):
+        dist = haversine_km(alert.lat, alert.lon, case.lat, case.lon)
+        if dist <= best_km:
+            best, best_km = case, dist
+    return best.case_id if best else None
+
+
 def _open_case_for_alert(alert: FusedAlert, alert_event_id: str) -> Optional[str]:
     try:
-        from core.cases.service import OPEN_STATUSES, open_case
+        from core.cases.service import CASE_TYPES, OPEN_STATUSES, link_intel_events, open_case
         from core.db.models import CaseDB, CaseIntelEventDB
         from core.db.session import session_scope
 
         linked_ids = list(dict.fromkeys([alert_event_id, *alert.contributing_event_ids]))
+        case_type = (alert.case_type if alert.case_type in CASE_TYPES
+                     and alert.case_type != "unspecified"
+                     else _DOMAIN_CASE_TYPE.get(alert.domain, alert.case_type))
         with session_scope() as db:
             existing = (
                 db.query(CaseIntelEventDB.case_id)
@@ -673,12 +722,25 @@ def _open_case_for_alert(alert: FusedAlert, alert_event_id: str) -> Optional[str
             if existing is not None:
                 logger.info("fusion: open case %s already covers cluster %s", existing[0], alert.cluster_id)
                 return existing[0]
-            priority = "critical" if alert.confidence >= 0.8 else "high"
-            from core.cases.service import CASE_TYPES
 
-            case_type = (alert.case_type if alert.case_type in CASE_TYPES
-                         and alert.case_type != "unspecified"
-                         else _DOMAIN_CASE_TYPE.get(alert.domain, alert.case_type))
+            relink_case_id = _find_relinkable_case(db, alert, case_type)
+            if relink_case_id is not None:
+                link_intel_events(
+                    db,
+                    case_id=relink_case_id,
+                    intel_event_ids=linked_ids,
+                    linked_by="fusion-engine",
+                    timeline_note=f"Re-linked: new {alert.alert_type} signal matches this case ({alert.summary})",
+                    audit_action="case.auto_relinked",
+                    audit_data={"alert_type": alert.alert_type, "cluster_id": alert.cluster_id},
+                )
+                logger.info(
+                    "fusion: relinked cluster %s onto existing case %s (no new case opened)",
+                    alert.cluster_id, relink_case_id,
+                )
+                return relink_case_id
+
+            priority = "critical" if alert.confidence >= 0.8 else "high"
             case = open_case(
                 db,
                 title=f"[{alert.domain}] {alert.alert_type}: {alert.summary}"[:256],

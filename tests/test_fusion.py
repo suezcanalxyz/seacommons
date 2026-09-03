@@ -252,3 +252,182 @@ def test_register_is_idempotent() -> None:
     fusion.register()
     fusion.register()
     assert intel_store._subscribers.count(fusion.evaluate) == 1
+
+
+def test_relink_existing_case_by_mmsi_for_new_cluster_days_later() -> None:
+    """A follow-up pair of AIS anomalies for the same vessel, days after the
+    first, is a *fresh* cluster (new event ids -> new cluster_id) but is the
+    same underlying incident. It must update the existing open case, not
+    fork a duplicate one."""
+    now = datetime.now(timezone.utc)
+    _add(
+        type="ais_anomaly", severity="high", lat=34.5, lon=13.2,
+        title="dark zone entry", source="AISStream", linked_mmsi="209888000",
+        timestamp_utc=(now - timedelta(hours=2)).isoformat(),
+        metadata={"anomaly_type": "dark_zone_entry", "mmsi": "209888000"},
+    )
+    first_second = _add(
+        type="ais_anomaly", severity="high", lat=34.6, lon=13.3,
+        title="impossible speed", source="AISStream", linked_mmsi="209888000",
+        metadata={"anomaly_type": "impossible_speed", "mmsi": "209888000"},
+    )
+    fusion.evaluate(first_second)
+    assert len(_alerts()) == 1
+
+    from core.db.models import CaseDB
+    from core.db.session import session_scope
+
+    with session_scope() as db:
+        original_case_id = db.query(CaseDB).one().case_id
+
+    # Roll the bounded in-memory windows past this cluster -- same technique
+    # as test_recurring_cluster_upserts_one_db_row_after_dedup_window_rolls --
+    # so the next pair is evaluated as an unrelated, brand new cluster.
+    with intel_store._lock:
+        intel_store._seen.clear()
+        intel_store._events.clear()
+
+    _add(
+        type="ais_anomaly", severity="high", lat=34.55, lon=13.25,
+        title="long gap", source="AISStream", linked_mmsi="209888000",
+        timestamp_utc=(now - timedelta(minutes=10)).isoformat(),
+        metadata={"anomaly_type": "long_gap", "mmsi": "209888000"},
+    )
+    second_pair_new = _add(
+        type="ais_anomaly", severity="high", lat=34.56, lon=13.26,
+        title="position jump", source="AISStream", linked_mmsi="209888000",
+        metadata={"anomaly_type": "position_jump", "mmsi": "209888000"},
+    )
+    fusion.evaluate(second_pair_new)
+
+    # The first cluster's alert IntelEvent was pushed out of the in-memory
+    # store by the reset above (like the recurring-cluster regression test),
+    # but both alerts are persisted -- two distinct clusters, confirming this
+    # really is a fresh cluster_id and not a dedup no-op.
+    from core.db.models import CaseIntelEventDB, IntelEventDB
+
+    with session_scope() as db:
+        alert_rows = db.query(IntelEventDB).filter(IntelEventDB.type == fusion.ALERT_TYPE).all()
+        assert len(alert_rows) == 2
+        assert alert_rows[0].id != alert_rows[1].id
+
+        cases = db.query(CaseDB).all()
+        assert len(cases) == 1, "second cluster for the same MMSI must relink, not fork a case"
+        assert cases[0].case_id == original_case_id
+
+        linked = {
+            row.event_id
+            for row in db.query(CaseIntelEventDB).filter(
+                CaseIntelEventDB.case_id == original_case_id
+            )
+        }
+        assert second_pair_new.id in linked
+
+
+def test_no_relink_once_case_is_older_than_the_relink_window() -> None:
+    """A case opened long before FUSION_CASE_RELINK_WINDOW_DAYS must not be
+    silently reused -- an old, possibly-resolved-in-practice incident should
+    not keep absorbing unrelated new reports for the same vessel forever."""
+    now = datetime.now(timezone.utc)
+    _add(
+        type="ais_anomaly", severity="high", lat=34.5, lon=13.2,
+        title="dark zone entry", source="AISStream", linked_mmsi="209777000",
+        timestamp_utc=(now - timedelta(hours=2)).isoformat(),
+        metadata={"anomaly_type": "dark_zone_entry", "mmsi": "209777000"},
+    )
+    first_second = _add(
+        type="ais_anomaly", severity="high", lat=34.6, lon=13.3,
+        title="impossible speed", source="AISStream", linked_mmsi="209777000",
+        metadata={"anomaly_type": "impossible_speed", "mmsi": "209777000"},
+    )
+    fusion.evaluate(first_second)
+
+    from core.db.models import CaseDB
+    from core.db.session import session_scope
+
+    with session_scope() as db:
+        old_case = db.query(CaseDB).one()
+        old_case.created_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
+
+    with intel_store._lock:
+        intel_store._seen.clear()
+        intel_store._events.clear()
+
+    _add(
+        type="ais_anomaly", severity="high", lat=34.55, lon=13.25,
+        title="long gap", source="AISStream", linked_mmsi="209777000",
+        timestamp_utc=(now - timedelta(minutes=10)).isoformat(),
+        metadata={"anomaly_type": "long_gap", "mmsi": "209777000"},
+    )
+    second_pair_new = _add(
+        type="ais_anomaly", severity="high", lat=34.56, lon=13.26,
+        title="position jump", source="AISStream", linked_mmsi="209777000",
+        metadata={"anomaly_type": "position_jump", "mmsi": "209777000"},
+    )
+    fusion.evaluate(second_pair_new)
+
+    with session_scope() as db:
+        assert db.query(CaseDB).count() == 2, "a 30-day-old case is outside the relink window"
+
+
+def test_relink_existing_case_by_proximity_when_alert_has_no_mmsi() -> None:
+    """Most humanitarian SAR reports (a migrant dinghy) carry no MMSI at
+    all -- the exact scenario reported live: a second post about a boat
+    already tracked under an open case, days later, must update that case
+    instead of opening a duplicate one for the same incident."""
+    ev1 = _add(
+        type="vessel_incident", severity="high", lat=35.40, lon=13.00,
+        title="Cargo aground off Lampedusa", source="AIS incidents",
+        metadata={"subtype": "aground"},
+    )
+    fusion.evaluate(ev1)
+    assert len(_alerts()) == 1
+
+    from core.db.models import CaseDB
+    from core.db.session import session_scope
+
+    with session_scope() as db:
+        original_case_id = db.query(CaseDB).one().case_id
+
+    # A day-later follow-up report, close by but not identical, no MMSI --
+    # a fresh event id / cluster_id, same real-world incident.
+    ev2 = _add(
+        type="vessel_incident", severity="high", lat=35.41, lon=13.01,
+        title="Same vessel still aground off Lampedusa, day 2",
+        source="AIS incidents",
+        metadata={"subtype": "grounding"},
+    )
+    fusion.evaluate(ev2)
+
+    alerts = _alerts()
+    assert len(alerts) == 2
+
+    with session_scope() as db:
+        cases = db.query(CaseDB).all()
+        assert len(cases) == 1, "nearby follow-up report with no MMSI must relink by proximity"
+        assert cases[0].case_id == original_case_id
+
+
+def test_no_relink_by_proximity_beyond_relink_radius() -> None:
+    """A same-type incident far enough away is a different boat, not an
+    update -- it must still get its own case."""
+    ev1 = _add(
+        type="vessel_incident", severity="high", lat=35.40, lon=13.00,
+        title="Cargo aground off Lampedusa", source="AIS incidents",
+        metadata={"subtype": "aground"},
+    )
+    fusion.evaluate(ev1)
+
+    # ~950 km away (well beyond FUSION_CASE_RELINK_RADIUS_KM's default 50 km).
+    ev2 = _add(
+        type="vessel_incident", severity="high", lat=36.0, lon=23.5,
+        title="Cargo aground off Kythira", source="AIS incidents",
+        metadata={"subtype": "aground"},
+    )
+    fusion.evaluate(ev2)
+
+    from core.db.models import CaseDB
+    from core.db.session import session_scope
+
+    with session_scope() as db:
+        assert db.query(CaseDB).count() == 2
