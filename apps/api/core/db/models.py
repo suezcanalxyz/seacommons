@@ -381,6 +381,51 @@ class DeletionRequestDB(Base):
     reviewed_at = Column(DateTime)
 
 
+class SourceObservationDB(Base):
+    """Lossless, immutable, replayable record of what a source actually sent
+    (docs/fixes.md M1.1) -- the first durable layer of the canonical data
+    flow (SOURCE INPUT -> RAW OBSERVATION -> ... -> PUBLIC PROJECTION),
+    written before any classification decision. `IntelEventDB` remains the
+    compatibility/public-projection envelope; this table is not a
+    replacement for it yet -- adapters are wired onto this incrementally
+    (M1.2), in parallel with their existing IntelEventDB write path.
+
+    Idempotent by (source_name, source_id) -- see
+    core.intel.source_observation.observation_id(); a re-delivered raw
+    fixture resolves to the same observation_id and is a no-op, not a
+    duplicate row (docs/fixes.md M1.1 exit gate).
+    """
+
+    __tablename__ = "source_observations"
+    observation_id = Column(String(64), primary_key=True)
+    service = Column(String(32), nullable=False, index=True)
+    lane = Column(String(32), nullable=False, index=True)
+    observation_type = Column(String(48), nullable=False, index=True)
+    source_name = Column(String(64), nullable=False, index=True)
+    source_policy = Column(String(32), nullable=False)
+    source_id = Column(String(256), nullable=False)
+    source_url = Column(String(512), default="")
+    # ISO 8601 string, same convention as IntelEventDB.timestamp_utc -- most
+    # source timestamps arrive as strings from third-party APIs/feeds.
+    observed_at = Column(String(32), nullable=False)
+    received_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+    raw_payload_hash = Column(String(64), nullable=False)
+    raw_payload_ref = Column(Text, default="")
+    lat = Column(Float)
+    lon = Column(Float)
+    location_precision = Column(String(32))
+    uncertainty_m = Column(Float)
+    subject_refs = Column(JSON, default=list)
+    provenance = Column(JSON, default=dict)
+    schema_version = Column(Integer, nullable=False, server_default="1")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("source_name", "source_id", name="uq_source_observation_delivery_key"),
+        Index("ix_source_observations_source_ts", "source_name", "observed_at"),
+    )
+
+
 def create_all(database_url: str) -> None:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
