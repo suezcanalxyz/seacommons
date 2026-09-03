@@ -255,9 +255,14 @@ def public_event_from_row(
     from core.intel.public_policy import SECURITY_MARITIME_DOMAINS, domains_for_mode
     from core.live.projection import _public_intel_feature
 
-    if event.maritime_domain() in SECURITY_MARITIME_DOMAINS:
+    resolved_domain = event.maritime_domain()
+    if resolved_domain in SECURITY_MARITIME_DOMAINS or resolved_domain == "safety":
         # The public edge is the humanitarian compartment only; the VM buckets
-        # these into `security` and excludes them from mode=humanitarian.
+        # these into `security`/`safety` and excludes them from
+        # mode=humanitarian (docs/fixes.md P0.1 -- Safety became its own VM
+        # mode, DEFAULT_PUBLIC_MARITIME_DOMAINS now includes it, so it must
+        # be excluded explicitly here too or it would leak into the edge's
+        # humanitarian-only feed and break VM/edge parity).
         return None
     vm_feature = _public_intel_feature(
         event, allowed_domains=domains_for_mode("humanitarian")

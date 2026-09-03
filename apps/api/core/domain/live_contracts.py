@@ -176,6 +176,12 @@ DEFAULT_PUBLIC_MARITIME_DOMAINS = frozenset(
     {
         MaritimeDomain.SAR.value,
         MaritimeDomain.PIRACY.value,
+        # docs/fixes.md P0.1/P6.4: Maritime Safety (not_under_command,
+        # aground, restricted_manoeuvrability, navwarning) is its own
+        # visible product surface, not Security/Intelligence and not
+        # hidden. core.live.projection._public_intel_feature's own
+        # docstring already documented this as the intended default.
+        MaritimeDomain.SAFETY.value,
     }
 )
 

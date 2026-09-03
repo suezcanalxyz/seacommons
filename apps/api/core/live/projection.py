@@ -257,12 +257,18 @@ def _public_intel_feature(
         ))
     if event.is_vessel_mobility_incident():
         # Legacy fusion alerts pre-date the dedicated vessel-incident monitor.
-        # Give them the same contract so they coalesce by MMSI and gain the
-        # observed AIS path plus an optional cargo-vessel drift forecast.
+        # Tag them so they still coalesce by MMSI and gain the observed AIS
+        # path -- but docs/fixes.md P0.2 / A-02: never infer cargo-Drift
+        # eligibility here. A NUC/disabled/adrift subject is a Maritime
+        # Safety observation, never cargo-Drift eligible (docs/fixes.md
+        # invariant), regardless of how old the record is or whether it
+        # predates PR #62's explicit drift_eligible=False. This used to
+        # setdefault drift_eligible=True / drift_vessel_type="cargo" for any
+        # record missing those keys, which is exactly the Safety->Drift
+        # behaviour PR #62 removed at the producer -- resurrected here for
+        # every record that predates it.
         metadata.setdefault("ais_nav_status_kind", "not_under_command")
-        metadata.setdefault("drift_eligible", True)
-        metadata.setdefault("drift_event_id", f"intel:{event.id}")
-        metadata.setdefault("drift_vessel_type", "cargo")
+        metadata["drift_eligible"] = False
     # MMSI/IMO/name/flag are professional vessel identifiers broadcast in AIS
     # or drawn from the local public registry.  Keeping them on every linked
     # alert is what lets the client join updates into one vessel episode.

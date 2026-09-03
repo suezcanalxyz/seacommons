@@ -176,13 +176,25 @@ class IntelEvent:
         )
 
     def maritime_domain(self) -> str:
-        # Older fusion records labelled every vessel casualty as ``safety``.
-        # Correct NUC history at projection time without rewriting the DB.
-        if self.is_vessel_mobility_incident():
-            return MaritimeDomain.GREY_ZONE.value
+        # An explicit, current maritime_domain always wins (docs/fixes.md
+        # A-02 / P0.1): current producers set this directly -- in
+        # particular vessel_incident_monitor.py writes "safety" for
+        # not_under_command/aground/restricted_manoeuvrability (PR #62),
+        # and fusion.py's correlated_alert events carry the domain their
+        # rule computed. Only a record with NO explicit maritime_domain at
+        # all (a genuinely older record, from before either of those wrote
+        # one) falls through to the legacy is_vessel_mobility_incident()
+        # correction below -- older fusion records labelled every vessel
+        # casualty "safety", which was wrong for a NUC/disabled/adrift
+        # subject; this reclassifies THOSE to grey_zone at projection time
+        # without rewriting the DB. Checking is_vessel_mobility_incident()
+        # first, as this used to, silently discarded every explicit value
+        # PR #62 writes and reintroduced the exact bug it fixed.
         explicit = self.metadata.get("maritime_domain")
         if explicit:
             return explicit
+        if self.is_vessel_mobility_incident():
+            return MaritimeDomain.GREY_ZONE.value
         if self.type == "ais_anomaly":
             anomaly_type = self.metadata.get("anomaly_type", "")
             if anomaly_type in self._GREY_ZONE_ANOMALIES:
