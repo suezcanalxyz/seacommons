@@ -43,46 +43,40 @@ from core.intel.ngo_registry import NGO_VESSELS, UNCONFIRMED_MMSI
 _APPROX_MARKER_RE = re.compile(r"~|≈|\babout\b|\baround\b|\bapprox\.?\b|\bcirca\b", re.I)
 
 # Same multilingual "people" noun set as core.intel.humanitarian._PEOPLE
-# (Alarm Phone posts the same alert in several languages) -- optional filler
-# between the count and the role marker, e.g. "30 personnes à bord" vs
-# "30 à bord".
+# (Alarm Phone posts the same alert in several languages), plus a small
+# filler-verb set ("45 people believed aboard") -- both optional, between
+# the count and the role marker for the count-first ordering below.
 _QTY = (
     r"(\d{1,4})\s*"
     r"(?:(?:people|persons|passengers|migrants|survivors"
     r"|personnes?|passagers?|rescapée?s?"
     r"|persone|passeggeri"
     r"|personas?|pasajeros?"
-    r"|menschen|personen)\s*)?"
+    r"|menschen|personen)\s+)?"
+    r"(?:(?:believed|reported|thought|confirmed|said|estimated)\s+(?:to\s+be\s+)?)?"
 )
 
+# Role-name fragments (no capture group) shared by both orderings below.
+_ROLE_WORDS: dict[str, str] = {
+    "aboard": r"(?:on\s*board|aboard|à\s*bord|a\s*bordo|an\s*Bord)",
+    "rescued": r"(?:rescued|saved|sauvés?|sauvées?|salvati|salvate|rescatados?|rescatadas?|gerettet)",
+    "missing": r"(?:missing|disparus?|disparues?|dispersi|disperse|desaparecidos?|desaparecidas?|vermisst)",
+    "dead": r"(?:dead|died|killed|morts?|mortes?|morti|morte|\btot\b|gestorben|muertos?|muertas?)",
+    "injured": r"(?:injured|wounded|blessés?|blessées?|feriti|ferite|heridos?|heridas?|verletzt)",
+    "intercepted": r"(?:intercepted|interceptés?|interceptées?|intercettati|intercettate|interceptados?|interceptadas?)",
+    "returned": r"(?:returned|pushed\s*back|renvoyés?|renvoyées?|rimpatriati|rimpatriate|devueltos?|devueltas?)",
+}
+
+# Each role matches BOTH orderings real reports use: count-first ("50
+# aboard", "12 dead") via group 1, and role-first via group 2 ("dispersi
+# almeno 12 persone" -- Italian commonly states the role before the
+# number). The role-first side allows a short non-greedy filler so "almeno"
+# / "at least" between the role word and the number doesn't block the match.
 _ROLE_PATTERNS: dict[str, re.Pattern[str]] = {
-    "aboard": re.compile(
-        _QTY + r"(?:on\s*board|aboard|à\s*bord|a\s*bordo|an\s*Bord)\b", re.I,
-    ),
-    "rescued": re.compile(
-        _QTY + r"(?:rescued|saved|sauvés?|sauvées?|salvati|salvate|rescatados?|rescatadas?|gerettet)\b",
-        re.I,
-    ),
-    "missing": re.compile(
-        _QTY + r"(?:missing|disparus?|disparues?|dispersi|disperse|desaparecidos?|desaparecidas?|vermisst)\b",
-        re.I,
-    ),
-    "dead": re.compile(
-        _QTY + r"(?:dead|died|killed|morts?|mortes?|morti|morte|muertos?|muertas?|\btot\b|gestorben)\b",
-        re.I,
-    ),
-    "injured": re.compile(
-        _QTY + r"(?:injured|wounded|blessés?|blessées?|feriti|ferite|heridos?|heridas?|verletzt)\b",
-        re.I,
-    ),
-    "intercepted": re.compile(
-        _QTY + r"(?:intercepted|interceptés?|interceptées?|intercettati|intercettate|interceptados?|interceptadas?)\b",
-        re.I,
-    ),
-    "returned": re.compile(
-        _QTY + r"(?:returned|pushed\s*back|renvoyés?|renvoyées?|rimpatriati|rimpatriate|devueltos?|devueltas?)\b",
-        re.I,
-    ),
+    role: re.compile(
+        rf"(?:{_QTY}{words}\b)|(?:{words}\D{{0,20}}?(\d{{1,4}})\b)", re.I,
+    )
+    for role, words in _ROLE_WORDS.items()
 }
 
 _VESSEL_TYPE_RE = re.compile(
@@ -199,7 +193,13 @@ def _extract_people(text: str) -> PeopleCounts:
     values: dict[str, Optional[int]] = {}
     for role, pattern in _ROLE_PATTERNS.items():
         match = pattern.search(text)
-        values[role] = int(match.group(1)) if match else None
+        if match is None:
+            values[role] = None
+        else:
+            # group(1): count-first ordering ("50 aboard"). group(2):
+            # role-first ordering ("dispersi almeno 12 persone").
+            digits = match.group(1) or match.group(2)
+            values[role] = int(digits) if digits else None
     return PeopleCounts(**values)
 
 
@@ -287,7 +287,16 @@ def assess(text: str) -> HumanitarianAssessment:
 
     if resolved:
         lifecycle_value = IncidentLifecycle.RESOLVED.value
-    elif distress or is_ongoing_incident(text):
+    elif (
+        distress
+        or is_ongoing_incident(text)
+        # A "boat missing, no contact" report is itself an active, ongoing
+        # search situation -- it doesn't need a separate distress/SOS
+        # marker to be operational (found while ground-truthing the M2.1
+        # corpus: "Boat missing since yesterday evening... 45 people
+        # believed aboard" was falling through to needs_review).
+        or case_type == HumanitarianCaseType.MISSING.value
+    ):
         lifecycle_value = IncidentLifecycle.ACTIVE.value
     else:
         lifecycle_value = IncidentLifecycle.NEEDS_REVIEW.value

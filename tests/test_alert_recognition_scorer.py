@@ -10,17 +10,25 @@ test in the same PR as the fix -- not silently.
 """
 from __future__ import annotations
 
-from core.intel.alert_recognition_scorer import render_report, run_all, score_ais_status, score_humanitarian
+from core.intel.alert_recognition_scorer import (
+    render_report,
+    run_all,
+    score_ais_status,
+    score_humanitarian,
+    score_humanitarian_recognition,
+)
 
 
-def test_scorer_runs_against_all_four_fixture_files():
+def test_scorer_runs_against_all_five_fixture_reports():
     reports = run_all()
     names = {r.filename for r in reports}
     assert names == {
-        "humanitarian.jsonl", "ais_status.jsonl", "ais_behaviour.jsonl", "ais_integrity.jsonl",
+        "humanitarian.jsonl", "humanitarian.jsonl (recognition v2)",
+        "ais_status.jsonl", "ais_behaviour.jsonl", "ais_integrity.jsonl",
     }
     scored = {r.filename: r.scored for r in reports}
     assert scored["humanitarian.jsonl"] is True
+    assert scored["humanitarian.jsonl (recognition v2)"] is True
     assert scored["ais_status.jsonl"] is True
     assert scored["ais_behaviour.jsonl"] is False
     assert scored["ais_integrity.jsonl"] is False
@@ -36,6 +44,22 @@ def test_humanitarian_baseline_is_locked():
     assert cls.fp_ids == []
     assert cls.precision == 1.0
     assert cls.recall == 1.0
+
+
+def test_humanitarian_recognition_baseline_is_locked():
+    """docs/fixes.md M2.1: core.intel.humanitarian_recognition.assess()
+    scored against the same corpus. hum-004 (French distress phrasing) is
+    the one KNOWN, documented gap -- see its fixture note -- so it is the
+    sole expected false negative on case_type/lifecycle/publication.
+    people_counts has zero false negatives: every expected_counts value in
+    the corpus is one this module's extractor actually produces."""
+    report = score_humanitarian_recognition()
+    assert report.classes["case_type"].fn_ids == ["hum-004"]
+    assert report.classes["lifecycle"].fn_ids == ["hum-004"]
+    assert report.classes["publication_recommendation"].fn_ids == ["hum-004"]
+    assert report.classes["people_counts"].fn_ids == []
+    for cls in report.classes.values():
+        assert cls.false_positives == 0, f"{cls.label}: {cls.fp_ids}"
 
 
 def test_ais_status_baseline_is_clean():

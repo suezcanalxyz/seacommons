@@ -30,6 +30,30 @@ def test_french_role_terms_are_recognised():
     assert result.people.missing == 3
 
 
+def test_role_word_before_the_count_is_also_recognised():
+    """Italian commonly states the role before the number ('dispersi
+    almeno 12 persone' = 'missing at least 12 people'), not just
+    count-first -- found while ground-truthing the M2.1 corpus."""
+    result = assess("Naufragio al largo della Libia, dispersi almeno 12 persone secondo i sopravvissuti")
+    assert result.people.missing == 12
+
+
+def test_a_filler_verb_between_count_and_role_does_not_block_the_match():
+    """'45 people believed aboard' -- 'believed' sits between the count
+    and the role marker; found while ground-truthing the M2.1 corpus."""
+    result = assess("Boat missing since yesterday evening, no contact with the 45 people believed aboard")
+    assert result.people.aboard == 45
+
+
+def test_a_missing_report_is_active_even_without_a_distress_marker():
+    """A 'boat missing, no contact' report is itself an ongoing search
+    situation, not merely something that needs review to classify --
+    found while ground-truthing the M2.1 corpus."""
+    result = assess("Boat missing since yesterday evening, no contact with the 45 people believed aboard")
+    assert result.case_type == "missing"
+    assert result.lifecycle == "active"
+
+
 def test_italian_role_terms_are_recognised():
     result = assess("Naufragio al largo della Libia: 25 a bordo, 10 salvati, 2 morti")
     assert result.people.aboard == 25

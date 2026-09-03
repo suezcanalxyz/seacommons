@@ -26,16 +26,62 @@ The original baseline (PR #64) found 3 confirmed false positives in
 `humanitarian.jsonl` (0 FP, 0 FN) -- see full report below. Additional
 direct unit tests for both functions: `tests/test_geoextract.py`.
 
+## Update 2026-09-03: M2.1 -- corpus expanded, HumanitarianAssessment scored
+
+`docs/fixes.md` M2.1: `humanitarian.jsonl` grew from 12 to 18 fixtures
+(added `hum-007`..`hum-012`, covering the multi-quantity-separation
+headline rule, pushback, interception, land_humanitarian, a clean
+resolution case, and non-memorial advocacy), and every row now carries
+`provenance_kind`, `expected_case_type`, `expected_counts` and
+`expected_publication` alongside the existing `expected_is_distress` /
+`expected_lifecycle`. All fixtures are `provenance_kind: synthetic` --
+no repository access to real historical Alarm Phone posts was available
+for this pass.
+
+A new `score_humanitarian_recognition()` scores
+`core.intel.humanitarian_recognition.assess()` (#87/#88) against the same
+corpus on the four M2.1 exit-gate dimensions: case_type, lifecycle,
+people-count accuracy, and publication recommendation. Ground-truthing
+the corpus by hand caught and fixed two real extraction gaps in `assess()`
+itself before this report was captured -- role-word-before-count ordering
+("dispersi almeno 12 persone") and a small filler-verb tolerance ("45
+people *believed* aboard") -- plus one lifecycle gap (a `missing`-case-type
+report was falling through to `needs_review` instead of `active`). See
+`tests/test_humanitarian_recognition.py` for the regression tests.
+
+**One known, intentionally NOT fixed gap remains**: `hum-004`, a French
+distress report ("Détresse maritime signalée..."), is the sole false
+negative on case_type/lifecycle/publication. `is_direct_distress_call()`
+and `_case_type()` have no French distress-call patterns yet -- `is_distress()`
+(the loose ingestion prefilter, scored separately above) does still catch
+it. Extending direct-call recognition to French/Italian is out of scope
+for this corpus/scorer PR and is recorded here rather than silently
+patched, per this file's own "do not claim an improvement unless the
+evaluation corpus demonstrates it" rule.
+
 ## Full report
 
 ```
 # Alert Recognition Baseline
 
-## humanitarian.jsonl (12 fixtures)
+## humanitarian.jsonl (18 fixtures)
 
 | class | precision | recall | F1 | FP | FN |
 |---|---|---|---|---|---|
 | is_distress | 1.00 | 1.00 | 1.00 | 0 | 0 |
+
+## humanitarian.jsonl (recognition v2) (18 fixtures)
+
+| class | precision | recall | F1 | FP | FN |
+|---|---|---|---|---|---|
+| case_type | 1.00 | 0.94 | 0.97 | 0 | 1 |
+| lifecycle | 1.00 | 0.88 | 0.93 | 0 | 1 |
+| people_counts | 1.00 | 1.00 | 1.00 | 0 | 0 |
+| publication_recommendation | 1.00 | 0.94 | 0.97 | 0 | 1 |
+
+False negatives (case_type): hum-004
+False negatives (lifecycle): hum-004
+False negatives (publication_recommendation): hum-004
 
 ## ais_status.jsonl (10 fixtures)
 
