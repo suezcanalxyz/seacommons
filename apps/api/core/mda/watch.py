@@ -168,7 +168,21 @@ class MdaWatch:
             linked_mmsi=key[0],
             metadata={
                 "anomaly_type": "ais_rendezvous",
-                "maritime_domain": "sanctions",
+                # docs/fixes.md M0.3: a raw rendezvous observation is not a
+                # sanctions event -- two vessels in sustained proximity is
+                # the entire evidence at this point, regardless of tanker/
+                # dark-party/zone flags (those raise severity, not the
+                # legal-allegation-shaped domain). Was "sanctions"
+                # unconditionally. core.intel.fusion._rule_dark_sts (the
+                # correlation layer) already computes its own, properly
+                # evidence-gated domain/case_type when it later corroborates
+                # this with an independent sanctions/identity signal --
+                # this raw observation must not pre-empt that with its own
+                # unconditional allegation-shaped tag.
+                "maritime_domain": "grey_zone",
+                "service": "maritime",
+                "lane": "intelligence",
+                "observation_type": "rendezvous",
                 "is_distress": False,
                 "publication_status": "internal",
                 "source_policy": "official_api",
