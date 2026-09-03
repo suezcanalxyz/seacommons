@@ -8,13 +8,80 @@ core.intel.backfill_alarm_phone.apply_position (historical). A disputed or
 lone-engine coordinate could also outrank a verified one because upgrade
 decisions compared source rank alone. This module is the single place both
 concerns are defined.
+
+docs/fixes.md M3 standardizes this dataclass with the fields the spec names
+that were still missing: ``location_evidence_id``, ``source_observation_id``
+(the link to the M1.1 durable SourceObservation row), ``engine_results``,
+``consensus``, ``land_sea_class`` and ``algorithm_version``, plus optional
+area-geometry fields for the region-only case. Purely additive -- every new
+field defaults to ``None``/empty, so every existing construction call site
+(twikit_monitor, backfill_alarm_phone, ...) keeps working unchanged. This
+stays an in-memory value object, same as before M3; there is no persisted
+``LocationEvidenceDB`` table yet.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Mapping
+import hashlib
+from dataclasses import dataclass, field
+from typing import Any, Mapping, Optional
 
 from core.domain.live_contracts import CoordinateReviewStatus as _CRS
+
+# docs/fixes.md M3's method vocabulary. Distinct from coordinate_source (the
+# existing, much finer-grained vocabulary every call site already writes) --
+# method() below is a read-only *view* of coordinate_source in these six
+# buckets, not a replacement for it; renaming coordinate_source everywhere it
+# is already stored/queried is out of scope here.
+_METHOD_FOR_SOURCE: dict[str, str] = {
+    "post_text": "text_reported",
+    "post_text_or_maritime_place": "text_reported",
+    "navtext": "text_reported",
+    "media_ocr_text": "ocr",
+    "media_ocr_consensus": "ocr",
+    "media_pin_landmark": "pin_fit",
+    "region_area": "region_fallback",
+    "place_centroid": "region_fallback",
+    "relative_place_offset": "region_fallback",
+}
+
+
+def method_for(coordinate_source: str | None) -> Optional[str]:
+    """docs/fixes.md M3 ``method`` vocabulary for a coordinate_source value.
+
+    Returns ``None`` for a source this mapping doesn't cover -- e.g. a
+    structured-feed geometry (``ais_position``/``gfw``/``viirs``/``acled``)
+    that isn't extracted via any of these six methods at all. ``operator``
+    and ``landmark_fit`` currently have no coordinate_source callers ever
+    write (no operator-entered-coordinate or landmark-fit-distinct-from-
+    pin-fit path exists yet); both stay reachable values here for when one
+    does, rather than being silently unmappable forever.
+    """
+    return _METHOD_FOR_SOURCE.get(str(coordinate_source or "").lower())
+
+
+def location_evidence_id(source_observation_id: str, method: str) -> str:
+    """Deterministic id, same (source_observation_id, method) always
+    resolves to the same id -- mirrors
+    core.intel.source_observation.observation_id's construction."""
+    digest = hashlib.blake2s(
+        f"{source_observation_id}:{method}".encode(), digest_size=16,
+    ).hexdigest()
+    return f"loc:{digest}"
+
+
+def land_sea_class_for(lat: float | None, lon: float | None) -> str:
+    """"sea" | "land" | "unknown" -- the M3 land_sea_class field, built on
+    the same landmask core.intel.landmask.is_on_land already uses
+    everywhere else. "unknown" (not a guess) when there's no coordinate or
+    the landmask itself is unavailable."""
+    if lat is None or lon is None:
+        return "unknown"
+    from core.intel.landmask import is_on_land
+
+    on_land = is_on_land(lat, lon)
+    if on_land is None:
+        return "unknown"
+    return "land" if on_land else "sea"
 
 
 @dataclass(frozen=True)
@@ -34,6 +101,23 @@ class LocationEvidence:
     source_post_id: str | None = None
     media_index: int | None = None
     review_required: bool = False
+    # docs/fixes.md M3 additions -- see module docstring. (The field below
+    # and the module-level location_evidence_id() function are independent
+    # namespaces -- an instance's `.location_evidence_id` attribute access
+    # never shadows the function.)
+    location_evidence_id: Optional[str] = None
+    source_observation_id: Optional[str] = None
+    engine_results: list[dict[str, Any]] = field(default_factory=list)
+    consensus: Optional[bool] = None
+    land_sea_class: Optional[str] = None
+    algorithm_version: Optional[str] = None
+    area_geojson: Optional[dict[str, Any]] = None
+    area_radius_m: Optional[float] = None
+
+    @property
+    def method(self) -> Optional[str]:
+        """docs/fixes.md M3 method vocabulary -- see method_for()."""
+        return method_for(self.coordinate_source)
 
     def as_metadata(self) -> dict[str, Any]:
         """The IntelEvent.metadata subset live ingestion and backfill both write."""
