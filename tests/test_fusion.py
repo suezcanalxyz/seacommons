@@ -107,31 +107,45 @@ def test_single_anomaly_does_not_alert() -> None:
     assert _alerts() == []
 
 
-def test_not_under_command_and_gap_become_one_mobility_alert() -> None:
+def test_not_under_command_never_fuses_with_a_nearby_gap_into_a_security_alert() -> None:
+    """docs/fixes.md M-04: `_rule_vessel_mobility_episode` (removed) used to
+    fuse a self-reported nav status with an unrelated AIS movement anomaly
+    on the same MMSI into a single grey_zone `vessel_mobility_anomaly`
+    alert -- single-signal promotion to intelligence from a benign
+    self-report, exactly what fixes.md prohibits. NUC still opens its own
+    single-source case (an operator legitimately wants to review a
+    sustained NUC report) but now correctly tagged Maritime Safety, and a
+    nearby unrelated AIS gap must not be able to escalate it."""
     now = datetime.now(timezone.utc)
     _add(
-        type="ais_anomaly", severity="medium", lat=41.33, lon=29.14,
-        title="AIS gap — ST. OLGA", source="ais", linked_mmsi="352001914",
+        type="ais_anomaly", severity="medium", lat=35.41, lon=13.01,
+        title="AIS gap — TANKER B", source="ais", linked_mmsi="352001914",
         timestamp_utc=(now - timedelta(hours=1)).isoformat(),
         metadata={"anomaly_type": "gap", "maritime_domain": "grey_zone"},
     )
     incident = _add(
-        type="vessel_incident", severity="medium", lat=41.34, lon=29.15,
-        title="Vessel unable to manoeuvre — ST. OLGA", source="ais",
+        type="vessel_incident", severity="medium", lat=35.40, lon=13.00,
+        title="Vessel unable to manoeuvre — TANKER B", source="ais",
         linked_mmsi="352001914",
-        metadata={"ais_nav_status_kind": "not_under_command", "maritime_domain": "grey_zone"},
+        metadata={"ais_nav_status_kind": "not_under_command"},
     )
 
     fusion.evaluate(incident)
 
-    assert len(_alerts()) == 1
-    alert = _alerts()[0]
-    assert alert.metadata["alert_type"] == "vessel_mobility_anomaly"
-    assert alert.metadata["maritime_domain"] == "grey_zone"
-    assert set(alert.metadata["contributing"]) == {
-        next(e.id for e in intel_store.events(limit=20) if e.title == "AIS gap — ST. OLGA"),
-        incident.id,
-    }
+    alerts = _alerts()
+    assert len(alerts) == 1  # not two, and not a fused mobility alert
+    alert = alerts[0]
+    assert alert.metadata["alert_type"] == "vessel_casualty"
+    assert alert.metadata["maritime_domain"] == "safety"
+    assert alert.metadata["contributing"] == [incident.id]
+
+    from core.db.models import CaseDB
+    from core.db.session import session_scope
+
+    with session_scope() as db:
+        cases = db.query(CaseDB).all()
+        assert len(cases) == 1
+        assert cases[0].case_type == "vessel_incident"
 
 
 def test_grey_zone_proximity_to_platform_alerts() -> None:

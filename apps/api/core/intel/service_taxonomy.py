@@ -52,7 +52,7 @@ MARITIME_LANES = frozenset({MARITIME_SAFETY_LANE, MARITIME_INTELLIGENCE_LANE, MA
 # global constraint: "not_under_command belongs to service=maritime,
 # lane=safety; it is not a Maritime Intelligence hypothesis and is not cargo
 # Drift eligible"). "disabled"/"adrift" are the same observation under other
-# names used elsewhere in the codebase (core.intel.fusion._MOBILITY_INCIDENTS).
+# names used elsewhere in the codebase (core.intel.fusion._GROUNDING_SUBTYPES).
 SAFETY_AIS_STATUS_KINDS = frozenset(
     {"not_under_command", "aground", "restricted_manoeuvrability", "disabled", "adrift"}
 )

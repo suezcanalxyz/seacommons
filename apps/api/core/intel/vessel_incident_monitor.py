@@ -13,9 +13,18 @@ events:
   * Not under command (nav status 2) -- a vessel unable to manoeuvre.
     Emitted once sustained, but left for operator review rather than
     auto-published (it is frequently set for benign reasons).
+  * Restricted manoeuvrability (nav status 3) -- emitted once sustained,
+    also left for operator review. Dredgers, cable layers and survey
+    vessels broadcast this continuously as routine work, not distress --
+    this monitor does not yet distinguish that from a genuine casualty
+    (no vessel-role lookup wired in here); treat a lone report as a weak
+    signal until that discrimination exists (docs/fixes.md Task 0.2).
 
-Restricted-manoeuvrability (nav 3) is deliberately ignored -- dredgers,
-cable layers and survey vessels broadcast it continuously.
+All three navigational-status kinds are Maritime Safety observations, not
+Maritime Intelligence hypotheses and not cargo-Drift eligible -- a
+self-reported AIS status is never sufficient evidence of suspicious intent
+or of a real mechanical failure (docs/fixes.md Global Constraints,
+core.intel.service_taxonomy).
 
 The monitor is driven by aisstream.register_position_hook, so it shares the
 single AISStream connection (the free tier allows only one socket per key).
@@ -38,6 +47,7 @@ logger = logging.getLogger(__name__)
 _INCIDENT_STATUS: dict[int, tuple[str, str, bool, bool, int, float]] = {
     6: ("aground", "high", True, True, 2, 180.0),
     2: ("not_under_command", "medium", False, False, 3, 600.0),
+    3: ("restricted_manoeuvrability", "low", False, False, 3, 600.0),
 }
 # Plain-language label for the raw `kind` — this is what operators (and the
 # public feed) actually read; the technical AIS nav-status name stays in
@@ -45,8 +55,12 @@ _INCIDENT_STATUS: dict[int, tuple[str, str, bool, bool, int, float]] = {
 _KIND_LABEL = {
     "aground": "Vessel ran aground",
     "not_under_command": "Vessel unable to manoeuvre",
+    "restricted_manoeuvrability": "Vessel manoeuvrability restricted",
     "distress_beacon": "Distress beacon activated",
 }
+# Kinds this monitor emits that are Maritime Safety observations -- never a
+# Maritime Intelligence hypothesis, never cargo Drift eligible.
+_SAFETY_KINDS = frozenset({"aground", "not_under_command", "restricted_manoeuvrability"})
 _BEACON_STATUS = 14
 _BEACON_MMSI_PREFIXES = ("970", "972", "974")
 _BEACON_SOURCE = {"970": "ais_sart", "972": "ais_mob", "974": "ais_epirb"}
@@ -62,6 +76,7 @@ def _event_id(mmsi: str, kind: str) -> str:
         "not_under_command": "nuc",
         "distress_beacon": "beacon",
         "aground": "aground",
+        "restricted_manoeuvrability": "restman",
     }.get(kind, kind[:12])
     return f"aisinc:{mmsi}:{suffix}"
 
@@ -261,10 +276,17 @@ class VesselIncidentMonitor:
                 "verification_status": "ais_transponder",
                 "is_distress": is_distress,
                 "publication_status": "published" if auto_publish else "internal",
-                "maritime_domain": (
-                    "grey_zone" if kind == "not_under_command"
-                    else "safety" if kind == "aground"
-                    else "sar"
+                "maritime_domain": "safety" if kind in _SAFETY_KINDS else "sar",
+                # Explicit service/lane (docs/fixes.md Task 0.1,
+                # core.intel.service_taxonomy): a self-reported navigational
+                # status is Maritime Safety, never a Maritime Intelligence
+                # hypothesis -- set directly rather than relying on
+                # classify_service()'s maritime_domain-based inference, which
+                # a downstream migration step could otherwise still get
+                # wrong for this specific, security-sensitive case.
+                **(
+                    {"service": "maritime", "lane": "safety"}
+                    if kind in _SAFETY_KINDS else {}
                 ),
                 "report_kind": "distress" if is_distress else "vessel_incident",
                 "coordinate_source": "ais_position",
@@ -283,7 +305,12 @@ class VesselIncidentMonitor:
                     **({"sog": round(float(sog), 2)} if sog is not None else {}),
                     **({"nav_status": int(nav_status)} if nav_status is not None else {}),
                 }],
-                "drift_eligible": kind in {"not_under_command", "disabled", "adrift"},
+                # Never cargo-Drift eligible: a self-reported nav status
+                # (not_under_command / aground / restricted_manoeuvrability)
+                # is not confirmation of an actual drifting casualty
+                # (docs/fixes.md Global Constraints; was `True` for
+                # not_under_command -- M-04).
+                "drift_eligible": False,
                 "drift_event_id": f"intel:{_event_id(mmsi, kind)}",
                 "drift_vessel_type": "cargo",
                 "jamming_score": round(jam_score, 2),
