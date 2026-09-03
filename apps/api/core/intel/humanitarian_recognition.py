@@ -13,14 +13,13 @@ distinct ``PeopleCounts`` fields, not a single ``persons=50``.
 codebase already uses for case_type/distress/resolution (docs/prompt.md
 sec 3: no second taxonomy) -- it does not reimplement or fork them.
 
-v0 scope: ``needs``, ``actors``, ``location_claims``, ``temporal_claims``
-and ``resolution_evidence`` are reserved fields on ``HumanitarianAssessment``
-(present so callers can already type against the full M2 schema) but are
-not yet populated -- extracting those is a follow-up PR, same "smallest
-slice" pattern used for the M1.2 adapters. ``lifecycle`` here is the
-TEXT-STATED outcome only (active/resolved/needs_review); the fourth value,
-``archived``, is a time-based transition this module cannot see from text
-alone and stays exactly where it already lives, ``core.intel.lifecycle``.
+``needs``, ``actors``, ``location_claims``, ``temporal_claims`` and
+``resolution_evidence`` are deterministic, regex/registry-based extractions
+-- like every other field here, a controlled-vocabulary or raw-span match,
+never free-text generation. ``lifecycle`` here is the TEXT-STATED outcome
+only (active/resolved/needs_review); the fourth value, ``archived``, is a
+time-based transition this module cannot see from text alone and stays
+exactly where it already lives, ``core.intel.lifecycle``.
 """
 from __future__ import annotations
 
@@ -30,11 +29,16 @@ from typing import Optional
 
 from core.domain.live_contracts import HumanitarianCaseType, IncidentLifecycle
 from core.intel.geoextract import (
+    _PLACES_SORTED,
+    _RELATIVE_DIRECTION,
+    _RELATIVE_DISTANCE,
+    _RESOLVED_DISTRESS_PATTERNS,
     is_direct_distress_call,
     is_ongoing_incident,
     is_resolved_distress,
 )
 from core.intel.humanitarian import _case_type
+from core.intel.ngo_registry import NGO_VESSELS, UNCONFIRMED_MMSI
 
 _APPROX_MARKER_RE = re.compile(r"~|≈|\babout\b|\baround\b|\bapprox\.?\b|\bcirca\b", re.I)
 
@@ -89,6 +93,68 @@ _ENGINE_STATUS_RE = re.compile(
 )
 _VESSEL_CONDITION_RE = re.compile(
     r"\b(taking\s*on\s*water|overloaded|capsiz\w*|sinking|adrift)\b", re.I,
+)
+
+_NEED_PATTERNS: dict[str, re.Pattern[str]] = {
+    "rescue": re.compile(
+        r"\b(?:urgent\s+)?rescue\s+(?:is\s+)?(?:urgently\s+)?needed\b"
+        r"|\bneeds?\s+(?:urgent\s+)?rescue\b|\brescue\s+is\s+urgent\b",
+        re.I,
+    ),
+    "medical_assistance": re.compile(
+        r"\bmedical\s+(?:assistance|attention|emergency|evacuation)\b|\bmedevac\b", re.I,
+    ),
+    "water": re.compile(r"\b(?:out\s+of|no|needs?)\s+water\b", re.I),
+    "food": re.compile(r"\b(?:out\s+of|no|needs?)\s+food\b", re.I),
+    "fuel": re.compile(r"\b(?:out\s+of|no|needs?)\s+fuel\b", re.I),
+}
+
+# Generic responder/authority mentions -- distinct from the specific named
+# NGO/coastguard vessels below (a vessel NAME is direct evidence a specific
+# asset was mentioned; these are evidence an authority TYPE was mentioned,
+# even with no specific vessel named).
+_AUTHORITY_ACTOR_PATTERNS: dict[str, re.Pattern[str]] = {
+    "libyan_coast_guard": re.compile(r"\blibyan\s+coast\s*guard\b", re.I),
+    "italian_coast_guard": re.compile(r"\bitalian\s+coast\s*guard\b|\bguardia\s+costiera\b", re.I),
+    "tunisian_coast_guard": re.compile(r"\btunisian\s+coast\s*guard\b", re.I),
+    "greek_coast_guard": re.compile(r"\bgreek\s+coast\s*guard\b", re.I),
+    "maltese_authorities": re.compile(r"\bmaltese\s+(?:coast\s*guard|authorities|armed\s+forces)\b", re.I),
+    "mrcc": re.compile(r"\bmrcc\b", re.I),
+    "frontex": re.compile(r"\bfrontex\b", re.I),
+}
+
+# Known SAR NGO / coastguard vessel names (core.intel.ngo_registry), longest
+# first so e.g. "Sea Watch 5" is matched whole rather than partially by a
+# shorter unrelated prefix.
+_KNOWN_VESSEL_NAMES = sorted(
+    {
+        str(info["name"]) for info in NGO_VESSELS.values() if info.get("name")
+    }
+    | set(UNCONFIRMED_MMSI.keys()),
+    key=len,
+    reverse=True,
+)
+
+_TEMPORAL_PATTERNS = tuple(
+    re.compile(pattern, re.I)
+    for pattern in (
+        r"\bsince\s+(?:yesterday(?:\s+evening|\s+morning|\s+night)?|last\s+night"
+        r"|this\s+morning|this\s+afternoon|this\s+evening)\b",
+        r"\b\d{1,3}\s*(?:hours?|hrs?|days?)\s+ago\b",
+        r"\bno\s+contact\s+for\s+\d{1,3}\s*(?:hours?|hrs?|days?)\b",
+        r"\bovernight\b",
+        r"\blast\s+night\b",
+    )
+)
+
+# A relative distance+direction claim, e.g. "90nm south of Lampedusa" --
+# reuses the exact same fragments extract_relative_coords() already relies
+# on for real coordinate derivation, so this claim text and that pipeline's
+# geometry can never silently disagree on what counts as a distance/
+# direction phrase.
+_RELATIVE_LOCATION_RE = re.compile(
+    _RELATIVE_DISTANCE + r"\s+" + _RELATIVE_DIRECTION + r"\s+(?:of|from)\s+(?:the\s+)?[\w\séèàïô'-]{2,30}",
+    re.I,
 )
 
 
@@ -148,6 +214,56 @@ def _extract_vessel(text: str) -> VesselInfo:
     )
 
 
+def _extract_needs(text: str) -> list[str]:
+    return [need for need, pattern in _NEED_PATTERNS.items() if pattern.search(text)]
+
+
+def _extract_actors(text: str) -> list[str]:
+    actors: list[str] = []
+    for name in _KNOWN_VESSEL_NAMES:
+        if re.search(r"\b" + re.escape(name) + r"\b", text, re.I):
+            actors.append(name)
+    for actor, pattern in _AUTHORITY_ACTOR_PATTERNS.items():
+        if pattern.search(text):
+            actors.append(actor)
+    return actors
+
+
+def _extract_location_claims(text: str) -> list[str]:
+    claims: list[str] = []
+    for match in _RELATIVE_LOCATION_RE.finditer(text):
+        claims.append(re.sub(r"\s+", " ", match.group(0)).strip())
+    seen_places: set[str] = set()
+    for place, _coords in _PLACES_SORTED:
+        if place in seen_places:
+            continue
+        if re.search(r"\b" + re.escape(place).replace(r"\ ", r"\s+") + r"\b", text, re.I):
+            claims.append(place)
+            seen_places.add(place)
+    return claims
+
+
+def _extract_temporal_claims(text: str) -> list[str]:
+    claims: list[str] = []
+    for pattern in _TEMPORAL_PATTERNS:
+        for match in pattern.finditer(text):
+            span = re.sub(r"\s+", " ", match.group(0)).strip().lower()
+            if span not in claims:
+                claims.append(span)
+    return claims
+
+
+def _extract_resolution_evidence(text: str, *, resolved: bool) -> list[str]:
+    if not resolved:
+        return []
+    evidence: list[str] = []
+    for pattern in _RESOLVED_DISTRESS_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            evidence.append(re.sub(r"\s+", " ", match.group(0)).strip())
+    return evidence
+
+
 def assess(text: str) -> HumanitarianAssessment:
     """Build a HumanitarianAssessment from raw report text. Never raises --
     an extraction failure on any one field degrades that field to its
@@ -190,6 +306,11 @@ def assess(text: str) -> HumanitarianAssessment:
         caveats.append("approximate_count_marker_present")
 
     vessel = _extract_vessel(text)
+    needs = _extract_needs(text)
+    actors = _extract_actors(text)
+    location_claims = _extract_location_claims(text)
+    temporal_claims = _extract_temporal_claims(text)
+    resolution_evidence = _extract_resolution_evidence(text, resolved=resolved)
 
     is_operational = case_type not in {
         HumanitarianCaseType.ADVOCACY.value,
@@ -222,4 +343,9 @@ def assess(text: str) -> HumanitarianAssessment:
         caveats=caveats,
         people=people,
         vessel=vessel,
+        needs=needs,
+        actors=actors,
+        location_claims=location_claims,
+        temporal_claims=temporal_claims,
+        resolution_evidence=resolution_evidence,
     )
