@@ -8,8 +8,8 @@ lists -- required before any detector threshold is touched (this session's
 priority order; docs/prompt.md: "Do not claim an improvement unless the
 evaluation corpus demonstrates it").
 
-v0 scope: three of the four fixture files are actually scored today,
-against functions that already exist as pure, callable classifiers:
+v0 scope: all four fixture files are scored today, against functions
+that already exist as pure, callable classifiers:
 
   humanitarian.jsonl  -> core.intel.geoextract.is_distress(text)
                        -> core.intel.humanitarian_recognition.assess(text)
@@ -23,14 +23,17 @@ against functions that already exist as pure, callable classifiers:
                           fixture/classifier yet and is reported as its
                           own unscored_count within an otherwise-scored
                           report, not silently dropped)
-
-``ais_integrity.jsonl`` is present (full schema, hard negatives from
-docs/prompt.md/fixes.md included) but not yet scored -- its gap/
-impossible_speed/dark_zone_entry kinds are docs/fixes.md M4.2/M4.3
-territory (coverage-baseline reasoning should inform the gap classifier
-before it's built, not be guessed at ahead of that milestone). Reported
-as ``not_yet_scored`` rather than silently skipped, so the report is
-honest about what it did and did not measure.
+  ais_integrity.jsonl -> core.intel.ais_integrity_replay.classify(input)
+                          (docs/fixes.md M4.1/M4.3 -- gap/impossible_speed/
+                          dark_zone_entry; the gap classifier reasons from
+                          a neighbour-reporting ratio, never vessel type,
+                          satisfying M4.3's "vessel class becomes a
+                          contextual feature only" for this classifier by
+                          construction -- it has no vessel_type parameter
+                          to exclude on. NOT wired into the live
+                          core.mda.watch.scan_gaps()/scan_spoofing()
+                          detectors yet; that remains a separate,
+                          larger, carefully-reviewed PR)
 
 Run: ``python -m core.intel.alert_recognition_scorer``
 """
@@ -258,6 +261,40 @@ def score_ais_behaviour() -> FileReport:
     return report
 
 
+def score_ais_integrity() -> FileReport:
+    """docs/fixes.md M4.1/M4.3: score core.intel.ais_integrity_replay.classify()
+    against ais_integrity.jsonl -- same two dimensions as score_ais_behaviour()
+    above (classification-label accuracy, confidence-range membership).
+    """
+    from core.intel.ais_integrity_replay import classify
+
+    rows = _load_jsonl("ais_integrity.jsonl")
+    report = FileReport(filename="ais_integrity.jsonl", scored=True, total=len(rows))
+    label_cls = _record(report.classes, "classification")
+    confidence_cls = _record(report.classes, "confidence_in_range")
+
+    for row in rows:
+        try:
+            label, confidence = classify(row["input"])
+        except KeyError:
+            report.unscored_count += 1
+            continue
+        row_id = row["id"]
+        if label == row["expected_classification"]:
+            label_cls.true_positives += 1
+        else:
+            label_cls.false_negatives += 1
+            label_cls.fn_ids.append(row_id)
+
+        lo, hi = row["expected_confidence_range"]
+        if lo <= confidence <= hi:
+            confidence_cls.true_positives += 1
+        else:
+            confidence_cls.false_negatives += 1
+            confidence_cls.fn_ids.append(row_id)
+    return report
+
+
 def _unscored_report(filename: str) -> FileReport:
     rows = _load_jsonl(filename)
     return FileReport(filename=filename, scored=False, total=len(rows), unscored_count=len(rows))
@@ -268,8 +305,9 @@ _SCORERS: dict[str, Callable[[], FileReport]] = {
     "humanitarian.jsonl (recognition v2)": score_humanitarian_recognition,
     "ais_status.jsonl": score_ais_status,
     "ais_behaviour.jsonl": score_ais_behaviour,
+    "ais_integrity.jsonl": score_ais_integrity,
 }
-_UNSCORED_FILES = ["ais_integrity.jsonl"]
+_UNSCORED_FILES: list[str] = []
 
 
 def run_all() -> list[FileReport]:
