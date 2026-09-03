@@ -152,3 +152,49 @@ def test_intel_drift_seed_radius_is_capped(monkeypatch) -> None:
         "unc-evt-2", 35.0, 16.0, None, "rubber_boat", "2026-08-21T16:00:00+00:00"
     )
     assert captured["config"]["seed_radius_m"] == 50_000.0  # capped
+
+
+def test_intel_drift_result_records_origin_evidence_id_and_model_version(monkeypatch) -> None:
+    """docs/fixes.md M3 rule: 'Drift result always records origin evidence
+    ID and model version.'"""
+    from core.drift.engine import DriftResult
+    from core.intel import drift_service
+    from core.intel.store import IntelEvent, intel_store
+
+    event = IntelEvent(
+        id="origin-evt-1", type="twitter", severity="high", title="Boat off Lampedusa",
+        source="alarm_phone", lat=35.5, lon=14.1,
+        metadata={"coordinate_source": "media_ocr_consensus", "coordinate_review_status": "machine_ocr_consensus_verified"},
+    )
+    intel_store.add(event)
+
+    def _fake_result(**_kwargs) -> DriftResult:
+        return DriftResult(
+            trajectory={"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[14.1, 35.5], [14.2, 35.6]]}, "properties": {}},
+            cone_6h={"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[]]}, "properties": {}},
+            cone_12h={"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[]]}, "properties": {}},
+            cone_24h={"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[]]}, "properties": {}},
+            impact_point={"type": "FeatureCollection", "features": []},
+            metadata={"model": "OpenDrift Leeway"},
+        )
+
+    class _FakeEngine:
+        def compute(self, **kwargs):
+            return _fake_result(**kwargs)
+
+    import core.drift.engine as engine_module
+
+    monkeypatch.setattr(engine_module, "DriftEngine", _FakeEngine)
+
+    drift_service._run_intel_drift_inner(
+        "origin-evt-1", 35.5, 14.1, None, "rubber_boat", "2026-08-21T16:00:00+00:00"
+    )
+
+    from core.db.store import get_drift
+    from core.intel.location_evidence import location_evidence_id
+
+    updated = intel_store.get("origin-evt-1")
+    job_id = updated.metadata["drift_job_id"]
+    row = get_drift(job_id)
+    assert row["origin_evidence_id"] == location_evidence_id("origin-evt-1", "ocr")
+    assert row["model_version"] and row["model_version"].startswith("opendrift/")

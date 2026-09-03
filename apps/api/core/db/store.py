@@ -100,6 +100,8 @@ def create_drift_job(
     domain: str,
     duration_h: int,
     started_at: datetime,
+    origin_evidence_id: str | None = None,
+    model_version: str | None = None,
 ) -> None:
     with session_scope() as session:
         row = session.get(DriftResultDB, drift_id)
@@ -112,6 +114,8 @@ def create_drift_job(
                 lon=lon,
                 metadata_json={"start_time": started_at.isoformat(), "duration_h": duration_h},
                 status="computing",
+                origin_evidence_id=origin_evidence_id,
+                model_version=model_version,
             )
             session.add(row)
 
@@ -124,6 +128,8 @@ def complete_drift_job(
     lon: float,
     domain: str,
     result: Any,
+    origin_evidence_id: str | None = None,
+    model_version: str | None = None,
 ) -> None:
     with session_scope() as session:
         row = session.get(DriftResultDB, drift_id)
@@ -142,6 +148,13 @@ def complete_drift_job(
         row.impact_point = result.impact_point
         row.metadata_json = result.metadata
         row.status = "completed"
+        # docs/fixes.md M3: preserve whatever create_drift_job() recorded if
+        # this completion call doesn't pass its own value -- never silently
+        # drop the origin evidence link a job was created with.
+        if origin_evidence_id is not None:
+            row.origin_evidence_id = origin_evidence_id
+        if model_version is not None:
+            row.model_version = model_version
 
 
 def fail_drift_job(
@@ -215,6 +228,8 @@ def list_drift_history(event_id: str, limit: int = 50) -> list[dict[str, Any]]:
                 "trajectory_distance_m": meta.get("trajectory_distance_m"),
                 "mean_drift_speed_ms": meta.get("mean_drift_speed_ms"),
                 "impact_point": impact,
+                "origin_evidence_id": getattr(row, "origin_evidence_id", None),
+                "model_version": getattr(row, "model_version", None),
             })
     return history
 
@@ -243,6 +258,8 @@ def drift_to_dict(row: DriftResultDB | None) -> dict[str, Any] | None:
         "impact_point": row.impact_point,
         "metadata": row.metadata_json or {},
         "status": getattr(row, "status", "completed"),
+        "origin_evidence_id": getattr(row, "origin_evidence_id", None),
+        "model_version": getattr(row, "model_version", None),
     }
 
 
