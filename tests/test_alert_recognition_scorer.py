@@ -13,6 +13,7 @@ from __future__ import annotations
 from core.intel.alert_recognition_scorer import (
     render_report,
     run_all,
+    score_ais_behaviour,
     score_ais_status,
     score_humanitarian,
     score_humanitarian_recognition,
@@ -30,7 +31,7 @@ def test_scorer_runs_against_all_five_fixture_reports():
     assert scored["humanitarian.jsonl"] is True
     assert scored["humanitarian.jsonl (recognition v2)"] is True
     assert scored["ais_status.jsonl"] is True
-    assert scored["ais_behaviour.jsonl"] is False
+    assert scored["ais_behaviour.jsonl"] is True
     assert scored["ais_integrity.jsonl"] is False
 
 
@@ -62,6 +63,19 @@ def test_humanitarian_recognition_baseline_is_locked():
         assert cls.false_positives == 0, f"{cls.label}: {cls.fp_ids}"
 
 
+def test_ais_behaviour_baseline_is_clean():
+    """docs/fixes.md M4.1: core.intel.ais_behaviour_replay.classify() was
+    built to match this exact fixture set, so it scores perfectly -- a
+    regression here means a later change broke a case this corpus already
+    covers. unscored_count is 0: every current fixture's kind (sudden_stop/
+    rescue_cluster/ngo_search_pattern) is implemented."""
+    report = score_ais_behaviour()
+    for cls in report.classes.values():
+        assert cls.false_positives == 0, f"{cls.label}: {cls.fp_ids}"
+        assert cls.false_negatives == 0, f"{cls.label}: {cls.fn_ids}"
+    assert report.unscored_count == 0
+
+
 def test_ais_status_baseline_is_clean():
     """classify_service() (this session's own PR #61) was built against
     these exact fixtures, so it should score perfectly -- a regression here
@@ -76,4 +90,4 @@ def test_render_report_produces_markdown_with_no_crash():
     text = render_report(run_all())
     assert "# Alert Recognition Baseline" in text
     assert "humanitarian.jsonl" in text
-    assert "NOT YET SCORED" in text  # ais_behaviour / ais_integrity
+    assert "NOT YET SCORED" in text  # ais_integrity

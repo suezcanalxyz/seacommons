@@ -59,6 +59,31 @@ for this corpus/scorer PR and is recorded here rather than silently
 patched, per this file's own "do not claim an improvement unless the
 evaluation corpus demonstrates it" rule.
 
+## Update 2026-09-03: M4.1 -- ais_behaviour.jsonl scored
+
+`docs/fixes.md` M4.1: a new `core/intel/ais_behaviour_replay.py` gives
+`AISSpikeDetector` (stateful, time-series-driven, polls the live vessel
+registry) a pure `classify(input) -> (label, confidence)` entry point that
+matches `ais_behaviour.jsonl`'s fixture shape exactly. Covers 3 of its
+kinds -- `sudden_stop`, `rescue_cluster`, `ngo_search_pattern` (the ones
+the current 5 fixtures exercise) -- built directly against
+`ais_spike_detector`'s existing threshold constants (`SPEED_THRESHOLD_KN`,
+`STOP_THRESHOLD_KN`, `CLUSTER_RADIUS_NM`, `SEARCH_TRACK_MIN_FIXES`,
+`SEARCH_TRACK_WINDOW_MIN`), imported rather than duplicated, so neither
+module's tuning can drift out of sync with the other. `vessel_loiter` has
+no fixture or classifier yet; a row of that kind would report as its own
+`unscored_count` inside an otherwise-scored file, not silently dropped.
+
+Scores perfectly (1.00/1.00 on both dimensions the fixture schema
+carries: classification-label accuracy and confidence-range membership)
+-- the classifier was built directly against this exact fixture set, so
+this locks in a regression guard, not a claimed improvement over prior
+behaviour (there was no prior scored behaviour for this file).
+
+`ais_integrity.jsonl` (gap/impossible_speed/dark_zone_entry) stays
+unscored -- its gap classifier is `docs/fixes.md` M4.2 territory
+(coverage-baseline reasoning should inform it before it's built).
+
 ## Full report
 
 ```
@@ -96,7 +121,10 @@ False negatives (publication_recommendation): hum-004
 
 ## ais_behaviour.jsonl (5 fixtures)
 
-NOT YET SCORED -- see module docstring. Fixtures committed, no classifier wired yet.
+| class | precision | recall | F1 | FP | FN |
+|---|---|---|---|---|---|
+| classification | 1.00 | 1.00 | 1.00 | 0 | 0 |
+| confidence_in_range | 1.00 | 1.00 | 1.00 | 0 | 0 |
 
 ## ais_integrity.jsonl (4 fixtures)
 
