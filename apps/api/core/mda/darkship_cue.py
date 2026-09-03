@@ -81,7 +81,9 @@ def _recent_s1_scenes(bbox: tuple[float, float, float, float], since: datetime) 
             "datetime": f"{since.isoformat()}/{datetime.now(timezone.utc).isoformat()}",
             "limit": 20,
         }
-        r = httpx.post("https://catalogue.dataspace.copernicus.eu/stac/search",
+        # docs/fixes.md M0.5: the old catalogue.dataspace.copernicus.eu/stac
+        # endpoint is stale; use the current Copernicus Data Space STAC API.
+        r = httpx.post("https://stac.dataspace.copernicus.eu/v1/search",
                        json=body, timeout=45)
         r.raise_for_status()
         feats = r.json().get("features", [])
@@ -161,8 +163,21 @@ def build(*, lat: float, lon: float, course_deg: Optional[float] = None,
         "gfw_sar_detections": gfw,
         "gfw_unmatched_in_area": unmatched,
         "next_s1_pass_estimate_hours": round(next_pass_h, 1),
+        # docs/fixes.md M0.5: an unmatched SAR detection inside the reachable
+        # area is a candidate, never "likely/confirmed" -- this stage has no
+        # acquisition-time-propagated AIS position, no distance/uncertainty
+        # score against it, and no check for another vessel that happens to
+        # be transiting the same area (docs/fixes.md M7.2 is the stronger
+        # association stage that would justify "likely"). association_status
+        # mirrors that future stage's vocabulary so a caller can branch on it
+        # without parsing this English sentence.
+        "association_status": "unmatched_candidate" if unmatched else "no_detection",
         "recommendation": (
-            "Unmatched SAR detection inside the search area — likely the dark vessel."
+            f"{len(unmatched)} unmatched SAR detection(s) inside the reachable search area "
+            f"({poly['_radius_km']} km radius, {round(hours, 1)}h since last known position) "
+            "-- a candidate for the dark vessel, not a confirmed match. No acquisition-time "
+            "AIS propagation or distance/uncertainty scoring has been run against it yet; "
+            "the detection could belong to another vessel transiting the same area."
             if unmatched else
             f"No SAR detection yet. Next Sentinel-1 pass over the area in ~{round(next_pass_h)} h."
         ),
