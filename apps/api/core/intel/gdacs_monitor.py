@@ -90,8 +90,47 @@ class GDACSMonitor:
                 logger.info("GDACS: +%d new intel events", new_total)
             time.sleep(_POLL_INTERVAL_S)
 
+    def _record_source_observation(self, item: dict[str, str], identity: str) -> None:
+        """docs/fixes.md M1.2: a durable, lossless SourceObservation for
+        every GDACS RSS item this monitor receives -- before the region/
+        coordinate filtering below decides whether it becomes a published
+        IntelEvent. Best-effort and strictly additive: never raises into
+        _ingest, never alters what gets published. The existing
+        intel_store.add() write path below remains authoritative until a
+        parity comparison (a later PR) proves this envelope is equivalent.
+        """
+        try:
+            from core.db.session import session_scope
+            from core.intel.source_observation import record_observation
+
+            lat_raw, lon_raw = item.get("lat"), item.get("lon")
+            lat_f = lon_f = None
+            if lat_raw is not None and lon_raw is not None:
+                try:
+                    lat_f, lon_f = float(lat_raw), float(lon_raw)
+                except ValueError:
+                    pass
+            with session_scope() as db:
+                record_observation(
+                    db,
+                    service="maritime",
+                    lane="environmental",
+                    observation_type="source_post",
+                    source_name="GDACS",
+                    source_policy="official_rss",
+                    source_id=identity,
+                    observed_at=item.get("pub_date", "") or datetime.now(timezone.utc).isoformat(),
+                    raw_payload=str(item),
+                    source_url=item.get("link", ""),
+                    lat=lat_f,
+                    lon=lon_f,
+                )
+        except Exception as exc:
+            logger.debug("gdacs_monitor: source_observation record skipped for %s: %s", identity, exc)
+
     def _ingest(self, item: dict[str, str]) -> bool:
         identity = item.get("guid") or item.get("link") or item.get("title") or ""
+        self._record_source_observation(item, identity)
         dedup = hashlib.blake2s(f"gdacs:{identity}".encode(), digest_size=8).hexdigest()
 
         with self._seen_lock:
