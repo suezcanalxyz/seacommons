@@ -201,7 +201,7 @@ def test_dark_sts_rendezvous_opens_sanctions_case() -> None:
     ev = _add(
         type="ais_rendezvous", severity="high", lat=36.5, lon=22.7,
         title="Tanker STS rendezvous — A / B", source="mda", linked_mmsi="209111000",
-        metadata={"anomaly_type": "ais_rendezvous", "maritime_domain": "sanctions",
+        metadata={"anomaly_type": "ais_rendezvous", "maritime_domain": "grey_zone",
                   "tanker": True, "dark": True, "sts_zone": "Laconian Gulf",
                   "vessels": [{"mmsi": "209111000"}, {"mmsi": "636222000"}]},
     )
@@ -214,6 +214,39 @@ def test_dark_sts_rendezvous_opens_sanctions_case() -> None:
     with session_scope() as db:
         cases = db.query(CaseDB).all()
         assert len(cases) == 1 and cases[0].case_type == "dark_rendezvous"
+
+
+def test_neutral_rendezvous_cannot_create_a_sanctions_allegation_by_itself() -> None:
+    """docs/fixes.md M0.3 exit gate: a plain STS pair -- not a tanker, not a
+    dark party, not in a known STS zone, no corroborating sanctions/identity
+    signal -- must stay a neutral, internal observation. It still gets a
+    low-severity alert (two vessels co-located is worth recording), but
+    never a sanctions-shaped domain and never an auto-opened case."""
+    ev = _add(
+        type="ais_rendezvous", severity="medium", lat=40.1, lon=25.3,
+        title="STS rendezvous — C / D", source="mda", linked_mmsi="273000001",
+        metadata={"anomaly_type": "ais_rendezvous", "maritime_domain": "grey_zone",
+                  "service": "maritime", "lane": "intelligence",
+                  "observation_type": "rendezvous", "publication_status": "internal",
+                  "tanker": False, "dark": False, "sts_zone": None,
+                  "vessels": [{"mmsi": "273000001"}, {"mmsi": "273000002"}]},
+    )
+    fusion.evaluate(ev)
+    alerts = _alerts()
+    assert len(alerts) == 1
+    assert alerts[0].metadata["alert_type"] == "sts_transfer"
+    assert alerts[0].metadata["maritime_domain"] != "sanctions"
+    from core.db.models import CaseDB
+    from core.db.session import session_scope
+    with session_scope() as db:
+        assert db.query(CaseDB).count() == 0
+
+    from core.intel.service_taxonomy import classify_service
+
+    result = classify_service(ev)
+    assert result.service == "maritime"
+    assert result.lane == "intelligence"
+    assert result.publishable is False
 
 
 def test_recurring_cluster_upserts_one_db_row_after_dedup_window_rolls() -> None:

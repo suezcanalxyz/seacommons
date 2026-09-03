@@ -59,7 +59,18 @@ def test_rendezvous_emits_after_sustained(monkeypatch):
     assert w.scan_rendezvous() == 1
     ev = _alerts("ais_rendezvous")
     assert len(ev) == 1
-    assert ev[0].metadata["maritime_domain"] == "sanctions"
+    # docs/fixes.md M0.3: a raw rendezvous is not a sanctions event by
+    # itself -- was "sanctions" unconditionally.
+    assert ev[0].metadata["maritime_domain"] == "grey_zone"
+    assert ev[0].metadata["service"] == "maritime"
+    assert ev[0].metadata["lane"] == "intelligence"
+    assert ev[0].metadata["observation_type"] == "rendezvous"
+    assert ev[0].metadata["publication_status"] == "internal"
+
+    from core.intel.service_taxonomy import classify_service
+
+    result = classify_service(ev[0])
+    assert (result.service, result.lane, result.publishable) == ("maritime", "intelligence", False)
 
 
 def test_rendezvous_ignored_inside_a_port():
