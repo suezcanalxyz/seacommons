@@ -102,12 +102,50 @@ def test_confidence_and_basis_reflect_matched_signals():
     assert any(b.startswith("people_count:aboard") for b in result.confidence_basis)
 
 
-def test_reserved_v0_fields_are_present_but_empty():
-    """Structural completeness against the full M2 schema -- these fields
-    are reserved for a follow-up PR, not yet populated."""
+def test_fields_stay_empty_when_nothing_matches():
     result = assess("Some humanitarian report with no operational content")
     assert result.needs == []
     assert result.actors == []
     assert result.location_claims == []
     assert result.temporal_claims == []
     assert result.resolution_evidence == []
+
+
+def test_needs_extracts_a_controlled_vocabulary_not_free_text():
+    result = assess("Boat in distress, medical assistance needed, no water, no fuel")
+    assert set(result.needs) == {"medical_assistance", "water", "fuel"}
+
+
+def test_actors_recognises_known_ngo_vessel_names():
+    result = assess("Ocean Viking is proceeding to the position, Libyan coast guard also en route")
+    assert "Ocean Viking" in result.actors
+    assert "libyan_coast_guard" in result.actors
+
+
+def test_actors_empty_when_no_known_responder_mentioned():
+    result = assess("A boat with 20 people aboard is adrift near Lampedusa")
+    assert result.actors == []
+
+
+def test_location_claims_capture_named_places_and_relative_position():
+    result = assess("Boat 90nm south of Lampedusa, drifting toward Libya")
+    assert any("lampedusa" in claim.lower() for claim in result.location_claims)
+    assert any("90" in claim and "south" in claim.lower() for claim in result.location_claims)
+
+
+def test_temporal_claims_capture_relative_time_phrases():
+    result = assess("No contact since yesterday evening, overnight silence, last seen 12 hours ago")
+    assert any("since yesterday evening" in claim for claim in result.temporal_claims)
+    assert any("overnight" in claim for claim in result.temporal_claims)
+    assert any("12 hours ago" in claim for claim in result.temporal_claims)
+
+
+def test_resolution_evidence_is_empty_when_not_resolved():
+    result = assess("🆘 MAYDAY boat in distress, urgent rescue needed")
+    assert result.resolution_evidence == []
+
+
+def test_resolution_evidence_captures_the_matched_resolved_phrase():
+    result = assess("Update: all 40 people were rescued and disembarked safely at the port of Lampedusa")
+    assert result.resolution_evidence != []
+    assert any("rescued" in evidence.lower() or "disembarked" in evidence.lower() for evidence in result.resolution_evidence)
