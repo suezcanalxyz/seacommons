@@ -12,6 +12,10 @@ v0 scope: two of the four fixture files are actually scored today, against
 functions that already exist as pure, callable classifiers:
 
   humanitarian.jsonl  -> core.intel.geoextract.is_distress(text)
+                       -> core.intel.humanitarian_recognition.assess(text)
+                          (docs/fixes.md M2.1 -- case_type/lifecycle/
+                          people-count/publication accuracy, a second,
+                          independent report over the same corpus)
   ais_status.jsonl    -> core.intel.service_taxonomy.classify_service(metadata)
 
 ``ais_behaviour.jsonl`` and ``ais_integrity.jsonl`` are present (full
@@ -28,7 +32,7 @@ Run: ``python -m core.intel.alert_recognition_scorer``
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -109,6 +113,68 @@ def score_humanitarian() -> FileReport:
     return report
 
 
+def score_humanitarian_recognition() -> FileReport:
+    """docs/fixes.md M2.1: score core.intel.humanitarian_recognition.assess()
+    against the same humanitarian.jsonl corpus, on the four dimensions the
+    M2.1 exit gate names -- case_type, lifecycle, count accuracy, and
+    publication recommendation. A separate report from score_humanitarian()
+    above (which only ever scored the older is_distress() prefilter) so
+    neither scorer's meaning drifts by being silently overloaded.
+
+    expected_lifecycle: null means "not scored for this row" -- every
+    non-operational hard negative in the corpus uses this (there is no
+    single canonical lifecycle value for a report that never becomes an
+    operational incident), same convention the corpus already used before
+    this scorer existed to read it.
+    """
+    from core.intel.humanitarian_recognition import assess
+
+    rows = _load_jsonl("humanitarian.jsonl")
+    report = FileReport(filename="humanitarian.jsonl (recognition v2)", scored=True, total=len(rows))
+
+    case_cls = _record(report.classes, "case_type")
+    lifecycle_cls = _record(report.classes, "lifecycle")
+    publication_cls = _record(report.classes, "publication_recommendation")
+    counts_cls = _record(report.classes, "people_counts")
+
+    for row in rows:
+        if "expected_case_type" not in row:
+            # Pre-M2.1 rows without the richer schema -- not this scorer's
+            # concern; score_humanitarian() above still covers them.
+            continue
+        result = assess(row["input"])
+        row_id = row["id"]
+
+        if result.case_type == row["expected_case_type"]:
+            case_cls.true_positives += 1
+        else:
+            case_cls.false_negatives += 1
+            case_cls.fn_ids.append(row_id)
+
+        expected_lifecycle = row.get("expected_lifecycle")
+        if expected_lifecycle is not None:
+            if result.lifecycle == expected_lifecycle:
+                lifecycle_cls.true_positives += 1
+            else:
+                lifecycle_cls.false_negatives += 1
+                lifecycle_cls.fn_ids.append(row_id)
+
+        if result.publication_recommendation == row.get("expected_publication"):
+            publication_cls.true_positives += 1
+        else:
+            publication_cls.false_negatives += 1
+            publication_cls.fn_ids.append(row_id)
+
+        actual_counts = {k: v for k, v in asdict(result.people).items() if v is not None}
+        if actual_counts == row.get("expected_counts", {}):
+            counts_cls.true_positives += 1
+        else:
+            counts_cls.false_negatives += 1
+            counts_cls.fn_ids.append(row_id)
+
+    return report
+
+
 def score_ais_status() -> FileReport:
     from core.intel.service_taxonomy import classify_service
 
@@ -153,6 +219,7 @@ def _unscored_report(filename: str) -> FileReport:
 
 _SCORERS: dict[str, Callable[[], FileReport]] = {
     "humanitarian.jsonl": score_humanitarian,
+    "humanitarian.jsonl (recognition v2)": score_humanitarian_recognition,
     "ais_status.jsonl": score_ais_status,
 }
 _UNSCORED_FILES = ["ais_behaviour.jsonl", "ais_integrity.jsonl"]
