@@ -10,10 +10,24 @@ from datetime import UTC, datetime
 from typing import Any
 
 from core.api.ratelimit import acquire_drift_slot, release_drift_slot
+from core.intel import location_evidence
 from core.intel.public_policy import HUMANITARIAN_DRIFT_DOMAINS
 from core.intel.store import intel_store
 
 logger = logging.getLogger(__name__)
+
+
+def _drift_model_version() -> str | None:
+    """docs/fixes.md M3: the model_version a Drift result records. Never
+    raises -- an unavailable/unexpected opendrift build must not block a
+    drift run, it just means this particular job's model_version is None."""
+    try:
+        import opendrift
+
+        version = getattr(opendrift, "__version__", None)
+        return f"opendrift/{version}" if version else None
+    except Exception:
+        return None
 
 
 # ── Auto-drift evidence eligibility ───────────────────────────────────────────
@@ -230,6 +244,17 @@ def _run_intel_drift_inner(
         time_utc = now
     elapsed_h = max(0.0, (now - time_utc).total_seconds() / 3600)
     duration_h = min(72, max(24, math.ceil(elapsed_h) + 12))
+    event = intel_store.get(event_id)
+    # docs/fixes.md M3 rule: "Drift result always records origin evidence ID
+    # and model version." Deterministic from the triggering event's own
+    # coordinate_source + the M3 method vocabulary -- the same
+    # (event_id, method) pair always resolves to the same id, matching
+    # location_evidence_id()'s determinism contract.
+    origin_evidence_id = None
+    model_version = _drift_model_version()
+    if event is not None:
+        method = location_evidence.method_for(event.metadata.get("coordinate_source")) or "unknown"
+        origin_evidence_id = location_evidence.location_evidence_id(event_id, method)
     create_drift_job(
         job_id,
         event_id=f"intel:{event_id}",
@@ -238,6 +263,8 @@ def _run_intel_drift_inner(
         domain="ocean_sar",
         duration_h=duration_h,
         started_at=time_utc,
+        origin_evidence_id=origin_evidence_id,
+        model_version=model_version,
     )
     try:
         engine = DriftEngine()
@@ -249,7 +276,6 @@ def _run_intel_drift_inner(
         # Seed the drift ensemble over the report's actual position
         # uncertainty, not a fixed 150 m -- a boat located only to a named
         # SAR zone must not produce a falsely confident start.
-        event = intel_store.get(event_id)
         if event is not None:
             uncertainty = event.metadata.get("location_uncertainty_m")
             case_type = event.metadata.get("case_type")
@@ -275,6 +301,8 @@ def _run_intel_drift_inner(
             lon=lon,
             domain="ocean_sar",
             result=result,
+            origin_evidence_id=origin_evidence_id,
+            model_version=model_version,
         )
         intel_store.update_metadata(
             event_id,

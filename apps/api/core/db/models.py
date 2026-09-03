@@ -114,6 +114,13 @@ class DriftResultDB(Base):
     metadata_json = Column("metadata", JSON)
     status        = Column(String(32), default="completed")
     created_at    = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # docs/fixes.md M3 rule: "Drift result always records origin evidence ID
+    # and model version." Dedicated columns rather than metadata_json keys --
+    # complete_drift_job() replaces metadata_json wholesale with the
+    # engine's own result.metadata, which would silently wipe these if they
+    # lived there instead.
+    origin_evidence_id = Column(String(64))
+    model_version = Column(String(64))
 
 
 class AlertEvent(Base):
