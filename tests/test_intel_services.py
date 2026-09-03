@@ -111,6 +111,130 @@ def test_manual_ingestion_keeps_validation_outside_and_bounds_content(
     assert registry.registered == [("Manual", "manual")]
 
 
+def test_manual_ingestion_records_a_source_observation(monkeypatch) -> None:
+    """docs/fixes.md M1.2: a console manual entry gets a durable
+    SourceObservation, keyed by the generated event id (no external
+    delivery key exists for an operator typing something in)."""
+    from core.db.models import SourceObservationDB
+    from core.db.session import session_scope
+
+    store = _EventStore()
+    registry = _SourceRegistry()
+    monkeypatch.setattr(ingestion_service, "intel_store", store)
+    monkeypatch.setattr(ingestion_service, "source_registry", registry)
+
+    event = ingestion_service.store_manual_event(
+        title="Operator sighting",
+        text="Vessel observed loitering near the port entrance.",
+        source="operator",
+        severity="medium",
+        event_type="manual",
+        lat=35.5,
+        lon=14.1,
+        url="https://example.test/note",
+        linked_mmsi="",
+    )
+
+    with session_scope() as db:
+        row = db.query(SourceObservationDB).filter(
+            SourceObservationDB.source_name == "Manual",
+            SourceObservationDB.source_id == event.id,
+        ).one()
+        assert row.service == "humanitarian"
+        assert row.lane == "review"
+        assert row.source_policy == "operator_asserted"
+        assert row.lat == 35.5
+        assert row.lon == 14.1
+
+
+def test_manual_ingestion_source_observation_failure_does_not_block_storage(monkeypatch) -> None:
+    store = _EventStore()
+    registry = _SourceRegistry()
+    monkeypatch.setattr(ingestion_service, "intel_store", store)
+    monkeypatch.setattr(ingestion_service, "source_registry", registry)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("db unavailable")
+
+    monkeypatch.setattr("core.db.session.session_scope", _boom)
+
+    event = ingestion_service.store_manual_event(
+        title="Operator sighting",
+        text="Vessel observed loitering near the port entrance.",
+        source="operator",
+        severity="medium",
+        event_type="manual",
+        lat=35.5,
+        lon=14.1,
+        url="",
+        linked_mmsi="",
+    )
+    assert event is store.added  # storage still succeeded
+
+
+def test_external_ingestion_records_a_source_observation_keyed_by_source_id(monkeypatch) -> None:
+    from core.db.models import SourceObservationDB
+    from core.db.session import session_scope
+    from core.intel.source_observation import observation_id
+
+    store = _EventStore()
+    registry = _SourceRegistry()
+    monkeypatch.setattr(ingestion_service, "intel_store", store)
+    monkeypatch.setattr(ingestion_service, "source_registry", registry)
+
+    ingestion_service.store_external_event(
+        source="partner-feed",
+        source_id="upstream-obs-1",
+        text="Routine maritime position report",
+        title="Position report",
+        url="https://example.test/report",
+        lat=35.5,
+        lon=14.1,
+        timestamp_utc="2026-08-26T10:00:00+00:00",
+        publish=False,
+    )
+
+    obs_id = observation_id("External / partner-feed"[:64], "upstream-obs-1")
+    with session_scope() as db:
+        row = db.query(SourceObservationDB).filter(
+            SourceObservationDB.source_name == "External / partner-feed",
+            SourceObservationDB.source_id == "upstream-obs-1",
+        ).one()
+        assert row.observation_id == obs_id
+        assert row.lat == 35.5
+        assert row.lon == 14.1
+
+
+def test_external_ingestion_without_a_source_id_records_no_observation(monkeypatch) -> None:
+    """Mirrors the existing dedup_key behaviour: no source_id means no
+    stable delivery key to be idempotent by, so this adapter -- like
+    intel_store.add()'s own dedup -- skips rather than fabricating one."""
+    from core.db.models import SourceObservationDB
+    from core.db.session import session_scope
+
+    store = _EventStore()
+    registry = _SourceRegistry()
+    monkeypatch.setattr(ingestion_service, "intel_store", store)
+    monkeypatch.setattr(ingestion_service, "source_registry", registry)
+
+    ingestion_service.store_external_event(
+        source="partner-feed",
+        source_id="",
+        text="Routine maritime position report, no upstream id",
+        title="Position report",
+        url="https://example.test/report-no-id",
+        lat=None,
+        lon=None,
+        timestamp_utc=None,
+        publish=False,
+    )
+
+    with session_scope() as db:
+        assert db.query(SourceObservationDB).filter(
+            SourceObservationDB.source_name == "External / partner-feed"
+        ).count() == 0
+
+
 def test_external_ingestion_is_private_by_default(monkeypatch) -> None:
     store = _EventStore()
     registry = _SourceRegistry()
