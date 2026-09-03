@@ -151,6 +151,11 @@ class SuezCanalConfig(BaseSettings):
     VESSEL_TRACK_ENABLED: bool = True
     VESSEL_TRACK_MIN_INTERVAL_S: int = 60     # at most one stored row per MMSI per this
     VESSEL_TRACK_RETENTION_DAYS: int = 60
+    # SourceObservation sampling off the same live feed (docs/fixes.md M1.2)
+    # -- distinct from VESSEL_TRACK_MIN_INTERVAL_S: this is not a throttle,
+    # it's the silence duration after which a vessel reporting again is
+    # itself recorded as an observation (see core/vessels/ais_source_observation.py).
+    AIS_SOURCE_OBSERVATION_GAP_S: int = 1800
     # MDA periodic scans (core/mda/watch.py) — rendezvous / STS, infra loitering,
     # AIS gap, identity screening, duplicate-MMSI.
     MDA_WATCH_ENABLED: bool = True
