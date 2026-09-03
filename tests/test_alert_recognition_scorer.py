@@ -27,14 +27,14 @@ def test_scorer_runs_against_all_four_fixture_files():
 
 
 def test_humanitarian_baseline_is_locked():
-    """Current is_distress() baseline: 3 known false positives, 0 false
-    negatives. This is the finding this PR exists to surface, not to fix --
-    see the fixture notes and docs/ALERT_RECOGNITION_BASELINE.md."""
+    """is_distress() baseline after the false-positive fix: 0 false
+    positives, 0 false negatives, on the exact fixtures that used to false-
+    positive (docs/ALERT_RECOGNITION_BASELINE.md)."""
     report = score_humanitarian()
     cls = report.classes["is_distress"]
     assert cls.false_negatives == 0
-    assert sorted(cls.fp_ids) == ["hum-neg-001", "hum-neg-003", "hum-neg-004"]
-    assert cls.precision is not None and abs(cls.precision - (cls.true_positives / (cls.true_positives + cls.false_positives))) < 1e-9
+    assert cls.fp_ids == []
+    assert cls.precision == 1.0
     assert cls.recall == 1.0
 
 

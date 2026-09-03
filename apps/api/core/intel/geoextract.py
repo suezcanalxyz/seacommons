@@ -242,9 +242,20 @@ def extract_region_coords(text: str) -> Optional[tuple[tuple[float, float], floa
 # ── Distress & emergency keyword sets ────────────────────────────────────────
 DISTRESS_KW = frozenset([
     # English
-    "mayday", "sos", "distress", "sinking", "capsized", "capsize",
+    # "sos" deliberately excluded here -- it is also the first word of
+    # several NGO names (SOS Mediterranee, SOS Humanity, ...), so a bare
+    # substring match here promoted an org's own press release / RSS
+    # footer to a distress incident (docs/ALERT_RECOGNITION_BASELINE.md).
+    # _SOS_MARKER_RE below already excludes those known forms with a
+    # word-boundary + negative-lookahead; is_distress() reuses it directly.
+    "mayday", "distress", "sinking", "capsized", "capsize",
     "overloaded", "taking water", "engine failure", "boat missing",
-    "people drowning", "drowning", "rescue operation", "shipwreck",
+    # "rescue operation" deliberately excluded -- too weak/ambiguous alone
+    # (matched abstract policy language like "funding for search and
+    # rescue operations"); is_direct_distress_call() never relied on it
+    # either. Genuine rescue-in-progress reports pair with a stronger
+    # keyword (taking water, engine failure, an explicit SOS marker, ...).
+    "people drowning", "drowning", "shipwreck",
     "overcrowded boat", "rubber boat sinking", "missing migrants",
     # Italian
     "naufragio", "affondamento", "dispersi", "soccorso in mare",
@@ -290,6 +301,17 @@ _SOS_MARKER_RE = re.compile(
     r"(?:🆘|🆘️|\bmayday\b|\bsos\b"
     r"(?!\s+(?:m[eé]diterran[eé]e|mediterranee|humanity|balkanroute)\b))",
     re.I,
+)
+
+# A report clearly framed as commemorating/marking a past event -- an
+# anniversary, a memorial, a vigil -- is not a new incident report, no
+# matter which distress keywords it happens to repeat while doing so (e.g.
+# "Last year's shipwreck anniversary was marked with a vigil in
+# Lampedusa"). Shared by is_distress() and is_direct_distress_call(), both
+# of which independently false-positived on this shape
+# (docs/ALERT_RECOGNITION_BASELINE.md).
+_RETROSPECTIVE_COMMEMORATION_RE = re.compile(
+    r"\b(?:anniversary|memorial|vigil|commemorat\w*)\b", re.I
 )
 
 _DIRECT_DISTRESS_PATTERNS = tuple(
@@ -795,8 +817,21 @@ def _valid(lat: float, lon: float) -> bool:
 
 
 def is_distress(text: str) -> bool:
-    """True if text contains any distress keyword."""
+    """True if text contains any distress keyword.
+
+    Deliberately a loose pre-filter -- core.intel.twitter_monitor uses it
+    only to decide whether a tweet is worth ingesting at all;
+    is_direct_distress_call() is what actually sets an event's severity,
+    coordinates and public is_distress metadata. Still excludes the same
+    known non-distress shapes that stricter function excludes
+    (docs/ALERT_RECOGNITION_BASELINE.md), so an obviously non-distress post
+    doesn't create ingestion noise.
+    """
     tl = text.lower()
+    if _RETROSPECTIVE_COMMEMORATION_RE.search(tl):
+        return False
+    if _SOS_MARKER_RE.search(tl):
+        return True
     return any(kw in tl for kw in DISTRESS_KW)
 
 
@@ -811,6 +846,12 @@ def is_direct_distress_call(text: str) -> bool:
     if not normalised:
         return False
     if any(pattern.search(normalised) for pattern in _RESOLVED_DISTRESS_PATTERNS):
+        return False
+    # A commemoration of a past incident (an anniversary, a memorial, a
+    # vigil) is not itself an active call, however many distress keywords
+    # it repeats while doing so -- e.g. "Last year's shipwreck anniversary
+    # was marked with a vigil in Lampedusa" (docs/ALERT_RECOGNITION_BASELINE.md).
+    if _RETROSPECTIVE_COMMEMORATION_RE.search(normalised):
         return False
     # An explicit SOS marker (🆘 / mayday / sos) is the operator's active-call
     # signal and overrides concluded-outcome wording: "🆘 ... They were found
