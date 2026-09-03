@@ -25,6 +25,7 @@ class IntelEngine:
         self._drift_refresh: object | None = None
         self._mda_watch: object | None = None
         self._gdacs: object | None = None
+        self._ais_source_observation: object | None = None
         self._started = False
 
     def start(
@@ -136,6 +137,14 @@ class IntelEngine:
             except Exception as exc:
                 logger.warning("IntelEngine: MDA watch failed to start: %s", exc)
 
+            try:
+                from core.vessels.ais_source_observation import ais_source_observation_sampler
+                ais_source_observation_sampler.start()
+                self._ais_source_observation = ais_source_observation_sampler
+                logger.info("IntelEngine: AIS SourceObservation sampler started")
+            except Exception as exc:
+                logger.warning("IntelEngine: AIS SourceObservation sampler failed to start: %s", exc)
+
         if gdacs_enabled:
             try:
                 from core.intel.gdacs_monitor import GDACSMonitor
@@ -157,6 +166,7 @@ class IntelEngine:
             self._mda_watch,
             self._drift_refresh,
             self._gdacs,
+            self._ais_source_observation,
         ):
             if monitor:
                 try:
@@ -190,6 +200,7 @@ class IntelEngine:
             "ais_anomaly": self._ais_anomaly is not None,
             "gdacs": self._gdacs is not None,
             "drift_refresher": self._drift_refresh is not None,
+            "ais_source_observation": self._ais_source_observation is not None,
             "ais_feed_hooks": hooks,
         }
 
