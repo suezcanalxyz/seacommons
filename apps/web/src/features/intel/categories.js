@@ -23,7 +23,11 @@ export const SIGNAL_CATEGORIES = [
     description: 'A published news article matched to a location/event — secondary reporting, not a primary observation.' },
   { key: 'ngo',        label: 'NGO activity',      color: '#4ade80', types: ['ngo_activity'],
     description: 'A public status update from an NGO SAR vessel or operation.' },
-  { key: 'other',      label: 'Other signal',      color: '#8bf0c5', types: [],
+  // docs/fixes.md M0.4: not a public semantic category -- a real signal
+  // that doesn't match a known type, fails closed here rather than
+  // inventing a category. Legend.jsx already excludes this key from
+  // display; kept internally for counts/grouping only.
+  { key: 'other',      label: 'Unclassified',      color: '#8bf0c5', types: [],
     description: 'Does not match a known category yet.' },
 ];
 
