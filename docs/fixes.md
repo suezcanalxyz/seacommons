@@ -6,7 +6,7 @@
 
 **Production target:** current ARM VM (~12 GB RAM), FastAPI/Python backend, PostgreSQL production storage, React/Vite/MapLibre web app, bounded background workers for OCR/Drift/Sentinel jobs.
 
-**Current verified baseline:** `main` after PR #65 plus docs commits `24e671f` and `bbd2c4e`; backend baseline `581 passed`, ruff clean. PR #66 is currently open and mergeable at head `ec71079f525ed57cb52a26b20e12437b1bfb1223` with `584 passed`. PR #66 is the first execution gate below.
+**Current verified baseline:** `main` at `2c3cdc28af279f8c3926a2f3adc4853203a02f2e`, 2026-09-03. M0 is closed — PRs #66 (P0.1/A-01/A-02), #67 (M0.2 EventAssessment→UI), #68 (M0.3 neutral rendezvous), #69 (M0.4 vessel-class fallbacks), #70 (M0.5 darkship cue) all merged. Backend `589 passed`, ruff clean; web lint/typecheck/build clean. Next: M1 (`docs/fixes.md` section 6, SourceObservation durable schema + adapter audit) — a materially larger architectural change (new DB tables/migrations, source-adapter rewrites) than M0's semantic fixes; start there only with explicit sign-off given the risk-profile shift.
 
 ---
 
