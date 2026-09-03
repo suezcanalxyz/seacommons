@@ -707,7 +707,44 @@ class TwikitMonitor:
         except Exception as exc:
             logger.debug("X (twikit) auto-drift deferred for %s: %s", event_id, exc)
 
+    def _record_source_observation(self, tweet: Any, handle: str) -> None:
+        """docs/fixes.md M1.2: a durable, lossless SourceObservation for
+        every tweet this monitor receives (Alarm Phone and every other
+        tracked account sharing this same _ingest path) -- independent of
+        how the classification/threading logic below routes it (a brand
+        new incident, a repost/quote/reply thread, a translation twin, or
+        dropped as too short). Best-effort and strictly additive: never
+        raises into _ingest, never alters what gets classified/published.
+        The existing intel_store.add() write path below remains
+        authoritative until a parity comparison (a later PR) proves this
+        envelope is equivalent -- this does not replace or touch it.
+        """
+        try:
+            from core.db.session import session_scope
+            from core.intel.source_observation import record_observation
+
+            text = str(getattr(tweet, "text", "") or "")
+            with session_scope() as db:
+                record_observation(
+                    db,
+                    # Not yet classified at this point in _ingest (distress/
+                    # resolved is computed further down) -- "review" is the
+                    # pre-triage humanitarian lane, not a guess at the real one.
+                    service="humanitarian",
+                    lane="review",
+                    observation_type="source_post",
+                    source_name=handle,
+                    source_policy="official_api",
+                    source_id=str(tweet.id),
+                    observed_at=self._timestamp(tweet),
+                    raw_payload=text,
+                    source_url=f"https://x.com/i/web/status/{tweet.id}",
+                )
+        except Exception as exc:
+            logger.debug("twikit_monitor: source_observation record skipped for %s: %s", tweet.id, exc)
+
     def _ingest(self, tweet: Any, handle: str) -> bool:
+        self._record_source_observation(tweet, handle)
         original = getattr(tweet, "retweeted_tweet", None)
         if original is not None and getattr(original, "id", None) is not None:
             return self._thread_repost(tweet, handle, original, kind="repost")

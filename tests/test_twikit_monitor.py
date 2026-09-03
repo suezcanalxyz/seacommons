@@ -156,6 +156,58 @@ def test_ingest_tracked_account_tweets_are_ingested_regardless_of_distress(monke
     assert m._ingest(tweet, handle="alarm_phone") is False
 
 
+def test_ingest_records_a_source_observation_independent_of_classification(monkeypatch, tmp_path):
+    """docs/fixes.md M1.2: every tweet _ingest processes gets a durable
+    SourceObservation, regardless of how it's classified/threaded below --
+    this is the Alarm Phone (and every other tracked account sharing this
+    _ingest path) adapter wired onto the M1.1 schema. Idempotent by tweet
+    id: ingesting the same tweet twice still yields exactly one row."""
+    from core.db.models import SourceObservationDB
+    from core.db.session import session_scope
+    from core.intel.source_observation import observation_id
+
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet("555000111", "Operational update, nothing distress-shaped here at all.")
+
+    m._ingest(tweet, handle="alarm_phone")
+    m._ingest(tweet, handle="alarm_phone")  # replay: same tweet id, must not duplicate
+
+    obs_id = observation_id("alarm_phone", "555000111")
+    with session_scope() as db:
+        rows = db.query(SourceObservationDB).filter(
+            SourceObservationDB.source_name == "alarm_phone",
+            SourceObservationDB.source_id == "555000111",
+        ).all()
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.observation_id == obs_id
+        assert row.service == "humanitarian"
+        assert row.lane == "review"
+        assert row.observation_type == "source_post"
+        assert row.source_policy == "official_api"
+        assert row.source_url == "https://x.com/i/web/status/555000111"
+        assert "Operational update" in row.raw_payload_hash or row.raw_payload_hash  # a real hash
+
+
+def test_ingest_still_classifies_normally_if_source_observation_write_fails(monkeypatch, tmp_path):
+    """The observation write is best-effort and must never block real
+    tweet processing -- a broken DB session must not stop _ingest from
+    doing its actual job."""
+    def _boom(*args, **kwargs):
+        raise RuntimeError("db unavailable")
+
+    monkeypatch.setattr("core.db.session.session_scope", _boom)
+    store = IntelStore()
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
+    tweet = _FakeTweet("555000222", "Operational update from the rescue vessel position update 35.5N 12.6E.")
+
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    assert len(store.events()) == 1
+
+
 def test_ingest_marks_distress_and_geo(tmp_path, monkeypatch):
     store = IntelStore()
     monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
