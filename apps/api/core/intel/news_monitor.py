@@ -108,6 +108,42 @@ class NewsMonitor:
         """Refresh approved RSS sources; used by the process scheduler."""
         self._poll_rss_all()
 
+    @staticmethod
+    def _record_source_observation(
+        *, service: str, lane: str, source_name: str, source_id: str,
+        source_policy: str, observed_at: str, raw_payload: str, source_url: str = "",
+        lat: float | None = None, lon: float | None = None,
+    ) -> None:
+        """docs/fixes.md M1.2: a durable, lossless SourceObservation for
+        every item this collector receives (IOM archive incidents and NGO
+        RSS items alike), before any dedup/classification decision.
+        Best-effort and strictly additive: never raises into the caller,
+        never alters what gets published. The existing intel_store.add()
+        write path remains authoritative until a parity comparison (a
+        later PR) proves this envelope is equivalent.
+        """
+        try:
+            from core.db.session import session_scope
+            from core.intel.source_observation import record_observation
+
+            with session_scope() as db:
+                record_observation(
+                    db,
+                    service=service,
+                    lane=lane,
+                    observation_type="source_post",
+                    source_name=source_name,
+                    source_policy=source_policy,
+                    source_id=source_id,
+                    observed_at=observed_at,
+                    raw_payload=raw_payload,
+                    source_url=source_url,
+                    lat=lat,
+                    lon=lon,
+                )
+        except Exception as exc:
+            logger.debug("news_monitor: source_observation record skipped for %s: %s", source_id, exc)
+
     def _poll_iom(self) -> None:
         from core.intel.source_registry import source_registry
 
@@ -131,16 +167,28 @@ class NewsMonitor:
                         digest_size=8,
                     ).hexdigest()
                 )
+                lat = _safe_float(incident.get("latitude") or incident.get("lat"))
+                lon = _safe_float(incident.get("longitude") or incident.get("lon"))
+                date_value = str(incident.get("date") or incident.get("incident_date") or "")
+                self._record_source_observation(
+                    service="humanitarian",
+                    lane="missing",
+                    source_name="IOM Missing Migrants",
+                    source_policy="archive",
+                    source_id=incident_id,
+                    observed_at=_parse_date(date_value),
+                    raw_payload=json.dumps(incident, sort_keys=True, default=str),
+                    source_url=str(incident.get("url") or "https://missingmigrants.iom.int/"),
+                    lat=lat,
+                    lon=lon,
+                )
                 if incident_id in self._iom_last_ids:
                     continue
                 self._iom_last_ids.add(incident_id)
-                lat = _safe_float(incident.get("latitude") or incident.get("lat"))
-                lon = _safe_float(incident.get("longitude") or incident.get("lon"))
                 dead = int(incident.get("dead") or incident.get("number_dead") or 0)
                 missing = int(incident.get("missing") or incident.get("number_missing") or 0)
                 total = dead + missing
                 severity = "critical" if total > 50 else "high" if total > 10 else "medium"
-                date_value = str(incident.get("date") or incident.get("incident_date") or "")
                 title = str(
                     incident.get("title")
                     or incident.get("incident_type")
@@ -214,6 +262,19 @@ class NewsMonitor:
 
     def _ingest_rss_item(self, item: dict[str, str], source: str) -> bool:
         identity = item.get("guid") or item.get("link") or item.get("title") or ""
+        self._record_source_observation(
+            # Not yet classified at this point (distress is computed
+            # further down) -- "review" is the pre-triage humanitarian
+            # lane, not a guess at the eventual classification.
+            service="humanitarian",
+            lane="review",
+            source_name=source,
+            source_policy="official_rss",
+            source_id=identity,
+            observed_at=item.get("pub_date", "") or datetime.now(timezone.utc).isoformat(),
+            raw_payload=json.dumps(item, sort_keys=True),
+            source_url=item.get("link", ""),
+        )
         dedup = hashlib.blake2s(f"{source}:{identity}".encode(), digest_size=8).hexdigest()
         if dedup in self._rss_last_guids:
             return False
