@@ -1,308 +1,173 @@
-# SeaCommons Post-#65 Evidence Engine Fixes Roadmap
+# SeaCommons Final Maritime OSINT Stabilization Plan
 
-> **For agentic workers:** execute this document task-by-task. Do not skip exit gates, do not broaden scope, and do not reopen already-stabilized Humanitarian OCR/Drift work unless a regression test fails.
+> **For Claude/Codex agentic workers:** this file is the single execution source of truth. Work in small PRs, in order, with TDD and explicit exit gates. Do not skip ahead because a later task looks easier. Do not reopen a DONE invariant unless a regression test proves it broke.
 
-**Goal:** move SeaCommons from a mixed collection of event heuristics into a selective, explainable evidence engine with one canonical Humanitarian pipeline and one canonical Maritime pipeline, while preserving the stable production behaviour reached through PRs #59–#65.
+**Goal:** stabilize SeaCommons as a production-grade, evidence-first maritime OSINT platform with two first-class operational sides — Humanitarian and Maritime — sharing one canonical data/evidence pipeline while preserving different publication, privacy and analytical rules.
 
-**Audited baseline:** `main` after PR #65 (`f51a2471f70880fadce1d49225c4d76d19348338`), 2026-09-03.
+**Architecture:** all external inputs become immutable observations. Deterministic processors derive structured features. Correlation groups observations/features into bounded episodes. Episodes may open hypotheses only through explicit evidence gates. Humanitarian incidents and Maritime Intelligence hypotheses remain distinct products but share provenance, storage, review, replay, observability and public-projection infrastructure.
 
-**Verified test baseline:** `581 passed`, `ruff check` clean.
+**Production target:** current ARM VM (~12 GB RAM), FastAPI/Python backend, PostgreSQL production storage, React/Vite/MapLibre web app, optional isolated workers for OCR/Drift/Sentinel processing.
 
-**Status vocabulary used below:**
-
-- `DONE` — implementation exists, is wired into the relevant runtime path, and is covered by regression tests.
-- `PARTIAL` — a primitive exists but is not yet authoritative, fully wired, or fully represented in UI/storage.
-- `BROKEN` — current behaviour contradicts the target semantics or reintroduces a known invariant violation.
-- `PLANNED` — architecture or feature not yet implemented.
+**Current verified baseline:** `main` after PR #65 (`f51a2471f70880fadce1d49225c4d76d19348338`), `581 passed`, ruff clean. PR #66 is open and mergeable with `584 passed`; it fixes authoritative Safety routing and Safety→Drift resurrection and is the first gate in this plan.
 
 ---
 
-# 0. Non-negotiable product invariants
+# 0. Product definition
 
-These are release constraints, not suggestions.
+SeaCommons is not a generic vessel tracker and not a risk-scoring dashboard. It is a maritime evidence engine.
 
-1. SeaCommons classifies and explains evidence; it does not present a synthetic risk score as truth.
-2. Humanitarian, Maritime Safety, Maritime Intelligence, and Environmental are positive classifications. Unknown never falls into another compartment by complement.
-3. A self-reported AIS navigational status is an observation, not proof of mechanical failure and never proof of suspicious intent.
-4. `not_under_command`, `aground`, and `restricted_manoeuvrability` belong to `service=maritime`, `lane=safety`.
-5. Maritime Safety observations are never cargo-Drift eligible.
-6. Alarm Phone / Humanitarian drift remains a separate humanitarian-only model. Maritime Intelligence must not reuse humanitarian drift semantics.
-7. A rendezvous is not a sanctions event. An AIS gap is not proof that AIS was deliberately disabled. An unmatched SAR detection is not a confirmed dark vessel.
-8. Public allegations require explicit evidence and review. Direct official-list matches may publish as list facts without implying evasive behaviour.
-9. Public Humanitarian views must not expose MMSI, IMO, MarineTraffic dossier links, or professional-vessel identity blocks.
-10. Vessel class is context, never an investigation category or a substitute for evidence.
-11. Raw observations, derived features, correlations, hypotheses, and public projections must remain distinguishable.
-12. The current ARM production VM (~12 GB RAM) remains the deployment target. Heavy SAR inference must be optional, bounded, and isolated from the API process.
-13. No source may be scraped in violation of licence/terms. GFW remains research/benchmark-only unless a compatible licence is obtained. OpenSanctions is optional enrichment; official OFAC/EU/UN facts remain canonical.
-14. Preserve prohibitions on migrant interception support, border-enforcement targeting, military targeting, and commercial surveillance aggregation.
+The system must answer five questions for every surfaced item:
+
+1. **What was actually observed?**
+2. **Where did that observation come from?**
+3. **What was deterministically derived from it?**
+4. **What interpretation is being investigated, and why?**
+5. **What can safely be published, to whom, and with what uncertainty?**
+
+The two product sides are:
+
+```text
+HUMANITARIAN
+  distress
+  missing
+  rescue/update
+  interception
+  pushback
+  resolution
+  land_humanitarian
+
+MARITIME
+  safety
+  intelligence
+  environmental
+```
+
+Humanitarian is people-centred and privacy-constrained. Maritime Intelligence is vessel/episode-centred and evidence-gated. Safety is operational context, never Intelligence by fallback.
 
 ---
 
-# 1. Baseline: what is already DONE
+# 1. Non-negotiable invariants
 
-The following work landed before or through PR #65 and must be treated as regression-protected infrastructure, not reopened by default.
+These are release blockers.
 
-## 1.1 Humanitarian ingestion / Alarm Phone
-
-`DONE`
-
-- Alarm Phone translated reposts fold onto one incident.
-- Real extracted OCR coordinates replace stale region polygons.
-- A real machine-extracted maritime point can originate Humanitarian drift under the canonical gate while retaining uncertainty and review state.
-- Region-only, disputed, withheld/land and invalid points cannot originate maritime drift.
-- Land Humanitarian incidents remain visible as Humanitarian events without creating maritime Drift.
-- Durable lookup prevents drift-gate bypass when an Intel event has fallen out of the in-memory deque.
-- Alarm Phone dedup survives DB load-window truncation after restart.
-- Historical Alarm Phone reprocessing/backfill exists.
-- Category-based visual identity replaced severity-based Live styling.
-- Browser-side automatic Alarm Phone drift was removed; backend/worker Drift is authoritative.
-- Public Humanitarian cards no longer intentionally expose MMSI/IMO blocks.
-- Duplicate case creation across later correlated signals is mitigated by PR #60 case relinking.
-
-## 1.2 Phase-0 semantics from PRs #61–#65
-
-`DONE` as primitives, with wiring caveats called out later.
-
-- `core/intel/service_taxonomy.py` exists.
-- Fail-closed `classify_service(...)` exists.
-- NUC/aground/restricted manoeuvrability producer events now emit `service=maritime`, `lane=safety`, `drift_eligible=False`.
-- NUC no longer auto-promotes through the removed vessel-mobility fusion rule.
-- `EventAssessment` exists for NUC, aground and restricted manoeuvrability.
-- Alert-recognition corpus and scorer exist.
-- Humanitarian baseline FP cases found in PR #64 were fixed in PR #65.
-- `is_distress()` currently scores 1.00 precision / 1.00 recall / 1.00 F1 on the small committed Humanitarian corpus.
-
-## 1.3 Current baseline warning
-
-The 1.00 Humanitarian metric is **not production validation**. The corpus is still small and synthetic. Treat it as a regression suite, not as proof that the classifier is complete.
+1. SeaCommons classifies and explains; it does not present a synthetic risk score as truth.
+2. Unknown classifications fail closed.
+3. `service` and `lane` are positive decisions, never inferred by complement.
+4. `not_under_command`, `aground`, and `restricted_manoeuvrability` are `service=maritime`, `lane=safety`.
+5. Safety observations are never cargo-Drift eligible.
+6. Humanitarian Drift is humanitarian-only.
+7. A rendezvous is not a sanctions event.
+8. An AIS gap is not proof that AIS was deliberately disabled.
+9. A SAR detection without a valid time/trajectory association is a candidate, not a dark-vessel confirmation.
+10. Vessel class is context, never an allegation or investigation category.
+11. Public Humanitarian views never expose MMSI, IMO, tracker links or professional-vessel dossiers.
+12. Public Maritime allegations require evidence + review, except direct official-list facts and neutral Safety observations.
+13. Raw observations, derived features, episodes, hypotheses and public projections remain distinguishable.
+14. All derived outputs carry algorithm/version and input IDs.
+15. External-source licence/terms are part of provenance.
+16. No scraping that violates source terms.
+17. No migrant interception support, border-enforcement targeting, military targeting or commercial surveillance aggregation.
+18. Every production pipeline must be replayable from persisted source observations or source fixtures.
+19. A green unit suite is insufficient: every milestone needs integration/replay validation.
+20. No task is DONE until the exit gate below it is proven by tests.
 
 ---
 
-# 2. Audit findings after PR #65
+# 2. Execution loop for Claude
 
-This section is the authoritative defect inventory for the current release line.
+Claude should run continuously using this exact loop.
 
-| ID | Status | Current code | Problem | Required outcome |
-|---|---|---|---|---|
-| A-01 | `BROKEN` | `core/live/feed.py` still routes with `compartment_for_domain(event.maritime_domain())` | `service/lane` exists but is not the routing authority | one canonical service/lane classifier drives feed compartment selection |
-| A-02 | `BROKEN` | `core/live/projection.py` legacy `is_vessel_mobility_incident()` compatibility sets `drift_eligible=True` and cargo vessel type | can reintroduce the exact Safety→cargo-Drift behaviour removed in #62 | legacy projection may never upgrade Safety to Drift eligibility |
-| A-03 | `PARTIAL` | `core/intel/assessment.py` exists; `ConePanel.jsx` still renders `descriptionOf(props.type)` as Interpretation | EventAssessment is not visible or transported as the real assessment | backend assessment fields are projected and UI consumes them |
-| A-04 | `BROKEN` | `core/live/vessel_episodes.py` groups all vessel signals by MMSI | vessel identity is used as an episode boundary | stable subject + bounded episodes separated by time/behaviour |
-| A-05 | `BROKEN` | vessel episode output rewrites domain as `sanctions` if match else `grey_zone` | Safety/identity/context distinctions are flattened | episode preserves service/lane + observation types + hypothesis state |
-| A-06 | `BROKEN` | `core/mda/watch.py::_emit_rendezvous()` writes `maritime_domain="sanctions"` for all STS pairs | observation is born as an allegation-shaped domain | neutral rendezvous observation; sanctions hypothesis only after evidence gate |
-| A-07 | `BROKEN` | `scan_gaps()` excludes pleasure/passenger/fishing/tug classes | class blacklist substitutes for coverage/context modelling | all classes evaluated; coverage and operational context determine confidence |
-| A-08 | `BROKEN` | spoofing path repeats class-based suppressions | vessel role is treated as evidence for/against spoofing | feature/context baseline replaces class exemption logic |
-| A-09 | `BROKEN` | `core/mda/darkship_cue.py` says unmatched SAR target is “likely the dark vessel” | correlation strength is overstated | candidate wording + time-aligned association score + uncertainty |
-| A-10 | `BROKEN` | `darkship_cue.py` uses old Copernicus catalogue STAC endpoint | stale external contract | current Copernicus Data Space STAC endpoint |
-| A-11 | `PARTIAL` | `tests/fixtures/alert_recognition/ais_behaviour.jsonl` and `ais_integrity.jsonl` exist but scorer reports NOT YET SCORED | no baseline for the detectors that most need tuning | deterministic replay/scoring adapters and real metrics |
-| A-12 | `PARTIAL` | Humanitarian case metadata is regex-based and mostly one-dimensional (`people_reported`) | cannot represent aboard/rescued/missing/dead/injured simultaneously | structured HumanitarianAssessment with independent quantities/evidence |
-| A-13 | `BROKEN` | frontend keeps `Other signal`, `Other vessel` and vessel-class-driven fallback semantics | unknown/context becomes analytical meaning | unknown is internal/unclassified; vessel class rendered only as optional context |
-| A-14 | `PARTIAL` | `IntelEventDB.meta` still carries much of the semantics | observation, feature, episode, hypothesis and review state are flattened | durable evidence entities with typed relations |
-| A-15 | `PARTIAL` | severity remains in DB/public contract and some detector logic | old scoring vocabulary can continue to influence semantics | keep compatibility field temporarily, but no routing/publication/evidence decision may depend on it |
-| A-16 | `PARTIAL` | edge and VM now share projection primitives | parity improved, but any projection semantic bug propagates to both | contract tests must validate service/lane/publication parity explicitly |
-| A-17 | `PARTIAL` | identity anomalies live in sanctions-shaped pathways | identity inconsistency is not designation | separate identity-integrity observation from official sanctions fact |
-| A-18 | `PARTIAL` | infrastructure proximity produces `grey_zone` alerts | proximity is context, not interference evidence | preserve geometry/dwell observation; hypothesis requires independent corroboration |
+```text
+READ docs/fixes.md
+↓
+READ current main + open PRs
+↓
+SELECT first unchecked task whose dependencies are DONE
+↓
+WRITE failing regression/integration test
+↓
+IMPLEMENT smallest coherent change
+↓
+RUN targeted tests
+↓
+RUN full backend suite + ruff
+↓
+RUN web tests/lint/build if frontend touched
+↓
+RUN replay/smoke gate for the affected pipeline
+↓
+OPEN PR with root cause + invariants + before/after evidence
+↓
+STOP at PR boundary unless CI is green
+↓
+AFTER MERGE: update task status in docs/fixes.md and continue
+```
+
+Rules for the loop:
+
+- one semantic concern per PR unless two fixes share the same root-cause boundary;
+- never hide a discovered root cause behind a downstream workaround;
+- if a committed test encodes the wrong behaviour, fix the test and explain why;
+- never tune AIS thresholds before a replay/scorer exists for that detector;
+- never call synthetic fixtures “production validation”;
+- every PR body must state what remains out of scope;
+- every migration must be reversible and SQLite-test-compatible;
+- if a new bug invalidates an earlier assumption, update this file before continuing.
 
 ---
 
-# 3. Target architecture
+# 3. Current state matrix
 
-## 3.1 Canonical service/lane taxonomy
+## DONE / protected
 
-```text
-service=humanitarian
-  lane=distress
-  lane=missing
-  lane=interception
-  lane=pushback
-  lane=resolution
-  lane=land_humanitarian
-  lane=advocacy
-  lane=review
+- Alarm Phone multilingual dedup and case relinking.
+- Humanitarian OCR → point/area logic.
+- land/region/disputed points cannot originate maritime Drift.
+- backend persisted Drift is authoritative.
+- category-based public styling replaces severity-based styling.
+- Humanitarian cards intentionally hide vessel identity blocks.
+- `service_taxonomy.py` exists and fails closed.
+- NUC/aground/restricted manoeuvrability producers emit Safety metadata.
+- old NUC mobility fusion escalation was removed.
+- `EventAssessment` exists for core Safety events.
+- alert-recognition corpus/scorer exists.
+- Humanitarian keyword baseline false positives from PR #64 were fixed in PR #65.
 
-service=maritime
-  lane=safety
-  lane=intelligence
-  lane=environmental
-```
+## IN FLIGHT
 
-Within Maritime Intelligence, `hypothesis_type` is separate from `lane`:
+### PR #66 — Safety authority + projection consistency
 
-```text
-dark_transit
-concealed_port_call
-covert_rendezvous
-identity_deception
-position_spoofing
-route_deception
-sanctions_evasion_pattern
-infrastructure_pattern
-```
+Must merge before new work.
 
-Within Maritime Safety, `observation_type` is separate from `lane`:
+Covers:
 
-```text
-not_under_command
-aground
-restricted_manoeuvrability
-navwarning
-distress_beacon
-```
+- explicit `metadata.maritime_domain` wins in `IntelEvent.maritime_domain()`;
+- legacy Safety cannot resurrect cargo Drift;
+- `mode=safety` exists as a distinct VM feed bucket;
+- Safety is excluded from humanitarian edge feed;
+- tests updated from incorrect legacy behaviour.
 
-`maritime_domain` remains a compatibility field during migration only. It must not remain the authoritative product-router.
-
-## 3.2 Evidence ladder
-
-```text
-observed      direct sensor/source fact
-derived       reproducible calculation from observations
-corroborated  independent observations/modalities agree
-assessed      human/operator interpretation recorded
-confirmed     authoritative/documentary confirmation
-```
-
-Rules:
-
-- no detector threshold can directly create `confirmed`;
-- a single AIS field can be `observed`, never `assessed` by itself;
-- a derived anomaly may become `corroborated` only with independent evidence;
-- public allegations require at least `corroborated` plus review, except direct official-list facts;
-- every assessment carries caveats and contradictory evidence when available.
-
-## 3.3 Durable evidence model
-
-Target entities:
-
-```text
-VesselSubject
-  stable subject_id
-  dated identity aliases / source
-
-MaritimeObservation
-  immutable sourced fact
-  observation_type
-  time / geometry / uncertainty
-  source / provenance
-
-BehaviourFeature
-  algorithm + version + parameters
-  input observation ids
-  reproducible values
-
-MaritimeEpisode
-  bounded time window
-  one or more subjects
-  observation + feature membership
-
-InvestigationHypothesis
-  hypothesis_type
-  lifecycle
-  evidence_stage
-  reason_codes
-  counter_indicators
-
-EvidenceLink
-  typed relationship between observations/features/episodes/hypotheses
-
-CoverageBaseline
-  source/AOI/time receiver expectations
-  density / jamming / coast / known blind-zone context
-```
-
-`IntelEventDB` remains the compatibility envelope used by existing feeds and public projections. It must stop being the only semantic datastore.
-
-## 3.4 Hypothesis lifecycle
-
-```text
-candidate → collecting → review_ready → assessed → published
-          ↘ rejected
-          ↘ expired
-```
-
-Every transition stores:
-
-- actor;
-- timestamp;
-- reason;
-- evidence snapshot IDs/hash;
-- previous state;
-- new state.
+**Exit gate:** `584/584`, ruff clean, CI green, merge.
 
 ---
 
-# 4. P0 — restore semantic consistency after #65
+# 4. Milestone M0 — semantic correctness
 
-**Priority:** immediate.
+**Objective:** eliminate every remaining place where the same event acquires different meaning depending on which consumer reads it.
 
-**Exit gate:** the newly introduced taxonomy and assessment primitives are actually authoritative in runtime paths, and no legacy compatibility path can reintroduce Safety→Intelligence or Safety→Drift behaviour.
+## M0.1 Merge and regression-lock PR #66
 
-## Task P0.1 — make `classify_service()` authoritative
+- [ ] merge #66 only after green CI;
+- [ ] add a regression fixture representing a legacy NUC row and a current explicit Safety row;
+- [ ] prove producer → DB object → projection → feed preserves Safety and `drift_eligible=False`.
 
-**Files**
+**Exit gate:** Safety cannot become Humanitarian, Intelligence, grey-zone or Drift through any current read/projection path.
 
-- Modify: `apps/api/core/intel/service_taxonomy.py`
-- Modify: `apps/api/core/intel/public_policy.py`
-- Modify: `apps/api/core/live/feed.py`
-- Modify: `apps/api/core/live/projection.py`
-- Modify: `apps/api/core/live_edge_publisher.py`
-- Test: `tests/test_service_taxonomy.py`
-- Test: `tests/test_live_compartments.py`
-- Test: `tests/test_public_policy.py`
-- Test: edge parity tests
+## M0.2 EventAssessment end-to-end
 
-**Required behaviour**
+**Files:** `core/intel/assessment.py`, `core/live/projection.py`, `core/domain/live_contracts.py`, `ConePanel.jsx`, panel tests.
 
-- [ ] Humanitarian/Safety/Intelligence/Environmental routing calls one canonical classifier.
-- [ ] `compartment_for_domain()` becomes compatibility-only or is removed after all callers migrate.
-- [ ] unknown service/lane fails closed.
-- [ ] a stale `maritime_domain=grey_zone` cannot override `ais_nav_status_kind=not_under_command`.
-- [ ] a bare `maritime_domain=sar` path is explicitly mapped only where the event is actually Humanitarian; no fallback-by-domain guessing.
-- [ ] VM and edge produce the same routing result from the same event.
-
-**Acceptance tests**
-
-```python
-assert classify_service(nuc_event).service == "maritime"
-assert classify_service(nuc_event).lane == "safety"
-assert classify_service(unknown_event).publishable is False
-```
-
-Add a feed integration test proving Safety survives routing without becoming Humanitarian or Intelligence.
-
-## Task P0.2 — remove legacy Safety Drift resurrection
-
-**Files**
-
-- Modify: `apps/api/core/live/projection.py`
-- Modify: `apps/api/core/live/vessel_episodes.py`
-- Test: `tests/test_live_projection.py`
-- Test: `tests/test_live_vessel_episodes.py`
-- Test: `tests/test_vessel_incidents.py`
-
-**Required behaviour**
-
-- [ ] remove the compatibility path that sets `drift_eligible=True` for legacy vessel mobility incidents.
-- [ ] never infer `drift_vessel_type="cargo"` from a Safety incident.
-- [ ] coalescing may preserve an existing explicit eligible Intelligence modelling product, but cannot invent eligibility.
-- [ ] NUC/aground/restricted manoeuvrability remain `drift_eligible=False` through producer → DB → projection → episode → UI.
-
-**Regression case**
-
-Create one legacy-style NUC event with the old event shape and prove projection cannot upgrade it to Drift eligibility.
-
-## Task P0.3 — wire EventAssessment into projection and UI
-
-**Files**
-
-- Modify: `apps/api/core/intel/assessment.py`
-- Modify: `apps/api/core/live/projection.py`
-- Modify: `apps/api/core/domain/live_contracts.py`
-- Modify: `apps/web/src/components/ConePanel.jsx`
-- Test: `tests/test_assessment.py`
-- Test: public projection tests
-- Test: web panel tests
-
-**Projected fields**
+Project:
 
 ```text
 assessment_observation
@@ -318,663 +183,692 @@ assessment_rule_ids[]
 assessment_classification_version
 ```
 
-**Required behaviour**
+- [ ] `ConePanel` stops using `descriptionOf(props.type)` as event interpretation;
+- [ ] `descriptionOf()` remains category help only;
+- [ ] events with no assessor show no invented interpretation;
+- [ ] Safety reports visibly explain self-report/corroboration limitations.
 
-- [ ] `ConePanel` no longer uses `descriptionOf(props.type)` as the event-specific Interpretation.
-- [ ] `descriptionOf()` remains category help text only.
-- [ ] events without an assessor show “Assessment not available” or omit the section; they never receive generic generated interpretation.
-- [ ] two NUC events with different evidence continue to produce different interpretation/observation content.
+**Exit gate:** two events of the same type with different evidence render different assessments.
 
-## Task P0.4 — neutral rendezvous semantics
+## M0.3 Neutral rendezvous observation
 
-**Files**
+**Files:** `core/mda/watch.py`, `core/intel/fusion.py`, taxonomy + tests.
 
-- Modify: `apps/api/core/mda/watch.py`
-- Modify: `apps/api/core/intel/fusion.py`
-- Modify: `apps/api/core/intel/service_taxonomy.py`
-- Test: `tests/test_mda_watch.py`
-- Test: `tests/test_fusion.py`
-
-**Required behaviour**
-
-Raw STS/rendezvous observation:
+Raw STS event:
 
 ```text
 service=maritime
 lane=intelligence
 observation_type=rendezvous
+evidence_level=derived
 publication_status=internal
-evidence_level=observed/derived
-hypothesis_type absent
+hypothesis_type=None
 ```
 
-A direct STS observation must **not** be stored as `maritime_domain=sanctions` solely because two vessels were close for N minutes.
+- [ ] remove unconditional `maritime_domain=sanctions` from `_emit_rendezvous()`;
+- [ ] sanctions fact is separate from rendezvous observation;
+- [ ] sanctions-evasion hypothesis requires additional evidence;
+- [ ] STS-zone presence is context, not proof.
 
-Sanctions-evasion hypotheses may be opened only when additional evidence exists, for example:
+**Exit gate:** a normal offshore rendezvous never appears as sanctions/evasion by itself.
 
-- official sanctions-list match;
-- gap before/after encounter;
-- dark counterpart;
-- meaningful draught change;
-- concealed/irregular port call;
-- repeated encounter sequence;
-- reviewed satellite association.
+## M0.4 Remove vessel-class-as-analysis
 
-Known STS-zone presence alone is context, not designation.
+- [ ] eliminate `Other vessel` as analytical fallback;
+- [ ] vessel type may appear under Context only;
+- [ ] remove class-based category titles from investigation output;
+- [ ] public unknown classification fails closed rather than becoming “other”.
 
-## Task P0.5 — remove vessel-class analytical fallbacks
+**Exit gate:** vessel class can influence baseline/context, never the event/hypothesis label.
 
-**Files**
+## M0.5 Darkship cue language + current STAC
 
-- Modify: `apps/web/src/components/ConePanel.jsx`
-- Modify: `apps/web/src/features/intel/categories.js`
-- Create or complete: `apps/web/src/features/live/identityDisclosure.js`
-- Test: corresponding web unit tests
+- [ ] migrate to current Copernicus Data Space STAC API;
+- [ ] replace “likely the dark vessel” with candidate wording;
+- [ ] persist acquisition timestamp, scene ID, detection timestamp and reachable-area uncertainty;
+- [ ] no association unless observation times overlap the reachable-state interval.
 
-**Required behaviour**
-
-- [ ] unknown ship type → omit row, never `Other vessel`.
-- [ ] `Pleasure craft`, `Cargo ship`, `Fishing`, etc. may appear in an analyst-only context row when sourced from AIS registry metadata.
-- [ ] vessel type never becomes a case category, evidence level, hypothesis type or title fallback.
-- [ ] public Humanitarian path never shows MMSI, IMO, MarineTraffic link, or professional identity dossier.
-- [ ] public Maritime identifiers appear only where the product policy explicitly allows them and never as allegation/category.
-
-## Task P0.6 — darkship cue correctness
-
-**Files**
-
-- Modify: `apps/api/core/mda/darkship_cue.py`
-- Test: `tests/test_darkship_cue.py`
-
-**Required changes**
-
-- [ ] use current Copernicus Data Space STAC API (`https://stac.dataspace.copernicus.eu/v1/`).
-- [ ] replace “likely the dark vessel” with “unmatched SAR candidate inside the reachable area”.
-- [ ] store acquisition timestamp, AIS propagation timestamp, temporal offset, spatial distance and association uncertainty.
-- [ ] never assign a detection to a vessel solely because it lies inside a growing reachable polygon.
-- [ ] preserve source/licensing metadata for GFW/Sentinel-derived evidence.
+**Exit gate:** darkship output never claims attribution from spatial containment alone.
 
 ---
 
-# 5. P1 — Humanitarian Recognition V2
+# 5. Milestone M1 — canonical observation layer
 
-**Priority:** after P0 only.
+**Objective:** stop using `IntelEvent.meta` as the universal semantic datastore.
 
-**Goal:** retain the now-stabilized `is_distress()` as a cheap pre-filter while adding structured incident understanding that can distinguish multiple humanitarian states and quantities without collapsing everything into one boolean.
+Create durable entities and migrations:
 
-**Exit gate:** a single Humanitarian assessment represents incident type, lifecycle, quantities, actors, needs, location evidence and uncertainty; public policy reads that structure instead of re-parsing text independently.
-
-## Task P1.1 — introduce `HumanitarianAssessment`
-
-**Create:** `apps/api/core/intel/humanitarian_recognition.py`
-
-Target shape:
-
-```python
-@dataclass(frozen=True)
-class HumanitarianAssessment:
-    is_humanitarian: bool
-    incident_type: str
-    lifecycle: str
-    people_aboard: int | None
-    people_rescued: int | None
-    people_missing: int | None
-    people_dead: int | None
-    people_injured: int | None
-    vessel_condition: list[str]
-    needs: list[str]
-    actors: list[str]
-    place_mentions: list[str]
-    temporal_markers: list[str]
-    evidence: list[str]
-    caveats: list[str]
-    confidence: float
-    confidence_basis: list[str]
-    classification_version: str
+```text
+MaritimeObservation
+BehaviourFeature
+VesselSubject
+EvidenceLink
+SourceRecord
 ```
 
-No single `people_reported` field may overwrite distinct quantities.
+Minimum `MaritimeObservation` fields:
 
-## Task P1.2 — canonical Humanitarian incident taxonomy
+```text
+observation_id
+service
+lane
+observation_type
+source_id
+source_kind
+source_timestamp_utc
+received_at
+geometry
+location_uncertainty_m
+subject_ids[]
+payload_hash
+verification_status
+publication_status
+schema_version
+created_at
+```
 
-Recognize explicitly:
+Minimum `BehaviourFeature` fields:
+
+```text
+feature_id
+feature_type
+algorithm
+algorithm_version
+parameters
+input_observation_ids[]
+value_json
+geometry
+started_at
+ended_at
+created_at
+```
+
+Tasks:
+
+- [ ] migrations + ORM models;
+- [ ] adapters from existing IntelEvent producers;
+- [ ] dual-write for one release;
+- [ ] no destructive migration of current `intel_events`;
+- [ ] evidence links connect old compatibility events to new observation IDs;
+- [ ] deterministic content identity for replay/idempotency.
+
+**Exit gate:** a new AIS observation and a new Humanitarian observation can be reconstructed without reading opaque free-form metadata.
+
+---
+
+# 6. Milestone M2 — Humanitarian Recognition V2
+
+**Objective:** turn Humanitarian from distress keyword detection into structured incident recognition without losing the stable Alarm Phone pipeline.
+
+Keep `is_distress()` as a cheap prefilter only.
+
+Create `HumanitarianAssessment`:
+
+```text
+incident_type
+lifecycle
+people.aboard
+people.rescued
+people.missing
+people.dead
+people.injured
+people.precision
+vessel.condition
+vessel.description
+needs[]
+actors[]
+location_evidence[]
+temporal_evidence[]
+source_evidence[]
+confidence
+uncertainty_reasons[]
+rule_ids[]
+classification_version
+```
+
+Recognize at minimum:
 
 ```text
 distress
 missing
 rescue_update
-resolution
 shipwreck
+medical_emergency
 interception
 pushback
-land_humanitarian
+resolution
+retrospective
 advocacy
+land_humanitarian
 unknown_humanitarian
 ```
 
-Rules:
+Tasks:
 
-- active shipwreck reporting is not the same as retrospective shipwreck commemoration;
-- rescue underway is not necessarily resolution;
-- “rescued 40, 12 missing” must preserve both quantities;
-- an NGO organisation name containing SOS is not a distress call;
-- policy/news use of “search and rescue” is not an operational incident;
-- explicit 🆘/Mayday or direct active-call language may override concluded wording only where the ongoing need is clear.
+- [ ] separate recognition from publication decision;
+- [ ] lifecycle derived from event/thread evidence, not one keyword;
+- [ ] multiple people counts can coexist in one incident;
+- [ ] distinguish “50 aboard, 40 rescued, 10 missing” correctly;
+- [ ] preserve original and translated source text internally;
+- [ ] public projection remains privacy-filtered;
+- [ ] expand corpus with sanitized real historical Alarm Phone/SAR examples;
+- [ ] retain synthetic hard negatives as regression fixtures;
+- [ ] scorer reports per-class precision/recall/F1 + lifecycle accuracy + people-field accuracy.
 
-## Task P1.3 — real/sanitized evaluation corpus
-
-**Modify:** `tests/fixtures/alert_recognition/humanitarian.jsonl`
-
-Keep synthetic fixtures, but add sanitized historical shapes from production data with private/personally identifying content removed.
-
-Minimum corpus categories:
-
-- direct Alarm Phone active calls;
-- later updates for same incident;
-- rescue underway;
-- rescue completed;
-- shipwreck active;
-- shipwreck retrospective/memorial;
-- missing/no-contact;
-- interception/pullback;
-- pushback;
-- land-border humanitarian;
-- NGO organisational updates;
-- NGO vessel routine status;
-- policy/news/annual report language;
-- multilingual EN/IT/FR examples;
-- mixed quantity cases.
-
-Do not claim production quality until this corpus is materially larger than the current 12 examples.
-
-## Task P1.4 — integrate one canonical Humanitarian assessment
-
-**Files**
-
-- Modify: `core/intel/humanitarian.py`
-- Modify: relevant Twitter/Alarm Phone ingestion
-- Modify: `core/intel/lifecycle.py`
-- Modify: `core/live/projection.py`
-- Modify: drift eligibility gate only where it consumes classification fields
-
-Rule: classification is computed once and persisted. Consumers read canonical fields; they do not each run their own regex interpretation.
+**Exit gate:** Humanitarian classification is evaluated on a mixed real/synthetic corpus and can replay historical incidents deterministically.
 
 ---
 
-# 6. P2 — make AIS behaviour and integrity measurable before tuning
+# 7. Milestone M3 — location evidence and image pipeline
 
-**Priority:** before changing thresholds.
+**Objective:** make every Humanitarian coordinate auditable.
 
-**Exit gate:** `ais_behaviour.jsonl` and `ais_integrity.jsonl` are scored, with precision/recall/F1 and explicit FP/FN examples. No detector threshold change is accepted without before/after metrics.
+Canonical result:
 
-## Task P2.1 — pure/replayable feature extraction
-
-Extract deterministic feature builders from stateful live monitors.
-
-Target pure interfaces:
-
-```python
-extract_gap_features(track, coverage_context) -> GapFeatures
-extract_spoof_features(track, vessel_context) -> SpoofFeatures
-extract_rendezvous_features(track_a, track_b, context) -> RendezvousFeatures
-extract_loiter_features(track, aoi_context) -> LoiterFeatures
+```text
+LocationEvidence
+  method
+  lat/lon or area
+  uncertainty_m
+  review_status
+  source_asset_id
+  extracted_text
+  anchors[]
+  engine_votes[]
+  diagnostics
 ```
 
-The live monitor can keep state, but evaluation must replay identical inputs without live timing/thread dependencies.
+Tasks:
 
-## Task P2.2 — score current detector behaviour
+- [ ] unify text coordinates, OCR coordinates, map-pin inference and place-region fallback under one resolver;
+- [ ] keep ROI/preprocessing/OCR-engine outputs separately;
+- [ ] coordinate consensus requires explicit engine votes/tolerance;
+- [ ] pin geolocation stores anchors and residual error;
+- [ ] region-only always produces area geometry, never a fake precise point;
+- [ ] land/sea classification happens after coordinate resolution;
+- [ ] backfill/replay tool reruns historical media using versioned algorithms;
+- [ ] benchmark old vs new resolver on labelled screenshots.
 
-Modify `core/intel/alert_recognition_scorer.py` so:
+**Exit gate:** every displayed point/area can explain where the coordinate came from and why its uncertainty/review state is what it is.
 
-- `ais_behaviour.jsonl` is scored;
-- `ais_integrity.jsonl` is scored;
-- every class reports precision/recall/F1/FP/FN;
-- unscored rows are zero at the Phase exit gate.
+---
 
-## Task P2.3 — coverage-aware gap baseline
+# 8. Milestone M4 — AIS replayable feature engine
 
-Replace class blacklist logic with `CoverageBaseline` inputs.
+**Objective:** stop tuning stateful AIS detectors against live intuition.
 
-Features should include at minimum:
+Build a deterministic replay adapter for:
+
+```text
+gap
+long_gap
+sudden_stop
+loiter
+dwell
+rendezvous
+position_jump
+impossible_speed
+frozen_position
+circular_pattern
+mmsi_duplicate
+identity_change
+```
+
+Tasks:
+
+- [ ] pure feature extraction from ordered track samples;
+- [ ] all detector parameters serialized with the feature;
+- [ ] `ais_behaviour.jsonl` scorer becomes executable;
+- [ ] `ais_integrity.jsonl` scorer becomes executable;
+- [ ] generate negative fixtures for port, anchorage, ferry, tug, fishing, leisure and receiver outage behaviour;
+- [ ] CI fails when detector metrics regress beyond declared tolerances.
+
+**Exit gate:** no AIS threshold change is accepted without before/after replay metrics.
+
+---
+
+# 9. Milestone M5 — coverage-aware AIS gaps
+
+**Objective:** replace vessel-class blacklists with reception/context evidence.
+
+Create `CoverageBaseline` using SeaCommons' own historical reception:
+
+```text
+cell/AOI
+hour/day profile
+source
+expected_message_density
+active_vessel_count
+median_gap
+p95_gap
+coast_distance
+port/anchorage/TSS context
+jamming_context
+coverage_quality
+sample_count
+version
+```
+
+Gap feature includes:
 
 ```text
 silent_seconds
-previous_message_density
-receiver/source availability
+expected_gap_seconds
+coverage_quality
 jamming_score
 coast_distance
-port_or_anchorage proximity
-traffic density
-previous SOG/COG
-expected reporting profile
-last-known receiver/source mix
+last_speed
+last_course
+receiver_density
+baseline_deviation
+counter_indicators[]
 ```
 
-Vessel class may modify expectation, but must not be a hard exemption.
+- [ ] evaluate all vessel classes;
+- [ ] vessel role modifies expectation but cannot suppress detection outright;
+- [ ] feed-wide outage becomes coverage failure, not vessel anomaly;
+- [ ] low coverage lowers evidence strength;
+- [ ] gap never directly creates “dark vessel” or sanctions allegation.
 
-## Task P2.4 — spoofing/integrity separation
-
-Separate:
-
-```text
-position_integrity_anomaly
-identity_integrity_anomaly
-behavioural_anomaly
-official_sanctions_fact
-```
-
-A duplicate MMSI is an identity-integrity problem, not automatically a sanctions event.
+**Exit gate:** known port/ferry/fishing negatives stop relying on hard-coded class exclusions.
 
 ---
 
-# 7. P3 — durable Maritime evidence model
+# 10. Milestone M6 — bounded Maritime episodes
 
-**Priority:** after P2 metrics exist.
+**Objective:** replace `one MMSI = one episode`.
 
-**Exit gate:** new Maritime observations/features/episodes/hypotheses persist outside `IntelEventDB.meta`, can be replayed/rebuilt, and project back into the current Live envelope.
-
-## Task P3.1 — schema + Alembic migration
-
-Create ORM models for:
-
-- `VesselSubjectDB`
-- `MaritimeObservationDB`
-- `BehaviourFeatureDB`
-- `MaritimeEpisodeDB`
-- `InvestigationHypothesisDB`
-- `EvidenceLinkDB`
-- `CoverageBaselineDB`
-
-Migration requirements:
-
-- additive first;
-- reversible;
-- PostgreSQL production and SQLite test compatibility;
-- indices for subject/time/type/state;
-- no destructive migration until dual-write comparison passes.
-
-## Task P3.2 — observation ingestion adapters
-
-Current producers write immutable observations first.
-
-Examples:
+Create `MaritimeEpisode`:
 
 ```text
-AIS nav status → MaritimeObservation
-AIS track gap → BehaviourFeature derived from observations
-Rendezvous geometry → BehaviourFeature
-Official sanctions row → MaritimeObservation(type=official_designation)
-Sentinel/GFW detection → MaritimeObservation(type=sar_detection)
+episode_id
+subject_ids[]
+started_at
+ended_at
+state
+service
+lane
+observation_ids[]
+feature_ids[]
+area
+summary_facts
+created_at
+updated_at
 ```
 
-## Task P3.3 — compatibility projection
-
-Build one adapter:
-
-```python
-project_episode_or_hypothesis_to_intel_event(...)
-```
-
-Existing Live/API paths continue functioning while the new evidence model becomes authoritative.
-
----
-
-# 8. P4 — bounded Maritime episodes and hypotheses
-
-**Priority:** after P3.
-
-**Exit gate:** one MMSI can have multiple separate episodes; a subject is not itself an incident; a hypothesis has explicit evidence/counter-evidence and lifecycle.
-
-## Task P4.1 — stable subject identity
-
-Create `VesselSubject` records keyed independently from an episode.
-
-Track dated aliases:
-
-- MMSI;
-- IMO;
-- name;
-- flag;
-- source;
-- valid-from/to where known.
-
-Do not overwrite identity history in place.
-
-## Task P4.2 — episode segmentation
-
-Replace `coalesce_security_vessel_episodes()` as the semantic episode builder.
-
-Episode boundaries use:
+Episode boundaries use explicit rules:
 
 - time gap;
-- behavioural reset;
-- geographic separation;
-- state transition;
-- encounter counterpart change;
-- hypothesis lifecycle.
+- return to baseline behaviour;
+- location/AOI discontinuity;
+- lifecycle resolution;
+- new encounter counterpart;
+- configurable max duration.
 
-Example: a vessel may have a gap Monday, a normal transit Tuesday and a separate rendezvous Friday. Those are three episodes, not one ever-growing MMSI dossier.
+Tasks:
 
-## Task P4.3 — evidence-gated hypothesis engine
+- [ ] retire semantic rewriting inside `coalesce_security_vessel_episodes()`;
+- [ ] subject identity is stable across episodes;
+- [ ] one vessel can have several independent episodes in a day;
+- [ ] one STS episode can have two subjects;
+- [ ] Safety and Intelligence episodes never merge merely because MMSI matches.
 
-A hypothesis must contain:
+**Exit gate:** replay of a track with NUC → normal → later AIS gap yields separate Safety and Intelligence episodes.
+
+---
+
+# 11. Milestone M7 — hypothesis/evidence engine
+
+**Objective:** make Maritime Intelligence an investigation layer, not an anomaly feed.
+
+Create `InvestigationHypothesis`:
 
 ```text
+hypothesis_id
 hypothesis_type
+episode_id
 state
-evidence_stage
-reason_codes
-supporting_evidence_ids
-contradicting_evidence_ids
-counter_indicators
-reviewer
+ evidence_stage
+reason_codes[]
+counter_indicators[]
+evidence_link_ids[]
+assessment
+reviewed_by
 reviewed_at
-publication_decision
+published_at
+classification_version
 ```
 
-No direct detector may mark itself `published`.
-
-## Task P4.4 — hypothesis-specific gates
-
-### `covert_rendezvous`
-
-Require more than proximity/dwell. Consider:
-
-- offshore encounter geometry;
-- duration and relative speed;
-- course alignment;
-- vessel roles;
-- pre/post AIS gaps;
-- repeated pattern;
-- draught changes where available;
-- official sanctions context;
-- satellite association.
-
-### `position_spoofing`
-
-Require reproducible impossible movement / duplicate-location / GNSS-integrity evidence, with coverage/jamming counter-indicators.
-
-### `sanctions_evasion_pattern`
-
-Official sanctions fact alone is not an evasion hypothesis. Require movement/identity/encounter evidence plus review.
-
-### `infrastructure_pattern`
-
-Cable/pipeline proximity is context. Require repeated/dwell/anomaly/corroborating evidence before investigation-state escalation.
-
----
-
-# 9. P5 — cross-sensor evidence
-
-**Priority:** after bounded episodes/hypotheses exist.
-
-## Task P5.1 — time-aligned Sentinel association
-
-Association must compare at image acquisition time.
-
-For each AIS subject:
-
-1. propagate/interpolate AIS state to acquisition timestamp;
-2. carry kinematic and receiver uncertainty;
-3. compare SAR candidate distance;
-4. include candidate size/heading if available;
-5. preserve unmatched candidates;
-6. never force one-to-one attribution when multiple candidates fit.
-
-Output:
+Lifecycle:
 
 ```text
-candidate_id
-acquired_at
-predicted_subject_position
-prediction_uncertainty_m
-candidate_position
-association_distance_m
-association_score
-association_status=candidate|plausible|reviewed_match|rejected
+candidate → collecting → review_ready → assessed → published
+          ↘ rejected
+          ↘ expired
 ```
 
-## Task P5.2 — isolate heavy SAR worker
-
-The API process must not load heavy raster/detection models.
-
-Use a bounded job path with:
-
-- explicit memory gate;
-- one concurrent heavy job on ARM unless benchmark proves otherwise;
-- timeout;
-- failure state;
-- provenance/version metadata;
-- no API outage when satellite processing fails.
-
-## Task P5.3 — licensing enforcement
-
-Persist source licence class in every cross-sensor observation.
-
-Do not expose a GFW-derived commercial feature unless the deployment has a compatible licence flag.
-
----
-
-# 10. P6 — public and analyst presentation
-
-**Priority:** after evidence model produces stable data.
-
-## Task P6.1 — one disclosure policy
-
-Every frontend identifier render must call the same policy.
+Initial hypothesis types:
 
 ```text
-public Humanitarian
-  no MMSI / IMO / MarineTraffic / professional dossier
-
-public Maritime
-  neutral vessel identifier may appear only where product policy permits
-  never present identity as allegation
-
-analyst Maritime
-  full dated identity/evidence dossier
+dark_transit
+covert_rendezvous
+concealed_port_call
+identity_deception
+position_spoofing
+route_deception
+sanctions_evasion_pattern
+infrastructure_pattern
 ```
 
-## Task P6.2 — evidence-first panel
+Evidence examples:
 
-Replace category prose with:
+- official sanctions list match = fact, not evasion hypothesis;
+- STS + sanctions match + gap around encounter can support sanctions-evasion candidate;
+- infrastructure proximity alone cannot support infrastructure-threat hypothesis;
+- duplicate MMSI + incompatible simultaneous positions supports identity-deception candidate;
+- multiple impossible movement features + independent context can support spoofing candidate.
+
+Publication function must fail closed.
+
+**Exit gate:** no Maritime Intelligence public marker exists without a hypothesis record and its evidence links.
+
+---
+
+# 12. Milestone M8 — identity and sanctions separation
+
+**Objective:** separate identity integrity from designation.
+
+Create distinct observation/fact types:
 
 ```text
-Observation
-Derived features
-Assessment
-Evidence level
-Supporting evidence
-Counter-indicators
-Caveats
-Source provenance
-Episode window
-Hypothesis state (if any)
-Review/publication status
+identity_integrity
+official_sanctions_match
+registry_change
+flag_change
+imo_mmsi_mismatch
+mmsi_duplicate
+name_alias
 ```
 
-## Task P6.3 — unknown fails closed
+Tasks:
 
-Frontend must not invent semantic categories:
+- [ ] official OFAC/EU/UN lists canonical;
+- [ ] OpenSanctions optional enrichment only;
+- [ ] sanctions match can publish as sourced list fact;
+- [ ] sanctions match alone never implies evasion;
+- [ ] duplicate MMSI/identity anomaly routes to identity-integrity, not sanctions;
+- [ ] identity history is dated and source-specific.
 
-- no `Other signal` as a meaningful public category;
-- no `Other vessel` analytical row;
-- unknown/unclassified remains internal or receives a neutral “Unclassified context” treatment only where explicitly allowed.
-
-## Task P6.4 — Safety as its own product surface
-
-Maritime Safety should be visible without appearing in Security/Intelligence.
-
-Examples:
-
-- NUC;
-- aground;
-- restricted manoeuvrability;
-- navwarnings;
-- distress beacons where relevant.
-
-Safety uses neutral operational language and direct source evidence.
+**Exit gate:** “sanctioned vessel” and “identity anomaly” are two different evidence paths in DB, API and UI.
 
 ---
 
-# 11. P7 — production verification and cleanup
+# 13. Milestone M9 — cross-sensor maritime intelligence
 
-**Priority:** release gate.
+**Objective:** correlate AIS with independent sensors without overstating attribution.
 
-## Task P7.1 — full regression matrix
+Inputs:
 
-Required suites:
+- Sentinel-1 scene metadata/detections;
+- GFW research-only SAR/encounter data where licensing permits;
+- Copernicus Marine/weather context;
+- EMODnet ports/infrastructure/AOI;
+- GNSS interference layers;
+- official nav warnings;
+- Humanitarian events only as nearby context, never automatic causation.
+
+Association requirements:
 
 ```text
-backend full pytest
-ruff
-web lint
-typecheck
-web unit tests
-live simulation tests
-live API tests
-map tests
-vite production build
-edge parity tests
-Alembic upgrade from production-like snapshot
+sensor time alignment
+trajectory propagation
+position uncertainty
+sensor detection uncertainty
+candidate count
+AIS-match status
+counter-candidates
+source licence
+algorithm version
 ```
 
-## Task P7.2 — runtime acceptance tests
+Tasks:
 
-Verify against current production-like data:
+- [ ] Sentinel queries isolated from API process;
+- [ ] no automatic heavy GRD inference on API worker;
+- [ ] cache scene metadata;
+- [ ] bounded queue/timeout/retry policy;
+- [ ] candidate association returns uncertainty, never binary attribution without evidence.
 
-### Humanitarian
-
-- active Alarm Phone maritime point appears once;
-- translated repost updates same incident;
-- region-only shows area/no fake point;
-- land event shows Humanitarian marker/no drift;
-- resolved/archived lifecycle behaves according to the final operator policy;
-- no Humanitarian MMSI/IMO disclosure;
-- drift uses event observation time and canonical gate.
-
-### Maritime Safety
-
-- NUC is Safety, not Intelligence;
-- restricted manoeuvrability is Safety;
-- aground is Safety;
-- no Safety cargo Drift;
-- return to normal AIS status resolves the Safety episode;
-- EventAssessment reaches the UI.
-
-### Maritime Intelligence
-
-- neutral rendezvous is not sanctions by default;
-- ordinary coverage loss does not automatically become dark activity;
-- duplicate MMSI stays identity-integrity unless other evidence exists;
-- infrastructure proximity alone is context;
-- sanctions-list match is presented as an official-list fact, not automatic evasion;
-- hypothesis publication requires evidence gate + review.
-
-## Task P7.3 — historical data migration/backfill
-
-After new semantics are stable:
-
-- classify historical Safety events with service/lane;
-- remove legacy Drift eligibility from Safety records;
-- convert legacy rendezvous `sanctions` tagging to neutral observations where no sanctions evidence existed;
-- preserve audit history of original values;
-- do not silently rewrite forensic log entries.
-
-## Task P7.4 — severity decommission stage 2
-
-Only after all readers/writers are audited:
-
-- remove severity from routing decisions;
-- remove severity from publication decisions;
-- remove severity-driven presentation;
-- retain temporary compatibility serialization if old consumers still require it;
-- then use a reversible Alembic migration to remove obsolete DB field only when zero active readers depend on it.
+**Exit gate:** a darkship cue can be reproduced from stored AIS inputs + scene metadata + association parameters.
 
 ---
 
-# 12. Test and evaluation policy
+# 14. Milestone M10 — public and analyst product surfaces
 
-This policy applies to every future detector/classifier PR.
+**Objective:** UI mirrors the evidence architecture.
 
-1. Add/identify failing fixture first.
-2. Measure baseline before changing logic.
-3. Make the smallest semantic change.
-4. Re-run the target scorer.
-5. Run full regression suite.
-6. Report precision/recall/F1 and exact FP/FN IDs.
-7. Do not claim an improvement when the test corpus only changed to match the implementation.
-8. Synthetic examples remain valid regression fixtures, but production-quality claims require sanitized real-world examples.
-9. Stateful detectors must expose deterministic replayable feature/classification functions for evaluation.
-10. Any public-allegation rule needs explicit hard negatives representing routine/benign behaviour.
-
----
-
-# 13. Required PR order
-
-Do not implement later architecture before earlier semantic violations are closed.
-
-Recommended sequence:
+Public modes:
 
 ```text
-PR A — P0.1 canonical service/lane routing
-PR B — P0.2 remove legacy Safety Drift resurrection
-PR C — P0.3 wire EventAssessment backend→Live→UI
-PR D — P0.4 neutral rendezvous semantics
-PR E — P0.5 identity/vessel-class presentation cleanup
-PR F — P0.6 darkship cue endpoint + wording + association metadata
-PR G — P1 HumanitarianAssessment + expanded corpus
-PR H — P2 replayable AIS feature extraction + scorer
-PR I — P2 coverage-aware gap/integrity baseline
-PR J — P3 durable evidence schema + dual write
-PR K — P4 bounded episode builder
-PR L — P4 hypothesis lifecycle/publication gate
-PR M — P5 cross-sensor association
-PR N — P6 evidence-first UI/disclosure policy
-PR O — P7 production migration/verification
+Humanitarian
+Safety
+Maritime Intelligence (reviewed/published only)
+Environmental
 ```
 
-Each PR must be reviewable independently and preserve `main` green.
+Analyst mode additionally exposes:
+
+```text
+raw observation timeline
+feature values
+coverage baseline
+identity history
+evidence graph
+hypothesis state
+counter-indicators
+source provenance
+review actions
+```
+
+Public Humanitarian:
+
+- no professional vessel identifiers;
+- people-centred incident description;
+- location uncertainty explicit;
+- source/public thread updates allowed when safe;
+- Drift only where canonical gate allows it.
+
+Public Maritime:
+
+- neutral observation wording for Safety;
+- reviewed evidence-first wording for Intelligence;
+- identifier may appear only as sourced vessel identity, not as the analytical conclusion;
+- category color driven by semantic category, never severity.
+
+**Exit gate:** every visible card can be traced to service/lane + assessment/hypothesis + provenance.
 
 ---
 
-# 14. Stop conditions for autonomous agents
+# 15. Milestone M11 — backfill and legacy cleanup
 
-An autonomous agent must stop and report instead of improvising when:
+**Objective:** stop carrying compatibility heuristics indefinitely.
 
-- a change would weaken Humanitarian privacy;
-- a change would allow Safety to create Drift;
-- a rule would publicly imply sanctions/evasion/interference from one heuristic observation;
-- a migration would rewrite forensic history destructively;
-- a source licence/terms decision is unknown;
-- production data is needed to establish a threshold but is not available;
-- a supposedly equivalent VM/edge path produces different classifications;
-- tests show a regression in the stabilized Alarm Phone OCR/Drift pipeline;
-- a new ML/heavy dependency would materially exceed the ARM VM resource target.
+Tasks:
 
-Do not “solve” these by adding a permissive fallback. Unknown and unresolved states fail closed.
+- [ ] build dry-run classifier for historical `intel_events`;
+- [ ] report rows affected before migration;
+- [ ] backfill canonical service/lane, case type, lifecycle, location status and observation IDs;
+- [ ] remove legacy `maritime_domain()` semantic correction after backfill is proven;
+- [ ] remove Safety→grey_zone compatibility branches;
+- [ ] remove stale cargo Drift metadata;
+- [ ] clean stuck drift rows such as historically known land/computing residues;
+- [ ] deduplicate deterministic correlated alerts/cases;
+- [ ] retain immutable forensic/source records.
+
+**Exit gate:** current runtime no longer needs read-time semantic correction for historical records.
 
 ---
 
-# 15. Definition of the next stable SeaCommons release
+# 16. Milestone M12 — production observability and data quality
 
-The next stable milestone is reached only when all of the following are true:
+**Objective:** detect semantic/data degradation before the UI reveals it.
 
-- Humanitarian recognition is measured on a materially expanded corpus, not only the original synthetic baseline.
-- `service/lane` is authoritative across producer, DB projection, feed, edge and UI.
-- Maritime Safety is visible as Safety and cannot become cargo Drift or Security through a legacy fallback.
-- EventAssessment is actually visible in the Live/analyst panel.
-- AIS behaviour/integrity fixtures are scored, not marked `NOT YET SCORED`.
-- AIS gap detection is coverage-aware rather than class-blacklist-driven.
-- rendezvous is a neutral observation until independent evidence supports a hypothesis.
-- one MMSI no longer equals one indefinite security episode.
-- identity anomaly is separated from official sanctions designation.
-- infrastructure proximity is context, not implied sabotage/interference.
-- darkship/SAR association uses acquisition-time geometry and candidate wording.
-- observations, derived features, episodes and hypotheses are durably distinguishable.
-- public Maritime hypotheses require review/evidence gates.
-- Public Humanitarian identity/privacy invariants remain intact.
-- VM and edge are contract-parity tested.
-- full backend/web/build/migration/runtime acceptance gates are green.
+Metrics:
 
-Until those conditions hold, SeaCommons should describe Maritime Intelligence outputs as **observations, derived features, candidates and reviewable hypotheses**, not as confirmed suspicious activity.
+```text
+ingest events/source/min
+source freshness
+unclassified rate
+location resolution success
+OCR disputed rate
+region-only rate
+Drift eligibility count/rejection reason
+Safety events by type
+AIS feature counts
+coverage-quality distribution
+episodes opened/closed
+hypotheses by state
+publication rejections
+edge/VM parity mismatches
+queue depth/retries
+DB write failures
+```
+
+Add data-quality assertions:
+
+- no Safety event with `drift_eligible=True`;
+- no Humanitarian public record exposing MMSI/IMO;
+- no published Intelligence record without evidence links/review;
+- no region-only Humanitarian record with precise public point;
+- no STS observation classified sanctions solely from rendezvous;
+- no unresolved unknown classification silently routed to public.
+
+**Exit gate:** violations are observable counters/logged errors and covered by tests.
+
+---
+
+# 17. Milestone M13 — evaluation and replay release gate
+
+Every release must run four evaluation lanes.
+
+## Humanitarian
+
+- real + synthetic recognition corpus;
+- precision/recall/F1 per incident class;
+- lifecycle accuracy;
+- people-field extraction accuracy;
+- coordinate/location-status accuracy.
+
+## Maritime Safety
+
+- NUC/aground/restricted manoeuvrability replay;
+- benign routine-status negatives;
+- routing + publication correctness.
+
+## Maritime Behaviour/Integrity
+
+- gap/spoof/loiter/rendezvous replay metrics;
+- port/ferry/fishing/tug/pleasure negatives;
+- coverage outage negatives.
+
+## End-to-end public projection
+
+Replay representative incidents through:
+
+```text
+source observation
+→ persisted observation
+→ feature/classification
+→ episode/incident
+→ assessment/hypothesis
+→ publication policy
+→ VM feed
+→ edge feed where applicable
+→ web presentation
+```
+
+**Release gate:** no stage may be mocked away in the final integration replay except external network access, which must be replaced by recorded fixtures.
+
+---
+
+# 18. Milestone M14 — final production stabilization
+
+Run a production verification window and compare expected vs actual data.
+
+Checklist:
+
+- [ ] current Alarm Phone posts ingest and deduplicate;
+- [ ] OCR/region-only/land examples render correctly;
+- [ ] automatic Humanitarian Drift appears only for eligible maritime points;
+- [ ] NGO/SAR context is fresh and correctly classified;
+- [ ] Safety feed contains NUC/aground/restricted events and never Security-coalesces them;
+- [ ] AIS anomaly volume is bounded and explainable;
+- [ ] STS observations remain neutral until evidence gate;
+- [ ] vessel episodes are bounded;
+- [ ] hypotheses carry evidence/counter-evidence;
+- [ ] published Intelligence records have review provenance;
+- [ ] edge and VM Humanitarian semantics match;
+- [ ] memory/CPU/DB growth remain acceptable on ARM VM;
+- [ ] queues recover after restart;
+- [ ] no duplicate case explosion;
+- [ ] no stale public markers remain active indefinitely.
+
+**Definition of production-stable:** seven continuous days without invariant violations, duplicate-case explosion, unexplained public classification drift, stuck mandatory jobs or feed starvation; all replay suites green from the same release commit.
+
+---
+
+# 19. PR order from current state
+
+Claude should execute in this order unless a newly discovered root cause forces a documented dependency change:
+
+```text
+#66  Safety authority + no Safety Drift        [IN FLIGHT]
+#67  EventAssessment → public contract/UI
+#68  neutral rendezvous semantics
+#69  vessel-class/context cleanup + fail-closed unknowns
+#70  darkship cue semantics + current Copernicus STAC
+#71  observation/evidence schema + migrations
+#72  dual-write producers into observation layer
+#73  HumanitarianAssessment V2
+#74  real/sanitized Humanitarian corpus + scorer expansion
+#75  canonical LocationEvidence/image resolver
+#76  AIS deterministic replay adapters
+#77  executable behaviour/integrity scorer
+#78  CoverageBaseline + coverage-aware gaps
+#79  bounded MaritimeEpisode model
+#80  migrate Live security grouping to bounded episodes
+#81  InvestigationHypothesis + evidence graph
+#82  publication/review gate
+#83  identity-integrity vs sanctions separation
+#84  cross-sensor association model
+#85  analyst/public evidence UI
+#86  historical backfill + legacy semantic cleanup
+#87  observability/data-quality invariant metrics
+#88  full replay/e2e release gate
+#89  production verification fixes only
+```
+
+PR numbers are indicative; task order is authoritative.
+
+---
+
+# 20. What “complete maritime OSINT platform” means
+
+SeaCommons is complete for this release when:
+
+1. Humanitarian incidents are structured, deduplicated, positioned with auditable uncertainty, lifecycle-aware and privacy-safe.
+2. AIS observations are stored independently from derived anomalies.
+3. Detector outputs are replayable and quantitatively evaluated.
+4. AIS gaps are coverage-aware rather than vessel-class-filtered.
+5. vessel identity, sanctions facts, behaviour anomalies and Safety states are distinct concepts.
+6. vessel episodes are bounded in time/behaviour rather than grouped forever by MMSI.
+7. Maritime Intelligence consists of explicit hypotheses backed by evidence and counter-evidence.
+8. cross-sensor associations preserve acquisition time and uncertainty.
+9. public Intelligence cannot bypass human/evidence gates.
+10. every public item explains observation, interpretation, evidence level, provenance and caveats.
+11. historical data has been backfilled enough that runtime semantic hacks can be removed.
+12. CI + replay + production data-quality monitoring jointly guard the system.
+13. the ARM production target remains stable under normal workload.
+14. Claude can continue from this file alone, one PR at a time, without inventing architecture or reopening settled semantics.
+
+When all fourteen conditions are true, the stabilization roadmap is complete. Further work becomes feature development rather than repair of the data/evidence foundation.
