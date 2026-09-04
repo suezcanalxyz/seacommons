@@ -596,6 +596,24 @@ class IncidentTransitionDB(Base):
     review_decision_id = Column(String(96))
 
 
+class SourceCoverageEventDB(Base):
+    """Append-only coverage-change log (docs/updates.md P1.3): "record
+    coverage break when not feasible", "version the coverage profile" --
+    a source's coverage profile changing (added/removed/collection
+    method changed/coverage break) is data, written once, never edited.
+    ``profile_version`` increments per source with each recorded event,
+    so "when did this source's coverage change" is answerable without
+    inferring it from unrelated logs.
+    """
+    __tablename__ = "source_coverage_events"
+    id = Column(String(64), primary_key=True)
+    source_name = Column(String(64), nullable=False, index=True)
+    event_type = Column(String(32), nullable=False)  # added|removed|method_changed|coverage_break
+    rationale = Column(Text)
+    profile_version = Column(Integer, nullable=False)
+    recorded_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 def create_all(database_url: str) -> None:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
