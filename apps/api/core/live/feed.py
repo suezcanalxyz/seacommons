@@ -231,13 +231,24 @@ def public_signal_collection(
                 # regardless of whether it was ever resolved. Older history lives
                 # in the archive/replay views, not the live pulsing map.
                 continue
-            state = lifecycle.distress_lifecycle(
+            # docs/updates.md P0.10: canonical HumanitarianIncident state is
+            # the public authority when one exists; falls back to read-time
+            # recomputation only for markers with no incident (Maritime
+            # Safety, or pre-P0.3 legacy records) -- see
+            # core.intel.humanitarian_incident.resolve_public_incident_state.
+            from core.intel.humanitarian_incident import resolve_public_incident_state
+
+            incident_state = resolve_public_incident_state(
                 event, now=now, same_source=by_source.get(event.source, [])
             )
             # Directly resolved incidents were filtered above. Cross-post matches
             # may still project resolved; ambiguous replies project needs_review.
             feature["properties"]["kind"] = LiveSignalKind.DISTRESS.value
-            feature["properties"]["incident_lifecycle"] = state
+            feature["properties"]["incident_lifecycle"] = incident_state["lifecycle"]
+            feature["properties"]["reported_at"] = incident_state["reported_at"]
+            feature["properties"]["last_update_at"] = incident_state["last_update_at"]
+            feature["properties"]["state_changed_at"] = incident_state["state_changed_at"]
+            feature["properties"]["resolved_at"] = incident_state["resolved_at"]
             mode_features[event_mode].append(feature)
         elif kind in ("context", "distress"):
             # Broader OSINT context: news, AIS anomalies, GDACS, vessel

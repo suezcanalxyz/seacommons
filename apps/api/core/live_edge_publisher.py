@@ -290,10 +290,17 @@ def public_event_from_row(
     # or older than 7 days. The edge purges it outright; lifecycle still
     # describes records that remain visible or are consumed by archive views.
     expired = is_distress and not lifecycle.is_within_live_window(event, now=now)
-    incident_lifecycle = (
-        lifecycle.distress_lifecycle(event, now=now, same_source=same_source)
+    # docs/updates.md P0.10: canonical HumanitarianIncident state is the
+    # public authority when one exists -- same helper core.live.feed's
+    # public_signal_collection uses, so VM/edge parity holds by construction
+    # rather than by re-deriving the same logic twice.
+    from core.intel.humanitarian_incident import resolve_public_incident_state
+
+    incident_state = (
+        resolve_public_incident_state(event, now=now, same_source=same_source)
         if is_distress else None
     )
+    incident_lifecycle = incident_state["lifecycle"] if incident_state else None
     # Same redaction as the VM's public feed (core/live/projection.py,
     # _public_intel_feature): only the tracked account's own reply fields —
     # never the event's private-caller-sourced `text` (already blanked
@@ -328,6 +335,10 @@ def public_event_from_row(
         "coordinate_source": metadata.get("coordinate_source"),
         "radius_m": metadata.get("location_uncertainty_m"),
         "incident_lifecycle": incident_lifecycle,
+        "reported_at": incident_state["reported_at"] if incident_state else None,
+        "last_update_at": incident_state["last_update_at"] if incident_state else None,
+        "state_changed_at": incident_state["state_changed_at"] if incident_state else None,
+        "resolved_at": incident_state["resolved_at"] if incident_state else None,
         "expired": expired,
         "persons": metadata.get("persons"),
         "linked_mmsi": event.linked_mmsi,

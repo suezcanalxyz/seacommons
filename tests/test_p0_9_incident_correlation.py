@@ -41,9 +41,15 @@ def _fresh_tables():
 
 
 def _distress_event(event_id, text, timestamp):
+    # Unique text per call: intel_store.add()'s dedup keys off
+    # source+title+text[:120], and intel_store is a shared, process-global
+    # singleton across the whole pytest session -- a fixed string reused
+    # across test files can collide with an unrelated test's event and be
+    # silently dropped as a duplicate.
+    unique_text = f"{text} [{event_id}]"
     return IntelEvent(
         id=event_id, type="distress", severity="high", lat=35.5, lon=14.1,
-        title=text[:80], text=text, source="Alarm Phone", timestamp_utc=timestamp,
+        title=unique_text[:80], text=unique_text, source="Alarm Phone", timestamp_utc=timestamp,
         metadata={"is_distress": True},
     )
 
