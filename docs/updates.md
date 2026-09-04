@@ -1,109 +1,262 @@
-# SeaCommons — Post-Stabilization Geospatial & Data Intelligence Upgrade Plan
+# SeaCommons — Maritime OSINT Platform Upgrade Plan
 
-> **Execution order:** `docs/fixes.md` remains authoritative until fully completed. Do not start this plan while any required `fixes.md` milestone, migration, replay, integration, privacy, CI, or production verification gate is still open.
+> **Authority:** `docs/fixes.md` remains authoritative until its production-closure gate is complete. This plan starts only after that gate is green on the exact `main` SHA used as baseline.
 >
-> **Purpose:** raise SeaCommons from a stabilized maritime OSINT application to a production-grade geospatial and evidence-intelligence infrastructure without accumulating another layer of legacy. This is a migration program, not a feature wishlist.
+> **Target:** SeaCommons is a production-grade **maritime OSINT platform**. It continuously acquires open-source observations, preserves provenance, resolves entities and incidents, correlates independent evidence, follows cases over time, performs bounded geospatial/intelligence analysis, exposes reviewable assessments, and publishes privacy-aware outputs.
+>
+> **This document is executable.** Every section defines canonical objects, invariants, work packets, tests and exit gates. It is not a branding document and not a feature wishlist.
 
 ---
 
-# FIRST PRIORITY AFTER `fixes.md` CLOSES — LIVE HUMANITARIAN OSINT + LIVING INCIDENT DATASET
+# 0. Platform definition
 
-Before PostGIS, AI enrichment, new geospatial infrastructure or any other upgrade milestone, inspect and correct the **actual production Live dataset and rendered Live UI**. Do not infer correctness from fixtures or unit tests.
-
-The Humanitarian side must stop behaving like a feed of posts and become a **living incident-intelligence dataset**:
+SeaCommons has two first-class operational verticals sharing one evidence platform:
 
 ```text
-SOURCE / REPORT / MEDIA ITEM
-        ↓
-immutable SourceObservation
-        ↓
-normalization + extraction + preservation
-        ↓
-spatial / temporal / identity candidate retrieval
-        ↓
-correlation / duplicate decision
-        ↓
-canonical HumanitarianIncident
-        ↓
-append-only evidence + lifecycle updates
-        ↓
-assessment / contradiction handling / review
-        ↓
-current operational projection
-        ↓
-Live / Drift / Archive / analyst views
+HUMANITARIAN OSINT
+  distress / SAR / rescue / interception / missing / disembarkation / outcome
+
+MARITIME INTELLIGENCE
+  AIS integrity / identity / behaviour / dark activity / rendezvous /
+  sanctions-linked facts / infrastructure context / hypotheses
 ```
 
-A source post is evidence. It is not automatically the incident itself.
+Both use the same platform primitives:
 
-## Senior OSINT methodology baseline
+```text
+Source Registry
+Connector / Collector
+SourceObservation
+PreservedArtifact
+Claim
+Entity
+Relationship
+CorrelationDecision
+Incident / Episode
+Assessment / Hypothesis
+Watch
+ReviewDecision
+PublicationDecision
+GeometryEvidence
+Revision / AuditEvent
+```
 
-SeaCommons should follow the operational principles used by serious event-data and digital-investigation systems:
+The shared canonical flow is:
 
-1. **Living dataset, stable incident identity.** Once an incident is created, better later information updates the same canonical incident instead of creating a new unrelated record. Corrections, merges, source additions, location refinements and outcome updates must preserve a stable incident identity and a revision trail.
-2. **Immutable source evidence.** Original observations are never overwritten by later interpretation. Store the raw/source reference, capture time, source time, retrieval time, canonical URL/identifier, hashes where applicable, media metadata and preservation status.
-3. **Evidence and assessment are separate.** A source claim, a normalized field, an analyst assessment and a public projection are different objects. Never collapse them into one mutable row without provenance.
-4. **Triangulation over source prestige.** Multiple independent sources may strengthen an assessment; repeated syndication/copying of one source does not. Track source independence and circular reporting risk.
-5. **Conservative uncertainty.** Conflicting reports remain conflicting until resolved. Do not silently choose the most convenient number, location or outcome.
-6. **Coverage is measurable.** “Following the news” means maintaining a versioned source-coverage strategy by geography, language, topic and source type, with known gaps and outages.
-7. **Historical integrity matters.** Adding a new source changes observable event volume. Coverage changes must be logged and, when feasible, historically backfilled before trend comparisons are trusted.
-8. **Preservation before disappearance.** Time-sensitive online evidence should be archived/preserved as early as practical because posts, pages and media may later be edited or deleted.
-9. **Chronology is first-class.** Distinguish source event time, publication time, observation time, ingestion time, update time, lifecycle transition time and model-computation time.
-10. **Operational state is evidence-based.** Silence is not resolution. Age may change visibility or review priority, but lifecycle must describe what evidence supports.
-11. **Public safety/privacy outranks analytic completeness.** Exact vulnerable-person location, private identifiers and sensitive raw humanitarian material must remain governed by publication/privacy policy.
-12. **Every automated decision is replayable.** Persist enough structured evidence, rule/model version and decision rationale to reproduce why SeaCommons correlated, updated, resolved, reopened, published or withheld a case.
+```text
+SOURCE
+  ↓
+CONNECTOR / COLLECTOR
+  ↓
+IMMUTABLE SourceObservation + provenance
+  ↓
+PRESERVATION / media / hashes where permitted
+  ↓
+DETERMINISTIC extraction + normalization
+  ↓
+CLAIMS + entities + geometry evidence
+  ↓
+SPATIAL / TEMPORAL / IDENTITY candidate retrieval
+  ↓
+CORRELATION / entity resolution / duplicate decision
+  ↓
+INCIDENT / EPISODE / ENTITY GRAPH
+  ↓
+WATCH + follow-up collection
+  ↓
+ASSESSMENT / contradiction / review
+  ↓
+PUBLICATION POLICY + privacy projection
+  ↓
+LIVE / ARCHIVE / API / EXPORT / ANALYST UI
+```
 
-These principles are consistent with mature event-data practice that treats datasets as continuously revised rather than immutable snapshots; with professional digital open-source investigation standards that emphasize collection, preservation, verification and metadata; and with humanitarian data-responsibility practice that prioritizes safe and ethical information management.
+Forbidden shortcuts:
+
+```text
+SOURCE → post-as-incident
+SOURCE → LLM/VLM → production truth
+completed Drift job → current operational Drift
+single list match → behavioural allegation
+silence → resolved
+age → archived without lifecycle semantics
+multiple copied articles → independent corroboration
+```
 
 ---
 
-## A. Immediate production Live audit
+# 1. Non-negotiable OSINT invariants
 
-Audit at minimum:
+1. **Observation is not incident.** A source item is immutable evidence. Canonical incidents/episodes are derived, revisable objects.
+2. **Stable identity.** Better later information updates the same incident/entity whenever evidence supports continuity; merges/splits keep redirects and revision history.
+3. **Evidence and assessment are separate.** Raw/source claims, normalized claims, analyst/automated assessments and public projections are different records.
+4. **Provenance is mandatory.** Every claim and derived output points back to observation IDs and method/version.
+5. **Contradictions are data.** Conflicting claims are retained and surfaced; do not overwrite disagreement.
+6. **Independent corroboration is explicit.** Syndication/copying does not multiply source independence.
+7. **Coverage is measurable.** The platform knows what sources/regions/languages it covers, what is stale/down and when source mix changes.
+8. **Historical integrity matters.** High-yield new sources require a backfill/coverage-break assessment before trend comparisons are trusted.
+9. **Chronology is typed.** Event time, publication time, retrieval time, ingestion time, update time, lifecycle time and model-computation time are never interchangeable.
+10. **Silence is not resolution.** No time threshold alone may claim rescue, interception, death, resolution or closure.
+11. **False merge cost is high.** Prefer `UNCERTAIN` + review over an unsupported incident merge.
+12. **Original geometry is preserved.** Reported, derived, uncertainty and public geometry are distinct.
+13. **Privacy precedes convenience.** Humanitarian public outputs never inherit internal precision or private identifiers by accident.
+14. **AI is bounded.** Models may extract, rank, classify or propose correlations, but may not silently become canonical truth.
+15. **Every automated decision is replayable.** Rule/model/schema versions and supporting evidence are persisted.
+16. **Live and Archive are projections of one history.** They are not separate truth stores.
+17. **One authoritative path per concept.** Compatibility may exist temporarily only with an explicit deletion milestone.
+
+---
+
+# 2. Agent execution contract
+
+The agent must treat this file as a dependency graph, not as permission to work broadly.
+
+## 2.1 Work-packet rule
+
+Before coding any packet, write a short implementation note in the PR body containing:
+
+```text
+Packet ID:
+Problem observed:
+Production path affected:
+Canonical object/contract changed:
+Existing authoritative path:
+Target authoritative path:
+Schema/migration delta:
+Legacy to delete:
+Temporary compatibility:
+Deletion packet:
+Tests to write first:
+Replay/fixture evidence:
+Observability added:
+Privacy/publication impact:
+Known non-goals:
+```
+
+Then execute only that packet.
+
+## 2.2 PR boundary rule
+
+One PR may change one semantic authority at a time. Examples of valid PR boundaries:
+
+```text
+observation provenance schema
+incident lifecycle persistence
+correlation decision persistence
+source coverage registry
+current-Drift ownership
+Live timer contract
+one connector adapter
+one PostGIS query family
+one AI shadow capability
+```
+
+Invalid PR boundary:
+
+```text
+"improve humanitarian pipeline"
+"upgrade OSINT"
+"refactor live"
+"add AI intelligence"
+```
+
+If a packet requires unrelated schema, UI and infrastructure rewrites, split it unless they are required for one tested vertical slice.
+
+## 2.3 TDD / replay order
+
+For each packet:
+
+```text
+1. sync main
+2. prove fixes.md closure still green
+3. read this packet + direct dependencies
+4. inspect production path and current DB schema
+5. capture a failing regression fixture from real/redacted data where possible
+6. write failing unit/integration/replay test
+7. implement smallest vertical slice
+8. run targeted tests
+9. run relevant full suites
+10. run migration up/down/re-up when schema changes
+11. inspect duplicate authority / stale compatibility
+12. verify public/privacy projection
+13. verify observability
+14. self-review diff against packet exit gate
+15. open PR with evidence
+16. merge only green
+17. update main before next packet
+```
+
+## 2.4 Stop conditions
+
+Stop the packet and report instead of widening scope when:
+
+- required source data is inaccessible or terms prohibit planned collection;
+- schema semantics are ambiguous enough to create two possible authorities;
+- a migration cannot preserve existing provenance/history;
+- privacy/publication impact is unclear;
+- the packet needs a dependency scheduled later;
+- a proposed model capability has no labelled evaluation corpus;
+- a production anomaly cannot be reproduced/explained from data/code;
+- a change would make source observation mutable;
+- tests require inventing precision or truth not supported by evidence.
+
+Do not solve stop conditions by adding silent fallback logic.
+
+---
+
+# 3. FIRST PRIORITY — Production Humanitarian Live as a real OSINT vertical
+
+This is the first work after `fixes.md` closes. Do not start PostGIS, provider integrations or new GIS infrastructure first.
+
+Goal: every Humanitarian item visible in production must be traceable from source observation through canonical incident, lifecycle, current geometry, current Drift, timer and publication decision.
+
+## P0.1 — Production truth-table audit
+
+Build a machine-readable audit over:
 
 ```text
 /api/v1/live/signals
 /api/v1/live/drifts
 /api/v1/live/archives
-public edge projection
-rendered Humanitarian Live map/panel
-Alarm Phone source threads and repost/update chains
-NGO / authority / news updates correlated to Humanitarian cases
-persisted IntelEvent / SourceObservation / DriftResult rows behind each visible case
+edge/public projection
+rendered Humanitarian Live UI
+persisted IntelEvent / SourceObservation / DriftResult data
+Alarm Phone threads/replies/reposts
+correlated NGO / authority / news observations
 ```
 
-For every currently visible Humanitarian case reconstruct:
+For each visible case output:
 
 ```text
-incident_id / event ids
+visible feature id
+candidate incident id
 source observation ids
-source observed_at
-source published_at
-received_at
-event timestamp used by Live
-first publication time
-latest source update time
-latest correlated update time
+source ids
+reported/event time
+source publication time
+retrieved_at / received_at
+last relevant update time
+lifecycle + reason
 state_changed_at
-resolved_at when known
-Drift origin observation/time
-Drift model created_at / completed_at
-current lifecycle state
-why that lifecycle state was selected
-whether the marker is still on Live
-whether a Drift is still on Live
-which source/evidence currently supports each public field
+resolved_at if any
+current location evidence id + method + precision
+current Drift id + origin observation/time + status
+marker visible yes/no
+Drift visible yes/no
+public timer values
+expected timer values
+publication decision
+correlation candidates
+anomaly flags
 ```
 
-Treat stale Drift geometry, impossible timers, duplicate Alarm Phone markers, unresolved events that silently disappear, resolved events that remain operational-looking, incorrect coordinates and unlinked follow-up reports as data-model/pipeline defects, not cosmetic UI issues.
-
-Required anomaly flags include:
+Required flags:
 
 ```text
 STALE_DRIFT
 DRIFT_AFTER_RESOLUTION
 MULTIPLE_CURRENT_DRIFTS
-DRIFT_ORIGIN_OLDER_THAN_CURRENT_ACCEPTED_POSITION
+DRIFT_ORIGIN_OLDER_THAN_CURRENT_POSITION
 TIMER_SOURCE_MISMATCH
 RECEIVED_AT_USED_AS_REPORTED_AT
 OUT_OF_ORDER_UPDATE
@@ -120,321 +273,87 @@ SOURCE_COVERAGE_GAP
 SOURCE_STALE_OR_DOWN
 ```
 
-Create privacy-redacted regression fixtures from real production failures. The audit is complete only when every unexplained visible anomaly has a code/data-path explanation and a test or remediation task.
+**Exit:** every unexplained visible anomaly has a code/data-path explanation and a redacted regression fixture or explicit remediation packet.
 
----
+## P0.2 — Immutable SourceObservation + provenance boundary
 
-## B. Canonical Humanitarian incident model
+Make `SourceObservation` the canonical source-evidence primitive.
 
-Persist a canonical `HumanitarianIncident` with stable identity. Source observations remain immutable evidence linked to it.
+Minimum fields:
 
-Minimum canonical fields:
+```text
+observation_id
+source_id
+source_item_id
+canonical_url
+parent/reply/repost/thread ids
+published_at
+observed_at
+retrieved_at
+ingested_at
+language
+raw_text_ref / permitted snapshot ref
+media_refs[]
+content_hash
+parser/extractor version
+collection_method
+access/preservation status
+raw metadata payload
+```
+
+Rules:
+
+- idempotent collection by stable source identity/hash;
+- corrections from the source become new observations or explicit source revisions;
+- normalized fields never overwrite the captured source representation;
+- deleted/edited source state may be recorded as a later observation;
+- public exposure of raw content is a separate policy.
+
+**Exit:** replay can reconstruct what SeaCommons saw and when; duplicate ingestion does not reset incident time.
+
+## P0.3 — Canonical HumanitarianIncident
+
+Create/persist a stable incident object independent of any one source post.
+
+Minimum structure:
 
 ```text
 incident_id
+lifecycle
 reported_at
 last_update_at
 state_changed_at
 resolved_at
 archived_at
-lifecycle
 case_type
-people_claims[]
-current_people_assessment
-outcome_claims[]
-current_outcome_assessment
-location_claims[]
-current_location_evidence_id
-current_location_precision
-current_drift_id
 source_observation_ids[]
-correlated_incident_ids[]
-supporting_evidence_ids[]
-contradicting_evidence_ids[]
-assessment_confidence
+current_location_evidence_id
+current_people_assessment_id
+current_outcome_assessment_id
+current_drift_id
 review_status
 revision
 created_at
 updated_at
+redirect/merge/split metadata
 ```
 
-Do not overwrite conflicting source claims. Example:
+The incident owns current operational state. Source observations do not.
 
-```text
-Alarm Phone: ~56 people
-NGO source: 59 people
-authority report: 61 people
+**Exit:** multiple updates to one real case can be attached without creating unrelated Live markers.
 
-incident.current_people_assessment = 59
-assessment basis = [observation A, observation B]
-contradiction = observation C
-confidence = medium
-```
+## P0.4 — Claim + assessment model
 
-The public API may expose only the bounded/appropriate assessment, but the internal evidence graph must retain all source claims.
-
----
-
-## C. Canonical lifecycle
-
-Minimum lifecycle states:
-
-```text
-reported         first credible distress observation received
-active           evidence supports an ongoing incident
-needs_review     updates exist but outcome/correlation is ambiguous
-unresolved_stale no recent evidence, outcome unknown; operational confidence decayed
-resolved         credible evidence says immediate distress/search is concluded
-archived         case is historical and no longer operationally Live
-reopened         credible new evidence after resolution indicates renewed/continuing danger
-```
-
-Rules:
-
-- `archived` must never mean merely “nothing heard for 24h”.
-- `unresolved_stale` explicitly represents missing outcome evidence.
-- time can reduce display prominence or trigger review, but cannot manufacture a rescue/resolution.
-- resolved cases continue receiving later evidence and corrections.
-- a reopened case preserves the previous resolution transition; do not erase history.
-- ambiguous source updates must not silently resolve or reopen a case.
-
-Every transition persists:
-
-```text
-incident_id
-from_state
-to_state
-transition_at
-effective_at
-reason_code
-supporting_observation_ids[]
-contradicting_observation_ids[]
-correlation_method
-rule/model version
-confidence
-review_required
-reviewed_by/reviewed_at when applicable
-```
-
----
-
-## D. Incident-follow-up engine — Humanitarian must keep following the news
-
-After a case opens, create an explicit `IncidentWatch` rather than relying on generic feed polling.
-
-The watch builds a search/correlation profile from:
-
-```text
-source thread / post ids
-coordinates + uncertainty
-named places
-people-count range
-vessel description
-route / departure / destination
-case type
-NGO / authority references
-known vessel identities when publishable internally
-keywords / named entities
-language variants
-```
-
-The watcher searches available sources for updates and emits new immutable observations. It does not directly mutate the incident.
-
-Suggested cadence is risk-based rather than one fixed interval:
-
-```text
-ACTIVE / REOPENED
-  highest follow-up priority
-
-NEEDS_REVIEW
-  high follow-up + analyst queue
-
-RESOLVED 0–24h
-  high follow-up for outcome confirmation/corrections
-
-RESOLVED 1–7d
-  periodic follow-up for disembarkation, casualties, missing, interception/return, official/NGO corrections
-
-7–30d
-  low-frequency enrichment / historical correction
-
-ARCHIVED
-  no operational polling by default, but newly ingested evidence may still reopen or revise history
-```
-
-Do not implement “follow all news” as an unbounded LLM/web crawl. Build bounded, auditable source adapters and queries with explicit coverage and failure metrics.
-
----
-
-## E. Source Coverage Matrix
-
-Create a versioned Source Registry + Coverage Matrix.
-
-Each source records at minimum:
-
-```text
-source_id
-name
-source_type
-operator/organisation
-geographic coverage
-route coverage
-languages
-content types
-collection method
-polling cadence
-expected publication latency
-historical coverage start
-access/licence/terms
-privacy constraints
-preservation capability
-current health
-last successful fetch
-known biases / limitations
-source independence group
-active_from / active_to
-```
-
-Humanitarian source categories should include, where legally/technically available and justified:
-
-```text
-Alarm Phone and relevant source threads
-SAR NGOs / rescue organisations
-official NGO RSS / statements
-IOM / Missing Migrants / DTM outputs
-UNHCR / OCHA / ReliefWeb humanitarian reporting
-coastguard / MRCC / government statements
-local and regional Mediterranean media
-international media
-verified specialist journalists / monitors
-public social feeds with source-specific rules
-relevant vessel/AIS evidence as corroboration, never as a humanitarian source substitute
-```
-
-Maintain geographic coverage profiles at least for:
-
-```text
-Central Mediterranean
-Eastern Mediterranean
-Western Mediterranean
-Aegean
-Adriatic / Ionian where relevant
-Atlantic / Canary route when included in product scope
-```
-
-Coverage health must answer:
-
-```text
-What are we watching?
-Which languages?
-Which feeds are currently healthy?
-How stale is each source?
-Which routes have only one source family?
-Which areas have no local-language coverage?
-Did the source mix change recently?
-Are apparent trend changes actually collection changes?
-```
-
-A new source entering production requires:
-
-1. source profile and reason for inclusion;
-2. duplicate/correlation evaluation;
-3. known bias/coverage notes;
-4. historical/backfill assessment;
-5. before/after coverage metrics;
-6. source-change log entry.
-
-Where feasible, backfill the source before using its addition for trend comparisons. If backfill is impossible, mark the coverage break explicitly so dashboards do not interpret collection expansion as a real-world incident spike.
-
----
-
-## F. Source preservation and provenance
-
-For every important online source observation preserve enough evidence to verify what SeaCommons saw at collection time.
-
-Persist when legally/technically permitted:
-
-```text
-canonical source URL / platform id
-source account / publisher id
-source publication timestamp
-retrieved_at
-raw content or permitted snapshot reference
-media attachment references
-content hash
-media hash where retained
-HTTP/source metadata useful for replay
-parent/reply/repost/thread relations
-language
-parser/extractor version
-archival status / archive URI when available
-```
-
-Original evidence is append-only. Corrections create new observations or revision records; they do not rewrite the source item SeaCommons originally ingested.
-
-Preservation storage and public exposure are separate concerns. Sensitive/private humanitarian material may be retained under restricted policy while never appearing in public projection.
-
----
-
-## G. Correlation and duplicate handling
-
-Required decision taxonomy:
-
-```text
-SAME_INCIDENT
-RELATED_INCIDENT
-NEW_INCIDENT
-UNCERTAIN
-```
-
-Candidate generation should use deterministic evidence first:
-
-```text
-thread/reply identity
-source identifiers
-spatial overlap + uncertainty
-time overlap
-people-count compatibility
-vessel description
-route/departure/place references
-NGO / authority references
-known source-specific case identifiers
-```
-
-Optional lexical/embedding/model similarity may rerank candidates later, but may not be the sole evidence for merging.
-
-Persist a `CorrelationDecision` containing:
-
-```text
-observation_id
-candidate_incident_id
-decision
-supporting_features[]
-contradicting_features[]
-source_independence assessment
-method/version
-confidence
-review state
-```
-
-False merges are more dangerous than temporary duplicates. Prefer `UNCERTAIN` + review when evidence is weak.
-
-Detect circular reporting: multiple articles quoting the same original report count as one evidence lineage, not multiple independent corroborations.
-
----
-
-## H. Claim-level evidence and contradiction model
-
-Important changing fields should be represented as claims rather than repeatedly overwritten values:
+Important facts become claims, not mutable scalar truth:
 
 ```text
 location
 people aboard
-rescued count
-missing count
-death count
-vessel type
-engine condition
+rescued
+missing
+deaths
+vessel description/type
+engine/condition
 water ingress
 last contact
 interception
@@ -444,42 +363,107 @@ rescuing vessel/authority
 outcome
 ```
 
-Each claim records:
+Each claim:
 
 ```text
+claim_id
 claim_type
-value / structured value
+structured value
 observation_id
 source_id
 claimed_at
 observed_at
-confidence if source supplies one
 extraction method/version
 verification status
-supersedes claim id when explicit
+explicit supersedes id if applicable
 ```
 
-The canonical incident assessment selects or bounds claims while retaining disagreement.
-
-Do not implement one generic numeric `trust_score` that automatically decides truth. Source reliability is contextual: a source may be strong for direct distress reports but weaker for final casualty figures, or vice versa.
-
----
-
-## I. Alarm Phone timer semantics
-
-The UI timer must have an explicit semantic source. Never calculate one generic age from whichever timestamp exists.
-
-Expose:
+Assessment:
 
 ```text
-reported_at       original incident report/observation time
-last_update_at    latest relevant evidence attached to the case
-state_changed_at  latest lifecycle transition effective time
-data_received_at  when SeaCommons received latest evidence
-resolved_at       evidence-backed resolution time when known
+assessment_id
+incident_id
+field/type
+selected/bounded value
+supporting_claim_ids[]
+contradicting_claim_ids[]
+method/version
+confidence
+review state
+created_at
 ```
 
-Public UI should normally display:
+Never implement one global numeric source `trust_score` as truth arbitration.
+
+**Exit:** conflicting people/location/outcome claims can coexist while public/internal assessment remains explicit and traceable.
+
+## P0.5 — Evidence-based lifecycle
+
+Canonical states:
+
+```text
+reported
+active
+needs_review
+unresolved_stale
+resolved
+archived
+reopened
+```
+
+Meaning:
+
+```text
+reported          credible initial distress evidence exists
+active            current evidence supports ongoing danger/search
+needs_review      material update/correlation is ambiguous
+unresolved_stale  outcome unknown; fresh evidence has gone quiet
+resolved          positive evidence supports conclusion of immediate distress/search
+archived          no longer operationally Live; history retained
+reopened          new credible evidence after resolution supports renewed/continuing danger
+```
+
+Every transition:
+
+```text
+transition_id
+incident_id
+from_state
+to_state
+transition_at
+effective_at
+reason_code
+supporting_observation_ids[]
+contradicting_observation_ids[]
+method/version
+confidence
+review_required
+review_decision_id
+```
+
+Rules:
+
+- time alone may move `active -> unresolved_stale` only under an explicit stale-evidence policy;
+- time alone cannot create `resolved`;
+- `archived` is presentation/operational retirement after lifecycle policy, not a synonym for no update;
+- later evidence may revise a resolved/archived incident;
+- reopening retains prior transitions.
+
+**Exit:** same input history always yields the same lifecycle replay; no stored ingestion-era shortcut can override canonical transition history.
+
+## P0.6 — Humanitarian timer contract
+
+Expose typed timestamps:
+
+```text
+reported_at
+last_update_at
+state_changed_at
+resolved_at
+data_received_at
+```
+
+UI semantics:
 
 ```text
 ACTIVE
@@ -492,37 +476,29 @@ UNRESOLVED_STALE
 Reported 31h ago · Last update 27h ago · Outcome unknown
 ```
 
-Never reset incident age because of duplicate ingestion, a classifier rerun, projection refresh or Drift recomputation.
-
-Normalize timestamps to UTC and test timezone offsets, missing timezone, delayed ingestion, reposts, duplicate ingestion and out-of-order updates.
-
----
-
-## J. Drift lifecycle belongs to the incident
-
-A Drift is a derived model product, not an independently live incident.
-
 Rules:
 
-```text
-ACTIVE/REOPENED + valid maritime point -> current Drift may be visible
-NEEDS_REVIEW -> Drift visible only if origin evidence remains eligible and policy permits
-UNRESOLVED_STALE -> hide/freeze operational Drift according to explicit stale-model policy; never imply current search certainty
-RESOLVED -> immediately remove/freeze Drift from operational Live
-ARCHIVED -> no operational Live Drift
-new accepted position -> old Drift becomes superseded
-REOPENED -> create a new versioned Drift only from newly valid evidence
-region-only/unpositioned -> no fabricated Drift
-```
+- timer derives from explicit server timestamps;
+- reruns, duplicate ingestion, projection refresh and Drift recomputation never reset incident age;
+- UTC storage; offset-aware rendering;
+- out-of-order source updates do not move `reported_at` forward.
 
-Persist:
+Test delayed ingestion, timezone offsets, duplicate posts, reposts, source edits, missing timezone and out-of-order arrival.
+
+**Exit:** public timer can be reconstructed from API fields with no hidden frontend inference.
+
+## P0.7 — Drift ownership and supersession
+
+A Drift is a versioned derived artifact owned by an incident.
+
+Minimum record:
 
 ```text
 drift_id
 incident_id
 origin_observation_id
-origin_timestamp
 origin_geometry_evidence_id
+origin_timestamp
 model/version
 forcing inputs/version
 created_at
@@ -531,51 +507,369 @@ status = current | superseded | resolved | failed | historical
 superseded_by
 ```
 
-`public_drift_collection()` must select only the incident's current operational Drift; it must not rediscover arbitrary completed historical jobs and publish them as current.
+Rules:
+
+```text
+ACTIVE/REOPENED + valid point -> current Drift may be operational
+NEEDS_REVIEW -> only if origin evidence remains eligible by explicit policy
+UNRESOLVED_STALE -> freeze/hide operational Drift according to stale-model policy
+RESOLVED -> remove/freeze from Live immediately
+ARCHIVED -> never operational Live
+new accepted position -> old Drift superseded before new current Drift becomes public
+region-only/unpositioned -> no fabricated trajectory
+```
+
+`public_drift_collection()` must select `incident.current_drift_id`; it must not rediscover arbitrary completed jobs.
+
+**Exit:** exactly zero or one operational current Drift per incident; stale/historical jobs remain replayable but cannot appear current.
 
 ---
 
-## K. Archive and revision semantics
+# 4. Source acquisition and coverage subsystem
 
-Live and Archive are projections over the same incident history.
+A serious OSINT platform must know what it watches and where it is blind.
 
-Archive must retain:
+## P1.1 — Source Registry
 
-```text
-stable incident id
-first report time
-final/current lifecycle
-revision number
-resolution/outcome when known
-bounded public location
-historical Drift references when publication-safe
-source-count / provenance summary
-last revised_at
-```
-
-Later evidence may revise an archived incident without reintroducing it to operational Live unless lifecycle rules actually reopen it.
-
-Maintain an internal revision/change log describing at least:
+Each source:
 
 ```text
-incident created
-observation attached
-field assessment changed
-location refined
-lifecycle transition
-incident merge/split
-source correction
-historical backfill
-public projection changed
+source_id
+name
+source_family
+source_type
+operator/organisation
+geographic coverage
+route coverage
+languages
+content types
+collection method
+polling cadence
+expected latency
+historical coverage start
+terms/licence/access constraints
+privacy constraints
+preservation capability
+independence group
+known limitations
+active_from / active_to
 ```
+
+Source reliability is contextual metadata, not one global truth score.
+
+## P1.2 — Coverage Matrix
+
+Track at least:
+
+```text
+Central Mediterranean
+Eastern Mediterranean
+Western Mediterranean
+Aegean
+Adriatic / Ionian when in scope
+Atlantic / Canary route when in scope
+```
+
+Across dimensions:
+
+```text
+region / route
+language
+source family
+active sources
+healthy sources
+last successful fetch
+expected vs actual cadence
+local-language coverage
+single-family dependency
+coverage change date
+backfill status
+```
+
+Source families should include, when legally/technically justified:
+
+```text
+Alarm Phone / distress networks
+SAR NGOs / rescue organisations
+NGO statements/RSS
+IOM / Missing Migrants / DTM
+UNHCR / OCHA / ReliefWeb
+MRCC / coastguard / government statements
+local Mediterranean media
+regional/international media
+verified specialist journalists/monitors
+source-specific public social feeds
+AIS/vessel evidence as corroborating maritime evidence
+```
+
+Do not claim “all news”. The platform must expose its observable universe and gaps.
+
+## P1.3 — Coverage-change integrity
+
+A high-yield new source can create an artificial trend break.
+
+Before using a new source for comparative trends:
+
+```text
+record inclusion rationale
+measure unique-event yield
+measure duplicate/correlation yield
+assess historical availability
+backfill when feasible
+record coverage break when not feasible
+version the coverage profile
+```
+
+Dashboards/exports must expose material collection-method changes.
+
+**P1 exit:** operators can answer what SeaCommons is watching, what is down, which areas/languages have weak coverage and when coverage changed.
 
 ---
 
-## L. Humanitarian review queue
+# 5. Connector architecture
+
+Use a connector contract instead of source-specific logic leaking into domain code.
+
+Connector classes:
+
+```text
+IMPORT      pull/poll external source and emit SourceObservation
+STREAM      continuously receive source events
+ENRICH      query external source for a known incident/entity/watch
+PRESERVE    archive permitted source artifact/media
+EXPORT      emit selected platform objects to external consumers
+```
+
+Each connector must implement:
+
+```text
+capabilities
+source_id
+checkpoint/cursor semantics
+idempotency key
+rate-limit policy
+retry/backoff
+failure classification
+health signal
+raw-to-observation mapping
+terms/privacy notes
+fixture/replay mode
+```
+
+Connector failure must not mutate existing incidents or silently mark sources as empty.
+
+Test:
+
+```text
+first fetch
+no-op repeat fetch
+new item
+edited item
+pagination
+out-of-order item
+429
+5xx
+timeout
+partial malformed payload
+cursor recovery
+source deletion where observable
+```
+
+Do not build one giant “news scraper”. Build bounded adapters with measurable coverage.
+
+---
+
+# 6. Preservation and evidentiary provenance
+
+For public web/social evidence, preserve enough to verify what the platform observed at collection time where terms/law/privacy permit.
+
+Persist/reference:
+
+```text
+canonical URL/platform id
+publisher/account id
+publication timestamp
+retrieved_at
+raw text or permitted snapshot
+media references
+content/media hashes
+thread/parent relations
+language
+HTTP/source metadata useful for replay
+parser version
+preservation status
+archive URI/reference when available
+```
+
+Preservation and public publication are separate policies.
+
+For sensitive Humanitarian material:
+
+- minimize retained personal identifiers;
+- segregate restricted artifacts;
+- make retention policy explicit;
+- never leak internal artifact URLs/hashes if they reveal sensitive content;
+- preserve provenance even when public content is generalized/withheld.
+
+---
+
+# 7. Correlation, entity resolution and evidence graph
+
+## P2.1 — CorrelationDecision
+
+Taxonomy:
+
+```text
+SAME_INCIDENT
+RELATED_INCIDENT
+NEW_INCIDENT
+UNCERTAIN
+```
+
+Persist:
+
+```text
+observation_id
+candidate_incident_id
+decision
+supporting_features[]
+contradicting_features[]
+source_independence_result
+method/version
+confidence
+review state
+```
+
+Candidate generation order:
+
+```text
+1. exact thread/source IDs
+2. known source-specific case IDs
+3. temporal bounds
+4. spatial overlap + uncertainty
+5. place/route/departure compatibility
+6. people-count range
+7. vessel description/identity
+8. NGO/authority references
+9. lexical/entity overlap
+10. optional embedding/reranker
+```
+
+Model similarity cannot be sole merge evidence.
+
+## P2.2 — Circular reporting lineage
+
+Represent derivation/quotation relationships where detectable:
+
+```text
+original report → article A → article B
+```
+
+Independent-source count must use evidence lineages, not URL count.
+
+## P2.3 — Entity graph
+
+Canonical entities may include:
+
+```text
+vessel
+organisation
+source account
+port
+place
+maritime zone
+infrastructure
+incident
+episode
+observation
+```
+
+Relationships carry provenance and time bounds:
+
+```text
+reported_by
+mentions
+located_at
+near
+responding_to
+involved_in
+observed_as
+same_as_candidate
+corroborates
+contradicts
+supersedes
+derived_from
+```
+
+Do not force the entire platform into a graph database prematurely. Start with typed relational objects/edges in PostgreSQL; evaluate specialized graph infrastructure only if measured queries justify it.
+
+---
+
+# 8. IncidentWatch — follow cases, not only feeds
+
+Opening a Humanitarian incident creates a bounded `IncidentWatch`.
+
+Watch profile:
+
+```text
+incident_id
+source thread/item IDs
+coordinates + uncertainty
+named places
+people-count range
+vessel description
+route/departure/destination
+case type
+NGO/authority names
+known internal vessel identities
+keywords/entities
+language variants
+created_at
+priority
+next_run_at
+expires/degrades policy
+```
+
+The watch invokes eligible connectors/search adapters and emits new `SourceObservation`s. It never directly mutates the incident.
+
+Cadence by state:
+
+```text
+ACTIVE / REOPENED    highest priority
+NEEDS_REVIEW         high priority + analyst queue
+UNRESOLVED_STALE     targeted searches, lower cadence, outcome unknown
+RESOLVED 0–24h       high follow-up for confirmation/corrections
+RESOLVED 1–7d        periodic follow-up
+7–30d                 low-frequency enrichment
+ARCHIVED              no dedicated polling by default; global ingestion may still revise/reopen
+```
+
+Follow-up targets include:
+
+```text
+rescue confirmation
+interception/return
+disembarkation
+people-count correction
+missing/deaths
+rescuing vessel/authority
+port/outcome
+location correction
+later NGO/authority statements
+news investigation / follow-up
+```
+
+Budget watches by priority/source cost. Prevent duplicate queries and retry storms.
+
+**Exit:** labelled replay shows later updates attach to existing cases and can resolve/reopen/correct them without creating duplicate operational incidents.
+
+---
+
+# 9. Review and case-management subsystem
 
 Automation must route uncertainty instead of hiding it.
 
-Create review reasons such as:
+Review reasons:
 
 ```text
 AMBIGUOUS_DUPLICATE
@@ -584,332 +878,106 @@ CONFLICTING_OUTCOME
 RESOLUTION_LOW_CONFIDENCE
 REOPEN_AFTER_RESOLUTION
 PEOPLE_COUNT_DIVERGENCE
-COORDINATE_OCR_VS_IMAGE_CONFLICT
+OCR_VS_IMAGE_COORDINATE_CONFLICT
 STALE_ACTIVE_CASE
 SOURCE_THREAD_BROKEN
 CIRCULAR_REPORTING_RISK
 PUBLICATION_PRIVACY_REVIEW
+ENTITY_IDENTITY_CONFLICT
+HYPOTHESIS_PUBLICATION_REVIEW
 ```
 
-Review decisions must themselves be persisted with who/when/reason, and become replayable evidence for lifecycle/publication decisions.
-
----
-
-## M. Coverage + dataset quality metrics
-
-Do not report only ingestion counts. Track:
+Persist `ReviewDecision`:
 
 ```text
-source success rate / latency / staleness
-coverage by region / route / language / source family
-single-source incident rate
-multi-independent-source corroboration rate
-duplicate rate
-false-merge rate from labelled corpus
-unresolved-stale rate
-median time report -> first ingestion
-median time report -> Live publication
-median time update -> incident attachment
-median time resolution evidence -> lifecycle resolution
-location-positioned rate by method
-location correction rate
-outcome-known rate
-historical revision rate
-source-coverage changes over time
-stale Drift count
-Drift-after-resolution count
+review_id
+object_type/object_id
+reason
+input evidence ids
+decision
+notes/code
+reviewer id where applicable
+created_at
+method/version
 ```
 
-Trend dashboards must expose or account for material collection-coverage changes.
-
----
-
-## FIRST-PRIORITY EXIT GATE
-
-This first priority is complete only when:
-
-- production Live marker/Drift/timer inventory is committed;
-- every visible Humanitarian item maps to a canonical incident or an explicit review state;
-- source observations are immutable and provenance-bearing;
-- Alarm Phone updates/resolutions/reopens modify the same incident when evidence supports correlation;
-- silence alone cannot produce `resolved` or `archived` semantics;
-- `unresolved_stale` or equivalent explicitly represents unknown outcome after evidence goes quiet;
-- stale/superseded Drift cannot remain operationally current;
-- timers use explicit event/update/state timestamps;
-- source coverage and source health are measurable;
-- follow-up watches continue to ingest relevant news after initial report and after resolution for bounded enrichment windows;
-- circular reporting does not count as independent corroboration;
-- new source additions have coverage/backfill/change-log semantics;
-- archived incidents remain revisable without being operationally reopened unless evidence requires it;
-- Live and Archive are projections of one incident history rather than separate incompatible datasets.
-
----
-
-# 0. Operating principle
-
-Every milestone must do at least one of the following:
-
-1. remove an architectural limitation;
-2. replace duplicated/ad-hoc logic with a canonical subsystem;
-3. measurably improve correctness, observability, performance, replayability, privacy or interoperability;
-4. delete legacy code or create an explicit deletion path.
-
-**Hard rule:** every new subsystem must replace, simplify or measurably improve an existing path. Do not leave previous authoritative paths alive indefinitely.
-
-**AI rule:** model output is evidence enrichment or candidate analysis, never an unproven source of truth.
-
----
-
-# 1. Preconditions — `fixes.md` must be closed first
-
-Before starting M0, prove on the exact `main` commit used as the upgrade baseline:
-
-- every required `docs/fixes.md` milestone complete;
-- backend suite green;
-- lint/typecheck/build green;
-- DB migrations tested on PostgreSQL and retained SQLite-compatible test paths;
-- deterministic replay gates green;
-- Humanitarian and Maritime live/public projections verified;
-- privacy contracts verified;
-- no unresolved P0/P1 stabilization defect hidden behind skips/fallbacks/mock-only paths;
-- latest production verification documented;
-- FIRST PRIORITY Humanitarian Live/lifecycle/source-coverage gate above completed.
-
-If any fail, return to stabilization/first-priority work.
-
----
-
-# 2. Mandatory agent execution protocol
+Review queues need:
 
 ```text
-1. sync main
-2. confirm fixes.md closed
-3. confirm FIRST PRIORITY Live/Humanitarian gate remains green
-4. read updates.md
-5. inspect current implementation
-6. identify legacy path being replaced/retained
-7. write failing tests / migration / replay fixtures first
-8. implement smallest coherent vertical slice
-9. run targeted tests
-10. run full relevant suites
-11. measure performance/query/model impact where applicable
-12. review duplicate logic / compatibility / dead code
-13. document canonical path + removed legacy
-14. document temporary compatibility + deletion milestone
-15. open one reviewable PR
-16. merge only after green CI + exit-gate evidence
-17. update main and continue
+priority
+age
+incident severity/operational state
+reason
+blocking/non-blocking status
 ```
 
-For every PR include:
-
-```text
-Existing implementation:
-Target implementation:
-Legacy removed:
-Temporary compatibility retained:
-Deletion milestone:
-Files touched:
-Tests proving parity/correctness:
-Migration/replay evidence:
-Known limitations:
-```
-
-AI-enabled PRs additionally include:
-
-```text
-AI mode: disabled | shadow | assistive | bounded-authoritative
-Provider/model(s):
-Deterministic fallback:
-Persisted provenance fields:
-Evaluation corpus:
-Accuracy/divergence metrics:
-Privacy review:
-Failure/degradation behaviour:
-```
+A review action itself becomes replayable provenance.
 
 ---
 
-# 3. Global non-negotiable constraints
+# 10. Geospatial evidence foundation
 
-1. PostGIS does not replace evidence semantics, provenance, confidence, review or publication policy.
-2. Spatial SQL performs retrieval/geometry candidate generation; domain reasoning remains explicit and testable.
-3. Raw, reported, derived, uncertainty and public geometries remain distinguishable.
-4. No inferred geometry may be presented as reported position.
-5. Humanitarian privacy takes precedence over analytic convenience.
-6. Never destroy original source geometry/content when producing corrected or public derivatives.
-7. Every derived geometry/result carries method/version/input provenance.
-8. Unknown CRS is a validation failure, not a guess.
-9. No speculative dependency/index; require a measured query/capability.
-10. Every compatibility layer has a removal milestone.
-11. AI providers are replaceable adapters; provider structures do not leak into canonical domain models.
-12. Model output conforms to typed schemas before domain use.
-13. AI failure/rate limits/outage degrade to deterministic behavior and never block core ingestion.
-14. No Humanitarian publication/lifecycle/private-location decision may rely solely on an LLM/VLM.
-15. VLM coordinates are candidate/derived claims, never automatically `reported_geometry`.
-16. Embeddings generate/rerank candidates; they do not prove same-event identity.
-17. AI-generated allegations require the same evidence/review gates as all other hypotheses.
-18. Sensitive Humanitarian content may be sent to a provider only when data-processing/privacy policy permits it.
-19. Persist enough model/result provenance to replay decisions without regenerating the external response.
-20. Coverage changes and source outages are part of data quality and must be visible to operators.
+This begins only after the first Humanitarian vertical is canonical.
 
----
+## P3.1 — PostGIS foundation
 
-# 4. Target architecture
-
-```text
-SOURCE / SENSOR / DATASET
-        ↓
-SOURCE PRESERVATION + SourceObservation
-        ↓
-DETERMINISTIC EXTRACTION / NORMALIZATION
-        ↓
-GEOSPATIAL NORMALIZATION
-        ↓
-SPATIAL + TEMPORAL CANDIDATE RETRIEVAL
-        ↓
-OPTIONAL AI / SEMANTIC CANDIDATE ENRICHMENT
-        ↓
-CORRELATION + CLAIM/EVIDENCE GRAPH
-        ↓
-INCIDENT / EPISODE / ASSESSMENT
-        ↓
-LIFECYCLE + REVIEW
-        ↓
-PUBLICATION POLICY
-        ↓
-PRIVACY-AWARE PUBLIC GEOMETRY / DATA
-        ↓
-REST / WS / VECTOR TILE / GIS EXPORT
-```
-
-Forbidden shortcut:
-
-```text
-SOURCE → LLM/VLM → production truth
-```
-
-Canonical vector target:
+Introduce:
 
 ```text
 PostgreSQL + PostGIS
-        ↑
 GeoAlchemy2
-        ↑
-Python domain services ↔ Shapely / PyProj
+Shapely
+PyProj
 ```
 
-AI target remains provider-agnostic:
-
-```text
-AIProvider
-  ├─ NVIDIA NIM-compatible
-  ├─ Groq-compatible
-  ├─ Gemini-compatible multimodal
-  └─ OpenRouter-compatible benchmark/fallback
-        ↓
-typed result
-        ↓
-persisted AI evidence/provenance
-        ↓
-domain validator / correlator
-```
-
-Provider names are candidates, not architecture.
-
----
-
-# 5. M0 — Legacy eradication and architecture census
-
-Inventory backend, DB, migrations, tests, frontend contracts, edge/live publisher, fixtures and deployment paths.
-
-Search/classify at minimum:
-
-```text
-legacy deprecated compat compatibility fallback old_
-TODO migration remove after remove once dual write
-maritime_domain lat/lon assumptions area_geojson
-haversine bearing bbox point_to_segment
-GeoJSON in generic JSON
-provider-specific AI helpers
-ad-hoc OCR/model calls
-embedding/vector experiments
-post-as-incident assumptions
-stored lifecycle shortcuts
-arbitrary completed Drift lookup
-```
-
-Each item: `KEEP | MIGRATE | DELETE | TEMP COMPAT` with deletion milestone.
-
-**M0 exit gate:** complete inventory; no unclassified known legacy path; no production behavior change except proven dead-code removal.
-
----
-
-# 6. M1 — PostGIS geospatial foundation
-
-Introduce PostGIS, GeoAlchemy2, Shapely and PyProj only as required by the first slice.
-
-Introduce canonical `location_geom` while scalar lat/lon remain temporary compatibility. Writes pass through one helper; divergence is an error.
-
-Create GiST indexes only for measured query paths. Benchmark recent positioned events, bbox, radius search and vessel positions.
-
-Migration backfills valid coordinates, flags invalid ranges, preserves null/unpositioned states and is restart-safe.
-
-**M1 exit gate:** PostGIS active; one canonical spatial path; query test and migration evidence; no duplicated authority.
-
----
-
-# 7. M2 — Canonical spatial evidence model
-
-Explicit roles:
+Canonical geometry roles:
 
 ```text
 reported_geometry
+  directly supplied by source/sensor
+
 derived_geometry
+  calculated/inferred from evidence
+
 uncertainty_geometry
+  plausible area/trajectory uncertainty
+
 public_geometry
+  publication/privacy projection
 ```
 
-Use typed geometry-evidence records when provenance is multi-valued. Preserve raw AIS points. Drift migrates from generic JSON toward typed trajectory/cone geometry with model/version/forcing inputs/start time.
+Original source geometry is immutable.
 
-**M2 exit gate:** source geometry never overwritten; roles documented/tested; generic metadata geometry no longer authoritative where typed replacement exists.
+Migrate one vertical slice at a time; scalar lat/lon remain temporary projection compatibility only.
 
----
+## P3.2 — Spatial candidate retrieval
 
-# 8. M3 — Spatial query migration and deterministic candidate generation
-
-Move candidate retrieval/math into PostGIS while interpretation stays explicit in Python.
-
-Priority:
+Move bounded candidate retrieval to PostGIS:
 
 ```text
-nearby events
-nearby vessels
-bbox
+nearby observations/incidents
+bbox/time
 point-in-zone
-infrastructure proximity
 track/area intersection
-drift/track intersection
-nearest object
-spatiotemporal fusion shortlist
-dedup/correlation shortlist
+vessel proximity
+infrastructure proximity
+nearest-object
+Drift/event intersection
+correlation shortlist
 ```
 
-DB answers which records are plausible candidates; domain layer answers whether evidence represents the same incident/episode/hypothesis.
+The DB finds plausible candidates; domain logic determines semantic meaning.
 
-**M3 exit gate:** measured query improvement/justification; no replay regression; superseded math removed.
+Require query plans/benchmarks before indexes.
 
----
+## P3.3 — Humanitarian geolocation V2
 
-# 9. M4 — Humanitarian geolocation V2
-
-Supported evidence:
+Evidence types:
 
 ```text
 reported coordinate
 OCR coordinate
-map screenshot coordinate
-map pin inference
+map screenshot coordinate/map pin candidate
 named place
 relative location phrase
 named region
@@ -918,311 +986,556 @@ land humanitarian location
 unpositioned
 ```
 
-Do not collapse claims early. Preserve exact source evidence and attach derived uncertainty-aware geometry.
+Do not invent precision. A vague region remains an area/uncertainty geometry.
 
-Replay corpus includes Alarm Phone text coordinates, map screenshots, contradictory text/image claims, land cases, coastline ambiguity, invalid OCR, exact-coordinate updates and no-position negatives.
-
-**M4 exit gate:** no fake precision; analyst/public location separate; source geometry preserved; method accuracy measured.
+Replay corpus must include Alarm Phone text coordinates, screenshots, contradictory claims, land/sea ambiguity, invalid OCR, coordinate updates and no-position negatives.
 
 ---
 
-# 9A. M4A — AI evidence-enrichment foundation
+# 11. Maritime Intelligence vertical
 
-Create a canonical provider-neutral interface for:
+Humanitarian and Maritime share evidence primitives but have different publication semantics.
+
+Canonical flow:
+
+```text
+AIS / registries / sanctions lists / notices / news / infrastructure data
+        ↓
+SourceObservation + vessel/entity identity evidence
+        ↓
+normalized features
+        ↓
+VesselSubject
+        ↓
+bounded MaritimeEpisode
+        ↓
+EvidenceLinks + contradictions
+        ↓
+InvestigationHypothesis
+        ↓
+review / publication gate
+```
+
+Distinguish:
+
+```text
+FACT
+  vessel appears on list X
+
+OBSERVATION
+  AIS transmission gap observed during interval
+
+DERIVED FEATURE
+  gap is isolated relative to coverage baseline
+
+EPISODE
+  bounded cluster of related features
+
+HYPOTHESIS
+  evidence supports candidate interpretation
+
+ALLEGATION/PUBLIC CLAIM
+  requires publication/review gate
+```
+
+Never convert sanctions-list membership into sanctions-evasion behaviour without independent behavioural evidence.
+
+Maintain hypothesis states and audit transitions separately from raw facts.
+
+---
+
+# 12. AI evidence-enrichment layer
+
+AI is a capability layer behind typed contracts.
+
+Provider-neutral capabilities:
 
 ```text
 structured text extraction
 classification
-multimodal extraction
+multimodal/image extraction
 embeddings
 reranking
 bounded correlation/reasoning
+optional transcription
 ```
 
-Persist provider/model/version, capability, schema/prompt version, input observation IDs, timestamp, latency, status/errors, usage metadata, structured result and validation status.
+Provider adapters may include NVIDIA NIM, Groq, Gemini, OpenRouter or later providers, but domain services depend only on capability contracts.
 
-Initial mode is shadow:
+Persist each invocation/result:
 
 ```text
-deterministic_result = current_pipeline(input)
-ai_candidate = ai_pipeline(input)
-compare_and_record(...)
-return deterministic_result
+provider
+model/revision
+capability
+schema version
+prompt/instruction version
+input observation IDs
+request timestamp
+latency
+status/error class
+usage metadata
+structured result
+validation status
 ```
 
-**M4A exit gate:** provider abstraction proven; all AI disable-able; outage does not block deterministic pipeline; no public decision depends on AI.
-
----
-
-# 9B. M4B — Multimodal Humanitarian geolocation
-
-Workflow:
+Promotion ladder:
 
 ```text
-source image/screenshot
-   ↓
-deterministic OCR + VLM structured extraction
-   ↓
-claim comparison
-   ↓
-validation / land-sea / map plausibility
-   ↓
-candidate derived geometry + uncertainty
-   ↓
-review or bounded promotion
+DISABLED
+  ↓
+SHADOW
+  ↓
+ASSISTIVE
+  ↓
+BOUNDED_AUTHORITATIVE
 ```
 
-No model may invent exact coordinates to fill missing data. Persist disagreements.
+No capability skips the ladder.
 
-Evaluation includes coordinate detection precision/recall, numeric accuracy, false-precision rate, land/sea consistency, OCR agreement and correct null rate.
+## P4.1 — Shadow extraction
 
----
+Run model extraction beside deterministic extraction and return deterministic result.
 
-# 9C. M4C — Semantic correlation and duplicate intelligence
+Measure divergence on labelled corpus.
 
-Cascade:
+## P4.2 — Multimodal Alarm Phone image evidence
+
+Compare:
 
 ```text
-new observation
-   ↓
-PostGIS + temporal shortlist
-   ↓
-optional lexical/embedding/reranking
-   ↓
-correlation rules + evidence comparison
-   ↓
-SAME_INCIDENT | RELATED_INCIDENT | NEW_INCIDENT | UNCERTAIN
+OCR
+caption/thread text
+VLM structured extraction
+map labels/pin plausibility
+land/sea validity
 ```
 
-Persist supporting/contradicting features and source-independence/circular-reporting analysis.
+Model coordinates are `derived_candidate`, never `reported_geometry`.
 
-A false merge threshold is a release gate. Model/provider outage must leave deterministic correlation functional.
-
----
-
-# 10. M5 — H3 spatial intelligence layer
-
-Use only where measured value exists for privacy aggregation, density, clustering, heatmaps or regional summaries. Geometry remains authoritative.
-
----
-
-# 11. M6 — Geospatial dataset ingestion with GDAL/OGR
-
-Reproducibly ingest justified vector/raster reference geography. Record source/version/licence/retrieval/checksum/CRS/transforms/count/validation.
-
-Reject/quarantine invalid geometry and unknown CRS rather than silently repairing source defects.
-
----
-
-# 12. M7 — QGIS operational QA
-
-Provide read-only QA layers for raw/reported/derived/uncertainty/public geometry, Humanitarian incidents, AIS tracks, Drift products, reference zones and AI-derived candidates.
-
-Sensitive exact humanitarian location remains role-restricted.
-
----
-
-# 13. M8 — Map delivery / vector-tile scaling
-
-Adopt vector tiles only after measured GeoJSON volume justifies them. Public/private projection and cache invalidation remain policy-aware.
-
----
-
-# 14. M9 — Raster and ocean-data architecture
-
-Preferred path:
+Metrics:
 
 ```text
-source → xarray/GDAL → COG/object storage → rio-tiler/TiTiler when justified → map/analyst tools
+coordinate detection precision/recall
+numeric error
+false-precision rate
+correct null/no-position rate
+OCR/VLM agreement
+privacy compliance
 ```
 
-PostgreSQL stores metadata/provenance rather than becoming a raster archive.
+## P4.3 — Semantic correlation/reranking
 
----
+Use only after deterministic spatiotemporal/identity shortlist.
 
-# 15. M10 — AIS spatial/time-series scale
-
-Start with native PostgreSQL/PostGIS indexes/partitioning/retention and measured query plans. Evaluate TimescaleDB only after demonstrated bottlenecks.
-
----
-
-# 16. M11 — Reproducible infrastructure
-
-Automate VM/runtime/PostgreSQL/PostGIS/reverse proxy/TLS/workers/secrets references/backups/logging/monitoring/restart policy with Docker/Ansible or the smallest justified reproducible approach.
-
-Provider outage must not prevent deterministic API/ingestion startup.
-
----
-
-# 17. M12 — GIS interoperability
-
-Expose GeoJSON/GeoPackage/WMS/WFS/WMTS/OGC API Features only when a real consumer requires them. Privacy policy applies to every export.
-
----
-
-# 18. M13 — Explicit non-goals / prohibited premature dependencies
-
-Do not add technologies merely because they are common:
+Measure:
 
 ```text
-Django
-.NET
-Oracle Spatial
-SQL Server Spatial
-ESRI runtime dependencies
-FME
-GeoNode
-Kubernetes
-TimescaleDB
-GeoServer
-standalone vector DB
-model orchestration framework
-agent framework
-self-hosted GPU inference cluster
+SAME_INCIDENT precision/recall/F1
+NEW_INCIDENT precision/recall/F1
+false-merge rate
+UNCERTAIN calibration
 ```
 
-Likewise no NIM/Groq/Gemini/OpenRouter provider enters production because a free tier exists. Each provider must serve a measured capability and remain replaceable.
+False-merge threshold is an explicit release gate.
+
+All AI-off operation must remain safe and functional.
 
 ---
 
-# 19. M14 — Final legacy deletion
+# 13. External datasets and GIS tooling
 
-After parity:
+## P5.1 — Versioned geodata ingestion
 
-- remove spatial dual-write authority;
-- remove legacy metadata geometry authority;
-- remove superseded geospatial helpers;
-- remove post-as-incident and stale lifecycle shortcuts;
-- remove historical Drift rediscovery as current-state logic;
-- remove obsolete provider/model bypasses and temporary compatibility;
-- retain historical provenance readability.
-
-Repository-wide audit all remaining legacy/deprecated/compat/fallback/TODO-migration markers.
-
----
-
-# 20. M15 — Production qualification
-
-Correctness:
-
-- full backend/web suites;
-- PostGIS migration/query tests;
-- Humanitarian incident/lifecycle replay;
-- source-correlation replay;
-- Alarm Phone update/resolution/reopen replay;
-- Drift lifecycle replay;
-- AIS/fusion replay;
-- AI contract/schema/evaluation tests where enabled.
-
-Privacy:
-
-- analyst/public geometry separation;
-- exact-location leakage tests;
-- Humanitarian publication contract;
-- provider data-handling review;
-- proof unreviewed AI-derived exact locations cannot reach public output.
-
-Operational data-quality qualification additionally reports:
+Use GDAL/OGR only when justified for reproducible import of:
 
 ```text
-source coverage by route/language/family
-source outage/staleness
-incident correlation precision/recall
-false merge rate
+SAR regions
+EEZ / territorial waters
+coastlines
+ports
+subsea cables/pipelines
+offshore infrastructure
+protected areas/AOIs
+```
+
+Persist:
+
+```text
+source/version
+licence/terms
+retrieved_at
+checksum
+original/canonical CRS
+transform/tool version
+feature count
+validation result
+```
+
+Unknown CRS is rejection/quarantine, never guessed EPSG:4326.
+
+## P5.2 — QGIS analyst QA
+
+QGIS is read-only QA/analysis tooling, not runtime authority.
+
+Expose separable layers for:
+
+```text
+reported geometry
+derived geometry
+uncertainty geometry
+public geometry
+Humanitarian incidents
+AIS tracks/episodes
+Drift trajectories/cones
+reference zones/infrastructure
+AI-derived candidates with provenance
+```
+
+Sensitive exact Humanitarian locations require role-restricted access.
+
+## P5.3 — H3 only if measured
+
+Use H3 only for justified aggregation/privacy/statistics/cache use cases. Geometry remains authoritative.
+
+## P5.4 — Vector tiles only if measured
+
+Move from bulk GeoJSON to vector tiles only when profiling shows a material map-delivery problem. Public/private attributes must be separated before tile generation.
+
+---
+
+# 14. Platform observability and data-quality console
+
+Operational metrics:
+
+```text
+connector success/error/rate-limit
+source last successful fetch
+source staleness
+collection latency
+observation ingestion rate
+parse/extraction failures
+unpositioned rate by method
+correlation decisions by class
+false-merge labelled rate
+single-source incident rate
+independent corroboration rate
 unresolved-stale rate
-resolution latency
+report -> ingestion latency
+report -> Live latency
+update -> incident attachment latency
+resolution evidence -> resolved latency
+location correction rate
+outcome-known rate
 historical revision rate
-circular-reporting detection
-stale Drift rate
-timer correctness
-public/edge/VM parity
+coverage changes over time
+current/stale Drift count
+Drift-after-resolution count
+review queue size/age
+edge/VM projection divergence
+AI invocation/error/latency/divergence where enabled
 ```
 
-AI evaluation is capability-specific, not one global score.
+Expose an internal data-health endpoint/dashboard without raw sensitive text in metric labels.
 
-Failure testing includes provider timeout/429/5xx/malformed output/refusal/version change and deterministic-only operation.
+A source returning zero items is not equivalent to a healthy source with zero events. Health and content are separate signals.
 
 ---
 
-# 21. Recommended dependency graph
+# 15. Import/export and interoperability
+
+The platform should support stable machine-readable exchange without coupling internals to one external standard.
+
+First-class exports:
 
 ```text
-fixes.md COMPLETE
-      ↓
-LIVE HUMANITARIAN AUDIT
-      ↓
-CANONICAL INCIDENT + LIFECYCLE
-      ↓
-SOURCE COVERAGE MATRIX + FOLLOW-UP WATCHES
-      ↓
-PROVENANCE / PRESERVATION / CORRELATION / REVIEW
-      ↓
-PRODUCTION LIVE + DRIFT + TIMER REPLAY GATE
-      ↓
-M0 Legacy census
-      ↓
-M1 PostGIS
-      ↓
-M2 Spatial evidence model
-      ↓
-M3 Spatial/temporal candidate retrieval
-      ↓
-M4 Humanitarian geolocation V2
-      ↓
-M4A AI shadow foundation
-      ↓
- ┌────┴───────────────┐
-M4B multimodal     M4C semantic correlation
- └───────┬────────────┘
-         ↓
-M5 H3 if justified
-      ↓
-M6 geodata ingestion
-      ↓
-M7 QGIS QA
-      ↓
-M8 tiles if justified
-      ↓
-M9 raster/ocean
-      ↓
-M10 AIS scale
-      ↓
-M11 reproducible infrastructure
-      ↓
-M12 interoperability if required
-      ↓
-M14 legacy deletion
-      ↓
-M15 production qualification
+GeoJSON
+JSON/JSONL canonical observation/incident export
+CSV for bounded analysis
+GeoPackage when geospatial analyst use justifies it
 ```
 
-M13 is a standing non-goal gate.
+Evaluate mappings to relevant standards/formats only when interoperability requires them. MISP/STIX/OpenCTI concepts are architectural references, not mandatory schemas for Humanitarian maritime incidents.
+
+Every export:
+
+- applies publication/privacy policy;
+- includes stable IDs and revision/provenance references;
+- never exports restricted raw Humanitarian artifacts by default;
+- declares schema version.
 
 ---
 
-# 22. Definition of DONE
+# 16. Scale and infrastructure
 
-The upgrade is DONE only when:
+Start simple and measured.
 
-1. `fixes.md` remains green;
-2. Humanitarian Live is incident-centric rather than post-centric;
-3. production cases have stable IDs and immutable source observations;
-4. lifecycle is evidence-backed with `unresolved_stale` distinct from `resolved/archived`;
-5. Alarm Phone and other source updates attach to the same canonical incident when evidence supports it;
-6. resolved and archived incidents remain revisable as new reporting arrives;
-7. source coverage by route/language/source family is versioned and observable;
-8. source outages and coverage changes cannot silently masquerade as real-world trend changes;
-9. online source provenance/preservation is sufficient for replay and verification;
-10. circular reporting is not counted as independent corroboration;
-11. stale/superseded Drift cannot appear current;
-12. Live timer semantics distinguish reported/update/state/received/resolved time;
-13. review queues capture ambiguity instead of hiding it;
-14. PostGIS becomes canonical spatial query layer;
-15. source/reported/derived/uncertainty/public geometry are distinguishable;
-16. Humanitarian geolocation is uncertainty-aware and privacy-safe;
-17. model providers are replaceable and cannot bypass evidence/publication policy;
-18. every enabled AI capability has labelled evaluation, provenance and deterministic degradation;
-19. transitional legacy paths are removed;
-20. production qualification demonstrates correctness, privacy, coverage integrity, performance, provider degradation and recovery on the final commit.
+## AIS/time-series
 
-The target is not “more feeds”, “more GIS tools” or “AI everywhere”. The target is a rigorous maritime OSINT system where observations are preserved, incidents evolve as a living dataset, news updates are continuously correlated, uncertainty remains visible, source coverage is measurable, lifecycle is evidence-based, and public output remains privacy-safe and operationally credible.
+Use native PostgreSQL/PostGIS indexes and partitioning first. Benchmark:
+
+```text
+track by MMSI/time
+bbox/time
+nearby vessels
+zone crossing
+rendezvous candidates
+infrastructure proximity
+multi-MMSI recent history
+```
+
+Evaluate TimescaleDB only after measured bottlenecks.
+
+## Deployment
+
+Make VM deployment reproducible with Docker/Ansible or equivalent minimal automation only when production closure is stable.
+
+Prove:
+
+```text
+clean host -> operational stack
+idempotent redeploy
+migration
+backup
+restore
+worker restart
+DB reconnect
+source connector degradation
+all-AI-disabled operation
+```
+
+Do not introduce Kubernetes, GeoServer, standalone vector DB, graph DB or self-hosted GPU cluster without an ADR and measured requirement.
+
+---
+
+# 17. Milestone / packet dependency graph
+
+```text
+fixes.md CLOSED
+      ↓
+P0.1 production Humanitarian truth-table audit
+      ↓
+P0.2 SourceObservation/provenance
+      ↓
+P0.3 HumanitarianIncident
+      ↓
+P0.4 claims/assessments
+      ↓
+P0.5 lifecycle
+      ↓
+P0.6 timer contract
+      ↓
+P0.7 current Drift ownership
+      ↓
+P1.1 Source Registry
+      ↓
+P1.2 Coverage Matrix
+      ↓
+P1.3 coverage-change integrity
+      ↓
+Connector contracts + bounded source adapters
+      ↓
+P2.1 correlation decisions
+      ↓
+P2.2 circular-reporting lineage
+      ↓
+P2.3 entity/relationship graph
+      ↓
+IncidentWatch + review queue
+      ↓
+P3.1 PostGIS foundation
+      ↓
+P3.2 spatial candidate retrieval
+      ↓
+P3.3 Humanitarian geolocation V2
+      ↓
+Maritime Intelligence vertical hardening
+      ↓
+P4.1 AI shadow extraction
+      ↓
+P4.2 multimodal evidence
+      ↓
+P4.3 semantic reranking
+      ↓
+external geodata / QGIS / optional H3 / optional tiles
+      ↓
+scale + reproducible infrastructure
+      ↓
+final legacy deletion + production qualification
+```
+
+Parallel work is allowed only when packets do not modify the same canonical schema/authority and have independent tests.
+
+---
+
+# 18. Packet acceptance template
+
+No packet is DONE without all applicable evidence:
+
+```text
+[ ] failing test existed before implementation
+[ ] production/redacted regression fixture added when relevant
+[ ] canonical schema/object documented
+[ ] migration up/down/re-up green
+[ ] targeted tests green
+[ ] relevant backend full suite green
+[ ] web lint/typecheck/tests/build green when contract/UI changed
+[ ] deterministic replay green
+[ ] privacy/publication tests green
+[ ] edge/VM parity checked when public projection changed
+[ ] source outage/invalid input behavior tested when connector changed
+[ ] observability added
+[ ] duplicate authoritative path removed or deletion packet named
+[ ] exact main/head SHA recorded
+[ ] known limitations explicit
+```
+
+If one required box cannot be checked, the PR must state why and the packet remains open.
+
+---
+
+# 19. Final legacy deletion
+
+After parity is proven, remove:
+
+```text
+post-as-incident assumptions
+stored ingestion-era lifecycle shortcuts
+arbitrary completed-Drift lookup
+legacy area_geojson authority
+spatial dual-write authority
+custom geometry helpers superseded by canonical spatial layer
+duplicate correlation logic
+provider-specific AI bypasses
+obsolete prompt/schema active routing
+per-source domain logic that belongs in connectors
+unbounded fallback source scans
+duplicate publication policy paths
+```
+
+Repository-wide audit:
+
+```text
+legacy
+deprecated
+compat
+fallback
+old_
+remove after
+TODO migration
+dual write
+```
+
+Every remaining occurrence is justified or removed.
+
+---
+
+# 20. Production qualification
+
+Qualification runs on the exact release-candidate SHA.
+
+## Humanitarian replay
+
+Cover at least:
+
+```text
+new Alarm Phone distress
+thread update remains same incident
+location update supersedes old position/Drift
+ambiguous update -> needs_review
+positive rescue evidence -> resolved
+silence -> unresolved_stale, not resolved
+later contradiction revises assessment
+resolved case receives later correction
+reopened case
+circular media copies do not multiply corroboration
+source outage does not imply no incidents
+out-of-order update preserves chronology
+```
+
+## Maritime replay
+
+Cover:
+
+```text
+common AIS outage vs isolated gap
+separate episodes days apart
+continuing episode stays one
+list membership remains fact
+single signal cannot become public allegation
+multi-evidence hypothesis retains EvidenceLinks
+review/publication transition is exercised
+```
+
+## Privacy
+
+Prove:
+
+```text
+no public MMSI/IMO/tracker dossier in Humanitarian projection
+no restricted raw Humanitarian text/media leak
+no unreviewed precise derived Humanitarian location leak
+no Maritime hypothesis published outside policy gate
+```
+
+## Failure/degradation
+
+Prove:
+
+```text
+source 429/5xx/timeout
+parser/schema failure
+DB reconnect
+worker restart
+AI provider timeout/429/5xx/malformed output
+all AI disabled
+coverage source down
+edge/VM mismatch detection
+```
+
+## Metrics
+
+Report before/after baseline for:
+
+```text
+Live correctness anomaly count
+stale Drift count
+resolution latency
+update attachment latency
+duplicate rate
+false-merge rate
+positioned-event rate by method
+source coverage/health
+query latency
+map payload/load where changed
+AI divergence/latency only where enabled
+```
+
+---
+
+# 21. Definition of DONE
+
+SeaCommons qualifies as the target maritime OSINT platform only when:
+
+1. every public Humanitarian item traces to immutable source observations and a stable canonical incident;
+2. updates, corrections, resolutions and reopens modify incident history rather than creating feed duplicates;
+3. claims and assessments are separate, contradiction-preserving and provenance-backed;
+4. lifecycle is evidence-based and silence never becomes resolution;
+5. Live timers use typed chronology;
+6. exactly zero or one current operational Drift exists per eligible incident;
+7. the Source Registry and Coverage Matrix make observable gaps/outages/source-mix changes explicit;
+8. connectors are bounded, idempotent, replayable and source failures are observable;
+9. IncidentWatch continues targeted collection after an initial report and through bounded post-resolution enrichment;
+10. correlation decisions and source-independence/circular-reporting logic are persisted and testable;
+11. entity/relationship evidence is provenance-bearing;
+12. PostGIS is the canonical spatial query layer once spatial migration completes;
+13. reported/derived/uncertainty/public geometry remain distinct;
+14. Humanitarian privacy and Maritime allegation gates are enforced at publication boundaries;
+15. Maritime facts, episodes, hypotheses and public allegations remain distinct;
+16. AI is provider-neutral, evaluable, disable-able and cannot bypass evidence/publication policy;
+17. source/geodata/model provenance is sufficient for deterministic replay;
+18. observability exposes collection quality, incident quality, review debt and projection drift;
+19. legacy duplicate authorities introduced during migration are deleted;
+20. the exact release SHA passes Humanitarian + Maritime replay, privacy, failure/degradation and production verification gates.
+
+The end state is not a map with more feeds. It is a maritime OSINT platform whose collection scope, evidence, uncertainty, correlation, chronology, analysis and publication decisions are explicit, inspectable and reproducible.
