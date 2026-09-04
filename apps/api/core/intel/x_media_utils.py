@@ -124,6 +124,7 @@ def _easyocr_image(payload: bytes) -> tuple[Optional[tuple[float, float]], list[
             continue
         boxes.append({
             "text": raw_text,
+            "confidence": round(confidence, 3),
             "left": round(min(xs)),
             "top": round(min(ys)),
             "width": max(1, round(max(xs) - min(xs))),
@@ -332,33 +333,17 @@ def _tesseract_cross_check(payload: bytes, executable: str) -> Optional[tuple[fl
     return coordinate
 
 
-def _ocr_photo(
-    url: str,
-) -> tuple[Optional[tuple[float, float]], bool, str, dict[str, Any]]:
-    """Download one bounded public image and run three local Tesseract passes.
+def _download_bounded_image(url: str) -> Optional[bytes]:
+    """Fetch one public image from an allow-listed host, size-capped.
 
-    Returns (coordinate, attempted, method, diagnostics). ``diagnostics`` may
-    carry ``interengine_distance_m`` / ``consensus_threshold_m`` for the
-    EasyOCR<->Tesseract cross-check (F-03).
-      - "easyocr_tesseract_consensus" — EasyOCR's read, cross-checked and
-        confirmed by an independent Tesseract pass (tight uncertainty).
-      - "easyocr_text_disputed" — EasyOCR's read, but a Tesseract cross-check
-        landed on a materially different coordinate (wide uncertainty,
-        needs_review) — never silently trust one engine over a disagreement.
-      - "easyocr_text" — EasyOCR's read, Tesseract unavailable or found
-        nothing to compare against (unchanged legacy behaviour).
-      - "text" — printed coordinate readout from the Tesseract-only path.
-      - "pin_landmark" — a plain map screenshot geolocated from its drop-pin
-        plus visible place labels (see map_pin_geolocate.py).
-      - "none".
+    Returns the raw bytes, or ``None`` for a disallowed host, a non-image
+    content type, or an over-size payload. Kept here (not in
+    ``image_extraction``) so the existing tests that patch
+    ``x_media_utils.urllib.request.urlopen`` keep working.
     """
-    executable = shutil.which("tesseract")
-    if not executable and importlib.util.find_spec("easyocr") is None:
-        return None, False, "none", {}
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in _ALLOWED_MEDIA_HOSTS:
-        return None, False, "none", {}
-
+        return None
     request = urllib.request.Request(
         url,
         headers={**_HEADERS, "Accept": "image/jpeg,image/png,image/webp"},
@@ -366,11 +351,21 @@ def _ocr_photo(
     with urllib.request.urlopen(request, timeout=15) as response:
         content_type = str(response.headers.get("Content-Type") or "").lower()
         if not content_type.startswith("image/"):
-            return None, False, "none", {}
+            return None
         payload = response.read(_MAX_IMAGE_BYTES + 1)
-    if len(payload) > _MAX_IMAGE_BYTES:
-        return None, False, "none", {}
+    return payload if len(payload) <= _MAX_IMAGE_BYTES else None
 
+
+def _extract_coordinate_from_bytes(
+    payload: bytes, *, executable: Optional[str] = None, sea_snap: bool = True
+) -> tuple[Optional[tuple[float, float]], bool, str, dict[str, Any]]:
+    """The OCR core: EasyOCR read + Tesseract cross-check, else the Tesseract
+    multi-band sweep, else pin+landmark geolocation. See ``_ocr_photo``.
+
+    ``sea_snap`` is forwarded to the pin-landmark path: a land humanitarian
+    case (Evros, a reception centre) must not have its pin dragged into the
+    water (docs/fixes.md F-09 parity, audit LM-6)."""
+    executable = executable if executable is not None else shutil.which("tesseract")
     easy_coordinate, easy_boxes, easy_attempted = _easyocr_image(payload)
     if easy_coordinate is not None:
         if executable:
@@ -487,6 +482,7 @@ def _ocr_photo(
             payload,
             executable=executable,
             word_boxes=easy_boxes or None,
+            sea_snap=sea_snap,
         )
     except Exception:
         pin_coord = None
@@ -498,3 +494,37 @@ def _ocr_photo(
             {},
         )
     return None, attempted or easy_attempted, "none", {}
+
+
+def _ocr_photo(
+    url: str,
+) -> tuple[Optional[tuple[float, float]], bool, str, dict[str, Any]]:
+    """Download one bounded public image and extract a coordinate from it.
+
+    Returns (coordinate, attempted, method, diagnostics). ``diagnostics`` may
+    carry ``interengine_distance_m`` / ``consensus_threshold_m`` for the
+    EasyOCR<->Tesseract cross-check (F-03).
+      - "easyocr_tesseract_consensus" — EasyOCR's read, cross-checked and
+        confirmed by an independent Tesseract pass (tight uncertainty).
+      - "easyocr_text_disputed" — EasyOCR's read, but a Tesseract cross-check
+        landed on a materially different coordinate (wide uncertainty,
+        needs_review) — never silently trust one engine over a disagreement.
+      - "easyocr_text" — EasyOCR's read, Tesseract unavailable or found
+        nothing to compare against (unchanged legacy behaviour).
+      - "text" — printed coordinate readout from the Tesseract-only path.
+      - "easyocr_pin_landmark" / "tesseract_pin_landmark" — a plain map
+        screenshot geolocated from its drop-pin plus visible place labels
+        (see map_pin_geolocate.py).
+      - "none".
+
+    The structured, multi-field version is
+    ``core.intel.image_extraction.extract_from_url`` -- this stays a 4-tuple
+    for twikit_monitor / backfill until they are migrated.
+    """
+    executable = shutil.which("tesseract")
+    if not executable and importlib.util.find_spec("easyocr") is None:
+        return None, False, "none", {}
+    payload = _download_bounded_image(url)
+    if payload is None:
+        return None, False, "none", {}
+    return _extract_coordinate_from_bytes(payload, executable=executable)
