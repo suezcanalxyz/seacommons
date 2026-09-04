@@ -409,7 +409,7 @@ def public_signal_collection(
 
 def public_drift_collection(limit: int = 100) -> dict[str, Any]:
     """Published model geometry linked to received public signals, without raw content."""
-    from core.db.store import get_drift, list_drift_jobs_for_event
+    from core.db.store import get_drift
 
     features: list[dict[str, Any]] = []
     drift_count = 0
@@ -436,7 +436,6 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         public_event = _public_intel_feature(
             event, allowed_domains=HUMANITARIAN_DRIFT_DOMAINS
         )
-        job_id = event.metadata.get("drift_job_id")
         if public_event is None:
             continue
         # Once an incident is resolved or archived, the search is over --
@@ -460,10 +459,17 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         eligible, _reason = is_auto_drift_eligible(event)
         if not eligible:
             continue
-        if not job_id:
-            jobs = list_drift_jobs_for_event(f"intel:{event.id}")
-            completed = [job for job in jobs if job.get("status") == "completed"]
-            job_id = completed[0].get("id") if completed else None
+        # docs/updates.md P0.11: the incident's current_drift_id is the ONLY
+        # authority for which job publishes -- never rediscovered from
+        # event.metadata["drift_job_id"] (a stale/replayed value could
+        # disagree with what the incident actually owns) and never picked
+        # arbitrarily from every completed job for this event (the exact
+        # anti-pattern P0.11 names: "must not rediscover arbitrary
+        # completed jobs"). No pointer set yet (drift never computed, or
+        # not yet synced) -- correctly no Drift publishes.
+        from core.intel.drift_ownership import get_current_drift_id
+
+        job_id = get_current_drift_id(event.id)
         if not job_id:
             continue
         drift = get_drift(job_id)
