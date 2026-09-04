@@ -18,8 +18,23 @@ function object, not a re-implementation) at the bottom of this module.
 This module is pure and standalone: it reads a caller-supplied record
 dict and, for the Intelligence gate, an optional
 ``core.intel.hypothesis.InvestigationHypothesis`` (M6) -- it does not
-query IntelEventDB, IntelStore, or any live source itself. Wiring this
-into the actual API response / edge publisher is a separate, later PR.
+query IntelEventDB, IntelStore, or any live source itself.
+
+Wired live (docs/fixes.md M14.4):
+  - ``project_public_maritime_assessed`` is the sole authority behind
+    ``GET /api/v1/live/hypotheses`` (core.intel.hypothesis_publication) --
+    a published InvestigationHypothesis never reaches a public caller on
+    any other basis.
+  - ``core.live.projection._public_intel_feature`` (the one function the
+    live API and the edge publisher both consume, docs/fixes.md F-06)
+    withholds MMSI/IMO/tracker-dossier fields from Humanitarian-compartment
+    output using the same humanitarian/security split this module's
+    ``_VESSEL_IDENTITY_FIELDS`` rule encodes -- ``project_public_humanitarian``
+    /``project_public_safety``'s full field-shape (public_summary/
+    observation/interpretation/caveats) still targets a more canonical
+    record model than the live feed's current event shape; wiring that
+    remaining piece is tracked as a separate follow-up rather than
+    risking today's live map field contract in this PR.
 """
 from __future__ import annotations
 

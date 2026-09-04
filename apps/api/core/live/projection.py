@@ -272,9 +272,21 @@ def _public_intel_feature(
         metadata["drift_eligible"] = False
     # MMSI/IMO/name/flag are professional vessel identifiers broadcast in AIS
     # or drawn from the local public registry.  Keeping them on every linked
-    # alert is what lets the client join updates into one vessel episode.
+    # alert is what lets the client join updates into one vessel episode --
+    # legitimate for Maritime/security-mode content, but docs/fixes.md
+    # M14.4's canonical publication policy is explicit that Public
+    # Humanitarian output must never carry MMSI/IMO/tracker-dossier fields
+    # (core.intel.publication_policy._VESSEL_IDENTITY_FIELDS), even when a
+    # distress/SAR case happens to link a vessel (its own AIS, or a
+    # rescuing vessel's). compartment_for_domain() is the same canonical
+    # humanitarian/security split publication_policy's targets are built
+    # around -- this only withholds the dossier fields on the humanitarian
+    # side, the vessel-episode join behaviour for Maritime content below is
+    # unchanged.
+    from core.intel.public_policy import compartment_for_domain
+
     mmsi = linked_mmsi
-    if len(mmsi) == 9 and mmsi.isdigit():
+    if len(mmsi) == 9 and mmsi.isdigit() and compartment_for_domain(resolved_domain) != "humanitarian":
         metadata["linked_mmsi"] = mmsi
         metadata["mmsi"] = mmsi
         try:

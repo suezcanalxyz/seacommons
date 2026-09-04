@@ -93,6 +93,42 @@ def test_public_projection_keeps_professional_vessel_identifier(monkeypatch) -> 
     assert feature["properties"]["flag"] == "PA"
 
 
+def test_public_humanitarian_projection_excludes_vessel_identity(monkeypatch) -> None:
+    """docs/fixes.md M14.4 exit gate: "Humanitarian public output must
+    still exclude MMSI/IMO/tracker dossier data" -- a distress/SAR case
+    that happens to carry a linked vessel (its own AIS, or a rescuing
+    vessel's) must never leak that vessel's MMSI/IMO/name/flag through the
+    default (humanitarian) public projection, even though the same
+    identity fields are legitimately kept for Maritime/security-mode
+    output (see test_public_projection_keeps_professional_vessel_identifier
+    above)."""
+    from core.vessels.registry import registry
+
+    monkeypatch.setattr(
+        registry,
+        "_cache",
+        {"209888000": {"ship_name": "RESCUE ONE", "imo": "9123456", "ship_type": 30, "flag": "MT"}},
+    )
+    event = IntelEvent(
+        id="sar-with-vessel",
+        type="distress",
+        severity="high",
+        lat=35.5,
+        lon=14.1,
+        title="Migrant boat in distress",
+        source="Alarm Phone",
+        linked_mmsi="209888000",
+        metadata={"is_distress": True, "source_policy": "official_api"},
+    )
+
+    feature = _public_intel_feature(event)  # default allowed_domains -- humanitarian posture
+
+    assert feature is not None
+    assert feature["properties"]["maritime_domain"] == "sar"
+    for field in ("linked_mmsi", "mmsi", "vessel_name", "imo", "ship_type", "flag"):
+        assert field not in feature["properties"], f"{field} leaked into humanitarian public output"
+
+
 def test_public_projection_exposes_repost_thread_including_its_own_note() -> None:
     # Unlike the event's own `text` (may originate from a private caller who
     # never consented to publication), a thread_reposts note only ever comes
@@ -1719,3 +1755,15 @@ def test_live_websocket_uses_the_requested_mode(monkeypatch) -> None:
         assert websocket.receive_json()["meta"]["mode"] == "security"
 
     assert requested_modes == ["security"]
+
+
+def test_live_hypotheses_route_returns_the_publication_policy_projection() -> None:
+    """docs/fixes.md M14.4: /api/v1/live/hypotheses is public and wired
+    through core.intel.publication_policy -- exercised end to end via
+    the actual route, not just the underlying function."""
+    response = client.get("/api/v1/live/hypotheses")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["type"] == "FeatureCollection"
+    assert "features" in payload
+    assert "count" in payload["meta"]
