@@ -551,6 +551,42 @@ class AssessmentDB(Base):
     )
 
 
+class IncidentTransitionDB(Base):
+    """One audited lifecycle transition of a HumanitarianIncident
+    (docs/updates.md P0.5): "every transition is data" -- never a silent
+    state change. Append-only: a transition row is written once and
+    never edited; a later re-evaluation that changes the state again
+    writes a NEW row rather than mutating this one.
+
+    v0 scope, honestly bounded: ``to_state`` is still today's 4-state
+    lifecycle (active/resolved/archived/needs_review) --
+    core.intel.lifecycle.distress_lifecycle() itself, not yet P0.5's
+    fuller 7-state evidence-based model (reported/active/needs_review/
+    unresolved_stale/resolved/archived/reopened), which needs new
+    signal detection (a distinct unresolved_stale-vs-archived split, a
+    reopen detector) this packet does not invent. ``reason_code`` is
+    derived best-effort from the same signals distress_lifecycle()
+    itself already inspects (self-reply outcome, cross-post resolution
+    signal, silence) -- an honest label of what was observed, not a
+    guarantee of full future-taxonomy precision.
+    """
+
+    __tablename__ = "incident_transitions"
+    transition_id = Column(String(96), primary_key=True)
+    incident_id = Column(String(64), nullable=False, index=True)
+    from_state = Column(String(32))
+    to_state = Column(String(32), nullable=False)
+    transition_at = Column(DateTime, nullable=False)
+    effective_at = Column(String(32))
+    reason_code = Column(String(64), nullable=False)
+    supporting_observation_ids = Column(JSON, default=list)
+    contradicting_observation_ids = Column(JSON, default=list)
+    method_version = Column(String(64), nullable=False)
+    confidence = Column(Float)
+    review_required = Column(Boolean, nullable=False, default=False)
+    review_decision_id = Column(String(96))
+
+
 def create_all(database_url: str) -> None:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
