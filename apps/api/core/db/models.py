@@ -643,6 +643,23 @@ class CorrelationDecisionDB(Base):
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
+class LineageEdgeDB(Base):
+    """Circular-reporting lineage (docs/updates.md P2.2): "Represent
+    derivation/quotation relationships where detectable" -- one directed
+    edge, ``from_observation_id`` derived_from ``to_observation_id``.
+    Append-only, never edited: a re-detected edge for the same pair
+    writes a new row, never updates an existing verdict.
+    """
+    __tablename__ = "lineage_edges"
+    id = Column(String(64), primary_key=True)
+    from_observation_id = Column(String(64), nullable=False, index=True)
+    to_observation_id = Column(String(64), nullable=False, index=True)
+    relation = Column(String(32), nullable=False)  # derived_from|quotes
+    confidence = Column(Float, nullable=False)
+    method_version = Column(String(64), nullable=False)
+    detected_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 def create_all(database_url: str) -> None:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)

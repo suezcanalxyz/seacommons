@@ -169,6 +169,11 @@ def record_observation(
     )
     db.add(row)
     db.flush()
+
+    from core.intel.circular_reporting import detect_lineage_for_observation
+
+    detect_lineage_for_observation(obs_id, db=db)
+
     return _to_observation(row, replayed=False)
 
 
