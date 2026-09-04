@@ -40,3 +40,5 @@ apps/unreal/**/Samples/PixelStreaming/WebServers/*
 
 # Local operational secrets — never committed
 secrets/
+
+.worktrees/
