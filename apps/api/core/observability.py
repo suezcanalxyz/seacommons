@@ -38,13 +38,17 @@ INTEL_SOURCE_EVENTS = Gauge(
     "Events received from all registered intel sources in the last hour",
 )
 # ── docs/fixes.md M11 -- pipeline/data-quality metrics ─────────────────────
-# Additive only: definitions only, not yet wired into every ingest/dedup/
-# classification call site (that instrumentation is mechanical, per-call-
-# site work spanning the whole ingestion pipeline -- a separate, later
-# follow-up). Two recording helpers below (record_hypothesis_transition,
-# record_drift_maintenance_report) ARE wired-ready against code this
-# session already built (core.intel.hypothesis, M6;
-# core.intel.backfill_drift_maintenance, M8).
+# Wired live (docs/fixes.md M14.5): record_hypothesis_transition (from
+# core.intel.hypothesis_engine.evaluate_episode(), M14.3),
+# record_drift_maintenance_report (from core.observability_health.
+# gather_data_health_summary(), the GET /health/data caller), and
+# record_classification_fail_closed (from core.intel.service_taxonomy.
+# classify_service()'s own fail-closed return). The remaining counters
+# below (source parse failures, dedup outcomes, observation-to-incident/
+# episode latency, AIS coverage, gap-candidate labels, case relinking,
+# edge projection mismatch) are definitions only -- wiring each into its
+# own ingest/dedup/classification call site is mechanical, per-call-site
+# work spanning the whole ingestion pipeline, tracked as follow-up.
 SOURCE_PARSE_FAILURES = Counter(
     "seacommons_source_parse_failures_total", "Source ingestion parse failures", ["source"],
 )
@@ -112,6 +116,29 @@ def record_drift_maintenance_report(report: dict[str, int]) -> None:
         DRIFT_STATUS.labels("invalid").set(report.get("invalid", 0))
     except Exception:  # pragma: no cover
         pass
+
+
+def record_classification_fail_closed(classifier: str) -> None:
+    """Call from a classifier's own fail-closed branch (docs/fixes.md
+    M11/M14.5) -- e.g. core.intel.service_taxonomy.classify_service()'s
+    "unclassified" return. Never raises."""
+    try:
+        CLASSIFICATION_FAIL_CLOSED.labels(classifier).inc()
+    except Exception:  # pragma: no cover
+        pass
+
+
+def current_gauge_value(gauge: Gauge, *, default: float = 0.0) -> float:
+    """Read a Gauge's currently-set value without relying on the
+    prometheus_client private ``_value`` attribute -- ``collect()`` is the
+    stable public API for reading back what a metric currently holds."""
+    try:
+        for metric in gauge.collect():
+            for sample in metric.samples:
+                return sample.value
+    except Exception:  # pragma: no cover
+        pass
+    return default
 
 
 LIVE_PUBLISH_CYCLES = Counter(

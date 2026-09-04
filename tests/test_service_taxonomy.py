@@ -127,3 +127,14 @@ def test_classify_service_accepts_an_event_object_not_just_a_dict():
     result = classify_service(event)
     assert result.service == "maritime"
     assert result.lane == MARITIME_SAFETY_LANE
+
+
+def test_fail_closed_path_records_the_classification_fail_closed_metric():
+    """docs/fixes.md M14.5: the fail-closed branch is a real M11 metric
+    call site, not a dangling counter definition."""
+    from prometheus_client import generate_latest
+
+    classify_service({"maritime_domain": "something_never_classified"})
+
+    metrics = generate_latest().decode()
+    assert 'seacommons_classification_fail_closed_total{classifier="service_taxonomy"}' in metrics

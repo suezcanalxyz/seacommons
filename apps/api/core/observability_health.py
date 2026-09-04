@@ -13,11 +13,12 @@ given already-gathered signals (a source-health snapshot, an M8 drift-
 maintenance dry-run report, and the edge heartbeat flag), it returns a
 structured dict with an explicit boolean per exit-gate scenario plus an
 overall ``healthy`` flag. It does not itself query a database, call any
-live source, or expose an HTTP route -- a caller (the actual
-``/health/data`` FastAPI route, a later PR) gathers those three inputs
-from wherever it already gets them (core.intel.source_registry,
-core.intel.backfill_drift_maintenance.run(apply=False), the existing
-LIVE_EDGE_HEARTBEAT_OK gauge in core.observability) and passes them in.
+live source, or expose an HTTP route. ``gather_data_health_summary()``
+below (docs/fixes.md M14.5) is that caller: it gathers the three inputs
+from core.intel.source_registry, core.intel.backfill_drift_maintenance.
+run(apply=False), and the LIVE_EDGE_HEARTBEAT_OK gauge in
+core.observability, and is what the real ``GET /health/data`` FastAPI
+route (core.api.main) calls.
 
 "No raw sensitive Humanitarian text in metrics/log labels" (M11): this
 summary's shape carries only counts, booleans, and source *names* --
@@ -85,4 +86,61 @@ def build_data_health_summary(
             "source_count": len(source_snapshots),
             "degraded_source_count": len(degraded),
         },
+    )
+
+
+_REGISTRY_STATUS_TO_SNAPSHOT_STATUS = {
+    "active": "healthy",
+    "degraded": "degraded",
+    "offline": "down",
+    "pending": "unknown",
+}
+
+
+def gather_data_health_summary() -> DataHealthSummary:
+    """The real, live-wired caller docs/fixes.md M14.5 asks for: gathers
+    the three inputs build_data_health_summary() needs from wherever this
+    codebase already tracks them (core.intel.source_registry,
+    core.intel.backfill_drift_maintenance.run(apply=False), the
+    LIVE_EDGE_HEARTBEAT_OK gauge) and returns the pure computation over
+    them. This is the function GET /health/data calls.
+
+    edge_heartbeat_ok reads core.observability's in-process gauge -- in a
+    deployment where core.live_edge_publisher runs as its own process
+    (its module docstring's documented run mode), that gauge is local to
+    the publisher's process and this reads as never-updated (0.0) in the
+    API process. Cross-process heartbeat sharing needs a durable store
+    (a DB row, a shared metrics backend) this module doesn't have; this
+    is one of the "remaining environment-only checks" docs/fixes.md
+    M14.6 asks to document rather than silently paper over. Deployments
+    that run the publisher embedded in the API process are unaffected.
+    """
+    from core.intel.backfill_drift_maintenance import run as run_drift_maintenance
+    from core.intel.source_registry import source_registry
+    from core.observability import (
+        LIVE_EDGE_HEARTBEAT_OK,
+        current_gauge_value,
+        record_drift_maintenance_report,
+    )
+
+    source_snapshots = [
+        SourceHealthSnapshot(
+            name=str(source.get("name") or ""),
+            status=_REGISTRY_STATUS_TO_SNAPSHOT_STATUS.get(
+                str(source.get("status") or "pending"), "unknown",
+            ),
+            events_last_hour=int(source.get("events_last_hour") or 0),
+        )
+        for source in source_registry.get_all()
+    ]
+
+    drift_maintenance_report = run_drift_maintenance(apply=False)
+    record_drift_maintenance_report(drift_maintenance_report)
+
+    edge_heartbeat_ok = current_gauge_value(LIVE_EDGE_HEARTBEAT_OK, default=1.0) != 0.0
+
+    return build_data_health_summary(
+        source_snapshots=source_snapshots,
+        drift_maintenance_report=drift_maintenance_report,
+        edge_heartbeat_ok=edge_heartbeat_ok,
     )
