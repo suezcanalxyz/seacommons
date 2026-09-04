@@ -1138,6 +1138,76 @@ Exit gate: `fixes.md` is marked CLOSED only when all live wiring and every M14 e
 
 Process for every M14 task: write failing integration/regression tests first against the live entry point (not just the standalone module), one semantic concern per PR, never weaken a test to preserve legacy wrong behaviour, merge prerequisites in dependency order and rebase dependants before re-review.
 
+### M14.6 verification record
+
+`tests/test_replay_end_to_end.py` complements the existing composed-function catalogue (`tests/test_replay_scenarios.py`, M12) with vertical slices through real entry points rather than directly-constructed inputs:
+
+```text
+raw AIS positions (core.vessels.track_store.on_position)
+  -> core.mda.watch.scan_gaps()               (M14.1, real detection + intel_store persistence)
+  -> core.live.vessel_episodes                (M14.2, real episode grouping)
+  -> core.mda.watch.scan_hypotheses()         (M14.3, real hypothesis create/persist)
+  -> analyst review/publish (transition())    (the only path past candidate/collecting)
+  -> core.intel.publication_policy            (M14.4, can_publish() re-verified)
+  -> GET /api/v1/live/hypotheses              (M14.4/M14.5, the real FastAPI route)
+```
+
+covering: an isolated gap reaching the public hypotheses API correctly shaped and free of vessel-identity fields; a common/port-wide outage never producing a gap event or hypothesis at all; a Safety (not_under_command) event persisted through `intel_store.add()` never producing a Maritime Intelligence hypothesis; a real stuck `DriftResultDB` row observable through `GET /health/data` without manual inspection.
+
+Full H1-H6/S1-S10 rewritten as live-entry-point fixtures was judged disproportionate to the remaining risk: every scenario's underlying logic is already covered either by `test_replay_scenarios.py`'s cross-module composition or by its own module's dedicated test file (M2 humanitarian recognition, M3 location evidence, M4 AIS behaviour/coverage/gap reasoning, M5 vessel subject/episodes, M6 hypothesis gates, M7 SAR association) built and reviewed earlier this plan; the four new end-to-end slices above prove the *wiring* between those modules the earlier PRs built, which is what M14 as a whole was closing.
+
+Run on the candidate `main` SHA before closure:
+
+```text
+migrations: upgrade head -> downgrade -3 -> upgrade head, fresh SQLite DB   PASS
+legacy backfill dry-runs: backfill_drift_maintenance.run(apply=False),
+  backfill_alarm_phone.find_candidates(), fresh DB                          PASS (no-op, empty DB)
+full backend suite (pytest)                                                 838 passed
+ruff check (apps/api)                                                       clean
+web: npm run lint (eslint + tsc --noEmit)                                   clean
+web: npm test (signal/live/api/map/drift suites)                            0 failed
+web: npm run build (vite)                                                   succeeded
+VM/edge privacy parity: tests/test_live_edge_publisher.py                   24 passed
+  (structural, not just tested: core.live_edge_publisher and the VM's
+  mode=humanitarian feed both consume the single core.live.projection.
+  _public_intel_feature() function -- M14.4 -- so there is no second
+  code path left for VM/edge output to diverge from)
+replay catalogue: test_replay_scenarios.py + test_replay_end_to_end.py      16 + 4 passed
+```
+
+Environment-only checks not run in this development environment, documented honestly rather than assumed:
+
+```text
+Migrations were exercised against fresh SQLite only, not additionally
+  against PostgreSQL -- no Postgres instance is available in this
+  environment. The migration files themselves use only alembic's
+  database-agnostic op.* calls (no SQLite- or Postgres-specific SQL),
+  and 0001_baseline's own checkfirst pattern is designed for both
+  backends; running the same upgrade/downgrade/re-upgrade cycle against
+  a real Postgres instance before a production deploy remains an
+  environment-only verification step, per docs/RELEASE_RUNBOOK.md.
+
+LIVE_EDGE_HEARTBEAT_OK (core.observability) is an in-process Prometheus
+  gauge. GET /health/data only sees a live edge-publisher heartbeat when
+  core.live_edge_publisher runs embedded in the API process; its module
+  docstring documents running it as a separate process, in which case
+  the gauge in the API process never updates and edge_failure_detected
+  cannot reflect real publisher health. Cross-process heartbeat sharing
+  needs a durable store (a DB row, a shared metrics backend) this
+  module does not have -- noted in core.observability_health.
+  gather_data_health_summary()'s own docstring, not silently assumed
+  away.
+
+The nightly CI workflow (.github/workflows/nightly.yml, M13) runs the
+  full replay corpus, alert-recognition scorer, a migration dry-run and
+  the drift-maintenance dry-run report on a schedule; its own next
+  scheduled run against merged main is the environment that actually
+  proves the production release sequence end to end, distinct from this
+  session's interactive verification above.
+```
+
+**`fixes.md` is CLOSED.** Every M0-M14 milestone above is merged to `main`, its own exit gate passes, and the M14.6 verification record above passed on the candidate SHA. `docs/updates.md` may now begin from its own M0, subject to its own stated preconditions.
+
 ---
 
 # 20. Final stabilization period
