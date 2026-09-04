@@ -465,6 +465,41 @@ class InvestigationHypothesisDB(Base):
     )
 
 
+class HumanitarianIncidentDB(Base):
+    """Canonical Humanitarian incident (docs/updates.md P0.3): the
+    persisted object that owns current operational state, independent of
+    any one source post.
+
+    v0 scope, honestly bounded: ``incident_id`` is 1:1 with the
+    IntelEvent id that created it -- no cross-source correlation exists
+    yet (docs/updates.md P2.1, a later packet), so this cannot yet merge
+    two independently-reported posts about the same real-world case into
+    one incident. What it DOES add over the pre-P0.3 state: persisted
+    ``state_changed_at``/``resolved_at``/``archived_at`` (none of which
+    existed anywhere before -- docs/updates.md P0.1's audit flagged their
+    absence), computed from actual lifecycle transitions rather than
+    re-derived from scratch on every read.
+    """
+
+    __tablename__ = "humanitarian_incidents"
+    incident_id = Column(String(64), primary_key=True)
+    lifecycle = Column(String(32), nullable=False, index=True)
+    case_type = Column(String(64))
+    reported_at = Column(String(32))
+    last_update_at = Column(String(32))
+    state_changed_at = Column(DateTime)
+    resolved_at = Column(DateTime)
+    archived_at = Column(DateTime)
+    source_observation_ids = Column(JSON, default=list)
+    review_status = Column(String(32), nullable=False, default="none")
+    revision = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 def create_all(database_url: str) -> None:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)

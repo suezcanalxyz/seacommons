@@ -96,6 +96,13 @@ def start_background_sensors() -> None:
     except Exception as exc:
         logger.warning("Correlation/fusion engine failed to start: %s", exc)
 
+    try:
+        from core.intel import humanitarian_incident
+
+        humanitarian_incident.register()
+    except Exception as exc:
+        logger.warning("Humanitarian incident sync failed to start: %s", exc)
+
     if config.AISSTREAM_KEY:
         try:
             from core.vessels import aisstream
