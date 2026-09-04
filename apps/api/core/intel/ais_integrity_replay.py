@@ -15,11 +15,10 @@ local_receiver_density compute from live track history; this pure function
 takes the ratio as an input rather than the live baseline, matching the
 fixture's shape). Critically, it never looks at vessel type at all --
 "vessel class becomes a contextual feature only" (M4.3) is satisfied here
-by construction: there is no vessel_type parameter to exclude on. This
-does NOT replace core.mda.watch.scan_gaps()'s hard vessel-class exclusions
-yet -- wiring a coverage-ratio-based decision into that live, production
-detector is a separate, larger PR needing its own careful review against
-the M4.3 exit gate.
+by construction: there is no vessel_type parameter to exclude on.
+``classify_gap`` (via core.mda.gap_reason) and ``classify_impossible_speed``
+are wired into core.mda.watch.scan_gaps()/scan_spoofing() (docs/fixes.md
+M14.1), replacing scan_gaps()'s hard vessel-class exclusions.
 """
 from __future__ import annotations
 

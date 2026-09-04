@@ -31,9 +31,37 @@ logger = logging.getLogger(__name__)
 
 _MED_BLACK_SEA = (-8.0, 28.0, 45.0, 48.0)  # min_lon, min_lat, max_lon, max_lat
 
+# docs/fixes.md M14.1: minimum number of other nearby vessels reporting
+# *before* a gap starts before we treat their before/after ratio as real
+# evidence of a coverage outage. Below this we have no corroborating data
+# either way, so a gap is judged on its own (matches the pre-M14.1
+# behaviour for an isolated vessel with no neighbours in range at all)
+# rather than defaulting to "no witnesses" == "outage".
+_MIN_COVERAGE_WITNESSES = 2
+
 
 def _nm(km: float) -> float:
     return km / 1.852
+
+
+def _nearby_gap_witness_counts(
+    track_store: Any, mmsi: str, lat: float, lon: float,
+    gap_start: datetime, now: datetime,
+    *, window_min: float = 60.0, radius_nm: float = 25.0,
+) -> tuple[int, int]:
+    """Distinct other vessels reporting near (lat, lon) in the window just
+    before the gap started vs during the gap itself -- the
+    nearby_vessels_reporting_before/after core.mda.gap_reason.build_gap_reason
+    needs to tell a vessel-specific gap from a shared reception outage."""
+    from core.mda.coverage import _bbox_for_radius
+
+    bbox = _bbox_for_radius(lat, lon, radius_nm)
+    before_rows = track_store.positions_between(
+        gap_start - timedelta(minutes=window_min), gap_start, bbox=bbox)
+    after_rows = track_store.positions_between(gap_start, now, bbox=bbox)
+    before = {r["mmsi"] for r in before_rows if r.get("mmsi") and r["mmsi"] != mmsi}
+    after = {r["mmsi"] for r in after_rows if r.get("mmsi") and r["mmsi"] != mmsi}
+    return len(before), len(after)
 
 
 class MdaWatch:
@@ -304,6 +332,8 @@ class MdaWatch:
 
     def scan_gaps(self) -> int:
         from core.intel import confidence as confidence_mod
+        from core.mda.coverage import compute_coverage_baseline
+        from core.mda.gap_reason import build_gap_reason
         from core.mda.jamming import jamming
         from core.vessels.registry import registry
         from core.vessels.track_store import track_store
@@ -312,62 +342,38 @@ class MdaWatch:
         candidates = track_store.silent_since(min_silent_s=min_gap, min_speed_kn=2.0)
         cache = getattr(registry, "_cache", {}) or {}
         emitted = 0
+        now_dt = datetime.now(timezone.utc)
         for mmsi, last in candidates:
             if self._recently_emitted(f"gap:{mmsi}", 6 * 3600):
                 continue
-            # AIS ship_type 36/37 = sailing / pleasure craft. These routinely
-            # switch off AIS overnight at anchor near a marina -- that is
-            # normal leisure behaviour, not a reporting anomaly, and must not
-            # be reported as one unless the vessel itself is a sanctions
-            # match (see core.mda.identity.screen).
+            # docs/fixes.md M14.1: vessel type is context only from here on --
+            # it is carried into the emitted event's metadata but never gates
+            # whether a gap is reported. What decides that is
+            # core.mda.gap_reason.build_gap_reason (docs/fixes.md M4.3),
+            # which classifies this vessel's silence against how many OTHER
+            # nearby vessels kept reporting through the same window: a
+            # common/port-wide outage silences its neighbours too and is
+            # rejected as "coverage_gap"; a vessel actually going dark while
+            # its neighbours keep reporting normally is a "vessel_gap" and
+            # gets reported regardless of ship type.
             v = cache.get(mmsi, {})
             ship_type = v.get("ship_type")
-            if isinstance(ship_type, int) and ship_type in (36, 37):
-                from core.mda.identity import screen
-                result = screen(
-                    mmsi=mmsi, imo=v.get("imo"),
-                    name=v.get("ship_name") or "", flag=v.get("flag") or "",
+            silent_s = time.time() - last.ts
+            gap_start = datetime.fromtimestamp(last.ts, tz=timezone.utc)
+            nearby_before, nearby_after = _nearby_gap_witness_counts(
+                track_store, mmsi, last.lat, last.lon, gap_start, now_dt)
+            gap_reason = None
+            if nearby_before >= _MIN_COVERAGE_WITNESSES:
+                coverage = compute_coverage_baseline(mmsi, last.lat, last.lon, at=gap_start)
+                gap_reason = build_gap_reason(
+                    gap_duration_s=silent_s,
+                    nearby_vessels_reporting_before=nearby_before,
+                    nearby_vessels_reporting_after=nearby_after,
+                    coverage=coverage,
+                    pre_gap_speed=last.sog,
+                    pre_gap_course=_last_course(track_store, mmsi),
                 )
-                if not result.get("sanctions"):
-                    continue
-            # AIS ship_type 60-69 = passenger vessel (ferries included).
-            # Scheduled commercial traffic is a different data vertical from
-            # maritime-security anomalies -- kept out of Live for now (not
-            # deleted: the detection itself is unchanged and still runs,
-            # this only withholds passenger-vessel results from this feed)
-            # until it has its own destination separate from this one.
-            if isinstance(ship_type, int) and 60 <= ship_type <= 69:
-                from core.mda.identity import screen
-                result = screen(
-                    mmsi=mmsi, imo=v.get("imo"),
-                    name=v.get("ship_name") or "", flag=v.get("flag") or "",
-                )
-                if not result.get("sanctions"):
-                    continue
-            # AIS ship_type 30-32 = fishing vessel. Fishing boats routinely
-            # work slowly or go dark far from any port while actually
-            # fishing -- scan_infra_loiter already exempts this ship_type
-            # blanket ("fishing vessels work slowly everywhere"); a gap is
-            # the same normal-work pattern, not an anomaly.
-            if isinstance(ship_type, int) and 30 <= ship_type <= 32:
-                from core.mda.identity import screen
-                result = screen(
-                    mmsi=mmsi, imo=v.get("imo"),
-                    name=v.get("ship_name") or "", flag=v.get("flag") or "",
-                )
-                if not result.get("sanctions"):
-                    continue
-            # AIS ship_type 52 = tug. Port tugs sit idle waiting for the next
-            # job and go dark between assignments -- observed live: Genoa
-            # tug traffic showing the same false-gap pattern as fishing
-            # vessels do. Same exemption.
-            if ship_type == 52:
-                from core.mda.identity import screen
-                result = screen(
-                    mmsi=mmsi, imo=v.get("imo"),
-                    name=v.get("ship_name") or "", flag=v.get("flag") or "",
-                )
-                if not result.get("sanctions"):
+                if gap_reason.hypothesis == "coverage_gap":
                     continue
             jam = jamming.in_jamming_zone(last.lat, last.lon)
             cue = None
@@ -387,7 +393,6 @@ class MdaWatch:
             # above. Stored, not cut over -- severity/publication behaviour
             # here is still driven entirely by `confidence`/`severity` above,
             # unchanged. Lets the two be compared before anything switches.
-            silent_s = time.time() - last.ts
             gap_rule = "ais_gap_long" if silent_s > 6 * 3600 else "ais_gap"
             confidence_v2 = confidence_mod.combine(
                 gap_rule,
@@ -419,6 +424,19 @@ class MdaWatch:
                     "silent_seconds": int(time.time() - last.ts),
                     "jamming_score": jam, "anomaly_confidence": confidence,
                     "confidence_v2": confidence_v2.as_metadata(),
+                    # docs/fixes.md M14.1: vessel class is context only here,
+                    # never a detection gate.
+                    "vessel_type_context": ship_type,
+                    "gap_reason": (
+                        {
+                            "hypothesis": gap_reason.hypothesis,
+                            "confidence": gap_reason.confidence,
+                            "coverage_ratio": gap_reason.coverage_ratio,
+                            "nearby_vessels_reporting_before": nearby_before,
+                            "nearby_vessels_reporting_after": nearby_after,
+                        }
+                        if gap_reason is not None else None
+                    ),
                     "darkship_cue": cue,
                 },
             ), dedup_key=f"aisgap:{mmsi}:{int(time.time() // 21600)}")
@@ -566,6 +584,7 @@ class MdaWatch:
 
     def scan_spoofing(self) -> int:
         from core.intel import confidence as confidence_mod
+        from core.intel.ais_integrity_replay import classify_impossible_speed
         from core.mda.jamming import jamming
         from core.vessels.registry import registry
         from core.vessels.track_store import track_store
@@ -588,8 +607,14 @@ class MdaWatch:
                 # A pleasure/sailing craft (ship_type 36/37) swinging on its
                 # anchor near a marina produces exactly this signature --
                 # near-static or a small drift circle. Real, not spoofed.
-                # Same exemption as scan_gaps: only a confirmed sanctions
-                # match overrides it.
+                # docs/fixes.md M14.1 scoped the vessel-class-exclusion
+                # removal to scan_gaps() (the exit gate it was tested
+                # against); these frozen/circular exemptions stay for now --
+                # removing them needs a coverage-based replacement signal of
+                # their own, tracked as separate follow-up work, not a
+                # same-PR removal that would just reintroduce the exact
+                # false positives (Genoa tug traffic, marina-anchored
+                # yachts) these were added for.
                 v = cache.get(mmsi, {})
                 ship_type = v.get("ship_type")
                 if isinstance(ship_type, int) and ship_type in (36, 37):
@@ -641,6 +666,22 @@ class MdaWatch:
             jam = jamming.in_jamming_zone(mid["lat"], mid["lon"])
             atype = "position_jump" if reason == "teleport" else (
                 "circle_spoof" if reason == "circular" else "static_spoof")
+            # docs/fixes.md M14.1: cross-check the teleport signature against
+            # core.intel.ais_integrity_replay.classify_impossible_speed --
+            # informational only (this detector's own gating above is
+            # unchanged), vessel type is passed through but never used to
+            # gate the classification either (see that module's docstring).
+            integrity_classification = None
+            if reason == "teleport":
+                kn, dt_s = self._teleport_metrics(pts)
+                if kn is not None:
+                    v = cache.get(mmsi, {})
+                    label, conf = classify_impossible_speed(
+                        implied_speed_kn=kn,
+                        vessel_type=str(v.get("ship_type") or "unknown"),
+                        time_delta_s=dt_s,
+                    )
+                    integrity_classification = {"label": label, "confidence": conf}
             # Shadow-mode confidence model (docs/prompt.md phase 9/11) --
             # this detector had no confidence value at all before, only
             # severity from jamming alone. Stored alongside severity, not
@@ -672,10 +713,25 @@ class MdaWatch:
                     "coordinate_source": "ais_position", "spoof_reason": reason,
                     "jamming_score": jam, "detail": extra,
                     "confidence_v2": confidence_v2.as_metadata(),
+                    "ais_integrity_classification": integrity_classification,
                 },
             ), dedup_key=f"spoof:{mmsi}:{reason}:{int(time.time() // 21600)}")
             emitted += 1
         return emitted
+
+    @staticmethod
+    def _teleport_metrics(pts: list[dict[str, Any]]) -> tuple[Optional[float], float]:
+        """The implied speed (kn) and elapsed time (s) of the fix pair that
+        triggered a 'teleport' _spoof_signature() verdict -- same pair, same
+        threshold, so this always finds one when reason == 'teleport'."""
+        for a, b in zip(pts, pts[1:]):
+            dt = (_parse(b["ts"]) - _parse(a["ts"])).total_seconds()
+            if dt <= 0:
+                continue
+            kn = haversine_km(a["lat"], a["lon"], b["lat"], b["lon"]) / 1.852 / (dt / 3600)
+            if kn > 60 and haversine_km(a["lat"], a["lon"], b["lat"], b["lon"]) > 15:
+                return kn, dt
+        return None, 0.0
 
     @staticmethod
     def _spoof_signature(pts: list[dict[str, Any]]) -> tuple[Optional[str], str]:
