@@ -304,6 +304,23 @@ def _run_intel_drift_inner(
             origin_evidence_id=origin_evidence_id,
             model_version=model_version,
         )
+        # docs/updates.md P0.11: this completed job becomes the incident's
+        # ONE current Drift -- a single-pointer overwrite, so a later
+        # recomputation for the same incident always supersedes whatever
+        # was current before, never leaves two. Best-effort: event_id is
+        # the same id as HumanitarianIncidentDB.incident_id in the current
+        # 1:1 model (P0.3), but the incident row may not exist yet (a rare
+        # race with the async intel_store subscriber that creates it) or
+        # this may be a non-Humanitarian drift-eligible event -- either
+        # way, sync_current_drift_for_incident itself already no-ops
+        # safely rather than raising, and must never block drift
+        # completion from being recorded above.
+        try:
+            from core.intel.drift_ownership import sync_current_drift_for_incident
+
+            sync_current_drift_for_incident(event_id, job_id)
+        except Exception:
+            logger.debug("current_drift_id sync skipped for %s", event_id, exc_info=True)
         intel_store.update_metadata(
             event_id,
             metadata={
