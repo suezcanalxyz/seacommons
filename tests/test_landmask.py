@@ -56,6 +56,43 @@ def test_gazetteer_fallback_is_nudged_off_land(monkeypatch):
     assert extract_coords("boat near #Malta in distress") == (99.0, 99.0)
 
 
+# ── docs/fixes.md M4.2: distance_to_coast_km ────────────────────────────────
+
+def test_distance_to_coast_is_zero_when_already_on_land(monkeypatch):
+    monkeypatch.setattr(landmask, "is_on_land", lambda lat, lon: True)
+    assert landmask.distance_to_coast_km(41.9, 12.5) == 0.0
+
+
+def test_distance_to_coast_is_none_when_the_landmask_is_unavailable(monkeypatch):
+    monkeypatch.setattr(landmask, "is_on_land", lambda lat, lon: None)
+    assert landmask.distance_to_coast_km(35.5, 14.1) is None
+
+
+def test_distance_to_coast_searches_outward_until_land(monkeypatch):
+    # Land only far from the query point -- the search must expand rings
+    # until it finds it, and report a distance in the right ballpark.
+    origin = (35.5, 14.1)
+    land_radius_km = 15.0
+
+    def fake_is_on_land(lat, lon):
+        if (round(lat, 5), round(lon, 5)) == origin:
+            return False
+        # Approximate: land classified once far enough from the origin.
+        d_lat_km = (lat - origin[0]) * 111.32
+        d_lon_km = (lon - origin[1]) * 111.32 * max(0.2, __import__("math").cos(__import__("math").radians(origin[0])))
+        return (d_lat_km ** 2 + d_lon_km ** 2) ** 0.5 >= land_radius_km
+
+    monkeypatch.setattr(landmask, "is_on_land", fake_is_on_land)
+    result = landmask.distance_to_coast_km(*origin)
+    assert result is not None
+    assert 0.0 < result <= 30.0  # found within a couple of rings of the true radius
+
+
+def test_distance_to_coast_gives_up_within_max_radius_over_open_ocean(monkeypatch):
+    monkeypatch.setattr(landmask, "is_on_land", lambda lat, lon: False)
+    assert landmask.distance_to_coast_km(35.5, 14.1, max_radius_km=15, step_km=5) is None
+
+
 def test_mask_loading_is_lazy_not_at_import_time():
     # Every other test in this file mocks is_on_land directly, so the real
     # (slow, ~20-30s) landmask load is never actually triggered anywhere in

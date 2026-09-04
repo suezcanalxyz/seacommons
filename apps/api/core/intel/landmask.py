@@ -106,3 +106,42 @@ def nearest_sea_point(
         max_radius_km, lat, lon,
     )
     return (lat, lon)
+
+
+def distance_to_coast_km(
+    lat: float,
+    lon: float,
+    *,
+    max_radius_km: float = _MAX_RADIUS_KM,
+    step_km: float = _RADIUS_STEP_KM,
+) -> Optional[float]:
+    """docs/fixes.md M4.2 coverage-baseline field. Approximate distance from
+    a sea point to the nearest land, via the same ring-by-ring radial
+    search nearest_sea_point() already does in the opposite direction (sea
+    from land here; land from sea there) -- same compass-step/radius-step
+    parameters, same tolerance.
+
+    Returns ``0.0`` if the point is already on land, ``None`` if the
+    landmask is unavailable or nothing land-classified is found within
+    ``max_radius_km`` (open ocean far from any coast this system's
+    operational region would ever plot).
+    """
+    on_land = is_on_land(lat, lon)
+    if on_land is None:
+        return None
+    if on_land:
+        return 0.0
+
+    radius = step_km
+    while radius <= max_radius_km:
+        for i in range(_COMPASS_STEPS):
+            bearing = math.radians(360.0 * i / _COMPASS_STEPS)
+            north_km = math.cos(bearing) * radius
+            east_km = math.sin(bearing) * radius
+            candidate_lat = lat + north_km / 111.32
+            lon_scale = max(0.2, math.cos(math.radians(lat)))
+            candidate_lon = lon + east_km / (111.32 * lon_scale)
+            if is_on_land(candidate_lat, candidate_lon) is True:
+                return round(radius, 1)
+        radius += step_km
+    return None
