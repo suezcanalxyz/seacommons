@@ -493,6 +493,15 @@ class HumanitarianIncidentDB(Base):
     source_observation_ids = Column(JSON, default=list)
     review_status = Column(String(32), nullable=False, default="none")
     revision = Column(Integer, nullable=False, default=1)
+    # docs/updates.md P0.7: "exactly zero or one operational current Drift
+    # per incident" -- a single nullable pointer makes that true by
+    # construction (there is nowhere a second "current" could be stored).
+    # Not yet read by core.live.feed.public_drift_collection() (which
+    # still selects by rediscovering completed DriftResultDB rows,
+    # docs/updates.md's own named anti-pattern) -- swapping that live
+    # selection is a later, deliberately separate packet once parity is
+    # proven, not this one.
+    current_drift_id = Column(String(36))
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
         DateTime, default=lambda: datetime.now(timezone.utc),

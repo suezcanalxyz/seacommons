@@ -151,6 +151,7 @@ def get_incident(incident_id: str):
             "source_observation_ids": list(row.source_observation_ids or []),
             "review_status": row.review_status,
             "revision": row.revision,
+            "current_drift_id": row.current_drift_id,
         }
 
 
