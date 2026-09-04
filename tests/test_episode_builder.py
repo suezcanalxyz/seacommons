@@ -41,6 +41,23 @@ def test_family_for_unknown_type_falls_back_to_safety_episode():
     assert family_for("something_never_seen_before") == "safety_episode"
 
 
+def test_family_for_maps_the_real_live_emitter_vocabulary():
+    """docs/fixes.md M14.2: the anomaly_type strings core.mda.watch and the
+    other live emitters actually produce -- not just the fixture-shaped
+    ones above -- must route to their real family, not fall through to the
+    safety_episode catch-all."""
+    assert family_for("ais_rendezvous") == "rendezvous_episode"  # watch._emit_rendezvous
+    assert family_for("loiter") == "infrastructure_proximity_episode"
+    assert family_for("cable_proximity") == "infrastructure_proximity_episode"
+    assert family_for("sanctions_bunkering_loiter") == "infrastructure_proximity_episode"
+    assert family_for("position_jump") == "spoofing_episode"  # scan_spoofing "teleport"
+    assert family_for("circle_spoof") == "spoofing_episode"  # scan_spoofing "circular"
+    assert family_for("static_spoof") == "spoofing_episode"  # scan_spoofing "frozen"
+    assert family_for("impossible_speed") == "spoofing_episode"  # core.anomaly.ais
+    assert family_for("dark_zone_entry") == "spoofing_episode"  # core.anomaly.ais
+    assert family_for("dark_candidate") == "gap_episode"  # core.intel.viirs_monitor
+
+
 def test_exit_gate_repeated_updates_of_one_continuing_event_remain_one_episode():
     signals = [
         _sig("s1", family="gap_episode", hours_ago=5),

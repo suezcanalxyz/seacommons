@@ -1,19 +1,20 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Bounded episode builder (docs/fixes.md M5.2).
 
-``coalesce_security_vessel_episodes()`` (core.live.vessel_episodes) collapses
-every Live signal for one MMSI into a single, permanently-open "episode" for
-the whole lifetime of that MMSI -- exactly the problem M5's goal names:
-"stop equating one MMSI with one lifelong episode." Two unrelated anomalies
-on the same vessel, months apart, currently read as one continuing episode.
+``coalesce_security_vessel_episodes()`` (core.live.vessel_episodes) used to
+collapse every Live signal for one MMSI into a single, permanently-open
+"episode" for the whole lifetime of that MMSI -- exactly the problem M5's
+goal names: "stop equating one MMSI with one lifelong episode."
 
-This module is the replacement *logic*, built and tested standalone against
+This module is the replacement logic, built and tested standalone against
 the M5.2 exit gate: "two unrelated anomalies on the same MMSI days apart
 become two episodes; repeated updates of one continuing event remain one
-episode." It is NOT wired into ``coalesce_security_vessel_episodes()`` or
-``core/live/feed.py`` yet -- swapping the live Live-feed grouping behaviour
-is its own follow-up needing dedicated review, same reasoning as M4.3's
-gap_reason.py (docs/fixes.md M4.3) staying unwired into scan_gaps().
+episode." Wired into ``coalesce_security_vessel_episodes()`` (docs/fixes.md
+M14.2), which is now the authoritative live episode builder: it resolves
+each signal's subject (core.mda.vessel_subject) and family (family_for()
+below) and lets build_episodes() decide the grouping, then runs the same
+rich per-episode aggregation (track, severity, source records) it always
+did -- once per resulting episode instead of once per MMSI.
 
 Episode boundary rules (docs/fixes.md M5.2), applied per (subject, family):
 
@@ -55,8 +56,10 @@ _FAMILY_BY_ANOMALY_TYPE: dict[str, str] = {
     "long_gap": "gap_episode",
     "vessel_gap": "gap_episode",
     "coverage_gap": "gap_episode",
+    "dark_candidate": "gap_episode",  # core.intel.viirs_monitor -- satellite-corroborated AIS-dark
     "rendezvous": "rendezvous_episode",
     "sts": "rendezvous_episode",
+    "ais_rendezvous": "rendezvous_episode",  # core.mda.watch._emit_rendezvous / gfw_monitor "encounter"
     "identity_anomaly": "identity_integrity_episode",
     "sdn_match": "identity_integrity_episode",
     "sanctioned_vessel": "identity_integrity_episode",
@@ -64,9 +67,17 @@ _FAMILY_BY_ANOMALY_TYPE: dict[str, str] = {
     "spoofing_candidate": "spoofing_episode",
     "position_anomaly": "spoofing_episode",
     "circular_pattern": "spoofing_episode",
+    "position_jump": "spoofing_episode",  # core.mda.watch.scan_spoofing "teleport"
+    "circle_spoof": "spoofing_episode",  # core.mda.watch.scan_spoofing "circular"
+    "static_spoof": "spoofing_episode",  # core.mda.watch.scan_spoofing "frozen"
+    "impossible_speed": "spoofing_episode",  # core.anomaly.ais
+    "dark_zone_entry": "spoofing_episode",  # core.anomaly.ais
     "port_call": "port_call_episode",
     "infrastructure_proximity": "infrastructure_proximity_episode",
     "vessel_loiter": "infrastructure_proximity_episode",
+    "loiter": "infrastructure_proximity_episode",  # core.mda.watch.scan_infra_loiter / gfw_monitor
+    "cable_proximity": "infrastructure_proximity_episode",  # core.mda.watch.scan_infra_loiter
+    "sanctions_bunkering_loiter": "infrastructure_proximity_episode",  # core.mda.watch.scan_infra_loiter
     "not_under_command": "safety_episode",
     "sudden_stop": "safety_episode",
 }
