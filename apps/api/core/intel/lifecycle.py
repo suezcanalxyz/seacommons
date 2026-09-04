@@ -19,7 +19,9 @@ from core.intel.store import IntelEvent
 # Total visible lifetime of an unresolved distress marker on Live. Concluded
 # incidents leave Live immediately and remain available through archive/replay
 # surfaces instead of occupying the current operational timeline.
-DISTRESS_LIVE_MAX_AGE_DAYS = 7
+DISTRESS_LIVE_MAX_AGE_HOURS = 24
+# Compatibility for bounded DB scans that accept integer days.
+DISTRESS_LIVE_MAX_AGE_DAYS = 1
 # How far back to look for a later same-source post reporting resolution.
 RESOLUTION_LOOKBACK_DAYS = 10
 # Once an unresolved report has had no update for this long, it fades from
@@ -154,7 +156,7 @@ def is_directly_concluded(event: IntelEvent) -> bool:
 def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[IntelEvent]) -> str:
     """Return active, resolved, archived, or needs_review lifecycle state.
 
-    Callers must separately drop anything past DISTRESS_LIVE_MAX_AGE_DAYS —
+    Callers must separately drop anything past DISTRESS_LIVE_MAX_AGE_HOURS —
     this only distinguishes among events still within that window.
 
     Deliberately does NOT trust a stored `incident_status` metadata field:
@@ -187,14 +189,14 @@ def is_within_live_window(event: IntelEvent, *, now: datetime) -> bool:
     """Whether a marker belongs on the current operational Live surface.
 
     A directly concluded incident is removed immediately. Unresolved cases
-    remain bounded by the rolling seven-day window; older history belongs in
-    archive/replay views. Cross-post conclusions are handled by callers that
+    remain bounded by the rolling 24-hour window; older history belongs in
+    Play/reconstruction views. Cross-post conclusions are handled by callers that
     have the full same-source context.
     """
     if is_directly_concluded(event):
         return False
-    observed = parse_utc(event.timestamp_utc)
+    observed = _latest_activity_time(event)
     if observed is None:
         return True
-    age_days = (now - observed).total_seconds() / 86400
-    return age_days < DISTRESS_LIVE_MAX_AGE_DAYS
+    age_hours = (now - observed).total_seconds() / 3600
+    return age_hours < DISTRESS_LIVE_MAX_AGE_HOURS

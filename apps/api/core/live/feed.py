@@ -241,10 +241,13 @@ def public_signal_collection(
             incident_state = resolve_public_incident_state(
                 event, now=now, same_source=by_source.get(event.source, [])
             )
-            # Directly resolved incidents were filtered above. Cross-post matches
-            # may still project resolved; ambiguous replies project needs_review.
+            # Live is operational only. Terminal/retired real-world statuses
+            # belong to Play immediately even when the founding post is recent.
+            if incident_state["incident_status"] in {"resolved", "outcome_unknown"}:
+                continue
             feature["properties"]["kind"] = LiveSignalKind.DISTRESS.value
             feature["properties"]["incident_lifecycle"] = incident_state["lifecycle"]
+            feature["properties"]["incident_status"] = incident_state["incident_status"]
             feature["properties"]["reported_at"] = incident_state["reported_at"]
             feature["properties"]["last_update_at"] = incident_state["last_update_at"]
             feature["properties"]["state_changed_at"] = incident_state["state_changed_at"]

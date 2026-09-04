@@ -317,3 +317,30 @@ def test_sync_persists_incident_status_independently_from_legacy_lifecycle():
     incident = get_incident("status-1")
     assert incident["lifecycle"] == "archived"
     assert incident["incident_status"] == "outcome_unknown"
+
+
+def test_reconcile_stale_active_incident_persists_outcome_unknown():
+    from core.intel.humanitarian_incident import reconcile_stale_incidents
+
+    event = _distress_event("reconcile-old", "distress", timestamp="2026-09-03T10:00:00+00:00")
+    sync_incident_for_event(event, lifecycle="active")
+    changed = reconcile_stale_incidents(now=datetime(2026, 9, 5, 0, 0, tzinfo=timezone.utc))
+
+    incident = get_incident("reconcile-old")
+    assert changed == 1
+    assert incident["incident_status"] == "outcome_unknown"
+    assert incident["lifecycle"] == "archived"
+    assert incident["archived_at"] is not None
+
+
+def test_reconcile_does_not_convert_needs_review_to_outcome_unknown():
+    from core.intel.humanitarian_incident import reconcile_stale_incidents
+
+    event = _distress_event("reconcile-review", "distress", timestamp="2026-09-03T10:00:00+00:00")
+    sync_incident_for_event(event, lifecycle="needs_review")
+    changed = reconcile_stale_incidents(now=datetime(2026, 9, 5, 0, 0, tzinfo=timezone.utc))
+
+    incident = get_incident("reconcile-review")
+    assert changed == 0
+    assert incident["incident_status"] == "needs_review"
+    assert incident["lifecycle"] == "needs_review"

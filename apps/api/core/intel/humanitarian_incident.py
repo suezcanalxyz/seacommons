@@ -175,6 +175,59 @@ def sync_incident_for_event(
             )
 
 
+def reconcile_stale_incidents(*, now: Optional[datetime] = None, limit: int = 500) -> int:
+    """Persist silent active incidents as outcome_unknown for Play.
+
+    `needs_review` is intentionally not converted: it leaves Live at the same
+    24-hour surface boundary but retains its real-world review status in Play.
+    """
+    from core.db.models import HumanitarianIncidentDB, IntelEventDB
+    from core.db.session import session_scope
+    from core.domain.live_contracts import IncidentStatus
+    from core.intel.lifecycle import parse_utc
+
+    now_utc = now or datetime.now(timezone.utc)
+    if now_utc.tzinfo is None:
+        now_utc = now_utc.replace(tzinfo=timezone.utc)
+    now_naive = now_utc.astimezone(timezone.utc).replace(tzinfo=None)
+    changed = 0
+    with session_scope() as db:
+        rows = (
+            db.query(HumanitarianIncidentDB)
+            .filter(HumanitarianIncidentDB.incident_status == IncidentStatus.ACTIVE.value)
+            .limit(limit)
+            .all()
+        )
+        for row in rows:
+            last_update = parse_utc(row.last_update_at or row.reported_at or "")
+            if last_update is None:
+                continue
+            if (now_utc - last_update).total_seconds() < PUBLIC_STATUS_RETIRE_AFTER_HOURS * 3600:
+                continue
+            previous_lifecycle = row.lifecycle
+            row.incident_status = IncidentStatus.OUTCOME_UNKNOWN.value
+            row.lifecycle = "archived"
+            row.state_changed_at = now_naive
+            row.archived_at = row.archived_at or now_naive
+            row.revision = (row.revision or 1) + 1
+            event_row = db.get(IntelEventDB, row.incident_id)
+            if event_row is not None and previous_lifecycle != "archived":
+                event = IntelEvent(
+                    id=event_row.id, timestamp_utc=event_row.timestamp_utc,
+                    type=event_row.type, severity=event_row.severity,
+                    lat=event_row.lat, lon=event_row.lon, title=event_row.title or "",
+                    text=event_row.text or "", url=event_row.url or "",
+                    source=event_row.source or "", linked_mmsi=event_row.linked_mmsi or "",
+                    metadata=dict(event_row.meta or {}),
+                )
+                _record_transition(
+                    db, incident_id=row.incident_id, from_state=previous_lifecycle,
+                    to_state="archived", event=event, reason_code="silence_after_threshold", now=now_naive,
+                )
+            changed += 1
+    return changed
+
+
 def get_incident(incident_id: str):
     from core.db.models import HumanitarianIncidentDB
     from core.db.session import session_scope
