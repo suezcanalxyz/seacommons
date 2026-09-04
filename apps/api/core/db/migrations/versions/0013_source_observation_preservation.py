@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """source_observations.preservation_status
 
-Revision ID: 0013_source_observation_preservation
+Revision ID: 0013_source_obs_preservation
 Revises: 0012_source_coverage_events
 Create Date: 2026-09-04
 
@@ -22,7 +22,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0013_source_observation_preservation"
+revision = "0013_source_obs_preservation"
 down_revision = "0012_source_coverage_events"
 branch_labels = None
 depends_on = None
