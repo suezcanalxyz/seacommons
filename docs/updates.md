@@ -4,6 +4,152 @@
 >
 > **Purpose:** raise SeaCommons from a stabilized maritime OSINT application to a production-grade geospatial and evidence-intelligence infrastructure without accumulating another layer of legacy. This document is a migration program, not a feature wishlist.
 
+## Immediate first task after `fixes.md` closes — audit the real Live data and make lifecycle canonical
+
+Before PostGIS, AI enrichment, new geospatial infrastructure or any other upgrade milestone, inspect the **actual production Live datasets and rendered Live UI**. Do not infer correctness from fixtures or unit tests. The first post-stabilization PRs must explain and correct what real operators/users currently see.
+
+Audit at minimum:
+
+```text
+/api/v1/live/signals
+/api/v1/live/drifts
+/api/v1/live/archives
+public edge projection
+rendered Humanitarian Live map/panel
+Alarm Phone source threads and repost/update chains
+persisted IntelEvent / SourceObservation / DriftResult rows behind each visible case
+```
+
+For every currently visible Humanitarian case reconstruct a timeline:
+
+```text
+source observed_at
+received_at
+event timestamp used by Live
+first publication time
+latest source update time
+latest correlated update time
+Drift origin time
+Drift model created_at / completed_at
+current lifecycle state
+why that lifecycle state was selected
+whether the case is still on Live
+whether a Drift is still on Live
+```
+
+Treat visible stale Drift geometry, impossible/incorrect timers, duplicate Alarm Phone markers, unresolved events that silently disappear, resolved events that remain operational-looking, and incorrect coordinates as data-model/pipeline defects — not cosmetic UI issues.
+
+### Canonical Humanitarian case lifecycle
+
+Stop treating each source post as the operational case itself. Persist a canonical `HumanitarianIncident`/case identity and an append-only lifecycle history. Source observations remain immutable evidence linked to that case.
+
+Minimum lifecycle states:
+
+```text
+reported       first credible distress observation received
+active         current evidence supports an ongoing incident
+needs_review   updates exist but outcome/correlation is ambiguous
+resolved       credible evidence says immediate distress/search is concluded
+archived       case is historical and no longer operationally live
+reopened       new credible evidence after resolution indicates renewed/continuing danger
+```
+
+`archived` must not mean “we have heard nothing for 24 hours”. Silence is not resolution. Age may change display prominence and trigger review, but lifecycle must describe what evidence says happened.
+
+Every transition persists:
+
+```text
+incident_id
+from_state
+to_state
+transition_at
+effective_at
+reason_code
+supporting_observation_ids[]
+source/correlation method
+confidence
+review_required
+reviewed_by/reviewed_at when applicable
+```
+
+A later Alarm Phone post/reply must update the same incident when correlation is strong enough; it must not merely create a second unrelated red marker. Ambiguous correlation becomes `needs_review`, never a silent merge.
+
+### Alarm Phone timer semantics
+
+The UI timer must have an explicit semantic source. Never calculate one generic “age” from whichever timestamp happens to be present.
+
+Expose at least:
+
+```text
+reported_at       when the original incident was reported/observed
+last_update_at    latest evidence/update attached to the case
+state_changed_at  when lifecycle last changed
+data_received_at  when SeaCommons received the latest source observation
+```
+
+Public UI should normally display **“reported X ago”** plus **“updated Y ago”** when later evidence exists. For `resolved`, display **“resolved X ago”** and stop the active timer. Never reset incident age merely because SeaCommons re-ingested the same source item, reran a classifier, regenerated a projection or recalculated Drift.
+
+All timestamps must be normalized to UTC in storage and rendered from explicit ISO timestamps. Add regression fixtures for timezone offsets, source timestamps without timezone, delayed ingestion, reposts, duplicate ingestion and out-of-order updates.
+
+### Drift lifecycle must be owned by the incident
+
+A Drift is a derived model product, not an independently live incident. Each Drift must reference the canonical incident and the exact origin evidence/time that generated it.
+
+Rules:
+
+```text
+ACTIVE/NEEDS_REVIEW case + valid maritime point -> Drift may be operationally visible
+RESOLVED case -> immediately remove/freeze Drift from operational Live
+ARCHIVED case -> no operational Live Drift
+REOPENED case -> create a new versioned Drift only from newly valid evidence
+new accepted position -> old Drift becomes superseded; never display old and new as equally current
+region-only/unpositioned case -> no fabricated Drift
+```
+
+Persist Drift status such as `current | superseded | resolved | failed | historical`, with `superseded_by`, origin observation ID, origin timestamp, model/version and lifecycle linkage. `public_drift_collection()` must select only the current Drift belonging to an operationally eligible case; it must not rediscover arbitrary completed historical jobs and publish them as current.
+
+### Required production-data audit output
+
+Before changing algorithms, produce a machine-readable report over current Live data containing, per visible case:
+
+```text
+incident/event ids
+source
+reported_at
+last_update_at
+lifecycle
+lifecycle reason
+position status/method
+visible marker yes/no
+current drift id/status/origin time
+visible drift yes/no
+age/timer values shown vs expected
+duplicate/correlation candidates
+anomaly flags
+```
+
+Flag at least:
+
+```text
+STALE_DRIFT
+DRIFT_AFTER_RESOLUTION
+MULTIPLE_CURRENT_DRIFTS
+DRIFT_ORIGIN_OLDER_THAN_CURRENT_ACCEPTED_POSITION
+TIMER_SOURCE_MISMATCH
+RECEIVED_AT_USED_AS_REPORTED_AT
+OUT_OF_ORDER_UPDATE
+RESOLUTION_NOT_LINKED
+ARCHIVED_BY_SILENCE_ONLY
+DUPLICATE_LIVE_INCIDENT
+OPEN_CASE_DROPPED_FROM_LIVE
+RESOLVED_CASE_STILL_ACTIVE_LOOKING
+LOCATION_CHANGED_WITHOUT_DRIFT_SUPERSESSION
+```
+
+Create regression fixtures from real problematic records after removing/private-redacting sensitive content. The audit is complete only when every unexplained visible anomaly has a code/data-path explanation and a test or explicit remediation task.
+
+**Immediate-first-task exit gate:** production Live marker/Drift/timer inventory committed; lifecycle transitions are evidence-based and persisted; Alarm Phone updates resolve/reopen/update one canonical case; stale/superseded Drift cannot remain operationally visible; timers use explicit event/update/state timestamps; archive and Live are distinct projections of the same incident history.
+
 ---
 
 # 0. Operating principle
@@ -856,6 +1002,8 @@ Final docs describe canonical spatial model, geometry evidence, DB/index archite
 ```text
 fixes.md COMPLETE
       ↓
+LIVE DATA + LIFECYCLE AUDIT (mandatory immediate first task)
+      ↓
 M0 Legacy census
       ↓
 M1 PostGIS foundation
@@ -908,20 +1056,23 @@ Parallel work elsewhere is allowed only when milestones do not modify the same s
 The upgrade program is DONE only when:
 
 1. `fixes.md` remains green after all upgrades;
-2. PostGIS is the canonical spatial query layer;
-3. source/reported/derived/uncertainty/public geometry are distinguishable;
-4. high-value spatial queries no longer depend on scattered ad-hoc loops;
-5. Humanitarian location is uncertainty-aware and privacy-safe;
-6. imported geography is versioned and provenance-aware;
-7. large map delivery is scalable if measured volume justified tiles;
-8. raster/model data has an explicit artifact architecture when used;
-9. AIS scale limits are measured rather than guessed;
-10. deployment is reproducible;
-11. model providers are replaceable and cannot bypass canonical evidence/publication policy;
-12. every enabled AI capability has a labelled evaluation corpus, persisted provenance, deterministic degradation path and explicit promotion state;
-13. no AI-derived exact Humanitarian location or allegation can reach public output outside deterministic privacy/evidence gates;
-14. legacy compatibility introduced during migration has been removed;
-15. repository-wide legacy audit has no unexplained production residue;
-16. production qualification demonstrates correctness, privacy, performance, provider degradation and recovery on the final commit.
+2. production Live cases have a canonical evidence-backed lifecycle and explicit event/update/state timestamps;
+3. stale/superseded Drift products cannot appear operationally current;
+4. Alarm Phone updates/resolutions/reopens are linked to canonical incidents rather than rendered as unrelated posts;
+5. PostGIS is the canonical spatial query layer;
+6. source/reported/derived/uncertainty/public geometry are distinguishable;
+7. high-value spatial queries no longer depend on scattered ad-hoc loops;
+8. Humanitarian location is uncertainty-aware and privacy-safe;
+9. imported geography is versioned and provenance-aware;
+10. large map delivery is scalable if measured volume justified tiles;
+11. raster/model data has an explicit artifact architecture when used;
+12. AIS scale limits are measured rather than guessed;
+13. deployment is reproducible;
+14. model providers are replaceable and cannot bypass canonical evidence/publication policy;
+15. every enabled AI capability has a labelled evaluation corpus, persisted provenance, deterministic degradation path and explicit promotion state;
+16. no AI-derived exact Humanitarian location or allegation can reach public output outside deterministic privacy/evidence gates;
+17. legacy compatibility introduced during migration has been removed;
+18. repository-wide legacy audit has no unexplained production residue;
+19. production qualification demonstrates correctness, privacy, performance, provider degradation and recovery on the final commit.
 
 The target is not "more GIS tools" or "AI everywhere". The target is a simpler, more rigorous SeaCommons whose geospatial and evidence-intelligence capabilities are first-class, testable, reproducible, privacy-safe and operationally credible.
