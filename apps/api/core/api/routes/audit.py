@@ -50,3 +50,16 @@ async def humanitarian_incident(incident_id: str):
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
     return {**incident, "transitions": list_transitions(incident_id)}
+
+
+@router.get("/source-registry")
+async def source_registry_catalog():
+    """docs/updates.md P1.1: "what SeaCommons is watching" -- descriptive
+    catalog (family/coverage/languages/collection method/independence
+    group/known limitations) joined against live operational health.
+    Never a single reliability score (updates.md P1.1: "source
+    reliability is contextual metadata, not one global truth score").
+    """
+    from core.intel.source_catalog import get_source_registry_catalog
+
+    return {"sources": get_source_registry_catalog()}
