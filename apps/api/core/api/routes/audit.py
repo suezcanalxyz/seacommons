@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter(prefix="/api/v1/audit", tags=["audit"])
 
@@ -33,3 +33,20 @@ async def humanitarian_truth_table(limit: int = Query(200, ge=1, le=1000)):
         **result,
         "rows": [asdict(row) for row in result["rows"]],
     }
+
+
+@router.get("/humanitarian-incidents/{incident_id}")
+async def humanitarian_incident(incident_id: str):
+    """docs/updates.md P0.6: "public timer can be reconstructed from API
+    fields with no hidden frontend inference" -- the canonical incident's
+    typed timestamps (reported_at/last_update_at/state_changed_at/
+    resolved_at/archived_at) plus its full lifecycle transition audit
+    trail (P0.5), straight from HumanitarianIncidentDB/
+    IncidentTransitionDB.
+    """
+    from core.intel.humanitarian_incident import get_incident, list_transitions
+
+    incident = get_incident(incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return {**incident, "transitions": list_transitions(incident_id)}

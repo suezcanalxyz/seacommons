@@ -208,3 +208,61 @@ def test_needs_review_transition_sets_review_required():
 
 def test_list_transitions_returns_empty_for_an_unknown_incident():
     assert list_transitions("does-not-exist") == []
+
+
+# ── docs/updates.md P0.6: timer contract ────────────────────────────────
+
+
+def test_reported_at_never_changes_after_creation():
+    event = _distress_event("p6-1", "distress", timestamp="2026-09-04T08:00:00+00:00")
+    sync_incident_for_event(event, lifecycle="active")
+    later = _distress_event("p6-1", "update", timestamp="2026-09-04T09:00:00+00:00")
+    sync_incident_for_event(later, lifecycle="active")
+
+    assert get_incident("p6-1")["reported_at"] == "2026-09-04T08:00:00+00:00"
+
+
+def test_last_update_at_advances_on_an_in_order_update():
+    event = _distress_event("p6-2", "distress", timestamp="2026-09-04T08:00:00+00:00")
+    sync_incident_for_event(event, lifecycle="active")
+    later = _distress_event("p6-2", "update", timestamp="2026-09-04T09:00:00+00:00")
+    sync_incident_for_event(later, lifecycle="active")
+
+    assert get_incident("p6-2")["last_update_at"] == "2026-09-04T09:00:00+00:00"
+
+
+def test_last_update_at_never_moves_backward_on_an_out_of_order_update():
+    """docs/updates.md P0.6 exit gate: a delayed/out-of-order observation
+    must never make an incident look older than an already-processed
+    later one."""
+    event = _distress_event("p6-3", "distress", timestamp="2026-09-04T09:00:00+00:00")
+    sync_incident_for_event(event, lifecycle="active")
+    stale = _distress_event("p6-3", "a delayed earlier report", timestamp="2026-09-04T07:00:00+00:00")
+    sync_incident_for_event(stale, lifecycle="active")
+
+    assert get_incident("p6-3")["last_update_at"] == "2026-09-04T09:00:00+00:00"
+
+
+def test_humanitarian_incident_route_reconstructs_the_timer_from_api_fields() -> None:
+    from fastapi.testclient import TestClient
+
+    from core.api.main import app
+
+    event = _distress_event("p6-4", "MAYDAY people aboard", timestamp="2026-09-04T08:00:00+00:00")
+    sync_incident_for_event(event, lifecycle="active")
+
+    response = TestClient(app).get("/api/v1/audit/humanitarian-incidents/p6-4")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reported_at"] == "2026-09-04T08:00:00+00:00"
+    assert payload["last_update_at"] == "2026-09-04T08:00:00+00:00"
+    assert len(payload["transitions"]) == 1
+
+
+def test_humanitarian_incident_route_404s_for_an_unknown_incident() -> None:
+    from fastapi.testclient import TestClient
+
+    from core.api.main import app
+
+    response = TestClient(app).get("/api/v1/audit/humanitarian-incidents/does-not-exist")
+    assert response.status_code == 404
