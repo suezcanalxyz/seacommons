@@ -80,3 +80,18 @@ async def coverage_matrix(lookback_hours: int = Query(168, ge=1, le=8760)):
 
     matrix = build_coverage_matrix(lookback_hours=lookback_hours)
     return asdict(matrix)
+
+
+@router.get("/coverage-change-log")
+async def coverage_change_log(source_name: str | None = None, limit: int = Query(200, ge=1, le=1000)):
+    """docs/updates.md P1.3: "version the coverage profile" -- the
+    append-only log of when a source's coverage changed (added/removed/
+    method_changed/coverage_break) and why, per source. Never edited,
+    only appended to.
+    """
+    from dataclasses import asdict
+
+    from core.intel.coverage_change_log import get_coverage_change_log
+
+    events = get_coverage_change_log(source_name=source_name, limit=limit)
+    return {"events": [asdict(e) for e in events]}
