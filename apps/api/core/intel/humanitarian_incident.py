@@ -155,6 +155,59 @@ def get_incident(incident_id: str):
         }
 
 
+def resolve_public_incident_state(event: IntelEvent, *, now: datetime, same_source: list) -> dict:
+    """docs/updates.md P0.10: Live authority cutover.
+
+    The single function core.live.feed.public_signal_collection and
+    core.live_edge_publisher.public_event_from_row must both call for a
+    Humanitarian marker's lifecycle/timestamps, instead of each calling
+    core.intel.lifecycle.distress_lifecycle() directly at read time.
+    When a canonical HumanitarianIncidentDB row exists (every event
+    classified humanitarian, since core.intel.humanitarian_incident.
+    register() -- P0.3/P0.9), its precomputed, write-time state IS the
+    public authority: lifecycle/reported_at/last_update_at/
+    state_changed_at/resolved_at all come from the incident, not from
+    re-deriving them from the event's own text/metadata on every request.
+
+    Falls back to the pre-P0.10 read-time recomputation ONLY for an
+    event with no canonical incident -- e.g. a Maritime Safety marker
+    (docs/updates.md P0.8: a beacon/nav-status event never gets a
+    HumanitarianIncidentDB row at all) or a genuinely pre-P0.3 legacy
+    record. This fallback is deliberate, not a loophole: those events
+    were never meant to have canonical incident state in the first
+    place, so there is nothing stale to prefer over a live computation.
+
+    Known, accepted consequence of the cutover (not a bug): the
+    canonical incident is updated asynchronously, off-thread, by
+    intel_store's subscriber fan-out (P0.3/P0.9) -- a read landing in
+    the brief window between a new update and that background sync
+    completing sees the incident's still-slightly-stale state rather
+    than an instantaneous recomputation. The same trade-off already
+    applies to every other staged-shadow authority this codebase has
+    cut over (P0.5 lifecycle, P0.7 Drift ownership).
+    """
+    incident = get_incident(event.id)
+    if incident is not None:
+        return {
+            "lifecycle": incident["lifecycle"],
+            "reported_at": incident["reported_at"],
+            "last_update_at": incident["last_update_at"],
+            "state_changed_at": incident["state_changed_at"],
+            "resolved_at": incident["resolved_at"],
+        }
+
+    from core.intel.lifecycle import distress_lifecycle
+
+    fallback_lifecycle = distress_lifecycle(event, now=now, same_source=same_source)
+    return {
+        "lifecycle": fallback_lifecycle,
+        "reported_at": event.timestamp_utc,
+        "last_update_at": event.timestamp_utc,
+        "state_changed_at": None,
+        "resolved_at": None,
+    }
+
+
 def list_transitions(incident_id: str) -> list[dict]:
     """Every recorded transition for one incident, oldest first --
     docs/updates.md P0.5's audit trail. Never edited in place; a caller
