@@ -159,13 +159,16 @@ def coalesce_security_vessel_episodes(
         items = [by_signal_id[sid] for sid in group.signal_ids if sid in by_signal_id]
         if not items:
             continue
-        episodes.append(_build_episode_feature(group.episode_id, items, track_history))
+        episodes.append(_build_episode_feature(
+            group.episode_id, group.subject_ids, group.family, items, track_history))
 
     return ungrouped + episodes
 
 
 def _build_episode_feature(
     episode_id: str,
+    subject_ids: tuple[str, ...],
+    family: str,
     items: list[dict[str, Any]],
     track_history: dict[str, list[dict[str, Any]]] | None,
 ) -> dict[str, Any]:
@@ -268,6 +271,8 @@ def _build_episode_feature(
         {
             "id": episode_id,
             "episode_id": episode_id,
+            "episode_family": family,
+            "subject_ids": list(subject_ids),
             "linked_mmsi": mmsi,
             "mmsi": mmsi,
             "severity": most_severe,

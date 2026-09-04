@@ -3,7 +3,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 from sqlalchemy import (
-    BigInteger, Column, String, Float, Integer, DateTime, Index, JSON, Text,
+    BigInteger, Boolean, Column, String, Float, Integer, DateTime, Index, JSON, Text,
     UniqueConstraint, ForeignKey, create_engine
 )
 from sqlalchemy.orm import DeclarativeBase, Session
@@ -430,6 +430,38 @@ class SourceObservationDB(Base):
     __table_args__ = (
         UniqueConstraint("source_name", "source_id", name="uq_source_observation_delivery_key"),
         Index("ix_source_observations_source_ts", "source_name", "observed_at"),
+    )
+
+
+class InvestigationHypothesisDB(Base):
+    """Persisted core.intel.hypothesis.InvestigationHypothesis (docs/fixes.md
+    M6/M14.3). One row per hypothesis; audit_history is append-only JSON,
+    never rewritten in place -- core.intel.hypothesis.transition() always
+    appends a new AuditEntry to the tuple it returns, this column just
+    stores that tuple verbatim.
+    """
+
+    __tablename__ = "investigation_hypotheses"
+    hypothesis_id = Column(String(128), primary_key=True)
+    hypothesis_type = Column(String(64), nullable=False, index=True)
+    subject_ids = Column(JSON, nullable=False, default=list)
+    state = Column(String(32), nullable=False, default="candidate", index=True)
+    reason_codes = Column(JSON, default=list)
+    counter_indicators = Column(JSON, default=list)
+    evidence_links = Column(JSON, default=list)
+    evidence_stage = Column(String(32), nullable=False, default="observed")
+    has_unresolved_blocking_identity_conflict = Column(Boolean, nullable=False, default=False)
+    allegation_shaped_wording = Column(Boolean, nullable=False, default=False)
+    explicit_review_done = Column(Boolean, nullable=False, default=False)
+    audit_history = Column(JSON, default=list)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_investigation_hypotheses_type_state", "hypothesis_type", "state"),
     )
 
 
