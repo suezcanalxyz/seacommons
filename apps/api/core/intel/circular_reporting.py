@@ -101,6 +101,17 @@ def _detect(db, observation_id: str) -> Optional[LineageEdge]:
         detected_at=now.replace(tzinfo=None),
     ))
     db.flush()
+
+    from core.intel.entity_graph import get_or_create_entity, record_relationship
+
+    from_entity = get_or_create_entity(db, entity_type="observation", canonical_key=observation_id)
+    to_entity = get_or_create_entity(db, entity_type="observation", canonical_key=earlier.observation_id)
+    record_relationship(
+        db, from_entity_id=from_entity.entity_id, to_entity_id=to_entity.entity_id,
+        relation_type=RELATION_DERIVED_FROM, provenance={"lineage_edge_id": edge_id},
+        confidence=0.9, method_version=METHOD_VERSION,
+    )
+
     return LineageEdge(
         id=edge_id, from_observation_id=observation_id, to_observation_id=earlier.observation_id,
         relation=RELATION_DERIVED_FROM, confidence=0.9, method_version=METHOD_VERSION,

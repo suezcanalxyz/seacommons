@@ -660,6 +660,45 @@ class LineageEdgeDB(Base):
     detected_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
+class EntityDB(Base):
+    """Canonical entity (docs/updates.md P2.3 evidence graph). "Start
+    with typed relational objects/edges in PostgreSQL; evaluate
+    specialized graph infrastructure only if measured queries justify
+    it" -- a plain table, not a graph database. Idempotent by
+    (entity_type, canonical_key) -- see core.intel.entity_graph.entity_id.
+    """
+    __tablename__ = "entities"
+    entity_id = Column(String(64), primary_key=True)
+    entity_type = Column(String(32), nullable=False, index=True)
+    canonical_key = Column(String(256), nullable=False)
+    display_name = Column(String(256))
+    attributes = Column(JSON, default=dict)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("entity_type", "canonical_key", name="uq_entity_type_canonical_key"),
+    )
+
+
+class EntityRelationshipDB(Base):
+    """One typed, time-bounded, provenanced edge between two EntityDB
+    rows (docs/updates.md P2.3). Append-only: a relationship that
+    changes over time (e.g. supersedes) is a NEW row, never an edit --
+    the edge history is itself the evidence graph's audit trail.
+    """
+    __tablename__ = "entity_relationships"
+    id = Column(String(64), primary_key=True)
+    from_entity_id = Column(String(64), nullable=False, index=True)
+    to_entity_id = Column(String(64), nullable=False, index=True)
+    relation_type = Column(String(32), nullable=False, index=True)
+    provenance = Column(JSON, default=dict)
+    valid_from = Column(String(32))
+    valid_to = Column(String(32))
+    confidence = Column(Float, nullable=False, default=1.0)
+    method_version = Column(String(64), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 def create_all(database_url: str) -> None:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
