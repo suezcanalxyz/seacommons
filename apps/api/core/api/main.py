@@ -32,7 +32,7 @@ from core.config import config
 from core import bootstrap
 from core.api.routes import alerts, drift, anomaly, forensic, integrations, ops, vessels
 from core.api.routes import ingest, probability, weather, zones, intel, cases, governance, live, connectors
-from core.api.routes import mda
+from core.api.routes import mda, audit
 from core.db.session import init_database
 from core.security import READ_ROLES, WRITE_ROLES, require_roles, validate_production_security
 from core.config_validation import validate_configuration
@@ -239,6 +239,7 @@ app.include_router(governance.router)
 app.include_router(live.router)
 app.include_router(connectors.router)
 app.include_router(mda.router)
+app.include_router(audit.router)
 
 
 @app.get("/health")
