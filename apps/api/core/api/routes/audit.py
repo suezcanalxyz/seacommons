@@ -63,3 +63,20 @@ async def source_registry_catalog():
     from core.intel.source_catalog import get_source_registry_catalog
 
     return {"sources": get_source_registry_catalog()}
+
+
+@router.get("/coverage-matrix")
+async def coverage_matrix(lookback_hours: int = Query(168, ge=1, le=8760)):
+    """docs/updates.md P1.2: per-region (Western/Central/Eastern
+    Mediterranean, Aegean, Adriatic/Ionian, Atlantic/Canary route)
+    coverage -- active/healthy sources, source-family mix, single-family
+    dependency risk, last successful fetch. Zero-event regions are
+    listed explicitly, never omitted -- "the platform must expose its
+    observable universe and gaps."
+    """
+    from dataclasses import asdict
+
+    from core.intel.coverage_matrix import build_coverage_matrix
+
+    matrix = build_coverage_matrix(lookback_hours=lookback_hours)
+    return asdict(matrix)
