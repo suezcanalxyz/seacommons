@@ -171,8 +171,17 @@ def record_observation(
     db.flush()
 
     from core.intel.circular_reporting import detect_lineage_for_observation
+    from core.intel.entity_graph import get_or_create_entity, record_relationship
 
     detect_lineage_for_observation(obs_id, db=db)
+
+    observation_entity = get_or_create_entity(db, entity_type="observation", canonical_key=obs_id)
+    source_entity = get_or_create_entity(db, entity_type="source_account", canonical_key=source_name)
+    record_relationship(
+        db, from_entity_id=observation_entity.entity_id, to_entity_id=source_entity.entity_id,
+        relation_type="reported_by", provenance={"observation_id": obs_id},
+        method_version="v0_mechanical_from_source_observation",
+    )
 
     return _to_observation(row, replayed=False)
 

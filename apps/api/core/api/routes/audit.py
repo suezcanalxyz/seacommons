@@ -146,3 +146,26 @@ async def lineage(observation_id: str):
         "edges": [asdict(e) for e in edges],
         "not_yet_computable_signals": LINEAGE_NOT_YET_COMPUTABLE,
     }
+
+
+@router.get("/entity-graph/{entity_type}/{canonical_key}")
+async def entity_graph(entity_type: str, canonical_key: str):
+    """docs/updates.md P2.3: an entity's relationships, by (entity_type,
+    canonical_key). See core.intel.entity_graph's NOT_YET_WIRED for
+    which named entity/relation types have no producer yet.
+    """
+    from dataclasses import asdict
+
+    from core.intel.entity_graph import (
+        NOT_YET_WIRED,
+        entity_id as compute_entity_id,
+        get_relationships,
+    )
+
+    eid = compute_entity_id(entity_type, canonical_key)
+    relationships = get_relationships(eid)
+    return {
+        "entity_id": eid,
+        "relationships": [asdict(r) for r in relationships],
+        "not_yet_wired": NOT_YET_WIRED,
+    }
