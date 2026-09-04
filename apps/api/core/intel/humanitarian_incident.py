@@ -211,6 +211,10 @@ def _on_intel_event(event: IntelEvent) -> None:
         assessment = assess(event.text or event.title)
         record_claims_for_incident(event.id, event, assessment)
         sync_assessments_for_incident(event.id)
+
+        from core.intel.correlation import generate_correlation_decisions
+
+        generate_correlation_decisions(event, lifecycle=lifecycle)
     except Exception:  # pragma: no cover - never break ingestion over incident sync
         pass
 

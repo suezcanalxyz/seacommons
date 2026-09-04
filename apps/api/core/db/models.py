@@ -621,6 +621,28 @@ class SourceCoverageEventDB(Base):
     recorded_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
+class CorrelationDecisionDB(Base):
+    """CorrelationDecision (docs/updates.md P2.1): "Model similarity
+    cannot be sole merge evidence" -- a row here is a candidate pairing
+    surfaced for review, never an automatic incident merge. Append-only:
+    a re-run over the same (observation_id, candidate_incident_id) pair
+    writes a new row rather than editing a prior verdict, so the
+    decision history for a pair is itself the audit trail.
+    """
+    __tablename__ = "correlation_decisions"
+    id = Column(String(64), primary_key=True)
+    observation_id = Column(String(64), nullable=False, index=True)
+    candidate_incident_id = Column(String(64), index=True)
+    decision = Column(String(16), nullable=False)  # SAME_INCIDENT|RELATED_INCIDENT|NEW_INCIDENT|UNCERTAIN
+    supporting_features = Column(JSON, default=list)
+    contradicting_features = Column(JSON, default=list)
+    source_independence_result = Column(Boolean)
+    method_version = Column(String(64), nullable=False)
+    confidence = Column(Float, nullable=False)
+    review_state = Column(String(32), nullable=False, default="pending_review")
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 def create_all(database_url: str) -> None:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
