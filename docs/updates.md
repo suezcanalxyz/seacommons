@@ -2,7 +2,7 @@
 
 > **Execution order:** `docs/fixes.md` remains authoritative until fully completed. Do not start this plan while any required `fixes.md` milestone, migration, replay, integration, privacy, CI, or production verification gate is still open.
 >
-> **Purpose:** raise SeaCommons from a stabilized maritime OSINT application to a production-grade geospatial data-intelligence infrastructure without accumulating another layer of legacy. This document is a migration program, not a feature wishlist.
+> **Purpose:** raise SeaCommons from a stabilized maritime OSINT application to a production-grade geospatial and evidence-intelligence infrastructure without accumulating another layer of legacy. This document is a migration program, not a feature wishlist.
 
 ---
 
@@ -12,36 +12,38 @@ Every milestone in this document must do at least one of the following:
 
 1. remove an existing architectural limitation;
 2. replace duplicated or ad-hoc logic with a canonical subsystem;
-3. improve correctness, observability, performance, replayability, privacy, or interoperability in a measurable way;
+3. improve correctness, observability, performance, replayability, privacy or interoperability in a measurable way;
 4. delete legacy code or create an explicit and testable deletion path for it.
 
-A new dependency, service, schema, abstraction, compatibility field, dual-write path, or fallback is not progress by itself.
+A new dependency, service, schema, abstraction, model provider, compatibility field, dual-write path or fallback is not progress by itself.
 
-**Hard rule:** every new subsystem must either replace, simplify, or measurably improve an existing path. Do not leave the previous path alive indefinitely.
+**Hard rule:** every new subsystem must either replace, simplify or measurably improve an existing path. Do not leave previous authoritative paths alive indefinitely.
+
+**AI rule:** model output is evidence enrichment or candidate analysis, never an unproven source of truth. No LLM/VLM provider may silently become canonical domain logic.
 
 ---
 
 # 1. Preconditions — `fixes.md` must be closed first
 
-Before starting M0 below, the agent must prove all of the following on the exact `main` commit it intends to use as the upgrade baseline:
+Before starting M0, the agent must prove on the exact `main` commit used as the upgrade baseline:
 
 - every required milestone in `docs/fixes.md` is complete;
 - backend full suite green;
 - lint/typecheck/build green where applicable;
-- DB migrations tested on PostgreSQL and SQLite-compatible test paths where retained;
+- DB migrations tested on PostgreSQL and retained SQLite-compatible test paths;
 - deterministic replay gates green;
 - Humanitarian and Maritime live/public projections verified;
 - privacy contracts verified;
-- no unresolved P0/P1 stabilization defect remains hidden behind a skipped test, fallback, mock-only path, or compatibility branch;
+- no unresolved P0/P1 stabilization defect is hidden behind a skipped test, fallback, mock-only path or compatibility branch;
 - latest production verification is documented.
 
-If any of those fail, return to `fixes.md`. Do not use this document as an excuse to bypass stabilization work.
+If any of those fail, return to `fixes.md`. Do not use this document to bypass stabilization work.
 
 ---
 
 # 2. Mandatory agent execution protocol
 
-Every milestone must follow this loop:
+Every milestone follows this loop:
 
 ```text
 1. sync main
@@ -53,17 +55,17 @@ Every milestone must follow this loop:
 7. implement the smallest coherent vertical slice
 8. run targeted tests
 9. run the full relevant suites
-10. measure query/performance impact when DB or map delivery changes
-11. self-review for duplicate logic, compatibility leftovers and dead code
+10. measure query/performance impact where DB, map or model calls change
+11. self-review duplicate logic, compatibility leftovers and dead code
 12. document what became canonical
 13. document what legacy code was removed
-14. document any temporary compatibility code and its deletion milestone
+14. document temporary compatibility and its deletion milestone
 15. open one reviewable PR
 16. merge only after green CI and explicit exit-gate evidence
 17. update main and continue with the next dependency-ready milestone
 ```
 
-For every PR, the agent must include this table in the PR description:
+For every PR include:
 
 ```text
 Existing implementation:
@@ -77,7 +79,20 @@ Migration/replay evidence:
 Known limitations:
 ```
 
-A milestone is not DONE if the new system exists but the previous authoritative path still silently controls production behaviour.
+For AI-enabled PRs also include:
+
+```text
+AI mode: disabled | shadow | assistive | bounded-authoritative
+Provider/model(s):
+Deterministic fallback:
+Persisted provenance fields:
+Evaluation corpus:
+Accuracy/divergence metrics:
+Privacy review:
+Failure/degradation behaviour:
+```
+
+A milestone is not DONE if the new system exists but an older authoritative path silently controls production behaviour.
 
 ---
 
@@ -85,7 +100,7 @@ A milestone is not DONE if the new system exists but the previous authoritative 
 
 1. PostGIS does not replace evidence semantics, provenance, confidence, review or publication policy.
 2. Spatial SQL performs retrieval, geometry operations and candidate generation; domain reasoning remains explicit and testable.
-3. Raw, reported, derived, uncertainty and public geometries must remain distinguishable.
+3. Raw, reported, derived, uncertainty and public geometries remain distinguishable.
 4. No inferred geometry may be presented as a reported position.
 5. Humanitarian privacy constraints take precedence over analytical convenience.
 6. Do not expose exact vulnerable-person locations merely because the canonical datastore contains them.
@@ -95,22 +110,35 @@ A milestone is not DONE if the new system exists but the previous authoritative 
 10. Unknown CRS is a validation failure, not an invitation to guess.
 11. Never assume EPSG:4326 without explicit source knowledge.
 12. No new spatial dependency enters production without deterministic tests.
-13. No speculative index. Every non-trivial production index must correspond to a documented query path or measured plan.
+13. No speculative index. Every non-trivial production index corresponds to a documented query path or measured plan.
 14. No large GIS dataset is hardcoded in Python when it can be versioned as data.
-15. No technology is added solely to match a job description or improve keyword coverage.
+15. No technology or model provider is added solely for keyword coverage or novelty.
 16. Every compatibility layer has an explicit removal milestone.
 17. `legacy`, `deprecated`, `compat`, `fallback`, duplicate geometry helpers and obsolete schema fields are release-review targets, not permanent architecture.
+18. AI providers are replaceable adapters; provider-specific response structures must not leak into canonical domain models.
+19. All model-derived outputs persist provider, model, model/version identifier where available, prompt/schema version, timestamp, input IDs and confidence/quality metadata where meaningful.
+20. New model calls start **disabled or in shadow mode**. They may not alter production publication, incident lifecycle, privacy projection or canonical geometry until their bounded promotion gate is passed.
+21. Model output must conform to explicit typed/JSON schemas before entering domain logic. Free-form prose is never a database contract.
+22. AI failure, rate limiting, quota exhaustion or provider outage must degrade to deterministic behaviour rather than block core ingestion.
+23. No Humanitarian public publication decision may be made solely by an LLM/VLM.
+24. No VLM-inferred coordinate may be labelled `reported_geometry`; it is a candidate/derived claim until deterministic validation or explicit review promotes it.
+25. Embeddings and semantic similarity generate candidates; they do not independently prove that two observations refer to the same event.
+26. AI-generated allegations or identity claims are prohibited from public projection without the same evidence and review gates as any other hypothesis.
+27. Source content containing sensitive Humanitarian information must only be sent to a provider when data-processing/privacy policy explicitly permits that provider and mode.
+28. Persist enough structured model output to replay downstream decisions without requiring the same external model response to be regenerated.
 
 ---
 
 # 4. Target architecture
 
-Long-term data flow:
+Long-term flow:
 
 ```text
 SOURCE / SENSOR / DATASET
         ↓
 CANONICAL OBSERVATION + PROVENANCE
+        ↓
+DETERMINISTIC EXTRACTION / NORMALIZATION
         ↓
 GEOSPATIAL NORMALIZATION
         ↓
@@ -118,13 +146,39 @@ REPORTED / DERIVED / UNCERTAINTY GEOMETRY
         ↓
 SPATIAL + TEMPORAL CANDIDATE RETRIEVAL
         ↓
-DOMAIN CORRELATION / INTELLIGENCE LOGIC
+OPTIONAL AI EVIDENCE ENRICHMENT / SEMANTIC CANDIDATES
+        ↓
+VALIDATION + DOMAIN CORRELATION / INTELLIGENCE LOGIC
         ↓
 INCIDENT / EPISODE / ASSESSMENT
+        ↓
+REVIEW + PUBLICATION POLICY
         ↓
 PRIVACY-AWARE PUBLIC GEOMETRY
         ↓
 REST / WS / VECTOR TILE / GIS EXPORT
+```
+
+The forbidden shortcut is:
+
+```text
+SOURCE → LLM/VLM → production truth
+```
+
+The required model-assisted pattern is:
+
+```text
+SOURCE
+  ↓
+deterministic extraction
+  ↓
+model candidate/enrichment (optional)
+  ↓
+typed validation
+  ↓
+comparison/correlation
+  ↓
+canonical domain decision
 ```
 
 Canonical vector storage target:
@@ -137,6 +191,26 @@ GeoAlchemy2
 Python domain services
         ↔ Shapely / PyProj
 ```
+
+AI integration target:
+
+```text
+AIProvider interface
+  ├─ Groq-compatible adapter
+  ├─ Gemini-compatible multimodal adapter
+  ├─ NVIDIA NIM-compatible adapter
+  └─ OpenRouter-compatible fallback/benchmark adapter
+
+Provider output
+  ↓
+typed schema
+  ↓
+persisted AI evidence/provenance
+  ↓
+domain validator / correlator
+```
+
+Provider names above are initial candidates, not permanent architecture. Adding or removing a provider must not require rewriting event, incident, geometry or publication models.
 
 Raster target where required:
 
@@ -158,13 +232,11 @@ Do not store large raster archives in PostgreSQL by default.
 
 # 5. M0 — Legacy eradication and architecture census
 
-**Goal:** establish exactly what must disappear before new GIS infrastructure becomes authoritative.
+**Goal:** establish exactly what must disappear before new GIS/intelligence infrastructure becomes authoritative.
 
-This milestone is documentation/tests/audit first. Do not install PostGIS until the current geospatial paths are mapped.
+Audit backend, DB models, migrations, tests, frontend contracts, edge/live publisher, docs, deployment files, fixtures and environment variables.
 
-## M0.1 — Repository-wide legacy inventory
-
-Search and classify at minimum:
+Classify at minimum:
 
 ```text
 legacy
@@ -177,94 +249,26 @@ TODO migration
 remove after
 remove once
 dual write
-dual-write
 maritime_domain
-lat / lon assumptions
+lat/lon assumptions
 area_geojson
-_haversine
-haversine
+_haversine / haversine
 bearing
 bbox
 point_to_segment
 GeoJSON stored in JSON
+provider-specific AI helpers
+ad-hoc OCR/model calls
+embedding/vector experiments
 ```
 
-Audit:
+Each item is `KEEP`, `MIGRATE`, `DELETE` or `TEMP COMPAT` with a named deletion milestone.
 
-- backend source;
-- DB models;
-- migrations;
-- tests;
-- frontend contracts;
-- edge/live publisher;
-- docs;
-- deployment files;
-- fixtures;
-- environment variables.
+Map all implementations of distance, bearing, bbox, proximity, point-to-segment, land/sea, nearest-sea snapping, clustering, containment, track proximity, infrastructure proximity, GeoJSON parsing, drift geometry and uncertainty representation.
 
-Output a checked inventory inside this document or a linked `docs/architecture/legacy-inventory.md` before implementation starts.
+Audit geospatial/analytical fields hidden in generic metadata and decide whether each belongs in a typed DB column, typed geometry column, derived artifact, immutable provenance payload or compatibility metadata.
 
-Each item must be labelled:
-
-```text
-KEEP — still canonical and justified
-MIGRATE — replaced by a named milestone below
-DELETE — dead/obsolete
-TEMP COMPAT — required temporarily, with explicit deletion milestone
-```
-
-## M0.2 — Geospatial duplication audit
-
-Map every current implementation of:
-
-- Haversine distance;
-- bearing;
-- bbox filtering;
-- proximity checks;
-- point-to-segment distance;
-- land/sea tests;
-- nearest-sea snapping;
-- spatial clustering;
-- area containment;
-- track proximity;
-- infrastructure proximity;
-- GeoJSON parsing/creation;
-- drift geometry representation;
-- uncertainty representation.
-
-The current shared `core.geo` module is a migration source, not automatically the permanent destination. Identify local duplicate helpers still present in AIS, fusion, zones, triangulation, drift or other code.
-
-## M0.3 — JSON metadata schema audit
-
-Find geospatial or analytical fields hidden in generic JSON/metadata that have become first-class domain data.
-
-Examples to inspect:
-
-```text
-area_geojson
-coordinate_source
-area_confidence
-location uncertainty
-drift trajectory / cones
-infrastructure geometry
-subject geometry
-public projection geometry
-```
-
-For each, decide whether it belongs in:
-
-- typed DB column;
-- typed geometry column;
-- derived artifact;
-- immutable provenance payload;
-- compatibility metadata only.
-
-## M0 exit gate
-
-- complete inventory committed;
-- no unclassified known legacy path related to spatial storage/query/projection;
-- each TEMP COMPAT item points to a deletion milestone in this document;
-- no production behaviour changed yet except safe dead-code removal proven by tests.
+**M0 exit gate:** complete inventory committed; no unclassified known legacy path; every temporary compatibility item has a deletion milestone; no production behaviour changed except safe dead-code removal proven by tests.
 
 ---
 
@@ -272,81 +276,15 @@ For each, decide whether it belongs in:
 
 **Goal:** introduce a canonical spatial database layer without breaking current contracts.
 
-## M1.1 — PostgreSQL extension and dependency foundation
+Add only the dependencies required for the first vertical slice: PostGIS, GeoAlchemy2, Shapely and PyProj. Do not add GeoServer, GDAL, H3, TimescaleDB, Kubernetes or tile servers here.
 
-Add only the dependencies required for the first vertical slice:
+Introduce `location_geom` for one bounded canonical observation/event location path while scalar lat/lon remain temporary API/persistence compatibility. Writes must pass through one canonical helper and divergence is an error.
 
-```text
-PostGIS
-GeoAlchemy2
-Shapely
-PyProj
-```
+Create GiST indexes only for proven query paths and benchmark at minimum recent positioned events, bbox events, events within radius and vessel positions within radius using representative PostgreSQL fixtures.
 
-Do not add GeoServer, GDAL, H3, TimescaleDB, Kubernetes or tile servers in this milestone.
+Migration must backfill valid lat/lon, flag invalid ranges, preserve null/unpositioned states, be restart-safe and verify row/geometry counts.
 
-Requirements:
-
-- production PostgreSQL enables PostGIS through a migration/provisioning path;
-- local/dev setup documents how to enable the extension;
-- CI has a PostgreSQL+PostGIS integration path;
-- lightweight SQLite tests remain supported only where they still provide value;
-- spatial behaviour is never considered verified solely through SQLite.
-
-## M1.2 — Canonical point geometry
-
-Introduce geometry/geography for one bounded entity class first, preferably the canonical observation/event location path.
-
-Initial migration pattern:
-
-```text
-lat
-lon
-location_geom   <- new canonical spatial column
-```
-
-During migration only:
-
-- existing lat/lon remain for public/API compatibility;
-- writes must produce both through one canonical helper;
-- reads must have an explicit authoritative source;
-- divergence is treated as an error and tested.
-
-Do not create independent dual-write implementations in different adapters.
-
-## M1.3 — Spatial indexes
-
-Create GiST indexes only for proven query paths.
-
-At minimum benchmark:
-
-- recent positioned events;
-- events in bbox;
-- events within radius;
-- vessel positions within radius.
-
-Record `EXPLAIN (ANALYZE, BUFFERS)` or equivalent evidence for representative PostgreSQL fixtures before and after.
-
-## M1.4 — Backfill and rollback
-
-Migration must:
-
-- backfill geometry from valid lat/lon;
-- reject/flag invalid coordinate ranges;
-- preserve null/unpositioned states;
-- be restart-safe;
-- have a tested downgrade or explicitly documented irreversible boundary if a downgrade is unsafe;
-- verify row counts and geometry counts.
-
-## M1 exit gate
-
-- PostGIS active in integration environment;
-- one canonical location path is spatially backed;
-- GiST query test exists;
-- no frontend/public contract break;
-- no duplicated dual-write path;
-- rollback/backfill evidence captured;
-- legacy lat/lon deletion remains deferred to M14.
+**M1 exit gate:** PostGIS active in integration; one canonical location path spatially backed; GiST query test exists; no public contract break; no duplicated dual-write; rollback/backfill evidence captured.
 
 ---
 
@@ -354,87 +292,30 @@ Migration must:
 
 **Goal:** stop treating all location as a single point.
 
-Introduce explicit geometry roles.
-
-Canonical conceptual model:
+Explicit geometry roles:
 
 ```text
-reported_geometry
-  geometry provided directly by source/sensor
-
-derived_geometry
-  geometry created deterministically from source evidence
-
-uncertainty_geometry
-  area in which the position/trajectory may plausibly lie
-
-public_geometry
-  privacy/publication projection only
+reported_geometry   = directly supplied by source/sensor
+derived_geometry    = deterministically or analytically derived from evidence
+uncertainty_geometry = plausible area/trajectory uncertainty
+public_geometry     = privacy/publication projection only
 ```
 
-A single entity may carry more than one of these. They are not aliases.
+Prefer a dedicated typed geometry-evidence record when provenance becomes multi-valued. Suggested fields include owner, role, geometry, CRS, method, method version, precision class, uncertainty, input observation IDs, source reference and creation time.
 
-## M2.1 — Geometry evidence model
+Raw AIS points remain evidence/time-series primitives even if derived `LineString` tracks are created.
 
-Prefer a dedicated typed record/table when geometry provenance becomes multi-valued rather than expanding one event table indefinitely.
+Drift output migrates from generic JSON toward typed trajectory/cone geometry while preserving model version, forcing inputs, start time and simulation parameters.
 
-Suggested fields:
+SAR regions, EEZs, territorial waters, ports, infrastructure corridors and AOIs become versioned reference data where real datasets exist.
 
-```text
-geometry_id
-owner_type
-owner_id
-role
-geometry
-geometry_type
-crs
-method
-method_version
-precision_class
-uncertainty_m
-input_observation_ids[]
-source_reference
-created_at
-```
-
-## M2.2 — Tracks
-
-Represent vessel trajectories as spatially queryable track geometry where beneficial.
-
-Do not replace raw AIS position history with only a `LineString`.
-
-Raw points remain evidence/time-series primitives. Derived lines are reproducible spatial products.
-
-## M2.3 — Drift outputs
-
-Current drift trajectory/cone JSON must migrate toward typed geometry/artifacts:
-
-```text
-trajectory -> LineString
-cone_6h    -> Polygon/MultiPolygon
-cone_12h   -> Polygon/MultiPolygon
-cone_24h   -> Polygon/MultiPolygon
-impact     -> Point or explicit uncertainty geometry
-```
-
-Preserve model version, forcing inputs, start time, simulation parameters and source observations.
-
-## M2.4 — Operational regions and reference geography
-
-Represent SAR regions, EEZs, territorial waters, ports, infrastructure corridors, AOIs and other durable reference geography as versioned data rather than ad-hoc Python constants where a real dataset exists.
-
-## M2 exit gate
-
-- reported/derived/uncertainty/public geometry semantics documented and tested;
-- raw evidence never overwritten by derived geometry;
-- drift and track migration strategy tested on fixtures;
-- no generic metadata geometry remains authoritative where a typed replacement exists.
+**M2 exit gate:** geometry semantics documented/tested; raw evidence never overwritten; drift/track migration tested; generic metadata geometry is not authoritative where a typed replacement exists.
 
 ---
 
-# 8. M3 — Spatial query migration
+# 8. M3 — Spatial query migration and deterministic candidate generation
 
-**Goal:** move candidate retrieval and geometry math into PostGIS while keeping evidence interpretation explicit in Python.
+**Goal:** move candidate retrieval and geometry math into PostGIS while evidence interpretation remains explicit in Python.
 
 Priority conversions:
 
@@ -449,58 +330,25 @@ Priority conversions:
 9. spatiotemporal candidate generation for fusion;
 10. deduplication shortlist generation.
 
-Expected primitives include, where appropriate:
+Use appropriate PostGIS primitives such as `ST_DWithin`, `ST_Intersects`, `ST_Covers`, `ST_Distance`, `ST_ClosestPoint`, `ST_LineLocatePoint`, `ST_MakeLine`, `ST_Envelope`, `ST_Expand`, `ST_Simplify` while validating units and geography-vs-geometry semantics.
 
-```text
-ST_DWithin
-ST_Intersects
-ST_Contains / ST_Covers
-ST_Distance
-ST_ClosestPoint
-ST_LineLocatePoint
-ST_MakeLine
-ST_Envelope
-ST_Expand
-ST_Simplify
-```
+The DB answers: **which recent observations/events are plausible spatial/temporal candidates?**
 
-Do not mechanically replace tested geodesic logic without validating units and geography-vs-geometry semantics.
+The domain layer answers: **do these observations support the same incident, episode or hypothesis?**
 
-## M3.1 — Fusion candidate generation
+This becomes the mandatory first-stage shortlist for later semantic similarity. Do not run expensive embedding/LLM comparisons across the entire corpus when deterministic spatial/temporal constraints can safely bound candidates.
 
-The DB should answer:
+After each migration delete superseded local geometry code and retain semantic parity/replay tests.
 
-> Which recent events are plausible spatial/temporal candidates?
-
-The domain layer should answer:
-
-> Do these observations support the same incident, episode or hypothesis?
-
-Never move evidence semantics into opaque SQL triggers.
-
-## M3.2 — Remove duplicate math
-
-After each successful migration:
-
-- delete the superseded local helper;
-- delete duplicate tests tied only to the old implementation;
-- keep semantic parity/regression tests;
-- update imports to one canonical path.
-
-## M3 exit gate
-
-- representative production-like query benchmark improved or justified;
-- no semantic regression in fusion/replay;
-- superseded local geometry code removed;
-- query plans recorded for high-volume paths.
+**M3 exit gate:** representative query benchmark improved/justified; no fusion/replay semantic regression; superseded math removed; query plans recorded for high-volume paths.
 
 ---
 
 # 9. M4 — Humanitarian geolocation V2
 
-**Goal:** make humanitarian location evidence explicit, uncertainty-aware and privacy-safe.
+**Goal:** make Humanitarian location evidence explicit, uncertainty-aware, multimodal-ready and privacy-safe.
 
-Supported location evidence types should include:
+Supported evidence types include:
 
 ```text
 reported coordinate
@@ -515,257 +363,319 @@ land humanitarian location
 unpositioned
 ```
 
-## M4.1 — Claim preservation
-
-Do not collapse multiple location claims too early.
-
-An event may include:
-
-```text
-text claim
-OCR claim
-image/map claim
-thread/repost claim
-external corroborating claim
-```
-
-Persist claim provenance and compare them before choosing a derived canonical geometry.
-
-## M4.2 — Uncertainty geometry
+Do not collapse multiple claims early. An event may carry text, OCR, image/map, thread/repost and external corroborating claims simultaneously.
 
 Examples:
 
 ```text
 exact reported coordinate -> Point + source precision
-OCR coordinate -> Point + OCR confidence + uncertainty
-place centroid -> derived Point + regional uncertainty Polygon
-"south of Lampedusa" -> area/sector geometry, not fake precise point
-map-pin fit -> derived Point + fit uncertainty
+OCR coordinate -> candidate Point + OCR confidence + uncertainty
+place centroid -> derived Point + regional uncertainty geometry
+"south of Lampedusa" -> sector/area, not fake precision
+map-pin fit -> derived candidate Point + fit uncertainty
+VLM coordinate -> derived candidate claim + model provenance + uncertainty
 ```
 
-## M4.3 — Land/sea validation
+Land/sea validation preserves source coordinates; corrected/snapped geometry is derived; land Humanitarian remains visible under its own policy.
 
-Retain the existing semantic distinction between maritime humanitarian and land humanitarian incidents.
+Public Humanitarian geometry may be exact only when policy permits, otherwise generalized, buffered, regionalized, cell-based or withheld, with machine-readable precision class.
 
-Rules:
+Replay corpus must include Alarm Phone text coordinates, Alarm Phone map screenshots, coarse regions, contradictory text/image coordinates, land cases, coastline ambiguity, invalid OCR pairs, exact coordinate superseding stale region geometry and no-position negatives.
 
-- maritime location on land is suspicious evidence, not automatically deletable data;
-- source coordinate remains preserved;
-- corrected/snapped geometry is a derived geometry;
-- land humanitarian remains visible under its own policy;
-- never silently mutate source coordinates.
+**M4 exit gate:** no fake precision; analyst/public location tested independently; source geometry preserved; location-method accuracy metrics reported.
 
-## M4.4 — Public projection
+---
 
-Public humanitarian geometry may be:
+# 9A. M4A — AI evidence-enrichment foundation
 
-- exact only when policy explicitly permits;
-- generalized;
-- buffered;
-- regionalized;
-- cell-based;
-- withheld.
+**Goal:** introduce provider-agnostic model infrastructure without changing production decisions.
 
-The public projection must retain a machine-readable precision class.
+This milestone starts only after M4's evidence/geometry semantics are stable enough to store model-derived claims correctly.
 
-## M4.5 — Replay corpus
+## M4A.1 — Provider abstraction
 
-Build/extend a labelled location corpus containing at minimum:
+Create one canonical `AIProvider`-style interface for bounded capabilities such as:
 
-- Alarm Phone text coordinates;
-- Alarm Phone map screenshots;
-- coarse regional posts;
-- contradictory text/image coordinates;
-- land humanitarian cases;
-- coastline ambiguity;
-- invalid OCR number pairs;
-- exact coordinate superseding stale region geometry;
-- no-position negative fixtures.
+```text
+structured text extraction
+classification
+multimodal/image extraction
+embeddings
+reranking
+bounded reasoning/correlation
+transcription (later/optional)
+```
 
-## M4 exit gate
+Adapters may initially target NVIDIA NIM, Groq, Gemini and OpenRouter, but canonical services must depend on capability contracts rather than provider names.
 
-- no fake precision in replay corpus;
-- public location policy tested independently from analyst location;
-- source geometry preserved;
-- location-method accuracy metrics reported.
+## M4A.2 — Structured result envelope
+
+Every persisted invocation/result records at minimum:
+
+```text
+provider
+model
+model_version/revision where available
+capability
+schema_version
+prompt/instruction version
+input observation IDs or immutable source references
+request timestamp
+latency
+status/error class
+usage metadata where available
+structured result
+validation status
+```
+
+Never persist model prose as the only machine-readable result.
+
+## M4A.3 — Shadow mode
+
+Initial integration must be observational:
+
+```text
+deterministic_result = current_pipeline(input)
+ai_candidate = ai_pipeline(input)
+compare_and_record(deterministic_result, ai_candidate)
+return deterministic_result
+```
+
+Model output may not alter canonical incident creation, lifecycle, public publication, privacy projection, Drift eligibility or reported geometry during this phase.
+
+## M4A.4 — Failure and cost controls
+
+Requirements:
+
+- feature flag OFF by default;
+- per-capability/provider configuration;
+- bounded timeout;
+- rate-limit/quota handling;
+- deterministic fallback;
+- no retry storm;
+- observability for latency/error/usage;
+- cache only where input identity and model/schema version make cache semantics deterministic;
+- provider secrets never committed.
+
+## M4A exit gate
+
+- at least two interchangeable provider adapters pass the same contract tests, or one real adapter plus a deterministic fake proves provider separation;
+- all AI calls can be disabled without changing core ingestion behaviour;
+- shadow results persist with full provenance;
+- provider outage/rate limit does not block deterministic ingestion;
+- no production/public decision depends on AI output.
+
+---
+
+# 9B. M4B — Multimodal Humanitarian geolocation and Alarm Phone image evidence
+
+**Goal:** improve screenshot/map extraction without replacing deterministic OCR or inventing precision.
+
+Primary workflow:
+
+```text
+source image/screenshot
+        ↓
+existing OCR / deterministic extraction
+        ├──────────────┐
+        ↓              ↓
+text/location claims   VLM structured extraction
+        └──────┬───────┘
+               ↓
+claim comparison + validation
+               ↓
+candidate derived geometry / uncertainty
+               ↓
+review or bounded promotion policy
+```
+
+A VLM should extract a strict schema containing only fields justified by the source, for example coordinates/raw coordinate text, named places, map labels, apparent pin location, people-count claims, event-type cues and per-field confidence/quality indicators. Absence stays null/unknown.
+
+Never allow a model to convert a vague map region into an exact point merely to satisfy a schema.
+
+For Alarm Phone screenshots specifically compare:
+
+- deterministic OCR coordinate extraction;
+- VLM coordinate extraction;
+- text caption/thread evidence;
+- land/sea validity;
+- map extent/pin plausibility when available.
+
+Persist disagreements rather than silently choosing one.
+
+Promotion states:
+
+```text
+shadow_candidate
+validated_candidate
+review_required
+accepted_derived
+rejected
+```
+
+No VLM coordinate becomes `reported_geometry`.
+
+Evaluation corpus metrics:
+
+- coordinate detection precision/recall;
+- coordinate numeric accuracy;
+- false precise-point rate;
+- land/sea consistency;
+- agreement/disagreement with OCR;
+- correct null/no-position rate;
+- privacy-policy compliance.
+
+## M4B exit gate
+
+- labelled Alarm Phone/map screenshot corpus evaluated;
+- VLM improves at least one defined metric without unacceptable precision hallucination;
+- disagreements remain inspectable;
+- source image/text provenance retained;
+- public projection remains governed by deterministic privacy policy;
+- model unavailability returns the existing OCR/deterministic path unchanged.
+
+---
+
+# 9C. M4C — Semantic correlation, duplicate resolution and OSINT intelligence layer
+
+**Goal:** use embeddings/reranking/bounded reasoning to improve candidate correlation while preserving evidence semantics.
+
+Required cascade:
+
+```text
+new observation
+      ↓
+PostGIS + temporal deterministic shortlist
+      ↓
+optional embedding similarity / lexical features
+      ↓
+semantic candidate shortlist
+      ↓
+domain correlation rules + evidence comparison
+      ↓
+SAME_EVENT | RELATED_EVENT | NEW_EVENT | UNCERTAIN
+```
+
+Embeddings are candidate-generation features, not truth. Persist embedding model/version and recompute policy.
+
+Do not build a permanent provider-specific vector architecture before measuring whether PostgreSQL/pgvector or the existing datastore can satisfy the actual scale. Introduce a separate vector database only through an ADR with measured need.
+
+## M4C.1 — Cross-source event matching
+
+Evaluate cases where Alarm Phone, NGO reporting, press, authority statements, AIS observations or other feeds describe the same incident differently.
+
+Signals may include:
+
+- spatial/temporal overlap;
+- people-count compatibility;
+- vessel description;
+- departure/location references;
+- event lifecycle;
+- shared source/thread identity;
+- semantic text similarity;
+- contradiction strength.
+
+The result stores supporting and contradicting features, not only a score.
+
+## M4C.2 — Contradiction detection
+
+Model-assisted reasoning may produce a typed analytical record such as:
+
+```text
+claims
+agreements
+contradictions
+missing_information
+source_independence indicators
+candidate interpretation
+confidence/quality metadata
+```
+
+It must not decide that one source is true merely because of provider language-model preference. Source reliability/policy remains explicit domain configuration/evidence.
+
+## M4C.3 — Provider roles
+
+Initial likely routing, subject to benchmark:
+
+```text
+Groq-class fast inference      -> high-frequency structured extraction/classification
+Gemini-class multimodal        -> image/map understanding where privacy policy permits
+NVIDIA NIM/Nemotron-class      -> embeddings/reranking/bounded analytical correlation
+OpenRouter                     -> benchmark/fallback access, not canonical routing logic
+```
+
+These are implementation candidates only. Routing decisions must be capability/benchmark driven and replaceable.
+
+## M4C.4 — Promotion ladder
+
+```text
+DISABLED
+  ↓
+SHADOW
+  ↓
+ASSISTIVE (analyst/candidate ranking only)
+  ↓
+BOUNDED_AUTHORITATIVE
+```
+
+`BOUNDED_AUTHORITATIVE` is permitted only for a narrowly defined field/action after replay metrics and failure-mode tests prove it. Publication and Humanitarian privacy decisions remain outside model-only authority.
+
+## M4C exit gate
+
+- labelled duplicate/correlation corpus exists;
+- precision/recall/F1 reported for `SAME_EVENT`, `RELATED_EVENT`, `NEW_EVENT`, `UNCERTAIN` or equivalent taxonomy;
+- false-merge rate has an explicit release threshold;
+- contradiction records cite source observation IDs;
+- model/provider outage does not prevent deterministic candidate correlation;
+- no public allegation or Humanitarian publication is created solely from semantic similarity/model reasoning.
 
 ---
 
 # 10. M5 — H3 spatial intelligence layer
 
-**Goal:** introduce a discrete spatial index only where it improves privacy, aggregation or scalable clustering.
+**Goal:** introduce a discrete spatial index only where it measurably improves privacy, aggregation or clustering.
 
-Use H3 for:
+Use H3 for density aggregation, privacy-preserving public cells, spatial statistics, coarse clustering, heatmaps, regional summaries and justified cache keys. Geometry remains authoritative; H3 resolution is explicit.
 
-- density aggregation;
-- privacy-preserving humanitarian public cells;
-- spatial statistics;
-- coarse clustering;
-- heatmaps;
-- regional event summaries;
-- cache keys where appropriate.
-
-Do not use H3 as a replacement for original geometry.
-
-Persist H3 resolution explicitly. Never compare cells of different resolutions without deliberate conversion.
-
-Exit gate:
-
-- geometry remains authoritative;
-- H3 is reproducible from geometry;
-- privacy behaviour tested across cell boundaries;
-- no exact private position leaks through cell metadata or API payloads.
+**M5 exit gate:** H3 reproducible from geometry; privacy tested across cell boundaries; no exact private location leaks through H3 metadata/API.
 
 ---
 
 # 11. M6 — Geospatial dataset ingestion with GDAL/OGR
 
-**Goal:** create a deterministic, provenance-aware import path for external vector/raster geography.
+**Goal:** deterministic, provenance-aware import of external vector/raster geography.
 
-Only start after PostGIS schema and provenance conventions are stable.
+Support justified inputs such as GeoJSON, GeoPackage, Shapefile, KML and CSV with explicit coordinate schema. Potential datasets include SAR regions, EEZs, territorial waters, coastlines, ports, subsea cables, pipelines, offshore infrastructure, protected areas and AOIs.
 
-## M6.1 — Vector ingestion
+Every import records source identity/version, licence/terms, retrieval time, checksum, original/canonical CRS, tool version, transforms, feature count and validation result.
 
-Support justified source formats such as:
+Reject or quarantine invalid geometry, unknown CRS, impossible coordinates, malformed polygons, unexpected feature-count collapse and duplicate source versions. Preserve source defects rather than silently hiding them.
 
-```text
-GeoJSON
-GeoPackage
-Shapefile
-KML
-CSV with explicit coordinate schema
-```
-
-Normalize using GDAL/OGR where beneficial.
-
-Potential datasets:
-
-- SAR regions;
-- EEZs;
-- territorial waters;
-- coastlines;
-- ports;
-- subsea cables;
-- pipelines;
-- offshore infrastructure;
-- protected areas;
-- operational AOIs.
-
-## M6.2 — Import manifest
-
-Every imported dataset needs:
-
-```text
-source_name
-source_url/source_id
-source_version/date
-licence/terms
-retrieved_at
-checksum
-original_crs
-canonical_crs
-import_tool_version
-transform steps
-row/feature count
-validation result
-```
-
-## M6.3 — Validation
-
-Reject or quarantine:
-
-- invalid geometry;
-- unknown CRS;
-- impossible coordinate ranges;
-- malformed polygons;
-- unexpected feature-count collapse;
-- duplicate source version.
-
-Do not silently `make_valid` and lose evidence of source defects. Preserve validation findings.
-
-## M6 exit gate
-
-- at least one real reference dataset imported reproducibly;
-- same input checksum produces identical canonical feature identity;
-- licence/provenance recorded;
-- import can be replayed from scratch.
+**M6 exit gate:** one real dataset reproducibly imported; identical input checksum gives identical canonical feature identity; provenance/licence recorded; import replayable from scratch.
 
 ---
 
 # 12. M7 — QGIS operational QA and analyst validation
 
-**Goal:** make spatial correctness inspectable independently of the SeaCommons frontend.
+**Goal:** make spatial correctness inspectable independently of the frontend.
 
-QGIS is development/QA tooling, not a runtime dependency.
+QGIS is QA tooling, not runtime. Provide read-only analyst/debug layers for raw/reported, derived, uncertainty and public geometry, Humanitarian events, AIS positions/tracks, drift trajectories/cones, SAR/EEZ/reference zones, infrastructure and correlated alerts.
 
-Create a documented read-only analyst/debug setup with layers for:
+Where AI-derived claims exist, provide a separable QA layer/table view showing candidate geometry, method/model provenance and validation state; do not visually merge it with reported geometry.
 
-```text
-raw/reported geometry
-derived geometry
-uncertainty geometry
-public geometry
-humanitarian events
-AIS positions
-vessel tracks
-drift trajectories
-6h/12h/24h cones
-SAR/EEZ/reference zones
-infrastructure
-anomalies/correlated alerts
-```
-
-Where safe, provide a versioned QGIS project or a reproducible setup document.
-
-Security:
-
-- read-only DB role;
-- no production secrets committed;
-- vulnerable-person exact locations not exposed to general/shared analyst profiles;
-- separate analyst/public connection examples.
-
-Exit gate:
-
-- representative geospatial bug can be independently reproduced/inspected in QGIS;
-- QA procedure documented;
-- no runtime coupling to QGIS.
+**M7 exit gate:** representative geospatial/model-derived location bugs independently inspectable; QA procedure documented; no runtime coupling; vulnerable-person exact locations protected by role.
 
 ---
 
 # 13. M8 — Map delivery and vector-tile scaling
 
-**Goal:** stop sending unnecessarily large GeoJSON payloads as spatial volume grows.
+**Goal:** stop sending unnecessarily large GeoJSON payloads when measured volume requires it.
 
-Do not implement until measurement shows a real map-delivery bottleneck.
+Candidate path: `PostGIS → ST_AsMVT / Martin / pg_tileserv → MapLibre`. Choose the smallest system satisfying actual requirements.
 
-Candidate architecture:
+Tiles must respect public/private projection, zoom-aware simplification and cache invalidation; private attributes never enter public tiles. Separate map transport from detail APIs where necessary.
 
-```text
-PostGIS
-  ↓
-ST_AsMVT / Martin / pg_tileserv
-  ↓
-MapLibre
-```
-
-Choose the smallest system that satisfies actual requirements.
-
-Requirements:
-
-- tiles respect public/private projection rules;
-- zoom-aware geometry simplification;
-- no private attributes embedded in public tiles;
-- deterministic cache invalidation strategy;
-- bounded tile size;
-- benchmark at representative event/AIS volumes.
-
-Do not hide domain metadata needed by the event panel solely to optimize tiles; separate map geometry transport from detail APIs if necessary.
-
-Exit gate:
-
-- map benchmark shows material improvement;
-- tile privacy contract tests green;
-- legacy bulk GeoJSON endpoint removed or explicitly retained for export with documented limits.
+**M8 exit gate:** benchmark shows material improvement; privacy tests green; legacy bulk endpoint removed or explicitly retained as bounded export.
 
 ---
 
@@ -773,153 +683,39 @@ Exit gate:
 
 **Goal:** support oceanographic/satellite/model rasters without turning the core DB into a raster archive.
 
-SeaCommons already uses scientific/ocean tooling. Treat large raster/model outputs as artifacts.
+Preferred pattern: source → xarray/GDAL → COG or equivalent → object storage → rio-tiler/TiTiler when justified → MapLibre/Cesium. PostgreSQL stores metadata/provenance.
 
-Preferred pattern where justified:
+Potential use: currents, wind, waves, SST, bathymetry, satellite detections, drift forcing and model uncertainty.
 
-```text
-Copernicus / model / satellite source
-        ↓
-xarray / GDAL processing
-        ↓
-Cloud Optimized GeoTIFF (COG) or equivalent
-        ↓
-object storage
-        ↓
-rio-tiler / TiTiler if dynamic tile delivery is required
-        ↓
-MapLibre / Cesium
-```
-
-Store metadata/provenance in PostgreSQL; store heavy raster payloads in object storage.
-
-Do not introduce PostGIS Raster unless a measured query requirement specifically benefits from it.
-
-Potential use cases:
-
-- currents;
-- wind;
-- waves;
-- sea-surface temperature;
-- bathymetry;
-- satellite detection layers;
-- drift forcing context;
-- model uncertainty layers.
-
-Exit gate:
-
-- one raster pipeline reproducible end-to-end;
-- checksum/provenance recorded;
-- no uncontrolled local-file dependency;
-- public licensing verified.
+**M9 exit gate:** one raster pipeline reproducible end-to-end; checksum/provenance recorded; no uncontrolled local-file dependency; licensing verified.
 
 ---
 
 # 15. M10 — AIS spatial/time-series scale
 
-**Goal:** ensure vessel history remains performant as retention and coverage increase.
+**Goal:** keep vessel history performant as retention/coverage increases.
 
-Do not add TimescaleDB first.
+Start with native PostgreSQL/PostGIS: spatial, temporal and measured composite indexes; time partitioning where justified; retention/pruning; VACUUM/ANALYZE expectations; representative benchmarks.
 
-Start with native PostgreSQL/PostGIS:
+Benchmark track by MMSI/time, bbox/time, nearby vessels, rendezvous candidates, zone crossing, infrastructure proximity and recent multi-MMSI history at increasing data volumes.
 
-- spatial index;
-- temporal index;
-- composite indexes from real query patterns;
-- time partitioning where measured;
-- retention/pruning strategy;
-- VACUUM/ANALYZE expectations;
-- representative query benchmarks.
+Evaluate TimescaleDB only after measured native-Postgres bottlenecks.
 
-Benchmark at increasing scales, e.g.:
-
-```text
-1M positions
-10M positions
-50M positions
-100M positions where infrastructure allows
-```
-
-Key queries:
-
-- track by MMSI/time;
-- positions in bbox/time;
-- nearby vessels at time window;
-- rendezvous candidate generation;
-- zone crossing;
-- infrastructure proximity;
-- recent history for multiple MMSIs.
-
-Only evaluate TimescaleDB if native Postgres becomes an evidenced bottleneck that Timescale addresses without unacceptable operational complexity.
-
-Exit gate:
-
-- documented data-volume envelope;
-- query-plan evidence;
-- retention behaviour tested;
-- no full-table spatial scans on primary operational paths.
+**M10 exit gate:** data-volume envelope documented; query plans captured; retention tested; no full-table spatial scans on primary paths.
 
 ---
 
 # 16. M11 — Reproducible infrastructure with Docker + Ansible
 
-**Goal:** replace manual VM configuration with a reproducible, auditable deployment.
+**Goal:** replace manual VM configuration with reproducible deployment.
 
-Current/manual deployment concepts to automate include:
+Automate supported Ubuntu/base users/SSH/firewall/runtime/PostgreSQL/PostGIS/Redis where required/reverse proxy/TLS/application workers/secrets references/backups/log rotation/monitoring/restart policies.
 
-- base Ubuntu configuration;
-- users/SSH;
-- firewall;
-- Docker/runtime dependencies;
-- PostgreSQL;
-- PostGIS;
-- Redis where required;
-- Nginx/reverse proxy;
-- TLS integration;
-- application services/workers;
-- environment/secrets references;
-- backups;
-- log rotation;
-- monitoring exporters;
-- restart policies.
+Do not split containers for aesthetics; separate API/worker/geospatial/drift/model gateway only when dependency weight, isolation or scaling justifies it.
 
-## M11.1 — Docker boundary review
+AI provider secrets/configuration belong in deployment secret management. A provider outage must not prevent API startup or deterministic ingestion.
 
-Do not split services only for aesthetics.
-
-Possible images if dependency weight or scaling justifies separation:
-
-```text
-seacommons-api
-seacommons-worker
-seacommons-geospatial-worker
-seacommons-drift-worker
-```
-
-A single image remains valid if operationally simpler.
-
-## M11.2 — Ansible
-
-Create idempotent playbooks/roles that can provision a clean supported VM into a working SeaCommons node.
-
-Requirements:
-
-- no secrets in repo;
-- second run is safe/idempotent;
-- version-pinned critical services where appropriate;
-- database migration is an explicit deployment step;
-- backup/restore paths documented.
-
-## M11.3 — Disaster recovery test
-
-Prove restoration from backups into a fresh environment including PostGIS geometry and required object-storage metadata.
-
-Exit gate:
-
-- clean VM -> operational stack reproducibly;
-- redeploy idempotency tested;
-- restore test green;
-- old manual instructions either updated to call automation or removed.
+Prove clean VM → operational stack, idempotent redeploy and backup restore including PostGIS geometry and required artifacts.
 
 ---
 
@@ -927,159 +723,52 @@ Exit gate:
 
 **Goal:** expose standards only when an external consumer needs them.
 
-Potential requirements:
+Potential requirements: GeoJSON/GeoPackage export, WMS/WFS/WMTS, OGC API Features. GeoServer is allowed only after an ADR proves FastAPI/PostGIS or a lightweight service cannot cleanly satisfy the requirement.
 
-- GeoJSON export;
-- GeoPackage export;
-- WMS;
-- WFS;
-- WMTS;
-- OGC API Features.
-
-GeoServer is allowed only when there is a concrete interoperability requirement that the existing API/tile stack does not satisfy cleanly.
-
-Before adding GeoServer, document an ADR comparing at least:
-
-```text
-existing FastAPI + PostGIS
-pg_featureserv / equivalent lightweight service
-GeoServer
-```
-
-Evaluate:
-
-- protocol need;
-- authorization;
-- styling;
-- operational cost;
-- memory;
-- caching;
-- licence;
-- maintenance burden.
-
-Do not add GeoNode unless SeaCommons is deliberately becoming a generic GIS catalogue/portal, which is not currently the product direction.
-
-Exit gate:
-
-- interoperability feature is driven by a documented partner/user need;
-- access/privacy policies hold through GIS protocols;
-- no duplicate authoritative API semantics.
+Exports must not leak private geometry or unreviewed AI-derived claims.
 
 ---
 
 # 18. M13 — Explicit non-goals / prohibited premature dependencies
 
-The following technologies must NOT be introduced into SeaCommons merely because they are common in GIS job descriptions:
+Do not introduce technologies merely because they are common in GIS/AI stacks:
 
 ```text
 Django
 .NET
 Oracle Spatial
-Microsoft SQL Server Spatial
-ESRI Experience Builder
-ArcGIS runtime dependencies
+SQL Server Spatial
+ESRI runtime dependencies
 FME
 GeoNode
 Kubernetes
 TimescaleDB
 GeoServer
+standalone vector DB
+model orchestration framework
+agent framework
+self-hosted GPU inference cluster
 ```
 
-They may be reconsidered only with an ADR demonstrating:
+Any reconsideration requires an ADR documenting the unsolved requirement, alternatives, operational cost, migration/exit strategy and test plan.
 
-1. the specific unsolved requirement;
-2. why the existing stack cannot solve it cleanly;
-3. alternatives evaluated;
-4. operational cost;
-5. migration/exit strategy;
-6. test plan.
-
-Learning a technology for professional development is not sufficient reason to introduce it into production.
+Likewise do not introduce NVIDIA NIM, Groq, Gemini, OpenRouter or any other provider into production simply because a free tier exists. Each provider must serve a measured capability and remain replaceable.
 
 ---
 
 # 19. M14 — Final legacy deletion
 
-**Goal:** once the spatial architecture has proven parity, remove transitional architecture rather than preserving it forever.
+**Goal:** after parity is proven, remove transitional architecture.
 
-This is a release milestone, not cleanup to do "someday".
+Remove spatial dual-write authority once geometry is canonical; scalar lat/lon may remain only as derived API projection fields.
 
-## M14.1 — Remove spatial dual-write compatibility
+Remove authoritative dependence on legacy `area_geojson` or similar metadata once typed geometry evidence has parity.
 
-If geometry has become canonical and all consumers have migrated:
+Remove superseded custom geospatial helpers and stale taxonomy/compatibility fields.
 
-- remove duplicate authoritative lat/lon write logic;
-- retain lat/lon only as derived API projection fields where a contract still needs scalar coordinates;
-- eliminate divergence possibility between scalar fields and canonical geometry.
+Remove temporary AI shadow/compatibility infrastructure that no longer has a defined role, including provider-specific bypasses, obsolete prompt/schema versions from active routing, duplicate model-call helpers and fallback branches whose deletion condition has passed. Historical persisted provenance must remain readable even after a provider adapter is removed.
 
-Do not necessarily remove scalar API output; remove scalar persistence as an independent source of truth.
-
-## M14.2 — Remove obsolete metadata geometry
-
-Delete authoritative dependence on metadata such as legacy `area_geojson` once typed geometry evidence has full parity.
-
-Migration may retain original raw payload metadata as provenance, but consumers must not route based on obsolete compatibility keys.
-
-## M14.3 — Remove old geospatial helpers
-
-Repository-wide prove that obsolete custom implementations are gone where PostGIS/canonical geometry replaced them.
-
-Search again for:
-
-```text
-_haversine
-point_to_segment
-bbox manual comparisons
-manual point-in-zone
-manual infrastructure proximity
-legacy geometry serialization
-```
-
-Keep a Python geometry helper only when it remains deliberately useful outside DB queries and has a documented canonical purpose.
-
-## M14.4 — Remove stale taxonomy and compatibility fields
-
-Coordinate with `fixes.md` canonical data-model migration.
-
-Fields such as old routing/taxonomy compatibility values must not survive simply because old fixtures reference them.
-
-Tests must migrate to canonical semantics before deletion.
-
-## M14.5 — Remove stale docs/config/tests
-
-Audit:
-
-- obsolete env vars;
-- old deployment docs;
-- dead API examples;
-- old frontend props;
-- abandoned fixtures;
-- skipped migration tests;
-- compatibility comments whose removal condition has passed.
-
-## M14 exit gate — legacy burn-down
-
-Run a repository-wide legacy audit.
-
-Every remaining occurrence of:
-
-```text
-legacy
-deprecated
-compat
-fallback
-old_
-remove after
-TODO migration
-```
-
-must be one of:
-
-- legitimate historical/test documentation;
-- necessary external compatibility with explicit justification;
-- active temporary compatibility with an issue/milestone and deletion condition.
-
-No unexplained compatibility path may remain in production code.
+Repository-wide audit every remaining occurrence of `legacy`, `deprecated`, `compat`, `fallback`, `old_`, `remove after`, `TODO migration` and AI/provider bypass markers. Every remaining case must be justified or actively scheduled for deletion.
 
 ---
 
@@ -1087,80 +776,78 @@ No unexplained compatibility path may remain in production code.
 
 **Goal:** prove the upgraded system is more correct and operable than the stabilized baseline.
 
-Required final qualification matrix:
-
 ## Correctness
 
-- full backend suite;
-- full web suite;
-- spatial unit tests;
-- PostgreSQL/PostGIS integration tests;
-- geometry migration tests;
-- coordinate/CRS validation tests;
+- full backend/web suites;
+- PostGIS integration and geometry migration tests;
+- CRS/coordinate tests;
 - Humanitarian location replay;
 - AIS/fusion replay;
-- drift geometry replay.
+- drift replay;
+- AI provider contract tests where enabled;
+- AI structured-schema validation tests;
+- semantic duplicate/correlation replay where enabled.
 
 ## Privacy
 
-- analyst vs public geometry tests;
-- exact-location leakage tests;
-- vector-tile privacy tests if tiles enabled;
-- exports obey role/policy rules;
-- humanitarian public projection review.
+- analyst vs public geometry;
+- exact-location leakage;
+- vector-tile privacy when enabled;
+- export policy;
+- Humanitarian public projection;
+- provider data-handling/privacy review for each enabled AI capability;
+- proof that unreviewed AI-derived exact Humanitarian locations cannot leak to public output.
+
+## AI evaluation
+
+Report by capability and corpus, not one global "AI accuracy" number:
+
+```text
+classification precision/recall/F1
+publication-decision agreement (shadow only unless independently promoted)
+lifecycle agreement
+coordinate extraction precision/recall
+coordinate numeric error / false-precision rate
+no-position/null accuracy
+duplicate-resolution precision/recall/F1
+false-merge rate
+contradiction detection quality
+AI vs deterministic divergence rate
+provider/model-specific failure rate
+latency distribution
+usage/cost or quota consumption
+```
+
+A provider/model change affecting a promoted capability requires replay against the same labelled corpus before production rollout.
 
 ## Performance
 
-Benchmark against the pre-upgrade baseline:
+Benchmark pre/post upgrade for nearby-event query, AIS bbox/time, fusion candidate generation, track retrieval, map load/pan/zoom and DB size/index overhead. When AI is enabled also measure model-call latency, queue/backpressure impact and percentage of observations requiring model calls after deterministic candidate filtering.
 
-- nearby-event query;
-- AIS bbox/time query;
-- fusion candidate generation;
-- track retrieval;
-- map initial load;
-- map pan/zoom under representative load;
-- DB size/index overhead.
+## Failure/degradation
 
-Do not claim improvement without numbers.
+Prove behaviour for:
 
-## Operations
+- provider timeout;
+- provider 429/quota exhaustion;
+- provider 5xx/outage;
+- malformed/non-schema model output;
+- model refusal/empty result;
+- embedding provider unavailable;
+- model version change;
+- deterministic-only operation with all AI disabled.
 
-- fresh deploy;
-- migration from prior production schema;
-- backup;
-- restore;
-- worker restart;
-- DB reconnect;
-- corrupted/invalid geodata rejection;
-- object-storage/raster degradation where applicable.
+Core ingestion, storage, privacy and public policy must remain safe in every case.
 
-## Observability
+## Operations and observability
 
-At minimum expose/record where relevant:
+Prove fresh deploy, migration, backup, restore, worker restart, DB reconnect, invalid geodata rejection and artifact degradation.
 
-- ingestion failures;
-- invalid geometry count;
-- unpositioned event count;
-- geometry derivation failures;
-- spatial query latency;
-- tile latency/cache metrics if enabled;
-- AIS write/prune volume;
-- drift artifact failures;
-- geodata import version.
+Record at minimum ingestion failures, invalid/unpositioned geometry, derivation failures, spatial query latency, AIS volume, drift failures, geodata import version and—where enabled—AI invocation count, provider/model, validation failures, latency, rate limiting, shadow divergence and promotion state.
 
 ## Documentation
 
-Final docs must describe:
-
-- canonical spatial model;
-- geometry evidence semantics;
-- database/index architecture;
-- geospatial ingestion;
-- privacy projection;
-- QGIS analyst workflow;
-- deployment/restore;
-- interoperability endpoints if enabled;
-- removed legacy architecture.
+Final docs describe canonical spatial model, geometry evidence, DB/index architecture, ingestion, privacy projection, QGIS workflow, deployment/restore, interoperability where enabled, AI provider abstraction, model-derived evidence semantics, promotion gates, evaluation corpus and removed legacy architecture.
 
 ---
 
@@ -1175,10 +862,18 @@ M1 PostGIS foundation
       ↓
 M2 Canonical spatial model
       ↓
-M3 Spatial query migration
+M3 Spatial + temporal candidate retrieval
       ↓
 M4 Humanitarian geolocation V2
       ↓
+M4A AI provider + shadow evidence infrastructure
+      ↓
+ ┌────┴────────────────────┐
+ ↓                         ↓
+M4B Multimodal          M4C Semantic correlation
+Humanitarian evidence   / duplicate intelligence
+ └───────────┬─────────────┘
+             ↓
 M5 H3 (optional if justified)
       ↓
 M6 GDAL/OGR ingestion
@@ -1202,7 +897,9 @@ M15 Production qualification
 
 M13 is a standing non-goal gate throughout the program.
 
-Parallel work is allowed only when two milestones do not modify the same schema/contracts and both can independently satisfy their exit gates. Never parallelize migrations that compete for authority over the same data path.
+M4B and M4C may proceed independently only after M4A passes its exit gate and only when they do not compete for authority over the same data path. No model capability may skip directly from implementation to production authority.
+
+Parallel work elsewhere is allowed only when milestones do not modify the same schema/contracts and each independently satisfies its exit gate.
 
 ---
 
@@ -1212,16 +909,19 @@ The upgrade program is DONE only when:
 
 1. `fixes.md` remains green after all upgrades;
 2. PostGIS is the canonical spatial query layer;
-3. source/report/derived/uncertainty/public geometry are distinguishable;
-4. high-value proximity/containment/intersection queries are no longer implemented through scattered ad-hoc loops;
-5. humanitarian location is uncertainty-aware and privacy-safe;
+3. source/reported/derived/uncertainty/public geometry are distinguishable;
+4. high-value spatial queries no longer depend on scattered ad-hoc loops;
+5. Humanitarian location is uncertainty-aware and privacy-safe;
 6. imported geography is versioned and provenance-aware;
-7. large map delivery is scalable if volume justified implementing tiles;
-8. raster/model data has an explicit artifact architecture if used;
+7. large map delivery is scalable if measured volume justified tiles;
+8. raster/model data has an explicit artifact architecture when used;
 9. AIS scale limits are measured rather than guessed;
 10. deployment is reproducible;
-11. legacy compatibility introduced during migration has been removed;
-12. repository-wide legacy audit has no unexplained production residue;
-13. production qualification demonstrates correctness, privacy, performance and recovery on the final commit.
+11. model providers are replaceable and cannot bypass canonical evidence/publication policy;
+12. every enabled AI capability has a labelled evaluation corpus, persisted provenance, deterministic degradation path and explicit promotion state;
+13. no AI-derived exact Humanitarian location or allegation can reach public output outside deterministic privacy/evidence gates;
+14. legacy compatibility introduced during migration has been removed;
+15. repository-wide legacy audit has no unexplained production residue;
+16. production qualification demonstrates correctness, privacy, performance, provider degradation and recovery on the final commit.
 
-The target is not "more GIS tools". The target is a simpler, more rigorous SeaCommons whose geospatial capabilities are first-class, testable, reproducible and operationally credible.
+The target is not "more GIS tools" or "AI everywhere". The target is a simpler, more rigorous SeaCommons whose geospatial and evidence-intelligence capabilities are first-class, testable, reproducible, privacy-safe and operationally credible.
