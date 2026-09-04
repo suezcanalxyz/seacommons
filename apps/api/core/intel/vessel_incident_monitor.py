@@ -20,11 +20,15 @@ events:
     (no vessel-role lookup wired in here); treat a lone report as a weak
     signal until that discrimination exists (docs/fixes.md Task 0.2).
 
-All three navigational-status kinds are Maritime Safety observations, not
-Maritime Intelligence hypotheses and not cargo-Drift eligible -- a
-self-reported AIS status is never sufficient evidence of suspicious intent
-or of a real mechanical failure (docs/fixes.md Global Constraints,
-core.intel.service_taxonomy).
+All four kinds -- the distress beacon included -- are Maritime Safety
+observations, not Humanitarian cases, not Maritime Intelligence
+hypotheses, and not cargo-Drift eligible (docs/updates.md P0.8): a
+self-reported AIS transponder signal, even a distress beacon, is never
+by itself sufficient evidence to create or render a Humanitarian
+incident. A beacon may become evidence linked to an already-open
+Humanitarian incident, but only through explicit correlation (docs/
+updates.md P0.9/P2.1) -- never automatically, and never by virtue of
+being classified "distress" here. See core.intel.service_taxonomy.
 
 The monitor is driven by aisstream.register_position_hook, so it shares the
 single AISStream connection (the free tier allows only one socket per key).
@@ -86,8 +90,14 @@ _KIND_LABEL = {
     "distress_beacon": "Distress beacon activated",
 }
 # Kinds this monitor emits that are Maritime Safety observations -- never a
-# Maritime Intelligence hypothesis, never cargo Drift eligible.
-_SAFETY_KINDS = frozenset({"aground", "not_under_command", "restricted_manoeuvrability"})
+# Maritime Intelligence hypothesis, never cargo Drift eligible, and
+# (docs/updates.md P0.8) never sufficient by itself to create or render a
+# Humanitarian incident, distress_beacon included -- a self-reported AIS
+# transponder signal is not a human-corroborated distress case until an
+# explicit correlation links it to one (P0.9/P2.1).
+_SAFETY_KINDS = frozenset(
+    {"aground", "not_under_command", "restricted_manoeuvrability", "distress_beacon"}
+)
 _BEACON_STATUS = 14
 _BEACON_MMSI_PREFIXES = ("970", "972", "974")
 _BEACON_SOURCE = {"970": "ais_sart", "972": "ais_mob", "974": "ais_epirb"}
