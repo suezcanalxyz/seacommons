@@ -102,6 +102,18 @@ async def live_drifts(limit: int = Query(100, ge=1, le=200)):
     return public_drift_collection(limit=limit)
 
 
+@router.get("/hypotheses")
+async def live_hypotheses(limit: int = Query(100, ge=1, le=200)):
+    """Published Maritime Intelligence hypotheses (docs/fixes.md M14.3/
+    M14.4) -- core.intel.publication_policy.project_public_maritime_
+    assessed() is the sole authority for what this returns; a hypothesis
+    still in candidate/collecting/review_ready/assessed never appears
+    here."""
+    from core.intel.hypothesis_publication import public_hypothesis_collection
+
+    return public_hypothesis_collection(limit=limit)
+
+
 @router.get("/archives")
 async def live_archives(limit: int = Query(40, ge=1, le=200)):
     """Anonymised incident index for the Play archive timeline.
