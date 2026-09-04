@@ -12,10 +12,16 @@ of these rows. It is idempotent by ``(source_name, source_id)`` -- the
 identical returned dict both times, never a duplicate (the M1.1 exit gate).
 
 This module does not replace ``core.intel.store.intel_store`` / the
-``IntelEventDB`` public-projection envelope. Wiring existing source
-adapters (AISStream, Alarm Phone, GDACS, sanctions lists, ...) onto this in
-parallel with their current write path is docs/fixes.md M1.2, a separate,
-later PR -- do not delete or bypass an adapter's existing write path here.
+``IntelEventDB`` public-projection envelope. Wired (docs/fixes.md M1.2 /
+docs/updates.md P0.2) alongside each adapter's existing write path, never
+replacing it, in: core.intel.twikit_monitor, core.intel.news_monitor,
+core.intel.gdacs_monitor, core.intel.ingestion_service, core.vessels.
+ais_source_observation, core.intel.gfw_monitor, core.intel.viirs_monitor,
+core.intel.twitter_monitor, core.intel.vessel_incident_monitor,
+core.mda.warfare. core.mda.watch's own detections (scan_gaps and
+siblings) are derived features over AIS positions already recorded
+through core.vessels.ais_source_observation, not new source acquisition,
+so they intentionally have no SourceObservation call site of their own.
 """
 from __future__ import annotations
 

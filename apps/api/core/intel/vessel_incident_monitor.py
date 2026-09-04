@@ -41,6 +41,33 @@ from core.intel.store import IntelEvent, intel_store
 
 logger = logging.getLogger(__name__)
 
+
+def _record_source_observation(
+    event: IntelEvent, *, mmsi: str, kind: str, source: str, lat: float, lon: float,
+) -> None:
+    """docs/updates.md P0.2: a durable, lossless SourceObservation for
+    every vessel-incident event this monitor emits -- before the
+    existing intel_store.add() write path. Best-effort and strictly
+    additive: never raises into _emit(), never alters what gets
+    published."""
+    try:
+        from core.db.session import session_scope
+        from core.intel.source_observation import record_observation
+
+        with session_scope() as db:
+            record_observation(
+                db,
+                service="maritime",
+                lane="safety" if kind in _SAFETY_KINDS else "sar",
+                observation_type="ais_nav_status",
+                source_name=source, source_policy="official_api", source_id=event.id,
+                observed_at=event.timestamp_utc, raw_payload=f"mmsi={mmsi} kind={kind}",
+                lat=lat, lon=lon,
+            )
+    except Exception as exc:
+        logger.debug("vessel_incident_monitor: source_observation record skipped for %s: %s", event.id, exc)
+
+
 # nav status -> (kind, severity, is_distress, auto_publish, min_reports, min_span_s)
 # A grounded vessel is an operational incident (breakup / pollution / crew at
 # risk); "not under command" is left for operator review.
@@ -318,6 +345,7 @@ class VesselIncidentMonitor:
                 **({"detection_reason": rule_reason} if rule_reason else {}),
             },
         )
+        _record_source_observation(event, mmsi=mmsi, kind=kind, source=source, lat=lat, lon=lon)
         added = intel_store.add(event, dedup_key=_event_id(mmsi, kind))
         if not added:
             # The stable episode may have been preloaded after restart. Update

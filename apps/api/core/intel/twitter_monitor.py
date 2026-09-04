@@ -22,6 +22,37 @@ from core.intel.store import IntelEvent, intel_store
 
 logger = logging.getLogger(__name__)
 
+
+def _record_source_observation(post: dict, *, event: IntelEvent) -> None:
+    """docs/updates.md P0.2: a durable, lossless SourceObservation for
+    every X post this monitor receives -- before the existing
+    intel_store.add() write path below. Best-effort and strictly
+    additive: never raises, never alters what gets published. The raw
+    payload is hashed/referenced, not exposed publicly -- a
+    SourceObservation is internal provenance, a separate policy from
+    public publication (docs/updates.md section 6)."""
+    try:
+        from core.db.session import session_scope
+        from core.intel.source_observation import record_observation
+
+        tweet_id = str(post.get("id") or "")
+        if not tweet_id:
+            return
+        with session_scope() as db:
+            record_observation(
+                db,
+                service="humanitarian", lane="distress", observation_type="source_post",
+                source_name="X / Twitter", source_policy="official_api", source_id=tweet_id,
+                observed_at=str(post.get("created_at") or ""),
+                raw_payload=json.dumps(post, sort_keys=True, default=str),
+                source_url=str(post.get("url") or ""),
+                lat=event.lat, lon=event.lon,
+            )
+    except Exception as exc:
+        logger.debug("twitter_monitor: source_observation record skipped for %s: %s",
+                     post.get("id"), exc)
+
+
 _SEARCH_QUERIES = [
     '(mayday OR "boat sinking" OR "taking water" OR capsized OR "people drowning" '
     'OR "man overboard") (Mediterranean OR Lampedusa OR Sicily OR Libya OR Malta '
@@ -173,6 +204,7 @@ class TwitterMonitor:
                 } if not distress else {}),
             },
         )
+        _record_source_observation(post, event=event)
         added = intel_store.add(event, dedup_key=f"x:{post.get('id', '')}")
         if added and distress:
             from core.intel.triangulation import evaluate as evaluate_triangulation

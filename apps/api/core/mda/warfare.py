@@ -40,6 +40,29 @@ _GNSS_KW = re.compile(r"\b(gps|gnss|jamming|spoofing|interference|navigation war
 _FIRING_KW = re.compile(r"\b(firing exercise|gunnery|live fire|missile (test|firing)|naval exercise)\b", re.I)
 
 
+def _record_source_observation(
+    *, source_name: str, source_id: str, observed_at: str, raw_payload: Any, lat: float, lon: float,
+) -> None:
+    """docs/updates.md P0.2: a durable, lossless SourceObservation for
+    every ACLED/NGA MSI item this module polls -- before the existing
+    intel_store.add() write path. Best-effort and strictly additive:
+    never raises into poll_acled()/poll_navwarnings(), never alters what
+    gets published."""
+    try:
+        from core.db.session import session_scope
+        from core.intel.source_observation import record_observation
+
+        with session_scope() as db:
+            record_observation(
+                db,
+                service="maritime", lane="intelligence", observation_type="source_post",
+                source_name=source_name, source_policy="official_rss", source_id=source_id,
+                observed_at=observed_at, raw_payload=str(raw_payload), lat=lat, lon=lon,
+            )
+    except Exception as exc:
+        logger.debug("warfare: source_observation record skipped for %s: %s", source_id, exc)
+
+
 def _in_aoi(lat: float, lon: float) -> bool:
     return (_AOI["min_lat"] <= lat <= _AOI["max_lat"]
             and _AOI["min_lon"] <= lon <= _AOI["max_lon"])
@@ -82,6 +105,11 @@ def poll_acled() -> int:
         if not maritime:
             continue
         eid = f"acled:{row.get('data_id') or row.get('event_id_cnty')}"
+        _record_source_observation(
+            source_name="ACLED", source_id=eid,
+            observed_at=(row.get("event_date") or "") + "T00:00:00+00:00",
+            raw_payload=row, lat=lat, lon=lon,
+        )
         added = intel_store.add(IntelEvent(
             id=eid, type="conflict_event",
             severity="high" if _STRIKE_KW.search(text) else "medium",
@@ -135,6 +163,11 @@ def poll_navwarnings() -> int:
         wid = f"navwarn:{w.get('navArea')}:{w.get('msgYear')}:{w.get('msgNumber')}"
         zones.append({"kind": kind, "lat": lat, "lon": lon, "id": wid,
                       "points": polys, "text": str(w.get("text", ""))[:400]})
+        _record_source_observation(
+            source_name="NGA MSI", source_id=wid,
+            observed_at=datetime.now(timezone.utc).isoformat(),
+            raw_payload=w, lat=lat, lon=lon,
+        )
         added = intel_store.add(IntelEvent(
             id=wid, type="navwarning",
             severity="high" if kind in ("strike_warning", "missile_test") else "medium",
