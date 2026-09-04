@@ -321,13 +321,23 @@ class IntelStore:
         # committed by a later lifecycle update. The worker is lazy so the
         # many short-lived IntelStore instances used by tests do not each
         # create an idle thread.
-        self._persist_queue: queue.Queue[tuple[Callable[..., None], tuple[Any, ...]]] = queue.Queue()
+        self._persist_queue: queue.Queue[
+            tuple[Callable[..., None], tuple[Any, ...], threading.Event | None]
+        ] = queue.Queue()
         self._persist_worker: threading.Thread | None = None
         self._persist_worker_lock = threading.Lock()
 
-    def _enqueue_persist(self, target: Callable[..., None], *args: Any) -> None:
-        """Run DB mutations asynchronously in call order for this store."""
-        self._persist_queue.put((target, args))
+    def _enqueue_persist(
+        self, target: Callable[..., None], *args: Any, wait: bool = False
+    ) -> None:
+        """Run DB mutations in FIFO order; optionally wait for this write."""
+        # Defensive against a future persistence callback enqueueing a blocking
+        # write from the worker itself: execute inline rather than deadlocking.
+        if wait and threading.current_thread() is self._persist_worker:
+            target(*args)
+            return
+        completed = threading.Event() if wait else None
+        self._persist_queue.put((target, args, completed))
         with self._persist_worker_lock:
             if self._persist_worker is None or not self._persist_worker.is_alive():
                 self._persist_worker = threading.Thread(
@@ -336,15 +346,19 @@ class IntelStore:
                     daemon=True,
                 )
                 self._persist_worker.start()
+        if completed is not None:
+            completed.wait()
 
     def _persist_worker_loop(self) -> None:
         while True:
-            target, args = self._persist_queue.get()
+            target, args, completed = self._persist_queue.get()
             try:
                 target(*args)
             except Exception as exc:  # defensive: one failed write must not stop FIFO
                 logger.warning("intel_store persistence worker error: %s", exc)
             finally:
+                if completed is not None:
+                    completed.set()
                 self._persist_queue.task_done()
 
     # ── Write ─────────────────────────────────────────────────────────────────
@@ -1073,8 +1087,12 @@ class IntelStore:
             # Verified replies change lifecycle and are rare/high-value. Commit
             # before broadcasting so a restart cannot leave a visible reply
             # attached only to an in-memory event.
-            self._persist_metadata_sync(
-                event_id, dict(updated.metadata), updated.linked_mmsi,
+            self._enqueue_persist(
+                self._persist_metadata_sync,
+                event_id,
+                dict(updated.metadata),
+                updated.linked_mmsi,
+                wait=True,
             )
             self._fire_broadcast(updated)
         else:

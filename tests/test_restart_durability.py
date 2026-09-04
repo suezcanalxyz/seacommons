@@ -14,6 +14,7 @@ the bounded deque still reaches the reloaded store.
 """
 from __future__ import annotations
 
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -207,3 +208,50 @@ def test_intel_store_persistence_mutations_are_fifo(monkeypatch):
 
     assert _wait_until(lambda: len(order) == 3)
     assert order == ["add", "location", "metadata"]
+
+
+def test_high_value_reply_waits_for_prior_fifo_write_before_broadcast(monkeypatch):
+    """A verified reply cannot jump ahead of an older queued DB mutation."""
+    monkeypatch.setenv("SEACOMMONS_INTEL_PERSIST_SYNC", "false")
+    store = IntelStore()
+    prior_started = threading.Event()
+    release_prior = threading.Event()
+    order: list[str] = []
+
+    def persist_add(_event):
+        prior_started.set()
+        release_prior.wait(timeout=2)
+        order.append("add")
+
+    def persist_metadata(*_args):
+        order.append("reply")
+
+    def broadcast(event):
+        if event.metadata.get("thread_reposts"):
+            order.append("broadcast")
+
+    monkeypatch.setattr(store, "_persist_sync", persist_add)
+    monkeypatch.setattr(store, "_persist_metadata_sync", persist_metadata)
+    monkeypatch.setattr(store, "_fire_broadcast", broadcast)
+
+    assert store.add(IntelEvent(id="fifo-reply-1", type="twitter", title="reply")) is True
+    assert prior_started.wait(timeout=1)
+
+    result: list[bool] = []
+    reply_thread = threading.Thread(
+        target=lambda: result.append(store.append_thread_repost(
+            "fifo-reply-1",
+            {"tweet_id": "reply-1", "posted_at": _recent(), "kind": "reply", "note": "Rescued"},
+        ))
+    )
+    reply_thread.start()
+    time.sleep(0.05)
+
+    # Persist-before-broadcast must also respect every older queued mutation.
+    assert order == []
+    assert reply_thread.is_alive()
+
+    release_prior.set()
+    reply_thread.join(timeout=1)
+    assert result == [True]
+    assert order == ["add", "reply", "broadcast"]
