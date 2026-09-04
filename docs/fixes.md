@@ -1201,8 +1201,20 @@ Each commit requires its own regression test and verification checkpoint.
 # 7. Final release gate
 
 This version is **not stable** until every item below is proven on a fresh deployment.
-`[x]` = covered by an automated regression test on `fix/p0-drift-evidence-gate`;
+`[x]` = covered by an automated regression test;
 `[ ]` = still needs the production-like smoke run / manual proof.
+
+Update 2026-09-03: the last two open gate items are now covered by automated
+regression tests — `tests/test_ocr_burst_responsiveness.py` (a burst 50x the
+pool size adds at most `workers` threads, `submit` never blocks, the public
+feed answers in <3 s while the pool is saturated) and
+`tests/test_restart_durability.py` (a fresh `IntelStore` reloaded from the DB
+keeps the repaired coordinate, review status, uncertainty, `maritime_domain`,
+tier, `humanitarian_case_type`, `incident_lifecycle` and identical auto-drift
+eligibility). Backend suite: 696 passed, 2 skipped. The remaining
+non-checkbox work is operator/infra only: production schema stamp at Alembic
+head, the production-like smoke run on real current data, and the
+`live_vm_edge_incident_set_mismatch` alert wiring.
 
 ```text
 [x] disputed OCR -> 0 auto-Drift
@@ -1217,7 +1229,7 @@ This version is **not stable** until every item below is proven on a fresh deplo
 [x] translated/duplicate posts do not create duplicate incidents
 [x] advocacy does not enter the active SAR lane
 [x] OCR queue/thread count remains bounded during burst
-[ ] public Live remains responsive during OCR burst
+[x] public Live remains responsive during OCR burst
 [x] connection failure never renders as a legitimate zero-event state
 [x] VM and edge agree on humanitarian incident eligibility
 [x] browser has no independent Alarm-Phone-only product policy
@@ -1232,7 +1244,7 @@ This version is **not stable** until every item below is proven on a fresh deplo
 [x] map receives only fleet entries with geometry
 [x] Civil NGO and State SAR identities remain distinct
 [x] selected Mare Jonio/other NGO shows organization + operator class
-[ ] restart preserves durable events, classifications, lifecycle and repaired locations
+[x] restart preserves durable events, classifications, lifecycle and repaired locations
 ```
 
 ## Definition of done
