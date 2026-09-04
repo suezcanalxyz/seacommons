@@ -1058,6 +1058,41 @@ class IntelStore:
                 args=(event_id, dict(updated.metadata), updated.linked_mmsi),
                 daemon=True,
             ).start()
+        # docs/updates.md P0.9: a reply/repost/quote/translation-twin/self-
+        # reply-resolution never creates a new IntelEvent (event_id above is
+        # always the SAME id as the founding event this thread already
+        # belongs to) -- but until this call, that also meant the canonical
+        # HumanitarianIncidentDB (core.intel.humanitarian_incident, upserted
+        # by event.id) never re-synced on a thread update, going stale
+        # relative to what core.live.feed's own read-time lifecycle
+        # recomputation already reflected. Reusing intel_store's existing
+        # subscriber fan-out here is exactly the "Alarm Phone update updates
+        # the existing incident" cutover requirement: sync_incident_for_event
+        # is an upsert BY event.id, so this can only ever update the incident
+        # already keyed to this thread, never create a second one.
+        #
+        # sync_incident_for_event derives HumanitarianIncidentDB.last_update_at
+        # from the passed event's own timestamp_utc -- which append_thread_repost
+        # deliberately never mutates on the real stored event (that field means
+        # "when the founding post was made", not "when this thread was last
+        # active"; changing it here would corrupt every other reader of
+        # timestamp_utc, e.g. reported_at/age/sort order). Notify with a
+        # throwaway dataclasses.replace() copy carrying the repost's own
+        # posted_at instead, so the canonical incident's *activity* timer
+        # advances without touching the real event's own timestamp.
+        from dataclasses import replace as _dc_replace
+
+        notify_event = updated
+        posted_at = repost.get("posted_at")
+        if posted_at:
+            from core.intel.lifecycle import parse_utc
+
+            posted_ts = parse_utc(str(posted_at))
+            current_ts = parse_utc(updated.timestamp_utc)
+            if posted_ts is not None and (current_ts is None or posted_ts > current_ts):
+                notify_event = _dc_replace(updated, timestamp_utc=str(posted_at))
+
+        self._notify_subscribers(notify_event)
         return True
 
     def touch_source_observation(self, event_id: str, observed_at: str) -> bool:
