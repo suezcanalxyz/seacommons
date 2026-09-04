@@ -127,3 +127,22 @@ async def correlation_decisions(observation_id: str):
         "decisions": [asdict(d) for d in decisions],
         "not_yet_computable_signals": NOT_YET_COMPUTABLE,
     }
+
+
+@router.get("/lineage/{observation_id}")
+async def lineage(observation_id: str):
+    """docs/updates.md P2.2: derivation/quotation edges detected for
+    this observation -- see core.intel.circular_reporting's
+    NOT_YET_COMPUTABLE for what this cannot yet detect (partial
+    quotation, exact multi-hop chain order).
+    """
+    from dataclasses import asdict
+
+    from core.intel.circular_reporting import NOT_YET_COMPUTABLE as LINEAGE_NOT_YET_COMPUTABLE
+    from core.intel.circular_reporting import get_lineage
+
+    edges = get_lineage(observation_id)
+    return {
+        "edges": [asdict(e) for e in edges],
+        "not_yet_computable_signals": LINEAGE_NOT_YET_COMPUTABLE,
+    }
