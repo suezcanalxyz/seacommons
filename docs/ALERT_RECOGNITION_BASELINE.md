@@ -80,9 +80,32 @@ carries: classification-label accuracy and confidence-range membership)
 this locks in a regression guard, not a claimed improvement over prior
 behaviour (there was no prior scored behaviour for this file).
 
-`ais_integrity.jsonl` (gap/impossible_speed/dark_zone_entry) stays
-unscored -- its gap classifier is `docs/fixes.md` M4.2 territory
-(coverage-baseline reasoning should inform it before it's built).
+## Update 2026-09-04: M4.1 complete -- ais_integrity.jsonl scored too
+
+A sibling `core/intel/ais_integrity_replay.py` gives the same pure
+`classify(input) -> (label, confidence)` treatment to the remaining
+fixture file's three kinds: `gap`, `impossible_speed`, `dark_zone_entry`.
+
+The `gap` classifier is the docs/fixes.md M4.3-relevant one: it reasons
+from `local_reporting_ratio` (how many OTHER nearby vessels also kept
+reporting through the same window) rather than vessel type at all -- it
+has no `vessel_type` parameter to exclude on, so "vessel class becomes a
+contextual feature only" (M4.3) is satisfied by construction for this
+classifier. A feed-wide outage (`local_reporting_ratio < 0.5`) classifies
+as `coverage_gap`, never hundreds of individual `vessel_gap` alerts.
+`impossible_speed` accepts `vessel_type` (present in every real message)
+but never uses it to gate the alert either -- a fast cargo ship is flagged
+identically to any other declared type.
+
+**Not wired into the live detectors.** `core.mda.watch.scan_gaps()` /
+`scan_spoofing()` still carry their original hard vessel-class exclusions
+unchanged -- replacing those with a coverage-ratio-based decision is a
+separate, larger, carefully-reviewed PR (`core/mda/coverage.py`,
+docs/fixes.md M4.2, is the reception-history baseline that PR would draw
+on; also standalone/read-only so far).
+
+Scores 1.00/1.00 on both dimensions -- built directly against this exact
+fixture set, a regression guard rather than a claimed improvement.
 
 ## Full report
 
