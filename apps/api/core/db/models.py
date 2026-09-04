@@ -500,6 +500,57 @@ class HumanitarianIncidentDB(Base):
     )
 
 
+class ClaimDB(Base):
+    """One structured fact extracted from one observation (docs/updates.md
+    P0.4): "important facts become claims, not mutable scalar truth."
+    Never overwritten in place for a genuinely new value -- a later claim
+    of the same claim_type on the same incident is a NEW row, so
+    conflicting reports coexist rather than the earlier one being lost.
+    Idempotent by ``claim_id`` (deterministic from incident_id +
+    claim_type + observation_id): re-syncing the same observation never
+    duplicates its claims.
+    """
+
+    __tablename__ = "claims"
+    claim_id = Column(String(96), primary_key=True)
+    incident_id = Column(String(64), nullable=False, index=True)
+    claim_type = Column(String(32), nullable=False, index=True)
+    value = Column(JSON, nullable=False)
+    observation_id = Column(String(64), nullable=False)
+    source_id = Column(String(64))
+    claimed_at = Column(String(32))
+    observed_at = Column(String(32))
+    extraction_method = Column(String(64), nullable=False)
+    verification_status = Column(String(32), nullable=False, default="unverified")
+    supersedes_id = Column(String(96))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class AssessmentDB(Base):
+    """The selected/bounded value for one incident field, traceable back
+    to the claims that support (or, once contradiction detection exists,
+    contradict) it (docs/updates.md P0.4). Never a single opaque
+    "trust_score" -- the module computing this documents its own
+    selection method_version explicitly.
+    """
+
+    __tablename__ = "assessments"
+    assessment_id = Column(String(96), primary_key=True)
+    incident_id = Column(String(64), nullable=False, index=True)
+    field_type = Column(String(32), nullable=False)
+    value = Column(JSON)
+    supporting_claim_ids = Column(JSON, default=list)
+    contradicting_claim_ids = Column(JSON, default=list)
+    method_version = Column(String(64), nullable=False)
+    confidence = Column(Float)
+    review_state = Column(String(32), nullable=False, default="unreviewed")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 def create_all(database_url: str) -> None:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)

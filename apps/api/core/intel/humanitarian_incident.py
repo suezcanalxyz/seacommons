@@ -113,6 +113,13 @@ def _on_intel_event(event: IntelEvent) -> None:
         lifecycle = distress_lifecycle(event, now=datetime.now(timezone.utc), same_source=same_source)
         case_type = event.metadata.get("humanitarian_case_type") or event.metadata.get("case_type")
         sync_incident_for_event(event, lifecycle=lifecycle, case_type=case_type)
+
+        from core.intel.claims import record_claims_for_incident, sync_assessments_for_incident
+        from core.intel.humanitarian_recognition import assess
+
+        assessment = assess(event.text or event.title)
+        record_claims_for_incident(event.id, event, assessment)
+        sync_assessments_for_incident(event.id)
     except Exception:  # pragma: no cover - never break ingestion over incident sync
         pass
 
