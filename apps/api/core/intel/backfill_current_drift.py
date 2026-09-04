@@ -49,7 +49,7 @@ def find_candidates(*, limit: int = 500) -> list[CurrentDriftBackfillCandidate]:
             db.query(HumanitarianIncidentDB)
             .filter(
                 HumanitarianIncidentDB.current_drift_id.is_(None),
-                HumanitarianIncidentDB.lifecycle.in_(("active", "needs_review")),
+                HumanitarianIncidentDB.incident_status.in_(("active", "needs_review")),
             )
             .limit(limit)
             .all()

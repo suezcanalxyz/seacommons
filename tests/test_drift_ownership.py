@@ -93,3 +93,18 @@ def test_sync_returns_none_for_an_unknown_incident():
 
 def test_get_current_drift_id_returns_none_for_an_unknown_incident():
     assert get_current_drift_id("does-not-exist") is None
+
+
+def test_outcome_unknown_status_never_gets_operational_drift_even_if_legacy_lifecycle_is_active():
+    from core.db.models import HumanitarianIncidentDB
+    from core.db.session import session_scope
+
+    _make_incident("d6", lifecycle="active")
+    with session_scope() as db:
+        row = db.get(HumanitarianIncidentDB, "d6")
+        row.incident_status = "outcome_unknown"
+        row.lifecycle = "active"  # deliberately inconsistent legacy row
+
+    result = sync_current_drift_for_incident("d6", "drift-x")
+    assert result is None
+    assert get_current_drift_id("d6") is None
