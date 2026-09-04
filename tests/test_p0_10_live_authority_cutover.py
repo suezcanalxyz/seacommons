@@ -171,3 +171,18 @@ def test_a_maritime_safety_marker_has_no_canonical_incident_and_falls_back():
     state = resolve_public_incident_state(event, now=_NOW, same_source=[])
     assert state["state_changed_at"] is None
     assert state["resolved_at"] is None
+
+
+def test_resolve_public_incident_state_exposes_real_incident_status():
+    event_id = f"p010-status-{uuid.uuid4()}"
+    event = _distress_event(event_id, "MAYDAY status contract", "2026-09-04T08:00:00+00:00")
+    intel_store.add(event)
+    assert _wait_for(lambda: get_incident(event_id) is not None)
+
+    state = resolve_public_incident_state(event, now=_NOW, same_source=[])
+    assert state["incident_status"] == "active"
+
+    from core.intel.humanitarian_incident import sync_incident_for_event
+    sync_incident_for_event(event, lifecycle="resolved")
+    state = resolve_public_incident_state(event, now=_NOW, same_source=[])
+    assert state["incident_status"] == "resolved"

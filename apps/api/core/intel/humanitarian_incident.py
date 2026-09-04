@@ -30,6 +30,35 @@ from core.intel.store import IntelEvent
 
 
 TRANSITION_METHOD_VERSION = "v0_distress_lifecycle_4state"
+PUBLIC_STATUS_RETIRE_AFTER_HOURS = 24
+
+
+def _status_for_lifecycle(lifecycle: str) -> str:
+    from core.domain.live_contracts import IncidentStatus
+
+    return {
+        "resolved": IncidentStatus.RESOLVED.value,
+        "needs_review": IncidentStatus.NEEDS_REVIEW.value,
+        "archived": IncidentStatus.OUTCOME_UNKNOWN.value,
+    }.get(str(lifecycle), IncidentStatus.ACTIVE.value)
+
+
+def public_incident_status(incident: dict, *, now: datetime) -> str:
+    """Public real-world status, independent from the Live/Play surface."""
+    from core.domain.live_contracts import IncidentStatus
+    from core.intel.lifecycle import parse_utc
+
+    raw = incident.get("incident_status")
+    if raw not in {status.value for status in IncidentStatus}:
+        raw = _status_for_lifecycle(str(incident.get("lifecycle") or "active"))
+    if raw != IncidentStatus.ACTIVE.value:
+        return raw
+    last_update = parse_utc(str(incident.get("last_update_at") or ""))
+    if last_update is None:
+        return raw
+    if (now - last_update).total_seconds() >= PUBLIC_STATUS_RETIRE_AFTER_HOURS * 3600:
+        return IncidentStatus.OUTCOME_UNKNOWN.value
+    return raw
 
 
 def _reason_code_for(event: IntelEvent, lifecycle: str) -> str:
@@ -83,24 +112,38 @@ def sync_incident_for_event(
     with session_scope() as db:
         row = db.get(HumanitarianIncidentDB, event.id)
         if row is None:
-            db.add(HumanitarianIncidentDB(
-                incident_id=event.id,
-                lifecycle=lifecycle,
-                case_type=case_type,
-                reported_at=event.timestamp_utc,
-                last_update_at=event.timestamp_utc,
-                state_changed_at=now,
-                resolved_at=now if lifecycle == "resolved" else None,
-                archived_at=now if lifecycle == "archived" else None,
-                source_observation_ids=[event.id],
-                review_status="none",
-                revision=1,
-            ))
-            _record_transition(
-                db, incident_id=event.id, from_state=None, to_state=lifecycle,
-                event=event, reason_code=_reason_code_for(event, lifecycle), now=now,
-            )
-            return
+            # Subscriber fan-out and operator backfills can legitimately race on
+            # the same first observation. Use a savepoint so the loser of the
+            # insert race can re-read and continue as an idempotent update.
+            from sqlalchemy.exc import IntegrityError
+
+            try:
+                with db.begin_nested():
+                    row = HumanitarianIncidentDB(
+                        incident_id=event.id,
+                        lifecycle=lifecycle,
+                        incident_status=_status_for_lifecycle(lifecycle),
+                        case_type=case_type,
+                        reported_at=event.timestamp_utc,
+                        last_update_at=event.timestamp_utc,
+                        state_changed_at=now,
+                        resolved_at=now if lifecycle == "resolved" else None,
+                        archived_at=now if lifecycle == "archived" else None,
+                        source_observation_ids=[event.id],
+                        review_status="none",
+                        revision=1,
+                    )
+                    db.add(row)
+                    db.flush()
+                    _record_transition(
+                        db, incident_id=event.id, from_state=None, to_state=lifecycle,
+                        event=event, reason_code=_reason_code_for(event, lifecycle), now=now,
+                    )
+                return
+            except IntegrityError:
+                row = db.get(HumanitarianIncidentDB, event.id)
+                if row is None:
+                    raise
 
         # docs/updates.md P0.6: "out-of-order source updates do not move
         # reported_at forward" -- the same principle applies to
@@ -115,6 +158,7 @@ def sync_incident_for_event(
         if new_ts is None or current_ts is None or new_ts >= current_ts:
             row.last_update_at = event.timestamp_utc
         row.revision = (row.revision or 1) + 1
+        row.incident_status = _status_for_lifecycle(lifecycle)
         if case_type and not row.case_type:
             row.case_type = case_type
         if row.lifecycle != lifecycle:
@@ -142,6 +186,7 @@ def get_incident(incident_id: str):
         return {
             "incident_id": row.incident_id,
             "lifecycle": row.lifecycle,
+            "incident_status": row.incident_status or _status_for_lifecycle(row.lifecycle),
             "case_type": row.case_type,
             "reported_at": row.reported_at,
             "last_update_at": row.last_update_at,
@@ -190,6 +235,7 @@ def resolve_public_incident_state(event: IntelEvent, *, now: datetime, same_sour
     if incident is not None:
         return {
             "lifecycle": incident["lifecycle"],
+            "incident_status": public_incident_status(incident, now=now),
             "reported_at": incident["reported_at"],
             "last_update_at": incident["last_update_at"],
             "state_changed_at": incident["state_changed_at"],
@@ -201,6 +247,7 @@ def resolve_public_incident_state(event: IntelEvent, *, now: datetime, same_sour
     fallback_lifecycle = distress_lifecycle(event, now=now, same_source=same_source)
     return {
         "lifecycle": fallback_lifecycle,
+        "incident_status": _status_for_lifecycle(fallback_lifecycle),
         "reported_at": event.timestamp_utc,
         "last_update_at": event.timestamp_utc,
         "state_changed_at": None,

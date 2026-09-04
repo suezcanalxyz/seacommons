@@ -491,6 +491,9 @@ class HumanitarianIncidentDB(Base):
     __tablename__ = "humanitarian_incidents"
     incident_id = Column(String(64), primary_key=True)
     lifecycle = Column(String(32), nullable=False, index=True)
+    # Public real-world outcome. ``lifecycle=archived`` is retained only as a
+    # compatibility marker for pre-Live/Play rows; it maps to outcome_unknown.
+    incident_status = Column(String(32), nullable=False, default="active", index=True)
     case_type = Column(String(64))
     reported_at = Column(String(32))
     last_update_at = Column(String(32))

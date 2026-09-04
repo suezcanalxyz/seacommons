@@ -29,7 +29,7 @@
 - Modify: `apps/api/core/intel/lifecycle.py`
 - Modify: `apps/api/core/intel/humanitarian_incident.py`
 - Modify: `apps/api/core/db/models.py`
-- Create: `apps/api/alembic/versions/0017_incident_status_surface.py`
+- Create: `apps/api/core/db/migrations/versions/0017_incident_status.py`
 - Test: `tests/test_humanitarian_incident.py`
 - Test: `tests/test_p0_10_live_authority_cutover.py`
 
@@ -108,7 +108,7 @@
 - Create: `apps/api/core/intel/satellite_observation.py`
 - Create: `apps/api/core/intel/satellite_resolver.py`
 - Modify: `apps/api/core/db/models.py`
-- Create: `apps/api/alembic/versions/0018_satellite_observations.py`
+- Create: `apps/api/core/db/migrations/versions/0018_satellite_observations.py`
 - Modify: `apps/api/core/api/routes/play.py`
 - Test: `tests/test_satellite_resolver.py`
 - Test: `tests/test_play_timeline.py`
