@@ -69,6 +69,7 @@ class SourceObservation:
     subject_refs: list[str]
     provenance: dict[str, Any]
     schema_version: int
+    preservation_status: str
     replayed: bool  # True when this call found an existing row (idempotent hit)
 
 
@@ -93,6 +94,7 @@ def _to_observation(row: SourceObservationDB, *, replayed: bool) -> SourceObserv
         subject_refs=list(row.subject_refs or []),
         provenance=dict(row.provenance or {}),
         schema_version=row.schema_version,
+        preservation_status=row.preservation_status or "",
         replayed=replayed,
     )
 
@@ -128,6 +130,8 @@ def record_observation(
     once recorded. A source that legitimately has new information sends a
     new source_id (e.g. a new tweet id, a new AIS message sequence).
     """
+    from core.intel.preservation import classify_preservation_status
+
     obs_id = observation_id(source_name, source_id)
     existing = db.get(SourceObservationDB, obs_id)
     if existing is not None:
@@ -159,6 +163,9 @@ def record_observation(
         subject_refs=list(subject_refs or []),
         provenance=dict(provenance or {}),
         schema_version=schema_version,
+        preservation_status=classify_preservation_status(
+            service, has_archive_ref=bool(raw_payload_ref),
+        ),
     )
     db.add(row)
     db.flush()
