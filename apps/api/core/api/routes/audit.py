@@ -95,3 +95,17 @@ async def coverage_change_log(source_name: str | None = None, limit: int = Query
 
     events = get_coverage_change_log(source_name=source_name, limit=limit)
     return {"events": [asdict(e) for e in events]}
+
+
+@router.get("/preservation-summary")
+async def preservation_summary(limit: int = Query(5000, ge=1, le=50000)):
+    """docs/updates.md Section 6: "Preservation and public publication
+    are separate policies" -- real counts of source_observations by
+    preservation_status (not_applicable/preserved/restricted). No
+    adapter populates an archive reference yet, so today this honestly
+    reports mostly not_applicable -- see core.intel.preservation's own
+    module docstring for the named non-goal.
+    """
+    from core.intel.preservation import summarize_preservation_status
+
+    return {"counts": summarize_preservation_status(limit=limit)}

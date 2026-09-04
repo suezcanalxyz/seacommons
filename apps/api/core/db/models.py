@@ -426,6 +426,13 @@ class SourceObservationDB(Base):
     provenance = Column(JSON, default=dict)
     schema_version = Column(Integer, nullable=False, server_default="1")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # docs/updates.md Section 6 (Preservation): a deterministic classification
+    # of this observation's preservation policy -- not_applicable/preserved/
+    # restricted -- computed once at record_observation() time by
+    # core.intel.preservation.classify_preservation_status and never edited
+    # afterward, consistent with this row's own immutability. raw_payload_ref
+    # above doubles as Section 6's "archive URI/reference when available".
+    preservation_status = Column(String(32))
 
     __table_args__ = (
         UniqueConstraint("source_name", "source_id", name="uq_source_observation_delivery_key"),
