@@ -21,18 +21,27 @@ def _feature(event_id, timestamp, lon, lat, **properties):
     }
 
 
-def test_one_vessel_becomes_one_episode_with_current_point_and_track() -> None:
+def test_repeated_updates_in_the_same_family_become_one_episode() -> None:
+    """docs/fixes.md M14.2: build_episodes() combines same-subject,
+    same-family, close-in-time signals into one episode -- the pre-M14.2
+    per-MMSI rich aggregation (track, signal_count, source records, the
+    NUC-resolved special case) still runs, just per episode now. Both
+    items here declare the same explicit `episode_family` -- the lever a
+    correlation layer uses when it already knows two differently-typed
+    signals are one real incident (docs/live/episode_builder.family_for:
+    "an explicit, already-known family on the signal always wins")."""
     gap = _feature(
         "intel:gap", "2026-08-30T19:00:00+00:00", 29.14, 41.33,
         type="ais_anomaly", linked_mmsi="352001914", anomaly_type="gap",
         maritime_domain="sanctions", title="AIS gap — ST. OLGA",
+        episode_family="safety_episode",
     )
     incident = _feature(
         "intel:nuc", "2026-08-30T20:00:00+00:00", 29.16, 41.34,
         type="vessel_incident", linked_mmsi="352001914",
         ais_nav_status_kind="not_under_command", maritime_domain="grey_zone",
         title="Vessel unable to manoeuvre — ST. OLGA", drift_eligible=True,
-        url="https://example.test/olga",
+        url="https://example.test/olga", episode_family="safety_episode",
     )
 
     result = coalesce_security_vessel_episodes(
@@ -47,7 +56,7 @@ def test_one_vessel_becomes_one_episode_with_current_point_and_track() -> None:
 
     assert len(result) == 1
     episode = result[0]
-    assert episode["id"] == "vessel-episode:352001914"
+    assert episode["id"].startswith("episode:subj:mmsi:352001914:safety_episode:")
     assert episode["geometry"]["coordinates"] == [29.18, 41.35]
     assert episode["properties"]["maritime_domain"] == "grey_zone"
     assert episode["properties"]["signal_count"] == 2
@@ -56,6 +65,55 @@ def test_one_vessel_becomes_one_episode_with_current_point_and_track() -> None:
     assert episode["properties"]["incident_lifecycle"] == "resolved"
     assert episode["properties"]["latest_nav_status"] == 0
     assert episode["properties"]["source_records"][0]["url"] == "https://example.test/olga"
+
+
+def test_exit_gate_two_unrelated_anomaly_families_become_two_episodes() -> None:
+    """docs/fixes.md M14.2 exit gate, live-wiring form: two unrelated
+    anomalies on the same vessel (here, different families: a reporting
+    gap vs. a not-under-command incident) become two separate episodes,
+    not one lifelong per-MMSI blob."""
+    gap = _feature(
+        "intel:gap2", "2026-08-30T19:00:00+00:00", 29.14, 41.33,
+        type="ais_anomaly", linked_mmsi="352001915", anomaly_type="gap",
+        maritime_domain="sanctions", title="AIS gap — vessel B",
+    )
+    incident = _feature(
+        "intel:nuc2", "2026-08-30T20:00:00+00:00", 29.16, 41.34,
+        type="vessel_incident", linked_mmsi="352001915",
+        ais_nav_status_kind="not_under_command", maritime_domain="grey_zone",
+        title="Vessel unable to manoeuvre — vessel B",
+    )
+
+    result = coalesce_security_vessel_episodes([gap, incident])
+
+    assert len(result) == 2
+    ids = {f["properties"]["id"] for f in result}
+    assert any(":gap_episode:" in i for i in ids)
+    assert any(":safety_episode:" in i for i in ids)
+    for feature in result:
+        assert feature["properties"]["mmsi"] == "352001915"
+        assert feature["properties"]["signal_count"] == 1
+
+
+def test_exit_gate_two_unrelated_gaps_days_apart_become_two_episodes() -> None:
+    """Same family, but separated by more than build_episodes()'s 3-day
+    default boundary -- a genuinely new occurrence, not a continuation."""
+    old_gap = _feature(
+        "intel:gap-old", "2026-08-20T10:00:00+00:00", 14.0, 35.5,
+        type="ais_anomaly", linked_mmsi="352001916", anomaly_type="gap",
+        title="AIS gap — vessel C (old)",
+    )
+    new_gap = _feature(
+        "intel:gap-new", "2026-08-30T10:00:00+00:00", 14.0, 35.5,
+        type="ais_anomaly", linked_mmsi="352001916", anomaly_type="gap",
+        title="AIS gap — vessel C (new)",
+    )
+
+    result = coalesce_security_vessel_episodes([old_gap, new_gap])
+
+    assert len(result) == 2
+    for feature in result:
+        assert feature["properties"]["signal_count"] == 1
 
 
 def test_real_sanctions_match_enriches_episode_domain() -> None:
