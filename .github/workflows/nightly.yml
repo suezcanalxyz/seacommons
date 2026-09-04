@@ -1,0 +1,62 @@
+name: Nightly extended checks
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  extended:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e "apps/api[dev]"
+
+      # docs/fixes.md M13 nightly: full replay corpus (the same suite the
+      # PR gate already runs, restated here as its own named, always-run
+      # step so a nightly failure is unambiguous about which check it is).
+      - name: full replay corpus (H1-H6, S1-S10)
+        run: python -m pytest -q tests/test_replay_scenarios.py
+        working-directory: .
+
+      - name: full backend suite
+        run: python -m pytest -q
+        working-directory: .
+
+      # docs/fixes.md M13 nightly: historical sanitized corpus scorer +
+      # AIS behaviour/integrity scorer -- both live in the one scorer
+      # module (core.intel.alert_recognition_scorer); printed to the job
+      # log rather than failing the build on a score regression alone --
+      # tests/test_alert_recognition_scorer.py already locks the numeric
+      # baselines as a hard PR-gate failure; this step is the human-
+      # readable report a nightly run should surface, not a second gate.
+      - name: alert recognition scorer report
+        run: python -m core.intel.alert_recognition_scorer
+        working-directory: apps/api
+
+      # docs/fixes.md M13 nightly: migration/backfill dry-run + worker
+      # stuck-job recovery, both against this run's own fresh CI database
+      # (never a real snapshot from a secrets-bearing environment).
+      # apply=False everywhere below: dry-run counts only, no writes.
+      - name: migration dry-run (fresh DB)
+        run: python -m alembic upgrade head
+        working-directory: apps/api
+        env:
+          DATABASE_URL: sqlite:////tmp/nightly_migrations.db
+      - name: drift maintenance dry-run report
+        run: |
+          python -c "
+          import os
+          os.environ.setdefault('DATABASE_URL', 'sqlite:////tmp/nightly_migrations.db')
+          from core.intel.backfill_drift_maintenance import run
+          print(run(apply=False))
+          "
+        working-directory: apps/api
