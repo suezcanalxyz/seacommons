@@ -109,3 +109,21 @@ async def preservation_summary(limit: int = Query(5000, ge=1, le=50000)):
     from core.intel.preservation import summarize_preservation_status
 
     return {"counts": summarize_preservation_status(limit=limit)}
+
+
+@router.get("/correlation-decisions/{observation_id}")
+async def correlation_decisions(observation_id: str):
+    """docs/updates.md P2.1: candidate incident pairings surfaced for
+    analyst review -- never an automatic merge. See
+    core.intel.correlation's NOT_YET_COMPUTABLE for candidate-generation
+    signals not yet implemented.
+    """
+    from dataclasses import asdict
+
+    from core.intel.correlation import NOT_YET_COMPUTABLE, get_correlation_decisions
+
+    decisions = get_correlation_decisions(observation_id)
+    return {
+        "decisions": [asdict(d) for d in decisions],
+        "not_yet_computable_signals": NOT_YET_COMPUTABLE,
+    }
