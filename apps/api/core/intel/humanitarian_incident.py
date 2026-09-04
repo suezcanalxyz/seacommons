@@ -29,13 +29,53 @@ from typing import Optional
 from core.intel.store import IntelEvent
 
 
+TRANSITION_METHOD_VERSION = "v0_distress_lifecycle_4state"
+
+
+def _reason_code_for(event: IntelEvent, lifecycle: str) -> str:
+    """Best-effort label of which of core.intel.lifecycle.
+    distress_lifecycle()'s own signals produced this state -- an honest
+    account of what was observed (docs/updates.md P0.5), not a claim of
+    full future-taxonomy precision (see module docstring)."""
+    from core.intel.lifecycle import latest_own_reply_outcome
+
+    if latest_own_reply_outcome(event) is not None:
+        return "self_reply_outcome"
+    if lifecycle == "resolved":
+        return "cross_post_resolution_signal"
+    if lifecycle == "needs_review":
+        return "ambiguous_reply"
+    if lifecycle == "archived":
+        return "silence_after_threshold"
+    return "text_classification"
+
+
+def _record_transition(
+    db, *, incident_id: str, from_state: Optional[str], to_state: str,
+    event: IntelEvent, reason_code: str, now: datetime,
+) -> None:
+    from core.db.models import IncidentTransitionDB
+
+    transition_id = f"trans:{incident_id}:{now.isoformat()}"
+    db.add(IncidentTransitionDB(
+        transition_id=transition_id, incident_id=incident_id,
+        from_state=from_state, to_state=to_state, transition_at=now,
+        effective_at=event.timestamp_utc, reason_code=reason_code,
+        supporting_observation_ids=[event.id], contradicting_observation_ids=[],
+        method_version=TRANSITION_METHOD_VERSION,
+        review_required=(to_state == "needs_review"),
+    ))
+
+
 def sync_incident_for_event(
     event: IntelEvent, *, lifecycle: str, case_type: Optional[str] = None,
 ) -> None:
     """Idempotent upsert keyed by event.id. Never raises -- a caller in
     an intel_store subscriber callback already isolates exceptions, but
     this stays defensive on its own too since it may also be called
-    directly (e.g. from a backfill script)."""
+    directly (e.g. from a backfill script). Every actual lifecycle
+    transition is also recorded as its own IncidentTransitionDB row
+    (docs/updates.md P0.5) -- append-only, never edited in place."""
     from core.db.models import HumanitarianIncidentDB
     from core.db.session import session_scope
 
@@ -56,6 +96,10 @@ def sync_incident_for_event(
                 review_status="none",
                 revision=1,
             ))
+            _record_transition(
+                db, incident_id=event.id, from_state=None, to_state=lifecycle,
+                event=event, reason_code=_reason_code_for(event, lifecycle), now=now,
+            )
             return
 
         row.last_update_at = event.timestamp_utc
@@ -63,12 +107,17 @@ def sync_incident_for_event(
         if case_type and not row.case_type:
             row.case_type = case_type
         if row.lifecycle != lifecycle:
+            previous_lifecycle = row.lifecycle
             row.lifecycle = lifecycle
             row.state_changed_at = now
             if lifecycle == "resolved" and row.resolved_at is None:
                 row.resolved_at = now
             if lifecycle == "archived" and row.archived_at is None:
                 row.archived_at = now
+            _record_transition(
+                db, incident_id=event.id, from_state=previous_lifecycle, to_state=lifecycle,
+                event=event, reason_code=_reason_code_for(event, lifecycle), now=now,
+            )
 
 
 def get_incident(incident_id: str):
@@ -92,6 +141,36 @@ def get_incident(incident_id: str):
             "review_status": row.review_status,
             "revision": row.revision,
         }
+
+
+def list_transitions(incident_id: str) -> list[dict]:
+    """Every recorded transition for one incident, oldest first --
+    docs/updates.md P0.5's audit trail. Never edited in place; a caller
+    wanting the current lifecycle should still read get_incident()."""
+    from core.db.models import IncidentTransitionDB
+    from core.db.session import session_scope
+
+    with session_scope() as db:
+        rows = (
+            db.query(IncidentTransitionDB)
+            .filter(IncidentTransitionDB.incident_id == incident_id)
+            .order_by(IncidentTransitionDB.transition_at.asc())
+            .all()
+        )
+        return [
+            {
+                "transition_id": r.transition_id,
+                "from_state": r.from_state,
+                "to_state": r.to_state,
+                "transition_at": r.transition_at.isoformat() if r.transition_at else None,
+                "reason_code": r.reason_code,
+                "supporting_observation_ids": list(r.supporting_observation_ids or []),
+                "contradicting_observation_ids": list(r.contradicting_observation_ids or []),
+                "method_version": r.method_version,
+                "review_required": r.review_required,
+            }
+            for r in rows
+        ]
 
 
 def _on_intel_event(event: IntelEvent) -> None:

@@ -17,6 +17,7 @@ import pytest
 from core.intel.humanitarian_incident import (
     _on_intel_event,
     get_incident,
+    list_transitions,
     register,
     sync_incident_for_event,
 )
@@ -25,12 +26,14 @@ from core.intel.store import IntelEvent, intel_store
 
 @pytest.fixture(autouse=True)
 def _fresh_table():
-    from core.db.models import HumanitarianIncidentDB
+    from core.db.models import HumanitarianIncidentDB, IncidentTransitionDB
     from core.db.session import engine, session_scope
 
     HumanitarianIncidentDB.__table__.create(bind=engine(), checkfirst=True)
+    IncidentTransitionDB.__table__.create(bind=engine(), checkfirst=True)
     with session_scope() as db:
         db.query(HumanitarianIncidentDB).delete()
+        db.query(IncidentTransitionDB).delete()
     yield
 
 
@@ -143,3 +146,65 @@ def test_registered_subscriber_syncs_on_a_real_intel_store_add():
         time.sleep(0.05)
     assert incident is not None
     assert incident["lifecycle"] == "active"
+
+
+# ── docs/updates.md P0.5: transition audit trail ────────────────────────
+
+
+def test_a_new_incident_records_its_first_transition():
+    event = _distress_event("t1", "MAYDAY people in the water")
+    sync_incident_for_event(event, lifecycle="active")
+
+    transitions = list_transitions("t1")
+    assert len(transitions) == 1
+    assert transitions[0]["from_state"] is None
+    assert transitions[0]["to_state"] == "active"
+    assert transitions[0]["supporting_observation_ids"] == ["t1"]
+
+
+def test_repeated_syncs_at_the_same_lifecycle_record_no_new_transition():
+    event = _distress_event("t2", "MAYDAY people in the water")
+    sync_incident_for_event(event, lifecycle="active")
+    sync_incident_for_event(event, lifecycle="active")
+    sync_incident_for_event(event, lifecycle="active")
+    assert len(list_transitions("t2")) == 1
+
+
+def test_a_real_transition_appends_a_new_row_with_from_and_to_state():
+    event = _distress_event("t3", "distress")
+    sync_incident_for_event(event, lifecycle="active")
+    sync_incident_for_event(event, lifecycle="resolved")
+
+    transitions = list_transitions("t3")
+    assert len(transitions) == 2
+    assert {"from_state": None, "to_state": "active"}.items() <= transitions[0].items()
+    assert transitions[1]["from_state"] == "active"
+    assert transitions[1]["to_state"] == "resolved"
+    assert transitions[1]["reason_code"] in {"cross_post_resolution_signal", "self_reply_outcome"}
+
+
+def test_transitions_are_never_edited_in_place_only_appended():
+    """docs/updates.md P0.5: append-only -- reopening/oscillating a
+    lifecycle keeps every prior transition, never rewrites one."""
+    event = _distress_event("t4", "distress")
+    sync_incident_for_event(event, lifecycle="active")
+    sync_incident_for_event(event, lifecycle="needs_review")
+    sync_incident_for_event(event, lifecycle="archived")
+
+    transitions = list_transitions("t4")
+    assert [t["to_state"] for t in transitions] == ["active", "needs_review", "archived"]
+    assert transitions[2]["from_state"] == "needs_review"
+
+
+def test_needs_review_transition_sets_review_required():
+    event = _distress_event("t5", "distress")
+    sync_incident_for_event(event, lifecycle="active")
+    sync_incident_for_event(event, lifecycle="needs_review")
+
+    transitions = list_transitions("t5")
+    assert transitions[-1]["review_required"] is True
+    assert transitions[0]["review_required"] is False
+
+
+def test_list_transitions_returns_empty_for_an_unknown_incident():
+    assert list_transitions("does-not-exist") == []
