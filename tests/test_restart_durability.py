@@ -17,12 +17,11 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
-
 from core.db.models import IntelEventDB
 from core.db.session import session_scope
 from core.intel.drift_service import is_auto_drift_eligible
 from core.intel.store import IntelEvent, IntelStore
+from sqlalchemy import select
 
 
 def _recent(hours: float = 1.0) -> str:
@@ -174,3 +173,37 @@ def test_restart_reload_reseeds_dedup_so_re_ingestion_makes_no_second_marker():
         metadata={"tweet_id": "2100000000000000002"},
     )
     assert post.add(reingest, dedup_key="x:2100000000000000002") is False
+
+
+def test_intel_store_persistence_mutations_are_fifo(monkeypatch):
+    """DB writes for one store must preserve mutation order under async runtime mode."""
+    monkeypatch.setenv("SEACOMMONS_INTEL_PERSIST_SYNC", "false")
+    store = IntelStore()
+    order: list[str] = []
+
+    def persist_add(_event):
+        time.sleep(0.02)
+        order.append("add")
+
+    def persist_location(*_args):
+        time.sleep(0.08)
+        order.append("location")
+
+    def persist_metadata(*_args):
+        order.append("metadata")
+
+    monkeypatch.setattr(store, "_persist_sync", persist_add)
+    monkeypatch.setattr(store, "_persist_location_sync", persist_location)
+    monkeypatch.setattr(store, "_persist_metadata_sync", persist_metadata)
+
+    assert store.add(IntelEvent(id="fifo-1", type="twitter", title="fifo")) is True
+    assert store.enrich_location(
+        "fifo-1",
+        lat=34.0,
+        lon=12.0,
+        metadata={"coordinate_source": "media_ocr_text", "location_uncertainty_m": 1500},
+    ) is True
+    assert store.update_metadata("fifo-1", metadata={"incident_lifecycle": "needs_review"}) is True
+
+    assert _wait_until(lambda: len(order) == 3)
+    assert order == ["add", "location", "metadata"]

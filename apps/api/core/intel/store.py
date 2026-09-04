@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import os
+import queue
 import re
 import threading
 import uuid
@@ -314,6 +315,37 @@ class IntelStore:
         # single fan-out point the correlation/fusion engine hooks into
         # (mirrors core.ingestion.router.subscribe for messaging signals).
         self._subscribers: list[Callable[[IntelEvent], None]] = []
+        # Serialize durable mutations for this store. Runtime writes remain
+        # asynchronous, but a single FIFO worker prevents a slower earlier
+        # write (for example location enrichment) from overwriting metadata
+        # committed by a later lifecycle update. The worker is lazy so the
+        # many short-lived IntelStore instances used by tests do not each
+        # create an idle thread.
+        self._persist_queue: queue.Queue[tuple[Callable[..., None], tuple[Any, ...]]] = queue.Queue()
+        self._persist_worker: threading.Thread | None = None
+        self._persist_worker_lock = threading.Lock()
+
+    def _enqueue_persist(self, target: Callable[..., None], *args: Any) -> None:
+        """Run DB mutations asynchronously in call order for this store."""
+        self._persist_queue.put((target, args))
+        with self._persist_worker_lock:
+            if self._persist_worker is None or not self._persist_worker.is_alive():
+                self._persist_worker = threading.Thread(
+                    target=self._persist_worker_loop,
+                    name="seacommons-intel-persist",
+                    daemon=True,
+                )
+                self._persist_worker.start()
+
+    def _persist_worker_loop(self) -> None:
+        while True:
+            target, args = self._persist_queue.get()
+            try:
+                target(*args)
+            except Exception as exc:  # defensive: one failed write must not stop FIFO
+                logger.warning("intel_store persistence worker error: %s", exc)
+            finally:
+                self._persist_queue.task_done()
 
     # ── Write ─────────────────────────────────────────────────────────────────
 
@@ -358,15 +390,12 @@ class IntelStore:
 
         if url_duplicate is not None:
             if metadata_changed:
-                threading.Thread(
-                    target=self._persist_metadata_sync,
-                    args=(
-                        url_duplicate.id,
-                        dict(url_duplicate.metadata),
-                        url_duplicate.linked_mmsi,
-                    ),
-                    daemon=True,
-                ).start()
+                self._enqueue_persist(
+                    self._persist_metadata_sync,
+                    url_duplicate.id,
+                    dict(url_duplicate.metadata),
+                    url_duplicate.linked_mmsi,
+                )
             return False
 
         self._fire_broadcast(event)
@@ -579,8 +608,7 @@ class IntelStore:
                     to_fix.append(ev.id)
         if to_fix:
             logger.info("intel_store: reset %d orphaned computing drift(s) to failed", len(to_fix))
-            import threading
-            threading.Thread(target=self._persist_drift_status_reset, args=(to_fix,), daemon=True).start()
+            self._enqueue_persist(self._persist_drift_status_reset, to_fix)
         return len(to_fix)
 
     def _persist_drift_status_reset(self, event_ids: list[str]) -> None:
@@ -605,7 +633,7 @@ class IntelStore:
         if os.getenv("SEACOMMONS_INTEL_PERSIST_SYNC", "").lower() in {"1", "true", "yes"}:
             self._persist_sync(event)
             return
-        threading.Thread(target=self._persist_sync, args=(event,), daemon=True).start()
+        self._enqueue_persist(self._persist_sync, event)
 
     def _persist_sync(self, event: IntelEvent) -> None:
         try:
@@ -737,11 +765,9 @@ class IntelStore:
                 break
         if updated is None:
             return False
-        threading.Thread(
-            target=self._persist_location_sync,
-            args=(event_id, lat, lon, dict(metadata)),
-            daemon=True,
-        ).start()
+        self._enqueue_persist(
+            self._persist_location_sync, event_id, lat, lon, dict(metadata)
+        )
         self._fire_broadcast(updated)
         return True
 
@@ -817,11 +843,9 @@ class IntelStore:
                 break
         if updated is None:
             return False
-        threading.Thread(
-            target=self._persist_metadata_sync,
-            args=(event_id, dict(updated.metadata), updated.linked_mmsi),
-            daemon=True,
-        ).start()
+        self._enqueue_persist(
+            self._persist_metadata_sync, event_id, dict(updated.metadata), updated.linked_mmsi
+        )
         self._fire_broadcast(updated)
         return True
 
@@ -870,17 +894,14 @@ class IntelStore:
                 break
         if updated is None:
             return False
-        threading.Thread(
-            target=self._persist_vessel_episode_sync,
-            args=(
-                normalized,
-                updated.lat,
-                updated.lon,
-                updated.timestamp_utc,
-                dict(updated.metadata),
-            ),
-            daemon=True,
-        ).start()
+        self._enqueue_persist(
+            self._persist_vessel_episode_sync,
+            normalized,
+            updated.lat,
+            updated.lon,
+            updated.timestamp_utc,
+            dict(updated.metadata),
+        )
         self._fire_broadcast(updated)
         return True
 
@@ -1001,11 +1022,7 @@ class IntelStore:
                 break
         if updated is None:
             return False
-        threading.Thread(
-            target=self._persist_link_sync,
-            args=(event_id, url, tweet_id),
-            daemon=True,
-        ).start()
+        self._enqueue_persist(self._persist_link_sync, event_id, url, tweet_id)
         self._fire_broadcast(updated)
         return True
 
@@ -1061,11 +1078,9 @@ class IntelStore:
             )
             self._fire_broadcast(updated)
         else:
-            threading.Thread(
-                target=self._persist_metadata_sync,
-                args=(event_id, dict(updated.metadata), updated.linked_mmsi),
-                daemon=True,
-            ).start()
+            self._enqueue_persist(
+                self._persist_metadata_sync, event_id, dict(updated.metadata), updated.linked_mmsi
+            )
         # docs/updates.md P0.9: a reply/repost/quote/translation-twin/self-
         # reply-resolution never creates a new IntelEvent (event_id above is
         # always the SAME id as the founding event this thread already
@@ -1116,11 +1131,7 @@ class IntelStore:
                 ) + 1
                 found = True
                 break
-        threading.Thread(
-            target=self._persist_source_observation_sync,
-            args=(event_id, observed_at),
-            daemon=True,
-        ).start()
+        self._enqueue_persist(self._persist_source_observation_sync, event_id, observed_at)
         return found
 
     def _persist_source_observation_sync(self, event_id: str, observed_at: str) -> None:
