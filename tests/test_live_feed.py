@@ -1478,8 +1478,23 @@ def test_drift_not_shown_for_resolved_or_archived_incidents(monkeypatch) -> None
         "metadata": {"published": True},
     }
     monkeypatch.setattr("core.db.store.get_drift", lambda job_id: fake_drift)
-    monkeypatch.setattr("core.db.store.list_drift_jobs_for_event", lambda event_id: [])
     monkeypatch.setattr("core.live.feed._is_publishable_live_drift", lambda drift: True)
+
+    # docs/updates.md P0.11: public_drift_collection now reads ONLY the
+    # canonical incident's current_drift_id, never event.metadata
+    # ["drift_job_id"] directly -- seed the real authority the same way
+    # core.intel.drift_service does on a real drift completion.
+    from core.db.models import HumanitarianIncidentDB, IncidentTransitionDB
+    from core.db.session import engine
+    from core.intel.drift_ownership import sync_current_drift_for_incident
+    from core.intel.humanitarian_incident import sync_incident_for_event
+
+    HumanitarianIncidentDB.__table__.create(bind=engine(), checkfirst=True)
+    IncidentTransitionDB.__table__.create(bind=engine(), checkfirst=True)
+    sync_incident_for_event(active_event, lifecycle="active")
+    sync_incident_for_event(resolved_event, lifecycle="resolved")
+    sync_current_drift_for_incident("drift-active", "job-active")
+    sync_current_drift_for_incident("drift-resolved", "job-resolved")  # refused: resolved
 
     collection = public_drift_collection(limit=50)
     event_ids = {f["properties"]["intel_event_id"] for f in collection["features"]}
@@ -1555,8 +1570,18 @@ def test_needs_review_alarm_phone_point_keeps_operational_drift(monkeypatch) -> 
         "metadata": {"published": True},
     }
     monkeypatch.setattr("core.db.store.get_drift", lambda job_id: fake_drift)
-    monkeypatch.setattr("core.db.store.list_drift_jobs_for_event", lambda event_id: [])
     monkeypatch.setattr("core.live.feed._is_publishable_live_drift", lambda drift: True)
+
+    # docs/updates.md P0.11: seed the real current_drift_id authority.
+    from core.db.models import HumanitarianIncidentDB, IncidentTransitionDB
+    from core.db.session import engine
+    from core.intel.drift_ownership import sync_current_drift_for_incident
+    from core.intel.humanitarian_incident import sync_incident_for_event
+
+    HumanitarianIncidentDB.__table__.create(bind=engine(), checkfirst=True)
+    IncidentTransitionDB.__table__.create(bind=engine(), checkfirst=True)
+    sync_incident_for_event(event, lifecycle="needs_review")
+    sync_current_drift_for_incident("ap-needs-review", "job-nr")
 
     collection = public_drift_collection(limit=50)
     by_id = {f["properties"]["intel_event_id"]: f["properties"] for f in collection["features"]}

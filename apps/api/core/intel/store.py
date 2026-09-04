@@ -377,9 +377,17 @@ class IntelStore:
     # ── Observers ─────────────────────────────────────────────────────────────
 
     def subscribe(self, fn: Callable[[IntelEvent], None]) -> None:
-        """Register a callback invoked (off-thread) after every new event is stored."""
+        """Register a callback invoked (off-thread) after every new event is
+        stored. Idempotent: registering the exact same callable twice (an
+        accidental double-call of a module's own register(), or -- as
+        surfaced by this test suite -- many independent test fixtures each
+        calling register() over one shared process-global intel_store) is a
+        no-op rather than a second registration -- otherwise every event
+        gets processed once per accumulated duplicate, racing multiple
+        redundant writers against the same downstream state."""
         with self._lock:
-            self._subscribers.append(fn)
+            if fn not in self._subscribers:
+                self._subscribers.append(fn)
 
     def _notify_subscribers(self, event: IntelEvent) -> None:
         with self._lock:
