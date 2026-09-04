@@ -183,7 +183,10 @@ def evaluate_episode(episode: dict[str, Any]) -> Optional[InvestigationHypothesi
     hyp = replace(hyp, reason_codes=reason_codes, evidence_links=signal_ids)
 
     if hyp.state == "candidate" and len(signal_ids) >= _MIN_EVIDENCE_FOR_COLLECTING:
+        from core.observability import record_hypothesis_transition
+
         hyp = transition(hyp, "collecting", actor="hypothesis_engine")
+        record_hypothesis_transition(hyp.hypothesis_type, hyp.state)
 
     save_hypothesis(hyp)
     return hyp

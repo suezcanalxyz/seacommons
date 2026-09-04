@@ -122,4 +122,7 @@ def classify_service(event_or_metadata: Any) -> ServiceClassification:
     if maritime_domain == "environmental":
         return ServiceClassification("maritime", MARITIME_ENVIRONMENTAL_LANE, False, "environmental_unassessed")
 
+    from core.observability import record_classification_fail_closed
+
+    record_classification_fail_closed("service_taxonomy")
     return ServiceClassification(None, None, False, "unclassified")

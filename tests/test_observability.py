@@ -84,3 +84,20 @@ def test_record_drift_maintenance_report_sets_stuck_and_invalid_gauges() -> None
 
 def test_record_drift_maintenance_report_never_raises_on_missing_keys() -> None:
     record_drift_maintenance_report({})  # must not raise, defaults to 0
+
+
+def test_health_data_route_exposes_the_real_data_health_summary() -> None:
+    """docs/fixes.md M14.5: the real internal /health/data endpoint --
+    exercised end to end via the FastAPI route, not just the underlying
+    function."""
+    from fastapi.testclient import TestClient
+
+    from core.api.main import app
+
+    response = TestClient(app).get("/health/data")
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload.keys()) >= {
+        "healthy", "source_outage_detected", "stuck_drift_detected",
+        "edge_failure_detected", "degraded_sources",
+    }

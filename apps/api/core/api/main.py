@@ -258,6 +258,30 @@ async def ready():
         return JSONResponse(status_code=503, content={"status": "not_ready", "database": "error"})
 
 
+@app.get("/health/data")
+async def health_data():
+    """Analyst data-health summary (docs/fixes.md M11/M14.5): source
+    outage, stuck/invalid Drift jobs and edge-heartbeat failure, all
+    observable in one call without inspecting the database manually.
+    Never a database identifier or any private event content -- only
+    counts, booleans and source names (core.observability_health's own
+    docstring guarantee).
+    """
+    from dataclasses import asdict
+
+    from core.observability_health import gather_data_health_summary
+
+    try:
+        summary = gather_data_health_summary()
+    except Exception as exc:  # pragma: no cover - health check must not 500 the API
+        logger.warning("health_data unavailable: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content={"healthy": False, "error": "data_health_unavailable"},
+        )
+    return asdict(summary)
+
+
 @app.get("/metrics")
 async def metrics():
     from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
