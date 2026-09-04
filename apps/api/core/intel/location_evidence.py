@@ -165,6 +165,7 @@ def evidence_from_ocr_method(
     lon: float | None,
     *,
     engine: str | None = None,
+    estimated_position_error_m: float | None = None,
     **extra: Any,
 ) -> LocationEvidence:
     """Build a LocationEvidence from an _ocr_photo() method string.
@@ -180,6 +181,11 @@ def evidence_from_ocr_method(
         source, uncertainty, review, review_required = _OCR_TEXT_FALLBACK
     else:
         source, uncertainty, review, review_required = _OCR_PIN_FALLBACK
+    if estimated_position_error_m is not None:
+        try:
+            uncertainty = max(uncertainty, float(estimated_position_error_m))
+        except (TypeError, ValueError):
+            pass
     resolved_engine = engine or ("easyocr" if key.startswith("easyocr") else "tesseract")
     return LocationEvidence(
         lat=lat,

@@ -36,21 +36,28 @@ CREATE TABLE IF NOT EXISTS vessels (
     last_course   REAL,
     last_speed    REAL,
     last_heading  REAL,
+    nav_status    INTEGER,
     last_seen     TEXT,
     updated_at    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_last_seen ON vessels(last_seen);
 """
 
+# Columns added after the original schema shipped. SQLite has no
+# "ADD COLUMN IF NOT EXISTS", so _init_db checks PRAGMA table_info first.
+_ADDED_COLUMNS: dict[str, str] = {
+    "nav_status": "INTEGER",
+}
+
 _UPSERT_SQL = """
 INSERT INTO vessels (
     mmsi, ship_name, imo, ship_type, flag, ais_class,
     destination, last_lat, last_lon, last_course,
-    last_speed, last_heading, last_seen, updated_at
+    last_speed, last_heading, nav_status, last_seen, updated_at
 ) VALUES (
     :mmsi, :ship_name, :imo, :ship_type, :flag, :ais_class,
     :destination, :last_lat, :last_lon, :last_course,
-    :last_speed, :last_heading, :last_seen, :updated_at
+    :last_speed, :last_heading, :nav_status, :last_seen, :updated_at
 )
 ON CONFLICT(mmsi) DO UPDATE SET
     ship_name   = COALESCE(excluded.ship_name,   vessels.ship_name),
@@ -64,6 +71,7 @@ ON CONFLICT(mmsi) DO UPDATE SET
     last_course = COALESCE(excluded.last_course, vessels.last_course),
     last_speed  = COALESCE(excluded.last_speed,  vessels.last_speed),
     last_heading= COALESCE(excluded.last_heading,vessels.last_heading),
+    nav_status  = COALESCE(excluded.nav_status,  vessels.nav_status),
     last_seen   = COALESCE(excluded.last_seen,   vessels.last_seen),
     updated_at  = excluded.updated_at;
 """
@@ -93,6 +101,10 @@ class VesselRegistry:
     def _init_db(self) -> None:
         con = sqlite3.connect(self._db_path)
         con.executescript(_CREATE_SQL)
+        have = {r[1] for r in con.execute("PRAGMA table_info(vessels)")}
+        for col, decl in _ADDED_COLUMNS.items():
+            if col not in have:
+                con.execute(f"ALTER TABLE vessels ADD COLUMN {col} {decl}")
         con.commit()
         con.close()
 
@@ -121,6 +133,7 @@ class VesselRegistry:
         course: float | None = None,
         speed: float | None = None,
         heading: float | None = None,
+        nav_status: int | None = None,
         last_seen: datetime | None = None,
     ) -> None:
         now = datetime.now(timezone.utc).isoformat()
@@ -139,6 +152,7 @@ class VesselRegistry:
             "last_course": course,
             "last_speed": speed,
             "last_heading": heading,
+            "nav_status": nav_status,
             "last_seen": ts,
             "updated_at": now,
         }
@@ -219,6 +233,7 @@ class VesselRegistry:
                     "course": v.get("last_course"),
                     "speed": v.get("last_speed"),
                     "heading": v.get("last_heading"),
+                    "nav_status": v.get("nav_status"),
                     "last_seen": v.get("last_seen"),
                     "sources": ["aisstream"],
                 },

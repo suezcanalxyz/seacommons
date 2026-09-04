@@ -143,3 +143,217 @@ def test_emit_respects_cooldown_even_when_process_just_booted(monkeypatch):
         lat=35.51, lon=12.61, severity="high", detail="Rescue cluster: 2 vessels within 3nm",
     )
     assert len([e for e in intel_store.events(limit=10) if e.type == "ais_spike"]) == 1
+
+
+def _cluster_feature(mmsi, lat, lon, *, speed=4.0, age_s=120):
+    from datetime import timedelta
+    seen = (datetime.now(timezone.utc) - timedelta(seconds=age_s)).isoformat()
+    return {
+        "geometry": {"type": "Point", "coordinates": [lon, lat]},
+        "properties": {
+            "mmsi": mmsi, "ship_name": mmsi, "last_speed": speed,
+            "last_course": 90.0, "last_seen": seen, "destination": "",
+        },
+    }
+
+
+def _run_cluster_scan(monkeypatch, features):
+    det = AISSpikeDetector()
+    monkeypatch.setattr(
+        "core.vessels.registry.registry.get_geojson",
+        lambda: {"type": "FeatureCollection", "features": features},
+    )
+    emitted: list = []
+    monkeypatch.setattr(det, "_emit", lambda **kw: emitted.append(kw))
+    det._scan()
+    return det, emitted
+
+
+_CARGO = "999000111"
+
+
+def test_converging_fresh_cluster_near_distress_is_a_rescue_cluster(monkeypatch):
+    monkeypatch.setattr("core.intel.ais_spike_detector.is_ngo", lambda m: m == _OCEAN_VIKING)
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_hotspot", lambda a, b: "Central Med")
+    monkeypatch.setattr(
+        "core.intel.ais_spike_detector._nearby_active_distress",
+        lambda a, b: {"case_id": "d1", "title": "distress", "distance_nm": 5.0},
+    )
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_port", lambda a, b: False)
+
+    # scan 1: 2.4 nm apart, no previous positions -> convergence unknown -> possible
+    det, e1 = _run_cluster_scan(monkeypatch, [
+        _cluster_feature(_OCEAN_VIKING, 35.50, 12.60),
+        _cluster_feature(_CARGO, 35.50, 12.64),
+    ])
+    assert e1 and e1[0]["spike_type"] == "possible_rescue_cluster"
+    # scan 2: closed to ~1.2 nm
+    monkeypatch.setattr(
+        "core.vessels.registry.registry.get_geojson",
+        lambda: {"type": "FeatureCollection", "features": [
+            _cluster_feature(_OCEAN_VIKING, 35.50, 12.60),
+            _cluster_feature(_CARGO, 35.50, 12.62),
+        ]},
+    )
+    emitted: list = []
+    monkeypatch.setattr(det, "_emit", lambda **kw: emitted.append(kw))
+    det._scan()
+    assert len(emitted) == 1
+    assert emitted[0]["spike_type"] == "rescue_cluster"
+    assert emitted[0]["metadata"]["converging"] is True
+    assert emitted[0]["metadata"]["closing_nm"] > 0
+
+
+def test_stale_positions_do_not_form_a_cluster(monkeypatch):
+    monkeypatch.setattr("core.intel.ais_spike_detector.is_ngo", lambda m: m == _OCEAN_VIKING)
+    _, emitted = _run_cluster_scan(monkeypatch, [
+        _cluster_feature(_OCEAN_VIKING, 35.50, 12.60, age_s=4000),
+        _cluster_feature(_CARGO, 35.50, 12.62, age_s=4000),
+    ])
+    assert emitted == []
+
+
+def test_proximity_without_convergence_is_only_possible(monkeypatch):
+    monkeypatch.setattr("core.intel.ais_spike_detector.is_ngo", lambda m: m == _OCEAN_VIKING)
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_hotspot", lambda a, b: "Central Med")
+    monkeypatch.setattr("core.intel.ais_spike_detector._nearby_active_distress", lambda a, b: None)
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_port", lambda a, b: False)
+
+    feats = [
+        _cluster_feature(_OCEAN_VIKING, 35.50, 12.60),
+        _cluster_feature(_CARGO, 35.50, 12.62),
+    ]
+    det, _ = _run_cluster_scan(monkeypatch, feats)
+    emitted: list = []
+    monkeypatch.setattr(det, "_emit", lambda **kw: emitted.append(kw))
+    det._scan()  # same positions -> not converging
+    assert len(emitted) == 1
+    assert emitted[0]["spike_type"] == "possible_rescue_cluster"
+    assert emitted[0]["severity"] == "medium"
+    assert emitted[0]["metadata"]["converging"] is False
+
+
+def _stop_feature(mmsi, lat, lon, *, speed, nav_status=None, age_s=60):
+    from datetime import timedelta
+    seen = (datetime.now(timezone.utc) - timedelta(seconds=age_s)).isoformat()
+    props = {
+        "mmsi": mmsi, "ship_name": mmsi, "last_speed": speed,
+        "last_course": 90.0, "last_seen": seen, "destination": "",
+    }
+    if nav_status is not None:
+        props["nav_status"] = nav_status
+    return {"geometry": {"type": "Point", "coordinates": [lon, lat]}, "properties": props}
+
+
+def _scan_with(monkeypatch, det, features, emitted):
+    monkeypatch.setattr(
+        "core.vessels.registry.registry.get_geojson",
+        lambda: {"type": "FeatureCollection", "features": features},
+    )
+    monkeypatch.setattr(det, "_emit", lambda **kw: emitted.append(kw))
+    det._scan()
+
+
+# ── sudden_stop: cue vs alert (audit SP-6, prompt.md PHASE 7B) ────────────────
+_UNDERWAY = 34.90, 12.00  # open water, Strait of Sicily hotspot
+
+
+def test_single_sample_stop_is_a_cue_not_an_alert(monkeypatch):
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_port", lambda a, b: False)
+    det = AISSpikeDetector()
+    emitted: list = []
+    _scan_with(monkeypatch, det, [_stop_feature(_CARGO, *_UNDERWAY, speed=7.0)], emitted)
+    assert emitted == []  # first sighting, no prior speed
+    _scan_with(monkeypatch, det, [_stop_feature(_CARGO, *_UNDERWAY, speed=0.1)], emitted)
+    assert len(emitted) == 1
+    assert emitted[0]["spike_type"] == "possible_sudden_stop"
+    assert emitted[0]["severity"] == "medium"
+    assert emitted[0]["metadata"]["promoted_from_cue"] is False
+
+
+def test_persistent_stop_is_promoted_to_sudden_stop(monkeypatch):
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_port", lambda a, b: False)
+    monkeypatch.setattr("core.intel.ais_spike_detector._sudden_stop_persistence_s", lambda: 0.0)
+    monkeypatch.setattr("core.intel.ais_spike_detector._sudden_stop_min_samples", lambda: 2)
+    det = AISSpikeDetector()
+    emitted: list = []
+    _scan_with(monkeypatch, det, [_stop_feature(_CARGO, *_UNDERWAY, speed=7.0)], emitted)
+    _scan_with(monkeypatch, det, [_stop_feature(_CARGO, *_UNDERWAY, speed=0.1)], emitted)
+    emitted.clear()
+    _scan_with(monkeypatch, det, [_stop_feature(_CARGO, *_UNDERWAY, speed=0.1)], emitted)
+    assert len(emitted) == 1
+    assert emitted[0]["spike_type"] == "sudden_stop"
+    assert emitted[0]["metadata"]["stop_samples"] == 2
+    assert emitted[0]["metadata"]["promoted_from_cue"] is True
+
+
+def test_anchored_vessel_is_not_a_sudden_stop(monkeypatch):
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_port", lambda a, b: False)
+    det = AISSpikeDetector()
+    emitted: list = []
+    _scan_with(monkeypatch, det, [_stop_feature(_CARGO, *_UNDERWAY, speed=7.0)], emitted)
+    _scan_with(monkeypatch, det, [_stop_feature(_CARGO, *_UNDERWAY, speed=0.1, nav_status=1)], emitted)
+    assert emitted == []
+
+
+# ── vessel_loiter: nav-status exclusion (audit SP-3, prompt.md PHASE 7C) ──────
+def test_moored_vessel_does_not_loiter(monkeypatch):
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_port", lambda a, b: False)
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_hotspot", lambda a, b: "Central Med")
+    monkeypatch.setattr("core.intel.ais_spike_detector.LOITER_MIN_S", 0)
+    det = AISSpikeDetector()
+    emitted: list = []
+    for _ in range(3):
+        _scan_with(monkeypatch, det, [_stop_feature(_CARGO, *_UNDERWAY, speed=0.0, nav_status=5)], emitted)
+    assert [e for e in emitted if e["spike_type"] == "vessel_loiter"] == []
+
+
+def test_loiter_fires_when_nav_status_is_underway(monkeypatch):
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_port", lambda a, b: False)
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_hotspot", lambda a, b: "Central Med")
+    monkeypatch.setattr("core.intel.ais_spike_detector.LOITER_MIN_S", 0)
+    det = AISSpikeDetector()
+    emitted: list = []
+    for _ in range(3):
+        _scan_with(monkeypatch, det, [_stop_feature(_CARGO, *_UNDERWAY, speed=0.0, nav_status=0)], emitted)
+    loiter = [e for e in emitted if e["spike_type"] == "vessel_loiter"]
+    assert loiter
+    assert loiter[0]["metadata"]["nav_status_known"] is True
+
+
+def test_loiter_without_nav_status_is_flagged_unknown(monkeypatch):
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_port", lambda a, b: False)
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_hotspot", lambda a, b: "Central Med")
+    monkeypatch.setattr("core.intel.ais_spike_detector.LOITER_MIN_S", 0)
+    det = AISSpikeDetector()
+    emitted: list = []
+    for _ in range(3):
+        _scan_with(monkeypatch, det, [_stop_feature(_CARGO, *_UNDERWAY, speed=0.0)], emitted)
+    loiter = [e for e in emitted if e["spike_type"] == "vessel_loiter"]
+    assert loiter
+    assert loiter[0]["metadata"]["nav_status_known"] is False
+
+
+def test_ngo_vessels_moored_in_port_are_not_a_rescue(monkeypatch):
+    monkeypatch.setattr("core.intel.ais_spike_detector.is_ngo", lambda m: True)
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_hotspot", lambda a, b: None)
+    monkeypatch.setattr("core.intel.ais_spike_detector._nearby_active_distress", lambda a, b: None)
+    monkeypatch.setattr("core.intel.ais_spike_detector._in_port", lambda a, b: True)
+
+    feats = [
+        _cluster_feature(_OCEAN_VIKING, 37.80, 12.44, speed=0.0),
+        _cluster_feature(_CARGO, 37.80, 12.45, speed=0.0),
+    ]
+    det, _ = _run_cluster_scan(monkeypatch, feats)
+    # bring them closer on scan 2 -- still in port, still not moving
+    monkeypatch.setattr(
+        "core.vessels.registry.registry.get_geojson",
+        lambda: {"type": "FeatureCollection", "features": [
+            _cluster_feature(_OCEAN_VIKING, 37.80, 12.44, speed=0.0),
+            _cluster_feature(_CARGO, 37.80, 12.445, speed=0.0),
+        ]},
+    )
+    emitted: list = []
+    monkeypatch.setattr(det, "_emit", lambda **kw: emitted.append(kw))
+    det._scan()
+    assert emitted and emitted[0]["spike_type"] == "possible_rescue_cluster"

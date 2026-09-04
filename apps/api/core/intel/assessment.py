@@ -145,6 +145,110 @@ def _assess_aground(metadata: dict[str, Any]) -> EventAssessment:
     )
 
 
+def _assess_sudden_stop(metadata: dict[str, Any]) -> EventAssessment:
+    samples = int(metadata.get("stop_samples") or 1)
+    persistence_s = float(metadata.get("stop_persistence_s") or 0.0)
+    displacement_nm = metadata.get("stop_displacement_nm")
+    promoted = str(metadata.get("spike_type") or "") == "sudden_stop"
+    observation = (
+        f"AIS speed-stop cue held for {persistence_s / 60:.0f} min over {samples} fixes"
+        + (
+            f" with {float(displacement_nm):.2f} nm displacement."
+            if displacement_nm is not None
+            else "."
+        )
+    )
+    return EventAssessment(
+        observation=observation,
+        interpretation=(
+            "An abrupt stop persisted outside the detector's port exclusion. "
+            "This can indicate an incident, rendezvous, anchoring, traffic conditions, "
+            "or ordinary manoeuvring; it is a track-derived cue, not confirmation."
+        ),
+        evidence_level="derived",
+        confidence=0.65 if promoted else 0.35,
+        confidence_basis=[
+            "ais_track_speed_transition",
+            "persistence_threshold_met" if promoted else "single_transition_cue",
+        ],
+        supporting_evidence=[observation],
+        caveats=["A speed transition alone is a cue, not a confirmed incident."],
+        recommended_action="operator_review" if promoted else "await_more_fixes",
+        rule_ids=["ais_spike:sudden_stop"],
+    )
+
+
+def _assess_rescue_cluster(metadata: dict[str, Any]) -> EventAssessment:
+    vessels = int(metadata.get("cluster_size") or 0)
+    converging = bool(metadata.get("converging"))
+    age_s = float(metadata.get("positions_max_age_s") or 0.0)
+    distress = metadata.get("near_active_distress")
+    fresh = age_s <= 1800
+    strong = converging and fresh and bool(distress)
+    observation = (
+        f"{vessels} vessels clustered; positions up to {age_s / 60:.0f} min old; "
+        f"converging={'yes' if converging else 'no'}; "
+        f"active distress nearby={'yes' if distress else 'no'}."
+    )
+    return EventAssessment(
+        observation=observation,
+        interpretation=(
+            "Fresh vessels are converging near an active distress report, a pattern "
+            "consistent with a rescue response but not confirmation of one."
+            if strong
+            else "Vessel proximity is a coordination cue only; freshness, convergence, "
+            "and distress context are insufficient for a rescue conclusion."
+        ),
+        evidence_level="corroborated" if strong else "derived",
+        confidence=0.75 if strong else 0.35,
+        confidence_basis=[
+            "ais_multi_vessel_geometry",
+            *( ["measured_convergence"] if converging else [] ),
+            *( ["active_distress_proximity"] if distress else [] ),
+        ],
+        supporting_evidence=[observation],
+        caveats=["Proximity alone is never treated as proof of a rescue."],
+        recommended_action="cross_reference_distress" if strong else "monitor_cluster",
+        rule_ids=["ais_spike:rescue_cluster"],
+    )
+
+
+def _assess_ais_gap(metadata: dict[str, Any]) -> EventAssessment:
+    anomaly_type = str(metadata.get("anomaly_type") or "")
+    evidence = metadata.get("anomaly_evidence") or {}
+    silence_s = float(evidence.get("silent_seconds") or 0.0)
+    before = evidence.get("nearby_vessels_before")
+    after = evidence.get("nearby_vessels_after")
+    ratio = evidence.get("local_reporting_ratio")
+    observation = f"AIS silence lasted {silence_s / 60:.0f} min"
+    if before is not None and after is not None:
+        observation += f"; nearby reporting {before}->{after}"
+    if ratio is not None:
+        observation += f"; local reporting ratio {float(ratio):.0%}"
+    observation += "."
+    coverage = anomaly_type == "coverage_gap"
+    return EventAssessment(
+        observation=observation,
+        interpretation=(
+            "Nearby AIS traffic also disappeared, indicating reception or source coverage "
+            "loss rather than vessel-specific intent."
+            if coverage
+            else "The vessel stopped reporting while nearby AIS coverage remained available. "
+            "This is a vessel-specific integrity observation, not proof of intent."
+        ),
+        evidence_level="derived",
+        confidence=0.65 if not coverage else 0.45,
+        confidence_basis=[
+            "ais_silence_duration",
+            "local_coverage_comparison",
+        ],
+        supporting_evidence=[observation],
+        caveats=["AIS silence alone does not establish deliberate dark activity."],
+        recommended_action="treat_as_coverage_context" if coverage else "operator_review",
+        rule_ids=[f"ais_anomaly:{anomaly_type}"],
+    )
+
+
 _ASSESSORS = {
     "not_under_command": _assess_not_under_command,
     "restricted_manoeuvrability": _assess_restricted_manoeuvrability,
@@ -161,6 +265,16 @@ def build_assessment(event: Any) -> EventAssessment | None:
     metadata = metadata or {}
     kind = str(metadata.get("ais_nav_status_kind") or "").strip().lower()
     assessor = _ASSESSORS.get(kind)
-    if assessor is None:
-        return None
-    return assessor(metadata)
+    if assessor is not None:
+        return assessor(metadata)
+
+    spike_type = str(metadata.get("spike_type") or "").strip().lower()
+    if spike_type in {"possible_sudden_stop", "sudden_stop"}:
+        return _assess_sudden_stop(metadata)
+    if spike_type in {"possible_rescue_cluster", "rescue_cluster"}:
+        return _assess_rescue_cluster(metadata)
+
+    anomaly_type = str(metadata.get("anomaly_type") or "").strip().lower()
+    if anomaly_type in {"gap", "coverage_gap"}:
+        return _assess_ais_gap(metadata)
+    return None

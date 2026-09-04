@@ -212,6 +212,13 @@ class SuezCanalConfig(BaseSettings):
     # mode records technical outcomes only and never changes public semantics.
     ALARM_PHONE_IMAGE_V2_ENABLED: bool = True
     ALARM_PHONE_IMAGE_V2_SHADOW: bool = False
+    # Extra relay accounts whose Alarm-Phone-style images should be analysed.
+    ALARM_PHONE_IMAGE_V2_ACCOUNTS: str = ""
+    # Public syndication CDN fallback when twikit object shapes expose no media.
+    X_MEDIA_SYNDICATION_FALLBACK: bool = True
+    # AIS spike calibration: one speed drop is a cue; promotion requires persistence.
+    AIS_SUDDEN_STOP_MIN_SAMPLES: int = 2
+    AIS_SUDDEN_STOP_PERSISTENCE_S: int = 300
     # Shared-secret auth for an operator's own external script pushing
     # already-parsed text reports into the intel pipeline (e.g. a personal
     # tool reading some feed the operator runs themselves) — see

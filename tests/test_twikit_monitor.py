@@ -12,8 +12,21 @@ from types import SimpleNamespace
 
 import pytest
 
+from core.intel.image_extraction import ImageExtractionResult
 from core.intel.store import IntelStore
 from core.intel.twikit_monitor import TwikitMonitor
+
+
+def _image_result(coordinate, method, *, attempted=True, diagnostics=None):
+    """A canned ImageExtractionResult for _analyze_tweet_image patches."""
+    result = ImageExtractionResult(
+        selected_coordinate=coordinate,
+        coordinate_method=method,
+        ocr_attempted=attempted,
+    )
+    if diagnostics:
+        result.diagnostics.update(diagnostics)
+    return result
 
 
 @pytest.fixture(autouse=True)
@@ -1014,7 +1027,7 @@ def test_tweet_media_urls_extended_entities_fallback(tmp_path):
         "🆘 38 lives at risk south of #Crete! #Greece",
         extended_entities={"media": [{"media_url_https": "https://pbs.twimg.com/media/map.png"}]},
     )
-    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/map.png"]
+    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/map.png?name=orig"]
 
 
 def test_tweet_media_urls_entities_fallback(tmp_path):
@@ -1024,7 +1037,7 @@ def test_tweet_media_urls_entities_fallback(tmp_path):
     m = TwikitMonitor(enabled=True, cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}))
     tweet = _FakeTweet("3002", "🆘 38 lives at risk south of #Crete! #Greece")
     tweet.entities = {"media": [{"media_url_https": "https://pbs.twimg.com/media/entities.png"}]}
-    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/entities.png"]
+    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/entities.png?name=orig"]
 
 
 def test_tweet_media_urls_card_fallback(tmp_path):
@@ -1037,7 +1050,7 @@ def test_tweet_media_urls_card_fallback(tmp_path):
         thumbnail_url = "https://pbs.twimg.com/media/card.jpg"
 
     tweet.card = _FakeCard()
-    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/card.jpg"]
+    assert m._tweet_media_urls(tweet) == ["https://pbs.twimg.com/media/card.jpg?name=orig"]
 
 
 def test_tweet_media_urls_returns_empty_when_every_shape_is_absent(tmp_path, caplog):
@@ -1155,6 +1168,59 @@ def test_non_alarm_phone_non_distress_media_never_schedules_ocr(tmp_path, monkey
     assert scheduled == []
 
 
+def test_configured_relay_account_gets_image_analysis_on_non_distress_caption(
+    tmp_path, monkeypatch
+):
+    """docs/prompt.md §3 (audit SC-2): a relay handle listed in
+    ALARM_PHONE_IMAGE_V2_ACCOUNTS is analysed like an Alarm Phone map post
+    even though its caption never classified as a direct distress call."""
+    scheduled: list = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+        scheduled=scheduled,
+    )
+    monkeypatch.setattr("core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_ENABLED", True)
+    monkeypatch.setattr("core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_SHADOW", False)
+    monkeypatch.setattr(
+        "core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_ACCOUNTS",
+        "@SosMedFrance, aegean_boat",
+    )
+    tweet = _FakeTweet(
+        "3007-relay",
+        "Nouvelle position ⬇️",
+        media=[_FakeMedia("https://pbs.twimg.com/media/relay.jpg")],
+    )
+
+    assert m._ingest(tweet, handle="sosmedfrance") is True
+
+    evt = store.events()[0]
+    assert evt.metadata["is_distress"] is False
+    assert evt.metadata["media_transport"] == "x_media_ocr"
+    assert len(scheduled) == 1
+
+def test_unconfigured_relay_account_non_distress_media_never_schedules_ocr(
+    tmp_path, monkeypatch
+):
+    scheduled: list = []
+    m, store = _ocr_gated_monitor(
+        tmp_path,
+        monkeypatch,
+        lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
+        scheduled=scheduled,
+    )
+    monkeypatch.setattr("core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_ENABLED", True)
+    monkeypatch.setattr("core.intel.twikit_monitor.config.ALARM_PHONE_IMAGE_V2_ACCOUNTS", "")
+    tweet = _FakeTweet(
+        "3007-noconf",
+        "Nouvelle position ⬇️",
+        media=[_FakeMedia("https://pbs.twimg.com/media/relay.jpg")],
+    )
+    assert m._ingest(tweet, handle="sosmedfrance") is True
+    assert store.events()[0].metadata["media_transport"] == "none"
+    assert scheduled == []
+
 def test_alarm_phone_shadow_analyzes_non_distress_media_without_public_mutation(tmp_path, monkeypatch):
     shadow_jobs: list[tuple[str, str, list[str]]] = []
     m, store = _ocr_gated_monitor(
@@ -1216,6 +1282,42 @@ def test_alarm_phone_image_v2_schedules_non_distress_media_for_private_enrichmen
     assert len(scheduled) == 1
 
 
+def test_event_sea_snap_is_false_only_for_a_land_humanitarian_case(tmp_path, monkeypatch):
+    """docs/fixes.md F-09 (audit LM-6): _apply_media_ocr must not sea-snap a
+    land humanitarian pin."""
+    m, store = _ocr_gated_monitor(
+        tmp_path, monkeypatch, lambda name: "/usr/bin/tesseract" if name == "tesseract" else None
+    )
+    sea = _FakeTweet("4001", "🆘 Boat adrift south of #Crete, ~40 people!",
+                     media=[_FakeMedia("https://pbs.twimg.com/media/a.jpg")])
+    land = _FakeTweet(
+        "4002",
+        "Group in danger near the #Evros forest at the land border, no shelter",
+        media=[_FakeMedia("https://pbs.twimg.com/media/b.jpg")],
+    )
+    assert m._ingest(sea, handle="alarm_phone") is True
+    assert m._ingest(land, handle="alarm_phone") is True
+    by_tweet = {e.metadata["tweet_id"]: e for e in store.events()}
+    assert m._event_sea_snap(by_tweet["4001"].id) is True
+    assert by_tweet["4002"].metadata["humanitarian_case_type"] == "land_humanitarian"
+    assert m._event_sea_snap(by_tweet["4002"].id) is False
+
+def test_caption_place_names_are_stored_for_image_context(tmp_path, monkeypatch):
+    """docs/prompt.md §8: the caption's gazetteer place names are persisted so
+    _apply_media_ocr can validate an image coordinate against them."""
+    m, store = _ocr_gated_monitor(
+        tmp_path, monkeypatch, lambda name: "/usr/bin/tesseract" if name == "tesseract" else None
+    )
+    tweet = _FakeTweet(
+        "3009",
+        "🆘 Boat in distress off #Lampedusa, ~40 people, engine failure! #Malta",
+        media=[_FakeMedia("https://pbs.twimg.com/media/map.jpg")],
+    )
+    assert m._ingest(tweet, handle="alarm_phone") is True
+    names = store.events()[0].metadata.get("context_place_names")
+    assert names and "lampedusa" in names
+    assert m._event_context_places(store.events()[0].id) == tuple(names)
+
 def test_no_ocr_when_tesseract_missing(tmp_path, monkeypatch):
     scheduled: list = []
     monkeypatch.setattr(
@@ -1248,7 +1350,8 @@ def test_media_ocr_single_engine_sea_coordinate_upgrades_and_drifts(tmp_path, mo
         lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
         drift_calls=drift_calls,
     )
-    monkeypatch.setattr("core.intel.twikit_monitor._ocr_photo", lambda url: ((35.5, 24.9), True, "text"))
+    monkeypatch.setattr("core.intel.twikit_monitor._analyze_tweet_image",
+                        lambda url, **kw: _image_result((35.5, 24.9), "text"))
     tweet = _FakeTweet(
         "3010",
         "🆘 38 lives at risk south of #Crete! #Greece",
@@ -1266,7 +1369,6 @@ def test_media_ocr_single_engine_sea_coordinate_upgrades_and_drifts(tmp_path, mo
     assert evt.metadata["drift_status"] == "superseded"
     assert drift_calls, "a single-engine OCR sea coordinate must auto-drift (policy /2)"
 
-
 def test_media_ocr_consensus_between_engines_gets_tight_uncertainty(tmp_path, monkeypatch):
     """User follow-up: "fix humanitarian tesseract piu preciso" -- when
     EasyOCR's coordinate is cross-checked and confirmed by an independent
@@ -1280,8 +1382,8 @@ def test_media_ocr_consensus_between_engines_gets_tight_uncertainty(tmp_path, mo
         drift_calls=drift_calls,
     )
     monkeypatch.setattr(
-        "core.intel.twikit_monitor._ocr_photo",
-        lambda url: ((35.5, 24.9), True, "easyocr_tesseract_consensus"),
+        "core.intel.twikit_monitor._analyze_tweet_image",
+        lambda url, **kw: _image_result((35.5, 24.9), "easyocr_tesseract_consensus"),
     )
     tweet = _FakeTweet(
         "3013",
@@ -1299,7 +1401,6 @@ def test_media_ocr_consensus_between_engines_gets_tight_uncertainty(tmp_path, mo
     assert evt.metadata["drift_status"] == "superseded"
     assert drift_calls, "drift must fire with the confirmed position"
 
-
 def test_media_ocr_disputed_between_engines_gets_wide_uncertainty_and_review(tmp_path, monkeypatch):
     """When EasyOCR and the Tesseract cross-check land on materially
     different coordinates, the disagreement must never be silently resolved
@@ -1313,8 +1414,8 @@ def test_media_ocr_disputed_between_engines_gets_wide_uncertainty_and_review(tmp
         drift_calls=drift_calls,
     )
     monkeypatch.setattr(
-        "core.intel.twikit_monitor._ocr_photo",
-        lambda url: ((35.5, 24.9), True, "easyocr_text_disputed"),
+        "core.intel.twikit_monitor._analyze_tweet_image",
+        lambda url, **kw: _image_result((35.5, 24.9), "easyocr_text_disputed"),
     )
     tweet = _FakeTweet(
         "3014",
@@ -1335,7 +1436,6 @@ def test_media_ocr_disputed_between_engines_gets_wide_uncertainty_and_review(tmp
     # drift model origin -- exactly zero drift requests.
     assert drift_calls == []
 
-
 def test_media_pin_landmark_fallback_upgrades_position_with_wider_uncertainty(tmp_path, monkeypatch):
     """A map screenshot with only a pin (no printed coordinates) upgrades the
     event's position via map_pin_geolocate, tagged distinctly from a text-OCR
@@ -1350,8 +1450,8 @@ def test_media_pin_landmark_fallback_upgrades_position_with_wider_uncertainty(tm
         drift_calls=drift_calls,
     )
     monkeypatch.setattr(
-        "core.intel.twikit_monitor._ocr_photo",
-        lambda url: ((34.9, 25.2), True, "pin_landmark"),
+        "core.intel.twikit_monitor._analyze_tweet_image",
+        lambda url, **kw: _image_result((34.9, 25.2), "pin_landmark"),
     )
     tweet = _FakeTweet(
         "3012",
@@ -1366,7 +1466,6 @@ def test_media_pin_landmark_fallback_upgrades_position_with_wider_uncertainty(tm
     assert evt.metadata["coordinate_source"] == "media_pin_landmark"
     assert evt.metadata["location_uncertainty_m"] == 4000
     assert drift_calls, "a pin-landmark sea coordinate must auto-drift (policy /2)"
-
 
 def test_precise_place_match_uses_tighter_uncertainty_radius(tmp_path, monkeypatch):
     # Fallback path only: extract_area (a real sea-only polygon, tried
@@ -1548,7 +1647,8 @@ def test_media_ocr_failure_keeps_fallback_area_but_does_not_drift(tmp_path, monk
         lambda name: "/usr/bin/tesseract" if name == "tesseract" else None,
         drift_calls=drift_calls,
     )
-    monkeypatch.setattr("core.intel.twikit_monitor._ocr_photo", lambda url: (None, True, "none"))
+    monkeypatch.setattr("core.intel.twikit_monitor._analyze_tweet_image",
+                        lambda url, **kw: _image_result(None, "none"))
     tweet = _FakeTweet(
         "3011",
         "🆘 38 lives at risk south of #Crete! #Greece",
@@ -1562,7 +1662,6 @@ def test_media_ocr_failure_keeps_fallback_area_but_does_not_drift(tmp_path, monk
     assert evt.metadata["coordinate_source"] == "region_area"
     assert evt.lat is not None
     assert drift_calls == []
-
 
 def test_easyocr_inference_is_serialized(monkeypatch):
     from PIL import Image

@@ -82,7 +82,6 @@ from datetime import UTC, datetime
 from typing import Any, Optional
 
 from core.config import config
-from core.intel.x_media_utils import _ocr_photo
 from core.intel.auto_drift_client import request_auto_drift
 from core.intel.area_extract import extract_area
 from core.intel.forensic_link import attach_forensic_packet
@@ -92,6 +91,7 @@ from core.intel.geoextract import (
     extract_coords,
     extract_numeric_coords,
     extract_relative_coords,
+    find_all_place_matches,
     is_direct_distress_call,
     is_resolved_distress,
     place_match_precision,
@@ -141,6 +141,26 @@ _DEFAULT_ACCOUNTS = list(NGO_TWITTER_HANDLES)
 # as a map screenshot, not in the tweet text. Same host allow-list as the
 # shared OCR path (x_media_utils._ocr_photo).
 _ALLOWED_MEDIA_HOSTS = frozenset({"pbs.twimg.com"})
+
+_ALARM_PHONE_HANDLES = frozenset({"alarm_phone", "alarmphone"})
+
+
+def _tracked_image_accounts() -> frozenset[str]:
+    extra = {
+        part.strip().lstrip("@").lower()
+        for part in str(getattr(config, "ALARM_PHONE_IMAGE_V2_ACCOUNTS", "") or "").split(",")
+        if part.strip()
+    }
+    return _ALARM_PHONE_HANDLES | extra
+
+
+def _analyze_tweet_image(
+    url: str, *, context_places: tuple[str, ...] = (), sea_snap: bool = True
+):
+    """Structured image understanding seam for one tracked X media URL."""
+    from core.intel.image_extraction import extract_from_url
+
+    return extract_from_url(url, context_places=context_places, sea_snap=sea_snap)
 
 
 class TwikitMonitor:
@@ -435,126 +455,75 @@ class TwikitMonitor:
         return None
 
     @staticmethod
-    def _tweet_media_urls(tweet: Any, *, tweet_id: str = "") -> list[str]:
-        """Best-effort extraction of https://pbs.twimg.com/ media from a tweet.
+    def _tweet_media_urls(
+        tweet: Any, *, tweet_id: str = "", quoted_tweet: Any = None
+    ) -> list[str]:
+        """Resolve allow-listed, original-resolution X media canonically."""
+        from core.intel.x_media import resolve_x_media
 
-        Twikit (twifork) exposes each media entity as a typed object whose
-        image URL lives on the ``media_url`` / ``source_url`` properties (the
-        raw ``media_url_https`` key is not an attribute), while older shapes
-        expose ``media_url_https`` directly or keep the raw ``extended_entities``
-        dict, and some map-tool posts attach the screenshot as a link-preview
-        card (``tweet.card``) rather than native media. Try every shape so an
-        API change never silently disables image-based geolocation. Same host
-        allow-list as the OCR path.
-
-        Logs a diagnosable warning — listing exactly which raw shapes were
-        present and empty — whenever nothing at all is found, and separately
-        when candidate URLs were found but none matched the host allow-list,
-        so a real extraction gap (as opposed to "this tweet has no image")
-        shows up in logs instead of silently falling back to a rough
-        centroid.
-        """
-        urls: list[str] = []
-        shapes_tried: list[str] = []
-        try:
-            media = getattr(tweet, "media", None) or []
-            shapes_tried.append(f"media[{len(media)}]")
-            for item in media:
-                url = str(
-                    getattr(item, "source_url", "")
-                    or getattr(item, "media_url", "")
-                    or getattr(item, "media_url_https", "")
-                    or getattr(item, "url", "")
-                    or ""
-                )
-                if url:
-                    urls.append(url)
-        except Exception as exc:
-            shapes_tried.append(f"media[error:{exc}]")
-        if not urls:
-            try:
-                extended = getattr(tweet, "extended_entities", None) or {}
-                extended_media = extended.get("media") or []
-                shapes_tried.append(f"extended_entities[{len(extended_media)}]")
-                for item in extended_media:
-                    url = str(item.get("media_url_https") or item.get("url") or "")
-                    if url:
-                        urls.append(url)
-            except Exception as exc:
-                shapes_tried.append(f"extended_entities[error:{exc}]")
-        if not urls:
-            try:
-                entities = getattr(tweet, "entities", None) or {}
-                entities_media = entities.get("media") or []
-                shapes_tried.append(f"entities[{len(entities_media)}]")
-                for item in entities_media:
-                    url = str(item.get("media_url_https") or item.get("url") or "")
-                    if url:
-                        urls.append(url)
-            except Exception as exc:
-                shapes_tried.append(f"entities[error:{exc}]")
-        if not urls:
-            # Map-tool posts (Alarm Phone's screenshot generator, some NGO
-            # dashboards) can attach the image as a link-preview card rather
-            # than native tweet media, particularly when posted through a
-            # third-party scheduling tool.
-            try:
-                card = getattr(tweet, "card", None)
-                if card is not None:
-                    card_url = str(
-                        getattr(card, "thumbnail_url", "")
-                        or getattr(card, "image_url", "")
-                        or ""
-                    )
-                    shapes_tried.append(f"card[{'1' if card_url else '0'}]")
-                    if card_url:
-                        urls.append(card_url)
-                else:
-                    shapes_tried.append("card[absent]")
-            except Exception as exc:
-                shapes_tried.append(f"card[error:{exc}]")
-
-        allowed = []
-        for url in urls[:4]:
-            try:
-                from urllib.parse import urlparse
-                parsed = urlparse(url)
-                if parsed.scheme == "https" and parsed.hostname in _ALLOWED_MEDIA_HOSTS:
-                    allowed.append(url)
-            except Exception:
-                continue
-
-        if not allowed:
-            if urls:
+        resolution = resolve_x_media(
+            tweet,
+            tweet_id or str(getattr(tweet, "id", "")),
+            quoted_tweet,
+            allow_syndication=config.X_MEDIA_SYNDICATION_FALLBACK,
+        )
+        if not resolution.candidates:
+            if resolution.failure_reason == "candidates_failed_host_allowlist":
                 logger.warning(
-                    "X (twikit) tweet %s: %d candidate media URL(s) found but none "
+                    "X (twikit) tweet %s: candidate media URL(s) found but none "
                     "matched the allowed host (%s); shapes tried: %s",
-                    tweet_id, len(urls), sorted(_ALLOWED_MEDIA_HOSTS), shapes_tried,
+                    tweet_id, sorted(_ALLOWED_MEDIA_HOSTS), resolution.shapes_tried,
                 )
             else:
                 logger.debug(
                     "X (twikit) tweet %s: no media found in any known shape (%s) — "
                     "this tweet likely has no attached image",
-                    tweet_id, shapes_tried,
+                    tweet_id, resolution.shapes_tried,
                 )
-        return allowed
+        return resolution.urls
 
     def _ocr_tweet_media(
-        self, tweet_id: str, urls: list[str]
+        self,
+        tweet_id: str,
+        urls: list[str],
+        *,
+        context_places: tuple[str, ...] = (),
+        sea_snap: bool = True,
     ) -> tuple[Optional[tuple[float, float]], bool, str, dict[str, Any]]:
-        """OCR the tweet's images until one yields a coordinate pair."""
+        """Analyse images through ImageExtractionResult, preserving legacy tuple output."""
         if not urls:
             return None, False, "none", {}
+        last_assessment: dict[str, Any] = {}
         for url in urls:
             try:
-                result = _ocr_photo(url)
-                candidate, attempted, method = result[0], result[1], result[2]
-                diagnostics = result[3] if len(result) > 3 else {}
-                if candidate is not None:
-                    return candidate, attempted, method, diagnostics
+                result = _analyze_tweet_image(
+                    url, context_places=context_places, sea_snap=sea_snap
+                )
             except Exception as exc:
                 logger.debug("X (twikit) media OCR failed for %s (%s): %s", tweet_id, url, exc)
-        return None, True, "none", {}
+                continue
+            last_assessment = result.as_metadata()
+            candidate, attempted, method, diagnostics = result.legacy_tuple()
+            if candidate is not None:
+                diagnostics["image_assessment"] = last_assessment
+                return candidate, attempted, method, diagnostics
+        return None, True, "none", {"image_assessment": last_assessment}
+
+    def _event_context_places(self, event_id: str) -> tuple[str, ...]:
+        event = intel_store.get(event_id)
+        if event is None:
+            return ()
+        return tuple(event.metadata.get("context_place_names") or ())
+
+    def _event_sea_snap(self, event_id: str) -> bool:
+        event = intel_store.get(event_id)
+        if event is None:
+            return True
+        meta = event.metadata
+        return (
+            meta.get("humanitarian_case_type") != "land_humanitarian"
+            and meta.get("location_status") != "withheld_from_maritime_map"
+        )
 
     def _apply_media_ocr(self, event_id: str, urls: list[str]) -> None:
         """Run in a pool worker: OCR, upgrade the stored position, drift."""
@@ -565,7 +534,12 @@ class TwikitMonitor:
         from core.observability import record_ocr_result
 
         try:
-            coords, attempted, method, ocr_diag = self._ocr_tweet_media(event_id, urls)
+            coords, attempted, method, ocr_diag = self._ocr_tweet_media(
+                event_id,
+                urls,
+                context_places=self._event_context_places(event_id),
+                sea_snap=self._event_sea_snap(event_id),
+            )
             if coords is None:
                 record_ocr_result("no_coordinate")
                 # Visible in prod logs: was OCR even possible, and did it run
@@ -578,8 +552,12 @@ class TwikitMonitor:
                     "media OCR: no coordinate for %s (images=%d, tesseract=%s, attempted=%s)",
                     event_id, len(urls), bool(shutil.which("tesseract")), attempted,
                 )
-                if attempted:
-                    intel_store.update_metadata(event_id, metadata={"ocr_attempted": True})
+                image_assessment = ocr_diag.get("image_assessment") or {}
+                if attempted or image_assessment:
+                    intel_store.update_metadata(
+                        event_id,
+                        metadata={"ocr_attempted": bool(attempted), **image_assessment},
+                    )
                 self._auto_drift_if_live(event_id, force=False)
                 return
             logger.info(
@@ -594,6 +572,7 @@ class TwikitMonitor:
                 coords[0],
                 coords[1],
                 interengine_distance_m=ocr_diag.get("interengine_distance_m"),
+                estimated_position_error_m=ocr_diag.get("estimated_position_error_m"),
             )
             record_ocr_result(ocr_result_label(method))
             upgraded = intel_store.enrich_location(
@@ -602,6 +581,7 @@ class TwikitMonitor:
                 lon=coords[1],
                 metadata={
                     **evidence.as_metadata(),
+                    **(ocr_diag.get("image_assessment") or {}),
                     "media_transport": "x_media_ocr",
                     "ocr_attempted": True,
                     "media_count": len(urls),
@@ -656,13 +636,27 @@ class TwikitMonitor:
         urls_snapshot = list(urls)
 
         def run_shadow() -> None:
-            coords, attempted, method, _diagnostics = self._ocr_tweet_media(
-                event_id, urls_snapshot
+            coords, attempted, method, diagnostics = self._ocr_tweet_media(
+                event_id,
+                urls_snapshot,
+                context_places=self._event_context_places(event_id),
+                sea_snap=self._event_sea_snap(event_id),
             )
             result = "shadow_coordinate" if coords is not None else (
                 "shadow_no_coordinate" if attempted else "shadow_not_attempted"
             )
             record_ocr_result(result)
+            intel_store.update_metadata(
+                event_id,
+                metadata={
+                    "image_assessment_shadow": {
+                        "result": result,
+                        "method": method,
+                        "coordinate": list(coords) if coords else None,
+                        **(diagnostics.get("image_assessment") or {}),
+                    }
+                },
+            )
             logger.info(
                 "media OCR shadow: event=%s images=%d attempted=%s result=%s method=%s",
                 event_id, len(urls_snapshot), attempted, result, method,
@@ -848,11 +842,15 @@ class TwikitMonitor:
         # as a map screenshot. Priority: explicit text coords > OCR of attached
         # images > declared relative offset > place-name centroid.
         text_coords = extract_numeric_coords(combined_text) if distress else None
-        media_urls = self._tweet_media_urls(tweet, tweet_id=str(tweet.id))
-        if quoted is not None:
-            for url in self._tweet_media_urls(quoted, tweet_id=str(quoted.id)):
-                if url not in media_urls:
-                    media_urls.append(url)
+        from core.intel.x_media import resolve_x_media
+
+        media_resolution = resolve_x_media(
+            tweet,
+            str(tweet.id),
+            quoted,
+            allow_syndication=config.X_MEDIA_SYNDICATION_FALLBACK,
+        )
+        media_urls = media_resolution.urls
         self._record_media_source_observations(
             media_urls, tweet_id=str(tweet.id), handle=handle, observed_at=self._timestamp(tweet),
         )
@@ -872,9 +870,9 @@ class TwikitMonitor:
         ocr_available = bool(
             shutil.which("tesseract") or importlib.util.find_spec("easyocr") is not None
         )
+        handle_tracked_for_images = handle.lower() in _tracked_image_accounts()
         alarm_phone_image_v2 = (
-            handle.lower() in {"alarm_phone", "alarmphone"}
-            and config.ALARM_PHONE_IMAGE_V2_ENABLED
+            handle_tracked_for_images and config.ALARM_PHONE_IMAGE_V2_ENABLED
         )
         if (distress or alarm_phone_image_v2) and not text_coords and media_count:
             if ocr_available:
@@ -893,7 +891,7 @@ class TwikitMonitor:
         elif (
             media_count
             and not text_coords
-            and handle.lower() in {"alarm_phone", "alarmphone"}
+            and handle_tracked_for_images
             and config.ALARM_PHONE_IMAGE_V2_SHADOW
             and ocr_available
         ):
@@ -949,6 +947,10 @@ class TwikitMonitor:
             else (120_000 if place_precision == "imprecise" else 25_000) if place_coords
             else None
         )
+
+        caption_place_names = [
+            name for name, _coords, _tier in find_all_place_matches(combined_text)
+        ][:10]
 
         # Prefer the tracked account's own words for the title/display text;
         # fall back to the combined text only when the caption alone is too
@@ -1011,6 +1013,7 @@ class TwikitMonitor:
                 ),
                 "location_uncertainty_m": location_uncertainty_m,
                 "media_count": media_count,
+                **media_resolution.as_diagnostics(),
                 # Kept so a later re-process (core.intel.backfill_alarm_phone)
                 # never has to resolve the tweet again.
                 **({"media_urls": media_urls[:6]} if media_urls else {}),
@@ -1020,6 +1023,7 @@ class TwikitMonitor:
                     else "none"
                 ),
                 "ocr_attempted": False,
+                **({"context_place_names": caption_place_names} if caption_place_names else {}),
                 "provenance": "twikit_account_timeline",
                 "tracked_account": handle,
                 "quoted_tweet_id": str(quoted.id) if quoted is not None else None,
