@@ -77,6 +77,58 @@ def test_silence_sweep_emits_a_gap_for_a_vessel_gone_dark(detector) -> None:
     assert detector._added and detector._added[0].metadata["anomaly_type"] == "gap"
 
 
+def _silent(lat, lon, *, age_s, speed=12.0, name="V"):
+    return {"lat": lat, "lon": lon, "ts": time.time() - age_s, "speed": speed,
+            "type": "", "name": name}
+
+
+def test_gap_is_vessel_specific_when_nearby_coverage_is_healthy(detector) -> None:
+    now = time.time()
+    detector._last_seen["ghost"] = _silent(34.5, 18.0, age_s=1800, name="GHOST")
+    for i in range(4):  # neighbours still reporting now
+        detector._last_seen[f"n{i}"] = _silent(34.5 + i * 0.05, 18.1, age_s=60)
+    ev = detector._build_gap_event("ghost", detector._last_seen["ghost"], 1800, now)
+    assert ev.anomaly_type == "gap"
+    assert ev.evidence["nearby_vessels_after"] == 4
+
+
+def test_gap_becomes_coverage_gap_when_nearby_traffic_also_went_silent(detector) -> None:
+    now = time.time()
+    detector._last_seen["ghost"] = _silent(34.5, 18.0, age_s=1800, name="GHOST")
+    for i in range(4):  # neighbours seen recently in history, none fresh now
+        detector._last_seen[f"n{i}"] = _silent(34.5 + i * 0.05, 18.1, age_s=1700)
+    ev = detector._build_gap_event("ghost", detector._last_seen["ghost"], 1800, now)
+    assert ev.anomaly_type == "coverage_gap"
+    assert ev.evidence["nearby_vessels_before"] == 4
+    assert ev.evidence["nearby_vessels_after"] == 0
+
+
+def test_coverage_gap_intel_event_is_neutral_context(detector) -> None:
+    ev = ais_mod.AISAnomalyEvent(
+        event_id="x", timestamp_utc="2026-09-02T00:00:00Z", anomaly_type="coverage_gap",
+        mmsi="ghost", vessel_name="GHOST", position={"lat": 34.5, "lon": 18.0},
+        confidence=0.4, evidence={"nearby_vessels_before": 4, "nearby_vessels_after": 0},
+    )
+    detector._emit(ev)
+    assert detector._added
+    ie = detector._added[0]
+    assert ie.metadata["anomaly_type"] == "coverage_gap"
+    assert ie.metadata["report_kind"] == "coverage_outage"
+    assert ie.metadata["maritime_domain"] == "safety"
+    assert ie.metadata["is_distress"] is False
+    assert ie.severity == "low"
+    assert ie.linked_mmsi is None
+
+
+def test_feed_wide_outage_collapses_to_one_event_per_cell(detector) -> None:
+    for mmsi in ("a", "b", "c"):
+        detector._emit(ais_mod.AISAnomalyEvent(
+            event_id=mmsi, timestamp_utc="2026-09-02T00:00:00Z", anomaly_type="coverage_gap",
+            mmsi=mmsi, position={"lat": 34.4, "lon": 18.2}, confidence=0.4, evidence={},
+        ))
+    assert len(detector._added) == 1
+
+
 def test_position_hook_adapter_forwards_to_process_position(detector, monkeypatch) -> None:
     seen: list = []
     monkeypatch.setattr(detector, "process_position", lambda *a: seen.append(a))

@@ -84,3 +84,63 @@ def test_build_assessment_accepts_an_event_object_not_just_a_dict():
     result = build_assessment(event)
     assert result is not None
     assert result.rule_ids == ["aground_sustained"]
+
+
+def test_sudden_stop_assessment_is_derived_from_persistence_evidence():
+    result = build_assessment({
+        "spike_type": "sudden_stop",
+        "stop_samples": 4,
+        "stop_persistence_s": 720,
+        "stop_displacement_nm": 0.02,
+        "nav_status": 0,
+    })
+    assert result is not None
+    assert result.evidence_level == "derived"
+    assert "held" in result.observation
+    assert any("speed transition" in caveat.lower() for caveat in result.caveats)
+
+
+def test_rescue_cluster_needs_convergence_and_distress_for_corroborated_assessment():
+    result = build_assessment({
+        "spike_type": "rescue_cluster",
+        "cluster_size": 3,
+        "converging": True,
+        "positions_max_age_s": 120,
+        "near_active_distress": "case-1",
+        "closing_nm": -0.5,
+    })
+    assert result is not None
+    assert result.evidence_level == "corroborated"
+    assert "rescue" in result.interpretation.lower()
+    assert result.confidence > 0.5
+
+
+def test_vessel_specific_ais_gap_is_derived_not_proof_of_intent():
+    result = build_assessment({
+        "anomaly_type": "gap",
+        "anomaly_evidence": {
+            "silent_seconds": 1800,
+            "nearby_vessels_before": 4,
+            "nearby_vessels_after": 4,
+            "local_reporting_ratio": 1.0,
+        },
+    })
+    assert result is not None
+    assert result.evidence_level == "derived"
+    assert "not proof of intent" in result.interpretation.lower()
+
+
+def test_coverage_gap_is_context_not_vessel_intent():
+    result = build_assessment({
+        "anomaly_type": "coverage_gap",
+        "anomaly_evidence": {
+            "silent_seconds": 1800,
+            "nearby_vessels_before": 4,
+            "nearby_vessels_after": 0,
+            "local_reporting_ratio": 0.0,
+        },
+    })
+    assert result is not None
+    assert result.evidence_level == "derived"
+    assert "coverage" in result.interpretation.lower()
+    assert result.recommended_action == "treat_as_coverage_context"

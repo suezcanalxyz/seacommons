@@ -227,6 +227,7 @@ class AISStreamClient:
                     course=float(cog) if cog is not None else None,
                     speed=float(sog) if sog is not None else None,
                     heading=float(hdg) if hdg is not None and hdg != 511 else None,
+                    nav_status=int(nav_status) if nav_status is not None else None,
                 )
                 received_at = datetime.now(timezone.utc)
                 for hook in _position_hooks:
