@@ -31,7 +31,7 @@ from fastapi import HTTPException
 from core.config import config
 from core import bootstrap
 from core.api.routes import alerts, drift, anomaly, forensic, integrations, ops, vessels
-from core.api.routes import ingest, probability, weather, zones, intel, cases, governance, live, connectors
+from core.api.routes import ingest, probability, weather, zones, intel, cases, governance, live, play, connectors
 from core.api.routes import mda, audit
 from core.db.session import init_database
 from core.security import READ_ROLES, WRITE_ROLES, require_roles, validate_production_security
@@ -176,7 +176,7 @@ async def authorization_gate(request, call_next):
         and path in {"/api/v1/alert", "/api/v1/intel/auto-drift", "/api/v1/intel/external"}
     ) or (
         request.method in {"GET", "HEAD", "OPTIONS"}
-        and path.startswith("/api/v1/live/")
+        and path.startswith(("/api/v1/live/", "/api/v1/play/"))
     )
     try:
         if not public and config.INTERNAL_PROXY_SECRET:
@@ -237,6 +237,7 @@ app.include_router(intel.router)
 app.include_router(cases.router)
 app.include_router(governance.router)
 app.include_router(live.router)
+app.include_router(play.router)
 app.include_router(connectors.router)
 app.include_router(mda.router)
 app.include_router(audit.router)
