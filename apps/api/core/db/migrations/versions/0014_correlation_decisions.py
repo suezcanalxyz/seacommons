@@ -2,7 +2,7 @@
 """correlation_decisions
 
 Revision ID: 0014_correlation_decisions
-Revises: 0013_source_observation_preservation
+Revises: 0013_source_obs_preservation
 Create Date: 2026-09-04
 
 docs/updates.md P2.1: CorrelationDecision -- append-only table of
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0014_correlation_decisions"
-down_revision = "0013_source_observation_preservation"
+down_revision = "0013_source_obs_preservation"
 branch_labels = None
 depends_on = None
 
