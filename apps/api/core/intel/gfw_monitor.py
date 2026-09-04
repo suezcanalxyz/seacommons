@@ -31,6 +31,28 @@ _MAP = {
 }
 
 
+def _record_source_observation(eid: str, entry: dict, *, lat: float, lon: float) -> None:
+    """docs/updates.md P0.2: a durable, lossless SourceObservation for
+    every GFW event this monitor receives -- before the existing
+    intel_store.add() write path below. Best-effort and strictly
+    additive: never raises into poll_once(), never alters what gets
+    published."""
+    try:
+        from core.db.session import session_scope
+        from core.intel.source_observation import record_observation
+
+        with session_scope() as db:
+            record_observation(
+                db,
+                service="maritime", lane="intelligence", observation_type="ais_derived_event",
+                source_name="GFW", source_policy="official_api", source_id=eid,
+                observed_at=str(entry.get("start") or ""),
+                raw_payload=str(entry), lat=lat, lon=lon,
+            )
+    except Exception as exc:
+        logger.debug("gfw_monitor: source_observation record skipped for %s: %s", eid, exc)
+
+
 def poll_once() -> int:
     token = getattr(config, "GFW_API_TOKEN", "") or ""
     if not token:
@@ -69,6 +91,7 @@ def poll_once() -> int:
             eid = f"gfw:{gfw_type}:{e.get('id')}"
             vessels = [v.get("ship", {}).get("mmsi") or v.get("mmsi")
                        for v in (e.get("vessels") or [])]
+            _record_source_observation(eid, e, lat=float(lat), lon=float(lon))
             added = intel_store.add(IntelEvent(
                 id=eid,
                 type="ais_rendezvous" if gfw_type == "encounter" else "ais_anomaly",

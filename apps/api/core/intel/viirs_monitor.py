@@ -23,6 +23,28 @@ logger = logging.getLogger(__name__)
 _BBOX = {"min_lat": 28.0, "max_lat": 48.0, "min_lon": -8.0, "max_lon": 45.0}
 
 
+def _record_source_observation(eid: str, row: dict, day: str, *, lat: float, lon: float) -> None:
+    """docs/updates.md P0.2: a durable, lossless SourceObservation for
+    every VIIRS detection this monitor receives -- before the existing
+    intel_store.add() write path below. Best-effort and strictly
+    additive: never raises into poll_once(), never alters what gets
+    published."""
+    try:
+        from core.db.session import session_scope
+        from core.intel.source_observation import record_observation
+
+        with session_scope() as db:
+            record_observation(
+                db,
+                service="maritime", lane="intelligence", observation_type="satellite_detection",
+                source_name="VIIRS VBD", source_policy="official_api", source_id=eid,
+                observed_at=f"{day}T01:30:00+00:00",
+                raw_payload=str(row), lat=lat, lon=lon,
+            )
+    except Exception as exc:
+        logger.debug("viirs_monitor: source_observation record skipped for %s: %s", eid, exc)
+
+
 def poll_once() -> int:
     token = getattr(config, "EOG_TOKEN", "") or ""
     if not token:
@@ -65,6 +87,7 @@ def poll_once() -> int:
             continue   # matched to a broadcasting vessel
         mpa = reference.in_mpa(lat, lon)
         eid = f"vbd:{row.get('id') or f'{lat:.4f}_{lon:.4f}_{day}'}"
+        _record_source_observation(eid, row, day, lat=lat, lon=lon)
         added = intel_store.add(IntelEvent(
             id=eid, type="dark_candidate",
             severity="high" if mpa else "medium", lat=lat, lon=lon,

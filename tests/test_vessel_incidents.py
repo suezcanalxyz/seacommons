@@ -158,3 +158,24 @@ def test_sustained_incident_updates_the_same_episode_and_track(monitor) -> None:
     assert event_id == "aisinc:352001914:nuc"
     assert (update["lat"], update["lon"]) == (41.34, 29.16)
     assert update["incident_lifecycle"] == "active"
+
+
+def test_emitted_incident_records_a_source_observation(monitor) -> None:
+    """docs/updates.md P0.2: every emitted vessel-incident event has a
+    backing SourceObservationDB row -- the real (not monkeypatched)
+    record_observation() write path, proving this monitor is wired onto
+    the canonical source-evidence primitive."""
+    from core.db.session import session_scope
+    from core.intel.source_observation import observation_id
+
+    monitor.on_position("972999999", "", 35.1, 14.2, 0.0, 0)
+    assert monitor._added
+
+    event = monitor._added[0]
+    obs_id = observation_id(event.source, event.id)
+    with session_scope() as db:
+        from core.db.models import SourceObservationDB
+
+        row = db.get(SourceObservationDB, obs_id)
+        assert row is not None
+        assert row.lat == 35.1 and row.lon == 14.2
