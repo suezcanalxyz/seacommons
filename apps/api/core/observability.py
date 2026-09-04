@@ -37,6 +37,83 @@ INTEL_SOURCE_EVENTS = Gauge(
     "seacommons_intel_source_events_last_hour",
     "Events received from all registered intel sources in the last hour",
 )
+# ── docs/fixes.md M11 -- pipeline/data-quality metrics ─────────────────────
+# Additive only: definitions only, not yet wired into every ingest/dedup/
+# classification call site (that instrumentation is mechanical, per-call-
+# site work spanning the whole ingestion pipeline -- a separate, later
+# follow-up). Two recording helpers below (record_hypothesis_transition,
+# record_drift_maintenance_report) ARE wired-ready against code this
+# session already built (core.intel.hypothesis, M6;
+# core.intel.backfill_drift_maintenance, M8).
+SOURCE_PARSE_FAILURES = Counter(
+    "seacommons_source_parse_failures_total", "Source ingestion parse failures", ["source"],
+)
+DEDUP_EVENTS = Counter(
+    "seacommons_dedup_events_total", "Ingested events by dedup outcome", ["outcome"],
+)
+OBSERVATION_TO_INCIDENT_LATENCY = Histogram(
+    "seacommons_observation_to_incident_latency_seconds",
+    "Time from a SourceObservation (M1.1) to the incident it produced",
+)
+OBSERVATION_TO_EPISODE_LATENCY = Histogram(
+    "seacommons_observation_to_episode_latency_seconds",
+    "Time from a SourceObservation (M1.1) to the episode (M5.2) it joined",
+)
+CLASSIFICATION_FAIL_CLOSED = Counter(
+    "seacommons_classification_fail_closed_total",
+    "Classifications that fell back to an unclassified/review state",
+    ["classifier"],
+)
+LOCATION_STATUS_EVENTS = Gauge(
+    "seacommons_location_status_events",
+    "Events by location_status (M3) -- region_only vs positioned rate",
+    ["status"],
+)
+DRIFT_STATUS = Gauge(
+    "seacommons_drift_status", "Drift jobs by lifecycle status", ["status"],
+)
+AIS_COVERAGE = Gauge(
+    "seacommons_ais_coverage_ratio",
+    "AIS local_reporting_ratio (M4.2) by AOI/time bucket",
+    ["aoi", "time_bucket"],
+)
+GAP_CANDIDATE_EVENTS = Counter(
+    "seacommons_gap_candidate_events_total",
+    "Gap-detector classification outcomes (M4.1/M4.3)", ["label"],
+)
+HYPOTHESIS_EVENTS = Counter(
+    "seacommons_hypothesis_events_total",
+    "InvestigationHypothesis (M6) state transitions", ["hypothesis_type", "state"],
+)
+CASE_RELINK_EVENTS = Counter(
+    "seacommons_case_relink_events_total", "Incident linking outcomes", ["outcome"],
+)
+EDGE_PROJECTION_MISMATCH = Counter(
+    "seacommons_edge_projection_mismatch_total",
+    "VM-edge projection parity check failures (M9)",
+)
+
+
+def record_hypothesis_transition(hypothesis_type: str, new_state: str) -> None:
+    """Call from core.intel.hypothesis.transition() call sites once wired
+    -- never raises, so a broken metrics backend can never block a
+    hypothesis transition."""
+    try:
+        HYPOTHESIS_EVENTS.labels(hypothesis_type, new_state).inc()
+    except Exception:  # pragma: no cover
+        pass
+
+
+def record_drift_maintenance_report(report: dict[str, int]) -> None:
+    """Call after core.intel.backfill_drift_maintenance.run() (M8) --
+    never raises."""
+    try:
+        DRIFT_STATUS.labels("stuck").set(report.get("stuck", 0))
+        DRIFT_STATUS.labels("invalid").set(report.get("invalid", 0))
+    except Exception:  # pragma: no cover
+        pass
+
+
 LIVE_PUBLISH_CYCLES = Counter(
     "seacommons_live_publish_cycles_total",
     "Live edge publisher cycles by outcome",
