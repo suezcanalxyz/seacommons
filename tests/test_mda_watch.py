@@ -159,6 +159,9 @@ def test_infra_loiter_flags_sanctioned_vessel_in_sts_zone():
 
 
 def test_gap_scan_flags_silent_vessel(monkeypatch):
+    """No corroborating neighbour data either way (an isolated vessel with
+    nothing else in range) must not be treated as proof of a coverage
+    outage -- docs/fixes.md M14.1 keeps this pre-wiring behaviour."""
     w = MdaWatch()
     _feed("111000006", 34.0, 20.0, sog=12.0)
     track_store._last["111000006"].ts = time.time() - 5400   # 90 min silent
@@ -166,147 +169,64 @@ def test_gap_scan_flags_silent_vessel(monkeypatch):
     assert _alerts("ais_anomaly")[0].metadata["anomaly_type"] == "gap"
 
 
-def test_gap_scan_ignores_pleasure_craft_at_anchor():
-    """Ship_type 37 (pleasure craft) swinging AIS off at anchor near a marina
-    is normal leisure behaviour, not a reporting anomaly -- must not alert
-    unless the vessel is a confirmed sanctions match."""
+def _witness(mmsi: str, lat: float, lon: float, minutes_ago: float) -> None:
+    """A nearby vessel's single position report, `minutes_ago` in the past --
+    the corroborating-neighbour data core.mda.gap_reason needs to tell a
+    vessel-specific gap from a shared reception outage."""
+    from datetime import timedelta
+
+    track_store.on_position(
+        mmsi, mmsi, lat, lon, sog=8.0, nav_status=0,
+        received_at=datetime.now(timezone.utc) - timedelta(minutes=minutes_ago),
+    )
+    track_store._last_write_epoch[mmsi] = 0.0
+
+
+@pytest.mark.parametrize("ship_type", [37, 60, 30, 52])
+def test_gap_scan_flags_isolated_gap_independent_of_vessel_class(ship_type):
+    """docs/fixes.md M14.1 exit gate: an isolated gap -- this vessel silent
+    while its neighbours keep reporting normally through the same window --
+    remains detectable regardless of ship type. Vessel-class hard exclusions
+    (pleasure/passenger/fishing/tug) are removed; class is context only."""
     from core.vessels.registry import registry
 
-    w = MdaWatch()
-    registry.upsert("111000008", ship_type=37, ship_name="SUNSEEKER")
-    _feed("111000008", 36.0, 14.5, sog=3.0)
-    track_store._last["111000008"].ts = time.time() - 5400   # 90 min silent
-    assert w.scan_gaps() == 0
-    assert not _alerts("ais_anomaly")
+    mmsi = f"11100003{ship_type}"
+    registry.upsert(mmsi, ship_type=ship_type, ship_name="ANY CLASS")
+    _feed(mmsi, 37.00, 18.00, sog=8.0)
+    track_store._last[mmsi].ts = time.time() - 5400   # 90 min silent
 
-
-def test_gap_scan_still_flags_sanctioned_pleasure_craft():
-    """The same pleasure-craft exemption must not shield an actual sanctions
-    match -- 'eliminate false positives, not sanctioned yachts'."""
-    from core.db.models import SanctionedVesselDB
-    from core.db.session import engine, session_scope
-    from core.vessels.registry import registry
-
-    SanctionedVesselDB.__table__.create(bind=engine(), checkfirst=True)
-    with session_scope() as db:
-        db.add(SanctionedVesselDB(source_list="OFAC_SDN", name="ROYAL STAR",
-                                  name_upper="ROYAL STAR", imo=None, mmsi="111000009",
-                                  program="RUSSIA-EO14024"))
+    # three neighbours reporting steadily both before AND through the gap --
+    # healthy local coverage, so the silence is this vessel's own.
+    for k in range(3):
+        w_mmsi = f"11100004{k}"
+        _witness(w_mmsi, 37.01, 18.01, minutes_ago=100)   # before the gap
+        _witness(w_mmsi, 37.01, 18.01, minutes_ago=40)    # during the gap
 
     w = MdaWatch()
-    registry.upsert("111000009", ship_type=37, ship_name="ROYAL STAR")
-    _feed("111000009", 36.0, 14.5, sog=3.0)
-    track_store._last["111000009"].ts = time.time() - 5400
     assert w.scan_gaps() == 1
-    assert _alerts("ais_anomaly")[0].metadata["anomaly_type"] == "gap"
+    ev = _alerts("ais_anomaly")[0]
+    assert ev.metadata["anomaly_type"] == "gap"
+    assert ev.metadata["vessel_type_context"] == ship_type
+    assert ev.metadata["gap_reason"]["hypothesis"] == "vessel_gap"
 
 
-def test_gap_scan_ignores_passenger_ferry_near_port():
-    """Ship_type 60 (passenger) going quiet at its own terminal (Piraeus) is
-    the scheduled turnaround, not an anomaly."""
-    from core.vessels.registry import registry
+def test_gap_scan_suppresses_common_port_wide_outage():
+    """docs/fixes.md M14.1 exit gate: neighbouring vessels also went silent
+    through the same window as this one -- a shared reception outage, not
+    an intentional-dark hypothesis on this vessel."""
+    mmsi = "111000040"
+    _feed(mmsi, 37.00, 18.00, sog=8.0)
+    track_store._last[mmsi].ts = time.time() - 5400   # 90 min silent
+
+    # three neighbours reporting before the gap, then ALSO silent for its
+    # duration -- the outage is the local reception environment, not this
+    # vessel going dark.
+    for k in range(3):
+        _witness(f"11100005{k}", 37.01, 18.01, minutes_ago=100)
 
     w = MdaWatch()
-    registry.upsert("111000014", ship_type=60, ship_name="BLUE STAR")
-    _feed("111000014", 37.94, 23.60, sog=5.0)   # Piraeus
-    track_store._last["111000014"].ts = time.time() - 5400
     assert w.scan_gaps() == 0
     assert not _alerts("ais_anomaly")
-
-
-def test_gap_scan_ignores_passenger_ferry_in_open_water_too():
-    """Passenger vessels are withheld from Live entirely for now (detection
-    unchanged, not surfaced here) -- not just near a known port."""
-    from core.vessels.registry import registry
-
-    w = MdaWatch()
-    registry.upsert("111000015", ship_type=60, ship_name="OPEN FERRY")
-    _feed("111000015", 37.00, 18.00, sog=5.0)   # mid-Ionian, far from any bundled port
-    track_store._last["111000015"].ts = time.time() - 5400
-    assert w.scan_gaps() == 0
-    assert not _alerts("ais_anomaly")
-
-
-def test_gap_scan_still_flags_sanctioned_passenger_ferry_near_port():
-    from core.db.models import SanctionedVesselDB
-    from core.db.session import engine, session_scope
-    from core.vessels.registry import registry
-
-    SanctionedVesselDB.__table__.create(bind=engine(), checkfirst=True)
-    with session_scope() as db:
-        db.add(SanctionedVesselDB(source_list="OFAC_SDN", name="SHADOW FERRY",
-                                  name_upper="SHADOW FERRY", imo=None, mmsi="111000016",
-                                  program="RUSSIA-EO14024"))
-
-    w = MdaWatch()
-    registry.upsert("111000016", ship_type=60, ship_name="SHADOW FERRY")
-    _feed("111000016", 37.94, 23.60, sog=5.0)   # Piraeus
-    track_store._last["111000016"].ts = time.time() - 5400
-    assert w.scan_gaps() == 1
-
-
-def test_gap_scan_ignores_fishing_vessel():
-    """Ship_type 30 (fishing) going dark far from any port is the vessel
-    actually fishing -- scan_infra_loiter already exempts this ship_type
-    blanket ('fishing vessels work slowly everywhere'); a gap gets the
-    same treatment."""
-    from core.vessels.registry import registry
-
-    w = MdaWatch()
-    registry.upsert("111000018", ship_type=30, ship_name="F/V LUCKY STAR")
-    _feed("111000018", 37.00, 18.00, sog=4.0)   # open water, no port nearby
-    track_store._last["111000018"].ts = time.time() - 5400
-    assert w.scan_gaps() == 0
-    assert not _alerts("ais_anomaly")
-
-
-def test_gap_scan_still_flags_sanctioned_fishing_vessel():
-    from core.db.models import SanctionedVesselDB
-    from core.db.session import engine, session_scope
-    from core.vessels.registry import registry
-
-    SanctionedVesselDB.__table__.create(bind=engine(), checkfirst=True)
-    with session_scope() as db:
-        db.add(SanctionedVesselDB(source_list="OFAC_SDN", name="SHADOW TRAWLER",
-                                  name_upper="SHADOW TRAWLER", imo=None, mmsi="111000019",
-                                  program="RUSSIA-EO14024"))
-
-    w = MdaWatch()
-    registry.upsert("111000019", ship_type=30, ship_name="SHADOW TRAWLER")
-    _feed("111000019", 37.00, 18.00, sog=4.0)
-    track_store._last["111000019"].ts = time.time() - 5400
-    assert w.scan_gaps() == 1
-
-
-def test_gap_scan_ignores_tug():
-    """Ship_type 52 (tug) idling near the breakwater between jobs is normal
-    port-tug work, not an anomaly -- observed live in Genoa traffic."""
-    from core.vessels.registry import registry
-
-    w = MdaWatch()
-    registry.upsert("111000022", ship_type=52, ship_name="GENOA TUG 3")
-    _feed("111000022", 44.40, 8.93, sog=3.0)   # Genoa
-    track_store._last["111000022"].ts = time.time() - 5400
-    assert w.scan_gaps() == 0
-    assert not _alerts("ais_anomaly")
-
-
-def test_gap_scan_still_flags_sanctioned_tug():
-    from core.db.models import SanctionedVesselDB
-    from core.db.session import engine, session_scope
-    from core.vessels.registry import registry
-
-    SanctionedVesselDB.__table__.create(bind=engine(), checkfirst=True)
-    with session_scope() as db:
-        db.add(SanctionedVesselDB(source_list="OFAC_SDN", name="SHADOW TUG",
-                                  name_upper="SHADOW TUG", imo=None, mmsi="111000023",
-                                  program="RUSSIA-EO14024"))
-
-    w = MdaWatch()
-    registry.upsert("111000023", ship_type=52, ship_name="SHADOW TUG")
-    _feed("111000023", 44.40, 8.93, sog=3.0)
-    track_store._last["111000023"].ts = time.time() - 5400
-    assert w.scan_gaps() == 1
 
 
 def test_spoofing_circular_ignores_tug_working_the_breakwater():

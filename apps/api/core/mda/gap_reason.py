@@ -18,13 +18,10 @@ pre_gap_course/speed, post_gap_reappearance, coast_distance,
 jamming_context) from a caller-supplied ``core.mda.coverage.CoverageBaseline``
 (docs/fixes.md M4.2) plus the gap-specific inputs classify_gap() needs.
 
-Standalone and read-only, same as coverage.py and ais_integrity_replay.py:
-NOT wired into core.mda.watch.scan_gaps() yet. That live-detector wiring
--- replacing scan_gaps()'s hard ship_type 30-32/36-37/52/60-69 exclusions
-with a call through this module -- is intentionally left as a distinct,
-final follow-up PR: swapping a production security detector's actual
-behaviour deserves its own dedicated review, separate from landing the
-(already fully tested) decision logic itself.
+Wired into ``core.mda.watch.scan_gaps()`` (docs/fixes.md M14.1), which
+replaced its hard ship_type 30-32/36-37/52/60-69 exclusions with this
+module's coverage-ratio-based hypothesis: vessel type is passed through as
+context metadata only and never gates detection.
 """
 from __future__ import annotations
 

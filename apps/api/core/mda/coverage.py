@@ -8,14 +8,10 @@ something different in a dense, well-covered shipping lane than it does
 context from the platform's own reception history (core.vessels.track_store),
 not from a fixed global threshold.
 
-Standalone and read-only: this is a pure computation over existing track
-history, jamming, and landmask data. Not wired into
-core.mda.watch.scan_gaps()/scan_spoofing() or core.intel.confidence yet --
-that wiring (replacing scan_gaps()'s hard vessel-class exclusions with this
-as contextual input) is docs/fixes.md M4.3, a separate, larger PR that
-needs its own careful review against the exit gate ("synthetic/common port
-outage produces no intentional-dark hypothesis; genuine isolated gap
-fixture remains detectable independent of vessel class").
+Wired into core.mda.watch.scan_gaps() (docs/fixes.md M14.1) as the
+reception-quality context behind each gap's core.mda.gap_reason
+classification, replacing scan_gaps()'s former hard vessel-class
+exclusions.
 """
 from __future__ import annotations
 
