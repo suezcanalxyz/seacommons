@@ -102,7 +102,18 @@ def sync_incident_for_event(
             )
             return
 
-        row.last_update_at = event.timestamp_utc
+        # docs/updates.md P0.6: "out-of-order source updates do not move
+        # reported_at forward" -- the same principle applies to
+        # last_update_at here: a delayed/out-of-order observation must
+        # never make the incident LOOK older than an already-processed
+        # later one. reported_at itself is never touched after creation
+        # (set once above), satisfying that half of the rule directly.
+        from core.intel.lifecycle import parse_utc
+
+        new_ts = parse_utc(event.timestamp_utc)
+        current_ts = parse_utc(row.last_update_at) if row.last_update_at else None
+        if new_ts is None or current_ts is None or new_ts >= current_ts:
+            row.last_update_at = event.timestamp_utc
         row.revision = (row.revision or 1) + 1
         if case_type and not row.case_type:
             row.case_type = case_type
