@@ -1086,7 +1086,61 @@ Rollback must not require deleting new evidence tables. Roll back application re
 
 ---
 
-# 19. Final stabilization period
+# 19. M14 — Production Wiring & Closure
+
+M0-M13 built pure, standalone, tested modules (`CoverageBaseline`, `ais_integrity_replay`, `gap_reason`, `VesselSubject`, `build_episodes`, `InvestigationHypothesis`, `publication_policy`, observability recorders) but several of them are not called from the live production pipeline yet. SeaCommons is not closed while it is a collection of isolated tested modules instead of a wired product. M14 is the mandatory final phase: every module above must be reachable from a real request/ingest/replay path before `fixes.md` is CLOSED.
+
+Do not start `docs/updates.md` until every M14 task below is merged to `main`, its own tests pass, the full exit gate passes, and this milestone is marked CLOSED.
+
+## M14.1 — AIS live integration
+
+- Wire `CoverageBaseline`, `ais_integrity_replay`, and `gap_reason` into the real `core.mda.watch.scan_gaps()` / spoofing paths.
+- Remove vessel-class hard exclusions from production detection logic. Vessel class may remain context only, never a suppression rule.
+
+Exit gate: a common/port-wide outage must not create an intentional-dark hypothesis; an isolated gap must remain detectable independent of vessel class.
+
+## M14.2 — VesselSubject + bounded episode live integration
+
+- Wire `VesselSubject` and `build_episodes()` into the actual live/feed/case pipeline.
+- Replace `coalesce_security_vessel_episodes()` as the authoritative episode builder.
+
+Exit gate: two unrelated anomalies on the same MMSI days apart become two separate episodes, while one continuing event remains one episode.
+
+## M14.3 — InvestigationHypothesis live integration
+
+- Real observations/features/episodes must create/update persisted `InvestigationHypothesis` records.
+- Wire lifecycle, EvidenceLinks, counter-evidence and audit transitions.
+
+Exit gate: a single AIS observation must never create a published allegation; an official sanctions-list match alone remains an official-list fact, not sanctions-evasion behaviour.
+
+## M14.4 — Canonical publication policy live integration
+
+- Wire `publication_policy.py` into the actual API projections and edge publisher. No duplicated legacy publication logic may remain authoritative.
+
+Exit gate: Humanitarian public output still excludes MMSI/IMO/tracker dossier data; Maritime Intelligence public output requires the hypothesis publication gate; Safety remains neutral and publishable without allegation wording.
+
+## M14.5 — Observability live integration
+
+- Wire all M11 metric recorders into real call sites.
+- Expose the real internal `/health/data` endpoint from `build_data_health_summary()`.
+
+Exit gate: a controlled source outage, a stuck Drift job, a classification fail-closed path, and an edge/VM mismatch are all observable without manual DB inspection. Never put raw Humanitarian text into metric labels/log dimensions.
+
+## M14.6 — True end-to-end replay + production closure
+
+- Replace/complement composed-function replay with real vertical fixtures: raw/source fixture -> ingestion -> SourceObservation/IntelEvent persistence -> normalized feature -> HumanitarianIncident or MaritimeEpisode -> EventAssessment/InvestigationHypothesis -> publication policy -> API/edge projection.
+- Cover H1-H6 and S1-S10 through real pipeline entry points where technically possible.
+- Run migrations upgrade/downgrade and legacy backfill.
+- Run full backend suite, ruff, web lint/typecheck/tests/build, VM/edge privacy parity and the replay catalogue on the exact candidate release SHA.
+- Document remaining environment-only checks honestly.
+
+Exit gate: `fixes.md` is marked CLOSED only when all live wiring and every M14 exit gate above passes on merged `main`.
+
+Process for every M14 task: write failing integration/regression tests first against the live entry point (not just the standalone module), one semantic concern per PR, never weaken a test to preserve legacy wrong behaviour, merge prerequisites in dependency order and rebase dependants before re-review.
+
+---
+
+# 20. Final stabilization period
 
 Before declaring SeaCommons stable, run a continuous **7-day production observation window** on one release line.
 
@@ -1108,7 +1162,7 @@ Release is stable only if all are true:
 
 ---
 
-# 20. Recommended PR sequence from current state
+# 21. Recommended PR sequence from current state
 
 Execute in this exact order unless a discovered production blocker requires an explicitly documented emergency PR.
 
@@ -1143,7 +1197,7 @@ PR numbers are illustrative after #66; if GitHub assigns different numbers, pres
 
 ---
 
-# 21. Definition of Done
+# 22. Definition of Done
 
 SeaCommons reaches the target state when:
 
