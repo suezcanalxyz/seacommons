@@ -27,8 +27,10 @@ This module is pure and standalone: it holds no reference to
 core.intel.store/IntelEventDB, core.mda.vessel_subject, or any live
 detector. A caller assembles the gate-function inputs from whatever
 evidence sources it has (SourceObservation, VesselSubject, episode
-builder output, ...); wiring this into an actual ingestion/investigation
-pipeline is a separate, later PR.
+builder output, ...). core.intel.hypothesis_engine (docs/fixes.md M14.3)
+is that caller: it wires four of the six gates above into the live
+episode pipeline (core.mda.watch.scan_hypotheses -> core.live.
+vessel_episodes -> this module), persisted via core.intel.hypothesis_store.
 """
 from __future__ import annotations
 

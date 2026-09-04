@@ -103,11 +103,32 @@ class MdaWatch:
             "mmsi_duplicate": self.scan_mmsi_duplicate(),
             "spoofing": self.scan_spoofing(),
         }
+        # Hypothesis evaluation runs after every detector above so it sees
+        # this cycle's freshest events (docs/fixes.md M14.3).
+        counts["hypotheses"] = self.scan_hypotheses()
         # prune emit-dedup + stale pairs
         now = time.time()
         self._emitted = {k: t for k, t in self._emitted.items() if now - t < 24 * 3600}
         self._pairs = {k: v for k, v in self._pairs.items() if now - v["last_seen"] < 2 * 3600}
         return counts
+
+    # ── investigation hypotheses ────────────────────────────────────────────
+
+    def scan_hypotheses(self) -> int:
+        from core.intel.hypothesis_engine import (
+            event_to_episode_input_feature,
+            evaluate_episode,
+        )
+        from core.intel.store import intel_store
+        from core.live.vessel_episodes import coalesce_security_vessel_episodes
+
+        features = []
+        for event in intel_store.events(limit=600):
+            feature = event_to_episode_input_feature(event)
+            if feature is not None:
+                features.append(feature)
+        episodes = coalesce_security_vessel_episodes(features)
+        return sum(1 for episode in episodes if evaluate_episode(episode) is not None)
 
     # ── rendezvous / STS ─────────────────────────────────────────────────────
 
