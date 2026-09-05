@@ -102,3 +102,23 @@ def test_cli_apply_is_explicit(monkeypatch):
     monkeypatch.setattr(module, "run", lambda **kwargs: calls.append(kwargs) or {"scanned": 1, "created": 1})
     assert module.main(["--apply"]) == 0
     assert calls[0]["apply"] is True
+
+
+def test_candidate_scan_is_not_starved_by_newer_non_humanitarian_rows():
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+
+    event_id = f"legacy-starved-{uuid.uuid4()}"
+    _insert_humanitarian_event(event_id=event_id)
+    with session_scope() as db:
+        for index in range(6):
+            db.add(IntelEventDB(
+                id=f"newer-ais-{uuid.uuid4()}",
+                timestamp_utc=f"2026-09-05T00:5{index}:00+00:00",
+                type="ais_anomaly", severity="low", lat=35.0, lon=14.0,
+                title="AIS context", text="telemetry", source="ais",
+                maritime_domain="grey_zone", meta={"anomaly_type": "gap"},
+            ))
+
+    candidates = find_candidates(limit=1, days=30)
+    assert any(candidate.event_id == event_id for candidate in candidates)
