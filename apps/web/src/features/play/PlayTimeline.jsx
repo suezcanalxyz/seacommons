@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchJson } from '../../services/api/client.js';
 import {
   incidentCollection,
+  mergeIncidentPages,
   playMapStyle,
   incidentStatusAtCutoff,
   incidentsAtCutoff,
@@ -120,30 +121,31 @@ export default function PlayTimeline({ apiBase }) {
 
   useEffect(() => {
     let cancelled = false;
-    async function loadIncidents() {
+    async function loadIncidents({ full = true } = {}) {
       try {
-        const all = [];
+        let collected = [];
         let offset = 0;
         let pages = 0;
-        while (!cancelled && pages < 100) {
+        while (!cancelled && pages < (full ? 100 : 1)) {
           const payload = await fetchJson(apiBase, `/api/v1/play/incidents?limit=500&offset=${offset}`);
-          all.push(...(Array.isArray(payload?.incidents) ? payload.incidents : []));
-          if (payload?.next_offset == null) break;
+          const page = Array.isArray(payload?.incidents) ? payload.incidents : [];
+          collected = mergeIncidentPages(collected, page);
+          if (cancelled) return;
+          setIncidents((previous) => mergeIncidentPages((offset > 0 || !full) ? previous : [], collected));
+          if (offset === 0) setLoading(false);
+          if (payload?.next_offset == null || !full) break;
           offset = Number(payload.next_offset);
           pages += 1;
         }
-        if (cancelled) return;
-        const unique = [...new Map(all.map((item) => [item.incident_id, item])).values()];
-        setIncidents(unique);
-        setError('');
+        if (!cancelled) setError('');
       } catch (exc) {
         if (!cancelled) setError(exc?.message || 'Play archive unavailable');
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
-    loadIncidents();
-    const timer = window.setInterval(loadIncidents, 60_000);
+    loadIncidents({ full: true });
+    const timer = window.setInterval(() => loadIncidents({ full: false }), 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [apiBase]);
 

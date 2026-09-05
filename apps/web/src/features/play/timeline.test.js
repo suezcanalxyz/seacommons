@@ -145,3 +145,18 @@ test('Play panels use the same glass treatment as public Live and keep the map d
   assert.match(css, /\.play-shell\.has-selection/);
   assert.match(css, /grid-template-columns:\s*min\(392px,\s*32vw\)\s+minmax\(0,\s*1fr\)\s+0/);
 });
+
+test('mergeIncidentPages progressively deduplicates pages and keeps the newest version', async () => {
+  const { mergeIncidentPages } = await import('./timeline.js');
+  const first = [
+    { incident_id: 'a', reported_at: '2026-09-05T10:00:00Z', title: 'A' },
+    { incident_id: 'b', reported_at: '2026-09-05T09:00:00Z', title: 'B old' },
+  ];
+  const second = [
+    { incident_id: 'b', reported_at: '2026-09-05T09:00:00Z', title: 'B new' },
+    { incident_id: 'c', reported_at: '2026-09-04T08:00:00Z', title: 'C' },
+  ];
+  const merged = mergeIncidentPages(first, second);
+  assert.deepEqual(merged.map((item) => item.incident_id), ['a', 'b', 'c']);
+  assert.equal(merged.find((item) => item.incident_id === 'b').title, 'B new');
+});
