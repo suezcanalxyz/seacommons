@@ -234,3 +234,13 @@ def test_play_index_reuses_public_projection_for_historical_security_signal():
     assert item["domain"] == "maritime"
     assert item["case_type"] == "ais_anomaly"
     assert item["geometry"] == {"type": "Point", "coordinates": [14.8, 35.8]}
+
+
+def test_play_counts_exposes_real_archive_total():
+    _seed_case(lifecycle="resolved", age_hours=72, with_update=False)
+    _seed_maritime_play_event(age_hours=30)
+    response = TestClient(app).get("/api/v1/play/counts")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_count"] == payload["humanitarian_count"] + payload["maritime_count"]
+    assert payload["total_count"] >= 2

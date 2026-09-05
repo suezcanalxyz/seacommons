@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from core.intel.satellite_observation import SatelliteObservation
 from core.intel.satellite_resolver import (
@@ -157,3 +157,36 @@ def test_resolve_for_incident_combines_free_sources_without_credentials():
         "sentinel-1-grd", "sentinel-2-l2a", "sentinel-3-olci-2-wfr-nrt"
     ]
     assert provider.calls[0]["bbox"] == [13.9, 35.3, 14.3, 35.7]
+
+
+def test_forward_satellite_window_is_bounded_for_historical_play_case():
+    from core.intel.satellite_resolver import resolve_for_incident
+
+    class FakeProvider:
+        def __init__(self):
+            self.calls = []
+        def search(self, **kwargs):
+            self.calls.append(kwargs)
+            return []
+
+    provider = FakeProvider()
+    event_time = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+    resolve_for_incident(
+        incident_id="historic", lat=35.5, lon=14.1,
+        event_time=event_time, direction="forward", provider=provider,
+        include_viirs=False, now=datetime(2026, 9, 5, tzinfo=timezone.utc),
+    )
+    assert provider.calls[0]["end"] <= event_time + timedelta(days=7)
+
+
+def test_satellite_enrichment_keeps_recent_play_history_eligible():
+    from core.intel.satellite_enrichment import is_satellite_enrichment_candidate
+    from core.intel.store import IntelEvent
+    now = datetime(2026, 9, 5, tzinfo=timezone.utc)
+    event = IntelEvent(
+        id="historic-ap", timestamp_utc="2026-08-20T12:00:00+00:00",
+        type="distress", severity="high", lat=35.5, lon=14.1,
+        title="Historic distress", source="Alarm Phone",
+        metadata={"is_distress": True, "publication_status": "published"},
+    )
+    assert is_satellite_enrichment_candidate(event, now=now, history_days=30) is True

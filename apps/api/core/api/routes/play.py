@@ -113,6 +113,42 @@ def _generic_maritime_projection(event) -> dict[str, Any]:
     }
 
 
+@router.get("/counts")
+async def play_counts():
+    """Exact public archive counters, independent of page/transport size."""
+    from core.db.models import HumanitarianIncidentDB, IntelEventDB
+    from core.db.session import session_scope
+
+    now = datetime.now(timezone.utc)
+    cutoff = datetime.fromtimestamp(now.timestamp() - 24 * 3600, tz=timezone.utc).isoformat()
+    with session_scope() as db:
+        human_rows = db.query(HumanitarianIncidentDB).all()
+        human_ids = {row.incident_id for row in human_rows}
+        humanitarian_count = sum(1 for row in human_rows if _belongs_to_play(row, now=now))
+        maritime_count = 0
+        rows = (
+            db.query(IntelEventDB)
+            .filter(
+                IntelEventDB.type.in_(public_archive_event_types()),
+                IntelEventDB.timestamp_utc <= cutoff,
+                IntelEventDB.lat.isnot(None),
+                IntelEventDB.lon.isnot(None),
+            )
+            .yield_per(1000)
+        )
+        for event in rows:
+            if event.id in human_ids:
+                continue
+            if _is_public_historical_maritime(event, now=now):
+                maritime_count += 1
+    return {
+        "total_count": humanitarian_count + maritime_count,
+        "humanitarian_count": humanitarian_count,
+        "maritime_count": maritime_count,
+        "generated_at": now.isoformat(),
+    }
+
+
 @router.get("/incidents")
 async def play_incidents(
     limit: int = Query(100, ge=1, le=500),

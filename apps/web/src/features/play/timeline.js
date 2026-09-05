@@ -55,7 +55,9 @@ export function satelliteRasterDescriptor(observation) {
   }
   const bbox = Array.isArray(props.bbox) ? props.bbox.map(Number) : null;
   const looksLikeImage = /\.(?:png|jpe?g|webp)(?:\?|$)/i.test(asset);
-  if (!looksLikeImage || bbox?.length !== 4 || bbox.some((value) => !Number.isFinite(value))) return null;
+  const copernicusThumbnail = observation?.source === 'copernicus_dataspace'
+    && /\/odata\/v1\/Assets\([^)]*\)\/\$value(?:\?|$)/i.test(asset);
+  if ((!looksLikeImage && !copernicusThumbnail) || bbox?.length !== 4 || bbox.some((value) => !Number.isFinite(value))) return null;
   const [west, south, east, north] = bbox;
   return {
     type: 'image',
@@ -160,4 +162,23 @@ export function mergeIncidentPages(previous = [], incoming = []) {
     const bAt = parseTime(b?.last_update_at || b?.reported_at);
     return (Number.isFinite(bAt) ? bAt : 0) - (Number.isFinite(aAt) ? aAt : 0);
   });
+}
+
+
+export function satelliteFootprintCollection(timeline = []) {
+  return {
+    type: 'FeatureCollection',
+    features: timeline
+      .filter((item) => item?.type === 'satellite' && item?.source === 'copernicus_dataspace' && item?.geometry)
+      .map((item) => ({
+        type: 'Feature',
+        geometry: item.geometry,
+        properties: {
+          observation_id: item.id,
+          mission: item.properties?.mission || 'Copernicus',
+          sensor_type: item.properties?.sensor_type || 'satellite',
+          temporal_relation: item.properties?.temporal_relation || 'nearest',
+        },
+      })),
+  };
 }

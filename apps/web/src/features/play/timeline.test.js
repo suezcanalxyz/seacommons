@@ -12,6 +12,7 @@ import {
   incidentCollection,
   timelineAtCutoff,
   incidentStatusAtCutoff,
+  satelliteFootprintCollection,
 } from './timeline.js';
 
 const items = [
@@ -159,4 +160,31 @@ test('mergeIncidentPages progressively deduplicates pages and keeps the newest v
   const merged = mergeIncidentPages(first, second);
   assert.deepEqual(merged.map((item) => item.incident_id), ['a', 'b', 'c']);
   assert.equal(merged.find((item) => item.incident_id === 'b').title, 'B new');
+});
+
+
+test('Copernicus OData thumbnails are renderable image sources even without a filename extension', async () => {
+  const { satelliteRasterDescriptor } = await import('./timeline.js');
+  const observation = {
+    source: 'copernicus_dataspace',
+    properties: {
+      asset_ref: 'https://datahub.creodias.eu/odata/v1/Assets(abc)/$value',
+      bbox: [14, 35, 15, 36],
+      mission: 'Sentinel-1',
+    },
+  };
+  const source = satelliteRasterDescriptor(observation);
+  assert.equal(source.type, 'image');
+  assert.equal(source.url, observation.properties.asset_ref);
+});
+
+test('Sentinel footprints remain visible when no raster preview is available', () => {
+  const timeline = [{
+    id: 's1', type: 'satellite', source: 'copernicus_dataspace',
+    geometry: { type: 'Polygon', coordinates: [[[14,35],[15,35],[15,36],[14,35]]] },
+    properties: { mission: 'Sentinel-1', sensor_type: 'sar' },
+  }];
+  const collection = satelliteFootprintCollection(timeline);
+  assert.equal(collection.features.length, 1);
+  assert.equal(collection.features[0].properties.mission, 'Sentinel-1');
 });

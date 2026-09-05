@@ -1229,6 +1229,9 @@ def test_mode_all_reserves_humanitarian_features_from_security_flood() -> None:
     ids = {feature["properties"]["id"] for feature in collection["features"]}
     assert "intel:floodtest-hum-01" in ids
     assert len(collection["features"]) == limit
+    # Public counter is the real eligible Live population, never the transport cap.
+    assert collection["meta"]["total"] == collection["meta"]["mode_counts"]["humanitarian"] + collection["meta"]["mode_counts"]["security"] + collection["meta"]["mode_counts"]["safety"]
+    assert collection["meta"]["total"] > len(collection["features"])
 
 
 def test_public_feed_modes_return_separate_signals_and_counts(monkeypatch) -> None:
@@ -1878,3 +1881,20 @@ def test_needs_review_drift_leaves_live_after_24h(monkeypatch) -> None:
     collection = public_drift_collection(limit=50)
     ids = {f["properties"]["intel_event_id"] for f in collection["features"]}
     assert event.id not in ids
+
+
+def test_mode_all_never_caps_humanitarian_even_when_it_exceeds_transport_limit(monkeypatch) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    events = [
+        IntelEvent(
+            id=f"always-human-{i}", timestamp_utc=now, type="distress", severity="high",
+            lat=34.0 + i * 0.01, lon=14.0, title="Distress", source="Alarm Phone",
+            metadata={"is_distress": True, "maritime_domain": "sar", "source_policy": "official_site_embed"},
+        ) for i in range(3)
+    ]
+    monkeypatch.setattr("core.live.feed.intel_store.events", lambda **_kwargs: events)
+    monkeypatch.setattr("core.live.feed.intel_store.persisted_events", lambda **_kwargs: [])
+    monkeypatch.setattr("core.live.feed._published_ingested_features", lambda _limit: [])
+    collection = public_signal_collection(limit=2, days=1, mode="all")
+    assert len(collection["features"]) == 3
+    assert collection["meta"]["total"] == 3

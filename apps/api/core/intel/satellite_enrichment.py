@@ -11,17 +11,20 @@ from core.intel.satellite_resolver import resolve_for_incident
 logger = logging.getLogger(__name__)
 
 SATELLITE_HISTORY_DAYS = 7
+PLAY_HUMANITARIAN_HISTORY_DAYS = 30
 SATELLITE_RECHECK_MINUTES = 30
 _DIRECTIONS = ("reverse", "nearest", "forward")
 
 
-def is_satellite_enrichment_candidate(event, *, now: datetime | None = None) -> bool:
+def is_satellite_enrichment_candidate(
+    event, *, now: datetime | None = None, history_days: int = SATELLITE_HISTORY_DAYS
+) -> bool:
     """Select sparse incident-level signals, never raw high-volume AIS pings."""
     if event.lat is None or event.lon is None:
         return False
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     observed = parse_utc(event.timestamp_utc)
-    if observed is not None and now - observed > timedelta(days=SATELLITE_HISTORY_DAYS):
+    if observed is not None and now - observed > timedelta(days=max(1, history_days)):
         return False
 
     meta = event.metadata or {}
@@ -77,13 +80,25 @@ def enrich_recent_events(*, limit: int = 6, now: datetime | None = None) -> dict
     from core.intel.store import intel_store
 
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    events = intel_store.events(limit=300, max_age_days=SATELLITE_HISTORY_DAYS)
+    recent = intel_store.events(limit=300, max_age_days=SATELLITE_HISTORY_DAYS)
+    humanitarian_history = intel_store.persisted_events(
+        source_in=["Alarm Phone", "alarm_phone"],
+        max_age_days=PLAY_HUMANITARIAN_HISTORY_DAYS,
+        limit=120,
+    )
+    priority_ids = {event.id for event in humanitarian_history}
+    ordered = [*humanitarian_history, *recent]
+    events = list({event.id: event for event in ordered}.values())
     report = {"scanned": len(events), "enriched": 0, "persisted": 0, "errors": 0}
 
     for event in events:
         if report["enriched"] >= limit:
             break
-        if not is_satellite_enrichment_candidate(event, now=now) or not _is_due(event, now=now):
+        history_days = (
+            PLAY_HUMANITARIAN_HISTORY_DAYS if event.id in priority_ids
+            else SATELLITE_HISTORY_DAYS
+        )
+        if not is_satellite_enrichment_candidate(event, now=now, history_days=history_days) or not _is_due(event, now=now):
             continue
         result = enrich_event(event, now=now)
         report["enriched"] += 1
