@@ -35,6 +35,7 @@ import { fetchJson } from './services/api/client.js';
 import { useLiveFeed } from './hooks/useLiveFeed.js';
 import { FEED_STATUS_LABEL, FEED_STATUS_TONE, liveSignalTotal } from './features/live/feedStatus.js';
 import { mergeIntelDriftUpdate } from './features/live/normalize.js';
+import { splitObservedTrackSegments } from './features/live/observedTrack.js';
 import { mergeLiveDrifts } from './simulation/liveTracking.js';
 
 // Short two-tone chime for a correlated OSINT alert. Web Audio only; silent
@@ -2467,20 +2468,17 @@ function App() {
     const observedTracks = intelEvents.flatMap((feature) => {
       const p = feature.properties || {};
       const points = Array.isArray(p.observed_track) ? p.observed_track : [];
-      const coordinates = points
-        .map((point) => [Number(point.lon), Number(point.lat)])
-        .filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
-      if (coordinates.length < 2) return [];
-      return [{
+      return splitObservedTrackSegments(points).map((segment, segmentIndex) => ({
         type: 'Feature',
-        geometry: { type: 'LineString', coordinates },
+        geometry: { type: 'LineString', coordinates: segment.map((point) => [point.lon, point.lat]) },
         properties: {
           episode_id: p.episode_id || p.id,
+          segment_index: segmentIndex,
           mmsi: p.linked_mmsi || p.mmsi,
           maritime_domain: p.maritime_domain,
           track_kind: 'observed_ais',
         },
-      }];
+      }));
     });
     map.getSource('intel-observed-tracks')?.setData({ type: 'FeatureCollection', features: observedTracks });
   }, [intelEvents, mapReady, activeSignalCategories, layerVis.alarm_phone]);
@@ -3517,6 +3515,7 @@ function App() {
                 publicMode
                 intelEvents={intelEvents}
                 intelStats={intelStats}
+                liveModeCounts={liveModeCounts}
                 intelFilter={intelFilter}
                 setIntelFilter={setIntelFilter}
                 feedStatus={feedStatus}
@@ -3649,6 +3648,8 @@ function App() {
               publicMode={isPublicLiveHost}
               intelEvents={intelEvents}
               intelStats={intelStats}
+              liveModeCounts={liveModeCounts}
+              liveMode={liveMode}
               intelFilter={intelFilter}
               setIntelFilter={setIntelFilter}
               feedStatus={feedStatus}

@@ -222,6 +222,7 @@ export default function IntelDashboard({
   publicMode = false,
   intelEvents,
   intelStats,
+  liveModeCounts = null,
   intelFilter,
   setIntelFilter,
   feedStatus = 'live',
@@ -422,19 +423,16 @@ export default function IntelDashboard({
       {/* Stats row */}
       <section className="panel-block" style={{ paddingTop: 0, paddingBottom: 8 }}>
         <div className="osint-stats-row">
-          <div className="osint-stat">
-            <strong>{intelStats.total}</strong>
-            <span>{publicMode ? (liveMode === 'all' ? 'signals' : 'humanitarian') : 'events'}</span>
-          </div>
-          <div className="osint-stat osint-stat--critical">
-            <strong>{intelStats.by_sev?.critical || 0}</strong><span>critical</span>
-          </div>
-          <div className="osint-stat osint-stat--high">
-            <strong>{intelStats.by_sev?.high || 0}</strong><span>high</span>
-          </div>
-          <div className="osint-stat">
-            <strong>{filteredEvents.length}</strong><span>shown</span>
-          </div>
+          {publicMode ? (<>
+            <div className="osint-stat"><strong>{(liveModeCounts?.humanitarian || 0) + (liveModeCounts?.security || 0) + (liveModeCounts?.safety || 0)}</strong><span>live total</span></div>
+            <div className="osint-stat osint-stat--critical"><strong>{liveModeCounts?.humanitarian || 0}</strong><span>humanitarian</span></div>
+            <div className="osint-stat"><strong>{(liveModeCounts?.security || 0) + (liveModeCounts?.safety || 0)}</strong><span>maritime</span></div>
+          </>) : (<>
+            <div className="osint-stat"><strong>{intelStats.total}</strong><span>events</span></div>
+            <div className="osint-stat osint-stat--critical"><strong>{intelStats.by_sev?.critical || 0}</strong><span>critical</span></div>
+            <div className="osint-stat osint-stat--high"><strong>{intelStats.by_sev?.high || 0}</strong><span>high</span></div>
+            <div className="osint-stat"><strong>{filteredEvents.length}</strong><span>shown</span></div>
+          </>)}
         </div>
       </section>
 
