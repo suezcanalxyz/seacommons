@@ -13,15 +13,16 @@ from core.intel.store import IntelEvent
 
 @pytest.fixture(autouse=True)
 def _fresh_play_tables():
-    from core.db.models import DriftResultDB, HumanitarianIncidentDB, IncidentTransitionDB
+    from core.db.models import DriftResultDB, HumanitarianIncidentDB, IncidentTransitionDB, SatelliteObservationDB
     from core.db.session import engine, session_scope
 
-    for table in (HumanitarianIncidentDB, IncidentTransitionDB, DriftResultDB):
+    for table in (HumanitarianIncidentDB, IncidentTransitionDB, DriftResultDB, SatelliteObservationDB):
         table.__table__.create(bind=engine(), checkfirst=True)
     with session_scope() as db:
         db.query(HumanitarianIncidentDB).delete()
         db.query(IncidentTransitionDB).delete()
         db.query(DriftResultDB).delete()
+        db.query(SatelliteObservationDB).delete()
     yield
 
 
@@ -110,3 +111,30 @@ def test_recent_active_incident_stays_out_of_play_index():
     assert response.status_code == 200
     ids = {item["incident_id"] for item in response.json()["incidents"]}
     assert event_id not in ids
+
+
+def test_play_timeline_includes_persisted_satellite_observation():
+    from core.intel.satellite_observation import SatelliteObservation, persist_observations
+
+    event_id = _seed_case(lifecycle="resolved")
+    observation = SatelliteObservation(
+        observation_id=f"sat-{uuid.uuid4()}", incident_id=event_id,
+        provider="copernicus_dataspace", mission="Sentinel-1", product_id="S1_CASE",
+        acquisition_time="2026-09-04T09:30:00+00:00",
+        discovered_at="2026-09-05T00:00:00+00:00",
+        footprint={"type": "Polygon", "coordinates": []},
+        bbox=[14.0, 35.0, 14.2, 35.2], sensor_type="sar",
+        temporal_relation="reverse", temporal_delta_s=-7200,
+        asset_ref="https://example.test/preview.jpg",
+        source_url="https://example.test/stac/S1_CASE",
+        provenance={"stac_collection": "sentinel-1-grd"},
+    )
+    assert persist_observations([observation]) == 1
+
+    response = TestClient(app).get(f"/api/v1/play/incidents/{event_id}/timeline")
+    assert response.status_code == 200
+    satellite = next(item for item in response.json()["timeline"] if item["type"] == "satellite")
+    assert satellite["properties"]["mission"] == "Sentinel-1"
+    assert satellite["properties"]["temporal_relation"] == "reverse"
+    assert satellite["properties"]["asset_ref"] == "https://example.test/preview.jpg"
+    assert satellite["properties"]["bbox"] == [14.0, 35.0, 14.2, 35.2]

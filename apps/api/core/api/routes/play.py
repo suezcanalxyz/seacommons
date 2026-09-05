@@ -160,6 +160,7 @@ async def play_incident_timeline(incident_id: str):
         HumanitarianIncidentDB,
         IncidentTransitionDB,
         IntelEventDB,
+        SatelliteObservationDB,
     )
     from core.db.session import session_scope
 
@@ -212,6 +213,14 @@ async def play_incident_timeline(incident_id: str):
         )
         timeline.extend(_drift_item(row) for row in drifts)
 
+        satellites = (
+            db.query(SatelliteObservationDB)
+            .filter(SatelliteObservationDB.incident_id == incident_id)
+            .order_by(SatelliteObservationDB.acquisition_time.asc())
+            .all()
+        )
+        timeline.extend(_satellite_item(row) for row in satellites)
+
     timeline = [item for item in timeline if item.get("at")]
     timeline.sort(key=lambda item: item["at"])
     return {
@@ -220,4 +229,30 @@ async def play_incident_timeline(incident_id: str):
         "surface": "play",
         "timeline": timeline,
         "generated_at": now.isoformat(),
+    }
+
+
+def _satellite_item(row) -> dict[str, Any]:
+    return {
+        "id": row.observation_id,
+        "at": _iso(row.acquisition_time),
+        "type": "satellite",
+        "source": row.provider,
+        "title": f"{row.mission} observation",
+        "geometry": row.footprint,
+        "properties": {
+            "mission": row.mission,
+            "product_id": row.product_id,
+            "sensor_type": row.sensor_type,
+            "temporal_relation": row.temporal_relation,
+            "temporal_delta_s": row.temporal_delta_s,
+            "asset_ref": row.asset_ref,
+            "source_url": row.source_url,
+            "bbox": row.bbox,
+            "resolution_m": row.resolution_m,
+            "cloud_cover": row.cloud_cover,
+            "polarisation": row.polarisation,
+            "evidence_status": row.evidence_status,
+            "provenance": row.provenance or {},
+        },
     }

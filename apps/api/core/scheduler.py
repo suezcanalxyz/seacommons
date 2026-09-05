@@ -383,6 +383,23 @@ def _job_mda_daily() -> None:
         logger.info("MDA daily track prune skipped: %s", exc)
 
 
+# ── Job: satellite evidence enrichment ───────────────────────────────────────
+
+def _job_satellite_enrichment() -> None:
+    """Collect a bounded batch of free satellite evidence for recent incidents."""
+    try:
+        from core.intel.satellite_enrichment import enrich_recent_events
+
+        report = enrich_recent_events(limit=6)
+        if report["enriched"] or report["errors"]:
+            logger.info(
+                "Scheduler satellite enrichment: scanned=%d enriched=%d persisted=%d errors=%d",
+                report["scanned"], report["enriched"], report["persisted"], report["errors"],
+            )
+    except Exception as exc:
+        logger.warning("Scheduler satellite enrichment failed: %s", exc)
+
+
 # ── Job: Humanitarian Live/Play retirement ───────────────────────────────────
 
 def _job_reconcile_humanitarian_incidents() -> None:
@@ -435,6 +452,10 @@ def start() -> None:
                           id="humanitarian_reconcile", replace_existing=True,
                           max_instances=1, misfire_grace_time=300, next_run_time=_soon())
 
+        scheduler.add_job(_job_satellite_enrichment, IntervalTrigger(minutes=30),
+                          id="satellite_enrichment", replace_existing=True,
+                          max_instances=1, misfire_grace_time=600, next_run_time=_soon())
+
         scheduler.add_job(_job_iom_incidents,  IntervalTrigger(hours=1),
                           id="iom_incidents",  replace_existing=True,
                           max_instances=1, misfire_grace_time=600)
@@ -457,7 +478,7 @@ def start() -> None:
         _scheduler = scheduler
         logger.info(
             "Background scheduler started: refresh_news(30m), source_health(15m), "
-            "humanitarian_reconcile(15m), iom_incidents(1h), forensic_scan(6h), "
+            "humanitarian_reconcile(15m), satellite_enrichment(30m), iom_incidents(1h), forensic_scan(6h), "
             "mda_reference(14d), mda_daily(24h) "
             "[drift: manual-only]"
         )
