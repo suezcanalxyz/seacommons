@@ -206,3 +206,11 @@ test('satellite layer can explicitly select a mission', async () => {
   ];
   assert.equal(selectPreferredSatelliteObservation(timeline, '2026-09-05T00:00:00Z', 'Sentinel-2')?.id, 's2');
 });
+
+
+test('selector respects cutoff and null cloud metadata', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /new Set\(visibleTimeline/);
+  assert.match(source, /setSatelliteMission\('auto'\)/);
+  assert.match(source, /cloud_cover != null/);
+});

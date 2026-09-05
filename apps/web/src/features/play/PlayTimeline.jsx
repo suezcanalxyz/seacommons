@@ -122,10 +122,10 @@ export default function PlayTimeline({ apiBase }) {
     [visibleTimeline, frame.item?.at, satelliteMission],
   );
   const satelliteMissions = useMemo(
-    () => [...new Set(fullTimeline
+    () => [...new Set(visibleTimeline
       .filter((item) => item?.type === 'satellite' && item?.properties?.mission)
       .map((item) => item.properties.mission))],
-    [fullTimeline],
+    [visibleTimeline],
   );
 
   useEffect(() => {
@@ -174,6 +174,16 @@ export default function PlayTimeline({ apiBase }) {
     const timer = window.setInterval(loadCounts, 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [apiBase]);
+
+  useEffect(() => {
+    setSatelliteMission('auto');
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (satelliteMission !== 'auto' && !satelliteMissions.includes(satelliteMission)) {
+      setSatelliteMission('auto');
+    }
+  }, [satelliteMission, satelliteMissions]);
 
   useEffect(() => {
     if (selectedId && !visibleIncidents.some((item) => item.incident_id === selectedId)) {
@@ -397,7 +407,7 @@ export default function PlayTimeline({ apiBase }) {
             {satelliteProps.product_id ? <span>Product {satelliteProps.product_id}</span> : null}
             {satelliteProps.temporal_relation ? <span>{satelliteProps.temporal_relation}</span> : null}
             {satelliteProps.polarisation?.length ? <span>Polarisation {satelliteProps.polarisation.join(' / ')}</span> : null}
-            {Number.isFinite(Number(satelliteProps.cloud_cover)) ? <span>Cloud {Math.round(Number(satelliteProps.cloud_cover))}%</span> : null}
+            {satelliteProps.cloud_cover != null && Number.isFinite(Number(satelliteProps.cloud_cover)) ? <span>Cloud {Math.round(Number(satelliteProps.cloud_cover))}%</span> : null}
             {satelliteProps.evidence_status ? <span>Evidence {satelliteProps.evidence_status}</span> : null}
             {satelliteProps.source_url ? <a href={satelliteProps.source_url} target="_blank" rel="noreferrer">Acquisition record ↗</a> : null}
           </section>
