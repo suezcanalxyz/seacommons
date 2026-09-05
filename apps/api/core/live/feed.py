@@ -441,6 +441,12 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         )
         if public_event is None:
             continue
+        # Drift is a derived Live product and obeys the exact same rolling
+        # 24h surface boundary as its founding distress signal. A needs_review
+        # incident can retain that real-world status in Play without keeping an
+        # operational trajectory/cone on Live indefinitely.
+        if not lifecycle.is_within_live_window(event, now=now):
+            continue
         # Once an incident is resolved or archived, the search is over --
         # an active-looking pulsing drift cone still on the map reads as
         # "still adrift, still searching", which is exactly wrong for a
