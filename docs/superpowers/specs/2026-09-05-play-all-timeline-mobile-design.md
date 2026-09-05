@@ -117,3 +117,16 @@ surface rules.
 10. Humanitarian and Maritime points are both represented in ALL mode.
 11. Alarm Phone ingestion health is checked during rollout and missing public posts are explained.
 12. Full frontend tests/lint/typecheck/build pass before deploy; public mobile/desktop smoke passes after deploy.
+
+## Live mobile selected-case layout
+
+The mobile Live detail interaction is map-first, not modal-overlay-first. When a case is selected on a phone, the map remains visible in the upper viewport with the selected marker kept inside the visible map area. The report/details occupy the lower portion as a full-width document sheet.
+
+The detail sheet must scroll independently, use readable line lengths, and never place long provenance/status values into a narrow two-column layout. On small screens, metadata rows stack when needed. The close control remains reachable without covering the report title.
+
+Acceptance criteria:
+- selecting a Live case on a 390-430 px viewport keeps at least 30vh of map visible;
+- the selected point is fit into the visible upper map region rather than hidden behind the sheet;
+- report content uses full device width below the map and scrolls vertically;
+- no horizontal overflow in OpenDrift, provenance, source, status, or evidence blocks;
+- closing the report returns to the normal full-map Live view.
