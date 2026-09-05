@@ -366,20 +366,20 @@ def public_signal_collection(
         for mode_name, mode_features in features_by_mode.items()
     }
     if selected_mode == "all":
-        # A flat merge-then-truncate starves humanitarian content: security
-        # fires far more often (MDA scans every few minutes; a genuine
-        # distress report is rare), so a plain recency sort can push every
-        # humanitarian feature past `limit` even though mode_counts still
-        # reports it as eligible -- observed in production: a published,
-        # is_distress=true Alarm Phone report was absent from `features`
-        # while mode_counts.humanitarian correctly said 1. Reserve every
-        # currently-eligible humanitarian feature first (this mode's whole
-        # volume is small; it will not itself starve security), then fill
-        # the remainder of the page with the newest security features.
-        humanitarian_reserved = features_by_mode["humanitarian"][:limit]
-        security_budget = max(0, limit - len(humanitarian_reserved))
+        # The public transport cap protects the browser from Maritime volume;
+        # it must never hide an eligible humanitarian distress. Humanitarian
+        # is therefore unbounded by `limit`, while Safety then Security fill
+        # the remaining transport budget. The real population is reported
+        # separately in meta.total/mode_counts.
+        humanitarian_reserved = list(features_by_mode["humanitarian"])
+        maritime_budget = max(0, limit - len(humanitarian_reserved))
+        maritime_candidates = [
+            *features_by_mode["safety"],
+            *features_by_mode["security"],
+        ]
+        selected_maritime = maritime_candidates[:maritime_budget]
         features = sorted(
-            humanitarian_reserved + features_by_mode["security"][:security_budget],
+            humanitarian_reserved + selected_maritime,
             key=lambda f: str(f["properties"].get("timestamp_utc") or ""),
             reverse=True,
         )
@@ -391,14 +391,20 @@ def public_signal_collection(
             for feature in features
             if str(feature["properties"].get("timestamp_utc") or "") > since
         ]
-    features = features[:limit]
+    if selected_mode != "all":
+        features = features[:limit]
+
+    real_total = (
+        sum(mode_counts.values()) if selected_mode == "all"
+        else mode_counts[selected_mode]
+    )
 
     return {
         "type": "FeatureCollection",
         "features": features,
         "meta": {
             "schema": "org.seacommons.live-feed/v1",
-            "total": len(features),
+            "total": real_total,
             "mode": selected_mode,
             "mode_counts": mode_counts,
             "memory_candidates": len(memory_events),

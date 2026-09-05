@@ -10,6 +10,7 @@ import {
   normalizeTimeline,
   resolveGlobalTimelinePosition,
   satelliteRasterDescriptor,
+  satelliteFootprintCollection,
   selectFrame,
   selectSatelliteObservation,
   statusLabel,
@@ -83,6 +84,7 @@ export default function PlayTimeline({ apiBase }) {
   const mapRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
   const [incidents, setIncidents] = useState([]);
+  const [archiveTotal, setArchiveTotal] = useState(null);
   const [selectedId, setSelectedId] = useState('');
   const [caseData, setCaseData] = useState(null);
   const [globalPosition, setGlobalPosition] = useState(TIMELINE_MAX);
@@ -150,6 +152,23 @@ export default function PlayTimeline({ apiBase }) {
   }, [apiBase]);
 
   useEffect(() => {
+    let cancelled = false;
+    async function loadCounts() {
+      try {
+        const payload = await fetchJson(apiBase, '/api/v1/play/counts');
+        if (!cancelled && Number.isFinite(Number(payload?.total_count))) {
+          setArchiveTotal(Number(payload.total_count));
+        }
+      } catch {
+        // Map/archive loading remains usable even if the lightweight counter is unavailable.
+      }
+    }
+    loadCounts();
+    const timer = window.setInterval(loadCounts, 60_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [apiBase]);
+
+  useEffect(() => {
     if (selectedId && !visibleIncidents.some((item) => item.incident_id === selectedId)) {
       setSelectedId('');
       setCaseData(null);
@@ -210,6 +229,15 @@ export default function PlayTimeline({ apiBase }) {
           filter: ['==', ['geometry-type'], 'LineString'],
           paint: { 'line-color': '#8ed8ff', 'line-width': 3, 'line-opacity': 0.9 },
         });
+        map.addSource('play-satellite-footprints', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({
+          id: 'play-satellite-footprint-fill', type: 'fill', source: 'play-satellite-footprints',
+          paint: { 'fill-color': '#75a7ff', 'fill-opacity': 0.08 },
+        });
+        map.addLayer({
+          id: 'play-satellite-footprint-line', type: 'line', source: 'play-satellite-footprints',
+          paint: { 'line-color': '#75a7ff', 'line-width': 1.5, 'line-opacity': 0.85, 'line-dasharray': [2, 2] },
+        });
         map.on('click', 'play-incidents', (event) => {
           const id = event.features?.[0]?.properties?.incident_id;
           if (id) {
@@ -236,6 +264,7 @@ export default function PlayTimeline({ apiBase }) {
     if (!mapReady || !map) return;
     map.getSource('play-incidents')?.setData(incidentCollection(visibleIncidents));
     map.getSource('play-evidence')?.setData(evidenceCollection(visibleTimeline));
+    map.getSource('play-satellite-footprints')?.setData(satelliteFootprintCollection(visibleTimeline));
     if (map.getLayer('play-incidents')) {
       map.setPaintProperty('play-incidents', 'circle-radius', ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5]);
     }
@@ -272,11 +301,11 @@ export default function PlayTimeline({ apiBase }) {
         </div>
         <div className="play-header__actions">
           <button className="play-mobile-cases-toggle" type="button" onClick={() => setCasesOpen((value) => !value)}>
-            Archive · {visibleIncidents.length}
+            Archive · {globalState.mode === 'all' && archiveTotal != null ? archiveTotal : visibleIncidents.length}
           </button>
           <div className="play-header__meta">
             <span>{globalState.mode === 'all' ? 'Complete archive' : 'Historical cutoff'}</span>
-            <strong>{visibleIncidents.length} / {incidents.length}</strong>
+            <strong>{globalState.mode === 'all' && archiveTotal != null ? archiveTotal : visibleIncidents.length}</strong>
           </div>
         </div>
       </header>
@@ -305,7 +334,7 @@ export default function PlayTimeline({ apiBase }) {
 
       <section className="play-map-stage">
         <div className="play-map" ref={mapNodeRef} />
-        <div className="play-all-badge"><strong>{modeLabel}</strong><span>{visibleIncidents.length} points</span></div>
+        <div className="play-all-badge"><strong>{modeLabel}</strong><span>{globalState.mode === 'all' && archiveTotal != null ? `${archiveTotal} archive` : `${visibleIncidents.length} points`}</span></div>
         {loading ? <div className="play-map-message">Loading temporal evidence…</div> : null}
         {error ? <div className="play-map-message is-error">{error}</div> : null}
         {selectedId ? (

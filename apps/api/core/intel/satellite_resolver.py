@@ -222,7 +222,8 @@ def resolve_for_incident(
     if direction == "reverse":
         start, end = event_time - timedelta(days=7), event_time
     elif direction == "forward":
-        start, end = event_time, max(event_time, now)
+        start = event_time
+        end = min(max(event_time, now), event_time + timedelta(days=7))
     else:
         start = event_time - timedelta(days=3)
         end = min(event_time + timedelta(days=3), max(event_time, now))
