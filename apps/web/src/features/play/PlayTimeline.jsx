@@ -361,7 +361,7 @@ export default function PlayTimeline({ apiBase }) {
       </header>
 
       <button className="live-feed-toggle play-mobile-cases-toggle" type="button" onClick={() => setCasesOpen((value) => !value)}>
-        Archive · {globalState.mode === 'all' && archiveTotal != null ? archiveTotal : visibleIncidents.length}
+        Archive · {archiveTotal != null ? archiveTotal : `${visibleIncidents.length} loaded`}
       </button>
 
       <aside className={`live-feed-panel is-open play-archive-panel play-cases ${casesOpen ? 'is-mobile-open' : ''}`}>
@@ -405,7 +405,7 @@ export default function PlayTimeline({ apiBase }) {
 
       <section className="map-stage play-map-stage">
         <div className="map-frame play-map" ref={mapNodeRef} />
-        <div className="play-all-badge"><strong>{modeLabel}</strong><span>{globalState.mode === 'all' && archiveTotal != null ? `${archiveTotal} archive` : `${visibleIncidents.length} points`}</span></div>
+        <div className="play-all-badge"><strong>{modeLabel}</strong><span>{archiveTotal != null ? `${archiveTotal} archive` : `${visibleIncidents.length} loaded`}</span></div>
         {loading ? <div className="play-map-message">Loading temporal evidence…</div> : null}
         {error ? <div className="play-map-message is-error">{error}</div> : null}
         {selectedId ? (
