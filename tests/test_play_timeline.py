@@ -244,3 +244,37 @@ def test_play_counts_exposes_real_archive_total():
     payload = response.json()
     assert payload["total_count"] == payload["humanitarian_count"] + payload["maritime_count"]
     assert payload["total_count"] >= 2
+
+
+def test_play_counts_route_is_sync_so_exact_scan_does_not_block_event_loop():
+    import inspect
+    from core.api.routes.play import play_counts
+    assert inspect.iscoroutinefunction(play_counts) is False
+
+
+def test_play_counts_uses_short_lived_exact_snapshot_cache(monkeypatch):
+    from core.api.routes import play as play_routes
+
+    calls = []
+    def fake_compute():
+        calls.append(1)
+        return {
+            "total_count": 12, "humanitarian_count": 2, "maritime_count": 10,
+            "generated_at": "2026-09-05T14:00:00+00:00",
+        }
+
+    monkeypatch.setattr(play_routes, "_compute_play_counts", fake_compute)
+    play_routes._play_counts_cache.clear()
+    first = play_routes.play_counts()
+    second = play_routes.play_counts()
+    assert first == second
+    assert first["total_count"] == 12
+    assert len(calls) == 1
+    play_routes._play_counts_cache.clear()
+
+
+def test_play_db_routes_are_sync_for_threadpool_isolation():
+    import inspect
+    from core.api.routes.play import play_incidents, play_incident_timeline
+    assert inspect.iscoroutinefunction(play_incidents) is False
+    assert inspect.iscoroutinefunction(play_incident_timeline) is False
