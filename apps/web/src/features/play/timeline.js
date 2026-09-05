@@ -37,6 +37,32 @@ export function selectSatelliteObservation(timeline = [], at) {
   return [...candidates].sort((a, b) => parseTime(a.at) - parseTime(b.at))[0];
 }
 
+
+export function selectPreferredSatelliteObservation(timeline = [], at = null, preferredMission = 'auto') {
+  const target = parseTime(at);
+  const candidates = timeline
+    .filter((item) => item?.type === 'satellite')
+    .filter((item) => !Number.isFinite(target) || parseTime(item?.at) <= target);
+  if (!candidates.length) return null;
+
+  const newest = (items) => [...items].sort((a, b) => parseTime(b?.at) - parseTime(a?.at))[0] || null;
+  if (preferredMission && preferredMission !== 'auto') {
+    return newest(candidates.filter((item) => item?.properties?.mission === preferredMission));
+  }
+
+  const priorities = [
+    (mission) => mission === 'Sentinel-1',
+    (mission) => mission === 'Sentinel-2',
+    (mission) => mission === 'Sentinel-3',
+    (mission) => String(mission || '').startsWith('VIIRS'),
+  ];
+  for (const matches of priorities) {
+    const selected = newest(candidates.filter((item) => matches(item?.properties?.mission)));
+    if (selected) return selected;
+  }
+  return newest(candidates);
+}
+
 export function statusLabel(status) {
   const value = String(status || '').toLowerCase();
   if (value === 'needs_review') return 'NEEDS REVIEW';
