@@ -35,6 +35,7 @@ from typing import Callable, Optional
 
 from core.config import config
 from core.geo import cluster_key, haversine_km
+from core.intel.evidence_lineage import lineage_for_event
 from core.intel.store import IntelEvent, intel_store
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,9 @@ class FusionSignal:
     mmsi: str = ""
     imo: str = ""
     source: str = ""
+    source_family: str = "unknown"
+    independence_group: str = "unknown"
+    sensor_family: str = "unknown"
     severity: str = ""
     weight: float = 0.0
 
@@ -144,6 +148,7 @@ def normalize(event: IntelEvent) -> Optional[FusionSignal]:
     ).lower()
     mmsi = str(event.linked_mmsi or meta.get("mmsi") or meta.get("MMSI") or "").strip()
     imo = str(meta.get("imo") or meta.get("IMO") or "").strip()
+    lineage = lineage_for_event(event)
     return FusionSignal(
         event_id=event.id,
         kind=event.type,
@@ -154,6 +159,9 @@ def normalize(event: IntelEvent) -> Optional[FusionSignal]:
         mmsi=mmsi,
         imo=imo,
         source=event.source or event.type,
+        source_family=lineage.source_family,
+        independence_group=lineage.independence_group,
+        sensor_family=lineage.sensor_family,
         severity=event.severity or "",
     )
 
@@ -167,6 +175,26 @@ def _recent_signals(exclude_id: str, limit: int = 600) -> list[FusionSignal]:
         if sig is not None:
             out.append(sig)
     return out
+
+
+def verification_for_event_ids(event_ids: list[str]) -> tuple[str, list[str], int]:
+    """Classify corroboration from evidence lineage, never detector count."""
+    groups: set[str] = set()
+    found = 0
+    for event_id in dict.fromkeys(event_ids):
+        event = intel_store.get_durable(event_id)
+        if event is None:
+            continue
+        found += 1
+        group = lineage_for_event(event).independence_group
+        if group != "unknown":
+            groups.add(group)
+    ordered = sorted(groups)
+    if len(ordered) >= 2:
+        return "multi_source_corroborated", ordered, found
+    if found >= 2:
+        return "single_source_multi_indicator", ordered, found
+    return "single_source_observed", ordered, found
 
 
 # ── rules ─────────────────────────────────────────────────────────────────────
@@ -565,15 +593,21 @@ def _emit_locked(alert: FusedAlert) -> None:
         logger.debug("fusion: cluster %s already alerted, skipping", alert.cluster_id)
         return
 
+    verification_status, independence_groups, evidence_count = verification_for_event_ids(
+        alert.contributing_event_ids
+    )
     metadata = {
         "alert_type": alert.alert_type,
         "maritime_domain": alert.domain,
         "confidence": alert.confidence,
         "contributing": alert.contributing_event_ids,
         "contributing_sources": alert.contributing_sources,
+        "contributing_independence_groups": independence_groups,
+        "independent_source_count": len(independence_groups),
+        "evidence_count": evidence_count,
         "cluster_id": alert.cluster_id,
         "is_distress": alert.domain == "sar",
-        "verification_status": "multi_source_corroborated",
+        "verification_status": verification_status,
         "coordinate_source": "post_text",
     }
     if alert.vessel_mmsi:

@@ -478,3 +478,79 @@ def test_no_relink_by_proximity_beyond_relink_radius() -> None:
 
     with session_scope() as db:
         assert db.query(CaseDB).count() == 2
+
+
+def test_verification_one_event_is_single_source_observed() -> None:
+    event = _add(
+        id="lineage-one", type="ais_anomaly", severity="medium",
+        lat=35.9, lon=14.5, title="AIS gap", source="AISStream",
+        linked_mmsi="229113000", metadata={"anomaly_type": "gap"},
+    )
+
+    status, groups, count = fusion.verification_for_event_ids([event.id])
+
+    assert status == "single_source_observed"
+    assert groups == ["ais_sensor_lineage"]
+    assert count == 1
+
+
+def test_two_ais_detectors_are_single_source_multi_indicator() -> None:
+    first = _add(
+        id="lineage-ais-1", type="ais_anomaly", severity="medium",
+        lat=35.9, lon=14.5, title="AIS gap", source="AISStream",
+        linked_mmsi="229113000", metadata={"anomaly_type": "gap"},
+    )
+    second = _add(
+        id="lineage-ais-2", type="ais_anomaly", severity="medium",
+        lat=35.9, lon=14.5, title="Infra proximity", source="mda",
+        linked_mmsi="229113000", metadata={"anomaly_type": "cable_proximity"},
+    )
+
+    status, groups, count = fusion.verification_for_event_ids([first.id, second.id])
+
+    assert status == "single_source_multi_indicator"
+    assert groups == ["ais_sensor_lineage"]
+    assert count == 2
+
+
+def test_ais_plus_independent_official_source_is_multi_source_corroborated() -> None:
+    ais = _add(
+        id="lineage-independent-ais", type="ais_anomaly", severity="medium",
+        lat=35.9, lon=14.5, title="AIS gap", source="AISStream",
+        linked_mmsi="229113000", metadata={"anomaly_type": "gap"},
+    )
+    official = _add(
+        id="lineage-independent-gdacs", type="gdacs", severity="high",
+        lat=35.9, lon=14.5, title="Official alert", source="GDACS",
+        metadata={},
+    )
+
+    status, groups, count = fusion.verification_for_event_ids([ais.id, official.id])
+
+    assert status == "multi_source_corroborated"
+    assert groups == ["ais_sensor_lineage", "gdacs"]
+    assert count == 2
+
+
+def test_same_lineage_spoofing_alert_uses_multi_indicator_verification() -> None:
+    now = datetime.now(timezone.utc)
+    _add(
+        id="verify-spoof-gap", type="ais_anomaly", severity="high",
+        lat=34.5, lon=13.2, title="gap", source="AISStream",
+        linked_mmsi="229113000",
+        timestamp_utc=(now - timedelta(minutes=20)).isoformat(),
+        metadata={"anomaly_type": "long_gap"},
+    )
+    second = _add(
+        id="verify-spoof-jump", type="ais_anomaly", severity="high",
+        lat=34.55, lon=13.25, title="jump", source="mda",
+        linked_mmsi="229113000", metadata={"anomaly_type": "position_jump"},
+    )
+
+    fusion.evaluate(second)
+
+    alert = _alerts()[0]
+    assert alert.metadata["verification_status"] == "single_source_multi_indicator"
+    assert alert.metadata["contributing_independence_groups"] == ["ais_sensor_lineage"]
+    assert alert.metadata["independent_source_count"] == 1
+    assert alert.metadata["evidence_count"] == 2
