@@ -99,22 +99,15 @@ def _record_transition(
 def sync_incident_for_event(
     event: IntelEvent, *, lifecycle: str, case_type: Optional[str] = None,
 ) -> None:
-    """Idempotent upsert keyed by event.id. Never raises -- a caller in
-    an intel_store subscriber callback already isolates exceptions, but
-    this stays defensive on its own too since it may also be called
-    directly (e.g. from a backfill script). Every actual lifecycle
-    transition is also recorded as its own IncidentTransitionDB row
-    (docs/updates.md P0.5) -- append-only, never edited in place."""
+    """Idempotent canonical incident upsert followed by best-effort watch sync."""
     from core.db.models import HumanitarianIncidentDB
     from core.db.session import session_scope
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    created = False
     with session_scope() as db:
         row = db.get(HumanitarianIncidentDB, event.id)
         if row is None:
-            # Subscriber fan-out and operator backfills can legitimately race on
-            # the same first observation. Use a savepoint so the loser of the
-            # insert race can re-read and continue as an idempotent update.
             from sqlalchemy.exc import IntegrityError
 
             try:
@@ -139,40 +132,43 @@ def sync_incident_for_event(
                         db, incident_id=event.id, from_state=None, to_state=lifecycle,
                         event=event, reason_code=_reason_code_for(event, lifecycle), now=now,
                     )
-                return
+                created = True
             except IntegrityError:
                 row = db.get(HumanitarianIncidentDB, event.id)
                 if row is None:
                     raise
 
-        # docs/updates.md P0.6: "out-of-order source updates do not move
-        # reported_at forward" -- the same principle applies to
-        # last_update_at here: a delayed/out-of-order observation must
-        # never make the incident LOOK older than an already-processed
-        # later one. reported_at itself is never touched after creation
-        # (set once above), satisfying that half of the rule directly.
-        from core.intel.lifecycle import parse_utc
+        if not created:
+            from core.intel.lifecycle import parse_utc
 
-        new_ts = parse_utc(event.timestamp_utc)
-        current_ts = parse_utc(row.last_update_at) if row.last_update_at else None
-        if new_ts is None or current_ts is None or new_ts >= current_ts:
-            row.last_update_at = event.timestamp_utc
-        row.revision = (row.revision or 1) + 1
-        row.incident_status = _status_for_lifecycle(lifecycle)
-        if case_type and not row.case_type:
-            row.case_type = case_type
-        if row.lifecycle != lifecycle:
-            previous_lifecycle = row.lifecycle
-            row.lifecycle = lifecycle
-            row.state_changed_at = now
-            if lifecycle == "resolved" and row.resolved_at is None:
-                row.resolved_at = now
-            if lifecycle == "archived" and row.archived_at is None:
-                row.archived_at = now
-            _record_transition(
-                db, incident_id=event.id, from_state=previous_lifecycle, to_state=lifecycle,
-                event=event, reason_code=_reason_code_for(event, lifecycle), now=now,
-            )
+            new_ts = parse_utc(event.timestamp_utc)
+            current_ts = parse_utc(row.last_update_at) if row.last_update_at else None
+            if new_ts is None or current_ts is None or new_ts >= current_ts:
+                row.last_update_at = event.timestamp_utc
+            row.revision = (row.revision or 1) + 1
+            row.incident_status = _status_for_lifecycle(lifecycle)
+            if case_type and not row.case_type:
+                row.case_type = case_type
+            if row.lifecycle != lifecycle:
+                previous_lifecycle = row.lifecycle
+                row.lifecycle = lifecycle
+                row.state_changed_at = now
+                if lifecycle == "resolved" and row.resolved_at is None:
+                    row.resolved_at = now
+                if lifecycle == "archived" and row.archived_at is None:
+                    row.archived_at = now
+                _record_transition(
+                    db, incident_id=event.id, from_state=previous_lifecycle, to_state=lifecycle,
+                    event=event, reason_code=_reason_code_for(event, lifecycle), now=now,
+                )
+
+    try:
+        from core.intel.incident_watch import sync_watch_for_incident
+
+        sync_watch_for_incident(event.id, event_hint=event)
+    except Exception:
+        # Follow-up is operational enrichment; it must never break ingestion.
+        pass
 
 
 def reconcile_stale_incidents(*, now: Optional[datetime] = None, limit: int = 500) -> int:
@@ -191,6 +187,7 @@ def reconcile_stale_incidents(*, now: Optional[datetime] = None, limit: int = 50
         now_utc = now_utc.replace(tzinfo=timezone.utc)
     now_naive = now_utc.astimezone(timezone.utc).replace(tzinfo=None)
     changed = 0
+    changed_incident_ids: list[str] = []
     with session_scope() as db:
         rows = (
             db.query(HumanitarianIncidentDB)
@@ -225,6 +222,17 @@ def reconcile_stale_incidents(*, now: Optional[datetime] = None, limit: int = 50
                     to_state="archived", event=event, reason_code="silence_after_threshold", now=now_naive,
                 )
             changed += 1
+            changed_incident_ids.append(row.incident_id)
+
+    if changed_incident_ids:
+        try:
+            from core.intel.incident_watch import sync_watch_for_incident
+
+            for incident_id in changed_incident_ids:
+                sync_watch_for_incident(incident_id, now=now_utc)
+        except Exception:
+            # Watch follow-up must never make retirement fail.
+            pass
     return changed
 
 

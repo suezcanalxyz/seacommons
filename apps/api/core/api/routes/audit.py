@@ -169,3 +169,10 @@ async def entity_graph(entity_type: str, canonical_key: str):
         "relationships": [asdict(r) for r in relationships],
         "not_yet_wired": NOT_YET_WIRED,
     }
+
+@router.get("/incident-watches")
+async def incident_watches(limit: int = Query(200, ge=1, le=1000)):
+    """Operator-only IncidentWatch status without sensitive watch profiles."""
+    from core.intel.incident_watch import list_watch_summaries
+
+    return {"watches": list_watch_summaries(limit=limit)}
