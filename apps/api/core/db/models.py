@@ -553,6 +553,40 @@ class HumanitarianIncidentDB(Base):
     )
 
 
+class IncidentWatchDB(Base):
+    """Restart-safe bounded follow-up state for one Humanitarian incident."""
+
+    __tablename__ = "incident_watches"
+    watch_id = Column(String(64), primary_key=True)
+    incident_id = Column(String(64), nullable=False)
+    status = Column(String(16), nullable=False, default="active", index=True)
+    priority = Column(String(16), nullable=False, default="medium", index=True)
+    lifecycle_snapshot = Column(String(32), nullable=False)
+    profile_json = Column(JSON, nullable=False, default=dict)
+    profile_version = Column(Integer, nullable=False, default=1)
+    next_run_at = Column(DateTime, nullable=False, index=True)
+    last_run_at = Column(DateTime)
+    last_success_at = Column(DateTime)
+    last_error_at = Column(DateTime)
+    last_error_class = Column(String(64))
+    consecutive_errors = Column(Integer, nullable=False, default=0)
+    run_count = Column(Integer, nullable=False, default=0)
+    query_fingerprint = Column(String(64))
+    lease_owner = Column(String(128))
+    lease_until = Column(DateTime, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    expires_at = Column(DateTime)
+
+    __table_args__ = (
+        UniqueConstraint("incident_id", name="uq_incident_watch_incident"),
+        Index("ix_incident_watches_due", "status", "next_run_at", "priority"),
+    )
+
+
 class ClaimDB(Base):
     """One structured fact extracted from one observation (docs/updates.md
     P0.4): "important facts become claims, not mutable scalar truth."
