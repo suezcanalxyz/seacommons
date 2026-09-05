@@ -54,8 +54,35 @@ def test_catalogued_non_ais_source_keeps_independent_group():
 def test_unknown_source_is_not_assumed_independent():
     from core.intel.evidence_lineage import lineage_for_event
 
-    lineage = lineage_for_event(_event("mystery-provider"))
+    lineage = lineage_for_event(_event("mystery-provider", event_type="unknown_event"))
 
     assert lineage.source_family == "unknown"
     assert lineage.sensor_family == "unknown"
     assert lineage.independence_group == "unknown"
+
+
+def test_x_handle_and_ocr_from_same_platform_share_one_independence_group():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    text = _event(
+        "@alarm_phone", event_type="twitter",
+        metadata={"platform": "x", "coordinate_source": "post_text"},
+    )
+    ocr = _event(
+        "@alarm_phone", event_type="twitter",
+        metadata={"platform": "x", "coordinate_source": "media_ocr_consensus"},
+    )
+
+    assert lineage_for_event(text).independence_group == "x_twitter_platform"
+    assert lineage_for_event(ocr).independence_group == "x_twitter_platform"
+
+
+def test_uncatalogued_rss_news_has_conservative_reporting_lineage():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    event = _event("Reuters", event_type="news", metadata={"transport": "rss"})
+
+    lineage = lineage_for_event(event)
+    assert lineage.source_family == "secondary_reporting"
+    assert lineage.sensor_family == "public_report"
+    assert lineage.independence_group == "secondary_news_reporting"

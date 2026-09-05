@@ -197,6 +197,11 @@ def verification_for_event_ids(event_ids: list[str]) -> tuple[str, list[str], in
     return "single_source_observed", ordered, found
 
 
+def has_independent_corroboration(event_ids: list[str]) -> bool:
+    status, _groups, _count = verification_for_event_ids(event_ids)
+    return status == "multi_source_corroborated"
+
+
 # ── rules ─────────────────────────────────────────────────────────────────────
 
 def _rule_sar_multisource(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]:
@@ -241,18 +246,20 @@ def _rule_spoofing(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]
             continue
         evidence = {new.anomaly_type, other.anomaly_type}
         confidence = round(min(0.95, 0.45 + 0.2 * len(evidence)), 3)
+        ids = [new.event_id, other.event_id]
         return FusedAlert(
             alert_type="spoofing",
             domain="grey_zone",
             severity="high",
             confidence=confidence,
             lat=new.lat, lon=new.lon, ts=new.ts,
-            contributing_event_ids=[new.event_id, other.event_id],
+            contributing_event_ids=ids,
             contributing_sources=sorted({new.source, other.source}),
             summary=(
                 f"MMSI {new.mmsi}: {other.anomaly_type} + {new.anomaly_type} "
                 f"within {int(window // 3600)}h"
             ),
+            open_case=has_independent_corroboration(ids),
             case_type="monitoring",
             vessel_mmsi=new.mmsi,
         )
@@ -300,33 +307,42 @@ def _rule_grey_zone(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert
     hit = _nearest_infrastructure(new.lat, new.lon, config.FUSION_INFRA_PROXIMITY_KM)
     if hit is None:
         return None
-    # Cables and pipelines crisscross the whole Med — a lone "slow near a cable"
-    # is an alert, not a case. A case opens only with corroboration: the vessel
-    # also had an AIS gap, or a second infra-proximity flag for the same hull
-    # (a repeat pass / dwell), or it is a sanctioned / identity-flagged vessel.
-    corroborated = False
+
+    ids = [new.event_id]
+    sources = {new.source}
+    high_specificity_identity = False
     for other in _recent_signals(new.event_id):
         if not other.mmsi or other.mmsi != new.mmsi:
             continue
-        if (other.kind == "vessel_identity"
-                or (other.kind == "ais_anomaly"
-                    and other.anomaly_type in ("gap", "long_gap", "cable_proximity", "loiter"))):
-            corroborated = True
-            break
+        relevant_ais = (
+            other.kind == "ais_anomaly"
+            and other.anomaly_type in ("gap", "long_gap", "cable_proximity", "loiter")
+        )
+        if other.kind != "vessel_identity" and not relevant_ais:
+            continue
+        ids.append(other.event_id)
+        sources.add(other.source)
+        high_specificity_identity = other.kind == "vessel_identity"
+        break
+
+    independently_corroborated = has_independent_corroboration(ids)
+    case_supported = high_specificity_identity or independently_corroborated
     return FusedAlert(
-        alert_type="infrastructure_threat" if corroborated else "infra_proximity",
+        alert_type="infrastructure_threat" if case_supported else "infra_proximity",
         domain="grey_zone",
-        severity="high" if corroborated else "medium",
-        confidence=round(max(0.4, 0.75 - hit["distance_km"] / 40.0) + 0.15 * corroborated, 3),
+        severity="high" if case_supported else "medium",
+        confidence=round(
+            max(0.4, 0.75 - hit["distance_km"] / 40.0) + 0.15 * case_supported, 3
+        ),
         lat=new.lat, lon=new.lon, ts=new.ts,
-        contributing_event_ids=[new.event_id],
-        contributing_sources=[new.source],
+        contributing_event_ids=ids,
+        contributing_sources=sorted(sources),
         summary=(
             f"AIS {new.anomaly_type} inside {hit['name']}"
             if hit.get("inside")
             else f"AIS {new.anomaly_type} within {hit['distance_km']:.1f} km of {hit['name']}"
         ),
-        open_case=corroborated,
+        open_case=case_supported,
         case_type="subsea_infrastructure",
         vessel_mmsi=new.mmsi,
     )
@@ -610,6 +626,12 @@ def _emit_locked(alert: FusedAlert) -> None:
         "verification_status": verification_status,
         "coordinate_source": "post_text",
     }
+    if (
+        alert.domain in {"grey_zone", "sanctions"}
+        and verification_status != "multi_source_corroborated"
+        and alert.alert_type not in {"sdn_match", "mmsi_duplicate"}
+    ):
+        metadata["publication_status"] = "internal"
     if alert.vessel_mmsi:
         metadata["mmsi"] = alert.vessel_mmsi
     alert_event = IntelEvent(

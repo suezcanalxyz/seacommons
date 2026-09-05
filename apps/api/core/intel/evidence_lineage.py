@@ -43,7 +43,23 @@ def _sensor_family(profile: dict | None, source_name: str) -> str:
 
 def lineage_for_event(event) -> EvidenceLineage:
     source_name = str(getattr(event, "source", "") or "").strip()
+    metadata = dict(getattr(event, "metadata", {}) or {})
+    platform = str(metadata.get("platform") or "").strip().lower()
+    transport = str(metadata.get("transport") or "").strip().lower()
+    event_type = str(getattr(event, "type", "") or "").strip().lower()
+
+    if platform in {"x", "twitter"}:
+        return EvidenceLineage(source_name, "social_public_reports", "x_twitter_platform", "public_report")
+    if platform == "mastodon":
+        return EvidenceLineage(source_name, "social_public_reports", "mastodon_platform", "public_report")
+    if platform == "bluesky":
+        return EvidenceLineage(source_name, "social_public_reports", "bluesky_platform", "public_report")
+    if event_type in {"ais_anomaly", "ais_spike", "ais_rendezvous"}:
+        return EvidenceLineage(source_name, "ais", "ais_sensor_lineage", "ais")
+
     profile = get_source_profile(source_name)
+    if profile is None and (event_type == "news" or transport == "rss"):
+        return EvidenceLineage(source_name, "secondary_reporting", "secondary_news_reporting", "public_report")
     sensor_family = _sensor_family(profile, source_name)
     if sensor_family == "ais":
         return EvidenceLineage(

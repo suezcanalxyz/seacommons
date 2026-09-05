@@ -36,7 +36,7 @@ def _alerts() -> list[IntelEvent]:
     return [e for e in intel_store.events(limit=100) if e.type == fusion.ALERT_TYPE]
 
 
-def test_dark_fleet_spoofing_pair_opens_alert_and_case() -> None:
+def test_dark_fleet_spoofing_pair_stays_internal_without_case() -> None:
     now = datetime.now(timezone.utc)
     _add(
         type="ais_anomaly", severity="high", lat=34.5, lon=13.2,
@@ -62,18 +62,17 @@ def test_dark_fleet_spoofing_pair_opens_alert_and_case() -> None:
     assert len(alert.metadata["contributing"]) == 2
     assert second.id in alert.metadata["contributing"]
 
-    from core.db.models import CaseDB, CaseIntelEventDB
+    assert alert.metadata["verification_status"] == "single_source_multi_indicator"
+    assert alert.metadata["publication_status"] == "internal"
+
+    from core.db.models import CaseDB
     from core.db.session import session_scope
 
     with session_scope() as db:
-        cases = db.query(CaseDB).all()
-        assert len(cases) == 1
-        assert cases[0].case_type == "monitoring"
-        links = db.query(CaseIntelEventDB).filter(CaseIntelEventDB.case_id == cases[0].case_id).all()
-        assert {link.event_id for link in links} >= {second.id}
+        assert db.query(CaseDB).count() == 0
 
 
-def test_spoofing_dedup_no_second_case_for_same_cluster() -> None:
+def test_spoofing_dedup_no_case_for_same_lineage_cluster() -> None:
     now = datetime.now(timezone.utc)
     _add(
         type="ais_anomaly", severity="high", lat=34.5, lon=13.2,
@@ -94,7 +93,7 @@ def test_spoofing_dedup_no_second_case_for_same_cluster() -> None:
     from core.db.session import session_scope
 
     with session_scope() as db:
-        assert db.query(CaseDB).count() == 1
+        assert db.query(CaseDB).count() == 0
 
 
 def test_single_anomaly_does_not_alert() -> None:
@@ -302,92 +301,60 @@ def test_register_is_idempotent() -> None:
 
 
 def test_relink_existing_case_by_mmsi_for_new_cluster_days_later() -> None:
-    """A follow-up pair of AIS anomalies for the same vessel, days after the
-    first, is a *fresh* cluster (new event ids -> new cluster_id) but is the
-    same underlying incident. It must update the existing open case, not
-    fork a duplicate one."""
-    now = datetime.now(timezone.utc)
-    _add(
-        type="ais_anomaly", severity="high", lat=34.5, lon=13.2,
-        title="dark zone entry", source="AISStream", linked_mmsi="209888000",
-        timestamp_utc=(now - timedelta(hours=2)).isoformat(),
-        metadata={"anomaly_type": "dark_zone_entry", "mmsi": "209888000"},
+    """High-specificity identity evidence may open a case; a later fresh
+    cluster for the same MMSI should relink rather than fork it."""
+    first = _add(
+        id="identity-duplicate-first", type="vessel_identity", severity="high",
+        lat=34.6, lon=13.3, title="Duplicate MMSI identity", source="mda",
+        linked_mmsi="209888000",
+        metadata={"anomaly_type": "mmsi_duplicate", "maritime_domain": "sanctions"},
     )
-    first_second = _add(
-        type="ais_anomaly", severity="high", lat=34.6, lon=13.3,
-        title="impossible speed", source="AISStream", linked_mmsi="209888000",
-        metadata={"anomaly_type": "impossible_speed", "mmsi": "209888000"},
-    )
-    fusion.evaluate(first_second)
+    fusion.evaluate(first)
     assert len(_alerts()) == 1
 
-    from core.db.models import CaseDB
+    from core.db.models import CaseDB, CaseIntelEventDB, IntelEventDB
     from core.db.session import session_scope
 
     with session_scope() as db:
         original_case_id = db.query(CaseDB).one().case_id
 
-    # Roll the bounded in-memory windows past this cluster -- same technique
-    # as test_recurring_cluster_upserts_one_db_row_after_dedup_window_rolls --
-    # so the next pair is evaluated as an unrelated, brand new cluster.
     with intel_store._lock:
         intel_store._seen.clear()
         intel_store._events.clear()
 
-    _add(
-        type="ais_anomaly", severity="high", lat=34.55, lon=13.25,
-        title="long gap", source="AISStream", linked_mmsi="209888000",
-        timestamp_utc=(now - timedelta(minutes=10)).isoformat(),
-        metadata={"anomaly_type": "long_gap", "mmsi": "209888000"},
+    second = _add(
+        id="identity-duplicate-second", type="vessel_identity", severity="high",
+        lat=34.61, lon=13.31, title="Duplicate MMSI identity follow-up", source="mda",
+        linked_mmsi="209888000",
+        metadata={"anomaly_type": "mmsi_duplicate", "maritime_domain": "sanctions"},
     )
-    second_pair_new = _add(
-        type="ais_anomaly", severity="high", lat=34.56, lon=13.26,
-        title="position jump", source="AISStream", linked_mmsi="209888000",
-        metadata={"anomaly_type": "position_jump", "mmsi": "209888000"},
-    )
-    fusion.evaluate(second_pair_new)
-
-    # The first cluster's alert IntelEvent was pushed out of the in-memory
-    # store by the reset above (like the recurring-cluster regression test),
-    # but both alerts are persisted -- two distinct clusters, confirming this
-    # really is a fresh cluster_id and not a dedup no-op.
-    from core.db.models import CaseIntelEventDB, IntelEventDB
+    fusion.evaluate(second)
 
     with session_scope() as db:
         alert_rows = db.query(IntelEventDB).filter(IntelEventDB.type == fusion.ALERT_TYPE).all()
         assert len(alert_rows) == 2
-        assert alert_rows[0].id != alert_rows[1].id
-
         cases = db.query(CaseDB).all()
-        assert len(cases) == 1, "second cluster for the same MMSI must relink, not fork a case"
+        assert len(cases) == 1
         assert cases[0].case_id == original_case_id
-
         linked = {
             row.event_id
             for row in db.query(CaseIntelEventDB).filter(
                 CaseIntelEventDB.case_id == original_case_id
             )
         }
-        assert second_pair_new.id in linked
+        assert second.id in linked
 
 
 def test_no_relink_once_case_is_older_than_the_relink_window() -> None:
-    """A case opened long before FUSION_CASE_RELINK_WINDOW_DAYS must not be
-    silently reused -- an old, possibly-resolved-in-practice incident should
-    not keep absorbing unrelated new reports for the same vessel forever."""
-    now = datetime.now(timezone.utc)
-    _add(
-        type="ais_anomaly", severity="high", lat=34.5, lon=13.2,
-        title="dark zone entry", source="AISStream", linked_mmsi="209777000",
-        timestamp_utc=(now - timedelta(hours=2)).isoformat(),
-        metadata={"anomaly_type": "dark_zone_entry", "mmsi": "209777000"},
+    """A high-specificity identity case older than the relink window must not
+    absorb a fresh later identity cluster for the same MMSI."""
+    first = _add(
+        id="identity-old-first", type="vessel_identity", severity="high",
+        lat=34.6, lon=13.3, title="Duplicate MMSI identity", source="mda",
+        linked_mmsi="209777000",
+        metadata={"anomaly_type": "mmsi_duplicate", "maritime_domain": "sanctions"},
     )
-    first_second = _add(
-        type="ais_anomaly", severity="high", lat=34.6, lon=13.3,
-        title="impossible speed", source="AISStream", linked_mmsi="209777000",
-        metadata={"anomaly_type": "impossible_speed", "mmsi": "209777000"},
-    )
-    fusion.evaluate(first_second)
+    fusion.evaluate(first)
 
     from core.db.models import CaseDB
     from core.db.session import session_scope
@@ -400,18 +367,13 @@ def test_no_relink_once_case_is_older_than_the_relink_window() -> None:
         intel_store._seen.clear()
         intel_store._events.clear()
 
-    _add(
-        type="ais_anomaly", severity="high", lat=34.55, lon=13.25,
-        title="long gap", source="AISStream", linked_mmsi="209777000",
-        timestamp_utc=(now - timedelta(minutes=10)).isoformat(),
-        metadata={"anomaly_type": "long_gap", "mmsi": "209777000"},
+    second = _add(
+        id="identity-old-second", type="vessel_identity", severity="high",
+        lat=34.61, lon=13.31, title="Duplicate MMSI identity later", source="mda",
+        linked_mmsi="209777000",
+        metadata={"anomaly_type": "mmsi_duplicate", "maritime_domain": "sanctions"},
     )
-    second_pair_new = _add(
-        type="ais_anomaly", severity="high", lat=34.56, lon=13.26,
-        title="position jump", source="AISStream", linked_mmsi="209777000",
-        metadata={"anomaly_type": "position_jump", "mmsi": "209777000"},
-    )
-    fusion.evaluate(second_pair_new)
+    fusion.evaluate(second)
 
     with session_scope() as db:
         assert db.query(CaseDB).count() == 2, "a 30-day-old case is outside the relink window"
@@ -554,3 +516,55 @@ def test_same_lineage_spoofing_alert_uses_multi_indicator_verification() -> None
     assert alert.metadata["contributing_independence_groups"] == ["ais_sensor_lineage"]
     assert alert.metadata["independent_source_count"] == 1
     assert alert.metadata["evidence_count"] == 2
+
+
+def test_same_lineage_spoofing_does_not_open_intelligence_case() -> None:
+    now = datetime.now(timezone.utc)
+    _add(
+        id="same-lineage-gap", type="ais_anomaly", severity="high",
+        lat=34.5, lon=13.2, title="gap", source="AISStream",
+        linked_mmsi="229113000",
+        timestamp_utc=(now - timedelta(minutes=15)).isoformat(),
+        metadata={"anomaly_type": "long_gap"},
+    )
+    second = _add(
+        id="same-lineage-jump", type="ais_anomaly", severity="high",
+        lat=34.55, lon=13.25, title="jump", source="mda",
+        linked_mmsi="229113000", metadata={"anomaly_type": "position_jump"},
+    )
+
+    fusion.evaluate(second)
+
+    alert = _alerts()[0]
+    assert alert.metadata["verification_status"] == "single_source_multi_indicator"
+    assert alert.metadata["publication_status"] == "internal"
+    from core.db.models import CaseDB
+    from core.db.session import session_scope
+    with session_scope() as db:
+        assert db.query(CaseDB).count() == 0
+
+
+def test_same_lineage_gap_plus_infra_proximity_does_not_open_case() -> None:
+    now = datetime.now(timezone.utc)
+    _add(
+        id="infra-gap", type="ais_anomaly", severity="medium",
+        lat=32.90, lon=13.30, title="AIS gap", source="AISStream",
+        linked_mmsi="229113000",
+        timestamp_utc=(now - timedelta(minutes=30)).isoformat(),
+        metadata={"anomaly_type": "gap"},
+    )
+    loiter = _add(
+        id="infra-loiter", type="ais_anomaly", severity="medium",
+        lat=32.90, lon=13.30, title="loiter near platform", source="mda",
+        linked_mmsi="229113000", metadata={"anomaly_type": "loiter"},
+    )
+
+    fusion.evaluate(loiter)
+
+    alert = _alerts()[0]
+    assert alert.metadata["verification_status"] == "single_source_multi_indicator"
+    assert alert.metadata["alert_type"] == "infra_proximity"
+    from core.db.models import CaseDB
+    from core.db.session import session_scope
+    with session_scope() as db:
+        assert db.query(CaseDB).count() == 0
