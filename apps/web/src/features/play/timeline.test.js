@@ -278,3 +278,11 @@ test('Play gives the exact archive counter a longer timeout without delaying map
   assert.match(source, /fetchJson\(apiBase, '\/api\/v1\/play\/counts', undefined, 30_000\)/);
   assert.match(source, /fetchJson\(apiBase, `\/api\/v1\/play\/incidents\?limit=500&offset=\$\{offset\}`\)/);
 });
+
+
+test('Play labels partial progressive archive counts as loaded until exact total arrives', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /archiveTotal != null \? `\$\{archiveTotal\} archive` : `\$\{visibleIncidents\.length\} loaded`/);
+  assert.match(source, /Archive · \{archiveTotal != null \? archiveTotal : `\$\{visibleIncidents\.length\} loaded`\}/);
+  assert.doesNotMatch(source, /`\$\{visibleIncidents\.length\} points`/);
+});
