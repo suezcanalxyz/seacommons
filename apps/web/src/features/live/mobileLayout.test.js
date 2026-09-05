@@ -19,6 +19,6 @@ test('opening a mobile map panel recenters feature above the report sheet', asyn
 
 test('public Live hides transport-buffer tier counts', async () => {
   const source = await readFile(new URL('../../components/IntelDashboard.jsx', import.meta.url), 'utf8');
-  assert.match(source, /!publicMode \? <span className=\"intel-tier-count\">/);
-  assert.match(source, /!publicMode \? <span className=\"intel-tier-head-count\">/);
+  assert.match(source, /!publicMode \? <span className="intel-tier-count">/);
+  assert.match(source, /!publicMode \? <span className="intel-tier-head-count">/);
 });
