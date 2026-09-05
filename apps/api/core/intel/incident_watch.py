@@ -476,3 +476,42 @@ def _default_adapters() -> list[Any]:
         pass
     return []
 
+def eligible_adapter_names(
+    profile: dict[str, Any], *, adapters: list[Any] | None = None,
+) -> list[str]:
+    candidates = list(_default_adapters() if adapters is None else adapters)
+    return [str(adapter.name) for adapter in _eligible_adapters(profile, candidates)]
+
+
+def list_watch_summaries(*, limit: int = 200) -> list[dict[str, Any]]:
+    """Operator-safe watch state; never exposes profiles or raw source text."""
+    from core.db.models import IncidentWatchDB
+    from core.db.session import session_scope
+
+    with session_scope() as db:
+        rows = (
+            db.query(IncidentWatchDB)
+            .order_by(IncidentWatchDB.next_run_at.asc(), IncidentWatchDB.watch_id.asc())
+            .limit(max(1, min(int(limit), 1000)))
+            .all()
+        )
+        return [
+            {
+                "watch_id": row.watch_id,
+                "incident_id": row.incident_id,
+                "status": row.status,
+                "priority": row.priority,
+                "lifecycle_snapshot": row.lifecycle_snapshot,
+                "next_run_at": row.next_run_at.isoformat() if row.next_run_at else None,
+                "last_run_at": row.last_run_at.isoformat() if row.last_run_at else None,
+                "last_success_at": row.last_success_at.isoformat() if row.last_success_at else None,
+                "last_error_at": row.last_error_at.isoformat() if row.last_error_at else None,
+                "last_error_class": row.last_error_class,
+                "consecutive_errors": row.consecutive_errors,
+                "run_count": row.run_count,
+                "profile_version": row.profile_version,
+                "eligible_adapter_names": eligible_adapter_names(dict(row.profile_json or {})),
+            }
+            for row in rows
+        ]
+

@@ -15,6 +15,7 @@ Jobs:
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -418,6 +419,31 @@ def _job_reconcile_humanitarian_incidents() -> None:
         logger.warning("Scheduler humanitarian reconcile failed: %s", exc)
 
 
+# ── Job: bounded Humanitarian incident follow-up ─────────────────────────────
+
+def _job_incident_watch() -> None:
+    """Claim and execute a tiny due-watch batch; failures stay local."""
+    try:
+        from core.intel.incident_watch import claim_due_watches, run_claimed_watch
+
+        now = datetime.now(timezone.utc)
+        claimed = claim_due_watches(
+            now=now,
+            limit=3,
+            lease_owner=f"apscheduler:{os.getpid()}",
+            lease_seconds=240,
+        )
+        for watch in claimed:
+            result = run_claimed_watch(watch["watch_id"], now=now)
+            if result.get("executed") and not result.get("success", True):
+                logger.info(
+                    "IncidentWatch run failed: watch=%s error=%s",
+                    watch["watch_id"], result.get("error_class"),
+                )
+    except Exception as exc:
+        logger.warning("Scheduler incident_watch failed: %s", exc)
+
+
 # ── Scheduler lifecycle ───────────────────────────────────────────────────────
 
 def start() -> None:
@@ -452,6 +478,10 @@ def start() -> None:
                           id="humanitarian_reconcile", replace_existing=True,
                           max_instances=1, misfire_grace_time=300, next_run_time=_soon())
 
+        scheduler.add_job(_job_incident_watch, IntervalTrigger(minutes=5),
+                          id="incident_watch", replace_existing=True,
+                          max_instances=1, misfire_grace_time=300, next_run_time=_soon())
+
         scheduler.add_job(_job_satellite_enrichment, IntervalTrigger(minutes=30),
                           id="satellite_enrichment", replace_existing=True,
                           max_instances=1, misfire_grace_time=600, next_run_time=_soon())
@@ -478,7 +508,8 @@ def start() -> None:
         _scheduler = scheduler
         logger.info(
             "Background scheduler started: refresh_news(30m), source_health(15m), "
-            "humanitarian_reconcile(15m), satellite_enrichment(30m), iom_incidents(1h), forensic_scan(6h), "
+            "humanitarian_reconcile(15m), incident_watch(5m), satellite_enrichment(30m), "
+            "iom_incidents(1h), forensic_scan(6h), "
             "mda_reference(14d), mda_daily(24h) "
             "[drift: manual-only]"
         )

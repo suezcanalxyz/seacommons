@@ -296,3 +296,32 @@ def test_three_adapter_failures_degrade_and_do_not_mutate_incident(watch_tables)
         assert watch.consecutive_errors == 3
         assert watch.status == "degraded"
         assert watch.next_run_at >= (NOW + timedelta(minutes=40, hours=4)).replace(tzinfo=None)
+
+
+def test_operator_watch_summary_excludes_sensitive_profile(watch_tables):
+    from core.intel.incident_watch import list_watch_summaries
+
+    _seed_watch("iw-audit")
+    summaries = list_watch_summaries(limit=10)
+    assert len(summaries) == 1
+    summary = summaries[0]
+    assert summary["incident_id"] == "iw-audit"
+    assert "profile_json" not in summary
+    assert "coordinates" not in summary
+    assert "source_observation_ids" not in summary
+    assert "eligible_adapter_names" in summary
+
+
+def test_incident_watch_audit_endpoint_returns_operational_metadata_only(watch_tables):
+    from core.api.main import app
+    from fastapi.testclient import TestClient
+
+    _seed_watch("iw-audit-route")
+    response = TestClient(app).get("/api/v1/audit/incident-watches")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["watches"][0]["incident_id"] == "iw-audit-route"
+    serialized = response.text.lower()
+    assert "profile_json" not in serialized
+    assert "source_observation_ids" not in serialized
+    assert "linked_mmsi" not in serialized
