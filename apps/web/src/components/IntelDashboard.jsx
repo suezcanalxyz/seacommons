@@ -464,7 +464,7 @@ export default function IntelDashboard({
             >
               {t.key === 'operational' && <span className="intel-tier-dot" />}
               {t.label}
-              <span className="intel-tier-count">{tierGroups[t.key].length}</span>
+              {!publicMode ? <span className="intel-tier-count">{tierGroups[t.key].length}</span> : null}
             </button>
           ))}
         </div>
@@ -591,7 +591,7 @@ export default function IntelDashboard({
                     {t.key === 'operational' && <span className="intel-tier-dot" />}
                     <span className="intel-tier-head-label">{t.label}</span>
                     <span className="intel-tier-head-sub">{t.sub}</span>
-                    <span className="intel-tier-head-count">{live.length}</span>
+                    {!publicMode ? <span className="intel-tier-head-count">{live.length}</span> : null}
                   </div>
                   <ul className="intel-list" style={{ margin: 0 }}>
                     {live.map(renderEvent)}
