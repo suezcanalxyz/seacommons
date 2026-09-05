@@ -166,7 +166,7 @@ class CopernicusSTACProvider:
         return [
             self._normalize_feature(incident_id=incident_id, feature=feature)
             for feature in features
-            if (feature.get("properties") or {}).get("datetime")
+            if ((feature.get("properties") or {}).get("datetime") or (feature.get("properties") or {}).get("start_datetime"))
         ]
     def _normalize_feature(
         self, *, incident_id: str, feature: dict,
@@ -175,7 +175,7 @@ class CopernicusSTACProvider:
         product_id = str(feature.get("id") or "unknown")
         collection = str(feature.get("collection") or "")
         mission, sensor_type = _mission_for_feature(feature, collection)
-        acquired = str(props.get("datetime"))
+        acquired = str(props.get("datetime") or props.get("start_datetime"))
         cloud = props.get("eo:cloud_cover")
         gsd = props.get("gsd")
         polarisation = props.get("sar:polarizations")

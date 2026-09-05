@@ -35,6 +35,7 @@ import { useLiveFeed } from './hooks/useLiveFeed.js';
 import { FEED_STATUS_LABEL, FEED_STATUS_TONE, liveSignalTotal } from './features/live/feedStatus.js';
 import { mergeIntelDriftUpdate } from './features/live/normalize.js';
 import { splitObservedTrackSegments } from './features/live/observedTrack.js';
+import { createVesselArrowImage } from './features/map/vesselMarker.js';
 import { mergeLiveDrifts } from './simulation/liveTracking.js';
 
 // Short two-tone chime for a correlated OSINT alert. Web Audio only; silent
@@ -550,23 +551,6 @@ function buildProximityGeojson(vessels, distressLat, distressLon) {
   };
 }
 
-function createVesselArrowImage(size = 48) {
-  const canvas = document.createElement('canvas');
-  canvas.width = size; canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, size, size);
-  ctx.fillStyle = '#ffffff';
-  const cx = size / 2;
-  ctx.beginPath();
-  ctx.moveTo(cx, 3);
-  ctx.lineTo(size - 6, size - 4);
-  ctx.lineTo(cx, size - 11);
-  ctx.lineTo(6, size - 4);
-  ctx.closePath();
-  ctx.fill();
-  const idata = ctx.getImageData(0, 0, size, size);
-  return { width: size, height: size, data: new Uint8Array(idata.data.buffer) };
-}
 
 /** True course from the last two distinct observed AIS positions. */
 function observedTrackCourse(points) {
@@ -1203,7 +1187,7 @@ function App() {
         padding: isPublicLiveHost && window.innerWidth > 820
           ? { top: 0, right: 0, bottom: 0, left: 392 }
           : 0,
-        attributionControl: true,
+        attributionControl: !isPublicLiveHost,
       });
 
       // ── Globe intro: 3D globe that flattens to 2D as you zoom in ──────────

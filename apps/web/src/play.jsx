@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 
 import PlayTimeline from './features/play/PlayTimeline.jsx';
+import './styles.css';
 import './features/play/play.css';
 
 function playApiBase() {
