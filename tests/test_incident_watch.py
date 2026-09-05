@@ -178,3 +178,121 @@ def test_canonical_incident_sync_also_syncs_watch_after_commit(watch_tables):
     watch = get_watch("iw-humanitarian-sync")
     assert watch is not None
     assert watch["profile_json"]["source_item_ids"] == ["9001"]
+
+
+def _seed_watch(incident_id: str, *, status="active", lifecycle="active", now=NOW):
+    from core.db.models import HumanitarianIncidentDB
+    from core.db.session import session_scope
+    from core.intel.incident_watch import sync_watch_for_incident
+
+    with session_scope() as db:
+        db.add(HumanitarianIncidentDB(
+            incident_id=incident_id, lifecycle=lifecycle, incident_status=status,
+            case_type="distress", reported_at="2026-09-05T10:00:00+00:00",
+            last_update_at="2026-09-05T10:00:00+00:00",
+            source_observation_ids=[], review_status="none", revision=1,
+        ))
+    return sync_watch_for_incident(incident_id, now=now)
+
+
+def test_claim_due_watches_only_claims_due_rows_in_priority_order(watch_tables):
+    from core.db.models import IncidentWatchDB
+    from core.db.session import session_scope
+    from core.intel.incident_watch import claim_due_watches
+
+    _seed_watch("iw-due-high")
+    _seed_watch("iw-due-medium", status="outcome_unknown", lifecycle="archived")
+    _seed_watch("iw-future")
+    with session_scope() as db:
+        db.query(IncidentWatchDB).filter_by(incident_id="iw-future").update(
+            {"next_run_at": NOW.replace(tzinfo=None) + timedelta(hours=3)}
+        )
+    claimed = claim_due_watches(
+        now=NOW, limit=5, lease_owner="test-worker", lease_seconds=120,
+    )
+    assert [row["incident_id"] for row in claimed] == ["iw-due-high", "iw-due-medium"]
+    assert all(row["lease_owner"] == "test-worker" for row in claimed)
+
+
+def test_unexpired_lease_prevents_double_claim(watch_tables):
+    from core.intel.incident_watch import claim_due_watches
+
+    _seed_watch("iw-lease")
+    first = claim_due_watches(now=NOW, limit=1, lease_owner="worker-a", lease_seconds=120)
+    second = claim_due_watches(
+        now=NOW + timedelta(seconds=30), limit=1, lease_owner="worker-b", lease_seconds=120,
+    )
+    assert len(first) == 1
+    assert second == []
+
+
+class _SuccessAdapter:
+    name = "fake-success"
+
+    def __init__(self):
+        self.calls = 0
+
+    def eligible(self, profile):
+        return True
+
+    def run(self, query):
+        from core.intel.incident_watch import WatchResult
+
+        self.calls += 1
+        return WatchResult(
+            source_name=self.name, source_items_seen=1,
+            observations_created=1, observations_replayed=0,
+            checkpoint="1", error_class=None,
+        )
+
+
+class _FailingAdapter:
+    name = "fake-fail"
+
+    def eligible(self, profile):
+        return True
+
+    def run(self, query):
+        raise TimeoutError("bounded adapter timeout")
+
+
+def test_query_fingerprint_skips_duplicate_run_inside_cadence(watch_tables):
+    from core.intel.incident_watch import run_claimed_watch
+
+    _seed_watch("iw-fingerprint")
+    adapter = _SuccessAdapter()
+    first = run_claimed_watch("iw-fingerprint", adapters=[adapter], now=NOW)
+    second = run_claimed_watch(
+        "iw-fingerprint", adapters=[adapter], now=NOW + timedelta(minutes=1),
+    )
+    assert first["executed"] is True
+    assert second["executed"] is False
+    assert second["reason"] == "duplicate_fingerprint_within_cadence"
+    assert adapter.calls == 1
+
+
+def test_three_adapter_failures_degrade_and_do_not_mutate_incident(watch_tables):
+    from core.db.models import HumanitarianIncidentDB, IncidentWatchDB
+    from core.db.session import session_scope
+    from core.intel.incident_watch import run_claimed_watch
+
+    _seed_watch("iw-fail")
+    before = None
+    with session_scope() as db:
+        incident = db.get(HumanitarianIncidentDB, "iw-fail")
+        before = (incident.lifecycle, incident.incident_status, incident.revision)
+
+    for offset in (0, 20, 40):
+        result = run_claimed_watch(
+            "iw-fail", adapters=[_FailingAdapter()], now=NOW + timedelta(minutes=offset),
+        )
+        assert result["executed"] is True
+
+    with session_scope() as db:
+        incident = db.get(HumanitarianIncidentDB, "iw-fail")
+        after = (incident.lifecycle, incident.incident_status, incident.revision)
+        watch = db.query(IncidentWatchDB).filter_by(incident_id="iw-fail").one()
+        assert before == after
+        assert watch.consecutive_errors == 3
+        assert watch.status == "degraded"
+        assert watch.next_run_at >= (NOW + timedelta(minutes=40, hours=4)).replace(tzinfo=None)

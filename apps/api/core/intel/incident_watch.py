@@ -20,6 +20,24 @@ class WatchPolicy:
     expires_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class WatchQuery:
+    incident_id: str
+    profile: dict[str, Any]
+    since: datetime | None
+    budget: int
+
+
+@dataclass(frozen=True)
+class WatchResult:
+    source_name: str
+    source_items_seen: int
+    observations_created: int
+    observations_replayed: int
+    checkpoint: str | None
+    error_class: str | None
+
+
 def _aware_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
@@ -175,7 +193,7 @@ def sync_watch_for_incident(incident_id: str, *, now: datetime | None = None, ev
                 lifecycle_snapshot=snapshot, profile_json=profile,
                 profile_version=PROFILE_VERSION, next_run_at=now_naive,
                 consecutive_errors=0, run_count=0,
-                query_fingerprint=_profile_fingerprint(profile),
+                query_fingerprint=None,
                 expires_at=_naive_utc(policy.expires_at) if policy.expires_at else None,
             )
             db.add(row)
@@ -185,9 +203,11 @@ def sync_watch_for_incident(incident_id: str, *, now: datetime | None = None, ev
             row.status = policy.status
             row.priority = policy.priority
             row.lifecycle_snapshot = snapshot
+            profile_changed = dict(row.profile_json or {}) != profile
             row.profile_json = profile
             row.profile_version = PROFILE_VERSION
-            row.query_fingerprint = _profile_fingerprint(profile)
+            if profile_changed:
+                row.query_fingerprint = None
             row.expires_at = _naive_utc(policy.expires_at) if policy.expires_at else None
             if lifecycle_changed and policy.cadence is not None:
                 row.next_run_at = now_naive
@@ -201,3 +221,208 @@ def get_watch(incident_id: str) -> dict[str, Any] | None:
     with session_scope() as db:
         row = db.query(IncidentWatchDB).filter_by(incident_id=incident_id).one_or_none()
         return _watch_to_dict(row) if row is not None else None
+
+_PRIORITY_ORDER = {"highest": 0, "high": 1, "medium": 2, "low": 3}
+MAX_ADAPTERS_PER_RUN = 3
+MAX_ACCEPTED_OBSERVATIONS = 25
+DEGRADED_RETRY = timedelta(hours=4)
+
+
+def _run_fingerprint(profile: dict[str, Any], adapter_names: list[str]) -> str:
+    payload = {
+        "profile": profile,
+        "adapters": sorted(adapter_names),
+        "profile_version": PROFILE_VERSION,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def claim_due_watches(
+    *, now: datetime, limit: int, lease_owner: str, lease_seconds: int = 120,
+) -> list[dict[str, Any]]:
+    """Atomically claim due watches with an optimistic, restart-safe lease."""
+    from sqlalchemy import case, or_
+
+    from core.db.models import IncidentWatchDB
+    from core.db.session import session_scope
+
+    if limit <= 0:
+        return []
+    now_naive = _naive_utc(_aware_utc(now) or datetime.now(timezone.utc))
+    lease_until = now_naive + timedelta(seconds=max(1, lease_seconds))
+    priority_case = case(
+        (IncidentWatchDB.priority == "highest", 0),
+        (IncidentWatchDB.priority == "high", 1),
+        (IncidentWatchDB.priority == "medium", 2),
+        (IncidentWatchDB.priority == "low", 3),
+        else_=4,
+    )
+    claimed: list[dict[str, Any]] = []
+    with session_scope() as db:
+        candidate_ids = [
+            row[0]
+            for row in (
+                db.query(IncidentWatchDB.watch_id)
+                .filter(
+                    IncidentWatchDB.status.in_(["active", "degraded"]),
+                    IncidentWatchDB.next_run_at <= now_naive,
+                    or_(IncidentWatchDB.lease_until.is_(None), IncidentWatchDB.lease_until <= now_naive),
+                )
+                .order_by(priority_case.asc(), IncidentWatchDB.next_run_at.asc(), IncidentWatchDB.watch_id.asc())
+                .limit(limit)
+                .all()
+            )
+        ]
+        for watch_id in candidate_ids:
+            updated = (
+                db.query(IncidentWatchDB)
+                .filter(
+                    IncidentWatchDB.watch_id == watch_id,
+                    IncidentWatchDB.status.in_(["active", "degraded"]),
+                    IncidentWatchDB.next_run_at <= now_naive,
+                    or_(IncidentWatchDB.lease_until.is_(None), IncidentWatchDB.lease_until <= now_naive),
+                )
+                .update(
+                    {
+                        IncidentWatchDB.lease_owner: lease_owner,
+                        IncidentWatchDB.lease_until: lease_until,
+                    },
+                    synchronize_session=False,
+                )
+            )
+            if updated != 1:
+                continue
+            db.flush()
+            row = db.get(IncidentWatchDB, watch_id)
+            if row is not None:
+                claimed.append(_watch_to_dict(row))
+    return claimed
+
+
+def _eligible_adapters(profile: dict[str, Any], adapters: list[Any]) -> list[Any]:
+    eligible: list[Any] = []
+    for adapter in adapters:
+        try:
+            if adapter.eligible(profile):
+                eligible.append(adapter)
+        except Exception:
+            continue
+        if len(eligible) >= MAX_ADAPTERS_PER_RUN:
+            break
+    return eligible
+
+
+def run_claimed_watch(
+    watch_id: str, *, adapters: list[Any] | None = None, now: datetime | None = None,
+) -> dict[str, Any]:
+    """Execute one bounded watch without ever writing canonical incident truth."""
+    from core.db.models import HumanitarianIncidentDB, IncidentWatchDB
+    from core.db.session import session_scope
+
+    now_aware = _aware_utc(now) or datetime.now(timezone.utc)
+    now_naive = _naive_utc(now_aware)
+    adapter_list = list(adapters or [])
+
+    with session_scope() as db:
+        row = db.query(IncidentWatchDB).filter_by(incident_id=watch_id).one_or_none()
+        if row is None:
+            row = db.get(IncidentWatchDB, watch_id)
+        if row is None:
+            return {"executed": False, "reason": "watch_not_found"}
+        incident = db.get(HumanitarianIncidentDB, row.incident_id)
+        if incident is None:
+            row.status = "expired"
+            row.lease_owner = None
+            row.lease_until = None
+            return {"executed": False, "reason": "incident_not_found"}
+        policy = policy_for_state(
+            incident_status=incident.incident_status,
+            lifecycle=incident.lifecycle,
+            resolved_at=incident.resolved_at,
+            now=now_aware,
+        )
+        if policy.status == "expired" or policy.cadence is None:
+            row.status = "expired"
+            row.expires_at = _naive_utc(policy.expires_at) if policy.expires_at else now_naive
+            row.lease_owner = None
+            row.lease_until = None
+            return {"executed": False, "reason": "watch_expired"}
+        profile = dict(row.profile_json or {})
+        eligible = _eligible_adapters(profile, adapter_list)
+        fingerprint = _run_fingerprint(profile, [str(a.name) for a in eligible])
+        last_run = _aware_utc(row.last_run_at)
+        if (
+            row.query_fingerprint == fingerprint
+            and last_run is not None
+            and now_aware - last_run < policy.cadence
+        ):
+            row.next_run_at = _naive_utc(last_run + policy.cadence)
+            row.lease_owner = None
+            row.lease_until = None
+            return {
+                "executed": False,
+                "reason": "duplicate_fingerprint_within_cadence",
+            }
+        incident_id = row.incident_id
+        since = _aware_utc(row.last_success_at)
+
+    created = 0
+    replayed = 0
+    seen = 0
+    error: Exception | None = None
+    remaining = MAX_ACCEPTED_OBSERVATIONS
+    for adapter in eligible:
+        if remaining <= 0:
+            break
+        query = WatchQuery(
+            incident_id=incident_id, profile=profile, since=since, budget=remaining,
+        )
+        try:
+            result = adapter.run(query)
+            seen += max(0, int(result.source_items_seen))
+            created += max(0, int(result.observations_created))
+            replayed += max(0, int(result.observations_replayed))
+            remaining = max(0, MAX_ACCEPTED_OBSERVATIONS - created)
+            if result.error_class:
+                error = RuntimeError(result.error_class)
+                break
+        except Exception as exc:  # local failure: never mutate the incident
+            error = exc
+            break
+
+    with session_scope() as db:
+        row = db.query(IncidentWatchDB).filter_by(incident_id=incident_id).one()
+        row.run_count = (row.run_count or 0) + 1
+        row.last_run_at = now_naive
+        row.query_fingerprint = fingerprint
+        row.lease_owner = None
+        row.lease_until = None
+        if error is None:
+            row.last_success_at = now_naive
+            row.last_error_at = None
+            row.last_error_class = None
+            row.consecutive_errors = 0
+            row.status = policy.status
+            row.priority = policy.priority
+            row.next_run_at = _naive_utc(now_aware + policy.cadence)
+        else:
+            row.last_error_at = now_naive
+            row.last_error_class = error.__class__.__name__
+            row.consecutive_errors = (row.consecutive_errors or 0) + 1
+            if row.consecutive_errors >= 3:
+                row.status = "degraded"
+                retry = max(policy.cadence, DEGRADED_RETRY)
+            else:
+                retry = policy.cadence
+            row.next_run_at = _naive_utc(now_aware + retry)
+
+    return {
+        "executed": True,
+        "success": error is None,
+        "source_items_seen": seen,
+        "observations_created": created,
+        "observations_replayed": replayed,
+        "error_class": error.__class__.__name__ if error is not None else None,
+    }
+
