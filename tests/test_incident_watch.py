@@ -325,3 +325,21 @@ def test_incident_watch_audit_endpoint_returns_operational_metadata_only(watch_t
     assert "profile_json" not in serialized
     assert "source_observation_ids" not in serialized
     assert "linked_mmsi" not in serialized
+
+
+def test_stale_reconcile_resynchronizes_watch_as_outcome_unknown(watch_tables):
+    from core.db.models import HumanitarianIncidentDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_incident import reconcile_stale_incidents
+    from core.intel.incident_watch import get_watch
+
+    _seed_watch("iw-stale-reconcile", now=NOW)
+    with session_scope() as db:
+        incident = db.get(HumanitarianIncidentDB, "iw-stale-reconcile")
+        incident.last_update_at = "2026-09-04T09:00:00+00:00"
+    changed = reconcile_stale_incidents(now=NOW)
+    assert changed == 1
+    watch = get_watch("iw-stale-reconcile")
+    assert watch["lifecycle_snapshot"] == "outcome_unknown/archived"
+    assert watch["status"] == "active"
+    assert watch["priority"] == "medium"

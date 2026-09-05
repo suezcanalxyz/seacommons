@@ -187,6 +187,7 @@ def reconcile_stale_incidents(*, now: Optional[datetime] = None, limit: int = 50
         now_utc = now_utc.replace(tzinfo=timezone.utc)
     now_naive = now_utc.astimezone(timezone.utc).replace(tzinfo=None)
     changed = 0
+    changed_incident_ids: list[str] = []
     with session_scope() as db:
         rows = (
             db.query(HumanitarianIncidentDB)
@@ -221,6 +222,17 @@ def reconcile_stale_incidents(*, now: Optional[datetime] = None, limit: int = 50
                     to_state="archived", event=event, reason_code="silence_after_threshold", now=now_naive,
                 )
             changed += 1
+            changed_incident_ids.append(row.incident_id)
+
+    if changed_incident_ids:
+        try:
+            from core.intel.incident_watch import sync_watch_for_incident
+
+            for incident_id in changed_incident_ids:
+                sync_watch_for_incident(incident_id, now=now_utc)
+        except Exception:
+            # Watch follow-up must never make retirement fail.
+            pass
     return changed
 
 
