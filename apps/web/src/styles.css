@@ -3837,3 +3837,13 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   border: 1px solid var(--glass-border); background: rgba(255,255,255,0.05); color: var(--ink-1);
 }
 .sidebar-tabs--4 { display: flex; gap: 4px; flex-wrap: wrap; }
+
+/* Live panels must remain vertically navigable regardless of content variant. */
+.live-feed-panel__body,
+.cone-panel {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
+}
+.live-feed-panel__body > .panel-stack { min-height: min-content; }

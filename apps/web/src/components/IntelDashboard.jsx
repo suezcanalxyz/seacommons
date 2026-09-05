@@ -68,18 +68,6 @@ function eventTier(p) {
   return 'news';
 }
 
-// Distress lifecycle marker (mirrors core/api/routes/live.py): the backend
-// projects `incident_lifecycle` = active | resolved | needs_review | archived onto public
-// features, and sets `kind` for older cache entries. Null = not a distress
-// marker (plain context event), so it never gets lifecycle coloring.
-function eventLifecycle(p) {
-  if (p.incident_lifecycle) return p.incident_lifecycle;
-  if (p.kind === 'resolved') return 'resolved';
-  if (p.kind === 'needs_review') return 'needs_review';
-  if (p.kind === 'archived') return 'archived';
-  return null;
-}
-
 // Average of a Polygon's exterior-ring vertices -- good enough for "fly
 // here" / display purposes; not a true area-weighted centroid.
 function polygonCentroid(polygonCoords) {
@@ -254,7 +242,6 @@ export default function IntelDashboard({
   const [viewMode, setViewMode] = useState('list');   // 'list' | 'timeline'
   const [showInject, setShowInject] = useState(false);
   const [injectSuccess, setInjectSuccess] = useState(false);
-  const [archivedOpen, setArchivedOpen] = useState(false);
   const selectedRowRef = useRef(null);
 
   useEffect(() => {
@@ -596,15 +583,10 @@ export default function IntelDashboard({
             visibleTiers.map((t) => {
               const group = tierGroups[t.key];
               if (!group.length) return null;
-              const isOperational = t.key === 'operational';
-              // Archived markers stay in the feed but are collapsed at the
-              // bottom of the operational tier behind a chevron toggle.
-              const archived = isOperational
-                ? group.filter((f) => eventLifecycle(f.properties || {}) === 'archived')
-                : [];
-              const live = isOperational
-                ? group.filter((f) => eventLifecycle(f.properties || {}) !== 'archived')
-                : group;
+              // Public Live is an operational <=24h surface. Historical and
+              // terminal incidents belong to play.seacommons.org, never a
+              // collapsible archive bucket inside this feed.
+              const live = group;
               return (
                 <div key={t.key} className={`intel-tier-group intel-tier-group--${t.key}`}>
                   <div className="intel-tier-head">
@@ -616,26 +598,6 @@ export default function IntelDashboard({
                   <ul className="intel-list" style={{ margin: 0 }}>
                     {live.map(renderEvent)}
                   </ul>
-                  {isOperational && archived.length > 0 && (
-                    <div className="intel-archive-block">
-                      <button
-                        type="button"
-                        className="intel-archive-toggle"
-                        onClick={() => setArchivedOpen((v) => !v)}
-                        aria-expanded={archivedOpen}
-                      >
-                        <span className={`intel-archive-chevron${archivedOpen ? ' is-open' : ''}`}>▾</span>
-                        <span className="intel-archive-label">Archived</span>
-                        <span className="intel-archive-sub">archived items stay in the feed</span>
-                        <span className="intel-tier-head-count">{archived.length}</span>
-                      </button>
-                      {archivedOpen && (
-                        <ul className="intel-list" style={{ margin: 0 }}>
-                          {archived.map(renderEvent)}
-                        </ul>
-                      )}
-                    </div>
-                  )}
                 </div>
               );
             })
