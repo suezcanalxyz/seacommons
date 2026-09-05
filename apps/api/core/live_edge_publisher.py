@@ -61,10 +61,9 @@ class PublisherSettings:
     poll_seconds: float = 1.0
     batch_size: int = 25
     scan_limit: int = 200
-    # Must comfortably exceed lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS (7 days) so
-    # an event stays inside the scan long enough to receive its final
-    # "expired" removal at the true 7-day boundary, plus margin for a
-    # same-source resolution post to still be seen before that.
+    # Deliberately longer than the 24h public Live window: the publisher must
+    # keep rescanning retired rows long enough to deliver an explicit removal
+    # after an edge/VM outage. Scan retention is not public visibility.
     live_window_minutes: int = 8 * 24 * 60
     request_timeout_seconds: float = 8.0
     max_attempts: int = 20
@@ -286,14 +285,8 @@ def public_event_from_row(
     if confidence is not None and not 0 <= confidence <= 1:
         confidence = None
 
-    # expired: outside the operational Live window — either directly resolved
-    # or older than 7 days. The edge purges it outright; lifecycle still
-    # describes records that remain visible or are consumed by archive views.
-    expired = is_distress and not lifecycle.is_within_live_window(event, now=now)
     # docs/updates.md P0.10: canonical HumanitarianIncident state is the
-    # public authority when one exists -- same helper core.live.feed's
-    # public_signal_collection uses, so VM/edge parity holds by construction
-    # rather than by re-deriving the same logic twice.
+    # public authority when one exists -- same helper core.live.feed uses.
     from core.intel.humanitarian_incident import resolve_public_incident_state
 
     incident_state = (
@@ -301,6 +294,13 @@ def public_event_from_row(
         if is_distress else None
     )
     incident_lifecycle = incident_state["lifecycle"] if incident_state else None
+    incident_status = incident_state["incident_status"] if incident_state else None
+    # Live is a 24-hour operational surface. Resolved/outcome-unknown incidents
+    # are explicit removals even when their founding observation is younger.
+    expired = is_distress and (
+        not lifecycle.is_within_live_window(event, now=now)
+        or incident_status in {"resolved", "outcome_unknown"}
+    )
     # Same redaction as the VM's public feed (core/live/projection.py,
     # _public_intel_feature): only the tracked account's own reply fields —
     # never the event's private-caller-sourced `text` (already blanked
@@ -335,6 +335,7 @@ def public_event_from_row(
         "coordinate_source": metadata.get("coordinate_source"),
         "radius_m": metadata.get("location_uncertainty_m"),
         "incident_lifecycle": incident_lifecycle,
+        "incident_status": incident_status,
         "reported_at": incident_state["reported_at"] if incident_state else None,
         "last_update_at": incident_state["last_update_at"] if incident_state else None,
         "state_changed_at": incident_state["state_changed_at"] if incident_state else None,

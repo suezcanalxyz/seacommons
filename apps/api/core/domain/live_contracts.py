@@ -31,6 +31,15 @@ class IncidentLifecycle(StrEnum):
     ARCHIVED = "archived"
 
 
+class IncidentStatus(StrEnum):
+    """Real-world incident outcome, independent from Live/Play surface."""
+
+    ACTIVE = "active"
+    RESOLVED = "resolved"
+    NEEDS_REVIEW = "needs_review"
+    OUTCOME_UNKNOWN = "outcome_unknown"
+
+
 class LiveSignalKind(StrEnum):
     DISTRESS = "distress"
     CONTEXT = "context"

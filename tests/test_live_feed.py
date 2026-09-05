@@ -1792,3 +1792,43 @@ def test_live_hypotheses_route_returns_the_publication_policy_projection() -> No
     assert payload["type"] == "FeatureCollection"
     assert "features" in payload
     assert "count" in payload["meta"]
+
+
+# ── 24h operational Live surface (2026-09-05) ──────────────────────────
+
+
+def test_humanitarian_live_excludes_unresolved_signal_after_24_hours(monkeypatch) -> None:
+    old = IntelEvent(
+        id="live24-old-active",
+        timestamp_utc=(datetime.now(timezone.utc) - timedelta(hours=25)).isoformat(),
+        type="distress", severity="high", lat=34.8, lon=14.2,
+        title="Distress reported 25 hours ago", text="Rescue is urgent",
+        source="Alarm Phone",
+        metadata={"is_distress": True, "maritime_domain": "sar", "source_policy": "operator_published"},
+    )
+    monkeypatch.setattr("core.live.feed.intel_store.events", lambda **_kwargs: [old])
+    monkeypatch.setattr("core.live.feed.intel_store.persisted_events", lambda **_kwargs: [])
+
+    collection = public_signal_collection(limit=50, days=7, mode="humanitarian")
+    assert "intel:live24-old-active" not in {
+        feature["properties"]["id"] for feature in collection["features"]
+    }
+
+
+def test_humanitarian_live_excludes_canonical_resolved_signal_immediately(monkeypatch) -> None:
+    from core.intel.humanitarian_incident import sync_incident_for_event
+
+    event = IntelEvent(
+        id="live24-resolved", timestamp_utc=datetime.now(timezone.utc).isoformat(),
+        type="distress", severity="high", lat=34.8, lon=14.2,
+        title="Recent distress", text="Rescue is urgent", source="Alarm Phone",
+        metadata={"is_distress": True, "maritime_domain": "sar", "source_policy": "operator_published"},
+    )
+    sync_incident_for_event(event, lifecycle="resolved")
+    monkeypatch.setattr("core.live.feed.intel_store.events", lambda **_kwargs: [event])
+    monkeypatch.setattr("core.live.feed.intel_store.persisted_events", lambda **_kwargs: [])
+
+    collection = public_signal_collection(limit=50, days=1, mode="humanitarian")
+    assert "intel:live24-resolved" not in {
+        feature["properties"]["id"] for feature in collection["features"]
+    }

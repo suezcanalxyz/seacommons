@@ -64,7 +64,7 @@
     {
       "source": "/",
       "has": [{ "type": "host", "value": "play.seacommons.org" }],
-      "destination": "/console.html"
+      "destination": "/play.html"
     },
     {
       "source": "/",

@@ -440,6 +440,40 @@ class SourceObservationDB(Base):
     )
 
 
+class SatelliteObservationDB(Base):
+    """Provider-neutral satellite evidence attached to one incident.
+
+    Stores metadata and asset references only; large raster products remain at
+    the provider and are rendered/fetched on demand by public Play.
+    """
+
+    __tablename__ = "satellite_observations"
+    observation_id = Column(String(64), primary_key=True)
+    incident_id = Column(String(64), nullable=False, index=True)
+    provider = Column(String(48), nullable=False, index=True)
+    mission = Column(String(64), nullable=False)
+    product_id = Column(String(256), nullable=False)
+    acquisition_time = Column(String(32), nullable=False, index=True)
+    discovered_at = Column(DateTime, nullable=False)
+    footprint = Column(JSON)
+    bbox = Column(JSON)
+    sensor_type = Column(String(32), nullable=False)
+    temporal_relation = Column(String(16), nullable=False)
+    temporal_delta_s = Column(Float, nullable=False, default=0)
+    asset_ref = Column(Text, default="")
+    source_url = Column(Text, default="")
+    provenance = Column(JSON, default=dict)
+    resolution_m = Column(Float)
+    cloud_cover = Column(Float)
+    polarisation = Column(JSON)
+    evidence_status = Column(String(32), nullable=False, default="contextual")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_satellite_observations_incident_time", "incident_id", "acquisition_time"),
+    )
+
+
 class InvestigationHypothesisDB(Base):
     """Persisted core.intel.hypothesis.InvestigationHypothesis (docs/fixes.md
     M6/M14.3). One row per hypothesis; audit_history is append-only JSON,
@@ -491,6 +525,9 @@ class HumanitarianIncidentDB(Base):
     __tablename__ = "humanitarian_incidents"
     incident_id = Column(String(64), primary_key=True)
     lifecycle = Column(String(32), nullable=False, index=True)
+    # Public real-world outcome. ``lifecycle=archived`` is retained only as a
+    # compatibility marker for pre-Live/Play rows; it maps to outcome_unknown.
+    incident_status = Column(String(32), nullable=False, default="active", index=True)
     case_type = Column(String(64))
     reported_at = Column(String(32))
     last_update_at = Column(String(32))

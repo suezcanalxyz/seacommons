@@ -5,7 +5,7 @@ Periodic drift refresh for in-window distress events.
 A drift is a snapshot of wind/current forcing at the time it ran. Weather and
 currents keep changing, so a single run stays accurate only for the duration of
 its forecast horizon. This refresher re-runs the OpenDrift model for distress
-events that are still inside the Live window (7 days) whenever the last run is
+events that are still inside the Live window (24 hours) whenever the last run is
 older than DRIFT_REFRESH_AFTER_HOURS — so the "current position" estimate on
 the map keeps tracking the conditions instead of freezing at the original
 forecast.

@@ -178,14 +178,15 @@ def test_unsafe_rescue_reply_stays_active_on_the_edge() -> None:
     assert event["properties"]["incident_lifecycle"] == "active"
 
 
-def test_stale_unresolved_report_turns_archived_not_removed() -> None:
+def test_stale_unresolved_report_leaves_live_after_24_hours() -> None:
     old_timestamp = (_NOW - timedelta(hours=30)).isoformat()
     row = distress_row(timestamp_utc=old_timestamp)
     event = public_event_from_row(row, "node", now=_NOW, same_source=[])
 
     assert event is not None
-    assert event["properties"]["incident_lifecycle"] == "archived"
-    assert event["type"] != "incident_removed"
+    assert event["properties"]["incident_status"] == "outcome_unknown"
+    assert event["type"] == "incident_removed"
+    assert event["properties"]["expired"] is True
 
 
 def test_event_past_the_live_window_is_marked_for_removal() -> None:

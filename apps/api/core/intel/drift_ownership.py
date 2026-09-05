@@ -32,6 +32,7 @@ from __future__ import annotations
 from typing import Optional
 
 _TERMINAL_LIFECYCLES = frozenset({"resolved", "archived"})
+_TERMINAL_INCIDENT_STATUSES = frozenset({"resolved", "outcome_unknown"})
 
 
 def sync_current_drift_for_incident(
@@ -49,7 +50,10 @@ def sync_current_drift_for_incident(
         row = db.get(HumanitarianIncidentDB, incident_id)
         if row is None:
             return None
-        if row.lifecycle in _TERMINAL_LIFECYCLES:
+        if (
+            row.lifecycle in _TERMINAL_LIFECYCLES
+            or (row.incident_status or "") in _TERMINAL_INCIDENT_STATUSES
+        ):
             row.current_drift_id = None
             return None
         row.current_drift_id = candidate_drift_id

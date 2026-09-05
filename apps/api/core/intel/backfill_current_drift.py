@@ -49,7 +49,7 @@ def find_candidates(*, limit: int = 500) -> list[CurrentDriftBackfillCandidate]:
             db.query(HumanitarianIncidentDB)
             .filter(
                 HumanitarianIncidentDB.current_drift_id.is_(None),
-                HumanitarianIncidentDB.lifecycle.in_(("active", "needs_review")),
+                HumanitarianIncidentDB.incident_status.in_(("active", "needs_review")),
             )
             .limit(limit)
             .all()
@@ -96,3 +96,21 @@ def run(*, apply: bool = False, limit: int = 500) -> dict[str, int]:
             report["backfilled"] += 1
 
     return report
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entrypoint. Dry-run is the default; writes require --apply."""
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(description="Backfill HumanitarianIncident current Drift pointers")
+    parser.add_argument("--apply", action="store_true", help="persist changes (default: dry-run)")
+    parser.add_argument("--limit", type=int, default=500)
+    args = parser.parse_args(argv)
+    report = run(apply=args.apply, limit=max(1, args.limit))
+    print(json.dumps(report, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -14,12 +14,16 @@ const cesiumRoot = resolve(webRoot, 'node_modules', 'cesium', 'Build', 'Cesium')
 
 const consoleIndex = resolve(distRoot, 'index.html');
 const siteIndex = resolve(distRoot, 'site.html');
+const playIndex = resolve(distRoot, 'play.html');
 
 if (!existsSync(consoleIndex)) {
   throw new Error('Vite build is missing dist/index.html (console entry)');
 }
 if (!existsSync(siteIndex)) {
   throw new Error('Vite build is missing dist/site.html (institutional site entry)');
+}
+if (!existsSync(playIndex)) {
+  throw new Error('Vite build is missing dist/play.html (Play timeline entry)');
 }
 
 renameSync(consoleIndex, resolve(distRoot, 'console.html'));
@@ -28,4 +32,4 @@ for (const directory of ['Assets', 'ThirdParty', 'Widgets', 'Workers']) {
   cpSync(resolve(cesiumRoot, directory), resolve(distRoot, 'cesium', directory), { recursive: true });
 }
 
-console.log('Unified package ready: institutional site + Play demo + Live console');
+console.log('Unified package ready: institutional site + Play timeline + Live console');

@@ -62,7 +62,7 @@ def test_refresher_force_reschedules_stale_completed_drift(monkeypatch) -> None:
     now = datetime.now(timezone.utc)
     stale = _distress_event(
         "evt-stale-scan",
-        ts=(now - timedelta(hours=30)).isoformat(),
+        ts=(now - timedelta(hours=20)).isoformat(),
         drift_completed_at=(now - timedelta(hours=8)).isoformat(),
         drift_status="completed",
     )
@@ -97,5 +97,30 @@ def test_refresher_force_reschedules_stale_completed_drift(monkeypatch) -> None:
     assert lat == 35.5
     assert calls[0][1]["force"] is True
 
+    store._events.clear()
+    store._seen.clear()
+
+
+def test_refresher_never_reschedules_completed_drift_after_live_24h_window(monkeypatch) -> None:
+    from core.intel import drift_refresher
+
+    now = datetime.now(timezone.utc)
+    retired = _distress_event(
+        "evt-retired-scan",
+        ts=(now - timedelta(hours=30)).isoformat(),
+        drift_completed_at=(now - timedelta(hours=8)).isoformat(),
+        drift_status="completed",
+    )
+    calls = []
+    monkeypatch.setattr(
+        "core.intel.drift_service.schedule_intel_drift",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or True,
+    )
+    store = drift_refresher.intel_store
+    store._events.clear()
+    store._seen.clear()
+    store._events.appendleft(retired)
+    drift_refresher.DriftRefresher()._scan()
+    assert calls == []
     store._events.clear()
     store._seen.clear()
