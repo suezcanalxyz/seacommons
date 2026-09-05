@@ -202,6 +202,23 @@ def has_independent_corroboration(event_ids: list[str]) -> bool:
     return status == "multi_source_corroborated"
 
 
+def verification_explanation(status: str, groups: list[str], evidence_count: int) -> str:
+    if status == "multi_source_corroborated":
+        return (
+            f"{evidence_count} evidence items across {len(groups)} independent evidence lineages"
+        )
+    if status == "single_source_multi_indicator":
+        group_count = max(1, len(groups))
+        noun = "lineage" if group_count == 1 else "lineages"
+        return (
+            f"{evidence_count} indicators from {group_count} evidence {noun}; "
+            "independent corroboration not established"
+        )
+    if groups:
+        return "1 observation from 1 evidence lineage; independent corroboration not established"
+    return "source lineage unresolved; independent corroboration not established"
+
+
 # ── rules ─────────────────────────────────────────────────────────────────────
 
 def _rule_sar_multisource(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]:
@@ -621,6 +638,9 @@ def _emit_locked(alert: FusedAlert) -> None:
         "contributing_independence_groups": independence_groups,
         "independent_source_count": len(independence_groups),
         "evidence_count": evidence_count,
+        "verification_explanation": verification_explanation(
+            verification_status, independence_groups, evidence_count
+        ),
         "cluster_id": alert.cluster_id,
         "is_distress": alert.domain == "sar",
         "verification_status": verification_status,

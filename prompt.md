@@ -35,37 +35,30 @@ Do not reimplement these because historical sections in `docs/fixes.md` describe
 
 ## Current task
 
-The next platform packet is **Section 9 — Review and case-management subsystem** in `docs/updates.md`.
+The immediate platform packet is **OSINT Evidence Pipeline v1**. It takes precedence over Section 9 Review v0 because review must sit on top of analytically correct evidence semantics.
 
-Implement it as a bounded, evidence-first vertical slice. Start with a written design/TDD plan before product code.
-
-Initial target:
+Current invariant:
 
 ```text
-uncertain/canonical object
-  -> typed ReviewReason
-  -> durable ReviewDecision / review queue item
-  -> analyst/operator decision with provenance
-  -> existing canonical pipeline consumes the explicit decision
+observation != corroboration
+multiple detectors != multiple independent sources
+single-source multi-indicator evidence may remain an internal episode
+but may not claim multi-source corroboration or auto-open an intelligence case
 ```
 
-The review subsystem must route uncertainty; it must not become a second incident truth store.
+Required v1 behavior:
 
-Minimum v0 reasons should cover the existing production uncertainties that are already computable, especially:
+- derive source/sensor lineage from canonical provenance and `independence_group`;
+- treat AIS-derived detectors sharing one sensor lineage as one source for corroboration;
+- treat X post text and OCR from the same platform/publication as one source lineage;
+- emit `single_source_observed`, `single_source_multi_indicator`, or `multi_source_corroborated` from actual lineage;
+- keep same-lineage grey-zone/sanctions fused episodes internal unless a high-specificity evidence producer independently justifies a case;
+- expose evidence count, independent-source count and lineage explanation on genuinely publishable fused alerts;
+- preserve YOUR WISDOM (Malta/Gozo ferry) as a benign-service regression fixture, never as a hard-coded suppress rule.
 
-- ambiguous duplicate/correlation;
-- conflicting location or outcome;
-- stale/needs-review Humanitarian case;
-- broken source thread;
-- circular-reporting risk;
-- privacy/publication review;
-- entity identity conflict.
+## Order after OSINT Evidence Pipeline v1
 
-Do not invent review reasons whose evidence producers do not yet exist.
-
-## Order after Review v0
-
-Only after the Review subsystem is production-verified should the agent advance to Section 10 / P3 PostGIS foundation and spatial candidate retrieval.
+After this packet is production-verified, continue with **Vessel Context + behavioural baseline**, then **Observation -> Episode -> Hypothesis**. Revisit **Review v0** only on top of that corrected evidence model. Section 10 / PostGIS remains after the evidence/review foundation, not before it.
 
 ## Non-negotiable constraints
 

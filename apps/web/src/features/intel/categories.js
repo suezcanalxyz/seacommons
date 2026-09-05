@@ -8,7 +8,7 @@ export const SIGNAL_CATEGORIES = [
   { key: 'distress',   label: 'Active distress',   color: '#ff3b3b', types: ['distress'],
     description: 'A distress beacon (AIS-SART/MOB/EPIRB) or a corroborated SAR report. Auto-published — treat as real until stood down.' },
   { key: 'fused',      label: 'Correlated alert',  color: '#ffb347', types: ['correlated_alert'],
-    description: 'Multiple independent sources agree on the same event (spoofing, dark rendezvous, infrastructure proximity, identity fraud...). Never opened from one source alone.' },
+    description: 'SeaCommons groups related evidence into one analytical episode. Check verification and source lineage to see whether independent corroboration is established.' },
   { key: 'ais',        label: 'AIS anomaly / spike', color: '#60a5fa', types: ['ais_spike', 'ais_anomaly'],
     description: 'A transponder pattern that does not look like normal navigation — circular track, teleport jump, or a signal frozen in place. Flags identity questions, not identity conclusions.' },
   { key: 'incident',   label: 'Vessel incident',   color: '#fb923c', types: ['vessel_incident'],

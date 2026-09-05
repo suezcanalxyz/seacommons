@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
+from pathlib import Path
 
 import pytest
 
@@ -568,3 +570,44 @@ def test_same_lineage_gap_plus_infra_proximity_does_not_open_case() -> None:
     from core.db.session import session_scope
     with session_scope() as db:
         assert db.query(CaseDB).count() == 0
+
+
+def test_your_wisdom_benign_service_fixture_stays_internal_without_case() -> None:
+    fixture_path = Path(__file__).parent / "fixtures" / "osint" / "benign_service_vessels.jsonl"
+    case = json.loads(fixture_path.read_text().splitlines()[0])
+    vessel = case["vessel"]
+    expected = case["expected"]
+    now = datetime.now(timezone.utc)
+
+    observations = []
+    for row in case["observations"]:
+        observations.append(_add(
+            id=row["id"], type=row["type"], severity="medium",
+            lat=row["lat"], lon=row["lon"], title=row["anomaly_type"], source=row["source"],
+            linked_mmsi=vessel["mmsi"],
+            timestamp_utc=(now - timedelta(minutes=row["minutes_before"])).isoformat(),
+            metadata={
+                "anomaly_type": row["anomaly_type"],
+                "vessel_name": vessel["name"],
+                "imo": vessel["imo"],
+                "vessel_role": vessel["role"],
+                "operational_context": vessel["operational_context"],
+            },
+        ))
+
+    fusion.evaluate(observations[-1])
+    alert = _alerts()[0]
+
+    assert alert.metadata["verification_status"] == expected["verification_status"]
+    assert alert.metadata["contributing_independence_groups"] == expected["independence_groups"]
+    assert alert.metadata["independent_source_count"] == expected["independent_source_count"]
+    assert alert.metadata["publication_status"] == expected["publication_status"]
+    assert alert.metadata["alert_type"] == "infra_proximity"
+    assert alert.metadata["verification_explanation"] == (
+        "2 indicators from 1 evidence lineage; independent corroboration not established"
+    )
+
+    from core.db.models import CaseDB
+    from core.db.session import session_scope
+    with session_scope() as db:
+        assert db.query(CaseDB).count() == expected["case_count"]

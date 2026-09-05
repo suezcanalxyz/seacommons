@@ -1924,3 +1924,34 @@ def test_internal_single_lineage_correlated_alert_is_not_public_in_security_mode
     feature = _public_intel_feature(event, allowed_domains=frozenset({"grey_zone"}))
 
     assert feature is None
+
+
+def test_public_correlated_alert_exposes_evidence_lineage_summary() -> None:
+    event = IntelEvent(
+        id="public-corroborated-lineage",
+        type="correlated_alert",
+        severity="high",
+        lat=35.9,
+        lon=14.5,
+        title="Independently corroborated maritime episode",
+        source="SeaCommons fusion",
+        linked_mmsi="229113000",
+        metadata={
+            "maritime_domain": "grey_zone",
+            "alert_type": "infrastructure_threat",
+            "publication_status": "published",
+            "verification_status": "multi_source_corroborated",
+            "contributing_independence_groups": ["ais_sensor_lineage", "official_report"],
+            "independent_source_count": 2,
+            "evidence_count": 3,
+            "verification_explanation": "3 evidence items across 2 independent evidence lineages",
+        },
+    )
+
+    feature = _public_intel_feature(event, allowed_domains=frozenset({"grey_zone"}))
+    assert feature is not None
+    props = feature["properties"]
+    assert props["contributing_independence_groups"] == ["ais_sensor_lineage", "official_report"]
+    assert props["independent_source_count"] == 2
+    assert props["evidence_count"] == 3
+    assert props["verification_explanation"] == "3 evidence items across 2 independent evidence lineages"
