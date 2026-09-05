@@ -44,27 +44,38 @@ def find_candidates(*, limit: int = 500, days: int = 30) -> list[HumanitarianInc
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(days=max(1, days))).isoformat()
     with session_scope() as db:
+        existing_ids = {
+            incident_id for (incident_id,) in db.query(HumanitarianIncidentDB.incident_id).all()
+        }
         rows = (
             db.query(IntelEventDB)
             .filter(IntelEventDB.timestamp_utc >= cutoff)
             .order_by(IntelEventDB.timestamp_utc.desc())
-            .limit(max(limit * 4, limit))
-            .all()
+            .yield_per(1000)
         )
-        events = [_event_from_row(row) for row in rows]
-        by_source: dict[str, list[IntelEvent]] = {}
-        for event in events:
-            by_source.setdefault(event.source, []).append(event)
-
+        source_context: dict[str, list[IntelEvent]] = {}
         candidates: list[HumanitarianIncidentBackfillCandidate] = []
-        for event in events:
-            if db.get(HumanitarianIncidentDB, event.id) is not None:
+        for row in rows:
+            if row.id in existing_ids:
                 continue
+            event = _event_from_row(row)
             if classify_service(event).service != "humanitarian":
                 continue
+            if event.source not in source_context:
+                context_rows = (
+                    db.query(IntelEventDB)
+                    .filter(
+                        IntelEventDB.timestamp_utc >= cutoff,
+                        IntelEventDB.source == event.source,
+                    )
+                    .order_by(IntelEventDB.timestamp_utc.desc())
+                    .limit(250)
+                    .all()
+                )
+                source_context[event.source] = [_event_from_row(item) for item in context_rows]
             lifecycle = distress_lifecycle(
                 event, now=now,
-                same_source=[other for other in by_source.get(event.source, []) if other.id != event.id],
+                same_source=[other for other in source_context[event.source] if other.id != event.id],
             )
             candidates.append(HumanitarianIncidentBackfillCandidate(
                 event=event,
