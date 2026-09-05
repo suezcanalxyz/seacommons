@@ -1832,3 +1832,49 @@ def test_humanitarian_live_excludes_canonical_resolved_signal_immediately(monkey
     assert "intel:live24-resolved" not in {
         feature["properties"]["id"] for feature in collection["features"]
     }
+
+
+def test_needs_review_drift_leaves_live_after_24h(monkeypatch) -> None:
+    """Live's 24h surface boundary applies to derived Drift products too."""
+    from datetime import timedelta, timezone
+    from core.live.feed import public_drift_collection
+
+    old_iso = (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat()
+    event = IntelEvent(
+        id="ap-needs-review-old", type="distress", severity="high",
+        lat=35.0, lon=14.0, title="Older unresolved distress",
+        source="alarm_phone", timestamp_utc=old_iso,
+        metadata={"is_distress": True, "source_policy": "official_api",
+                  "incident_lifecycle": "needs_review", "maritime_domain": "sar",
+                  "coordinate_source": "media_ocr_text",
+                  "coordinate_review_status": "machine_ocr_unverified",
+                  "location_status": "positioned",
+                  "thread_reposts": [{
+                      "tweet_id": "later-ambiguous-update",
+                      "posted_at": (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat(),
+                      "kind": "reply",
+                      "note": "Still no rescue came.",
+                  }]},
+    )
+    monkeypatch.setattr("core.live.feed.intel_store.persisted_events", lambda **_kwargs: [])
+    monkeypatch.setattr("core.live.feed.intel_store.events", lambda **_kwargs: [event])
+    fake = {"trajectory": {"type": "Feature", "geometry": {"type": "LineString",
+            "coordinates": [[14.0, 35.0], [14.1, 35.1]]}, "properties": {}},
+            "cone_24h": None, "impact_point": {}, "metadata": {"published": True}}
+    monkeypatch.setattr("core.db.store.get_drift", lambda _job_id: fake)
+    monkeypatch.setattr("core.live.feed._is_publishable_live_drift", lambda _drift: True)
+    from core.db.models import HumanitarianIncidentDB, IncidentTransitionDB
+    from core.db.session import engine
+    from core.intel.drift_ownership import sync_current_drift_for_incident
+    from core.intel.humanitarian_incident import sync_incident_for_event
+
+    HumanitarianIncidentDB.__table__.create(bind=engine(), checkfirst=True)
+    IncidentTransitionDB.__table__.create(bind=engine(), checkfirst=True)
+    sync_incident_for_event(event, lifecycle="needs_review")
+    assert sync_current_drift_for_incident(event.id, "job-old-needs-review") == "job-old-needs-review"
+    from core.intel.drift_service import is_auto_drift_eligible
+    assert is_auto_drift_eligible(event)[0] is True
+
+    collection = public_drift_collection(limit=50)
+    ids = {f["properties"]["intel_event_id"] for f in collection["features"]}
+    assert event.id not in ids
