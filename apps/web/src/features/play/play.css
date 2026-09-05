@@ -166,11 +166,11 @@
 
 @media (max-width: 820px) {
   .play-public-shell { --live-panel-width: 100vw; }
-  .play-archive-panel {
+  .play-public-shell .play-archive-panel {
     height: min(72dvh, 680px);
     transform: translateY(102%);
   }
-  .play-archive-panel.is-mobile-open { transform: translateY(0); }
+  .play-public-shell .play-archive-panel.is-mobile-open { transform: translateY(0); }
   .play-mobile-cases-toggle {
     position: fixed;
     z-index: 1161;

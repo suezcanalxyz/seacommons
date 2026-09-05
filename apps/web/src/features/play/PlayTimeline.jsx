@@ -353,15 +353,16 @@ export default function PlayTimeline({ apiBase }) {
           <h1>PLAY</h1>
         </div>
         <div className="play-header__actions">
-          <button className="play-mobile-cases-toggle" type="button" onClick={() => setCasesOpen((value) => !value)}>
-            Archive · {globalState.mode === 'all' && archiveTotal != null ? archiveTotal : visibleIncidents.length}
-          </button>
           <div className="play-header__meta">
             <span>{globalState.mode === 'all' ? 'Complete archive' : 'Historical cutoff'}</span>
             <strong>{globalState.mode === 'all' && archiveTotal != null ? archiveTotal : visibleIncidents.length}</strong>
           </div>
         </div>
       </header>
+
+      <button className="live-feed-toggle play-mobile-cases-toggle" type="button" onClick={() => setCasesOpen((value) => !value)}>
+        Archive · {globalState.mode === 'all' && archiveTotal != null ? archiveTotal : visibleIncidents.length}
+      </button>
 
       <aside className={`live-feed-panel is-open play-archive-panel play-cases ${casesOpen ? 'is-mobile-open' : ''}`}>
         <header className="live-feed-panel__header">

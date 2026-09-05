@@ -190,3 +190,24 @@ def test_satellite_enrichment_keeps_recent_play_history_eligible():
         metadata={"is_distress": True, "publication_status": "published"},
     )
     assert is_satellite_enrichment_candidate(event, now=now, history_days=30) is True
+
+
+def test_copernicus_stac_accepts_start_datetime_when_datetime_is_missing():
+    client = _FakeClient({
+        "features": [{
+            "id": "S3_INTERVAL_PRODUCT",
+            "collection": "sentinel-3-olci-2-wfr-nrt",
+            "bbox": [14.0, 35.0, 14.2, 35.2],
+            "geometry": {"type": "Polygon", "coordinates": []},
+            "properties": {"start_datetime": "2026-09-04T09:30:00Z", "end_datetime": "2026-09-04T09:33:00Z", "platform": "sentinel-3a"},
+            "assets": {"thumbnail": {"href": "https://example.test/s3-thumb.jpg"}},
+            "links": [{"rel": "self", "href": "https://example.test/stac/S3_INTERVAL_PRODUCT"}],
+        }]
+    })
+    observation = CopernicusSTACProvider(client=client).search(
+        incident_id="inc-1", bbox=[14.0, 35.0, 14.2, 35.2],
+        start=datetime(2026, 9, 3, tzinfo=timezone.utc), end=datetime(2026, 9, 5, tzinfo=timezone.utc),
+        collections=["sentinel-3-olci-2-wfr-nrt"],
+    )[0]
+    assert observation.acquisition_time == "2026-09-04T09:30:00Z"
+    assert observation.mission == "Sentinel-3"

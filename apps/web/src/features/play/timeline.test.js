@@ -246,6 +246,12 @@ test('Play reuses the public Live shell classes instead of a parallel panel syst
   assert.match(jsx, /cone-panel cone-panel--intel play-evidence/);
 });
 
+test('Play mobile archive drawer stays closed until the archive toggle opens it', async () => {
+  const css = await readFile(new URL('./play.css', import.meta.url), 'utf8');
+  assert.match(css, /\.play-public-shell \.play-archive-panel\s*\{[^}]*transform:\s*translateY\(102%\)/s);
+  assert.match(css, /\.play-public-shell \.play-archive-panel\.is-mobile-open\s*\{[^}]*transform:\s*translateY\(0\)/s);
+});
+
 test('Play exposes Live-style archive filter controls', async () => {
   const jsx = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
   for (const label of ['ALL', 'HUMANITARIAN', 'MARITIME', 'CORRELATED', 'SATELLITE']) {
