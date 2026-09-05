@@ -138,3 +138,78 @@ def test_play_timeline_includes_persisted_satellite_observation():
     assert satellite["properties"]["temporal_relation"] == "reverse"
     assert satellite["properties"]["asset_ref"] == "https://example.test/preview.jpg"
     assert satellite["properties"]["bbox"] == [14.0, 35.0, 14.2, 35.2]
+
+
+def _seed_maritime_play_event(*, age_hours=36):
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    event_id = f"maritime-{uuid.uuid4()}"
+    reported = datetime.now(timezone.utc) - timedelta(hours=age_hours)
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=event_id, timestamp_utc=reported.isoformat(), type="vessel_incident",
+            severity="medium", lat=36.2, lon=15.4,
+            title="Public maritime incident", text="PRIVATE MARITIME RAW",
+            url=f"https://example.test/{event_id}", source="maritime_osint",
+            linked_mmsi="123456789", maritime_domain="maritime_security",
+            meta={"publication_status": "published", "source_policy": "operator_published"},
+        ))
+    return event_id
+
+
+def test_play_index_includes_public_historical_maritime_points():
+    event_id = _seed_maritime_play_event()
+    response = TestClient(app).get("/api/v1/play/incidents?limit=500")
+    assert response.status_code == 200
+    item = next(row for row in response.json()["incidents"] if row["incident_id"] == event_id)
+    assert item["domain"] == "maritime"
+    assert item["geometry"] == {"type": "Point", "coordinates": [15.4, 36.2]}
+    assert item["incident_status"] == "outcome_unknown"
+
+
+def test_play_generic_maritime_timeline_is_privacy_safe():
+    event_id = _seed_maritime_play_event()
+    response = TestClient(app).get(f"/api/v1/play/incidents/{event_id}/timeline")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["domain"] == "maritime"
+    assert payload["timeline"][0]["type"] == "report"
+    assert "PRIVATE MARITIME RAW" not in response.text
+
+
+def test_play_maritime_rejects_blocked_source_even_if_marked_published():
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    event_id = f"blocked-{uuid.uuid4()}"
+    reported = datetime.now(timezone.utc) - timedelta(hours=36)
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=event_id, timestamp_utc=reported.isoformat(), type="vessel_incident",
+            severity="medium", lat=36.0, lon=15.0, title="Must stay private",
+            text="PRIVATE", url="https://example.test/blocked", source="blocked",
+            linked_mmsi="", maritime_domain="maritime_security",
+            meta={"publication_status": "published", "source_policy": "unofficial"},
+        ))
+    index = TestClient(app).get("/api/v1/play/incidents?limit=500").json()["incidents"]
+    assert event_id not in {item["incident_id"] for item in index}
+    assert TestClient(app).get(f"/api/v1/play/incidents/{event_id}/timeline").status_code == 404
+
+
+def test_play_index_sorts_humanitarian_and_maritime_before_limit():
+    _seed_case(lifecycle="resolved", age_hours=72, with_update=False)
+    maritime_id = _seed_maritime_play_event(age_hours=30)
+    response = TestClient(app).get("/api/v1/play/incidents?limit=1&offset=0")
+    assert response.status_code == 200
+    assert response.json()["incidents"][0]["incident_id"] == maritime_id
+
+
+def test_play_index_paginates_combined_archive():
+    _seed_maritime_play_event(age_hours=30)
+    _seed_maritime_play_event(age_hours=31)
+    _seed_maritime_play_event(age_hours=32)
+    first = TestClient(app).get("/api/v1/play/incidents?limit=2&offset=0").json()
+    second = TestClient(app).get(f"/api/v1/play/incidents?limit=2&offset={first['next_offset']}").json()
+    first_ids = {item["incident_id"] for item in first["incidents"]}
+    second_ids = {item["incident_id"] for item in second["incidents"]}
+    assert first["next_offset"] == 2
+    assert first_ids.isdisjoint(second_ids)

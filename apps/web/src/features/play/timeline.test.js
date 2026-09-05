@@ -6,6 +6,11 @@ import {
   selectFrame,
   selectSatelliteObservation,
   statusLabel,
+  resolveGlobalTimelinePosition,
+  incidentsAtCutoff,
+  incidentCollection,
+  timelineAtCutoff,
+  incidentStatusAtCutoff,
 } from './timeline.js';
 
 const items = [
@@ -65,4 +70,60 @@ test('satelliteRasterDescriptor supports dated tiles and bounded image previews'
 test('satelliteRasterDescriptor rejects non-image product assets', async () => {
   const { satelliteRasterDescriptor } = await import('./timeline.js');
   assert.equal(satelliteRasterDescriptor({ properties: { asset_ref: 's3://bucket/product.safe' } }), null);
+});
+
+
+test('global archive timeline is ALL at its rightmost position and temporal before it', () => {
+  const incidents = [
+    { incident_id: 'a', reported_at: '2026-09-01T00:00:00Z' },
+    { incident_id: 'b', reported_at: '2026-09-05T00:00:00Z' },
+  ];
+  assert.deepEqual(resolveGlobalTimelinePosition(incidents, 1000), { mode: 'all', cutoff: null });
+  const past = resolveGlobalTimelinePosition(incidents, 500);
+  assert.equal(past.mode, 'temporal');
+  assert.equal(past.cutoff, '2026-09-03T00:00:00.000Z');
+});
+
+test('cutoff filters archive incidents and selected-case evidence without leaking the future', () => {
+  const incidents = [
+    { incident_id: 'a', reported_at: '2026-09-01T00:00:00Z', geometry: { type: 'Point', coordinates: [10, 35] } },
+    { incident_id: 'b', reported_at: '2026-09-04T00:00:00Z', geometry: { type: 'Point', coordinates: [12, 36] } },
+  ];
+  const cutoff = '2026-09-02T00:00:00.000Z';
+  assert.deepEqual(incidentsAtCutoff(incidents, cutoff).map((x) => x.incident_id), ['a']);
+  const fc = incidentCollection(incidents, cutoff);
+  assert.equal(fc.features.length, 1);
+  assert.equal(fc.features[0].properties.incident_id, 'a');
+  const timeline = normalizeTimeline([
+    { id: 'r', at: '2026-09-01T01:00:00Z', type: 'report' },
+    { id: 'future', at: '2026-09-03T01:00:00Z', type: 'satellite' },
+  ]);
+  assert.deepEqual(timelineAtCutoff(timeline, cutoff).map((x) => x.id), ['r']);
+  assert.equal(timelineAtCutoff(timeline, null).length, 2);
+});
+
+test('Play surface exposes ALL-first global timeline and mobile drawer/sheet contracts', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const jsx = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  const css = await readFile(new URL('./play.css', import.meta.url), 'utf8');
+  assert.match(jsx, /aria-label="Global archive timeline"/);
+  assert.match(jsx, /play-mobile-cases-toggle/);
+  assert.match(jsx, /play-evidence.*is-open/);
+  assert.match(jsx, /next_offset/);
+  assert.match(jsx, /!visibleIncidents\.some/);
+  assert.match(css, /\.play-mobile-cases-toggle/);
+  assert.match(css, /\.play-evidence\.is-open/);
+});
+
+test('incident status at cutoff uses only transitions knowable by that time', () => {
+  const incident = {
+    incident_status: 'resolved',
+    status_history: [
+      { at: '2026-09-03T00:00:00Z', from_state: 'active', to_state: 'needs_review' },
+      { at: '2026-09-04T00:00:00Z', from_state: 'needs_review', to_state: 'resolved' },
+    ],
+  };
+  assert.equal(incidentStatusAtCutoff(incident, '2026-09-02T00:00:00Z'), 'active');
+  assert.equal(incidentStatusAtCutoff(incident, '2026-09-03T12:00:00Z'), 'needs_review');
+  assert.equal(incidentStatusAtCutoff(incident, null), 'resolved');
 });

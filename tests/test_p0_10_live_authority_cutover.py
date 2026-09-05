@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -27,7 +27,9 @@ from core.intel.humanitarian_incident import (
 )
 from core.intel.store import IntelEvent, intel_store
 
-_NOW = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+_NOW = datetime.now(timezone.utc).replace(microsecond=0)
+_FOUNDING_TS = (_NOW - timedelta(hours=4)).isoformat()
+_REPLY_TS = (_NOW - timedelta(hours=2, minutes=30)).isoformat()
 
 
 @pytest.fixture(autouse=True)
@@ -72,7 +74,7 @@ def _wait_for(predicate, *, tries=40, delay=0.05):
 def test_resolve_public_incident_state_uses_the_canonical_incident_when_present():
     from core.intel.humanitarian_incident import sync_incident_for_event
 
-    event = _distress_event(f"p010-{uuid.uuid4()}", "MAYDAY test", "2026-09-04T08:00:00+00:00")
+    event = _distress_event(f"p010-{uuid.uuid4()}", "MAYDAY test", _FOUNDING_TS)
     sync_incident_for_event(event, lifecycle="active")
 
     state = resolve_public_incident_state(event, now=_NOW, same_source=[])
@@ -83,7 +85,7 @@ def test_resolve_public_incident_state_uses_the_canonical_incident_when_present(
 
 
 def test_resolve_public_incident_state_falls_back_when_no_incident_exists():
-    event = _distress_event(f"p010-noincident-{uuid.uuid4()}", "Rescued! All safe.", "2026-09-04T08:00:00+00:00")
+    event = _distress_event(f"p010-noincident-{uuid.uuid4()}", "Rescued! All safe.", _FOUNDING_TS)
     assert get_incident(event.id) is None
 
     state = resolve_public_incident_state(event, now=_NOW, same_source=[])
@@ -98,14 +100,14 @@ def test_public_signal_collection_exposes_canonical_timer_fields():
     from core.live.feed import public_signal_collection
 
     event_id = f"p010-live-{uuid.uuid4()}"
-    event = _distress_event(event_id, "MAYDAY live feed test", "2026-09-04T08:00:00+00:00")
+    event = _distress_event(event_id, "MAYDAY live feed test", _FOUNDING_TS)
     intel_store.add(event)
     assert _wait_for(lambda: get_incident(event_id) is not None)
 
     collection = public_signal_collection(mode="humanitarian", limit=500, days=1)
     feature = next(f for f in collection["features"] if f["properties"]["id"] == f"intel:{event_id}")
-    assert feature["properties"]["last_update_at"] == "2026-09-04T08:00:00+00:00"
-    assert feature["properties"]["reported_at"] == "2026-09-04T08:00:00+00:00"
+    assert feature["properties"]["last_update_at"] == _FOUNDING_TS
+    assert feature["properties"]["reported_at"] == _FOUNDING_TS
 
 
 def test_a_thread_update_advances_the_public_last_update_at():
@@ -115,11 +117,11 @@ def test_a_thread_update_advances_the_public_last_update_at():
     from core.live.feed import public_signal_collection
 
     event_id = f"p010-thread-{uuid.uuid4()}"
-    event = _distress_event(event_id, "MAYDAY thread update test", "2026-09-04T08:00:00+00:00")
+    event = _distress_event(event_id, "MAYDAY thread update test", _FOUNDING_TS)
     intel_store.add(event)
     assert _wait_for(lambda: get_incident(event_id) is not None)
 
-    reply_posted_at = "2026-09-04T09:30:00+00:00"
+    reply_posted_at = _REPLY_TS
     intel_store.append_thread_repost(event_id, {
         "tweet_id": f"reply-{uuid.uuid4()}", "posted_at": reply_posted_at,
         "url": "https://x.test/reply", "kind": "repost",
@@ -135,7 +137,7 @@ def test_vm_and_edge_agree_on_the_canonical_state_for_the_same_incident():
     from core.live_edge_publisher import public_event_from_row
 
     event_id = f"p010-parity-{uuid.uuid4()}"
-    event = _distress_event(event_id, "MAYDAY parity test", "2026-09-04T08:00:00+00:00")
+    event = _distress_event(event_id, "MAYDAY parity test", _FOUNDING_TS)
     intel_store.add(event)
     assert _wait_for(lambda: get_incident(event_id) is not None)
 
@@ -145,7 +147,7 @@ def test_vm_and_edge_agree_on_the_canonical_state_for_the_same_incident():
         id=event_id, type="distress", severity="high", lat=35.5, lon=14.1,
         title="MAYDAY parity test", text="MAYDAY parity test",
         url="", source="Alarm Phone", linked_mmsi="",
-        timestamp_utc="2026-09-04T08:00:00+00:00",
+        timestamp_utc=_FOUNDING_TS,
         meta={
             "is_distress": True, "source_policy": "operator_published",
             "publication_status": "published",
@@ -164,7 +166,7 @@ def test_a_maritime_safety_marker_has_no_canonical_incident_and_falls_back():
     event = IntelEvent(
         id=f"p010-safety-{uuid.uuid4()}", type="distress", severity="critical",
         lat=35.1, lon=14.2, title="Distress beacon activated", text="beacon",
-        source="ais_sart", timestamp_utc="2026-09-04T08:00:00+00:00",
+        source="ais_sart", timestamp_utc=_FOUNDING_TS,
         metadata={"is_distress": True, "maritime_domain": "safety", "service": "maritime", "lane": "safety"},
     )
     assert get_incident(event.id) is None
@@ -175,7 +177,7 @@ def test_a_maritime_safety_marker_has_no_canonical_incident_and_falls_back():
 
 def test_resolve_public_incident_state_exposes_real_incident_status():
     event_id = f"p010-status-{uuid.uuid4()}"
-    event = _distress_event(event_id, "MAYDAY status contract", "2026-09-04T08:00:00+00:00")
+    event = _distress_event(event_id, "MAYDAY status contract", _FOUNDING_TS)
     intel_store.add(event)
     assert _wait_for(lambda: get_incident(event_id) is not None)
 

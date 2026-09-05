@@ -25,6 +25,11 @@ import pytest
 from core.intel.humanitarian_incident import get_incident, list_transitions, register
 from core.intel.store import IntelEvent, intel_store
 
+_BASE = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(hours=6)
+
+def _ts(*, hours=0, minutes=0):
+    return (_BASE + timedelta(hours=hours, minutes=minutes)).isoformat()
+
 
 @pytest.fixture(autouse=True)
 def _fresh_tables():
@@ -64,7 +69,7 @@ def _wait_for(predicate, *, tries=40, delay=0.05):
 
 def test_a_verified_reply_advances_the_canonical_incident_without_a_second_row():
     event_id = f"p09-{uuid.uuid4()}"
-    founding_ts = "2026-09-04T08:00:00+00:00"
+    founding_ts = _ts()
     event = _distress_event(event_id, "MAYDAY 30 people taking water off Libya", founding_ts)
     intel_store.add(event)
 
@@ -73,7 +78,7 @@ def test_a_verified_reply_advances_the_canonical_incident_without_a_second_row()
     assert before["last_update_at"] == founding_ts
     assert before["lifecycle"] == "active"
 
-    reply_posted_at = "2026-09-04T09:30:00+00:00"
+    reply_posted_at = _ts(hours=1, minutes=30)
     intel_store.append_thread_repost(event_id, {
         "tweet_id": f"reply-{uuid.uuid4()}", "posted_at": reply_posted_at,
         "url": "https://x.test/reply", "kind": "reply", "note": "Rescued! All safe.",
@@ -93,12 +98,12 @@ def test_a_verified_reply_advances_the_canonical_incident_without_a_second_row()
 
 def test_a_plain_repost_with_no_note_advances_the_timer_without_forcing_resolution():
     event_id = f"p09-{uuid.uuid4()}"
-    founding_ts = "2026-09-04T08:00:00+00:00"
+    founding_ts = _ts()
     event = _distress_event(event_id, "distress report, position uncertain", founding_ts)
     intel_store.add(event)
     assert _wait_for(lambda: get_incident(event_id) is not None)
 
-    repost_posted_at = "2026-09-04T08:45:00+00:00"
+    repost_posted_at = _ts(minutes=45)
     intel_store.append_thread_repost(event_id, {
         "tweet_id": f"rt-{uuid.uuid4()}", "posted_at": repost_posted_at,
         "url": "https://x.test/rt", "kind": "repost",
@@ -112,14 +117,14 @@ def test_a_plain_repost_with_no_note_advances_the_timer_without_forcing_resoluti
 
 def test_multiple_thread_updates_still_produce_exactly_one_incident():
     event_id = f"p09-{uuid.uuid4()}"
-    event = _distress_event(event_id, "MAYDAY multiple updates test", "2026-09-04T08:00:00+00:00")
+    event = _distress_event(event_id, "MAYDAY multiple updates test", _ts())
     intel_store.add(event)
     assert _wait_for(lambda: get_incident(event_id) is not None)
 
     for i in range(4):
         intel_store.append_thread_repost(event_id, {
             "tweet_id": f"rt-{i}-{uuid.uuid4()}",
-            "posted_at": f"2026-09-04T0{8 + i}:15:00+00:00",
+            "posted_at": (_BASE + timedelta(hours=i, minutes=15)).isoformat(),
             "url": f"https://x.test/rt{i}", "kind": "repost",
         })
     time.sleep(0.3)
@@ -136,18 +141,18 @@ def test_multiple_thread_updates_still_produce_exactly_one_incident():
 
 def test_an_out_of_order_repost_never_moves_the_timer_backward():
     event_id = f"p09-{uuid.uuid4()}"
-    event = _distress_event(event_id, "MAYDAY out of order test", "2026-09-04T10:00:00+00:00")
+    event = _distress_event(event_id, "MAYDAY out of order test", _ts(hours=2))
     intel_store.add(event)
     assert _wait_for(lambda: get_incident(event_id) is not None)
 
-    later_reply_at = "2026-09-04T12:00:00+00:00"
+    later_reply_at = _ts(hours=4)
     intel_store.append_thread_repost(event_id, {
         "tweet_id": f"a-{uuid.uuid4()}", "posted_at": later_reply_at,
         "url": "https://x.test/a", "kind": "repost",
     })
     assert _wait_for(lambda: get_incident(event_id)["last_update_at"] == later_reply_at)
 
-    earlier_delayed_reply_at = "2026-09-04T10:30:00+00:00"
+    earlier_delayed_reply_at = _ts(hours=2, minutes=30)
     intel_store.append_thread_repost(event_id, {
         "tweet_id": f"b-{uuid.uuid4()}", "posted_at": earlier_delayed_reply_at,
         "url": "https://x.test/b", "kind": "repost",

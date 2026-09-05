@@ -793,14 +793,57 @@ function App() {
     return canonicalFeature ? { ...mapPanel, feature: canonicalFeature } : mapPanel;
   }, [intelEvents, mapPanel]);
 
+  function panelFocusCoordinates(panel) {
+    const geometry = panel?.feature?.geometry;
+    if (!geometry) return null;
+    if (geometry.type === 'Point' && Array.isArray(geometry.coordinates)) return geometry.coordinates;
+    if (geometry.type === 'LineString' && Array.isArray(geometry.coordinates) && geometry.coordinates.length) {
+      return geometry.coordinates[Math.floor((geometry.coordinates.length - 1) / 2)] || geometry.coordinates[0];
+    }
+    if (geometry.type === 'Polygon' && Array.isArray(geometry.coordinates?.[0]) && geometry.coordinates[0].length) {
+      const ring = geometry.coordinates[0];
+      const total = ring.reduce((acc, point) => [acc[0] + Number(point[0]), acc[1] + Number(point[1])], [0, 0]);
+      return [total[0] / ring.length, total[1] / ring.length];
+    }
+    return null;
+  }
+
+  function mobilePanelMapPadding() {
+    return {
+      top: 24,
+      right: 24,
+      bottom: Math.round(window.innerHeight * 0.66),
+      left: 24,
+    };
+  }
+
   function openIntelReport(feature) {
     const coordinates = feature?.geometry?.type === 'Point' ? feature.geometry.coordinates : null;
-    if (coordinates && mapRef.current) {
+    const isMobile = window.matchMedia('(max-width: 680px)').matches;
+    if (coordinates && mapRef.current && !isMobile) {
       mapRef.current.flyTo({ center: coordinates, zoom: 9, duration: 800 });
     }
     setMapPanel({ type: 'intel', feature });
     setConePanelHidden(false);
   }
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!isPublicLiveHost || !map || !mapReady || !window.matchMedia('(max-width: 680px)').matches) return;
+    if (conePanelHidden || !resolvedMapPanel) {
+      map.easeTo({ padding: { top: 0, right: 0, bottom: 0, left: 0 }, duration: 220, essential: true });
+      return;
+    }
+    const coordinates = panelFocusCoordinates(resolvedMapPanel);
+    if (!coordinates) return;
+    map.easeTo({
+      center: coordinates,
+      zoom: Math.max(map.getZoom(), resolvedMapPanel.type === 'intel' ? 7.8 : 6.5),
+      padding: mobilePanelMapPadding(),
+      duration: 420,
+      essential: true,
+    });
+  }, [conePanelHidden, mapReady, resolvedMapPanel]);
 
   useEffect(() => {
     if (mapPanel?.type === 'cone') setConePanelHidden(false);
