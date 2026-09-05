@@ -1,6 +1,6 @@
 # Current work — post-IncidentWatch production baseline
 
-> **Main:** `6e0d1057d9e7d1149a30f3d902e980e248c98d9d`
+> **Runtime code baseline:** PR #148 merge `6e0d1057d9e7d1149a30f3d902e980e248c98d9d` (subsequent docs-only commits may advance `main`)
 > **Production schema:** `0019_incident_watch`
 > **Status:** IncidentWatch v0 merged, migrated, deployed and smoke-verified on 2026-09-05.
 

@@ -4,7 +4,7 @@ Work on `suezcanalxyz/seacommons` from the latest `main` only.
 
 ## Verified production baseline — 2026-09-05
 
-- Current merged baseline: `6e0d1057d9e7d1149a30f3d902e980e248c98d9d` (PR #148).
+- Current runtime-code baseline: PR #148 merge `6e0d1057d9e7d1149a30f3d902e980e248c98d9d`; later docs-only commits may advance `main` without changing deployed API semantics.
 - IncidentWatch v0 is implemented, migrated and deployed; production Alembic head is `0019_incident_watch`.
 - Full CI #421 and CodeQL #380 passed on the implementation head before merge.
 - Production Vercel deployment for the merge is `READY` on Live and Play.
