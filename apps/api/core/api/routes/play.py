@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from threading import Lock
+from time import monotonic
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -113,9 +115,13 @@ def _generic_maritime_projection(event) -> dict[str, Any]:
     }
 
 
-@router.get("/counts")
-async def play_counts():
-    """Exact public archive counters, independent of page/transport size."""
+_PLAY_COUNTS_TTL_S = 60.0
+_play_counts_cache: dict[str, Any] = {}
+_play_counts_lock = Lock()
+
+
+def _compute_play_counts() -> dict[str, Any]:
+    """Compute an exact public archive snapshot. Expensive by design."""
     from core.db.models import HumanitarianIncidentDB, IntelEventDB
     from core.db.session import session_scope
 
@@ -149,8 +155,29 @@ async def play_counts():
     }
 
 
+@router.get("/counts")
+def play_counts():
+    """Exact archive snapshot, isolated from the async request loop."""
+    now_mono = monotonic()
+    cached = _play_counts_cache.get("payload")
+    cached_at = float(_play_counts_cache.get("at") or 0.0)
+    if cached is not None and now_mono - cached_at < _PLAY_COUNTS_TTL_S:
+        return cached
+
+    with _play_counts_lock:
+        now_mono = monotonic()
+        cached = _play_counts_cache.get("payload")
+        cached_at = float(_play_counts_cache.get("at") or 0.0)
+        if cached is not None and now_mono - cached_at < _PLAY_COUNTS_TTL_S:
+            return cached
+        payload = _compute_play_counts()
+        _play_counts_cache["payload"] = payload
+        _play_counts_cache["at"] = monotonic()
+        return payload
+
+
 @router.get("/incidents")
-async def play_incidents(
+def play_incidents(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
@@ -298,7 +325,7 @@ def _drift_item(row) -> dict[str, Any]:
 
 
 @router.get("/incidents/{incident_id}/timeline")
-async def play_incident_timeline(incident_id: str):
+def play_incident_timeline(incident_id: str):
     from sqlalchemy import or_
 
     from core.db.models import (

@@ -171,7 +171,7 @@ export default function PlayTimeline({ apiBase }) {
     let cancelled = false;
     async function loadCounts() {
       try {
-        const payload = await fetchJson(apiBase, '/api/v1/play/counts');
+        const payload = await fetchJson(apiBase, '/api/v1/play/counts', undefined, 30_000);
         if (!cancelled && Number.isFinite(Number(payload?.total_count))) {
           setArchiveTotal(Number(payload.total_count));
         }

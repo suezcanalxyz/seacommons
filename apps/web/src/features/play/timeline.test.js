@@ -271,3 +271,10 @@ test('Play uses the shared Live vessel triangle for AIS archive identities', asy
   assert.match(jsx, /createVesselArrowImage/);
   assert.match(jsx, /id: 'play-vessels'/);
 });
+
+
+test('Play gives the exact archive counter a longer timeout without delaying map pages', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /fetchJson\(apiBase, '\/api\/v1\/play\/counts', undefined, 30_000\)/);
+  assert.match(source, /fetchJson\(apiBase, `\/api\/v1\/play\/incidents\?limit=500&offset=\$\{offset\}`\)/);
+});
