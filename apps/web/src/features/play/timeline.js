@@ -148,3 +148,16 @@ export function playMapStyle(day = new Date(Date.now() - 24 * 3600 * 1000).toISO
     ],
   };
 }
+
+
+export function mergeIncidentPages(previous = [], incoming = []) {
+  const byId = new Map((previous || []).map((item) => [item.incident_id, item]));
+  for (const item of incoming || []) {
+    if (item?.incident_id) byId.set(item.incident_id, item);
+  }
+  return [...byId.values()].sort((a, b) => {
+    const aAt = parseTime(a?.last_update_at || a?.reported_at);
+    const bAt = parseTime(b?.last_update_at || b?.reported_at);
+    return (Number.isFinite(bAt) ? bAt : 0) - (Number.isFinite(aAt) ? aAt : 0);
+  });
+}
