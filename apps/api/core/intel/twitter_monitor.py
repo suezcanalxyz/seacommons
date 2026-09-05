@@ -23,7 +23,9 @@ from core.intel.store import IntelEvent, intel_store
 logger = logging.getLogger(__name__)
 
 
-def _record_source_observation(post: dict, *, event: IntelEvent) -> None:
+def _record_source_observation(
+    post: dict, *, event: IntelEvent, provenance: dict[str, Any] | None = None,
+):
     """docs/updates.md P0.2: a durable, lossless SourceObservation for
     every X post this monitor receives -- before the existing
     intel_store.add() write path below. Best-effort and strictly
@@ -37,9 +39,9 @@ def _record_source_observation(post: dict, *, event: IntelEvent) -> None:
 
         tweet_id = str(post.get("id") or "")
         if not tweet_id:
-            return
+            return None
         with session_scope() as db:
-            record_observation(
+            return record_observation(
                 db,
                 service="humanitarian", lane="distress", observation_type="source_post",
                 source_name="X / Twitter", source_policy="official_api", source_id=tweet_id,
@@ -47,10 +49,12 @@ def _record_source_observation(post: dict, *, event: IntelEvent) -> None:
                 raw_payload=json.dumps(post, sort_keys=True, default=str),
                 source_url=str(post.get("url") or ""),
                 lat=event.lat, lon=event.lon,
+                provenance=dict(provenance or {}),
             )
     except Exception as exc:
         logger.debug("twitter_monitor: source_observation record skipped for %s: %s",
                      post.get("id"), exc)
+        return None
 
 
 _SEARCH_QUERIES = [
@@ -85,6 +89,69 @@ class TwitterMonitor:
     @property
     def configured(self) -> bool:
         return bool(self._bearer)
+
+    def watch_conversation(
+        self, tweet_id: str, *, watch_id: str, incident_id: str, budget: int = 20,
+    ):
+        """Bounded follow-up of one explicit X conversation.
+
+        Every returned post is first persisted as immutable SourceObservation
+        evidence. Distress-shaped posts may additionally enter the monitor's
+        existing IntelEvent path; benign resolution/correction text remains
+        evidence and never becomes a new incident merely because a watch found it.
+        """
+        from core.intel.incident_watch import WatchResult
+
+        limit = max(0, min(int(budget), 20))
+        query = f"conversation_id:{str(tweet_id).strip()} -is:retweet"
+        posts = list(self._fetch(query))[:limit]
+        created = replayed = 0
+        provenance = {
+            "collection_trigger": "incident_watch",
+            "watch_id": watch_id,
+            "candidate_incident_id": incident_id,
+        }
+        for post in posts:
+            text = str(post.get("text") or "")
+            distress = is_direct_distress_call(text)
+            coords = extract_coords(text) if distress else None
+            event = IntelEvent(
+                type="twitter",
+                severity=classify_severity(text) if distress else "low",
+                lat=coords[0] if coords else None,
+                lon=coords[1] if coords else None,
+                title=_make_title(text, str(post.get("author") or "")),
+                text=text[:500],
+                url=str(post.get("url") or ""),
+                source=str(post.get("author") or "X"),
+                author=str(post.get("author") or ""),
+                timestamp_utc=str(post.get("created_at") or ""),
+                metadata={
+                    "tweet_id": str(post.get("id") or ""),
+                    "platform": "x",
+                    "source_policy": "official_api",
+                    "is_distress": distress,
+                    **provenance,
+                },
+            )
+            observation = _record_source_observation(
+                post, event=event, provenance=provenance,
+            )
+            if observation is not None:
+                if observation.replayed:
+                    replayed += 1
+                else:
+                    created += 1
+            if is_distress(text):
+                self._ingest(post, query)
+        return WatchResult(
+            source_name="X / Twitter",
+            source_items_seen=len(posts),
+            observations_created=created,
+            observations_replayed=replayed,
+            checkpoint=str(posts[-1].get("id")) if posts else None,
+            error_class=None,
+        )
 
     def start(self) -> None:
         if self._running:

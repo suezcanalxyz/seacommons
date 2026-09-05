@@ -322,7 +322,7 @@ def run_claimed_watch(
 
     now_aware = _aware_utc(now) or datetime.now(timezone.utc)
     now_naive = _naive_utc(now_aware)
-    adapter_list = list(adapters or [])
+    adapter_list = list(_default_adapters() if adapters is None else adapters)
 
     with session_scope() as db:
         row = db.query(IncidentWatchDB).filter_by(incident_id=watch_id).one_or_none()
@@ -425,4 +425,54 @@ def run_claimed_watch(
         "observations_replayed": replayed,
         "error_class": error.__class__.__name__ if error is not None else None,
     }
+
+class _OfficialXWatchAdapter:
+    name = "X / Twitter"
+
+    def __init__(self, monitor) -> None:
+        self._monitor = monitor
+
+    def eligible(self, profile: dict[str, Any]) -> bool:
+        return bool(self._monitor.configured and profile.get("source_item_ids"))
+
+    def run(self, query: WatchQuery) -> WatchResult:
+        remaining = max(0, min(int(query.budget), MAX_ACCEPTED_OBSERVATIONS))
+        seen = created = replayed = 0
+        checkpoint = None
+        watch_id = watch_id_for_incident(query.incident_id)
+        for source_item_id in list(query.profile.get("source_item_ids") or []):
+            if remaining <= 0:
+                break
+            result = self._monitor.watch_conversation(
+                str(source_item_id),
+                watch_id=watch_id,
+                incident_id=query.incident_id,
+                budget=remaining,
+            )
+            seen += result.source_items_seen
+            created += result.observations_created
+            replayed += result.observations_replayed
+            checkpoint = result.checkpoint or checkpoint
+            remaining = max(0, remaining - result.observations_created)
+        return WatchResult(
+            source_name=self.name,
+            source_items_seen=seen,
+            observations_created=created,
+            observations_replayed=replayed,
+            checkpoint=checkpoint,
+            error_class=None,
+        )
+
+
+def _default_adapters() -> list[Any]:
+    """Return only already-running, explicitly watch-capable adapters."""
+    try:
+        from core.intel.engine import intel_engine
+
+        monitor = intel_engine._twitter
+        if monitor is not None and getattr(monitor, "configured", False):
+            return [_OfficialXWatchAdapter(monitor)]
+    except Exception:
+        pass
+    return []
 
