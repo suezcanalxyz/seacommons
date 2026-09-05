@@ -26,7 +26,7 @@ Desktop Play uses the same dark left rail and dominant map canvas as Live. The c
 Mobile Play uses the same `map-top + panel-bottom` pattern as Live when a case is selected. The archive/filter controls collapse into the same drawer/sheet language rather than occupying a permanent narrow column.
 ## Play map behavior
 
-Play opens in `ALL` mode with a visible basemap and archive points immediately. The map must never depend on a selected incident before it renders.
+Play opens in `ALL` mode with a visible satellite basemap and archive points immediately. The default basemap is global VIIRS true-colour satellite imagery. OSM remains underneath only as a fail-safe fallback so a missing satellite tile can never leave the canvas blank. The map must never depend on a selected incident before it renders.
 
 The first archive page is rendered as soon as it arrives; later pages merge progressively in the background. A loading state may overlay the map but must not replace or hide the basemap.
 
