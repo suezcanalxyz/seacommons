@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -23,6 +24,8 @@ import pytest
 from core.intel.drift_ownership import get_current_drift_id
 from core.intel.humanitarian_incident import get_incident, register, sync_incident_for_event
 from core.intel.store import IntelEvent, intel_store
+
+_RECENT_TS = (datetime.now(timezone.utc).replace(microsecond=0) - timedelta(hours=4)).isoformat()
 
 
 def _wait_for(predicate, *, tries=40, delay=0.05):
@@ -70,7 +73,7 @@ def _run_fake_drift_completion(monkeypatch, event_id: str):
 
     monkeypatch.setattr(engine_module, "DriftEngine", _FakeEngine)
     drift_service._run_intel_drift_inner(
-        event_id, 35.5, 14.1, None, "rubber_boat", "2026-09-04T08:00:00+00:00",
+        event_id, 35.5, 14.1, None, "rubber_boat", _RECENT_TS,
     )
 
 
@@ -79,7 +82,7 @@ def test_a_completed_drift_becomes_the_incidents_current_drift(monkeypatch):
     event = IntelEvent(
         id=event_id, type="distress", severity="high", lat=35.5, lon=14.1,
         title=f"MAYDAY drift test [{event_id}]", text=f"MAYDAY drift test [{event_id}]", source="Alarm Phone",
-        timestamp_utc="2026-09-04T08:00:00+00:00", metadata={"is_distress": True},
+        timestamp_utc=_RECENT_TS, metadata={"is_distress": True},
     )
     intel_store.add(event)
     assert _wait_for(lambda: get_incident(event_id) is not None)
@@ -96,7 +99,7 @@ def test_a_second_completion_supersedes_the_first(monkeypatch):
     event = IntelEvent(
         id=event_id, type="distress", severity="high", lat=35.5, lon=14.1,
         title=f"MAYDAY supersede test [{event_id}]", text=f"MAYDAY supersede test [{event_id}]", source="Alarm Phone",
-        timestamp_utc="2026-09-04T08:00:00+00:00", metadata={"is_distress": True},
+        timestamp_utc=_RECENT_TS, metadata={"is_distress": True},
     )
     intel_store.add(event)
     assert _wait_for(lambda: get_incident(event_id) is not None)
@@ -117,7 +120,7 @@ def test_a_completion_for_a_resolved_incident_never_becomes_current(monkeypatch)
         id=event_id, type="distress", severity="high", lat=35.5, lon=14.1,
         title=f"Rescued! All safe. [{event_id}]", text=f"Rescued! All safe. [{event_id}]",
         source="Alarm Phone",
-        timestamp_utc="2026-09-04T08:00:00+00:00", metadata={"is_distress": True},
+        timestamp_utc=_RECENT_TS, metadata={"is_distress": True},
     )
     intel_store.add(event)
     assert _wait_for(lambda: get_incident(event_id) is not None and get_incident(event_id)["lifecycle"] == "resolved")
@@ -136,7 +139,7 @@ def test_public_drift_collection_reads_only_the_current_drift_id(monkeypatch):
     event = IntelEvent(
         id=event_id, type="distress", severity="high", lat=35.5, lon=14.1,
         title="MAYDAY public feed test", source="alarm_phone",
-        timestamp_utc="2026-09-04T08:00:00+00:00",
+        timestamp_utc=_RECENT_TS,
         metadata={
             "is_distress": True, "source_policy": "official_api",
             "coordinate_source": "media_ocr_text",
