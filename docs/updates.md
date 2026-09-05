@@ -1,6 +1,6 @@
 # SeaCommons — Maritime OSINT Platform Upgrade Plan
 
-> **Authority:** `docs/fixes.md` remains authoritative until its production-closure gate is complete. This plan starts only after that gate is green on the exact `main` SHA used as baseline.
+> **Authority:** the stabilization program in `docs/fixes.md` is production-closed and retained as historical execution record. This upgrade plan is the current forward authority. Current production baseline after IncidentWatch v0: `6e0d1057d9e7d1149a30f3d902e980e248c98d9d` (2026-09-05).
 >
 > **Target:** SeaCommons is a production-grade **maritime OSINT platform**. It continuously acquires open-source observations, preserves provenance, resolves entities and incidents, correlates independent evidence, follows cases over time, performs bounded geospatial/intelligence analysis, exposes reviewable assessments, and publishes privacy-aware outputs.
 >
@@ -806,6 +806,8 @@ Do not force the entire platform into a graph database prematurely. Start with t
 ---
 
 # 8. IncidentWatch — follow cases, not only feeds
+
+> **Production status — 2026-09-05:** v0 implemented and deployed in PR #148. Durable watch persistence is Alembic `0019_incident_watch`; scheduling is bounded with leases/retry policy; official-X incident follow-up emits `SourceObservation`; unresolved `outcome_unknown + lifecycle=archived` remains watchable; operator audit is available under `/api/v1/audit/incident-watches`. Existing canonical Humanitarian incidents were idempotently synced after rollout. Further adapter expansion is a separate packet, not a reason to reopen v0.
 
 Opening a Humanitarian incident creates a bounded `IncidentWatch`.
 

@@ -1,37 +1,12 @@
-# Current work — IncidentWatch v0 design review
+# Current work — post-IncidentWatch production baseline
 
-> **Branch:** `spec/incident-watch-v0`
-> **Base:** `ccef5022d220b67d309707e179fc7b264209ec3c`
-> **Status:** design-only branch. No product code, migration, deploy, restart, or production mutation.
+> **Main:** `6e0d1057d9e7d1149a30f3d902e980e248c98d9d`
+> **Production schema:** `0019_incident_watch`
+> **Status:** IncidentWatch v0 merged, migrated, deployed and smoke-verified on 2026-09-05.
 
-## Current production/repository baseline
+## Production state
 
-The previous Humanitarian/Maritime Phase 0 notes in this file were stale. The current repository has already progressed through the canonical evidence foundation and the first production Humanitarian cutover.
-
-Implemented on `main` before this branch include:
-
-- durable/idempotent `SourceObservation` with source-adapter coverage;
-- canonical `HumanitarianIncident`, lifecycle transitions and public timer fields;
-- current Drift ownership and Live cutover;
-- Source Registry, Coverage Matrix and coverage-change tracking;
-- connector contract and preservation-policy classification;
-- `CorrelationDecision`, circular-reporting lineage and typed entity graph;
-- Alarm Phone image/OCR V2 integration and AIS evidence/safety fixes;
-- Live 24h operational projection and Play historical archive;
-- satellite evidence via Sentinel/VIIRS;
-- shared Live/Play public shell and standardized vessel markers.
-
-The current Vercel production deployment is built from `ccef502` and reports `READY`. No implementation PR is open at the start of this design branch.
-
-## Current design target
-
-The next platform primitive is `IncidentWatch v0`.
-
-Authoritative design under review:
-
-`docs/superpowers/specs/2026-09-05-incident-watch-v0-design.md`
-
-The core data-flow invariant is:
+IncidentWatch v0 is now part of the canonical Humanitarian follow-up path:
 
 ```text
 HumanitarianIncident
@@ -41,27 +16,50 @@ HumanitarianIncident
   -> existing correlation / incident / assessment pipeline
 ```
 
-IncidentWatch performs follow-up collection only. It never directly changes lifecycle, incident truth, correlation decisions, Drift ownership, or public projection.
+The production rollout included:
 
-## Compatibility decision captured in the design
+- PostgreSQL backup before migration;
+- Alembic `0018 -> 0019_incident_watch`;
+- coordinated restart of API, worker and Live edge publisher;
+- scheduler registration of `incident_watch(5m)`;
+- idempotent sync of all pre-existing canonical Humanitarian incidents into watch rows;
+- first real scheduler cycle with successful executions and no degraded/error state;
+- Live/Play public smoke after rollout.
 
-Current SeaCommons can persist a silent unresolved case as:
+IncidentWatch remains bounded: the scheduler claims at most three due watches per five-minute run. Existing-case backfill therefore drains gradually instead of creating a source-query storm.
 
-```text
-incident_status=outcome_unknown
-lifecycle=archived
-```
+## UI / vessel contract
 
-For watch scheduling, this must remain eligible for bounded follow-up. `incident_status` therefore wins when migration-era lifecycle/status semantics disagree.
+IncidentWatch did not modify frontend source files.
 
-## Next gate
+The current public contract remains:
 
-1. Operator reviews and approves the written IncidentWatch v0 design.
-2. Only after approval, write the TDD implementation plan.
-3. Implement the canonical watch model/service/scheduler/audit vertical slice in one reviewable PR.
-4. Keep materially different adapter integrations as separate follow-up packets when they widen acquisition semantics.
-5. Production rollout remains separately operator-approved after merge and verification.
+- moving and stationary vessels use the shared triangle marker;
+- NGO colour is the intentional vessel-marker exception;
+- Play reuses the same Live vessel marker asset;
+- Live and Play production bundles both load the same `vesselMarker` JS/CSS asset.
 
-## Production note
+## Closed operational issue
 
-The historical GitHub issue #41 about `demo-api` returning 502 remains open, but it predates the current deployment. Vercel currently shows the `ccef502` deployment as `READY`, with `play.seacommons.org` and `live.seacommons.org` attached, and no 5xx runtime logs were observed in the checked recent window. Do not close #41 solely from that evidence; close it only after direct vhost/application smoke confirms the old symptom is gone.
+GitHub issue #41, the historical `demo-api` 502 on Play, was re-tested after rollout. The Play archive API returned HTTP 200 while still reporting `x-seacommons-proxy: demo-api.seacommons.org`, proving the original vhost path itself is healthy. The issue is closed.
+
+## Next packet
+
+Next authority from `docs/updates.md`: **Section 9 — Review and case-management subsystem**.
+
+The first Review v0 PR should persist typed, provenance-linked review work without creating a parallel truth model. It should consume already-existing uncertainty signals and provide a replayable decision boundary for analyst/operator actions.
+
+PostGIS / Section 10 remains after Review v0, not before it.
+
+## Current engineering gate
+
+Before the next product PR:
+
+1. sync latest `main`;
+2. read Section 9 and its existing producers/consumers;
+3. inventory current `review_status`, `CorrelationDecision.review_state`, privacy gates and entity-conflict signals;
+4. define one canonical `ReviewDecision`/queue authority and deletion/compatibility path for overlapping flags;
+5. write failing tests first;
+6. keep the first PR to one review vertical slice;
+7. run full backend, web/edge regression when touched, migrations and privacy/publication checks;
+8. merge only with green CI and exact-head verification.

@@ -1,12 +1,12 @@
 # SeaCommons — Final Maritime OSINT Stabilization & Execution Plan
 
-> **For Claude/Codex agentic workers:** this file is the single source of truth for the stabilization program. Execute milestones in order, one reviewable PR at a time. Use TDD. Do not skip a gate because a later task is easier. Do not mark work DONE because unit tests are green: every milestone has an integration/replay exit gate.
+> **Historical stabilization record:** this program is production-closed. Do not execute its old "Next" instructions against current `main`. The forward authority is `docs/updates.md`; current production baseline is `6e0d1057d9e7d1149a30f3d902e980e248c98d9d` after IncidentWatch v0 deployment on 2026-09-05. The milestone text below is retained for rationale, invariants and audit history.
 
 **Goal:** turn SeaCommons into a production-grade, evidence-first maritime OSINT platform with two first-class operational sides — **Humanitarian** and **Maritime** — sharing one canonical data/evidence pipeline while preserving different privacy, publication and analytical rules.
 
 **Production target:** current ARM VM (~12 GB RAM), FastAPI/Python backend, PostgreSQL production storage, React/Vite/MapLibre web app, bounded background workers for OCR/Drift/Sentinel jobs.
 
-**Current verified baseline:** `main` at `2c3cdc28af279f8c3926a2f3adc4853203a02f2e`, 2026-09-03. M0 is closed — PRs #66 (P0.1/A-01/A-02), #67 (M0.2 EventAssessment→UI), #68 (M0.3 neutral rendezvous), #69 (M0.4 vessel-class fallbacks), #70 (M0.5 darkship cue) all merged. Backend `589 passed`, ruff clean; web lint/typecheck/build clean. Next: M1 (`docs/fixes.md` section 6, SourceObservation durable schema + adapter audit) — a materially larger architectural change (new DB tables/migrations, source-adapter rewrites) than M0's semantic fixes; start there only with explicit sign-off given the risk-profile shift.
+**Closure baseline:** the historical baseline below has been superseded by the production sequence through PR #148. `SourceObservation`, canonical Humanitarian incidents/lifecycle/Drift ownership, source coverage, correlation/lineage/entity graph, Live/Play cutover, satellite evidence and IncidentWatch are all implemented on current `main`. Do not restart M1 or later stabilization milestones from this document; use `docs/updates.md` for the remaining dependency graph.
 
 ---
 
