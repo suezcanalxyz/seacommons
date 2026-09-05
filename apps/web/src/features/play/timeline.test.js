@@ -188,3 +188,29 @@ test('Sentinel footprints remain visible when no raster preview is available', (
   assert.equal(collection.features.length, 1);
   assert.equal(collection.features[0].properties.mission, 'Sentinel-1');
 });
+
+test('satellite layer auto mode prefers Sentinel over newer VIIRS context', async () => {
+  const { selectPreferredSatelliteObservation } = await import('./timeline.js');
+  const timeline = [
+    { id: 's1', at: '2026-09-01T10:00:00Z', type: 'satellite', source: 'copernicus_dataspace', properties: { mission: 'Sentinel-1' } },
+    { id: 'viirs', at: '2026-09-04T00:00:00Z', type: 'satellite', source: 'nasa_gibs', properties: { mission: 'VIIRS Suomi-NPP' } },
+  ];
+  assert.equal(selectPreferredSatelliteObservation(timeline, '2026-09-05T00:00:00Z')?.id, 's1');
+});
+
+test('satellite layer can explicitly select a mission', async () => {
+  const { selectPreferredSatelliteObservation } = await import('./timeline.js');
+  const timeline = [
+    { id: 's1', at: '2026-09-01T10:00:00Z', type: 'satellite', source: 'copernicus_dataspace', properties: { mission: 'Sentinel-1' } },
+    { id: 's2', at: '2026-09-02T10:00:00Z', type: 'satellite', source: 'copernicus_dataspace', properties: { mission: 'Sentinel-2' } },
+  ];
+  assert.equal(selectPreferredSatelliteObservation(timeline, '2026-09-05T00:00:00Z', 'Sentinel-2')?.id, 's2');
+});
+
+
+test('selector respects cutoff and null cloud metadata', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /new Set\(visibleTimeline/);
+  assert.match(source, /setSatelliteMission\('auto'\)/);
+  assert.match(source, /cloud_cover != null/);
+});

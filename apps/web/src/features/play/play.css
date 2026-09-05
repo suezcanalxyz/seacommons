@@ -328,3 +328,26 @@ a { color: #8ed8ff; }
   .play-header,
   .play-timeline-bar { box-shadow: none; }
 }
+
+
+.play-satellite-selector {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 4px;
+  color: rgba(173, 202, 194, .62);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.play-satellite-selector select {
+  min-width: 0;
+  width: 100%;
+  padding: 6px 8px;
+  color: #e9f7f1;
+  background: rgba(3, 10, 14, .88);
+  border: 1px solid rgba(56, 189, 248, .28);
+  border-radius: 3px;
+  font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+}

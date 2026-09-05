@@ -12,7 +12,7 @@ import {
   satelliteRasterDescriptor,
   satelliteFootprintCollection,
   selectFrame,
-  selectSatelliteObservation,
+  selectPreferredSatelliteObservation,
   statusLabel,
   timelineAtCutoff,
 } from './timeline.js';
@@ -91,6 +91,7 @@ export default function PlayTimeline({ apiBase }) {
   const [casesOpen, setCasesOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [satelliteMission, setSatelliteMission] = useState('auto');
 
   const globalState = useMemo(
     () => resolveGlobalTimelinePosition(incidents, globalPosition, TIMELINE_MAX),
@@ -117,8 +118,14 @@ export default function PlayTimeline({ apiBase }) {
     [visibleTimeline],
   );
   const satellite = useMemo(
-    () => selectSatelliteObservation(visibleTimeline, frame.item?.at),
-    [visibleTimeline, frame.item?.at],
+    () => selectPreferredSatelliteObservation(visibleTimeline, frame.item?.at, satelliteMission),
+    [visibleTimeline, frame.item?.at, satelliteMission],
+  );
+  const satelliteMissions = useMemo(
+    () => [...new Set(visibleTimeline
+      .filter((item) => item?.type === 'satellite' && item?.properties?.mission)
+      .map((item) => item.properties.mission))],
+    [visibleTimeline],
   );
 
   useEffect(() => {
@@ -167,6 +174,16 @@ export default function PlayTimeline({ apiBase }) {
     const timer = window.setInterval(loadCounts, 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [apiBase]);
+
+  useEffect(() => {
+    setSatelliteMission('auto');
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (satelliteMission !== 'auto' && !satelliteMissions.includes(satelliteMission)) {
+      setSatelliteMission('auto');
+    }
+  }, [satelliteMission, satelliteMissions]);
 
   useEffect(() => {
     if (selectedId && !visibleIncidents.some((item) => item.incident_id === selectedId)) {
@@ -376,10 +393,22 @@ export default function PlayTimeline({ apiBase }) {
           </section>
           <section className="play-card">
             <p>Satellite context</p>
+            <label className="play-satellite-selector">
+              <span>Layer</span>
+              <select value={satelliteMission} onChange={(event) => setSatelliteMission(event.target.value)}>
+                <option value="auto">Auto · Sentinel first</option>
+                {satelliteMissions.map((mission) => <option key={mission} value={mission}>{mission}</option>)}
+              </select>
+            </label>
             <h3>{satelliteProps.mission || 'No acquisition before this time'}</h3>
             {satellite ? <time>{itemTime(satellite.at)}</time> : null}
             <span>{satelliteProps.sensor_type || satellite?.source || '—'}</span>
             {Number.isFinite(Number(satelliteProps.temporal_delta_s)) ? <span>Δt {Math.round(Number(satelliteProps.temporal_delta_s) / 3600)} h from report</span> : null}
+            {satelliteProps.product_id ? <span>Product {satelliteProps.product_id}</span> : null}
+            {satelliteProps.temporal_relation ? <span>{satelliteProps.temporal_relation}</span> : null}
+            {satelliteProps.polarisation?.length ? <span>Polarisation {satelliteProps.polarisation.join(' / ')}</span> : null}
+            {satelliteProps.cloud_cover != null && Number.isFinite(Number(satelliteProps.cloud_cover)) ? <span>Cloud {Math.round(Number(satelliteProps.cloud_cover))}%</span> : null}
+            {satelliteProps.evidence_status ? <span>Evidence {satelliteProps.evidence_status}</span> : null}
             {satelliteProps.source_url ? <a href={satelliteProps.source_url} target="_blank" rel="noreferrer">Acquisition record ↗</a> : null}
           </section>
         </div>
