@@ -11,6 +11,10 @@ from core.intel.lifecycle import parse_utc
 
 router = APIRouter(prefix="/api/v1/play", tags=["play"])
 
+_PLAY_MARITIME_TYPES = {
+    "vessel_incident", "dark_candidate", "correlated_alert", "oil_spill",
+}
+
 
 def _iso(value: Any) -> str | None:
     if value is None:
@@ -56,6 +60,44 @@ def _incident_projection(row, event, *, now: datetime) -> dict[str, Any]:
         "title": event.title if event is not None else "Humanitarian incident",
         "source": event.source if event is not None else None,
         "geometry": geometry,
+        "domain": "humanitarian",
+    }
+
+
+def _generic_maritime_status(event) -> str:
+    meta = dict(event.meta or {})
+    raw = str(meta.get("incident_status") or meta.get("lifecycle") or "").lower()
+    if raw == "resolved":
+        return "resolved"
+    if raw == "needs_review":
+        return "needs_review"
+    return "outcome_unknown"
+
+
+def _is_public_historical_maritime(event, *, now: datetime) -> bool:
+    if event.type not in _PLAY_MARITIME_TYPES or event.lat is None or event.lon is None:
+        return False
+    meta = dict(event.meta or {})
+    if str(meta.get("publication_status") or "").lower() != "published":
+        return False
+    at = parse_utc(event.timestamp_utc or "")
+    return bool(at and (now - at).total_seconds() >= 24 * 3600)
+
+
+def _generic_maritime_projection(event) -> dict[str, Any]:
+    return {
+        "incident_id": event.id,
+        "incident_status": _generic_maritime_status(event),
+        "surface": "play",
+        "case_type": event.type,
+        "reported_at": event.timestamp_utc,
+        "last_update_at": event.timestamp_utc,
+        "state_changed_at": None,
+        "resolved_at": None,
+        "title": event.title or "Maritime incident",
+        "source": event.source,
+        "geometry": {"type": "Point", "coordinates": [event.lon, event.lat]},
+        "domain": "maritime",
     }
 
 
@@ -80,7 +122,28 @@ async def play_incidents(limit: int = Query(100, ge=1, le=500)):
             incidents.append(_incident_projection(row, event, now=now))
             if len(incidents) >= limit:
                 break
-    return {"incidents": incidents, "generated_at": now.isoformat()}
+
+        if len(incidents) < limit:
+            human_ids = {item["incident_id"] for item in incidents}
+            maritime_rows = (
+                db.query(IntelEventDB)
+                .filter(
+                    IntelEventDB.type.in_(_PLAY_MARITIME_TYPES),
+                    IntelEventDB.lat.isnot(None),
+                    IntelEventDB.lon.isnot(None),
+                )
+                .order_by(IntelEventDB.timestamp_utc.desc())
+                .limit(limit * 12)
+                .all()
+            )
+            for event in maritime_rows:
+                if event.id in human_ids or not _is_public_historical_maritime(event, now=now):
+                    continue
+                incidents.append(_generic_maritime_projection(event))
+                if len(incidents) >= limit:
+                    break
+    incidents.sort(key=lambda item: str(item.get("last_update_at") or item.get("reported_at") or ""), reverse=True)
+    return {"incidents": incidents[:limit], "generated_at": now.isoformat()}
 
 
 def _thread_item(incident_id: str, repost: dict, *, reported_at: str | None) -> dict[str, Any] | None:
@@ -167,12 +230,14 @@ async def play_incident_timeline(incident_id: str):
     now = datetime.now(timezone.utc)
     with session_scope() as db:
         incident = db.get(HumanitarianIncidentDB, incident_id)
-        if incident is None:
-            raise HTTPException(status_code=404, detail="Incident not found")
-        if not _belongs_to_play(incident, now=now):
-            raise HTTPException(status_code=404, detail="Incident is still operationally Live")
-        incident_status = _status_for_row(incident, now=now)
         event = db.get(IntelEventDB, incident_id)
+        generic_maritime = incident is None and event is not None and _is_public_historical_maritime(event, now=now)
+        if incident is None and not generic_maritime:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        if incident is not None and not _belongs_to_play(incident, now=now):
+            raise HTTPException(status_code=404, detail="Incident is still operationally Live")
+        incident_status = _status_for_row(incident, now=now) if incident is not None else _generic_maritime_status(event)
+        domain = "humanitarian" if incident is not None else "maritime"
         timeline: list[dict[str, Any]] = []
         if event is not None:
             geometry = None
@@ -188,16 +253,17 @@ async def play_incident_timeline(incident_id: str):
                 "properties": {"url": event.url or None},
             })
             for repost in (event.meta or {}).get("thread_reposts") or []:
-                item = _thread_item(incident_id, repost, reported_at=incident.reported_at)
+                item = _thread_item(incident_id, repost, reported_at=incident.reported_at if incident is not None else event.timestamp_utc)
                 if item is not None:
                     timeline.append(item)
-        transitions = (
-            db.query(IncidentTransitionDB)
-            .filter(IncidentTransitionDB.incident_id == incident_id)
-            .order_by(IncidentTransitionDB.transition_at.asc())
-            .all()
-        )
-        timeline.extend(_transition_item(row) for row in transitions)
+        if incident is not None:
+            transitions = (
+                db.query(IncidentTransitionDB)
+                .filter(IncidentTransitionDB.incident_id == incident_id)
+                .order_by(IncidentTransitionDB.transition_at.asc())
+                .all()
+            )
+            timeline.extend(_transition_item(row) for row in transitions)
 
         drifts = (
             db.query(DriftResultDB)
@@ -227,6 +293,7 @@ async def play_incident_timeline(incident_id: str):
         "incident_id": incident_id,
         "incident_status": incident_status,
         "surface": "play",
+        "domain": domain,
         "timeline": timeline,
         "generated_at": now.isoformat(),
     }

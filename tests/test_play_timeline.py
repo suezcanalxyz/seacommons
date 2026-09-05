@@ -138,3 +138,40 @@ def test_play_timeline_includes_persisted_satellite_observation():
     assert satellite["properties"]["temporal_relation"] == "reverse"
     assert satellite["properties"]["asset_ref"] == "https://example.test/preview.jpg"
     assert satellite["properties"]["bbox"] == [14.0, 35.0, 14.2, 35.2]
+
+
+def _seed_maritime_play_event(*, age_hours=36):
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    event_id = f"maritime-{uuid.uuid4()}"
+    reported = datetime.now(timezone.utc) - timedelta(hours=age_hours)
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=event_id, timestamp_utc=reported.isoformat(), type="vessel_incident",
+            severity="medium", lat=36.2, lon=15.4,
+            title="Public maritime incident", text="PRIVATE MARITIME RAW",
+            url=f"https://example.test/{event_id}", source="maritime_osint",
+            linked_mmsi="123456789", maritime_domain="maritime_security",
+            meta={"publication_status": "published", "source_policy": "operator_published"},
+        ))
+    return event_id
+
+
+def test_play_index_includes_public_historical_maritime_points():
+    event_id = _seed_maritime_play_event()
+    response = TestClient(app).get("/api/v1/play/incidents?limit=500")
+    assert response.status_code == 200
+    item = next(row for row in response.json()["incidents"] if row["incident_id"] == event_id)
+    assert item["domain"] == "maritime"
+    assert item["geometry"] == {"type": "Point", "coordinates": [15.4, 36.2]}
+    assert item["incident_status"] == "outcome_unknown"
+
+
+def test_play_generic_maritime_timeline_is_privacy_safe():
+    event_id = _seed_maritime_play_event()
+    response = TestClient(app).get(f"/api/v1/play/incidents/{event_id}/timeline")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["domain"] == "maritime"
+    assert payload["timeline"][0]["type"] == "report"
+    assert "PRIVATE MARITIME RAW" not in response.text

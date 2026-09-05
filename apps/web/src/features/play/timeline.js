@@ -63,3 +63,45 @@ export function satelliteRasterDescriptor(observation) {
     coordinates: [[west, north], [east, north], [east, south], [west, south]],
   };
 }
+
+export function incidentsAtCutoff(incidents = [], cutoff = null) {
+  if (!cutoff) return [...incidents];
+  const cutoffMs = parseTime(cutoff);
+  return incidents.filter((incident) => parseTime(incident?.reported_at) <= cutoffMs);
+}
+
+export function timelineAtCutoff(timeline = [], cutoff = null) {
+  if (!cutoff) return [...timeline];
+  const cutoffMs = parseTime(cutoff);
+  return timeline.filter((item) => parseTime(item?.at) <= cutoffMs);
+}
+
+export function resolveGlobalTimelinePosition(incidents = [], position = 1000, max = 1000) {
+  const times = incidents.map((incident) => parseTime(incident?.reported_at)).filter(Number.isFinite);
+  if (!times.length || Number(position) >= Number(max)) return { mode: 'all', cutoff: null };
+  const min = Math.min(...times);
+  const latest = Math.max(...times);
+  const ratio = Math.max(0, Math.min(1, Number(position) / Number(max || 1)));
+  return { mode: 'temporal', cutoff: new Date(min + ((latest - min) * ratio)).toISOString() };
+}
+
+export function incidentCollection(incidents = [], cutoff = null) {
+  return {
+    type: 'FeatureCollection',
+    features: incidentsAtCutoff(incidents, cutoff)
+      .filter((incident) => incident?.geometry?.type === 'Point')
+      .map((incident) => ({
+        type: 'Feature',
+        geometry: incident.geometry,
+        properties: {
+          incident_id: incident.incident_id,
+          incident_status: incident.incident_status || 'outcome_unknown',
+          case_type: incident.case_type || 'incident',
+          source: incident.source || '',
+          domain: incident.domain || 'humanitarian',
+          reported_at: incident.reported_at || '',
+          title: incident.title || '',
+        },
+      })),
+  };
+}

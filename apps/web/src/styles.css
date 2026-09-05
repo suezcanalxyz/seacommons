@@ -3847,3 +3847,72 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   touch-action: pan-y;
 }
 .live-feed-panel__body > .panel-stack { min-height: min-content; }
+
+
+/* Public Live mobile: keep the selected point visible above a readable report. */
+@media (max-width: 680px) {
+  .cop-shell.is-live-mode {
+    --nav-h: env(safe-area-inset-bottom);
+  }
+
+  .cop-shell.is-live-mode .intel-report-map-overlay {
+    display: none;
+  }
+
+  .cop-shell.is-live-mode .cone-panel {
+    top: 34dvh;
+    right: 0;
+    bottom: env(safe-area-inset-bottom);
+    left: 0;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    border-radius: 18px 18px 0 0;
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  .cop-shell.is-live-mode .cone-panel-header {
+    top: 12px;
+    padding: 10px 14px 9px;
+  }
+
+  .cop-shell.is-live-mode .cone-panel-header strong {
+    font-size: 15px !important;
+    line-height: 1.25;
+  }
+
+  .cop-shell.is-live-mode .cone-section {
+    padding: 10px 14px;
+  }
+
+  .cop-shell.is-live-mode .cone-row {
+    display: grid;
+    grid-template-columns: minmax(88px, auto) minmax(0, 1fr);
+    align-items: start;
+    gap: 8px 12px;
+    padding: 5px 0;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .cop-shell.is-live-mode .cone-row > span,
+  .cop-shell.is-live-mode .cone-row > strong {
+    min-width: 0;
+  }
+
+  .cop-shell.is-live-mode .cone-row strong {
+    max-width: 100%;
+    text-align: right;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .cop-shell.is-live-mode .cone-reopen-btn {
+    bottom: max(8px, env(safe-area-inset-bottom));
+  }
+}
