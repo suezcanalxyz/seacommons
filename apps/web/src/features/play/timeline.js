@@ -1,3 +1,5 @@
+import { isVesselArchiveIncident } from '../map/vesselMarker.js';
+
 function parseTime(value) {
   const ms = Date.parse(String(value || ''));
   return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
@@ -129,6 +131,8 @@ export function incidentCollection(incidents = [], cutoff = null) {
           domain: incident.domain || 'humanitarian',
           reported_at: incident.reported_at || '',
           title: incident.title || '',
+          marker_kind: isVesselArchiveIncident(incident) ? 'vessel' : 'incident',
+          course: Number.isFinite(Number(incident.course)) ? Number(incident.course) : 0,
         },
       })),
   };

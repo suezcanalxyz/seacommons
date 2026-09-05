@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { fetchJson } from '../../services/api/client.js';
+import { createVesselArrowImage, VESSEL_COLOR } from '../map/vesselMarker.js';
 import {
   incidentCollection,
   mergeIncidentPages,
@@ -92,6 +93,8 @@ export default function PlayTimeline({ apiBase }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [satelliteMission, setSatelliteMission] = useState('auto');
+  const [archiveFilter, setArchiveFilter] = useState('all');
+  const [satelliteVisible, setSatelliteVisible] = useState(true);
 
   const globalState = useMemo(
     () => resolveGlobalTimelinePosition(incidents, globalPosition, TIMELINE_MAX),
@@ -101,6 +104,12 @@ export default function PlayTimeline({ apiBase }) {
     () => incidentsAtCutoff(incidents, globalState.cutoff),
     [incidents, globalState.cutoff],
   );
+  const filteredIncidents = useMemo(() => visibleIncidents.filter((incident) => {
+    if (archiveFilter === 'humanitarian') return incident.domain === 'humanitarian';
+    if (archiveFilter === 'maritime') return incident.domain === 'maritime';
+    if (archiveFilter === 'correlated') return incident.case_type === 'correlated_alert';
+    return true;
+  }), [visibleIncidents, archiveFilter]);
   const selectedIncident = useMemo(
     () => visibleIncidents.find((item) => item.incident_id === selectedId) || null,
     [visibleIncidents, selectedId],
@@ -225,15 +234,29 @@ export default function PlayTimeline({ apiBase }) {
       map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'bottom-right');
       map.on('load', () => {
         if (disposed) return;
+        map.addImage('vessel-arrow', createVesselArrowImage(48), { sdf: true });
         map.addSource('play-incidents', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addLayer({
           id: 'play-incidents', type: 'circle', source: 'play-incidents',
+          filter: ['!=', ['get', 'marker_kind'], 'vessel'],
           paint: {
             'circle-radius': ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5],
             'circle-color': ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f'],
             'circle-opacity': 0.9,
             'circle-stroke-color': '#071014', 'circle-stroke-width': 1.5,
           },
+        });
+        map.addLayer({
+          id: 'play-vessels', type: 'symbol', source: 'play-incidents',
+          filter: ['==', ['get', 'marker_kind'], 'vessel'],
+          layout: {
+            'icon-image': 'vessel-arrow',
+            'icon-size': ['case', ['==', ['get', 'incident_id'], selectedId], 0.46, 0.34],
+            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+          },
+          paint: { 'icon-color': VESSEL_COLOR, 'icon-opacity': 0.94 },
         });
         map.addSource('play-evidence', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addLayer({
@@ -255,15 +278,18 @@ export default function PlayTimeline({ apiBase }) {
           id: 'play-satellite-footprint-line', type: 'line', source: 'play-satellite-footprints',
           paint: { 'line-color': '#75a7ff', 'line-width': 1.5, 'line-opacity': 0.85, 'line-dasharray': [2, 2] },
         });
-        map.on('click', 'play-incidents', (event) => {
+        const selectArchiveFeature = (event) => {
           const id = event.features?.[0]?.properties?.incident_id;
           if (id) {
             setSelectedId(String(id));
             setCasesOpen(false);
           }
-        });
-        map.on('mouseenter', 'play-incidents', () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mouseleave', 'play-incidents', () => { map.getCanvas().style.cursor = ''; });
+        };
+        for (const layerId of ['play-incidents', 'play-vessels']) {
+          map.on('click', layerId, selectArchiveFeature);
+          map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
+          map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
+        }
         mapRef.current = map;
         map.resize();
         setMapReady(true);
@@ -280,11 +306,14 @@ export default function PlayTimeline({ apiBase }) {
   useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map) return;
-    map.getSource('play-incidents')?.setData(incidentCollection(visibleIncidents));
+    map.getSource('play-incidents')?.setData(incidentCollection(filteredIncidents));
     map.getSource('play-evidence')?.setData(evidenceCollection(visibleTimeline));
     map.getSource('play-satellite-footprints')?.setData(satelliteFootprintCollection(visibleTimeline));
     if (map.getLayer('play-incidents')) {
       map.setPaintProperty('play-incidents', 'circle-radius', ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5]);
+    }
+    if (map.getLayer('play-vessels')) {
+      map.setLayoutProperty('play-vessels', 'icon-size', ['case', ['==', ['get', 'incident_id'], selectedId], 0.46, 0.34]);
     }
     addSatelliteLayer(map, satellite);
 
@@ -294,16 +323,22 @@ export default function PlayTimeline({ apiBase }) {
       map.easeTo({
         center: geometry.coordinates,
         zoom: Math.max(map.getZoom(), 6.5),
-        padding: mobile ? { top: 40, bottom: 250, left: 24, right: 24 } : { top: 20, bottom: 20, left: 20, right: 20 },
+        padding: mobile ? { top: 24, bottom: Math.round(window.innerHeight * 0.66), left: 24, right: 24 } : { top: 20, bottom: 80, left: 412, right: 20 },
         duration: 450,
       });
     }
-  }, [mapReady, visibleIncidents, visibleTimeline, selectedId, selectedIncident, satellite]);
+  }, [mapReady, filteredIncidents, visibleTimeline, selectedId, selectedIncident, satellite]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (mapReady && map) window.setTimeout(() => map.resize(), 40);
-  }, [mapReady, selectedId, casesOpen]);
+  }, [mapReady, selectedId, casesOpen, filteredIncidents.length]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    if (map.getLayer('satellite-context')) map.setLayoutProperty('satellite-context', 'visibility', satelliteVisible ? 'visible' : 'none');
+  }, [mapReady, satelliteVisible]);
 
   const status = selectedIncident ? incidentStatusAtCutoff(selectedIncident, globalState.cutoff) : 'outcome_unknown';
   const frameProps = frame.item?.properties || {};
@@ -311,8 +346,8 @@ export default function PlayTimeline({ apiBase }) {
   const modeLabel = cutoffLabel(globalState);
 
   return (
-    <main className={`play-shell ${selectedId ? 'has-selection' : ''}`}>
-      <header className="play-header">
+    <main className={`cop-shell is-live-mode play-public-shell play-shell ${selectedId ? 'has-selection' : ''}`}>
+      <header className="play-header" aria-hidden="true">
         <div>
           <p className="play-eyebrow">SeaCommons / temporal OSINT reconstruction</p>
           <h1>PLAY</h1>
@@ -328,13 +363,30 @@ export default function PlayTimeline({ apiBase }) {
         </div>
       </header>
 
-      <aside className={`play-cases ${casesOpen ? 'is-open' : ''}`}>
-        <div className="play-section-head">
-          <span>Archive</span>
-          <button type="button" onClick={() => setCasesOpen(false)}>Close</button>
-        </div>
-        <div className="play-cases__list">
-          {visibleIncidents.map((incident) => (
+      <aside className={`live-feed-panel is-open play-archive-panel play-cases ${casesOpen ? 'is-mobile-open' : ''}`}>
+        <header className="live-feed-panel__header">
+          <div className="live-feed-panel__eyebrow">
+            <span className="live-feed-panel__mark">SC</span>
+            <span>SEACOMMONS / MEDITERRANEAN</span>
+            <b><i /> ARCHIVE</b>
+          </div>
+          <div className="live-feed-panel__title">
+            <div><p>TEMPORAL OSINT RECONSTRUCTION</p><h1>Play</h1></div>
+            <button type="button" onClick={() => setCasesOpen(false)} aria-label="Close archive">−</button>
+          </div>
+          <div className="signals-selector play-filter-selector" role="group" aria-label="Play archive filters">
+            <div className="signals-selector__list">
+              <button type="button" className={`signals-selector__link ${archiveFilter === 'all' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('all')}><span className="signals-selector__box" aria-hidden="true" />ALL</button>
+              <button type="button" className={`signals-selector__link ${archiveFilter === 'humanitarian' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('humanitarian')}><span className="signals-selector__box" aria-hidden="true" />HUMANITARIAN</button>
+              <button type="button" className={`signals-selector__link ${archiveFilter === 'maritime' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('maritime')}><span className="signals-selector__box" aria-hidden="true" />MARITIME</button>
+              <button type="button" className={`signals-selector__link ${archiveFilter === 'correlated' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('correlated')}><span className="signals-selector__box" aria-hidden="true" />CORRELATED</button>
+              <button type="button" className={`signals-selector__link ${satelliteVisible ? 'is-active' : ''}`} onClick={() => setSatelliteVisible((value) => !value)}><span className="signals-selector__box" aria-hidden="true" />SATELLITE</button>
+            </div>
+          </div>
+          <p className="live-feed-panel__continuity"><span />Evidence is bounded to what was knowable at the selected cutoff.</p>
+        </header>
+        <div className="live-feed-panel__body play-cases__list">
+          {filteredIncidents.map((incident) => (
             <button
               key={incident.incident_id}
               type="button"
@@ -346,12 +398,12 @@ export default function PlayTimeline({ apiBase }) {
               <span>{incident.domain || 'humanitarian'} · {incident.source || 'source'} · {statusLabel(incidentStatusAtCutoff(incident, globalState.cutoff))}</span>
             </button>
           ))}
-          {!visibleIncidents.length && !loading ? <div className="play-empty">No incidents at this time.</div> : null}
+          {!filteredIncidents.length && !loading ? <div className="play-empty">No incidents at this time.</div> : null}
         </div>
       </aside>
 
-      <section className="play-map-stage">
-        <div className="play-map" ref={mapNodeRef} />
+      <section className="map-stage play-map-stage">
+        <div className="map-frame play-map" ref={mapNodeRef} />
         <div className="play-all-badge"><strong>{modeLabel}</strong><span>{globalState.mode === 'all' && archiveTotal != null ? `${archiveTotal} archive` : `${visibleIncidents.length} points`}</span></div>
         {loading ? <div className="play-map-message">Loading temporal evidence…</div> : null}
         {error ? <div className="play-map-message is-error">{error}</div> : null}
@@ -364,11 +416,11 @@ export default function PlayTimeline({ apiBase }) {
         ) : null}
       </section>
 
-      <aside className={`play-evidence ${selectedId ? 'is-open' : ''}`}>
+      <aside className={`cone-panel cone-panel--intel play-evidence ${selectedId ? 'is-open' : ''}`}>
         <div className="play-sheet-handle" />
-        <div className="play-section-head">
+        <div className="cone-panel-header play-section-head">
           <span>Case dossier</span>
-          <button type="button" onClick={() => setSelectedId('')}>Close</button>
+          <button className="cone-close-btn" type="button" onClick={() => setSelectedId('')}>×</button>
         </div>
         <div className="play-evidence__scroll">
           <section className="play-card">

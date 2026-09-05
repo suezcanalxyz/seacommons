@@ -23,3 +23,8 @@ test('public Live hides transport-buffer tier counts', async () => {
   assert.match(source, /!publicMode \? <span className="intel-tier-head-count">/);
   assert.match(source, /!publicMode && Object\.keys\(intelStats\.by_type/);
 });
+
+test('public Live hides the persistent MapLibre attribution control', async () => {
+  const source = await readFile(new URL('../../main.jsx', import.meta.url), 'utf8');
+  assert.match(source, /attributionControl:\s*!isPublicLiveHost/);
+});

@@ -145,8 +145,9 @@ test('Play panels use the same glass treatment as public Live and keep the map d
   const css = await readFile(new URL('./play.css', import.meta.url), 'utf8');
   assert.match(css, /background:\s*rgba\(3,\s*10,\s*14,\s*\.88\)/);
   assert.match(css, /backdrop-filter:\s*blur\(18px\)\s+saturate\(1\.15\)/);
-  assert.match(css, /\.play-shell\.has-selection/);
-  assert.match(css, /grid-template-columns:\s*min\(392px,\s*32vw\)\s+minmax\(0,\s*1fr\)\s+0/);
+  assert.match(css, /\.play-public-shell/);
+  assert.match(css, /--live-panel-width:\s*392px/);
+  assert.match(css, /\.play-timeline-bar/);
 });
 
 test('mergeIncidentPages progressively deduplicates pages and keeps the newest version', async () => {
@@ -232,4 +233,35 @@ test('Play public map hides attribution control and initializes independently of
   assert.match(source, /map\.resize\(\)/);
   const init = source.slice(source.indexOf("map.on('load'"), source.indexOf("mapRef.current = map"));
   assert.doesNotMatch(init, /if\s*\(selectedId\)/);
+});
+
+test('Play reuses the public Live shell classes instead of a parallel panel system', async () => {
+  const jsx = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  const entry = await readFile(new URL('../../play.jsx', import.meta.url), 'utf8');
+  assert.match(entry, /import ['"]\.\/styles\.css['"]/);
+  assert.match(jsx, /cop-shell[^`]*play-public-shell/);
+  assert.match(jsx, /live-feed-panel is-open play-archive-panel/);
+  assert.match(jsx, /live-feed-panel__header/);
+  assert.match(jsx, /live-feed-panel__body/);
+  assert.match(jsx, /cone-panel cone-panel--intel play-evidence/);
+});
+
+test('Play exposes Live-style archive filter controls', async () => {
+  const jsx = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  for (const label of ['ALL', 'HUMANITARIAN', 'MARITIME', 'CORRELATED', 'SATELLITE']) {
+    assert.match(jsx, new RegExp(`>${label}<`));
+  }
+});
+
+test('Play uses the shared Live vessel triangle for AIS archive identities', async () => {
+  const { incidentCollection } = await import('./timeline.js');
+  const collection = incidentCollection([
+    { incident_id: 'aisanom:123:gap', case_type: 'ais_anomaly', domain: 'maritime', geometry: { type: 'Point', coordinates: [12, 35] } },
+    { incident_id: 'fus:abc', case_type: 'correlated_alert', domain: 'maritime', geometry: { type: 'Point', coordinates: [13, 36] } },
+  ]);
+  assert.equal(collection.features[0].properties.marker_kind, 'vessel');
+  assert.equal(collection.features[1].properties.marker_kind, 'incident');
+  const jsx = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(jsx, /createVesselArrowImage/);
+  assert.match(jsx, /id: 'play-vessels'/);
 });
