@@ -267,3 +267,64 @@ a { color: #8ed8ff; }
   .maplibregl-ctrl-bottom-right { bottom: 10px; }
   .maplibregl-ctrl-attrib { font-size: 8px; }
 }
+
+/* Visual parity with public Live: same glass rail language, map-first canvas. */
+:root {
+  --play-accent: #a9ffda;
+  --play-blue: #75a7ff;
+  --play-panel-width: 392px;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.play-header,
+.play-timeline-bar,
+.play-cases,
+.play-evidence {
+  color: #e9f7f1;
+  background: rgba(3, 10, 14, .88);
+  backdrop-filter: blur(18px) saturate(1.15);
+  box-shadow: 0 20px 54px rgba(0, 0, 0, .52), inset 0 0 48px rgba(3, 10, 14, .2);
+}
+.play-header { border-bottom-color: rgba(56, 189, 248, .28); }
+.play-cases { border-right: 1px solid rgba(56, 189, 248, .28); }
+.play-evidence { border-left: 1px solid rgba(56, 189, 248, .28); }
+.play-timeline-bar { border-top-color: rgba(56, 189, 248, .28); }
+.play-eyebrow,
+.play-section-head,
+.play-case__time,
+.play-all-badge strong { color: var(--play-accent); font-family: var(--font-mono); }
+.play-header h1 { font-family: var(--font-mono); letter-spacing: .14em; }
+.play-section-head {
+  background: rgba(3, 10, 14, .92);
+  border-bottom-color: rgba(255,255,255,.07);
+}
+.play-case:hover,
+.play-case.is-active { background: rgba(169, 255, 218, .06); }
+.play-case.is-active { box-shadow: inset 2px 0 0 var(--play-accent); }
+.play-card { background: rgba(3, 10, 14, .62); border-color: rgba(255,255,255,.07); }
+.play-map-message,
+.play-all-badge,
+.play-map-status {
+  background: rgba(3, 10, 14, .88);
+  border-color: rgba(56, 189, 248, .28);
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+
+@media (min-width: 961px) {
+  .play-shell {
+    grid-template-columns: min(392px, 32vw) minmax(0, 1fr) 0;
+    transition: grid-template-columns .22s ease;
+  }
+  .play-shell.has-selection {
+    grid-template-columns: min(392px, 32vw) minmax(0, 1fr) min(392px, 32vw);
+  }
+  .play-evidence { visibility: hidden; pointer-events: none; }
+  .play-shell.has-selection .play-evidence { visibility: visible; pointer-events: auto; }
+}
+
+@media (max-width: 680px) {
+  .play-cases,
+  .play-evidence { background: rgba(3, 10, 14, .94); }
+  .play-header,
+  .play-timeline-bar { box-shadow: none; }
+}

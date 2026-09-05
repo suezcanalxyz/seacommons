@@ -123,3 +123,28 @@ export function incidentStatusAtCutoff(incident, cutoff = null) {
   }
   return effective || current;
 }
+
+
+export function playMapStyle(day = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10)) {
+  return {
+    version: 8,
+    sources: {
+      baseMap: {
+        type: 'raster',
+        tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '&copy; OpenStreetMap contributors',
+      },
+      satelliteContext: {
+        type: 'raster',
+        tiles: [`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/${day}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`],
+        tileSize: 256,
+        attribution: 'NASA EOSDIS GIBS / VIIRS',
+      },
+    },
+    layers: [
+      { id: 'base-map', type: 'raster', source: 'baseMap', paint: { 'raster-opacity': 1 } },
+      { id: 'satellite-context', type: 'raster', source: 'satelliteContext', paint: { 'raster-opacity': 0.62 } },
+    ],
+  };
+}

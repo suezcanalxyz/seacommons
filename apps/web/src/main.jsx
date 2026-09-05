@@ -33,7 +33,7 @@ import { loadStoredSimulations, storeScenario } from './simulation/scenarioStore
 import { computeDriftInWorker } from './simulation/workerClient.js';
 import { fetchJson } from './services/api/client.js';
 import { useLiveFeed } from './hooks/useLiveFeed.js';
-import { FEED_STATUS_LABEL, FEED_STATUS_TONE } from './features/live/feedStatus.js';
+import { FEED_STATUS_LABEL, FEED_STATUS_TONE, liveSignalTotal } from './features/live/feedStatus.js';
 import { mergeIntelDriftUpdate } from './features/live/normalize.js';
 import { mergeLiveDrifts } from './simulation/liveTracking.js';
 
@@ -647,7 +647,7 @@ function App() {
   // NGO, fused...) had plenty of eligible content sitting on the VM.
   const [liveMode] = useState(() => (isPublicLiveHost ? 'all' : 'humanitarian'));
   const seenAlertIdsRef = useRef(null);
-  const { intelEvents, setIntelEvents, feedStatus } = useLiveFeed({
+  const { intelEvents, setIntelEvents, feedStatus, liveModeCounts } = useLiveFeed({
     apiBase,
     edgeBase: LIVE_EDGE_BASE,
     isPublicLiveHost,
@@ -2766,12 +2766,12 @@ function App() {
     const openAlerts = stats?.sar?.open_alerts ?? 0;
     return [
       { label: 'AIS',      value: summary.traffic?.registry?.active_30m ?? '—', tone: 'ok' },
-      { label: 'Signals',  value: intelEvents.length || stats?.signals?.recent_event_count || 0, tone: 'info' },
+      { label: 'Signals',  value: liveSignalTotal(liveModeCounts, intelEvents.length || stats?.signals?.recent_event_count || 0), tone: 'info' },
       { label: 'Feed',     value: FEED_STATUS_LABEL[feedStatus] || 'sync', tone: FEED_STATUS_TONE[feedStatus] || 'info' },
       { label: 'Alerts',   value: openAlerts,                                    tone: openAlerts > 0 ? 'warn' : 'default' },
       { label: 'Forensics',value: stats?.sar?.forensic_packets ?? '—',           tone: 'default' },
     ];
-  }, [summary, stats, intelEvents.length, feedStatus]);
+  }, [summary, stats, intelEvents.length, feedStatus, liveModeCounts]);
 
   const serviceRows = useMemo(() => {
     if (!summary) return [];
@@ -3414,7 +3414,7 @@ function App() {
                       SIGNALS_TOGGLE_CATEGORIES.every((c) => isLayerGroupOn(c.groupKey)) ? 'is-active' : ''
                     }`}
                     onClick={(event) => { event.preventDefault(); toggleAllSignals(); }}
-                  >All<span className="signals-selector__count">{intelEvents.length}</span></a>
+                  >All<span className="signals-selector__count">{liveSignalTotal(liveModeCounts, intelEvents.length)}</span></a>
                   <button
                     type="button"
                     className={`signals-selector__chevron ${signalsExpanded ? 'is-open' : ''}`}
@@ -3427,9 +3427,11 @@ function App() {
                   <div className="signals-selector__macros" role="group" aria-label="Signal categories">
                     {SIGNALS_MACRO_GROUPS.map((macro) => {
                       const macroOn = macro.categories.every((c) => isLayerGroupOn(c.groupKey));
-                      const macroCount = macro.categories.reduce(
+                      const sampledMacroCount = macro.categories.reduce(
                         (sum, c) => sum + (signalCategoryCounts[c.key] || 0), 0,
                       ) + (macro.key === 'security' ? (signalCategoryCounts.other || 0) : 0);
+                      const canonicalMacroCount = Number(liveModeCounts?.[macro.key]);
+                      const macroCount = Number.isFinite(canonicalMacroCount) ? canonicalMacroCount : sampledMacroCount;
                       const macroExpanded = expandedMacros.has(macro.key);
                       return (
                         <div key={macro.key} className="signals-selector__macro">

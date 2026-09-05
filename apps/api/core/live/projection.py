@@ -129,6 +129,22 @@ _PUBLIC_METADATA = frozenset(
 )
 
 
+def public_archive_event_types() -> frozenset[str]:
+    """Event types eligible for the public historical Play projection.
+
+    Play deliberately reuses Live's canonical eligibility set rather than
+    maintaining a second hand-written maritime allow-list.
+    """
+    return _PUBLIC_INTEL_TYPES | _PUBLIC_CONTEXT_TYPES
+
+
+def public_intel_feature(
+    event: IntelEvent, *, allowed_domains: frozenset[str] | None = None
+) -> dict[str, Any] | None:
+    """Public wrapper around the canonical Live privacy/eligibility projection."""
+    return _public_intel_feature(event, allowed_domains=allowed_domains)
+
+
 def _safe_public_url(value: str) -> str:
     try:
         parsed = urlparse(value)

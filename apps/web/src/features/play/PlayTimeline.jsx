@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchJson } from '../../services/api/client.js';
 import {
   incidentCollection,
+  playMapStyle,
   incidentStatusAtCutoff,
   incidentsAtCutoff,
   normalizeTimeline,
@@ -15,36 +16,6 @@ import {
 } from './timeline.js';
 
 const TIMELINE_MAX = 1000;
-
-function recentGibsDate() {
-  const date = new Date(Date.now() - 24 * 3600 * 1000);
-  return date.toISOString().slice(0, 10);
-}
-
-function mapStyle() {
-  const day = recentGibsDate();
-  return {
-    version: 8,
-    sources: {
-      satelliteContext: {
-        type: 'raster',
-        tiles: [`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/${day}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`],
-        tileSize: 256,
-        attribution: 'NASA EOSDIS GIBS / VIIRS',
-      },
-      labels: {
-        type: 'raster',
-        tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png'],
-        tileSize: 256,
-        attribution: '&copy; OpenStreetMap contributors',
-      },
-    },
-    layers: [
-      { id: 'satellite-context', type: 'raster', source: 'satelliteContext' },
-      { id: 'labels', type: 'raster', source: 'labels', paint: { 'raster-opacity': 0.16 } },
-    ],
-  };
-}
 
 function evidenceCollection(timeline = []) {
   return {
@@ -210,7 +181,7 @@ export default function PlayTimeline({ apiBase }) {
       if (disposed || !mapNodeRef.current || mapRef.current) return;
       const map = new maplibregl.Map({
         container: mapNodeRef.current,
-        style: mapStyle(), center: [14.8, 35.7], zoom: 3.55,
+        style: playMapStyle(), center: [14.8, 35.7], zoom: 3.55,
         attributionControl: true,
       });
       map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'bottom-right');

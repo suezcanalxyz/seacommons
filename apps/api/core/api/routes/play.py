@@ -8,13 +8,11 @@ from fastapi import APIRouter, HTTPException, Query
 
 from core.intel.humanitarian_incident import public_incident_status
 from core.intel.lifecycle import parse_utc
-from core.intel.public_policy import is_blocked_source, is_explicitly_private
+from core.intel.public_policy import domains_for_mode
+from core.intel.store import IntelEvent
+from core.live.projection import public_archive_event_types, public_intel_feature
 
 router = APIRouter(prefix="/api/v1/play", tags=["play"])
-
-_PLAY_MARITIME_TYPES = {
-    "vessel_incident", "dark_candidate", "correlated_alert", "oil_spill",
-}
 
 
 def _iso(value: Any) -> str | None:
@@ -75,16 +73,27 @@ def _generic_maritime_status(event) -> str:
     return "outcome_unknown"
 
 
-def _is_public_historical_maritime(event, *, now: datetime) -> bool:
-    if event.type not in _PLAY_MARITIME_TYPES or event.lat is None or event.lon is None:
-        return False
+def _intel_event_from_row(event) -> IntelEvent:
     meta = dict(event.meta or {})
-    if is_explicitly_private(meta) or is_blocked_source(meta):
-        return False
-    if str(meta.get("publication_status") or "").lower() != "published":
+    if event.maritime_domain and not meta.get("maritime_domain"):
+        meta["maritime_domain"] = event.maritime_domain
+    return IntelEvent(
+        id=event.id, timestamp_utc=event.timestamp_utc, type=event.type,
+        severity=event.severity, lat=event.lat, lon=event.lon,
+        title=event.title or "", text=event.text or "", url=event.url or "",
+        source=event.source or "", linked_mmsi=event.linked_mmsi or "", metadata=meta,
+    )
+
+
+def _is_public_historical_maritime(event, *, now: datetime) -> bool:
+    if event.lat is None or event.lon is None:
         return False
     at = parse_utc(event.timestamp_utc or "")
-    return bool(at and (now - at).total_seconds() >= 24 * 3600)
+    if not at or (now - at).total_seconds() < 24 * 3600:
+        return False
+    return public_intel_feature(
+        _intel_event_from_row(event), allowed_domains=domains_for_mode("all")
+    ) is not None
 
 
 def _generic_maritime_projection(event) -> dict[str, Any]:
@@ -113,6 +122,8 @@ async def play_incidents(
     from core.db.session import session_scope
 
     now = datetime.now(timezone.utc)
+    historical_cutoff = (now.timestamp() - 24 * 3600)
+    historical_cutoff_iso = datetime.fromtimestamp(historical_cutoff, tz=timezone.utc).isoformat()
     need = offset + limit + 1
     candidate_cap = max(2000, need * 8)
     combined: list[dict[str, Any]] = []
@@ -135,7 +146,8 @@ async def play_incidents(
         maritime_rows = (
             db.query(IntelEventDB)
             .filter(
-                IntelEventDB.type.in_(_PLAY_MARITIME_TYPES),
+                IntelEventDB.type.in_(public_archive_event_types()),
+                IntelEventDB.timestamp_utc <= historical_cutoff_iso,
                 IntelEventDB.lat.isnot(None),
                 IntelEventDB.lon.isnot(None),
             )

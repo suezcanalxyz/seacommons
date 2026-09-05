@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 
 import {
   normalizeTimeline,
@@ -126,4 +127,21 @@ test('incident status at cutoff uses only transitions knowable by that time', ()
   assert.equal(incidentStatusAtCutoff(incident, '2026-09-02T00:00:00Z'), 'active');
   assert.equal(incidentStatusAtCutoff(incident, '2026-09-03T12:00:00Z'), 'needs_review');
   assert.equal(incidentStatusAtCutoff(incident, null), 'resolved');
+});
+
+test('Play map style keeps a visible street-map fallback under satellite imagery', async () => {
+  const { playMapStyle } = await import('./timeline.js');
+  const style = playMapStyle('2026-09-04');
+  assert.equal(style.layers[0].id, 'base-map');
+  assert.equal(style.layers[0].paint?.['raster-opacity'] ?? 1, 1);
+  assert.equal(style.layers[1].id, 'satellite-context');
+  assert.ok((style.layers[1].paint?.['raster-opacity'] ?? 1) < 1);
+});
+
+test('Play panels use the same glass treatment as public Live and keep the map dominant', async () => {
+  const css = await readFile(new URL('./play.css', import.meta.url), 'utf8');
+  assert.match(css, /background:\s*rgba\(3,\s*10,\s*14,\s*\.88\)/);
+  assert.match(css, /backdrop-filter:\s*blur\(18px\)\s+saturate\(1\.15\)/);
+  assert.match(css, /\.play-shell\.has-selection/);
+  assert.match(css, /grid-template-columns:\s*min\(392px,\s*32vw\)\s+minmax\(0,\s*1fr\)\s+0/);
 });

@@ -213,3 +213,24 @@ def test_play_index_paginates_combined_archive():
     second_ids = {item["incident_id"] for item in second["incidents"]}
     assert first["next_offset"] == 2
     assert first_ids.isdisjoint(second_ids)
+
+def test_play_index_reuses_public_projection_for_historical_security_signal():
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    event_id = f"security-{uuid.uuid4()}"
+    reported = datetime.now(timezone.utc) - timedelta(hours=36)
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=event_id, timestamp_utc=reported.isoformat(), type="ais_anomaly",
+            severity="high", lat=35.8, lon=14.8,
+            title="Historical AIS anomaly", text="internal raw",
+            url="", source="SeaCommons", linked_mmsi="123456789",
+            maritime_domain="grey_zone",
+            meta={"maritime_domain": "grey_zone", "anomaly_type": "ais_gap"},
+        ))
+    response = TestClient(app).get("/api/v1/play/incidents?limit=500")
+    assert response.status_code == 200
+    item = next(row for row in response.json()["incidents"] if row["incident_id"] == event_id)
+    assert item["domain"] == "maritime"
+    assert item["case_type"] == "ais_anomaly"
+    assert item["geometry"] == {"type": "Point", "coordinates": [14.8, 35.8]}
