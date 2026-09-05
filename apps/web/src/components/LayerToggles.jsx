@@ -17,8 +17,8 @@ const INTEL_CATEGORY_GROUPS = INTEL_MAP_CATEGORIES.map((c) => ({
 
 export const LAYER_GROUPS = [
   { key: 'nautical',    label: 'Nautical overlay · OpenSeaMap', layers: ['seamarks-layer'] },
-  { key: 'vessels',     label: 'AIS vessels',    layers: ['vessels-layer', 'vessels-stationary'] },
-  { key: 'ngo_vessels', label: 'NGO SAR fleet',  layers: ['vessels-ngo', 'vessels-ngo-stationary'] },
+  { key: 'vessels',     label: 'AIS vessels',    layers: ['vessels-layer'] },
+  { key: 'ngo_vessels', label: 'NGO SAR fleet',  layers: ['vessels-ngo'] },
   { key: 'weather',     label: 'Weather grid',   layers: ['weather-vectors', 'weather-points'] },
   { key: 'sar',         label: 'Distress signals', layers: ['intel-events-layer', 'intel-events-halo', 'intel-distress-core', 'intel-distress-pulse', 'intel-distress-area', 'intel-distress-polygon-fill', 'intel-distress-polygon-outline', 'live-nearby-vessels-layer', 'live-nearby-vessels-halo', 'ngo-response-lines-layer', 'ngo-response-points-layer'] },
   { key: 'fused',       label: 'Correlated alerts', layers: ['intel-fused-core', 'intel-fused-pulse', 'intel-vessel-core', 'intel-vessel-pulse'] },
