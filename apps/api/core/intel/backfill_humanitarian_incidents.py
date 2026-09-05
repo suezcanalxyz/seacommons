@@ -92,3 +92,22 @@ def run(*, apply: bool = False, limit: int = 500, days: int = 30) -> dict[str, i
         )
         report["created"] += 1
     return report
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entrypoint. Dry-run is the default; writes require --apply."""
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(description="Backfill canonical HumanitarianIncident rows")
+    parser.add_argument("--apply", action="store_true", help="persist changes (default: dry-run)")
+    parser.add_argument("--limit", type=int, default=500)
+    parser.add_argument("--days", type=int, default=30)
+    args = parser.parse_args(argv)
+    report = run(apply=args.apply, limit=max(1, args.limit), days=max(1, args.days))
+    print(json.dumps(report, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

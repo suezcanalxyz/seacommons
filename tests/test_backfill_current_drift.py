@@ -101,3 +101,28 @@ def test_apply_writes_the_pointer():
     report = run(apply=True)
     assert report["backfilled"] >= 1
     assert get_current_drift_id(event_id) == "job-apply"
+
+
+def test_cli_defaults_to_dry_run_and_prints_json(monkeypatch, capsys):
+    import core.intel.backfill_current_drift as module
+
+    calls = []
+    monkeypatch.setattr(
+        module, "run",
+        lambda **kwargs: calls.append(kwargs) or {"scanned": 2, "backfilled": 0, "skipped_terminal": 0},
+    )
+    assert module.main(["--limit", "30"]) == 0
+    assert calls == [{"apply": False, "limit": 30}]
+    assert '"backfilled": 0' in capsys.readouterr().out
+
+
+def test_cli_apply_is_explicit(monkeypatch):
+    import core.intel.backfill_current_drift as module
+
+    calls = []
+    monkeypatch.setattr(
+        module, "run",
+        lambda **kwargs: calls.append(kwargs) or {"scanned": 1, "backfilled": 1, "skipped_terminal": 0},
+    )
+    assert module.main(["--apply"]) == 0
+    assert calls[0]["apply"] is True

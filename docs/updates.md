@@ -1539,3 +1539,70 @@ SeaCommons qualifies as the target maritime OSINT platform only when:
 20. the exact release SHA passes Humanitarian + Maritime replay, privacy, failure/degradation and production verification gates.
 
 The end state is not a map with more feeds. It is a maritime OSINT platform whose collection scope, evidence, uncertainty, correlation, chronology, analysis and publication decisions are explicit, inspectable and reproducible.
+---
+
+# 22. 2026-09-05 Live / Play / Satellite cutover
+
+Public surfaces now have separate temporal responsibilities:
+
+```text
+live.seacommons.org  = operational awareness, rolling <=24h
+play.seacommons.org  = historical temporal reconstruction, >24h or terminal
+```
+
+`archived` is no longer a public incident outcome. Canonical incident status is
+`active`, `needs_review`, `resolved`, or `outcome_unknown`; legacy archived rows
+map to `outcome_unknown`. Silence never becomes resolution. A 15-minute
+reconciler persists stale active incidents as `outcome_unknown` after 24 hours.
+
+Live publishes only operational incidents inside the 24-hour window. Resolved
+incidents leave Live immediately. Needs-review incidents retain their real
+status but also retire from Live at the 24-hour surface boundary. Historical
+records remain available to Play rather than an archive bucket in the Live UI.
+
+Drift authority remains incident-owned:
+
+```text
+IntelEvent -> HumanitarianIncident -> current_drift_id -> DriftResult
+```
+
+No public code rediscovers an arbitrary completed job as the current Drift.
+Legacy deploys must first create missing canonical Humanitarian incidents and
+only then repair `current_drift_id`. Resolved/outcome-unknown incidents cannot
+regain an operational Drift pointer.
+
+Play exposes an incident-centric API:
+
+```text
+GET /api/v1/play/incidents
+GET /api/v1/play/incidents/{incident_id}/timeline
+```
+
+The timeline combines privacy-safe source reports/updates, lifecycle
+transitions, historical Drift products and persisted SatelliteObservations.
+The public Play frontend is a dedicated MapLibre build entry; Cesium/Unreal are
+not part of the `play.html` dependency graph.
+
+Satellite evidence is provider-agnostic and metadata-first. The free resolver
+currently supports Copernicus Data Space STAC (Sentinel-1/2/3) and dated NASA
+GIBS VIIRS context. Each significant geolocated event can collect
+`reverse`, `nearest`, and `forward` observations. A bounded 30-minute job
+checks at most six recent incident-level events per run and degrades safely
+when an external provider is unavailable. Satellite observations are evidence,
+never automatic vessel identity proof.
+
+Production rollout order is mandatory:
+
+```text
+1. database backup
+2. alembic upgrade head
+3. humanitarian incident backfill -- dry-run, then apply
+4. current drift pointer backfill -- dry-run, then apply
+5. coordinated API / edge publisher / worker restart
+6. local API + Live + Play smoke tests
+7. frontend deploy
+8. verify live/play production asset hashes against merged build
+```
+
+Do not run the second backfill before the first. Keep the pre-deploy database
+backup until Live and Play have both been visually and operationally verified.

@@ -83,3 +83,22 @@ def test_incident_then_drift_pointer_backfills_in_order():
     assert run(apply=True, limit=500)["created"] >= 1
     assert run_drift_backfill(apply=True, limit=500)["backfilled"] >= 1
     assert get_current_drift_id(event_id) == "legacy-job-1"
+
+
+def test_cli_defaults_to_dry_run_and_prints_json(monkeypatch, capsys):
+    import core.intel.backfill_humanitarian_incidents as module
+
+    calls = []
+    monkeypatch.setattr(module, "run", lambda **kwargs: calls.append(kwargs) or {"scanned": 3, "created": 0})
+    assert module.main(["--limit", "25", "--days", "14"]) == 0
+    assert calls == [{"apply": False, "limit": 25, "days": 14}]
+    assert '"created": 0' in capsys.readouterr().out
+
+
+def test_cli_apply_is_explicit(monkeypatch):
+    import core.intel.backfill_humanitarian_incidents as module
+
+    calls = []
+    monkeypatch.setattr(module, "run", lambda **kwargs: calls.append(kwargs) or {"scanned": 1, "created": 1})
+    assert module.main(["--apply"]) == 0
+    assert calls[0]["apply"] is True
