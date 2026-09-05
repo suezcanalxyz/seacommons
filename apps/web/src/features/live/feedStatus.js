@@ -46,3 +46,13 @@ export const FEED_STATUS_TONE = {
   retrying: 'warn',
   offline: 'warn',
 };
+
+
+/** Total public Live signals from canonical server compartment counts. */
+export function liveSignalTotal(modeCounts = {}, fallback = 0) {
+  const values = ['humanitarian', 'security', 'safety']
+    .map((key) => Number(modeCounts?.[key]))
+    .filter(Number.isFinite);
+  if (!values.length) return Number(fallback) || 0;
+  return values.reduce((sum, value) => sum + value, 0);
+}
