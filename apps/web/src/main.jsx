@@ -15,7 +15,6 @@ import {
   categoryColorExpression,
   categoryOf,
   classifyEventVisual,
-  EVENT_VISUAL_CATEGORIES,
   INTEL_MAP_CATEGORIES,
   isAlarmPhoneSource,
 } from './features/intel/categories.js';
@@ -1408,11 +1407,6 @@ function App() {
         // Keep the marker bare: the triangle shows the latest observed AIS
         // course and the separate selection layer supplies the only glow.
         // Icon halos around this hand-built SDF render as squares on some GPUs.
-        const _vesselEpisodeColor = ['match', ['get', 'visual_category']];
-        for (const category of EVENT_VISUAL_CATEGORIES) {
-          _vesselEpisodeColor.push(category.key, category.color);
-        }
-        _vesselEpisodeColor.push('#8bf0c5');
         map.addLayer({
           id: 'intel-vessel-core', type: 'symbol', source: 'intel-vessels',
           layout: {
@@ -1424,7 +1418,7 @@ function App() {
             'icon-ignore-placement': true,
           },
           paint: {
-            'icon-color': _vesselEpisodeColor,
+            'icon-color': '#7dd3fc',
             'icon-opacity': 1,
           },
         });
@@ -1562,30 +1556,18 @@ function App() {
             'icon-ignore-placement': true,
           },
           paint: {
-            'icon-color': '#f97316',
+            'icon-color': '#7dd3fc',
             'icon-opacity': 1.0,
             'icon-halo-color': '#431407',
             'icon-halo-width': 2.0,
           },
         });
 
-        // AIS vessels — moving: triangle arrow; stationary: dot
-        const _movingFilter  = ['>', ['coalesce', ['get', 'speed'], 0], 0.3];
-        const _stationFilter = ['<=', ['coalesce', ['get', 'speed'], 0], 0.3];
-        map.addLayer({
-          id: 'vessels-stationary', type: 'circle', source: 'vessels',
-          filter: _stationFilter,
-          paint: {
-            'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 3, 10, 5, 14, 7],
-            'circle-color': ['match', ['get', 'ais_class'], 'A', '#4a9ebb', '#75f5e2'],
-            'circle-opacity': 0.75,
-            'circle-stroke-width': 0.8,
-            'circle-stroke-color': '#021318',
-          },
-        });
+        // AIS vessel identity follows one chart convention: every vessel is a
+        // heading triangle, including stopped contacts. Operational findings stay
+        // in rings/tracks/dossiers instead of recoloring the vessel itself.
         map.addLayer({
           id: 'vessels-layer', type: 'symbol', source: 'vessels',
-          filter: _movingFilter,
           layout: {
             'icon-image': 'vessel-arrow',
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.30, 10, 0.50, 14, 0.65],
@@ -1595,32 +1577,16 @@ function App() {
             'icon-ignore-placement': true,
           },
           paint: {
-            'icon-color': ['match', ['get', 'ais_class'], 'A', '#4a9ebb', '#75f5e2'],
+            'icon-color': '#7dd3fc',
             'icon-opacity': 0.96,
             'icon-halo-color': '#021318',
             'icon-halo-width': 1.2,
           },
         });
 
-        // NGO / coastguard vessels — bright teal, on top of commercial
-        map.addLayer({
-          id: 'vessels-ngo-stationary', type: 'circle', source: 'vessels-ngo',
-          filter: _stationFilter,
-          paint: {
-            // A known, named humanitarian fleet is never more than ~20
-            // vessels -- worth a floor size that reads at any zoom, not
-            // scaled down to the same near-invisible dot a generic AIS
-            // contact gets.
-            'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 5, 10, 7, 14, 9],
-            'circle-color': '#00e8c8',
-            'circle-opacity': 0.95,
-            'circle-stroke-width': 1.6,
-            'circle-stroke-color': '#021318',
-          },
-        });
+        // Civil NGO SAR vessels use the same triangle and differ only by hue.
         map.addLayer({
           id: 'vessels-ngo', type: 'symbol', source: 'vessels-ngo',
-          filter: _movingFilter,
           layout: {
             'icon-image': 'vessel-arrow',
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.36, 10, 0.58, 14, 0.72],
@@ -1630,7 +1596,7 @@ function App() {
             'icon-ignore-placement': true,
           },
           paint: {
-            'icon-color': '#00e8c8',
+            'icon-color': '#8bf0c5',
             'icon-opacity': 1.0,
             'icon-halo-color': '#021318',
             'icon-halo-width': 1.8,
@@ -1959,7 +1925,7 @@ function App() {
             'icon-ignore-placement': true,
           },
           paint: {
-            'icon-color': '#38bdf8',
+            'icon-color': '#7dd3fc',
             'icon-halo-color': '#03212e',
             'icon-halo-width': 1.6,
           },
@@ -2000,13 +1966,20 @@ function App() {
           },
         });
         map.addLayer({
-          id: 'ngo-response-points-layer', type: 'circle', source: 'ngo-response-points',
+          id: 'ngo-response-points-layer', type: 'symbol', source: 'ngo-response-points',
+          layout: {
+            'icon-image': 'vessel-arrow',
+            'icon-size': 0.56,
+            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotation-alignment': 'map',
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+          },
           paint: {
-            'circle-radius': ['case', ['==', ['get', 'heading_toward'], true], 7, 5],
-            'circle-color': ['case', ['==', ['get', 'heading_toward'], true], '#38bdf8', '#7dd3fc'],
-            'circle-stroke-width': 1.5,
-            'circle-stroke-color': '#03212e',
-            'circle-opacity': 0.95,
+            'icon-color': '#8bf0c5',
+            'icon-opacity': 1.0,
+            'icon-halo-color': '#03212e',
+            'icon-halo-width': 1.5,
           },
         });
         const ngoResponsePopup = new maplibregl.Popup({
@@ -2056,7 +2029,7 @@ function App() {
         // every other addLayer in this setup, guarantees the NGO fleet is
         // always the top-most vessel marker regardless of how much security
         // noise is on screen.
-        for (const ngoLayerId of ['vessels-ngo-stationary', 'vessels-ngo']) {
+        for (const ngoLayerId of ['vessels-ngo']) {
           if (map.getLayer(ngoLayerId)) map.moveLayer(ngoLayerId);
         }
 
@@ -2147,7 +2120,7 @@ function App() {
         });
 
         // vessel click (commercial + NGO share same handler)
-        for (const lyr of ['vessels-layer', 'vessels-stationary', 'vessels-ngo', 'vessels-ngo-stationary', 'proximity-vessels-layer']) {
+        for (const lyr of ['vessels-layer', 'vessels-ngo', 'proximity-vessels-layer']) {
           map.on('mouseenter', lyr, () => { map.getCanvas().style.cursor = 'pointer'; });
           map.on('mouseleave', lyr, () => {
             map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
@@ -2206,7 +2179,7 @@ function App() {
           }
           if (isPublicLiveHost) return;
           const hit = map.queryRenderedFeatures(event.point, {
-            layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'vessels-stationary', 'vessels-ngo', 'vessels-ngo-stationary', 'proximity-vessels-layer', 'intel-events-layer', 'intel-fused-core', 'intel-vessel-core', 'intel-spike-layer',
+            layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'vessels-ngo', 'proximity-vessels-layer', 'intel-events-layer', 'intel-fused-core', 'intel-vessel-core', 'intel-spike-layer',
               ...INTEL_MAP_CATEGORIES.map((c) => `intel-cat-${c.key}`)].filter((l) => map.getLayer(l)),
           });
           if (hit.length > 0) return;
