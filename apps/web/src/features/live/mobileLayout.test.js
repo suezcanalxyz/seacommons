@@ -21,4 +21,5 @@ test('public Live hides transport-buffer tier counts', async () => {
   const source = await readFile(new URL('../../components/IntelDashboard.jsx', import.meta.url), 'utf8');
   assert.match(source, /!publicMode \? <span className="intel-tier-count">/);
   assert.match(source, /!publicMode \? <span className="intel-tier-head-count">/);
+  assert.match(source, /!publicMode && Object\.keys\(intelStats\.by_type/);
 });

@@ -617,7 +617,7 @@ export default function IntelDashboard({
       </section>
 
       {/* Channel breakdown */}
-      {Object.keys(intelStats.by_type || {}).length > 0 && (
+      {!publicMode && Object.keys(intelStats.by_type || {}).length > 0 && (
         <section className="panel-block">
           <p className="section-kicker">By channel</p>
           <ul className="signal-list" style={{ marginTop: 4 }}>
