@@ -176,4 +176,3 @@ async def incident_watches(limit: int = Query(200, ge=1, le=1000)):
     from core.intel.incident_watch import list_watch_summaries
 
     return {"watches": list_watch_summaries(limit=limit)}
-

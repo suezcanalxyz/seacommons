@@ -514,4 +514,3 @@ def list_watch_summaries(*, limit: int = 200) -> list[dict[str, Any]]:
             }
             for row in rows
         ]
-
