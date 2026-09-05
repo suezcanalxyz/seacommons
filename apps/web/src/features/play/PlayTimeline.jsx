@@ -220,7 +220,7 @@ export default function PlayTimeline({ apiBase }) {
       const map = new maplibregl.Map({
         container: mapNodeRef.current,
         style: playMapStyle(), center: [14.8, 35.7], zoom: 3.55,
-        attributionControl: true,
+        attributionControl: false,
       });
       map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'bottom-right');
       map.on('load', () => {
@@ -265,6 +265,7 @@ export default function PlayTimeline({ apiBase }) {
         map.on('mouseenter', 'play-incidents', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'play-incidents', () => { map.getCanvas().style.cursor = ''; });
         mapRef.current = map;
+        map.resize();
         setMapReady(true);
       });
     }

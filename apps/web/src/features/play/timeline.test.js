@@ -136,7 +136,9 @@ test('Play map style keeps a visible street-map fallback under satellite imagery
   assert.equal(style.layers[0].id, 'base-map');
   assert.equal(style.layers[0].paint?.['raster-opacity'] ?? 1, 1);
   assert.equal(style.layers[1].id, 'satellite-context');
-  assert.ok((style.layers[1].paint?.['raster-opacity'] ?? 1) < 1);
+  assert.equal(style.layers[1].paint?.['raster-opacity'], 1);
+  assert.ok(style.sources.baseMap?.tiles?.length);
+  assert.ok(style.sources.satelliteContext?.tiles?.length);
 });
 
 test('Play panels use the same glass treatment as public Live and keep the map dominant', async () => {
@@ -213,4 +215,21 @@ test('selector respects cutoff and null cloud metadata', async () => {
   assert.match(source, /new Set\(visibleTimeline/);
   assert.match(source, /setSatelliteMission\('auto'\)/);
   assert.match(source, /cloud_cover != null/);
+});
+
+test('Play satellite basemap is the default visual surface over an OSM fallback', async () => {
+  const { playMapStyle } = await import('./timeline.js');
+  const style = playMapStyle('2026-09-04');
+  assert.equal(style.layers[0].id, 'base-map');
+  assert.equal(style.layers[1].id, 'satellite-context');
+  assert.equal(style.layers[1].paint?.['raster-opacity'], 1);
+  assert.match(style.sources.satelliteContext.tiles[0], /VIIRS_SNPP_CorrectedReflectance_TrueColor/);
+});
+
+test('Play public map hides attribution control and initializes independently of a selected case', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /attributionControl:\s*false/);
+  assert.match(source, /map\.resize\(\)/);
+  const init = source.slice(source.indexOf("map.on('load'"), source.indexOf("mapRef.current = map"));
+  assert.doesNotMatch(init, /if\s*\(selectedId\)/);
 });

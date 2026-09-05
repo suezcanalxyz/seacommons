@@ -172,7 +172,7 @@ export function playMapStyle(day = new Date(Date.now() - 24 * 3600 * 1000).toISO
     },
     layers: [
       { id: 'base-map', type: 'raster', source: 'baseMap', paint: { 'raster-opacity': 1 } },
-      { id: 'satellite-context', type: 'raster', source: 'satelliteContext', paint: { 'raster-opacity': 0.62 } },
+      { id: 'satellite-context', type: 'raster', source: 'satelliteContext', paint: { 'raster-opacity': 1, 'raster-fade-duration': 120 } },
     ],
   };
 }
