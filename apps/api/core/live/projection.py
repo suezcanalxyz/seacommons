@@ -79,6 +79,10 @@ _PUBLIC_METADATA = frozenset(
         "alert_type",
         "confidence",
         "contributing_sources",
+        "contributing_independence_groups",
+        "independent_source_count",
+        "evidence_count",
+        "verification_explanation",
         "cluster_id",
         "anomaly_type",
         "ais_nav_status_kind",
@@ -179,6 +183,10 @@ def _public_intel_feature(
         return None
     publication = str(event.metadata.get("publication_status") or "").lower()
     source_policy = str(event.metadata.get("source_policy") or "").lower()
+    if publication == "internal":
+        # Explicitly internal analytical episodes never cross the public boundary,
+        # including SeaCommons-derived events that would otherwise be eligible.
+        return None
     if is_blocked_source(event.metadata):
         # Old scraper records may still be persisted; they must never re-enter Live.
         return None

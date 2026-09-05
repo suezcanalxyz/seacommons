@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from core.config import config as _cfg
+from core.intel.evidence_lineage import lineage_for_event
 from core.intel.store import IntelEvent, intel_store
 
 logger = logging.getLogger(__name__)
@@ -121,6 +122,9 @@ def evaluate(new_event: IntelEvent) -> Optional[dict[str, Any]]:
     channel = channel_of(new_event)
     if channel is None:
         return None
+    new_group = lineage_for_event(new_event).independence_group
+    if new_group == "unknown":
+        return None
 
     new_ts = _parse_timestamp(new_event.timestamp_utc) or datetime.now(timezone.utc)
     radius_km = _cfg.SAR_TRIANGULATION_RADIUS_KM
@@ -128,6 +132,7 @@ def evaluate(new_event: IntelEvent) -> Optional[dict[str, Any]]:
     threshold = _cfg.SAR_TRIANGULATION_THRESHOLD
 
     contributing: dict[str, IntelEvent] = {channel: new_event}
+    contributing_groups: set[str] = {new_group}
     linked_mmsi = new_event.linked_mmsi or ""
 
     for candidate in intel_store.events(limit=600):
@@ -136,12 +141,16 @@ def evaluate(new_event: IntelEvent) -> Optional[dict[str, Any]]:
         other_channel = channel_of(candidate)
         if other_channel is None or other_channel in contributing:
             continue
+        other_group = lineage_for_event(candidate).independence_group
+        if other_group == "unknown" or other_group in contributing_groups:
+            continue
         other_ts = _parse_timestamp(candidate.timestamp_utc)
         if other_ts is None or abs((new_ts - other_ts).total_seconds()) > window_s:
             continue
         if _haversine_km(new_event.lat, new_event.lon, candidate.lat, candidate.lon) > radius_km:
             continue
         contributing[other_channel] = candidate
+        contributing_groups.add(other_group)
         if not linked_mmsi and candidate.linked_mmsi:
             linked_mmsi = candidate.linked_mmsi
 
@@ -156,6 +165,8 @@ def evaluate(new_event: IntelEvent) -> Optional[dict[str, Any]]:
         "verification_status": "multi_source_corroborated",
         "corroborating_sources": sorted(contributing.keys()),
         "corroborating_event_ids": sorted(event.id for event in contributing.values()),
+        "corroborating_independence_groups": sorted(contributing_groups),
+        "independent_source_count": len(contributing_groups),
         "corroboration_confidence": confidence,
     }
     # Apply corroboration to every participating event. In particular, if an
@@ -207,7 +218,7 @@ def test_triangulation() -> None:
     plus_20min_ts = (now + timedelta(minutes=20)).isoformat()
 
     # Test 1: a single Alarm Phone report alone is not corroborated.
-    solo = make("twitter", 35.50, 12.60, base_ts, source_policy="official_site_embed")
+    solo = make("twitter", 35.50, 12.60, base_ts, source_policy="official_site_embed", platform="x")
     assert evaluate(solo) is None
     assert solo.verification_status() == "unverified_public_source"
 
@@ -226,7 +237,7 @@ def test_triangulation() -> None:
     assert solo.linked_mmsi == "123456789"
 
     # Test 3: a second event from the SAME channel does not add confidence.
-    same_channel = make("twitter", 35.51, 12.61, base_ts, source_policy="official_site_embed")
+    same_channel = make("twitter", 35.51, 12.61, base_ts, source_policy="official_site_embed", platform="x")
     r2 = evaluate(same_channel)
     assert r2 is not None  # still corroborated by the earlier ais_spike
     assert set(r2["corroborating_sources"]) == {

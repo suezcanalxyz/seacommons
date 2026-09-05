@@ -35,6 +35,7 @@ from typing import Callable, Optional
 
 from core.config import config
 from core.geo import cluster_key, haversine_km
+from core.intel.evidence_lineage import lineage_for_event
 from core.intel.store import IntelEvent, intel_store
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,9 @@ class FusionSignal:
     mmsi: str = ""
     imo: str = ""
     source: str = ""
+    source_family: str = "unknown"
+    independence_group: str = "unknown"
+    sensor_family: str = "unknown"
     severity: str = ""
     weight: float = 0.0
 
@@ -144,6 +148,7 @@ def normalize(event: IntelEvent) -> Optional[FusionSignal]:
     ).lower()
     mmsi = str(event.linked_mmsi or meta.get("mmsi") or meta.get("MMSI") or "").strip()
     imo = str(meta.get("imo") or meta.get("IMO") or "").strip()
+    lineage = lineage_for_event(event)
     return FusionSignal(
         event_id=event.id,
         kind=event.type,
@@ -154,6 +159,9 @@ def normalize(event: IntelEvent) -> Optional[FusionSignal]:
         mmsi=mmsi,
         imo=imo,
         source=event.source or event.type,
+        source_family=lineage.source_family,
+        independence_group=lineage.independence_group,
+        sensor_family=lineage.sensor_family,
         severity=event.severity or "",
     )
 
@@ -167,6 +175,48 @@ def _recent_signals(exclude_id: str, limit: int = 600) -> list[FusionSignal]:
         if sig is not None:
             out.append(sig)
     return out
+
+
+def verification_for_event_ids(event_ids: list[str]) -> tuple[str, list[str], int]:
+    """Classify corroboration from evidence lineage, never detector count."""
+    groups: set[str] = set()
+    found = 0
+    for event_id in dict.fromkeys(event_ids):
+        event = intel_store.get_durable(event_id)
+        if event is None:
+            continue
+        found += 1
+        group = lineage_for_event(event).independence_group
+        if group != "unknown":
+            groups.add(group)
+    ordered = sorted(groups)
+    if len(ordered) >= 2:
+        return "multi_source_corroborated", ordered, found
+    if found >= 2:
+        return "single_source_multi_indicator", ordered, found
+    return "single_source_observed", ordered, found
+
+
+def has_independent_corroboration(event_ids: list[str]) -> bool:
+    status, _groups, _count = verification_for_event_ids(event_ids)
+    return status == "multi_source_corroborated"
+
+
+def verification_explanation(status: str, groups: list[str], evidence_count: int) -> str:
+    if status == "multi_source_corroborated":
+        return (
+            f"{evidence_count} evidence items across {len(groups)} independent evidence lineages"
+        )
+    if status == "single_source_multi_indicator":
+        group_count = max(1, len(groups))
+        noun = "lineage" if group_count == 1 else "lineages"
+        return (
+            f"{evidence_count} indicators from {group_count} evidence {noun}; "
+            "independent corroboration not established"
+        )
+    if groups:
+        return "1 observation from 1 evidence lineage; independent corroboration not established"
+    return "source lineage unresolved; independent corroboration not established"
 
 
 # ── rules ─────────────────────────────────────────────────────────────────────
@@ -213,18 +263,20 @@ def _rule_spoofing(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert]
             continue
         evidence = {new.anomaly_type, other.anomaly_type}
         confidence = round(min(0.95, 0.45 + 0.2 * len(evidence)), 3)
+        ids = [new.event_id, other.event_id]
         return FusedAlert(
             alert_type="spoofing",
             domain="grey_zone",
             severity="high",
             confidence=confidence,
             lat=new.lat, lon=new.lon, ts=new.ts,
-            contributing_event_ids=[new.event_id, other.event_id],
+            contributing_event_ids=ids,
             contributing_sources=sorted({new.source, other.source}),
             summary=(
                 f"MMSI {new.mmsi}: {other.anomaly_type} + {new.anomaly_type} "
                 f"within {int(window // 3600)}h"
             ),
+            open_case=has_independent_corroboration(ids),
             case_type="monitoring",
             vessel_mmsi=new.mmsi,
         )
@@ -272,33 +324,42 @@ def _rule_grey_zone(new: FusionSignal, event: IntelEvent) -> Optional[FusedAlert
     hit = _nearest_infrastructure(new.lat, new.lon, config.FUSION_INFRA_PROXIMITY_KM)
     if hit is None:
         return None
-    # Cables and pipelines crisscross the whole Med — a lone "slow near a cable"
-    # is an alert, not a case. A case opens only with corroboration: the vessel
-    # also had an AIS gap, or a second infra-proximity flag for the same hull
-    # (a repeat pass / dwell), or it is a sanctioned / identity-flagged vessel.
-    corroborated = False
+
+    ids = [new.event_id]
+    sources = {new.source}
+    high_specificity_identity = False
     for other in _recent_signals(new.event_id):
         if not other.mmsi or other.mmsi != new.mmsi:
             continue
-        if (other.kind == "vessel_identity"
-                or (other.kind == "ais_anomaly"
-                    and other.anomaly_type in ("gap", "long_gap", "cable_proximity", "loiter"))):
-            corroborated = True
-            break
+        relevant_ais = (
+            other.kind == "ais_anomaly"
+            and other.anomaly_type in ("gap", "long_gap", "cable_proximity", "loiter")
+        )
+        if other.kind != "vessel_identity" and not relevant_ais:
+            continue
+        ids.append(other.event_id)
+        sources.add(other.source)
+        high_specificity_identity = other.kind == "vessel_identity"
+        break
+
+    independently_corroborated = has_independent_corroboration(ids)
+    case_supported = high_specificity_identity or independently_corroborated
     return FusedAlert(
-        alert_type="infrastructure_threat" if corroborated else "infra_proximity",
+        alert_type="infrastructure_threat" if case_supported else "infra_proximity",
         domain="grey_zone",
-        severity="high" if corroborated else "medium",
-        confidence=round(max(0.4, 0.75 - hit["distance_km"] / 40.0) + 0.15 * corroborated, 3),
+        severity="high" if case_supported else "medium",
+        confidence=round(
+            max(0.4, 0.75 - hit["distance_km"] / 40.0) + 0.15 * case_supported, 3
+        ),
         lat=new.lat, lon=new.lon, ts=new.ts,
-        contributing_event_ids=[new.event_id],
-        contributing_sources=[new.source],
+        contributing_event_ids=ids,
+        contributing_sources=sorted(sources),
         summary=(
             f"AIS {new.anomaly_type} inside {hit['name']}"
             if hit.get("inside")
             else f"AIS {new.anomaly_type} within {hit['distance_km']:.1f} km of {hit['name']}"
         ),
-        open_case=corroborated,
+        open_case=case_supported,
         case_type="subsea_infrastructure",
         vessel_mmsi=new.mmsi,
     )
@@ -565,17 +626,32 @@ def _emit_locked(alert: FusedAlert) -> None:
         logger.debug("fusion: cluster %s already alerted, skipping", alert.cluster_id)
         return
 
+    verification_status, independence_groups, evidence_count = verification_for_event_ids(
+        alert.contributing_event_ids
+    )
     metadata = {
         "alert_type": alert.alert_type,
         "maritime_domain": alert.domain,
         "confidence": alert.confidence,
         "contributing": alert.contributing_event_ids,
         "contributing_sources": alert.contributing_sources,
+        "contributing_independence_groups": independence_groups,
+        "independent_source_count": len(independence_groups),
+        "evidence_count": evidence_count,
+        "verification_explanation": verification_explanation(
+            verification_status, independence_groups, evidence_count
+        ),
         "cluster_id": alert.cluster_id,
         "is_distress": alert.domain == "sar",
-        "verification_status": "multi_source_corroborated",
+        "verification_status": verification_status,
         "coordinate_source": "post_text",
     }
+    if (
+        alert.domain in {"grey_zone", "sanctions"}
+        and verification_status != "multi_source_corroborated"
+        and alert.alert_type not in {"sdn_match", "mmsi_duplicate"}
+    ):
+        metadata["publication_status"] = "internal"
     if alert.vessel_mmsi:
         metadata["mmsi"] = alert.vessel_mmsi
     alert_event = IntelEvent(

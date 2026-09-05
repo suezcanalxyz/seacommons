@@ -64,3 +64,10 @@ test('every category the colour expression can match resolves to a distinct or i
     assert.match(expr[i + 1], /^#[0-9a-f]{6}$/i);
   }
 });
+
+
+test('correlated alert taxonomy never assumes independent corroboration', () => {
+  const description = descriptionOf('correlated_alert');
+  assert.ok(!description.includes('Multiple independent sources agree'));
+  assert.match(description, /verification and source lineage/i);
+});
