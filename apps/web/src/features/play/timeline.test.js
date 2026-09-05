@@ -10,6 +10,7 @@ import {
   incidentsAtCutoff,
   incidentCollection,
   timelineAtCutoff,
+  incidentStatusAtCutoff,
 } from './timeline.js';
 
 const items = [
@@ -108,6 +109,21 @@ test('Play surface exposes ALL-first global timeline and mobile drawer/sheet con
   assert.match(jsx, /aria-label="Global archive timeline"/);
   assert.match(jsx, /play-mobile-cases-toggle/);
   assert.match(jsx, /play-evidence.*is-open/);
+  assert.match(jsx, /next_offset/);
+  assert.match(jsx, /!visibleIncidents\.some/);
   assert.match(css, /\.play-mobile-cases-toggle/);
   assert.match(css, /\.play-evidence\.is-open/);
+});
+
+test('incident status at cutoff uses only transitions knowable by that time', () => {
+  const incident = {
+    incident_status: 'resolved',
+    status_history: [
+      { at: '2026-09-03T00:00:00Z', from_state: 'active', to_state: 'needs_review' },
+      { at: '2026-09-04T00:00:00Z', from_state: 'needs_review', to_state: 'resolved' },
+    ],
+  };
+  assert.equal(incidentStatusAtCutoff(incident, '2026-09-02T00:00:00Z'), 'active');
+  assert.equal(incidentStatusAtCutoff(incident, '2026-09-03T12:00:00Z'), 'needs_review');
+  assert.equal(incidentStatusAtCutoff(incident, null), 'resolved');
 });

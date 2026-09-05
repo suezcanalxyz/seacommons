@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from core.intel.humanitarian_incident import public_incident_status
 from core.intel.lifecycle import parse_utc
+from core.intel.public_policy import is_blocked_source, is_explicitly_private
 
 router = APIRouter(prefix="/api/v1/play", tags=["play"])
 
@@ -78,6 +79,8 @@ def _is_public_historical_maritime(event, *, now: datetime) -> bool:
     if event.type not in _PLAY_MARITIME_TYPES or event.lat is None or event.lon is None:
         return False
     meta = dict(event.meta or {})
+    if is_explicitly_private(meta) or is_blocked_source(meta):
+        return False
     if str(meta.get("publication_status") or "").lower() != "published":
         return False
     at = parse_utc(event.timestamp_utc or "")
@@ -102,48 +105,80 @@ def _generic_maritime_projection(event) -> dict[str, Any]:
 
 
 @router.get("/incidents")
-async def play_incidents(limit: int = Query(100, ge=1, le=500)):
-    from core.db.models import HumanitarianIncidentDB, IntelEventDB
+async def play_incidents(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    from core.db.models import HumanitarianIncidentDB, IncidentTransitionDB, IntelEventDB
     from core.db.session import session_scope
 
     now = datetime.now(timezone.utc)
-    incidents: list[dict[str, Any]] = []
+    need = offset + limit + 1
+    candidate_cap = max(2000, need * 8)
+    combined: list[dict[str, Any]] = []
+    human_ids: set[str] = set()
+
     with session_scope() as db:
         rows = (
             db.query(HumanitarianIncidentDB)
             .order_by(HumanitarianIncidentDB.last_update_at.desc())
-            .limit(limit * 4)
+            .limit(candidate_cap)
             .all()
         )
         for row in rows:
+            human_ids.add(row.incident_id)
             if not _belongs_to_play(row, now=now):
                 continue
             event = db.get(IntelEventDB, row.incident_id)
-            incidents.append(_incident_projection(row, event, now=now))
-            if len(incidents) >= limit:
-                break
+            combined.append(_incident_projection(row, event, now=now))
 
-        if len(incidents) < limit:
-            human_ids = {item["incident_id"] for item in incidents}
-            maritime_rows = (
-                db.query(IntelEventDB)
-                .filter(
-                    IntelEventDB.type.in_(_PLAY_MARITIME_TYPES),
-                    IntelEventDB.lat.isnot(None),
-                    IntelEventDB.lon.isnot(None),
-                )
-                .order_by(IntelEventDB.timestamp_utc.desc())
-                .limit(limit * 12)
+        maritime_rows = (
+            db.query(IntelEventDB)
+            .filter(
+                IntelEventDB.type.in_(_PLAY_MARITIME_TYPES),
+                IntelEventDB.lat.isnot(None),
+                IntelEventDB.lon.isnot(None),
+            )
+            .order_by(IntelEventDB.timestamp_utc.desc())
+            .limit(candidate_cap)
+            .all()
+        )
+        for event in maritime_rows:
+            if event.id in human_ids or not _is_public_historical_maritime(event, now=now):
+                continue
+            combined.append(_generic_maritime_projection(event))
+
+        combined.sort(
+            key=lambda item: str(item.get("last_update_at") or item.get("reported_at") or ""),
+            reverse=True,
+        )
+        page = combined[offset:offset + limit]
+
+        page_human_ids = [item["incident_id"] for item in page if item.get("domain") == "humanitarian"]
+        history: dict[str, list[dict[str, Any]]] = {incident_id: [] for incident_id in page_human_ids}
+        if page_human_ids:
+            transitions = (
+                db.query(IncidentTransitionDB)
+                .filter(IncidentTransitionDB.incident_id.in_(page_human_ids))
+                .order_by(IncidentTransitionDB.transition_at.asc())
                 .all()
             )
-            for event in maritime_rows:
-                if event.id in human_ids or not _is_public_historical_maritime(event, now=now):
-                    continue
-                incidents.append(_generic_maritime_projection(event))
-                if len(incidents) >= limit:
-                    break
-    incidents.sort(key=lambda item: str(item.get("last_update_at") or item.get("reported_at") or ""), reverse=True)
-    return {"incidents": incidents[:limit], "generated_at": now.isoformat()}
+            for transition in transitions:
+                history.setdefault(transition.incident_id, []).append({
+                    "at": _iso(transition.transition_at),
+                    "from_state": transition.from_state,
+                    "to_state": transition.to_state,
+                })
+        for item in page:
+            item["status_history"] = history.get(item["incident_id"], [])
+
+    next_offset = offset + len(page) if len(combined) > offset + len(page) else None
+    return {
+        "incidents": page,
+        "offset": offset,
+        "next_offset": next_offset,
+        "generated_at": now.isoformat(),
+    }
 
 
 def _thread_item(incident_id: str, repost: dict, *, reported_at: str | None) -> dict[str, Any] | None:

@@ -95,7 +95,7 @@ export function incidentCollection(incidents = [], cutoff = null) {
         geometry: incident.geometry,
         properties: {
           incident_id: incident.incident_id,
-          incident_status: incident.incident_status || 'outcome_unknown',
+          incident_status: incidentStatusAtCutoff(incident, cutoff),
           case_type: incident.case_type || 'incident',
           source: incident.source || '',
           domain: incident.domain || 'humanitarian',
@@ -104,4 +104,22 @@ export function incidentCollection(incidents = [], cutoff = null) {
         },
       })),
   };
+}
+
+
+export function incidentStatusAtCutoff(incident, cutoff = null) {
+  const current = incident?.incident_status || 'outcome_unknown';
+  if (!cutoff) return current;
+  const cutoffMs = parseTime(cutoff);
+  const history = [...(incident?.status_history || [])]
+    .filter((item) => Number.isFinite(parseTime(item?.at)))
+    .sort((a, b) => parseTime(a.at) - parseTime(b.at));
+  let effective = null;
+  for (const transition of history) {
+    const at = parseTime(transition.at);
+    if (at <= cutoffMs) effective = transition.to_state || effective;
+    else if (effective == null) return transition.from_state || current;
+    else break;
+  }
+  return effective || current;
 }

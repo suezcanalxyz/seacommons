@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchJson } from '../../services/api/client.js';
 import {
   incidentCollection,
+  incidentStatusAtCutoff,
   incidentsAtCutoff,
   normalizeTimeline,
   resolveGlobalTimelinePosition,
@@ -126,8 +127,8 @@ export default function PlayTimeline({ apiBase }) {
     [incidents, globalState.cutoff],
   );
   const selectedIncident = useMemo(
-    () => incidents.find((item) => item.incident_id === selectedId) || null,
-    [incidents, selectedId],
+    () => visibleIncidents.find((item) => item.incident_id === selectedId) || null,
+    [visibleIncidents, selectedId],
   );
   const fullTimeline = useMemo(
     () => normalizeTimeline(caseData?.timeline || []),
@@ -150,9 +151,19 @@ export default function PlayTimeline({ apiBase }) {
     let cancelled = false;
     async function loadIncidents() {
       try {
-        const payload = await fetchJson(apiBase, '/api/v1/play/incidents?limit=500');
+        const all = [];
+        let offset = 0;
+        let pages = 0;
+        while (!cancelled && pages < 100) {
+          const payload = await fetchJson(apiBase, `/api/v1/play/incidents?limit=500&offset=${offset}`);
+          all.push(...(Array.isArray(payload?.incidents) ? payload.incidents : []));
+          if (payload?.next_offset == null) break;
+          offset = Number(payload.next_offset);
+          pages += 1;
+        }
         if (cancelled) return;
-        setIncidents(Array.isArray(payload?.incidents) ? payload.incidents : []);
+        const unique = [...new Map(all.map((item) => [item.incident_id, item])).values()];
+        setIncidents(unique);
         setError('');
       } catch (exc) {
         if (!cancelled) setError(exc?.message || 'Play archive unavailable');
@@ -164,6 +175,13 @@ export default function PlayTimeline({ apiBase }) {
     const timer = window.setInterval(loadIncidents, 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [apiBase]);
+
+  useEffect(() => {
+    if (selectedId && !visibleIncidents.some((item) => item.incident_id === selectedId)) {
+      setSelectedId('');
+      setCaseData(null);
+    }
+  }, [selectedId, visibleIncidents]);
 
   useEffect(() => {
     let cancelled = false;
@@ -267,7 +285,7 @@ export default function PlayTimeline({ apiBase }) {
     if (mapReady && map) window.setTimeout(() => map.resize(), 40);
   }, [mapReady, selectedId, casesOpen]);
 
-  const status = caseData?.incident_status || selectedIncident?.incident_status || 'outcome_unknown';
+  const status = selectedIncident ? incidentStatusAtCutoff(selectedIncident, globalState.cutoff) : 'outcome_unknown';
   const frameProps = frame.item?.properties || {};
   const satelliteProps = satellite?.properties || {};
   const modeLabel = cutoffLabel(globalState);
@@ -305,7 +323,7 @@ export default function PlayTimeline({ apiBase }) {
             >
               <span className="play-case__time">{itemTime(incident.reported_at)}</span>
               <strong>{incident.title || 'SeaCommons incident'}</strong>
-              <span>{incident.domain || 'humanitarian'} · {incident.source || 'source'} · {statusLabel(incident.incident_status)}</span>
+              <span>{incident.domain || 'humanitarian'} · {incident.source || 'source'} · {statusLabel(incidentStatusAtCutoff(incident, globalState.cutoff))}</span>
             </button>
           ))}
           {!visibleIncidents.length && !loading ? <div className="play-empty">No incidents at this time.</div> : null}
