@@ -6,9 +6,9 @@
 
 ## Purpose
 
-SeaCommons already persists immutable `SourceObservation` records, canonical `HumanitarianIncident` state, evidence-based lifecycle transitions, current Drift ownership, source coverage metadata, correlation candidates, circular-reporting lineage, and a typed entity graph. The next missing platform primitive is active case follow-up.
+SeaCommons already persists immutable `SourceObservation` records, canonical `HumanitarianIncident` state, lifecycle transitions, current Drift ownership, source coverage metadata, correlation candidates, circular-reporting lineage, and a typed entity graph. The next missing platform primitive is active case follow-up.
 
-`IncidentWatch` makes an open Humanitarian incident capable of requesting bounded follow-up collection without allowing the watch itself to change incident truth.
+`IncidentWatch` makes a Humanitarian incident capable of requesting bounded follow-up collection without allowing the watch itself to change incident truth.
 
 The invariant is:
 
@@ -21,7 +21,7 @@ HumanitarianIncident
   -> possible incident update / review / resolution / reopening
 ```
 
-A watch never writes lifecycle, location, people counts, Drift, publication status, or canonical assessments directly.
+A watch never writes lifecycle, location, people counts, Drift, publication status, correlation decisions, or canonical assessments directly.
 
 ## Selected approach
 
@@ -39,14 +39,14 @@ IncidentWatch v0 is Humanitarian-only.
 
 It covers:
 
-- creating/updating one active watch per canonical Humanitarian incident;
+- creating/updating one watch per canonical Humanitarian incident;
 - deriving a bounded watch profile from already persisted incident/evidence data;
 - lifecycle-aware priority and cadence;
 - deterministic due-watch selection;
 - invoking only explicitly eligible existing connectors/adapters;
 - persisting every newly found source item only through `record_observation()` or the adapter's existing canonical SourceObservation path;
 - preventing duplicate queries and retry storms;
-- expiring/degrading watches when the incident lifecycle changes;
+- degrading/expiring watches according to canonical incident state;
 - operator observability and deterministic tests.
 
 It does not add a new external provider, general web search crawler, LLM search agent, paid API, PostGIS dependency, public UI, or automatic incident mutation.
@@ -63,14 +63,18 @@ incident_id
 status
 priority
 lifecycle_snapshot
+incident_status_snapshot
 profile_json
+profile_version
 next_run_at
 last_run_at
 last_success_at
 last_error_at
 consecutive_errors
 run_count
-query_fingerprint
+last_query_fingerprint
+lease_until
+lease_owner
 created_at
 updated_at
 expires_at
@@ -85,7 +89,7 @@ priority = highest | high | medium | low
 
 `incident_id` is unique. Re-syncing an incident updates the watch row rather than creating a second active watch.
 
-`profile_json` is a versioned snapshot of query inputs, not a second incident truth store.
+`profile_json` is a versioned snapshot of query inputs, not a second incident truth store. `lease_until`/`lease_owner` are execution coordination only, never case state.
 
 ## Watch profile
 
@@ -121,43 +125,56 @@ Rules:
 - absent evidence stays absent; the profile never invents route, people count, language, or vessel details;
 - profile regeneration is deterministic from the same persisted inputs.
 
-## Lifecycle policy
+## Lifecycle and compatibility policy
 
-The watch cadence follows the canonical incident lifecycle/status.
+Watch scheduling reads both canonical `incident_status` and `lifecycle`. `incident_status` wins when the two encode different migration-era semantics.
+
+This is required because current SeaCommons can persist a silent unresolved case as:
 
 ```text
-reported / active / reopened
+incident_status=outcome_unknown
+lifecycle=archived
+```
+
+That combination means “outcome unknown and retired from Live”, not “stop follow-up forever”. IncidentWatch must not treat it as an explicit resolved archive.
+
+Policy:
+
+```text
+incident_status=active OR lifecycle in {reported, active, reopened}
   priority=highest
-  normal cadence target=15 minutes
+  cadence target=15 minutes
 
-needs_review
+incident_status=needs_review OR lifecycle=needs_review
   priority=high
-  normal cadence target=30 minutes
+  cadence target=30 minutes
 
-unresolved_stale / outcome_unknown
+incident_status=outcome_unknown OR lifecycle=unresolved_stale
   priority=medium
-  normal cadence target=2 hours
+  cadence target=2 hours for first 7 days since last update
+  cadence target=12 hours for days 7-30
+  expire dedicated polling after 30 days unless reopened
 
-resolved, age <= 24h
+incident_status=resolved OR lifecycle=resolved, age <=24h
   priority=high
-  normal cadence target=1 hour
+  cadence target=1 hour
 
-resolved, age >24h and <=7d
+resolved age >24h and <=7d
   priority=medium
-  normal cadence target=12 hours
+  cadence target=12 hours
 
-resolved, age >7d and <=30d
+resolved age >7d and <=30d
   priority=low
-  normal cadence target=24 hours
+  cadence target=24 hours
 
-archived or resolved age >30d
+explicit archived state with known outcome, or resolved/outcome-known age >30d
   status=expired
   no dedicated polling
 ```
 
-The scheduler may run more frequently than these cadences, but it must only select watches whose `next_run_at <= now`.
+The scheduler may run more frequently than these cadences, but it selects only watches whose `next_run_at <= now` and whose lease is absent/expired.
 
-A lifecycle change re-synchronizes priority, expiry policy and `next_run_at`. It does not delete prior run history.
+A lifecycle/status change re-synchronizes priority, expiry policy and `next_run_at`. It does not delete prior run history.
 
 ## Connector boundary
 
@@ -195,6 +212,7 @@ No watch code may directly create:
 - `HumanitarianIncidentDB` updates;
 - lifecycle transitions;
 - claims or assessments;
+- correlation decisions;
 - Drift jobs;
 - public Live features.
 
@@ -204,16 +222,16 @@ Duplicate collection is harmless because SourceObservation remains idempotent by
 
 ## Query deduplication and budgets
 
-A watch run has a deterministic `query_fingerprint` derived from:
+A watch adapter execution has a deterministic query fingerprint derived from:
 
 ```text
-watch profile version
+profile_version
 eligible adapter id
 query-relevant normalized profile fields
 bounded time window
 ```
 
-The same fingerprint must not execute twice inside its cadence window.
+The same fingerprint must not execute twice inside its cadence window. `last_query_fingerprint` records the most recently attempted fingerprint; detailed per-run audit can remain structured logging in v0 rather than introducing a second run-history table.
 
 Per-run safeguards:
 
@@ -226,22 +244,25 @@ max consecutive errors before degraded: 3
 
 A degraded watch remains eligible at a slower retry cadence and must not spin in a tight loop.
 
-A failing connector never marks the incident resolved, empty, or stale.
+A failing connector never marks the incident resolved, empty, stale, archived, or reviewed.
 
-## Scheduling
+## Scheduling and leases
 
 Reuse the existing background scheduling infrastructure rather than introducing another worker framework in v0.
 
 Add one bounded scheduler job that:
 
 1. selects due active/degraded watches in priority order;
-2. locks/claims a small batch deterministically;
+2. atomically claims a small batch using a short `lease_until`/`lease_owner`;
 3. executes one watch at a time in v0;
 4. records run state and errors;
-5. calculates the next run from current canonical lifecycle;
-6. exits cleanly when there are no due watches.
+5. clears/advances the lease on completion;
+6. calculates the next run from current canonical incident state;
+7. exits cleanly when there are no due watches.
 
-The scheduler must not perform long unbounded work on the FastAPI event loop. Existing synchronous/network adapter behaviour should run using the same isolation pattern already used elsewhere in the backend.
+The lease protects against accidental duplicate execution if scheduler instances overlap or a deployment briefly has more than one process. An expired lease is reclaimable after a crash.
+
+The scheduler must not perform long unbounded work on the FastAPI event loop. Existing synchronous/network adapter behaviour should use the repository's established isolation pattern rather than blocking async request handling.
 
 ## Watch creation and synchronization
 
@@ -253,7 +274,7 @@ Rules:
 - one incident has at most one watch;
 - creating a watch is idempotent;
 - an event/thread update refreshes the profile and cadence of the same watch;
-- resolved/archived transitions update the watch policy immediately;
+- resolved/outcome-unknown/archived transitions update watch policy immediately;
 - incident synchronization continues to succeed if watch synchronization fails; the watch path is best-effort and observable, not allowed to break ingestion.
 
 ## Correlation semantics
@@ -306,6 +327,7 @@ incident_id
 status
 priority
 lifecycle_snapshot
+incident_status_snapshot
 next_run_at
 last_run_at
 last_success_at
@@ -313,6 +335,7 @@ consecutive_errors
 run_count
 profile_version
 eligible_adapter_names[]
+lease_until
 ```
 
 Add metrics/logging sufficient to answer:
@@ -322,7 +345,8 @@ Add metrics/logging sufficient to answer:
 - which adapters fail most often;
 - observations created versus replayed;
 - watch-run latency;
-- whether one watch is repeatedly executing the same fingerprint.
+- whether one watch is repeatedly executing the same fingerprint;
+- whether any lease remains stuck beyond its expiry.
 
 ## Persistence and migration
 
@@ -335,7 +359,7 @@ Requirements:
 - migration revision identifier <= 32 characters;
 - reversible downgrade;
 - unique `incident_id` constraint;
-- indexes justified by actual query paths: `(status, next_run_at, priority)` and `incident_id` uniqueness are sufficient for v0.
+- indexes justified by actual query paths: `(status, next_run_at, priority)` plus unique `incident_id` are sufficient for v0.
 
 No destructive migration and no production mutation in the implementation PR.
 
@@ -358,8 +382,9 @@ SourceObservation DB failure
   -> adapter/watch run reports error
   -> no fallback direct IntelEvent write added for the watch
 
-scheduler restart
+scheduler/process restart
   -> persisted next_run_at/run state survives
+  -> expired lease becomes reclaimable
   -> due watch is retried idempotently
 ```
 
@@ -372,18 +397,20 @@ The implementation is not complete until tests prove at least:
 3. Maritime Safety/Intelligence events never create IncidentWatch rows.
 4. Same incident history produces the same watch profile/fingerprint.
 5. Missing evidence is omitted rather than invented.
-6. Lifecycle changes deterministically change priority/cadence.
-7. Archived/expired incidents receive no dedicated polling.
-8. Scheduler selects only due watches and respects priority.
-9. One failing adapter does not mutate incident state.
-10. A discovered item is persisted through canonical SourceObservation semantics.
-11. Replaying the same discovered source item creates no duplicate observation.
-12. Watch provenance does not force `SAME_INCIDENT`; normal correlation authority remains intact.
-13. Query fingerprint prevents duplicate runs within a cadence window.
-14. Three consecutive adapter failures degrade the watch and back off.
-15. Migration upgrade -> downgrade -> re-upgrade is green on SQLite and schema matches model metadata.
-16. Full backend suite and ruff are green on the exact PR head.
-17. No public Humanitarian projection gains MMSI/IMO/callsign or watch-profile fields.
+6. Lifecycle/status changes deterministically change priority/cadence.
+7. `incident_status=outcome_unknown` remains follow-up eligible even when compatibility `lifecycle=archived` is present.
+8. Explicitly expired/old resolved incidents receive no dedicated polling.
+9. Scheduler selects only due/unleased watches and respects priority.
+10. An active lease prevents duplicate selection; an expired lease is reclaimable.
+11. One failing adapter does not mutate incident state.
+12. A discovered item is persisted through canonical SourceObservation semantics.
+13. Replaying the same discovered source item creates no duplicate observation.
+14. Watch provenance does not force `SAME_INCIDENT`; normal correlation authority remains intact.
+15. Query fingerprint prevents duplicate runs within a cadence window.
+16. Three consecutive adapter failures degrade the watch and back off.
+17. Migration upgrade -> downgrade -> re-upgrade is green on SQLite and schema matches model metadata.
+18. Full backend suite and ruff are green on the exact PR head.
+19. No public Humanitarian projection gains MMSI/IMO/callsign or watch-profile fields.
 
 ## Expected implementation boundaries
 
