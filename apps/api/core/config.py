@@ -140,6 +140,10 @@ class SuezCanalConfig(BaseSettings):
     CMEMS_WAVE_DATASET: str = "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i"
     OPEN_METEO_BASE: str = "https://api.open-meteo.com/v1"
     AIS_FUSION_ENABLED: bool = False
+    AISCAST_ENABLED: bool = False
+    AISCAST_WS_URL: str = "wss://ais.openwaters.io/v1/stream"
+    AISCAST_BBOX: str = ""
+    AISCAST_NGO_MMSI_LIMIT: int = 10
     AISSTREAM_KEY: str = ""
     # Optional SEPARATE AISStream API key (different account/registration) for
     # a dedicated, globally-scoped subscription tracking the known NGO/SAR

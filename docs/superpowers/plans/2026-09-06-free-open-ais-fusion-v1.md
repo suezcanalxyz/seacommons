@@ -216,7 +216,7 @@ git commit -m "refactor: emit normalized AISStream observations"
 - Consumes: `AISPositionObservation` and `AISProviderHealth` from Task 1.
 - Produces: `AiscastClient(on_observation=...)` with reconnect/backoff, provider health, and station provenance when exposed upstream.
 
-- [ ] **Step 1: Write RED parser and reconnect tests using captured fixture payloads**
+- [x] **Step 1: Write RED parser and reconnect tests using captured fixture payloads**
 
 ```python
 def test_aiscast_message_preserves_station_provenance():
@@ -233,12 +233,12 @@ def test_aiscast_message_preserves_station_provenance():
 
 Add contrastive tests for malformed MMSI, missing coordinates, invalid latitude/longitude, missing optional station ID, and disconnect -> degraded health -> reconnect.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `pytest -q tests/test_aiscast.py`
 Expected: FAIL because module/config do not exist.
 
-- [ ] **Step 3: Implement the minimal client**
+- [x] **Step 3: Implement the minimal client**
 
 Use the verified native endpoint `wss://ais.openwaters.io/v1/stream`, bounded reconnect backoff, and no credential requirement in the default anonymous path. Start with a small configured bbox plus the known NGO MMSI set because the anonymous tier is bounded. Parse and preserve upstream `source`, `station`, event id/time, and source/license attribution metadata when present. Do not copy provider-specific JSON past `parse_aiscast_message()`.
 
@@ -254,17 +254,20 @@ The anonymous service currently permits 2 concurrent connections, 20 messages/s,
 
 If the verified upstream endpoint differs at implementation time, update only the default URL and its test fixture; do not change the adapter contract.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run: `pytest -q tests/test_aiscast.py tests/test_ais_provider.py`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/core/vessels/aiscast.py apps/api/core/config.py tests/test_aiscast.py
 git commit -m "feat: add free aiscast provider adapter"
 ```
+
+
+**Execution:** Verified current Open Waters native v1 stream contract and anonymous limits before coding. RED failed on missing adapter; GREEN: `14 passed`. Adapter rejects unbounded/oversized anonymous subscriptions, preserves upstream source/station/terms/id, and exposes provider health.
 
 ### Task 4: Reconcile provider observations into one canonical track input
 
