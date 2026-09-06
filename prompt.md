@@ -15,13 +15,13 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-Remote Maritime Radio v1, Task 2 — KiwiSDR remote adapter.
+Remote Maritime Radio v1, Task 4 — immutable Radio SourceObservation bridge.
 
 Detailed plan: `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`.
 
 Free/Open AIS Fusion v1 is development-complete/shadow-ready. Humanitarian Verification v1 is development-complete/review-ready through `961c436`; release gates were `141` focused tests and `1350` full backend tests plus green static/web/edge/dependency gates. No production AIS cutover or Humanitarian auto-resolution was authorized.
 
-Tasks 0-1 are complete. Continue with Task 2 using the provider-neutral contract and explicit receiver registry; keep all network I/O injectable and fail closed. `core.sensors.sdr.SDRScanner` is the legacy local RTL-SDR anomaly scanner and must not become the remote receiver architecture.
+Tasks 0-3 are complete. Continue with Task 4 by bridging bounded `RadioObservation` objects into immutable `SourceObservation` rows without persisting audio/IQ bytes or changing Humanitarian/lifecycle state. `core.sensors.sdr.SDRScanner` is the legacy local RTL-SDR anomaly scanner and must not become the remote receiver architecture.
 
 ## Packet boundary
 

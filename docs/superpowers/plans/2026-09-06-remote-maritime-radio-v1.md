@@ -69,13 +69,13 @@
 - Implements `RemoteReceiverAdapter` for one configured KiwiSDR endpoint.
 - Emits normalized `RadioObservation` metadata through the Task 0 callback; v1 does not persist audio bytes.
 
-- [ ] Write RED fixture tests for connection/handshake metadata normalization, bounded tune validation, health transitions, source-terms propagation, and disconnect/error fail-closed behavior.
-- [ ] Add a contrastive RED test proving the adapter never writes an audio artifact or Humanitarian incident.
-- [ ] Run `pytest -q tests/test_kiwisdr_adapter.py` and observe the expected failures.
-- [ ] Implement the smallest transport wrapper needed for configured endpoints, with dependency injection for network I/O so tests never require the public internet.
-- [ ] Enforce configured frequency/mode capability bounds before network calls and expose `connected`, `last_message_at`, `observations_received`, and bounded `error` in health.
-- [ ] Run adapter tests GREEN and focused source-observation/privacy regressions.
-- [ ] Commit `feat: add KiwiSDR remote receiver adapter`.
+- [x] Write RED fixture tests for connection/handshake metadata normalization, bounded tune validation, health transitions, source-terms propagation, and disconnect/error fail-closed behavior.
+- [x] Add a contrastive RED test proving the adapter never writes an audio artifact or Humanitarian incident.
+- [x] Run `pytest -q tests/test_kiwisdr_adapter.py` and observe the expected failures.
+- [x] Implement the smallest transport wrapper needed for configured endpoints, with dependency injection for network I/O so tests never require the public internet.
+- [x] Enforce configured frequency/mode capability bounds before network calls and expose `connected`, `last_message_at`, `observations_received`, and bounded `error` in health.
+- [x] Run adapter tests GREEN and focused source-observation/privacy regressions.
+- [x] Commit `feat: add KiwiSDR remote receiver adapter`.
 
 ### Task 3: OpenWebRX remote adapter
 
@@ -87,12 +87,21 @@
 - Implements the same Task 0 `RemoteReceiverAdapter` contract without leaking OpenWebRX-specific shapes downstream.
 - Reuses receiver identity/physical lineage from Task 1 rather than deriving independence from URL/provider count.
 
-- [ ] Write RED fixtures for OpenWebRX metadata/session normalization, tune capability rejection, health transitions, and source-terms propagation.
-- [ ] Write RED proving a KiwiSDR and OpenWebRX frontend configured with the same `physical_lineage` remain one evidence lineage.
-- [ ] Run `pytest -q tests/test_openwebrx_adapter.py tests/test_remote_receiver_registry.py` and confirm expected failures.
-- [ ] Implement the minimal adapter using injected transport functions and the same bounded observation contract as KiwiSDR.
-- [ ] Run the adapter/registry tests GREEN.
-- [ ] Commit `feat: add OpenWebRX remote receiver adapter`.
+- [x] Write RED fixtures for OpenWebRX metadata/session normalization, tune capability rejection, health transitions, and source-terms propagation.
+- [x] Write RED proving a KiwiSDR and OpenWebRX frontend configured with the same `physical_lineage` remain one evidence lineage.
+- [x] Run `pytest -q tests/test_openwebrx_adapter.py tests/test_remote_receiver_registry.py` and confirm expected failures.
+- [x] Implement the minimal adapter using injected transport functions and the same bounded observation contract as KiwiSDR.
+- [x] Run the adapter/registry tests GREEN.
+- [x] Commit `feat: add OpenWebRX remote receiver adapter`.
+
+
+### Task 3 execution record — 2026-09-06
+
+- KiwiSDR adapter committed as `d9e31be`; no audio persistence, bounded SND signal metadata only.
+- OpenWebRX adapter uses the same provider-neutral contract and configured physical lineage. Binary/audio frames are ignored in v1; only bounded `signal` metadata becomes `RadioObservation`.
+- Registry regression proves KiwiSDR and OpenWebRX frontends sharing one `physical_lineage` produce one runnable receiver lineage.
+- Focused radio/config/Humanitarian/source-observation gate: `62 passed, 1 warning`; Ruff and `git diff --check` green.
+- No Humanitarian incident creation, lifecycle mutation, DSC/NAVTEX decoding, or audio artifact persistence was added.
 
 ### Task 4: Immutable radio SourceObservation bridge
 
