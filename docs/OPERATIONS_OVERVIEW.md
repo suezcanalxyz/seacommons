@@ -54,6 +54,16 @@ Configuration is intentionally staged:
 
 Rollback is configuration-only: return to `AIS_FUSION_MODE=legacy`. No database rollback is required by Free/Open AIS Fusion v1. Open Waters transport software licensing does not override per-upstream AIS data terms; event-level upstream/source terms must remain attached to provenance.
 
+### Humanitarian verification operations
+
+Humanitarian source roles are policy-driven: Alarm Phone is `operational_origin`; operational SAR NGOs are `verification`; IOM Missing Migrants is `archive_reference`. Verification sources never open a new Humanitarian incident by default. They can add deterministic claims and association decisions to an existing Alarm Phone incident when matching evidence is strong enough.
+
+Tracked X handles such as `SOSMedIntl`, `openarms_fund`, `seawatchcrew`, `SOShumanity`, `seaeyeorg`, `ResQship` and `emergency_ong` normalize to organization-level verification identities before transport/lineage reasoning. Verification posts with no deterministic Humanitarian claim stop before correlation.
+
+Derived state is stored in existing `ClaimDB`, `CorrelationDecisionDB` and `AssessmentDB`; no new schema migration is required by Humanitarian Verification v1. `sar_mission` and `resolution` assessments are replayable derived evidence, not a second canonical lifecycle. Automatic lifecycle resolution remains disabled.
+
+Operator-safe verification state is available at `GET /api/v1/audit/humanitarian-verification/{incident_id}`. Metrics use only bounded semantic labels (`stage`, `source_role`, `outcome`) and never MMSI, IMO, callsign, station/message IDs, email addresses or source text.
+
 ## Compute footprint
 
 | Cost centre | Reality |

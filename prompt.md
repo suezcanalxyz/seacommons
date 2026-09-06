@@ -8,43 +8,47 @@ Read first:
 
 1. `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
 2. `docs/current_work.md`
-3. the current packet spec
-4. the current packet implementation plan
+3. `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`
+4. the existing provider/source-observation/runtime patterns referenced by that plan
 
-The master loop controls packet order. Do not jump directly to Review, radio/audio or a later source integration while the current packet still has an open release gate.
+The master loop controls packet order. Humanitarian Verification v1 is closed for development; do not reopen it unless a regression in the Remote Radio packet proves a boundary defect.
 
 ## Current packet
 
-Free/Open AIS Fusion v1, Task 8 release gates.
+Remote Maritime Radio v1, Task 0 — provider-neutral receiver and observation contracts.
 
-Detailed plan: `docs/superpowers/plans/2026-09-06-free-open-ais-fusion-v1.md`.
+Detailed plan: `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`.
 
-Tasks 0-7 are already implemented. Continue from Task 8; do not reimplement the AIS bus, provider contract, AISStream adapter, aiscast adapter, reconciliation, coverage reasoning, SAR Mission enrichment, or `legacy | shadow | fused` runtime.
+Free/Open AIS Fusion v1 is development-complete/shadow-ready. Humanitarian Verification v1 is development-complete/review-ready through `961c436`; release gates were `141` focused tests and `1350` full backend tests plus green static/web/edge/dependency gates. No production AIS cutover or Humanitarian auto-resolution was authorized.
 
-Current development runtime defaults to `legacy`. Shadow/fused activation is a separate deployment decision.
+Start Remote Radio from the shared contract, not from provider-specific transport code. `core.sensors.sdr.SDRScanner` is the legacy local RTL-SDR anomaly scanner and must not become the remote receiver architecture.
 
-## Loop after AIS
+## Packet boundary
 
-Humanitarian Verification v1 -> Remote Maritime Radio v1 -> DSC/NAVTEX structured evidence -> Audio Evidence v1 -> Cross-modal Evidence Fusion v1 -> Review v0/publication controls.
+Remote Maritime Radio v1 adds software-only configured receiver identity/capability/health, provider adapters (KiwiSDR/OpenWebRX where terms and automation permit), physical RF lineage, bounded observations, observability, and a disabled-by-default runtime.
 
-At packet completion, update this file, `docs/current_work.md`, the master loop, and the packet execution record before advancing.
+Do not add continuous audio/IQ persistence, broad voice transcription, DSC decoding, NAVTEX decoding, Humanitarian incident creation, lifecycle resolution, or public allegations in this packet. Those belong to later packets.
+
+## Loop after Remote Radio
+
+DSC + NAVTEX structured evidence -> Audio Evidence v1 -> Cross-modal Evidence Fusion v1 -> Review v0/publication controls.
+
 ## Non-negotiable invariants
 
-- Source identity != transport adapter != physical/provider lineage.
-- Humanitarian domain != incident-creation authority.
-- Alarm Phone remains the Humanitarian operational-origin authority for now; other humanitarian NGOs are verification sources, not Maritime by reclassification.
+- Source identity != transport adapter != provider/frontend != physical receiver/RF lineage.
+- Multiple frontends exposing one physical receiver are one evidence lineage, not independent corroboration.
+- Alarm Phone remains the Humanitarian operational-origin authority for now; Humanitarian verification source-role logic is already implemented and must remain intact.
 - Observation != incident/episode != assessment/hypothesis != review != public projection.
-- Safety/nav status never becomes Humanitarian or Intelligence by fallback.
+- Safety/nav/radio status never becomes Humanitarian or Intelligence by fallback.
 - Humanitarian public output never exposes MMSI/IMO/callsign/tracker dossier data.
-- Multiple AIS providers/detectors do not become independent corroboration automatically.
-- Derived behaviour, transcription and AI output are context/assistive evidence, never canonical truth alone.
-- New adapters must fail closed, expose health, preserve provenance/source terms, and normalize before business reasoning.
+- Derived behaviour, radio decoding, transcription and AI output are context/assistive evidence, never canonical truth alone.
+- New adapters fail closed, expose health, preserve provenance/source terms, and normalize before business reasoning.
 - Prefer software-only and free/open acquisition; paid providers or SeaCommons-owned hardware are not core requirements.
 
 ## Execution loop
 
 For each task: inspect existing code -> write RED test -> run and observe expected failure -> implement minimum change -> run GREEN + focused regressions -> static checks -> commit one semantic unit -> update execution record.
 
-For each packet: run full backend/static/web/edge gates, privacy and evidence-lineage regressions, review the exact diff, fix Critical/Important findings, then advance the master loop. Never claim completion from partial tests.
+For each packet: run full backend/static and any crossed web/edge gates, privacy/evidence-lineage regressions, review the exact diff, fix Critical/Important findings, update controllers/docs, then advance. Never claim completion from partial tests.
 
-Production migration, restart, destructive maintenance, or activation of a new canonical feed mode requires explicit operator authorization.
+Production migration, restart, destructive maintenance, remote receiver activation, audio capture, or activation of a new canonical feed mode requires explicit operator authorization.

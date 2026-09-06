@@ -6,9 +6,9 @@
 
 **Architecture:** All source-specific transports normalize into shared evidence contracts before domain reasoning. Humanitarian incidents and Maritime Intelligence episodes share provenance/lineage infrastructure but keep separate decision semantics. New source types are added as adapters, never as parallel truth pipelines.
 
-**Current packet:** Free/Open AIS Fusion v1 — Task 8 release gates.
+**Current packet:** Remote Maritime Radio v1 — Task 0 provider-neutral receiver contract.
 
-**Detailed current plan:** `docs/superpowers/plans/2026-09-06-free-open-ais-fusion-v1.md`
+**Detailed current plan:** `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`
 
 ## Canonical loop
 
@@ -28,13 +28,15 @@ Every cycle MUST execute in this order:
 
 ### Packet A — Free/Open AIS Fusion v1
 
-Status: implementation Tasks 0-7 complete; Task 8 release verification/documentation remains.
+Status: development-complete / shadow-ready; release gates and review are complete. Production `shadow`/`fused` activation remains a separate operator decision.
 
 Delivers: AISStream + Open Waters/aiscast adapters, normalized provider contract, upstream/station provenance, conservative reconciliation, coverage-aware gap reasoning, SAR Mission context, runtime `legacy | shadow | fused`, bounded observability and rollback.
 
 Exit gate: exact-head backend/static/web/edge suites green, Humanitarian privacy unchanged, no low-specificity hypothesis inflation, docs aligned, review complete. Shadow/fused production activation is not required to advance the development loop unless operator explicitly requests deployment.
 
 ### Packet B — Humanitarian Verification v1
+
+Status: development-complete / review-ready. No automatic Humanitarian lifecycle resolution is enabled.
 
 Goal: use humanitarian verification sources to double-check Alarm Phone incidents and determine outcome evidence without letting secondary sources create canonical incidents by default.
 
@@ -47,8 +49,10 @@ Source roles:
 - SOS Mediterranee / MSF / Sea-Watch / Open Arms / similar first-party NGO sources: `verification`.
 - IOM Missing Migrants and comparable historical datasets: `archive_reference`.
 
-Required outcomes: `no_evidence | response_detected | rescue_activity_probable | rescue_confirmed | contradictory_evidence | insufficient_evidence`. Explicit first-party rescue claims may resolve only with strong incident matching; otherwise `rescue_confirmed + needs_review`.
+Required outcomes: `no_resolution_evidence | response_detected | rescue_activity_probable | rescue_confirmed | disembarkation_confirmed | fatal_outcome_reported | contradictory_evidence | insufficient_evidence`. Explicit first-party outcome claims contribute only with strong incident matching; ambiguous/contradictory evidence requires review. Source identity is evaluated independently of transport, so distinct first-party organizations may remain independent even on the same X transport.
 ### Packet C — Remote Maritime Radio v1
+
+Status: current packet; implementation plan ready, runtime must remain disabled by default.
 
 Goal: software-only remote receiver ingestion with no SeaCommons-owned hardware.
 

@@ -1,8 +1,8 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Free/Open AIS Fusion v1 — Task 8 release gates
-> **Current packet plan:** `docs/superpowers/plans/2026-09-06-free-open-ais-fusion-v1.md`
+> **Current packet:** Remote Maritime Radio v1 — Task 0 provider-neutral receiver contract
+> **Current packet plan:** `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`
 > **Production runtime baseline:** `0ae4df7cc20c8209acc267eb595129c2dc3961bd`
 > **Production schema:** `0021_maritime_episodes`
 
@@ -10,42 +10,44 @@
 
 OSINT Evidence Pipeline v1, Vessel Context + Behavioural Baseline v1, and Observation -> Episode -> Hypothesis v1 are merged, deployed and production-verified. Production keeps the Humanitarian privacy boundary, shared Live/Play vessel-marker contract, and evidence-lineage semantics where detector/provider multiplicity is not source independence.
 
-The Evidence Fusion work is being developed in an isolated branch/worktree and is not yet production-active.
+Evidence Fusion development remains isolated from production. No development packet below implies a deploy, migration, restart, AIS fused cutover, Humanitarian auto-resolution, or remote-radio activation.
 
-## Current packet state
+## Completed development packets
 
-Free/Open AIS Fusion v1 Tasks 0-7 are implemented and committed. The packet adds:
+### Free/Open AIS Fusion v1
 
-- compatibility-preserving AIS event bus;
-- normalized `AISPositionObservation` + provider health contract;
-- AISStream adapter under the normalized contract;
-- Open Waters/aiscast software-only free adapter;
-- conservative multi-provider reconciliation with upstream/station/source-terms provenance;
-- coverage-aware gap reasoning extending the existing authoritative MDA classifier;
-- reconciled AIS context in SAR Mission Assessment;
-- runtime modes `legacy | shadow | fused`, default `legacy`, with instant rollback;
-- provider-health propagation, bounded metrics and existing coverage-change audit logging.
+Development-complete and shadow-ready. It adds the compatibility-preserving AIS event bus, normalized provider/health contract, AISStream + Open Waters/aiscast adapters, conservative reconciliation, coverage-aware gap reasoning, reconciled SAR context, bounded observability, and `legacy | shadow | fused` runtime modes. Runtime remains `legacy` unless an operator explicitly authorizes a cutover.
 
-Task 8 remains: docs alignment, exact-head backend/static/web/edge gates, review, and final branch readiness.
-## Loop order after AIS
+### Humanitarian Verification v1
 
-1. Humanitarian Verification v1 — NGO/IOM source roles, claim extraction, incident association, ResolutionAssessment.
-2. Remote Maritime Radio v1 — software-only remote receiver abstraction and source/receiver health.
-3. DSC + NAVTEX structured evidence.
-4. Audio Evidence v1 — immutable bounded audio artifacts, transcription as derived evidence only.
-5. Cross-modal Evidence Fusion v1 — combine Humanitarian, AIS and radio while preserving lineage independence.
-6. Review v0 / publication controls on top of the real evidence workflows.
+Development-complete and review-ready through `961c436`. Alarm Phone aliases resolve to one `operational_origin` identity; operational SAR NGOs resolve to `verification`; IOM Missing Migrants remains `archive_reference`. Real monitored NGO X handles normalize to their canonical source identities before transport reasoning.
 
-Each packet must ship independently testable software. The loop does not skip a packet because later functionality is more interesting.
+Verification sources extract deterministic claims, associate only on strong multi-feature matching, and update replayable `sar_mission` / `resolution` assessments without creating another Humanitarian incident or mutating canonical lifecycle. AIS alone cannot confirm rescue. Verification events with no deterministic Humanitarian claim do not create correlation noise. Operator summaries and metrics preserve the Humanitarian privacy boundary.
+
+Release evidence: focused privacy/lineage `141 passed`; full backend `1350 passed, 2 skipped`; Ruff/mypy/migrations/Python dependency audit green; web test/lint/typecheck/build/audit green; edge `12 passed`, Wrangler dry-run and audit green.
+
+## Current packet state — Remote Maritime Radio v1
+
+The next packet is software-only remote receiver acquisition. Its plan is `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`. Task 0 creates the provider-neutral `RemoteReceiverAdapter`, receiver health/capability contract, and bounded `RadioObservation` metadata.
+
+The existing `core.sensors.sdr.SDRScanner` is a local RTL-SDR anomaly scanner and is not the architecture for this packet. Remote radio must preserve provider/frontend identity separately from physical receiver/RF lineage; duplicate frontends cannot become independent evidence. No continuous audio/IQ persistence and no DSC/NAVTEX decoding belong in this packet. Runtime defaults disabled.
+
+## Loop order
+
+1. Remote Maritime Radio v1 — software-only receiver abstraction, identity/capability/health, KiwiSDR/OpenWebRX adapters, bounded observations.
+2. DSC + NAVTEX structured evidence.
+3. Audio Evidence v1 — immutable bounded audio artifacts with explicit retention; transcription remains derived evidence.
+4. Cross-modal Evidence Fusion v1 — combine Humanitarian, AIS and radio while preserving lineage independence.
+5. Review v0 / publication controls on top of real evidence workflows.
 
 ## Core domain rules
 
-Alarm Phone is currently the Humanitarian incident-creation authority, not the only Humanitarian source. SOS Mediterranee, MSF, Sea-Watch, Open Arms and similar first-party NGO sources remain Humanitarian verification sources. IOM Missing Migrants is archive/reference. A future Alarm Phone email/webhook adapter must normalize to the same source identity as X/Twikit; transport never changes business authority.
+Alarm Phone is currently the Humanitarian incident-creation authority, not the only Humanitarian source. Source identity is resolved before transport lineage: two distinct first-party organizations can remain independent even when both publish through X, while two transports/frontends for the same organization or physical receiver do not multiply evidence.
 
-NGO AIS behaviour may establish `response_detected` or `rescue_activity_probable`, but AIS alone never confirms rescue. Explicit NGO rescue claims can contribute to `rescue_confirmed` only after strong association with the Alarm Phone incident; ambiguous matches require review.
+NGO AIS behaviour may establish `response_detected` or `rescue_activity_probable`, but AIS alone never confirms rescue. Explicit first-party rescue claims can contribute to `rescue_confirmed` only after strong association with the Alarm Phone incident; ambiguous matches require review.
 
-Radio/audio follows the same model: adapters produce observations/artifacts; source/receiver identity and physical lineage are preserved; derived transcripts/claims cannot silently mutate canonical lifecycle.
+Radio/audio follows the same model: adapters produce observations/artifacts; source/receiver identity and physical lineage are preserved; derived decodes/transcripts/claims cannot silently mutate canonical lifecycle.
 
 ## Execution discipline
 
-TDD RED -> GREEN for every behavior change, one semantic commit per task, focused regression gate before advancing, full release gate at packet completion, code review before merge readiness, and documentation/status updates in the same cycle. Production deploy/migration/restart remains separately controlled.
+TDD RED -> GREEN for every behavior change, one semantic commit per task, focused regression gate before advancing, full release gate at packet completion, and exact diff review before merge readiness. Production deploy/migration/restart remains separately controlled.

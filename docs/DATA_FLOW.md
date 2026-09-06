@@ -45,6 +45,28 @@ Runtime modes are explicit: `legacy` preserves the historical AISStream path, `s
 
 Provider multiplicity improves availability and coverage reasoning only. It never turns one AIS broadcast into multiple independent intelligence sources. Existing neighbour-based `gap` vs `coverage_gap` logic remains authoritative and consumes provider-health as additional context rather than creating a second detector truth.
 
+## Humanitarian verification and resolution evidence
+
+```mermaid
+flowchart LR
+  AP[Alarm Phone operational_origin] --> HI[HumanitarianIncident]
+  NGO[NGO verification source] --> HC[Deterministic Humanitarian Claims]
+  HC --> CA[CorrelationDecision / association]
+  CA -->|strong match only| PC[Persist associated claims]
+  AIS[SAR Mission Assessment] --> RA[ResolutionAssessment]
+  PC --> RA
+  RA --> AU[Operator audit / future Review]
+  HI --> AU
+```
+
+`service=humanitarian` does not imply authority to create an incident. Alarm Phone is currently `operational_origin`; SOS Mediterranee, MSF, Sea-Watch and equivalent operational NGOs are `verification`; IOM Missing Migrants is `archive_reference`. Transport metadata such as X, RSS, email or webhook never changes source authority.
+
+Known Humanitarian source independence is evaluated from canonical source identity rather than shared transport: Alarm Phone and SOS Mediterranee may remain independent when both publish via X, while aliases/transports of the same organization remain one source. Generic non-Humanitarian correlation keeps its existing evidence-lineage rules.
+
+Verification-source text is converted into deterministic, immutable claim types such as `rescue_completed`, `people_rescued`, `disembarkation_reported`, `fatality_reported`, `asset_on_scene` and `contradictory_update`. Claims are attached to a HumanitarianIncident only after strong association. Temporal proximity alone remains `UNCERTAIN`; strong matching requires multiple compatible features and independent lineage.
+
+AIS SAR behaviour persists separately as `AssessmentDB(field_type=sar_mission)`. It may support `response_detected` or `rescue_activity_probable`, but AIS alone cannot produce `rescue_confirmed`. `ResolutionAssessment` is derived/replayable and remains distinct from canonical Humanitarian lifecycle; Humanitarian Verification v1 does not enable automatic resolution.
+
 ## Operational state to Public Live
 
 ```mermaid

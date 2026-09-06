@@ -36,12 +36,12 @@
 - Produces `SourceIdentityPolicy(identity_id, service, source_role, may_open_incident, independence_group)`.
 - Produces `resolve_source_identity(source_name, metadata=None)` and `may_open_humanitarian_incident(event)`.
 
-- [ ] Write RED tests: Alarm Phone aliases across `transport=x|email` resolve to identity `alarm_phone`, role `operational_origin`; SOS/MSF/Sea-Watch resolve to role `verification`; IOM to `archive_reference`; unknown/AIS/nav sources never gain Humanitarian authority.
-- [ ] Add RED regression proving a verification-source event classified Humanitarian does not create `HumanitarianIncidentDB`, while equivalent Alarm Phone origin does.
-- [ ] Implement stable alias/policy resolver; source role comes from policy, never wording.
-- [ ] Gate `_on_intel_event()` incident creation on `may_open_humanitarian_incident(event)` while leaving legacy Alarm Phone aliases compatible.
-- [ ] Run focused service/source/incident/privacy tests GREEN.
-- [ ] Commit `feat: add humanitarian source identity and authority policy`.
+- [x] Write RED tests: Alarm Phone aliases across `transport=x|email` resolve to identity `alarm_phone`, role `operational_origin`; SOS/MSF/Sea-Watch resolve to role `verification`; IOM to `archive_reference`; unknown/AIS/nav sources never gain Humanitarian authority.
+- [x] Add RED regression proving a verification-source event classified Humanitarian does not create `HumanitarianIncidentDB`, while equivalent Alarm Phone origin does.
+- [x] Implement stable alias/policy resolver; source role comes from policy, never wording.
+- [x] Gate `_on_intel_event()` incident creation on `may_open_humanitarian_incident(event)` while leaving legacy Alarm Phone aliases compatible.
+- [x] Run focused service/source/incident/privacy tests GREEN.
+- [x] Commit `feat: add humanitarian source identity and authority policy`.
 
 ### Task 1: Explicit humanitarian action/outcome Claim v1
 
@@ -55,12 +55,12 @@
 - Produces `extract_humanitarian_claims(event, source_policy) -> tuple[ExtractedHumanitarianClaim, ...]`.
 - Produces idempotent `persist_associated_claims(incident_id, event, claims)` using existing `ClaimDB`.
 
-- [ ] RED: explicit first-party wording extracts bounded types `rescue_started`, `rescue_completed`, `people_rescued`, `disembarkation_reported`, `fatality_reported`, `asset_dispatched`, `asset_on_scene`, `case_resolved_statement`, `contradictory_update`.
-- [ ] RED contrastives: generic NGO advocacy/news text and AIS motion do not become rescue-completed claims; extraction confidence is extraction-only.
-- [ ] Implement deterministic phrase/entity/count extraction with method version and actor/asset/time/place evidence in `value`; no LLM.
-- [ ] Persist only after an incident candidate is selected; same observation/type replay keeps deterministic ClaimDB identity.
-- [ ] Verify existing PeopleCounts claims remain compatible and GREEN.
-- [ ] Commit `feat: extract humanitarian verification claims`.### Task 2: Rich association over existing CorrelationDecision
+- [x] RED: explicit first-party wording extracts bounded types `rescue_started`, `rescue_completed`, `people_rescued`, `disembarkation_reported`, `fatality_reported`, `asset_dispatched`, `asset_on_scene`, `case_resolved_statement`, `contradictory_update`.
+- [x] RED contrastives: generic NGO advocacy/news text and AIS motion do not become rescue-completed claims; extraction confidence is extraction-only.
+- [x] Implement deterministic phrase/entity/count extraction with method version and actor/asset/time/place evidence in `value`; no LLM.
+- [x] Persist only after an incident candidate is selected; same observation/type replay keeps deterministic ClaimDB identity.
+- [x] Verify existing PeopleCounts claims remain compatible and GREEN.
+- [x] Commit `feat: extract humanitarian verification claims`.### Task 2: Rich association over existing CorrelationDecision
 
 **Files:**
 - Modify: `apps/api/core/intel/correlation.py`
@@ -73,13 +73,13 @@
 - Produces deterministic features for temporal, spatial, people-count, actor/asset and source-native linkage where available.
 - Keeps `CorrelationDecisionDB` append-only; no incident merge occurs here.
 
-- [ ] RED: temporal-only candidate remains `UNCERTAIN`.
-- [ ] RED: strong temporal + spatial + compatible people count + explicit NGO asset/actor reference may produce `SAME_INCIDENT` candidate with review state, but never merges rows.
-- [ ] RED: conflicting people count/location adds contradicting features and cannot become strong association.
-- [ ] Fix independence to use authoritative evidence/source independence group rather than comparing display source families.
-- [ ] Enrich `IncidentWatch.profile_json` from existing claims/coordinates so follow-up adapters can search using real people/actor/asset context.
-- [ ] Verify replay writes auditable decisions without lifecycle mutation.
-- [ ] Commit `feat: enrich humanitarian incident association`.
+- [x] RED: temporal-only candidate remains `UNCERTAIN`.
+- [x] RED: strong temporal + spatial + compatible people count + explicit NGO asset/actor reference may produce `SAME_INCIDENT` candidate with review state, but never merges rows.
+- [x] RED: conflicting people count/location adds contradicting features and cannot become strong association.
+- [x] Fix independence to use authoritative evidence/source independence group rather than comparing display source families.
+- [x] Enrich `IncidentWatch.profile_json` from existing claims/coordinates so follow-up adapters can search using real people/actor/asset context.
+- [x] Verify replay writes auditable decisions without lifecycle mutation.
+- [x] Commit `feat: enrich humanitarian incident association`.
 
 ### Task 3: Persist SAR Mission Assessment v1
 
@@ -92,12 +92,12 @@
 - Uses existing `AssessmentDB` with `field_type="sar_mission"`; deterministic assessment ID includes incident + asset identity.
 - Consumes current `ngo_response` result, reconciled AIS provenance, coverage status and Behavioural context where available.
 
-- [ ] RED mission states: unrelated → possible_response → approaching → on_scene → probable_rescue_activity; add departing/post-rescue only with actual trajectory evidence, otherwise insufficient evidence.
-- [ ] RED: provider-degraded caps interpretation; same AIS lineage behavioural flags are context, not a second source.
-- [ ] Implement replayable/idempotent persisted assessment with evidence IDs/provenance in value and bounded confidence/reason codes.
-- [ ] Ensure public Humanitarian projection never receives internal vessel identifiers from this object.
-- [ ] Verify existing `ngo_response` API contracts GREEN.
-- [ ] Commit `feat: persist SAR mission assessments`.
+- [x] RED mission states: unrelated → possible_response → approaching → on_scene → probable_rescue_activity; add departing/post-rescue only with actual trajectory evidence, otherwise insufficient evidence.
+- [x] RED: provider-degraded caps interpretation; same AIS lineage behavioural flags are context, not a second source.
+- [x] Implement replayable/idempotent persisted assessment with evidence IDs/provenance in value and bounded confidence/reason codes.
+- [x] Ensure public Humanitarian projection never receives internal vessel identifiers from this object.
+- [x] Verify existing `ngo_response` API contracts GREEN.
+- [x] Commit `feat: persist SAR mission assessments`.
 
 ### Task 4: Resolution Assessment v1
 
@@ -110,12 +110,12 @@
 - Consumes associated claims + SAR Mission assessments + evidence lineage.
 - Produces one derived outcome and explicit reason/evidence snapshot; does not directly mutate HumanitarianIncident.
 
-- [ ] RED: no evidence → `no_resolution_evidence`; AIS response → `response_detected`; AIS on-scene/search → at most `rescue_activity_probable`.
-- [ ] RED: strongly associated first-party NGO `rescue_completed` claim can yield `rescue_confirmed`; weak association yields `insufficient_evidence`/review requirement.
-- [ ] RED: contradictory claims produce `contradictory_evidence`; explicit disembarkation/fatality claims map only when strongly associated.
-- [ ] Implement deterministic evidence-stage ordering; provider/detector count never substitutes for independence.
-- [ ] Persist supporting/contradicting claim IDs and method version; replay updates the same derived assessment ID.
-- [ ] Commit `feat: add humanitarian resolution assessments`.### Task 5: Verification orchestration through IncidentWatch
+- [x] RED: no evidence → `no_resolution_evidence`; AIS response → `response_detected`; AIS on-scene/search → at most `rescue_activity_probable`.
+- [x] RED: strongly associated first-party NGO `rescue_completed` claim can yield `rescue_confirmed`; weak association yields `insufficient_evidence`/review requirement.
+- [x] RED: contradictory claims produce `contradictory_evidence`; explicit disembarkation/fatality claims map only when strongly associated.
+- [x] Implement deterministic evidence-stage ordering; provider/detector count never substitutes for independence.
+- [x] Persist supporting/contradicting claim IDs and method version; replay updates the same derived assessment ID.
+- [x] Commit `feat: add humanitarian resolution assessments`.### Task 5: Verification orchestration through IncidentWatch
 
 **Files:**
 - Modify: `apps/api/core/intel/incident_watch.py`
@@ -128,11 +128,11 @@
 - Consumes associated claims, SAR Mission assessments and current watch profile.
 - Does not mutate canonical lifecycle.
 
-- [ ] RED: a verification-source observation can enrich an existing incident through claims/association without opening another incident.
-- [ ] RED: replay is idempotent for claims and assessments.
-- [ ] Implement bounded orchestration after watch/source ingestion; failures remain local enrichment failures.
-- [ ] Expose operator-safe verification summary without raw private identifiers.
-- [ ] Commit `feat: orchestrate humanitarian verification assessments`.
+- [x] RED: a verification-source observation can enrich an existing incident through claims/association without opening another incident.
+- [x] RED: replay is idempotent for claims and assessments.
+- [x] Implement bounded orchestration after watch/source ingestion; failures remain local enrichment failures.
+- [x] Expose operator-safe verification summary without raw private identifiers.
+- [x] Commit `feat: orchestrate humanitarian verification assessments`.
 
 ### Task 6: Observability, audit surface, and privacy gates
 
@@ -146,11 +146,11 @@
 - Metrics use bounded labels only: source identity, transport class, source role, outcome, review state, method version.
 - Operator response may expose assessment IDs/reason codes, never MMSI/IMO/callsign/private email headers/message bodies.
 
-- [ ] RED: metrics never use source-native message IDs, MMSI, email address or arbitrary station labels.
-- [ ] RED: public Humanitarian response remains clean after SAR/verification enrichment.
-- [ ] Add bounded metrics/logs for claim extraction, association decision, mission outcome and resolution outcome.
-- [ ] Add operator-safe verification/audit summary if an existing route can host it without a new public contract.
-- [ ] Commit `feat: add humanitarian verification observability`.
+- [x] RED: metrics never use source-native message IDs, MMSI, email address or arbitrary station labels.
+- [x] RED: public Humanitarian response remains clean after SAR/verification enrichment.
+- [x] Add bounded metrics/logs for claim extraction, association decision, mission outcome and resolution outcome.
+- [x] Add operator-safe verification/audit summary if an existing route can host it without a new public contract.
+- [x] Commit `feat: add humanitarian verification observability`.
 ### Task 7: Release gates and loop handoff
 
 **Files:**
@@ -160,13 +160,13 @@
 - Modify: `prompt.md`
 - Modify: this plan execution record
 
-- [ ] Run focused Humanitarian source/claim/association/SAR/resolution/privacy regressions.
-- [ ] Run full backend suite, Ruff critical gate and canonical mypy gate.
-- [ ] Run web tests/lint/typecheck/build and edge tests/Wrangler dry-run if public contracts changed.
-- [ ] Review diff for duplicate truth paths, lifecycle mutation, false independence and privacy leakage.
-- [ ] Mark packet `review-ready`; no production lifecycle automation is enabled.
-- [ ] Advance the master loop to `Remote Maritime Radio v1` only after this packet is green and reviewed.
-- [ ] Commit `docs: close humanitarian verification v1 release gates`.
+- [x] Run focused Humanitarian source/claim/association/SAR/resolution/privacy regressions.
+- [x] Run full backend suite, Ruff critical gate and canonical mypy gate.
+- [x] Run web tests/lint/typecheck/build and edge tests/Wrangler dry-run if public contracts changed.
+- [x] Review diff for duplicate truth paths, lifecycle mutation, false independence and privacy leakage.
+- [x] Mark packet `review-ready`; no production lifecycle automation is enabled.
+- [x] Advance the master loop to `Remote Maritime Radio v1` only after this packet is green and reviewed.
+- [x] Commit `docs: close humanitarian verification v1 release gates`.
 
 ## Exit Criteria
 
@@ -175,3 +175,18 @@ Humanitarian Verification v1 is complete when Alarm Phone transport aliases reso
 ## Rollback Boundary
 
 The packet adds derived policy/claims/assessments and gates incident opening. It does not require a new schema migration and does not enable automatic resolution. Rollback is therefore code/config rollback to the prior incident subscriber behavior; existing immutable SourceObservations, Claims and Assessments remain auditable evidence and must not be destructively deleted.
+
+
+### Task 7 release verification — 2026-09-06
+
+- Focused Humanitarian/privacy/evidence-lineage gate: `141 passed, 1 warning`.
+- Full backend exact-code gate: `1350 passed, 2 skipped, 221 warnings`.
+- Ruff critical gate: green. Canonical mypy Live-domain gate: green.
+- Alembic migration chain `0001` through `0021_maritime_episodes`: green on a clean SQLite release-gate database.
+- Python dependency audit: no known vulnerabilities.
+- Web tests/lint/typecheck/build: green; only the existing Vite chunk-size warning remains. Web production dependency audit: no vulnerabilities.
+- Edge tests: `12 passed`; Wrangler dry-run green; edge production dependency audit: no vulnerabilities.
+- Exact diff review found and fixed two Important integration defects before release: Humanitarian source independence was incorrectly collapsing distinct NGO/Alarm Phone sources sharing X transport, and real monitored NGO X handles were not all resolving to verification identities. The fix is `961c436` with RED/GREEN regressions.
+- Verification sources with no deterministic Humanitarian claim now stop before correlation, preventing follow-up noise.
+- No verification/resolution path writes canonical lifecycle; AIS-only mission evidence remains capped below rescue confirmation; operator summary excludes internal vessel identifiers.
+- Packet state: development-complete / review-ready. No production auto-resolution, migration, restart, or feed activation is enabled by this packet.
