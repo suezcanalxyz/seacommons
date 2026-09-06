@@ -15,9 +15,10 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-Evidence Fusion development loop complete — Packets A-G are development-complete / review-ready. Do not invent a new packet automatically.
+Live Humanitarian/Maritime + Radio Pipeline. Packets A-G are complete and deployed; do not reopen them except for a regression required by this packet.
 
-Detailed plan: `docs/superpowers/plans/2026-09-06-review-v0-publication-controls.md`.
+Detailed plan: `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-radio-pipeline.md`.
+Design: `docs/superpowers/specs/2026-09-07-live-humanitarian-maritime-radio-pipeline-design.md`.
 
 Free/Open AIS Fusion v1 is development-complete/shadow-ready. Humanitarian Verification v1 is development-complete/review-ready through `961c436`; release gates were `141` focused tests and `1350` full backend tests plus green static/web/edge/dependency gates. No production AIS cutover or Humanitarian auto-resolution was authorized.
 
@@ -55,4 +56,4 @@ Production migration, restart, destructive maintenance, remote receiver activati
 
 Audio Evidence v1 is development-complete/review-ready through `90d08e4`; production capture remains disabled and unauthorized. Cross-modal Evidence Fusion v1 is also closed; preserve the established lineage and derived-evidence boundaries.
 
-Cross-modal Evidence Fusion v1 is development-complete/review-ready through `52efdd1`. Review v0 is development-complete/review-ready through code HEAD `19dbb7d`: append-only review ledger, audited Humanitarian transitions, Maritime state-machine delegation, bounded observability, and no direct publication transition. The Evidence Fusion loop is complete; next actions require an explicit operator decision (review/merge, production migration/deploy, or runtime activation).
+Cross-modal Evidence Fusion v1 is development-complete/review-ready through `52efdd1`. Review v0 is development-complete/review-ready through code HEAD `19dbb7d`: append-only review ledger, audited Humanitarian transitions, Maritime state-machine delegation, bounded observability, and no direct publication transition. The Evidence Fusion loop is complete and production is at schema `0023_review_records`. Current work is the approved Live Humanitarian/Maritime + Radio Pipeline packet. AIS remains legacy; Remote/Structured Radio activation is staged by the current plan; Audio Evidence stays disabled unless separately authorized.

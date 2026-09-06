@@ -6,9 +6,9 @@
 
 **Architecture:** All source-specific transports normalize into shared evidence contracts before domain reasoning. Humanitarian incidents and Maritime Intelligence episodes share provenance/lineage infrastructure but keep separate decision semantics. New source types are added as adapters, never as parallel truth pipelines.
 
-**Current packet:** Development loop complete — all Packets A-G are development-complete / review-ready; production integration remains operator-controlled.
+**Current packet:** Packet H — Live Humanitarian/Maritime + Radio Pipeline. Packets A-G are complete and deployed.
 
-**Detailed current plan:** `docs/superpowers/plans/2026-09-06-review-v0-publication-controls.md`
+**Detailed current plan:** `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-radio-pipeline.md`
 
 ## Canonical loop
 
@@ -98,6 +98,14 @@ Status: development-complete / review-ready; no production migration, deploy, fe
 Goal: route uncertainty from Humanitarian ResolutionAssessment and Maritime InvestigationHypothesis through one review mechanism without creating a second truth store.
 
 Review records evidence snapshot, decision, rationale, actor/time and transition. Approval may advance canonical lifecycle/publication only through existing domain-specific gates.
+
+### Packet H — Live Humanitarian/Maritime + Radio Pipeline
+
+Status: approved / planned.
+
+Goal: make public Live use the canonical Humanitarian / Maritime split and connect terms-allowed remote receivers into structured DSC/NAVTEX and cross-modal evidence rather than exposing Radio as a separate feed. Safety observations such as Aground, Not Under Command and Restricted Manoeuvrability render under Maritime; source/receiver/channel remain provenance.
+
+Runtime rollout is staged: Structured Radio first, then Remote Radio with a bounded receiver allow-list. Audio Evidence acquisition remains disabled unless separately authorized. Public pipeline health may expose only public-safe receiver/channel metadata and must never bypass domain publication gates.
 
 ## Permanent invariants
 

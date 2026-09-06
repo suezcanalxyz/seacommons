@@ -1,16 +1,16 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Development loop complete — Packets A-G development-complete / review-ready
-> **Current packet plan:** `docs/superpowers/plans/2026-09-06-review-v0-publication-controls.md`
-> **Production runtime baseline:** `0ae4df7cc20c8209acc267eb595129c2dc3961bd`
-> **Production schema:** `0021_maritime_episodes`
+> **Current packet:** Live Humanitarian/Maritime + Radio Pipeline
+> **Current packet plan:** `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-radio-pipeline.md`
+> **Production runtime baseline:** `d3fd42b319581986998dc266269ebdc7a5465719`
+> **Production schema:** `0023_review_records`
 
 ## Production baseline
 
 OSINT Evidence Pipeline v1, Vessel Context + Behavioural Baseline v1, and Observation -> Episode -> Hypothesis v1 are merged, deployed and production-verified. Production keeps the Humanitarian privacy boundary, shared Live/Play vessel-marker contract, and evidence-lineage semantics where detector/provider multiplicity is not source independence.
 
-Evidence Fusion development remains isolated from production. No development packet below implies a deploy, migration, restart, AIS fused cutover, Humanitarian auto-resolution, or remote-radio activation.
+Evidence Fusion Packets A-G are now integrated and deployed. AIS remains in `legacy` mode; Remote Radio, Structured Radio and Audio Evidence acquisition remain disabled pending the current staged activation packet. Production publication gates remain fail-closed.
 
 ## Completed development packets
 
@@ -56,9 +56,9 @@ Development-complete / review-ready through code HEAD `19dbb7d`. ReviewRecord is
 
 Release evidence: focused review/privacy/publication `181 passed`; full backend `1519 passed, 2 skipped`; Ruff/mypy/migrations through `0023`/dependency audit green; web and edge gates green. Exact-diff review fixes are included.
 
-## Development loop state
+## Current execution packet
 
-Packets A-G are development-complete / review-ready. Remaining actions are integration/operator decisions rather than another automatically implied development packet: branch review/merge, production migration to schema `0023` if authorized, runtime/feed activation decisions, and any production audio/radio acquisition approval remain explicit operator actions.
+Packets A-G are complete and deployed. The active packet is `Live Humanitarian/Maritime + Radio Pipeline`: replace legacy Live grouping with Humanitarian/Maritime, integrate terms-allowed remote radio into structured/cross-modal evidence, expose public-safe acquisition provenance, and stage receiver activation while keeping audio acquisition disabled.
 
 ## Loop order
 
