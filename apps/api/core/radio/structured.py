@@ -52,6 +52,7 @@ class DSCObservation:
     latitude: float | None = None
     longitude: float | None = None
     nature_code: str | None = None
+    field_presence: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         receiver, lineage, raw_ref, message_id = _validate_common(
@@ -87,6 +88,11 @@ class DSCObservation:
             str(self.nature_code or "").strip().lower()[:64] or None,
         )
         object.__setattr__(self, "source_terms", str(self.source_terms or "").strip() or None)
+        object.__setattr__(
+            self,
+            "field_presence",
+            tuple(sorted({str(name).strip().lower() for name in self.field_presence if str(name).strip()})),
+        )
 
 
 @dataclass(frozen=True)

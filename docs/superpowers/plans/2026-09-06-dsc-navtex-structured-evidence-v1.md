@@ -58,12 +58,20 @@
 - Consumes a bounded mapping from an external DSC decoder/NMEA bridge rather than waveform bytes.
 - Produces `DSCObservation` with deterministic `decoder_message_id` and explicit field-presence provenance.
 
-- [ ] RED fixtures: distress, urgency/safety/non-distress, MMSI present/absent, coordinates present/absent, malformed/partial input.
-- [ ] RED contrastive: a DSC distress message yields Maritime Safety classification metadata and never Humanitarian metadata.
-- [ ] Run the decoder tests RED.
-- [ ] Implement deterministic mapping/validation; retain unknown/unsupported codes as bounded strings instead of inventing semantic meaning.
-- [ ] Run DSC + beacon-compartment + service-taxonomy regressions GREEN.
-- [ ] Commit `feat: normalize structured DSC evidence`.
+- [x] RED fixtures: distress, urgency/safety/non-distress, MMSI present/absent, coordinates present/absent, malformed/partial input.
+- [x] RED contrastive: a DSC distress message yields Maritime Safety classification metadata and never Humanitarian metadata.
+- [x] Run the decoder tests RED.
+- [x] Implement deterministic mapping/validation; retain unknown/unsupported codes as bounded strings instead of inventing semantic meaning.
+- [x] Run DSC + beacon-compartment + service-taxonomy regressions GREEN.
+- [x] Commit `feat: normalize structured DSC evidence`.
+
+### Task 1 execution record — 2026-09-06
+
+- RED: `6 failed` because `core.radio.dsc` did not exist.
+- GREEN focused gate: `43 passed` across DSC, structured contracts, beacon compartment, and service taxonomy; Ruff and `git diff --check` clean.
+- Decoder-native IDs are preserved when present; otherwise IDs are deterministic over bounded decoded content + physical receiver/time/frequency context.
+- Field presence is explicit; unknown DSC categories normalize to `unknown` and unsupported nature codes remain bounded raw semantic codes.
+- DSC classification metadata is explicitly `service=maritime`, `lane=safety`; no Humanitarian fallback is introduced.
 
 ### Task 2: NAVTEX block parser
 
