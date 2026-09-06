@@ -6,7 +6,7 @@
 
 **Architecture:** All source-specific transports normalize into shared evidence contracts before domain reasoning. Humanitarian incidents and Maritime Intelligence episodes share provenance/lineage infrastructure but keep separate decision semantics. New source types are added as adapters, never as parallel truth pipelines.
 
-**Current packet:** Audio Evidence v1 — Task 0 immutable artifact contract.
+**Current packet:** Cross-modal Evidence Fusion v1 — Task 0 evidence packet contracts.
 
 **Detailed current plan:** `docs/superpowers/plans/2026-09-06-audio-evidence-v1.md`
 
@@ -72,7 +72,7 @@ A DSC/EPIRB-style emergency observation may create a maritime emergency candidat
 
 ### Packet E — Audio Evidence v1
 
-Status: current packet; artifact/retention boundary first, acquisition disabled until terms/jurisdiction are explicit.
+Status: development-complete / review-ready; production capture remains disabled and unauthorized.
 
 Goal: support bounded, legally-permitted remote audio as immutable evidence artifacts rather than a second truth store.
 
@@ -80,6 +80,8 @@ Introduce `EvidenceArtifact(type=audio)` with receiver, frequency/channel, start
 
 Before production acquisition, complete jurisdiction/provider-specific legal and retention review. Unsupported or unclear receiver terms remain disabled.
 ### Packet F — Cross-modal Evidence Fusion v1
+
+Status: current packet.
 
 Goal: combine independent evidence modalities without collapsing provenance or overstating confidence.
 

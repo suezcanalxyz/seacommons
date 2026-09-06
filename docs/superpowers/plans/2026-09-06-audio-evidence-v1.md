@@ -58,14 +58,28 @@
 
 ### Task 3: Derived transcript contract
 
-- Transcript is derived from artifact ID/hash, versioned by engine/model, replayable, and non-canonical.
-- No transcript/model output may create/resolve Humanitarian lifecycle or publish allegations.
+- [x] Transcript is derived from artifact ID/hash, versioned by engine/model, replayable, and non-canonical.
+- [x] No transcript/model output may create/resolve Humanitarian lifecycle or publish allegations.
+
+### Task 3 execution record — 2026-09-06
+
+- `DerivedAudioTranscript` is frozen, deterministic, bounded to 20,000 characters, and versioned by engine/model/model_version.
+- It exposes `derived=True` and `canonical_authority=False`; no Humanitarian/lifecycle/publication/decision fields exist.
+- Focused transcript/artifact/store/policy gate: `34 passed`; Ruff and `git diff --check` green.
 
 ### Task 4: Release gates and handoff
 
-- Focused audio/provenance/privacy regressions; full backend/static/migrations/dependency audit.
-- Exact-diff review for continuous recording, unbounded retention, raw-byte DB persistence, source-lineage inflation, Humanitarian/lifecycle mutation and model authority.
-- Hand off to Cross-modal Evidence Fusion v1 only after green/reviewed.
+- [x] Focused audio/provenance/privacy regressions; full backend/static/migrations/dependency audit.
+- [x] Exact-diff review for continuous recording, unbounded retention, raw-byte DB persistence, source-lineage inflation, Humanitarian/lifecycle mutation and model authority.
+- [x] Hand off to Cross-modal Evidence Fusion v1 only after green/reviewed.
+
+### Task 4 execution record — 2026-09-06
+
+- Focused audio/privacy/provenance gate: `80 passed, 1 warning`.
+- Full backend: `1458 passed, 2 skipped, 221 warnings`.
+- Ruff critical, canonical mypy, migrations through `0022_audio_artifacts`, and canonical project dependency audit are green.
+- Exact diff confirms metadata-only DB persistence, bounded retention, disabled-by-default acquisition, no continuous recorder ownership, no source-lineage inflation, and no Humanitarian/lifecycle/model authority path.
+- Audio Evidence v1 is development-complete/review-ready. Production audio capture remains disabled and requires explicit operator authorization.
 
 ## Exit criteria
 

@@ -1,8 +1,8 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Audio Evidence v1 — Task 3 derived transcript contract
-> **Current packet plan:** `docs/superpowers/plans/2026-09-06-audio-evidence-v1.md`
+> **Current packet:** Cross-modal Evidence Fusion v1 — Task 0 evidence packet contracts
+> **Current packet plan:** `docs/superpowers/plans/2026-09-06-cross-modal-evidence-fusion-v1.md`
 > **Production runtime baseline:** `0ae4df7cc20c8209acc267eb595129c2dc3961bd`
 > **Production schema:** `0021_maritime_episodes`
 
@@ -38,7 +38,13 @@ Development-complete / review-ready through `08c20f4`. Already-decoded DSC/NAVTE
 
 Release evidence: focused `116 passed`; full backend `1424 passed, 2 skipped`; Ruff/mypy/migrations/canonical dependency audit green. Structured runtime remains disabled by default and production activation is separate.
 
-## Current packet state — Audio Evidence v1
+## Completed packet — Audio Evidence v1
+
+Development-complete / review-ready through `1271a85`. Immutable bounded audio artifact metadata, migration `0022_audio_artifacts`, disabled-by-default acquisition policy, and derived-only transcript contracts are implemented. Production capture remains unauthorized.
+
+Release evidence: focused audio/privacy/provenance `80 passed`; full backend `1458 passed, 2 skipped`; Ruff/mypy/migrations/canonical dependency audit green.
+
+## Current packet state — Cross-modal Evidence Fusion v1
 
 Packet E introduces bounded, legally-permitted audio evidence artifacts with explicit content hash, receiver/frequency/time provenance and retention policy. Audio is evidence storage, not a truth store: transcript/claim extraction remains derived and cannot directly mutate Humanitarian lifecycle or public allegations. Task 0 defines the immutable artifact contract and fail-closed retention/terms boundary before any acquisition runtime exists.
 

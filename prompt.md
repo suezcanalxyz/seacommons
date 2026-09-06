@@ -15,13 +15,13 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-Audio Evidence v1, Task 3 — derived transcript contract.
+Cross-modal Evidence Fusion v1, Task 0 — evidence packet contracts.
 
-Detailed plan: `docs/superpowers/plans/2026-09-06-audio-evidence-v1.md`.
+Detailed plan: `docs/superpowers/plans/2026-09-06-cross-modal-evidence-fusion-v1.md`.
 
 Free/Open AIS Fusion v1 is development-complete/shadow-ready. Humanitarian Verification v1 is development-complete/review-ready through `961c436`; release gates were `141` focused tests and `1350` full backend tests plus green static/web/edge/dependency gates. No production AIS cutover or Humanitarian auto-resolution was authorized.
 
-Remote Maritime Radio v1 is development-complete/review-ready through `2ea9e35`. DSC + NAVTEX Structured Evidence v1 is development-complete/review-ready through `08c20f4`, with `116` focused and `1424` full-backend tests green. Continue with Audio Evidence v1 Task 0: define an immutable bounded audio artifact contract with explicit receiver/frequency/time provenance, content hash, retention policy and source terms before adding any acquisition runtime. Transcript/claims remain derived and cannot mutate canonical lifecycle or public allegations.
+Remote Maritime Radio v1 and DSC + NAVTEX Structured Evidence v1 are closed. Audio Evidence v1 is development-complete/review-ready through `1271a85`, with bounded metadata-only artifacts, disabled-by-default acquisition policy, migration `0022_audio_artifacts`, and derived-only transcripts. Continue with Cross-modal Evidence Fusion v1 Task 0; preserve lineage/modality independence and never let derived evidence become canonical authority.
 
 ## Packet boundary
 
@@ -52,3 +52,5 @@ For each task: inspect existing code -> write RED test -> run and observe expect
 For each packet: run full backend/static and any crossed web/edge gates, privacy/evidence-lineage regressions, review the exact diff, fix Critical/Important findings, update controllers/docs, then advance. Never claim completion from partial tests.
 
 Production migration, restart, destructive maintenance, remote receiver activation, audio capture, or activation of a new canonical feed mode requires explicit operator authorization.
+
+Audio Evidence v1 is development-complete/review-ready through `1271a85`; production capture remains disabled and unauthorized. Continue with Cross-modal Evidence Fusion v1 without collapsing lineage or allowing derived audio/transcripts to become independent source authority.
