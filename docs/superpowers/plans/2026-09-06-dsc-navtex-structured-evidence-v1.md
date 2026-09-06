@@ -83,12 +83,19 @@
 - Consumes already-demodulated NAVTEX text blocks (`ZCZC ... NNNN`) plus receiver provenance.
 - Produces `NAVTEXObservation`; parser never performs voice/audio acquisition.
 
-- [ ] RED fixtures: valid station/subject/serial header, multiline body, duplicate replay identity, malformed/no terminator, oversized body truncation/fail-closed behavior.
-- [ ] RED contrastive: distress wording inside NAVTEX does not become a Humanitarian incident or direct lifecycle command.
-- [ ] Run NAVTEX tests RED.
-- [ ] Implement bounded header/body parser with deterministic message identity and explicit parse reason codes.
-- [ ] Run NAVTEX + service-taxonomy/privacy regressions GREEN.
-- [ ] Commit `feat: parse structured NAVTEX evidence`.
+- [x] RED fixtures: valid station/subject/serial header, multiline body, duplicate replay identity, malformed/no terminator, oversized body truncation/fail-closed behavior.
+- [x] RED contrastive: distress wording inside NAVTEX does not become a Humanitarian incident or direct lifecycle command.
+- [x] Run NAVTEX tests RED.
+- [x] Implement bounded header/body parser with deterministic message identity and explicit parse reason codes.
+- [x] Run NAVTEX + service-taxonomy/privacy regressions GREEN.
+- [x] Commit `feat: parse structured NAVTEX evidence`.
+
+### Task 2 execution record — 2026-09-06
+
+- RED: `9 failed` because `core.radio.navtex` did not exist.
+- GREEN focused gate: `52 passed` across NAVTEX, DSC, structured contracts, service taxonomy, and beacon compartment; Ruff and `git diff --check` clean.
+- Parser accepts already-demodulated `ZCZC B1B2NN ... NNNN` blocks, normalizes CRLF, bounds body text to the contract limit, and derives deterministic IDs when no native decoder ID is supplied.
+- Malformed header/terminator/empty body fail closed. Distress wording remains message content only and introduces no Humanitarian/lifecycle authority.
 
 ### Task 3: Immutable structured-radio SourceObservation bridge
 
