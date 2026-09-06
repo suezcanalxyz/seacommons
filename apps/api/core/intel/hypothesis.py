@@ -83,6 +83,7 @@ class InvestigationHypothesis:
     hypothesis_id: str
     hypothesis_type: HypothesisType
     subject_ids: tuple[str, ...]
+    episode_id: Optional[str] = None
     state: HypothesisState = "candidate"
     reason_codes: tuple[str, ...] = ()
     counter_indicators: tuple[str, ...] = ()
@@ -97,6 +98,7 @@ class InvestigationHypothesis:
 
 def _evidence_snapshot_hash(hypothesis: InvestigationHypothesis) -> str:
     snapshot = {
+        "episode_id": hypothesis.episode_id,
         "reason_codes": sorted(hypothesis.reason_codes),
         "counter_indicators": sorted(hypothesis.counter_indicators),
         "evidence_links": sorted(hypothesis.evidence_links),
@@ -108,11 +110,13 @@ def _evidence_snapshot_hash(hypothesis: InvestigationHypothesis) -> str:
 
 def new_hypothesis(
     hypothesis_id: str, hypothesis_type: HypothesisType, subject_ids: tuple[str, ...],
+    *, episode_id: Optional[str] = None,
 ) -> InvestigationHypothesis:
     if hypothesis_type not in _GATE_NAMES:
         raise ValueError(f"unknown hypothesis_type: {hypothesis_type!r}")
     return InvestigationHypothesis(
         hypothesis_id=hypothesis_id, hypothesis_type=hypothesis_type, subject_ids=subject_ids,
+        episode_id=episode_id,
     )
 
 

@@ -24,12 +24,14 @@ from core.intel.store import IntelEvent, intel_store
 
 @pytest.fixture(autouse=True)
 def _clean():
-    from core.db.models import InvestigationHypothesisDB
+    from core.db.models import InvestigationHypothesisDB, MaritimeEpisodeDB
     from core.db.session import engine, session_scope
 
     InvestigationHypothesisDB.__table__.create(bind=engine(), checkfirst=True)
+    MaritimeEpisodeDB.__table__.create(bind=engine(), checkfirst=True)
     with session_scope() as db:
         db.query(InvestigationHypothesisDB).delete()
+        db.query(MaritimeEpisodeDB).delete()
     with intel_store._lock:
         intel_store._events.clear()
         intel_store._seen.clear()
@@ -49,23 +51,26 @@ def _add_event(event_id, *, mmsi="211879870", anomaly_type="gap", **metadata):
 
 
 def _episode(family, *, subject="subj:mmsi:211879870", signal_ids, episode_id="hyp-ep:test"):
+    status = "single_source_observed" if len(signal_ids) <= 1 else "single_source_multi_indicator"
     return {"properties": {
         "episode_id": episode_id, "episode_family": family,
         "subject_ids": [subject], "related_signal_ids": list(signal_ids),
+        "first_observed_at": "2026-09-06T08:00:00+00:00",
+        "last_observed_at": "2026-09-06T08:20:00+00:00",
+        "verification_status": status,
+        "independence_groups": ["ais_sensor_lineage"],
+        "independent_source_count": 1,
     }}
 
 
-def test_dark_transit_hypothesis_created_for_isolated_gap():
+def test_same_lineage_isolated_gap_pair_stays_episode_only():
+    """V1 replaces the legacy detector-count promotion with lineage gating."""
     _add_event("gap1", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.6})
     _add_event("gap2", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.55})
 
     hyp = evaluate_episode(_episode("gap_episode", signal_ids=["gap1", "gap2"]))
 
-    assert hyp is not None
-    assert hyp.hypothesis_type == "dark_transit"
-    assert hyp.state == "collecting"
-    assert set(hyp.evidence_links) == {"gap1", "gap2"}
-    assert get_hypothesis(hyp.hypothesis_id) == hyp
+    assert hyp is None
 
 
 def test_coverage_gap_does_not_create_a_dark_transit_hypothesis():
@@ -78,15 +83,12 @@ def test_coverage_gap_does_not_create_a_dark_transit_hypothesis():
     assert hyp is None
 
 
-def test_exit_gate_a_single_observation_never_exceeds_candidate():
+def test_exit_gate_a_single_low_specificity_observation_stays_episode_only():
     _add_event("gap4", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.6})
 
     hyp = evaluate_episode(_episode("gap_episode", signal_ids=["gap4"]))
 
-    assert hyp is not None
-    assert hyp.state == "candidate"
-    ok, _reason = can_publish(hyp)
-    assert ok is False
+    assert hyp is None
 
 
 def test_exit_gate_sanctions_match_alone_never_creates_a_hypothesis():
@@ -118,8 +120,7 @@ def test_covert_rendezvous_requires_an_independent_irregularity():
         "rendezvous_episode", subject="subj:mmsi:111000001",
         signal_ids=["rdv1", "rdv2"], episode_id="hyp-ep:rdv",
     ))
-    assert hyp is not None
-    assert hyp.hypothesis_type == "covert_rendezvous"
+    assert hyp is None  # dark flag is an indicator, not an independent source
 
 
 def test_position_spoofing_wires_ais_integrity_classification():
@@ -157,15 +158,11 @@ def test_infrastructure_pattern_requires_more_than_bare_proximity():
         "infrastructure_proximity_episode", subject="subj:mmsi:111000003",
         signal_ids=["infra1", "infra2"], episode_id="hyp-ep:infra",
     ))
-    assert hyp is not None
-    assert hyp.hypothesis_type == "infrastructure_pattern"
+    assert hyp is None  # sanctions flag on the same lineage is not corroboration
 
 
-def test_end_to_end_scan_gaps_then_scan_hypotheses_creates_a_persisted_hypothesis():
-    """docs/fixes.md M14.3: real observations flowing through the actual
-    live detector (core.mda.watch.scan_gaps(), M14.1) and episode builder
-    (core.live.vessel_episodes, M14.2) create a persisted hypothesis --
-    not just a synthetic evaluate_episode() call."""
+def test_end_to_end_isolated_gap_persists_episode_without_hypothesis():
+    """V1 keeps an isolated single-lineage AIS gap at Episode level."""
     from core.mda.watch import MdaWatch
     from core.vessels.track_store import track_store
 
@@ -198,10 +195,147 @@ def test_end_to_end_scan_gaps_then_scan_hypotheses_creates_a_persisted_hypothesi
 
     w = MdaWatch()
     assert w.scan_gaps() == 1
-    assert w.scan_hypotheses() == 1
+    assert w.scan_hypotheses() == 0
 
-    from core.intel.hypothesis_store import list_hypotheses
-    hyps = list_hypotheses(hypothesis_type="dark_transit")
-    assert len(hyps) == 1
-    assert hyps[0].subject_ids == (f"subj:mmsi:{target}",)
-    assert hyps[0].state == "candidate"  # one gap signal so far -- exit gate
+    from core.db.models import MaritimeEpisodeDB
+    with session_scope() as db:
+        episodes = db.query(MaritimeEpisodeDB).filter(MaritimeEpisodeDB.episode_family == "gap_episode").all()
+        assert len(episodes) == 1
+        assert episodes[0].verification_status == "single_source_observed"
+
+
+def test_v1_single_gap_does_not_create_dark_transit_hypothesis() -> None:
+    _add_event("v1-gap-one", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.7})
+    episode = _episode("gap_episode", signal_ids=["v1-gap-one"], episode_id="episode:v1:gap-one")
+    episode["properties"].update({
+        "first_observed_at": "2026-09-06T08:00:00+00:00",
+        "last_observed_at": "2026-09-06T08:00:00+00:00",
+        "verification_status": "single_source_observed",
+        "independence_groups": ["ais_sensor_lineage"],
+        "independent_source_count": 1,
+    })
+    assert evaluate_episode(episode) is None
+
+
+def test_v1_two_same_lineage_gaps_do_not_create_dark_transit_hypothesis() -> None:
+    _add_event("v1-gap-a", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.7})
+    _add_event("v1-gap-b", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.65})
+    episode = _episode("gap_episode", signal_ids=["v1-gap-a", "v1-gap-b"], episode_id="episode:v1:gap-pair")
+    episode["properties"].update({
+        "first_observed_at": "2026-09-06T08:00:00+00:00",
+        "last_observed_at": "2026-09-06T08:20:00+00:00",
+        "verification_status": "single_source_multi_indicator",
+        "independence_groups": ["ais_sensor_lineage"],
+        "independent_source_count": 1,
+    })
+    assert evaluate_episode(episode) is None
+
+
+def test_v1_corroborated_gap_links_persisted_episode() -> None:
+    from core.intel.store import IntelEvent, intel_store
+    from core.db.models import InvestigationHypothesisDB, MaritimeEpisodeDB
+    from core.db.session import session_scope
+
+    _add_event("v1-gap-c", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.7})
+    intel_store.add(IntelEvent(
+        id="v1-report-c", type="news", severity="medium", lat=35.5, lon=14.1,
+        title="independent:v1-report-c", source="Independent report", linked_mmsi="211879870",
+        metadata={"anomaly_type": "gap", "transport": "rss"},
+    ), dedup_key="v1-report-c")
+    episode_id = "episode:v1:gap-corroborated"
+    episode = _episode("gap_episode", signal_ids=["v1-gap-c", "v1-report-c"], episode_id=episode_id)
+    episode["properties"].update({
+        "first_observed_at": "2026-09-06T08:00:00+00:00",
+        "last_observed_at": "2026-09-06T08:20:00+00:00",
+        "verification_status": "multi_source_corroborated",
+        "independence_groups": ["ais_sensor_lineage", "secondary_news_reporting"],
+        "independent_source_count": 2,
+    })
+    hyp = evaluate_episode(episode)
+    assert hyp is not None
+    assert hyp.episode_id == episode_id
+    assert hyp.hypothesis_id == f"hyp:v1:dark_transit:{episode_id}"
+    assert hyp.state == "collecting"
+    with session_scope() as db:
+        assert db.query(MaritimeEpisodeDB).filter_by(episode_id=episode_id).count() == 1
+        row = db.query(InvestigationHypothesisDB).filter_by(hypothesis_id=hyp.hypothesis_id).one()
+        assert row.episode_id == episode_id
+
+
+def test_v1_same_lineage_spoofing_stays_candidate() -> None:
+    for event_id in ("v1-spoof-a", "v1-spoof-b"):
+        _add_event(
+            event_id,
+            anomaly_type="position_jump",
+            ais_integrity_classification={"label": "position_anomaly", "confidence": 0.8},
+        )
+    episode = _episode(
+        "spoofing_episode",
+        signal_ids=["v1-spoof-a", "v1-spoof-b"],
+        episode_id="episode:v1:spoof-one-lineage",
+    )
+    episode["properties"].update({
+        "first_observed_at": "2026-09-06T08:00:00+00:00",
+        "last_observed_at": "2026-09-06T08:10:00+00:00",
+        "verification_status": "single_source_multi_indicator",
+        "independence_groups": ["ais_sensor_lineage"],
+        "independent_source_count": 1,
+    })
+    hyp = evaluate_episode(episode)
+    assert hyp is not None
+    assert hyp.hypothesis_type == "position_spoofing"
+    assert hyp.state == "candidate"
+    assert hyp.evidence_stage == "derived"
+
+
+def test_v1_engine_never_relinks_or_mutates_legacy_null_episode_hypothesis() -> None:
+    from core.db.models import InvestigationHypothesisDB
+    from core.db.session import session_scope
+    from core.intel.store import IntelEvent, intel_store
+
+    episode_id = "episode:v1:legacy-isolation"
+    legacy_id = f"hyp:dark_transit:{episode_id}"
+    with session_scope() as db:
+        db.add(InvestigationHypothesisDB(
+            hypothesis_id=legacy_id,
+            episode_id=None,
+            hypothesis_type="dark_transit",
+            subject_ids=["subj:mmsi:211879870"],
+            state="candidate",
+            reason_codes=["legacy-gap"],
+            counter_indicators=[],
+            evidence_links=["legacy-evidence"],
+            evidence_stage="derived",
+            audit_history=[],
+        ))
+
+    _add_event("v1-legacy-gap", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.8})
+    intel_store.add(IntelEvent(
+        id="v1-legacy-report", type="news", severity="medium", lat=35.5, lon=14.1,
+        title="independent legacy isolation", source="Independent report",
+        linked_mmsi="211879870",
+        metadata={"anomaly_type": "gap", "transport": "rss"},
+    ), dedup_key="v1-legacy-report")
+    episode = _episode(
+        "gap_episode",
+        signal_ids=["v1-legacy-gap", "v1-legacy-report"],
+        episode_id=episode_id,
+    )
+    episode["properties"].update({
+        "first_observed_at": "2026-09-06T08:00:00+00:00",
+        "last_observed_at": "2026-09-06T08:20:00+00:00",
+        "verification_status": "multi_source_corroborated",
+        "independence_groups": ["ais_sensor_lineage", "secondary_news_reporting"],
+        "independent_source_count": 2,
+    })
+
+    new_hyp = evaluate_episode(episode)
+    assert new_hyp is not None
+    assert new_hyp.hypothesis_id == f"hyp:v1:dark_transit:{episode_id}"
+    assert new_hyp.episode_id == episode_id
+    with session_scope() as db:
+        legacy = db.get(InvestigationHypothesisDB, legacy_id)
+        assert legacy is not None
+        assert legacy.episode_id is None
+        assert legacy.reason_codes == ["legacy-gap"]
+        assert legacy.evidence_links == ["legacy-evidence"]

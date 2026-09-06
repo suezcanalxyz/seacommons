@@ -607,7 +607,23 @@ def test_your_wisdom_benign_service_fixture_stays_internal_without_case() -> Non
         "2 indicators from 1 evidence lineage; independent corroboration not established"
     )
 
-    from core.db.models import CaseDB
-    from core.db.session import session_scope
+    from core.db.models import CaseDB, InvestigationHypothesisDB, MaritimeEpisodeDB
+    from core.db.session import engine, session_scope
+    MaritimeEpisodeDB.__table__.create(bind=engine(), checkfirst=True)
+    InvestigationHypothesisDB.__table__.create(bind=engine(), checkfirst=True)
     with session_scope() as db:
         assert db.query(CaseDB).count() == expected["case_count"]
+        db.query(MaritimeEpisodeDB).delete()
+        db.query(InvestigationHypothesisDB).delete()
+
+    from core.mda.watch import MdaWatch
+    assert MdaWatch().scan_hypotheses() == 0
+    with session_scope() as db:
+        rows = db.query(MaritimeEpisodeDB).all()
+        derived = [row for row in rows if alert.id in (row.feature_ids or [])]
+        assert len(derived) == 1
+        row = derived[0]
+        assert set(row.observation_ids or []) == {o["id"] for o in case["observations"]}
+        assert row.independence_groups == expected["independence_groups"]
+        assert row.verification_status == expected["verification_status"]
+        assert db.query(InvestigationHypothesisDB).count() == 0

@@ -42,12 +42,14 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def _clean():
-    from core.db.models import InvestigationHypothesisDB, VesselTrackDB
+    from core.db.models import InvestigationHypothesisDB, MaritimeEpisodeDB, VesselTrackDB
     from core.db.session import engine, session_scope
 
     InvestigationHypothesisDB.__table__.create(bind=engine(), checkfirst=True)
+    MaritimeEpisodeDB.__table__.create(bind=engine(), checkfirst=True)
     with session_scope() as db:
         db.query(InvestigationHypothesisDB).delete()
+        db.query(MaritimeEpisodeDB).delete()
         db.query(VesselTrackDB).delete()
     with intel_store._lock:
         intel_store._events.clear()
@@ -68,21 +70,16 @@ def _witness(mmsi: str, lat: float, lon: float, minutes_ago: float) -> None:
     track_store._last_write_epoch[mmsi] = 0.0
 
 
-def test_e2e_isolated_ais_gap_reaches_the_public_hypotheses_api():
-    """Full vertical slice: raw AIS positions (real ingestion entry point)
-    -> core.mda.watch.scan_gaps() (real detection, M14.1) -> intel_store
-    persistence -> core.live.vessel_episodes (real episode grouping,
-    M14.2) -> core.mda.watch.scan_hypotheses() (real hypothesis
-    create/persist, M14.3) -> analyst review/publish (the only way past
-    "candidate"/"collecting", by design) -> core.intel.publication_policy
-    (M14.4) -> the real GET /api/v1/live/hypotheses route (M14.4/M14.5).
-    """
+def test_e2e_isolated_ais_gap_stops_at_persisted_episode():
+    """A single-lineage AIS gap is an Episode, not an Intelligence hypothesis."""
+    from core.db.models import MaritimeEpisodeDB
+    from core.db.session import session_scope
+
     target = "211879801"
     track_store.on_position(target, target, 37.00, 18.00, sog=8.0, nav_status=0,
                              received_at=datetime.now(timezone.utc))
     track_store._last_write_epoch[target] = 0.0
-    track_store._last[target].ts = time.time() - 5400  # 90 min silent -- isolated gap
-
+    track_store._last[target].ts = time.time() - 5400
     for k in range(3):
         w_mmsi = f"21100091{k}"
         _witness(w_mmsi, 37.01, 18.01, minutes_ago=100)
@@ -90,37 +87,53 @@ def test_e2e_isolated_ais_gap_reaches_the_public_hypotheses_api():
 
     w = MdaWatch()
     assert w.scan_gaps() == 1
+    assert w.scan_hypotheses() == 0
+    with session_scope() as db:
+        rows = db.query(MaritimeEpisodeDB).filter_by(episode_family="gap_episode").all()
+        assert len(rows) == 1
+        assert rows[0].verification_status == "single_source_observed"
+    assert client.get("/api/v1/live/hypotheses").json()["features"] == []
 
-    gap_event = intel_store.get(f"aisgap:{target}")
-    assert gap_event is not None
-    assert gap_event.metadata["gap_reason"]["hypothesis"] == "vessel_gap"
 
+def test_e2e_independent_gap_corroboration_creates_idempotent_v1_hypothesis():
+    """Independent evidence creates one linked v1 hypothesis; replay never duplicates it."""
+    from core.db.models import InvestigationHypothesisDB, MaritimeEpisodeDB
+    from core.db.session import session_scope
+    from core.intel.hypothesis_store import list_hypotheses, save_hypothesis
+
+    target = "211879803"
+    intel_store.add(IntelEvent(
+        id="e2e-gap-independent", type="ais_anomaly", severity="medium", lat=35.5, lon=14.1,
+        title="isolated AIS gap", source="mda", linked_mmsi=target,
+        metadata={"anomaly_type": "gap", "gap_reason": {"hypothesis": "vessel_gap", "confidence": 0.7}},
+    ), dedup_key="e2e-gap-independent")
+    intel_store.add(IntelEvent(
+        id="e2e-gap-report", type="news", severity="medium", lat=35.5, lon=14.1,
+        title="independent gap report", source="Independent report", linked_mmsi=target,
+        metadata={"anomaly_type": "gap", "transport": "rss"},
+    ), dedup_key="e2e-gap-report")
+
+    w = MdaWatch()
     assert w.scan_hypotheses() == 1
-    hyp = get_hypothesis(f"hyp:dark_transit:episode:subj:mmsi:{target}:gap_episode:1")
-    assert hyp is not None
-    assert hyp.state == "candidate"  # single signal so far -- M14.3 exit gate
+    hyps = list_hypotheses(hypothesis_type="dark_transit")
+    assert len(hyps) == 1
+    hyp = hyps[0]
+    assert hyp.hypothesis_id.startswith("hyp:v1:dark_transit:")
+    assert hyp.episode_id is not None
+    assert hyp.state == "collecting"
+    assert w.scan_hypotheses() == 1
+    with session_scope() as db:
+        assert db.query(MaritimeEpisodeDB).count() == 1
+        assert db.query(InvestigationHypothesisDB).count() == 1
 
-    # Not yet published -- must not appear on the public API.
-    before = client.get("/api/v1/live/hypotheses").json()
-    assert not any(f["id"] == hyp.hypothesis_id for f in before["features"])
-
-    # An analyst reviews and publishes it (the only path to "published" --
-    # nothing in this pipeline ever does this automatically).
-    published = replace(hyp, evidence_stage="corroborated")
-    published = transition(published, "collecting", actor="analyst:test")
-    published = transition(published, "review_ready", actor="analyst:test")
+    published = transition(hyp, "review_ready", actor="analyst:test")
     published = transition(published, "assessed", actor="analyst:test")
     published = transition(published, "published", actor="analyst:test")
-    from core.intel.hypothesis_store import save_hypothesis
-
     save_hypothesis(published)
-
-    after = client.get("/api/v1/live/hypotheses").json()
-    match = next(f for f in after["features"] if f["id"] == hyp.hypothesis_id)
-    assert match["properties"]["hypothesis_type"] == "dark_transit"
+    features = client.get("/api/v1/live/hypotheses").json()["features"]
+    match = next(f for f in features if f["id"] == hyp.hypothesis_id)
     for field in ("linked_mmsi", "mmsi", "imo", "vessel_name"):
         assert field not in match["properties"]
-
 
 def test_e2e_common_port_outage_never_reaches_a_hypothesis():
     """Full vertical slice: several vessels going silent together (a

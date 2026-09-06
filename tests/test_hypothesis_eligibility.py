@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+import importlib
+
+import pytest
+
+from core.intel.store import IntelEvent
+
+
+def _eligibility():
+    try:
+        return importlib.import_module("core.intel.hypothesis_eligibility")
+    except ModuleNotFoundError:
+        pytest.fail("core.intel.hypothesis_eligibility is required")
+
+
+def _event(event_id: str, anomaly_type: str, **metadata) -> IntelEvent:
+    return IntelEvent(
+        id=event_id,
+        type="ais_anomaly",
+        severity="medium",
+        lat=35.5,
+        lon=14.1,
+        title=f"test:{event_id}",
+        source="mda",
+        linked_mmsi="211879870",
+        metadata={"anomaly_type": anomaly_type, **metadata},
+    )
+
+
+def _episode(family: str, status: str, count: int, **props) -> dict:
+    groups = ["ais_sensor_lineage"] if count else []
+    if count >= 2:
+        groups = ["ais_sensor_lineage", "secondary_news_reporting"]
+    return {"properties": {
+        "episode_id": f"episode:test:{family}",
+        "episode_family": family,
+        "verification_status": status,
+        "independent_source_count": count,
+        "independence_groups": groups,
+        **props,
+    }}
+
+
+def test_single_gap_is_not_hypothesis_eligible() -> None:
+    mod = _eligibility()
+    event = _event("gap:1", "gap", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.6})
+    decision = mod.evaluate_hypothesis_eligibility(
+        _episode("gap_episode", "single_source_observed", 1), [event]
+    )
+    assert decision.eligible is False
+    assert decision.hypothesis_type == "dark_transit"
+
+
+def test_two_same_lineage_gap_indicators_are_not_hypothesis_eligible() -> None:
+    mod = _eligibility()
+    events = [
+        _event("gap:1", "gap", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.6}),
+        _event("gap:2", "gap", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.55}),
+    ]
+    decision = mod.evaluate_hypothesis_eligibility(
+        _episode("gap_episode", "single_source_multi_indicator", 1), events
+    )
+    assert decision.eligible is False
+    assert "independent corroboration" in decision.explanation
+
+
+def test_independent_gap_corroboration_is_eligible() -> None:
+    mod = _eligibility()
+    events = [
+        _event("gap:1", "gap", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.6}),
+        IntelEvent(
+            id="report:1", type="news", severity="medium", lat=35.5, lon=14.1,
+            title="independent report", source="Independent report", linked_mmsi="211879870",
+            metadata={"anomaly_type": "gap", "transport": "rss"},
+        ),
+    ]
+    decision = mod.evaluate_hypothesis_eligibility(
+        _episode("gap_episode", "multi_source_corroborated", 2), events
+    )
+    assert decision.eligible is True
+    assert decision.may_advance_collecting is True
+    assert decision.evidence_stage == "corroborated"
+
+
+def test_behaviour_context_never_counts_as_independent_source() -> None:
+    mod = _eligibility()
+    events = [
+        _event("gap:1", "gap", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.6}),
+        _event("gap:2", "gap", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.55}),
+    ]
+    decision = mod.evaluate_hypothesis_eligibility(
+        _episode(
+            "gap_episode", "single_source_multi_indicator", 1,
+            behaviour_context={"status": "unusual", "reason_codes": ["UNUSUAL_AIS_SILENCE"]},
+        ),
+        events,
+    )
+    assert decision.eligible is False
+
+
+def test_high_specificity_spoofing_can_be_candidate_but_not_collecting_on_one_lineage() -> None:
+    mod = _eligibility()
+    events = [
+        _event(
+            "spoof:1", "position_jump",
+            ais_integrity_classification={"label": "position_anomaly", "confidence": 0.8},
+        ),
+        _event(
+            "spoof:2", "position_jump",
+            ais_integrity_classification={"label": "position_anomaly", "confidence": 0.8},
+        ),
+    ]
+    decision = mod.evaluate_hypothesis_eligibility(
+        _episode("spoofing_episode", "single_source_multi_indicator", 1), events
+    )
+    assert decision.eligible is True
+    assert decision.hypothesis_type == "position_spoofing"
+    assert decision.may_advance_collecting is False
+    assert decision.evidence_stage == "derived"

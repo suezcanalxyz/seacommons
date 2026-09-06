@@ -101,3 +101,26 @@ def test_health_data_route_exposes_the_real_data_health_summary() -> None:
         "healthy", "source_outage_detected", "stuck_drift_detected",
         "edge_failure_detected", "degraded_sources",
     }
+
+
+def test_maritime_episode_metric_uses_only_bounded_semantic_labels() -> None:
+    import core.observability as observability
+
+    observability.record_maritime_episode_evaluation(
+        "gap_episode", "single_source_multi_indicator"
+    )
+    metrics = generate_latest().decode()
+    assert (
+        'seacommons_maritime_episode_evaluations_total{episode_family="gap_episode",verification_status="single_source_multi_indicator"}'
+        in metrics
+    )
+
+
+def test_v1_hypothesis_decision_metric_distinguishes_eligible_from_ineligible() -> None:
+    import core.observability as observability
+
+    observability.record_v1_hypothesis_decision("dark_transit", "ineligible")
+    observability.record_v1_hypothesis_decision("position_spoofing", "eligible")
+    metrics = generate_latest().decode()
+    assert 'seacommons_v1_hypothesis_decisions_total{hypothesis_type="dark_transit",outcome="ineligible"}' in metrics
+    assert 'seacommons_v1_hypothesis_decisions_total{hypothesis_type="position_spoofing",outcome="eligible"}' in metrics

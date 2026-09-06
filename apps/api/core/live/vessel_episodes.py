@@ -194,6 +194,17 @@ def _build_episode_feature(
         }
 
     item_props = [item.get("properties") or {} for item in items]
+    behaviour_context = next(
+        (dict(p["behaviour_context"]) for p in reversed(item_props)
+         if isinstance(p.get("behaviour_context"), dict) and p.get("behaviour_context")),
+        {},
+    )
+    alternative_explanations = list(dict.fromkeys(
+        str(reason)
+        for p in item_props
+        for reason in (p.get("alternative_explanations") or ())
+        if reason
+    ))
     anomaly_types = sorted(
         {
             str(p.get("anomaly_type") or p.get("ais_nav_status_kind") or "")
@@ -210,7 +221,20 @@ def _build_episode_feature(
         (str(p.get("severity") or "low") for p in item_props),
         key=lambda severity: _SEVERITY_RANK.get(severity, 0),
     )
-    raw_ids = [str(p.get("id") or "") for p in item_props if p.get("id")]
+    episode_signal_ids = [str(p.get("id") or "") for p in item_props if p.get("id")]
+    observation_ids: list[str] = []
+    feature_ids: list[str] = []
+    for item in item_props:
+        parents = [str(v) for v in (item.get("observation_ids") or ()) if v]
+        if parents:
+            observation_ids.extend(parents)
+        elif item.get("id"):
+            observation_ids.append(str(item["id"]))
+        feature_ids.extend(str(v) for v in (item.get("feature_ids") or ()) if v)
+    observation_ids = list(dict.fromkeys(observation_ids))
+    feature_ids = list(dict.fromkeys(feature_ids))
+    from core.intel.fusion import verification_for_event_ids
+    verification_status, independence_groups, evidence_count = verification_for_event_ids(observation_ids)
     update_count = max(
         len(track),
         sum(max(1, int(p.get("episode_update_count") or 1)) for p in item_props),
@@ -283,7 +307,16 @@ def _build_episode_feature(
             "first_observed_at": first_observed_at,
             "last_observed_at": last_observed_at,
             "timestamp_utc": last_observed_at,
-            "related_signal_ids": raw_ids,
+            "related_signal_ids": observation_ids,
+            "observation_ids": observation_ids,
+            "feature_ids": feature_ids,
+            "episode_signal_ids": episode_signal_ids,
+            "evidence_count": evidence_count,
+            "independence_groups": independence_groups,
+            "independent_source_count": len(independence_groups),
+            "verification_status": verification_status,
+            "behaviour_context": behaviour_context,
+            "alternative_explanations": alternative_explanations,
             "alert_types": sorted({str(p.get("type")) for p in item_props if p.get("type")}),
             "anomaly_types": anomaly_types,
             "contributing_sources": sorted(

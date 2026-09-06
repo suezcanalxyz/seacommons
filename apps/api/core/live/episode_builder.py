@@ -85,7 +85,7 @@ _KNOWN_FAMILIES = frozenset(
     {
         "gap_episode", "rendezvous_episode", "identity_integrity_episode",
         "spoofing_episode", "port_call_episode",
-        "infrastructure_proximity_episode", "safety_episode",
+        "infrastructure_proximity_episode", "safety_episode", "unclassified_episode",
     }
 )
 
@@ -93,12 +93,12 @@ _KNOWN_FAMILIES = frozenset(
 def family_for(anomaly_type: Optional[str], *, explicit_family: Optional[str] = None) -> str:
     """The episode family for one signal. An explicit, already-known family
     on the signal always wins; otherwise map the anomaly_type; anything
-    unrecognised falls back to safety_episode (the required family closest
-    in spirit to "an anomaly report with no more specific classification
-    yet" -- never a silent drop)."""
+    unrecognised fails closed to unclassified_episode. Safety is reserved
+    for explicitly mapped operational Safety semantics; it is never a
+    generic fallback for unknown intelligence signals."""
     if explicit_family and explicit_family in _KNOWN_FAMILIES:
         return explicit_family
-    return _FAMILY_BY_ANOMALY_TYPE.get(str(anomaly_type or ""), "safety_episode")
+    return _FAMILY_BY_ANOMALY_TYPE.get(str(anomaly_type or ""), "unclassified_episode")
 
 
 @dataclass(frozen=True)

@@ -4,70 +4,75 @@ Work on `suezcanalxyz/seacommons` from the latest `main` only.
 
 ## Verified production baseline — 2026-09-06
 
-- Current runtime-code baseline: PR #151 merge `b44b5f2b72d64c84ffe99b52a959b597d47d71ea` (OSINT Evidence Pipeline v1).
-- IncidentWatch v0 is implemented, migrated and deployed; production Alembic head is `0019_incident_watch`.
-- Full CI #421 and CodeQL #380 passed on the implementation head before merge.
-- Production Vercel deployment for the merge is `READY` on Live and Play.
-- `live.seacommons.org` and `play.seacommons.org` both return 200 and load the same shared vessel-marker asset.
-- Live public feed and Play archive API both return 200 after rollout.
-- Existing canonical Humanitarian incidents were idempotently synced into IncidentWatch after deployment.
-- The historical Play demo-api 502 issue #41 is closed after direct application smoke returned 200 through the same demo vhost.
+- Current runtime-code baseline: PR #152 merge `fbcdb55471af4b19f45dfc927146e7ea26dc08b2`.
+- OSINT Evidence Pipeline v1 is merged, deployed and production-verified.
+- Vessel Context + Behavioural Baseline v1 is merged, deployed and production-verified.
+- Production Alembic head is `0020_vessel_baselines`; bounded production baseline rows were audited after rollout.
+- API, worker and Live edge publisher are active; `/ready`, `live.seacommons.org` and `play.seacommons.org` returned 200 after the rollout.
+- Live and Play still use the same shared vessel-marker assets.
+- IncidentWatch v0 remains the canonical bounded Humanitarian follow-up path.
 
 ## Do not restart completed work
 
 Already implemented and production-backed include:
 
 - durable/idempotent `SourceObservation` and adapter wiring;
-- canonical `HumanitarianIncident`, lifecycle transitions and timer contract;
-- current Drift ownership/cutover;
-- Source Registry, Coverage Matrix and coverage-change tracking;
-- connector contract and preservation policy;
-- `CorrelationDecision`, circular-reporting lineage and typed entity graph;
-- Alarm Phone image/OCR V2 and AIS evidence/safety separation;
-- Live 24h operational projection and Play historical archive;
+- canonical `HumanitarianIncident`, lifecycle transitions and current Drift ownership;
+- Source Registry, Coverage Matrix, preservation policy, correlation decisions and lineage edges;
+- Alarm Phone image/OCR V2 and Humanitarian privacy boundaries;
+- Live 24h operational projection and Play archive;
 - Sentinel/VIIRS evidence;
-- standardized shared Live/Play vessel triangles;
-- `IncidentWatchDB`, bounded scheduling, leases, retry/backoff and operator audit;
-- official-X bounded incident follow-up through `SourceObservation`;
-- compatibility for unresolved `outcome_unknown + lifecycle=archived` cases.
+- shared Live/Play vessel triangles;
+- IncidentWatch v0;
+- OSINT evidence-lineage classification and real source-independence semantics;
+- deterministic VesselContext, versioned BehaviouralBaseline and `expected | unusual | insufficient_history` BehaviourAssessment.
 
-Do not reimplement these because historical sections in `docs/fixes.md` describe them as future work. Inspect actual `main`, migrations, merged PRs and tests first.
+Inspect actual `main`, migrations, merged PRs and tests before changing historical work described in `docs/fixes.md`.
 
 ## Current task
 
-The immediate platform packet is **Vessel Context + Behavioural Baseline v1**. OSINT Evidence Pipeline v1 is already production-verified and must remain authoritative for source independence and publication.
+The immediate packet is **Observation -> Episode -> Hypothesis v1**. Its approved design and implementation plan are:
+
+- `docs/superpowers/specs/2026-09-06-observation-episode-hypothesis-v1-design.md`
+- `docs/superpowers/plans/2026-09-06-observation-episode-hypothesis-v1.md`
 
 Current invariant:
 
 ```text
-vessel identity/context != behavioural baseline
-unusual != suspicious
-baseline output != allegation
-behaviour context may inform an observation but cannot open a Case by itself
+observation != episode
+multiple detectors != multiple independent sources
+behaviour context != corroboration
+low-specificity single-lineage evidence != intelligence hypothesis
+new v1 hypothesis -> exactly one persisted episode
 ```
 
-Required v1 behavior:
+Required behavior:
 
-- build deterministic `VesselContext` from existing VesselSubject/registry/track evidence;
-- persist versioned behavioural baselines with deterministic evidence fingerprints under migration `0020_vessel_baselines`;
-- model only route corridor, speed envelope, recurrent ports/port pairs and AIS silence distribution;
-- emit only `expected`, `unusual`, or `insufficient_history` plus bounded reason codes and measurements;
-- attach compact behaviour context to selected AIS-derived observations without altering fusion case/publication authority;
-- keep baseline and behavioural reason codes operator/internal; public Live vessel context remains on the existing safe projection;
-- preserve YOUR WISDOM as a benign recurring-service regression and a same-identity contrastive deviation, never as a hard-coded suppress rule.
+- persist deterministic/replayable `MaritimeEpisodeDB` under migration `0021_maritime_episodes`;
+- add nullable `InvestigationHypothesisDB.episode_id`, where NULL explicitly marks legacy/pre-v1 rows;
+- never mutate or silently relink legacy hypothesis rows;
+- use `unclassified_episode` for unknown maritime anomalies; Safety is explicit only;
+- carry parent observation IDs, derived feature IDs, evidence fingerprint, lineage groups, verification status, behaviour context and alternative explanations on the Episode;
+- create low-specificity gap/rendezvous/infrastructure hypotheses only with genuine independent corroboration;
+- allow high-specificity deterministic spoofing to remain candidate on one lineage, never to advance on detector count;
+- give every new hypothesis `hyp:v1:*` identity and non-null episode ID;
+- persist Episode before interpretation so hypothesis-ineligible events remain auditable;
+- expose only bounded, identity-free observability labels for Episode and v1 hypothesis decisions;
+- preserve YOUR WISDOM as a generic benign-service regression, never a whitelist or hard-coded suppress rule.
 
-## Order after Vessel Context + Behavioural Baseline v1
+## Order after this packet
 
-After this packet is production-verified, continue with **Observation -> Episode -> Hypothesis**, then **Review v0**. Section 10 / PostGIS remains after the evidence/review foundation.
+After Observation -> Episode -> Hypothesis v1 is merged and production-verified, implement the already-designed **Review v0**. PostGIS / Section 10 follows Review. Sensor/collector expansion remains after the reasoning/review foundation.
 
 ## Non-negotiable constraints
 
 - Humanitarian privacy remains authoritative; no MMSI/IMO/callsign leakage into public Humanitarian surfaces.
 - Vessel class is context, never an allegation.
 - Safety observations never become Humanitarian or Intelligence by fallback.
-- Observation, incident/episode, assessment, review and publication remain distinct objects.
-- Models may assist but never silently become canonical truth.
-- Every new durable object is replayable and provenance-linked.
+- Observation, incident/episode, assessment/hypothesis, review and publication remain distinct objects.
+- AI/models may assist but never silently become canonical truth.
+- Every durable analytical object is replayable and provenance-linked.
+- Evidence independence is determined by lineage, not detector count or provider display name.
 - One semantic authority per PR; TDD first; exact-commit verification before merge.
 - Preserve the shared Live/Play vessel-marker contract and existing public UI semantics unless a packet explicitly targets them.
 - No production migration, restart or destructive maintenance without explicit operator approval.

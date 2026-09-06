@@ -1,0 +1,132 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""Episode-level eligibility for Maritime Intelligence hypotheses."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Optional
+
+from core.intel.hypothesis import evaluate_gate
+
+_FAMILY_HYPOTHESIS_TYPE = {
+    "gap_episode": "dark_transit",
+    "rendezvous_episode": "covert_rendezvous",
+    "spoofing_episode": "position_spoofing",
+    "infrastructure_proximity_episode": "infrastructure_pattern",
+}
+_LOW_SPECIFICITY = frozenset({
+    "gap_episode", "rendezvous_episode", "infrastructure_proximity_episode",
+})
+
+
+@dataclass(frozen=True)
+class EligibilityDecision:
+    eligible: bool
+    hypothesis_type: Optional[str]
+    may_advance_collecting: bool
+    evidence_stage: str
+    reason_codes: tuple[str, ...]
+    counter_indicators: tuple[str, ...]
+    explanation: str
+
+
+def _reason_codes(events: list[Any]) -> tuple[str, ...]:
+    return tuple(sorted({
+        str((getattr(event, "metadata", {}) or {}).get("anomaly_type") or "")
+        for event in events
+        if (getattr(event, "metadata", {}) or {}).get("anomaly_type")
+    }))
+
+
+def _counter_indicators(props: dict[str, Any]) -> tuple[str, ...]:
+    values = {str(v) for v in (props.get("alternative_explanations") or ()) if v}
+    behaviour = props.get("behaviour_context")
+    if isinstance(behaviour, dict) and behaviour.get("status") == "expected":
+        values.add("BEHAVIOUR_EXPECTED")
+    return tuple(sorted(values))
+
+
+def _base_gate(hypothesis_type: str, events: list[Any]) -> tuple[bool, str]:
+    if hypothesis_type == "dark_transit":
+        gap_reasons = [
+            (getattr(event, "metadata", {}) or {}).get("gap_reason")
+            for event in events
+            if isinstance((getattr(event, "metadata", {}) or {}).get("gap_reason"), dict)
+        ]
+        has_isolated = any(reason.get("hypothesis") == "vessel_gap" for reason in gap_reasons)
+        confidence = max((float(reason.get("confidence") or 0.0) for reason in gap_reasons), default=0.0)
+        return evaluate_gate(
+            "dark_transit",
+            has_isolated_gap_feature=has_isolated,
+            coverage_confidence=confidence,
+        )
+    if hypothesis_type == "covert_rendezvous":
+        metadata = [getattr(event, "metadata", {}) or {} for event in events]
+        has_rendezvous = any(m.get("anomaly_type") in {"ais_rendezvous", "rendezvous", "sts"} for m in metadata)
+        irregularities = tuple(sorted({"dark_party" for m in metadata if m.get("dark")}))
+        return evaluate_gate(
+            "covert_rendezvous",
+            has_sustained_rendezvous_episode=has_rendezvous,
+            independent_irregularities=irregularities,
+        )
+    if hypothesis_type == "position_spoofing":
+        metadata = [getattr(event, "metadata", {}) or {} for event in events]
+        implausible = any(m.get("anomaly_type") in {"position_jump", "circle_spoof", "static_spoof"} for m in metadata)
+        classifications = [m.get("ais_integrity_classification") for m in metadata if isinstance(m.get("ais_integrity_classification"), dict)]
+        counter_checked = any(c.get("label") not in (None, "not_alertable") for c in classifications)
+        return evaluate_gate(
+            "position_spoofing",
+            implausible_movement=implausible,
+            reproducible_inputs=True,
+            counter_evidence_checked=counter_checked,
+        )
+    if hypothesis_type == "infrastructure_pattern":
+        metadata = [getattr(event, "metadata", {}) or {} for event in events]
+        dwell = any(m.get("loiter_minutes") for m in metadata)
+        corroboration = tuple(sorted({"sanctions_match" for m in metadata if m.get("sanctions_matched")}))
+        return evaluate_gate(
+            "infrastructure_pattern",
+            dwell_or_route_repetition=dwell,
+            independent_corroboration=corroboration,
+        )
+    return False, f"no gate wired for hypothesis_type={hypothesis_type!r}"
+
+
+def evaluate_hypothesis_eligibility(
+    episode: dict[str, Any], events: list[Any],
+) -> EligibilityDecision:
+    props = episode.get("properties") or {}
+    family = str(props.get("episode_family") or "")
+    hypothesis_type = _FAMILY_HYPOTHESIS_TYPE.get(family)
+    reasons = _reason_codes(events)
+    counters = _counter_indicators(props)
+    if hypothesis_type is None:
+        return EligibilityDecision(False, None, False, "observed", reasons, counters, "episode family has no intelligence hypothesis mapping")
+
+    base_ok, base_reason = _base_gate(hypothesis_type, events)
+    if not base_ok:
+        return EligibilityDecision(False, hypothesis_type, False, "derived", reasons, counters, base_reason)
+
+    verification_status = str(props.get("verification_status") or "single_source_observed")
+    corroborated = verification_status == "multi_source_corroborated"
+    if family in _LOW_SPECIFICITY and not corroborated:
+        return EligibilityDecision(
+            False,
+            hypothesis_type,
+            False,
+            "derived",
+            reasons,
+            counters,
+            "independent corroboration required for low-specificity episode",
+        )
+
+    evidence_stage = "corroborated" if corroborated else "derived"
+    may_advance = corroborated
+    return EligibilityDecision(
+        True,
+        hypothesis_type,
+        may_advance,
+        evidence_stage,
+        reasons,
+        counters,
+        "eligible",
+    )
