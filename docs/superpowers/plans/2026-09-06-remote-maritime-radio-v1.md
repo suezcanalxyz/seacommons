@@ -143,12 +143,21 @@
 - Starts only enabled/configured/terms-allowed receivers when `REMOTE_RADIO_ENABLED=true`; default runtime is disabled.
 - Exposes bounded labels only: provider, health state, mode class, and outcome. Never label metrics with receiver URLs, station free text, session IDs, callsigns, MMSI, or arbitrary frequency values.
 
-- [ ] Write RED tests for disabled-by-default startup, partial provider failure isolation, stop semantics, duplicate physical-lineage suppression, and bounded health/status output.
-- [ ] Write RED metric-cardinality tests using hostile receiver/session strings and assert they normalize to bounded labels.
-- [ ] Run runtime/observability tests and observe expected failures.
-- [ ] Implement runtime orchestration and operator-safe status without any public Live contract change.
-- [ ] Run runtime/observability/config/bootstrap regressions GREEN.
-- [ ] Commit `feat: orchestrate remote maritime radio receivers`.
+- [x] Write RED tests for disabled-by-default startup, partial provider failure isolation, stop semantics, duplicate physical-lineage suppression, and bounded health/status output.
+- [x] Write RED metric-cardinality tests using hostile receiver/session strings and assert they normalize to bounded labels.
+- [x] Run runtime/observability tests and observe expected failures.
+- [x] Implement runtime orchestration and operator-safe status without any public Live contract change.
+- [x] Run runtime/observability/config/bootstrap regressions GREEN.
+- [x] Commit `feat: orchestrate remote maritime radio receivers`.
+
+### Task 5 execution record — 2026-09-06
+
+- Runtime remains disabled by default and does not build adapters when disabled.
+- Runnable receiver selection suppresses duplicate `physical_lineage` before adapter construction.
+- Provider startup failures are isolated and status output excludes receiver IDs, frontend URLs and transport exception details.
+- Remote-radio metrics use bounded provider/state/outcome labels only; hostile receiver/session strings collapse to `other`/bounded states.
+- Operator status is exposed only under the existing ops summary; no public Live contract changed.
+- Focused runtime/observability/config/provider/source-observation/bootstrap gate: `82 passed, 1 warning`; Ruff and `git diff --check` green.
 
 ### Task 6: Release gates and handoff to DSC + NAVTEX
 

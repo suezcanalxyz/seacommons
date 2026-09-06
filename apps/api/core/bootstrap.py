@@ -104,6 +104,21 @@ def start_background_sensors() -> None:
         logger.warning("Humanitarian incident sync failed to start: %s", exc)
 
     _start_ais_feeds()
+    _start_remote_radio()
+
+
+
+def _start_remote_radio() -> None:
+    """Start configured remote radio receivers; default config is disabled."""
+    if not config.REMOTE_RADIO_ENABLED:
+        return
+    try:
+        from core.radio.runtime import start_remote_radio_from_config
+
+        runtime = start_remote_radio_from_config()
+        logger.info("Remote radio runtime started: %s", runtime.status())
+    except Exception as exc:
+        logger.warning("Remote radio runtime failed to start: %s", type(exc).__name__)
 
 
 

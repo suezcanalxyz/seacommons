@@ -116,6 +116,11 @@ HUMANITARIAN_VERIFICATION_EVENTS = Counter(
     "Humanitarian verification pipeline events by bounded semantic stage",
     ["stage", "source_role", "outcome"],
 )
+REMOTE_RADIO_EVENTS = Counter(
+    "seacommons_remote_radio_events_total",
+    "Remote radio runtime events by bounded provider/state/outcome",
+    ["provider", "state", "outcome"],
+)
 
 _HV_STAGES = frozenset({"claim_extraction", "association", "mission", "resolution"})
 _HV_SOURCE_ROLES = frozenset({"operational_origin", "verification", "archive_reference", "unknown"})
@@ -137,6 +142,22 @@ def record_humanitarian_verification_event(*, stage: str, source_role: str, outc
         outcome_label = outcome if outcome in _HV_OUTCOMES else "other"
         HUMANITARIAN_VERIFICATION_EVENTS.labels(stage_label, role_label, outcome_label).inc()
     except Exception:  # pragma: no cover - metrics never block verification
+        pass
+
+
+_REMOTE_RADIO_PROVIDERS = frozenset({"kiwisdr", "openwebrx"})
+_REMOTE_RADIO_STATES = frozenset({"connected", "disconnected"})
+_REMOTE_RADIO_OUTCOMES = frozenset({"started", "start_failed", "observation", "persist_failed"})
+
+
+def record_remote_radio_event(*, provider: str, state: str, outcome: str) -> None:
+    """Bounded-cardinality remote-radio metric; never labels receiver/frequency/session IDs."""
+    try:
+        provider_label = provider if provider in _REMOTE_RADIO_PROVIDERS else "other"
+        state_label = state if state in _REMOTE_RADIO_STATES else "disconnected"
+        outcome_label = outcome if outcome in _REMOTE_RADIO_OUTCOMES else "other"
+        REMOTE_RADIO_EVENTS.labels(provider_label, state_label, outcome_label).inc()
+    except Exception:
         pass
 
 _AIS_PROVIDERS = frozenset({"aisstream", "aiscast"})

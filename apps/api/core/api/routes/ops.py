@@ -115,6 +115,20 @@ async def ops_summary():
     # Vessel registry — in-memory, instant
     vessel_stats = registry.stats()
 
+    try:
+        from core.radio.runtime import get_remote_radio_status
+
+        remote_radio = get_remote_radio_status()
+    except Exception:
+        remote_radio = {
+            "enabled": bool(config.REMOTE_RADIO_ENABLED),
+            "configured": 0,
+            "runnable": 0,
+            "started": 0,
+            "failed": 0,
+            "providers": {},
+        }
+
     # Scheduler status — in-memory, instant
     try:
         from core.scheduler import status as scheduler_status
@@ -157,6 +171,7 @@ async def ops_summary():
             "job_execution_mode": config.JOB_EXECUTION_MODE,
             "image_ocr": _image_ocr_status(),
             "intel_monitors": _intel_monitor_status(),
+            "remote_radio": remote_radio,
         },
         "channels": {
             "twitter": {

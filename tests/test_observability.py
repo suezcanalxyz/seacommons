@@ -171,3 +171,25 @@ def test_humanitarian_verification_metrics_accept_bounded_resolution_outcome() -
     assert 'stage="resolution"' in metrics
     assert 'source_role="verification"' in metrics
     assert 'outcome="rescue_confirmed"' in metrics
+
+
+def test_remote_radio_metrics_normalize_unbounded_labels() -> None:
+    from core import observability
+
+    secret = "receiver-258479000-private@example.com-session-123"
+    observability.record_remote_radio_event(provider=secret, state=secret, outcome=secret)
+    metrics = generate_latest().decode()
+    assert secret not in metrics
+    assert 'seacommons_remote_radio_events_total{outcome="other",provider="other",state="disconnected"}' in metrics
+
+
+def test_remote_radio_metrics_accept_bounded_provider_state_outcome() -> None:
+    from core import observability
+
+    observability.record_remote_radio_event(
+        provider="openwebrx", state="connected", outcome="observation"
+    )
+    metrics = generate_latest().decode()
+    assert 'provider="openwebrx"' in metrics
+    assert 'state="connected"' in metrics
+    assert 'outcome="observation"' in metrics
