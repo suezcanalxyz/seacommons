@@ -67,5 +67,15 @@
 
 ### Task 4: Observability, privacy and release gates
 
-- Bounded metrics, exact diff review, focused/full/static/migrations/audit.
-- Hand off to Review v0/publication controls only after green/reviewed.
+- [x] Bounded metrics, exact diff review, focused/full/static/migrations/audit.
+- [x] Hand off to Review v0/publication controls only after green/reviewed.
+
+### Task 4 execution record — 2026-09-06
+
+- Cross-modal metrics use bounded `stage/state/outcome` labels only; hostile identifiers collapse to `other`.
+- Focused privacy/lineage/cross-modal gate: `108 passed, 1 warning`.
+- Full backend: `1483 passed, 2 skipped, 221 warnings`.
+- Ruff critical, canonical mypy, migrations through `0022_audio_artifacts`, and canonical project dependency audit are green.
+- Web test/lint/typecheck/build/audit green; edge `12 passed`, Wrangler dry-run and audit green.
+- Exact-diff review confirms no lifecycle/publication shortcut, source/provider inflation, derived-evidence independence inflation, or receiver/MMSI leakage in attached contexts.
+- Cross-modal Evidence Fusion v1 is development-complete/review-ready.

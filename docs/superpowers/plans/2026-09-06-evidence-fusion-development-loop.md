@@ -6,7 +6,7 @@
 
 **Architecture:** All source-specific transports normalize into shared evidence contracts before domain reasoning. Humanitarian incidents and Maritime Intelligence episodes share provenance/lineage infrastructure but keep separate decision semantics. New source types are added as adapters, never as parallel truth pipelines.
 
-**Current packet:** Cross-modal Evidence Fusion v1 — Task 0 evidence packet contracts.
+**Current packet:** Review v0 / publication controls — Task 0 review record contract.
 
 **Detailed current plan:** `docs/superpowers/plans/2026-09-06-audio-evidence-v1.md`
 
@@ -81,7 +81,7 @@ Introduce `EvidenceArtifact(type=audio)` with receiver, frequency/channel, start
 Before production acquisition, complete jurisdiction/provider-specific legal and retention review. Unsupported or unclear receiver terms remain disabled.
 ### Packet F — Cross-modal Evidence Fusion v1
 
-Status: current packet.
+Status: development-complete / review-ready.
 
 Goal: combine independent evidence modalities without collapsing provenance or overstating confidence.
 
@@ -92,6 +92,8 @@ Target evidence packet:
 Rules: source independence is lineage-based; multiple transports from one source identity do not multiply evidence; AIS providers remain the same AIS modality; derived behaviour never counts as an extra source; contradictions are preserved, not averaged away.
 
 ### Packet G — Review v0 and publication controls
+
+Status: current packet.
 
 Goal: route uncertainty from Humanitarian ResolutionAssessment and Maritime InvestigationHypothesis through one review mechanism without creating a second truth store.
 

@@ -1,8 +1,8 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Cross-modal Evidence Fusion v1 — Task 4 observability, privacy and release gates
-> **Current packet plan:** `docs/superpowers/plans/2026-09-06-cross-modal-evidence-fusion-v1.md`
+> **Current packet:** Review v0 / publication controls — Task 0 review record contract
+> **Current packet plan:** `docs/superpowers/plans/2026-09-06-review-v0-publication-controls.md`
 > **Production runtime baseline:** `0ae4df7cc20c8209acc267eb595129c2dc3961bd`
 > **Production schema:** `0021_maritime_episodes`
 
@@ -44,9 +44,15 @@ Development-complete / review-ready through `1271a85`. Immutable bounded audio a
 
 Release evidence: focused audio/privacy/provenance `80 passed`; full backend `1458 passed, 2 skipped`; Ruff/mypy/migrations/canonical dependency audit green.
 
-## Current packet state — Cross-modal Evidence Fusion v1
+## Completed packet — Cross-modal Evidence Fusion v1
 
-Packet E introduces bounded, legally-permitted audio evidence artifacts with explicit content hash, receiver/frequency/time provenance and retention policy. Audio is evidence storage, not a truth store: transcript/claim extraction remains derived and cannot directly mutate Humanitarian lifecycle or public allegations. Task 0 defines the immutable artifact contract and fail-closed retention/terms boundary before any acquisition runtime exists.
+Development-complete / review-ready through `36b5c21`. Evidence packets preserve source lineage and modality; AIS provider multiplicity collapses to one AIS modality; derived AIS/audio evidence never adds independence. Contradictions remain explicit records rather than confidence averages. Humanitarian ResolutionAssessment and MaritimeEpisode receive bounded context only, with no lifecycle/publication/hypothesis-state mutation and no receiver/MMSI leakage.
+
+Release evidence: focused privacy/lineage `108 passed`; full backend `1483 passed, 2 skipped`; Ruff/mypy/migrations/dependency audit green; web/edge gates green.
+
+## Current packet state — Review v0 / publication controls
+
+Review v0 adds one auditable review record over the real Humanitarian ResolutionAssessment and Maritime InvestigationHypothesis workflows. Review stores an evidence snapshot, decision, rationale, actor/time and requested transition; approval can only invoke existing domain-specific gates. It must never become a second incident/hypothesis truth store or bypass Humanitarian privacy/publication policy.
 
 ## Loop order
 

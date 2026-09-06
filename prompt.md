@@ -15,9 +15,9 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-Cross-modal Evidence Fusion v1, Task 4 — observability, privacy and release gates.
+Review v0 / publication controls, Task 0 — review record contract.
 
-Detailed plan: `docs/superpowers/plans/2026-09-06-cross-modal-evidence-fusion-v1.md`.
+Detailed plan: `docs/superpowers/plans/2026-09-06-review-v0-publication-controls.md`.
 
 Free/Open AIS Fusion v1 is development-complete/shadow-ready. Humanitarian Verification v1 is development-complete/review-ready through `961c436`; release gates were `141` focused tests and `1350` full backend tests plus green static/web/edge/dependency gates. No production AIS cutover or Humanitarian auto-resolution was authorized.
 
@@ -54,3 +54,5 @@ For each packet: run full backend/static and any crossed web/edge gates, privacy
 Production migration, restart, destructive maintenance, remote receiver activation, audio capture, or activation of a new canonical feed mode requires explicit operator authorization.
 
 Audio Evidence v1 is development-complete/review-ready through `1271a85`; production capture remains disabled and unauthorized. Continue with Cross-modal Evidence Fusion v1 without collapsing lineage or allowing derived audio/transcripts to become independent source authority.
+
+Cross-modal Evidence Fusion v1 is development-complete/review-ready through `36b5c21`; continue with Review v0. Review decisions are audit records and may advance state/publication only through existing domain-specific transition/publication gates.
