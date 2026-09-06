@@ -103,6 +103,7 @@ class SuezCanalConfig(BaseSettings):
     # Software-only remote maritime radio. Disabled until an operator provides
     # explicit receiver descriptors with confirmed source terms.
     REMOTE_RADIO_ENABLED: bool = False
+    STRUCTURED_RADIO_ENABLED: bool = False
     REMOTE_RADIO_MAX_RECEIVERS: int = 8
     REMOTE_RADIO_CONNECT_TIMEOUT_S: float = 10.0
     REMOTE_RADIO_RECEIVERS_JSON: str = ""

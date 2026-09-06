@@ -25,15 +25,16 @@ def project_dsc_safety_candidate(
     if not evidence_id:
         raise ValueError("evidence_observation_id is required")
 
+    candidate_id = _candidate_id(observation)
     return IntelEvent(
-        id=_candidate_id(observation),
+        id=candidate_id,
         timestamp_utc=observation.observed_at.isoformat(),
         type="dsc_distress",
         severity="critical",
         lat=observation.latitude,
         lon=observation.longitude,
         title="DSC distress received",
-        text="Decoded DSC distress candidate; operator review required.",
+        text=f"Decoded DSC distress candidate; operator review required. Ref {candidate_id}.",
         source=f"radio_receiver:{observation.physical_lineage}",
         linked_mmsi=observation.mmsi or "",
         metadata={

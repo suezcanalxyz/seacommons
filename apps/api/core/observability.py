@@ -121,6 +121,11 @@ REMOTE_RADIO_EVENTS = Counter(
     "Remote radio runtime events by bounded provider/state/outcome",
     ["provider", "state", "outcome"],
 )
+STRUCTURED_RADIO_EVENTS = Counter(
+    "seacommons_structured_radio_events_total",
+    "Structured DSC/NAVTEX ingestion events by bounded kind/outcome",
+    ["kind", "outcome"],
+)
 
 _HV_STAGES = frozenset({"claim_extraction", "association", "mission", "resolution"})
 _HV_SOURCE_ROLES = frozenset({"operational_origin", "verification", "archive_reference", "unknown"})
@@ -159,6 +164,20 @@ def record_remote_radio_event(*, provider: str, state: str, outcome: str) -> Non
         REMOTE_RADIO_EVENTS.labels(provider_label, state_label, outcome_label).inc()
     except Exception:
         pass
+
+_STRUCTURED_RADIO_KINDS = frozenset({"dsc", "navtex"})
+_STRUCTURED_RADIO_OUTCOMES = frozenset({"accepted", "disabled", "invalid", "persist_failed", "projected", "context_only"})
+
+
+def record_structured_radio_event(*, kind: str, outcome: str) -> None:
+    """Bounded DSC/NAVTEX metric; never labels source-native identifiers or text."""
+    try:
+        kind_label = kind if kind in _STRUCTURED_RADIO_KINDS else "other"
+        outcome_label = outcome if outcome in _STRUCTURED_RADIO_OUTCOMES else "other"
+        STRUCTURED_RADIO_EVENTS.labels(kind_label, outcome_label).inc()
+    except Exception:
+        pass
+
 
 _AIS_PROVIDERS = frozenset({"aisstream", "aiscast"})
 _AIS_UPSTREAMS = frozenset({

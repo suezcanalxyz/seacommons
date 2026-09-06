@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import uuid
 
 
 def _dsc(**overrides):
@@ -60,7 +61,7 @@ def test_replay_does_not_duplicate_candidate():
     from core.intel.store import intel_store
     from core.radio.safety_projection import ingest_dsc_safety_candidate
 
-    observation = _dsc(decoder_message_id="dsc-replay-1")
+    observation = _dsc(decoder_message_id=f"dsc-replay-{uuid.uuid4().hex}")
     first = ingest_dsc_safety_candidate(observation, evidence_observation_id="obs:replay")
     second = ingest_dsc_safety_candidate(observation, evidence_observation_id="obs:replay")
     assert first is True
