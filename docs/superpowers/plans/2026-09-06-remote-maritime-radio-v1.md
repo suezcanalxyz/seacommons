@@ -113,12 +113,21 @@
 - Consumes normalized `RadioObservation` from Tasks 0/2/3.
 - Persists idempotent `SourceObservation` rows with `service="maritime"`, a non-Humanitarian radio acquisition lane/observation type compatible with current taxonomy, and provenance containing receiver/provider/physical-lineage/source-terms metadata.
 
-- [ ] Write RED proving replay of the same provider observation/session key is idempotent, provider URL is not treated as physical independence, and provenance keeps receiver/physical lineage/source terms.
-- [ ] Write RED proving no audio/IQ body, transcript, MMSI-derived Humanitarian classification, or lifecycle mutation is created by this bridge.
-- [ ] Run `pytest -q tests/test_radio_source_observation.py` and observe expected failures.
-- [ ] Implement a thin bridge around `core.intel.source_observation.record_observation()`; store only bounded text/JSON metadata as `raw_payload`, never continuous waveform content.
-- [ ] Run source-observation, evidence-lineage, Humanitarian privacy, and service-taxonomy regressions GREEN.
-- [ ] Commit `feat: persist bounded remote radio observations`.
+- [x] Write RED proving replay of the same provider observation/session key is idempotent, provider URL is not treated as physical independence, and provenance keeps receiver/physical lineage/source terms.
+- [x] Write RED proving no audio/IQ body, transcript, MMSI-derived Humanitarian classification, or lifecycle mutation is created by this bridge.
+- [x] Run `pytest -q tests/test_radio_source_observation.py` and observe expected failures.
+- [x] Implement a thin bridge around `core.intel.source_observation.record_observation()`; store only bounded text/JSON metadata as `raw_payload`, never continuous waveform content.
+- [x] Run source-observation, evidence-lineage, Humanitarian privacy, and service-taxonomy regressions GREEN.
+- [x] Commit `feat: persist bounded remote radio observations`.
+
+
+### Task 4 execution record — 2026-09-06
+
+- `RadioObservation` persists through the canonical immutable `record_observation()` path; no parallel radio truth store was added.
+- Source identity is `radio_receiver:<physical_lineage>` so provider/frontend changes do not inflate physical evidence independence.
+- Persisted body remains hash-only in `SourceObservationDB`; no audio/IQ/transcript body or archive ref is written by this packet.
+- Provenance preserves bounded receiver ID, provider, physical lineage, source terms, and whether a session key existed.
+- Focused source-observation/service-taxonomy/Humanitarian/provider regression gate: `77 passed, 1 warning`; Ruff and whitespace green.
 
 ### Task 5: Runtime, health, observability, and operator surface
 

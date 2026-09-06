@@ -15,13 +15,13 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-Remote Maritime Radio v1, Task 4 — immutable Radio SourceObservation bridge.
+Remote Maritime Radio v1, Task 5 — runtime, health, observability, and operator surface.
 
 Detailed plan: `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`.
 
 Free/Open AIS Fusion v1 is development-complete/shadow-ready. Humanitarian Verification v1 is development-complete/review-ready through `961c436`; release gates were `141` focused tests and `1350` full backend tests plus green static/web/edge/dependency gates. No production AIS cutover or Humanitarian auto-resolution was authorized.
 
-Tasks 0-3 are complete. Continue with Task 4 by bridging bounded `RadioObservation` objects into immutable `SourceObservation` rows without persisting audio/IQ bytes or changing Humanitarian/lifecycle state. `core.sensors.sdr.SDRScanner` is the legacy local RTL-SDR anomaly scanner and must not become the remote receiver architecture.
+Tasks 0-4 are complete. Continue with Task 5 by adding disabled-by-default runtime orchestration and bounded operator health/metrics. The SourceObservation bridge is already canonical and keyed to physical receiver lineage; do not add another persistence path. `core.sensors.sdr.SDRScanner` is the legacy local RTL-SDR anomaly scanner and must not become the remote receiver architecture.
 
 ## Packet boundary
 

@@ -28,7 +28,7 @@ Release evidence: focused privacy/lineage `141 passed`; full backend `1350 passe
 
 ## Current packet state — Remote Maritime Radio v1
 
-The next packet is software-only remote receiver acquisition. Its plan is `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`. Tasks 0-3 are complete: the provider-neutral contract, configured receiver registry/config, KiwiSDR adapter, and OpenWebRX adapter are implemented. Runnable candidates are deduplicated by physical lineage, source terms are gated fail-closed, and neither adapter persists audio. Task 4 adds the immutable Radio SourceObservation bridge.
+The next packet is software-only remote receiver acquisition. Its plan is `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`. Tasks 0-3 are complete: the provider-neutral contract, configured receiver registry/config, KiwiSDR adapter, and OpenWebRX adapter are implemented. Runnable candidates are deduplicated by physical lineage, source terms are gated fail-closed, and neither adapter persists audio. Task 4 is complete: bounded radio metadata now persists through the canonical immutable SourceObservation path keyed to physical receiver lineage. Task 5 adds disabled-by-default runtime orchestration, health, observability, and an operator-safe status surface.
 
 The existing `core.sensors.sdr.SDRScanner` is a local RTL-SDR anomaly scanner and is not the architecture for this packet. Remote radio must preserve provider/frontend identity separately from physical receiver/RF lineage; duplicate frontends cannot become independent evidence. No continuous audio/IQ persistence and no DSC/NAVTEX decoding belong in this packet. Runtime defaults disabled.
 
