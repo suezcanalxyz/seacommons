@@ -358,8 +358,14 @@ def _on_intel_event(event: IntelEvent) -> None:
 
         if classify_service(event).service != "humanitarian":
             return
-        from core.intel.source_identity import may_open_humanitarian_incident
+        from core.intel.source_identity import may_open_humanitarian_incident, resolve_source_identity
 
+        source_policy = resolve_source_identity(event.source, event.metadata)
+        if source_policy.source_role == "verification":
+            from core.intel.humanitarian_verification import process_verification_event
+
+            process_verification_event(event)
+            return
         if not may_open_humanitarian_incident(event):
             return
         same_source = [
