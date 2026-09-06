@@ -83,6 +83,31 @@ class VesselTrackDB(Base):
     )
 
 
+class VesselBehaviouralBaselineDB(Base):
+    """Versioned analytical baseline derived from vessel track evidence."""
+    __tablename__ = "vessel_behavioural_baselines"
+    baseline_id = Column(String(64), primary_key=True)
+    subject_id = Column(String(64), nullable=False, index=True)
+    primary_mmsi = Column(String(16), nullable=False, index=True)
+    primary_imo = Column(String(16), index=True)
+    window_start = Column(DateTime, nullable=False)
+    window_end = Column(DateTime, nullable=False, index=True)
+    sample_count = Column(Integer, nullable=False)
+    history_days = Column(Float, nullable=False)
+    route_model = Column(JSON, nullable=False, default=dict)
+    speed_model = Column(JSON, nullable=False, default=dict)
+    port_model = Column(JSON, nullable=False, default=dict)
+    silence_model = Column(JSON, nullable=False, default=dict)
+    evidence_fingerprint = Column(String(64), nullable=False, index=True)
+    method_version = Column(String(64), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_vessel_baselines_mmsi_window", "primary_mmsi", "window_end"),
+        UniqueConstraint("subject_id", "window_start", "window_end", "method_version", "evidence_fingerprint", name="uq_vessel_baseline_evidence_window"),
+    )
+
+
 class SanctionedVesselDB(Base):
     """Aggregated sanctioned-vessel reference (OpenSanctions + OFAC SDN), rebuilt
     daily by core.mda.identity.refresh_sanctions()."""
