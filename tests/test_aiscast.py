@@ -4,7 +4,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
-
 from core.vessels.aiscast import AiscastClient, parse_aiscast_message
 
 _NOW = datetime(2026, 9, 6, 10, 5, 2, tzinfo=timezone.utc)
@@ -61,3 +60,16 @@ def test_health_starts_disconnected_and_zero_messages():
     assert health.provider == "aiscast"
     assert health.connected is False
     assert health.messages_received == 0
+
+
+def test_aiscast_stop_emits_provider_health_callback():
+    seen = []
+    client = AiscastClient(
+        on_observation=lambda _obs: None,
+        on_health=seen.append,
+        bbox=(32, 10, 38, 20),
+    )
+    client.stop()
+    assert seen
+    assert seen[-1].provider == "aiscast"
+    assert seen[-1].connected is False

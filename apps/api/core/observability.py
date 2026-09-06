@@ -106,6 +106,33 @@ EDGE_PROJECTION_MISMATCH = Counter(
     "seacommons_edge_projection_mismatch_total",
     "VM-edge projection parity check failures (M9)",
 )
+AIS_FUSION_OBSERVATIONS = Counter(
+    "seacommons_ais_fusion_observations_total",
+    "Normalized AIS observations by bounded provider/upstream/runtime outcome",
+    ["provider", "upstream", "mode", "outcome"],
+)
+
+_AIS_PROVIDERS = frozenset({"aisstream", "aiscast"})
+_AIS_UPSTREAMS = frozenset({
+    "aisstream", "volunteer", "digitraffic", "kystverket",
+    "barentswatch", "aishub", "unknown",
+})
+_AIS_MODES = frozenset({"legacy", "shadow", "fused"})
+_AIS_OUTCOMES = frozenset({"received", "duplicate", "shadow", "canonical"})
+
+
+def record_ais_fusion_observation(*, provider: str, upstream: str, mode: str, outcome: str) -> None:
+    """Record AIS fusion flow without station/vessel/high-cardinality labels."""
+    try:
+        provider_label = provider if provider in _AIS_PROVIDERS else "other"
+        upstream_label = upstream if upstream in _AIS_UPSTREAMS else "other"
+        mode_label = mode if mode in _AIS_MODES else "legacy"
+        outcome_label = outcome if outcome in _AIS_OUTCOMES else "received"
+        AIS_FUSION_OBSERVATIONS.labels(
+            provider_label, upstream_label, mode_label, outcome_label
+        ).inc()
+    except Exception:  # pragma: no cover - metrics never block AIS ingestion
+        pass
 
 
 def record_maritime_episode_evaluation(episode_family: str, verification_status: str) -> None:

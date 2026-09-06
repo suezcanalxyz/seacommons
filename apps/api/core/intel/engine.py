@@ -188,8 +188,16 @@ class IntelEngine:
             hooks = position_hook_count()
         except Exception:
             hooks = 0
+        try:
+            from core.vessels.ais_runtime import runtime as ais_runtime
+            current_runtime = ais_runtime()
+            ais_runtime_status = current_runtime.status() if current_runtime is not None else {}
+        except Exception:
+            ais_runtime_status = {}
         return {
             "running": self._started,
+            "ais_fusion_mode": ais_runtime_status.get("mode", "legacy"),
+            "aiscast_started": bool(ais_runtime_status.get("aiscast_started", False)),
             "twikit": self._twikit is not None,
             "twitter_api": self._twitter is not None,
             "news": self._news is not None,

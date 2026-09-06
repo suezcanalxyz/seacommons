@@ -103,15 +103,35 @@ def start_background_sensors() -> None:
     except Exception as exc:
         logger.warning("Humanitarian incident sync failed to start: %s", exc)
 
-    if config.AISSTREAM_KEY:
-        try:
-            from core.vessels import aisstream
-            aisstream.start(config.AISSTREAM_KEY, ngo_api_key=config.AISSTREAM_NGO_KEY)
-            logger.info("AISStream client started")
-        except Exception as exc:
-            logger.warning("AISStream failed to start: %s", exc)
-    else:
+    _start_ais_feeds()
+
+
+
+def _start_ais_feeds() -> None:
+    """Start AIS providers through the staged fusion runtime.
+
+    `legacy` is intentionally identical to the historical AISStream-only
+    startup path. `shadow` adds aiscast without changing canonical writes;
+    `fused` is the only mode allowed to cut canonical positions over.
+    """
+    if not config.AISSTREAM_KEY:
         logger.warning("AISStream key missing: live vessel feed disabled")
+        return
+    try:
+        from core.vessels.ais_runtime import start_sources
+        runtime = start_sources(
+            mode=config.AIS_FUSION_MODE,
+            aisstream_key=config.AISSTREAM_KEY,
+            ngo_api_key=config.AISSTREAM_NGO_KEY,
+            aiscast_enabled=config.AISCAST_ENABLED,
+            aiscast_bbox=config.AISCAST_BBOX,
+            aiscast_mmsi_limit=config.AISCAST_NGO_MMSI_LIMIT,
+            aiscast_url=config.AISCAST_WS_URL,
+        )
+        logger.info("AIS runtime started (mode=%s, aiscast=%s)",
+                    runtime.mode, runtime.status().get("aiscast_started"))
+    except Exception as exc:
+        logger.warning("AIS runtime failed to start: %s", exc)
 
 
 def start_scheduler() -> None:

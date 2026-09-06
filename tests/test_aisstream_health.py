@@ -95,3 +95,38 @@ def test_aisstream_position_report_emits_provider_observation():
     assert seen[0].provider == "aisstream"
     assert seen[0].upstream_source == "aisstream"
     assert seen[0].mmsi == "247123456"
+
+
+def test_fused_mode_callback_can_disable_direct_legacy_writes(monkeypatch):
+    from core.vessels import ais_bus
+
+    seen = []
+    published = []
+    registry = _Registry()
+    monkeypatch.setattr(ais_bus, "publish", published.append)
+
+    client = AISStreamClient(
+        "key", on_observation=seen.append, publish_legacy=False,
+    )
+    client._handle(_position_message(), registry)
+
+    assert len(seen) == 1
+    assert registry.rows == []
+    assert published == []
+
+
+def test_aisstream_exposes_provider_health_contract():
+    client = AISStreamClient("key")
+    health = client.health()
+    assert health.provider == "aisstream"
+    assert health.connected is False
+    assert health.messages_received == 0
+
+
+def test_aisstream_stop_emits_provider_health_callback():
+    seen = []
+    client = AISStreamClient("key", on_health=seen.append)
+    client.stop()
+    assert seen
+    assert seen[-1].provider == "aisstream"
+    assert seen[-1].connected is False

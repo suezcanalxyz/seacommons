@@ -489,6 +489,19 @@ git add apps/api/core/bootstrap.py apps/api/core/config.py apps/api/core/intel/e
 git commit -m "feat: stage free AIS fusion behind shadow cutover"
 ```
 
+
+#### Task 7 execution record — 2026-09-06
+
+- Added explicit runtime modes `legacy | shadow | fused`; default remains `legacy`.
+- `legacy` starts only the historical AISStream path.
+- `shadow` starts aiscast and reconciliation/metrics while preserving AISStream canonical writes.
+- `fused` disables direct AISStream position writes and routes accepted reconciled fixes through the canonical sink.
+- AISStream and aiscast now expose the same provider-health contract and push health transitions into `CoverageState`.
+- Healthy→unhealthy transitions append one `coverage_break` to the existing `SourceCoverageEventDB` audit trail.
+- Ops/IntelEngine status exposes fusion mode and aiscast startup state.
+- Prometheus labels are bounded to provider/upstream/mode/outcome; no MMSI or station labels.
+- Verification: focused runtime/AIS/SAR/coverage/observability block `110 passed, 1 warning`; Ruff + `git diff --check` clean.
+
 ### Task 8: Release gates and bounded live verification
 
 **Files:**

@@ -94,20 +94,42 @@ class AISStreamClient:
         bbox: list | None = None,
         mmsi_filter: list[str] | None = None,
         on_observation=None,
+        on_health=None,
+        publish_legacy: bool = True,
     ):
         self._api_key = api_key
         self._label = label
         self._bbox = bbox or _BBOX
         self._mmsi_filter = mmsi_filter
         self._on_observation = on_observation
+        self._on_health = on_health
+        self._publish_legacy = bool(publish_legacy)
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._connected = False
+        self._last_message_at = None
+        self._error = None
         self.messages_received = 0
 
     @property
     def connected(self) -> bool:
         return self._connected
+
+    def health(self):
+        from core.vessels.ais_provider import AISProviderHealth
+        return AISProviderHealth(
+            provider="aisstream", connected=self._connected,
+            last_message_at=self._last_message_at,
+            messages_received=self.messages_received, error=self._error,
+        )
+
+    def _emit_health(self) -> None:
+        if self._on_health is None:
+            return
+        try:
+            self._on_health(self.health())
+        except Exception:
+            logger.debug("AISStream health callback failed", exc_info=True)
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -122,6 +144,7 @@ class AISStreamClient:
     def stop(self) -> None:
         self._stop.set()
         self._connected = False
+        self._emit_health()
 
     def _run(self) -> None:
         from core.vessels.registry import registry
@@ -157,6 +180,8 @@ class AISStreamClient:
                         sub["FiltersShipMMSI"] = self._mmsi_filter
                     ws.send(json.dumps(sub))
                     self._connected = True
+                    self._error = None
+                    self._emit_health()
                     backoff = 2
                     logger.info("AISStream: subscribed (%s)", self._label)
 
@@ -170,6 +195,7 @@ class AISStreamClient:
                             msg = json.loads(raw)
                             self._handle(msg, registry)
                             self.messages_received += 1
+                            self._last_message_at = datetime.now(timezone.utc)
                             messages_since_report += 1
                             if msg.get("MessageType") == "PositionReport":
                                 positions_this_window += 1
@@ -196,6 +222,8 @@ class AISStreamClient:
 
             except Exception as exc:
                 self._connected = False
+                self._error = str(exc)
+                self._emit_health()
                 source_registry.record_poll(source_name, events_found=messages_since_report, error=str(exc))
                 messages_since_report = 0
                 last_report_ts = time.monotonic()
@@ -224,16 +252,17 @@ class AISStreamClient:
             nav_status = pr.get("NavigationalStatus")
             if lat is not None and lon is not None:
                 name = meta.get("ShipName", "").strip()
-                registry.upsert(
-                    mmsi,
-                    ship_name=name or None,
-                    lat=float(lat),
-                    lon=float(lon),
-                    course=float(cog) if cog is not None else None,
-                    speed=float(sog) if sog is not None else None,
-                    heading=float(hdg) if hdg is not None and hdg != 511 else None,
-                    nav_status=int(nav_status) if nav_status is not None else None,
-                )
+                if self._publish_legacy:
+                    registry.upsert(
+                        mmsi,
+                        ship_name=name or None,
+                        lat=float(lat),
+                        lon=float(lon),
+                        course=float(cog) if cog is not None else None,
+                        speed=float(sog) if sog is not None else None,
+                        heading=float(hdg) if hdg is not None and hdg != 511 else None,
+                        nav_status=int(nav_status) if nav_status is not None else None,
+                    )
                 received_at = datetime.now(timezone.utc)
                 from core.vessels.ais_provider import AISPositionObservation
                 observation = AISPositionObservation(
@@ -250,8 +279,9 @@ class AISStreamClient:
                         self._on_observation(observation)
                     except Exception:
                         logger.debug("AIS provider observation callback failed", exc_info=True)
-                from core.vessels.ais_bus import publish
-                publish(observation)
+                if self._publish_legacy:
+                    from core.vessels.ais_bus import publish
+                    publish(observation)
 
         elif mtype == "ShipStaticData":
             sd = msg.get("Message", {}).get("ShipStaticData", {})
@@ -281,7 +311,10 @@ def get_ngo_client() -> AISStreamClient | None:
     return _ngo_client
 
 
-def start(api_key: str, *, ngo_api_key: str = "") -> AISStreamClient:
+def start(
+    api_key: str, *, ngo_api_key: str = "", on_observation=None, on_health=None,
+    publish_legacy: bool = True,
+) -> AISStreamClient:
     """`ngo_api_key` must be a SEPARATE AISStream key from `api_key` — verified
     live against the real service that it allows only one open connection per
     key, so a second subscription reusing the same key gets dropped
@@ -290,7 +323,10 @@ def start(api_key: str, *, ngo_api_key: str = "") -> AISStreamClient:
     not started rather than spinning in that broken state.
     """
     global _client, _ngo_client
-    _client = AISStreamClient(api_key, label="Mediterranean")
+    _client = AISStreamClient(
+        api_key, label="Mediterranean", on_observation=on_observation, on_health=on_health,
+        publish_legacy=publish_legacy,
+    )
     _client.start()
 
     if ngo_api_key and ngo_api_key != api_key:
@@ -300,6 +336,7 @@ def start(api_key: str, *, ngo_api_key: str = "") -> AISStreamClient:
             ngo_mmsi = list(NGO_VESSELS.keys())[:50]  # AISStream's FiltersShipMMSI cap
             _ngo_client = AISStreamClient(
                 ngo_api_key, label="NGO fleet (global)", bbox=_GLOBAL_BBOX, mmsi_filter=ngo_mmsi,
+                on_observation=on_observation, on_health=on_health, publish_legacy=publish_legacy,
             )
             _ngo_client.start()
         except Exception:

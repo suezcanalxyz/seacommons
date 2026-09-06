@@ -90,9 +90,8 @@ def test_health_data_route_exposes_the_real_data_health_summary() -> None:
     """docs/fixes.md M14.5: the real internal /health/data endpoint --
     exercised end to end via the FastAPI route, not just the underlying
     function."""
-    from fastapi.testclient import TestClient
-
     from core.api.main import app
+    from fastapi.testclient import TestClient
 
     response = TestClient(app).get("/health/data")
     assert response.status_code == 200
@@ -104,7 +103,7 @@ def test_health_data_route_exposes_the_real_data_health_summary() -> None:
 
 
 def test_maritime_episode_metric_uses_only_bounded_semantic_labels() -> None:
-    import core.observability as observability
+    from core import observability
 
     observability.record_maritime_episode_evaluation(
         "gap_episode", "single_source_multi_indicator"
@@ -117,10 +116,34 @@ def test_maritime_episode_metric_uses_only_bounded_semantic_labels() -> None:
 
 
 def test_v1_hypothesis_decision_metric_distinguishes_eligible_from_ineligible() -> None:
-    import core.observability as observability
+    from core import observability
 
     observability.record_v1_hypothesis_decision("dark_transit", "ineligible")
     observability.record_v1_hypothesis_decision("position_spoofing", "eligible")
     metrics = generate_latest().decode()
     assert 'seacommons_v1_hypothesis_decisions_total{hypothesis_type="dark_transit",outcome="ineligible"}' in metrics
     assert 'seacommons_v1_hypothesis_decisions_total{hypothesis_type="position_spoofing",outcome="eligible"}' in metrics
+
+
+def test_ais_fusion_metrics_use_only_bounded_provider_labels() -> None:
+    from core import observability
+
+    observability.record_ais_fusion_observation(
+        provider="aiscast", upstream="volunteer", mode="shadow", outcome="received"
+    )
+    metrics = generate_latest().decode()
+    assert (
+        'seacommons_ais_fusion_observations_total{mode="shadow",outcome="received",provider="aiscast",upstream="volunteer"}'
+        in metrics
+    )
+    assert "station_id" not in metrics
+
+
+def test_ais_fusion_metric_normalizes_unbounded_upstream_to_other() -> None:
+    from core import observability
+
+    observability.record_ais_fusion_observation(
+        provider="aiscast", upstream="random-station-feed-123", mode="shadow", outcome="received"
+    )
+    metrics = generate_latest().decode()
+    assert 'upstream="other"' in metrics

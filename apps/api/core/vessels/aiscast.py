@@ -83,11 +83,13 @@ class AiscastClient:
         self,
         *,
         on_observation: Callable[[AISPositionObservation], None],
+        on_health=None,
         bbox: tuple[float, float, float, float] | None = None,
         mmsis: Iterable[str] | None = None,
         url: str = _DEFAULT_URL,
     ) -> None:
         self._on_observation = on_observation
+        self._on_health = on_health
         self._bbox = tuple(bbox) if bbox is not None else None
         self._mmsis = tuple(str(m) for m in (mmsis or ()))
         self._url = url
@@ -123,6 +125,14 @@ class AiscastClient:
             messages_received=self._messages_received, error=self._error,
         )
 
+    def _emit_health(self) -> None:
+        if self._on_health is None:
+            return
+        try:
+            self._on_health(self.health())
+        except Exception:
+            logger.debug("aiscast health callback failed", exc_info=True)
+
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
@@ -133,6 +143,7 @@ class AiscastClient:
     def stop(self) -> None:
         self._stop.set()
         self._connected = False
+        self._emit_health()
 
     def _run(self) -> None:
         from core.intel.source_registry import source_registry
@@ -146,6 +157,7 @@ class AiscastClient:
                     ws.send(json.dumps(self.subscription_frame()))
                     self._connected = True
                     self._error = None
+                    self._emit_health()
                     backoff = 2
                     while not self._stop.is_set():
                         raw = ws.recv(timeout=60)
@@ -168,6 +180,7 @@ class AiscastClient:
             except Exception as exc:
                 self._connected = False
                 self._error = str(exc)
+                self._emit_health()
                 source_registry.record_poll("aiscast", error=self._error)
                 if not self._stop.is_set():
                     time.sleep(backoff)
