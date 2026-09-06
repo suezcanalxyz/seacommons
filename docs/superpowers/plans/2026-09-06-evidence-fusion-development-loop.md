@@ -6,9 +6,9 @@
 
 **Architecture:** All source-specific transports normalize into shared evidence contracts before domain reasoning. Humanitarian incidents and Maritime Intelligence episodes share provenance/lineage infrastructure but keep separate decision semantics. New source types are added as adapters, never as parallel truth pipelines.
 
-**Current packet:** Remote Maritime Radio v1 — Task 0 provider-neutral receiver contract.
+**Current packet:** DSC + NAVTEX Structured Evidence v1 — Task 0 structured decoded-input contracts.
 
-**Detailed current plan:** `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`
+**Detailed current plan:** `docs/superpowers/plans/2026-09-06-dsc-navtex-structured-evidence-v1.md`
 
 ## Canonical loop
 
@@ -52,7 +52,7 @@ Source roles:
 Required outcomes: `no_resolution_evidence | response_detected | rescue_activity_probable | rescue_confirmed | disembarkation_confirmed | fatal_outcome_reported | contradictory_evidence | insufficient_evidence`. Explicit first-party outcome claims contribute only with strong incident matching; ambiguous/contradictory evidence requires review. Source identity is evaluated independently of transport, so distinct first-party organizations may remain independent even on the same X transport.
 ### Packet C — Remote Maritime Radio v1
 
-Status: current packet; implementation plan ready, runtime must remain disabled by default.
+Status: development-complete / review-ready; runtime remains disabled by default and production receiver activation is a separate operator action.
 
 Goal: software-only remote receiver ingestion with no SeaCommons-owned hardware.
 
@@ -61,6 +61,8 @@ Delivers a generic `RemoteReceiverAdapter` contract and provider-specific adapte
 No continuous voice recording by default. Receiver/provider availability is operational context, not independent evidence merely because multiple frontends expose the same physical receiver.
 
 ### Packet D — DSC + NAVTEX structured evidence
+
+Status: current packet; consume already-demodulated/structured inputs first and do not pull Audio Evidence v1 forward.
 
 Goal: decode high-signal structured maritime radio before attempting broad voice intelligence.
 

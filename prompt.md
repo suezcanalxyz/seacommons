@@ -15,13 +15,13 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-Remote Maritime Radio v1, Task 5 — runtime, health, observability, and operator surface.
+DSC + NAVTEX Structured Evidence v1, Task 0 — structured decoded-input contracts.
 
-Detailed plan: `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`.
+Detailed plan: `docs/superpowers/plans/2026-09-06-dsc-navtex-structured-evidence-v1.md`.
 
 Free/Open AIS Fusion v1 is development-complete/shadow-ready. Humanitarian Verification v1 is development-complete/review-ready through `961c436`; release gates were `141` focused tests and `1350` full backend tests plus green static/web/edge/dependency gates. No production AIS cutover or Humanitarian auto-resolution was authorized.
 
-Tasks 0-4 are complete. Continue with Task 5 by adding disabled-by-default runtime orchestration and bounded operator health/metrics. The SourceObservation bridge is already canonical and keyed to physical receiver lineage; do not add another persistence path. `core.sensors.sdr.SDRScanner` is the legacy local RTL-SDR anomaly scanner and must not become the remote receiver architecture.
+Remote Maritime Radio v1 is development-complete/review-ready through `2ea9e35`; do not reopen its provider/runtime architecture unless a DSC/NAVTEX regression proves a boundary defect. Continue with DSC + NAVTEX Task 0 using already-demodulated/structured inputs first. Reuse the canonical radio SourceObservation boundary and physical receiver lineage; do not add continuous audio/IQ persistence or voice transcription in this packet.
 
 ## Packet boundary
 

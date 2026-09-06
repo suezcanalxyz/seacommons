@@ -1,8 +1,8 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Remote Maritime Radio v1 — Task 2 KiwiSDR remote adapter
-> **Current packet plan:** `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`
+> **Current packet:** DSC + NAVTEX Structured Evidence v1 — Task 0 structured decoded-input contracts
+> **Current packet plan:** `docs/superpowers/plans/2026-09-06-dsc-navtex-structured-evidence-v1.md`
 > **Production runtime baseline:** `0ae4df7cc20c8209acc267eb595129c2dc3961bd`
 > **Production schema:** `0021_maritime_episodes`
 
@@ -26,11 +26,15 @@ Verification sources extract deterministic claims, associate only on strong mult
 
 Release evidence: focused privacy/lineage `141 passed`; full backend `1350 passed, 2 skipped`; Ruff/mypy/migrations/Python dependency audit green; web test/lint/typecheck/build/audit green; edge `12 passed`, Wrangler dry-run and audit green.
 
-## Current packet state — Remote Maritime Radio v1
+## Completed packet — Remote Maritime Radio v1
 
-The next packet is software-only remote receiver acquisition. Its plan is `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`. Tasks 0-3 are complete: the provider-neutral contract, configured receiver registry/config, KiwiSDR adapter, and OpenWebRX adapter are implemented. Runnable candidates are deduplicated by physical lineage, source terms are gated fail-closed, and neither adapter persists audio. Task 4 is complete: bounded radio metadata now persists through the canonical immutable SourceObservation path keyed to physical receiver lineage. Task 5 adds disabled-by-default runtime orchestration, health, observability, and an operator-safe status surface.
+Development-complete / review-ready through `2ea9e35`. Provider-neutral contracts, explicit bounded receiver registry, KiwiSDR/OpenWebRX adapters, canonical SourceObservation persistence, disabled-by-default runtime, bounded health/metrics, and operator-safe status are implemented. Physical receiver lineage is authoritative for evidence source identity; frontend/provider multiplicity cannot inflate independence. No continuous audio/IQ is persisted.
 
-The existing `core.sensors.sdr.SDRScanner` is a local RTL-SDR anomaly scanner and is not the architecture for this packet. Remote radio must preserve provider/frontend identity separately from physical receiver/RF lineage; duplicate frontends cannot become independent evidence. No continuous audio/IQ persistence and no DSC/NAVTEX decoding belong in this packet. Runtime defaults disabled.
+Release evidence: focused radio/privacy/lineage `82 passed`; full backend `1385 passed, 2 skipped`; Ruff/mypy/migrations/canonical project dependency audit green; web/edge gates green. Production receiver activation remains separate and unauthorized.
+
+## Current packet state — DSC + NAVTEX Structured Evidence v1
+
+Packet D consumes the remote receiver/evidence boundary without introducing voice intelligence. Task 0 defines already-demodulated structured DSC/NAVTEX inputs and domain invariants; raw waveform/audio acquisition remains deferred to Audio Evidence v1. DSC emergency signals stay Maritime Safety by default and never become Humanitarian solely by signal type. NAVTEX is contextual/corroborative evidence unless an explicit later policy says otherwise.
 
 ## Loop order
 

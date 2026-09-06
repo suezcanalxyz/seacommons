@@ -112,3 +112,11 @@ worker (`JOB_EXECUTION_MODE=queue`, `python -m core.worker`).
 - [Architecture](ARCHITECTURE.md) · [Deployment](DEPLOYMENT.md) ·
   [Configuration](CONFIGURATION.md) · [Realtime architecture](REALTIME_ARCHITECTURE.md)
 - [Production runbook](PRODUCTION_RUNBOOK.md) — procedures and commands
+
+## Remote maritime radio operations
+
+Remote receiver acquisition is disabled by default with `REMOTE_RADIO_ENABLED=false`. Receiver descriptors are explicit and bounded by `REMOTE_RADIO_MAX_RECEIVERS`; there is no internet-wide receiver crawling. Entries with unknown/blocked terms or no declared source terms do not start. Duplicate frontends sharing one `physical_lineage` are collapsed before adapter construction.
+
+The operator summary exposes only bounded counts by provider/state. Receiver IDs, frontend URLs, session identifiers, frequencies, and transport exception strings are not metric labels or operator status fields. Partial provider failure is isolated and does not stop other configured receivers.
+
+KiwiSDR/OpenWebRX adapters do not retain continuous audio/IQ. OpenWebRX binary spectrum/audio/secondary-FFT/HD-audio frames are discarded in this packet; only bounded signal observations can enter the immutable SourceObservation path. Production activation is a separate operator action after receiver-specific terms and authorization are verified.

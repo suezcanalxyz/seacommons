@@ -169,14 +169,14 @@
 - Modify: `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
 - Modify: this plan execution record
 
-- [ ] Run focused remote-radio contract/registry/provider/source-observation/runtime/privacy/evidence-lineage regressions.
-- [ ] Run full backend suite, Ruff critical gate, canonical mypy gate, migrations, and dependency audit.
-- [ ] Run web/edge gates only if public/operator contracts crossed those boundaries; otherwise document why they are unchanged.
-- [ ] Review exact diff for hidden audio persistence, duplicate physical lineage, unbounded discovery/metrics, Humanitarian fallback, lifecycle mutation, and provider-specific truth paths.
-- [ ] Document provider/source-terms constraints and explicit no-continuous-recording boundary.
-- [ ] Mark Remote Maritime Radio v1 review-ready with runtime disabled by default; production receiver activation remains an operator decision.
-- [ ] Advance the master loop to DSC + NAVTEX only after the packet is green and reviewed.
-- [ ] Commit `docs: close remote maritime radio v1 release gates`.
+- [x] Run focused remote-radio contract/registry/provider/source-observation/runtime/privacy/evidence-lineage regressions.
+- [x] Run full backend suite, Ruff critical gate, canonical mypy gate, migrations, and dependency audit.
+- [x] Run web/edge gates only if public/operator contracts crossed those boundaries; otherwise document why they are unchanged.
+- [x] Review exact diff for hidden audio persistence, duplicate physical lineage, unbounded discovery/metrics, Humanitarian fallback, lifecycle mutation, and provider-specific truth paths.
+- [x] Document provider/source-terms constraints and explicit no-continuous-recording boundary.
+- [x] Mark Remote Maritime Radio v1 review-ready with runtime disabled by default; production receiver activation remains an operator decision.
+- [x] Advance the master loop to DSC + NAVTEX only after the packet is green and reviewed.
+- [x] Commit `docs: close remote maritime radio v1 release gates`.
 
 ## Exit Criteria
 
@@ -185,3 +185,17 @@ Remote Maritime Radio v1 is complete when configured KiwiSDR/OpenWebRX receiver 
 ## Rollback Boundary
 
 The packet is additive and disabled by default. Rollback is configuration/code rollback to `REMOTE_RADIO_ENABLED=false`; no Humanitarian lifecycle or public projection needs repair. Any immutable SourceObservations already recorded remain auditable evidence and are not destructively deleted.
+
+### Task 6 release verification — 2026-09-06
+
+- Focused remote-radio/privacy/evidence-lineage gate: `82 passed, 1 warning`.
+- Full backend gate on reviewed source: `1385 passed, 2 skipped, 221 warnings`.
+- Ruff critical gate and canonical mypy Live-domain gate: green.
+- Alembic migration chain `0001` through `0021_maritime_episodes`: green on a clean SQLite release database.
+- Canonical CI dependency audit `python -m pip_audit . --strict`: no known vulnerabilities. A whole-venv audit separately reported advisory-only build-tool versions for `pip`/`setuptools`; those are not declared project dependencies and are not the repository CI gate.
+- Web tests/lint/typecheck/build and production dependency audit: green; only the existing Vite large-chunk warning remains.
+- Edge tests: `12 passed`; Wrangler dry-run and production dependency audit: green.
+- Exact-diff review found no Humanitarian/lifecycle mutation, no continuous audio/IQ persistence, no unbounded receiver discovery, and no receiver/session labels in metrics. Receiver selection suppresses duplicate `physical_lineage` before startup.
+- OpenWebRX protocol review corrected the initial synthetic control shape to the native client flow (`SERVER DE CLIENT`, `connectionproperties`, `config`, `dspcontrol`, `smeter`) and explicitly discards binary spectrum/audio/FFT/HD-audio frames; review fix commit: `2ea9e35`.
+- Provider terms remain fail-closed: only explicitly configured receivers with `terms_status=allowed` and non-empty `source_terms` are runnable.
+- Packet state: development-complete / review-ready. Runtime remains disabled by default; no production receiver activation, migration, restart, or deploy is authorized.

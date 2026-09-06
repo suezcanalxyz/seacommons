@@ -130,3 +130,15 @@ labelled as derived/modelled and is not promoted to verified observation.
 Retention and backup policy are deployment responsibilities described in
 `PRODUCTION_RUNBOOK.md`. Immutable/public networks must never receive private or
 sensitive operational records.
+
+## Remote maritime radio evidence
+
+Configured remote receiver frontends normalize before evidence persistence:
+
+`KiwiSDR/OpenWebRX frontend -> RemoteReceiverAdapter -> RadioObservation -> SourceObservation`
+
+Receiver identity, provider/frontend identity, and physical RF lineage are distinct. `SourceObservation.source_name` is keyed to the configured physical receiver lineage; multiple frontends exposing the same physical receiver therefore remain one evidence source, not independent corroboration. Provider/frontend and session details are provenance only.
+
+Remote Maritime Radio v1 persists bounded signal metadata only (frequency, mode, signal level/SNR when available). Binary spectrum/audio/IQ/FFT payloads are discarded by the adapters and no continuous recording is stored. Provider terms are fail-closed: a receiver is runnable only when explicitly configured, enabled, `terms_status=allowed`, and accompanied by a non-empty `source_terms` declaration. Runtime defaults disabled.
+
+DSC/NAVTEX decoding is a later packet. Structured radio evidence must remain Maritime Safety/context unless an explicit domain rule says otherwise; signal type alone never creates a Humanitarian incident or mutates lifecycle.
