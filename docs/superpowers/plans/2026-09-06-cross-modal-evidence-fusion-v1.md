@@ -33,6 +33,13 @@
 - Preserve contradiction records instead of averaging confidence.
 - Commit `feat: evaluate cross-modal evidence independence`.
 
+### Task 1 execution record — 2026-09-06
+
+- `CrossModalIndependenceAssessment` reports bounded `single_lineage | multi_lineage | contradictory` states only.
+- Contradictions retain explicit topic/reason/evidence IDs and must reference evidence present in the packet.
+- Same physical receiver across radio/audio remains one source group; all direct AIS providers remain `modality:ais`; derived evidence is counted but never increases independence.
+- Focused Task 1 gate: `29 passed`; Ruff and `git diff --check` green.
+
 ### Task 2: Humanitarian resolution context bridge
 
 - Feed cross-modal context into ResolutionAssessment as evidence references only; no lifecycle mutation.
