@@ -509,15 +509,15 @@ git commit -m "feat: stage free AIS fusion behind shadow cutover"
 - Modify: `docs/DATA_FLOW.md`
 - Test: existing backend/web/edge suites.
 
-- [ ] **Step 1: Run compatibility and invariant gates**
+- [x] **Step 1: Run compatibility and invariant gates**
 
 Run focused AIS, evidence-lineage, Humanitarian privacy, vessel-marker, episode/hypothesis, and SAR-response tests. Expected: all PASS and hook-count parity preserved.
 
-- [ ] **Step 2: Run full backend and static gates**
+- [x] **Step 2: Run full backend and static gates**
 
 Run: `pytest -q`, Ruff critical gate, canonical mypy, `git diff --check`. Expected: PASS with only documented pre-existing warnings.
 
-- [ ] **Step 3: Run web/edge gates**
+- [x] **Step 3: Run web/edge gates**
 
 Run existing web tests/lint/typecheck/build plus edge tests and Wrangler dry-run. Expected: PASS.
 
@@ -529,6 +529,18 @@ Validate configuration parsing for `AIS_FUSION_MODE=shadow`, `AISCAST_ENABLED=tr
 
 Document the exact parity criteria required before any future `AIS_FUSION_MODE=fused` activation: stable AISStream rate, aiscast event flow, bounded shadow disagreements, no Humanitarian inflation, no low-specificity hypothesis/case inflation, track freshness, NGO response parity, and privacy gates. `AIS_FUSION_MODE=legacy` remains the instant rollback. Do not activate production in this development packet without explicit operator authorization.
 
-- [ ] **Step 6: Document exact upstream terms**
+- [x] **Step 6: Document exact upstream terms**
 
 Document that aiscast code is MIT but each event retains its upstream data terms/attribution; do not claim the aggregate is uniformly open-licensed or commercially reusable without respecting the event source terms.
+
+
+#### Task 8 development verification — 2026-09-06
+
+- Full backend exact-head gate: `1292 passed, 2 skipped, 221 warnings`.
+- Canonical Ruff critical gate: green. Canonical mypy Live-domain gate: green.
+- Focused invariants: `168 passed` across evidence lineage, Humanitarian incident/truth-table, SAR response, Episodes/Hypotheses, replay, Live feed and vessel registry; web vessel/SAR/Play regressions also green.
+- Web tests/lint/typecheck/build: green; only the pre-existing Vite chunk-size warning remains.
+- Edge: `12 passed`; Wrangler `--dry-run` green.
+- Live non-production protocol smoke against `wss://ais.openwaters.io/v1/stream` with bbox `34,12,38,18`: welcome received and 5 real AIS events parsed with upstream/station provenance, including Ocean Viking.
+- Review fixes before release: reconciler state is now serialized across provider threads; shadow mode is comparison-only and cannot alter MDA gap decisions; the MMSI-limited AISStream NGO socket cannot overwrite primary Mediterranean provider-health.
+- Production `shadow` and `fused` cutovers remain explicit operator actions and are not required to close the development packet.

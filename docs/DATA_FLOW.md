@@ -1,6 +1,6 @@
 # SeaCommons data flow
 
-Status: canonical data-flow description. Last reviewed: 2026-08-26.
+Status: canonical data-flow description. Last reviewed: 2026-09-06.
 
 ## Inbound signal to operational state
 
@@ -23,6 +23,27 @@ The database is the durable boundary. The in-memory intel store accelerates
 reads and broadcasts but persists additions/updates and is repopulated from the
 database at startup. In split deployment, the API periodically imports changes
 written by the standalone intel worker.
+
+
+## AIS fusion and coverage reasoning
+
+```mermaid
+flowchart LR
+  A[AISStream] --> N[Normalized AISPositionObservation]
+  B[Open Waters / aiscast] --> N
+  N --> R[AISReconciler]
+  R --> C[Canonical accepted fix]
+  C --> V[VesselRegistry + TrackStore]
+  C --> H[Legacy-compatible AIS hook consumers]
+  N --> Q[Provider/upstream health + coverage state]
+  Q --> G[Gap / coverage reasoning]
+```
+
+AIS transport/provider identity is distinct from upstream lineage. For example, an aiscast event with `upstream_source=aisstream` is the same AIS lineage as a direct AISStream observation, not independent corroboration. Station IDs and upstream data terms remain provenance metadata and are never promoted to public Humanitarian identifiers.
+
+Runtime modes are explicit: `legacy` preserves the historical AISStream path, `shadow` runs aiscast and reconciliation without changing canonical tracks, and `fused` lets accepted reconciled fixes drive the canonical AIS sink. Production defaults to `legacy`; `shadow`/`fused` are operational cutovers, not automatic deploy steps.
+
+Provider multiplicity improves availability and coverage reasoning only. It never turns one AIS broadcast into multiple independent intelligence sources. Existing neighbour-based `gap` vs `coverage_gap` logic remains authoritative and consumes provider-health as additional context rather than creating a second detector truth.
 
 ## Operational state to Public Live
 

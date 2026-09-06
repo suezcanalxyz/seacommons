@@ -334,31 +334,38 @@ def test_mmsi_duplicate():
     assert _alerts("vessel_identity")[0].metadata["anomaly_type"] == "mmsi_duplicate"
 
 
-def test_gap_scan_suppresses_vessel_gap_while_ais_provider_is_degraded(monkeypatch):
+def _degraded_provider_gap_fixture(monkeypatch, mode: str, mmsi: str):
     from core.config import config
     from core.vessels import ais_coverage
     from core.vessels.ais_coverage import CoverageAssessment
 
-    mmsi = "111000098"
     _feed(mmsi, 37.0, 18.0, sog=8.0)
     track_store._last[mmsi].ts = time.time() - 5400
     for k in range(3):
-        witness = f"11100009{k}"
+        witness = f"{mmsi[:-1]}{k}"
         _witness(witness, 37.01, 18.01, minutes_ago=100)
         _witness(witness, 37.01, 18.01, minutes_ago=40)
-
-    monkeypatch.setattr(config, "AIS_FUSION_ENABLED", True)
+    monkeypatch.setattr(config, "AIS_FUSION_ENABLED", False)
+    monkeypatch.setattr(config, "AIS_FUSION_MODE", mode)
     monkeypatch.setattr(
-        ais_coverage.coverage_state,
-        "assess",
+        ais_coverage.coverage_state, "assess",
         lambda **_kwargs: CoverageAssessment(
-            status="provider_degraded",
-            active_upstreams=frozenset({"volunteer"}),
-            degraded_upstreams=frozenset({"aisstream"}),
-            confidence=0.25,
-            reason_codes=("UPSTREAM_DEGRADED",),
-            gap_eligible=False,
+            status="provider_degraded", active_upstreams=frozenset({"volunteer"}),
+            degraded_upstreams=frozenset({"aisstream"}), confidence=0.25,
+            reason_codes=("UPSTREAM_DEGRADED",), gap_eligible=False,
         ),
     )
+
+
+def test_shadow_mode_never_changes_gap_decisions(monkeypatch):
+    mmsi = "111000098"
+    _degraded_provider_gap_fixture(monkeypatch, "shadow", mmsi)
+    assert MdaWatch().scan_gaps() == 1
+    assert [e for e in _alerts("ais_anomaly") if e.linked_mmsi == mmsi]
+
+
+def test_fused_mode_suppresses_gap_while_provider_is_degraded(monkeypatch):
+    mmsi = "111000097"
+    _degraded_provider_gap_fixture(monkeypatch, "fused", mmsi)
     assert MdaWatch().scan_gaps() == 0
     assert not [e for e in _alerts("ais_anomaly") if e.linked_mmsi == mmsi]

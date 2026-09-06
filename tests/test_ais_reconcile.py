@@ -81,3 +81,39 @@ def test_registry_projects_reconciled_provider_context(tmp_path):
     assert feature["properties"]["sources"] == ["aiscast"]
     assert feature["properties"]["upstream_sources"] == ["volunteer"]
     assert feature["properties"]["stations"] == ["mt-01"]
+
+
+def test_concurrent_ingest_serializes_reconciler_state(monkeypatch):
+    import threading
+    import time
+    import types
+
+    r = AISReconciler()
+    original = r._to_fix
+    active = 0
+    max_active = 0
+    guard = threading.Lock()
+
+    def slow_to_fix(self, obs):
+        nonlocal active, max_active
+        with guard:
+            active += 1
+            max_active = max(max_active, active)
+        time.sleep(0.02)
+        try:
+            return original(obs)
+        finally:
+            with guard:
+                active -= 1
+
+    monkeypatch.setattr(r, "_to_fix", types.MethodType(slow_to_fix, r))
+    observations = [
+        _obs("aiscast", 35.0 + i * 0.01, 15.0, second=10 + i, upstream="volunteer")
+        for i in range(4)
+    ]
+    threads = [threading.Thread(target=r.ingest, args=(obs,)) for obs in observations]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert max_active == 1

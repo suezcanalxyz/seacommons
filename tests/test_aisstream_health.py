@@ -130,3 +130,31 @@ def test_aisstream_stop_emits_provider_health_callback():
     assert seen
     assert seen[-1].provider == "aisstream"
     assert seen[-1].connected is False
+
+
+def test_ngo_socket_does_not_override_primary_provider_health(monkeypatch):
+    from core.vessels import aisstream
+
+    created = []
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            self.kwargs = kwargs
+            created.append(self)
+        def start(self):
+            pass
+
+    health = lambda _state: None
+    old_client, old_ngo_client = aisstream._client, aisstream._ngo_client
+    monkeypatch.setattr(aisstream, "AISStreamClient", FakeClient)
+    try:
+        aisstream.start(
+            "primary-key", ngo_api_key="ngo-key",
+            on_observation=lambda _obs: None, on_health=health,
+        )
+        assert len(created) == 2
+        assert created[0].kwargs["on_health"] is health
+        assert created[1].kwargs["on_health"] is None
+    finally:
+        aisstream._client = old_client
+        aisstream._ngo_client = old_ngo_client

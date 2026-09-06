@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -44,6 +45,7 @@ class AISReconciler:
         self._last_by_mmsi: dict[str, AISPositionObservation] = {}
         self._context: dict[str, ReconciledAISFix] = {}
         self._raw_keys: set[tuple[str, str, str]] = set()
+        self._lock = threading.RLock()
 
     @staticmethod
     def _upstream(obs: AISPositionObservation) -> str:
@@ -86,33 +88,34 @@ class AISReconciler:
         )
 
     def ingest(self, obs: AISPositionObservation) -> ReconciledAISFix | None:
-        raw_key = self._raw_key(obs)
-        if raw_key is not None and raw_key in self._raw_keys:
-            base = self._context.get(obs.mmsi) or self._to_fix(obs)
-            self._context[obs.mmsi] = self._merge_context(base, obs)
-            return None
+        with self._lock:
+            raw_key = self._raw_key(obs)
+            if raw_key is not None and raw_key in self._raw_keys:
+                base = self._context.get(obs.mmsi) or self._to_fix(obs)
+                self._context[obs.mmsi] = self._merge_context(base, obs)
+                return None
 
-        previous = self._last_by_mmsi.get(obs.mmsi)
-        same_lineage_duplicate = False
-        if previous is not None and self._upstream(previous) == self._upstream(obs):
-            dt = abs((obs.observed_at - previous.observed_at).total_seconds())
-            dist = _haversine_m(previous.lat, previous.lon, obs.lat, obs.lon)
-            same_lineage_duplicate = dt <= self.max_time_delta_s and dist <= self.max_distance_m
+            previous = self._last_by_mmsi.get(obs.mmsi)
+            same_lineage_duplicate = False
+            if previous is not None and self._upstream(previous) == self._upstream(obs):
+                dt = abs((obs.observed_at - previous.observed_at).total_seconds())
+                dist = _haversine_m(previous.lat, previous.lon, obs.lat, obs.lon)
+                same_lineage_duplicate = dt <= self.max_time_delta_s and dist <= self.max_distance_m
 
-        if raw_key is not None:
-            self._raw_keys.add(raw_key)
-            if len(self._raw_keys) > 100_000:
-                self._raw_keys = set(list(self._raw_keys)[-50_000:])
+            if raw_key is not None:
+                self._raw_keys.add(raw_key)
+                if len(self._raw_keys) > 100_000:
+                    self._raw_keys = set(list(self._raw_keys)[-50_000:])
 
-        if same_lineage_duplicate:
-            base = self._context.get(obs.mmsi) or self._to_fix(previous)
-            self._context[obs.mmsi] = self._merge_context(base, obs)
-            return None
+            if same_lineage_duplicate:
+                base = self._context.get(obs.mmsi) or self._to_fix(previous)
+                self._context[obs.mmsi] = self._merge_context(base, obs)
+                return None
 
-        fix = self._to_fix(obs)
-        self._last_by_mmsi[obs.mmsi] = obs
-        self._context[obs.mmsi] = fix
-        return fix
+            fix = self._to_fix(obs)
+            self._last_by_mmsi[obs.mmsi] = obs
+            self._context[obs.mmsi] = fix
+            return fix
 
     def context_for(self, mmsi: str) -> ReconciledAISFix | None:
         return self._context.get(str(mmsi))

@@ -336,7 +336,7 @@ def start(
             ngo_mmsi = list(NGO_VESSELS.keys())[:50]  # AISStream's FiltersShipMMSI cap
             _ngo_client = AISStreamClient(
                 ngo_api_key, label="NGO fleet (global)", bbox=_GLOBAL_BBOX, mmsi_filter=ngo_mmsi,
-                on_observation=on_observation, on_health=on_health, publish_legacy=publish_legacy,
+                on_observation=on_observation, on_health=None, publish_legacy=publish_legacy,
             )
             _ngo_client.start()
         except Exception:

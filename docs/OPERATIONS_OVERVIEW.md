@@ -1,6 +1,6 @@
 # Operations overview — what it takes to run SeaCommons
 
-Status: canonical operations reference. Last reviewed: 2026-08-28.
+Status: canonical operations reference. Last reviewed: 2026-09-06.
 
 This is the ground-truth picture of the running system: the real data that
 flows in, what each source costs, the compute footprint, and where it
@@ -27,7 +27,8 @@ in the API process. This is the binding constraint (see Compute below).
 
 | Source | What it gives | Auth | Cost / limit | Failure behaviour |
 | --- | --- | --- | --- | --- |
-| **AISStream** (`wss://stream.aisstream.io`) | live vessel positions (Mediterranean bbox) + nav status + AIS-SART/MOB/EPIRB | free API key | **one open socket per key**; no documented message quota | reconnect with backoff; stall detector forces a reconnect after 3 min with no PositionReports; source-health alert after a few cycles |
+| **AISStream** (`wss://stream.aisstream.io`) | live vessel positions + nav status | free API key | **one open socket per key** | reconnect/backoff; stall detector; source-health tracking |
+| **Open Waters / aiscast** (`wss://ais.openwaters.io/v1/stream`) | free/open-first second AIS transport with upstream source/station provenance | anonymous for bounded subscriptions | anonymous limits: bounded area/MMSI/message-rate; not whole-Mediterranean parity | disabled by default; used first in `shadow`; reconnect/backoff and shared provider health |
 | AISStream NGO key (optional) | a second global socket tracking the SAR fleet by MMSI | a **separate** free key | as above | skipped if unset |
 | **CMEMS / Copernicus Marine** | ocean current field (0.083°) for drift | free account (`CMEMS_USERNAME`/`PASSWORD`) | rate-limited; `open_dataset` ~25 s | 90 s timeout → Open-Meteo grid fallback → zero-current (flagged `degraded`) |
 | **Open-Meteo** forecast + marine | gridded wind, currents, waves for drift; also the browser drift engine | none | 10 000 calls/day soft | drift falls to constant forcing (flagged `degraded`) |
@@ -38,12 +39,20 @@ in the API process. This is the binding constraint (see Compute below).
 | **Image OCR** (tesseract + Pillow) | coordinates and drop-pins from Alarm Phone map screenshots | host binary | local CPU | **silently off if `tesseract` is not installed** — see `ops/summary.image_ocr` |
 | Meta WhatsApp / Telegram / partner webhooks | inbound operator and partner reports | per-channel secrets | free | fail closed without verification config |
 
-Derived from the single AISStream feed, with no extra connection:
-- vessel layer (position registry)
-- AIS density spikes → rescue-cluster intel (`ais_spike`)
-- vessel incidents → SART/MOB/EPIRB, sustained aground, sustained NUC
-- operator-only anomalies → impossible speed, dark-zone entry, OFAC-SDN
-  match, prolonged AIS silence (`ais_anomaly`)
+AIS consumers now sit behind a compatibility-preserving normalized layer. In `legacy`, AISStream remains exactly authoritative. In `shadow`, aiscast is compared without canonical writes. In `fused`, accepted reconciled fixes feed the same downstream consumers: vessel registry/track history, AIS spikes, vessel incidents, anomaly/MDA scans, SourceObservation sampling, and SAR response analysis.
+
+Provider count is not evidence independence. `aiscast(source=aisstream)` collapses to the AISStream upstream lineage. Provider/station health is used to distinguish likely vessel silence from reception/provider degradation, while the existing neighbour-based gap classifier remains authoritative.
+
+
+### AIS fusion rollout / rollback
+
+Configuration is intentionally staged:
+
+- `AIS_FUSION_MODE=legacy` — historical AISStream canonical path; aiscast not started.
+- `AIS_FUSION_MODE=shadow` + `AISCAST_ENABLED=true` — aiscast/reconciliation/metrics run, but AISStream still owns canonical writes.
+- `AIS_FUSION_MODE=fused` — accepted reconciled fixes own canonical AIS writes.
+
+Rollback is configuration-only: return to `AIS_FUSION_MODE=legacy`. No database rollback is required by Free/Open AIS Fusion v1. Open Waters transport software licensing does not override per-upstream AIS data terms; event-level upstream/source terms must remain attached to provenance.
 
 ## Compute footprint
 

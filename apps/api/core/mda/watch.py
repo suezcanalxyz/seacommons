@@ -439,7 +439,8 @@ class MdaWatch:
                 if gap_reason.hypothesis == "coverage_gap":
                     continue
             provider_coverage = None
-            if getattr(config, "AIS_FUSION_ENABLED", False):
+            fusion_mode = str(getattr(config, "AIS_FUSION_MODE", "legacy") or "legacy").lower()
+            if getattr(config, "AIS_FUSION_ENABLED", False) or fusion_mode == "fused":
                 from core.vessels.ais_coverage import coverage_state
                 provider_coverage = coverage_state.assess(
                     nearby_traffic_seen=nearby_after > 0, now=now_dt
