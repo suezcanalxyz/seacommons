@@ -1,8 +1,8 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Live Humanitarian/Maritime + Radio Pipeline
-> **Current packet plan:** `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-radio-pipeline.md`
+> **Current packet:** Live Humanitarian/Maritime + Unified Acquisition Pipeline
+> **Current packet plan:** `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`
 > **Production runtime baseline:** `d3fd42b319581986998dc266269ebdc7a5465719`
 > **Production schema:** `0023_review_records`
 
@@ -58,7 +58,7 @@ Release evidence: focused review/privacy/publication `181 passed`; full backend 
 
 ## Current execution packet
 
-Packets A-G are complete and deployed. The active packet is `Live Humanitarian/Maritime + Radio Pipeline`: replace legacy Live grouping with Humanitarian/Maritime, integrate terms-allowed remote radio into structured/cross-modal evidence, expose public-safe acquisition provenance, and stage receiver activation while keeping audio acquisition disabled.
+Packets A-G are complete and deployed. The active packet is `Live Humanitarian/Maritime + Unified Acquisition Pipeline`: replace legacy Live grouping with Humanitarian/Maritime and consolidate AIS, radio, first-party/public feeds, partner inputs and future connectors behind one acquisition -> observation -> evidence pipeline. Radio is only an adapter family; receiver activation remains staged and audio stays disabled.
 
 ## Loop order
 

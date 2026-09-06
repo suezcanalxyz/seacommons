@@ -1,14 +1,14 @@
-# Live Humanitarian/Maritime + Radio Pipeline Implementation Plan
+# Live Humanitarian/Maritime + Unified Acquisition Pipeline Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace legacy Live grouping with canonical Humanitarian/Maritime compartments and connect terms-allowed remote radio receivers into the structured/cross-modal evidence pipeline with public-safe acquisition provenance.
+**Goal:** Replace legacy Live grouping with canonical Humanitarian/Maritime compartments and make AIS, radio, first-party/public feeds, partner inputs and future connectors participate in one shared acquisition -> observation -> evidence pipeline with public-safe provenance.
 
-**Architecture:** Backend remains authoritative for domain/publication. A long-lived `RadioEvidencePipeline` composes receiver runtime + structured DSC/NAVTEX runtime and exposes bounded public-safe status. Live consumes canonical `humanitarian | maritime | all` modes; radio evidence appears inside those compartments after existing gates, never as a third feed.
+**Architecture:** Backend remains authoritative for domain/publication. Existing source-specific adapters normalize into shared observation/evidence contracts and expose health through one acquisition-status model. Radio is only one adapter family inside that pipeline; Live consumes canonical `humanitarian | maritime | all` modes and never uses acquisition source as a top-level content category.
 
 **Tech Stack:** Python 3.12, FastAPI, SQLAlchemy/Alembic, pytest, Prometheus metrics, React/Vite, Node test runner, systemd production services.
 
-**Spec:** `docs/superpowers/specs/2026-09-07-live-humanitarian-maritime-radio-pipeline-design.md`
+**Spec:** `docs/superpowers/specs/2026-09-07-live-humanitarian-maritime-acquisition-pipeline-design.md`
 
 ## Global Constraints
 
@@ -30,7 +30,8 @@ Backend responsibilities:
 
 - `apps/api/core/live/feed.py` — canonical public `humanitarian | maritime | all` composition/counts.
 - `apps/api/core/api/routes/live.py` — Live mode API + new public-safe pipeline endpoint.
-- `apps/api/core/radio/pipeline.py` — new long-lived receiver -> structured evidence orchestration.
+- `apps/api/core/acquisition/status.py` — shared bounded acquisition-status contract across AIS, radio, first-party/public feeds and partner inputs.
+- `apps/api/core/radio/bridge.py` — radio adapter bridge into existing structured evidence ingestion; no separate pipeline controller.
 - `apps/api/core/radio/runtime.py` — receiver adapter lifecycle and detailed safe health snapshot.
 - `apps/api/core/radio/registry.py` — channel/public-label descriptor fields and validation.
 - `apps/api/core/radio/structured_runtime.py` — shared structured runtime instance/status.
@@ -174,21 +175,22 @@ git add apps/api/core/radio/registry.py tests/test_radio_runtime.py tests/test_r
 git commit -m "feat: describe radio channels and public station labels"
 ```
 
-### Task 4: Build the long-lived RadioEvidencePipeline
+### Task 4: Integrate radio adapters into the unified acquisition/evidence pipeline
 
 **Files:**
-- Create: `apps/api/core/radio/pipeline.py`
+- Create: `apps/api/core/radio/bridge.py`
+- Create: `apps/api/core/acquisition/status.py`
 - Modify: `apps/api/core/radio/provider.py`
 - Modify: `apps/api/core/radio/runtime.py`
 - Modify: `apps/api/core/radio/structured_runtime.py`
 - Modify: `apps/api/core/bootstrap.py`
-- Test: `tests/test_radio_evidence_pipeline.py`
+- Create: `tests/test_acquisition_radio_bridge.py`
 - Test: `tests/test_radio_runtime.py`
 - Test: `tests/test_structured_radio_runtime.py`
 
 **Interfaces:**
-- Produces: `start_radio_evidence_pipeline_from_config() -> RadioEvidencePipeline`, `get_radio_evidence_pipeline_status() -> dict[str, object]`.
-- `RadioEvidencePipeline.handle_observation(observation: RadioObservation)` always persists canonical radio observation first.
+- Produces: `handle_radio_observation(observation: RadioObservation) -> None`, `handle_decoded_radio_message(message: DecodedRadioMessage) -> dict[str, object]`, and a radio acquisition-health adapter registered in the shared acquisition-status registry.
+- `handle_radio_observation()` persists canonical radio observations through the existing source-observation path; it does not own a separate runtime or truth store.
 - Structured routing occurs only for explicitly decoded payloads delivered through `DecodedRadioMessage(kind: Literal["dsc","navtex"], receiver_id: str, provider: str, physical_lineage: str, frequency_hz: int, mode: str, observed_at: datetime, payload: Mapping[str, Any] | str, provider_message_id: str | None = None)` defined in `core.radio.provider`; ordinary signal-level `RadioObservation` remains monitor-only.
 
 - [ ] **Step 1: RED orchestration tests**
@@ -198,27 +200,27 @@ Test disabled no-op; terms-allowed receiver start; physical-lineage dedup; obser
 - [ ] **Step 2: Run RED**
 
 ```bash
-$PY -m pytest -q tests/test_radio_evidence_pipeline.py tests/test_radio_runtime.py tests/test_structured_radio_runtime.py
+$PY -m pytest -q tests/test_acquisition_radio_bridge.py tests/test_radio_runtime.py tests/test_structured_radio_runtime.py
 ```
-Expected: pipeline module/callback contract missing.
+Expected: acquisition bridge/status contract missing.
 
-- [ ] **Step 3: Implement pipeline controller**
+- [ ] **Step 3: Implement the radio acquisition bridge**
 
-Create one controller containing the receiver runtime and a single `StructuredRadioRuntime`. Refactor bootstrap `_start_remote_radio()` to start this controller. Do not instantiate structured runtime per message.
+Keep the existing receiver runtime as an acquisition adapter. Add a thin bridge from explicit decoded radio messages into the shared `StructuredRadioRuntime`; register radio health in the unified acquisition-status registry. Radio must remain an adapter feeding the shared acquisition/evidence path and existing publication gates.
 
 Adapters must distinguish signal observations from decoded structured messages. If current Kiwi/OpenWebRX transports do not emit decoded messages, they remain monitor-only until a decoder output is available; do not parse arbitrary audio text.
 
 - [ ] **Step 4: GREEN + persistence regressions**
 
 ```bash
-$PY -m pytest -q tests/test_radio_evidence_pipeline.py tests/test_radio_runtime.py tests/test_structured_radio_runtime.py tests/test_radio_source_observation.py tests/test_structured_radio_source_observation.py
+$PY -m pytest -q tests/test_acquisition_radio_bridge.py tests/test_radio_runtime.py tests/test_structured_radio_runtime.py tests/test_radio_source_observation.py tests/test_structured_radio_source_observation.py
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/api/core/radio/pipeline.py apps/api/core/radio/provider.py apps/api/core/radio/runtime.py apps/api/core/radio/structured_runtime.py apps/api/core/bootstrap.py tests/test_radio_evidence_pipeline.py tests/test_radio_runtime.py tests/test_structured_radio_runtime.py
-git commit -m "feat: connect remote radio to structured evidence pipeline"
+git add apps/api/core/acquisition/status.py apps/api/core/radio/bridge.py apps/api/core/radio/provider.py apps/api/core/radio/runtime.py apps/api/core/radio/structured_runtime.py apps/api/core/bootstrap.py tests/test_acquisition_radio_bridge.py tests/test_radio_runtime.py tests/test_structured_radio_runtime.py
+git commit -m "feat: integrate radio into acquisition evidence pipeline"
 ```
 
 ### Task 5: Connect structured radio evidence to cross-modal references
@@ -260,11 +262,11 @@ git add apps/api/core/radio/evidence_bridge.py apps/api/core/evidence/cross_moda
 git commit -m "feat: bridge structured radio into cross-modal evidence"
 ```
 
-### Task 6: Add public-safe Live pipeline status endpoint
+### Task 6: Add unified public-safe acquisition status endpoint
 
 **Files:**
 - Modify: `apps/api/core/api/routes/live.py`
-- Modify: `apps/api/core/radio/pipeline.py`
+- Create: `apps/api/core/acquisition/status.py`
 - Test: `tests/test_live_pipeline_status.py`
 
 **Interfaces:**
@@ -272,16 +274,12 @@ git commit -m "feat: bridge structured radio into cross-modal evidence"
 ```json
 {
   "generated_at": "...",
-  "sources": {
-    "ais": {"state": "live|degraded|offline"},
-    "public_feeds": {"state": "live|degraded|offline"},
-    "radio": {
-      "state": "live|degraded|offline|disabled",
-      "receivers": [
-        {"receiver_id":"...","station_label":"...","provider":"kiwisdr","state":"live","channel_kind":"dsc","frequency_hz":2187500,"last_observation_at":"..."}
-      ]
-    }
-  }
+  "sources": [
+    {"family":"ais","state":"live|degraded|offline","label":"AIS"},
+    {"family":"first_party","state":"live|degraded|offline","label":"First-party feeds"},
+    {"family":"public_feed","state":"live|degraded|offline","label":"Public feeds"},
+    {"family":"radio","state":"live|degraded|offline|disabled","label":"Radio","receivers":[]}
+  ]
 }
 ```
 
@@ -298,7 +296,7 @@ Expected: 404/missing contract.
 
 - [ ] **Step 3: Implement endpoint**
 
-Build status from in-memory runtime/health only; no expensive DB scan. Cap public receiver rows at `REMOTE_RADIO_MAX_RECEIVERS`.
+Build one bounded status snapshot from existing in-memory health for AIS, source registries/connectors and radio. No expensive DB scan. Cap any source-specific detail, including radio receivers, to configured bounds.
 
 - [ ] **Step 4: GREEN**
 
@@ -309,7 +307,7 @@ $PY -m pytest -q tests/test_live_pipeline_status.py tests/test_pilot_smoke.py te
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/api/core/api/routes/live.py apps/api/core/radio/pipeline.py tests/test_live_pipeline_status.py
+git add apps/api/core/api/routes/live.py apps/api/core/acquisition/status.py tests/test_live_pipeline_status.py
 git commit -m "feat: expose public-safe live acquisition pipeline status"
 ```
 
@@ -331,7 +329,7 @@ git commit -m "feat: expose public-safe live acquisition pipeline status"
 
 - [ ] **Step 1: RED UI semantic tests**
 
-Add tests asserting no rendered primary labels `PUBLIC FEEDS`, `DIRECT`, or `Maritime Security`; macros are `Humanitarian` and `Maritime`; `liveSignalTotal()` sums only canonical public counts; Safety items are nested under Maritime; Aground/NUC/restricted manoeuvrability labels are preserved; pipeline receiver rows render inside the acquisition status area, not as a third signal category.
+Add tests asserting no rendered primary labels `PUBLIC FEEDS`, `DIRECT`, or `Maritime Security`; macros are `Humanitarian` and `Maritime`; `liveSignalTotal()` sums only canonical public counts; Safety items are nested under Maritime; Aground/NUC/restricted manoeuvrability labels are preserved; acquisition health renders AIS, first-party/public feeds, partner inputs and radio in one source-status area; none becomes a third signal category.
 
 - [ ] **Step 2: Run RED**
 
@@ -361,7 +359,7 @@ git add apps/web/src/main.jsx apps/web/src/hooks/useLiveFeed.js apps/web/src/fea
 git commit -m "feat: unify live ui around humanitarian and maritime data"
 ```
 
-### Task 8: Receiver configuration, staged activation and production verification
+### Task 8: Unified acquisition rollout, receiver activation and production verification
 
 **Files:**
 - Modify: deployment receiver config file referenced by `REMOTE_RADIO_RECEIVERS_FILE` (do not commit secrets/private URLs if repository policy forbids it)
@@ -399,7 +397,7 @@ Set `STRUCTURED_RADIO_ENABLED=true`, `REMOTE_RADIO_ENABLED=false`, restart API/w
 
 - [ ] **Step 4: Enable remote receiver runtime**
 
-Set `REMOTE_RADIO_ENABLED=true`, keep `AUDIO_EVIDENCE_ENABLED=false`, restart supervised services. Verify configured/started/failed counts, station labels, channel/frequency, and last observation timestamps.
+Set `REMOTE_RADIO_ENABLED=true`, keep `AUDIO_EVIDENCE_ENABLED=false`, restart supervised services. Verify the unified acquisition snapshot remains green for existing AIS/first-party/public sources and includes truthful radio configured/started/failed counts, station labels, channel/frequency and last observation timestamps.
 
 - [ ] **Step 5: End-to-end smoke**
 
@@ -412,7 +410,7 @@ receiver connected
 → cross-modal EvidenceReference has radio modality + physical lineage
 → Safety/context projection obeys existing gate
 → /api/v1/live/signals?mode=maritime contains only public-eligible output
-→ /api/v1/live/pipeline shows active receiver/channel provenance
+→ /api/v1/live/pipeline shows all active acquisition families and public-safe radio receiver/channel provenance
 → Humanitarian privacy scan = 0 MMSI/IMO/callsign leaks
 ```
 
@@ -428,8 +426,8 @@ Record deployed SHA, production schema `0023_review_records`, radio receiver cou
 
 Commit:
 ```bash
-git add docs/current_work.md prompt.md docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-radio-pipeline.md
-git commit -m "docs: record live radio pipeline rollout"
+git add docs/current_work.md prompt.md docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md
+git commit -m "docs: record unified acquisition rollout"
 ```
 
 ## Final acceptance gate
@@ -440,8 +438,8 @@ The packet is complete only when all of the following are simultaneously true:
 2. Web + edge tests/lint/build/audit green.
 3. Public Live UI shows **Humanitarian** and **Maritime**, not PUBLIC FEEDS/DIRECT/Maritime Security.
 4. Aground/NUC/restricted manoeuvrability are visibly Maritime Safety.
-5. `/api/v1/live/pipeline` lists only public-safe receiver/channel metadata.
-6. At least one terms-allowed receiver is either `live` or truthfully `degraded/offline` with no fake connectivity state.
+5. `/api/v1/live/pipeline` represents all acquisition families with bounded public-safe metadata; radio receiver/channel fields are only source-specific provenance.
+6. Existing AIS/first-party/public acquisition health remains truthful, and at least one terms-allowed receiver is either `live` or truthfully `degraded/offline` with no fake connectivity state.
 7. Structured DSC/NAVTEX path is proven end-to-end with real decoded input or canonical decoder fixture; no raw audio is mislabeled as decoded evidence.
 8. Cross-modal independence uses physical receiver lineage.
 9. `AUDIO_EVIDENCE_ENABLED=false` unless separately authorized.

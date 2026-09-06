@@ -6,9 +6,9 @@
 
 **Architecture:** All source-specific transports normalize into shared evidence contracts before domain reasoning. Humanitarian incidents and Maritime Intelligence episodes share provenance/lineage infrastructure but keep separate decision semantics. New source types are added as adapters, never as parallel truth pipelines.
 
-**Current packet:** Packet H — Live Humanitarian/Maritime + Radio Pipeline. Packets A-G are complete and deployed.
+**Current packet:** Packet H — Live Humanitarian/Maritime + Unified Acquisition Pipeline. Packets A-G are complete and deployed.
 
-**Detailed current plan:** `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-radio-pipeline.md`
+**Detailed current plan:** `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`
 
 ## Canonical loop
 
@@ -99,13 +99,13 @@ Goal: route uncertainty from Humanitarian ResolutionAssessment and Maritime Inve
 
 Review records evidence snapshot, decision, rationale, actor/time and transition. Approval may advance canonical lifecycle/publication only through existing domain-specific gates.
 
-### Packet H — Live Humanitarian/Maritime + Radio Pipeline
+### Packet H — Live Humanitarian/Maritime + Unified Acquisition Pipeline
 
 Status: approved / planned.
 
-Goal: make public Live use the canonical Humanitarian / Maritime split and connect terms-allowed remote receivers into structured DSC/NAVTEX and cross-modal evidence rather than exposing Radio as a separate feed. Safety observations such as Aground, Not Under Command and Restricted Manoeuvrability render under Maritime; source/receiver/channel remain provenance.
+Goal: make public Live use the canonical Humanitarian / Maritime split and unify all acquisition families behind the same observation/evidence boundary. AIS, radio, first-party/public feeds and partner inputs differ only by adapter/provenance; none is a separate public feed category. Safety observations such as Aground, Not Under Command and Restricted Manoeuvrability render under Maritime.
 
-Runtime rollout is staged: Structured Radio first, then Remote Radio with a bounded receiver allow-list. Audio Evidence acquisition remains disabled unless separately authorized. Public pipeline health may expose only public-safe receiver/channel metadata and must never bypass domain publication gates.
+Runtime rollout preserves currently active acquisition sources, then stages Structured Radio and Remote Radio as additional adapters with a bounded receiver allow-list. Audio Evidence acquisition remains disabled unless separately authorized. Public acquisition health is bounded and must never bypass domain publication gates.
 
 ## Permanent invariants
 
