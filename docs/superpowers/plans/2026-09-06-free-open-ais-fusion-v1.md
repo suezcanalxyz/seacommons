@@ -86,7 +86,7 @@ git commit -m "refactor: add compatibility preserving AIS event bus"
 - Produces: `AISPositionObservation`, `AISProviderHealth`, `AISProviderAdapter` protocol, `normalize_provider_name()`.
 - Consumes: no runtime provider implementation yet.
 
-- [ ] **Step 1: Write the failing contract tests**
+- [x] **Step 1: Write the failing contract tests**
 
 ```python
 from datetime import datetime, timezone
@@ -107,11 +107,11 @@ def test_position_observation_keeps_provider_and_station_provenance():
     assert obs.mmsi == "247123456"
 ```
 
-- [ ] **Step 2: Run test to verify RED**
+- [x] **Step 2: Run test to verify RED**
 
 Run: `pytest -q tests/test_ais_provider.py`
 Expected: FAIL because `core.vessels.ais_provider` does not exist.
-- [ ] **Step 3: Implement the minimal immutable contract**
+- [x] **Step 3: Implement the minimal immutable contract**
 
 ```python
 @dataclass(frozen=True)
@@ -143,17 +143,20 @@ class AISProviderHealth:
 
 Define an `AISProviderAdapter` protocol with `start()`, `stop()`, `health()`, and a callback accepting `AISPositionObservation`.
 
-- [ ] **Step 4: Run tests GREEN**
+- [x] **Step 4: Run tests GREEN**
 
 Run: `pytest -q tests/test_ais_provider.py`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/core/vessels/ais_provider.py tests/test_ais_provider.py
 git commit -m "feat: add normalized AIS provider contract"
 ```
+
+**Execution:** RED failed on missing `core.vessels.ais_provider`; GREEN: `4 passed`. Contract is frozen/immutable and preserves transport provider, upstream source, station, terms, and raw message identity.
+
 ### Task 2: Wrap AISStream behind the provider contract
 
 **Files:**
