@@ -757,6 +757,28 @@ class IncidentTransitionDB(Base):
     review_decision_id = Column(String(96))
 
 
+
+
+class ReviewRecordDB(Base):
+    """Append-only audit record for one explicit human review decision."""
+    __tablename__ = "review_records"
+    review_id = Column(String(64), primary_key=True)
+    target_type = Column(String(32), nullable=False, index=True)
+    target_id = Column(String(256), nullable=False, index=True)
+    target_version = Column(String(128), nullable=False)
+    evidence_snapshot_id = Column(String(256), nullable=False)
+    decision = Column(String(32), nullable=False, index=True)
+    rationale = Column(Text, nullable=False)
+    actor = Column(String(256), nullable=False, index=True)
+    reviewed_at = Column(DateTime, nullable=False, index=True)
+    requested_transition = Column(String(32))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_review_records_target_version", "target_type", "target_id", "target_version"),
+    )
+
+
 class SourceCoverageEventDB(Base):
     """Append-only coverage-change log (docs/updates.md P1.3): "record
     coverage break when not feasible", "version the coverage profile" --
