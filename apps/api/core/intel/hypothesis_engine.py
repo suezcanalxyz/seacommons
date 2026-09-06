@@ -62,6 +62,12 @@ def evaluate_episode(episode: dict[str, Any]) -> Optional[InvestigationHypothesi
     # Persistence precedes interpretation: an episode remains auditable even
     # when it is benign, unclassified, Safety-only, or hypothesis-ineligible.
     save_episode(episode)
+    from core.observability import record_maritime_episode_evaluation
+
+    record_maritime_episode_evaluation(
+        str(props.get("episode_family") or "unclassified_episode"),
+        str(props.get("verification_status") or "single_source_observed"),
+    )
 
     signal_ids = tuple(str(s) for s in (props.get("related_signal_ids") or ()) if s)
     events = [e for e in (intel_store.get_durable(sid) for sid in signal_ids) if e is not None]
@@ -69,6 +75,12 @@ def evaluate_episode(episode: dict[str, Any]) -> Optional[InvestigationHypothesi
         return None
 
     decision = evaluate_hypothesis_eligibility(episode, events)
+    from core.observability import record_v1_hypothesis_decision
+
+    record_v1_hypothesis_decision(
+        str(decision.hypothesis_type or "none"),
+        "eligible" if decision.eligible else "ineligible",
+    )
     if not decision.eligible or decision.hypothesis_type is None:
         return None
 

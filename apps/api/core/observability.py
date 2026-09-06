@@ -89,6 +89,16 @@ HYPOTHESIS_EVENTS = Counter(
     "seacommons_hypothesis_events_total",
     "InvestigationHypothesis (M6) state transitions", ["hypothesis_type", "state"],
 )
+MARITIME_EPISODE_EVALUATIONS = Counter(
+    "seacommons_maritime_episode_evaluations_total",
+    "Persisted MaritimeEpisode evaluations by bounded semantic class",
+    ["episode_family", "verification_status"],
+)
+V1_HYPOTHESIS_DECISIONS = Counter(
+    "seacommons_v1_hypothesis_decisions_total",
+    "Observation->Episode->Hypothesis v1 eligibility decisions",
+    ["hypothesis_type", "outcome"],
+)
 CASE_RELINK_EVENTS = Counter(
     "seacommons_case_relink_events_total", "Incident linking outcomes", ["outcome"],
 )
@@ -96,6 +106,22 @@ EDGE_PROJECTION_MISMATCH = Counter(
     "seacommons_edge_projection_mismatch_total",
     "VM-edge projection parity check failures (M9)",
 )
+
+
+def record_maritime_episode_evaluation(episode_family: str, verification_status: str) -> None:
+    """Count a persisted episode evaluation using bounded semantic labels only."""
+    try:
+        MARITIME_EPISODE_EVALUATIONS.labels(episode_family, verification_status).inc()
+    except Exception:  # pragma: no cover
+        pass
+
+
+def record_v1_hypothesis_decision(hypothesis_type: str, outcome: str) -> None:
+    """Count v1 eligibility decisions without vessel or evidence identifiers."""
+    try:
+        V1_HYPOTHESIS_DECISIONS.labels(hypothesis_type, outcome).inc()
+    except Exception:  # pragma: no cover
+        pass
 
 
 def record_hypothesis_transition(hypothesis_type: str, new_state: str) -> None:
