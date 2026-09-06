@@ -126,6 +126,32 @@ def _vessel_row(props: dict[str, Any], coords: list[Any],
     if speed_kn >= SPEED_SPIKE_KN and "speed_spike" not in motion_flags:
         motion_flags.insert(0, "speed_spike")
 
+    track_providers = sorted({str(v) for v in (props.get("sources") or []) if str(v)})
+    upstream_sources = sorted({str(v) for v in (props.get("upstream_sources") or []) if str(v)})
+    stations = sorted({str(v) for v in (props.get("stations") or []) if str(v)})
+    try:
+        from core.vessels.ais_coverage import coverage_state
+        coverage = coverage_state.assess(nearby_traffic_seen=True, now=now)
+        coverage_status = coverage.status
+    except Exception:
+        coverage_status = "coverage_unknown"
+
+    if coverage_status == "provider_degraded":
+        mission_state = "possible_response" if heading_toward or distance_nm <= RELATED_SIGNAL_RADIUS_NM else "unrelated"
+    elif distance_nm <= 20 and any(
+        flag in {"search_pattern", "rescue_cluster", "sudden_stop", "loitering"}
+        for flag in motion_flags
+    ):
+        mission_state = "probable_rescue_activity"
+    elif distance_nm <= 20:
+        mission_state = "on_scene"
+    elif heading_toward:
+        mission_state = "approaching"
+    elif distance_nm <= RELATED_SIGNAL_RADIUS_NM:
+        mission_state = "possible_response"
+    else:
+        mission_state = "unrelated"
+
     return {
         "mmsi": mmsi,
         "name": name,
@@ -144,6 +170,11 @@ def _vessel_row(props: dict[str, Any], coords: list[Any],
         "fix_age_min": fix_age_min,
         "track_saved": f"AIS fix recorded {fix_age_min} min ago" if fix_age_min is not None else "no AIS fix",
         "motion_flags": motion_flags,
+        "track_providers": track_providers,
+        "upstream_sources": upstream_sources,
+        "stations": stations,
+        "coverage_status": coverage_status,
+        "mission_state": mission_state,
     }
 
 
