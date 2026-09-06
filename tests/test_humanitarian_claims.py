@@ -77,3 +77,12 @@ def test_persist_associated_claims_is_idempotent():
     with session_scope() as db:
         rows = db.query(ClaimDB).filter(ClaimDB.incident_id == "incident-1").all()
         assert len(rows) == len(first)
+
+
+def test_known_sar_asset_name_is_attached_to_explicit_claims():
+    from core.intel.humanitarian_claims import extract_humanitarian_claims
+
+    event = _event("Ocean Viking rescued 42 people from a boat in distress.")
+    claims = extract_humanitarian_claims(event, resolve_source_identity(event.source, event.metadata))
+    rescue = next(claim for claim in claims if claim.claim_type == "rescue_completed")
+    assert rescue.value["asset_name"] == "Ocean Viking"

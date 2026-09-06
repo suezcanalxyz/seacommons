@@ -33,6 +33,20 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str], float], ...] = (
 _RESCUED_COUNT = re.compile(r"\b(?:rescued|saved)\s+(\d{1,4})\s+(?:people|persons|survivors|migrants)\b", re.I)
 
 
+def _known_asset_name(text: str) -> str | None:
+    from core.intel.ngo_registry import NGO_VESSELS
+
+    names = sorted(
+        {str(info.get("name") or "").strip() for info in NGO_VESSELS.values() if info.get("name")},
+        key=len, reverse=True,
+    )
+    folded = text.casefold()
+    for name in names:
+        if name.casefold() in folded:
+            return name
+    return None
+
+
 def extract_humanitarian_claims(
     event: IntelEvent,
     source_policy: SourceIdentityPolicy,
@@ -48,11 +62,15 @@ def extract_humanitarian_claims(
 
     claims: list[ExtractedHumanitarianClaim] = []
     seen: set[str] = set()
+    asset_name = _known_asset_name(text)
+    base_value: dict[str, Any] = {"source_identity": source_policy.identity_id}
+    if asset_name is not None:
+        base_value["asset_name"] = asset_name
     for claim_type, pattern, confidence in _PATTERNS:
         if pattern.search(text) and claim_type not in seen:
             claims.append(ExtractedHumanitarianClaim(
                 claim_type=claim_type,
-                value={"source_identity": source_policy.identity_id},
+                value=dict(base_value),
                 extraction_confidence=confidence,
             ))
             seen.add(claim_type)
@@ -61,7 +79,7 @@ def extract_humanitarian_claims(
     if rescued:
         claims.append(ExtractedHumanitarianClaim(
             claim_type="people_rescued",
-            value={"count": int(rescued.group(1)), "source_identity": source_policy.identity_id},
+            value={**base_value, "count": int(rescued.group(1))},
             extraction_confidence=0.98,
         ))
     return tuple(claims)

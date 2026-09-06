@@ -87,7 +87,7 @@ def watch_id_for_incident(incident_id: str) -> str:
 
 def build_watch_profile(db, incident, *, event_hint=None) -> dict[str, Any]:
     """Build a sparse deterministic profile from explicit persisted evidence only."""
-    from core.db.models import IntelEventDB
+    from core.db.models import ClaimDB, IntelEventDB
 
     event = db.get(IntelEventDB, incident.incident_id)
     if event is None and event_hint is not None:
@@ -101,6 +101,22 @@ def build_watch_profile(db, incident, *, event_hint=None) -> dict[str, Any]:
         value = meta.get(key)
         if value is not None and str(value) and str(value) not in source_item_ids:
             source_item_ids.append(str(value))
+
+    claims = db.query(ClaimDB).filter(ClaimDB.incident_id == incident.incident_id).all()
+    people_counts = [
+        int((claim.value or {}).get("count"))
+        for claim in claims
+        if claim.claim_type in {"people_aboard", "people_rescued"}
+        and (claim.value or {}).get("count") is not None
+    ]
+    asset_names = sorted({
+        str((claim.value or {}).get("asset_name") or "").strip()
+        for claim in claims if (claim.value or {}).get("asset_name")
+    })
+    actor_names = sorted({
+        str((claim.value or {}).get("source_identity") or "").strip()
+        for claim in claims if (claim.value or {}).get("source_identity")
+    })
 
     coordinates: list[dict[str, float]] = []
     if event is not None and getattr(event, "lat", None) is not None and getattr(event, "lon", None) is not None:
@@ -128,10 +144,10 @@ def build_watch_profile(db, incident, *, event_hint=None) -> dict[str, Any]:
         "route_terms": [],
         "departure_terms": [],
         "destination_terms": [],
-        "people_min": None,
-        "people_max": None,
-        "vessel_description_terms": [],
-        "actor_names": [],
+        "people_min": min(people_counts) if people_counts else None,
+        "people_max": max(people_counts) if people_counts else None,
+        "vessel_description_terms": asset_names,
+        "actor_names": actor_names,
         "keywords": [],
         "language_hints": [],
         "source_observation_ids": list(incident.source_observation_ids or []),

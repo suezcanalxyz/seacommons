@@ -343,3 +343,43 @@ def test_stale_reconcile_resynchronizes_watch_as_outcome_unknown(watch_tables):
     assert watch["lifecycle_snapshot"] == "outcome_unknown/archived"
     assert watch["status"] == "active"
     assert watch["priority"] == "medium"
+
+
+def test_watch_profile_uses_persisted_people_and_asset_claim_context(watch_tables):
+    from core.db.models import ClaimDB, HumanitarianIncidentDB, IntelEventDB
+    from core.db.session import engine, session_scope
+    from core.intel.incident_watch import build_watch_profile
+
+    ClaimDB.__table__.create(bind=engine(), checkfirst=True)
+    with session_scope() as db:
+        db.query(ClaimDB).delete()
+        db.add(IntelEventDB(
+            id="iw-claim-profile", timestamp_utc="2026-09-05T10:00:00+00:00",
+            type="twitter", severity="high", lat=34.5, lon=13.2,
+            title="MAYDAY", text="distress", source="Alarm Phone",
+            meta={"tweet_id": "claim-profile", "is_distress": True},
+        ))
+        incident = HumanitarianIncidentDB(
+            incident_id="iw-claim-profile", lifecycle="active", incident_status="active",
+            reported_at="2026-09-05T10:00:00+00:00", last_update_at="2026-09-05T10:00:00+00:00",
+            source_observation_ids=[], review_status="none", revision=1,
+        )
+        db.add(incident)
+        db.add(ClaimDB(
+            claim_id="claim:people", incident_id=incident.incident_id, claim_type="people_aboard",
+            value={"count": 40}, observation_id="obs-1", source_id="Alarm Phone",
+            extraction_method="test", verification_status="unverified",
+        ))
+        db.add(ClaimDB(
+            claim_id="claim:asset", incident_id=incident.incident_id, claim_type="rescue_completed",
+            value={"asset_name": "Ocean Viking", "source_identity": "sos_mediterranee"},
+            observation_id="obs-2", source_id="SOS Méditerranée",
+            extraction_method="test", verification_status="unverified",
+        ))
+        db.flush()
+        profile = build_watch_profile(db, incident)
+
+    assert profile["people_min"] == 40
+    assert profile["people_max"] == 40
+    assert profile["vessel_description_terms"] == ["Ocean Viking"]
+    assert profile["actor_names"] == ["sos_mediterranee"]

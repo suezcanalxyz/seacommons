@@ -82,6 +82,131 @@ def _source_family(source_name: str) -> Optional[str]:
     return profile["source_family"] if profile is not None else None
 
 
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    import math
+
+    radius_km = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    )
+    return radius_km * 2 * math.asin(math.sqrt(max(0.0, a)))
+
+
+def _event_from_row(row) -> object:
+    from core.intel.store import IntelEvent
+
+    return IntelEvent(
+        id=row.id, timestamp_utc=row.timestamp_utc, type=row.type, severity=row.severity,
+        lat=row.lat, lon=row.lon, title=row.title or "", text=row.text or "",
+        source=row.source or "", linked_mmsi=row.linked_mmsi or "", metadata=dict(row.meta or {}),
+    )
+
+
+def _claim_people_count(claims) -> int | None:
+    for claim in claims:
+        if getattr(claim, "claim_type", "") in {"people_rescued", "people_aboard"}:
+            value = dict(getattr(claim, "value", {}) or {})
+            if value.get("count") is not None:
+                return int(value["count"])
+    return None
+
+
+def _claim_asset_names(claims) -> set[str]:
+    return {
+        str(dict(getattr(claim, "value", {}) or {}).get("asset_name") or "").strip().casefold()
+        for claim in claims
+        if dict(getattr(claim, "value", {}) or {}).get("asset_name")
+    }
+
+
+def associate_verification_event(event, claims) -> list[CorrelationDecision]:
+    """Associate verification evidence to open incidents without merging or lifecycle mutation."""
+    from core.db.models import ClaimDB, HumanitarianIncidentDB, IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.evidence_lineage import lineage_for_event
+    from core.intel.lifecycle import parse_utc
+
+    event_ts = parse_utc(event.timestamp_utc)
+    if event_ts is None:
+        return []
+    start = (event_ts - timedelta(hours=TEMPORAL_CANDIDATE_WINDOW_HOURS)).isoformat()
+    end = (event_ts + timedelta(hours=TEMPORAL_CANDIDATE_WINDOW_HOURS)).isoformat()
+    new_lineage = lineage_for_event(event).independence_group
+    new_people = _claim_people_count(claims)
+    new_assets = _claim_asset_names(claims)
+    now = datetime.now(timezone.utc)
+    decisions: list[CorrelationDecision] = []
+
+    with session_scope() as db:
+        candidates = (
+            db.query(HumanitarianIncidentDB)
+            .filter(
+                HumanitarianIncidentDB.lifecycle.in_(_OPEN_LIFECYCLES),
+                HumanitarianIncidentDB.reported_at >= start,
+                HumanitarianIncidentDB.reported_at <= end,
+            )
+            .all()
+        )
+        for candidate in candidates:
+            founding = db.get(IntelEventDB, candidate.incident_id)
+            supporting = ["temporal_proximity"]
+            contradicting: list[str] = []
+            independent = False
+            if founding is not None:
+                founding_event = _event_from_row(founding)
+                founding_group = lineage_for_event(founding_event).independence_group
+                independent = (
+                    new_lineage != "unknown"
+                    and founding_group != "unknown"
+                    and new_lineage != founding_group
+                )
+                if independent:
+                    supporting.append("independent_lineage")
+                if event.lat is not None and event.lon is not None and founding.lat is not None and founding.lon is not None:
+                    distance_km = _haversine_km(float(event.lat), float(event.lon), float(founding.lat), float(founding.lon))
+                    if distance_km <= 25.0:
+                        supporting.append("spatial_overlap")
+                    else:
+                        contradicting.append("spatial_conflict")
+
+                candidate_assets = {
+                    str(value).strip().casefold()
+                    for key in ("responder_assets", "asset_names")
+                    for value in list((founding.meta or {}).get(key) or [])
+                }
+                if new_assets and candidate_assets and new_assets.intersection(candidate_assets):
+                    supporting.append("asset_reference_match")
+
+            candidate_counts = [
+                int((row.value or {}).get("count"))
+                for row in db.query(ClaimDB).filter(
+                    ClaimDB.incident_id == candidate.incident_id,
+                    ClaimDB.claim_type.in_(["people_aboard", "people_rescued"]),
+                ).all()
+                if (row.value or {}).get("count") is not None
+            ]
+            if new_people is not None and candidate_counts:
+                tolerance = max(5, round(max(candidate_counts) * 0.2))
+                if any(abs(new_people - count) <= tolerance for count in candidate_counts):
+                    supporting.append("people_count_compatible")
+                else:
+                    contradicting.append("people_count_conflict")
+
+            strong = {"temporal_proximity", "spatial_overlap", "people_count_compatible", "asset_reference_match", "independent_lineage"} <= set(supporting)
+            decision = DECISION_SAME_INCIDENT if strong and not contradicting else DECISION_UNCERTAIN
+            confidence = 0.9 if decision == DECISION_SAME_INCIDENT else 0.35
+            decisions.append(_persist(
+                db, observation_id=event.id, candidate_incident_id=candidate.incident_id,
+                decision=decision, supporting_features=supporting,
+                contradicting_features=contradicting, source_independence_result=independent,
+                confidence=confidence, now=now,
+            ))
+    return decisions
+
+
 def generate_correlation_decisions(event, *, lifecycle: str) -> list[CorrelationDecision]:
     """Real DB-querying entry point. Finds open humanitarian incidents
     (excluding this event's own incident_id) whose reported_at falls
@@ -123,12 +248,19 @@ def generate_correlation_decisions(event, *, lifecycle: str) -> list[Correlation
                             confidence=1.0, now=now)
             return [row]
 
-        own_family = _source_family(event.source)
+        from core.intel.evidence_lineage import lineage_for_event
+
+        own_group = lineage_for_event(event).independence_group
         for candidate in candidates:
             founding_event = db.get(IntelEventDB, candidate.incident_id)
-            candidate_family = _source_family(founding_event.source) if founding_event else None
+            candidate_group = (
+                lineage_for_event(_event_from_row(founding_event)).independence_group
+                if founding_event is not None else "unknown"
+            )
             independence = (
-                own_family is not None and candidate_family is not None and own_family != candidate_family
+                own_group != "unknown"
+                and candidate_group != "unknown"
+                and own_group != candidate_group
             )
             row = _persist(
                 db, observation_id=event.id, candidate_incident_id=candidate.incident_id,
