@@ -55,9 +55,9 @@ function parseTitleVessel(title) {
 }
 
 const PUBLIC_TIERS = [
-  { key: 'operational', label: 'Direct', sub: 'Published distress & partner reports' },
-  { key: 'news', label: 'Public feeds', sub: 'Official API & first-party publications' },
-  { key: 'signal', label: 'Partner ops', sub: 'Trusted operational observations' },
+  { key: 'operational', label: 'Operational', sub: 'Active public-eligible signals' },
+  { key: 'news', label: 'Context', sub: 'Published contextual observations' },
+  { key: 'signal', label: 'Observations', sub: 'Published telemetry and evidence' },
 ];
 
 function eventTier(p) {
@@ -356,7 +356,7 @@ export default function IntelDashboard({
     const eventId = String(p.id || p.title || '');
     const isSelected = eventId === String(selectedEventId || '');
     const visual = classifyEventVisual(p);
-    const parsedTitle = parseTitleVessel(p.title);
+    const parsedTitle = parseTitleVessel(p.operational_label || p.title);
     // A humanitarian distress report is about people, not a vessel identity:
     // never headline it with a bare MMSI.
     const isHumanitarianRow = visual.key === 'humanitarian_alarm_phone'
@@ -369,6 +369,7 @@ export default function IntelDashboard({
       || (!isHumanitarianRow && (p.linked_mmsi || p.mmsi)
         ? `MMSI ${p.linked_mmsi || p.mmsi}`
         : null)
+      || p.operational_label
       || p.title
       || (isHumanitarianRow ? 'Distress report' : 'Unknown vessel');
     const anomaly = eventAnomalyLabel(p);
@@ -401,7 +402,7 @@ export default function IntelDashboard({
             title={visual.label}
           />
           <strong>{vesselName}</strong>
-          <span>{anomaly}</span>
+          <span>{p.operational_label || anomaly}{p.input_modality ? ` · ${p.input_modality.replace('_', ' ')}` : ''}</span>
           {reported && <span className="intel-log-time">{reported}</span>}
           <code className={`intel-log-loc intel-log-loc--${location.tone}`}>{location.text}</code>
         </button>
@@ -424,9 +425,9 @@ export default function IntelDashboard({
       <section className="panel-block" style={{ paddingTop: 0, paddingBottom: 8 }}>
         <div className="osint-stats-row">
           {publicMode ? (<>
-            <div className="osint-stat"><strong>{(liveModeCounts?.humanitarian || 0) + (liveModeCounts?.security || 0) + (liveModeCounts?.safety || 0)}</strong><span>live total</span></div>
+            <div className="osint-stat"><strong>{(liveModeCounts?.humanitarian || 0) + (liveModeCounts?.maritime || 0)}</strong><span>live total</span></div>
             <div className="osint-stat osint-stat--critical"><strong>{liveModeCounts?.humanitarian || 0}</strong><span>humanitarian</span></div>
-            <div className="osint-stat"><strong>{(liveModeCounts?.security || 0) + (liveModeCounts?.safety || 0)}</strong><span>maritime</span></div>
+            <div className="osint-stat"><strong>{liveModeCounts?.maritime || 0}</strong><span>maritime</span></div>
           </>) : (<>
             <div className="osint-stat"><strong>{intelStats.total}</strong><span>events</span></div>
             <div className="osint-stat osint-stat--critical"><strong>{intelStats.by_sev?.critical || 0}</strong><span>critical</span></div>

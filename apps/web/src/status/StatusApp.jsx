@@ -27,7 +27,7 @@ const CHECK_COPY = {
   modes: {
     label: 'Live data modes',
     endpoint: 'GET /api/v1/live/signals?mode=all',
-    description: 'Canonical Humanitarian and Maritime Security projections.',
+    description: 'Canonical Humanitarian and Maritime projections.',
   },
   sources: {
     label: 'OSINT source availability',
@@ -142,7 +142,7 @@ export default function StatusApp() {
 
       <section className="status-mode-grid" aria-label="Live mode counts">
         <div><span>Humanitarian</span><strong>{snapshot?.mode_counts?.humanitarian ?? '—'}</strong></div>
-        <div><span>Maritime security</span><strong>{snapshot?.mode_counts?.security ?? '—'}</strong></div>
+        <div><span>Maritime</span><strong>{snapshot?.mode_counts?.maritime ?? '—'}</strong></div>
       </section>
 
       <section className="status-section">

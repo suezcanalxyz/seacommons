@@ -34,6 +34,7 @@ import { fetchJson } from './services/api/client.js';
 import { useLiveFeed } from './hooks/useLiveFeed.js';
 import { FEED_STATUS_LABEL, FEED_STATUS_TONE, liveSignalTotal } from './features/live/feedStatus.js';
 import { mergeIntelDriftUpdate } from './features/live/normalize.js';
+import { receiverChannelLabel } from './features/live/pipelineStatus.js';
 import { splitObservedTrackSegments } from './features/live/observedTrack.js';
 import { createVesselArrowImage } from './features/map/vesselMarker.js';
 import { mergeLiveDrifts } from './simulation/liveTracking.js';
@@ -134,19 +135,19 @@ const SIGNALS_MACRO_GROUPS = [
     label: 'Humanitarian',
     categories: [
       { key: 'distress', label: 'Distress', groupKey: 'sar' },
-      { key: 'incident', label: 'Vessel incident', groupKey: 'intel_incident' },
-      { key: 'hazard', label: 'Natural hazard (GDACS)', groupKey: 'intel_hazard' },
       { key: 'iom', label: 'IOM missing migrants', groupKey: 'intel_iom' },
-      { key: 'social', label: 'Social post', groupKey: 'intel_social' },
-      { key: 'news', label: 'News / RSS', groupKey: 'intel_news' },
       { key: 'ngo', label: 'NGO activity', groupKey: 'intel_ngo' },
     ],
   },
   {
-    key: 'security',
-    label: 'Maritime Security',
+    key: 'maritime',
+    label: 'Maritime',
     categories: [
-      { key: 'fused', label: 'Correlated alert', groupKey: 'fused' },
+      { key: 'incident', label: 'Safety', groupKey: 'intel_incident' },
+      { key: 'hazard', label: 'Maritime context', groupKey: 'intel_hazard' },
+      { key: 'news', label: 'Context reports', groupKey: 'intel_news' },
+      { key: 'social', label: 'Public observations', groupKey: 'intel_social' },
+      { key: 'fused', label: 'Reviewed intelligence', groupKey: 'fused' },
       { key: 'ais', label: 'AIS anomaly', groupKey: 'spikes' },
     ],
   },
@@ -631,7 +632,7 @@ function App() {
   // NGO, fused...) had plenty of eligible content sitting on the VM.
   const [liveMode] = useState(() => (isPublicLiveHost ? 'all' : 'humanitarian'));
   const seenAlertIdsRef = useRef(null);
-  const { intelEvents, setIntelEvents, feedStatus, liveModeCounts } = useLiveFeed({
+  const { intelEvents, setIntelEvents, feedStatus, liveModeCounts, pipelineSources } = useLiveFeed({
     apiBase,
     edgeBase: LIVE_EDGE_BASE,
     isPublicLiveHost,
@@ -2311,7 +2312,7 @@ function App() {
     });
   }
 
-  // Macro group ("Humanitarian" / "Maritime Security") block tick — on/off
+  // Macro group (Humanitarian / Maritime) block tick — on/off
   // for every sub-category underneath in one click.
   function toggleMacroSignals(macroKey) {
     const macro = SIGNALS_MACRO_GROUPS.find((g) => g.key === macroKey);
@@ -3384,7 +3385,7 @@ function App() {
                       const macroOn = macro.categories.every((c) => isLayerGroupOn(c.groupKey));
                       const sampledMacroCount = macro.categories.reduce(
                         (sum, c) => sum + (signalCategoryCounts[c.key] || 0), 0,
-                      ) + (macro.key === 'security' ? (signalCategoryCounts.other || 0) : 0);
+                      );
                       const canonicalMacroCount = Number(liveModeCounts?.[macro.key]);
                       const macroCount = Number.isFinite(canonicalMacroCount) ? canonicalMacroCount : sampledMacroCount;
                       const macroExpanded = expandedMacros.has(macro.key);
@@ -3438,20 +3439,6 @@ function App() {
                                   <span className="signals-selector__count">{alarmPhoneCount}</span>
                                 </a>
                               )}
-                              {/* Sanctions/identity findings (vessel_identity)
-                                  and any other type SIGNAL_CATEGORIES doesn't
-                                  name yet -- no dedicated toggle, always
-                                  shown, listed so counts add up. */}
-                              {macro.key === 'security' && (
-                                <span
-                                  className="signals-selector__link signals-selector__link--nested is-active is-static"
-                                  title="No dedicated toggle -- always shown"
-                                >
-                                  <span className="signals-selector__box" aria-hidden="true" />
-                                  Other
-                                  <span className="signals-selector__count">{signalCategoryCounts.other || 0}</span>
-                                </span>
-                              )}
                             </div>
                           )}
                         </div>
@@ -3464,6 +3451,21 @@ function App() {
                 <span />
                 Approved collectors remain active when this map is closed.
               </p>
+              <section className="live-acquisition" aria-label="Acquisition pipeline">
+                <div className="live-acquisition__head"><span>Acquisition</span><small>ONE DATA PIPELINE</small></div>
+                {pipelineSources.map((source) => (
+                  <div className="live-acquisition__source" key={source.family}>
+                    <div><i className={`is-${source.state}`} /><strong>{source.label}</strong><span>{source.state}</span></div>
+                    {source.family === 'radio' && Array.isArray(source.receivers) && source.receivers.map((receiver) => (
+                      <div className="live-acquisition__receiver" key={receiver.receiver_id}>
+                        <strong>{receiver.station_label || receiver.receiver_id}</strong>
+                        <span>{receiver.provider} · {receiverChannelLabel(receiver)}</span>
+                        <small>{receiver.state}</small>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </section>
             </header>
 
             <div className="live-feed-panel__body">
@@ -3485,8 +3487,7 @@ function App() {
                 selectedEventId={selectedIntelEventId}
                 onOpenReport={openIntelReport}
               />
-              {liveMode !== 'security' && (
-                <CivilSarFleetPanel
+              <CivilSarFleetPanel
                   fleet={ngoVessels}
                   onSelectVessel={(mmsi) => {
                     const feature = (ngoVessels.features || []).find(
@@ -3498,7 +3499,6 @@ function App() {
                     }
                   }}
                 />
-              )}
             </div>
           </aside>
           <button

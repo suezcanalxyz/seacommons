@@ -50,7 +50,7 @@ export const FEED_STATUS_TONE = {
 
 /** Total public Live signals from canonical server compartment counts. */
 export function liveSignalTotal(modeCounts = {}, fallback = 0) {
-  const values = ['humanitarian', 'security', 'safety']
+  const values = ['humanitarian', 'maritime']
     .map((key) => Number(modeCounts?.[key]))
     .filter(Number.isFinite);
   if (!values.length) return Number(fallback) || 0;

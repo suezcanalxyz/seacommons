@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { edgeSnapshotIsUsable } from '../simulation/liveTracking.js';
 import { fetchJson } from '../services/api/client.js';
 import { deriveFeedStatus } from '../features/live/feedStatus.js';
+import { normalizePipelineSources } from '../features/live/pipelineStatus.js';
 import {
   edgeSnapshotToFeatures,
   receivedSignalFeatures,
@@ -53,7 +54,8 @@ export function useLiveFeed({
   const [intelEvents, setIntelEvents] = useState(
     () => loadCachedEvents(isPublicLiveHost, liveMode),
   );
-  const [liveModeCounts, setLiveModeCounts] = useState({ humanitarian: null, security: null });
+  const [liveModeCounts, setLiveModeCounts] = useState({ humanitarian: null, maritime: null });
+  const [pipelineSources, setPipelineSources] = useState([]);
   const [intelConnected, setIntelConnected] = useState(false);
   const [intelMode, setIntelMode] = useState('offline');
   // docs/fixes.md F-06 / Phase 0.4: a successful empty response, a transient
@@ -373,6 +375,23 @@ export function useLiveFeed({
     };
   }, [apiBase, edgeBase, isPublicLiveHost, liveMode]);
 
+  useEffect(() => {
+    if (!isPublicLiveHost) return undefined;
+    let alive = true;
+    let timer = null;
+    async function refreshPipeline() {
+      try {
+        const payload = await fetchJson(apiBase, '/api/v1/live/pipeline', undefined, 5000);
+        if (alive) setPipelineSources(normalizePipelineSources(payload));
+      } catch {
+        // Keep the last good acquisition-health snapshot visible.
+      }
+      if (alive) timer = window.setTimeout(refreshPipeline, 30000);
+    }
+    refreshPipeline();
+    return () => { alive = false; window.clearTimeout(timer); };
+  }, [apiBase, isPublicLiveHost]);
+
   return {
     intelEvents,
     setIntelEvents,
@@ -380,5 +399,6 @@ export function useLiveFeed({
     intelMode,
     feedStatus,
     liveModeCounts,
+    pipelineSources,
   };
 }

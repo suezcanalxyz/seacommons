@@ -3264,7 +3264,7 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   margin-right: -2px;
   color: rgba(225,242,237,.35);
 }
-/* Macro rows (Humanitarian / Maritime Security): checkbox block-tick like
+/* Macro rows (Humanitarian / Maritime): checkbox block-tick like
    every sub-category, not the underlined-link treatment of the top "All"
    trigger -- .signals-selector__row's underline rule targets any link
    inside it, so cancel it specifically here. */
@@ -3916,3 +3916,17 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
     bottom: max(8px, env(safe-area-inset-bottom));
   }
 }
+
+.live-acquisition { border-top: 1px solid rgba(255,255,255,.09); padding: 10px 0 2px; margin-top: 10px; }
+.live-acquisition__head, .live-acquisition__source > div:first-child { display:flex; align-items:center; gap:7px; }
+.live-acquisition__head { justify-content:space-between; margin-bottom:6px; font-size:10px; letter-spacing:.08em; text-transform:uppercase; }
+.live-acquisition__head small { opacity:.52; }
+.live-acquisition__source { padding:4px 0; font-size:10px; }
+.live-acquisition__source > div:first-child span { margin-left:auto; opacity:.65; text-transform:uppercase; }
+.live-acquisition__source i { width:6px; height:6px; border-radius:50%; background:#6b7280; }
+.live-acquisition__source i.is-live { background:#8bf0c5; }
+.live-acquisition__source i.is-degraded { background:#f59e0b; }
+.live-acquisition__receiver { margin:5px 0 2px 13px; padding-left:8px; border-left:1px solid rgba(255,255,255,.12); display:grid; grid-template-columns:1fr auto; gap:1px 8px; }
+.live-acquisition__receiver strong { font-size:10px; }
+.live-acquisition__receiver span { grid-column:1 / -1; opacity:.65; }
+.live-acquisition__receiver small { grid-row:1; grid-column:2; text-transform:uppercase; opacity:.55; }

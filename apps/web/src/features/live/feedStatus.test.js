@@ -67,6 +67,6 @@ test('feedStatusIsFresh only trusts live and empty', () => {
 
 test('liveSignalTotal prefers canonical mode counts over the transport buffer length', async () => {
   const { liveSignalTotal } = await import('./feedStatus.js');
-  assert.equal(liveSignalTotal({ humanitarian: 1, security: 1250, safety: 44 }, 150), 1295);
+  assert.equal(liveSignalTotal({ humanitarian: 1, maritime: 1294 }, 150), 1295);
   assert.equal(liveSignalTotal({}, 150), 150);
 });
