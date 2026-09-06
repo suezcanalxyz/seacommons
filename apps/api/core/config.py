@@ -100,6 +100,13 @@ class SuezCanalConfig(BaseSettings):
     HYDRO_ENABLED: bool = False
     SDR_ENABLED: bool = False
     SDR_THRESHOLD_DB: float = 10.0
+    # Software-only remote maritime radio. Disabled until an operator provides
+    # explicit receiver descriptors with confirmed source terms.
+    REMOTE_RADIO_ENABLED: bool = False
+    REMOTE_RADIO_MAX_RECEIVERS: int = 8
+    REMOTE_RADIO_CONNECT_TIMEOUT_S: float = 10.0
+    REMOTE_RADIO_RECEIVERS_JSON: str = ""
+    REMOTE_RADIO_RECEIVERS_FILE: str = ""
     ADSB_ENABLED: bool = False
     ADSB_DEVICE: str = "rtlsdr"
     TID_ENABLED: bool = False

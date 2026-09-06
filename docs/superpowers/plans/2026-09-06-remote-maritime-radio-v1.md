@@ -52,12 +52,12 @@
 - Produces `ReceiverDescriptor` and `ReceiverRegistry` with deterministic `receiver_id`, provider/frontend URL, physical lineage, geographic coordinates when known, supported frequency ranges/modes, source terms, enabled flag, and bounded operator notes.
 - Consumes provider-neutral capability types from Task 0.
 
-- [ ] Write RED tests for deterministic identity, duplicate frontend collapse by physical lineage, disabled/unclear-terms receivers excluded from runnable candidates, and bounded configured receiver count.
-- [ ] Run `pytest -q tests/test_remote_receiver_registry.py` and confirm failures are due to the missing registry.
-- [ ] Implement explicit configured descriptors only; no unbounded internet crawling or automatic trust of directory metadata.
-- [ ] Add fail-closed config values for `REMOTE_RADIO_ENABLED`, maximum configured receivers, connect timeout, and optional receiver descriptor JSON/file path; default disabled.
-- [ ] Run registry tests plus `tests/test_config.py` or the nearest config regression file GREEN.
-- [ ] Commit `feat: add remote receiver identity registry`.
+- [x] Write RED tests for deterministic identity, duplicate frontend collapse by physical lineage, disabled/unclear-terms receivers excluded from runnable candidates, and bounded configured receiver count.
+- [x] Run `pytest -q tests/test_remote_receiver_registry.py` and confirm failures are due to the missing registry.
+- [x] Implement explicit configured descriptors only; no unbounded internet crawling or automatic trust of directory metadata.
+- [x] Add fail-closed config values for `REMOTE_RADIO_ENABLED`, maximum configured receivers, connect timeout, and optional receiver descriptor JSON/file path; default disabled.
+- [x] Run registry tests plus `tests/test_config.py` or the nearest config regression file GREEN.
+- [x] Commit `feat: add remote receiver identity registry`.
 
 ### Task 2: KiwiSDR remote adapter
 

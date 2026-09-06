@@ -75,3 +75,13 @@ def test_partial_meta_configuration_warns():
 
     assert report.ok
     assert any("Meta WhatsApp" in w for w in report.warnings)
+
+
+def test_remote_radio_defaults_fail_closed():
+    settings = _cfg()
+
+    assert settings.REMOTE_RADIO_ENABLED is False
+    assert settings.REMOTE_RADIO_MAX_RECEIVERS > 0
+    assert settings.REMOTE_RADIO_CONNECT_TIMEOUT_S > 0
+    assert settings.REMOTE_RADIO_RECEIVERS_JSON == ""
+    assert settings.REMOTE_RADIO_RECEIVERS_FILE == ""
