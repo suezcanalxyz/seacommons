@@ -126,6 +126,11 @@ STRUCTURED_RADIO_EVENTS = Counter(
     "Structured DSC/NAVTEX ingestion events by bounded kind/outcome",
     ["kind", "outcome"],
 )
+CROSS_MODAL_EVENTS = Counter(
+    "seacommons_cross_modal_events_total",
+    "Cross-modal evidence-fusion events by bounded stage/state/outcome",
+    ["stage", "state", "outcome"],
+)
 
 _HV_STAGES = frozenset({"claim_extraction", "association", "mission", "resolution"})
 _HV_SOURCE_ROLES = frozenset({"operational_origin", "verification", "archive_reference", "unknown"})
@@ -175,6 +180,22 @@ def record_structured_radio_event(*, kind: str, outcome: str) -> None:
         kind_label = kind if kind in _STRUCTURED_RADIO_KINDS else "other"
         outcome_label = outcome if outcome in _STRUCTURED_RADIO_OUTCOMES else "other"
         STRUCTURED_RADIO_EVENTS.labels(kind_label, outcome_label).inc()
+    except Exception:
+        pass
+
+
+_CROSS_MODAL_STAGES = frozenset({"packet", "independence", "humanitarian_context", "maritime_context"})
+_CROSS_MODAL_STATES = frozenset({"single_lineage", "multi_lineage", "contradictory", "na"})
+_CROSS_MODAL_OUTCOMES = frozenset({"created", "evaluated", "attached", "rejected", "other"})
+
+
+def record_cross_modal_event(*, stage: str, state: str, outcome: str) -> None:
+    """Bounded cross-modal metric; never labels evidence/source/subject identifiers."""
+    try:
+        stage_label = stage if stage in _CROSS_MODAL_STAGES else "other"
+        state_label = state if state in _CROSS_MODAL_STATES else "other"
+        outcome_label = outcome if outcome in _CROSS_MODAL_OUTCOMES else "other"
+        CROSS_MODAL_EVENTS.labels(stage_label, state_label, outcome_label).inc()
     except Exception:
         pass
 

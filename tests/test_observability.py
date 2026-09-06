@@ -193,3 +193,27 @@ def test_remote_radio_metrics_accept_bounded_provider_state_outcome() -> None:
     assert 'provider="openwebrx"' in metrics
     assert 'state="connected"' in metrics
     assert 'outcome="observation"' in metrics
+
+
+def test_cross_modal_metrics_normalize_hostile_labels() -> None:
+    from prometheus_client import generate_latest
+    from core import observability
+
+    secret = "receiver-258479000-private@example.com-packet-123"
+    observability.record_cross_modal_event(stage=secret, state=secret, outcome=secret)
+    metrics = generate_latest().decode()
+    assert secret not in metrics
+    assert 'seacommons_cross_modal_events_total{outcome="other",stage="other",state="other"}' in metrics
+
+
+def test_cross_modal_metrics_accept_bounded_independence_event() -> None:
+    from prometheus_client import generate_latest
+    from core import observability
+
+    observability.record_cross_modal_event(
+        stage="independence", state="multi_lineage", outcome="evaluated"
+    )
+    metrics = generate_latest().decode()
+    assert 'stage="independence"' in metrics
+    assert 'state="multi_lineage"' in metrics
+    assert 'outcome="evaluated"' in metrics

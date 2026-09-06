@@ -71,7 +71,7 @@ def evaluate_independence(
         state = "multi_lineage"
     else:
         state = "single_lineage"
-    return CrossModalIndependenceAssessment(
+    assessment = CrossModalIndependenceAssessment(
         packet_id=packet.packet_id,
         state=state,
         independence_groups=groups,
@@ -82,3 +82,7 @@ def evaluate_independence(
         contradictions=contradiction_tuple,
         confidence_ceiling=packet.confidence_ceiling,
     )
+    from core.observability import record_cross_modal_event
+
+    record_cross_modal_event(stage="independence", state=state, outcome="evaluated")
+    return assessment

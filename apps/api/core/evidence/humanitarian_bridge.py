@@ -50,4 +50,8 @@ def attach_resolution_context(
         value["cross_modal_context"] = context
         row.value = value
         db.flush()
-        return _row_to_dict(row)
+        result = _row_to_dict(row)
+    from core.observability import record_cross_modal_event
+
+    record_cross_modal_event(stage="humanitarian_context", state=analysis.state, outcome="attached")
+    return result

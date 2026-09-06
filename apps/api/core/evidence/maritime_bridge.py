@@ -46,4 +46,7 @@ def attach_episode_context(
         db.flush()
         db.refresh(row)
         db.expunge(row)
-        return row
+    from core.observability import record_cross_modal_event
+
+    record_cross_modal_event(stage="maritime_context", state=analysis.state, outcome="attached")
+    return row
