@@ -139,6 +139,7 @@ class SuezCanalConfig(BaseSettings):
     CMEMS_TEMPERATURE_DATASET: str = "cmems_mod_glo_phy-thetao_anfc_0.083deg_P1D-m"
     CMEMS_WAVE_DATASET: str = "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i"
     OPEN_METEO_BASE: str = "https://api.open-meteo.com/v1"
+    AIS_FUSION_ENABLED: bool = False
     AISSTREAM_KEY: str = ""
     # Optional SEPARATE AISStream API key (different account/registration) for
     # a dedicated, globally-scoped subscription tracking the known NGO/SAR

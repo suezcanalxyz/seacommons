@@ -22,29 +22,32 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
-# Extra consumers of each parsed PositionReport, driven off the single
-# AISStream connection (the free tier allows only one open socket per key,
-# so a second consumer must never open its own). A hook is called with
-# (mmsi, ship_name, lat, lon, sog, nav_status, cog, heading, received_at) and
-# must return fast and never raise -- it runs on the stream thread. The first
-# six args are the original stable contract; `cog`/`heading` (degrees, heading
-# None when 511) and `received_at` (our wall-clock at receipt, for AIS-timestamp
-# skew checks) were appended so old 6-arg consumers keep working unchanged.
-_PositionHook = Callable[..., None]
-_position_hooks: list[_PositionHook] = []
+# Compatibility wrappers: all downstream consumers still use the historical
+# nine-argument hook contract, but hook ownership now lives in ais_bus so new
+# providers can share one fan-out without changing consumer signatures.
+# `_position_hooks` remains as an alias because existing tests/internal tools
+# reset it directly; wrappers resynchronise the bus if that alias is replaced.
+from core.vessels import ais_bus as _ais_bus
+_position_hooks = _ais_bus._position_hooks
 
 
-def register_position_hook(hook: _PositionHook) -> None:
-    if hook not in _position_hooks:
-        _position_hooks.append(hook)
+def _sync_compat_hook_list() -> None:
+    global _position_hooks
+    if _position_hooks is not _ais_bus._position_hooks:
+        _ais_bus._position_hooks = _position_hooks
+
+
+def register_position_hook(hook) -> None:
+    _sync_compat_hook_list()
+    _ais_bus.register_position_hook(hook)
 
 
 def position_hook_count() -> int:
-    return len(_position_hooks)
+    _sync_compat_hook_list()
+    return _ais_bus.position_hook_count()
 
 # Mediterranean + Black Sea bounding box [lat_min, lon_min], [lat_max, lon_max]
 _BBOX = [[[28.0, -6.0], [47.0, 42.0]]]
@@ -230,18 +233,15 @@ class AISStreamClient:
                     nav_status=int(nav_status) if nav_status is not None else None,
                 )
                 received_at = datetime.now(timezone.utc)
-                for hook in _position_hooks:
-                    try:
-                        hook(
-                            mmsi, name, float(lat), float(lon),
-                            float(sog) if sog is not None else None,
-                            int(nav_status) if nav_status is not None else None,
-                            float(cog) if cog is not None else None,
-                            float(hdg) if hdg is not None and hdg != 511 else None,
-                            received_at,
-                        )
-                    except Exception:
-                        logger.debug("AIS position hook failed", exc_info=True)
+                from core.vessels.ais_bus import publish_legacy
+                publish_legacy(
+                    mmsi, name, float(lat), float(lon),
+                    float(sog) if sog is not None else None,
+                    int(nav_status) if nav_status is not None else None,
+                    float(cog) if cog is not None else None,
+                    float(hdg) if hdg is not None and hdg != 511 else None,
+                    received_at,
+                )
 
         elif mtype == "ShipStaticData":
             sd = msg.get("Message", {}).get("ShipStaticData", {})

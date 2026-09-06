@@ -38,7 +38,7 @@
 - Compatibility: legacy `core.vessels.aisstream.register_position_hook` delegates to the bus; consumers do not move files or change signatures in this task.
 - Rollback: `AIS_FUSION_ENABLED=false` keeps AISStream-only behaviour.
 
-- [ ] **Step 1: Snapshot the current hook contract in a RED parity test**
+- [x] **Step 1: Snapshot the current hook contract in a RED parity test**
 
 ```python
 def test_bus_delivers_exact_legacy_hook_shape():
@@ -52,26 +52,29 @@ def test_bus_delivers_exact_legacy_hook_shape():
 
 Also assert repeated registration is idempotent and a broken consumer cannot stop delivery to later consumers.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `pytest -q tests/test_ais_bus_compat.py tests/test_vessel_incidents.py tests/test_ais_source_observation.py`
 Expected: FAIL only because `ais_bus` does not exist.
 
-- [ ] **Step 3: Implement the bus and delegation shim**
+- [x] **Step 3: Implement the bus and delegation shim**
 
 Keep `aisstream.register_position_hook()` and `position_hook_count()` as compatibility wrappers. Do not edit TrackStore, AIS anomaly, vessel incident, or SourceObservation consumer signatures yet.
 
-- [ ] **Step 4: Verify parity GREEN**
+- [x] **Step 4: Verify parity GREEN**
 
 Run: `pytest -q tests/test_ais_bus_compat.py tests/test_vessel_incidents.py tests/test_ais_source_observation.py tests/test_aisstream_health.py`
 Expected: PASS with the same hook count and event semantics as main.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/core/vessels/ais_bus.py apps/api/core/vessels/aisstream.py apps/api/core/config.py tests/test_ais_bus_compat.py
 git commit -m "refactor: add compatibility preserving AIS event bus"
 ```
+
+
+**Execution:** RED failed on missing `core.vessels.ais_bus`; GREEN: `21 passed` across bus compatibility, vessel incidents, SourceObservation sampling, and AISStream health. Preserved the private `_position_hooks` alias because an existing regression/tooling contract resets it directly.
 
 ### Task 1: Normalized AIS provider contract
 
