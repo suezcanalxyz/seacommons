@@ -49,7 +49,7 @@ behaviour context may inform an observation but cannot open a Case by itself
 Required v1 behavior:
 
 - build deterministic `VesselContext` from existing VesselSubject/registry/track evidence;
-- persist versioned behavioural baselines with deterministic evidence fingerprints under migration `0020_vessel_behavioural_baselines`;
+- persist versioned behavioural baselines with deterministic evidence fingerprints under migration `0020_vessel_baselines`;
 - model only route corridor, speed envelope, recurrent ports/port pairs and AIS silence distribution;
 - emit only `expected`, `unusual`, or `insufficient_history` plus bounded reason codes and measurements;
 - attach compact behaviour context to selected AIS-derived observations without altering fusion case/publication authority;

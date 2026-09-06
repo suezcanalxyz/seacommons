@@ -67,7 +67,7 @@ Context labels may include `recurrent_port_pair`, `recurrent_corridor`, and `sch
 The projection must work even when IMO is absent. IMO continuity wins where a valid IMO exists; MMSI fallback remains explicitly limited by possible reassignment/spoofing.
 ## 7. BehaviouralBaseline persistence
 
-Add migration `0020_vessel_behavioural_baselines` with an append/version-friendly table rather than mutable identity columns.
+Add migration `0020_vessel_baselines` with an append/version-friendly table rather than mutable identity columns.
 
 Required fields:
 
@@ -210,7 +210,7 @@ Expected implementation files:
 - `core/mda/behavioural_baseline.py` — builder, fingerprint, persistence service;
 - `core/mda/behaviour_assessment.py` — pure assessment logic;
 - `core/db/models.py` — `VesselBehaviouralBaselineDB`;
-- Alembic `0020_vessel_behavioural_baselines.py`;
+- Alembic `0020_vessel_baselines.py`;
 - `core/api/routes/mda.py` — context/baseline operator reads;
 - narrowly scoped AIS detector integration in `core/mda/watch.py` and/or canonical AIS anomaly producer;
 - tests and synthetic fixtures.

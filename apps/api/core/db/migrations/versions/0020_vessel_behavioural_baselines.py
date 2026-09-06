@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """vessel behavioural baseline persistence
 
-Revision ID: 0020_vessel_behavioural_baselines
+Revision ID: 0020_vessel_baselines
 Revises: 0019_incident_watch
 Create Date: 2026-09-06
 """
@@ -10,7 +10,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0020_vessel_behavioural_baselines"
+revision = "0020_vessel_baselines"
 down_revision = "0019_incident_watch"
 branch_labels = None
 depends_on = None

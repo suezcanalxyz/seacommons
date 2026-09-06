@@ -41,7 +41,7 @@
 **Files:**
 - Create: `apps/api/core/mda/behavioural_baseline.py`
 - Modify: `apps/api/core/db/models.py`
-- Create: `apps/api/alembic/versions/0020_vessel_behavioural_baselines.py`
+- Create: `apps/api/alembic/versions/0020_vessel_baselines.py`
 - Test: `tests/test_behavioural_baseline.py`, `tests/test_alembic_migrations.py`
 
 **Interfaces:**

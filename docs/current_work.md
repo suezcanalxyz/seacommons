@@ -65,7 +65,7 @@ Core rules:
 - baseline/operator behaviour metadata is internal and is not added to public Live vessel context;
 - YOUR WISDOM is a synthetic benign-service regression plus a same-identity contrastive deviation; production code contains no name/MMSI/IMO/ferry exception.
 
-Migration `0020_vessel_behavioural_baselines` creates append/version-friendly analytical persistence only. It performs no fleet-wide backfill. Initial production baseline builds are bounded and explicitly audited.
+Migration `0020_vessel_baselines` creates append/version-friendly analytical persistence only. It performs no fleet-wide backfill. Initial production baseline builds are bounded and explicitly audited.
 
 ## Order after this packet
 
