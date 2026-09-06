@@ -50,3 +50,30 @@
 - Bounded review metrics and operator-safe summaries.
 - Full privacy/publication/replay gates, full backend/static/migrations/audit, web/edge if contracts cross boundaries.
 - Exact diff review for bypasses, destructive evidence changes, sensitive identifiers and duplicate truth stores.
+
+
+### Task 1 execution record — 2026-09-06
+
+- Added append-only `ReviewRecordDB` ledger and migration `0023_review_records`.
+- Exact replay is idempotent by `review_id`; distinct decisions/versions append distinct records.
+- Ledger stores review metadata/references only and never mutates Assessment/Hypothesis targets.
+
+### Task 2 execution record — 2026-09-06
+
+- Humanitarian review validates the current ResolutionAssessment version before ledger persistence.
+- Approved transitions create audited `IncidentTransitionDB` rows with `review_decision_id`; reject/needs-more-evidence do not advance lifecycle.
+- Direct publication remains unavailable from the review contract.
+
+### Task 3 execution record — 2026-09-06
+
+- Maritime review delegates state changes to the existing `InvestigationHypothesis.transition()` state machine.
+- Replay identity is the exact `review_id`, not reviewer identity; stale target versions fail before ledger persistence.
+- Review may attest `explicit_review_done`, but `published` is excluded from ReviewRecord transitions and remains behind the existing publication gate.
+
+### Task 4 / release record — 2026-09-06
+
+- Added bounded review metrics and an operator-safe recent-review summary that omits rationale and evidence snapshot contents.
+- Exact-diff review found and fixed two Important issues: actor-based Maritime replay identity and stale-review persistence before target validation; also aligned review transition vocabulary with the real Maritime state machine while continuing to exclude `published`.
+- Final code HEAD `19dbb7d`: focused review/privacy/publication gate `181 passed, 1 warning`; full backend `1519 passed, 2 skipped, 221 warnings`; Ruff and canonical mypy green; clean Alembic upgrade through `0023_review_records`; canonical project dependency audit reports no known vulnerabilities.
+- Web tests/lint/typecheck/build/audit green (pre-existing Vite large-chunk warning only); edge `12 passed`, Wrangler dry-run green, audit green.
+- Review v0 is development-complete / review-ready. No production migration, restart, deploy, audio capture, feed activation, or automatic publication was performed.

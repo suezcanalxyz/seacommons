@@ -1,7 +1,7 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Review v0 / publication controls — Task 1 durable review ledger
+> **Current packet:** Development loop complete — Packets A-G development-complete / review-ready
 > **Current packet plan:** `docs/superpowers/plans/2026-09-06-review-v0-publication-controls.md`
 > **Production runtime baseline:** `0ae4df7cc20c8209acc267eb595129c2dc3961bd`
 > **Production schema:** `0021_maritime_episodes`
@@ -28,31 +28,37 @@ Release evidence: focused privacy/lineage `141 passed`; full backend `1350 passe
 
 ## Completed packet — Remote Maritime Radio v1
 
-Development-complete / review-ready through `2ea9e35`. Provider-neutral contracts, explicit bounded receiver registry, KiwiSDR/OpenWebRX adapters, canonical SourceObservation persistence, disabled-by-default runtime, bounded health/metrics, and operator-safe status are implemented. Physical receiver lineage is authoritative for evidence source identity; frontend/provider multiplicity cannot inflate independence. No continuous audio/IQ is persisted.
+Development-complete / review-ready through `6a4f885`. Provider-neutral contracts, explicit bounded receiver registry, KiwiSDR/OpenWebRX adapters, canonical SourceObservation persistence, disabled-by-default runtime, bounded health/metrics, and operator-safe status are implemented. Physical receiver lineage is authoritative for evidence source identity; frontend/provider multiplicity cannot inflate independence. No continuous audio/IQ is persisted.
 
 Release evidence: focused radio/privacy/lineage `82 passed`; full backend `1385 passed, 2 skipped`; Ruff/mypy/migrations/canonical project dependency audit green; web/edge gates green. Production receiver activation remains separate and unauthorized.
 
 ## Completed packet — DSC + NAVTEX Structured Evidence v1
 
-Development-complete / review-ready through `08c20f4`. Already-decoded DSC/NAVTEX inputs normalize into immutable structured observations keyed to physical receiver lineage. DSC distress may project only a Maritime Safety candidate; NAVTEX remains context-only. No waveform/audio/IQ is persisted, and no signal type creates or resolves Humanitarian state.
+Development-complete / review-ready through `f09afcb`. Already-decoded DSC/NAVTEX inputs normalize into immutable structured observations keyed to physical receiver lineage. DSC distress may project only a Maritime Safety candidate; NAVTEX remains context-only. No waveform/audio/IQ is persisted, and no signal type creates or resolves Humanitarian state.
 
 Release evidence: focused `116 passed`; full backend `1424 passed, 2 skipped`; Ruff/mypy/migrations/canonical dependency audit green. Structured runtime remains disabled by default and production activation is separate.
 
 ## Completed packet — Audio Evidence v1
 
-Development-complete / review-ready through `1271a85`. Immutable bounded audio artifact metadata, migration `0022_audio_artifacts`, disabled-by-default acquisition policy, and derived-only transcript contracts are implemented. Production capture remains unauthorized.
+Development-complete / review-ready through `90d08e4`. Immutable bounded audio artifact metadata, migration `0022_audio_artifacts`, disabled-by-default acquisition policy, and derived-only transcript contracts are implemented. Production capture remains unauthorized.
 
 Release evidence: focused audio/privacy/provenance `80 passed`; full backend `1458 passed, 2 skipped`; Ruff/mypy/migrations/canonical dependency audit green.
 
 ## Completed packet — Cross-modal Evidence Fusion v1
 
-Development-complete / review-ready through `36b5c21`. Evidence packets preserve source lineage and modality; AIS provider multiplicity collapses to one AIS modality; derived AIS/audio evidence never adds independence. Contradictions remain explicit records rather than confidence averages. Humanitarian ResolutionAssessment and MaritimeEpisode receive bounded context only, with no lifecycle/publication/hypothesis-state mutation and no receiver/MMSI leakage.
+Development-complete / review-ready through `52efdd1`. Evidence packets preserve source lineage and modality; AIS provider multiplicity collapses to one AIS modality; derived AIS/audio evidence never adds independence. Contradictions remain explicit records rather than confidence averages. Humanitarian ResolutionAssessment and MaritimeEpisode receive bounded context only, with no lifecycle/publication/hypothesis-state mutation and no receiver/MMSI leakage.
 
 Release evidence: focused privacy/lineage `108 passed`; full backend `1483 passed, 2 skipped`; Ruff/mypy/migrations/dependency audit green; web/edge gates green.
 
-## Current packet state — Review v0 / publication controls
+## Completed packet — Review v0 / publication controls
 
-Review v0 adds one auditable review record over the real Humanitarian ResolutionAssessment and Maritime InvestigationHypothesis workflows. Review stores an evidence snapshot, decision, rationale, actor/time and requested transition; approval can only invoke existing domain-specific gates. It must never become a second incident/hypothesis truth store or bypass Humanitarian privacy/publication policy.
+Development-complete / review-ready through code HEAD `19dbb7d`. ReviewRecord is immutable and replay-deterministic; migration `0023_review_records` adds the append-only ledger; Humanitarian approvals create audited incident transitions, while Maritime approvals delegate to the existing hypothesis state machine. `published` is not a ReviewRecord transition and all publication remains behind existing domain-specific gates.
+
+Release evidence: focused review/privacy/publication `181 passed`; full backend `1519 passed, 2 skipped`; Ruff/mypy/migrations through `0023`/dependency audit green; web and edge gates green. Exact-diff review fixes are included.
+
+## Development loop state
+
+Packets A-G are development-complete / review-ready. Remaining actions are integration/operator decisions rather than another automatically implied development packet: branch review/merge, production migration to schema `0023` if authorized, runtime/feed activation decisions, and any production audio/radio acquisition approval remain explicit operator actions.
 
 ## Loop order
 

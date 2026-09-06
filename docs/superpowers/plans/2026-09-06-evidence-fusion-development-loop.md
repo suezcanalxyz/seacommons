@@ -6,9 +6,9 @@
 
 **Architecture:** All source-specific transports normalize into shared evidence contracts before domain reasoning. Humanitarian incidents and Maritime Intelligence episodes share provenance/lineage infrastructure but keep separate decision semantics. New source types are added as adapters, never as parallel truth pipelines.
 
-**Current packet:** Review v0 / publication controls — Task 0 review record contract.
+**Current packet:** Development loop complete — all Packets A-G are development-complete / review-ready; production integration remains operator-controlled.
 
-**Detailed current plan:** `docs/superpowers/plans/2026-09-06-audio-evidence-v1.md`
+**Detailed current plan:** `docs/superpowers/plans/2026-09-06-review-v0-publication-controls.md`
 
 ## Canonical loop
 
@@ -93,7 +93,7 @@ Rules: source independence is lineage-based; multiple transports from one source
 
 ### Packet G — Review v0 and publication controls
 
-Status: current packet.
+Status: development-complete / review-ready; no production migration, deploy, feed activation, audio capture, or automatic publication was authorized.
 
 Goal: route uncertainty from Humanitarian ResolutionAssessment and Maritime InvestigationHypothesis through one review mechanism without creating a second truth store.
 
