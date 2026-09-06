@@ -34,12 +34,19 @@
 - DSC additionally carries bounded category, MMSI when present, coordinates when present, and distress/nature code.
 - NAVTEX additionally carries station identifier, subject/message identifier, area when known, and bounded message text.
 
-- [ ] RED: empty receiver/physical lineage/message identity fails closed; coordinates/frequency validate; unknown categories remain explicit `unknown`, never guessed.
-- [ ] RED: DSC contract has no `service=humanitarian` shortcut and NAVTEX contract has no lifecycle/publication field.
-- [ ] Run `pytest -q tests/test_structured_radio_contracts.py` and confirm failures because `core.radio.structured` does not exist.
-- [ ] Implement frozen contracts plus bounded normalization helpers only; no parsing/persistence yet.
-- [ ] Run contract tests GREEN and Ruff on the new module/test.
-- [ ] Commit `feat: add DSC and NAVTEX structured evidence contracts`.
+- [x] RED: empty receiver/physical lineage/message identity fails closed; coordinates/frequency validate; unknown categories remain explicit `unknown`, never guessed.
+- [x] RED: DSC contract has no `service=humanitarian` shortcut and NAVTEX contract has no lifecycle/publication field.
+- [x] Run `pytest -q tests/test_structured_radio_contracts.py` and confirm failures because `core.radio.structured` does not exist.
+- [x] Implement frozen contracts plus bounded normalization helpers only; no parsing/persistence yet.
+- [x] Run contract tests GREEN and Ruff on the new module/test.
+- [x] Commit `feat: add DSC and NAVTEX structured evidence contracts`.
+
+### Task 0 execution record — 2026-09-06
+
+- RED: `9 failed` because `core.radio.structured` did not exist.
+- GREEN: `9 passed`; Ruff and `git diff --check` clean.
+- Contracts are frozen and fail closed on missing receiver/physical lineage/message/evidence identity, invalid frequency, naive timestamps, or partial/out-of-range coordinates.
+- Unsupported DSC categories normalize to explicit `unknown`; neither contract contains Humanitarian/lifecycle/publication authority.
 
 ### Task 1: DSC decoder-output normalizer
 

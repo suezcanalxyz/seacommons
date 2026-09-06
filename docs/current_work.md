@@ -1,7 +1,7 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** DSC + NAVTEX Structured Evidence v1 — Task 0 structured decoded-input contracts
+> **Current packet:** DSC + NAVTEX Structured Evidence v1 — Task 1 DSC decoder-output normalizer
 > **Current packet plan:** `docs/superpowers/plans/2026-09-06-dsc-navtex-structured-evidence-v1.md`
 > **Production runtime baseline:** `0ae4df7cc20c8209acc267eb595129c2dc3961bd`
 > **Production schema:** `0021_maritime_episodes`
@@ -34,7 +34,7 @@ Release evidence: focused radio/privacy/lineage `82 passed`; full backend `1385 
 
 ## Current packet state — DSC + NAVTEX Structured Evidence v1
 
-Packet D consumes the remote receiver/evidence boundary without introducing voice intelligence. Task 0 defines already-demodulated structured DSC/NAVTEX inputs and domain invariants; raw waveform/audio acquisition remains deferred to Audio Evidence v1. DSC emergency signals stay Maritime Safety by default and never become Humanitarian solely by signal type. NAVTEX is contextual/corroborative evidence unless an explicit later policy says otherwise.
+Packet D consumes the remote receiver/evidence boundary without introducing voice intelligence. Task 0 contracts are complete. Task 1 normalizes bounded already-decoded DSC mappings into `DSCObservation`; raw waveform/audio acquisition remains deferred to Audio Evidence v1. DSC emergency signals stay Maritime Safety by default and never become Humanitarian solely by signal type. NAVTEX is contextual/corroborative evidence unless an explicit later policy says otherwise.
 
 ## Loop order
 
