@@ -286,3 +286,56 @@ def test_v1_same_lineage_spoofing_stays_candidate() -> None:
     assert hyp.hypothesis_type == "position_spoofing"
     assert hyp.state == "candidate"
     assert hyp.evidence_stage == "derived"
+
+
+def test_v1_engine_never_relinks_or_mutates_legacy_null_episode_hypothesis() -> None:
+    from core.db.models import InvestigationHypothesisDB
+    from core.db.session import session_scope
+    from core.intel.store import IntelEvent, intel_store
+
+    episode_id = "episode:v1:legacy-isolation"
+    legacy_id = f"hyp:dark_transit:{episode_id}"
+    with session_scope() as db:
+        db.add(InvestigationHypothesisDB(
+            hypothesis_id=legacy_id,
+            episode_id=None,
+            hypothesis_type="dark_transit",
+            subject_ids=["subj:mmsi:211879870"],
+            state="candidate",
+            reason_codes=["legacy-gap"],
+            counter_indicators=[],
+            evidence_links=["legacy-evidence"],
+            evidence_stage="derived",
+            audit_history=[],
+        ))
+
+    _add_event("v1-legacy-gap", gap_reason={"hypothesis": "vessel_gap", "confidence": 0.8})
+    intel_store.add(IntelEvent(
+        id="v1-legacy-report", type="news", severity="medium", lat=35.5, lon=14.1,
+        title="independent legacy isolation", source="Independent report",
+        linked_mmsi="211879870",
+        metadata={"anomaly_type": "gap", "transport": "rss"},
+    ), dedup_key="v1-legacy-report")
+    episode = _episode(
+        "gap_episode",
+        signal_ids=["v1-legacy-gap", "v1-legacy-report"],
+        episode_id=episode_id,
+    )
+    episode["properties"].update({
+        "first_observed_at": "2026-09-06T08:00:00+00:00",
+        "last_observed_at": "2026-09-06T08:20:00+00:00",
+        "verification_status": "multi_source_corroborated",
+        "independence_groups": ["ais_sensor_lineage", "secondary_news_reporting"],
+        "independent_source_count": 2,
+    })
+
+    new_hyp = evaluate_episode(episode)
+    assert new_hyp is not None
+    assert new_hyp.hypothesis_id == f"hyp:v1:dark_transit:{episode_id}"
+    assert new_hyp.episode_id == episode_id
+    with session_scope() as db:
+        legacy = db.get(InvestigationHypothesisDB, legacy_id)
+        assert legacy is not None
+        assert legacy.episode_id is None
+        assert legacy.reason_codes == ["legacy-gap"]
+        assert legacy.evidence_links == ["legacy-evidence"]

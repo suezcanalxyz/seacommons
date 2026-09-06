@@ -29,6 +29,7 @@ def event_to_episode_input_feature(event: IntelEvent) -> Optional[dict[str, Any]
         return None
     coordinates = [event.lon, event.lat] if event.lat is not None and event.lon is not None else []
     metadata = event.metadata or {}
+    parent_ids = tuple(str(v) for v in (metadata.get("contributing") or ()) if v)
     return {
         "type": "Feature",
         "geometry": {"type": "Point", "coordinates": coordinates},
@@ -41,6 +42,8 @@ def event_to_episode_input_feature(event: IntelEvent) -> Optional[dict[str, Any]
             "episode_family": metadata.get("episode_family"),
             "severity": event.severity,
             "source": event.source,
+            "observation_ids": list(parent_ids or (event.id,)),
+            "feature_ids": [event.id] if parent_ids else [],
             "incident_lifecycle": metadata.get("incident_lifecycle"),
             "behaviour_context": metadata.get("behaviour_context"),
             "alternative_explanations": metadata.get("alternative_explanations"),

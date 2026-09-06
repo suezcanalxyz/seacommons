@@ -198,3 +198,31 @@ def test_episode_verification_two_independent_lineages_is_corroborated() -> None
     assert props["independent_source_count"] == 2
     assert set(props["independence_groups"]) == {"ais_sensor_lineage", "secondary_news_reporting"}
     assert props["verification_status"] == "multi_source_corroborated"
+
+
+def test_episode_preserves_behaviour_context_and_alternative_explanations() -> None:
+    contextual = _feature(
+        "intel:behaviour", "2026-09-06T08:00:00+00:00", 14.1, 35.5,
+        type="ais_anomaly", linked_mmsi="211879870", anomaly_type="gap",
+        behaviour_context={
+            "status": "expected",
+            "reason_codes": [],
+            "baseline_id": "baseline:test",
+        },
+        alternative_explanations=["COASTAL_RECEIVER_COVERAGE", "SCHEDULED_SERVICE_PATTERN"],
+    )
+    later_update = _feature(
+        "intel:behaviour-update", "2026-09-06T08:20:00+00:00", 14.1, 35.5,
+        type="ais_anomaly", linked_mmsi="211879870", anomaly_type="gap",
+        alternative_explanations=["COASTAL_RECEIVER_COVERAGE"],
+    )
+
+    result = coalesce_security_vessel_episodes([contextual, later_update])
+    props = result[0]["properties"]
+
+    assert props["behaviour_context"]["status"] == "expected"
+    assert props["behaviour_context"]["baseline_id"] == "baseline:test"
+    assert props["alternative_explanations"] == [
+        "COASTAL_RECEIVER_COVERAGE",
+        "SCHEDULED_SERVICE_PATTERN",
+    ]

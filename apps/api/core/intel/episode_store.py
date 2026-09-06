@@ -45,7 +45,7 @@ def save_episode(feature: dict[str, Any]):
     episode_id = str(props.get("episode_id") or "")
     family = str(props.get("episode_family") or "")
     subject_ids = tuple(str(v) for v in (props.get("subject_ids") or ()) if v)
-    signal_ids = tuple(str(v) for v in (props.get("related_signal_ids") or ()) if v)
+    signal_ids = tuple(str(v) for v in (props.get("observation_ids") or props.get("related_signal_ids") or ()) if v)
     first_at = str(props.get("first_observed_at") or props.get("timestamp_utc") or "")
     last_at = str(props.get("last_observed_at") or props.get("timestamp_utc") or "")
     if not episode_id or not family or not subject_ids or not first_at or not last_at:
