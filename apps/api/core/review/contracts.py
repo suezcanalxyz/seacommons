@@ -11,7 +11,7 @@ _TARGET_TYPES = frozenset({"humanitarian_resolution", "maritime_hypothesis"})
 _DECISIONS = frozenset({"approve", "reject", "needs_more_evidence"})
 _TRANSITIONS = {
     "humanitarian_resolution": frozenset({"active", "resolved", "needs_review"}),
-    "maritime_hypothesis": frozenset({"candidate", "collecting", "assessed", "rejected"}),
+    "maritime_hypothesis": frozenset({"candidate", "collecting", "review_ready", "assessed", "rejected", "expired"}),
 }
 _FORBIDDEN_SNAPSHOT_PREFIXES = ("raw:", "mmsi:", "imo:", "callsign:", "transcript:")
 

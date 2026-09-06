@@ -15,7 +15,6 @@ class MaritimeReviewResult:
 def apply_maritime_review(record: ReviewRecord) -> MaritimeReviewResult:
     if record.target_type != 'maritime_hypothesis':
         raise ValueError('target_type must be maritime_hypothesis')
-    persisted = persist_review(record)
     from core.intel.hypothesis import transition
     from core.intel.hypothesis_store import get_hypothesis, save_hypothesis
     hypothesis = get_hypothesis(record.target_id)
@@ -23,13 +22,14 @@ def apply_maritime_review(record: ReviewRecord) -> MaritimeReviewResult:
         raise ValueError('review target not found')
 
     # Exact replay: if this review already produced an audit entry, do not append another.
-    review_actor = f'review:{record.actor}'
+    review_actor = f'review:{record.review_id}'
     if any(entry.actor == review_actor for entry in hypothesis.audit_history):
         return MaritimeReviewResult(record.review_id, True, True, hypothesis.state)
 
     if hypothesis.state != record.target_version:
         raise ValueError('target_version does not match current hypothesis state')
 
+    persisted = persist_review(record)
     if record.decision == 'needs_more_evidence':
         return MaritimeReviewResult(record.review_id, False, persisted.replayed, hypothesis.state)
 

@@ -59,3 +59,11 @@ def test_replay_does_not_duplicate_transition():
     from core.db.models import IncidentTransitionDB
     from core.db.session import session_scope
     with session_scope() as db: assert db.query(IncidentTransitionDB).filter_by(review_decision_id=r.review_id).count()==1
+
+def test_stale_humanitarian_review_is_not_persisted_to_ledger():
+    _seed(); from core.review.humanitarian import apply_humanitarian_review
+    from core.db.models import ReviewRecordDB
+    from core.db.session import session_scope
+    r=_review(target_version='stale-version')
+    with pytest.raises(ValueError,match='target_version'): apply_humanitarian_review(r)
+    with session_scope() as db: assert db.get(ReviewRecordDB,r.review_id) is None

@@ -16,7 +16,6 @@ class HumanitarianReviewResult:
 def apply_humanitarian_review(record: ReviewRecord) -> HumanitarianReviewResult:
     if record.target_type != 'humanitarian_resolution':
         raise ValueError('target_type must be humanitarian_resolution')
-    persisted = persist_review(record)
     from core.db.models import AssessmentDB, HumanitarianIncidentDB, IncidentTransitionDB
     from core.db.session import session_scope
     with session_scope() as db:
@@ -31,6 +30,7 @@ def apply_humanitarian_review(record: ReviewRecord) -> HumanitarianReviewResult:
         prior = db.query(IncidentTransitionDB).filter(IncidentTransitionDB.review_decision_id == record.review_id).first()
         if prior is not None:
             return HumanitarianReviewResult(record.review_id, True, True, incident.lifecycle)
+        persisted = persist_review(record)
         if record.decision == 'reject':
             assessment.review_state = 'rejected'
             incident.review_status = 'rejected'

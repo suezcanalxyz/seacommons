@@ -22,7 +22,7 @@ def test_approve_uses_existing_state_machine_and_sets_explicit_review_done():
     assert result.applied and result.state=='collecting'
     from core.intel.hypothesis_store import get_hypothesis
     h=get_hypothesis('hyp:v1:dark:1'); assert h.explicit_review_done is True and h.state=='collecting'
-    assert h.audit_history[-1].actor=='review:operator:bob'
+    assert h.audit_history[-1].actor==f'review:{_review().review_id}'
 
 def test_reject_uses_state_machine_and_never_publishes():
     _seed(); from core.review.maritime import apply_maritime_review
@@ -49,3 +49,18 @@ def test_replay_does_not_append_duplicate_audit_entry():
     assert first.state=='collecting' and second.replayed
     from core.intel.hypothesis_store import get_hypothesis
     h=get_hypothesis(r.target_id); assert len(h.audit_history)==1
+
+def test_same_actor_distinct_review_is_not_mistaken_for_replay():
+    _seed(); from core.review.maritime import apply_maritime_review
+    first=_review(); apply_maritime_review(first)
+    second=_review(target_version='collecting',evidence_snapshot_id='xev:maritime2',reviewed_at=datetime(2026,9,6,21,5,tzinfo=timezone.utc),requested_transition='review_ready')
+    result=apply_maritime_review(second)
+    assert result.replayed is False and result.state=='review_ready'
+
+def test_stale_maritime_review_is_not_persisted_to_ledger():
+    _seed(); from core.review.maritime import apply_maritime_review
+    from core.db.models import ReviewRecordDB
+    from core.db.session import session_scope
+    r=_review(target_version='review_ready')
+    with pytest.raises(ValueError,match='target_version'): apply_maritime_review(r)
+    with session_scope() as db: assert db.get(ReviewRecordDB,r.review_id) is None
