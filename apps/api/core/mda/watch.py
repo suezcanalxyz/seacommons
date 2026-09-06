@@ -438,6 +438,14 @@ class MdaWatch:
                 )
                 if gap_reason.hypothesis == "coverage_gap":
                     continue
+            provider_coverage = None
+            if getattr(config, "AIS_FUSION_ENABLED", False):
+                from core.vessels.ais_coverage import coverage_state
+                provider_coverage = coverage_state.assess(
+                    nearby_traffic_seen=nearby_after > 0, now=now_dt
+                )
+                if not provider_coverage.gap_eligible:
+                    continue
             jam = jamming.in_jamming_zone(last.lat, last.lon)
             cue = None
             if jam < 0.3:   # not just jamming — worth a satellite cross-cue
@@ -490,6 +498,16 @@ class MdaWatch:
                     # docs/fixes.md M14.1: vessel class is context only here,
                     # never a detection gate.
                     "vessel_type_context": ship_type,
+                    "provider_coverage": (
+                        {
+                            "status": provider_coverage.status,
+                            "confidence": provider_coverage.confidence,
+                            "reason_codes": list(provider_coverage.reason_codes),
+                            "active_upstreams": sorted(provider_coverage.active_upstreams),
+                            "degraded_upstreams": sorted(provider_coverage.degraded_upstreams),
+                        }
+                        if provider_coverage is not None else None
+                    ),
                     "gap_reason": (
                         {
                             "hypothesis": gap_reason.hypothesis,

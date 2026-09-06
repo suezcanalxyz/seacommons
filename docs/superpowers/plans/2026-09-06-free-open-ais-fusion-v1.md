@@ -339,7 +339,7 @@ git commit -m "feat: reconcile multi-provider AIS fixes"
 - Consumes: provider health, recent station/provider activity, reconciled track history.
 - Produces: `CoverageAssessment(status, active_providers, active_stations, confidence, reason_codes)`.
 
-- [ ] **Step 1: Write RED contrastive tests**
+- [x] **Step 1: Write RED contrastive tests**
 
 ```python
 def test_single_provider_outage_does_not_create_real_gap():
@@ -354,26 +354,29 @@ def test_all_providers_silent_while_area_has_traffic_is_possible_real_silence():
 
 Add detector regression: a candidate silence during `upstream_degraded` may create coverage context but must not emit a `dark_transit`-eligible gap episode.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `pytest -q tests/test_ais_coverage.py tests/test_ais_spike_detector.py`
 Expected: FAIL on missing coverage contract/gate.
 
-- [ ] **Step 3: Implement deterministic coverage assessment**
+- [x] **Step 3: Implement deterministic coverage assessment**
 
 Reason codes are limited to `UPSTREAM_DEGRADED`, `COVERAGE_PRESENT`, `COVERAGE_UNKNOWN`, `NO_NEARBY_TRAFFIC`. Transport-provider count is never evidence independence. `aiscast(source=aisstream)` must not mask a direct AISStream outage. Extend the existing neighbour-based detector and reuse `SourceCoverageEventDB`/`coverage_change_log.py`; do not create a second persistent coverage truth.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run: `pytest -q tests/test_ais_coverage.py tests/test_ais_spike_detector.py tests/test_hypothesis_engine.py`
 Expected: PASS, including no low-specificity hypothesis inflation.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/core/vessels/ais_coverage.py apps/api/core/intel/ais_spike_detector.py apps/api/core/vessels/track_store.py tests/test_ais_coverage.py tests/test_ais_spike_detector.py
 git commit -m "feat: make AIS gap reasoning coverage aware"
 ```
+
+
+**Execution:** RED first on missing coverage module, then on MDA not consulting provider health. GREEN: `35 passed`. The real gap promotion point is `core.mda.watch.scan_gaps`, not `ais_spike_detector.py`; implementation therefore extends the existing authoritative neighbour-based gap classifier there. Gate is feature-flagged so legacy mode remains byte-for-byte semantic compatible when fusion is disabled. Persistent coverage-change logging is wired at runtime in Task 7 using the existing `SourceCoverageEventDB`.
 
 ### Task 6: Feed reconciled AIS into SAR Mission Assessment
 
