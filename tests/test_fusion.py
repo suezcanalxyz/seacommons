@@ -296,6 +296,28 @@ def test_sanctioned_vessel_sighting_opens_case() -> None:
     assert _alerts()[0].metadata["alert_type"] == "sdn_match"
 
 
+def test_single_source_sdn_match_fused_alert_stays_internal() -> None:
+    ev = _add(
+        type="vessel_identity", severity="high", lat=34.0, lon=18.0,
+        title="Sanctioned vessel: SHADOW STAR", source="mda", linked_mmsi="273999000",
+        metadata={"anomaly_type": "sdn_match", "maritime_domain": "sanctions"},
+    )
+    fusion.evaluate(ev)
+    alert = _alerts()[0]
+    assert alert.metadata["publication_status"] == "internal"
+
+
+def test_single_source_duplicate_mmsi_fused_alert_stays_internal() -> None:
+    ev = _add(
+        type="vessel_identity", severity="high", lat=34.0, lon=18.0,
+        title="Duplicate MMSI identity", source="mda", linked_mmsi="209888000",
+        metadata={"anomaly_type": "mmsi_duplicate", "maritime_domain": "sanctions"},
+    )
+    fusion.evaluate(ev)
+    alert = _alerts()[0]
+    assert alert.metadata["publication_status"] == "internal"
+
+
 def test_register_is_idempotent() -> None:
     fusion.register()
     fusion.register()

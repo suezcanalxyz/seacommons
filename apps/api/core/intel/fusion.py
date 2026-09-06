@@ -649,8 +649,12 @@ def _emit_locked(alert: FusedAlert) -> None:
     if (
         alert.domain in {"grey_zone", "sanctions"}
         and verification_status != "multi_source_corroborated"
-        and alert.alert_type not in {"sdn_match", "mmsi_duplicate"}
     ):
+        # A single source can establish an observation or an official-list
+        # fact, but a fused security alert is a derived interpretation. Keep
+        # it internal until independent corroboration/review clears the
+        # publication boundary. Official sanctions facts have their own
+        # source-cited projection and must not borrow this fused-alert path.
         metadata["publication_status"] = "internal"
     if alert.vessel_mmsi:
         metadata["mmsi"] = alert.vessel_mmsi
