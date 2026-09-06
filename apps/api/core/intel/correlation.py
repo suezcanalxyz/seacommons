@@ -122,11 +122,20 @@ def _claim_asset_names(claims) -> set[str]:
     }
 
 
+def _verification_independence_group(event) -> str:
+    from core.intel.evidence_lineage import lineage_for_event
+    from core.intel.source_identity import resolve_source_identity
+
+    policy = resolve_source_identity(event.source, event.metadata)
+    if policy.service == "humanitarian" and policy.source_role != "unknown":
+        return policy.independence_group
+    return lineage_for_event(event).independence_group
+
+
 def associate_verification_event(event, claims) -> list[CorrelationDecision]:
     """Associate verification evidence to open incidents without merging or lifecycle mutation."""
     from core.db.models import ClaimDB, HumanitarianIncidentDB, IntelEventDB
     from core.db.session import session_scope
-    from core.intel.evidence_lineage import lineage_for_event
     from core.intel.lifecycle import parse_utc
 
     event_ts = parse_utc(event.timestamp_utc)
@@ -134,7 +143,7 @@ def associate_verification_event(event, claims) -> list[CorrelationDecision]:
         return []
     start = (event_ts - timedelta(hours=TEMPORAL_CANDIDATE_WINDOW_HOURS)).isoformat()
     end = (event_ts + timedelta(hours=TEMPORAL_CANDIDATE_WINDOW_HOURS)).isoformat()
-    new_lineage = lineage_for_event(event).independence_group
+    new_lineage = _verification_independence_group(event)
     new_people = _claim_people_count(claims)
     new_assets = _claim_asset_names(claims)
     now = datetime.now(timezone.utc)
@@ -157,7 +166,7 @@ def associate_verification_event(event, claims) -> list[CorrelationDecision]:
             independent = False
             if founding is not None:
                 founding_event = _event_from_row(founding)
-                founding_group = lineage_for_event(founding_event).independence_group
+                founding_group = _verification_independence_group(founding_event)
                 independent = (
                     new_lineage != "unknown"
                     and founding_group != "unknown"

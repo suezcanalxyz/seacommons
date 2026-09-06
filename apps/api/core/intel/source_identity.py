@@ -26,15 +26,31 @@ _POLICIES = {
     "sos_mediterranee": SourceIdentityPolicy("sos_mediterranee", "humanitarian", "verification", False, "sos_mediterranee"),
     "msf": SourceIdentityPolicy("msf", "humanitarian", "verification", False, "msf"),
     "sea_watch": SourceIdentityPolicy("sea_watch", "humanitarian", "verification", False, "sea_watch"),
+    "open_arms": SourceIdentityPolicy("open_arms", "humanitarian", "verification", False, "open_arms"),
+    "sos_humanity": SourceIdentityPolicy("sos_humanity", "humanitarian", "verification", False, "sos_humanity"),
+    "sea_eye": SourceIdentityPolicy("sea_eye", "humanitarian", "verification", False, "sea_eye"),
+    "resqship": SourceIdentityPolicy("resqship", "humanitarian", "verification", False, "resqship"),
+    "emergency": SourceIdentityPolicy("emergency", "humanitarian", "verification", False, "emergency"),
     "iom_missing_migrants": SourceIdentityPolicy("iom_missing_migrants", "humanitarian", "archive_reference", False, "iom_missing_migrants"),
 }
 
 _ALIASES = {
     "alarmphone": "alarm_phone",
     "sosmediterranee": "sos_mediterranee",
+    "sosmedintl": "sos_mediterranee",
     "msf": "msf",
     "msfsea": "msf",
     "seawatch": "sea_watch",
+    "seawatchcrew": "sea_watch",
+    "openarms": "open_arms",
+    "openarmsfund": "open_arms",
+    "proactivaopenarms": "open_arms",
+    "soshumanity": "sos_humanity",
+    "seaeye": "sea_eye",
+    "seaeyeorg": "sea_eye",
+    "resqship": "resqship",
+    "emergency": "emergency",
+    "emergencyong": "emergency",
     "iommissingmigrants": "iom_missing_migrants",
 }
 

@@ -5,7 +5,10 @@ from typing import Any
 
 def process_verification_event(event) -> dict[str, Any]:
     from core.intel.correlation import DECISION_SAME_INCIDENT, associate_verification_event
-    from core.intel.humanitarian_claims import extract_humanitarian_claims, persist_associated_claims
+    from core.intel.humanitarian_claims import (
+        extract_humanitarian_claims,
+        persist_associated_claims,
+    )
     from core.intel.resolution_assessment import evaluate_resolution_assessment
     from core.intel.source_identity import resolve_source_identity
 
@@ -22,6 +25,17 @@ def process_verification_event(event) -> dict[str, Any]:
         )
     except Exception:
         pass
+    if not extracted:
+        return {
+            "processed": False,
+            "reason": "no_verification_claims",
+            "source_identity": policy.identity_id,
+            "source_role": policy.source_role,
+            "claim_types": [],
+            "associated_incident_ids": [],
+            "association_decision_ids": [],
+            "resolution_assessments": [],
+        }
     decisions = associate_verification_event(event, extracted)
     associated = sorted({
         decision.candidate_incident_id

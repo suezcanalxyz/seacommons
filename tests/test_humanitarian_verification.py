@@ -112,6 +112,41 @@ def test_subscriber_routes_verification_source_to_enrichment_not_incident_creati
     assert summary["resolution"]["value"]["outcome"] == "rescue_confirmed"
 
 
+def test_subscriber_accepts_real_x_verification_handle_without_distress_service_tag():
+    from core.intel.humanitarian_verification import get_verification_summary
+
+    origin = _seed_origin("origin-real-x-handle")
+    event = _verification_event("verify-real-x-handle")
+    event.type = "twitter"
+    event.source = "SOSMedIntl"
+    event.metadata = {"platform": "x", "transport": "x"}
+    _on_intel_event(event)
+
+    assert get_incident(event.id) is None
+    summary = get_verification_summary(origin.id)
+    assert summary["resolution"]["value"]["outcome"] == "rescue_confirmed"
+
+
+def test_verification_source_without_claims_does_not_create_association_noise():
+    from core.db.models import CorrelationDecisionDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_verification import process_verification_event
+
+    _seed_origin("origin-noise")
+    event = IntelEvent(
+        id="verify-noise", type="twitter", severity="low",
+        title="Our annual report is online", text="Read our annual report and latest organisation news.",
+        source="SOSMedIntl", timestamp_utc=datetime.now(timezone.utc).isoformat(),
+        metadata={"platform": "x", "transport": "x"},
+    )
+    result = process_verification_event(event)
+
+    assert result["processed"] is False
+    assert result["reason"] == "no_verification_claims"
+    with session_scope() as db:
+        assert db.query(CorrelationDecisionDB).filter_by(observation_id=event.id).count() == 0
+
+
 def test_operator_summary_excludes_internal_vessel_identifiers():
     from core.intel.humanitarian_verification import get_verification_summary
 

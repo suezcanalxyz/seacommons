@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from core.intel.store import IntelEvent
 
 
@@ -33,6 +32,28 @@ def test_operational_ngos_are_humanitarian_verification_sources(source):
     assert policy.may_open_incident is False
 
 
+@pytest.mark.parametrize(
+    ("source", "identity_id"),
+    [
+        ("SOSMedIntl", "sos_mediterranee"),
+        ("openarms_fund", "open_arms"),
+        ("seawatchcrew", "sea_watch"),
+        ("SOShumanity", "sos_humanity"),
+        ("seaeyeorg", "sea_eye"),
+        ("ResQship", "resqship"),
+        ("emergency_ong", "emergency"),
+    ],
+)
+def test_real_tracked_ngo_handles_resolve_to_verification_identity(source, identity_id):
+    from core.intel.source_identity import resolve_source_identity
+
+    policy = resolve_source_identity(source, {"platform": "x", "transport": "x"})
+    assert policy.identity_id == identity_id
+    assert policy.service == "humanitarian"
+    assert policy.source_role == "verification"
+    assert policy.may_open_incident is False
+
+
 def test_iom_is_archive_reference_not_live_incident_authority():
     from core.intel.source_identity import resolve_source_identity
 
@@ -44,7 +65,10 @@ def test_iom_is_archive_reference_not_live_incident_authority():
 
 
 def test_unknown_and_ais_sources_never_gain_humanitarian_opening_authority():
-    from core.intel.source_identity import may_open_humanitarian_incident, resolve_source_identity
+    from core.intel.source_identity import (
+        may_open_humanitarian_incident,
+        resolve_source_identity,
+    )
 
     assert resolve_source_identity("AISStream").may_open_incident is False
     assert resolve_source_identity("Unknown NGO").may_open_incident is False

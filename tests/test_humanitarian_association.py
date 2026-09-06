@@ -4,7 +4,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-
 from core.intel.humanitarian_claims import extract_humanitarian_claims
 from core.intel.humanitarian_incident import get_incident, sync_incident_for_event
 from core.intel.source_identity import resolve_source_identity
@@ -13,7 +12,12 @@ from core.intel.store import IntelEvent
 
 @pytest.fixture(autouse=True)
 def _fresh_tables():
-    from core.db.models import ClaimDB, CorrelationDecisionDB, HumanitarianIncidentDB, IntelEventDB
+    from core.db.models import (
+        ClaimDB,
+        CorrelationDecisionDB,
+        HumanitarianIncidentDB,
+        IntelEventDB,
+    )
     from core.db.session import engine, session_scope
 
     for model in (HumanitarianIncidentDB, CorrelationDecisionDB, ClaimDB, IntelEventDB):
@@ -62,7 +66,10 @@ def _verification_event(now: datetime, *, people: int = 42, lat: float = 35.51, 
 
 
 def test_strong_verification_evidence_creates_same_incident_candidate_without_merge():
-    from core.intel.correlation import DECISION_SAME_INCIDENT, associate_verification_event
+    from core.intel.correlation import (
+        DECISION_SAME_INCIDENT,
+        associate_verification_event,
+    )
 
     now = datetime.now(timezone.utc)
     origin = _seed_origin(now)
@@ -79,6 +86,24 @@ def test_strong_verification_evidence_creates_same_incident_candidate_without_me
     assert decision.review_state == "pending_review"
     assert get_incident(origin.id) == before
     assert get_incident(event.id) is None
+
+
+def test_distinct_humanitarian_sources_remain_independent_on_same_x_transport():
+    from core.intel.correlation import (
+        DECISION_SAME_INCIDENT,
+        associate_verification_event,
+    )
+
+    now = datetime.now(timezone.utc)
+    _seed_origin(now)
+    event = _verification_event(now)
+    event.metadata.update({"platform": "x", "transport": "x"})
+    claims = extract_humanitarian_claims(event, resolve_source_identity(event.source, event.metadata))
+
+    decision = associate_verification_event(event, claims)[0]
+    assert decision.source_independence_result is True
+    assert decision.decision == DECISION_SAME_INCIDENT
+    assert "independent_lineage" in decision.supporting_features
 
 
 def test_conflicting_location_and_people_count_never_become_strong_association():

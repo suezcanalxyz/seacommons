@@ -28,7 +28,6 @@ from typing import Optional
 
 from core.intel.store import IntelEvent
 
-
 TRANSITION_METHOD_VERSION = "v0_distress_lifecycle_4state"
 PUBLIC_STATUS_RETIRE_AFTER_HOURS = 24
 
@@ -354,17 +353,19 @@ def _on_intel_event(event: IntelEvent) -> None:
     try:
         from core.intel.lifecycle import distress_lifecycle
         from core.intel.service_taxonomy import classify_service
+        from core.intel.source_identity import (
+            may_open_humanitarian_incident,
+            resolve_source_identity,
+        )
         from core.intel.store import intel_store
-
-        if classify_service(event).service != "humanitarian":
-            return
-        from core.intel.source_identity import may_open_humanitarian_incident, resolve_source_identity
 
         source_policy = resolve_source_identity(event.source, event.metadata)
         if source_policy.source_role == "verification":
             from core.intel.humanitarian_verification import process_verification_event
 
             process_verification_event(event)
+            return
+        if classify_service(event).service != "humanitarian":
             return
         if not may_open_humanitarian_incident(event):
             return
