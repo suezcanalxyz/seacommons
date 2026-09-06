@@ -76,3 +76,16 @@ def test_lossless_event_id_downgrade_is_blocked(tmp_path):
     alembic_command.upgrade(cfg, "head")
     with pytest.raises(Exception, match="widening-only"):
         alembic_command.downgrade(cfg, "0003_intel_composite_idx")
+
+
+def test_vessel_behavioural_baseline_migration_roundtrip(tmp_path):
+    url = f"sqlite:///{tmp_path / 'baseline_roundtrip.db'}"
+    cfg = _config(url)
+    alembic_command.upgrade(cfg, "0020_vessel_baselines")
+    assert "vessel_behavioural_baselines" in _schema(create_engine(url))
+
+    alembic_command.downgrade(cfg, "0019_incident_watch")
+    assert "vessel_behavioural_baselines" not in _schema(create_engine(url))
+
+    alembic_command.upgrade(cfg, "0020_vessel_baselines")
+    assert "vessel_behavioural_baselines" in _schema(create_engine(url))

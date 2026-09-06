@@ -44,6 +44,47 @@ def _nm(km: float) -> float:
     return km / 1.852
 
 
+def _latest_behavioural_baseline(mmsi: str):
+    from core.mda.behavioural_baseline import latest_baseline
+
+    return latest_baseline(mmsi)
+
+
+def _recent_track_for_behaviour(mmsi: str) -> list[dict[str, Any]]:
+    from core.vessels.track_store import track_store
+
+    since = datetime.now(timezone.utc) - timedelta(hours=6)
+    return track_store.track(mmsi, since=since, limit=240)
+
+
+def _assess_behaviour(track: list[dict[str, Any]], baseline):
+    from core.mda.behaviour_assessment import assess_behaviour
+
+    return assess_behaviour(track, baseline)
+
+
+def _behaviour_context_for(mmsi: str) -> dict[str, Any]:
+    try:
+        assessment = _assess_behaviour(
+            _recent_track_for_behaviour(mmsi), _latest_behavioural_baseline(mmsi)
+        )
+        return {
+            "status": assessment.status,
+            "reason_codes": list(assessment.reason_codes),
+            "baseline_id": assessment.baseline_id,
+            "method_version": assessment.method_version,
+            "dimensions": assessment.dimensions,
+            "caveats": list(assessment.caveats),
+        }
+    except Exception as exc:
+        logger.debug("behaviour context unavailable for %s: %s", mmsi, exc)
+        return {
+            "status": "unavailable", "reason_codes": [],
+            "baseline_id": None, "method_version": None,
+            "dimensions": {}, "caveats": ["behavioural context unavailable"],
+        }
+
+
 def _nearby_gap_witness_counts(
     track_store: Any, mmsi: str, lat: float, lon: float,
     gap_start: datetime, now: datetime,
@@ -337,6 +378,7 @@ class MdaWatch:
                     "infrastructure": {"kind": hit.kind, "name": hit.name, "distance_km": hit.distance_km},
                     "loiter_minutes": round(span_min, 1),
                     "sanctions_matched": sanctioned,
+                    "behaviour_context": _behaviour_context_for(mmsi),
                     "detection_reason": (
                         f"AIS dwell: {len(slow)} slow fixes over {int(span_min)} minutes, "
                         f"within {hit.distance_km:.1f} km of {hit.name}; proximity is "
@@ -459,6 +501,7 @@ class MdaWatch:
                         if gap_reason is not None else None
                     ),
                     "darkship_cue": cue,
+                    "behaviour_context": _behaviour_context_for(mmsi),
                 },
             ), dedup_key=f"aisgap:{mmsi}:{int(time.time() // 21600)}")
             emitted += 1
