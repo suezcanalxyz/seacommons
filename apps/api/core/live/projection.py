@@ -62,6 +62,56 @@ _SEACOMMONS_DERIVED_TYPES = frozenset(
 # GDACS event types worth showing on a maritime SAR map (TC cyclone, EQ
 # earthquake / tsunami, FL flood, VO volcano) — excludes WF wildfire, DR drought.
 _MARITIME_GDACS_TYPES = frozenset({"TC", "EQ", "FL", "VO"})
+
+_SAFETY_OPERATIONAL_LABELS = {
+    "aground": "Aground",
+    "not_under_command": "Not Under Command",
+    "restricted_manoeuvrability": "Restricted Manoeuvrability",
+    "restricted_maneuverability": "Restricted Manoeuvrability",
+}
+
+
+def _operational_label(event: IntelEvent, *, resolved_domain: str) -> str | None:
+    if event.type == "dsc_distress" or str(event.metadata.get("dsc_category") or "").lower() == "distress":
+        return "DSC distress"
+    nav_kind = str(event.metadata.get("ais_nav_status_kind") or "").strip().lower()
+    if nav_kind in _SAFETY_OPERATIONAL_LABELS:
+        return _SAFETY_OPERATIONAL_LABELS[nav_kind]
+    if resolved_domain == "safety":
+        return "Maritime safety"
+    return None
+
+
+def _input_modality(event: IntelEvent, *, source_policy: str) -> str:
+    source = str(event.source or "").strip().lower()
+    metadata = event.metadata or {}
+    if (
+        event.type == "dsc_distress"
+        or metadata.get("receiver_id")
+        or metadata.get("physical_lineage")
+        or source.startswith("radio_receiver:")
+    ):
+        return "radio"
+    if (
+        source in {"ais", "aisstream", "aisstream.io"}
+        or source.startswith("seacommons ais")
+        or metadata.get("ais_nav_status_kind")
+        or str(metadata.get("coordinate_source") or "").lower() == "ais_position"
+        or event.type in {"ais_anomaly", "vessel_identity", "dark_candidate"}
+    ):
+        return "ais"
+    channel = str(metadata.get("source_channel") or "").strip().lower()
+    if channel in {"webhook", "api", "partner"}:
+        return "partner"
+    if event.type in {"news", "gdacs", "iom_incident"}:
+        return "public_feed"
+    if event.type in {"distress", "twitter", "mastodon", "ngo_activity"} and source_policy in {
+        "official_api", "official_site_embed", "operator_published"
+    }:
+        return "first_party"
+    if source_policy in {"official_api", "official_site_embed"}:
+        return "public_feed"
+    return "other"
 _PUBLIC_METADATA = frozenset(
     {
         "category",
@@ -416,6 +466,8 @@ def _public_intel_feature(
         humanitarian_case_type=metadata.get("humanitarian_case_type"),
         metadata=event.metadata,
     )
+    operational_label = _operational_label(event, resolved_domain=resolved_domain)
+    input_modality = _input_modality(event, source_policy=canonical_source_policy)
     feature = {
         "type": "Feature",
         "id": f"intel:{event.id}",
@@ -437,6 +489,8 @@ def _public_intel_feature(
             "verification_status": event.verification_status(),
             "publication_status": PublicationStatus.PUBLISHED.value,
             "source_policy": canonical_source_policy,
+            "input_modality": input_modality,
+            **({"operational_label": operational_label} if operational_label else {}),
             "title": (event.title or "Maritime signal")[:255],
             # Public Live deliberately excludes raw text and author identifiers.
             "text": "",

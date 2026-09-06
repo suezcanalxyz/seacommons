@@ -1978,3 +1978,42 @@ def test_public_correlated_alert_exposes_evidence_lineage_summary() -> None:
     assert props["independent_source_count"] == 2
     assert props["evidence_count"] == 3
     assert props["verification_explanation"] == "3 evidence items across 2 independent evidence lineages"
+
+
+def test_maritime_safety_projection_exposes_operational_label_and_input_modality() -> None:
+    cases = [
+        ("aground", "Aground"),
+        ("not_under_command", "Not Under Command"),
+        ("restricted_manoeuvrability", "Restricted Manoeuvrability"),
+    ]
+    for nav_kind, expected_label in cases:
+        event = IntelEvent(
+            id=f"safety-label-{nav_kind}", type="vessel_incident", severity="medium",
+            lat=35.2, lon=14.0, title=expected_label, source="ais", linked_mmsi="209888000",
+            metadata={
+                "ais_nav_status_kind": nav_kind, "maritime_domain": "safety",
+                "publication_status": "published", "source_policy": "official_api",
+            },
+        )
+        feature = _public_intel_feature(event, allowed_domains=frozenset({"safety"}))
+        assert feature is not None
+        assert feature["properties"]["operational_label"] == expected_label
+        assert feature["properties"]["input_modality"] == "ais"
+        assert feature["properties"]["source"] == "ais"
+
+
+def test_dsc_safety_projection_is_radio_modality() -> None:
+    event = IntelEvent(
+        id="safety-label-dsc", type="dsc_distress", severity="critical",
+        lat=35.2, lon=14.0, title="DSC distress received", source="radio_receiver:med_rx",
+        metadata={
+            "dsc_category": "distress", "receiver_id": "med_rx",
+            "physical_lineage": "rx_med_1", "frequency_hz": 2187500,
+            "maritime_domain": "safety", "publication_status": "published",
+            "source_policy": "operator_published",
+        },
+    )
+    feature = _public_intel_feature(event, allowed_domains=frozenset({"safety"}))
+    assert feature is not None
+    assert feature["properties"]["operational_label"] == "DSC distress"
+    assert feature["properties"]["input_modality"] == "radio"
