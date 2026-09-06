@@ -17,11 +17,18 @@
 
 **Files:** create `apps/api/core/evidence/audio_artifact.py`; tests `tests/test_audio_artifact_contract.py`.
 
-- [ ] RED: frozen artifact requires physical lineage, receiver, frequency, timezone-aware start/end, content hash, storage reference, MIME/codec, source terms and bounded retention.
-- [ ] RED: invalid duration/hash/retention/terms fail closed; artifact has no `humanitarian`, `lifecycle`, `publication`, `transcript`, or model-decision fields.
-- [ ] Implement minimum frozen contract and deterministic artifact ID.
-- [ ] Run focused provider/source-observation/privacy regressions GREEN.
-- [ ] Commit `feat: add immutable audio evidence artifact contract`.
+- [x] RED: frozen artifact requires physical lineage, receiver, frequency, timezone-aware start/end, content hash, storage reference, MIME/codec, source terms and bounded retention.
+- [x] RED: invalid duration/hash/retention/terms fail closed; artifact has no `humanitarian`, `lifecycle`, `publication`, `transcript`, or model-decision fields.
+- [x] Implement minimum frozen contract and deterministic artifact ID.
+- [x] Run focused provider/source-observation/privacy regressions GREEN.
+- [x] Commit `feat: add immutable audio evidence artifact contract`.
+
+### Task 0 execution record — 2026-09-06
+
+- `AudioEvidenceArtifact` is frozen and deterministic from physical lineage + content hash + clip window.
+- Maximum clip duration is 300 seconds; allowed retention policies are `24h | 7d | 30d`; source terms, audio MIME, codec, storage reference and at least one SourceObservation link are mandatory.
+- Contract exposes no Humanitarian/lifecycle/publication/transcript/model-decision authority.
+- Focused artifact/radio/source-observation/Humanitarian gate: `55 passed, 1 warning`; Ruff and `git diff --check` green.
 
 ### Task 1: Artifact persistence boundary
 

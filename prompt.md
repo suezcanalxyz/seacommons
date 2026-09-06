@@ -15,7 +15,7 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-Audio Evidence v1, Task 0 — immutable artifact contract.
+Audio Evidence v1, Task 1 — artifact persistence boundary.
 
 Detailed plan: `docs/superpowers/plans/2026-09-06-audio-evidence-v1.md`.
 
