@@ -211,6 +211,8 @@ def _build_episode_feature(
         key=lambda severity: _SEVERITY_RANK.get(severity, 0),
     )
     raw_ids = [str(p.get("id") or "") for p in item_props if p.get("id")]
+    from core.intel.fusion import verification_for_event_ids
+    verification_status, independence_groups, evidence_count = verification_for_event_ids(raw_ids)
     update_count = max(
         len(track),
         sum(max(1, int(p.get("episode_update_count") or 1)) for p in item_props),
@@ -284,6 +286,10 @@ def _build_episode_feature(
             "last_observed_at": last_observed_at,
             "timestamp_utc": last_observed_at,
             "related_signal_ids": raw_ids,
+            "evidence_count": evidence_count,
+            "independence_groups": independence_groups,
+            "independent_source_count": len(independence_groups),
+            "verification_status": verification_status,
             "alert_types": sorted({str(p.get("type")) for p in item_props if p.get("type")}),
             "anomaly_types": anomaly_types,
             "contributing_sources": sorted(

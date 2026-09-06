@@ -37,15 +37,18 @@ def test_family_for_maps_known_anomaly_types():
     assert family_for("vessel_loiter") == "infrastructure_proximity_episode"
 
 
-def test_family_for_unknown_type_falls_back_to_safety_episode():
-    assert family_for("something_never_seen_before") == "safety_episode"
+def test_family_for_unknown_type_fails_closed_to_unclassified_episode():
+    """Observation→Episode→Hypothesis v1 removes the legacy Safety catch-all.
+    Unknown intelligence semantics must stay unclassified, not become Safety.
+    """
+    assert family_for("something_never_seen_before") == "unclassified_episode"
 
 
 def test_family_for_maps_the_real_live_emitter_vocabulary():
     """docs/fixes.md M14.2: the anomaly_type strings core.mda.watch and the
     other live emitters actually produce -- not just the fixture-shaped
     ones above -- must route to their real family, not fall through to the
-    safety_episode catch-all."""
+    unclassified_episode fail-closed fallback."""
     assert family_for("ais_rendezvous") == "rendezvous_episode"  # watch._emit_rendezvous
     assert family_for("loiter") == "infrastructure_proximity_episode"
     assert family_for("cable_proximity") == "infrastructure_proximity_episode"
@@ -171,3 +174,15 @@ def test_max_gap_boundary_is_configurable():
 
 def test_default_max_gap_is_three_days():
     assert DEFAULT_MAX_GAP_S == 3 * 24 * 3600
+
+
+def test_unknown_anomaly_is_unclassified_not_safety() -> None:
+    from core.live.episode_builder import family_for
+
+    assert family_for("mystery_signal") == "unclassified_episode"
+
+
+def test_explicit_not_under_command_remains_safety() -> None:
+    from core.live.episode_builder import family_for
+
+    assert family_for("not_under_command") == "safety_episode"

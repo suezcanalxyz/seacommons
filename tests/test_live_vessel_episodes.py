@@ -143,3 +143,58 @@ def test_humanitarian_proximity_is_context_not_a_merge() -> None:
     props = security[0]["properties"]
     assert props["nearby_humanitarian_count"] == 1
     assert props["nearby_humanitarian"][0]["title"] == "Distress alert"
+
+
+def _seed_intel_event(event_id: str, *, event_type: str, source: str, **metadata) -> None:
+    from core.intel.store import IntelEvent, intel_store
+
+    intel_store.add(IntelEvent(
+        id=event_id,
+        type=event_type,
+        severity="medium",
+        lat=35.5,
+        lon=14.1,
+        title=f"seed:{event_id}",
+        source=source,
+        linked_mmsi="211879870",
+        metadata=metadata,
+    ), dedup_key=event_id)
+
+
+def test_episode_verification_same_ais_lineage_is_multi_indicator() -> None:
+    from core.intel.store import intel_store
+
+    with intel_store._lock:
+        intel_store._events.clear(); intel_store._seen.clear()
+    _seed_intel_event("lineage:a", event_type="ais_anomaly", source="AISStream", anomaly_type="gap")
+    _seed_intel_event("lineage:b", event_type="ais_anomaly", source="mda", anomaly_type="gap")
+    result = coalesce_security_vessel_episodes([
+        _feature("lineage:a", "2026-09-06T08:00:00+00:00", 14.1, 35.5, linked_mmsi="211879870", anomaly_type="gap"),
+        _feature("lineage:b", "2026-09-06T08:20:00+00:00", 14.1, 35.5, linked_mmsi="211879870", anomaly_type="gap"),
+    ])
+    props = result[0]["properties"]
+    assert props["independence_groups"] == ["ais_sensor_lineage"]
+    assert props["verification_status"] == "single_source_multi_indicator"
+
+
+def test_episode_verification_two_independent_lineages_is_corroborated() -> None:
+    from core.intel.store import intel_store
+
+    with intel_store._lock:
+        intel_store._events.clear(); intel_store._seen.clear()
+    _seed_intel_event("lineage:c", event_type="ais_anomaly", source="mda", anomaly_type="gap")
+    _seed_intel_event(
+        "lineage:d",
+        event_type="news",
+        source="Independent report",
+        anomaly_type="gap",
+        transport="rss",
+    )
+    result = coalesce_security_vessel_episodes([
+        _feature("lineage:c", "2026-09-06T08:00:00+00:00", 14.1, 35.5, linked_mmsi="211879870", anomaly_type="gap"),
+        _feature("lineage:d", "2026-09-06T08:20:00+00:00", 14.1, 35.5, linked_mmsi="211879870", anomaly_type="gap"),
+    ])
+    props = result[0]["properties"]
+    assert props["independent_source_count"] == 2
+    assert set(props["independence_groups"]) == {"ais_sensor_lineage", "secondary_news_reporting"}
+    assert props["verification_status"] == "multi_source_corroborated"
