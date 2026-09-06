@@ -89,6 +89,7 @@ class VesselRegistry:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._cache: dict[str, dict] = {}
+        self._source_context: dict[str, dict[str, list[str]]] = {}
         self._dirty = False
         self._geojson_cache: dict | None = None
         self._geojson_json: bytes | None = None  # pre-serialized, skips FastAPI encoder
@@ -168,6 +169,19 @@ class VesselRegistry:
 
         threading.Thread(target=self._db_write, args=(merged,), daemon=True).start()
 
+    def upsert_reconciled(self, fix) -> None:
+        with self._lock:
+            self._source_context[fix.mmsi] = {
+                "sources": sorted(fix.transport_providers),
+                "upstream_sources": sorted(fix.upstream_sources),
+                "stations": sorted(fix.station_ids),
+            }
+        self.upsert(
+            fix.mmsi, ship_name=fix.ship_name or None, lat=fix.lat, lon=fix.lon,
+            course=fix.cog, speed=fix.sog, heading=fix.heading,
+            nav_status=fix.nav_status, last_seen=fix.observed_at,
+        )
+
     def _db_write(self, data: dict) -> None:
         try:
             con = sqlite3.connect(self._db_path, timeout=5)
@@ -235,7 +249,9 @@ class VesselRegistry:
                     "heading": v.get("last_heading"),
                     "nav_status": v.get("nav_status"),
                     "last_seen": v.get("last_seen"),
-                    "sources": ["aisstream"],
+                    "sources": self._source_context.get(v["mmsi"], {}).get("sources", ["aisstream"]),
+                    "upstream_sources": self._source_context.get(v["mmsi"], {}).get("upstream_sources", ["aisstream"]),
+                    "stations": self._source_context.get(v["mmsi"], {}).get("stations", []),
                 },
             })
 

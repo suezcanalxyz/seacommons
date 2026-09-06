@@ -281,7 +281,7 @@ git commit -m "feat: add free aiscast provider adapter"
 - Consumes: normalized `AISPositionObservation` from Tasks 2-3.
 - Produces: `AISReconciler.ingest(obs) -> ReconciledAISFix | None`; only accepted reconciled fixes update registry/track history.
 
-- [ ] **Step 1: Write RED tests for duplicate and conflicting provider fixes**
+- [x] **Step 1: Write RED tests for duplicate and conflicting provider fixes**
 
 ```python
 def test_same_broadcast_from_two_providers_emits_one_fix():
@@ -299,30 +299,33 @@ def test_materially_new_fix_is_preserved():
     assert fix.upstream_sources == {"volunteer"}
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `pytest -q tests/test_ais_reconcile.py`
 Expected: FAIL because reconciler does not exist.
 
-- [ ] **Step 3: Implement bounded reconciliation**
+- [x] **Step 3: Implement bounded reconciliation**
 
 Prefer exact upstream event id/raw NMEA identity when available. Only use a conservative fallback fingerprint over MMSI + tightly quantized event time/position + navigation fields when no raw identity exists; do not suppress two legitimate high-rate AIS reports merely because they are close in space/time. Never average disagreeing coordinates. Preserve transport providers separately from `upstream_sources`, `station_ids`, `source_terms`, and selected-fix provenance. An aiscast event whose `upstream_source=aisstream` collapses to the same lineage as direct AISStream.
 
-- [ ] **Step 4: Dispatch accepted fixes through the compatibility bus**
+- [x] **Step 4: Dispatch accepted fixes through the compatibility bus**
 
 In `shadow` mode, reconciliation is comparison-only and existing AISStream registry/hooks remain authoritative. In `fused` mode, an accepted fix updates registry once and is dispatched through the legacy hook shim so AIS anomaly and vessel-incident consumers remain unchanged. Migrate only `TrackStore` to a normalized-hook path in this task so its existing `source` column records the selected upstream source (`aisstream`, `volunteer`, `aishub`, etc.); keep `TrackStore.on_position(...)` as a compatibility wrapper for tests/internal callers.
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 Run: `pytest -q tests/test_ais_reconcile.py tests/test_ais_spike_detector.py tests/test_replay_end_to_end.py`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/api/core/vessels/ais_reconcile.py apps/api/core/vessels/track_store.py apps/api/core/vessels/registry.py tests/test_ais_reconcile.py
 git commit -m "feat: reconcile multi-provider AIS fixes"
 ```
+
+
+**Execution:** RED failed on missing reconciler/TrackStore/Registry entry points. GREEN: `30 passed` across reconciliation, AIS spike, and replay tests. Same-upstream duplicate deliveries collapse; different upstream fixes stay distinct unless exact event identity matches. Registry provenance is memory-only in v1 and no DB migration was required.
 
 ### Task 5: Make AIS gaps coverage-aware
 

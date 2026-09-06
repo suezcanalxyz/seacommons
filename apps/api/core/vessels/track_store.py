@@ -89,6 +89,7 @@ class TrackStore:
         sog: Optional[float] = None, nav_status: Optional[int] = None,
         cog: Optional[float] = None, heading: Optional[float] = None,
         received_at: Optional[datetime] = None,
+        source: str = "aisstream", observed_at: Optional[datetime] = None,
     ) -> None:
         if not mmsi or lat is None or lon is None:
             return
@@ -96,7 +97,7 @@ class TrackStore:
         sog_v = float(sog) if sog is not None else 0.0
         prev = self._last.get(mmsi)
         recv = received_at or datetime.now(timezone.utc)
-        ts = recv  # AIS-reported time is not exposed by the current feed; use receipt
+        ts = observed_at or recv
 
         # Throttle: one row per MMSI per interval, UNLESS the nav status changed
         # or the vessel jumped a long way (both are signal, not noise).
@@ -121,12 +122,20 @@ class TrackStore:
             "cog": float(cog) if cog is not None else None,
             "heading": float(heading) if heading is not None else None,
             "nav_status": int(nav_status) if nav_status is not None else None,
-            "source": "aisstream",
+            "source": str(source or "aisstream")[:24],
         }
         with self._buf_lock:
             self._buffer.append(row)
         if _SYNC:
             self.flush()
+
+    def on_reconciled_fix(self, fix) -> None:
+        self.on_position(
+            fix.mmsi, fix.ship_name, fix.lat, fix.lon,
+            sog=fix.sog, nav_status=fix.nav_status, cog=fix.cog, heading=fix.heading,
+            received_at=fix.received_at, source=fix.selected_upstream,
+            observed_at=fix.observed_at,
+        )
 
     # ── flush / prune ────────────────────────────────────────────────────────
 
