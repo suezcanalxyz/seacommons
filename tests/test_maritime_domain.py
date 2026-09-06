@@ -10,7 +10,6 @@ widening (feed.py / edge gate) is a later phase and is tested there.
 from __future__ import annotations
 
 import pytest
-
 from core.domain.live_contracts import DEFAULT_PUBLIC_MARITIME_DOMAINS, MaritimeDomain
 from core.intel.public_policy import is_public_domain, public_maritime_domains
 from core.intel.store import IntelEvent
@@ -108,7 +107,8 @@ def test_geojson_feature_carries_the_tag() -> None:
 
 # ── public-domain allow-list ─────────────────────────────────────────────────
 
-def test_default_public_domains_are_sar_and_piracy() -> None:
+def test_default_public_domains_are_sar_and_piracy(monkeypatch) -> None:
+    monkeypatch.delenv("PUBLIC_MARITIME_DOMAINS", raising=False)
     assert public_maritime_domains() == DEFAULT_PUBLIC_MARITIME_DOMAINS
     assert is_public_domain("sar") is True
     assert is_public_domain("piracy") is True
