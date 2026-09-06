@@ -108,6 +108,32 @@ class VesselBehaviouralBaselineDB(Base):
     )
 
 
+class MaritimeEpisodeDB(Base):
+    """Persisted derived maritime episode; raw observations remain authoritative."""
+    __tablename__ = "maritime_episodes"
+    episode_id = Column(String(128), primary_key=True)
+    episode_family = Column(String(64), nullable=False, index=True)
+    subject_ids = Column(JSON, nullable=False, default=list)
+    start_at = Column(DateTime, nullable=False, index=True)
+    end_at = Column(DateTime, nullable=False, index=True)
+    geometry = Column(JSON)
+    observation_ids = Column(JSON, nullable=False, default=list)
+    feature_ids = Column(JSON, nullable=False, default=list)
+    independence_groups = Column(JSON, nullable=False, default=list)
+    verification_status = Column(String(32), nullable=False, index=True)
+    behaviour_context = Column(JSON, nullable=False, default=dict)
+    alternative_explanations = Column(JSON, nullable=False, default=list)
+    evidence_fingerprint = Column(String(64), nullable=False, index=True)
+    method_version = Column(String(64), nullable=False)
+    status = Column(String(32), nullable=False, default="active", index=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_maritime_episodes_family_end", "episode_family", "end_at"),
+    )
+
+
 class SanctionedVesselDB(Base):
     """Aggregated sanctioned-vessel reference (OpenSanctions + OFAC SDN), rebuilt
     daily by core.mda.identity.refresh_sanctions()."""
@@ -509,6 +535,7 @@ class InvestigationHypothesisDB(Base):
 
     __tablename__ = "investigation_hypotheses"
     hypothesis_id = Column(String(128), primary_key=True)
+    episode_id = Column(String(128), nullable=True, index=True)
     hypothesis_type = Column(String(64), nullable=False, index=True)
     subject_ids = Column(JSON, nullable=False, default=list)
     state = Column(String(32), nullable=False, default="candidate", index=True)
