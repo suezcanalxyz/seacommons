@@ -460,3 +460,22 @@ def record_publisher_delivery(*, delivered: bool) -> None:
 
 def record_publisher_heartbeat(*, ok: bool) -> None:
     LIVE_EDGE_HEARTBEAT_OK.set(1 if ok else 0)
+
+REVIEW_EVENTS = Counter(
+    "seacommons_review_events_total",
+    "Explicit review decisions by bounded target/decision/outcome",
+    ["target_type", "decision", "outcome"],
+)
+_REVIEW_TARGETS = frozenset({"humanitarian_resolution", "maritime_hypothesis"})
+_REVIEW_DECISIONS = frozenset({"approve", "reject", "needs_more_evidence"})
+_REVIEW_OUTCOMES = frozenset({"recorded", "applied", "replayed", "rejected", "needs_more_evidence", "failed"})
+
+def record_review_event(*, target_type: str, decision: str, outcome: str) -> None:
+    """Bounded-cardinality review metric; never labels target IDs, actors or evidence refs."""
+    try:
+        target = target_type if target_type in _REVIEW_TARGETS else "other"
+        decision_label = decision if decision in _REVIEW_DECISIONS else "other"
+        outcome_label = outcome if outcome in _REVIEW_OUTCOMES else "other"
+        REVIEW_EVENTS.labels(target, decision_label, outcome_label).inc()
+    except Exception:
+        pass
