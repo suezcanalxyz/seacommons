@@ -20,6 +20,14 @@
 - RED tests for deterministic identity, fail-closed values, replay semantics and privacy-safe snapshot references.
 - Commit `feat: add review record contract`.
 
+### Task 0 execution record — 2026-09-06
+
+- `ReviewRecord` is frozen and deterministic from target/version/snapshot/decision/rationale/actor/time/requested transition.
+- Decisions are bounded to `approve | reject | needs_more_evidence`; approve requires a target-specific requested transition, and no transition can request direct publication.
+- Snapshot is an opaque reference only; raw/sensitive prefixes including MMSI/IMO/callsign/transcript are rejected.
+- Contract contains no lifecycle/publication/raw evidence fields.
+- Focused Task 0 gate: `15 passed`; Ruff and `git diff --check` green.
+
 ### Task 1: Durable review ledger
 
 - Persist append-only/replay-safe review records with target/version uniqueness semantics and audit timestamps.

@@ -15,7 +15,7 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-Review v0 / publication controls, Task 0 — review record contract.
+Review v0 / publication controls, Task 1 — durable review ledger.
 
 Detailed plan: `docs/superpowers/plans/2026-09-06-review-v0-publication-controls.md`.
 

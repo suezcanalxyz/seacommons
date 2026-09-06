@@ -1,7 +1,7 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Review v0 / publication controls — Task 0 review record contract
+> **Current packet:** Review v0 / publication controls — Task 1 durable review ledger
 > **Current packet plan:** `docs/superpowers/plans/2026-09-06-review-v0-publication-controls.md`
 > **Production runtime baseline:** `0ae4df7cc20c8209acc267eb595129c2dc3961bd`
 > **Production schema:** `0021_maritime_episodes`
