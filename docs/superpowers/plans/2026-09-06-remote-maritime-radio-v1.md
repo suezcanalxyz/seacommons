@@ -35,11 +35,11 @@
 - Produces `ReceiverCapability`, `RemoteReceiverHealth`, `RadioObservation`, `ObservationCallback`, and `RemoteReceiverAdapter`.
 - `RadioObservation` contains only bounded metadata: `receiver_id`, `provider`, `physical_lineage`, `frequency_hz`, `mode`, `observed_at`, optional signal level/SNR, `source_terms`, and optional provider message/session id.
 
-- [ ] Write RED tests proving provider names normalize deterministically, invalid/empty receiver identity fails closed, and two provider frontends may share one `physical_lineage`.
-- [ ] Run `pytest -q tests/test_radio_provider.py` and observe the expected import/contract failures.
-- [ ] Implement frozen dataclasses and a `Protocol` with `start()`, `stop()`, `health()`, `capabilities()`, and `tune(frequency_hz, mode)`; do not add persistence or decoding.
-- [ ] Run `pytest -q tests/test_radio_provider.py` GREEN and `python -m ruff check core/radio/provider.py` from `apps/api`.
-- [ ] Commit `feat: add remote radio provider contract`.
+- [x] Write RED tests proving provider names normalize deterministically, invalid/empty receiver identity fails closed, and two provider frontends may share one `physical_lineage`.
+- [x] Run `pytest -q tests/test_radio_provider.py` and observe the expected import/contract failures.
+- [x] Implement frozen dataclasses and a `Protocol` with `start()`, `stop()`, `health()`, `capabilities()`, and `tune(frequency_hz, mode)`; do not add persistence or decoding.
+- [x] Run `pytest -q tests/test_radio_provider.py` GREEN and `python -m ruff check core/radio/provider.py` from `apps/api`.
+- [x] Commit `feat: add remote radio provider contract`.
 
 ### Task 1: Receiver identity, capability registry, and physical lineage
 

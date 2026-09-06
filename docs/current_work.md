@@ -1,7 +1,7 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Remote Maritime Radio v1 — Task 0 provider-neutral receiver contract
+> **Current packet:** Remote Maritime Radio v1 — Task 1 receiver identity/capability registry
 > **Current packet plan:** `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`
 > **Production runtime baseline:** `0ae4df7cc20c8209acc267eb595129c2dc3961bd`
 > **Production schema:** `0021_maritime_episodes`
@@ -28,7 +28,7 @@ Release evidence: focused privacy/lineage `141 passed`; full backend `1350 passe
 
 ## Current packet state — Remote Maritime Radio v1
 
-The next packet is software-only remote receiver acquisition. Its plan is `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`. Task 0 creates the provider-neutral `RemoteReceiverAdapter`, receiver health/capability contract, and bounded `RadioObservation` metadata.
+The next packet is software-only remote receiver acquisition. Its plan is `docs/superpowers/plans/2026-09-06-remote-maritime-radio-v1.md`. Task 0 is complete: provider-neutral `RemoteReceiverAdapter`, receiver health/capability contract, and bounded `RadioObservation` metadata are implemented. Task 1 adds configured receiver identity, capabilities, physical lineage and fail-closed runtime configuration.
 
 The existing `core.sensors.sdr.SDRScanner` is a local RTL-SDR anomaly scanner and is not the architecture for this packet. Remote radio must preserve provider/frontend identity separately from physical receiver/RF lineage; duplicate frontends cannot become independent evidence. No continuous audio/IQ persistence and no DSC/NAVTEX decoding belong in this packet. Runtime defaults disabled.
 
