@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
+
+from core.security import READ_ROLES, require_roles
 
 router = APIRouter(prefix="/api/v1/mda", tags=["mda"])
 
@@ -94,11 +96,35 @@ async def anomalies(hours: int = Query(default=48, ge=1, le=720),
 
 
 @router.get("/vessel/{mmsi}")
-async def vessel_dossier(mmsi: str, hours: float = Query(default=72.0, ge=1, le=24 * 90)):
-    return build_vessel_dossier(mmsi, hours=hours)
+async def vessel_dossier(request: Request, mmsi: str, hours: float = Query(default=72.0, ge=1, le=24 * 90)):
+    require_roles(request, READ_ROLES)
+    return build_vessel_dossier(mmsi, hours=hours, include_behaviour=True)
 
 
-def build_vessel_dossier(mmsi: str, *, hours: float, track_limit: int = 5000) -> dict:
+@router.get("/vessel/{mmsi}/baseline")
+async def vessel_baseline(request: Request, mmsi: str):
+    require_roles(request, READ_ROLES)
+    from core.mda.behavioural_baseline import latest_baseline
+
+    baseline = latest_baseline(mmsi)
+    return _baseline_payload(baseline, mmsi=mmsi)
+
+
+def _baseline_payload(baseline, *, mmsi: str) -> dict:
+    if baseline is None:
+        return {"mmsi": mmsi, "available": False}
+    return {
+        "mmsi": mmsi, "available": True, "baseline_id": baseline.baseline_id,
+        "subject_id": baseline.subject_id, "primary_imo": baseline.primary_imo,
+        "window_start": baseline.window_start.isoformat(), "window_end": baseline.window_end.isoformat(),
+        "sample_count": baseline.sample_count, "history_days": baseline.history_days,
+        "route_model": baseline.route_model, "speed_model": baseline.speed_model,
+        "port_model": baseline.port_model, "silence_model": baseline.silence_model,
+        "method_version": baseline.method_version, "evidence_fingerprint": baseline.evidence_fingerprint,
+    }
+
+
+def build_vessel_dossier(mmsi: str, *, hours: float, track_limit: int = 5000, include_behaviour: bool = False) -> dict:
     from core.mda.identity import screen
     from core.vessels.registry import registry
     from core.vessels.track_store import track_store
@@ -109,7 +135,7 @@ def build_vessel_dossier(mmsi: str, *, hours: float, track_limit: int = 5000) ->
     if track_limit >= 2 and len(track) > track_limit:
         scale = (len(track) - 1) / (track_limit - 1)
         track = [track[round(index * scale)] for index in range(track_limit)]
-    return {
+    dossier = {
         "mmsi": mmsi,
         "static": {"name": v.get("ship_name"), "imo": v.get("imo"),
                    "ship_type": v.get("ship_type"), "flag": v.get("flag"),
@@ -128,6 +154,21 @@ def build_vessel_dossier(mmsi: str, *, hours: float, track_limit: int = 5000) ->
         "track_points": track,
         "recent_port_calls": _derive_recent_port_calls(track),
     }
+    if include_behaviour:
+        from core.mda.behaviour_assessment import assess_behaviour
+        from core.mda.behavioural_baseline import latest_baseline
+        from core.mda.vessel_context import build_vessel_context
+
+        baseline = latest_baseline(mmsi)
+        assessment = assess_behaviour(track, baseline)
+        dossier["context"] = build_vessel_context(mmsi, hours=hours)
+        dossier["behaviour_assessment"] = {
+            "status": assessment.status, "baseline_id": assessment.baseline_id,
+            "method_version": assessment.method_version, "reason_codes": list(assessment.reason_codes),
+            "dimensions": assessment.dimensions, "caveats": list(assessment.caveats),
+            "evaluated_at": assessment.evaluated_at.isoformat(),
+        }
+    return dossier
 
 
 def _derive_recent_port_calls(track: list[dict], *, limit: int = 8) -> list[dict]:
