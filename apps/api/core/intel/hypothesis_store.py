@@ -50,6 +50,7 @@ def to_row_kwargs(hypothesis: InvestigationHypothesis) -> dict:
     write can build many of these without opening a session per row."""
     return {
         "hypothesis_id": hypothesis.hypothesis_id,
+        "episode_id": hypothesis.episode_id,
         "hypothesis_type": hypothesis.hypothesis_type,
         "subject_ids": list(hypothesis.subject_ids),
         "state": hypothesis.state,
@@ -69,6 +70,7 @@ def _from_row(row) -> InvestigationHypothesis:
         hypothesis_id=row.hypothesis_id,
         hypothesis_type=row.hypothesis_type,
         subject_ids=tuple(row.subject_ids or ()),
+        episode_id=getattr(row, "episode_id", None),
         state=row.state,
         reason_codes=tuple(row.reason_codes or ()),
         counter_indicators=tuple(row.counter_indicators or ()),
