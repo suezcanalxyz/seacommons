@@ -1,8 +1,8 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** DSC + NAVTEX Structured Evidence v1 — Task 3 structured-radio SourceObservation bridge
-> **Current packet plan:** `docs/superpowers/plans/2026-09-06-dsc-navtex-structured-evidence-v1.md`
+> **Current packet:** Audio Evidence v1 — Task 0 immutable artifact contract
+> **Current packet plan:** `docs/superpowers/plans/2026-09-06-audio-evidence-v1.md`
 > **Production runtime baseline:** `0ae4df7cc20c8209acc267eb595129c2dc3961bd`
 > **Production schema:** `0021_maritime_episodes`
 
@@ -32,9 +32,15 @@ Development-complete / review-ready through `2ea9e35`. Provider-neutral contract
 
 Release evidence: focused radio/privacy/lineage `82 passed`; full backend `1385 passed, 2 skipped`; Ruff/mypy/migrations/canonical project dependency audit green; web/edge gates green. Production receiver activation remains separate and unauthorized.
 
-## Current packet state — DSC + NAVTEX Structured Evidence v1
+## Completed packet — DSC + NAVTEX Structured Evidence v1
 
-Packet D consumes the remote receiver/evidence boundary without introducing voice intelligence. Tasks 0-2 are complete. Task 3 persists DSC/NAVTEX through the canonical immutable SourceObservation path keyed to physical receiver lineage; raw waveform/audio acquisition remains deferred to Audio Evidence v1. DSC emergency signals stay Maritime Safety by default and never become Humanitarian solely by signal type. NAVTEX is contextual/corroborative evidence unless an explicit later policy says otherwise.
+Development-complete / review-ready through `08c20f4`. Already-decoded DSC/NAVTEX inputs normalize into immutable structured observations keyed to physical receiver lineage. DSC distress may project only a Maritime Safety candidate; NAVTEX remains context-only. No waveform/audio/IQ is persisted, and no signal type creates or resolves Humanitarian state.
+
+Release evidence: focused `116 passed`; full backend `1424 passed, 2 skipped`; Ruff/mypy/migrations/canonical dependency audit green. Structured runtime remains disabled by default and production activation is separate.
+
+## Current packet state — Audio Evidence v1
+
+Packet E introduces bounded, legally-permitted audio evidence artifacts with explicit content hash, receiver/frequency/time provenance and retention policy. Audio is evidence storage, not a truth store: transcript/claim extraction remains derived and cannot directly mutate Humanitarian lifecycle or public allegations. Task 0 defines the immutable artifact contract and fail-closed retention/terms boundary before any acquisition runtime exists.
 
 ## Loop order
 

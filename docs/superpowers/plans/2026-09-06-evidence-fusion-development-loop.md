@@ -6,9 +6,9 @@
 
 **Architecture:** All source-specific transports normalize into shared evidence contracts before domain reasoning. Humanitarian incidents and Maritime Intelligence episodes share provenance/lineage infrastructure but keep separate decision semantics. New source types are added as adapters, never as parallel truth pipelines.
 
-**Current packet:** DSC + NAVTEX Structured Evidence v1 — Task 0 structured decoded-input contracts.
+**Current packet:** Audio Evidence v1 — Task 0 immutable artifact contract.
 
-**Detailed current plan:** `docs/superpowers/plans/2026-09-06-dsc-navtex-structured-evidence-v1.md`
+**Detailed current plan:** `docs/superpowers/plans/2026-09-06-audio-evidence-v1.md`
 
 ## Canonical loop
 
@@ -62,7 +62,7 @@ No continuous voice recording by default. Receiver/provider availability is oper
 
 ### Packet D — DSC + NAVTEX structured evidence
 
-Status: current packet; consume already-demodulated/structured inputs first and do not pull Audio Evidence v1 forward.
+Status: development-complete / review-ready; runtime remains disabled by default and no audio acquisition was pulled into Packet D.
 
 Goal: decode high-signal structured maritime radio before attempting broad voice intelligence.
 
@@ -71,6 +71,8 @@ DSC observations preserve category, MMSI when present, coordinates, timestamp, c
 A DSC/EPIRB-style emergency observation may create a maritime emergency candidate, but must never become Humanitarian solely by signal type. NAVTEX is primarily contextual/corroborative evidence unless a future explicit rule says otherwise.
 
 ### Packet E — Audio Evidence v1
+
+Status: current packet; artifact/retention boundary first, acquisition disabled until terms/jurisdiction are explicit.
 
 Goal: support bounded, legally-permitted remote audio as immutable evidence artifacts rather than a second truth store.
 

@@ -149,13 +149,23 @@
 - Runtime accepts bounded decoded DSC/NAVTEX input from configured adapters/bridges; no microphone/audio stream ownership.
 - Metrics use bounded type/outcome labels only, never MMSI, receiver ID, station free text, message body, or session IDs.
 
-- [ ] RED runtime/metric-cardinality/privacy tests.
-- [ ] Implement disabled-by-default structured-input orchestration and bounded operator summary if needed.
-- [ ] Run focused DSC/NAVTEX/source-observation/service/privacy/evidence-lineage regressions.
-- [ ] Run full backend, Ruff critical, canonical mypy, migrations and canonical dependency audit; run web/edge if boundaries changed.
-- [ ] Exact-diff review for Humanitarian fallback, lifecycle mutation, raw waveform/audio persistence, duplicate physical lineage, unbounded text/metrics, and provider-specific truth paths.
-- [ ] Mark packet review-ready and hand off to Audio Evidence v1 only after all gates are green.
-- [ ] Commit `docs: close DSC and NAVTEX structured evidence v1`.
+- [x] RED runtime/metric-cardinality/privacy tests.
+- [x] Implement disabled-by-default structured-input orchestration and bounded operator summary if needed.
+- [x] Run focused DSC/NAVTEX/source-observation/service/privacy/evidence-lineage regressions.
+- [x] Run full backend, Ruff critical, canonical mypy, migrations and canonical dependency audit; run web/edge if boundaries changed.
+- [x] Exact-diff review for Humanitarian fallback, lifecycle mutation, raw waveform/audio persistence, duplicate physical lineage, unbounded text/metrics, and provider-specific truth paths.
+- [x] Mark packet review-ready and hand off to Audio Evidence v1 only after all gates are green.
+- [x] Commit `docs: close DSC and NAVTEX structured evidence v1`.
+
+### Task 5 execution record — 2026-09-06
+
+- Disabled-by-default `StructuredRadioRuntime` accepts only already-decoded DSC/NAVTEX input; it owns no microphone, receiver audio stream, demodulator, or waveform store.
+- DSC distress persists through the canonical SourceObservation bridge and may project only a Maritime Safety candidate; NAVTEX persists as context-only evidence.
+- A review fix prevents distinct DSC distress candidates from the same physical receiver collapsing on IntelEvent content-hash dedup; the event text uses only the bounded hashed candidate ID.
+- Metrics are bounded to `kind={dsc,navtex,other}` and bounded outcomes; MMSI, receiver IDs, station IDs and free text never become labels.
+- Exact-diff review found no Humanitarian fallback, lifecycle mutation, waveform/audio/IQ persistence, duplicate physical-lineage independence, or provider-specific truth path.
+- Release evidence: focused `116 passed, 1 warning`; full backend `1424 passed, 2 skipped`; Ruff critical, canonical mypy, migrations through `0021_maritime_episodes`, canonical Python dependency audit, and `git diff --check` green. No public web/edge contract changed in this packet, so no client boundary change was required for release.
+- Runtime remains disabled by default; production structured-radio ingestion is not activated by this development packet.
 
 ## Exit Criteria
 

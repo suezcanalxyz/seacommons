@@ -15,19 +15,19 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-DSC + NAVTEX Structured Evidence v1, Task 3 — structured-radio SourceObservation bridge.
+Audio Evidence v1, Task 0 — immutable artifact contract.
 
-Detailed plan: `docs/superpowers/plans/2026-09-06-dsc-navtex-structured-evidence-v1.md`.
+Detailed plan: `docs/superpowers/plans/2026-09-06-audio-evidence-v1.md`.
 
 Free/Open AIS Fusion v1 is development-complete/shadow-ready. Humanitarian Verification v1 is development-complete/review-ready through `961c436`; release gates were `141` focused tests and `1350` full backend tests plus green static/web/edge/dependency gates. No production AIS cutover or Humanitarian auto-resolution was authorized.
 
-Remote Maritime Radio v1 is development-complete/review-ready through `2ea9e35`; do not reopen its provider/runtime architecture unless a DSC/NAVTEX regression proves a boundary defect. Tasks 0-2 are complete. Continue with Task 3 using the existing SourceObservation persistence boundary; do not create a parallel truth store or pull audio acquisition forward. Reuse the canonical radio SourceObservation boundary and physical receiver lineage; do not add continuous audio/IQ persistence or voice transcription in this packet.
+Remote Maritime Radio v1 is development-complete/review-ready through `2ea9e35`. DSC + NAVTEX Structured Evidence v1 is development-complete/review-ready through `08c20f4`, with `116` focused and `1424` full-backend tests green. Continue with Audio Evidence v1 Task 0: define an immutable bounded audio artifact contract with explicit receiver/frequency/time provenance, content hash, retention policy and source terms before adding any acquisition runtime. Transcript/claims remain derived and cannot mutate canonical lifecycle or public allegations.
 
 ## Packet boundary
 
 Remote Maritime Radio v1 adds software-only configured receiver identity/capability/health, provider adapters (KiwiSDR/OpenWebRX where terms and automation permit), physical RF lineage, bounded observations, observability, and a disabled-by-default runtime.
 
-Do not add continuous audio/IQ persistence, broad voice transcription, DSC decoding, NAVTEX decoding, Humanitarian incident creation, lifecycle resolution, or public allegations in this packet. Those belong to later packets.
+Do not add continuous recording, unbounded retention, automatic transcription-driven truth, Humanitarian incident creation, lifecycle resolution, or public allegations. Audio acquisition remains disabled until provider terms/jurisdiction/retention are explicit and allowed.
 
 ## Loop after Remote Radio
 

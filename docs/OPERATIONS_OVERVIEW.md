@@ -120,3 +120,8 @@ Remote receiver acquisition is disabled by default with `REMOTE_RADIO_ENABLED=fa
 The operator summary exposes only bounded counts by provider/state. Receiver IDs, frontend URLs, session identifiers, frequencies, and transport exception strings are not metric labels or operator status fields. Partial provider failure is isolated and does not stop other configured receivers.
 
 KiwiSDR/OpenWebRX adapters do not retain continuous audio/IQ. OpenWebRX binary spectrum/audio/secondary-FFT/HD-audio frames are discarded in this packet; only bounded signal observations can enter the immutable SourceObservation path. Production activation is a separate operator action after receiver-specific terms and authorization are verified.
+
+
+## DSC + NAVTEX Structured Evidence v1
+
+Already-decoded DSC/NAVTEX inputs enter through a disabled-by-default structured runtime. DSC persists as immutable `maritime/safety` evidence and only `distress` may project a review-required Maritime Safety candidate. NAVTEX persists as contextual Maritime Safety evidence and has no direct candidate projection. Both use `radio_receiver:<physical_lineage>` as the source boundary; receiver/frontend identifiers remain provenance. No waveform/audio/IQ is stored and no Humanitarian lifecycle is mutated.

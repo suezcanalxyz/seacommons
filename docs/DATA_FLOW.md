@@ -142,3 +142,8 @@ Receiver identity, provider/frontend identity, and physical RF lineage are disti
 Remote Maritime Radio v1 persists bounded signal metadata only (frequency, mode, signal level/SNR when available). Binary spectrum/audio/IQ/FFT payloads are discarded by the adapters and no continuous recording is stored. Provider terms are fail-closed: a receiver is runnable only when explicitly configured, enabled, `terms_status=allowed`, and accompanied by a non-empty `source_terms` declaration. Runtime defaults disabled.
 
 DSC/NAVTEX decoding is a later packet. Structured radio evidence must remain Maritime Safety/context unless an explicit domain rule says otherwise; signal type alone never creates a Humanitarian incident or mutates lifecycle.
+
+
+## DSC + NAVTEX Structured Evidence v1
+
+Already-decoded DSC/NAVTEX inputs enter through a disabled-by-default structured runtime. DSC persists as immutable `maritime/safety` evidence and only `distress` may project a review-required Maritime Safety candidate. NAVTEX persists as contextual Maritime Safety evidence and has no direct candidate projection. Both use `radio_receiver:<physical_lineage>` as the source boundary; receiver/frontend identifiers remain provenance. No waveform/audio/IQ is stored and no Humanitarian lifecycle is mutated.
