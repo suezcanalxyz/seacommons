@@ -27,11 +27,11 @@ async def live_signals(
     since: Optional[str] = Query(None),
     mode: str = Query(
         "humanitarian",
-        pattern="^(humanitarian|security|all)$",
+        pattern="^(humanitarian|maritime|security|all)$",
         description=(
-            "humanitarian (default, unchanged behaviour): distress/SAR/safety "
-            "content. security: sanctions/spoofing/dark-fleet content the "
-            "humanitarian posture excludes by design. all: both."
+            "humanitarian: public-eligible SAR/humanitarian output. "
+            "maritime: public-eligible Safety plus reviewed/published Maritime output. "
+            "security is a temporary alias for maritime. all: both compartments."
         ),
     ),
 ):

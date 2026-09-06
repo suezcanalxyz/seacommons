@@ -82,3 +82,41 @@ def test_safety_domain_event_has_no_operational_compartment():
             assert "intel:compartment-safety-1" not in ids
     finally:
         _cleanup("compartment-")
+
+
+def test_public_maritime_mode_unifies_safety_and_security_with_canonical_counts(monkeypatch):
+    now = "2026-09-07T00:00:00+00:00"
+    humanitarian = IntelEvent(
+        id="canonical-hum-1", type="distress", severity="high", lat=34.8, lon=14.2,
+        title="Reported distress", source="Alarm Phone", timestamp_utc=now,
+        metadata={"is_distress": True, "maritime_domain": "sar", "source_policy": "official_site_embed"},
+    )
+    safety = IntelEvent(
+        id="canonical-safety-1", type="vessel_incident", severity="medium", lat=35.2, lon=14.0,
+        title="Vessel unable to manoeuvre", source="ais", timestamp_utc=now,
+        metadata={"ais_nav_status_kind": "not_under_command", "maritime_domain": "safety",
+                  "publication_status": "published", "source_policy": "official_api"},
+    )
+    security = IntelEvent(
+        id="canonical-security-1", type="ais_anomaly", severity="high", lat=35.1, lon=14.5,
+        title="AIS identity anomaly", source="SeaCommons MDA", timestamp_utc=now,
+        metadata={"maritime_domain": "grey_zone", "publication_status": "published",
+                  "source_policy": "operator_published"},
+    )
+    monkeypatch.setattr("core.live.feed.intel_store.events", lambda **_kwargs: [humanitarian, safety, security])
+    monkeypatch.setattr("core.live.feed.intel_store.persisted_events", lambda **_kwargs: [])
+    monkeypatch.setattr("core.live.feed._published_ingested_features", lambda _limit: [])
+
+    maritime = public_signal_collection(mode="maritime", days=1, limit=50)
+    legacy_security = public_signal_collection(mode="security", days=1, limit=50)
+    humanitarian_feed = public_signal_collection(mode="humanitarian", days=1, limit=50)
+    all_feed = public_signal_collection(mode="all", days=1, limit=50)
+
+    maritime_ids = {f["properties"]["id"] for f in maritime["features"]}
+    assert maritime_ids == {"intel:canonical-safety-1", "intel:canonical-security-1"}
+    assert {f["properties"]["id"] for f in legacy_security["features"]} == maritime_ids
+    assert {f["properties"]["id"] for f in humanitarian_feed["features"]} == {"intel:canonical-hum-1"}
+    assert {f["properties"]["id"] for f in all_feed["features"]} == maritime_ids | {"intel:canonical-hum-1"}
+    assert maritime["meta"]["mode_counts"] == {"humanitarian": 1, "maritime": 2}
+    assert maritime["meta"]["mode"] == "maritime"
+    assert legacy_security["meta"]["mode"] == "maritime"

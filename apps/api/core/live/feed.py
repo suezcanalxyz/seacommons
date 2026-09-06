@@ -159,7 +159,10 @@ def public_signal_collection(
     since: str | None = None,
     mode: str = "humanitarian",
 ) -> dict[str, Any]:
-    selected_mode = mode if mode in {"humanitarian", "security", "safety", "all"} else "humanitarian"
+    requested_mode = str(mode or "humanitarian").strip().lower()
+    selected_mode = "maritime" if requested_mode == "security" else requested_mode
+    if selected_mode not in {"humanitarian", "maritime", "safety", "all"}:
+        selected_mode = "humanitarian"
     memory_events = intel_store.events(limit=600, max_age_days=days)
     # twikit_monitor writes source=author or handle per tweet -- the account's
     # display name ("Alarm Phone") when the tweet carried one, its handle
@@ -361,9 +364,19 @@ def public_signal_collection(
     add_nearby_humanitarian_context(
         features_by_mode["security"], features_by_mode["humanitarian"]
     )
+    maritime_features = sorted(
+        [*features_by_mode["safety"], *features_by_mode["security"]],
+        key=lambda f: str(f["properties"].get("timestamp_utc") or ""),
+        reverse=True,
+    )
     mode_counts = {
-        mode_name: len(mode_features)
-        for mode_name, mode_features in features_by_mode.items()
+        "humanitarian": len(features_by_mode["humanitarian"]),
+        "maritime": len(maritime_features),
+    }
+    domain_counts = {
+        "humanitarian": len(features_by_mode["humanitarian"]),
+        "safety": len(features_by_mode["safety"]),
+        "security": len(features_by_mode["security"]),
     }
     if selected_mode == "all":
         # The public transport cap protects the browser from Maritime volume;
@@ -373,17 +386,17 @@ def public_signal_collection(
         # separately in meta.total/mode_counts.
         humanitarian_reserved = list(features_by_mode["humanitarian"])
         maritime_budget = max(0, limit - len(humanitarian_reserved))
-        maritime_candidates = [
-            *features_by_mode["safety"],
-            *features_by_mode["security"],
-        ]
-        selected_maritime = maritime_candidates[:maritime_budget]
+        selected_maritime = maritime_features[:maritime_budget]
         features = sorted(
             humanitarian_reserved + selected_maritime,
             key=lambda f: str(f["properties"].get("timestamp_utc") or ""),
             reverse=True,
         )
+    elif selected_mode == "maritime":
+        features = maritime_features
     else:
+        # Internal compatibility only; the public route does not expose a
+        # standalone Safety mode.
         features = features_by_mode[selected_mode]
     if since:
         features = [
@@ -396,7 +409,7 @@ def public_signal_collection(
 
     real_total = (
         sum(mode_counts.values()) if selected_mode == "all"
-        else mode_counts[selected_mode]
+        else (domain_counts["safety"] if selected_mode == "safety" else mode_counts[selected_mode])
     )
 
     return {
@@ -407,6 +420,7 @@ def public_signal_collection(
             "total": real_total,
             "mode": selected_mode,
             "mode_counts": mode_counts,
+            "domain_counts": domain_counts,
             "memory_candidates": len(memory_events),
             "durable_alarm_phone_candidates": len(durable_alarm_phone),
             "with_coords": sum(1 for feature in features if feature.get("geometry") is not None),

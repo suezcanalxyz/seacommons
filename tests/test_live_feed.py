@@ -1230,7 +1230,7 @@ def test_mode_all_reserves_humanitarian_features_from_security_flood() -> None:
     assert "intel:floodtest-hum-01" in ids
     assert len(collection["features"]) == limit
     # Public counter is the real eligible Live population, never the transport cap.
-    assert collection["meta"]["total"] == collection["meta"]["mode_counts"]["humanitarian"] + collection["meta"]["mode_counts"]["security"] + collection["meta"]["mode_counts"]["safety"]
+    assert collection["meta"]["total"] == collection["meta"]["mode_counts"]["humanitarian"] + collection["meta"]["mode_counts"]["maritime"]
     assert collection["meta"]["total"] > len(collection["features"])
 
 
@@ -1322,7 +1322,7 @@ def test_public_feed_modes_return_separate_signals_and_counts(monkeypatch) -> No
     assert [feature["properties"]["id"] for feature in security_feed["features"]] == [
         "intel:mode-security-01"
     ]
-    expected_counts = {"humanitarian": 3, "security": 1, "safety": 0}
+    expected_counts = {"humanitarian": 3, "maritime": 1}
     assert humanitarian_feed["meta"]["mode_counts"] == expected_counts
     assert security_feed["meta"]["mode_counts"] == expected_counts
     assert small_feed["meta"]["mode_counts"] == expected_counts
@@ -1331,12 +1331,12 @@ def test_public_feed_modes_return_separate_signals_and_counts(monkeypatch) -> No
     assert incremental_feed["features"] == []
 
 
-def test_safety_mode_shows_nuc_and_never_leaks_into_humanitarian_or_security(monkeypatch) -> None:
-    """docs/fixes.md A-01/A-02/P0.1: a NUC event (service=maritime,
-    lane=safety per PR #62) must be visible under mode="safety", and must
-    NOT appear under "humanitarian" or "security" -- it was previously
-    silently dropped from every mode (compartment_for_domain("safety") is
-    None) after briefly being wrongly bucketed as security pre-#62."""
+def test_maritime_mode_shows_nuc_and_never_leaks_into_humanitarian(monkeypatch) -> None:
+    """Maritime Safety belongs to the canonical public Maritime compartment.
+
+    Safety remains an internal domain, but the public UI/API must not expose it
+    as a third top-level compartment.
+    """
     now = datetime.now(timezone.utc).isoformat()
     nuc = IntelEvent(
         id="mode-safety-nuc-01",
@@ -1367,17 +1367,17 @@ def test_safety_mode_shows_nuc_and_never_leaks_into_humanitarian_or_security(mon
     )
     monkeypatch.setattr("core.live.feed._published_ingested_features", lambda _limit: [])
 
-    safety_feed = public_signal_collection(limit=50, mode="safety")
+    maritime_feed = public_signal_collection(limit=50, mode="maritime")
     humanitarian_feed = public_signal_collection(limit=50, mode="humanitarian")
-    security_feed = public_signal_collection(limit=50, mode="security")
+    legacy_security_feed = public_signal_collection(limit=50, mode="security")
 
-    safety_ids = {f["properties"]["id"] for f in safety_feed["features"]}
-    assert "intel:mode-safety-nuc-01" in safety_ids
-    assert safety_feed["meta"]["mode_counts"]["safety"] == 1
+    maritime_ids = {f["properties"]["id"] for f in maritime_feed["features"]}
+    assert "intel:mode-safety-nuc-01" in maritime_ids
+    assert maritime_feed["meta"]["mode_counts"]["maritime"] == 1
+    assert maritime_feed["meta"]["domain_counts"]["safety"] == 1
     assert humanitarian_feed["features"] == []
-    assert security_feed["features"] == []
-    assert humanitarian_feed["meta"]["mode_counts"]["safety"] == 1  # counted, not shown
-    for feature in safety_feed["features"]:
+    assert {f["properties"]["id"] for f in legacy_security_feed["features"]} == maritime_ids
+    for feature in maritime_feed["features"]:
         assert feature["properties"]["maritime_domain"] == "safety"
         assert feature["properties"]["drift_eligible"] is False
 
