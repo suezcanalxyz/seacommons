@@ -165,8 +165,14 @@ def get_source_profile(source_name: str) -> Optional[dict[str, Any]]:
     profile = SOURCE_CATALOG.get(source_name)
     if profile is None:
         return None
+    from core.intel.source_identity import resolve_source_identity
+
+    identity = resolve_source_identity(profile.name)
     return {
         "source_id": profile.source_id,
+        "source_identity": identity.identity_id,
+        "source_role": identity.source_role,
+        "may_open_incident": identity.may_open_incident,
         "name": profile.name,
         "source_family": profile.source_family,
         "source_type": profile.source_type,

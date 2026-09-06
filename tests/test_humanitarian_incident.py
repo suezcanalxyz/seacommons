@@ -344,3 +344,21 @@ def test_reconcile_does_not_convert_needs_review_to_outcome_unknown():
     assert changed == 0
     assert incident["incident_status"] == "needs_review"
     assert incident["lifecycle"] == "needs_review"
+
+
+def test_verification_source_cannot_open_humanitarian_incident():
+    event = IntelEvent(
+        id="ngo-verify-1", type="distress", severity="high", lat=35.5, lon=14.1,
+        title="We rescued 42 people", text="We rescued 42 people from a boat in distress.",
+        source="SOS Méditerranée", timestamp_utc=datetime.now(timezone.utc).isoformat(),
+        metadata={"is_distress": True, "service": "humanitarian", "lane": "resolution", "transport": "rss"},
+    )
+    _on_intel_event(event)
+    assert get_incident(event.id) is None
+
+
+def test_alarm_phone_operational_origin_still_opens_humanitarian_incident():
+    event = _distress_event("origin-still-opens", "MAYDAY urgent rescue needed")
+    event.metadata["transport"] = "email"
+    _on_intel_event(event)
+    assert get_incident(event.id) is not None

@@ -358,6 +358,10 @@ def _on_intel_event(event: IntelEvent) -> None:
 
         if classify_service(event).service != "humanitarian":
             return
+        from core.intel.source_identity import may_open_humanitarian_incident
+
+        if not may_open_humanitarian_incident(event):
+            return
         same_source = [
             other for other in intel_store.events(limit=200)
             if other.source == event.source and other.id != event.id
