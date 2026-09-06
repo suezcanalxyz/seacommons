@@ -173,9 +173,10 @@ Humanitarian verification asks: what happened to this case? Maritime Intelligenc
 
 ## 13. Future sensor adapters
 
-New integrations from `implementation.txt` enter at the evidence boundary rather than creating new truth paths.
+New integrations from `implementation.txt` enter at the evidence boundary rather than creating new truth paths. The first sensor packet is explicitly **software-only, free-to-use, and open-first**: no new hardware dependency and no paid AIS provider may be required for core functionality.
 
-- AIS-Catcher: alternate AIS transport/resilience. It can improve availability and provenance but does not automatically become independent corroboration of AISStream when both observe the same transmission lineage.
+- Free/Open AIS Fusion v1: keep AISStream as an existing live source and add Open Waters/aiscast as the first new software-only provider. Both normalize through one provider adapter contract, preserve provider/station provenance where exposed, and feed one reconciled track layer. Provider multiplicity never counts automatically as independent physical evidence.
+- AIS-Catcher: retained as a future decoder/community compatibility target only; it is not required by v1 because the user explicitly requires no hardware.
 - DSC: structured maritime distress/urgency/safety communication evidence; may support maritime-emergency candidate creation and humanitarian corroboration when association exists.
 - NAVTEX: contextual navigation/SAR-area evidence; not a Humanitarian incident origin by itself.
 - EPIRB: high-specificity emergency evidence; may create a maritime-emergency candidate but not automatically classify it Humanitarian.
@@ -222,10 +223,18 @@ This architecture must be delivered as independent packets, each releasable and 
 5. `Review integration`
    - analyst approve/reject/needs-more-evidence decisions bind exact evidence snapshots.
 
-6. `Sensor expansion`
-   - DSC, NAVTEX, EPIRB, SDR/AIS-Catcher adapters through the same evidence boundary.
+6. `Free/Open AIS Fusion v1`
+   - generic AIS provider adapter contract;
+   - AISStream wrapped without changing its current feed behaviour;
+   - Open Waters/aiscast adapter;
+   - provider/station provenance, health, reconciliation, and coverage-aware gap reasoning;
+   - feed the reconciled track into Behavioural Baseline and SAR Mission Assessment.
 
-7. `Rich evidence artifacts`
+7. `Remote radio expansion`
+   - software-only DSC/NAVTEX/remote-SDR adapters through the same evidence boundary;
+   - no continuous VHF recording requirement in the first radio packet.
+
+8. `Rich evidence artifacts`
    - image/audio/video/document preservation and claim extraction without building a streaming platform.
 
 ## 17. TDD contracts
