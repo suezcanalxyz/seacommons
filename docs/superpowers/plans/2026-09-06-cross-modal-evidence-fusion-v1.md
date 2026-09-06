@@ -46,6 +46,13 @@
 - AIS/audio-derived evidence may support context but cannot alone confirm rescue.
 - Commit `feat: add cross-modal humanitarian resolution context`.
 
+### Task 2 execution record — 2026-09-06
+
+- Cross-modal Humanitarian context is attached only to the persisted `resolution` assessment JSON; the existing outcome/confidence/review semantics are untouched.
+- Context exposes evidence IDs/classes, direct modalities, independent-group count, contradiction topics, missing classes and confidence ceiling only; source-lineage/receiver/MMSI remain absent.
+- AIS and derived audio/transcript context cannot confirm rescue by themselves.
+- Focused Humanitarian bridge/resolution regressions: `40 passed, 1 warning`; Ruff and diff check green.
+
 ### Task 3: Maritime episode context bridge
 
 - Attach DSC/NAVTEX/radio/audio evidence to MaritimeEpisode/hypothesis context with replayable provenance.
