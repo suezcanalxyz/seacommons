@@ -41,6 +41,9 @@ class StructuredRadioRuntime:
             )
             with session_scope() as db:
                 persisted = persist_dsc_observation(db, observation)
+            from core.radio.evidence_bridge import evidence_reference_for_dsc
+
+            evidence_reference = evidence_reference_for_dsc(persisted)
             projected = ingest_dsc_safety_candidate(
                 observation,
                 evidence_observation_id=persisted.observation_id,
@@ -64,6 +67,7 @@ class StructuredRadioRuntime:
             "accepted": True,
             "projected": projected,
             "observation_id": persisted.observation_id,
+            "evidence_reference": evidence_reference,
         }
         if projected:
             from core.radio.safety_projection import project_dsc_safety_candidate
@@ -104,6 +108,9 @@ class StructuredRadioRuntime:
             )
             with session_scope() as db:
                 persisted = persist_navtex_observation(db, observation)
+            from core.radio.evidence_bridge import evidence_reference_for_navtex
+
+            evidence_reference = evidence_reference_for_navtex(persisted)
         except (TypeError, ValueError, KeyError):
             self._failed += 1
             record_structured_radio_event(kind="navtex", outcome="invalid")
@@ -119,6 +126,7 @@ class StructuredRadioRuntime:
             "accepted": True,
             "projected": False,
             "observation_id": persisted.observation_id,
+            "evidence_reference": evidence_reference,
         }
 
 

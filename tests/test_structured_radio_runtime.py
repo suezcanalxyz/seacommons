@@ -40,6 +40,11 @@ def test_enabled_runtime_persists_dsc_and_projects_only_distress():
     assert result["accepted"] is True
     assert result["projected"] is True
     assert result["observation_id"].startswith("obs:")
+    ref = result["evidence_reference"]
+    assert ref.evidence_id == result["observation_id"]
+    assert ref.evidence_class == "dsc_message"
+    assert ref.modality == "radio"
+    assert ref.source_lineage == "radio_receiver:med_rx_01"
     assert runtime.status()["accepted"] == 1
 
     with session_scope() as db:
@@ -60,6 +65,10 @@ def test_enabled_runtime_navtex_is_context_only():
     assert result["accepted"] is True
     assert result["projected"] is False
     assert "candidate_id" not in result
+    ref = result["evidence_reference"]
+    assert ref.evidence_class == "navtex_message"
+    assert ref.modality == "radio"
+    assert ref.source_lineage == "radio_receiver:med_rx_01"
 
 
 def test_structured_radio_metrics_are_bounded_against_hostile_labels():
