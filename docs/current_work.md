@@ -1,87 +1,80 @@
-# Current work — post-IncidentWatch production baseline
+# Current work — Observation -> Episode -> Hypothesis v1
 
-> **Runtime code baseline:** PR #151 merge `b44b5f2b72d64c84ffe99b52a959b597d47d71ea`
-> **Production schema:** `0019_incident_watch`
-> **Status:** OSINT Evidence Pipeline v1 is merged, deployed and production-verified; Vessel Context + Behavioural Baseline v1 is the current packet.
+> **Runtime code baseline:** PR #152 merge `fbcdb55471af4b19f45dfc927146e7ea26dc08b2`
+> **Production schema:** `0020_vessel_baselines`
+> **Status:** OSINT Evidence Pipeline v1 and Vessel Context + Behavioural Baseline v1 are production-verified. Observation -> Episode -> Hypothesis v1 is the current release packet.
 
 ## Production state
 
-IncidentWatch v0 is now part of the canonical Humanitarian follow-up path:
+The production reasoning chain currently includes durable SourceObservation/HumanitarianIncident, OSINT evidence lineage, and vessel-specific behavioural baselines. Production PostgreSQL is at `0020_vessel_baselines`; five bounded vessel baselines were audited after rollout. API, worker and Live edge publisher are active; `/ready`, Live and Play returned 200 after the baseline rollout.
 
-```text
-HumanitarianIncident
-  -> IncidentWatch
-  -> eligible bounded existing adapter
-  -> SourceObservation
-  -> existing correlation / incident / assessment pipeline
-```
+Two unrelated operational warnings remain outside this packet: intermittent AISStream ping-timeout reconnects and the GFW `/v3/events` endpoint returning 404. They must not be reclassified as evidence failures.
 
-The production rollout included:
+## Public vessel contract
 
-- PostgreSQL backup before migration;
-- Alembic `0018 -> 0019_incident_watch`;
-- coordinated restart of API, worker and Live edge publisher;
-- scheduler registration of `incident_watch(5m)`;
-- idempotent sync of all pre-existing canonical Humanitarian incidents into watch rows;
-- first real scheduler cycle with successful executions and no degraded/error state;
-- Live/Play public smoke after rollout.
-
-IncidentWatch remains bounded: the scheduler claims at most three due watches per five-minute run. Existing-case backfill therefore drains gradually instead of creating a source-query storm.
-
-## UI / vessel contract
-
-IncidentWatch did not modify frontend source files.
-
-The current public contract remains:
+The public UI contract remains unchanged:
 
 - moving and stationary vessels use the shared triangle marker;
 - NGO colour is the intentional vessel-marker exception;
-- Play reuses the same Live vessel marker asset;
-- Live and Play production bundles both load the same `vesselMarker` JS/CSS asset.
+- Play reuses the Live vessel marker asset;
+- Humanitarian public output does not expose MMSI/IMO/callsign/tracker dossier data.
 
-## Closed operational issue
+## Current packet — Observation -> Episode -> Hypothesis v1
 
-GitHub issue #41, the historical `demo-api` 502 on Play, was re-tested after rollout. The Play archive API returned HTTP 200 while still reporting `x-seacommons-proxy: demo-api.seacommons.org`, proving the original vhost path itself is healthy. The issue is closed.
-
-## Current packet — Vessel Context + Behavioural Baseline v1
-
-OSINT Evidence Pipeline v1 is production-verified. The next packet adds explainable vessel memory without creating a vessel reputation score or a second identity truth store.
+This packet corrects the remaining legacy assumption that detector count can stand in for evidence independence.
 
 ```text
-VesselSubject + registry + VesselTrackDB
-  -> deterministic VesselContext
-  -> versioned BehaviouralBaseline
-  -> explainable BehaviourAssessment
-  -> advisory detector metadata only
+SourceObservation / IntelEvent
+  -> persisted MaritimeEpisode
+  -> evidence lineage + BehaviourAssessment + alternative explanations
+  -> hypothesis eligibility gate
+  -> InvestigationHypothesis
+  -> Review
+  -> publication gate
 ```
 
 Core rules:
 
-- `VesselContext` is a projection of existing canonical inputs, not new truth;
-- persisted baselines are versioned analytical products with deterministic evidence fingerprints;
-- v1 dimensions are route corridor, speed envelope, recurrent ports/port pairs, and AIS silence distribution;
-- assessment states are exactly `expected`, `unusual`, `insufficient_history`;
-- unusual behaviour never by itself alleges intent, opens a Case, or bypasses evidence-lineage/publication gates;
-- baseline/operator behaviour metadata is internal and is not added to public Live vessel context;
-- YOUR WISDOM is a synthetic benign-service regression plus a same-identity contrastive deviation; production code contains no name/MMSI/IMO/ferry exception.
+- observations remain evidence authorities; an Episode is a deterministic, replayable derived object;
+- migration `0021_maritime_episodes` creates `MaritimeEpisodeDB` and adds nullable `InvestigationHypothesisDB.episode_id`;
+- legacy hypotheses remain untouched with `episode_id=NULL` and are never silently relinked;
+- every new v1 hypothesis uses `hyp:v1:*` identity and a non-null episode ID;
+- unknown maritime anomalies map to `unclassified_episode`; Safety is never a fallback;
+- source independence comes only from the existing evidence-lineage classifier;
+- behaviour context and alternative explanations remain analytical context, never an extra source;
+- low-specificity gap/rendezvous/infrastructure patterns require genuine independent corroboration before a v1 hypothesis is created;
+- high-specificity deterministic spoofing may create a candidate from one AIS lineage but cannot advance on detector count;
+- Episode persistence occurs before interpretation, so benign/ineligible episodes remain auditable;
+- bounded Prometheus counters report episode family/verification status and v1 hypothesis eligibility outcome without vessel identifiers.
 
-Migration `0020_vessel_baselines` creates append/version-friendly analytical persistence only. It performs no fleet-wide backfill. Initial production baseline builds are bounded and explicitly audited.
+## Regression contract
+
+YOUR WISDOM remains a regression fixture, never a production whitelist. Normal recurring-service behaviour plus AIS gap/infrastructure indicators from one AIS lineage must remain `single_source_multi_indicator`, persist as internal analytical evidence, and produce zero new hypothesis, zero Case and zero public Intelligence allegation. A contrastive behavioural deviation remains `unusual` context but still obeys the evidence gate.
+
+## Release verification completed on the branch
+
+Fresh local verification has covered:
+
+- full backend suite;
+- focused Episode/hypothesis/replay/lineage regressions;
+- canonical Ruff and mypy gates;
+- Alembic fresh-head plus `0020 -> 0021 -> 0020 -> 0021` round-trip;
+- Humanitarian stabilization/privacy contract;
+- web lint/typecheck/tests/build;
+- edge tests and Wrangler dry-run;
+- Python/web/edge dependency audits;
+- vessel-marker regression and shared built assets;
+- hard-code scan for YOUR WISDOM/MMSI/IMO/Malta/Gozo production exceptions.
+
+## Remaining gate before production
+
+1. commit the final observability/docs alignment and rerun exact-head verification;
+2. push one PR;
+3. merge only after Full CI + CodeQL are green on the exact PR head;
+4. production rollout is separate: backup PostgreSQL, migrate `0020 -> 0021`, supervised restart only with explicit operator approval, then `/ready`, Live/Play, Episode/Hypothesis counters and bounded production audit.
 
 ## Order after this packet
 
-1. production-verify Vessel Context + Behavioural Baseline v1;
-2. formalise Observation -> Episode -> Hypothesis;
-3. implement the already-designed Review v0 on top of the corrected evidence/behaviour model;
-4. advance to PostGIS / Section 10 only after those foundations are verified.
-
-## Current engineering gate
-
-Before merge/deploy:
-
-1. keep all new behavior TDD-backed;
-2. run full backend plus exact CI Ruff/mypy gates;
-3. run Live/Play/map/API/simulation web regressions, lint and build;
-4. verify Humanitarian privacy and SAR triangulation independence;
-5. verify vessel-marker tests and assets are unchanged;
-6. inspect the exact diff and run verification-before-completion;
-7. merge only with green Full CI + CodeQL and exact-head verification.
+1. Review v0 on top of persisted Episodes and v1 hypotheses;
+2. PostGIS / Section 10 after Review is verified;
+3. expand real sensor/collector coverage only through explicit source contracts and provenance/independence rules.
