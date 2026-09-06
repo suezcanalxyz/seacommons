@@ -1926,6 +1926,29 @@ def test_internal_single_lineage_correlated_alert_is_not_public_in_security_mode
     assert feature is None
 
 
+def test_security_correlated_alert_without_explicit_publication_is_not_public() -> None:
+    for verification in ("single_source_observed", "multi_source_corroborated"):
+        event = IntelEvent(
+            id=f"legacy-security-{verification}",
+            type="correlated_alert",
+            severity="high",
+            lat=35.9,
+            lon=14.5,
+            title="Historical security fusion alert",
+            source="SeaCommons fusion",
+            linked_mmsi="229113000",
+            metadata={
+                "maritime_domain": "sanctions",
+                "alert_type": "sdn_match",
+                "verification_status": verification,
+            },
+        )
+
+        assert _public_intel_feature(
+            event, allowed_domains=frozenset({"sanctions", "grey_zone"})
+        ) is None
+
+
 def test_public_correlated_alert_exposes_evidence_lineage_summary() -> None:
     event = IntelEvent(
         id="public-corroborated-lineage",

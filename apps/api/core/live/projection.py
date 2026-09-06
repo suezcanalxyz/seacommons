@@ -199,6 +199,17 @@ def _public_intel_feature(
     domains = allowed_domains if allowed_domains is not None else public_maritime_domains()
     resolved_domain = str(event.maritime_domain() or "sar").strip().lower()
     domain_public = resolved_domain in domains
+    # Security correlated alerts are derived interpretations, not raw facts.
+    # Historical records may pre-date an explicit publication_status; fail
+    # closed so domain eligibility / source policy / corroboration cannot act
+    # as an implicit publication decision. Reviewed/approved records must carry
+    # publication_status=published explicitly.
+    if (
+        event.type == "correlated_alert"
+        and resolved_domain in {"grey_zone", "sanctions"}
+        and publication != PublicationStatus.PUBLISHED.value
+    ):
+        return None
     is_derived = event.type in _SEACOMMONS_DERIVED_TYPES
     linked_mmsi = str(event.linked_mmsi or event.metadata.get("mmsi") or "").strip()
     if (
