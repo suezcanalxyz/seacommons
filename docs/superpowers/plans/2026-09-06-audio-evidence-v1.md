@@ -49,6 +49,13 @@
 - Require provider/source terms status `allowed`, explicit max clip duration, retention policy and configured storage destination.
 - No continuous rolling capture.
 
+### Task 2 execution record — 2026-09-06
+
+- Added pure `AudioAcquisitionPolicy`; no recorder/transport/network ownership exists in this task.
+- Defaults: disabled, max clip 60s, retention `7d`, storage prefix empty. Enabling only the flag cannot authorize capture.
+- Capture authorization additionally requires configured storage, allowed retention, exact `terms_status=allowed`, non-empty source terms, and positive duration within policy cap; absolute maximum is 300s.
+- Focused policy/config/artifact/store gate: `35 passed`; Ruff and `git diff --check` green.
+
 ### Task 3: Derived transcript contract
 
 - Transcript is derived from artifact ID/hash, versioned by engine/model, replayable, and non-canonical.

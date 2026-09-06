@@ -1,7 +1,7 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Audio Evidence v1 — Task 2 bounded acquisition policy
+> **Current packet:** Audio Evidence v1 — Task 3 derived transcript contract
 > **Current packet plan:** `docs/superpowers/plans/2026-09-06-audio-evidence-v1.md`
 > **Production runtime baseline:** `0ae4df7cc20c8209acc267eb595129c2dc3961bd`
 > **Production schema:** `0021_maritime_episodes`
