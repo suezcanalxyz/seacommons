@@ -58,6 +58,13 @@
 - Attach DSC/NAVTEX/radio/audio evidence to MaritimeEpisode/hypothesis context with replayable provenance.
 - Commit `feat: add cross-modal maritime episode context`.
 
+### Task 3 execution record — 2026-09-06
+
+- Cross-modal Maritime context persists only under `MaritimeEpisode.behaviour_context.cross_modal_context`.
+- Episode identity/status/fingerprint/native independence groups remain unchanged; linked hypothesis state/evidence_links/review flags are not mutated.
+- Context is bounded and omits source-lineage/receiver identifiers.
+- Focused episode/hypothesis gate: `24 passed`; Ruff and `git diff --check` green.
+
 ### Task 4: Observability, privacy and release gates
 
 - Bounded metrics, exact diff review, focused/full/static/migrations/audit.

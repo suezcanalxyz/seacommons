@@ -15,7 +15,7 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-Cross-modal Evidence Fusion v1, Task 3 — Maritime episode context bridge.
+Cross-modal Evidence Fusion v1, Task 4 — observability, privacy and release gates.
 
 Detailed plan: `docs/superpowers/plans/2026-09-06-cross-modal-evidence-fusion-v1.md`.
 
