@@ -1,8 +1,8 @@
 # Current work — post-IncidentWatch production baseline
 
-> **Runtime code baseline:** PR #148 merge `6e0d1057d9e7d1149a30f3d902e980e248c98d9d` (subsequent docs-only commits may advance `main`)
+> **Runtime code baseline:** PR #151 merge `b44b5f2b72d64c84ffe99b52a959b597d47d71ea`
 > **Production schema:** `0019_incident_watch`
-> **Status:** IncidentWatch v0 merged, migrated, deployed and smoke-verified on 2026-09-05.
+> **Status:** OSINT Evidence Pipeline v1 is merged, deployed and production-verified; Vessel Context + Behavioural Baseline v1 is the current packet.
 
 ## Production state
 
@@ -43,39 +43,36 @@ The current public contract remains:
 
 GitHub issue #41, the historical `demo-api` 502 on Play, was re-tested after rollout. The Play archive API returned HTTP 200 while still reporting `x-seacommons-proxy: demo-api.seacommons.org`, proving the original vhost path itself is healthy. The issue is closed.
 
-## Current packet — OSINT Evidence Pipeline v1
+## Current packet — Vessel Context + Behavioural Baseline v1
 
-A production false-positive review exposed a fusion-level evidence error: multiple SeaCommons detectors derived from one AIS lineage could be presented as `multi_source_corroborated`, and same-lineage AIS indicators could auto-open a maritime intelligence case.
-
-The current packet corrects that before Review v0:
+OSINT Evidence Pipeline v1 is production-verified. The next packet adds explainable vessel memory without creating a vessel reputation score or a second identity truth store.
 
 ```text
-raw/canonical observation
-  -> evidence lineage
-  -> one or more indicators
-  -> verification from independent lineage count
-  -> internal episode OR independently corroborated fused alert
+VesselSubject + registry + VesselTrackDB
+  -> deterministic VesselContext
+  -> versioned BehaviouralBaseline
+  -> explainable BehaviourAssessment
+  -> advisory detector metadata only
 ```
 
 Core rules:
 
-- detector count is not source count;
-- AISStream/MDA/AIS-derived transforms share one AIS sensor lineage for corroboration;
-- X text + OCR from the same platform/publication are not independent corroboration;
-- unknown lineage fails closed for corroboration;
-- same-lineage multi-indicator grey-zone/sanctions episodes remain internal and do not auto-open intelligence cases;
-- high-specificity identity evidence such as a real sanctions/list or duplicate-identity signal retains its dedicated case path;
-- public fused alerts expose evidence count, independent-source count and lineage explanation.
+- `VesselContext` is a projection of existing canonical inputs, not new truth;
+- persisted baselines are versioned analytical products with deterministic evidence fingerprints;
+- v1 dimensions are route corridor, speed envelope, recurrent ports/port pairs, and AIS silence distribution;
+- assessment states are exactly `expected`, `unusual`, `insufficient_history`;
+- unusual behaviour never by itself alleges intent, opens a Case, or bypasses evidence-lineage/publication gates;
+- baseline/operator behaviour metadata is internal and is not added to public Live vessel context;
+- YOUR WISDOM is a synthetic benign-service regression plus a same-identity contrastive deviation; production code contains no name/MMSI/IMO/ferry exception.
 
-YOUR WISDOM (MMSI 229113000 / IMO 9848388) is retained as a synthetic benign-service regression fixture for the Malta/Gozo ferry scenario. The production code contains no ferry/name whitelist.
+Migration `0020_vessel_behavioural_baselines` creates append/version-friendly analytical persistence only. It performs no fleet-wide backfill. Initial production baseline builds are bounded and explicitly audited.
 
 ## Order after this packet
 
-1. production-verify OSINT Evidence Pipeline v1;
-2. build Vessel Context + behavioural baseline;
-3. formalise Observation -> Episode -> Hypothesis;
-4. implement the already-designed Review v0 on top of the corrected evidence model;
-5. advance to PostGIS / Section 10 only after those foundations are verified.
+1. production-verify Vessel Context + Behavioural Baseline v1;
+2. formalise Observation -> Episode -> Hypothesis;
+3. implement the already-designed Review v0 on top of the corrected evidence/behaviour model;
+4. advance to PostGIS / Section 10 only after those foundations are verified.
 
 ## Current engineering gate
 

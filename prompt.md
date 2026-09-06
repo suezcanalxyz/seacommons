@@ -2,9 +2,9 @@
 
 Work on `suezcanalxyz/seacommons` from the latest `main` only.
 
-## Verified production baseline — 2026-09-05
+## Verified production baseline — 2026-09-06
 
-- Current runtime-code baseline: PR #148 merge `6e0d1057d9e7d1149a30f3d902e980e248c98d9d`; later docs-only commits may advance `main` without changing deployed API semantics.
+- Current runtime-code baseline: PR #151 merge `b44b5f2b72d64c84ffe99b52a959b597d47d71ea` (OSINT Evidence Pipeline v1).
 - IncidentWatch v0 is implemented, migrated and deployed; production Alembic head is `0019_incident_watch`.
 - Full CI #421 and CodeQL #380 passed on the implementation head before merge.
 - Production Vercel deployment for the merge is `READY` on Live and Play.
@@ -35,30 +35,30 @@ Do not reimplement these because historical sections in `docs/fixes.md` describe
 
 ## Current task
 
-The immediate platform packet is **OSINT Evidence Pipeline v1**. It takes precedence over Section 9 Review v0 because review must sit on top of analytically correct evidence semantics.
+The immediate platform packet is **Vessel Context + Behavioural Baseline v1**. OSINT Evidence Pipeline v1 is already production-verified and must remain authoritative for source independence and publication.
 
 Current invariant:
 
 ```text
-observation != corroboration
-multiple detectors != multiple independent sources
-single-source multi-indicator evidence may remain an internal episode
-but may not claim multi-source corroboration or auto-open an intelligence case
+vessel identity/context != behavioural baseline
+unusual != suspicious
+baseline output != allegation
+behaviour context may inform an observation but cannot open a Case by itself
 ```
 
 Required v1 behavior:
 
-- derive source/sensor lineage from canonical provenance and `independence_group`;
-- treat AIS-derived detectors sharing one sensor lineage as one source for corroboration;
-- treat X post text and OCR from the same platform/publication as one source lineage;
-- emit `single_source_observed`, `single_source_multi_indicator`, or `multi_source_corroborated` from actual lineage;
-- keep same-lineage grey-zone/sanctions fused episodes internal unless a high-specificity evidence producer independently justifies a case;
-- expose evidence count, independent-source count and lineage explanation on genuinely publishable fused alerts;
-- preserve YOUR WISDOM (Malta/Gozo ferry) as a benign-service regression fixture, never as a hard-coded suppress rule.
+- build deterministic `VesselContext` from existing VesselSubject/registry/track evidence;
+- persist versioned behavioural baselines with deterministic evidence fingerprints under migration `0020_vessel_behavioural_baselines`;
+- model only route corridor, speed envelope, recurrent ports/port pairs and AIS silence distribution;
+- emit only `expected`, `unusual`, or `insufficient_history` plus bounded reason codes and measurements;
+- attach compact behaviour context to selected AIS-derived observations without altering fusion case/publication authority;
+- keep baseline and behavioural reason codes operator/internal; public Live vessel context remains on the existing safe projection;
+- preserve YOUR WISDOM as a benign recurring-service regression and a same-identity contrastive deviation, never as a hard-coded suppress rule.
 
-## Order after OSINT Evidence Pipeline v1
+## Order after Vessel Context + Behavioural Baseline v1
 
-After this packet is production-verified, continue with **Vessel Context + behavioural baseline**, then **Observation -> Episode -> Hypothesis**. Revisit **Review v0** only on top of that corrected evidence model. Section 10 / PostGIS remains after the evidence/review foundation, not before it.
+After this packet is production-verified, continue with **Observation -> Episode -> Hypothesis**, then **Review v0**. Section 10 / PostGIS remains after the evidence/review foundation.
 
 ## Non-negotiable constraints
 
