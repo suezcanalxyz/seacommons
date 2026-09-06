@@ -122,7 +122,17 @@ class StructuredRadioRuntime:
         }
 
 
+_runtime: StructuredRadioRuntime | None = None
+
+
 def runtime_from_config() -> StructuredRadioRuntime:
     from core.config import config
 
     return StructuredRadioRuntime(enabled=config.STRUCTURED_RADIO_ENABLED)
+
+
+def get_structured_radio_runtime() -> StructuredRadioRuntime:
+    global _runtime
+    if _runtime is None:
+        _runtime = runtime_from_config()
+    return _runtime

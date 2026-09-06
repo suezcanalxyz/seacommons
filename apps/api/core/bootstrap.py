@@ -109,7 +109,13 @@ def start_background_sensors() -> None:
 
 
 def _start_remote_radio() -> None:
-    """Start configured remote radio receivers; default config is disabled."""
+    """Register radio as one acquisition adapter and start it when enabled."""
+    try:
+        from core.radio.bridge import register_radio_acquisition_status
+
+        register_radio_acquisition_status()
+    except Exception as exc:
+        logger.warning("Radio acquisition status registration failed: %s", type(exc).__name__)
     if not config.REMOTE_RADIO_ENABLED:
         return
     try:

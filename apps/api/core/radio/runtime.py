@@ -12,16 +12,9 @@ AdapterFactory = Callable[[ReceiverDescriptor, Callable[[RadioObservation], None
 
 
 def _default_observation_handler(observation: RadioObservation) -> None:
-    from core.db.session import session_scope
-    from core.observability import record_remote_radio_event
-    from core.radio.source_observation import persist_radio_observation
+    from core.radio.bridge import handle_radio_observation
 
-    try:
-        with session_scope() as db:
-            persist_radio_observation(db, observation)
-        record_remote_radio_event(provider=observation.provider, state="connected", outcome="observation")
-    except Exception:
-        record_remote_radio_event(provider=observation.provider, state="connected", outcome="persist_failed")
+    handle_radio_observation(observation)
 
 
 def _default_adapter_factory(
@@ -53,7 +46,7 @@ class RemoteRadioRuntime:
         self._registry = ReceiverRegistry(descriptors, max_receivers=max_receivers)
         self._adapter_factory = adapter_factory
         self._observation_handler = observation_handler
-        self._adapters: list[RemoteReceiverAdapter] = []
+        self._adapters: list[tuple[ReceiverDescriptor, RemoteReceiverAdapter]] = []
         self._failed_by_provider: dict[str, int] = defaultdict(int)
         self._lock = threading.Lock()
 
@@ -75,36 +68,61 @@ class RemoteRadioRuntime:
                 record_remote_radio_event(provider=provider, state="disconnected", outcome="start_failed")
                 continue
             with self._lock:
-                self._adapters.append(adapter)
+                self._adapters.append((descriptor, adapter))
             record_remote_radio_event(provider=provider, state="connected", outcome="started")
 
     def stop(self) -> None:
         with self._lock:
             adapters = tuple(self._adapters)
             self._adapters.clear()
-        for adapter in adapters:
+        for _descriptor, adapter in adapters:
             try:
                 adapter.stop()
             except Exception:
                 pass
 
-    def status(self) -> dict[str, object]:
+    def status(self, *, include_receivers: bool = False) -> dict[str, object]:
         with self._lock:
             adapters = tuple(self._adapters)
         providers: dict[str, dict[str, int]] = defaultdict(
             lambda: {"connected": 0, "disconnected": 0, "failed": 0}
         )
+        receiver_rows: list[dict[str, object]] = []
         for provider, failed in self._failed_by_provider.items():
             providers[provider]["failed"] += int(failed)
-        for adapter in adapters:
+        health_by_receiver: dict[str, object] = {}
+        for descriptor, adapter in adapters:
             try:
                 health = adapter.health()
+                health_by_receiver[descriptor.receiver_id] = health
                 provider = health.provider if health.provider in {"kiwisdr", "openwebrx"} else "other"
                 state = "connected" if health.connected else "disconnected"
                 providers[provider][state] += 1
             except Exception:
                 providers["other"]["failed"] += 1
-        return {
+        if include_receivers:
+            for descriptor in self._registry.runnable() if self.enabled else self._registry.all():
+                health = health_by_receiver.get(descriptor.receiver_id)
+                connected = bool(getattr(health, "connected", False))
+                last_message_at = getattr(health, "last_message_at", None)
+                receiver_rows.append(
+                    {
+                        "receiver_id": descriptor.receiver_id,
+                        "station_label": descriptor.public_label,
+                        "provider": descriptor.provider,
+                        "state": "connected" if connected else "disconnected",
+                        "channel_kind": descriptor.channel_kind,
+                        "frequency_hz": descriptor.frequency_hz,
+                        "mode": descriptor.mode,
+                        "last_observation_at": (
+                            last_message_at.isoformat() if last_message_at is not None else None
+                        ),
+                        "observations_received": int(
+                            getattr(health, "observations_received", 0) or 0
+                        ),
+                    }
+                )
+        result: dict[str, object] = {
             "enabled": self.enabled,
             "configured": len(self._registry.all()),
             "runnable": len(self._registry.runnable()) if self.enabled else 0,
@@ -112,6 +130,9 @@ class RemoteRadioRuntime:
             "failed": sum(self._failed_by_provider.values()),
             "providers": {key: dict(value) for key, value in sorted(providers.items())},
         }
+        if include_receivers:
+            result["receivers"] = receiver_rows
+        return result
 
 
 _runtime: RemoteRadioRuntime | None = None
@@ -135,12 +156,15 @@ def start_remote_radio_from_config() -> RemoteRadioRuntime:
         max_receivers=config.REMOTE_RADIO_MAX_RECEIVERS,
     )
     _runtime.start()
+    from core.radio.bridge import register_radio_acquisition_status
+
+    register_radio_acquisition_status()
     return _runtime
 
 
-def get_remote_radio_status() -> dict[str, object]:
+def get_remote_radio_status(*, include_receivers: bool = False) -> dict[str, object]:
     if _runtime is not None:
-        return _runtime.status()
+        return _runtime.status(include_receivers=include_receivers)
     from core.config import config
 
     return {
@@ -150,4 +174,5 @@ def get_remote_radio_status() -> dict[str, object]:
         "started": 0,
         "failed": 0,
         "providers": {},
+        **({"receivers": []} if include_receivers else {}),
     }

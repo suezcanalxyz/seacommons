@@ -215,3 +215,37 @@ def test_receiver_descriptor_public_label_is_bounded():
     )
     assert descriptor.public_label == descriptor.public_label.strip()
     assert len(descriptor.public_label) <= 96
+
+
+def test_detailed_runtime_status_exposes_only_public_safe_receiver_channel_metadata():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    descriptor = ReceiverDescriptor(
+        receiver_id="med_dsc", provider="kiwisdr", frontend_url="https://secret.example.org/rx",
+        physical_lineage="med_physical", enabled=True, terms_status="allowed",
+        source_terms="private terms text",
+        capabilities=(ReceiverCapability(2_000_000, 3_000_000, ("usb",)),),
+        public_label="Mediterranean DSC", channel_kind="dsc", frequency_hz=2_187_500, mode="usb",
+    )
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=(descriptor,), max_receivers=8,
+        adapter_factory=lambda d, callback: FakeAdapter(d),
+    )
+    runtime.start()
+    status = runtime.status(include_receivers=True)
+
+    assert status["receivers"] == [{
+        "receiver_id": "med_dsc",
+        "station_label": "Mediterranean DSC",
+        "provider": "kiwisdr",
+        "state": "connected",
+        "channel_kind": "dsc",
+        "frequency_hz": 2_187_500,
+        "mode": "usb",
+        "last_observation_at": None,
+        "observations_received": 0,
+    }]
+    serialized = str(status)
+    assert "secret.example.org" not in serialized
+    assert "private terms text" not in serialized
+    assert "physical_lineage" not in serialized
