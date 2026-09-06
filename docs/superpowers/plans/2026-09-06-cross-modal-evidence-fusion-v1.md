@@ -20,6 +20,13 @@
 - RED tests for deterministic identity, bounded vocabularies, duplicate-lineage collapse, AIS-provider same-modality handling, and derived evidence not increasing independence.
 - Commit `feat: add cross-modal evidence packet contracts`.
 
+### Task 0 execution record — 2026-09-06
+
+- `EvidenceReference` and `CrossModalEvidencePacket` are frozen, deterministic and bounded.
+- Source-lineage is authoritative for independence except AIS, which collapses to `modality:ais`; derived evidence contributes no independence key.
+- Duplicate evidence IDs, required classes and contradiction labels deduplicate deterministically; missing evidence classes and confidence ceiling are explicit.
+- Focused cross-modal/lineage/AIS/transcript gate: `33 passed`; Ruff and `git diff --check` green.
+
 ### Task 1: Independence and contradiction engine
 
 - Compute independent lineage/modality groups without provider-count inflation.
