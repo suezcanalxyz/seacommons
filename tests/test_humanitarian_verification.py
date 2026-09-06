@@ -126,3 +126,19 @@ def test_operator_summary_excludes_internal_vessel_identifiers():
     assert "mmsi" not in rendered
     assert "imo" not in rendered
     assert "callsign" not in rendered
+
+
+def test_audit_verification_route_is_operator_safe():
+    from core.api.main import app
+    from fastapi.testclient import TestClient
+
+    origin = _seed_origin("origin-audit-safe")
+    _on_intel_event(_verification_event("verify-audit-safe"))
+    response = TestClient(app).get(f"/api/v1/audit/humanitarian-verification/{origin.id}")
+    assert response.status_code == 200
+    rendered = response.text.lower()
+    assert "mmsi" not in rendered
+    assert "imo" not in rendered
+    assert "callsign" not in rendered
+    assert "tracker" not in rendered
+    assert "rescue_confirmed" in rendered

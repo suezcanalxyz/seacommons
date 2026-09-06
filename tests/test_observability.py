@@ -147,3 +147,27 @@ def test_ais_fusion_metric_normalizes_unbounded_upstream_to_other() -> None:
     )
     metrics = generate_latest().decode()
     assert 'upstream="other"' in metrics
+
+
+def test_humanitarian_verification_metrics_normalize_sensitive_unbounded_labels() -> None:
+    from core import observability
+
+    secret = "258479000-private@example.com-message-123"
+    observability.record_humanitarian_verification_event(
+        stage=secret, source_role=secret, outcome=secret,
+    )
+    metrics = generate_latest().decode()
+    assert secret not in metrics
+    assert 'seacommons_humanitarian_verification_events_total{outcome="other",source_role="unknown",stage="other"}' in metrics
+
+
+def test_humanitarian_verification_metrics_accept_bounded_resolution_outcome() -> None:
+    from core import observability
+
+    observability.record_humanitarian_verification_event(
+        stage="resolution", source_role="verification", outcome="rescue_confirmed",
+    )
+    metrics = generate_latest().decode()
+    assert 'stage="resolution"' in metrics
+    assert 'source_role="verification"' in metrics
+    assert 'outcome="rescue_confirmed"' in metrics

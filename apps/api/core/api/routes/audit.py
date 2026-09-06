@@ -176,3 +176,13 @@ async def incident_watches(limit: int = Query(200, ge=1, le=1000)):
     from core.intel.incident_watch import list_watch_summaries
 
     return {"watches": list_watch_summaries(limit=limit)}
+
+@router.get("/humanitarian-verification/{incident_id}")
+async def humanitarian_verification_summary(incident_id: str):
+    """Operator-safe derived verification summary; no raw vessel/private identifiers."""
+    from core.intel.humanitarian_incident import get_incident
+    from core.intel.humanitarian_verification import get_verification_summary
+
+    if get_incident(incident_id) is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return get_verification_summary(incident_id)

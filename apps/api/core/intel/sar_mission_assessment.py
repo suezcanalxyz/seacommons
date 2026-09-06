@@ -104,6 +104,13 @@ def persist_sar_mission_assessments(
                 row.method_version = METHOD_VERSION
                 row.confidence = _STATE_CONFIDENCE[state]
             persisted.append(_row_to_dict(row))
+            try:
+                from core.observability import record_humanitarian_verification_event
+                record_humanitarian_verification_event(
+                    stage="mission", source_role="verification", outcome=state,
+                )
+            except Exception:
+                pass
     return persisted
 
 

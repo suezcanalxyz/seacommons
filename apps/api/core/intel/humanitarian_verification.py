@@ -14,16 +14,41 @@ def process_verification_event(event) -> dict[str, Any]:
         return {"processed": False, "reason": "not_verification_source", "associated_incident_ids": []}
 
     extracted = extract_humanitarian_claims(event, policy)
+    try:
+        from core.observability import record_humanitarian_verification_event
+        record_humanitarian_verification_event(
+            stage="claim_extraction", source_role=policy.source_role,
+            outcome="observed" if extracted else "none",
+        )
+    except Exception:
+        pass
     decisions = associate_verification_event(event, extracted)
     associated = sorted({
         decision.candidate_incident_id
         for decision in decisions
         if decision.decision == DECISION_SAME_INCIDENT and decision.candidate_incident_id
     })
+    try:
+        from core.observability import record_humanitarian_verification_event
+        record_humanitarian_verification_event(
+            stage="association", source_role=policy.source_role,
+            outcome="associated" if associated else ("uncertain" if decisions else "none"),
+        )
+    except Exception:
+        pass
     resolution_assessments: list[dict[str, Any]] = []
     for incident_id in associated:
         persist_associated_claims(incident_id, event, extracted)
-        resolution_assessments.append(evaluate_resolution_assessment(incident_id))
+        resolution = evaluate_resolution_assessment(incident_id)
+        resolution_assessments.append(resolution)
+        try:
+            from core.observability import record_humanitarian_verification_event
+            record_humanitarian_verification_event(
+                stage="resolution", source_role=policy.source_role,
+                outcome=str((resolution.get("value") or {}).get("outcome") or "other"),
+            )
+        except Exception:
+            pass
         try:
             from core.intel.incident_watch import sync_watch_for_incident
             sync_watch_for_incident(incident_id)

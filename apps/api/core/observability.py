@@ -111,6 +111,33 @@ AIS_FUSION_OBSERVATIONS = Counter(
     "Normalized AIS observations by bounded provider/upstream/runtime outcome",
     ["provider", "upstream", "mode", "outcome"],
 )
+HUMANITARIAN_VERIFICATION_EVENTS = Counter(
+    "seacommons_humanitarian_verification_events_total",
+    "Humanitarian verification pipeline events by bounded semantic stage",
+    ["stage", "source_role", "outcome"],
+)
+
+_HV_STAGES = frozenset({"claim_extraction", "association", "mission", "resolution"})
+_HV_SOURCE_ROLES = frozenset({"operational_origin", "verification", "archive_reference", "unknown"})
+_HV_OUTCOMES = frozenset({
+    "observed", "none", "associated", "uncertain",
+    "unrelated", "possible_response", "approaching", "on_scene",
+    "probable_rescue_activity", "departing_scene", "post_rescue_transit",
+    "insufficient_evidence", "no_resolution_evidence", "response_detected",
+    "rescue_activity_probable", "rescue_confirmed", "disembarkation_confirmed",
+    "fatal_outcome_reported", "contradictory_evidence", "other",
+})
+
+
+def record_humanitarian_verification_event(*, stage: str, source_role: str, outcome: str) -> None:
+    """Bounded-cardinality verification metric; never labels raw identifiers or text."""
+    try:
+        stage_label = stage if stage in _HV_STAGES else "other"
+        role_label = source_role if source_role in _HV_SOURCE_ROLES else "unknown"
+        outcome_label = outcome if outcome in _HV_OUTCOMES else "other"
+        HUMANITARIAN_VERIFICATION_EVENTS.labels(stage_label, role_label, outcome_label).inc()
+    except Exception:  # pragma: no cover - metrics never block verification
+        pass
 
 _AIS_PROVIDERS = frozenset({"aisstream", "aiscast"})
 _AIS_UPSTREAMS = frozenset({
