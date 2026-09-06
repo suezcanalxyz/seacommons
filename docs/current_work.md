@@ -1,80 +1,51 @@
-# Current work — Observation -> Episode -> Hypothesis v1
+# Current work — Evidence Fusion Development Loop
 
-> **Runtime code baseline:** PR #152 merge `fbcdb55471af4b19f45dfc927146e7ea26dc08b2`
-> **Production schema:** `0020_vessel_baselines`
-> **Status:** OSINT Evidence Pipeline v1 and Vessel Context + Behavioural Baseline v1 are production-verified. Observation -> Episode -> Hypothesis v1 is the current release packet.
+> **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
+> **Current packet:** Free/Open AIS Fusion v1 — Task 8 release gates
+> **Current packet plan:** `docs/superpowers/plans/2026-09-06-free-open-ais-fusion-v1.md`
+> **Production runtime baseline:** `0ae4df7cc20c8209acc267eb595129c2dc3961bd`
+> **Production schema:** `0021_maritime_episodes`
 
-## Production state
+## Production baseline
 
-The production reasoning chain currently includes durable SourceObservation/HumanitarianIncident, OSINT evidence lineage, and vessel-specific behavioural baselines. Production PostgreSQL is at `0020_vessel_baselines`; five bounded vessel baselines were audited after rollout. API, worker and Live edge publisher are active; `/ready`, Live and Play returned 200 after the baseline rollout.
+OSINT Evidence Pipeline v1, Vessel Context + Behavioural Baseline v1, and Observation -> Episode -> Hypothesis v1 are merged, deployed and production-verified. Production keeps the Humanitarian privacy boundary, shared Live/Play vessel-marker contract, and evidence-lineage semantics where detector/provider multiplicity is not source independence.
 
-Two unrelated operational warnings remain outside this packet: intermittent AISStream ping-timeout reconnects and the GFW `/v3/events` endpoint returning 404. They must not be reclassified as evidence failures.
+The Evidence Fusion work is being developed in an isolated branch/worktree and is not yet production-active.
 
-## Public vessel contract
+## Current packet state
 
-The public UI contract remains unchanged:
+Free/Open AIS Fusion v1 Tasks 0-7 are implemented and committed. The packet adds:
 
-- moving and stationary vessels use the shared triangle marker;
-- NGO colour is the intentional vessel-marker exception;
-- Play reuses the Live vessel marker asset;
-- Humanitarian public output does not expose MMSI/IMO/callsign/tracker dossier data.
+- compatibility-preserving AIS event bus;
+- normalized `AISPositionObservation` + provider health contract;
+- AISStream adapter under the normalized contract;
+- Open Waters/aiscast software-only free adapter;
+- conservative multi-provider reconciliation with upstream/station/source-terms provenance;
+- coverage-aware gap reasoning extending the existing authoritative MDA classifier;
+- reconciled AIS context in SAR Mission Assessment;
+- runtime modes `legacy | shadow | fused`, default `legacy`, with instant rollback;
+- provider-health propagation, bounded metrics and existing coverage-change audit logging.
 
-## Current packet — Observation -> Episode -> Hypothesis v1
+Task 8 remains: docs alignment, exact-head backend/static/web/edge gates, review, and final branch readiness.
+## Loop order after AIS
 
-This packet corrects the remaining legacy assumption that detector count can stand in for evidence independence.
+1. Humanitarian Verification v1 — NGO/IOM source roles, claim extraction, incident association, ResolutionAssessment.
+2. Remote Maritime Radio v1 — software-only remote receiver abstraction and source/receiver health.
+3. DSC + NAVTEX structured evidence.
+4. Audio Evidence v1 — immutable bounded audio artifacts, transcription as derived evidence only.
+5. Cross-modal Evidence Fusion v1 — combine Humanitarian, AIS and radio while preserving lineage independence.
+6. Review v0 / publication controls on top of the real evidence workflows.
 
-```text
-SourceObservation / IntelEvent
-  -> persisted MaritimeEpisode
-  -> evidence lineage + BehaviourAssessment + alternative explanations
-  -> hypothesis eligibility gate
-  -> InvestigationHypothesis
-  -> Review
-  -> publication gate
-```
+Each packet must ship independently testable software. The loop does not skip a packet because later functionality is more interesting.
 
-Core rules:
+## Core domain rules
 
-- observations remain evidence authorities; an Episode is a deterministic, replayable derived object;
-- migration `0021_maritime_episodes` creates `MaritimeEpisodeDB` and adds nullable `InvestigationHypothesisDB.episode_id`;
-- legacy hypotheses remain untouched with `episode_id=NULL` and are never silently relinked;
-- every new v1 hypothesis uses `hyp:v1:*` identity and a non-null episode ID;
-- unknown maritime anomalies map to `unclassified_episode`; Safety is never a fallback;
-- source independence comes only from the existing evidence-lineage classifier;
-- behaviour context and alternative explanations remain analytical context, never an extra source;
-- low-specificity gap/rendezvous/infrastructure patterns require genuine independent corroboration before a v1 hypothesis is created;
-- high-specificity deterministic spoofing may create a candidate from one AIS lineage but cannot advance on detector count;
-- Episode persistence occurs before interpretation, so benign/ineligible episodes remain auditable;
-- bounded Prometheus counters report episode family/verification status and v1 hypothesis eligibility outcome without vessel identifiers.
+Alarm Phone is currently the Humanitarian incident-creation authority, not the only Humanitarian source. SOS Mediterranee, MSF, Sea-Watch, Open Arms and similar first-party NGO sources remain Humanitarian verification sources. IOM Missing Migrants is archive/reference. A future Alarm Phone email/webhook adapter must normalize to the same source identity as X/Twikit; transport never changes business authority.
 
-## Regression contract
+NGO AIS behaviour may establish `response_detected` or `rescue_activity_probable`, but AIS alone never confirms rescue. Explicit NGO rescue claims can contribute to `rescue_confirmed` only after strong association with the Alarm Phone incident; ambiguous matches require review.
 
-YOUR WISDOM remains a regression fixture, never a production whitelist. Normal recurring-service behaviour plus AIS gap/infrastructure indicators from one AIS lineage must remain `single_source_multi_indicator`, persist as internal analytical evidence, and produce zero new hypothesis, zero Case and zero public Intelligence allegation. A contrastive behavioural deviation remains `unusual` context but still obeys the evidence gate.
+Radio/audio follows the same model: adapters produce observations/artifacts; source/receiver identity and physical lineage are preserved; derived transcripts/claims cannot silently mutate canonical lifecycle.
 
-## Release verification completed on the branch
+## Execution discipline
 
-Fresh local verification has covered:
-
-- full backend suite;
-- focused Episode/hypothesis/replay/lineage regressions;
-- canonical Ruff and mypy gates;
-- Alembic fresh-head plus `0020 -> 0021 -> 0020 -> 0021` round-trip;
-- Humanitarian stabilization/privacy contract;
-- web lint/typecheck/tests/build;
-- edge tests and Wrangler dry-run;
-- Python/web/edge dependency audits;
-- vessel-marker regression and shared built assets;
-- hard-code scan for YOUR WISDOM/MMSI/IMO/Malta/Gozo production exceptions.
-
-## Remaining gate before production
-
-1. commit the final observability/docs alignment and rerun exact-head verification;
-2. push one PR;
-3. merge only after Full CI + CodeQL are green on the exact PR head;
-4. production rollout is separate: backup PostgreSQL, migrate `0020 -> 0021`, supervised restart only with explicit operator approval, then `/ready`, Live/Play, Episode/Hypothesis counters and bounded production audit.
-
-## Order after this packet
-
-1. Review v0 on top of persisted Episodes and v1 hypotheses;
-2. PostGIS / Section 10 after Review is verified;
-3. expand real sensor/collector coverage only through explicit source contracts and provenance/independence rules.
+TDD RED -> GREEN for every behavior change, one semantic commit per task, focused regression gate before advancing, full release gate at packet completion, code review before merge readiness, and documentation/status updates in the same cycle. Production deploy/migration/restart remains separately controlled.

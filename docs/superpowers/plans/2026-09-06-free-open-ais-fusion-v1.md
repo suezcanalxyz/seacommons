@@ -388,7 +388,7 @@ git commit -m "feat: make AIS gap reasoning coverage aware"
 - Consumes: reconciled registry/track data and coverage context.
 - Produces: NGO response rows with `track_providers`, `coverage_status`, and motion flags derived from reconciled history.
 
-- [ ] **Step 1: Write RED mission tests**
+- [x] **Step 1: Write RED mission tests**
 
 ```python
 def test_ngo_response_uses_reconciled_fix_and_reports_provider_context():
@@ -400,21 +400,21 @@ def test_ngo_response_uses_reconciled_fix_and_reports_provider_context():
 
 Add regression that `heading_toward + upstream_degraded` cannot be promoted beyond `possible_response`; AIS alone never yields `rescue_confirmed`.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `pytest -q tests/test_ngo_response.py tests/test_ngo_response_reconciled.py`
 Expected: FAIL because provider/coverage context is absent.
 
-- [ ] **Step 3: Extend the existing analysis, do not create a parallel tracker**
+- [x] **Step 3: Extend the existing analysis, do not create a parallel tracker**
 
 Read provider/coverage fields already projected by the reconciled registry/track layer. Preserve current distance, ETA, and motion-flag calculations. Do not expose Humanitarian MMSI/IMO/callsign in public projections.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run: `pytest -q tests/test_ngo_response.py tests/test_ngo_response_reconciled.py tests/test_live_feed.py tests/test_incident_watch.py`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/core/intel/ngo_response.py tests/test_ngo_response_reconciled.py
@@ -442,7 +442,7 @@ git commit -m "feat: enrich SAR response analysis with reconciled AIS"
 - Consumes: AIS bus, AISStream adapter, aiscast adapter, reconciler, provider health.
 - Produces: staged runtime modes `legacy`, `shadow`, `fused` with one-command rollback.
 
-- [ ] **Step 1: Write RED startup-mode tests**
+- [x] **Step 1: Write RED startup-mode tests**
 
 ```python
 def test_shadow_mode_never_changes_canonical_registry_or_track_store():
@@ -457,12 +457,12 @@ def test_legacy_mode_starts_no_aiscast_client():
     assert runtime.aiscast_started is False
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `pytest -q tests/test_ais_fusion_bootstrap.py`
 Expected: FAIL because runtime modes do not exist.
 
-- [ ] **Step 3: Implement explicit staged configuration**
+- [x] **Step 3: Implement explicit staged configuration**
 
 ```python
 AIS_FUSION_MODE: str = "legacy"  # legacy | shadow | fused
@@ -473,16 +473,16 @@ AISCAST_ENABLED: bool = False
 
 Do not start providers in both API and worker in split mode: preserve the existing `INTEL_MONITORS_ENABLED` boundary. Register each source-health name once per process.
 
-- [ ] **Step 4: Add bounded observability**
+- [x] **Step 4: Add bounded observability**
 
 Expose counters for received fixes by transport/upstream, dedup/collapse reason, selected canonical upstream, provider/upstream health, and shadow disagreements. Never label metrics with MMSI, station ID, or other high-cardinality identifiers.
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 Run: `pytest -q tests/test_ais_fusion_bootstrap.py tests/test_aisstream_health.py tests/test_observability.py tests/test_observability_health.py`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/api/core/bootstrap.py apps/api/core/config.py apps/api/core/intel/engine.py apps/api/core/observability.py tests/test_ais_fusion_bootstrap.py
@@ -521,15 +521,13 @@ Run: `pytest -q`, Ruff critical gate, canonical mypy, `git diff --check`. Expect
 
 Run existing web tests/lint/typecheck/build plus edge tests and Wrangler dry-run. Expected: PASS.
 
-- [ ] **Step 4: Deploy shadow mode first**
+- [ ] **Step 4: Prove the branch is shadow-ready without changing production**
 
-Production configuration: `AIS_FUSION_MODE=shadow`, `AISCAST_ENABLED=true`, with a bounded Central-Mediterranean bbox or NGO MMSI subscription that fits anonymous limits. Do not change public output semantics.
+Validate configuration parsing for `AIS_FUSION_MODE=shadow`, `AISCAST_ENABLED=true`, and a bounded Central-Mediterranean bbox or NGO MMSI subscription that fits anonymous limits. Verify startup wiring in tests, document expected metrics/health signals, and preserve public output semantics. Production activation is a separate operator-authorized action.
 
-Verify for a bounded observation window: AISStream message rate remains stable, aiscast receives events, no extra Humanitarian items appear, no increase in low-specificity hypotheses/cases, and shadow disagreements are observable.
+- [ ] **Step 5: Document fused promotion and instant rollback gates**
 
-- [ ] **Step 5: Enable fused mode only after parity**
-
-Switch only `AIS_FUSION_MODE=fused`; retain `legacy` as instant rollback. Verify `/ready`, Live/Play, service health, track freshness, NGO response analysis, gap/coverage metrics, and Humanitarian privacy.
+Document the exact parity criteria required before any future `AIS_FUSION_MODE=fused` activation: stable AISStream rate, aiscast event flow, bounded shadow disagreements, no Humanitarian inflation, no low-specificity hypothesis/case inflation, track freshness, NGO response parity, and privacy gates. `AIS_FUSION_MODE=legacy` remains the instant rollback. Do not activate production in this development packet without explicit operator authorization.
 
 - [ ] **Step 6: Document exact upstream terms**
 

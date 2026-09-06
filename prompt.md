@@ -1,78 +1,50 @@
 # SeaCommons — current agent prompt
 
-Work on `suezcanalxyz/seacommons` from the latest `main` only.
+Work on `suezcanalxyz/seacommons` from the latest verified branch state. Do not restart completed architecture packets.
 
-## Verified production baseline — 2026-09-06
+## Canonical controller
 
-- Current runtime-code baseline: PR #152 merge `fbcdb55471af4b19f45dfc927146e7ea26dc08b2`.
-- OSINT Evidence Pipeline v1 is merged, deployed and production-verified.
-- Vessel Context + Behavioural Baseline v1 is merged, deployed and production-verified.
-- Production Alembic head is `0020_vessel_baselines`; bounded production baseline rows were audited after rollout.
-- API, worker and Live edge publisher are active; `/ready`, `live.seacommons.org` and `play.seacommons.org` returned 200 after the rollout.
-- Live and Play still use the same shared vessel-marker assets.
-- IncidentWatch v0 remains the canonical bounded Humanitarian follow-up path.
+Read first:
 
-## Do not restart completed work
+1. `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
+2. `docs/current_work.md`
+3. the current packet spec
+4. the current packet implementation plan
 
-Already implemented and production-backed include:
+The master loop controls packet order. Do not jump directly to Review, radio/audio or a later source integration while the current packet still has an open release gate.
 
-- durable/idempotent `SourceObservation` and adapter wiring;
-- canonical `HumanitarianIncident`, lifecycle transitions and current Drift ownership;
-- Source Registry, Coverage Matrix, preservation policy, correlation decisions and lineage edges;
-- Alarm Phone image/OCR V2 and Humanitarian privacy boundaries;
-- Live 24h operational projection and Play archive;
-- Sentinel/VIIRS evidence;
-- shared Live/Play vessel triangles;
-- IncidentWatch v0;
-- OSINT evidence-lineage classification and real source-independence semantics;
-- deterministic VesselContext, versioned BehaviouralBaseline and `expected | unusual | insufficient_history` BehaviourAssessment.
+## Current packet
 
-Inspect actual `main`, migrations, merged PRs and tests before changing historical work described in `docs/fixes.md`.
+Free/Open AIS Fusion v1, Task 8 release gates.
 
-## Current task
+Detailed plan: `docs/superpowers/plans/2026-09-06-free-open-ais-fusion-v1.md`.
 
-The immediate packet is **Observation -> Episode -> Hypothesis v1**. Its approved design and implementation plan are:
+Tasks 0-7 are already implemented. Continue from Task 8; do not reimplement the AIS bus, provider contract, AISStream adapter, aiscast adapter, reconciliation, coverage reasoning, SAR Mission enrichment, or `legacy | shadow | fused` runtime.
 
-- `docs/superpowers/specs/2026-09-06-observation-episode-hypothesis-v1-design.md`
-- `docs/superpowers/plans/2026-09-06-observation-episode-hypothesis-v1.md`
+Current development runtime defaults to `legacy`. Shadow/fused activation is a separate deployment decision.
 
-Current invariant:
+## Loop after AIS
 
-```text
-observation != episode
-multiple detectors != multiple independent sources
-behaviour context != corroboration
-low-specificity single-lineage evidence != intelligence hypothesis
-new v1 hypothesis -> exactly one persisted episode
-```
+Humanitarian Verification v1 -> Remote Maritime Radio v1 -> DSC/NAVTEX structured evidence -> Audio Evidence v1 -> Cross-modal Evidence Fusion v1 -> Review v0/publication controls.
 
-Required behavior:
+At packet completion, update this file, `docs/current_work.md`, the master loop, and the packet execution record before advancing.
+## Non-negotiable invariants
 
-- persist deterministic/replayable `MaritimeEpisodeDB` under migration `0021_maritime_episodes`;
-- add nullable `InvestigationHypothesisDB.episode_id`, where NULL explicitly marks legacy/pre-v1 rows;
-- never mutate or silently relink legacy hypothesis rows;
-- use `unclassified_episode` for unknown maritime anomalies; Safety is explicit only;
-- carry parent observation IDs, derived feature IDs, evidence fingerprint, lineage groups, verification status, behaviour context and alternative explanations on the Episode;
-- create low-specificity gap/rendezvous/infrastructure hypotheses only with genuine independent corroboration;
-- allow high-specificity deterministic spoofing to remain candidate on one lineage, never to advance on detector count;
-- give every new hypothesis `hyp:v1:*` identity and non-null episode ID;
-- persist Episode before interpretation so hypothesis-ineligible events remain auditable;
-- expose only bounded, identity-free observability labels for Episode and v1 hypothesis decisions;
-- preserve YOUR WISDOM as a generic benign-service regression, never a whitelist or hard-coded suppress rule.
+- Source identity != transport adapter != physical/provider lineage.
+- Humanitarian domain != incident-creation authority.
+- Alarm Phone remains the Humanitarian operational-origin authority for now; other humanitarian NGOs are verification sources, not Maritime by reclassification.
+- Observation != incident/episode != assessment/hypothesis != review != public projection.
+- Safety/nav status never becomes Humanitarian or Intelligence by fallback.
+- Humanitarian public output never exposes MMSI/IMO/callsign/tracker dossier data.
+- Multiple AIS providers/detectors do not become independent corroboration automatically.
+- Derived behaviour, transcription and AI output are context/assistive evidence, never canonical truth alone.
+- New adapters must fail closed, expose health, preserve provenance/source terms, and normalize before business reasoning.
+- Prefer software-only and free/open acquisition; paid providers or SeaCommons-owned hardware are not core requirements.
 
-## Order after this packet
+## Execution loop
 
-After Observation -> Episode -> Hypothesis v1 is merged and production-verified, implement the already-designed **Review v0**. PostGIS / Section 10 follows Review. Sensor/collector expansion remains after the reasoning/review foundation.
+For each task: inspect existing code -> write RED test -> run and observe expected failure -> implement minimum change -> run GREEN + focused regressions -> static checks -> commit one semantic unit -> update execution record.
 
-## Non-negotiable constraints
+For each packet: run full backend/static/web/edge gates, privacy and evidence-lineage regressions, review the exact diff, fix Critical/Important findings, then advance the master loop. Never claim completion from partial tests.
 
-- Humanitarian privacy remains authoritative; no MMSI/IMO/callsign leakage into public Humanitarian surfaces.
-- Vessel class is context, never an allegation.
-- Safety observations never become Humanitarian or Intelligence by fallback.
-- Observation, incident/episode, assessment/hypothesis, review and publication remain distinct objects.
-- AI/models may assist but never silently become canonical truth.
-- Every durable analytical object is replayable and provenance-linked.
-- Evidence independence is determined by lineage, not detector count or provider display name.
-- One semantic authority per PR; TDD first; exact-commit verification before merge.
-- Preserve the shared Live/Play vessel-marker contract and existing public UI semantics unless a packet explicitly targets them.
-- No production migration, restart or destructive maintenance without explicit operator approval.
+Production migration, restart, destructive maintenance, or activation of a new canonical feed mode requires explicit operator authorization.
