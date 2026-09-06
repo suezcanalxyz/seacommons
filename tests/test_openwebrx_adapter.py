@@ -13,6 +13,7 @@ class FakeTransport:
         self.started = False
         self.stopped = False
         self.websocket_url = ""
+        self.texts: list[str] = []
         self.controls: list[dict[str, object]] = []
         self.on_message = None
         self.on_disconnect = None
@@ -24,6 +25,9 @@ class FakeTransport:
         self.websocket_url = websocket_url
         self.on_message = on_message
         self.on_disconnect = on_disconnect
+
+    def send_text(self, message):
+        self.texts.append(str(message))
 
     def send_control(self, payload):
         self.controls.append(dict(payload))
@@ -45,7 +49,12 @@ def descriptor(*, frontend_url="https://rx.example.org/", physical_lineage="med-
     )
 
 
-def test_start_uses_ws_endpoint_and_health_transitions():
+def _announce_profile(transport, *, center=156_500_000, sample_rate=2_000_000):
+    assert transport.on_message is not None
+    transport.on_message({"type": "config", "value": {"center_freq": center, "samp_rate": sample_rate}})
+
+
+def test_start_uses_native_handshake_connectionproperties_and_ws_endpoint():
     from core.radio.openwebrx import OpenWebRXAdapter
 
     transport = FakeTransport()
@@ -53,13 +62,17 @@ def test_start_uses_ws_endpoint_and_health_transitions():
     adapter.start()
 
     assert transport.websocket_url == "wss://rx.example.org/ws/"
+    assert transport.texts == ["SERVER DE CLIENT client=seacommons type=receiver"]
+    assert transport.controls == [
+        {"type": "connectionproperties", "params": {"output_rate": 12000, "hd_output_rate": 48000}}
+    ]
     assert adapter.health().connected is True
     adapter.stop()
     assert transport.stopped is True
     assert adapter.health().connected is False
 
 
-def test_tune_rejects_capability_before_transport_send():
+def test_tune_uses_native_dspcontrol_and_active_profile_bounds():
     from core.radio.openwebrx import OpenWebRXAdapter
 
     transport = FakeTransport()
@@ -68,23 +81,34 @@ def test_tune_rejects_capability_before_transport_send():
 
     with pytest.raises(ValueError):
         adapter.tune(190_000_000, "nbfm")
-    assert transport.controls == []
+    with pytest.raises(RuntimeError, match="profile metadata"):
+        adapter.tune(156_800_000, "nbfm")
 
+    _announce_profile(transport)
     adapter.tune(156_800_000, "nbfm")
-    assert transport.controls[-1] == {"type": "tune", "frequency_hz": 156_800_000, "mode": "nbfm"}
+    assert transport.controls[-2:] == [
+        {"type": "dspcontrol", "action": "start"},
+        {"type": "dspcontrol", "params": {"offset_freq": 300_000, "mod": "nfm"}},
+    ]
+
+    before = list(transport.controls)
+    with pytest.raises(ValueError, match="active OpenWebRX profile"):
+        adapter.tune(158_000_000, "nbfm")
+    assert transport.controls == before
 
 
-def test_signal_message_normalizes_metadata_and_discards_audio():
+def test_smeter_message_normalizes_dbfs_and_discards_binary_audio():
     from core.radio.openwebrx import OpenWebRXAdapter
 
     observations = []
     transport = FakeTransport()
     adapter = OpenWebRXAdapter(descriptor(), on_observation=observations.append, transport=transport)
     adapter.start()
+    _announce_profile(transport)
     adapter.tune(156_800_000, "nbfm")
 
     assert transport.on_message is not None
-    transport.on_message({"type": "signal", "signal_dbm": -83.5, "snr_db": 12.0, "message_id": "abc"})
+    transport.on_message({"type": "smeter", "value": 1e-8})
     transport.on_message(b"pretend-audio-bytes")
 
     assert len(observations) == 1
@@ -94,10 +118,10 @@ def test_signal_message_normalizes_metadata_and_discards_audio():
     assert obs.physical_lineage == "med_rx_01"
     assert obs.frequency_hz == 156_800_000
     assert obs.mode == "nbfm"
-    assert obs.signal_dbm == -83.5
-    assert obs.snr_db == 12.0
+    assert obs.signal_dbm is None
+    assert obs.signal_dbfs == -80.0
+    assert obs.snr_db is None
     assert obs.source_terms == "operator-permission"
-    assert obs.provider_message_id == "abc"
 
 
 def test_disconnect_and_start_failure_fail_closed():
@@ -140,17 +164,18 @@ def test_openwebrx_and_kiwi_frontends_same_physical_receiver_are_one_runnable_li
     assert runnable[0].physical_lineage == "shared_rx_01"
 
 
-def test_message_timestamp_defaults_to_now_and_health_counts_only_signal_observations(monkeypatch):
+def test_health_counts_only_smeter_observations():
     from core.radio.openwebrx import OpenWebRXAdapter
 
     observations = []
     transport = FakeTransport()
     adapter = OpenWebRXAdapter(descriptor(), on_observation=observations.append, transport=transport)
     adapter.start()
+    _announce_profile(transport, center=1_000_000, sample_rate=1_000_000)
     adapter.tune(1_000_000, "am")
     assert transport.on_message is not None
-    transport.on_message({"type": "status", "clients": 4})
-    transport.on_message({"type": "signal", "signal_dbm": -100.0})
+    transport.on_message({"type": "clients", "value": 4})
+    transport.on_message({"type": "smeter", "value": 1e-10})
 
     assert len(observations) == 1
     assert observations[0].observed_at.tzinfo is not None

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -10,6 +11,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 from core.radio.provider import ObservationCallback, RadioObservation, RemoteReceiverHealth
 from core.radio.registry import ReceiverDescriptor
+
+_OPENWEBRX_MODE_MAP = {"nbfm": "nfm"}
 
 
 class OpenWebRXTransport(Protocol):
@@ -22,13 +25,15 @@ class OpenWebRXTransport(Protocol):
         on_disconnect: Callable[[str], None],
     ) -> None: ...
 
+    def send_text(self, message: str) -> None: ...
+
     def send_control(self, payload: Mapping[str, object]) -> None: ...
 
     def stop(self) -> None: ...
 
 
 class WebSocketOpenWebRXTransport:
-    """Small transport wrapper; OpenWebRX-specific normalization stays in the adapter."""
+    """OpenWebRX WebSocket transport; binary audio/FFT frames are discarded in v1."""
 
     def __init__(self) -> None:
         self._connection = None
@@ -73,22 +78,25 @@ class WebSocketOpenWebRXTransport:
                 except TimeoutError:
                     continue
                 if isinstance(message, bytes):
-                    # Audio / binary stream is deliberately ignored in v1.
+                    # 0x01 spectrum / 0x02 audio / 0x03 secondary FFT / 0x04 HD audio.
+                    # This packet intentionally stores none of those byte streams.
                     continue
                 if isinstance(message, str):
                     try:
-                        decoded = json.loads(message)
+                        on_message(json.loads(message))
                     except json.JSONDecodeError:
                         continue
-                    on_message(decoded)
         except Exception:
             if not self._stop.is_set() and self._on_disconnect is not None:
                 self._on_disconnect("transport_disconnected")
 
-    def send_control(self, payload: Mapping[str, object]) -> None:
+    def send_text(self, message: str) -> None:
         if self._connection is None:
             raise RuntimeError("OpenWebRX transport is not connected")
-        self._connection.send(json.dumps(dict(payload), separators=(",", ":")))
+        self._connection.send(message)
+
+    def send_control(self, payload: Mapping[str, object]) -> None:
+        self.send_text(json.dumps(dict(payload), separators=(",", ":")))
 
     def stop(self) -> None:
         self._stop.set()
@@ -141,6 +149,9 @@ class OpenWebRXAdapter:
         self._frequency_hz: int | None = None
         self._mode: str | None = None
         self._session_id = ""
+        self._center_freq_hz: int | None = None
+        self._sample_rate_hz: int | None = None
+        self._dsp_started = False
         self._lock = threading.Lock()
 
     def start(self) -> None:
@@ -149,12 +160,22 @@ class OpenWebRXAdapter:
                 return
             self._error = None
             self._session_id = uuid.uuid4().hex
+            self._center_freq_hz = None
+            self._sample_rate_hz = None
+            self._dsp_started = False
         try:
             self._transport.start(
                 websocket_url=openwebrx_websocket_url(self._descriptor.frontend_url),
                 timeout_s=self._connect_timeout_s,
                 on_message=self._on_message,
                 on_disconnect=self._on_disconnect,
+            )
+            self._transport.send_text("SERVER DE CLIENT client=seacommons type=receiver")
+            self._transport.send_control(
+                {
+                    "type": "connectionproperties",
+                    "params": {"output_rate": 12000, "hd_output_rate": 48000},
+                }
             )
         except Exception as exc:
             try:
@@ -175,6 +196,7 @@ class OpenWebRXAdapter:
             with self._lock:
                 self._connected = False
                 self._error = None
+                self._dsp_started = False
 
     def health(self) -> RemoteReceiverHealth:
         with self._lock:
@@ -203,22 +225,56 @@ class OpenWebRXAdapter:
         with self._lock:
             if not self._connected:
                 raise RuntimeError("OpenWebRX adapter is not connected")
+            center = self._center_freq_hz
+            sample_rate = self._sample_rate_hz
+            dsp_started = self._dsp_started
+        if center is None or sample_rate is None:
+            raise RuntimeError("OpenWebRX profile metadata not received")
+        if not center - sample_rate // 2 <= frequency_hz <= center + sample_rate // 2:
+            raise ValueError("frequency is outside active OpenWebRX profile")
+        wire_mode = _OPENWEBRX_MODE_MAP.get(normalized_mode, normalized_mode)
+        if not dsp_started:
+            self._transport.send_control({"type": "dspcontrol", "action": "start"})
         self._transport.send_control(
-            {"type": "tune", "frequency_hz": int(frequency_hz), "mode": normalized_mode}
+            {
+                "type": "dspcontrol",
+                "params": {"offset_freq": int(frequency_hz - center), "mod": wire_mode},
+            }
         )
         with self._lock:
             self._frequency_hz = int(frequency_hz)
             self._mode = normalized_mode
+            self._dsp_started = True
 
     def _on_disconnect(self, _detail: str) -> None:
         with self._lock:
             self._connected = False
             self._error = "transport_disconnected"
+            self._dsp_started = False
 
     def _on_message(self, message: object) -> None:
         if not isinstance(message, Mapping):
             return
-        if str(message.get("type") or "").strip().lower() != "signal":
+        message_type = str(message.get("type") or "").strip().lower()
+        if message_type == "config":
+            value = message.get("value")
+            if isinstance(value, Mapping):
+                center = value.get("center_freq")
+                sample_rate = value.get("samp_rate")
+                with self._lock:
+                    if center is not None:
+                        self._center_freq_hz = int(center)
+                    if sample_rate is not None:
+                        self._sample_rate_hz = int(sample_rate)
+            return
+        if message_type != "smeter":
+            return
+        raw_value = message.get("value")
+        try:
+            linear = float(raw_value)
+        except (TypeError, ValueError):
+            return
+        if linear <= 0 or not math.isfinite(linear):
             return
         with self._lock:
             frequency_hz = self._frequency_hz
@@ -226,8 +282,6 @@ class OpenWebRXAdapter:
             session_id = self._session_id
             if frequency_hz is None or mode is None:
                 return
-        signal_dbm = message.get("signal_dbm")
-        snr_db = message.get("snr_db")
         observed_at = datetime.now(timezone.utc)
         observation = RadioObservation(
             receiver_id=self._descriptor.receiver_id,
@@ -236,10 +290,8 @@ class OpenWebRXAdapter:
             frequency_hz=frequency_hz,
             mode=mode,
             observed_at=observed_at,
-            signal_dbm=float(signal_dbm) if signal_dbm is not None else None,
-            snr_db=float(snr_db) if snr_db is not None else None,
+            signal_dbfs=round(10.0 * math.log10(linear), 1),
             source_terms=self._descriptor.source_terms,
-            provider_message_id=str(message.get("message_id")) if message.get("message_id") else None,
             session_id=session_id,
         )
         with self._lock:

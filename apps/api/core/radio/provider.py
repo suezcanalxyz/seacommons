@@ -60,6 +60,7 @@ class RadioObservation:
     mode: str
     observed_at: datetime
     signal_dbm: float | None = None
+    signal_dbfs: float | None = None
     snr_db: float | None = None
     source_terms: str | None = None
     provider_message_id: str | None = None

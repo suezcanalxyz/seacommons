@@ -41,6 +41,7 @@ def _bounded_payload(observation: RadioObservation) -> str:
         "frequency_hz": observation.frequency_hz,
         "mode": observation.mode,
         "signal_dbm": observation.signal_dbm,
+        "signal_dbfs": observation.signal_dbfs,
         "snr_db": observation.snr_db,
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))

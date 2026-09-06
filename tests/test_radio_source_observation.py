@@ -16,6 +16,7 @@ def _radio_observation(**overrides):
         "mode": "nbfm",
         "observed_at": datetime(2026, 9, 6, 17, 0, tzinfo=timezone.utc),
         "signal_dbm": -82.5,
+        "signal_dbfs": None,
         "snr_db": 11.0,
         "source_terms": "operator-permission",
         "provider_message_id": "msg-42",
@@ -70,6 +71,7 @@ def test_payload_is_bounded_metadata_only_without_audio_iq_transcript_or_mmsi():
         "frequency_hz": 156_800_000,
         "mode": "nbfm",
         "signal_dbm": -82.5,
+        "signal_dbfs": None,
         "snr_db": 11.0,
     }
     encoded = json.dumps(expected_payload, sort_keys=True, separators=(",", ":"))
