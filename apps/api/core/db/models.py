@@ -491,6 +491,37 @@ class SourceObservationDB(Base):
     )
 
 
+class AudioEvidenceArtifactDB(Base):
+    """Metadata-only immutable reference to one bounded audio evidence clip.
+
+    Audio bytes live in external object storage addressed by ``storage_ref``;
+    this row stores only provenance, hash, retention and SourceObservation links.
+    """
+
+    __tablename__ = "audio_evidence_artifacts"
+    artifact_id = Column(String(64), primary_key=True)
+    artifact_type = Column(String(16), nullable=False, default="audio")
+    physical_lineage = Column(String(128), nullable=False, index=True)
+    receiver_id = Column(String(128), nullable=False)
+    frequency_hz = Column(Integer, nullable=False, index=True)
+    channel = Column(String(64), nullable=False)
+    started_at = Column(String(40), nullable=False, index=True)
+    ended_at = Column(String(40), nullable=False)
+    duration_seconds = Column(Float, nullable=False)
+    content_sha256 = Column(String(64), nullable=False, index=True)
+    storage_ref = Column(Text, nullable=False)
+    mime_type = Column(String(128), nullable=False)
+    codec = Column(String(32), nullable=False)
+    source_terms = Column(Text, nullable=False)
+    retention_policy = Column(String(16), nullable=False, index=True)
+    source_observation_ids = Column(JSON, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_audio_artifacts_lineage_start", "physical_lineage", "started_at"),
+    )
+
+
 class SatelliteObservationDB(Base):
     """Provider-neutral satellite evidence attached to one incident.
 

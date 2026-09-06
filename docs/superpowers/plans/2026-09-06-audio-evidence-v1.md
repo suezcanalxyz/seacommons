@@ -36,6 +36,13 @@
 - Replay by content hash + physical lineage is idempotent.
 - Never embed audio bytes in DB JSON or SourceObservation.
 
+### Task 1 execution record — 2026-09-06
+
+- Added metadata-only `audio_evidence_artifacts` store and migration `0022_audio_artifacts`.
+- Artifact persistence is idempotent by deterministic artifact ID; same content on different physical lineages remains distinct evidence identity.
+- Database schema stores hash/reference/provenance/retention/SourceObservation links only; no audio bytes, blob, waveform, IQ, transcript, Humanitarian/lifecycle/publication/model fields exist.
+- Focused store/contract/migration gate: `19 passed`; migration upgrades cleanly through 0022. Extended source-observation/Humanitarian regressions green.
+
 ### Task 2: Bounded acquisition policy
 
 - Disabled by default.
