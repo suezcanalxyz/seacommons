@@ -168,7 +168,7 @@ git commit -m "feat: add normalized AIS provider contract"
 - Consumes: `AISPositionObservation` and provider callback from Task 1.
 - Produces: AISStream observations tagged `provider="aisstream"`; preserves current start/stop behavior and source health.
 
-- [ ] **Step 1: Write RED tests that AISStream emits the normalized contract once per PositionReport**
+- [x] **Step 1: Write RED tests that AISStream emits the normalized contract once per PositionReport**
 
 ```python
 def test_aisstream_position_report_emits_provider_observation(monkeypatch):
@@ -182,26 +182,29 @@ def test_aisstream_position_report_emits_provider_observation(monkeypatch):
 
 Keep the existing hook-count regression: one AISStream socket must not multiply per downstream consumer.
 
-- [ ] **Step 2: Run the focused tests and watch RED**
+- [x] **Step 2: Run the focused tests and watch RED**
 
 Run: `pytest -q tests/test_aisstream_health.py tests/test_vessel_incidents.py`
 Expected: FAIL because `AISStreamClient` does not yet accept/emit the normalized callback.
 
-- [ ] **Step 3: Implement adapter emission without changing subscription semantics**
+- [x] **Step 3: Implement adapter emission without changing subscription semantics**
 
 `AISStreamClient._handle()` should build one `AISPositionObservation` using provider=`aisstream`, station_id=None, observed_at=received_at when upstream message time is unavailable. Keep ShipStaticData registry updates as-is for v1.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run: `pytest -q tests/test_aisstream_health.py tests/test_vessel_incidents.py tests/test_ais_provider.py`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/core/vessels/aisstream.py tests/test_aisstream_health.py tests/test_vessel_incidents.py
 git commit -m "refactor: emit normalized AISStream observations"
 ```
+
+**Execution:** RED failed because `AISStreamClient` lacked `on_observation`; GREEN: `16 passed`. AISStream now emits one normalized observation per PositionReport and the same observation is fanned out through the legacy-compatible bus; registry/static-data semantics remain unchanged.
+
 ### Task 3: Add the Open Waters/aiscast adapter
 
 **Files:**

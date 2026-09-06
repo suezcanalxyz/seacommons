@@ -93,11 +93,13 @@ class AISStreamClient:
         label: str = "Mediterranean",
         bbox: list | None = None,
         mmsi_filter: list[str] | None = None,
+        on_observation=None,
     ):
         self._api_key = api_key
         self._label = label
         self._bbox = bbox or _BBOX
         self._mmsi_filter = mmsi_filter
+        self._on_observation = on_observation
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._connected = False
@@ -233,15 +235,23 @@ class AISStreamClient:
                     nav_status=int(nav_status) if nav_status is not None else None,
                 )
                 received_at = datetime.now(timezone.utc)
-                from core.vessels.ais_bus import publish_legacy
-                publish_legacy(
-                    mmsi, name, float(lat), float(lon),
-                    float(sog) if sog is not None else None,
-                    int(nav_status) if nav_status is not None else None,
-                    float(cog) if cog is not None else None,
-                    float(hdg) if hdg is not None and hdg != 511 else None,
-                    received_at,
+                from core.vessels.ais_provider import AISPositionObservation
+                observation = AISPositionObservation(
+                    mmsi=mmsi, ship_name=name, lat=float(lat), lon=float(lon),
+                    sog=float(sog) if sog is not None else None,
+                    cog=float(cog) if cog is not None else None,
+                    heading=float(hdg) if hdg is not None and hdg != 511 else None,
+                    nav_status=int(nav_status) if nav_status is not None else None,
+                    observed_at=received_at, received_at=received_at,
+                    provider="aisstream", upstream_source="aisstream",
                 )
+                if self._on_observation is not None:
+                    try:
+                        self._on_observation(observation)
+                    except Exception:
+                        logger.debug("AIS provider observation callback failed", exc_info=True)
+                from core.vessels.ais_bus import publish
+                publish(observation)
 
         elif mtype == "ShipStaticData":
             sd = msg.get("Message", {}).get("ShipStaticData", {})

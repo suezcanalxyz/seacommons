@@ -66,3 +66,32 @@ def test_repeated_connection_failure_reports_into_source_registry(monkeypatch):
         assert "timed out" in (source.last_error or "")
     finally:
         client.stop()
+
+
+class _Registry:
+    def __init__(self):
+        self.rows = []
+
+    def upsert(self, mmsi, **kwargs):
+        self.rows.append((mmsi, kwargs))
+
+
+def _position_message(mmsi="247123456", lat=35.1, lon=15.2):
+    return {
+        "MessageType": "PositionReport",
+        "MetaData": {"MMSI": mmsi, "ShipName": "TEST"},
+        "Message": {"PositionReport": {
+            "Latitude": lat, "Longitude": lon, "Sog": 7.2, "Cog": 91.0,
+            "TrueHeading": 90, "NavigationalStatus": 0,
+        }},
+    }
+
+
+def test_aisstream_position_report_emits_provider_observation():
+    seen = []
+    client = AISStreamClient("key", on_observation=seen.append)
+    client._handle(_position_message(), _Registry())
+    assert len(seen) == 1
+    assert seen[0].provider == "aisstream"
+    assert seen[0].upstream_source == "aisstream"
+    assert seen[0].mmsi == "247123456"
