@@ -243,6 +243,21 @@ async def live_archive_geojson(event_id: str):
     return {"type": "FeatureCollection", "features": features}
 
 
+@router.get("/pipeline")
+async def live_pipeline():
+    """Public-safe health for the single SeaCommons acquisition pipeline."""
+    from core.acquisition.status import (
+        acquisition_status_sources,
+        ensure_default_acquisition_status,
+    )
+
+    ensure_default_acquisition_status()
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "sources": acquisition_status_sources(),
+    }
+
+
 @router.get("/sources")
 async def live_sources():
     """Public health summary without credentials, endpoint URLs or raw errors."""
