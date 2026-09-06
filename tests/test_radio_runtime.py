@@ -162,3 +162,56 @@ def test_ops_summary_exposes_only_bounded_remote_radio_status(monkeypatch):
     assert payload["backend"]["remote_radio"]["runnable"] == 1
     assert "receiver_id" not in str(payload["backend"]["remote_radio"])
     assert "frontend_url" not in str(payload["backend"]["remote_radio"])
+
+
+def test_receiver_descriptor_accepts_public_channel_metadata():
+    descriptor = ReceiverDescriptor(
+        receiver_id="med_dsc_1", provider="kiwisdr",
+        frontend_url="https://rx.example.org", physical_lineage="med_rx_1",
+        enabled=True, terms_status="allowed", source_terms="operator-permission",
+        capabilities=(ReceiverCapability(2_000_000, 3_000_000, ("usb", "am")),),
+        public_label="Mediterranean DSC 1", channel_kind="dsc",
+        frequency_hz=2_187_500, mode="usb",
+    )
+    assert descriptor.public_label == "Mediterranean DSC 1"
+    assert descriptor.channel_kind == "dsc"
+    assert descriptor.frequency_hz == 2_187_500
+    assert descriptor.mode == "usb"
+
+
+def test_receiver_descriptor_defaults_to_monitor_and_public_receiver_id():
+    descriptor = _descriptor("kiwisdr", "rx-default", "default")
+    assert descriptor.channel_kind == "monitor"
+    assert descriptor.public_label == descriptor.receiver_id
+    assert descriptor.frequency_hz is None
+    assert descriptor.mode is None
+
+
+def test_receiver_descriptor_rejects_invalid_channel_or_out_of_range_frequency():
+    import pytest
+
+    kwargs = dict(
+        receiver_id="med_rx", provider="kiwisdr", frontend_url="https://rx.example.org",
+        physical_lineage="med_rx", enabled=True, terms_status="allowed",
+        source_terms="operator-permission",
+        capabilities=(ReceiverCapability(2_000_000, 3_000_000, ("usb",)),),
+        public_label="Med receiver",
+    )
+    with pytest.raises(ValueError, match="channel_kind"):
+        ReceiverDescriptor(**kwargs, channel_kind="voice")
+    with pytest.raises(ValueError, match="frequency_hz"):
+        ReceiverDescriptor(**kwargs, channel_kind="dsc", frequency_hz=4_000_000, mode="usb")
+    with pytest.raises(ValueError, match="requires frequency_hz"):
+        ReceiverDescriptor(**kwargs, channel_kind="navtex")
+
+
+def test_receiver_descriptor_public_label_is_bounded():
+    descriptor = ReceiverDescriptor(
+        receiver_id="label_rx", provider="kiwisdr", frontend_url="https://rx.example.org",
+        physical_lineage="label_rx", enabled=True, terms_status="allowed",
+        source_terms="operator-permission",
+        capabilities=(ReceiverCapability(100_000, 30_000_000, ("am",)),),
+        public_label="  " + ("Station " * 30) + "  ",
+    )
+    assert descriptor.public_label == descriptor.public_label.strip()
+    assert len(descriptor.public_label) <= 96

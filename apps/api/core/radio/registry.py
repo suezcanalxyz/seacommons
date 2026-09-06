@@ -12,6 +12,8 @@ from core.radio.provider import ReceiverCapability, _normalize_identifier, norma
 
 _TERMS_STATUSES = frozenset({"allowed", "unknown", "blocked"})
 _MAX_OPERATOR_NOTE_CHARS = 256
+_MAX_PUBLIC_LABEL_CHARS = 96
+_CHANNEL_KINDS = frozenset({"dsc", "navtex", "monitor"})
 
 
 def _canonical_frontend_url(value: str) -> str:
@@ -45,6 +47,10 @@ class ReceiverDescriptor:
     longitude: float | None = None
     operator_note: str = ""
     receiver_id: str = ""
+    public_label: str = ""
+    channel_kind: str = "monitor"
+    frequency_hz: int | None = None
+    mode: str | None = None
 
     def __post_init__(self) -> None:
         provider = normalize_provider_name(self.provider)
@@ -62,6 +68,29 @@ class ReceiverDescriptor:
             raise ValueError("latitude out of range")
         if self.longitude is not None and not -180 <= self.longitude <= 180:
             raise ValueError("longitude out of range")
+        channel_kind = str(self.channel_kind or "monitor").strip().lower()
+        if channel_kind not in _CHANNEL_KINDS:
+            raise ValueError("channel_kind must be dsc, navtex, or monitor")
+        frequency_hz = int(self.frequency_hz) if self.frequency_hz is not None else None
+        if channel_kind in {"dsc", "navtex"} and frequency_hz is None:
+            raise ValueError(f"{channel_kind} channel requires frequency_hz")
+        if frequency_hz is not None and not any(
+            capability.frequency_min_hz <= frequency_hz <= capability.frequency_max_hz
+            for capability in self.capabilities
+        ):
+            raise ValueError("frequency_hz is outside receiver capabilities")
+        mode = str(self.mode or "").strip().lower() or None
+        if mode is not None and not any(mode in capability.modes for capability in self.capabilities):
+            raise ValueError("mode is outside receiver capabilities")
+        resolved_receiver_id = (
+            _normalize_identifier(self.receiver_id, field="receiver_id")
+            if self.receiver_id
+            else receiver_id_for(provider, frontend_url)
+        )
+        public_label = " ".join(str(self.public_label or "").split()).strip()
+        if not public_label:
+            public_label = resolved_receiver_id
+        public_label = public_label[:_MAX_PUBLIC_LABEL_CHARS].strip()
 
         object.__setattr__(self, "provider", provider)
         object.__setattr__(self, "frontend_url", frontend_url)
@@ -69,13 +98,11 @@ class ReceiverDescriptor:
         object.__setattr__(self, "source_terms", source_terms)
         object.__setattr__(self, "terms_status", terms_status)
         object.__setattr__(self, "operator_note", str(self.operator_note or "")[:_MAX_OPERATOR_NOTE_CHARS])
-        object.__setattr__(
-            self,
-            "receiver_id",
-            _normalize_identifier(self.receiver_id, field="receiver_id")
-            if self.receiver_id
-            else receiver_id_for(provider, frontend_url),
-        )
+        object.__setattr__(self, "receiver_id", resolved_receiver_id)
+        object.__setattr__(self, "public_label", public_label)
+        object.__setattr__(self, "channel_kind", channel_kind)
+        object.__setattr__(self, "frequency_hz", frequency_hz)
+        object.__setattr__(self, "mode", mode)
 
 
 class ReceiverRegistry:
@@ -132,6 +159,10 @@ def _descriptor_from_mapping(value: Mapping[str, Any]) -> ReceiverDescriptor:
         longitude=float(value["longitude"]) if value.get("longitude") is not None else None,
         operator_note=str(value.get("operator_note") or ""),
         receiver_id=str(value.get("receiver_id") or ""),
+        public_label=str(value.get("public_label") or ""),
+        channel_kind=str(value.get("channel_kind") or "monitor"),
+        frequency_hz=(int(value["frequency_hz"]) if value.get("frequency_hz") is not None else None),
+        mode=(str(value.get("mode") or "") or None),
     )
 
 
