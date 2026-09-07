@@ -36,6 +36,7 @@ import { FEED_STATUS_LABEL, FEED_STATUS_TONE, liveSignalTotal } from './features
 import { mergeIntelDriftUpdate } from './features/live/normalize.js';
 import { receiverChannelLabel } from './features/live/pipelineStatus.js';
 import { splitObservedTrackSegments } from './features/live/observedTrack.js';
+import { vesselReportFeature } from './features/live/vesselVisual.js';
 import { createVesselArrowImage } from './features/map/vesselMarker.js';
 import { mergeLiveDrifts } from './simulation/liveTracking.js';
 
@@ -120,6 +121,7 @@ const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'en
 // never gated by a mode.
 const PUBLIC_LIVE_LAYER_GROUPS = new Set([
   'nautical', 'sar', 'fused', 'observed_tracks', 'drift_models', 'simulation', 'ngo_vessels', 'platforms', 'spikes',
+  'ais_moving', 'ais_stationary', 'ais_trails',
   'intel_social', 'intel_news', 'intel_hazard', 'intel_incident', 'intel_iom', 'intel_ngo',
 ]);
 // Signals selector: two macro groups (the original Humanitarian/Maritime
@@ -666,6 +668,9 @@ function App() {
   const [layerVis, setLayerVis] = useState(() => {
     const defaults = {
       vessels: true,
+      ais_moving: true,
+      ais_stationary: true,
+      ais_trails: true,
       ngo_vessels: true,
       weather: true,
       sar: true,
@@ -810,6 +815,15 @@ function App() {
     }
     setMapPanel({ type: 'intel', feature });
     setConePanelHidden(false);
+  }
+
+  function openVesselReport(feature) {
+    if (!feature) return;
+    const reportFeature = vesselReportFeature(feature);
+    setSelectedVessel(null);
+    setMapPanel({ type: 'intel', feature: reportFeature });
+    setConePanelHidden(false);
+    if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
   }
 
   useEffect(() => {
@@ -1260,6 +1274,7 @@ function App() {
         map.addSource('weather-points',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('weather-vectors',   { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('vessels',           { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('selected-vessel-track', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('vessels-ngo',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('platforms',         { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('alerts',            { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -1548,30 +1563,62 @@ function App() {
           },
         });
 
-        // AIS vessel identity follows one chart convention: every vessel is a
-        // heading triangle, including stopped contacts. Operational findings stay
-        // in rings/tracks/dossiers instead of recoloring the vessel itself.
+        // AIS contacts use chart-like motion semantics: moving contacts are
+        // heading triangles; stationary/unknown contacts are circles. Hue stays
+        // semantic (Maritime AIS blue), while shape carries motion state.
+        map.addLayer({
+          id: 'vessels-stationary-layer', type: 'circle', source: 'vessels',
+          filter: ['<=', ['coalesce', ['get', 'speed'], 0], 0.5],
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 3.3, 10, 5.0, 14, 6.2],
+            'circle-color': '#60a5fa',
+            'circle-opacity': 0.96,
+            'circle-stroke-color': '#021318',
+            'circle-stroke-width': 1.4,
+          },
+        });
         map.addLayer({
           id: 'vessels-layer', type: 'symbol', source: 'vessels',
+          filter: ['>', ['coalesce', ['get', 'speed'], 0], 0.5],
           layout: {
             'icon-image': 'vessel-arrow',
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.30, 10, 0.50, 14, 0.65],
-            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotate': ['coalesce', ['get', 'heading_deg'], ['get', 'heading'], ['get', 'course'], 0],
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
           },
           paint: {
-            'icon-color': '#7dd3fc',
+            'icon-color': '#38bdf8',
             'icon-opacity': 0.96,
             'icon-halo-color': '#021318',
             'icon-halo-width': 1.2,
           },
         });
+        map.addLayer({
+          id: 'selected-vessel-track', type: 'line', source: 'selected-vessel-track',
+          paint: {
+            'line-color': '#38bdf8',
+            'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1.3, 10, 2.2, 14, 3.0],
+            'line-opacity': 0.88,
+          },
+        });
 
         // Civil NGO SAR vessels use the same triangle and differ only by hue.
         map.addLayer({
+          id: 'vessels-ngo-stationary', type: 'circle', source: 'vessels-ngo',
+          filter: ['<=', ['coalesce', ['get', 'speed'], 0], 0.5],
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 3.8, 10, 5.5, 14, 6.8],
+            'circle-color': '#34d399',
+            'circle-opacity': 1,
+            'circle-stroke-color': '#021318',
+            'circle-stroke-width': 1.6,
+          },
+        });
+        map.addLayer({
           id: 'vessels-ngo', type: 'symbol', source: 'vessels-ngo',
+          filter: ['>', ['coalesce', ['get', 'speed'], 0], 0.5],
           layout: {
             'icon-image': 'vessel-arrow',
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.36, 10, 0.58, 14, 0.72],
@@ -2104,8 +2151,8 @@ function App() {
           event.originalEvent?.stopPropagation?.();
         });
 
-        // vessel click (commercial + NGO share same handler)
-        for (const lyr of ['vessels-layer', 'vessels-ngo', 'proximity-vessels-layer']) {
+        // Vessel click opens the same full Live report used by every signal.
+        for (const lyr of ['vessels-layer', 'vessels-stationary-layer', 'vessels-ngo', 'vessels-ngo-stationary', 'proximity-vessels-layer', 'live-nearby-vessels-layer']) {
           map.on('mouseenter', lyr, () => { map.getCanvas().style.cursor = 'pointer'; });
           map.on('mouseleave', lyr, () => {
             map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
@@ -2113,11 +2160,7 @@ function App() {
           map.on('click', lyr, (event) => {
             const feature = event.features?.[0];
             if (!feature) return;
-            const [lon, lat] = feature.geometry.coordinates;
-            setSelectedVessel({ ...feature.properties, lon, lat });
-            // Vessel details render as a map overlay card — opening the sheet on
-            // mobile would hide both the vessel and its card.
-            if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
+            openVesselReport(feature);
             event.originalEvent?.stopPropagation?.();
           });
         }
@@ -2531,6 +2574,30 @@ function App() {
     return () => { alive = false; if (timer) window.clearInterval(timer); };
   }, [intelEvents, mapReady, apiBase]);
 
+  // Selected AIS report trail. The public map never downloads every historical
+  // trajectory; it fetches the bounded public dossier only for the contact the
+  // reader opened, then paints that LineString as an explicit AIS trail layer.
+  useEffect(() => {
+    const map = mapRef.current;
+    const source = map?.getSource('selected-vessel-track');
+    if (!map || !source || !mapReady || !map.isStyleLoaded()) return undefined;
+    const props = resolvedMapPanel?.feature?.properties || {};
+    const mmsi = props.entity_kind === 'vessel' ? props.mmsi || props.report_id : null;
+    if (!mmsi || layerVis.ais_trails === false) {
+      source.setData({ type: 'FeatureCollection', features: [] });
+      return undefined;
+    }
+    let alive = true;
+    fetchJson(apiBase, `/api/v1/live/vessels/${encodeURIComponent(mmsi)}/context?hours=168`, undefined, 12000)
+      .then((data) => {
+        if (alive) source.setData(data?.track || { type: 'FeatureCollection', features: [] });
+      })
+      .catch(() => {
+        if (alive) source.setData({ type: 'FeatureCollection', features: [] });
+      });
+    return () => { alive = false; };
+  }, [apiBase, layerVis.ais_trails, mapReady, resolvedMapPanel]);
+
   // Intel drift traces map layer
   useEffect(() => {
     const map = mapRef.current;
@@ -2610,12 +2677,8 @@ function App() {
 
   // ── Initial data load + polling ──────────────────────────────────────────────
   useEffect(() => {
-    if (isPublicLiveHost) {
-      setVessels({ type: 'FeatureCollection', features: [] });
-      setAlerts({ type: 'FeatureCollection', features: [] });
-      setLoading(false);
-      return undefined;
-    }
+    // Public Live now exposes the public-safe AIS registry as an explicit map
+    // layer. Operator-only alert archives remain suppressed below.
     let alive = true;
     let running = false;           // guard: skip tick if previous loadAll still in flight
     let consecutiveErrors = 0;
@@ -2689,7 +2752,7 @@ function App() {
         running = false;
         if (alive) setLoading(false);
       }
-      loadSummary();
+      if (!isPublicLiveHost) loadSummary();
     }
     loadAll();
     // 30s interval: vessels update on AIS heartbeat (~every 2 min) so 15s was wasteful
@@ -2983,7 +3046,12 @@ function App() {
   }
 
   function focusVessel(vessel) {
-    setSelectedVessel(vessel);
+    const feature = {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [Number(vessel.lon), Number(vessel.lat)] },
+      properties: { ...vessel, mmsi: vessel.mmsi, ship_name: vessel.ship_name || vessel.name },
+    };
+    openVesselReport(feature);
     mapRef.current?.flyTo({
       center: [Number(vessel.lon), Number(vessel.lat)],
       zoom: 8.7,
@@ -3135,7 +3203,7 @@ function App() {
           </div>
         ) : null}
 
-        {selectedVessel && !play3D ? (
+        {selectedVessel && !play3D && !isPublicLiveHost ? (
           <div className={`map-overlay-vessel ${sidebarOpen ? 'sidebar-open' : ''}`}>
             <div className="overlay-card">
               <span className="overlay-label">Selected vessel</span>

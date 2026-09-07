@@ -12,11 +12,15 @@ const INFO_ICON = (
 );
 
 function Swatch({ shape, color, border }) {
+  if (shape === 'triangle') {
+    return <span style={{ width: 0, height: 0, flex: '0 0 auto', borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderBottom: `12px solid ${color}` }} />;
+  }
   const style = {
     width: 12, height: 12, flex: '0 0 auto',
     background: shape === 'ring' ? 'transparent' : color,
     border: `1.5px solid ${border || color}`,
-    borderRadius: shape === 'square' ? 2 : '50%',
+    borderRadius: shape === 'square' || shape === 'diamond' ? 2 : '50%',
+    transform: shape === 'diamond' ? 'rotate(45deg)' : undefined,
   };
   return <span style={style} />;
 }
@@ -45,6 +49,14 @@ export default function Legend() {
       </button>
       {open && (
         <div className="legend-panel">
+          <div className="legend-panel-title">AIS vessels</div>
+          <div className="legend-row"><Swatch shape="triangle" color="#38bdf8" /><span><strong>Moving vessel</strong><small>Triangle points to AIS heading/course</small></span></div>
+          <div className="legend-row"><Swatch shape="circle" color="#60a5fa" /><span><strong>Stationary vessel</strong><small>0.5 kn or less</small></span></div>
+          <div className="legend-row"><Swatch shape="triangle" color="#34d399" /><span><strong>Civil SAR vessel</strong><small>AIS contact in the NGO fleet registry</small></span></div>
+          <div className="legend-row"><Swatch shape="ring" color="#38bdf8" /><span><strong>Selected AIS trail</strong><small>Recent observed track</small></span></div>
+          <div className="legend-panel-title">Signal semantics</div>
+          <div className="legend-row"><Swatch shape="circle" color="#ff3b3b" /><span>Humanitarian / distress</span></div>
+          <div className="legend-row"><Swatch shape="diamond" color="#f59e0b" /><span>Maritime warning / context</span></div>
           <div className="legend-panel-title">OSINT signals</div>
           {SIGNAL_CATEGORIES.filter((c) => c.key !== 'other').map((cat) => (
             <div key={cat.key} className="legend-row legend-row--defined" title={cat.description}>

@@ -19,3 +19,14 @@ test('vessel incident safety filter belongs to Maritime macro', () => {
   assert.match(maritime, /key: 'incident'/);
   assert.match(maritime, /label: 'Safety'/);
 });
+
+
+test('public Live exposes AIS moving, stationary and selected-track layers with a vessel report on click', () => {
+  assert.match(main, /'ais_moving'/);
+  assert.match(main, /'ais_stationary'/);
+  assert.match(main, /'ais_trails'/);
+  assert.match(main, /id: 'vessels-stationary-layer'/);
+  assert.match(main, /id: 'selected-vessel-track'/);
+  assert.match(main, /openVesselReport/);
+  assert.doesNotMatch(main, /if \(isPublicLiveHost\) \{[\s\S]{0,120}setVessels\(\{ type: 'FeatureCollection', features: \[\] \}\)/);
+});

@@ -412,6 +412,7 @@ function EvidenceSources({ props, feature }) {
 function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels, onTriggerIntelDrift }) {
   const props = panel.feature?.properties || {};
   const mmsi = props.linked_mmsi || props.mmsi;
+  const isVesselReport = props.entity_kind === 'vessel' || props.report_type === 'vessel';
   const visual = classifyEventVisual(props);
   const isAlarmPhone = /alarm[ _-]?phone/i.test(`${props.source || ''} ${props.verification_status || ''}`)
     || visual.key === 'humanitarian_alarm_phone';
@@ -533,11 +534,12 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
     return () => { alive = false; };
   }, [apiBase, props.id, publicMode]);
 
-  const lifecycle = props.incident_lifecycle
-    || (['resolved', 'needs_review', 'archived'].includes(props.kind) ? props.kind : 'active');
+  const lifecycle = isVesselReport
+    ? (props.motion_state || 'observed')
+    : props.incident_lifecycle || (['resolved', 'needs_review', 'archived'].includes(props.kind) ? props.kind : 'active');
   const color = visual.color;
   const when = props.timestamp_utc || props.source_timestamp_utc;
-  const eventType = eventAnomalyLabel(props);
+  const eventType = isVesselReport ? 'Live AIS position' : eventAnomalyLabel(props);
   const sanctions = dossier?.identity?.sanctions || [];
   // docs/fixes.md M0.2: a case-specific EventAssessment (when the backend
   // has one for this event kind) takes priority over the older flat
@@ -562,10 +564,10 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
       <div className="cone-section">
         <div className="intel-report-title">
           <span style={{ background: color }} />
-          <strong>{props.vessel_name || props.ship_name || dossier?.static?.name || props.title || 'Maritime signal'}</strong>
+          <strong>{props.display_name || props.vessel_name || props.ship_name || dossier?.static?.name || props.title || 'Maritime signal'}</strong>
         </div>
         {props.text && <p className="intel-report-summary">{props.text}</p>}
-        <Row label="Category" value={visual.label} color={color} />
+        <Row label="Category" value={isVesselReport ? 'Maritime · AIS vessel' : visual.label} color={isVesselReport ? '#38bdf8' : color} />
         <Row label="Event" value={eventType} />
         <Row label="Status" value={lifecycle} color={color} />
         {props.verification_status && <Row label="Verification" value={String(props.verification_status).replace(/_/g, ' ')} />}
@@ -598,7 +600,7 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
       </div>}
 
       <div className="cone-section">
-        <SectionLabel>{isHumanitarian ? 'Humanitarian case' : 'Why this was flagged'}</SectionLabel>
+        <SectionLabel>{isHumanitarian ? 'Humanitarian case' : isVesselReport ? 'Current navigation' : 'Why this was flagged'}</SectionLabel>
         {isHumanitarian ? (
           <>
             <Row label="Case" value={props.humanitarian_case_id || props.incident_id || props.id} mono />
