@@ -20,6 +20,8 @@ export const LAYER_GROUPS = [
   { key: 'ais_moving', label: 'AIS · moving vessels', layers: ['vessels-layer'] },
   { key: 'ais_stationary', label: 'AIS · stationary vessels', layers: ['vessels-stationary-layer'] },
   { key: 'ais_trails', label: 'AIS · selected vessel trail', layers: ['selected-vessel-track'] },
+  { key: 'radio_receivers', label: 'Radio · receiver network', layers: ['radio-receivers-halo', 'radio-receivers-layer'] },
+  { key: 'radio_dsc', label: 'Radio · decoded DSC', layers: ['radio-dsc-halo', 'radio-dsc-layer'] },
   { key: 'ngo_vessels', label: 'NGO SAR fleet',  layers: ['vessels-ngo', 'vessels-ngo-stationary'] },
   { key: 'weather',     label: 'Weather grid',   layers: ['weather-vectors', 'weather-points'] },
   { key: 'sar',         label: 'Distress signals', layers: ['intel-events-layer', 'intel-events-halo', 'intel-distress-core', 'intel-distress-pulse', 'intel-distress-area', 'intel-distress-polygon-fill', 'intel-distress-polygon-outline', 'live-nearby-vessels-layer', 'live-nearby-vessels-halo', 'ngo-response-lines-layer', 'ngo-response-points-layer'] },

@@ -694,6 +694,22 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
         )}
       </div>}
 
+      {mmsi && (dossier?.radio_associations || []).length > 0 && (
+        <div className="cone-section">
+          <SectionLabel>Radio evidence</SectionLabel>
+          {(dossier.radio_associations || []).slice(0, 6).map((association, index) => (
+            <div className="mda-sanctions" key={`${association.created_at || association.ais_observed_at || index}`}>
+              <strong>DSC ↔ AIS · {String(association.match_status || 'observed').replace(/_/g, ' ')}</strong>
+              <span>{Math.round(Number(association.confidence || 0) * 100)}% association confidence</span>
+              {Number.isFinite(Number(association.distance_km)) && <span>{Number(association.distance_km).toFixed(1)} km from AIS fix</span>}
+              {association.ais_observed_at && <span>AIS {ageLabel(association.ais_observed_at)}</span>}
+              {association.episode_eligible && <span>Cross-modal correlation eligible</span>}
+            </div>
+          ))}
+          <p className="intel-report-note">Radio and AIS remain independent evidence lineages; only strong temporally and geographically coherent matches are promoted to a cross-modal episode.</p>
+        </div>
+      )}
+
       {(props.sanctions_matched || sanctions.length > 0) && (
         <div className="cone-section">
           <SectionLabel>Sanctions screening</SectionLabel>
@@ -885,6 +901,109 @@ function TrajectoryView({ panel }) {
   );
 }
 
+function RadioReceiverView({ panel }) {
+  const props = panel?.feature?.properties || {};
+  let capabilities;
+  try { capabilities = JSON.parse(props.capabilities_json || '[]'); } catch { capabilities = []; }
+  const ranges = capabilities.slice(0, 4).map((cap) => {
+    const lo = Number(cap.min_hz);
+    const hi = Number(cap.max_hz);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+    const unit = hi >= 1_000_000 ? 'MHz' : 'kHz';
+    const scale = hi >= 1_000_000 ? 1_000_000 : 1_000;
+    return `${(lo / scale).toFixed(lo < scale ? 3 : 1)}–${(hi / scale).toFixed(1)} ${unit}`;
+  }).filter(Boolean);
+  const coords = panel?.feature?.geometry?.coordinates || [];
+  return (
+    <>
+      <div className="cone-section">
+        <Row label="Station" value={props.station_label || props.receiver_id || 'Radio receiver'} />
+        <Row label="Network" value={props.network_family || '—'} />
+        <Row label="Country" value={props.country || '—'} />
+        <Row label="State" value={props.active ? 'active' : props.state || 'catalogued'} />
+        <Row label="Relevance score" value={Number.isFinite(Number(props.score)) ? `${Number(props.score).toFixed(1)} / 100` : '—'} />
+        {coords.length >= 2 && <Row label="Approx. position" value={`${Number(coords[1]).toFixed(3)}, ${Number(coords[0]).toFixed(3)}`} mono />}
+      </div>
+      <div className="cone-section">
+        <SectionLabel>Receiver capability</SectionLabel>
+        {ranges.length ? ranges.map((range) => <Row key={range} label="Band" value={range} />) : <p className="intel-report-note">Capability metadata unavailable.</p>}
+      </div>
+      <div className="cone-section">
+        <SectionLabel>Provenance</SectionLabel>
+        <p className="intel-report-note">Public receiver infrastructure only. Endpoint and physical lineage are intentionally withheld; receiver observations enter the same evidence pipeline as other acquisition sources.</p>
+      </div>
+    </>
+  );
+}
+
+function RadioMessageView({ panel, apiBase }) {
+  const props = panel?.feature?.properties || {};
+  let association = props.ais_association || null;
+  if (!association && props.ais_association_json) {
+    try { association = JSON.parse(props.ais_association_json); } catch { association = null; }
+  }
+  const isDsc = props.kind === 'dsc';
+  const mmsi = props.mmsi || association?.mmsi || '';
+  const [dossier, setDossier] = useState(null);
+
+  useEffect(() => {
+    if (!mmsi) { setDossier(null); return undefined; }
+    let alive = true;
+    const url = `${apiBase || ''}/api/v1/live/vessels/${encodeURIComponent(mmsi)}/context?hours=168`;
+    fetch(url).then((response) => response.ok ? response.json() : null)
+      .then((data) => { if (alive) setDossier(data); })
+      .catch(() => { if (alive) setDossier(null); });
+    return () => { alive = false; };
+  }, [apiBase, mmsi]);
+
+  const ports = dossier?.recent_port_calls || [];
+  const trackPoints = dossier?.track_points || [];
+  return (
+    <>
+      <div className="cone-section">
+        <Row label="Protocol" value={isDsc ? 'DSC' : 'NAVTEX'} />
+        <Row label="Frequency" value={Number(props.frequency_hz) ? `${(Number(props.frequency_hz) / 1000).toFixed(1)} kHz` : '—'} />
+        <Row label="Observed" value={props.observed_at || '—'} mono />
+        {isDsc && <Row label="Category" value={props.category || '—'} />}
+        {isDsc && <Row label="MMSI" value={mmsi || '—'} mono />}
+        {isDsc && <Row label="Nature" value={props.nature_code || '—'} />}
+        {!isDsc && <Row label="Station" value={props.station_id || '—'} />}
+        {!isDsc && <Row label="Subject" value={props.subject_id || '—'} />}
+        {!isDsc && <Row label="Area" value={props.area || '—'} />}
+      </div>
+      {association && (
+        <div className="cone-section">
+          <SectionLabel>AIS association</SectionLabel>
+          <Row label="Match" value={String(association.match_status || 'observed').replace(/_/g, ' ')} />
+          <Row label="Confidence" value={`${Math.round(Number(association.confidence || 0) * 100)}%`} />
+          {Number.isFinite(Number(association.distance_km)) && <Row label="Distance" value={`${Number(association.distance_km).toFixed(1)} km`} />}
+          <p className="intel-report-note">AIS and radio remain independent evidence lineages. Only strong temporal and geographic agreement is episode-eligible.</p>
+        </div>
+      )}
+      {dossier && (
+        <div className="cone-section">
+          <SectionLabel>Associated vessel report</SectionLabel>
+          <Row label="Name" value={dossier.static?.name || `MMSI ${mmsi}`} />
+          <Row label="IMO" value={dossier.static?.imo || '—'} mono />
+          <Row label="Type" value={shipTypeLabel(dossier.static?.ship_type)} />
+          <Row label="Destination" value={dossier.static?.destination || '—'} />
+          <Row label="Track" value={`${trackPoints.length} AIS fixes · 7 days`} />
+          <Row label="Port calls" value={ports.length ? `${ports.length} derived` : 'none in window'} />
+          {ports.slice(0, 4).map((port, index) => (
+            <Row key={`${port.port}-${index}`} label={index === 0 ? 'Recent port' : 'Earlier'} value={port.port || '—'} />
+          ))}
+        </div>
+      )}
+      {!isDsc && props.text && (
+        <div className="cone-section">
+          <SectionLabel>Decoded message</SectionLabel>
+          <p className="intel-report-note" style={{ whiteSpace: 'pre-wrap' }}>{String(props.text).slice(0, 1200)}</p>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function MapFloatingPanel({
   panel,
   onClose,
@@ -903,17 +1022,25 @@ export default function MapFloatingPanel({
       ? 'Drift projection'
       : panel.type === 'intel'
         ? 'Signal'
-        : 'Selected point';
+        : panel.type === 'radio_receiver'
+          ? (panel.feature?.properties?.station_label || 'Radio receiver')
+          : panel.type === 'radio_message'
+            ? (panel.feature?.properties?.kind === 'navtex' ? 'NAVTEX message' : 'DSC message')
+            : 'Selected point';
   const kicker = panel.type === 'trajectory'
     ? 'OpenDrift forecast'
     : panel.type === 'cone'
       ? 'SAR drift cone'
       : panel.type === 'intel'
         ? 'Live report'
-        : 'Map click';
+        : panel.type === 'radio_receiver'
+          ? 'Receiver mesh'
+          : panel.type === 'radio_message'
+            ? 'Structured radio evidence'
+            : 'Map click';
 
   return (
-    <div className={`cone-panel${panel.type === 'intel' ? ' cone-panel--intel' : ''}`}>
+    <div className={`cone-panel${['intel', 'radio_receiver', 'radio_message'].includes(panel.type) ? ' cone-panel--intel' : ''}`}>
       <div className="cone-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <span className="section-kicker">{kicker}</span>
@@ -930,6 +1057,12 @@ export default function MapFloatingPanel({
       )}
       {panel.type === 'trajectory' && (
         <TrajectoryView panel={panel} />
+      )}
+      {panel.type === 'radio_receiver' && (
+        <RadioReceiverView panel={panel} />
+      )}
+      {panel.type === 'radio_message' && (
+        <RadioMessageView panel={panel} apiBase={apiBase} />
       )}
       {panel.type === 'intel' && (
         <IntelView

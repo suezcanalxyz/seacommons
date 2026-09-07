@@ -3930,3 +3930,8 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .live-acquisition__receiver strong { font-size:10px; }
 .live-acquisition__receiver span { grid-column:1 / -1; opacity:.65; }
 .live-acquisition__receiver small { grid-row:1; grid-column:2; text-transform:uppercase; opacity:.55; }
+.live-acquisition__mesh { margin:3px 0 5px; font-size:10px; opacity:.72; line-height:1.35; }
+.live-acquisition__radio-message { width:100%; margin:3px 0; padding:6px 7px; border:1px solid rgba(255,255,255,.10); border-radius:7px; background:rgba(255,255,255,.025); color:inherit; text-align:left; display:grid; grid-template-columns:1fr auto; gap:3px 8px; cursor:pointer; }
+.live-acquisition__radio-message:hover { background:rgba(255,255,255,.05); }
+.live-acquisition__radio-message strong { font-size:10px; font-weight:600; }
+.live-acquisition__radio-message span { font-size:9px; opacity:.62; text-align:right; }

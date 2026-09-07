@@ -54,6 +54,10 @@ export default function Legend() {
           <div className="legend-row"><Swatch shape="circle" color="#60a5fa" /><span><strong>Stationary vessel</strong><small>0.5 kn or less</small></span></div>
           <div className="legend-row"><Swatch shape="triangle" color="#34d399" /><span><strong>Civil SAR vessel</strong><small>AIS contact in the NGO fleet registry</small></span></div>
           <div className="legend-row"><Swatch shape="ring" color="#38bdf8" /><span><strong>Selected AIS trail</strong><small>Recent observed track</small></span></div>
+          <div className="legend-panel-title">Radio receiver mesh</div>
+          <div className="legend-row"><Swatch shape="circle" color="#a78bfa" /><span><strong>Active receiver</strong><small>Public SDR currently contributing to the acquisition mesh</small></span></div>
+          <div className="legend-row"><Swatch shape="circle" color="#94a3b8" /><span><strong>Known receiver</strong><small>Eligible, standby or temporarily unavailable station</small></span></div>
+          <div className="legend-row"><Swatch shape="ring" color="#ff3b3b" /><span><strong>Decoded DSC</strong><small>Only geolocated structured messages become map points</small></span></div>
           <div className="legend-panel-title">Signal semantics</div>
           <div className="legend-row"><Swatch shape="circle" color="#ff3b3b" /><span>Humanitarian / distress</span></div>
           <div className="legend-row"><Swatch shape="diamond" color="#f59e0b" /><span>Maritime warning / context</span></div>

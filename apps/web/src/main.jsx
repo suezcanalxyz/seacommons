@@ -121,7 +121,7 @@ const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'en
 // never gated by a mode.
 const PUBLIC_LIVE_LAYER_GROUPS = new Set([
   'nautical', 'sar', 'fused', 'observed_tracks', 'drift_models', 'simulation', 'ngo_vessels', 'platforms', 'spikes',
-  'ais_moving', 'ais_stationary', 'ais_trails',
+  'ais_moving', 'ais_stationary', 'ais_trails', 'radio_receivers', 'radio_dsc',
   'intel_social', 'intel_news', 'intel_hazard', 'intel_incident', 'intel_iom', 'intel_ngo',
 ]);
 // Signals selector: two macro groups (the original Humanitarian/Maritime
@@ -605,6 +605,8 @@ function App() {
   const [playSimulationOpen, setPlaySimulationOpen] = useState(false);
   const [timezero, setTimezero] = useState(null);
   const [selectedVessel, setSelectedVessel] = useState(null);
+  const [receiverMesh, setReceiverMesh] = useState({ catalogued: 0, reachable: 0, eligible: 0, active: 0, receivers: [] });
+  const [radioSummary, setRadioSummary] = useState({ events: [], messages: [] });
   const [nearestVessels, setNearestVessels] = useState([]);
   const [mapReady, setMapReady] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -671,6 +673,8 @@ function App() {
       ais_moving: true,
       ais_stationary: true,
       ais_trails: true,
+      radio_receivers: true,
+      radio_dsc: true,
       ngo_vessels: true,
       weather: true,
       sar: true,
@@ -1275,6 +1279,8 @@ function App() {
         map.addSource('weather-vectors',   { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('vessels',           { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('selected-vessel-track', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('radio-receivers', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('radio-dsc', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('vessels-ngo',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('platforms',         { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('alerts',            { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -1362,6 +1368,47 @@ function App() {
             'circle-opacity': 0.95,
             'circle-stroke-width': 1.4,
             'circle-stroke-color': '#04131a',
+          },
+        });
+
+        // Public-safe radio receiver mesh. Coordinates are deliberately coarse
+        // (3 decimals) and the API never exposes receiver endpoint or physical lineage.
+        map.addLayer({
+          id: 'radio-receivers-halo', type: 'circle', source: 'radio-receivers',
+          paint: {
+            'circle-radius': ['match', ['get', 'active'], true, 10, 7],
+            'circle-color': ['match', ['get', 'active'], true, 'rgba(167,139,250,0.24)', 'rgba(148,163,184,0.12)'],
+            'circle-blur': 0.7,
+          },
+        });
+        map.addLayer({
+          id: 'radio-receivers-layer', type: 'circle', source: 'radio-receivers',
+          paint: {
+            'circle-radius': ['match', ['get', 'active'], true, 5.5, 4],
+            'circle-color': ['match', ['get', 'active'], true, '#a78bfa', '#94a3b8'],
+            'circle-opacity': ['match', ['get', 'state'], 'offline', 0.35, 0.92],
+            'circle-stroke-width': 1.2,
+            'circle-stroke-color': '#07151b',
+          },
+        });
+
+        // Geolocated decoded DSC messages. A radio burst without a decoded
+        // position never becomes a map point.
+        map.addLayer({
+          id: 'radio-dsc-halo', type: 'circle', source: 'radio-dsc',
+          paint: {
+            'circle-radius': 10,
+            'circle-color': ['match', ['get', 'category'], 'distress', 'rgba(255,59,59,0.24)', 'rgba(245,158,11,0.2)'],
+            'circle-blur': 0.7,
+          },
+        });
+        map.addLayer({
+          id: 'radio-dsc-layer', type: 'circle', source: 'radio-dsc',
+          paint: {
+            'circle-radius': 5.5,
+            'circle-color': ['match', ['get', 'category'], 'distress', '#ff3b3b', 'urgency', '#f59e0b', 'safety', '#38bdf8', '#a78bfa'],
+            'circle-stroke-width': 1.4,
+            'circle-stroke-color': '#07151b',
           },
         });
 
@@ -2151,6 +2198,28 @@ function App() {
           event.originalEvent?.stopPropagation?.();
         });
 
+        map.on('mouseenter', 'radio-receivers-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'radio-receivers-layer', () => {
+          map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+        });
+        map.on('click', 'radio-receivers-layer', (event) => {
+          const feature = event.features?.[0];
+          if (!feature) return;
+          setMapPanel({ type: 'radio_receiver', feature });
+          setConePanelHidden(false);
+          event.originalEvent?.stopPropagation?.();
+        });
+
+        map.on('mouseenter', 'radio-dsc-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'radio-dsc-layer', () => { map.getCanvas().style.cursor = ''; });
+        map.on('click', 'radio-dsc-layer', (event) => {
+          const feature = event.features?.[0];
+          if (!feature) return;
+          setMapPanel({ type: 'radio_message', feature });
+          setConePanelHidden(false);
+          event.originalEvent?.stopPropagation?.();
+        });
+
         // Vessel click opens the same full Live report used by every signal.
         for (const lyr of ['vessels-layer', 'vessels-stationary-layer', 'vessels-ngo', 'vessels-ngo-stationary', 'proximity-vessels-layer', 'live-nearby-vessels-layer']) {
           map.on('mouseenter', lyr, () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -2573,6 +2642,87 @@ function App() {
     timer = window.setInterval(refresh, LIVE_VESSEL_REFRESH_MS);
     return () => { alive = false; if (timer) window.clearInterval(timer); };
   }, [intelEvents, mapReady, apiBase]);
+
+  // Receiver mesh is provenance/infrastructure, not a third public content
+  // compartment. Poll a bounded public-safe snapshot and render only coarse
+  // station locations with operational state.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map?.getSource('radio-receivers')) return undefined;
+    let alive = true;
+    let timer = null;
+    const refresh = async () => {
+      try {
+        const data = await fetchJson(apiBase, '/api/v1/live/receivers/mesh?limit=64', undefined, 10000);
+        if (!alive) return;
+        setReceiverMesh(data || { catalogued: 0, reachable: 0, eligible: 0, active: 0, receivers: [] });
+        const features = (data?.receivers || [])
+          .filter((receiver) => Number.isFinite(Number(receiver.latitude)) && Number.isFinite(Number(receiver.longitude)))
+          .map((receiver) => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [Number(receiver.longitude), Number(receiver.latitude)] },
+            properties: {
+              receiver_id: receiver.receiver_id || '',
+              station_label: receiver.station_label || receiver.receiver_id || 'Radio receiver',
+              network_family: receiver.network_family || '',
+              country: receiver.country || '',
+              state: receiver.state || 'catalogued',
+              score: Number(receiver.score || 0),
+              active: Boolean(receiver.active),
+              capabilities_json: JSON.stringify(receiver.capabilities || []),
+            },
+          }));
+        map.getSource('radio-receivers')?.setData({ type: 'FeatureCollection', features });
+      } catch {
+        if (alive) map.getSource('radio-receivers')?.setData({ type: 'FeatureCollection', features: [] });
+      }
+    };
+    refresh();
+    timer = window.setInterval(refresh, 60_000);
+    return () => { alive = false; if (timer) window.clearInterval(timer); };
+  }, [apiBase, mapReady]);
+
+  // Decoded radio messages and correlated RF events are public-safe summaries.
+  // Only DSC messages carrying an explicit decoded position become map points.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map?.getSource('radio-dsc')) return undefined;
+    let alive = true;
+    let timer = null;
+    const refresh = async () => {
+      try {
+        const [eventData, messageData] = await Promise.all([
+          fetchJson(apiBase, '/api/v1/live/radio/events?limit=50', undefined, 10000),
+          fetchJson(apiBase, '/api/v1/live/radio/messages?limit=50', undefined, 10000),
+        ]);
+        if (!alive) return;
+        const messages = Array.isArray(messageData?.messages) ? messageData.messages : [];
+        setRadioSummary({ events: eventData?.events || [], messages });
+        const features = messages
+          .filter((message) => message.kind === 'dsc' && Number.isFinite(Number(message.latitude)) && Number.isFinite(Number(message.longitude)))
+          .map((message) => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [Number(message.longitude), Number(message.latitude)] },
+            properties: {
+              observation_id: message.observation_id || '', kind: 'dsc',
+              category: message.category || 'safety', mmsi: message.mmsi || '',
+              nature_code: message.nature_code || '', frequency_hz: Number(message.frequency_hz || 0),
+              observed_at: message.observed_at || '',
+              ais_association_json: JSON.stringify(message.ais_association || null),
+            },
+          }));
+        map.getSource('radio-dsc')?.setData({ type: 'FeatureCollection', features });
+      } catch {
+        if (alive) {
+          setRadioSummary({ events: [], messages: [] });
+          map.getSource('radio-dsc')?.setData({ type: 'FeatureCollection', features: [] });
+        }
+      }
+    };
+    refresh();
+    timer = window.setInterval(refresh, 60_000);
+    return () => { alive = false; if (timer) window.clearInterval(timer); };
+  }, [apiBase, mapReady]);
 
   // Selected AIS report trail. The public map never downloads every historical
   // trajectory; it fetches the bounded public dossier only for the contact the
@@ -3231,7 +3381,7 @@ function App() {
 
         {/* Cone detail panel — right side, appears when clicking a drift cone or a signal marker */}
         {mapPanel?.type === 'intel' && !conePanelHidden && <div className="intel-report-map-overlay" aria-hidden="true" />}
-        {['cone', 'trajectory', 'intel'].includes(mapPanel?.type) && !conePanelHidden && (
+        {['cone', 'trajectory', 'intel', 'radio_receiver', 'radio_message'].includes(mapPanel?.type) && !conePanelHidden && (
           <MapFloatingPanel
             panel={resolvedMapPanel}
             onClose={() => setConePanelHidden(true)}
@@ -3243,7 +3393,7 @@ function App() {
             onTriggerIntelDrift={triggerIntelDrift}
           />
         )}
-        {['cone', 'trajectory', 'intel'].includes(mapPanel?.type) && conePanelHidden && (
+        {['cone', 'trajectory', 'intel', 'radio_receiver', 'radio_message'].includes(mapPanel?.type) && conePanelHidden && (
           <button
             className="cone-reopen-btn"
             onClick={() => setConePanelHidden(false)}
@@ -3521,6 +3671,35 @@ function App() {
               </p>
               <section className="live-acquisition" aria-label="Acquisition pipeline">
                 <div className="live-acquisition__head"><span>Acquisition</span><small>ONE DATA PIPELINE</small></div>
+                <div className="live-acquisition__mesh">
+                  Radio mesh · {receiverMesh.catalogued || 0} catalogued · {receiverMesh.reachable || 0} reachable · {receiverMesh.eligible || 0} eligible · {receiverMesh.active || 0} active
+                </div>
+                <div className="live-acquisition__mesh">
+                  RF events · {(radioSummary.events || []).length} recent · DSC · {(radioSummary.messages || []).filter((message) => message.kind === 'dsc').length} · NAVTEX · {(radioSummary.messages || []).filter((message) => message.kind === 'navtex').length}
+                </div>
+                {(radioSummary.messages || []).slice(0, 3).map((message) => (
+                  <button
+                    type="button"
+                    className="live-acquisition__radio-message"
+                    key={message.observation_id}
+                    onClick={() => {
+                      setMapPanel({
+                        type: 'radio_message',
+                        feature: {
+                          type: 'Feature',
+                          geometry: Number.isFinite(Number(message.latitude)) && Number.isFinite(Number(message.longitude))
+                            ? { type: 'Point', coordinates: [Number(message.longitude), Number(message.latitude)] }
+                            : null,
+                          properties: { ...message, ais_association_json: JSON.stringify(message.ais_association || null) },
+                        },
+                      });
+                      setConePanelHidden(false);
+                    }}
+                  >
+                    <strong>{message.kind === 'dsc' ? `DSC · ${message.category || 'decoded'}` : `NAVTEX · ${message.station_id || 'message'}`}</strong>
+                    <span>{message.mmsi ? `MMSI ${message.mmsi}` : message.subject_id || message.area || 'structured radio'}</span>
+                  </button>
+                ))}
                 {pipelineSources.map((source) => (
                   <div className="live-acquisition__source" key={source.family}>
                     <div><i className={`is-${source.state}`} /><strong>{source.label}</strong><span>{source.state}</span></div>

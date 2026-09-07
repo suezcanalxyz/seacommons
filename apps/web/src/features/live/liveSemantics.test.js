@@ -30,3 +30,13 @@ test('public Live exposes AIS moving, stationary and selected-track layers with 
   assert.match(main, /openVesselReport/);
   assert.doesNotMatch(main, /if \(isPublicLiveHost\) \{[\s\S]{0,120}setVessels\(\{ type: 'FeatureCollection', features: \[\] \}\)/);
 });
+
+test('public Live exposes the radio receiver mesh and decoded DSC without making Radio a third macro category', () => {
+  assert.match(main, /'radio_receivers'/);
+  assert.match(main, /'radio_dsc'/);
+  assert.match(main, /id: 'radio-receivers-layer'/);
+  assert.match(main, /id: 'radio-dsc-layer'/);
+  assert.match(main, /\/api\/v1\/live\/radio\/messages/);
+  assert.match(main, /\/api\/v1\/live\/radio\/events/);
+  assert.doesNotMatch(main, /key: 'radio'[\s\S]{0,80}label: 'Radio'/);
+});
