@@ -55,18 +55,10 @@ def collect_mda_anomalies(hours: float, kind: str) -> dict:
     for e in candidates:
         if kind != "all" and e.type != kind:
             continue
-        # A correlated_alert already represents its contributing raw
-        # finding(s) with the same evidentiary content (same vessel, same
-        # position) -- showing both as separate map points reads as a
-        # duplicate. Keep only the richer correlated_alert when one exists.
         if e.type != "correlated_alert" and e.id in covered_ids:
             continue
         lat, lon = e.lat, e.lon
         if e.type == "correlated_alert" and (lat is None or lon is None):
-            # A sanctions hit can correlate without a position (see
-            # normalize() above); if a contributing raw event has since
-            # picked up a real position, backfill it here rather than
-            # plotting nothing.
             for cid in (e.metadata.get("contributing") or []):
                 src = by_id.get(cid)
                 if src is not None and src.lat is not None and src.lon is not None:
@@ -124,6 +116,35 @@ def _baseline_payload(baseline, *, mmsi: str) -> dict:
     }
 
 
+def _radio_associations_for_vessel(mmsi: str, *, limit: int = 20) -> list[dict]:
+    try:
+        from core.db.session import session_scope
+        from core.radio.ais_association import RadioAISAssociationDB
+
+        with session_scope() as db:
+            rows = (
+                db.query(RadioAISAssociationDB)
+                .filter(RadioAISAssociationDB.mmsi == str(mmsi))
+                .order_by(RadioAISAssociationDB.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return [
+                {
+                    "observation_id": row.observation_id,
+                    "match_status": row.match_status,
+                    "confidence": float(row.confidence),
+                    "distance_km": row.distance_km,
+                    "ais_observed_at": row.ais_observed_at,
+                    "episode_eligible": bool(row.episode_eligible),
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                }
+                for row in rows
+            ]
+    except Exception:
+        return []
+
+
 def build_vessel_dossier(mmsi: str, *, hours: float, track_limit: int = 5000, include_behaviour: bool = False) -> dict:
     from core.mda.identity import screen
     from core.vessels.registry import registry
@@ -153,6 +174,7 @@ def build_vessel_dossier(mmsi: str, *, hours: float, track_limit: int = 5000, in
         },
         "track_points": track,
         "recent_port_calls": _derive_recent_port_calls(track),
+        "radio_associations": _radio_associations_for_vessel(mmsi),
     }
     if include_behaviour:
         from core.mda.behaviour_assessment import assess_behaviour
