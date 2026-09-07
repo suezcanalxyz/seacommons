@@ -4,23 +4,23 @@ from datetime import datetime, timezone
 def _message(**overrides):
     from core.radio.provider import DecodedRadioMessage
 
-    values = dict(
-        kind="dsc",
-        receiver_id="rx",
-        provider="kiwisdr",
-        physical_lineage="lineage",
-        frequency_hz=2_187_500,
-        mode="usb",
-        observed_at=datetime(2026, 9, 7, 15, 0, tzinfo=timezone.utc),
-        payload={
+    values = {
+        "kind": "dsc",
+        "receiver_id": "rx",
+        "provider": "kiwisdr",
+        "physical_lineage": "lineage",
+        "frequency_hz": 2_187_500,
+        "mode": "usb",
+        "observed_at": datetime(2026, 9, 7, 15, 0, tzinfo=timezone.utc),
+        "payload": {
             "category": "distress",
             "mmsi": "123456789",
             "latitude": 35.9,
             "longitude": 14.5,
         },
-        provider_message_id="dsc-1",
-        source_terms="allowed",
-    )
+        "provider_message_id": "dsc-1",
+        "source_terms": "allowed",
+    }
     values.update(overrides)
     return DecodedRadioMessage(**values)
 
@@ -74,13 +74,12 @@ def test_mmsi_without_radio_position_stays_identity_only(monkeypatch):
 
 
 def test_association_persistence_is_idempotent():
+    from core.db.models import RadioAISAssociationDB
     from core.db.session import engine, session_scope
     from core.radio.ais_association import (
         RadioAISAssociation,
-        RadioAISAssociationDB,
         persist_association,
     )
-
     RadioAISAssociationDB.__table__.create(bind=engine(), checkfirst=True)
     assoc = RadioAISAssociation(
         "obs:persist",
@@ -129,7 +128,10 @@ def test_decoded_dsc_bridge_attaches_ais_association(monkeypatch):
 
 
 def test_only_strong_match_can_create_cross_modal_episode(monkeypatch):
-    from core.radio.ais_association import RadioAISAssociation, persist_strong_radio_ais_episode
+    from core.radio.ais_association import (
+        RadioAISAssociation,
+        persist_strong_radio_ais_episode,
+    )
 
     seen = []
     monkeypatch.setattr("core.intel.episode_store.save_episode", lambda feature: seen.append(feature) or feature)

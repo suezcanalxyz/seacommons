@@ -6,25 +6,8 @@ import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Float, String
-
-from core.db.models import Base
+from core.db.models import RadioAISAssociationDB
 from core.radio.provider import DecodedRadioMessage
-
-
-class RadioAISAssociationDB(Base):
-    """Audit record linking decoded DSC evidence to recent AIS history."""
-
-    __tablename__ = "radio_ais_associations"
-
-    observation_id = Column(String(64), primary_key=True)
-    mmsi = Column(String(16), nullable=False, index=True)
-    match_status = Column(String(32), nullable=False, index=True)
-    confidence = Column(Float, nullable=False)
-    distance_km = Column(Float)
-    ais_observed_at = Column(String(40))
-    episode_eligible = Column(Boolean, nullable=False, default=False)
-    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(frozen=True)

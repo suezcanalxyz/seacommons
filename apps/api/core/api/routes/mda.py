@@ -119,7 +119,7 @@ def _baseline_payload(baseline, *, mmsi: str) -> dict:
 def _radio_associations_for_vessel(mmsi: str, *, limit: int = 20) -> list[dict]:
     try:
         from core.db.session import session_scope
-        from core.radio.ais_association import RadioAISAssociationDB
+        from core.db.models import RadioAISAssociationDB
 
         with session_scope() as db:
             rows = (

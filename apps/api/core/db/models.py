@@ -904,6 +904,19 @@ class RadioEventDB(Base):
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
+class RadioAISAssociationDB(Base):
+    """Audit record linking decoded DSC evidence to recent AIS history."""
+    __tablename__ = "radio_ais_associations"
+    observation_id = Column(String(64), primary_key=True)
+    mmsi = Column(String(16), nullable=False, index=True)
+    match_status = Column(String(32), nullable=False, index=True)
+    confidence = Column(Float, nullable=False)
+    distance_km = Column(Float)
+    ais_observed_at = Column(String(40))
+    episode_eligible = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 class ReceiverCatalogDB(Base):
     """Persistent discovered/validated receiver catalog; endpoints remain private."""
     __tablename__ = "receiver_catalog"
