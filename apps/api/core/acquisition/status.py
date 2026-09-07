@@ -11,7 +11,7 @@ _lock = threading.Lock()
 _providers: dict[str, tuple[str, StatusProvider]] = {}
 
 _ALLOWED_DETAIL_FIELDS = frozenset(
-    {"mode", "configured", "started", "failed", "last_observation_at", "receivers"}
+    {"mode", "configured", "started", "failed", "last_observation_at", "receivers", "structured_enabled"}
 )
 _ALLOWED_RECEIVER_FIELDS = frozenset(
     {

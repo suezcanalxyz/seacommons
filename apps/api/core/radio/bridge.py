@@ -71,6 +71,7 @@ def handle_decoded_radio_message(message: DecodedRadioMessage) -> dict[str, obje
 
 
 def radio_acquisition_status() -> dict[str, object]:
+    from core.config import config
     from core.radio.runtime import get_remote_radio_status
 
     status = get_remote_radio_status(include_receivers=True)
@@ -85,6 +86,7 @@ def radio_acquisition_status() -> dict[str, object]:
         state = "live" if any(row.get("state") == "connected" for row in receivers) else "degraded"
     return {
         "state": state,
+        "structured_enabled": bool(config.STRUCTURED_RADIO_ENABLED),
         "configured": int(status.get("configured") or 0),
         "started": int(status.get("started") or 0),
         "failed": int(status.get("failed") or 0),

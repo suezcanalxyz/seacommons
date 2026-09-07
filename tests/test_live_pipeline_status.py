@@ -27,6 +27,7 @@ def test_live_pipeline_endpoint_is_public_and_uses_unified_source_families(monke
         lambda: {
             "state": "live",
             "configured": 1,
+            "structured_enabled": True,
             "receivers": [
                 {
                     "receiver_id": "med_dsc",
@@ -54,6 +55,7 @@ def test_live_pipeline_endpoint_is_public_and_uses_unified_source_families(monke
     assert next(source for source in payload["sources"] if source["family"] == "ais")["mode"] == "legacy"
     radio = next(source for source in payload["sources"] if source["family"] == "radio")
     assert radio["receivers"][0]["station_label"] == "Mediterranean DSC"
+    assert radio["structured_enabled"] is True
     serialized = str(payload).lower()
     for forbidden in (
         "frontend_url", "source_terms", "session_id", "physical_lineage",
@@ -72,3 +74,21 @@ def test_acquisition_status_fails_closed_on_bad_provider_state(monkeypatch):
     )
     sources = acquisition_status.acquisition_status_sources()
     assert sources == [{"family": "radio", "label": "Radio", "state": "degraded"}]
+
+
+def test_radio_acquisition_status_reports_structured_capability_when_remote_is_disabled(monkeypatch):
+    from core.config import config
+    from core.radio import runtime as radio_runtime
+    from core.radio.bridge import radio_acquisition_status
+
+    monkeypatch.setattr(config, "STRUCTURED_RADIO_ENABLED", True)
+    monkeypatch.setattr(
+        radio_runtime,
+        "get_remote_radio_status",
+        lambda include_receivers=False: {
+            "enabled": False, "configured": 0, "started": 0, "failed": 0, "receivers": [],
+        },
+    )
+    status = radio_acquisition_status()
+    assert status["state"] == "disabled"
+    assert status["structured_enabled"] is True
