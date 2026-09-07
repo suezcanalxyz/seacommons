@@ -63,7 +63,13 @@ class RemoteRadioRuntime:
             try:
                 adapter = self._adapter_factory(descriptor, self._observation_handler)
                 adapter.start()
+                if descriptor.frequency_hz is not None and descriptor.mode is not None:
+                    adapter.tune(descriptor.frequency_hz, descriptor.mode)
             except Exception:
+                try:
+                    adapter.stop()
+                except Exception:
+                    pass
                 self._failed_by_provider[provider] += 1
                 record_remote_radio_event(provider=provider, state="disconnected", outcome="start_failed")
                 continue

@@ -23,6 +23,7 @@ class FakeAdapter:
         self.fail = fail
         self.started = False
         self.stopped = False
+        self.tuned = []
 
     def start(self):
         if self.fail:
@@ -47,7 +48,7 @@ class FakeAdapter:
         return self.descriptor.capabilities
 
     def tune(self, frequency_hz, mode):
-        return None
+        self.tuned.append((frequency_hz, mode))
 
 
 def test_runtime_disabled_by_default_never_builds_adapters():
@@ -249,3 +250,29 @@ def test_detailed_runtime_status_exposes_only_public_safe_receiver_channel_metad
     assert "secret.example.org" not in serialized
     assert "private terms text" not in serialized
     assert "physical_lineage" not in serialized
+
+
+def test_runtime_tunes_configured_channel_after_receiver_start():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    descriptor = ReceiverDescriptor(
+        receiver_id="med_dsc", provider="kiwisdr", frontend_url="https://rx.example.org",
+        physical_lineage="med_rx", enabled=True, terms_status="allowed",
+        source_terms="operator-permission",
+        capabilities=(ReceiverCapability(2_000_000, 3_000_000, ("usb",)),),
+        public_label="Mediterranean DSC", channel_kind="dsc",
+        frequency_hz=2_187_500, mode="usb",
+    )
+    adapters = []
+    def factory(desc, callback):
+        adapter = FakeAdapter(desc)
+        adapters.append(adapter)
+        return adapter
+
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=(descriptor,), max_receivers=8, adapter_factory=factory,
+    )
+    runtime.start()
+
+    assert adapters[0].tuned == [(2_187_500, "usb")]
+    assert runtime.status()["started"] == 1
