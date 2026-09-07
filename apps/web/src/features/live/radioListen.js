@@ -1,3 +1,12 @@
+export function liveListenHttpUrl(apiBase, receiverId, locationLike = window.location) {
+  const origin = locationLike?.origin || window.location.origin;
+  const url = new URL(apiBase || origin, origin);
+  url.pathname = `/api/v1/live/radio/listen/${encodeURIComponent(String(receiverId || ''))}`;
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
 export function liveListenWebSocketUrl(apiBase, receiverId, locationLike = window.location, routeBase = '/api/v1/live/radio/listen') {
   const origin = locationLike?.origin || window.location.origin;
   const url = new URL(apiBase || origin, origin);

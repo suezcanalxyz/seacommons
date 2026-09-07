@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 
 from core.config import config
 from core.intel.store import intel_store
@@ -407,6 +408,59 @@ async def live_radio_messages(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "messages": messages,
     }
+
+
+@router.get("/radio/listen/{receiver_id}")
+async def live_radio_listen_http(
+    receiver_id: str,
+    stream_seconds: int = Query(default=8, ge=1, le=10),
+):
+    """Short-lived ephemeral PCM stream for HTTPS clients; audio is never persisted."""
+    import queue as queue_module
+
+    from core.radio.listen import listen_broker, listen_eligible_receiver_ids
+    from core.radio.runtime import get_remote_radio_status
+
+    if not config.RADIO_LIVE_LISTEN_ENABLED:
+        raise HTTPException(status_code=503, detail="live listen disabled")
+
+    runtime = get_remote_radio_status(include_receivers=True)
+    active_ids = {
+        str(row.get("receiver_id"))
+        for row in runtime.get("receivers", [])
+        if row.get("receiver_id") and row.get("state") == "connected"
+    }
+    if receiver_id not in listen_eligible_receiver_ids(active_ids):
+        raise HTTPException(status_code=404, detail="receiver unavailable")
+    try:
+        subscription = listen_broker.subscribe(receiver_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="listen capacity reached") from exc
+
+    async def pcm_stream():
+        deadline = asyncio.get_running_loop().time() + stream_seconds
+        try:
+            while asyncio.get_running_loop().time() < deadline:
+                try:
+                    packet = await asyncio.to_thread(subscription.queue.get, True, 1.0)
+                except queue_module.Empty:
+                    continue
+                yield packet
+        finally:
+            listen_broker.unsubscribe(subscription)
+
+    return StreamingResponse(
+        pcm_stream(),
+        media_type="audio/L16",
+        headers={
+            "Cache-Control": "no-store",
+            "X-SeaCommons-Audio-Encoding": "pcm_s16le",
+            "X-SeaCommons-Sample-Rate": "12000",
+            "X-SeaCommons-Channels": "1",
+            "X-SeaCommons-Persistent": "false",
+            "X-SeaCommons-Listen-Max-Seconds": str(max(1, min(int(config.RADIO_LIVE_LISTEN_MAX_SECONDS), 600))),
+        },
+    )
 
 
 @router.websocket("/radio/listen/{receiver_id}")

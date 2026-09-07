@@ -13,7 +13,6 @@
     // forever if the publisher ever goes down before sending that signal.
     "LIVE_EVENT_TTL_SECONDS": "691200",
     "LIVE_HEARTBEAT_MAX_AGE_SECONDS": "120",
-    "RADIO_LISTEN_UPSTREAM": "http://152.70.182.58",
     "NOSTR_BRIDGE_URL": ""
   },
   "durable_objects": {

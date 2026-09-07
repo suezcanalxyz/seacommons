@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { liveListenWebSocketUrl, pcm16leToFloat32 } from './radioListen.js';
+import { liveListenHttpUrl, liveListenWebSocketUrl, pcm16leToFloat32 } from './radioListen.js';
 
 test('listen websocket URL follows API origin and switches to ws protocol', () => {
   assert.equal(
@@ -24,14 +24,13 @@ test('PCM16 little-endian packets become normalized WebAudio samples', () => {
 });
 
 
-test('listen websocket can target the Cloudflare edge relay in production', () => {
+test('listen HTTP stream stays on the API/VM path instead of Cloudflare', () => {
   assert.equal(
-    liveListenWebSocketUrl(
-      'https://seacommons-edge.seacommons.workers.dev',
-      'rx-edge',
-      { origin: 'https://live.seacommons.org' },
-      '/v1/radio/listen',
-    ),
-    'wss://seacommons-edge.seacommons.workers.dev/v1/radio/listen/rx-edge',
+    liveListenHttpUrl('', 'rx-vm', { origin: 'https://live.seacommons.org' }),
+    'https://live.seacommons.org/api/v1/live/radio/listen/rx-vm',
+  );
+  assert.equal(
+    liveListenHttpUrl('https://console.seacommons.org', 'rx 2', { origin: 'https://live.seacommons.org' }),
+    'https://console.seacommons.org/api/v1/live/radio/listen/rx%202',
   );
 });

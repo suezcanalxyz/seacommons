@@ -4,6 +4,10 @@ The edge gateway removes environmental-feed traffic from Oracle and shields
 the upstream providers with a ten-minute spatial/time cache. It never runs the
 trajectory model: public simulation remains in the browser Worker.
 
+Radio Listen is intentionally **not** routed through Cloudflare. The Live UI requests short,
+non-cached PCM streams over the existing same-origin `/api` proxy; the audio broker and
+receiver connections stay on the Oracle VM, and no audio is persisted.
+
 ## Responsibility split
 
 | Component | Responsibility | Failure behaviour |

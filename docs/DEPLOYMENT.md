@@ -78,6 +78,10 @@ The edge publisher additionally requires `LIVE_EDGE_INGEST_URL` and
 combinations at startup; run `python -m core.config_validation` before a
 deploy. Full variable reference: [CONFIGURATION.md](CONFIGURATION.md).
 
+Live radio listening is an exception to the edge path: browser audio uses short HTTPS PCM
+streams on `/api/v1/live/radio/listen/{receiver_id}` through the Vercel same-origin proxy to
+Oracle. Cloudflare carries Public Live events/environment only, not receiver audio.
+
 ### Optional integrations
 
 All default to disabled/unset and degrade cleanly when absent: `AISSTREAM_KEY`

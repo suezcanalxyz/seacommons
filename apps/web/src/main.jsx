@@ -3390,8 +3390,6 @@ function App() {
             onClose={() => setConePanelHidden(true)}
             onComputeDrift={null}
             apiBase={apiBase}
-            radioListenBase={LIVE_EDGE_BASE || apiBase}
-            radioListenRoute={LIVE_EDGE_BASE ? '/v1/radio/listen' : '/api/v1/live/radio/listen'}
             publicMode={isPublicLiveHost}
             intelDrifts={displayedIntelDrifts}
             loadNearestVessels={loadNearestVessels}

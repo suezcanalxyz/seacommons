@@ -125,6 +125,41 @@ def test_listen_websocket_streams_broker_pcm_bytes(monkeypatch):
         assert websocket.receive_bytes() == packet
 
 
+
+def test_listen_http_streams_ephemeral_pcm_without_cloudflare(monkeypatch):
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from core.api.main import app
+    from core.config import config
+    from core.radio.listen import listen_broker
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(config, "RADIO_LIVE_LISTEN_ENABLED", True)
+    monkeypatch.setattr("core.radio.runtime.get_remote_radio_status", lambda include_receivers=False: {
+        "receivers": [{"receiver_id": "rx-listen", "state": "connected"}],
+    })
+    monkeypatch.setattr("core.radio.listen.listen_eligible_receiver_ids", lambda ids: {"rx-listen"})
+
+    with TestClient(app) as test_client, ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(lambda: test_client.get(
+            "/api/v1/live/radio/listen/rx-listen?stream_seconds=1"
+        ))
+        deadline = time.monotonic() + 1.0
+        while listen_broker.status()["subscribers"] < 1 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert listen_broker.status()["subscribers"] == 1
+        packet = b"\x01\x00\xff\x7f"
+        assert listen_broker.publish(_frame(packet)) == 1
+        response = future.result(timeout=3)
+
+    assert response.status_code == 200
+    assert response.content == packet
+    assert response.headers["content-type"].startswith("audio/L16")
+    assert response.headers["x-seacommons-audio-encoding"] == "pcm_s16le"
+    assert response.headers["x-seacommons-sample-rate"] == "12000"
+    assert response.headers["cache-control"] == "no-store"
+
 def test_receiver_mesh_advertises_listen_capability_without_receiver_endpoint(monkeypatch):
     from core.api.main import app
     from core.config import config

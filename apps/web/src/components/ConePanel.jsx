@@ -9,7 +9,7 @@ import {
   observationText,
 } from '../features/live/assessmentPresentation.js';
 import { shipTypeLabel } from '../features/live/vesselType.js';
-import { liveListenWebSocketUrl, pcm16leToFloat32 } from '../features/live/radioListen.js';
+import { liveListenHttpUrl, pcm16leToFloat32 } from '../features/live/radioListen.js';
 
 const HORIZON = {
   cone_6h:  '6 h drift zone',
@@ -902,35 +902,49 @@ function TrajectoryView({ panel }) {
   );
 }
 
-function RadioLiveListen({ props, apiBase, radioListenRoute }) {
+function RadioLiveListen({ props, apiBase }) {
   const [status, setStatus] = useState('idle');
   const [format, setFormat] = useState(null);
-  const socketRef = useRef(null);
+  const abortRef = useRef(null);
   const contextRef = useRef(null);
-  const formatRef = useRef(null);
   const nextStartRef = useRef(0);
 
-  const stopListening = () => {
-    const socket = socketRef.current;
-    socketRef.current = null;
-    if (socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, 'listener stopped');
+  const closeContext = () => {
     const context = contextRef.current;
     contextRef.current = null;
     if (context && context.state !== 'closed') context.close().catch(() => {});
-    formatRef.current = null;
     nextStartRef.current = 0;
+  };
+
+  const stopListening = () => {
+    const controller = abortRef.current;
+    abortRef.current = null;
+    if (controller) controller.abort();
+    closeContext();
     setFormat(null);
     setStatus('idle');
   };
 
   useEffect(() => () => {
-    const socket = socketRef.current;
-    socketRef.current = null;
-    if (socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, 'panel closed');
-    const context = contextRef.current;
-    contextRef.current = null;
-    if (context && context.state !== 'closed') context.close().catch(() => {});
+    abortRef.current?.abort();
+    abortRef.current = null;
+    closeContext();
   }, []);
+
+  const schedulePcm = (context, payload, sampleRate) => {
+    if (!payload.byteLength || context.state === 'closed') return;
+    const samples = pcm16leToFloat32(payload);
+    if (nextStartRef.current > context.currentTime + 0.75) return;
+    const buffer = context.createBuffer(1, samples.length, sampleRate);
+    buffer.copyToChannel(samples, 0);
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+    source.onended = () => source.disconnect();
+    const startAt = Math.max(context.currentTime + 0.025, nextStartRef.current);
+    source.start(startAt);
+    nextStartRef.current = startAt + buffer.duration;
+  };
 
   const startListening = async () => {
     if (status === 'connecting' || status === 'live') {
@@ -943,66 +957,63 @@ function RadioLiveListen({ props, apiBase, radioListenRoute }) {
       return;
     }
     setStatus('connecting');
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const context = new AudioContextCtor();
       contextRef.current = context;
       nextStartRef.current = context.currentTime;
       await context.resume();
-      const socket = new WebSocket(liveListenWebSocketUrl(apiBase, props.receiver_id, window.location, radioListenRoute));
-      socket.binaryType = 'arraybuffer';
-      socketRef.current = socket;
+      const startedAt = Date.now();
+      let maxSessionSeconds = 120;
+      let carry = new Uint8Array(0);
 
-      socket.onmessage = (event) => {
-        if (typeof event.data === 'string') {
-          try {
-            const metadata = JSON.parse(event.data);
-            if (metadata.type !== 'audio_format' || metadata.encoding !== 'pcm_s16le'
-                || Number(metadata.channels) !== 1 || metadata.persistent !== false) {
-              throw new Error('unsupported live audio format');
-            }
-            formatRef.current = metadata;
-            setFormat(metadata);
-            setStatus('live');
-          } catch {
-            setStatus('unavailable');
-            socket.close(1003, 'unsupported audio format');
-          }
-          return;
+      while (!controller.signal.aborted && Date.now() - startedAt < maxSessionSeconds * 1000) {
+        const response = await fetch(liveListenHttpUrl(apiBase, props.receiver_id, window.location), {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok || !response.body) throw new Error(`listen stream ${response.status}`);
+        const encoding = response.headers.get('x-seacommons-audio-encoding');
+        const sampleRate = Number(response.headers.get('x-seacommons-sample-rate')) || 12_000;
+        const channels = Number(response.headers.get('x-seacommons-channels')) || 1;
+        const persistent = response.headers.get('x-seacommons-persistent');
+        maxSessionSeconds = Number(response.headers.get('x-seacommons-listen-max-seconds')) || 120;
+        if (encoding !== 'pcm_s16le' || channels !== 1 || persistent !== 'false') {
+          throw new Error('unsupported live audio format');
         }
-        const metadata = formatRef.current;
-        if (!(event.data instanceof ArrayBuffer) || !metadata || context.state === 'closed') return;
-        const sampleRate = Number(metadata.sample_rate_hz) || 12_000;
-        const samples = pcm16leToFloat32(event.data);
-        if (nextStartRef.current > context.currentTime + 0.75) return;
-        const buffer = context.createBuffer(1, samples.length, sampleRate);
-        buffer.copyToChannel(samples, 0);
-        const source = context.createBufferSource();
-        source.buffer = buffer;
-        source.connect(context.destination);
-        source.onended = () => source.disconnect();
-        const startAt = Math.max(context.currentTime + 0.025, nextStartRef.current);
-        source.start(startAt);
-        nextStartRef.current = startAt + buffer.duration;
-      };
-      socket.onerror = () => {
-        if (socketRef.current === socket) setStatus('unavailable');
-      };
-      socket.onclose = (event) => {
-        if (socketRef.current !== socket) return;
-        socketRef.current = null;
-        const activeContext = contextRef.current;
-        contextRef.current = null;
-        if (activeContext && activeContext.state !== 'closed') activeContext.close().catch(() => {});
-        formatRef.current = null;
-        nextStartRef.current = 0;
-        setFormat(null);
-        setStatus(event.code === 1000 ? 'ended' : 'unavailable');
-      };
-    } catch {
-      const context = contextRef.current;
-      contextRef.current = null;
-      if (context && context.state !== 'closed') context.close().catch(() => {});
-      setStatus('unavailable');
+        const metadata = {
+          type: 'audio_format', encoding, sample_rate_hz: sampleRate, channels,
+          persistent: false, max_seconds: maxSessionSeconds,
+        };
+        setFormat(metadata);
+        setStatus('live');
+
+        const reader = response.body.getReader();
+        while (!controller.signal.aborted) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (!value?.byteLength) continue;
+          const merged = new Uint8Array(carry.byteLength + value.byteLength);
+          merged.set(carry, 0);
+          merged.set(value, carry.byteLength);
+          const evenLength = merged.byteLength - (merged.byteLength % 2);
+          if (evenLength) schedulePcm(context, merged.slice(0, evenLength), sampleRate);
+          carry = evenLength < merged.byteLength ? merged.slice(evenLength) : new Uint8Array(0);
+        }
+      }
+
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        closeContext();
+        setStatus('ended');
+      }
+    } catch (error) {
+      if (abortRef.current !== controller) return;
+      abortRef.current = null;
+      closeContext();
+      setFormat(null);
+      setStatus(error?.name === 'AbortError' ? 'idle' : 'unavailable');
     }
   };
 
@@ -1015,7 +1026,7 @@ function RadioLiveListen({ props, apiBase, radioListenRoute }) {
         {listening ? 'Stop listening' : 'Listen live'}
       </button>
       <p className="intel-report-note">
-        Ephemeral stream only; persistent audio is not stored. The server bounds each listening session and drops buffered frames under backpressure.
+        Ephemeral stream only; persistent audio is not stored. Audio is relayed from the receiver VM through short HTTPS streams and bounded in memory.
       </p>
       <Row label="Listen status" value={status} />
       {format && <Row label="Audio" value={`${Number(format.sample_rate_hz) / 1000} kHz PCM · max ${format.max_seconds}s`} />}
@@ -1023,7 +1034,7 @@ function RadioLiveListen({ props, apiBase, radioListenRoute }) {
   );
 }
 
-function RadioReceiverView({ panel, apiBase, radioListenRoute }) {
+function RadioReceiverView({ panel, apiBase }) {
   const props = panel?.feature?.properties || {};
   let capabilities;
   try { capabilities = JSON.parse(props.capabilities_json || '[]'); } catch { capabilities = []; }
@@ -1051,7 +1062,7 @@ function RadioReceiverView({ panel, apiBase, radioListenRoute }) {
         <SectionLabel>Receiver capability</SectionLabel>
         {ranges.length ? ranges.map((range) => <Row key={range} label="Band" value={range} />) : <p className="intel-report-note">Capability metadata unavailable.</p>}
       </div>
-      <RadioLiveListen props={props} apiBase={apiBase} radioListenRoute={radioListenRoute} />
+      <RadioLiveListen props={props} apiBase={apiBase} />
       <div className="cone-section">
         <SectionLabel>Provenance</SectionLabel>
         <p className="intel-report-note">Public receiver infrastructure only. Endpoint and physical lineage are intentionally withheld; receiver observations enter the same evidence pipeline as other acquisition sources.</p>
@@ -1133,8 +1144,6 @@ export default function MapFloatingPanel({
   onClose,
   onComputeDrift,
   apiBase,
-  radioListenBase,
-  radioListenRoute,
   publicMode,
   intelDrifts,
   loadNearestVessels,
@@ -1185,7 +1194,7 @@ export default function MapFloatingPanel({
         <TrajectoryView panel={panel} />
       )}
       {panel.type === 'radio_receiver' && (
-        <RadioReceiverView panel={panel} apiBase={radioListenBase || apiBase} radioListenRoute={radioListenRoute} />
+        <RadioReceiverView panel={panel} apiBase={apiBase} />
       )}
       {panel.type === 'radio_message' && (
         <RadioMessageView panel={panel} apiBase={apiBase} />

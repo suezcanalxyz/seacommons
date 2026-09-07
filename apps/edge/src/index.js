@@ -3,8 +3,6 @@ import { LiveRoom, liveRoomStub } from './live.js';
 
 const CACHE_SECONDS = 600;
 const STALE_SECONDS = 7_200;
-const RADIO_LISTEN_PREFIX = '/v1/radio/listen/';
-const DEFAULT_RADIO_LISTEN_UPSTREAM = 'http://152.70.182.58';
 
 function corsHeaders(request, env) {
   const allowed = new Set(String(env.ALLOWED_ORIGINS || '').split(',').map((item) => item.trim()));
@@ -15,42 +13,6 @@ function corsHeaders(request, env) {
     'Access-Control-Allow-Headers': 'Content-Type,X-SeaCommons-Signature',
     'Vary': 'Origin',
   };
-}
-
-export function radioListenOriginAllowed(origin, env) {
-  if (!origin) return true;
-  const allowed = new Set(String(env.ALLOWED_ORIGINS || '').split(',').map((item) => item.trim()).filter(Boolean));
-  return allowed.has(origin);
-}
-
-export function radioListenUpstreamUrl(publicUrl, upstreamBase = DEFAULT_RADIO_LISTEN_UPSTREAM) {
-  if (!publicUrl.pathname.startsWith(RADIO_LISTEN_PREFIX)) throw new Error('invalid radio listen path');
-  const encodedId = publicUrl.pathname.slice(RADIO_LISTEN_PREFIX.length);
-  const receiverId = decodeURIComponent(encodedId);
-  if (!receiverId) throw new Error('receiver id is required');
-  const upstream = new URL(upstreamBase);
-  upstream.pathname = `/api/v1/live/radio/listen/${encodeURIComponent(receiverId)}`;
-  upstream.search = '';
-  upstream.hash = '';
-  return upstream.toString();
-}
-
-async function radioListenResponse(request, env, url) {
-  if (request.method !== 'GET' || String(request.headers.get('Upgrade') || '').toLowerCase() !== 'websocket') {
-    return json({ error: 'websocket upgrade required' }, 426, corsHeaders(request, env));
-  }
-  if (!radioListenOriginAllowed(request.headers.get('Origin') || '', env)) {
-    return json({ error: 'origin not allowed' }, 403, corsHeaders(request, env));
-  }
-  let upstreamUrl;
-  try {
-    upstreamUrl = radioListenUpstreamUrl(url, env.RADIO_LISTEN_UPSTREAM || DEFAULT_RADIO_LISTEN_UPSTREAM);
-  } catch {
-    return json({ error: 'invalid receiver id' }, 400, corsHeaders(request, env));
-  }
-  const headers = new Headers(request.headers);
-  headers.delete('Host');
-  return fetch(new Request(upstreamUrl, { method: 'GET', headers }));
 }
 
 function json(payload, status, headers = {}) {
@@ -132,10 +94,6 @@ export default {
   async fetch(request, env, context) {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(request, env) });
-
-    if (url.pathname.startsWith(RADIO_LISTEN_PREFIX)) {
-      return radioListenResponse(request, env, url);
-    }
 
     if (url.pathname.startsWith('/v1/live/')) {
       if (!env.LIVE_ROOM) return json({ error: 'LIVE_ROOM binding is not configured' }, 503, corsHeaders(request, env));
