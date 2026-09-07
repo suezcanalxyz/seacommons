@@ -15,7 +15,7 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-Live Humanitarian/Maritime + Unified Acquisition Pipeline. Packets A-G are complete and deployed; do not reopen them except for a regression required by this packet.
+Live Humanitarian/Maritime + Unified Acquisition Pipeline is deployed and awaiting final Tasks 1-8 review. Packets A-G remain closed; do not reopen them except for a demonstrated regression.
 
 Detailed plan: `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`.
 Design: `docs/superpowers/specs/2026-09-07-live-humanitarian-maritime-acquisition-pipeline-design.md`.
@@ -56,4 +56,4 @@ Production migration, restart, destructive maintenance, remote receiver activati
 
 Audio Evidence v1 is development-complete/review-ready through `90d08e4`; production capture remains disabled and unauthorized. Cross-modal Evidence Fusion v1 is also closed; preserve the established lineage and derived-evidence boundaries.
 
-Cross-modal Evidence Fusion v1 is development-complete/review-ready through `52efdd1`. Review v0 is development-complete/review-ready through code HEAD `19dbb7d`: append-only review ledger, audited Humanitarian transitions, Maritime state-machine delegation, bounded observability, and no direct publication transition. The Evidence Fusion loop is complete and production is at schema `0023_review_records`. Current work is the approved Live Humanitarian/Maritime + Unified Acquisition Pipeline packet. AIS remains legacy; Remote/Structured Radio activation is staged by the current plan; Audio Evidence stays disabled unless separately authorized.
+Cross-modal Evidence Fusion v1 is development-complete/review-ready through `52efdd1`. Review v0 is development-complete/review-ready through code HEAD `19dbb7d`: append-only review ledger, audited Humanitarian transitions, Maritime state-machine delegation, bounded observability, and no direct publication transition. The Evidence Fusion loop is complete and production is at schema `0023_review_records`. The Live Humanitarian/Maritime + Unified Acquisition Pipeline packet is deployed at `414a76b` and ready for final review. AIS remains legacy; Structured Radio and one bounded terms-allowed Remote Radio monitor are active; Audio Evidence stays disabled unless separately authorized.

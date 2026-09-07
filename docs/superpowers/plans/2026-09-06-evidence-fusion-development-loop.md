@@ -119,3 +119,8 @@ Runtime rollout preserves currently active acquisition sources, then stages Stru
 - Every durable analytical object must be replayable and provenance-linked.
 - Prefer free/open and software-only acquisition; paid or owned-hardware dependencies are not core requirements.
 - Every new adapter must fail closed, expose health, document terms and preserve raw-source identity.
+
+
+### Post-loop production integration — 2026-09-07
+
+The approved Live Humanitarian/Maritime + Unified Acquisition Pipeline packet is deployed at `414a76b` on schema `0023_review_records`. Public Live uses Humanitarian/Maritime compartments; Structured Radio and one bounded terms-allowed KiwiSDR monitor are active; AIS remains legacy and Audio Evidence remains disabled. Final Tasks 1-8 review is the next gate.

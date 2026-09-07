@@ -1,16 +1,16 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Live Humanitarian/Maritime + Unified Acquisition Pipeline
+> **Current packet:** Live Humanitarian/Maritime + Unified Acquisition Pipeline — deployed, review pending
 > **Current packet plan:** `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`
-> **Production runtime baseline:** `d3fd42b319581986998dc266269ebdc7a5465719`
+> **Production runtime baseline:** `414a76bbd51da2bd3ea892fb8dc0ec42d7c5d40c`
 > **Production schema:** `0023_review_records`
 
 ## Production baseline
 
 OSINT Evidence Pipeline v1, Vessel Context + Behavioural Baseline v1, and Observation -> Episode -> Hypothesis v1 are merged, deployed and production-verified. Production keeps the Humanitarian privacy boundary, shared Live/Play vessel-marker contract, and evidence-lineage semantics where detector/provider multiplicity is not source independence.
 
-Evidence Fusion Packets A-G are now integrated and deployed. AIS remains in `legacy` mode; Remote Radio, Structured Radio and Audio Evidence acquisition remain disabled pending the current staged activation packet. Production publication gates remain fail-closed.
+Evidence Fusion Packets A-G are integrated and deployed. The unified acquisition packet is also deployed: public Live uses Humanitarian/Maritime compartments, Structured Radio and one bounded Remote Radio monitor are active, AIS remains `legacy`, and Audio Evidence acquisition remains disabled. Production publication gates remain fail-closed.
 
 ## Completed development packets
 
@@ -58,7 +58,7 @@ Release evidence: focused review/privacy/publication `181 passed`; full backend 
 
 ## Current execution packet
 
-Packets A-G are complete and deployed. The active packet is `Live Humanitarian/Maritime + Unified Acquisition Pipeline`: replace legacy Live grouping with Humanitarian/Maritime and consolidate AIS, radio, first-party/public feeds, partner inputs and future connectors behind one acquisition -> observation -> evidence pipeline. Radio is only an adapter family; receiver activation remains staged and audio stays disabled.
+Packets A-G and `Live Humanitarian/Maritime + Unified Acquisition Pipeline` are complete and deployed. Public Live now uses Humanitarian/Maritime; AIS, radio, first-party/public feeds and partner inputs report through one acquisition status contract. One terms-allowed KiwiSDR monitor is live on 2187.5 kHz with reconnect supervision; radio remains an adapter family and Audio Evidence stays disabled. Next action is review of Tasks 1-8, not another implementation packet.
 
 ## Loop order
 
