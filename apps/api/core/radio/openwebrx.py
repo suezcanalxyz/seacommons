@@ -152,6 +152,7 @@ class OpenWebRXAdapter:
         self._session_id = ""
         self._center_freq_hz: int | None = None
         self._sample_rate_hz: int | None = None
+        self._audio_compression: str | None = None
         self._dsp_started = False
         self._pending_tune: tuple[int, str] | None = None
         self._lock = threading.Lock()
@@ -164,6 +165,7 @@ class OpenWebRXAdapter:
             self._session_id = uuid.uuid4().hex
             self._center_freq_hz = None
             self._sample_rate_hz = None
+            self._audio_compression = None
             self._dsp_started = False
             self._pending_tune = None
         try:
@@ -265,7 +267,10 @@ class OpenWebRXAdapter:
             with self._lock:
                 frequency_hz = self._frequency_hz
                 mode = self._mode
+                audio_compression = self._audio_compression
             if frequency_hz is None or mode is None or len(message) <= 1:
+                return
+            if str(audio_compression or '').strip().lower() not in {'none', 'off', 'false', '0'}:
                 return
             try:
                 from core.radio.decoder_runtime import EphemeralRadioFrame, submit_ephemeral_frame
@@ -274,7 +279,7 @@ class OpenWebRXAdapter:
                     physical_lineage=self._descriptor.physical_lineage, frequency_hz=frequency_hz,
                     mode=mode, observed_at=datetime.now(timezone.utc),
                     sample_rate_hz=48_000 if message[0] == 0x04 else 12_000,
-                    encoding="openwebrx_audio", payload=message[1:],
+                    encoding="openwebrx_pcm_s16le", payload=message[1:],
                     source_terms=self._descriptor.source_terms,
                 ))
             except Exception:
@@ -288,11 +293,14 @@ class OpenWebRXAdapter:
             if isinstance(value, Mapping):
                 center = value.get("center_freq")
                 sample_rate = value.get("samp_rate")
+                audio_compression = value.get("audio_compression")
                 with self._lock:
                     if center is not None:
                         self._center_freq_hz = int(center)
                     if sample_rate is not None:
                         self._sample_rate_hz = int(sample_rate)
+                    if audio_compression is not None:
+                        self._audio_compression = str(audio_compression)
                     pending_tune = self._pending_tune
                 if pending_tune is not None:
                     try:

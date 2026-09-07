@@ -66,6 +66,7 @@ def test_invalid_decoder_output_is_fail_closed():
 
 def test_decoder_submit_queue_is_bounded_and_tracks_drops():
     import time
+
     from core.radio.decoder_runtime import RadioDecoderRuntime
 
     class SlowDecoder:
@@ -85,6 +86,7 @@ def test_decoder_submit_queue_is_bounded_and_tracks_drops():
 
 def test_process_decoder_jsonl_protocol_returns_structured_output(tmp_path):
     import sys
+
     from core.radio.decoder_runtime import JSONLProcessDecoder
 
     script = tmp_path / "decoder.py"
@@ -103,6 +105,7 @@ def test_process_decoder_jsonl_protocol_returns_structured_output(tmp_path):
 def test_kiwi_audio_frame_taps_ephemeral_decoder_only_after_audio_init(monkeypatch):
     from core.radio import decoder_runtime
     from core.radio.kiwisdr import KiwiSDRAdapter
+
     from tests.test_kiwisdr_adapter import FakeKiwiTransport, _descriptor, _snd_frame
 
     frames = []
@@ -122,15 +125,36 @@ def test_kiwi_audio_frame_taps_ephemeral_decoder_only_after_audio_init(monkeypat
 def test_openwebrx_audio_binary_taps_ephemeral_decoder(monkeypatch):
     from core.radio import decoder_runtime
     from core.radio.openwebrx import OpenWebRXAdapter
-    from tests.test_openwebrx_adapter import FakeTransport, descriptor, _announce_profile
+
+    from tests.test_openwebrx_adapter import (
+        FakeTransport,
+        descriptor,
+    )
 
     frames = []
     monkeypatch.setattr(decoder_runtime, "submit_ephemeral_frame", lambda frame: frames.append(frame) or True)
     transport = FakeTransport()
     adapter = OpenWebRXAdapter(descriptor(), on_observation=lambda obs: None, transport=transport)
-    adapter.start(); _announce_profile(transport, center=2_200_000, sample_rate=200_000)
+    adapter.start(); transport.on_message({"type": "config", "value": {"center_freq": 2_200_000, "samp_rate": 200_000, "audio_compression": "none"}})
     adapter.tune(2_187_500, "usb")
     transport.on_message(b"\x02payload")
     assert frames[-1].payload == b"payload"
     assert frames[-1].sample_rate_hz == 12000
-    assert frames[-1].encoding == "openwebrx_audio"
+    assert frames[-1].encoding == "openwebrx_pcm_s16le"
+
+
+def test_openwebrx_compressed_audio_is_not_forwarded_to_pcm_decoder(monkeypatch):
+    from core.radio import decoder_runtime
+    from core.radio.openwebrx import OpenWebRXAdapter
+
+    from tests.test_openwebrx_adapter import FakeTransport, descriptor
+
+    frames = []
+    monkeypatch.setattr(decoder_runtime, "submit_ephemeral_frame", lambda frame: frames.append(frame) or True)
+    transport = FakeTransport()
+    adapter = OpenWebRXAdapter(descriptor(), on_observation=lambda obs: None, transport=transport)
+    adapter.start()
+    transport.on_message({"type": "config", "value": {"center_freq": 2_200_000, "samp_rate": 200_000, "audio_compression": "adpcm"}})
+    adapter.tune(2_187_500, "usb")
+    transport.on_message(b"\x02compressed")
+    assert frames == []

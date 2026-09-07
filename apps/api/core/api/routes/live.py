@@ -352,6 +352,49 @@ async def live_radio_events(
     }
 
 
+@router.get("/radio/messages")
+async def live_radio_messages(
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Public-safe decoded DSC/NAVTEX messages; no receiver identity leakage."""
+    from core.db.models import RadioAISAssociationDB, SourceObservationDB
+    from core.db.session import session_scope
+    from core.radio.public_messages import project_public_radio_message
+
+    with session_scope() as db:
+        rows = (
+            db.query(SourceObservationDB)
+            .filter(SourceObservationDB.observation_type.in_(("dsc_message", "navtex_message")))
+            .order_by(SourceObservationDB.received_at.desc())
+            .limit(limit)
+            .all()
+        )
+        observation_ids = [row.observation_id for row in rows]
+        associations = {}
+        if observation_ids:
+            for assoc in db.query(RadioAISAssociationDB).filter(
+                RadioAISAssociationDB.observation_id.in_(observation_ids)
+            ):
+                associations[assoc.observation_id] = {
+                    "mmsi": assoc.mmsi,
+                    "match_status": assoc.match_status,
+                    "confidence": assoc.confidence,
+                    "distance_km": assoc.distance_km,
+                    "ais_observed_at": assoc.ais_observed_at,
+                    "episode_eligible": assoc.episode_eligible,
+                }
+        messages = []
+        for row in rows:
+            item = project_public_radio_message(row)
+            if row.observation_id in associations:
+                item["ais_association"] = associations[row.observation_id]
+            messages.append(item)
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "messages": messages,
+    }
+
+
 @router.get("/sources")
 async def live_sources():
     """Public health summary without credentials, endpoint URLs or raw errors."""
