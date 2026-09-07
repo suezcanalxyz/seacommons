@@ -92,7 +92,12 @@ def _vessel_visual_contract(v: dict[str, Any]) -> dict[str, Any]:
         speed = float(raw_speed) if raw_speed is not None else None
     except (TypeError, ValueError):
         speed = None
-    motion_state = "unknown" if speed is None else ("stationary" if speed <= 0.5 else "moving")
+    nav_status = v.get("nav_status")
+    try:
+        stationary_status = int(nav_status) in {1, 5}
+    except (TypeError, ValueError):
+        stationary_status = False
+    motion_state = "unknown" if speed is None and not stationary_status else ("stationary" if stationary_status or (speed is not None and speed <= 0.5) else "moving")
     heading = v.get("last_heading")
     try:
         heading_value = float(heading) if heading is not None and 0 <= float(heading) < 360 else None

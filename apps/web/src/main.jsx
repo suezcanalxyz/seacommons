@@ -1568,7 +1568,7 @@ function App() {
         // semantic (Maritime AIS blue), while shape carries motion state.
         map.addLayer({
           id: 'vessels-stationary-layer', type: 'circle', source: 'vessels',
-          filter: ['<=', ['coalesce', ['get', 'speed'], 0], 0.5],
+          filter: ['any', ['match', ['get', 'nav_status'], [1, 5], true, false], ['<=', ['coalesce', ['get', 'speed'], 0], 0.5]],
           paint: {
             'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 3.3, 10, 5.0, 14, 6.2],
             'circle-color': '#60a5fa',
@@ -1579,7 +1579,7 @@ function App() {
         });
         map.addLayer({
           id: 'vessels-layer', type: 'symbol', source: 'vessels',
-          filter: ['>', ['coalesce', ['get', 'speed'], 0], 0.5],
+          filter: ['all', ['match', ['get', 'nav_status'], [1, 5], false, true], ['>', ['coalesce', ['get', 'speed'], 0], 0.5]],
           layout: {
             'icon-image': 'vessel-arrow',
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.30, 10, 0.50, 14, 0.65],
@@ -1607,7 +1607,7 @@ function App() {
         // Civil NGO SAR vessels use the same triangle and differ only by hue.
         map.addLayer({
           id: 'vessels-ngo-stationary', type: 'circle', source: 'vessels-ngo',
-          filter: ['<=', ['coalesce', ['get', 'speed'], 0], 0.5],
+          filter: ['any', ['match', ['get', 'nav_status'], [1, 5], true, false], ['<=', ['coalesce', ['get', 'speed'], 0], 0.5]],
           paint: {
             'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 3.8, 10, 5.5, 14, 6.8],
             'circle-color': '#34d399',
@@ -1618,7 +1618,7 @@ function App() {
         });
         map.addLayer({
           id: 'vessels-ngo', type: 'symbol', source: 'vessels-ngo',
-          filter: ['>', ['coalesce', ['get', 'speed'], 0], 0.5],
+          filter: ['all', ['match', ['get', 'nav_status'], [1, 5], false, true], ['>', ['coalesce', ['get', 'speed'], 0], 0.5]],
           layout: {
             'icon-image': 'vessel-arrow',
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.36, 10, 0.58, 14, 0.72],

@@ -69,3 +69,9 @@ def test_geojson_exposes_public_visual_and_report_contract(tmp_path):
     assert stopped["visual_shape"] == "circle"
     assert stopped["show_heading"] is False
     assert stopped["layer_membership"] == ["maritime", "ais", "ais_stationary"]
+
+    reg.upsert("111000666", ship_name="Moored", lat=35.3, lon=13.3,
+               speed=0.8, course=80.0, nav_status=5, last_seen=now)
+    moored = {f["properties"]["mmsi"]: f["properties"] for f in reg.get_geojson(since=now.isoformat())["features"]}["111000666"]
+    assert moored["motion_state"] == "stationary"
+    assert moored["visual_shape"] == "circle"
