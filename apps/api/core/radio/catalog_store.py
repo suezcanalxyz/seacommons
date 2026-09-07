@@ -283,6 +283,17 @@ def public_catalog_summary(*, limit: int = 16) -> dict[str, object]:
                     "country": row.country,
                     "state": row.activation_status,
                     "score": round(float(row.score or 0.0), 2),
+                    "latitude": round(float(row.lat), 3) if row.lat is not None else None,
+                    "longitude": round(float(row.lon), 3) if row.lon is not None else None,
+                    "capabilities": [
+                        {
+                            "min_hz": int(cap.get("min_hz")),
+                            "max_hz": int(cap.get("max_hz")),
+                            "modes": list(cap.get("modes") or ()),
+                        }
+                        for cap in (row.capabilities or ())
+                        if isinstance(cap, dict) and cap.get("min_hz") is not None and cap.get("max_hz") is not None
+                    ],
                 }
                 for row in top
             ],
