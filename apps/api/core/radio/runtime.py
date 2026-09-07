@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from typing import Callable, Iterable
 
@@ -66,9 +67,14 @@ class RemoteRadioRuntime:
                 return
         from core.observability import record_remote_radio_event
 
-        def _start_descriptor(descriptor: ReceiverDescriptor) -> None:
+        runnable = self._registry.runnable()
+        prepared = [
+            (descriptor, self._adapter_factory(descriptor, self._observation_handler))
+            for descriptor in runnable
+        ]
+
+        def _start_descriptor(descriptor: ReceiverDescriptor, adapter: RemoteReceiverAdapter) -> None:
             provider = descriptor.provider if descriptor.provider in {"kiwisdr", "openwebrx"} else "other"
-            adapter = self._adapter_factory(descriptor, self._observation_handler)
             try:
                 adapter.start()
                 if descriptor.frequency_hz is not None and descriptor.mode is not None:
@@ -78,8 +84,8 @@ class RemoteRadioRuntime:
                     adapter.stop()
                 except Exception:
                     pass
-                self._failed_by_provider[provider] += 1
                 with self._lock:
+                    self._failed_by_provider[provider] += 1
                     self._adapters.append((descriptor, adapter))
                 record_remote_radio_event(provider=provider, state="disconnected", outcome="start_failed")
                 return
@@ -87,8 +93,11 @@ class RemoteRadioRuntime:
                 self._adapters.append((descriptor, adapter))
             record_remote_radio_event(provider=provider, state="connected", outcome="started")
 
-        for descriptor in self._registry.runnable():
-            _start_descriptor(descriptor)
+        if prepared:
+            with ThreadPoolExecutor(max_workers=len(prepared), thread_name_prefix="remote-radio-start") as pool:
+                futures = [pool.submit(_start_descriptor, descriptor, adapter) for descriptor, adapter in prepared]
+                for future in futures:
+                    future.result()
         with self._lock:
             if self._adapters and (self._supervisor is None or not self._supervisor.is_alive()):
                 self._supervisor = threading.Thread(

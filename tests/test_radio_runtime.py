@@ -416,3 +416,30 @@ def test_public_fallback_receivers_are_bounded_terms_allowed_and_monitor_only():
         assert row.frequency_hz == 2_187_500
         assert row.mode == "usb"
         assert row.provider in {"kiwisdr", "openwebrx"}
+
+
+def test_runtime_starts_multiple_receivers_concurrently():
+    import threading
+    from core.radio.runtime import RemoteRadioRuntime
+
+    barrier = threading.Barrier(2, timeout=0.5)
+
+    class ConcurrentAdapter(FakeAdapter):
+        def start(self):
+            barrier.wait()
+            self.started = True
+
+    descriptors = (
+        _descriptor("kiwisdr", "parallel-one", "parallel-one"),
+        _descriptor("kiwisdr", "parallel-two", "parallel-two"),
+    )
+    runtime = RemoteRadioRuntime(
+        enabled=True,
+        descriptors=descriptors,
+        max_receivers=2,
+        adapter_factory=lambda descriptor, _callback: ConcurrentAdapter(descriptor),
+        reconnect_interval_s=60.0,
+    )
+    runtime.start()
+    assert runtime.status()["started"] == 2
+    runtime.stop()
