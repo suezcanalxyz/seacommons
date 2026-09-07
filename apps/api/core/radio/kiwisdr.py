@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from __future__ import annotations
 
+import re
 import threading
 import time
 import uuid
@@ -214,14 +215,33 @@ class KiwiSDRAdapter:
         with self._lock:
             if not self._connected:
                 raise RuntimeError("KiwiSDR adapter is not connected")
+        with self._lock:
+            self._frequency_hz = frequency_hz
+            self._mode = normalized_mode
+        self._send_tune_message(frequency_hz, normalized_mode)
+
+    def _send_tune_message(self, frequency_hz: int, normalized_mode: str) -> None:
         low_cut, high_cut = _KIWI_PASSBANDS[normalized_mode]
         frequency_khz = frequency_hz / 1000
         self._transport.send(
             f"SET mod={normalized_mode} low_cut={low_cut} high_cut={high_cut} freq={frequency_khz:g}"
         )
+
+    def _complete_audio_handshake(self, frame: bytes) -> None:
+        text = frame.decode("utf-8", errors="ignore")
+        match = re.search(r"audio_rate=(\d+)", text)
+        if match is None:
+            return
+        audio_rate = int(match.group(1))
+        self._transport.send(f"SET AR OK in={audio_rate} out={audio_rate}")
+        self._transport.send("SERVER DE CLIENT SeaCommons SND")
+        self._transport.send("SET agc=1 hang=0 thresh=-130 slope=6 decay=1000 manGain=50")
+        self._transport.send("SET compression=0")
         with self._lock:
-            self._frequency_hz = frequency_hz
-            self._mode = normalized_mode
+            frequency_hz = self._frequency_hz
+            mode = self._mode
+        if frequency_hz is not None and mode is not None:
+            self._send_tune_message(frequency_hz, mode)
 
     def _on_disconnect(self, _detail: str) -> None:
         with self._lock:
@@ -229,6 +249,10 @@ class KiwiSDRAdapter:
             self._error = "transport_disconnected"
 
     def _on_frame(self, frame: bytes) -> None:
+        if frame.startswith(b"MSG"):
+            if b"audio_init=" in frame:
+                self._complete_audio_handshake(frame)
+            return
         if len(frame) < 10 or frame[:3] != b"SND":
             return
         sequence = int.from_bytes(frame[4:8], "little")

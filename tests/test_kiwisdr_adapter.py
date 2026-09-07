@@ -190,3 +190,21 @@ def test_snd_audio_bytes_do_not_persist_source_observation_or_humanitarian_incid
     with session_scope() as db:
         assert db.query(SourceObservationDB).count() == before_observations
         assert db.query(HumanitarianIncidentDB).count() == before_incidents
+
+
+def test_audio_init_completes_kiwi_handshake_and_reapplies_configured_tune():
+    from core.radio.kiwisdr import KiwiSDRAdapter
+
+    transport = FakeKiwiTransport()
+    adapter = KiwiSDRAdapter(_descriptor(), on_observation=lambda observation: None, transport=transport)
+    adapter.start()
+    adapter.tune(2_187_500, "usb")
+
+    transport.emit(b"MSG audio_init=0 audio_rate=12000")
+
+    assert "SET AR OK in=12000 out=12000" in transport.sent
+    assert "SERVER DE CLIENT SeaCommons SND" in transport.sent
+    assert "SET compression=0" in transport.sent
+    assert any(message.startswith("SET agc=1 ") for message in transport.sent)
+    tune_messages = [message for message in transport.sent if message.startswith("SET mod=usb ")]
+    assert len(tune_messages) >= 2
