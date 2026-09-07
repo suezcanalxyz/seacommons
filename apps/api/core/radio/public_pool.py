@@ -39,4 +39,11 @@ def public_receiver_pool() -> tuple[ReceiverDescriptor, ...]:
         _rx("cassine_hf_monitor", "Cassine HF DSC monitor", "http://kiwisdr.briata.org:8073", "cassine_i1cra_kiwisdr"),
         _rx("heimiswil_hf_monitor", "Heimiswil HF DSC monitor", "http://hb9cwk.internet-box.ch:8073", "heimiswil_hb9cwk_kiwisdr"),
         _rx("bad_ragaz_hf_monitor", "Bad Ragaz HF DSC monitor", "http://sdr-badragaz.proxy.kiwisdr.com", "bad_ragaz_kiwisdr"),
+        _rx("salerno_hf_monitor", "Salerno HF DSC monitor", "http://21443.proxy.kiwisdr.com", "salerno_ik8sut_kiwisdr"),
+        _rx("san_marino_hf_monitor", "San Marino HF DSC monitor", "http://22416.proxy.kiwisdr.com", "san_marino_kiwisdr"),
+        _rx("slovenia_hf_monitor", "Slovenia HF DSC monitor", "http://188.159.246.61:8073", "slovenia_s59gcd_kiwisdr"),
+        _rx("edessa_hf_monitor", "Edessa HF DSC monitor", "http://21900.proxy.kiwisdr.com", "edessa_sv2csn_kiwisdr"),
+        _rx("thessaloniki_hf_monitor", "Thessaloniki HF DSC monitor", "http://elektrongr.ddns.net:8073", "thessaloniki_elektron_kiwisdr"),
+        _rx("zakynthos_hf_monitor", "Zakynthos HF DSC monitor", "http://sv8rv.dyndns.org:8073", "zakynthos_sv8rv_kiwisdr"),
+        _rx("mallorca_hf_monitor", "Mallorca HF DSC monitor", "http://37.10.74.235:8073", "mallorca_alcudia_kiwisdr"),
     )

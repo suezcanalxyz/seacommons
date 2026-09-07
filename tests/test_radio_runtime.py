@@ -407,7 +407,7 @@ def test_public_fallback_receivers_are_bounded_terms_allowed_and_monitor_only():
     from core.radio.public_pool import public_receiver_pool
 
     rows = public_receiver_pool()
-    assert len(rows) == 8
+    assert len(rows) == 15
     for row in rows:
         assert row.enabled is True
         assert row.terms_status == "allowed"
