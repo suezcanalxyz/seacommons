@@ -44,3 +44,28 @@ def test_added_column_migration_on_a_preexisting_db(tmp_path):
                last_seen=datetime.now(timezone.utc))
     feats = reg.get_geojson()["features"]
     assert feats[0]["properties"]["nav_status"] == 6
+
+
+def test_geojson_exposes_public_visual_and_report_contract(tmp_path):
+    reg = VesselRegistry(db_path=tmp_path / "v.db")
+    now = datetime.now(timezone.utc)
+    reg.upsert("111000444", ship_name="  Ocean   Test  ", lat=35.0, lon=13.0,
+               speed=8.2, course=91.0, heading=92.0, nav_status=0, last_seen=now)
+    reg.upsert("111000555", ship_name="Stopped", lat=35.2, lon=13.2,
+               speed=0.1, course=10.0, heading=511.0, nav_status=5, last_seen=now)
+    feats = {f["properties"]["mmsi"]: f["properties"] for f in reg.get_geojson()["features"]}
+    moving = feats["111000444"]
+    stopped = feats["111000555"]
+    assert moving["display_name"] == "OCEAN TEST"
+    assert moving["entity_kind"] == "vessel"
+    assert moving["motion_state"] == "moving"
+    assert moving["visual_shape"] == "triangle"
+    assert moving["heading_deg"] == 92.0
+    assert moving["show_heading"] is True
+    assert moving["layer_membership"] == ["maritime", "ais", "ais_moving"]
+    assert moving["report_type"] == "vessel"
+    assert moving["report_id"] == "111000444"
+    assert stopped["motion_state"] == "stationary"
+    assert stopped["visual_shape"] == "circle"
+    assert stopped["show_heading"] is False
+    assert stopped["layer_membership"] == ["maritime", "ais", "ais_stationary"]

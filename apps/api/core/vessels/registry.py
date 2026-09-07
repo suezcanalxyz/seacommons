@@ -77,6 +77,47 @@ ON CONFLICT(mmsi) DO UPDATE SET
 """
 
 
+
+
+def _normalized_ship_name(value: Any, mmsi: str) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    if not text or text == mmsi:
+        return f"MMSI {mmsi}"
+    return text.upper()
+
+
+def _vessel_visual_contract(v: dict[str, Any]) -> dict[str, Any]:
+    raw_speed = v.get("last_speed")
+    try:
+        speed = float(raw_speed) if raw_speed is not None else None
+    except (TypeError, ValueError):
+        speed = None
+    motion_state = "unknown" if speed is None else ("stationary" if speed <= 0.5 else "moving")
+    heading = v.get("last_heading")
+    try:
+        heading_value = float(heading) if heading is not None and 0 <= float(heading) < 360 else None
+    except (TypeError, ValueError):
+        heading_value = None
+    if heading_value is None:
+        course = v.get("last_course")
+        try:
+            heading_value = float(course) if course is not None and 0 <= float(course) < 360 else None
+        except (TypeError, ValueError):
+            heading_value = None
+    moving = motion_state == "moving"
+    return {
+        "display_name": _normalized_ship_name(v.get("ship_name"), str(v["mmsi"])),
+        "entity_kind": "vessel",
+        "motion_state": motion_state,
+        "visual_shape": "triangle" if moving else "circle",
+        "visual_color": "#38bdf8" if moving else "#60a5fa",
+        "layer_membership": ["maritime", "ais", f"ais_{motion_state}"],
+        "show_heading": bool(moving and heading_value is not None),
+        "heading_deg": heading_value,
+        "report_type": "vessel",
+        "report_id": str(v["mmsi"]),
+    }
+
 def _row_to_dict(row: sqlite3.Row) -> dict:
     return dict(row)
 
@@ -252,6 +293,7 @@ class VesselRegistry:
                     "sources": self._source_context.get(v["mmsi"], {}).get("sources", ["aisstream"]),
                     "upstream_sources": self._source_context.get(v["mmsi"], {}).get("upstream_sources", ["aisstream"]),
                     "stations": self._source_context.get(v["mmsi"], {}).get("stations", []),
+                    **_vessel_visual_contract(v),
                 },
             })
 
