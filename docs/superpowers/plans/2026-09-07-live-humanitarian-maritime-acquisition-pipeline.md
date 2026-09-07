@@ -460,3 +460,12 @@ The packet is complete only when all of the following are simultaneously true:
 - Fresh release gates: backend `1543 passed, 2 skipped`; canonical Ruff green; web tests/lint/build green; edge tests/Wrangler dry-run green; dependency audits green.
 - GitHub `Full CI` and `CodeQL` for `414a76b` completed successfully.
 - Review boundary: implementation and production rollout are complete; next step is a deliberate Tasks 1-8 review.
+
+
+## 2026-09-07 Live-ready receiver mesh continuation
+
+- Deployed ranked Mediterranean receiver catalog and public-safe `/api/v1/live/receivers/catalog`.
+- Multi-receiver radio runtime starts endpoints concurrently and reconnects independently.
+- KiwiSDR + OpenWebRX share one acquisition path; Catania OpenWebRX is ranked first for Central Med.
+- Production smoke after `0b77d0d`: Radio `live`, 16 configured, 9 connected at the sampled instant; audio evidence remains disabled.
+- Current continuation: automatic bounded directory discovery. Discovered receivers are `catalogued` + `review_required` only; no discovery source may auto-authorize or auto-activate an endpoint.

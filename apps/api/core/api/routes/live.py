@@ -287,6 +287,16 @@ async def live_receiver_catalog(
     }
 
 
+@router.get("/receivers/discovery")
+async def live_receiver_discovery(
+    limit: int = Query(50, ge=1, le=100),
+):
+    """Public-safe snapshot of automatically discovered receiver candidates."""
+    from core.radio.discovery import discovery_registry
+
+    return discovery_registry.public_snapshot(limit=limit)
+
+
 @router.get("/sources")
 async def live_sources():
     """Public health summary without credentials, endpoint URLs or raw errors."""

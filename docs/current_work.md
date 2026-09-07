@@ -1,16 +1,16 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Live Humanitarian/Maritime + Unified Acquisition Pipeline — deployed, review pending
+> **Current packet:** Live-ready Mediterranean Receiver Mesh — discovery automation
 > **Current packet plan:** `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`
-> **Production runtime baseline:** `414a76bbd51da2bd3ea892fb8dc0ec42d7c5d40c`
+> **Production runtime baseline:** `0b77d0d`
 > **Production schema:** `0023_review_records`
 
 ## Production baseline
 
 OSINT Evidence Pipeline v1, Vessel Context + Behavioural Baseline v1, and Observation -> Episode -> Hypothesis v1 are merged, deployed and production-verified. Production keeps the Humanitarian privacy boundary, shared Live/Play vessel-marker contract, and evidence-lineage semantics where detector/provider multiplicity is not source independence.
 
-Evidence Fusion Packets A-G are integrated and deployed. The unified acquisition packet is also deployed: public Live uses Humanitarian/Maritime compartments, Structured Radio and one bounded Remote Radio monitor are active, AIS remains `legacy`, and Audio Evidence acquisition remains disabled. Production publication gates remain fail-closed.
+Evidence Fusion Packets A-G and the unified acquisition packet are deployed. Public Live uses Humanitarian/Maritime compartments; AIS is live in legacy mode; the Mediterranean Receiver Mesh runs KiwiSDR and OpenWebRX adapters through one bounded radio acquisition path. The active catalog has 16 curated receivers ranked for Central Mediterranean coverage, with concurrent startup/reconnect supervision. Audio Evidence acquisition remains disabled and publication gates remain fail-closed.
 
 ## Completed development packets
 
@@ -58,7 +58,7 @@ Release evidence: focused review/privacy/publication `181 passed`; full backend 
 
 ## Current execution packet
 
-Packets A-G and `Live Humanitarian/Maritime + Unified Acquisition Pipeline` are complete and deployed. Public Live now uses Humanitarian/Maritime; AIS, radio, first-party/public feeds and partner inputs report through one acquisition status contract. One terms-allowed KiwiSDR monitor is live on 2187.5 kHz with reconnect supervision; radio remains an adapter family and Audio Evidence stays disabled. Next action is review of Tasks 1-8, not another implementation packet.
+Packets A-G and `Live Humanitarian/Maritime + Unified Acquisition Pipeline` are complete and deployed. Live now includes the Mediterranean Receiver Mesh: a ranked catalog, KiwiSDR + OpenWebRX adapters, concurrent multi-receiver startup, reconnect supervision, and a public-safe receiver catalog. Catania OpenWebRX is the top Central-Med candidate and has connected successfully in production; the latest smoke saw 9/16 receivers connected. Current work adds automatic public-directory discovery as catalogued/review-required candidates only; discovery never auto-authorizes or activates a new endpoint. Audio Evidence stays disabled.
 
 ## Loop order
 
