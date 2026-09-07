@@ -88,6 +88,41 @@ def test_runtime_suppresses_duplicate_physical_lineage_before_adapter_start():
     assert runtime.status()["runnable"] == 1
 
 
+def test_start_failure_remains_managed_and_retries_until_connected():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    descriptor = _descriptor("kiwisdr", "rx-retry", "retry")
+
+    class FlakyAdapter(FakeAdapter):
+        def __init__(self, desc):
+            super().__init__(desc)
+            self.attempts = 0
+
+        def start(self):
+            self.attempts += 1
+            if self.attempts == 1:
+                raise RuntimeError("temporary upstream outage")
+            self.started = True
+
+    adapter = FlakyAdapter(descriptor)
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=(descriptor,), max_receivers=8,
+        adapter_factory=lambda _d, _cb: adapter, reconnect_interval_s=60.0,
+    )
+    runtime.start()
+    first = runtime.status(include_receivers=True)
+    assert first["started"] == 0
+    assert first["failed"] == 1
+    assert first["receivers"][0]["state"] == "disconnected"
+
+    runtime._reconnect_disconnected_once()
+    recovered = runtime.status(include_receivers=True)
+    assert adapter.attempts == 2
+    assert recovered["started"] == 1
+    assert recovered["failed"] == 0
+    assert recovered["receivers"][0]["state"] == "connected"
+
+
 def test_partial_provider_failure_is_isolated_and_status_is_bounded():
     from core.radio.runtime import RemoteRadioRuntime
 

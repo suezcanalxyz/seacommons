@@ -76,6 +76,8 @@ class RemoteRadioRuntime:
                 except Exception:
                     pass
                 self._failed_by_provider[provider] += 1
+                with self._lock:
+                    self._adapters.append((descriptor, adapter))
                 record_remote_radio_event(provider=provider, state="disconnected", outcome="start_failed")
                 continue
             with self._lock:
@@ -115,6 +117,10 @@ class RemoteRadioRuntime:
                     provider=provider, state="disconnected", outcome="reconnect_failed"
                 )
                 continue
+            if self._failed_by_provider.get(provider, 0) > 0:
+                self._failed_by_provider[provider] -= 1
+                if self._failed_by_provider[provider] <= 0:
+                    self._failed_by_provider.pop(provider, None)
             record_remote_radio_event(
                 provider=provider, state="connected", outcome="reconnected"
             )
@@ -175,11 +181,15 @@ class RemoteRadioRuntime:
                         ),
                     }
                 )
+        connected_count = sum(
+            1 for health in health_by_receiver.values()
+            if bool(getattr(health, "connected", False))
+        )
         result: dict[str, object] = {
             "enabled": self.enabled,
             "configured": len(self._registry.all()),
             "runnable": len(self._registry.runnable()) if self.enabled else 0,
-            "started": len(adapters),
+            "started": connected_count,
             "failed": sum(self._failed_by_provider.values()),
             "providers": {key: dict(value) for key, value in sorted(providers.items())},
         }
