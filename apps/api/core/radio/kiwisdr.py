@@ -146,6 +146,7 @@ class KiwiSDRAdapter:
         self._frequency_hz: int | None = None
         self._mode: str | None = None
         self._session_id = ""
+        self._audio_rate_hz: int | None = None
         self._lock = threading.Lock()
 
     def start(self) -> None:
@@ -154,6 +155,7 @@ class KiwiSDRAdapter:
                 return
             self._error = None
             self._session_id = uuid.uuid4().hex
+            self._audio_rate_hz = None
         websocket_url = kiwi_websocket_url(
             self._descriptor.frontend_url,
             self._stream_id_factory(),
@@ -233,6 +235,8 @@ class KiwiSDRAdapter:
         if match is None:
             return
         audio_rate = int(match.group(1))
+        with self._lock:
+            self._audio_rate_hz = audio_rate
         self._transport.send(f"SET AR OK in={audio_rate} out={audio_rate}")
         self._transport.send("SERVER DE CLIENT SeaCommons SND")
         self._transport.send("SET agc=1 hang=0 thresh=-130 slope=6 decay=1000 manGain=50")
@@ -263,10 +267,23 @@ class KiwiSDRAdapter:
             frequency_hz = self._frequency_hz
             mode = self._mode
             session_id = self._session_id
+            audio_rate_hz = self._audio_rate_hz
             if frequency_hz is None or mode is None:
                 return
             self._last_message_at = observed_at
             self._observations_received += 1
+        audio_payload = frame[10:]
+        if audio_payload and audio_rate_hz:
+            try:
+                from core.radio.decoder_runtime import EphemeralRadioFrame, submit_ephemeral_frame
+                submit_ephemeral_frame(EphemeralRadioFrame(
+                    receiver_id=self._descriptor.receiver_id, provider=self._descriptor.provider,
+                    physical_lineage=self._descriptor.physical_lineage, frequency_hz=frequency_hz,
+                    mode=mode, observed_at=observed_at, sample_rate_hz=audio_rate_hz,
+                    encoding="kiwi_snd_raw", payload=audio_payload, source_terms=self._descriptor.source_terms,
+                ))
+            except Exception:
+                pass
         self._on_observation(
             RadioObservation(
                 receiver_id=self._descriptor.receiver_id,

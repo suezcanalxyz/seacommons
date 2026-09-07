@@ -78,8 +78,9 @@ class WebSocketOpenWebRXTransport:
                 except TimeoutError:
                     continue
                 if isinstance(message, bytes):
-                    # 0x01 spectrum / 0x02 audio / 0x03 secondary FFT / 0x04 HD audio.
-                    # This packet intentionally stores none of those byte streams.
+                    # Binary streams remain ephemeral; the adapter decides whether an audio frame
+                    # is routed to the bounded decoder tap. Nothing is persisted here.
+                    on_message(message)
                     continue
                 if isinstance(message, str):
                     try:
@@ -258,6 +259,27 @@ class OpenWebRXAdapter:
             self._dsp_started = False
 
     def _on_message(self, message: object) -> None:
+        if isinstance(message, bytes):
+            if not message or message[0] not in {0x02, 0x04}:
+                return
+            with self._lock:
+                frequency_hz = self._frequency_hz
+                mode = self._mode
+            if frequency_hz is None or mode is None or len(message) <= 1:
+                return
+            try:
+                from core.radio.decoder_runtime import EphemeralRadioFrame, submit_ephemeral_frame
+                submit_ephemeral_frame(EphemeralRadioFrame(
+                    receiver_id=self._descriptor.receiver_id, provider=self._descriptor.provider,
+                    physical_lineage=self._descriptor.physical_lineage, frequency_hz=frequency_hz,
+                    mode=mode, observed_at=datetime.now(timezone.utc),
+                    sample_rate_hz=48_000 if message[0] == 0x04 else 12_000,
+                    encoding="openwebrx_audio", payload=message[1:],
+                    source_terms=self._descriptor.source_terms,
+                ))
+            except Exception:
+                pass
+            return
         if not isinstance(message, Mapping):
             return
         message_type = str(message.get("type") or "").strip().lower()

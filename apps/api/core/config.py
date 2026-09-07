@@ -104,6 +104,10 @@ class SuezCanalConfig(BaseSettings):
     # explicit receiver descriptors with confirmed source terms.
     REMOTE_RADIO_ENABLED: bool = False
     STRUCTURED_RADIO_ENABLED: bool = False
+    RADIO_DECODER_ENABLED: bool = False
+    RADIO_DECODER_COMMANDS_JSON: str = ""
+    RADIO_DECODER_TIMEOUT_S: float = 0.5
+    RADIO_DECODER_QUEUE_SIZE: int = 32
     AUDIO_EVIDENCE_ENABLED: bool = False
     AUDIO_EVIDENCE_MAX_CLIP_SECONDS: int = 60
     AUDIO_EVIDENCE_RETENTION_POLICY: str = "7d"
