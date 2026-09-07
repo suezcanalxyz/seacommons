@@ -15,6 +15,13 @@ class AudioSubscription:
     queue: queue.Queue[bytes]
 
 
+@dataclass(frozen=True)
+class _ListenReceiverRecord:
+    receiver_id: str
+    terms_status: str
+    network_family: str
+
+
 class EphemeralAudioBroker:
     """Bounded in-memory fanout for on-demand listening; never persists audio."""
 
@@ -82,7 +89,15 @@ def _catalog_rows_for_receiver_ids(receiver_ids: set[str]):
     if not receiver_ids:
         return []
     with session_scope() as db:
-        return db.query(ReceiverCatalogDB).filter(ReceiverCatalogDB.receiver_id.in_(receiver_ids)).all()
+        rows = db.query(ReceiverCatalogDB).filter(ReceiverCatalogDB.receiver_id.in_(receiver_ids)).all()
+        return [
+            _ListenReceiverRecord(
+                receiver_id=str(row.receiver_id or ""),
+                terms_status=str(row.terms_status or ""),
+                network_family=str(row.network_family or ""),
+            )
+            for row in rows
+        ]
 
 
 def listen_eligible_receiver_ids(active_receiver_ids: set[str]) -> set[str]:

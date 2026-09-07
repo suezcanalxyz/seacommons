@@ -152,3 +152,25 @@ def test_receiver_mesh_advertises_listen_capability_without_receiver_endpoint(mo
     assert receiver["frequency_hz"] == 2_187_500
     assert receiver["mode"] == "usb"
     assert "endpoint" not in str(payload).lower()
+
+
+def test_listen_eligibility_survives_catalog_session_close():
+    from core.db.models import ReceiverCatalogDB
+    from core.db.session import engine, session_scope
+    from core.radio.listen import listen_eligible_receiver_ids
+
+    ReceiverCatalogDB.__table__.create(bind=engine(), checkfirst=True)
+    key = "kiwisdr:listen-session.example:8073"
+    receiver_id = "rx-listen-session"
+    with session_scope() as db:
+        db.merge(ReceiverCatalogDB(
+            discovery_key=key, receiver_id=receiver_id, public_label="Listen Session RX",
+            network_family="kiwisdr", endpoint="http://listen-session.example:8073/",
+            directory_source="test", terms_status="allowed", activation_status="eligible",
+            reachable=True,
+        ))
+    try:
+        assert listen_eligible_receiver_ids({receiver_id}) == {receiver_id}
+    finally:
+        with session_scope() as db:
+            db.query(ReceiverCatalogDB).filter_by(discovery_key=key).delete()
