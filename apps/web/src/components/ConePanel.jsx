@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { classifyEventVisual, descriptionOf, eventAnomalyLabel } from '../features/intel/categories.js';
 import {
@@ -9,6 +9,7 @@ import {
   observationText,
 } from '../features/live/assessmentPresentation.js';
 import { shipTypeLabel } from '../features/live/vesselType.js';
+import { liveListenWebSocketUrl, pcm16leToFloat32 } from '../features/live/radioListen.js';
 
 const HORIZON = {
   cone_6h:  '6 h drift zone',
@@ -901,7 +902,128 @@ function TrajectoryView({ panel }) {
   );
 }
 
-function RadioReceiverView({ panel }) {
+function RadioLiveListen({ props, apiBase, radioListenRoute }) {
+  const [status, setStatus] = useState('idle');
+  const [format, setFormat] = useState(null);
+  const socketRef = useRef(null);
+  const contextRef = useRef(null);
+  const formatRef = useRef(null);
+  const nextStartRef = useRef(0);
+
+  const stopListening = () => {
+    const socket = socketRef.current;
+    socketRef.current = null;
+    if (socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, 'listener stopped');
+    const context = contextRef.current;
+    contextRef.current = null;
+    if (context && context.state !== 'closed') context.close().catch(() => {});
+    formatRef.current = null;
+    nextStartRef.current = 0;
+    setFormat(null);
+    setStatus('idle');
+  };
+
+  useEffect(() => () => {
+    const socket = socketRef.current;
+    socketRef.current = null;
+    if (socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, 'panel closed');
+    const context = contextRef.current;
+    contextRef.current = null;
+    if (context && context.state !== 'closed') context.close().catch(() => {});
+  }, []);
+
+  const startListening = async () => {
+    if (status === 'connecting' || status === 'live') {
+      stopListening();
+      return;
+    }
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor || !props.receiver_id) {
+      setStatus('unavailable');
+      return;
+    }
+    setStatus('connecting');
+    try {
+      const context = new AudioContextCtor();
+      contextRef.current = context;
+      nextStartRef.current = context.currentTime;
+      await context.resume();
+      const socket = new WebSocket(liveListenWebSocketUrl(apiBase, props.receiver_id, window.location, radioListenRoute));
+      socket.binaryType = 'arraybuffer';
+      socketRef.current = socket;
+
+      socket.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          try {
+            const metadata = JSON.parse(event.data);
+            if (metadata.type !== 'audio_format' || metadata.encoding !== 'pcm_s16le'
+                || Number(metadata.channels) !== 1 || metadata.persistent !== false) {
+              throw new Error('unsupported live audio format');
+            }
+            formatRef.current = metadata;
+            setFormat(metadata);
+            setStatus('live');
+          } catch {
+            setStatus('unavailable');
+            socket.close(1003, 'unsupported audio format');
+          }
+          return;
+        }
+        const metadata = formatRef.current;
+        if (!(event.data instanceof ArrayBuffer) || !metadata || context.state === 'closed') return;
+        const sampleRate = Number(metadata.sample_rate_hz) || 12_000;
+        const samples = pcm16leToFloat32(event.data);
+        if (nextStartRef.current > context.currentTime + 0.75) return;
+        const buffer = context.createBuffer(1, samples.length, sampleRate);
+        buffer.copyToChannel(samples, 0);
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        source.connect(context.destination);
+        source.onended = () => source.disconnect();
+        const startAt = Math.max(context.currentTime + 0.025, nextStartRef.current);
+        source.start(startAt);
+        nextStartRef.current = startAt + buffer.duration;
+      };
+      socket.onerror = () => {
+        if (socketRef.current === socket) setStatus('unavailable');
+      };
+      socket.onclose = (event) => {
+        if (socketRef.current !== socket) return;
+        socketRef.current = null;
+        const activeContext = contextRef.current;
+        contextRef.current = null;
+        if (activeContext && activeContext.state !== 'closed') activeContext.close().catch(() => {});
+        formatRef.current = null;
+        nextStartRef.current = 0;
+        setFormat(null);
+        setStatus(event.code === 1000 ? 'ended' : 'unavailable');
+      };
+    } catch {
+      const context = contextRef.current;
+      contextRef.current = null;
+      if (context && context.state !== 'closed') context.close().catch(() => {});
+      setStatus('unavailable');
+    }
+  };
+
+  if (!props.listen_available) return null;
+  const listening = status === 'connecting' || status === 'live';
+  return (
+    <div className="cone-section">
+      <SectionLabel>Listen live</SectionLabel>
+      <button type="button" className="intel-report-action" onClick={startListening}>
+        {listening ? 'Stop listening' : 'Listen live'}
+      </button>
+      <p className="intel-report-note">
+        Ephemeral stream only; persistent audio is not stored. The server bounds each listening session and drops buffered frames under backpressure.
+      </p>
+      <Row label="Listen status" value={status} />
+      {format && <Row label="Audio" value={`${Number(format.sample_rate_hz) / 1000} kHz PCM · max ${format.max_seconds}s`} />}
+    </div>
+  );
+}
+
+function RadioReceiverView({ panel, apiBase, radioListenRoute }) {
   const props = panel?.feature?.properties || {};
   let capabilities;
   try { capabilities = JSON.parse(props.capabilities_json || '[]'); } catch { capabilities = []; }
@@ -921,6 +1043,7 @@ function RadioReceiverView({ panel }) {
         <Row label="Network" value={props.network_family || '—'} />
         <Row label="Country" value={props.country || '—'} />
         <Row label="State" value={props.active ? 'active' : props.state || 'catalogued'} />
+        {props.active && Number(props.frequency_hz) > 0 && <Row label="Live channel" value={`${(Number(props.frequency_hz) / 1000).toFixed(1)} kHz · ${String(props.mode || 'audio').toUpperCase()}`} />}
         <Row label="Relevance score" value={Number.isFinite(Number(props.score)) ? `${Number(props.score).toFixed(1)} / 100` : '—'} />
         {coords.length >= 2 && <Row label="Approx. position" value={`${Number(coords[1]).toFixed(3)}, ${Number(coords[0]).toFixed(3)}`} mono />}
       </div>
@@ -928,6 +1051,7 @@ function RadioReceiverView({ panel }) {
         <SectionLabel>Receiver capability</SectionLabel>
         {ranges.length ? ranges.map((range) => <Row key={range} label="Band" value={range} />) : <p className="intel-report-note">Capability metadata unavailable.</p>}
       </div>
+      <RadioLiveListen props={props} apiBase={apiBase} radioListenRoute={radioListenRoute} />
       <div className="cone-section">
         <SectionLabel>Provenance</SectionLabel>
         <p className="intel-report-note">Public receiver infrastructure only. Endpoint and physical lineage are intentionally withheld; receiver observations enter the same evidence pipeline as other acquisition sources.</p>
@@ -1009,6 +1133,8 @@ export default function MapFloatingPanel({
   onClose,
   onComputeDrift,
   apiBase,
+  radioListenBase,
+  radioListenRoute,
   publicMode,
   intelDrifts,
   loadNearestVessels,
@@ -1059,7 +1185,7 @@ export default function MapFloatingPanel({
         <TrajectoryView panel={panel} />
       )}
       {panel.type === 'radio_receiver' && (
-        <RadioReceiverView panel={panel} />
+        <RadioReceiverView panel={panel} apiBase={radioListenBase || apiBase} radioListenRoute={radioListenRoute} />
       )}
       {panel.type === 'radio_message' && (
         <RadioMessageView panel={panel} apiBase={apiBase} />

@@ -2669,6 +2669,9 @@ function App() {
               state: receiver.state || 'catalogued',
               score: Number(receiver.score || 0),
               active: Boolean(receiver.active),
+              listen_available: Boolean(receiver.listen_available),
+              frequency_hz: receiver.frequency_hz,
+              mode: receiver.mode || '',
               capabilities_json: JSON.stringify(receiver.capabilities || []),
             },
           }));
@@ -3387,6 +3390,8 @@ function App() {
             onClose={() => setConePanelHidden(true)}
             onComputeDrift={null}
             apiBase={apiBase}
+            radioListenBase={LIVE_EDGE_BASE || apiBase}
+            radioListenRoute={LIVE_EDGE_BASE ? '/v1/radio/listen' : '/api/v1/live/radio/listen'}
             publicMode={isPublicLiveHost}
             intelDrifts={displayedIntelDrifts}
             loadNearestVessels={loadNearestVessels}

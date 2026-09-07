@@ -312,10 +312,24 @@ async def live_receiver_mesh(
         for row in runtime.get("receivers", [])
         if row.get("state") == "connected"
     }
+    runtime_by_id = {
+        str(row.get("receiver_id")): row
+        for row in runtime.get("receivers", [])
+        if row.get("receiver_id")
+    }
+    listen_ids: set[str] = set()
+    if config.RADIO_LIVE_LISTEN_ENABLED:
+        from core.radio.listen import listen_eligible_receiver_ids
+
+        listen_ids = listen_eligible_receiver_ids({str(value) for value in active_ids if value})
     receivers = []
     for row in summary.get("receivers", []):
         item = dict(row)
         item["active"] = item.get("receiver_id") in active_ids
+        item["listen_available"] = item.get("receiver_id") in listen_ids
+        runtime_row = runtime_by_id.get(str(item.get("receiver_id") or ""), {})
+        item["frequency_hz"] = runtime_row.get("frequency_hz") if item["active"] else None
+        item["mode"] = runtime_row.get("mode") if item["active"] else None
         receivers.append(item)
     return {**summary, "active": len(active_ids), "receivers": receivers}
 
@@ -393,6 +407,61 @@ async def live_radio_messages(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "messages": messages,
     }
+
+
+@router.websocket("/radio/listen/{receiver_id}")
+async def live_radio_listen(websocket: WebSocket, receiver_id: str):
+    """Ephemeral PCM listen stream for an already-active, terms-allowed receiver."""
+    import queue as queue_module
+
+    from core.radio.listen import listen_broker, listen_eligible_receiver_ids
+    from core.radio.runtime import get_remote_radio_status
+
+    if not config.RADIO_LIVE_LISTEN_ENABLED:
+        await websocket.close(code=1008, reason="live listen disabled")
+        return
+
+    runtime = get_remote_radio_status(include_receivers=True)
+    active_ids = {
+        str(row.get("receiver_id"))
+        for row in runtime.get("receivers", [])
+        if row.get("receiver_id") and row.get("state") == "connected"
+    }
+    if receiver_id not in listen_eligible_receiver_ids(active_ids):
+        await websocket.close(code=1008, reason="receiver unavailable")
+        return
+    try:
+        subscription = listen_broker.subscribe(receiver_id)
+    except RuntimeError:
+        await websocket.close(code=1013, reason="listen capacity reached")
+        return
+
+    await websocket.accept()
+    max_seconds = max(1, min(int(config.RADIO_LIVE_LISTEN_MAX_SECONDS), 600))
+    await websocket.send_json({
+        "type": "audio_format",
+        "encoding": "pcm_s16le",
+        "sample_rate_hz": 12_000,
+        "channels": 1,
+        "persistent": False,
+        "max_seconds": max_seconds,
+    })
+    deadline = asyncio.get_running_loop().time() + max_seconds
+    try:
+        while asyncio.get_running_loop().time() < deadline:
+            try:
+                packet = await asyncio.to_thread(subscription.queue.get, True, 1.0)
+            except queue_module.Empty:
+                continue
+            await websocket.send_bytes(packet)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        listen_broker.unsubscribe(subscription)
+        try:
+            await websocket.close(code=1000)
+        except Exception:
+            pass
 
 
 @router.get("/sources")

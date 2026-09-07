@@ -279,7 +279,11 @@ def get_radio_decoder_runtime() -> RadioDecoderRuntime:
 
 
 def submit_ephemeral_frame(frame: EphemeralRadioFrame) -> bool:
-    return get_radio_decoder_runtime().submit_frame(frame)
+    from core.radio.listen import publish_ephemeral_audio
+
+    listen_deliveries = publish_ephemeral_audio(frame)
+    decoder_accepted = get_radio_decoder_runtime().submit_frame(frame)
+    return bool(listen_deliveries or decoder_accepted)
 
 
 def radio_decoder_status() -> dict[str, object]:

@@ -5,6 +5,7 @@ import path from 'node:path';
 
 const main = fs.readFileSync(path.resolve('src/main.jsx'), 'utf8');
 const dashboard = fs.readFileSync(path.resolve('src/components/IntelDashboard.jsx'), 'utf8');
+const cone = fs.readFileSync(path.resolve('src/components/ConePanel.jsx'), 'utf8');
 
 test('public Live primary semantics are Humanitarian and Maritime, never legacy source buckets', () => {
   assert.match(main, /key: 'humanitarian'[\s\S]*label: 'Humanitarian'/);
@@ -39,4 +40,14 @@ test('public Live exposes the radio receiver mesh and decoded DSC without making
   assert.match(main, /\/api\/v1\/live\/radio\/messages/);
   assert.match(main, /\/api\/v1\/live\/radio\/events/);
   assert.doesNotMatch(main, /key: 'radio'[\s\S]{0,80}label: 'Radio'/);
+});
+
+
+test('eligible radio receivers expose bounded Listen live WebAudio controls', () => {
+  assert.match(main, /listen_available: Boolean\(receiver\.listen_available\)/);
+  assert.match(main, /frequency_hz: receiver\.frequency_hz/);
+  assert.match(cone, /Listen live/);
+  assert.match(cone, /liveListenWebSocketUrl/);
+  assert.match(cone, /pcm16leToFloat32/);
+  assert.match(cone, /persistent audio is not stored/i);
 });
