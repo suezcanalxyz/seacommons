@@ -81,11 +81,9 @@ def test_tune_uses_native_dspcontrol_and_active_profile_bounds():
 
     with pytest.raises(ValueError):
         adapter.tune(190_000_000, "nbfm")
-    with pytest.raises(RuntimeError, match="profile metadata"):
-        adapter.tune(156_800_000, "nbfm")
+    adapter.tune(156_800_000, "nbfm")
 
     _announce_profile(transport)
-    adapter.tune(156_800_000, "nbfm")
     assert transport.controls[-2:] == [
         {"type": "dspcontrol", "action": "start"},
         {"type": "dspcontrol", "params": {"offset_freq": 300_000, "mod": "nfm"}},
@@ -181,3 +179,17 @@ def test_health_counts_only_smeter_observations():
     assert observations[0].observed_at.tzinfo is not None
     assert adapter.health().observations_received == 1
     assert isinstance(adapter.health().last_message_at, datetime)
+
+
+def test_tune_requested_before_profile_metadata_is_applied_when_config_arrives():
+    from core.radio.openwebrx import OpenWebRXAdapter
+
+    transport = FakeTransport()
+    adapter = OpenWebRXAdapter(descriptor(), on_observation=lambda observation: None, transport=transport)
+    adapter.start()
+    adapter.tune(2_187_500, "usb")
+    assert not any(payload.get("type") == "dspcontrol" for payload in transport.controls)
+
+    transport.on_message({"type": "config", "value": {"center_freq": 2_200_000, "samp_rate": 200_000}})
+    assert any(payload.get("type") == "dspcontrol" and payload.get("action") == "start" for payload in transport.controls)
+    assert any(payload.get("params", {}).get("offset_freq") == -12_500 for payload in transport.controls)

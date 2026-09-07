@@ -152,6 +152,7 @@ class OpenWebRXAdapter:
         self._center_freq_hz: int | None = None
         self._sample_rate_hz: int | None = None
         self._dsp_started = False
+        self._pending_tune: tuple[int, str] | None = None
         self._lock = threading.Lock()
 
     def start(self) -> None:
@@ -163,6 +164,7 @@ class OpenWebRXAdapter:
             self._center_freq_hz = None
             self._sample_rate_hz = None
             self._dsp_started = False
+            self._pending_tune = None
         try:
             self._transport.start(
                 websocket_url=openwebrx_websocket_url(self._descriptor.frontend_url),
@@ -229,7 +231,9 @@ class OpenWebRXAdapter:
             sample_rate = self._sample_rate_hz
             dsp_started = self._dsp_started
         if center is None or sample_rate is None:
-            raise RuntimeError("OpenWebRX profile metadata not received")
+            with self._lock:
+                self._pending_tune = (int(frequency_hz), normalized_mode)
+            return
         if not center - sample_rate // 2 <= frequency_hz <= center + sample_rate // 2:
             raise ValueError("frequency is outside active OpenWebRX profile")
         wire_mode = _OPENWEBRX_MODE_MAP.get(normalized_mode, normalized_mode)
@@ -245,6 +249,7 @@ class OpenWebRXAdapter:
             self._frequency_hz = int(frequency_hz)
             self._mode = normalized_mode
             self._dsp_started = True
+            self._pending_tune = None
 
     def _on_disconnect(self, _detail: str) -> None:
         with self._lock:
@@ -266,6 +271,12 @@ class OpenWebRXAdapter:
                         self._center_freq_hz = int(center)
                     if sample_rate is not None:
                         self._sample_rate_hz = int(sample_rate)
+                    pending_tune = self._pending_tune
+                if pending_tune is not None:
+                    try:
+                        self.tune(*pending_tune)
+                    except (RuntimeError, ValueError):
+                        pass
             return
         if message_type != "smeter":
             return
