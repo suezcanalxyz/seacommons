@@ -39,12 +39,15 @@ class RemoteRadioRuntime:
         enabled: bool,
         descriptors: Iterable[ReceiverDescriptor],
         max_receivers: int,
+        fallback_descriptors: Iterable[ReceiverDescriptor] = (),
         adapter_factory: AdapterFactory = _default_adapter_factory,
         observation_handler: Callable[[RadioObservation], None] = _default_observation_handler,
         reconnect_interval_s: float = 15.0,
     ) -> None:
         self.enabled = bool(enabled)
-        self._registry = ReceiverRegistry(descriptors, max_receivers=max_receivers)
+        primary = tuple(descriptors)
+        fallback = tuple(fallback_descriptors)
+        self._registry = ReceiverRegistry(primary + fallback, max_receivers=max_receivers)
         self._adapter_factory = adapter_factory
         self._observation_handler = observation_handler
         self._adapters: list[tuple[ReceiverDescriptor, RemoteReceiverAdapter]] = []
@@ -63,10 +66,10 @@ class RemoteRadioRuntime:
                 return
         from core.observability import record_remote_radio_event
 
-        for descriptor in self._registry.runnable():
+        def _start_descriptor(descriptor: ReceiverDescriptor) -> None:
             provider = descriptor.provider if descriptor.provider in {"kiwisdr", "openwebrx"} else "other"
+            adapter = self._adapter_factory(descriptor, self._observation_handler)
             try:
-                adapter = self._adapter_factory(descriptor, self._observation_handler)
                 adapter.start()
                 if descriptor.frequency_hz is not None and descriptor.mode is not None:
                     adapter.tune(descriptor.frequency_hz, descriptor.mode)
@@ -79,10 +82,13 @@ class RemoteRadioRuntime:
                 with self._lock:
                     self._adapters.append((descriptor, adapter))
                 record_remote_radio_event(provider=provider, state="disconnected", outcome="start_failed")
-                continue
+                return
             with self._lock:
                 self._adapters.append((descriptor, adapter))
             record_remote_radio_event(provider=provider, state="connected", outcome="started")
+
+        for descriptor in self._registry.runnable():
+            _start_descriptor(descriptor)
         with self._lock:
             if self._adapters and (self._supervisor is None or not self._supervisor.is_alive()):
                 self._supervisor = threading.Thread(
@@ -160,7 +166,12 @@ class RemoteRadioRuntime:
             except Exception:
                 providers["other"]["failed"] += 1
         if include_receivers:
-            for descriptor in self._registry.runnable() if self.enabled else self._registry.all():
+            descriptors = list(self._registry.runnable() if self.enabled else self._registry.all())
+            seen_ids: set[str] = set()
+            for descriptor in descriptors:
+                if descriptor.receiver_id in seen_ids:
+                    continue
+                seen_ids.add(descriptor.receiver_id)
                 health = health_by_receiver.get(descriptor.receiver_id)
                 connected = bool(getattr(health, "connected", False))
                 last_message_at = getattr(health, "last_message_at", None)
@@ -185,9 +196,10 @@ class RemoteRadioRuntime:
             1 for health in health_by_receiver.values()
             if bool(getattr(health, "connected", False))
         )
+        configured_count = len({descriptor.physical_lineage for descriptor in self._registry.all()})
         result: dict[str, object] = {
             "enabled": self.enabled,
-            "configured": len(self._registry.all()),
+            "configured": configured_count,
             "runnable": len(self._registry.runnable()) if self.enabled else 0,
             "started": connected_count,
             "failed": sum(self._failed_by_provider.values()),
@@ -213,10 +225,19 @@ def start_remote_radio_from_config() -> RemoteRadioRuntime:
         file_path=config.REMOTE_RADIO_RECEIVERS_FILE,
         max_receivers=config.REMOTE_RADIO_MAX_RECEIVERS,
     )
+    fallback_descriptors = ()
+    if config.REMOTE_RADIO_PUBLIC_POOL_ENABLED:
+        from core.radio.public_pool import public_receiver_pool
+        fallback_descriptors = public_receiver_pool()[: max(0, int(config.REMOTE_RADIO_PUBLIC_POOL_MAX))]
+    effective_max = max(
+        int(config.REMOTE_RADIO_MAX_RECEIVERS),
+        len(registry.all()) + len(fallback_descriptors),
+    )
     _runtime = RemoteRadioRuntime(
         enabled=config.REMOTE_RADIO_ENABLED,
         descriptors=registry.all(),
-        max_receivers=config.REMOTE_RADIO_MAX_RECEIVERS,
+        fallback_descriptors=fallback_descriptors,
+        max_receivers=effective_max,
     )
     _runtime.start()
     from core.radio.bridge import register_radio_acquisition_status

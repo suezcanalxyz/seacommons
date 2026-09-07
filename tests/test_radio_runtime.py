@@ -351,3 +351,68 @@ def test_runtime_reconnects_disconnected_receiver_and_restores_configured_tune()
     assert adapter.started is True
     assert adapter.tuned[-1] == (2_187_500, "usb")
     runtime.stop()
+
+
+def test_runtime_activates_public_pool_when_primary_cannot_start():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    primary = _descriptor("kiwisdr", "primary-lineage", "primary")
+    fallback = _descriptor("kiwisdr", "fallback-lineage", "fallback")
+    created = []
+
+    def factory(descriptor, callback):
+        created.append(descriptor.receiver_id)
+        return FakeAdapter(descriptor, fail=descriptor.receiver_id == primary.receiver_id)
+
+    runtime = RemoteRadioRuntime(
+        enabled=True,
+        descriptors=(primary,),
+        fallback_descriptors=(fallback,),
+        max_receivers=3,
+        adapter_factory=factory,
+        reconnect_interval_s=60.0,
+    )
+    runtime.start()
+    status = runtime.status(include_receivers=True)
+    assert primary.receiver_id in created
+    assert fallback.receiver_id in created
+    assert status["started"] == 1
+    assert any(row["receiver_id"] == fallback.receiver_id and row["state"] == "connected" for row in status["receivers"])
+
+
+def test_runtime_activates_public_pool_alongside_live_primary():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    primary = _descriptor("kiwisdr", "primary-lineage", "primary-live")
+    fallback = _descriptor("kiwisdr", "fallback-lineage", "fallback-standby")
+    created = []
+
+    def factory(descriptor, callback):
+        created.append(descriptor.receiver_id)
+        return FakeAdapter(descriptor)
+
+    runtime = RemoteRadioRuntime(
+        enabled=True,
+        descriptors=(primary,),
+        fallback_descriptors=(fallback,),
+        max_receivers=3,
+        adapter_factory=factory,
+    )
+    runtime.start()
+    assert created == [primary.receiver_id, fallback.receiver_id]
+    assert runtime.status()["started"] == 2
+
+
+def test_public_fallback_receivers_are_bounded_terms_allowed_and_monitor_only():
+    from core.radio.public_pool import public_receiver_pool
+
+    rows = public_receiver_pool()
+    assert len(rows) == 8
+    for row in rows:
+        assert row.enabled is True
+        assert row.terms_status == "allowed"
+        assert "rx.kiwisdr.com" in row.source_terms
+        assert row.channel_kind == "monitor"
+        assert row.frequency_hz == 2_187_500
+        assert row.mode == "usb"
+        assert row.provider == "kiwisdr"
