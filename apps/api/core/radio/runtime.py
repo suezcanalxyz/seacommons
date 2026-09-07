@@ -41,6 +41,7 @@ class RemoteRadioRuntime:
         max_receivers: int,
         adapter_factory: AdapterFactory = _default_adapter_factory,
         observation_handler: Callable[[RadioObservation], None] = _default_observation_handler,
+        reconnect_interval_s: float = 15.0,
     ) -> None:
         self.enabled = bool(enabled)
         self._registry = ReceiverRegistry(descriptors, max_receivers=max_receivers)
@@ -49,10 +50,14 @@ class RemoteRadioRuntime:
         self._adapters: list[tuple[ReceiverDescriptor, RemoteReceiverAdapter]] = []
         self._failed_by_provider: dict[str, int] = defaultdict(int)
         self._lock = threading.Lock()
+        self._reconnect_interval_s = max(float(reconnect_interval_s), 1.0)
+        self._stop_event = threading.Event()
+        self._supervisor: threading.Thread | None = None
 
     def start(self) -> None:
         if not self.enabled:
             return
+        self._stop_event.clear()
         with self._lock:
             if self._adapters:
                 return
@@ -76,11 +81,53 @@ class RemoteRadioRuntime:
             with self._lock:
                 self._adapters.append((descriptor, adapter))
             record_remote_radio_event(provider=provider, state="connected", outcome="started")
+        with self._lock:
+            if self._adapters and (self._supervisor is None or not self._supervisor.is_alive()):
+                self._supervisor = threading.Thread(
+                    target=self._supervise, daemon=True, name="remote-radio-supervisor"
+                )
+                self._supervisor.start()
 
-    def stop(self) -> None:
+    def _supervise(self) -> None:
+        while not self._stop_event.wait(self._reconnect_interval_s):
+            self._reconnect_disconnected_once()
+
+    def _reconnect_disconnected_once(self) -> None:
+        from core.observability import record_remote_radio_event
+
         with self._lock:
             adapters = tuple(self._adapters)
+        for descriptor, adapter in adapters:
+            try:
+                health = adapter.health()
+            except Exception:
+                continue
+            if health.connected:
+                continue
+            provider = descriptor.provider if descriptor.provider in {"kiwisdr", "openwebrx"} else "other"
+            try:
+                adapter.stop()
+                adapter.start()
+                if descriptor.frequency_hz is not None and descriptor.mode:
+                    adapter.tune(descriptor.frequency_hz, descriptor.mode)
+            except Exception:
+                record_remote_radio_event(
+                    provider=provider, state="disconnected", outcome="reconnect_failed"
+                )
+                continue
+            record_remote_radio_event(
+                provider=provider, state="connected", outcome="reconnected"
+            )
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        with self._lock:
+            supervisor = self._supervisor
+            self._supervisor = None
+            adapters = tuple(self._adapters)
             self._adapters.clear()
+        if supervisor is not None and supervisor is not threading.current_thread():
+            supervisor.join(timeout=2.0)
         for _descriptor, adapter in adapters:
             try:
                 adapter.stop()

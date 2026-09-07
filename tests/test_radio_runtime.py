@@ -276,3 +276,43 @@ def test_runtime_tunes_configured_channel_after_receiver_start():
 
     assert adapters[0].tuned == [(2_187_500, "usb")]
     assert runtime.status()["started"] == 1
+
+
+def test_runtime_reconnects_disconnected_receiver_and_restores_configured_tune():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    descriptor = ReceiverDescriptor(
+        receiver_id="med_dsc", provider="kiwisdr", frontend_url="https://rx.example.org",
+        physical_lineage="med_rx", enabled=True, terms_status="allowed",
+        source_terms="operator-permission",
+        capabilities=(ReceiverCapability(2_000_000, 3_000_000, ("usb",)),),
+        public_label="Mediterranean DSC", channel_kind="monitor",
+        frequency_hz=2_187_500, mode="usb",
+    )
+    adapters = []
+    def factory(desc, callback):
+        adapter = FakeAdapter(desc)
+        adapter.start_count = 0
+        original_start = adapter.start
+        def counted_start():
+            adapter.start_count += 1
+            original_start()
+        adapter.start = counted_start
+        adapters.append(adapter)
+        return adapter
+
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=(descriptor,), max_receivers=8, adapter_factory=factory,
+        reconnect_interval_s=60.0,
+    )
+    runtime.start()
+    adapter = adapters[0]
+    assert adapter.start_count == 1
+    adapter.started = False
+
+    runtime._reconnect_disconnected_once()
+
+    assert adapter.start_count == 2
+    assert adapter.started is True
+    assert adapter.tuned[-1] == (2_187_500, "usb")
+    runtime.stop()
