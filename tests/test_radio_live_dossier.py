@@ -1,7 +1,4 @@
-from datetime import datetime, timezone
-
-
-def test_public_receiver_summary_exposes_coarse_location_not_endpoint(monkeypatch):
+def test_public_receiver_summary_exposes_coarse_location_not_endpoint():
     from core.db.models import ReceiverCatalogDB
     from core.db.session import engine, session_scope
     from core.radio.catalog_store import public_catalog_summary
@@ -27,7 +24,6 @@ def test_public_receiver_summary_exposes_coarse_location_not_endpoint(monkeypatc
             capabilities=[{"min_hz": 100000, "max_hz": 30000000, "modes": ["usb"]}],
             reachable=True,
             score=99.0,
-            created_at=datetime.now(timezone.utc) if hasattr(ReceiverCatalogDB, "created_at") else None,
         ))
     summary = public_catalog_summary(limit=1)
     receiver = summary["receivers"][0]
