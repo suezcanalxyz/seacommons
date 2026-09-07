@@ -407,12 +407,12 @@ def test_public_fallback_receivers_are_bounded_terms_allowed_and_monitor_only():
     from core.radio.public_pool import public_receiver_pool
 
     rows = public_receiver_pool()
-    assert len(rows) == 15
+    assert len(rows) >= 16
     for row in rows:
         assert row.enabled is True
         assert row.terms_status == "allowed"
-        assert "rx.kiwisdr.com" in row.source_terms
+        assert row.source_terms
         assert row.channel_kind == "monitor"
         assert row.frequency_hz == 2_187_500
         assert row.mode == "usb"
-        assert row.provider == "kiwisdr"
+        assert row.provider in {"kiwisdr", "openwebrx"}

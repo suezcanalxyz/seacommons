@@ -258,6 +258,35 @@ async def live_pipeline():
     }
 
 
+@router.get("/receivers/catalog")
+async def live_receiver_catalog(
+    zone: str = Query("central_med", pattern="^(central_med|sicily_channel|malta|tunisia_north|ionian)$"),
+    limit: int = Query(16, ge=1, le=64),
+):
+    """Public-safe ranked catalog of free/open receiver candidates."""
+    from core.radio.catalog import rank_catalog
+
+    rows = rank_catalog(zone, frequency_hz=2_187_500, limit=limit)
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "zone": zone,
+        "frequency_hz": 2_187_500,
+        "receivers": [
+            {
+                "receiver_id": row.receiver_id,
+                "station_label": row.public_label,
+                "network_family": row.network_family,
+                "country": row.country,
+                "license_class": row.license_class,
+                "activation_status": row.activation_status,
+                "terms_status": row.terms_status,
+                "priority_score": row.priority_score,
+            }
+            for row in rows
+        ],
+    }
+
+
 @router.get("/sources")
 async def live_sources():
     """Public health summary without credentials, endpoint URLs or raw errors."""

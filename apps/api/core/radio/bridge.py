@@ -79,8 +79,6 @@ def radio_acquisition_status() -> dict[str, object]:
         state = "disabled"
     elif int(status.get("started") or 0) == 0:
         state = "offline"
-    elif int(status.get("failed") or 0) > 0:
-        state = "degraded"
     else:
         receivers = status.get("receivers") or []
         state = "live" if any(row.get("state") == "connected" for row in receivers) else "degraded"

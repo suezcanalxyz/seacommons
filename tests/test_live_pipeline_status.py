@@ -4,8 +4,8 @@ from fastapi.testclient import TestClient
 
 
 def test_live_pipeline_endpoint_is_public_and_uses_unified_source_families(monkeypatch):
-    from core.api.main import app
     from core.acquisition import status as acquisition_status
+    from core.api.main import app
 
     acquisition_status._reset_acquisition_status_for_tests()
     monkeypatch.setattr(acquisition_status, "ensure_default_acquisition_status", lambda: None)
@@ -92,3 +92,33 @@ def test_radio_acquisition_status_reports_structured_capability_when_remote_is_d
     status = radio_acquisition_status()
     assert status["state"] == "disabled"
     assert status["structured_enabled"] is True
+
+
+def test_radio_status_is_live_when_any_receiver_is_connected(monkeypatch):
+    from core.config import config
+    from core.radio import runtime as radio_runtime
+    from core.radio.bridge import radio_acquisition_status
+
+    monkeypatch.setattr(config, "STRUCTURED_RADIO_ENABLED", True)
+    monkeypatch.setattr(radio_runtime, "get_remote_radio_status", lambda include_receivers=False: {
+        "enabled": True, "configured": 3, "started": 1, "failed": 2,
+        "receivers": [
+            {"receiver_id": "one", "state": "connected"},
+            {"receiver_id": "two", "state": "disconnected"},
+        ],
+    })
+    status = radio_acquisition_status()
+    assert status["state"] == "live"
+    assert status["failed"] == 2
+
+
+def test_public_receiver_catalog_is_bounded_and_hides_endpoints():
+    from core.api.main import app
+    payload = TestClient(app).get("/api/v1/live/receivers/catalog?zone=central_med&limit=8").json()
+    assert payload["zone"] == "central_med"
+    assert 1 <= len(payload["receivers"]) <= 8
+    assert any(row["network_family"] == "openwebrx" for row in payload["receivers"])
+    serialized = str(payload).lower()
+    assert "frontend_url" not in serialized
+    assert "endpoint" not in serialized
+    assert "physical_lineage" not in serialized
