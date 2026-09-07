@@ -3,8 +3,13 @@ from __future__ import annotations
 
 import hashlib
 
-from core.radio.provider import DecodedRadioMessage, RadioObservation
+from core.radio.ais_association import (
+    associate_and_persist_dsc,
+    persist_strong_radio_ais_episode,
+    public_association,
+)
 from core.radio.burst import RadioBurstDetector
+from core.radio.provider import DecodedRadioMessage, RadioObservation
 
 _burst_detector = RadioBurstDetector()
 
@@ -65,7 +70,7 @@ def get_structured_radio_runtime():
 
 
 def handle_decoded_radio_message(message: DecodedRadioMessage) -> dict[str, object]:
-    """Route only explicit decoder output into the existing structured boundary."""
+    """Route explicit decoder output, then correlate accepted DSC with AIS."""
     runtime = get_structured_radio_runtime()
     common = {
         "receiver_id": message.receiver_id,
@@ -76,7 +81,23 @@ def handle_decoded_radio_message(message: DecodedRadioMessage) -> dict[str, obje
         "raw_evidence_ref": _raw_evidence_ref(message),
     }
     if message.kind == "dsc":
-        return runtime.ingest_dsc(message.payload, **common)
+        result = runtime.ingest_dsc(message.payload, **common)
+        observation_id = str(result.get("observation_id") or "")
+        if result.get("accepted") and observation_id:
+            try:
+                association = associate_and_persist_dsc(message, observation_id=observation_id)
+            except Exception:
+                association = None
+            if association is not None:
+                result["ais_association"] = public_association(association)
+                if association.episode_eligible:
+                    try:
+                        episode = persist_strong_radio_ais_episode(message, association)
+                    except Exception:
+                        episode = None
+                    if episode is not None:
+                        result["maritime_episode_id"] = episode.episode_id
+        return result
     return runtime.ingest_navtex(
         message.payload,
         decoder_message_id=message.provider_message_id,
@@ -86,6 +107,7 @@ def handle_decoded_radio_message(message: DecodedRadioMessage) -> dict[str, obje
 
 def radio_acquisition_status() -> dict[str, object]:
     from core.config import config
+    from core.radio.decoder_runtime import radio_decoder_status
     from core.radio.runtime import get_remote_radio_status
 
     status = get_remote_radio_status(include_receivers=True)
@@ -99,6 +121,7 @@ def radio_acquisition_status() -> dict[str, object]:
     return {
         "state": state,
         "structured_enabled": bool(config.STRUCTURED_RADIO_ENABLED),
+        "decoder": radio_decoder_status(),
         "configured": int(status.get("configured") or 0),
         "started": int(status.get("started") or 0),
         "failed": int(status.get("failed") or 0),
