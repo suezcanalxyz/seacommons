@@ -359,6 +359,18 @@ def _job_receiver_discovery() -> None:
         logger.warning("Scheduler receiver discovery refresh failed")
 
 
+def _job_receiver_catalog_recompute() -> None:
+    """Seed curated receivers, probe health and recompute automatic mesh scores."""
+    try:
+        from core.radio.catalog_store import persist_curated_catalog, probe_and_score_catalog
+
+        persist_curated_catalog()
+        summary = probe_and_score_catalog()
+        logger.info("Scheduler: receiver catalog recomputed %s", summary)
+    except Exception:
+        logger.warning("Scheduler receiver catalog recompute failed")
+
+
 def _job_mda_reference_refresh() -> None:
     """Pull the authoritative open reference layers (EEZ / MPA / pipelines /
     platforms). Best-effort — a no-op offline."""
@@ -512,6 +524,10 @@ def start() -> None:
                           id="receiver_discovery", replace_existing=True,
                           max_instances=1, misfire_grace_time=1800, next_run_time=_soon())
 
+        scheduler.add_job(_job_receiver_catalog_recompute, IntervalTrigger(minutes=15),
+                          id="receiver_catalog_recompute", replace_existing=True,
+                          max_instances=1, misfire_grace_time=600, next_run_time=_soon())
+
         scheduler.add_job(_job_mda_reference_refresh, IntervalTrigger(days=14),
                           id="mda_reference_refresh", replace_existing=True,
                           max_instances=1, misfire_grace_time=3600,
@@ -527,7 +543,7 @@ def start() -> None:
         logger.info(
             "Background scheduler started: refresh_news(30m), source_health(15m), "
             "humanitarian_reconcile(15m), incident_watch(5m), satellite_enrichment(30m), "
-            "iom_incidents(1h), forensic_scan(6h), receiver_discovery(6h), "
+            "iom_incidents(1h), forensic_scan(6h), receiver_discovery(6h), receiver_catalog(15m), "
             "mda_reference(14d), mda_daily(24h) "
             "[drift: manual-only]"
         )

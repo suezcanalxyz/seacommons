@@ -875,6 +875,35 @@ class EntityRelationshipDB(Base):
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
+
+class ReceiverCatalogDB(Base):
+    """Persistent discovered/validated receiver catalog; endpoints remain private."""
+    __tablename__ = "receiver_catalog"
+    discovery_key = Column(String(256), primary_key=True)
+    receiver_id = Column(String(128), index=True)
+    public_label = Column(String(128), nullable=False)
+    network_family = Column(String(32), nullable=False, index=True)
+    physical_lineage = Column(String(128), index=True)
+    endpoint = Column(Text, nullable=False)
+    directory_source = Column(String(64), nullable=False, index=True)
+    license_class = Column(String(32), nullable=False, default="public_access")
+    source_terms = Column(Text)
+    terms_status = Column(String(32), nullable=False, default="review_required", index=True)
+    activation_status = Column(String(32), nullable=False, default="catalogued", index=True)
+    country = Column(String(8))
+    lat = Column(Float)
+    lon = Column(Float)
+    capabilities = Column(JSON, default=list)
+    reachable = Column(Boolean)
+    uptime_ratio = Column(Float, nullable=False, default=0.0)
+    failure_rate = Column(Float, nullable=False, default=0.0)
+    score = Column(Float, nullable=False, default=0.0, index=True)
+    available_slots = Column(Integer)
+    last_discovered_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    last_probed_at = Column(DateTime)
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 def create_all(database_url: str) -> None:
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)

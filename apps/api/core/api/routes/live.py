@@ -297,6 +297,29 @@ async def live_receiver_discovery(
     return discovery_registry.public_snapshot(limit=limit)
 
 
+@router.get("/receivers/mesh")
+async def live_receiver_mesh(
+    limit: int = Query(16, ge=1, le=64),
+):
+    """Public-safe computed receiver mesh summary plus current active state."""
+    from core.radio.catalog_store import public_catalog_summary
+    from core.radio.runtime import get_remote_radio_status
+
+    summary = public_catalog_summary(limit=limit)
+    runtime = get_remote_radio_status(include_receivers=True)
+    active_ids = {
+        row.get("receiver_id")
+        for row in runtime.get("receivers", [])
+        if row.get("state") == "connected"
+    }
+    receivers = []
+    for row in summary.get("receivers", []):
+        item = dict(row)
+        item["active"] = item.get("receiver_id") in active_ids
+        receivers.append(item)
+    return {**summary, "active": len(active_ids), "receivers": receivers}
+
+
 @router.get("/sources")
 async def live_sources():
     """Public health summary without credentials, endpoint URLs or raw errors."""

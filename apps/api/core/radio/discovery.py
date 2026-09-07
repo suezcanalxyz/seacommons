@@ -133,12 +133,17 @@ def _default_fetch_text(url: str) -> str:
 def refresh_discovery(*, registry: DiscoveryRegistry = discovery_registry, fetch_text=_default_fetch_text) -> dict[str, object]:
     """Refresh public receiver directories without authorizing discovered endpoints."""
     try:
-        registry.replace_source("receiverbook", _refresh_receiverbook(fetch_text))
+        rows = _refresh_receiverbook(fetch_text)
+        registry.replace_source("receiverbook", rows)
+        from core.radio.catalog_store import persist_discovered_receivers
+        persist_discovered_receivers(rows)
     except Exception:
         registry.record_failure("receiverbook")
     try:
-        rows = parse_kiwi_public_html(fetch_text("https://kiwisdr.com/.public/"))
-        registry.replace_source("kiwi_public", rows[:500])
+        rows = parse_kiwi_public_html(fetch_text("https://kiwisdr.com/.public/"))[:500]
+        registry.replace_source("kiwi_public", rows)
+        from core.radio.catalog_store import persist_discovered_receivers
+        persist_discovered_receivers(rows)
     except Exception:
         registry.record_failure("kiwi_public")
     return registry.public_snapshot(limit=100)
