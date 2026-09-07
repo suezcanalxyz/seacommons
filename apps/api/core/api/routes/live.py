@@ -320,6 +320,38 @@ async def live_receiver_mesh(
     return {**summary, "active": len(active_ids), "receivers": receivers}
 
 
+@router.get("/radio/events")
+async def live_radio_events(
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Public-safe recent correlated RF events; no receiver lineage leakage."""
+    from core.db.models import RadioEventDB
+    from core.db.session import session_scope
+
+    with session_scope() as db:
+        rows = (
+            db.query(RadioEventDB)
+            .order_by(RadioEventDB.started_at.desc())
+            .limit(limit)
+            .all()
+        )
+        events = [
+            {
+                "event_id": row.event_id,
+                "frequency_hz": row.frequency_hz,
+                "started_at": row.started_at.isoformat(),
+                "ended_at": row.ended_at.isoformat(),
+                "independent_receivers": row.independent_receivers,
+                "confidence": row.confidence,
+            }
+            for row in rows
+        ]
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "events": events,
+    }
+
+
 @router.get("/sources")
 async def live_sources():
     """Public health summary without credentials, endpoint URLs or raw errors."""

@@ -876,6 +876,34 @@ class EntityRelationshipDB(Base):
 
 
 
+class RadioBurstDB(Base):
+    """Closed RF burst derived from bounded signal-level observations."""
+    __tablename__ = "radio_bursts"
+    burst_id = Column(String(64), primary_key=True)
+    physical_lineage = Column(String(128), nullable=False, index=True)
+    frequency_hz = Column(Integer, nullable=False, index=True)
+    started_at = Column(DateTime, nullable=False, index=True)
+    ended_at = Column(DateTime, nullable=False)
+    sample_count = Column(Integer, nullable=False)
+    peak_signal_db = Column(Float, nullable=False)
+    mean_signal_db = Column(Float, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class RadioEventDB(Base):
+    """Correlated co-frequency RF event across independent physical receivers."""
+    __tablename__ = "radio_events"
+    event_id = Column(String(64), primary_key=True)
+    frequency_hz = Column(Integer, nullable=False, index=True)
+    started_at = Column(DateTime, nullable=False, index=True)
+    ended_at = Column(DateTime, nullable=False)
+    independent_receivers = Column(Integer, nullable=False)
+    physical_lineages = Column(JSON, nullable=False)
+    burst_ids = Column(JSON, nullable=False)
+    confidence = Column(Float, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 class ReceiverCatalogDB(Base):
     """Persistent discovered/validated receiver catalog; endpoints remain private."""
     __tablename__ = "receiver_catalog"

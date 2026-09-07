@@ -4,6 +4,9 @@ from __future__ import annotations
 import hashlib
 
 from core.radio.provider import DecodedRadioMessage, RadioObservation
+from core.radio.burst import RadioBurstDetector
+
+_burst_detector = RadioBurstDetector()
 
 
 def _persist_radio_observation(observation: RadioObservation) -> None:
@@ -24,9 +27,20 @@ def _persist_radio_observation(observation: RadioObservation) -> None:
         raise
 
 
+def _persist_radio_burst(burst) -> None:
+    from core.db.session import session_scope
+    from core.radio.burst_store import correlate_and_persist_recent, persist_radio_burst
+
+    with session_scope() as db:
+        persist_radio_burst(db, burst)
+        correlate_and_persist_recent(db, burst)
+
+
 def handle_radio_observation(observation: RadioObservation) -> None:
-    """Persist signal-level receiver metadata; never infer a structured message."""
+    """Persist signal metadata and closed RF bursts; never infer a decoded message."""
     _persist_radio_observation(observation)
+    for burst in _burst_detector.ingest(observation):
+        _persist_radio_burst(burst)
 
 
 def _raw_evidence_ref(message: DecodedRadioMessage) -> str:
