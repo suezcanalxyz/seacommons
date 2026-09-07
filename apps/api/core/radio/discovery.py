@@ -67,6 +67,20 @@ def parse_kiwi_public_html(raw_html: str) -> tuple[DiscoveredReceiver, ...]:
     return tuple(rows)
 
 
+def _receiverbook_page_count(raw_html: str, *, max_pages: int = 12) -> int:
+    pages = [int(value) for value in re.findall(r"[?&amp;]page=(\d+)", raw_html)]
+    return max(1, min(max(pages, default=1), max_pages))
+
+
+def _refresh_receiverbook(fetch_text) -> tuple[DiscoveredReceiver, ...]:
+    base = "https://www.receiverbook.de/?band=any-public&type=openwebrx"
+    first = fetch_text(base)
+    rows = list(parse_receiverbook_html(first))
+    for page in range(2, _receiverbook_page_count(first) + 1):
+        rows.extend(parse_receiverbook_html(fetch_text(f"{base}&page={page}")))
+    return tuple(rows[:500])
+
+
 class DiscoveryRegistry:
     def __init__(self) -> None:
         self._rows_by_source: dict[str, tuple[DiscoveredReceiver, ...]] = {}
@@ -118,14 +132,13 @@ def _default_fetch_text(url: str) -> str:
 
 def refresh_discovery(*, registry: DiscoveryRegistry = discovery_registry, fetch_text=_default_fetch_text) -> dict[str, object]:
     """Refresh public receiver directories without authorizing discovered endpoints."""
-    sources = (
-        ("receiverbook", "https://www.receiverbook.de/?band=any-public&type=openwebrx", parse_receiverbook_html),
-        ("kiwi_public", "https://kiwisdr.com/.public/", parse_kiwi_public_html),
-    )
-    for source, url, parser in sources:
-        try:
-            rows = parser(fetch_text(url))
-            registry.replace_source(source, rows[:500])
-        except Exception:
-            registry.record_failure(source)
+    try:
+        registry.replace_source("receiverbook", _refresh_receiverbook(fetch_text))
+    except Exception:
+        registry.record_failure("receiverbook")
+    try:
+        rows = parse_kiwi_public_html(fetch_text("https://kiwisdr.com/.public/"))
+        registry.replace_source("kiwi_public", rows[:500])
+    except Exception:
+        registry.record_failure("kiwi_public")
     return registry.public_snapshot(limit=100)

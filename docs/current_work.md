@@ -58,7 +58,7 @@ Release evidence: focused review/privacy/publication `181 passed`; full backend 
 
 ## Current execution packet
 
-Packets A-G and `Live Humanitarian/Maritime + Unified Acquisition Pipeline` are complete and deployed. Live now includes the Mediterranean Receiver Mesh: a ranked catalog, KiwiSDR + OpenWebRX adapters, concurrent multi-receiver startup, reconnect supervision, and a public-safe receiver catalog. Catania OpenWebRX is the top Central-Med candidate and has connected successfully in production; the latest smoke saw 9/16 receivers connected. Current work adds automatic public-directory discovery as catalogued/review-required candidates only; discovery never auto-authorizes or activates a new endpoint. Audio Evidence stays disabled.
+Packets A-G and `Live Humanitarian/Maritime + Unified Acquisition Pipeline` are complete and deployed. Live now includes the Mediterranean Receiver Mesh: a ranked catalog, KiwiSDR + OpenWebRX adapters, concurrent multi-receiver startup, reconnect supervision, and a public-safe receiver catalog. Catania OpenWebRX is the top Central-Med candidate and has connected successfully in production; the latest smoke saw 9/16 receivers connected. Current work adds automatic public-directory discovery as catalogued/review-required candidates only; Receiverbook discovery follows its bounded pagination (max 12 pages / 500 candidates per source), and discovery never auto-authorizes or activates a new endpoint. Audio Evidence stays disabled.
 
 ## Loop order
 

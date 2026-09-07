@@ -115,3 +115,27 @@ def test_scheduler_receiver_discovery_job_is_fail_closed(monkeypatch):
 
     monkeypatch.setattr(discovery, "refresh_discovery", boom)
     scheduler._job_receiver_discovery()
+
+
+def test_refresh_discovery_follows_bounded_receiverbook_pages():
+    from core.radio.discovery import refresh_discovery
+
+    registry = DiscoveryRegistry()
+    page1 = '''<a href="/?band=any-public&amp;type=openwebrx&amp;page=2">2</a>
+      <div class="receiver-details"><h5>A</h5><ul class="stationreceiverlist"><li>
+      <div><a href="http://a.example:8073/">A RX</a></div><div>OpenWebRX 1.2</div>
+      </li></ul></div>'''
+    page2 = '''<div class="receiver-details"><h5>B</h5><ul class="stationreceiverlist"><li>
+      <div><a href="http://b.example:8073/">B RX</a></div><div>OpenWebRX 1.2</div>
+      </li></ul></div>'''
+    seen = []
+
+    def fetch(url: str) -> str:
+        seen.append(url)
+        if "kiwisdr.com" in url:
+            raise OSError("offline")
+        return page2 if "page=2" in url else page1
+
+    snapshot = refresh_discovery(registry=registry, fetch_text=fetch)
+    assert snapshot["catalogued"] == 2
+    assert any("page=2" in url for url in seen)
