@@ -170,3 +170,26 @@ def test_radio_acquisition_status_carries_runtime_channel_coverage(monkeypatch):
     status = radio_acquisition_status()
 
     assert status["channels"] == channels
+
+
+def test_radio_acquisition_status_is_degraded_when_managed_channel_is_under_replicated(monkeypatch):
+    from core.config import config
+    from core.radio import runtime as radio_runtime
+    from core.radio.bridge import radio_acquisition_status
+
+    monkeypatch.setattr(config, "STRUCTURED_RADIO_ENABLED", True)
+    monkeypatch.setattr(radio_runtime, "get_remote_radio_status", lambda include_receivers=False: {
+        "enabled": True, "configured": 6, "started": 2, "failed": 0,
+        "receivers": [
+            {"receiver_id": "one", "state": "connected"},
+            {"receiver_id": "two", "state": "connected"},
+        ],
+        "channels": [{
+            "channel_kind": "monitor", "frequency_hz": 2_187_500, "mode": "usb",
+            "desired": 3, "active": 2, "standby": 3, "cooldown": 1, "failovers": 1,
+        }],
+    })
+
+    status = radio_acquisition_status()
+
+    assert status["state"] == "degraded"

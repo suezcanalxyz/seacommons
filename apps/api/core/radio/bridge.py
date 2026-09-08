@@ -111,13 +111,19 @@ def radio_acquisition_status() -> dict[str, object]:
     from core.radio.runtime import get_remote_radio_status
 
     status = get_remote_radio_status(include_receivers=True)
+    channels = list(status.get("channels") or [])
     if not status.get("enabled"):
         state = "disabled"
     elif int(status.get("started") or 0) == 0:
         state = "offline"
     else:
         receivers = status.get("receivers") or []
-        state = "live" if any(row.get("state") == "connected" for row in receivers) else "degraded"
+        any_connected = any(row.get("state") == "connected" for row in receivers)
+        under_replicated = any(
+            int(row.get("active") or 0) < int(row.get("desired") or 0)
+            for row in channels
+        )
+        state = "live" if any_connected and not under_replicated else "degraded"
     return {
         "state": state,
         "structured_enabled": bool(config.STRUCTURED_RADIO_ENABLED),

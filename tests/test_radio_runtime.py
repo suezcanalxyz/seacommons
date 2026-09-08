@@ -642,3 +642,38 @@ def test_managed_failover_skips_failed_standby_and_tries_next_ranked_candidate()
     assert adapters["managed_4"].started is True
     assert runtime.status()["started"] == 3
     runtime.stop()
+
+
+def test_managed_failover_uses_activation_grace_over_stale_previous_session_timestamp():
+    from datetime import datetime, timedelta, timezone
+    from core.radio.runtime import RemoteRadioRuntime
+
+    now = datetime(2026, 9, 8, 10, 0, tzinfo=timezone.utc)
+    adapters = {}
+
+    class PreviousSessionAdapter(FakeAdapter):
+        def health(self):
+            last_message = now - timedelta(hours=1) if self.descriptor.receiver_id == "managed_0" else now
+            return RemoteReceiverHealth(
+                receiver_id=self.descriptor.receiver_id, provider=self.descriptor.provider,
+                connected=self.started, last_message_at=last_message,
+                observations_received=1, error=None,
+            )
+
+    def factory(descriptor, _callback):
+        adapter = PreviousSessionAdapter(descriptor)
+        adapters[descriptor.receiver_id] = adapter
+        return adapter
+
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=tuple(_managed_descriptor(i) for i in range(4)),
+        max_receivers=4, adapter_factory=factory, failover_enabled=True,
+        channel_replicas=3, stale_after_s=30, reconnect_interval_s=60.0,
+        utcnow=lambda: now,
+    )
+    runtime.start()
+    runtime._failover_once()
+
+    assert adapters["managed_3"].started is False
+    assert runtime.status()["channels"][0]["failovers"] == 0
+    runtime.stop()

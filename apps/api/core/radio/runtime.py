@@ -226,12 +226,17 @@ class RemoteRadioRuntime:
             except Exception:
                 continue
             if health.connected:
-                reference = health.last_message_at or entry.activated_at
-                if reference is None:
+                last_message_at = health.last_message_at
+                activated_at = entry.activated_at
+                if last_message_at is not None and last_message_at.tzinfo is None:
+                    last_message_at = last_message_at.replace(tzinfo=timezone.utc)
+                if activated_at is not None and activated_at.tzinfo is None:
+                    activated_at = activated_at.replace(tzinfo=timezone.utc)
+                references = [value for value in (last_message_at, activated_at) if value is not None]
+                if not references:
                     continue
+                reference = max(references)
                 now = self._utcnow()
-                if reference.tzinfo is None:
-                    reference = reference.replace(tzinfo=timezone.utc)
                 if now.tzinfo is None:
                     now = now.replace(tzinfo=timezone.utc)
                 if (now - reference).total_seconds() <= self._stale_after_s:
