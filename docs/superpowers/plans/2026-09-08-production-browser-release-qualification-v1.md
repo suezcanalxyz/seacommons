@@ -34,12 +34,12 @@
 - Produces `installDeterministicRoutes(page)` for API/raster interception.
 - Produces `PUBLIC_LIVE_URL` and `PUBLIC_PLAY_URL` constants for public-host navigation.
 
-- [ ] **Step 1: Verify the browser gate is RED before setup**
+- [x] **Step 1: Verify the browser gate is RED before setup**
 
 Run: `cd apps/web && npm run test:e2e`
 Expected: FAIL with `Missing script: "test:e2e"`.
 
-- [ ] **Step 2: Add Playwright dependency and scripts**
+- [x] **Step 2: Add Playwright dependency and scripts**
 
 Run: `cd apps/web && npm install --save-dev @playwright/test`
 
@@ -49,7 +49,7 @@ Add scripts:
 "test:e2e:production": "playwright test --config=playwright.production.config.mjs"
 ```
 
-- [ ] **Step 3: Add local-public-host Playwright config**
+- [x] **Step 3: Add local-public-host Playwright config**
 
 Create `playwright.config.mjs` with Chromium only, `workers: 1`, trace on first retry, screenshots on failure, a Vite webServer on `0.0.0.0:4173`, and Chromium arg:
 ```js
@@ -57,7 +57,7 @@ Create `playwright.config.mjs` with Chromium only, `workers: 1`, trace on first 
 ```
 Set `baseURL` to `http://live.seacommons.org:4173` and test directory `./e2e` while excluding `production-smoke.spec.mjs`.
 
-- [ ] **Step 4: Add deterministic public fixtures**
+- [x] **Step 4: Add deterministic public fixtures**
 
 `publicFixtures.mjs` must route `/api/v1/live/*` and `/api/v1/play/*` to bounded JSON fixtures and fulfill OSM/Esri/NASA raster requests with one valid 1×1 PNG. Unhandled same-origin public API calls must return a bounded empty/healthy response rather than reaching production.
 
@@ -67,14 +67,14 @@ The pipeline fixture must include exactly these five families:
 ```
 The radio fixture must contain one `listen_available: true` receiver and one unavailable receiver, with no endpoint or lineage field.
 
-- [ ] **Step 5: Add minimal browser smoke test**
+- [x] **Step 5: Add minimal browser smoke test**
 
 Create a first test that installs deterministic routes, navigates to `PUBLIC_LIVE_URL`, and expects the public shell plus `Live feed` heading to render.
 
 Run: `cd apps/web && npx playwright install chromium && npm run test:e2e -- --grep "public Live shell"`
 Expected: PASS.
 
-- [ ] **Step 6: Commit foundation**
+- [x] **Step 6: Commit foundation**
 
 ```bash
 git add apps/web/package.json apps/web/package-lock.json apps/web/playwright.config.mjs apps/web/e2e
@@ -91,7 +91,7 @@ git commit -m "test: add deterministic browser harness"
 - Consumes `installDeterministicRoutes(page)` and public fixture payloads from Task 1.
 - Proves cross-layer UI semantics without changing React production code.
 
-- [ ] **Step 1: Write RED assertions for public semantics**
+- [x] **Step 1: Write RED assertions for public semantics**
 
 Add tests that expand signal categories and assert visible `Humanitarian` and `Maritime` macro controls, then expand Maritime and assert `Safety`. Fixture one maritime safety event with `type: 'vessel_incident'` and `navigation_status: 'not_under_command'`; assert the page never renders `Maritime Security`.
 
@@ -103,21 +103,21 @@ for (const forbidden of ['MMSI 247123456', 'IMO 9876543', 'CALLSIGN-SECRET', 'tr
 ```
 The forbidden strings may exist only in a deliberately private fixture field that the public projection must never render.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `cd apps/web && npm run test:e2e -- --grep "Live semantics|Humanitarian privacy"`
 Expected: FAIL until all fixture routes and selectors are complete.
 
-- [ ] **Step 3: Complete only the deterministic fixture/router needed by the assertions**
+- [x] **Step 3: Complete only the deterministic fixture/router needed by the assertions**
 
 Do not add data-testid attributes unless an existing accessible role/name cannot identify the element. Prefer `getByRole`, `getByText`, and existing aria labels.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run: `cd apps/web && npm run test:e2e -- --grep "Live semantics|Humanitarian privacy"`
 Expected: PASS.
 
-- [ ] **Step 5: Commit Live semantics**
+- [x] **Step 5: Commit Live semantics**
 
 ```bash
 git add apps/web/e2e
@@ -137,27 +137,27 @@ git commit -m "test: cover public live browser semantics"
 - The E2E-only Vite harness mounts the production `MapFloatingPanel` with a public `radio_receiver` feature; it contains no alternate business logic.
 - Proves Listen controls appear only for an eligible receiver and do not imply persistence.
 
-- [ ] **Step 1: Write RED acquisition assertions**
+- [x] **Step 1: Write RED acquisition assertions**
 
 Open the Live acquisition panel and assert the five family labels/state rows are present. Assert the radio receiver row exposes only station/provider/channel/state and does not render frontend URL or physical lineage.
 
 Add one eligible and one ineligible receiver to the mesh fixture. The Live page proves the bounded receiver rows are rendered. `radio-panel.html` mounts the same production `MapFloatingPanel` twice through query `?eligible=1|0`; assert the eligible receiver contains `Listen live` plus the non-persistence note and the ineligible receiver does not expose the control.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `cd apps/web && npm run test:e2e -- --grep "acquisition|Listen live"`
 Expected: FAIL until fixture routing and receiver interaction are complete.
 
-- [ ] **Step 3: Implement the deterministic receiver-panel harness**
+- [x] **Step 3: Implement the deterministic receiver-panel harness**
 
 Create `radio-panel.html` and `radio-panel-harness.jsx` under `apps/web/e2e/`. The harness imports the production `MapFloatingPanel`, builds a public `radio_receiver` feature with `listen_available` derived only from `new URLSearchParams(location.search).get('eligible') === '1'`, and renders it with `publicMode={true}`. It must not be added to Vite production build inputs and must not modify any production component or eligibility logic.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run: `cd apps/web && npm run test:e2e -- --grep "acquisition|Listen live"`
 Expected: PASS.
 
-- [ ] **Step 5: Commit radio browser contract**
+- [x] **Step 5: Commit radio browser contract**
 
 ```bash
 git add apps/web/e2e
@@ -174,16 +174,16 @@ git commit -m "test: cover live radio browser contract"
 - Uses `PUBLIC_PLAY_URL = 'http://play.seacommons.org:4173/play.html'`.
 - Uses bounded incident/count/timeline fixtures.
 
-- [ ] **Step 1: Write RED Play assertions**
+- [x] **Step 1: Write RED Play assertions**
 
 Fixture one Humanitarian incident, one Maritime incident and one correlated case. Assert Play renders the archive shell, `ALL / HUMANITARIAN / MARITIME / CORRELATED / SATELLITE` controls, filters correctly, opens a selected case dossier, and keeps the global timeline control accessible.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `cd apps/web && npm run test:e2e -- --grep "Play archive"`
 Expected: FAIL until Play API fixture routes are complete.
 
-- [ ] **Step 3: Complete Play fixture routes**
+- [x] **Step 3: Complete Play fixture routes**
 
 Return bounded payloads for:
 ```text
@@ -193,12 +193,12 @@ Return bounded payloads for:
 ```
 Use `next_offset: null` to prevent pagination beyond the fixture page.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run: `cd apps/web && npm run test:e2e -- --grep "Play archive"`
 Expected: PASS.
 
-- [ ] **Step 5: Commit Play E2E**
+- [x] **Step 5: Commit Play E2E**
 
 ```bash
 git add apps/web/e2e
@@ -220,11 +220,11 @@ git commit -m "test: add play browser qualification"
 - `E2E_PLAY_URL` defaults to `https://play.seacommons.org`.
 - Production smoke must not register route mocks.
 
-- [ ] **Step 1: Add production smoke config and tests**
+- [x] **Step 1: Add production smoke config and tests**
 
 The smoke suite must navigate Live and Play, assert each public shell renders, fetch `/api/v1/live/pipeline`, verify the five canonical families are present, and inspect `/api/v1/live/receivers/mesh?limit=64`. If at least one receiver is `listen_available`, issue a bounded GET to its Listen endpoint and assert HTTP 200 plus `Cache-Control: no-store` and `x-seacommons-persistent: false`; otherwise record the receiver-unavailable condition without fabricating success.
 
-- [ ] **Step 2: Add blocking Chromium CI job**
+- [x] **Step 2: Add blocking Chromium CI job**
 
 Add a separate `browser-e2e` job after checkout/setup-node:
 ```yaml
@@ -237,11 +237,11 @@ Add a separate `browser-e2e` job after checkout/setup-node:
 ```
 Do not run `test:e2e:production` in PR CI.
 
-- [ ] **Step 3: Update testing/controller docs**
+- [x] **Step 3: Update testing/controller docs**
 
 Document deterministic Chromium as a blocking test layer and production smoke as an explicit post-deploy qualification command. Mark Packet I implemented only after exact-head gates and production smoke pass.
 
-- [ ] **Step 4: Run release gates**
+- [x] **Step 4: Run release gates**
 
 Run:
 ```bash

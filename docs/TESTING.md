@@ -14,10 +14,12 @@ wins until one of them is fixed.
 
 | Layer | Runner | Location | Count | Scope |
 | --- | --- | --- | --- | --- |
-| Backend unit + domain invariants | `pytest` | `tests/` | 217 | connectors, normalization, lifecycle, public/private policy, projection, drift kernel, observability |
+| Backend unit + domain invariants | `pytest` | `tests/` | 1632 passed + 2 skipped at the last full gate | connectors, normalization, lifecycle, public/private policy, projection, drift kernel, observability |
 | Backend API / integration | `pytest` (FastAPI `TestClient`) | `tests/test_live_feed.py`, `tests/test_security.py`, `tests/test_live_resolved_visibility.py` | (subset of above) | route auth, feed shape, resolved-visibility across the HTTP boundary |
-| Edge realtime | `node --test` | `apps/edge/src/*.test.js` | 13 | Durable Object state, delivery semantics, restart/reconnect, trust-boundary validation, environment config |
-| Frontend domain / service | `node --test` | `apps/web/src/**/*.test.js` | 23 | response normalization, API client error handling, drift scene model, simulation engine |
+| Edge realtime | `node --test` | `apps/edge/src/*.test.js` | 14 | Durable Object state, delivery semantics, restart/reconnect, trust-boundary validation, environment config |
+| Frontend domain / service | `node --test` | `apps/web/src/**/*.test.js` | 117 | response normalization, Live semantics, API client error handling, drift scene model, simulation engine |
+| Deterministic browser E2E | Playwright Chromium | `apps/web/e2e/public-*.spec.mjs` | 8 | public Live/Play host branches, Humanitarian privacy, semantic categories, incident-first layers, acquisition, Listen eligibility |
+| Production browser smoke | Playwright Chromium, manual post-deploy | `apps/web/e2e/production-smoke.spec.mjs` | 1 | real Live/Play shells, five acquisition families, bounded real Listen check |
 
 Run everything the way CI does:
 
@@ -30,11 +32,12 @@ cd apps/edge && npm test
 
 # frontend
 cd apps/web && npm test
+
+# deterministic browser gate (CI x64; the Oracle VM is ARM64)
+cd apps/web && npm run test:e2e
 ```
 
-There is no Playwright layer yet. Critical browser flows are currently covered
-indirectly through the frontend domain/service tests and the edge integration
-tests; an end-to-end layer is tracked as remaining roadmap work.
+The deterministic Playwright suite is blocking in Full CI and runs the exact public-host code paths against bounded fixtures. It resolves `live.seacommons.org` and `play.seacommons.org` to the local Vite server and intercepts public API/raster traffic, so failures are application regressions rather than external-service noise. The separate `npm run test:e2e:production` suite has no route mocks and is run explicitly after deployment on an x64 runner; it is never a PR dependency.
 
 ## The ten highest-risk flows
 
@@ -175,8 +178,7 @@ catalogue and the Cloudflare edge from drifting apart:
 
 ## Remaining gaps
 
-- No browser end-to-end (Playwright) layer; the ten flows above are covered at
-  the domain/service/edge level only.
+- Production browser smoke remains an explicit post-deploy qualification rather than a PR dependency; deterministic Chromium E2E is now blocking in Full CI.
 - Runtime-level concurrent / multi-region edge replay needs a Miniflare
   integration harness; the current edge suite uses an in-memory Durable Object
   harness covering deterministic state transitions and persisted

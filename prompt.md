@@ -15,12 +15,11 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-No implementation packet is currently authorized. Packet H — Live Humanitarian/Maritime + Unified Acquisition Pipeline — is accepted/closed on production baseline `b358dec`, schema `0026_radio_ais_associations`. Do not restart Packet H or the receiver-discovery work unless a demonstrated regression requires reopening them.
+Packet H — Live Humanitarian/Maritime + Unified Acquisition Pipeline — remains accepted/closed on production baseline `b358dec`, schema `0026_radio_ais_associations`. Do not restart Packet H or receiver discovery unless a demonstrated regression requires it.
 
-Closed plan: `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`.
-Closed design: `docs/superpowers/specs/2026-09-07-live-humanitarian-maritime-acquisition-pipeline-design.md`.
+Current packet: **Packet I — Production Browser & Release Qualification v1**. Design and implementation are complete on PR #155; deterministic Chromium is a blocking Full CI gate. Final acceptance is pending the read-only production browser smoke after integration. Packet I also contains the incident-first Live fix: raw AIS context defaults off on public Live, semantic category parsing drives Humanitarian/Maritime filtering, and Maritime Safety fusion alerts preserve canonical category colour. Do not broaden this into publication/retention changes.
 
-Next candidate: **Production Browser & Release Qualification v1** (deterministic browser E2E plus read-only production smoke/qualification). Design approval is required before implementation. Keep the broader outbound HTTP/SSRF consolidation as a separate future security packet.
+Closed H plan: `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`. Packet I plan: `docs/superpowers/plans/2026-09-08-production-browser-release-qualification-v1.md`. Keep outbound HTTP/SSRF consolidation as a separate future security packet.
 
 Free/Open AIS Fusion v1 is development-complete/shadow-ready. Humanitarian Verification v1 is development-complete/review-ready through `961c436`; release gates were `141` focused tests and `1350` full backend tests plus green static/web/edge/dependency gates. No production AIS cutover or Humanitarian auto-resolution was authorized.
 
