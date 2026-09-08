@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { categoryOf, classifyEventVisual, eventAnomalyLabel, isAlarmPhoneSource } from '../features/intel/categories.js';
+import { classifyEventVisual, eventAnomalyLabel, isAlarmPhoneSource, signalCategoryOf } from '../features/intel/categories.js';
 import { locationLabel, relativeTime } from '../features/live/eventPresentation.js';
 
 const ALARM_PHONE_SOURCE = 'Alarm Phone';
@@ -265,7 +265,7 @@ export default function IntelDashboard({
     // exactly what the map's per-category layers show, so the feed cards and
     // the map never disagree about what is currently visible.
     if (activeSignalCategories) {
-      evs = evs.filter((f) => activeSignalCategories.has(categoryOf(f.properties?.type)));
+      evs = evs.filter((f) => activeSignalCategories.has(signalCategoryOf(f.properties || {})));
     }
     if (!alarmPhoneOn) {
       evs = evs.filter((f) => !isAlarmPhoneSource(f.properties?.source));

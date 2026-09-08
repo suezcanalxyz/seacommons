@@ -168,6 +168,21 @@ export function categoryOf(type) {
   return _BY_TYPE[type] || 'other';
 }
 
+export function signalCategoryOf(properties = {}) {
+  const visual = classifyEventVisual(properties).key;
+  const byVisual = {
+    humanitarian_alarm_phone: 'distress',
+    distress: 'distress',
+    navigation_casualty: 'incident',
+    environmental: 'hazard',
+    spoofing: 'ais',
+    ais_gap: 'ais',
+    loitering: 'ais',
+    identity: 'ais',
+  };
+  return byVisual[visual] || categoryOf(properties.type);
+}
+
 // Alarm Phone is a source, not a `type` -- its reports normalize to
 // type=distress (or, pre-classification, type=twitter) alongside IOM/NGO/
 // other operational sources. The Signals selector exposes it as its own

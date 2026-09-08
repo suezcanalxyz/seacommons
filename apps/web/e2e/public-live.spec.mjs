@@ -64,3 +64,35 @@ test('Listen live is exposed only for an eligible public receiver', async ({ pag
   await page.goto(`${RADIO_PANEL_URL}?eligible=0`);
   await expect(page.getByRole('button', { name: 'Listen live' })).toHaveCount(0);
 });
+
+test('public Live ignores the legacy AIS-on cache and starts incident-first', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('seacommons_layer_vis', JSON.stringify({
+      ais_moving: true,
+      ais_stationary: true,
+      ais_trails: true,
+    }));
+  });
+  await page.goto(PUBLIC_LIVE_URL);
+  await page.getByTitle('Map layers').click();
+
+  const row = (label) => page.locator('.layer-row').filter({ hasText: label }).locator('input');
+  await expect(row('AIS · moving vessels')).not.toBeChecked();
+  await expect(row('AIS · stationary vessels')).not.toBeChecked();
+  await expect(row('AIS · selected vessel trail')).not.toBeChecked();
+  await expect(row('NGO SAR fleet')).toBeChecked();
+});
+
+test('Alarm Phone transport type stays Humanitarian Distress in counts and feed filtering', async ({ page }) => {
+  await page.goto(PUBLIC_LIVE_URL);
+  await page.getByRole('button', { name: 'Expand signal categories' }).click();
+  const categories = page.getByRole('group', { name: 'Signal categories' });
+
+  await page.locator('button[aria-label$="Humanitarian"]').click();
+  await expect(categories.locator('a[href="#distress"]')).toContainText(/Distress\s*1/);
+
+  await page.locator('button[aria-label$="Maritime"]').click();
+  await expect(categories.locator('a[href="#social"]')).toContainText(/Public observations\s*0/);
+  await categories.locator('a[href="#social"]').click();
+  await expect(page.getByText('Distress report', { exact: true })).toBeVisible();
+});

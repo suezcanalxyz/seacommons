@@ -464,7 +464,7 @@ def _public_intel_feature(
         event_type=event.type,
         maritime_domain=resolved_domain,
         humanitarian_case_type=metadata.get("humanitarian_case_type"),
-        metadata=event.metadata,
+        metadata=metadata,
     )
     operational_label = _operational_label(event, resolved_domain=resolved_domain)
     input_modality = _input_modality(event, source_policy=canonical_source_policy)

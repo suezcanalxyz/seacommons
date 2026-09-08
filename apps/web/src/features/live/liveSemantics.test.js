@@ -53,3 +53,12 @@ test('eligible radio receivers expose bounded VM-backed Listen live WebAudio con
   assert.match(cone, /pcm16leToFloat32/);
   assert.match(cone, /persistent audio is not stored/i);
 });
+
+test('correlated alerts render canonical semantic colour before domain fallback', () => {
+  assert.match(main, /const _fusedColor = \['coalesce', \['get', 'visual_color'\], _domainColor\]/);
+  assert.match(main, /'circle-color': _fusedColor/);
+});
+
+test('public dashboard filters by semantic signal category, not raw transport type', () => {
+  assert.match(dashboard, /signalCategoryOf\(f\.properties \|\| \{\}\)/);
+});

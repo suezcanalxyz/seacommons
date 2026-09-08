@@ -11,9 +11,11 @@ const humanitarianFeature = {
   geometry: { type: 'Point', coordinates: [14.2, 35.4] },
   properties: {
     id: 'humanitarian-1',
-    type: 'distress',
+    type: 'twitter',
     kind: 'distress',
     source: 'Alarm Phone',
+    visual_category: 'humanitarian_alarm_phone',
+    visual_color: '#ff3b3b',
     title: 'Distress report',
     humanitarian_case_type: 'distress',
     origin_category: 'humanitarian_alarm_phone',
