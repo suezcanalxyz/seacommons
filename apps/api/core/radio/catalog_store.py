@@ -215,7 +215,7 @@ def persist_curated_catalog() -> int:
 
 
 def rank_persistent_catalog(*, target_frequency_hz: int, mode: str,
-                            limit: int = 16):
+                            limit: int = 16, channel_kind: str = "monitor"):
     from core.db.models import ReceiverCatalogDB
     from core.db.session import session_scope
     from core.radio.provider import ReceiverCapability
@@ -254,7 +254,7 @@ def rank_persistent_catalog(*, target_frequency_hz: int, mode: str,
                 frontend_url=row.endpoint, physical_lineage=row.physical_lineage,
                 enabled=True, terms_status="allowed", source_terms=row.source_terms,
                 capabilities=tuple(caps), public_label=row.public_label,
-                channel_kind="monitor", frequency_hz=target_frequency_hz, mode=mode,
+                channel_kind=channel_kind, frequency_hz=target_frequency_hz, mode=mode,
             ))
             seen.add(row.physical_lineage)
             if len(result) >= limit:

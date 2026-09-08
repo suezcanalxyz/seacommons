@@ -83,5 +83,9 @@ def test_remote_radio_defaults_fail_closed():
     assert settings.REMOTE_RADIO_ENABLED is False
     assert settings.REMOTE_RADIO_MAX_RECEIVERS > 0
     assert settings.REMOTE_RADIO_CONNECT_TIMEOUT_S > 0
+    assert settings.REMOTE_RADIO_FAILOVER_ENABLED is False
+    assert settings.REMOTE_RADIO_CHANNEL_REPLICAS == 3
+    assert settings.REMOTE_RADIO_FAILOVER_STALE_S == 30
+    assert settings.REMOTE_RADIO_FAILOVER_RETRY_S == 120
     assert settings.REMOTE_RADIO_RECEIVERS_JSON == ""
     assert settings.REMOTE_RADIO_RECEIVERS_FILE == ""

@@ -478,10 +478,18 @@ def start_remote_radio_from_config() -> RemoteRadioRuntime:
         file_path=config.REMOTE_RADIO_RECEIVERS_FILE,
         max_receivers=config.REMOTE_RADIO_MAX_RECEIVERS,
     )
+    configured_targets: list[ChannelTarget] = []
+    for descriptor in registry.runnable():
+        target = channel_target_for(descriptor)
+        if target is not None and target not in configured_targets:
+            configured_targets.append(target)
     fallback_descriptors = ()
     if config.REMOTE_RADIO_PUBLIC_POOL_ENABLED:
         from core.radio.public_pool import public_receiver_pool
-        fallback_descriptors = public_receiver_pool()[: max(0, int(config.REMOTE_RADIO_PUBLIC_POOL_MAX))]
+        fallback_descriptors = public_receiver_pool(
+            targets=tuple(configured_targets) or None,
+            limit=max(0, int(config.REMOTE_RADIO_PUBLIC_POOL_MAX)),
+        )
     effective_max = max(
         int(config.REMOTE_RADIO_MAX_RECEIVERS),
         len(registry.all()) + len(fallback_descriptors),
@@ -491,6 +499,10 @@ def start_remote_radio_from_config() -> RemoteRadioRuntime:
         descriptors=registry.all(),
         fallback_descriptors=fallback_descriptors,
         max_receivers=effective_max,
+        failover_enabled=bool(config.REMOTE_RADIO_FAILOVER_ENABLED),
+        channel_replicas=int(config.REMOTE_RADIO_CHANNEL_REPLICAS),
+        stale_after_s=float(config.REMOTE_RADIO_FAILOVER_STALE_S),
+        retry_after_s=float(config.REMOTE_RADIO_FAILOVER_RETRY_S),
     )
     _runtime.start()
     from core.radio.bridge import register_radio_acquisition_status

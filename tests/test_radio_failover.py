@@ -57,3 +57,32 @@ def test_build_channel_plans_deduplicates_physical_lineage_globally():
     assigned = [row.receiver_id for plan in plans for row in (*plan.active, *plan.standby)]
 
     assert assigned == ["rx_first", "rx_navtex"]
+
+
+def test_public_receiver_pool_builds_ranked_candidates_for_explicit_targets(monkeypatch):
+    from core.radio import catalog_store
+    from core.radio.failover import ChannelTarget
+    from core.radio.public_pool import public_receiver_pool
+
+    calls = []
+    def fake_rank(**kwargs):
+        calls.append(kwargs)
+        return (
+            _descriptor(
+                f"rx-{kwargs['channel_kind']}", f"lineage-{kwargs['channel_kind']}",
+                kind=kwargs["channel_kind"], frequency=kwargs["target_frequency_hz"],
+                mode=kwargs["mode"],
+            ),
+        )
+
+    monkeypatch.setattr(catalog_store, "rank_persistent_catalog", fake_rank)
+    targets = (
+        ChannelTarget("dsc", 2_187_500, "usb"),
+        ChannelTarget("navtex", 518_000, "am"),
+    )
+    rows = public_receiver_pool(targets=targets, limit=4)
+
+    assert [(row.channel_kind, row.frequency_hz, row.mode) for row in rows] == [
+        ("dsc", 2_187_500, "usb"), ("navtex", 518_000, "am"),
+    ]
+    assert [call["channel_kind"] for call in calls] == ["dsc", "navtex"]

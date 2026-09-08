@@ -164,8 +164,9 @@ def test_rank_persistent_catalog_returns_only_runtime_safe_eligible_descriptors(
             capabilities=[{"min_hz": 10000, "max_hz": 30000000, "modes": ["usb"]}],
             score=99.0,
         ))
-    rows = rank_persistent_catalog(target_frequency_hz=2_187_500, mode="usb", limit=1)
+    rows = rank_persistent_catalog(target_frequency_hz=2_187_500, mode="usb", limit=1, channel_kind="dsc")
     assert rows[0].receiver_id == "rank_rx"
+    assert rows[0].channel_kind == "dsc"
     assert rows[0].physical_lineage == "rank_lineage"
     with session_scope() as db:
         db.query(ReceiverCatalogDB).filter_by(discovery_key=key).delete()
