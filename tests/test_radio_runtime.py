@@ -51,6 +51,18 @@ class FakeAdapter:
         self.tuned.append((frequency_hz, mode))
 
 
+class FailOnReconnectAdapter(FakeAdapter):
+    def __init__(self, descriptor):
+        super().__init__(descriptor)
+        self.start_calls = 0
+
+    def start(self):
+        self.start_calls += 1
+        if self.start_calls > 1:
+            raise RuntimeError("reconnect failed")
+        super().start()
+
+
 def test_runtime_disabled_by_default_never_builds_adapters():
     from core.radio.runtime import RemoteRadioRuntime
 
@@ -478,12 +490,41 @@ def test_managed_failover_starts_only_desired_channel_replicas():
     runtime.stop()
 
 
-def test_managed_failover_promotes_best_standby_after_disconnect():
+def test_managed_failover_reconnects_transient_disconnect_before_using_standby():
     from core.radio.runtime import RemoteRadioRuntime
 
     adapters = {}
     def factory(descriptor, _callback):
         adapter = FakeAdapter(descriptor)
+        adapters[descriptor.receiver_id] = adapter
+        return adapter
+
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=tuple(_managed_descriptor(i) for i in range(5)),
+        max_receivers=5, adapter_factory=factory, failover_enabled=True,
+        channel_replicas=3, reconnect_interval_s=60.0,
+    )
+    runtime.start()
+    adapters["managed_0"].started = False
+
+    runtime._failover_once()
+
+    assert adapters["managed_0"].started is True
+    assert adapters["managed_3"].started is False
+    assert runtime.status()["channels"][0]["failovers"] == 0
+    runtime.stop()
+
+
+def test_managed_failover_promotes_best_standby_when_reconnect_fails():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    adapters = {}
+    def factory(descriptor, _callback):
+        adapter = (
+            FailOnReconnectAdapter(descriptor)
+            if descriptor.receiver_id == "managed_0"
+            else FakeAdapter(descriptor)
+        )
         adapters[descriptor.receiver_id] = adapter
         return adapter
 
@@ -545,7 +586,10 @@ def test_managed_failover_retries_cooldown_candidate_to_fill_deficit():
     clock = [0.0]
     adapters = {}
     def factory(descriptor, _callback):
-        adapter = FakeAdapter(descriptor, fail=descriptor.receiver_id == "managed_3")
+        if descriptor.receiver_id == "managed_0":
+            adapter = FailOnReconnectAdapter(descriptor)
+        else:
+            adapter = FakeAdapter(descriptor, fail=descriptor.receiver_id == "managed_3")
         adapters[descriptor.receiver_id] = adapter
         return adapter
 
@@ -596,7 +640,11 @@ def test_managed_failover_does_not_eager_failback_to_recovered_primary():
     clock = [0.0]
     adapters = {}
     def factory(descriptor, _callback):
-        adapter = FakeAdapter(descriptor)
+        adapter = (
+            FailOnReconnectAdapter(descriptor)
+            if descriptor.receiver_id == "managed_0"
+            else FakeAdapter(descriptor)
+        )
         adapters[descriptor.receiver_id] = adapter
         return adapter
 
@@ -624,7 +672,10 @@ def test_managed_failover_skips_failed_standby_and_tries_next_ranked_candidate()
 
     adapters = {}
     def factory(descriptor, _callback):
-        adapter = FakeAdapter(descriptor, fail=descriptor.receiver_id == "managed_3")
+        if descriptor.receiver_id == "managed_0":
+            adapter = FailOnReconnectAdapter(descriptor)
+        else:
+            adapter = FakeAdapter(descriptor, fail=descriptor.receiver_id == "managed_3")
         adapters[descriptor.receiver_id] = adapter
         return adapter
 

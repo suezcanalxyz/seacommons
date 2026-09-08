@@ -225,6 +225,30 @@ class RemoteRadioRuntime:
                 health = entry.adapter.health()
             except Exception:
                 continue
+            descriptor = entry.descriptor
+            provider = (
+                descriptor.provider if descriptor.provider in {"kiwisdr", "openwebrx"} else "other"
+            )
+            if not health.connected:
+                try:
+                    entry.adapter.stop()
+                    entry.adapter.start()
+                    entry.adapter.tune(
+                        int(descriptor.frequency_hz), str(descriptor.mode)
+                    )
+                    reconnected_health = entry.adapter.health()
+                    if not reconnected_health.connected:
+                        raise RuntimeError("receiver remained disconnected")
+                except Exception:
+                    record_remote_radio_event(
+                        provider=provider, state="disconnected", outcome="reconnect_failed"
+                    )
+                else:
+                    entry.activated_at = self._utcnow()
+                    record_remote_radio_event(
+                        provider=provider, state="connected", outcome="reconnected"
+                    )
+                    continue
             if health.connected:
                 last_message_at = health.last_message_at
                 activated_at = entry.activated_at
@@ -241,10 +265,6 @@ class RemoteRadioRuntime:
                     now = now.replace(tzinfo=timezone.utc)
                 if (now - reference).total_seconds() <= self._stale_after_s:
                     continue
-            descriptor = entry.descriptor
-            provider = (
-                descriptor.provider if descriptor.provider in {"kiwisdr", "openwebrx"} else "other"
-            )
             try:
                 entry.adapter.stop()
             except Exception:

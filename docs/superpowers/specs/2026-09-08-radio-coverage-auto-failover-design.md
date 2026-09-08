@@ -47,15 +47,16 @@ At startup, only the first `desired_replicas` candidates per target are started/
 
 ## Health and failover rules
 
-An active receiver is unhealthy when its adapter reports `connected=false`, or when it has produced no message beyond the configured stale window after its activation grace. A hard disconnect is eligible for failover on the next supervisor pass; silence uses the stale window so a quiet network does not flap immediately.
+An active receiver is unhealthy when its adapter reports `connected=false`, or when it has produced no message beyond the configured stale window after its activation grace. A hard disconnect first gets one immediate reconnect-and-retune attempt on the same receiver. Only a failed reconnect is eligible for failover on that supervisor pass; silence uses the stale window so a quiet network does not flap immediately.
 
 When an active slot becomes unhealthy:
 
-1. stop the unhealthy adapter;
-2. move it to cooldown until `REMOTE_RADIO_FAILOVER_RETRY_S` elapses;
-3. promote the highest-ranked compatible standby lineage;
-4. start and tune the replacement;
-5. increment bounded failover counters.
+1. on a hard disconnect, attempt one immediate reconnect and retune of the same receiver; if it succeeds, keep the slot active and do not consume standby;
+2. if reconnect fails, or the receiver is connected but stale, stop the unhealthy adapter;
+3. move it to cooldown until `REMOTE_RADIO_FAILOVER_RETRY_S` elapses;
+4. promote the highest-ranked compatible standby lineage;
+5. start and tune the replacement;
+6. increment bounded failover counters only when an active slot is actually demoted.
 
 There is no eager failback. A recovered higher-ranked receiver remains standby until a currently active receiver becomes unhealthy. This is the anti-flapping rule.
 
