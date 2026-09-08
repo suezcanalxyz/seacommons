@@ -6,6 +6,8 @@ An event's operational compartment is decided positively, never
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from core.intel.public_policy import compartment_for_domain
 from core.intel.store import IntelEvent, intel_store
 from core.live.feed import public_signal_collection
@@ -85,7 +87,7 @@ def test_safety_domain_event_has_no_operational_compartment():
 
 
 def test_public_maritime_mode_unifies_safety_and_security_with_canonical_counts(monkeypatch):
-    now = "2026-09-07T00:00:00+00:00"
+    now = datetime.now(timezone.utc).isoformat()
     humanitarian = IntelEvent(
         id="canonical-hum-1", type="distress", severity="high", lat=34.8, lon=14.2,
         title="Reported distress", source="Alarm Phone", timestamp_utc=now,
