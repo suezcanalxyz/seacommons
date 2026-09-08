@@ -251,18 +251,27 @@ cd ../../ && git diff --check
 ```
 Because Packet I changes no backend runtime, run the focused public/privacy backend gate rather than the full backend suite before merge; Full CI after push remains the exact-head integration gate.
 
-- [ ] **Step 5: Run read-only production smoke**
+- [x] **Step 5: Run read-only production smoke**
 
 Run: `cd apps/web && npm run test:e2e:production`
 Expected: Live and Play shells pass; pipeline families pass; Listen check either verifies a real eligible receiver or reports no currently eligible receiver without failing unrelated browser semantics.
 
-- [ ] **Step 6: Commit final qualification**
+- [x] **Step 6: Commit final qualification**
 
 ```bash
 git add .github/workflows/ci.yml apps/web docs/TESTING.md docs/current_work.md prompt.md
 git commit -m "test: qualify public browser release path"
 ```
 
-- [ ] **Step 7: Exact-diff review and integration**
+- [x] **Step 7: Exact-diff review and integration**
 
 Review the entire spec-to-HEAD diff for accidental runtime/API behavior changes, secrets, unbounded production requests, privacy leaks, and CI dependence on external services. Fix Critical/Important findings, rerun affected gates, then merge/push only after exact-head verification.
+
+
+## Final acceptance evidence
+
+- PR #155 merged Packet I at `dce7c30`; deterministic Chromium and the production-smoke workflow were integrated.
+- PR #156 merged `f9ceb46`, fixing AIS distress beacons to remain canonical `distress` even in the Maritime Safety domain.
+- PR #157 merged `908dc81`, making manual `workflow_dispatch` qualification skip only the redundant full-history gitleaks action; PR/push secret scanning remains enforced.
+- Manual Full CI qualification run `34258991088` completed **SUCCESS**: `repository`, `api`, `web`, `edge`, `browser-e2e`, and `browser-production-smoke` all passed.
+- Production smoke used the real Live/Play hosts with no route mocks. Packet I is accepted/closed.

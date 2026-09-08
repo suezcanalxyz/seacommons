@@ -15,11 +15,11 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-Packet H — Live Humanitarian/Maritime + Unified Acquisition Pipeline — remains accepted/closed on production baseline `b358dec`, schema `0026_radio_ais_associations`. Do not restart Packet H or receiver discovery unless a demonstrated regression requires it.
+Packets H and I are accepted/closed. Release-qualified `main` is `908dc81`, production behavior baseline is `f9ceb46`, and schema remains `0026_radio_ais_associations`. Do not restart H, receiver discovery, or Packet I unless a demonstrated regression requires it.
 
-Current packet: **Packet I — Production Browser & Release Qualification v1**. Design and implementation are complete on PR #155; deterministic Chromium is a blocking Full CI gate. Final acceptance is pending the read-only production browser smoke after integration. Packet I also contains the incident-first Live fix: raw AIS context defaults off on public Live, semantic category parsing drives Humanitarian/Maritime filtering, and Maritime Safety fusion alerts preserve canonical category colour. Do not broaden this into publication/retention changes.
+There is no authorized implementation packet at this controller state. Packet I closed with deterministic Chromium as a blocking Full CI gate and read-only production smoke PASS on run `34258991088`. Its incident-first Live fix keeps raw AIS context default-off, uses semantic Humanitarian/Maritime parsing, and preserves canonical Maritime Safety/distress colours. No publication, retention, or source-eligibility rule changed.
 
-Closed H plan: `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`. Packet I plan: `docs/superpowers/plans/2026-09-08-production-browser-release-qualification-v1.md`. Keep outbound HTTP/SSRF consolidation as a separate future security packet.
+Closed H plan: `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`. Closed I plan: `docs/superpowers/plans/2026-09-08-production-browser-release-qualification-v1.md`. Next candidate: **Packet J — Outbound HTTP / SSRF Hardening**; require design approval before implementation.
 
 Free/Open AIS Fusion v1 is development-complete/shadow-ready. Humanitarian Verification v1 is development-complete/review-ready through `961c436`; release gates were `141` focused tests and `1350` full backend tests plus green static/web/edge/dependency gates. No production AIS cutover or Humanitarian auto-resolution was authorized.
 
@@ -57,4 +57,4 @@ Production migration, restart, destructive maintenance, remote receiver activati
 
 Audio Evidence v1 is development-complete/review-ready through `90d08e4`; production capture remains disabled and unauthorized. Cross-modal Evidence Fusion v1 is also closed; preserve the established lineage and derived-evidence boundaries.
 
-Production truth at controller update: Packet H is accepted on `b358dec`; Full CI and CodeQL are green; Vercel production is READY; Alembic is `0026_radio_ais_associations (head)`; AIS remains legacy; the bounded radio mesh and ephemeral Listen Live are active; managed radio failover uses reconnect-before-failover; `AUDIO_EVIDENCE_ENABLED=false`. Public acquisition families are `ais`, `first_party`, `partner`, `public_feed`, and `radio`.
+Production truth at controller update: Packets H and I are accepted; release-qualified `main` is `908dc81`; Packet I runtime behavior is `f9ceb46`; manual qualification run `34258991088` is fully green including real-host `browser-production-smoke`; Alembic is `0026_radio_ais_associations (head)`; the AIS runtime remains legacy and raw AIS context layers are default-off on public Live; the bounded radio mesh and ephemeral Listen Live are active; managed radio failover uses reconnect-before-failover; `AUDIO_EVIDENCE_ENABLED=false`. Public acquisition families are `ais`, `first_party`, `partner`, `public_feed`, and `radio`.

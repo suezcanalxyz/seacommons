@@ -1,14 +1,15 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Packet I — Production Browser & Release Qualification v1 — implementation complete, production smoke pending
-> **Closed packet plan:** `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`
-> **Production runtime baseline:** `b358dec`
+> **Current packet:** none — Packet I accepted/closed; next packet requires design approval
+> **Closed packet plan:** `docs/superpowers/plans/2026-09-08-production-browser-release-qualification-v1.md`
+> **Release-qualified main:** `908dc81`
+> **Production behavior baseline:** `f9ceb46`
 > **Production schema:** `0026_radio_ais_associations`
 
 ## Production baseline
 
-Packet H — Live Humanitarian/Maritime + Unified Acquisition Pipeline — is accepted and production-verified on `b358dec`. Public Live uses the canonical Humanitarian/Maritime split and `/api/v1/live/pipeline` reports the bounded acquisition families `ais`, `first_party`, `partner`, `public_feed`, and `radio`. AIS remains in the authorized legacy runtime mode.
+Packets H and I are accepted and production-verified. Release-qualified `main` is `908dc81`; the latest production behavior change is `f9ceb46`. Public Live uses the canonical Humanitarian/Maritime split and `/api/v1/live/pipeline` reports the bounded acquisition families `ais`, `first_party`, `partner`, `public_feed`, and `radio`. The AIS runtime remains in the authorized legacy mode; raw AIS context layers are default-off on public Live and remain user-toggleable.
 
 The Mediterranean radio mesh is live with ephemeral Listen Live audio and managed receiver coverage/failover. The production policy is reconnect-before-failover for transient receiver drops, three desired independent active lineages for the monitored channel when capacity exists, and ranked standby promotion only when reconnect/staleness rules require it. Audio Evidence persistence remains disabled (`AUDIO_EVIDENCE_ENABLED=false`); Listen Live is ephemeral PCM with `no-store` and no persistent audio body.
 
@@ -60,11 +61,13 @@ Release evidence: focused review/privacy/publication `181 passed`; full backend 
 
 ## Current execution packet
 
-Packet I — **Production Browser & Release Qualification v1** — is implementation-complete on `feat/packet-i-browser-qualification` / PR #155 and awaits final production smoke after integration. The blocking CI layer now runs deterministic Chromium on the real public-host branches with bounded fixtures for Live/Play, Humanitarian privacy, acquisition, Listen eligibility and semantic filtering. A separate manual x64 smoke uses the real production hosts with no mocks.
+Packet I — **Production Browser & Release Qualification v1** — is accepted/closed. PR #155 merged the deterministic Chromium gate and read-only production-smoke path; PR #156 fixed AIS distress beacons that were incorrectly falling through to `context`; PR #157 made manual release qualification skip only the redundant full-history gitleaks step while preserving gitleaks on PR/push. Release-qualified `main` is `908dc81`; the runtime behavior change is `f9ceb46`.
 
-The Packet I browser pass also exposed and fixed the public Live regression visible in production: raw AIS moving/stationary/trails now start off under a versioned public layer profile, while remaining user-toggleable; Alarm Phone is categorized by semantic role rather than raw `twitter` transport type; and legacy Maritime Safety fusion alerts calculate and render their canonical `navigation_casualty` colour from enriched public metadata. No publication, retention or source eligibility rule changed.
+Final Packet I evidence: deterministic `browser-e2e` PASS; production `browser-production-smoke` PASS against the real `live.seacommons.org` and `play.seacommons.org` hosts with no route mocks; manual Full CI run `34258991088` completed SUCCESS with `repository`, `api`, `web`, `edge`, `browser-e2e`, and `browser-production-smoke` all green. The production API returned Maritime Safety casualties as canonical `navigation_casualty / #ff4d5e` and AIS distress beacons as `distress / #ff3b3b`.
 
-A separate broader security backlog remains for central outbound HTTP/SSRF controls; it is intentionally not folded into the browser-qualification packet because it crosses many collectors and requires its own design/review cycle.
+The Packet I browser pass fixed the public Live regression visible in production: raw AIS moving/stationary/trails start off under a versioned incident-first public layer profile while remaining user-toggleable; Alarm Phone is categorized by semantic role rather than raw `twitter` transport type; and Maritime Safety fusion alerts calculate/render canonical semantic colour from enriched public metadata. No publication, retention or source eligibility rule changed.
+
+No implementation packet is currently authorized. The next candidate is **Packet J — Outbound HTTP / SSRF Hardening**, covering centralized outbound request policy and collector migration. It requires its own design/review cycle because it crosses many collectors and trust boundaries.
 
 ## Loop order
 
