@@ -443,3 +443,202 @@ def test_runtime_starts_multiple_receivers_concurrently():
     runtime.start()
     assert runtime.status()["started"] == 2
     runtime.stop()
+
+
+def _managed_descriptor(index: int):
+    return ReceiverDescriptor(
+        receiver_id=f"managed_{index}", provider="kiwisdr",
+        frontend_url=f"https://managed-{index}.example.org",
+        physical_lineage=f"managed-lineage-{index}", enabled=True,
+        terms_status="allowed", source_terms="operator-permission",
+        capabilities=(ReceiverCapability(2_000_000, 3_000_000, ("usb",)),),
+        public_label=f"Managed {index}", channel_kind="monitor",
+        frequency_hz=2_187_500, mode="usb",
+    )
+
+
+def test_managed_failover_starts_only_desired_channel_replicas():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    adapters = {}
+    def factory(descriptor, _callback):
+        adapter = FakeAdapter(descriptor)
+        adapters[descriptor.receiver_id] = adapter
+        return adapter
+
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=tuple(_managed_descriptor(i) for i in range(5)),
+        max_receivers=5, adapter_factory=factory, failover_enabled=True,
+        channel_replicas=3, reconnect_interval_s=60.0,
+    )
+    runtime.start()
+
+    assert sum(adapter.started for adapter in adapters.values()) == 3
+    assert runtime.status()["started"] == 3
+    runtime.stop()
+
+
+def test_managed_failover_promotes_best_standby_after_disconnect():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    adapters = {}
+    def factory(descriptor, _callback):
+        adapter = FakeAdapter(descriptor)
+        adapters[descriptor.receiver_id] = adapter
+        return adapter
+
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=tuple(_managed_descriptor(i) for i in range(5)),
+        max_receivers=5, adapter_factory=factory, failover_enabled=True,
+        channel_replicas=3, reconnect_interval_s=60.0,
+    )
+    runtime.start()
+    adapters["managed_0"].started = False
+
+    runtime._failover_once()
+
+    assert adapters["managed_3"].started is True
+    assert adapters["managed_4"].started is False
+    assert runtime.status()["started"] == 3
+    runtime.stop()
+
+
+def test_managed_failover_replaces_connected_but_stale_receiver():
+    from datetime import datetime, timedelta, timezone
+    from core.radio.runtime import RemoteRadioRuntime
+
+    now = [datetime(2026, 9, 8, 9, 0, tzinfo=timezone.utc)]
+    adapters = {}
+    class FreshnessAdapter(FakeAdapter):
+        def health(self):
+            last_message = None if self.descriptor.receiver_id == "managed_0" else now[0]
+            return RemoteReceiverHealth(
+                receiver_id=self.descriptor.receiver_id, provider=self.descriptor.provider,
+                connected=self.started, last_message_at=last_message,
+                observations_received=1 if last_message is not None else 0, error=None,
+            )
+
+    def factory(descriptor, _callback):
+        adapter = FreshnessAdapter(descriptor)
+        adapters[descriptor.receiver_id] = adapter
+        return adapter
+
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=tuple(_managed_descriptor(i) for i in range(4)),
+        max_receivers=4, adapter_factory=factory, failover_enabled=True,
+        channel_replicas=3, stale_after_s=5, reconnect_interval_s=60.0,
+        utcnow=lambda: now[0],
+    )
+    runtime.start()
+    now[0] += timedelta(seconds=6)
+
+    runtime._failover_once()
+
+    assert adapters["managed_3"].started is True
+    assert runtime.status()["started"] == 3
+    runtime.stop()
+
+
+def test_managed_failover_retries_cooldown_candidate_to_fill_deficit():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    clock = [0.0]
+    adapters = {}
+    def factory(descriptor, _callback):
+        adapter = FakeAdapter(descriptor, fail=descriptor.receiver_id == "managed_3")
+        adapters[descriptor.receiver_id] = adapter
+        return adapter
+
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=tuple(_managed_descriptor(i) for i in range(4)),
+        max_receivers=4, adapter_factory=factory, failover_enabled=True,
+        channel_replicas=3, retry_after_s=30, reconnect_interval_s=60.0,
+        monotonic_clock=lambda: clock[0],
+    )
+    runtime.start()
+    adapters["managed_0"].started = False
+    runtime._failover_once()
+    assert runtime.status()["started"] == 2
+
+    adapters["managed_3"].fail = False
+    clock[0] = 31.0
+    runtime._failover_once()
+
+    assert adapters["managed_3"].started is True
+    assert runtime.status()["started"] == 3
+    runtime.stop()
+
+
+def test_managed_status_reports_channel_coverage_and_standby_states():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=tuple(_managed_descriptor(i) for i in range(5)),
+        max_receivers=5, adapter_factory=lambda d, _cb: FakeAdapter(d),
+        failover_enabled=True, channel_replicas=3, reconnect_interval_s=60.0,
+    )
+    runtime.start()
+    status = runtime.status(include_receivers=True)
+
+    assert status["channels"] == [{
+        "channel_kind": "monitor", "frequency_hz": 2_187_500, "mode": "usb",
+        "desired": 3, "active": 3, "standby": 2, "cooldown": 0, "failovers": 0,
+    }]
+    states = {row["receiver_id"]: row["state"] for row in status["receivers"]}
+    assert states["managed_0"] == "connected"
+    assert states["managed_3"] == "standby"
+    runtime.stop()
+
+
+def test_managed_failover_does_not_eager_failback_to_recovered_primary():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    clock = [0.0]
+    adapters = {}
+    def factory(descriptor, _callback):
+        adapter = FakeAdapter(descriptor)
+        adapters[descriptor.receiver_id] = adapter
+        return adapter
+
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=tuple(_managed_descriptor(i) for i in range(5)),
+        max_receivers=5, adapter_factory=factory, failover_enabled=True,
+        channel_replicas=3, retry_after_s=30, reconnect_interval_s=60.0,
+        monotonic_clock=lambda: clock[0],
+    )
+    runtime.start()
+    adapters["managed_0"].started = False
+    runtime._failover_once()
+    assert adapters["managed_3"].started is True
+
+    clock[0] = 31.0
+    runtime._failover_once()
+
+    assert adapters["managed_0"].started is False
+    assert adapters["managed_3"].started is True
+    runtime.stop()
+
+
+def test_managed_failover_skips_failed_standby_and_tries_next_ranked_candidate():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    adapters = {}
+    def factory(descriptor, _callback):
+        adapter = FakeAdapter(descriptor, fail=descriptor.receiver_id == "managed_3")
+        adapters[descriptor.receiver_id] = adapter
+        return adapter
+
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=tuple(_managed_descriptor(i) for i in range(5)),
+        max_receivers=5, adapter_factory=factory, failover_enabled=True,
+        channel_replicas=3, reconnect_interval_s=60.0,
+    )
+    runtime.start()
+    adapters["managed_0"].started = False
+
+    runtime._failover_once()
+
+    assert adapters["managed_3"].started is False
+    assert adapters["managed_4"].started is True
+    assert runtime.status()["started"] == 3
+    runtime.stop()
