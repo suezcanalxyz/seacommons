@@ -22,8 +22,12 @@ test('Live semantics keep Humanitarian and Maritime as the public macro split', 
   await expect(categories.getByRole('link', { name: /^Maritime/ })).toBeVisible();
   await expect(page.getByText('Maritime Security', { exact: true })).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Expand Maritime' }).click();
-  await expect(categories.getByRole('link', { name: /^Safety/ })).toBeVisible();
+  const expandMaritime = page.getByRole('button', { name: 'Expand Maritime' });
+  await expandMaritime.click();
+  await expect(expandMaritime).toHaveAttribute('aria-expanded', 'true');
+  const safety = categories.locator('a[href="#incident"]');
+  await expect(safety).toBeVisible();
+  await expect(safety).toContainText('Safety');
   await expect(page.getByText('Not under command report', { exact: true })).toBeVisible();
 });
 
