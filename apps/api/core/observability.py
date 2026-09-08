@@ -157,7 +157,10 @@ def record_humanitarian_verification_event(*, stage: str, source_role: str, outc
 
 _REMOTE_RADIO_PROVIDERS = frozenset({"kiwisdr", "openwebrx"})
 _REMOTE_RADIO_STATES = frozenset({"connected", "disconnected"})
-_REMOTE_RADIO_OUTCOMES = frozenset({"started", "start_failed", "observation", "persist_failed"})
+_REMOTE_RADIO_OUTCOMES = frozenset({
+    "started", "start_failed", "observation", "persist_failed",
+    "reconnected", "reconnect_failed", "failover", "standby_promoted", "cooldown_retry",
+})
 
 
 def record_remote_radio_event(*, provider: str, state: str, outcome: str) -> None:

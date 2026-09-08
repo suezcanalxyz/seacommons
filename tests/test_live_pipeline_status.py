@@ -122,3 +122,51 @@ def test_public_receiver_catalog_is_bounded_and_hides_endpoints():
     assert "frontend_url" not in serialized
     assert "endpoint" not in serialized
     assert "physical_lineage" not in serialized
+
+
+def test_acquisition_pipeline_sanitizes_bounded_radio_channel_coverage():
+    from core.acquisition import status as acquisition_status
+
+    acquisition_status._reset_acquisition_status_for_tests()
+    acquisition_status.register_acquisition_status(
+        "radio", "Radio", lambda: {
+            "state": "degraded",
+            "channels": [
+                {
+                    "channel_kind": "dsc", "frequency_hz": 2_187_500, "mode": "usb",
+                    "desired": 3, "active": 2, "standby": 4, "cooldown": 1,
+                    "failovers": 5, "physical_lineage": "secret-lineage",
+                    "frontend_url": "https://secret.example.org",
+                }
+            ] * 20,
+        },
+    )
+
+    radio = acquisition_status.acquisition_status_sources()[0]
+    assert len(radio["channels"]) == 8
+    assert radio["channels"][0] == {
+        "channel_kind": "dsc", "frequency_hz": 2_187_500, "mode": "usb",
+        "desired": 3, "active": 2, "standby": 4, "cooldown": 1, "failovers": 5,
+    }
+    assert "secret" not in str(radio).lower()
+
+
+def test_radio_acquisition_status_carries_runtime_channel_coverage(monkeypatch):
+    from core.config import config
+    from core.radio import runtime as radio_runtime
+    from core.radio.bridge import radio_acquisition_status
+
+    monkeypatch.setattr(config, "STRUCTURED_RADIO_ENABLED", True)
+    channels = [{
+        "channel_kind": "monitor", "frequency_hz": 2_187_500, "mode": "usb",
+        "desired": 3, "active": 3, "standby": 5, "cooldown": 0, "failovers": 2,
+    }]
+    monkeypatch.setattr(radio_runtime, "get_remote_radio_status", lambda include_receivers=False: {
+        "enabled": True, "configured": 8, "started": 3, "failed": 0,
+        "receivers": [{"receiver_id": "one", "state": "connected"}],
+        "channels": channels,
+    })
+
+    status = radio_acquisition_status()
+
+    assert status["channels"] == channels

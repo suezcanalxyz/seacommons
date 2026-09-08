@@ -11,7 +11,7 @@ _lock = threading.Lock()
 _providers: dict[str, tuple[str, StatusProvider]] = {}
 
 _ALLOWED_DETAIL_FIELDS = frozenset(
-    {"mode", "configured", "started", "failed", "last_observation_at", "receivers", "structured_enabled"}
+    {"mode", "configured", "started", "failed", "last_observation_at", "receivers", "channels", "structured_enabled"}
 )
 _ALLOWED_RECEIVER_FIELDS = frozenset(
     {
@@ -24,6 +24,12 @@ _ALLOWED_RECEIVER_FIELDS = frozenset(
         "mode",
         "last_observation_at",
         "observations_received",
+    }
+)
+_ALLOWED_CHANNEL_FIELDS = frozenset(
+    {
+        "channel_kind", "frequency_hz", "mode", "desired",
+        "active", "standby", "cooldown", "failovers",
     }
 )
 
@@ -50,6 +56,17 @@ def _sanitize_receivers(value: Any) -> list[dict[str, Any]]:
     return rows
 
 
+def _sanitize_channels(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in value[:8]:
+        if not isinstance(item, dict):
+            continue
+        rows.append({key: item.get(key) for key in _ALLOWED_CHANNEL_FIELDS if key in item})
+    return rows
+
+
 def acquisition_status_sources() -> list[dict[str, Any]]:
     with _lock:
         items = tuple(sorted(_providers.items()))
@@ -66,9 +83,12 @@ def acquisition_status_sources() -> list[dict[str, Any]]:
         for key in _ALLOWED_DETAIL_FIELDS:
             if key not in detail:
                 continue
-            public_detail[key] = (
-                _sanitize_receivers(detail[key]) if key == "receivers" else detail[key]
-            )
+            if key == "receivers":
+                public_detail[key] = _sanitize_receivers(detail[key])
+            elif key == "channels":
+                public_detail[key] = _sanitize_channels(detail[key])
+            else:
+                public_detail[key] = detail[key]
         result.append({"family": family, "label": label, "state": state, **public_detail})
     return result
 

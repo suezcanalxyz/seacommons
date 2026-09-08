@@ -217,3 +217,22 @@ def test_cross_modal_metrics_accept_bounded_independence_event() -> None:
     assert 'stage="independence"' in metrics
     assert 'state="multi_lineage"' in metrics
     assert 'outcome="evaluated"' in metrics
+
+
+def test_remote_radio_metrics_accept_failover_lifecycle_outcomes() -> None:
+    from core import observability
+
+    for outcome in (
+        "reconnected", "reconnect_failed", "failover",
+        "standby_promoted", "cooldown_retry",
+    ):
+        observability.record_remote_radio_event(
+            provider="kiwisdr", state="connected", outcome=outcome
+        )
+    metrics = generate_latest().decode()
+
+    for outcome in (
+        "reconnected", "reconnect_failed", "failover",
+        "standby_promoted", "cooldown_retry",
+    ):
+        assert f'outcome="{outcome}"' in metrics

@@ -126,6 +126,7 @@ def radio_acquisition_status() -> dict[str, object]:
         "started": int(status.get("started") or 0),
         "failed": int(status.get("failed") or 0),
         "receivers": list(status.get("receivers") or []),
+        "channels": list(status.get("channels") or []),
     }
 
 
