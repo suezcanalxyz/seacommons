@@ -30,7 +30,7 @@ test('Play archive exposes deterministic filters, dossier and global timeline', 
   await cases.getByText('Historical distress', { exact: true }).click();
   const dossier = page.locator('.play-evidence.is-open');
   await expect(dossier).toBeVisible();
-  await expect(dossier.getByRole('heading', { name: 'Historical distress' })).toBeVisible();
+  await expect(dossier.locator('h2', { hasText: 'Historical distress' })).toBeVisible();
   await expect(dossier.getByText('RESOLVED', { exact: true })).toBeVisible();
 
   await expect(page.getByRole('slider', { name: 'Global archive timeline' })).toBeVisible();
