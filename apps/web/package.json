@@ -30,7 +30,9 @@
     "test:live": "node --test src/features/live/*.test.js",
     "test:map": "node --test src/features/drift/*.test.js",
     "test:simulation": "node --test src/simulation/*.test.js",
-    "test:play": "node --test src/features/play/*.test.js"
+    "test:play": "node --test src/features/play/*.test.js",
+    "test:e2e": "playwright test --config=playwright.config.mjs",
+    "test:e2e:production": "playwright test --config=playwright.production.config.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.4",
@@ -45,6 +47,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^26.2.0",
     "eslint": "^10.9.1",
     "eslint-plugin-react-hooks": "^7.1.1",

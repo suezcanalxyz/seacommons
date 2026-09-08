@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { classifyEventVisual, eventAnomalyLabel } from '../intel/categories.js';
+import { classifyEventVisual, eventAnomalyLabel, signalCategoryOf } from '../intel/categories.js';
 
 test('classifies unable-to-manoeuvre reports as red navigation casualties', () => {
   const event = {
@@ -84,4 +84,17 @@ test('keeps operational categories visually distinct', () => {
     colors.add(category.color);
   }
   assert.equal(colors.size, cases.length);
+});
+
+
+test('signal parsing follows semantic category instead of raw transport type', () => {
+  assert.equal(signalCategoryOf({
+    type: 'twitter', kind: 'distress', source: 'alarm_phone',
+    humanitarian_case_type: 'distress',
+  }), 'distress');
+  assert.equal(signalCategoryOf({
+    type: 'correlated_alert', maritime_domain: 'safety',
+    ais_nav_status_kind: 'not_under_command', title: 'Vessel unable to manoeuvre',
+  }), 'incident');
+  assert.equal(signalCategoryOf({ type: 'twitter', source: 'public observer' }), 'social');
 });

@@ -1,7 +1,7 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** none — Packet H accepted/closed; next packet requires design approval
+> **Current packet:** Packet I — Production Browser & Release Qualification v1 — implementation complete, production smoke pending
 > **Closed packet plan:** `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`
 > **Production runtime baseline:** `b358dec`
 > **Production schema:** `0026_radio_ais_associations`
@@ -60,7 +60,9 @@ Release evidence: focused review/privacy/publication `181 passed`; full backend 
 
 ## Current execution packet
 
-No implementation packet is currently authorized. Packet H is closed after final acceptance on `b358dec`. The next candidate is **Production Browser & Release Qualification v1**, intended to add a deterministic browser E2E layer plus read-only production smoke/qualification coverage. That candidate must pass design approval before implementation.
+Packet I — **Production Browser & Release Qualification v1** — is implementation-complete on `feat/packet-i-browser-qualification` / PR #155 and awaits final production smoke after integration. The blocking CI layer now runs deterministic Chromium on the real public-host branches with bounded fixtures for Live/Play, Humanitarian privacy, acquisition, Listen eligibility and semantic filtering. A separate manual x64 smoke uses the real production hosts with no mocks.
+
+The Packet I browser pass also exposed and fixed the public Live regression visible in production: raw AIS moving/stationary/trails now start off under a versioned public layer profile, while remaining user-toggleable; Alarm Phone is categorized by semantic role rather than raw `twitter` transport type; and legacy Maritime Safety fusion alerts calculate and render their canonical `navigation_casualty` colour from enriched public metadata. No publication, retention or source eligibility rule changed.
 
 A separate broader security backlog remains for central outbound HTTP/SSRF controls; it is intentionally not folded into the browser-qualification packet because it crosses many collectors and requires its own design/review cycle.
 

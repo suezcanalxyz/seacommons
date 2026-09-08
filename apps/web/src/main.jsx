@@ -15,6 +15,7 @@ import {
   categoryColorExpression,
   categoryOf,
   classifyEventVisual,
+  signalCategoryOf,
   INTEL_MAP_CATEGORIES,
   isAlarmPhoneSource,
 } from './features/intel/categories.js';
@@ -35,6 +36,7 @@ import { useLiveFeed } from './hooks/useLiveFeed.js';
 import { FEED_STATUS_LABEL, FEED_STATUS_TONE, liveSignalTotal } from './features/live/feedStatus.js';
 import { mergeIntelDriftUpdate } from './features/live/normalize.js';
 import { receiverChannelLabel } from './features/live/pipelineStatus.js';
+import { initialLayerVisibility, layerVisibilityStorageKey } from './features/live/layerDefaults.js';
 import { splitObservedTrackSegments } from './features/live/observedTrack.js';
 import { vesselReportFeature } from './features/live/vesselVisual.js';
 import { createVesselArrowImage } from './features/map/vesselMarker.js';
@@ -113,8 +115,8 @@ const PUBLIC_DEMO_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org']
 const LIVE_HOSTS = new Set(['live.seacommons.org', 'console.seacommons.org', 'engine.seacommons.org']);
 // The public Live map only ever fetches data for these layer groups (see the
 // ngo-vessels/platforms effects and loadWeatherGridForMap's isPublicLiveHost
-// guard) — everything else (raw AIS vessel markers, weather, MDA-only layers,
-// past-SAR-cone archive) stays hidden there regardless of the layer toggle.
+// guard) — weather/MDA/archive layers stay hidden. Raw AIS is available as
+// optional context but starts off on public Live so incidents remain dominant.
 // Humanitarian and Security used to be two exclusive bundles the mode switch
 // swapped between; the per-category Signals selector now shows/hides each of
 // these individually, so the allow-list is their union -- always available,
@@ -667,38 +669,11 @@ function App() {
       return 'standard';
     }
   });
-  const [layerVis, setLayerVis] = useState(() => {
-    const defaults = {
-      vessels: true,
-      ais_moving: true,
-      ais_stationary: true,
-      ais_trails: true,
-      radio_receivers: true,
-      radio_dsc: true,
-      ngo_vessels: true,
-      weather: true,
-      sar: true,
-      fused: true,
-      spikes: true,
-      platforms: true,
-      alerts: true,
-    };
-    try {
-      const saved = JSON.parse(window.localStorage.getItem('seacommons_layer_vis') || '{}');
-      const merged = { ...defaults, ...saved };
-      // The NGO fleet is core Humanitarian-layer content on the public site,
-      // not an optional layer -- a browser that has ever saved ngo_vessels:
-      // false (e.g. from a session before this key existed, or an unrelated
-      // toggle that happened to persist the whole object at a moment this
-      // one was off) must not silently suppress it forever. Public Live
-      // always starts with it on; the Layers panel can still turn it off
-      // for the rest of that session.
-      if (isPublicLiveHost) merged.ngo_vessels = true;
-      return merged;
-    } catch {
-      return defaults;
-    }
-  });
+  const layerVisStorageKey = layerVisibilityStorageKey(isPublicLiveHost);
+  const [layerVis, setLayerVis] = useState(() => initialLayerVisibility({
+    publicLive: isPublicLiveHost,
+    storage: window.localStorage,
+  }));
   const [triggeringDrift, setTriggeringDrift] = useState(() => new Set());
   // triggerIntelDrift() adds an id here right away so the "…" spinner shows
   // before the first server-confirmed 'computing' status arrives, but only
@@ -1804,12 +1779,13 @@ function App() {
           'safety',    '#38bdf8',
           'piracy',    '#a78bfa',
                        '#ff3b3b'];
+        const _fusedColor = ['coalesce', ['get', 'visual_color'], _domainColor];
         map.addLayer({
           id: 'intel-fused-pulse', type: 'circle', source: 'intel-fused',
           paint: {
             'circle-radius': 8,
             'circle-color': 'transparent',
-            'circle-stroke-color': _domainColor,
+            'circle-stroke-color': _fusedColor,
             'circle-stroke-width': 2,
             'circle-stroke-opacity': 0.5,
           },
@@ -1818,7 +1794,7 @@ function App() {
           id: 'intel-fused-core', type: 'circle', source: 'intel-fused',
           paint: {
             'circle-radius': 6,
-            'circle-color': _domainColor,
+            'circle-color': _fusedColor,
             'circle-opacity': 0.95,
             'circle-stroke-width': 1.5,
             'circle-stroke-color': '#04131a',
@@ -2397,7 +2373,7 @@ function App() {
         if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
       }
     }
-    try { window.localStorage.setItem('seacommons_layer_vis', JSON.stringify(layerVis)); } catch { /* quota */ }
+    try { window.localStorage.setItem(layerVisStorageKey, JSON.stringify(layerVis)); } catch { /* quota */ }
   }, [layerVis, mapReady]);
 
   function isLayerGroupOn(key) {
@@ -2452,7 +2428,7 @@ function App() {
   const signalCategoryCounts = useMemo(() => {
     const counts = {};
     for (const feature of intelEvents) {
-      const key = categoryOf(feature?.properties?.type);
+      const key = signalCategoryOf(feature?.properties || {});
       counts[key] = (counts[key] || 0) + 1;
     }
     return counts;
@@ -2491,7 +2467,7 @@ function App() {
       const alarmPhoneOn = isLayerGroupOn('alarm_phone');
       positioned = positioned.filter((f) => {
         const props = f.properties || {};
-        if (!activeSignalCategories.has(categoryOf(props.type))) return false;
+        if (!activeSignalCategories.has(signalCategoryOf(props))) return false;
         if (!alarmPhoneOn && isAlarmPhoneSource(props.source)) return false;
         return true;
       });
