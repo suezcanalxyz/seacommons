@@ -15,10 +15,12 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-Live Humanitarian/Maritime + Unified Acquisition Pipeline is deployed. Current work is the Mediterranean Receiver Mesh discovery layer: ranked Central-Med catalog, KiwiSDR + OpenWebRX active pool, concurrent startup/reconnect, and automatic directory discovery that may only create `catalogued` / `review_required` candidates. Packets A-G remain closed unless a demonstrated regression requires reopening them.
+No implementation packet is currently authorized. Packet H — Live Humanitarian/Maritime + Unified Acquisition Pipeline — is accepted/closed on production baseline `b358dec`, schema `0026_radio_ais_associations`. Do not restart Packet H or the receiver-discovery work unless a demonstrated regression requires reopening them.
 
-Detailed plan: `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`.
-Design: `docs/superpowers/specs/2026-09-07-live-humanitarian-maritime-acquisition-pipeline-design.md`.
+Closed plan: `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`.
+Closed design: `docs/superpowers/specs/2026-09-07-live-humanitarian-maritime-acquisition-pipeline-design.md`.
+
+Next candidate: **Production Browser & Release Qualification v1** (deterministic browser E2E plus read-only production smoke/qualification). Design approval is required before implementation. Keep the broader outbound HTTP/SSRF consolidation as a separate future security packet.
 
 Free/Open AIS Fusion v1 is development-complete/shadow-ready. Humanitarian Verification v1 is development-complete/review-ready through `961c436`; release gates were `141` focused tests and `1350` full backend tests plus green static/web/edge/dependency gates. No production AIS cutover or Humanitarian auto-resolution was authorized.
 
@@ -56,4 +58,4 @@ Production migration, restart, destructive maintenance, remote receiver activati
 
 Audio Evidence v1 is development-complete/review-ready through `90d08e4`; production capture remains disabled and unauthorized. Cross-modal Evidence Fusion v1 is also closed; preserve the established lineage and derived-evidence boundaries.
 
-Cross-modal Evidence Fusion v1 is development-complete/review-ready through `52efdd1`. Review v0 is development-complete/review-ready through code HEAD `19dbb7d`: append-only review ledger, audited Humanitarian transitions, Maritime state-machine delegation, bounded observability, and no direct publication transition. The Evidence Fusion loop is complete and production is at schema `0023_review_records`. The Live Humanitarian/Maritime + Unified Acquisition Pipeline is deployed through `0b77d0d`. AIS remains legacy; Structured Radio is active through a bounded Mediterranean multi-receiver mesh using KiwiSDR + OpenWebRX. Automatic directory discovery is the current packet and must remain fail-closed: discovered endpoints are review-required until terms/capability validation. Audio Evidence stays disabled unless separately authorized.
+Production truth at controller update: Packet H is accepted on `b358dec`; Full CI and CodeQL are green; Vercel production is READY; Alembic is `0026_radio_ais_associations (head)`; AIS remains legacy; the bounded radio mesh and ephemeral Listen Live are active; managed radio failover uses reconnect-before-failover; `AUDIO_EVIDENCE_ENABLED=false`. Public acquisition families are `ais`, `first_party`, `partner`, `public_feed`, and `radio`.

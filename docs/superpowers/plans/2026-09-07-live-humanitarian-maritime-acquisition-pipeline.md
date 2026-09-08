@@ -459,7 +459,7 @@ The packet is complete only when all of the following are simultaneously true:
 - Humanitarian privacy scan: zero MMSI/IMO/callsign/tracker leaks in the verified public sample. Security publication gate remains fail-closed.
 - Fresh release gates: backend `1543 passed, 2 skipped`; canonical Ruff green; web tests/lint/build green; edge tests/Wrangler dry-run green; dependency audits green.
 - GitHub `Full CI` and `CodeQL` for `414a76b` completed successfully.
-- Review boundary: implementation and production rollout are complete; next step is a deliberate Tasks 1-8 review.
+- Historical review boundary at 2026-09-07: implementation and production rollout were complete; the then-pending Tasks 1-8 review is superseded by the 2026-09-08 acceptance record below.
 
 
 ## 2026-09-07 Live-ready receiver mesh continuation
@@ -468,4 +468,27 @@ The packet is complete only when all of the following are simultaneously true:
 - Multi-receiver radio runtime starts endpoints concurrently and reconnects independently.
 - KiwiSDR + OpenWebRX share one acquisition path; Catania OpenWebRX is ranked first for Central Med.
 - Production smoke after `0b77d0d`: Radio `live`, 16 configured, 9 connected at the sampled instant; audio evidence remains disabled.
-- Current continuation: automatic bounded directory discovery. Discovered receivers are `catalogued` + `review_required` only; no discovery source may auto-authorize or auto-activate an endpoint.
+- Historical continuation at 2026-09-07: automatic bounded directory discovery. That work is now deployed/closed; discovered receivers remain `catalogued` + `review_required` only and no discovery source may auto-authorize or auto-activate an endpoint.
+
+
+## Final Tasks 1-8 acceptance — 2026-09-08
+
+Status: **accepted / production-verified** on `b358dec`, schema `0026_radio_ais_associations`.
+
+Acceptance evidence:
+
+- Full backend on the release line: `1632 passed, 2 skipped`.
+- Focused Packet H backend contracts (pipeline, DSC/NAVTEX, radio, lineage, Humanitarian verification, publication/privacy): `110 passed`.
+- Focused Live web semantics: `65 passed`.
+- GitHub Full CI and CodeQL: success on `b358dec`; Vercel production: READY on the same SHA.
+- Public `/api/v1/live/pipeline` exposes bounded acquisition families `ais`, `first_party`, `partner`, `public_feed`, and `radio`.
+- Production Live bundle renders Humanitarian and Maritime as the canonical public signal split; Aground / Not Under Command / Restricted Manoeuvrability remain Maritime Safety semantics.
+- Radio acquisition health is truthful and bounded. Managed production coverage uses three desired active lineages with ranked standby; transient receiver drops are reconnected before failover and genuine failure/staleness can promote standby.
+- DSC/NAVTEX deterministic fixtures and structured projections are green; signal type never creates Humanitarian authority.
+- Physical receiver lineage remains the independence boundary and is withheld from public receiver status.
+- `AUDIO_EVIDENCE_ENABLED=false` in production. Listen Live is an ephemeral `no-store` PCM stream and does not authorize continuous audio persistence.
+- Humanitarian privacy and Maritime publication gates remain fail-closed.
+
+Known non-blocking test/runtime warnings remain tracked separately (framework/dependency deprecations and a focused-run asyncio harness warning); no Packet H acceptance test failed.
+
+Packet H is closed. Do not reopen it for new collectors, browser E2E, outbound HTTP consolidation, or other production-qualification work; those require separate packets.

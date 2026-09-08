@@ -6,7 +6,7 @@
 
 **Architecture:** All source-specific transports normalize into shared evidence contracts before domain reasoning. Humanitarian incidents and Maritime Intelligence episodes share provenance/lineage infrastructure but keep separate decision semantics. New source types are added as adapters, never as parallel truth pipelines.
 
-**Current packet:** Packet H — Live Humanitarian/Maritime + Unified Acquisition Pipeline. Packets A-G are complete and deployed.
+**Current packet:** none — Packet H is accepted/closed; the next packet is not authorized until its design is approved. Packets A-H are complete for this loop.
 
 **Detailed current plan:** `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`
 
@@ -101,7 +101,7 @@ Review records evidence snapshot, decision, rationale, actor/time and transition
 
 ### Packet H — Live Humanitarian/Maritime + Unified Acquisition Pipeline
 
-Status: approved / planned.
+Status: accepted / production-verified on `b358dec` (2026-09-08).
 
 Goal: make public Live use the canonical Humanitarian / Maritime split and unify all acquisition families behind the same observation/evidence boundary. AIS, radio, first-party/public feeds and partner inputs differ only by adapter/provenance; none is a separate public feed category. Safety observations such as Aground, Not Under Command and Restricted Manoeuvrability render under Maritime.
 
@@ -121,6 +121,10 @@ Runtime rollout preserves currently active acquisition sources, then stages Stru
 - Every new adapter must fail closed, expose health, document terms and preserve raw-source identity.
 
 
-### Post-loop production integration — 2026-09-07
+### Post-loop production integration — verified 2026-09-08
 
-The approved Live Humanitarian/Maritime + Unified Acquisition Pipeline packet is deployed at `414a76b` on schema `0023_review_records`. Public Live uses Humanitarian/Maritime compartments; Structured Radio and one bounded terms-allowed KiwiSDR monitor are active; AIS remains legacy and Audio Evidence remains disabled. Final Tasks 1-8 review is the next gate.
+Packet H final Tasks 1-8 review is complete. Current production baseline is `b358dec` on schema `0026_radio_ais_associations`. Public Live uses Humanitarian/Maritime compartments and the unified acquisition endpoint exposes bounded `ais`, `first_party`, `partner`, `public_feed`, and `radio` families. AIS remains legacy and Audio Evidence persistence remains disabled.
+
+Post-H radio reliability work added ephemeral Listen Live plus managed receiver coverage/failover. Production uses reconnect-before-failover for transient public-receiver drops, with three desired active independent lineages and ranked standby promotion when reconnect or staleness requires it. Final verification includes backend `1632 passed, 2 skipped`, focused Packet H backend `110 passed`, Live web `65 passed`, Full CI + CodeQL success, Vercel READY, and public production smoke.
+
+The next candidate packet is Production Browser & Release Qualification v1. It is not part of the closed A-H sequence and must receive design approval before implementation.

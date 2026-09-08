@@ -1,16 +1,18 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Live-ready Mediterranean Receiver Mesh — discovery automation
-> **Current packet plan:** `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`
-> **Production runtime baseline:** `0b77d0d`
-> **Production schema:** `0023_review_records`
+> **Current packet:** none — Packet H accepted/closed; next packet requires design approval
+> **Closed packet plan:** `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`
+> **Production runtime baseline:** `b358dec`
+> **Production schema:** `0026_radio_ais_associations`
 
 ## Production baseline
 
-OSINT Evidence Pipeline v1, Vessel Context + Behavioural Baseline v1, and Observation -> Episode -> Hypothesis v1 are merged, deployed and production-verified. Production keeps the Humanitarian privacy boundary, shared Live/Play vessel-marker contract, and evidence-lineage semantics where detector/provider multiplicity is not source independence.
+Packet H — Live Humanitarian/Maritime + Unified Acquisition Pipeline — is accepted and production-verified on `b358dec`. Public Live uses the canonical Humanitarian/Maritime split and `/api/v1/live/pipeline` reports the bounded acquisition families `ais`, `first_party`, `partner`, `public_feed`, and `radio`. AIS remains in the authorized legacy runtime mode.
 
-Evidence Fusion Packets A-G and the unified acquisition packet are deployed. Public Live uses Humanitarian/Maritime compartments; AIS is live in legacy mode; the Mediterranean Receiver Mesh runs KiwiSDR and OpenWebRX adapters through one bounded radio acquisition path. The active catalog has 16 curated receivers ranked for Central Mediterranean coverage, with concurrent startup/reconnect supervision. Audio Evidence acquisition remains disabled and publication gates remain fail-closed.
+The Mediterranean radio mesh is live with ephemeral Listen Live audio and managed receiver coverage/failover. The production policy is reconnect-before-failover for transient receiver drops, three desired independent active lineages for the monitored channel when capacity exists, and ranked standby promotion only when reconnect/staleness rules require it. Audio Evidence persistence remains disabled (`AUDIO_EVIDENCE_ENABLED=false`); Listen Live is ephemeral PCM with `no-store` and no persistent audio body.
+
+Final Packet H evidence on the current production line: full backend `1632 passed, 2 skipped`; focused H backend `110 passed`; Live web `65 passed`; Full CI and CodeQL green on `b358dec`; Vercel production READY; Alembic `0026_radio_ais_associations (head)`. Publication/privacy gates remain fail-closed and physical receiver lineage remains the radio independence boundary.
 
 ## Completed development packets
 
@@ -58,7 +60,9 @@ Release evidence: focused review/privacy/publication `181 passed`; full backend 
 
 ## Current execution packet
 
-Packets A-G and `Live Humanitarian/Maritime + Unified Acquisition Pipeline` are complete and deployed. Live now includes the Mediterranean Receiver Mesh: a ranked catalog, KiwiSDR + OpenWebRX adapters, concurrent multi-receiver startup, reconnect supervision, and a public-safe receiver catalog. Catania OpenWebRX is the top Central-Med candidate and has connected successfully in production; the latest smoke saw 9/16 receivers connected. Current work adds automatic public-directory discovery as catalogued/review-required candidates only; Receiverbook discovery follows its bounded pagination (max 12 pages / 500 candidates per source), and discovery never auto-authorizes or activates a new endpoint. Audio Evidence stays disabled.
+No implementation packet is currently authorized. Packet H is closed after final acceptance on `b358dec`. The next candidate is **Production Browser & Release Qualification v1**, intended to add a deterministic browser E2E layer plus read-only production smoke/qualification coverage. That candidate must pass design approval before implementation.
+
+A separate broader security backlog remains for central outbound HTTP/SSRF controls; it is intentionally not folded into the browser-qualification packet because it crosses many collectors and requires its own design/review cycle.
 
 ## Loop order
 
