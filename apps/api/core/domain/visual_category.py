@@ -162,7 +162,10 @@ def classify_visual_category(
         return "ngo_activity"
     if hct and hct not in {"advocacy", "unknown_humanitarian"}:
         return "distress"
-    if domain == "sar" and (meta.get("is_distress") or event_type == "distress"):
+    # `distress` is already the canonical semantic event type. AIS SART/EPIRB
+    # observations intentionally live in the Maritime Safety domain, so requiring
+    # domain=sar here incorrectly downgraded genuine distress beacons to context.
+    if event_type == "distress" or (domain == "sar" and meta.get("is_distress")):
         return "distress"
 
     # 4. Source-class fallbacks (still never severity).
