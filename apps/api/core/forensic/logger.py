@@ -6,14 +6,16 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 import blake3
 import nacl.encoding
 import nacl.signing
-import requests
 
 from core.db.store import save_forensic_packet
 from core.forensic.packet import ForensicPacket
+from core.net.outbound import OperatorInternalClient
+from core.net.policy import JSON_TEXT, OutboundError
 
 logger = logging.getLogger(__name__)
 
@@ -105,22 +107,40 @@ def sign_and_store(packet: ForensicPacket) -> ForensicPacket:
     return signed
 
 
+def _configured_witness_target(endpoint: str) -> tuple[str, str]:
+    parsed = urlsplit(endpoint)
+    if not parsed.scheme or not parsed.netloc:
+        raise OutboundError("invalid_request")
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    target = parsed.path or "/"
+    if parsed.query:
+        target = f"{target}?{parsed.query}"
+    return origin, target
+
+
 def _broadcast(packet: ForensicPacket) -> None:
     endpoints_str = os.environ.get("WITNESS_ENDPOINTS", "")
     if not endpoints_str:
         return
 
-    payload = packet.model_dump()
+    body = json.dumps(packet.model_dump(), separators=(",", ":")).encode("utf-8")
     endpoints = _parse_witness_endpoints(endpoints_str)
-    for endpoint in endpoints:
+    for index, endpoint in enumerate(endpoints, start=1):
         try:
-            resp = requests.post(endpoint, json=payload, timeout=5)
-            resp.raise_for_status()
-            logger.info("Broadcast OK -> %s [%s]", endpoint, resp.status_code)
-        except requests.exceptions.Timeout:
-            logger.error("Broadcast timeout -> %s", endpoint)
-        except Exception as exc:
-            logger.error("Broadcast failed -> %s: %s", endpoint, exc)
+            origin, target = _configured_witness_target(endpoint)
+            response = OperatorInternalClient(origin, timeout=5.0).request(
+                target,
+                method="POST",
+                contract=JSON_TEXT,
+                headers={"Content-Type": "application/json"},
+                body=body,
+            )
+            response.raise_for_status()
+            logger.info("Broadcast OK witness=%s status=%s", index, response.status_code)
+        except OutboundError as exc:
+            logger.error("Broadcast failed witness=%s outcome=%s", index, exc.code)
+        except Exception:
+            logger.error("Broadcast failed witness=%s outcome=upstream_error", index)
 
 
 def _store_persistent(packet: ForensicPacket) -> None:
