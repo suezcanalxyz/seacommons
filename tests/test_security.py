@@ -5,31 +5,18 @@ import os
 os.environ.setdefault("DATABASE_URL", "sqlite:///./core/data/test_security.db")
 os.environ.setdefault("RUNTIME_PROFILE", "operational")
 
-from fastapi.testclient import TestClient
-
 from core.api.main import app
 from core.config import config
 from core.db.session import init_database
 from core.security import authenticate_token, validate_production_security
-
+from fastapi.testclient import TestClient
 
 init_database()
 client = TestClient(app)
 
 
 def test_oidc_default_roles_apply_only_after_token_validation(monkeypatch) -> None:
-    import core.security as security
-
-    class SigningKey:
-        key = "validated-signing-key"
-
-    class JWKClient:
-        def __init__(self, _url, cache_keys=True):
-            assert cache_keys is True
-
-        def get_signing_key_from_jwt(self, token):
-            assert token == "signed-token"
-            return SigningKey()
+    from core import security
 
     captured = {}
 
@@ -39,11 +26,15 @@ def test_oidc_default_roles_apply_only_after_token_validation(monkeypatch) -> No
 
     previous = config.OIDC_DEFAULT_ROLES
     config.OIDC_DEFAULT_ROLES = ["researcher"]
-    monkeypatch.setattr(security.jwt, "PyJWKClient", JWKClient)
+    monkeypatch.setattr(security, "_load_jwks", lambda force_refresh=False: {"keys": []})
+    monkeypatch.setattr(
+        security, "_signing_key_from_jwks", lambda token, jwks: "validated-signing-key"
+    )
     monkeypatch.setattr(security.jwt, "decode", decode)
     try:
         principal = authenticate_token("signed-token")
         assert principal.roles == frozenset({"researcher"})
+        assert captured["key"] == "validated-signing-key"
         assert captured["options"] == {"require": ["exp", "iat", "sub"]}
     finally:
         config.OIDC_DEFAULT_ROLES = previous
@@ -314,6 +305,7 @@ def test_whatsapp_notification_uses_configured_twilio_channel(monkeypatch) -> No
 
 def test_public_demo_drift_has_explicit_degraded_fallback(monkeypatch) -> None:
     from datetime import datetime, timezone
+
     from core.drift import engine as engine_module
 
     drift = engine_module.DriftEngine()
