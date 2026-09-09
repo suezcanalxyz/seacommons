@@ -1,7 +1,7 @@
 # Outbound HTTP / SSRF Hardening v1 — Design
 
 **Date:** 2026-09-09
-**Status:** design approved in chat; implementation pending written-spec review
+**Status:** written spec approved; implementation plan ready for execution
 **Scope:** backend outbound HTTP/HTTPS trust boundary. No collector semantics, publication authority, lifecycle, database schema, AIS/radio protocol, or frontend behaviour changes.
 
 ## Goal
