@@ -482,3 +482,28 @@ def record_review_event(*, target_type: str, decision: str, outcome: str) -> Non
         REVIEW_EVENTS.labels(target, decision_label, outcome_label).inc()
     except Exception:
         pass
+
+
+OUTBOUND_REQUESTS = Counter(
+    "seacommons_outbound_http_requests_total",
+    "Outbound HTTP attempts by bounded policy/method/outcome",
+    ["policy", "method", "outcome"],
+)
+_OUTBOUND_POLICIES = frozenset({"public_untrusted", "public_fixed", "operator_internal"})
+_OUTBOUND_METHODS = frozenset({"GET", "HEAD", "POST"})
+_OUTBOUND_OUTCOMES = frozenset({
+    "success", "blocked_target", "invalid_request", "dns_failed",
+    "redirect_blocked", "redirect_limit", "timeout", "tls_failed",
+    "invalid_content_type", "response_too_large", "upstream_error",
+})
+
+
+def record_outbound_request(*, policy: str, method: str, outcome: str) -> None:
+    """Record outbound HTTP flow without URL, host, IP, token, or source labels."""
+    try:
+        policy_label = policy if policy in _OUTBOUND_POLICIES else "other"
+        method_label = method if method in _OUTBOUND_METHODS else "other"
+        outcome_label = outcome if outcome in _OUTBOUND_OUTCOMES else "other"
+        OUTBOUND_REQUESTS.labels(policy_label, method_label, outcome_label).inc()
+    except Exception:  # pragma: no cover - metrics never block outbound policy
+        pass
