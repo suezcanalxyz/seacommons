@@ -2,6 +2,7 @@
 """Drift engine with strict operational OpenDrift and an explicit demo-only fallback."""
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
@@ -15,6 +16,7 @@ from core.drift.cache import CacheManager
 from core.drift.models import BallisticTerminal
 from core.drift.profiles import resolve_profile
 from core.drift.opendrift_pool import run_leeway
+from core.net.outbound import OperatorInternalClient
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +38,22 @@ def _remote_compute(lat: float, lon: float, time_utc: datetime, duration_h: int,
     if not runtime_config.DRIFT_WORKER_URL or domain == "ballistic":
         return None
     try:
-        import httpx
-        response = httpx.post(
-            f"{runtime_config.DRIFT_WORKER_URL.rstrip('/')}/compute",
-            json={
+        client = OperatorInternalClient(
+            runtime_config.DRIFT_WORKER_URL,
+            timeout=runtime_config.DRIFT_WORKER_TIMEOUT_S,
+        )
+        response = client.request(
+            "/compute",
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "X-Worker-Secret": runtime_config.DRIFT_WORKER_SECRET,
+            },
+            body=json.dumps({
                 "lat": lat, "lon": lon, "time_utc": time_utc.isoformat(),
                 "duration_h": duration_h, "domain": domain, "config": config,
                 "backtrack": backtrack,
-            },
-            headers={"X-Worker-Secret": runtime_config.DRIFT_WORKER_SECRET},
-            timeout=runtime_config.DRIFT_WORKER_TIMEOUT_S,
+            }, separators=(",", ":")).encode("utf-8"),
         )
         response.raise_for_status()
         return DriftResult(**response.json())
