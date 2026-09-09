@@ -167,6 +167,7 @@ def resolve_target(
     except OutboundError:
         literal = None
 
+    addresses: tuple[IPAddress, ...]
     if literal is not None:
         addresses = (literal,)
     else:
