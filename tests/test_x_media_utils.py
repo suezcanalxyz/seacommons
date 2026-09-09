@@ -10,28 +10,14 @@ independent of how twikit_monitor.py maps its method string to metadata
 """
 from __future__ import annotations
 
-import io
-from contextlib import contextmanager
-from types import SimpleNamespace
-
-import pytest
-
 from core.intel import x_media_utils
-
-
-@contextmanager
-def _fake_response(headers: dict, payload: bytes):
-    yield SimpleNamespace(
-        headers=headers,
-        read=lambda *_args, **_kwargs: payload,
-    )
 
 
 def _patch_download(monkeypatch, payload: bytes = b"fake-image-bytes"):
     monkeypatch.setattr(
-        x_media_utils.urllib.request,
-        "urlopen",
-        lambda *a, **k: _fake_response({"Content-Type": "image/png"}, payload),
+        x_media_utils,
+        "_download_bounded_image",
+        lambda _url: payload,
     )
 
 
@@ -70,7 +56,7 @@ def test_ocr_photo_disputes_a_kilometre_scale_disagreement_that_degree_delta_mis
     monkeypatch.setattr(
         x_media_utils, "_tesseract_cross_check", lambda payload, executable: (35.513, 24.900)
     )
-    coord, _attempted, method, diag = x_media_utils._ocr_photo(
+    _coord, _attempted, method, diag = x_media_utils._ocr_photo(
         "https://pbs.twimg.com/media/map.jpg"
     )
     assert method == "easyocr_text_disputed"
@@ -88,7 +74,7 @@ def test_ocr_photo_flags_dispute_when_tesseract_disagrees_with_easyocr(monkeypat
         x_media_utils, "_tesseract_cross_check", lambda payload, executable: (36.2, 25.6)
     )
 
-    coord, attempted, method, diag = x_media_utils._ocr_photo(
+    coord, _attempted, method, _diag = x_media_utils._ocr_photo(
         "https://pbs.twimg.com/media/map.jpg"
     )
 
@@ -104,7 +90,7 @@ def test_ocr_photo_keeps_legacy_method_when_tesseract_finds_nothing(monkeypatch)
     )
     monkeypatch.setattr(x_media_utils, "_tesseract_cross_check", lambda payload, executable: None)
 
-    coord, attempted, method, diag = x_media_utils._ocr_photo(
+    coord, _attempted, method, _diag = x_media_utils._ocr_photo(
         "https://pbs.twimg.com/media/map.jpg"
     )
 
@@ -130,7 +116,7 @@ def test_ocr_photo_skips_cross_check_when_tesseract_binary_missing(monkeypatch):
 
     monkeypatch.setattr(x_media_utils, "_tesseract_cross_check", _boom)
 
-    coord, attempted, method, diag = x_media_utils._ocr_photo(
+    coord, _attempted, method, _diag = x_media_utils._ocr_photo(
         "https://pbs.twimg.com/media/map.jpg"
     )
 
@@ -152,7 +138,7 @@ def test_ocr_photo_survives_a_broken_cross_check(monkeypatch):
 
     monkeypatch.setattr(x_media_utils, "_tesseract_cross_check", _raise)
 
-    coord, attempted, method, diag = x_media_utils._ocr_photo(
+    coord, _attempted, method, _diag = x_media_utils._ocr_photo(
         "https://pbs.twimg.com/media/map.jpg"
     )
 
