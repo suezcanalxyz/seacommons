@@ -1,8 +1,8 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** none — Packet I accepted/closed; next packet requires design approval
-> **Closed packet plan:** `docs/superpowers/plans/2026-09-08-production-browser-release-qualification-v1.md`
+> **Current packet:** Packet J — Outbound HTTP / SSRF Hardening v1 — implementation active; production qualification pending
+> **Active packet plan:** `docs/superpowers/plans/2026-09-09-outbound-http-ssrf-hardening-v1.md`
 > **Release-qualified main:** `908dc81`
 > **Production behavior baseline:** `f9ceb46`
 > **Production schema:** `0026_radio_ais_associations`
@@ -61,13 +61,17 @@ Release evidence: focused review/privacy/publication `181 passed`; full backend 
 
 ## Current execution packet
 
+Packet J — **Outbound HTTP / SSRF Hardening v1** — is the active implementation packet. Its approved design/spec introduces `PUBLIC_UNTRUSTED`, `PUBLIC_FIXED`, and `OPERATOR_INTERNAL`, pinned DNS/IP connections, manual redirect validation, bounded response contracts, redacted failures, and bounded outbound metrics. Tasks 1–6 are implemented on `feat/outbound-http-ssrf-hardening-v1`; Task 7 release qualification is in progress.
+
+The v1 high-risk migrations cover untrusted image extraction, X/Twitter media, auto-drift, remote drift worker, OIDC/JWKS, and forensic witnesses. The post-migration legacy inventory currently contains 29 exact path/callee entries representing 44 direct HTTP calls, primarily fixed collectors/integrations to be migrated in later bounded batches. New direct bypasses are blocked by an AST inventory guard; WebSocket URL policy remains explicitly out of scope for Packet J v1.
+
 Packet I — **Production Browser & Release Qualification v1** — is accepted/closed. PR #155 merged the deterministic Chromium gate and read-only production-smoke path; PR #156 fixed AIS distress beacons that were incorrectly falling through to `context`; PR #157 made manual release qualification skip only the redundant full-history gitleaks step while preserving gitleaks on PR/push. Release-qualified `main` is `908dc81`; the runtime behavior change is `f9ceb46`.
 
 Final Packet I evidence: deterministic `browser-e2e` PASS; production `browser-production-smoke` PASS against the real `live.seacommons.org` and `play.seacommons.org` hosts with no route mocks; manual Full CI run `34258991088` completed SUCCESS with `repository`, `api`, `web`, `edge`, `browser-e2e`, and `browser-production-smoke` all green. The production API returned Maritime Safety casualties as canonical `navigation_casualty / #ff4d5e` and AIS distress beacons as `distress / #ff3b3b`.
 
 The Packet I browser pass fixed the public Live regression visible in production: raw AIS moving/stationary/trails start off under a versioned incident-first public layer profile while remaining user-toggleable; Alarm Phone is categorized by semantic role rather than raw `twitter` transport type; and Maritime Safety fusion alerts calculate/render canonical semantic colour from enriched public metadata. No publication, retention or source eligibility rule changed.
 
-No implementation packet is currently authorized. The next candidate is **Packet J — Outbound HTTP / SSRF Hardening**, covering centralized outbound request policy and collector migration. It requires its own design/review cycle because it crosses many collectors and trust boundaries.
+Packet J is authorized and in execution. Do not expand v1 into wholesale migration of all fixed collectors or WebSocket transports; those remain follow-up batches after the canonical HTTP trust boundary is production-qualified.
 
 ## Loop order
 
