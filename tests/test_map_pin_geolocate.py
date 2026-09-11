@@ -29,8 +29,8 @@ def test_detect_marker_pixel_ignores_a_large_coloured_region() -> None:
     from PIL import Image
 
     img = Image.new("RGB", (400, 300), (238, 232, 220))
-    for y in range(0, 200):          # a big blue sea area, not a marker
-        for x in range(0, 400):
+    for y in range(200):          # a big blue sea area, not a marker
+        for x in range(400):
             img.putpixel((x, y), (30, 90, 200))
     assert _detect_marker_pixel(img) is None
 
@@ -71,7 +71,7 @@ def test_match_landmarks_finds_single_word_places() -> None:
         _word("Rethymno", 400, 55, 80, 14, line="2", word=1),
         _word("Unrelated", 200, 200, 90, 14, line="3", word=1),
     ]
-    matches = dict((name, (px, py)) for name, px, py in _match_landmarks(boxes))
+    matches = {name: (px, py) for name, px, py in _match_landmarks(boxes)}
     assert "heraklion" in matches
     assert "rethymno" in matches
     assert "unrelated" not in matches
@@ -83,7 +83,7 @@ def test_match_landmarks_joins_adjacent_words_for_multiword_places() -> None:
         _word("Agios", 100, 50, 60, 14, line="1", word=1),
         _word("Nikolaos", 165, 50, 90, 14, line="1", word=2),
     ]
-    matches = dict((name, (px, py)) for name, px, py in _match_landmarks(boxes))
+    matches = {name: (px, py) for name, px, py in _match_landmarks(boxes)}
     assert "agios nikolaos" in matches
 
 
@@ -230,3 +230,13 @@ def test_geolocate_pin_from_image_refuses_single_landmark(monkeypatch) -> None:
     buf = io.BytesIO()
     Image.new("RGB", (800, 600), (235, 235, 235)).save(buf, format="PNG")
     assert geolocate_pin_from_image(buf.getvalue()) is None
+
+
+def test_match_landmarks_does_not_use_crete_region_label_as_point_calibration():
+    boxes = [
+        _word("Kriti", 180, 190, 60, 14, line="1", word=1),
+        _word("Rethimno", 100, 90, 80, 14, line="2", word=1),
+    ]
+    names = {name for name, _px, _py in _match_landmarks(boxes)}
+    assert "rethimno" in names
+    assert "kriti" not in names

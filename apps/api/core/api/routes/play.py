@@ -36,14 +36,6 @@ def _status_for_row(row, *, now: datetime) -> str:
     }, now=now)
 
 
-def _belongs_to_play(row, *, now: datetime) -> bool:
-    status = _status_for_row(row, now=now)
-    if status in {"resolved", "outcome_unknown"}:
-        return True
-    last = parse_utc(row.last_update_at or row.reported_at or "")
-    return bool(last and (now - last).total_seconds() >= 24 * 3600)
-
-
 def _incident_projection(row, event, *, now: datetime) -> dict[str, Any]:
     status = _status_for_row(row, now=now)
     geometry = None
@@ -87,18 +79,22 @@ def _intel_event_from_row(event) -> IntelEvent:
     )
 
 
-def _is_public_historical_maritime(event, *, now: datetime) -> bool:
-    if event.lat is None or event.lon is None:
-        return False
-    at = parse_utc(event.timestamp_utc or "")
-    if not at or (now - at).total_seconds() < 24 * 3600:
-        return False
+def _is_public_catalog_maritime(event) -> bool:
+    """Whether a durable maritime/intel row belongs in the public Play catalog.
+
+    Catalog membership is a publication/privacy decision, not a geometry or
+    age decision. Unpositioned records remain searchable/listable and current
+    records may coexist with Live; only the map requires geometry.
+    """
     return public_intel_feature(
         _intel_event_from_row(event), allowed_domains=domains_for_mode("all")
     ) is not None
 
 
 def _generic_maritime_projection(event) -> dict[str, Any]:
+    geometry = None
+    if event.lat is not None and event.lon is not None:
+        geometry = {"type": "Point", "coordinates": [event.lon, event.lat]}
     return {
         "incident_id": event.id,
         "incident_status": _generic_maritime_status(event),
@@ -110,7 +106,7 @@ def _generic_maritime_projection(event) -> dict[str, Any]:
         "resolved_at": None,
         "title": event.title or "Maritime incident",
         "source": event.source,
-        "geometry": {"type": "Point", "coordinates": [event.lon, event.lat]},
+        "geometry": geometry,
         "domain": "maritime",
     }
 
@@ -120,35 +116,51 @@ _play_counts_cache: dict[str, Any] = {}
 _play_counts_lock = Lock()
 
 
-def _compute_play_counts() -> dict[str, Any]:
-    """Compute an exact public archive snapshot. Expensive by design."""
+def _compute_play_catalog() -> list[dict[str, Any]]:
+    """Compute the complete public SeaCommons catalog used by Play.
+
+    Privacy/publication policy is evaluated before pagination. This is
+    intentionally exact: a high-volume block of private/non-public rows can
+    never crowd older public history out of the result.
+    """
     from core.db.models import HumanitarianIncidentDB, IntelEventDB
     from core.db.session import session_scope
 
     now = datetime.now(timezone.utc)
-    cutoff = datetime.fromtimestamp(now.timestamp() - 24 * 3600, tz=timezone.utc).isoformat()
+    combined: list[dict[str, Any]] = []
     with session_scope() as db:
         human_rows = db.query(HumanitarianIncidentDB).all()
         human_ids = {row.incident_id for row in human_rows}
-        humanitarian_count = sum(1 for row in human_rows if _belongs_to_play(row, now=now))
-        maritime_count = 0
+        for row in human_rows:
+            event = db.get(IntelEventDB, row.incident_id)
+            combined.append(_incident_projection(row, event, now=now))
+
         rows = (
             db.query(IntelEventDB)
-            .filter(
-                IntelEventDB.type.in_(public_archive_event_types()),
-                IntelEventDB.timestamp_utc <= cutoff,
-                IntelEventDB.lat.isnot(None),
-                IntelEventDB.lon.isnot(None),
-            )
+            .filter(IntelEventDB.type.in_(public_archive_event_types()))
             .yield_per(1000)
         )
         for event in rows:
             if event.id in human_ids:
                 continue
-            if _is_public_historical_maritime(event, now=now):
-                maritime_count += 1
+            if _is_public_catalog_maritime(event):
+                combined.append(_generic_maritime_projection(event))
+
+    combined.sort(
+        key=lambda item: str(item.get("last_update_at") or item.get("reported_at") or ""),
+        reverse=True,
+    )
+    return combined
+
+
+def _compute_play_counts() -> dict[str, Any]:
+    """Compute an exact public catalog snapshot using the same eligibility as the index."""
+    now = datetime.now(timezone.utc)
+    catalog = _compute_play_catalog()
+    humanitarian_count = sum(1 for item in catalog if item.get("domain") == "humanitarian")
+    maritime_count = sum(1 for item in catalog if item.get("domain") == "maritime")
     return {
-        "total_count": humanitarian_count + maritime_count,
+        "total_count": len(catalog),
         "humanitarian_count": humanitarian_count,
         "maritime_count": maritime_count,
         "generated_at": now.isoformat(),
@@ -181,57 +193,17 @@ def play_incidents(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
-    from core.db.models import HumanitarianIncidentDB, IncidentTransitionDB, IntelEventDB
+    from core.db.models import IncidentTransitionDB
     from core.db.session import session_scope
 
     now = datetime.now(timezone.utc)
-    historical_cutoff = (now.timestamp() - 24 * 3600)
-    historical_cutoff_iso = datetime.fromtimestamp(historical_cutoff, tz=timezone.utc).isoformat()
-    need = offset + limit + 1
-    candidate_cap = max(2000, need * 8)
-    combined: list[dict[str, Any]] = []
-    human_ids: set[str] = set()
+    combined = _compute_play_catalog()
+    page = [dict(item) for item in combined[offset:offset + limit]]
 
-    with session_scope() as db:
-        rows = (
-            db.query(HumanitarianIncidentDB)
-            .order_by(HumanitarianIncidentDB.last_update_at.desc())
-            .limit(candidate_cap)
-            .all()
-        )
-        for row in rows:
-            human_ids.add(row.incident_id)
-            if not _belongs_to_play(row, now=now):
-                continue
-            event = db.get(IntelEventDB, row.incident_id)
-            combined.append(_incident_projection(row, event, now=now))
-
-        maritime_rows = (
-            db.query(IntelEventDB)
-            .filter(
-                IntelEventDB.type.in_(public_archive_event_types()),
-                IntelEventDB.timestamp_utc <= historical_cutoff_iso,
-                IntelEventDB.lat.isnot(None),
-                IntelEventDB.lon.isnot(None),
-            )
-            .order_by(IntelEventDB.timestamp_utc.desc())
-            .limit(candidate_cap)
-            .all()
-        )
-        for event in maritime_rows:
-            if event.id in human_ids or not _is_public_historical_maritime(event, now=now):
-                continue
-            combined.append(_generic_maritime_projection(event))
-
-        combined.sort(
-            key=lambda item: str(item.get("last_update_at") or item.get("reported_at") or ""),
-            reverse=True,
-        )
-        page = combined[offset:offset + limit]
-
-        page_human_ids = [item["incident_id"] for item in page if item.get("domain") == "humanitarian"]
-        history: dict[str, list[dict[str, Any]]] = {incident_id: [] for incident_id in page_human_ids}
-        if page_human_ids:
+    page_human_ids = [item["incident_id"] for item in page if item.get("domain") == "humanitarian"]
+    history: dict[str, list[dict[str, Any]]] = {incident_id: [] for incident_id in page_human_ids}
+    if page_human_ids:
+        with session_scope() as db:
             transitions = (
                 db.query(IncidentTransitionDB)
                 .filter(IncidentTransitionDB.incident_id.in_(page_human_ids))
@@ -244,16 +216,18 @@ def play_incidents(
                     "from_state": transition.from_state,
                     "to_state": transition.to_state,
                 })
-        for item in page:
-            item["status_history"] = history.get(item["incident_id"], [])
+    for item in page:
+        item["status_history"] = history.get(item["incident_id"], [])
 
     next_offset = offset + len(page) if len(combined) > offset + len(page) else None
     return {
         "incidents": page,
         "offset": offset,
         "next_offset": next_offset,
+        "total_count": len(combined),
         "generated_at": now.isoformat(),
     }
+
 
 
 def _thread_item(incident_id: str, repost: dict, *, reported_at: str | None) -> dict[str, Any] | None:
@@ -341,11 +315,9 @@ def play_incident_timeline(incident_id: str):
     with session_scope() as db:
         incident = db.get(HumanitarianIncidentDB, incident_id)
         event = db.get(IntelEventDB, incident_id)
-        generic_maritime = incident is None and event is not None and _is_public_historical_maritime(event, now=now)
+        generic_maritime = incident is None and event is not None and _is_public_catalog_maritime(event)
         if incident is None and not generic_maritime:
             raise HTTPException(status_code=404, detail="Incident not found")
-        if incident is not None and not _belongs_to_play(incident, now=now):
-            raise HTTPException(status_code=404, detail="Incident is still operationally Live")
         incident_status = _status_for_row(incident, now=now) if incident is not None else _generic_maritime_status(event)
         domain = "humanitarian" if incident is not None else "maritime"
         timeline: list[dict[str, Any]] = []

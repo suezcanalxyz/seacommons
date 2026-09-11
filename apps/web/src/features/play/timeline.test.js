@@ -286,3 +286,16 @@ test('Play labels partial progressive archive counts as loaded until exact total
   assert.match(source, /Archive · \{archiveTotal != null \? archiveTotal : `\$\{visibleIncidents\.length\} loaded`\}/);
   assert.doesNotMatch(source, /`\$\{visibleIncidents\.length\} points`/);
 });
+
+test('Play archive loader follows pagination to exhaustion without a fixed page ceiling', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /pages\s*<\s*\(full\s*\?\s*100/);
+  assert.match(source, /seenOffsets/);
+  assert.match(source, /next_offset/);
+});
+
+test('Play adopts first-page total_count immediately as the catalog total', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /payload\?\.total_count/);
+  assert.match(source, /setArchiveTotal\(Number\(payload\.total_count\)\)/);
+});

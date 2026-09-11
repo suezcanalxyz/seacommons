@@ -11,7 +11,6 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
-
 from core.intel.image_extraction import ImageExtractionResult
 from core.intel.store import IntelStore
 from core.intel.twikit_monitor import TwikitMonitor
@@ -59,10 +58,10 @@ class _FakeTweet:
         tweet_id: str,
         text: str,
         original: object = None,
-        media: list = None,
-        extended_entities: dict = None,
+        media: list | None = None,
+        extended_entities: dict | None = None,
         user: object = None,
-        replies: list = None,
+        replies: list | None = None,
     ) -> None:
         self.id = tweet_id
         self.text = text
@@ -1664,9 +1663,8 @@ def test_media_ocr_failure_keeps_fallback_area_but_does_not_drift(tmp_path, monk
     assert drift_calls == []
 
 def test_easyocr_inference_is_serialized(monkeypatch):
-    from PIL import Image
-
     from core.intel import x_media_utils as media
+    from PIL import Image
 
     active = 0
     maximum_active = 0
@@ -1694,3 +1692,134 @@ def test_easyocr_inference_is_serialized(monkeypatch):
 
     assert maximum_active == 1
     assert all(attempted for _coordinate, _boxes, attempted in results)
+
+
+def test_reply_recheck_recovers_durable_incident_evicted_from_memory(monkeypatch, tmp_path):
+    """A delayed Alarm Phone resolution must still update an incident after AIS churn evicts it."""
+    from core.intel.lifecycle import has_own_reply_resolution
+
+    store = IntelStore(maxlen=1)
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    monitor = TwikitMonitor(
+        enabled=True,
+        cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}),
+    )
+    original = _FakeTweet(
+        "2097548106568978555",
+        "Alarm Phone was alerted by about 80 people in distress east of Malta.",
+    )
+    monitor._ingest(original, handle="alarm_phone")
+    event_id = store.events()[0].id
+    assert store.get_durable(event_id) is not None
+
+    store._events.clear()
+    assert store.get(event_id) is None
+
+    resolution = _FakeTweet(
+        "2097700000000000000",
+        "We are relieved that the group of ~80 people in distress was rescued by "
+        "@guardiacostiera and arrived safely in #Pozzallo.",
+        user=_FakeUser(),
+    )
+    refetched = _FakeTweet(original.id, original.text, user=_FakeUser(), replies=[resolution])
+
+    class _DirectClient(_FakeClient):
+        async def get_tweet_by_id(self, tweet_id: str):
+            assert tweet_id == original.id
+            return refetched
+
+    client = _DirectClient({"alarm_phone": _FakeTimelineUser(_FakeUser.id, [])})
+    asyncio.run(monitor._check_self_replies(client))
+
+    durable = store.get_durable(event_id)
+    assert durable is not None
+    replies = durable.metadata.get("thread_reposts") or []
+    assert [reply["tweet_id"] for reply in replies] == [resolution.id]
+    assert has_own_reply_resolution(durable) is True
+
+
+def test_reply_recheck_durable_scan_has_no_arbitrary_event_cap(monkeypatch, tmp_path):
+    store = IntelStore(maxlen=1)
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    calls = []
+
+    def persisted_events(**kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(store, "persisted_events", persisted_events)
+    monitor = TwikitMonitor(
+        enabled=True,
+        cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}),
+    )
+    asyncio.run(monitor._check_self_replies(_FakeClient({})))
+    assert calls
+    assert calls[0].get("limit") is None
+
+
+def test_delayed_resolution_reply_persists_humanitarian_incident_state(monkeypatch, tmp_path):
+    from datetime import datetime, timezone
+
+    from core.db.models import HumanitarianIncidentDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_incident import _on_intel_event
+
+    store = IntelStore(maxlen=1)
+    monkeypatch.setattr("core.intel.twikit_monitor.intel_store", store)
+    monkeypatch.setattr("core.intel.store.intel_store", store)
+    store.subscribe(_on_intel_event)
+    monitor = TwikitMonitor(
+        enabled=True,
+        cookies_file=_write_cookies(tmp_path, {"auth_token": "a", "ct0": "c"}),
+    )
+    original = _FakeTweet(
+        "2097548106568978555",
+        "Alarm Phone was alerted by about 80 people in distress east of Malta.",
+    )
+    monitor._ingest(original, handle="alarm_phone")
+    event_id = store.events()[0].id
+
+    deadline = time.time() + 2
+    while time.time() < deadline:
+        with session_scope() as db:
+            row = db.get(HumanitarianIncidentDB, event_id)
+            if row is not None:
+                break
+        time.sleep(0.02)
+    assert row is not None
+    with session_scope() as db:
+        initial = db.get(HumanitarianIncidentDB, event_id)
+        assert initial is not None
+        initial_lifecycle = initial.lifecycle
+    assert initial_lifecycle == "active"
+
+    store._events.clear()
+    resolution = _FakeTweet(
+        "2097700000000000000",
+        "We are relieved that the group of ~80 people in distress was rescued by "
+        "@guardiacostiera and arrived safely in #Pozzallo.",
+        user=_FakeUser(),
+    )
+    resolution.created_at_datetime = datetime.now(timezone.utc)
+    refetched = _FakeTweet(original.id, original.text, user=_FakeUser(), replies=[resolution])
+
+    class _DirectClient(_FakeClient):
+        async def get_tweet_by_id(self, tweet_id: str):
+            return refetched
+
+    asyncio.run(monitor._check_self_replies(_DirectClient({"alarm_phone": _FakeTimelineUser(_FakeUser.id, [])})))
+    deadline = time.time() + 2
+    while time.time() < deadline:
+        with session_scope() as db:
+            row = db.get(HumanitarianIncidentDB, event_id)
+            if row is not None and row.lifecycle == "resolved":
+                break
+        time.sleep(0.02)
+    assert row is not None
+    with session_scope() as db:
+        final = db.get(HumanitarianIncidentDB, event_id)
+        assert final is not None
+        final_lifecycle = final.lifecycle
+        resolved_at = final.resolved_at
+    assert final_lifecycle == "resolved"
+    assert resolved_at is not None

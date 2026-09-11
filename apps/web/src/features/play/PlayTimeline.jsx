@@ -143,8 +143,10 @@ export default function PlayTimeline({ apiBase }) {
       try {
         let collected = [];
         let offset = 0;
-        let pages = 0;
-        while (!cancelled && pages < (full ? 100 : 1)) {
+        const seenOffsets = new Set();
+        while (!cancelled) {
+          if (seenOffsets.has(offset)) throw new Error('Play archive pagination repeated an offset');
+          seenOffsets.add(offset);
           const payload = await fetchJson(apiBase, `/api/v1/play/incidents?limit=500&offset=${offset}`);
           const page = Array.isArray(payload?.incidents) ? payload.incidents : [];
           collected = mergeIncidentPages(collected, page);
@@ -152,8 +154,11 @@ export default function PlayTimeline({ apiBase }) {
           setIncidents((previous) => mergeIncidentPages((offset > 0 || !full) ? previous : [], collected));
           if (offset === 0) setLoading(false);
           if (payload?.next_offset == null || !full) break;
-          offset = Number(payload.next_offset);
-          pages += 1;
+          const nextOffset = Number(payload.next_offset);
+          if (!Number.isFinite(nextOffset) || nextOffset <= offset) {
+            throw new Error('Play archive pagination returned an invalid next_offset');
+          }
+          offset = nextOffset;
         }
         if (!cancelled) setError('');
       } catch (exc) {

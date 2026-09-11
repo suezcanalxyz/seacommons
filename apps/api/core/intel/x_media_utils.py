@@ -475,7 +475,10 @@ def _extract_coordinate_from_bytes(
     # docstring on map_pin_geolocate). Try recovering that from the pin's
     # pixel position plus visible place-name labels before giving up.
     try:
-        from core.intel.map_pin_geolocate import geolocate_pin_from_image
+        from core.intel.map_pin_geolocate import (
+            geolocate_pin_detailed,
+            geolocate_pin_from_image,
+        )
 
         pin_coord = geolocate_pin_from_image(
             payload,
@@ -483,14 +486,31 @@ def _extract_coordinate_from_bytes(
             word_boxes=easy_boxes or None,
             sea_snap=sea_snap,
         )
+        pin_solution = (
+            geolocate_pin_detailed(
+                payload, executable=executable, word_boxes=easy_boxes or None
+            )
+            if pin_coord is not None
+            else None
+        )
     except Exception:
         pin_coord = None
+        pin_solution = None
     if pin_coord is not None:
+        diagnostics: dict[str, Any] = {}
+        if pin_solution is not None:
+            diagnostics = {
+                "estimated_position_error_m": float(pin_solution.estimated_position_error_m),
+                "pin_solver_confidence": float(pin_solution.confidence),
+                "pin_fit_residual_px": float(pin_solution.fit_residual_px),
+                "pin_extrapolation_px": float(pin_solution.max_extrapolation_px),
+                "pin_landmarks_used": list(pin_solution.landmarks_used),
+            }
         return (
             pin_coord,
             True,
             "easyocr_pin_landmark" if easy_boxes else "tesseract_pin_landmark",
-            {},
+            diagnostics,
         )
     return None, attempted or easy_attempted, "none", {}
 

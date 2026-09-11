@@ -1063,7 +1063,20 @@ class IntelStore:
         opened, so a repost/echo can never spawn a new marker. A verified reply
         carrying text may change lifecycle and is broadcast immediately; a
         plain repost only updates bookkeeping and remains silent.
+
+        Delayed replies can arrive after AIS churn evicts the incident from the
+        bounded in-memory deque. Rehydrate that one durable event before the
+        update so reply/lifecycle correctness never depends on deque residency.
         """
+        normalized = event_id.removeprefix("intel:")
+        if self.get(normalized) is None:
+            durable = self.get_durable(normalized)
+            if durable is None:
+                return False
+            with self._lock:
+                if not any(event.id == normalized for event in self._events):
+                    self._events.appendleft(durable)
+
         updated: Optional[IntelEvent] = None
         with self._lock:
             for event in self._events:
@@ -1225,7 +1238,7 @@ class IntelStore:
         source_in: Optional[list[str]] = None,
         types: Optional[list[str]] = None,
         max_age_days: int = 30,
-        limit: int = 1000,
+        limit: Optional[int] = 1000,
     ) -> list[IntelEvent]:
         """Read durable events independently from the bounded in-memory deque.
 
@@ -1250,7 +1263,10 @@ class IntelStore:
                     query = query.filter(IntelEventDB.source.in_(source_in))
                 if types:
                     query = query.filter(IntelEventDB.type.in_(types))
-                rows = query.order_by(IntelEventDB.timestamp_utc.desc()).limit(limit).all()
+                query = query.order_by(IntelEventDB.timestamp_utc.desc())
+                if limit is not None:
+                    query = query.limit(limit)
+                rows = query.all()
                 return [
                     IntelEvent(
                         id=row.id,

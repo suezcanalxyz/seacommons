@@ -1279,9 +1279,13 @@ class TwikitMonitor:
         auto-healed here, so it's surfaced instead of silently sitting wrong
         on the live map — see _flag_unreachable_tweets().
         """
+        in_memory = intel_store.events(type_filter="twitter", max_age_days=7)
+        durable = intel_store.persisted_events(types=["twitter"], max_age_days=7, limit=None)
+        by_event_id = {event.id: event for event in durable}
+        by_event_id.update({event.id: event for event in in_memory})
         candidates = [
             event
-            for event in intel_store.events(type_filter="twitter", max_age_days=7)
+            for event in by_event_id.values()
             if event.metadata.get("is_distress") and event.metadata.get("tweet_id")
         ]
         if not candidates:

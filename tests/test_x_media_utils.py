@@ -144,3 +144,37 @@ def test_ocr_photo_survives_a_broken_cross_check(monkeypatch):
 
     assert coord == (35.5, 24.9)
     assert method == "easyocr_text"
+
+
+def test_pin_landmark_propagates_solver_uncertainty(monkeypatch):
+    import io
+    from types import SimpleNamespace
+
+    from core.intel import map_pin_geolocate, x_media_utils
+    from PIL import Image
+
+    payload = io.BytesIO()
+    Image.new("RGB", (320, 240), "white").save(payload, format="PNG")
+    monkeypatch.setattr(x_media_utils, "_easyocr_image", lambda _payload: (None, [{"text": "Heraklion"}], True))
+    monkeypatch.setattr(x_media_utils, "ocr_png_coordinate", lambda *_a, **_k: (None, True))
+    monkeypatch.setattr(map_pin_geolocate, "geolocate_pin_from_image", lambda *_a, **_k: (34.1, 25.1))
+    monkeypatch.setattr(
+        map_pin_geolocate,
+        "geolocate_pin_detailed",
+        lambda *_a, **_k: SimpleNamespace(
+            estimated_position_error_m=72_000.0,
+            confidence=0.05,
+            fit_residual_px=5.0,
+            max_extrapolation_px=700.0,
+            landmarks_used=["rethimno", "heraklion"],
+        ),
+    )
+
+    coord, attempted, method, diagnostics = x_media_utils._extract_coordinate_from_bytes(
+        payload.getvalue(), executable="/usr/bin/tesseract"
+    )
+    assert coord == (34.1, 25.1)
+    assert attempted is True
+    assert method == "easyocr_pin_landmark"
+    assert diagnostics["estimated_position_error_m"] == 72_000.0
+    assert diagnostics["pin_solver_confidence"] == 0.05
