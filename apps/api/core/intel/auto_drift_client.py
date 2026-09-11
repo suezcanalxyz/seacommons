@@ -9,12 +9,12 @@ needed for either topology.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional
 
-import httpx
-
 from core.config import config
+from core.net.outbound import OperatorInternalClient
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +42,6 @@ def request_auto_drift(
     entirely) while still sending the Host header the reverse proxy needs
     for vhost routing.
     """
-    url = f"{config.API_INTERNAL_URL.rstrip('/')}/api/v1/intel/auto-drift"
-    headers = {"Host": config.API_INTERNAL_HOST_HEADER} if config.API_INTERNAL_HOST_HEADER else {}
     body = {
         "intel_event_id": event_id,
         "lat": lat,
@@ -53,7 +51,17 @@ def request_auto_drift(
     if persons is not None:
         body["persons"] = persons
     try:
-        response = httpx.post(url, json=body, headers=headers, timeout=10.0)
+        client = OperatorInternalClient(
+            config.API_INTERNAL_URL,
+            host_header=config.API_INTERNAL_HOST_HEADER or None,
+            timeout=10.0,
+        )
+        response = client.request(
+            "/api/v1/intel/auto-drift",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps(body, separators=(",", ":")).encode("utf-8"),
+        )
         if response.status_code not in (200, 429):
             logger.warning("auto-drift request for %s failed: HTTP %s", event_id, response.status_code)
             return False

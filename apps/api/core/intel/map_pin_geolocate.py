@@ -45,6 +45,10 @@ _LON_RANGE = (-12.0, 42.0)
 # (OCR misread / wrong instance of an ambiguous name) rather than against
 # normal, expected extrapolation distance.
 _MAX_KM_FROM_NEAREST_LANDMARK = 600.0
+# Large region/island labels are not point landmarks. In particular the
+# `crete`/`kriti` gazetteer coordinate is deliberately an offshore textual
+# fallback, not the pixel location of the island-name label on a basemap.
+_PIN_CALIBRATION_EXCLUSIONS = frozenset({"crete", "kriti"})
 _EARTH_RADIUS_KM = 6371.0
 
 _PLACES_SORTED = sorted(PRECISE_PLACES.items(), key=lambda kv: -len(kv[0]))
@@ -203,7 +207,11 @@ def _match_landmarks(word_boxes: list[dict]) -> list[tuple[str, float, float]]:
             for span in range(1, min(_MAX_PHRASE_WORDS, len(boxes) - start) + 1):
                 span_boxes = boxes[start:start + span]
                 phrase = _normalize_label(" ".join(b["text"] for b in span_boxes))
-                if not phrase or phrase not in PRECISE_PLACES:
+                if (
+                    not phrase
+                    or phrase not in PRECISE_PLACES
+                    or phrase in _PIN_CALIBRATION_EXCLUSIONS
+                ):
                     continue
                 if phrase in matched:
                     continue
@@ -328,7 +336,7 @@ def _solve(matched: list[tuple[str, float, float]], pin: tuple[int, int], image_
     landmarks = [
         Landmark(name, px, py, PRECISE_PLACES[name][0], PRECISE_PLACES[name][1])
         for name, px, py in matched
-        if name in PRECISE_PLACES
+        if name in PRECISE_PLACES and name not in _PIN_CALIBRATION_EXCLUSIONS
     ]
     if len(landmarks) < _MIN_LANDMARK_MATCHES:
         return None

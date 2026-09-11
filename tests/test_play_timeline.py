@@ -4,16 +4,20 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from fastapi.testclient import TestClient
-
 from core.api.main import app
 from core.intel.humanitarian_incident import sync_incident_for_event
 from core.intel.store import IntelEvent
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
 def _fresh_play_tables():
-    from core.db.models import DriftResultDB, HumanitarianIncidentDB, IncidentTransitionDB, SatelliteObservationDB
+    from core.db.models import (
+        DriftResultDB,
+        HumanitarianIncidentDB,
+        IncidentTransitionDB,
+        SatelliteObservationDB,
+    )
     from core.db.session import engine, session_scope
 
     for table in (HumanitarianIncidentDB, IncidentTransitionDB, DriftResultDB, SatelliteObservationDB):
@@ -105,16 +109,20 @@ def test_play_timeline_never_exposes_raw_private_event_text():
     assert "PRIVATE RAW MESSAGE MUST NOT LEAK" not in body
 
 
-def test_recent_active_incident_stays_out_of_play_index():
+def test_recent_active_incident_is_also_in_general_play_catalog():
     event_id = _seed_case(lifecycle="active", age_hours=2, with_update=False)
     response = TestClient(app).get("/api/v1/play/incidents?limit=50")
     assert response.status_code == 200
     ids = {item["incident_id"] for item in response.json()["incidents"]}
-    assert event_id not in ids
+    assert event_id in ids
+    assert TestClient(app).get(f"/api/v1/play/incidents/{event_id}/timeline").status_code == 200
 
 
 def test_play_timeline_includes_persisted_satellite_observation():
-    from core.intel.satellite_observation import SatelliteObservation, persist_observations
+    from core.intel.satellite_observation import (
+        SatelliteObservation,
+        persist_observations,
+    )
 
     event_id = _seed_case(lifecycle="resolved")
     observation = SatelliteObservation(
@@ -248,6 +256,7 @@ def test_play_counts_exposes_real_archive_total():
 
 def test_play_counts_route_is_sync_so_exact_scan_does_not_block_event_loop():
     import inspect
+
     from core.api.routes.play import play_counts
     assert inspect.iscoroutinefunction(play_counts) is False
 
@@ -275,6 +284,61 @@ def test_play_counts_uses_short_lived_exact_snapshot_cache(monkeypatch):
 
 def test_play_db_routes_are_sync_for_threadpool_isolation():
     import inspect
-    from core.api.routes.play import play_incidents, play_incident_timeline
+
+    from core.api.routes.play import play_incident_timeline, play_incidents
     assert inspect.iscoroutinefunction(play_incidents) is False
     assert inspect.iscoroutinefunction(play_incident_timeline) is False
+
+
+def test_play_catalog_includes_current_humanitarian_case():
+    event_id = _seed_case(lifecycle="active", age_hours=2, with_update=False)
+    response = TestClient(app).get("/api/v1/play/incidents?limit=500")
+    assert response.status_code == 200
+    ids = {item["incident_id"] for item in response.json()["incidents"]}
+    assert event_id in ids
+
+
+def test_play_catalog_includes_public_maritime_record_without_coordinates():
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+
+    event_id = f"unpositioned-{uuid.uuid4()}"
+    reported = datetime.now(timezone.utc) - timedelta(hours=36)
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=event_id, timestamp_utc=reported.isoformat(), type="vessel_incident",
+            severity="medium", lat=None, lon=None,
+            title="Public unpositioned maritime record", text="internal raw",
+            url="", source="maritime_osint", linked_mmsi="",
+            maritime_domain="safety",
+            meta={"publication_status": "published", "source_policy": "operator_published",
+                  "maritime_domain": "safety"},
+        ))
+    response = TestClient(app).get("/api/v1/play/incidents?limit=500")
+    assert response.status_code == 200
+    item = next(row for row in response.json()["incidents"] if row["incident_id"] == event_id)
+    assert item["geometry"] is None
+    assert item["domain"] == "maritime"
+
+
+def test_play_catalog_does_not_truncate_public_history_behind_nonpublic_candidates():
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+
+    public_id = _seed_maritime_play_event(age_hours=72)
+    base = datetime.now(timezone.utc) - timedelta(hours=30)
+    with session_scope() as db:
+        db.add_all([
+            IntelEventDB(
+                id=f"blocked-bulk-{index}", timestamp_utc=(base - timedelta(seconds=index)).isoformat(),
+                type="vessel_incident", severity="low", lat=36.0, lon=15.0,
+                title="blocked", text="", url="", source="blocked", linked_mmsi="",
+                maritime_domain="safety",
+                meta={"publication_status": "private", "source_policy": "unofficial"},
+            )
+            for index in range(2100)
+        ])
+    response = TestClient(app).get("/api/v1/play/incidents?limit=1&offset=0")
+    assert response.status_code == 200
+    assert response.json()["incidents"][0]["incident_id"] == public_id
+    assert response.json()["next_offset"] is None

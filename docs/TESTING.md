@@ -16,6 +16,7 @@ wins until one of them is fixed.
 | --- | --- | --- | --- | --- |
 | Backend unit + domain invariants | `pytest` | `tests/` | 1632 passed + 2 skipped at the last full gate | connectors, normalization, lifecycle, public/private policy, projection, drift kernel, observability |
 | Backend API / integration | `pytest` (FastAPI `TestClient`) | `tests/test_live_feed.py`, `tests/test_security.py`, `tests/test_live_resolved_visibility.py` | (subset of above) | route auth, feed shape, resolved-visibility across the HTTP boundary |
+| Outbound HTTP security | `pytest` + AST guard | `tests/test_outbound_*.py`, `scripts/check_outbound_http_bypasses.py` | deterministic / no Internet | SSRF policy, DNS/IP pinning, redirects, bounded reads, internal-origin binding, JWKS, witness egress, legacy bypass adoption |
 | Edge realtime | `node --test` | `apps/edge/src/*.test.js` | 14 | Durable Object state, delivery semantics, restart/reconnect, trust-boundary validation, environment config |
 | Frontend domain / service | `node --test` | `apps/web/src/**/*.test.js` | 117 | response normalization, Live semantics, API client error handling, drift scene model, simulation engine |
 | Deterministic browser E2E | Playwright Chromium | `apps/web/e2e/public-*.spec.mjs` | 8 | public Live/Play host branches, Humanitarian privacy, semantic categories, incident-first layers, acquisition, Listen eligibility |
@@ -38,6 +39,8 @@ cd apps/web && npm run test:e2e
 ```
 
 The deterministic Playwright suite is blocking in Full CI and runs the exact public-host code paths against bounded fixtures. It resolves `live.seacommons.org` and `play.seacommons.org` to the local Vite server and intercepts public API/raster traffic, so failures are application regressions rather than external-service noise. The separate `npm run test:e2e:production` suite has no route mocks and is run explicitly after deployment on an x64 runner; it is never a PR dependency.
+
+Outbound HTTP security tests are fully deterministic and require no live Internet. `PUBLIC_UNTRUSTED`, `PUBLIC_FIXED`, and `OPERATOR_INTERNAL` are tested with injected DNS/transport fakes; the repository AST guard compares remaining direct `httpx`/`urllib`/`requests` calls against `docs/security/legacy-outbound-http.json` and fails on any new path, callee, or count increase. WebSocket transport policy remains outside Packet J v1.
 
 ## The ten highest-risk flows
 

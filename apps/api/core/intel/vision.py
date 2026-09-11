@@ -7,7 +7,8 @@ import logging
 import re
 from typing import Optional
 
-import httpx
+from core.net.outbound import async_request
+from core.net.policy import IMAGE, OutboundError, TrustProfile
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ def _exif_gps(image_bytes: bytes) -> Optional[dict]:
         from PIL.ExifTags import GPSTAGS, TAGS
 
         img = Image.open(io.BytesIO(image_bytes))
-        raw = img._getexif() or {}
+        raw = img._getexif() or {}  # type: ignore[attr-defined]
         exif: dict = {TAGS.get(k, k): v for k, v in raw.items()}
         gps_info = exif.get("GPSInfo") or {}
         gps: dict = {GPSTAGS.get(k, k): v for k, v in gps_info.items()}
@@ -52,17 +53,20 @@ async def _vision_extract(image_bytes: bytes, mime: str = "image/jpeg") -> Optio
 
 
 async def extract_from_url(url: str) -> Optional[dict]:
-    """Fetch image at URL and extract coordinates. Returns None if nothing found."""
+    """Fetch an untrusted public image and extract coordinates."""
     try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": "SeaCommons/1.0"})
-            resp.raise_for_status()
-            content_type = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
-            if not content_type.startswith("image/"):
-                return None
-            image_bytes = resp.content
-    except Exception as exc:
-        logger.warning("Failed to fetch image %s: %s", url, exc)
+        response = await async_request(
+            url,
+            profile=TrustProfile.PUBLIC_UNTRUSTED,
+            contract=IMAGE,
+            headers={"User-Agent": "SeaCommons/1.0"},
+            timeout=15.0,
+        )
+        response.raise_for_status()
+        content_type = response.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+        image_bytes = response.body
+    except OutboundError as exc:
+        logger.warning("Failed to fetch image: outbound=%s", exc.code)
         return None
 
     # 1. EXIF — free, instant

@@ -18,16 +18,19 @@ import re
 import shutil
 import subprocess
 import threading
-import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Optional
 from urllib.parse import urlparse
 
 from core.intel.geoextract import extract_numeric_coords
+from core.net.outbound import FixedOriginClient
+from core.net.policy import IMAGE, JSON_TEXT, OutboundError
 
 _X_EPOCH_MS = 1_288_834_974_657
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
 _ALLOWED_MEDIA_HOSTS = frozenset({"pbs.twimg.com"})
+_MEDIA_ORIGINS = tuple(f"https://{host}" for host in sorted(_ALLOWED_MEDIA_HOSTS))
+_SYNDICATION_ORIGINS = ("https://cdn.syndication.twimg.com",)
 
 # docs/fixes.md F-03: OCR agreement is a physical distance, not a degree
 # delta. 0.03 deg of latitude is ~3.3 km and a degree of longitude shrinks
@@ -73,7 +76,7 @@ def _easyocr_image(payload: bytes) -> tuple[Optional[tuple[float, float]], list[
     """
     global _EASYOCR_READER
     try:
-        import easyocr
+        import easyocr  # type: ignore[import-untyped]
         import numpy as np
         from PIL import Image, ImageOps
     except Exception:
@@ -212,12 +215,14 @@ def fetch_tweet_photos(tweet_id: str, *, timeout: float = 12.0) -> list[str]:
         f"?id={tweet_id}&token={_syndication_token(tweet_id)}&lang=en"
     )
     try:
-        request = urllib.request.Request(
-            url, headers={"User-Agent": _HEADERS["User-Agent"], "Accept": "application/json"}
+        response = FixedOriginClient(_SYNDICATION_ORIGINS, timeout=timeout).request(
+            url,
+            contract=JSON_TEXT,
+            headers={"User-Agent": _HEADERS["User-Agent"], "Accept": "application/json"},
         )
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.loads(response.read(2_000_000))
-    except Exception:
+        response.raise_for_status()
+        payload = response.json()
+    except (OutboundError, ValueError, TypeError):
         return []
     if not isinstance(payload, dict):
         return []
@@ -334,26 +339,20 @@ def _tesseract_cross_check(payload: bytes, executable: str) -> Optional[tuple[fl
 
 
 def _download_bounded_image(url: str) -> Optional[bytes]:
-    """Fetch one public image from an allow-listed host, size-capped.
-
-    Returns the raw bytes, or ``None`` for a disallowed host, a non-image
-    content type, or an over-size payload. Kept here (not in
-    ``image_extraction``) so the existing tests that patch
-    ``x_media_utils.urllib.request.urlopen`` keep working.
-    """
+    """Fetch one allow-listed X image through the canonical bounded client."""
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in _ALLOWED_MEDIA_HOSTS:
         return None
-    request = urllib.request.Request(
-        url,
-        headers={**_HEADERS, "Accept": "image/jpeg,image/png,image/webp"},
-    )
-    with urllib.request.urlopen(request, timeout=15) as response:
-        content_type = str(response.headers.get("Content-Type") or "").lower()
-        if not content_type.startswith("image/"):
-            return None
-        payload = response.read(_MAX_IMAGE_BYTES + 1)
-    return payload if len(payload) <= _MAX_IMAGE_BYTES else None
+    try:
+        response = FixedOriginClient(_MEDIA_ORIGINS, timeout=15.0).request(
+            url,
+            contract=IMAGE,
+            headers={**_HEADERS, "Accept": "image/jpeg,image/png,image/webp"},
+        )
+        response.raise_for_status()
+        return response.body
+    except OutboundError:
+        return None
 
 
 def _extract_coordinate_from_bytes(
@@ -476,7 +475,10 @@ def _extract_coordinate_from_bytes(
     # docstring on map_pin_geolocate). Try recovering that from the pin's
     # pixel position plus visible place-name labels before giving up.
     try:
-        from core.intel.map_pin_geolocate import geolocate_pin_from_image
+        from core.intel.map_pin_geolocate import (
+            geolocate_pin_detailed,
+            geolocate_pin_from_image,
+        )
 
         pin_coord = geolocate_pin_from_image(
             payload,
@@ -484,14 +486,31 @@ def _extract_coordinate_from_bytes(
             word_boxes=easy_boxes or None,
             sea_snap=sea_snap,
         )
+        pin_solution = (
+            geolocate_pin_detailed(
+                payload, executable=executable, word_boxes=easy_boxes or None
+            )
+            if pin_coord is not None
+            else None
+        )
     except Exception:
         pin_coord = None
+        pin_solution = None
     if pin_coord is not None:
+        diagnostics: dict[str, Any] = {}
+        if pin_solution is not None:
+            diagnostics = {
+                "estimated_position_error_m": float(pin_solution.estimated_position_error_m),
+                "pin_solver_confidence": float(pin_solution.confidence),
+                "pin_fit_residual_px": float(pin_solution.fit_residual_px),
+                "pin_extrapolation_px": float(pin_solution.max_extrapolation_px),
+                "pin_landmarks_used": list(pin_solution.landmarks_used),
+            }
         return (
             pin_coord,
             True,
             "easyocr_pin_landmark" if easy_boxes else "tesseract_pin_landmark",
-            {},
+            diagnostics,
         )
     return None, attempted or easy_attempted, "none", {}
 

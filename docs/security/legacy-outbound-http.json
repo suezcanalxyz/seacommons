@@ -1,0 +1,147 @@
+[
+  {
+    "path": "apps/api/core/anomaly/ais.py",
+    "callee": "urllib.request.urlopen",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/anomaly/ionosphere.py",
+    "callee": "urllib.request.urlopen",
+    "count": 2
+  },
+  {
+    "path": "apps/api/core/anomaly/traffic.py",
+    "callee": "urllib.request.urlopen",
+    "count": 2
+  },
+  {
+    "path": "apps/api/core/anomaly/weather.py",
+    "callee": "urllib.request.urlopen",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/api/routes/weather.py",
+    "callee": "urllib.request.urlopen",
+    "count": 2
+  },
+  {
+    "path": "apps/api/core/drift/cache.py",
+    "callee": "urllib.request.urlopen",
+    "count": 3
+  },
+  {
+    "path": "apps/api/core/drift/opendrift_pool.py",
+    "callee": "urllib.request.urlopen",
+    "count": 2
+  },
+  {
+    "path": "apps/api/core/integrations/timezero.py",
+    "callee": "httpx.Client",
+    "count": 2
+  },
+  {
+    "path": "apps/api/core/intel/gdacs_monitor.py",
+    "callee": "urllib.request.urlopen",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/intel/gfw_monitor.py",
+    "callee": "httpx.post",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/intel/news_monitor.py",
+    "callee": "urllib.request.urlopen",
+    "count": 2
+  },
+  {
+    "path": "apps/api/core/intel/satellite_resolver.py",
+    "callee": "httpx.Client",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/intel/twitter_monitor.py",
+    "callee": "urllib.request.urlopen",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/intel/viirs_monitor.py",
+    "callee": "httpx.get",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/live_edge_publisher.py",
+    "callee": "httpx.Client",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/mda/darkship_cue.py",
+    "callee": "httpx.get",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/mda/darkship_cue.py",
+    "callee": "httpx.post",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/mda/identity.py",
+    "callee": "httpx.get",
+    "count": 3
+  },
+  {
+    "path": "apps/api/core/mda/jamming.py",
+    "callee": "httpx.get",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/mda/reference.py",
+    "callee": "httpx.get",
+    "count": 4
+  },
+  {
+    "path": "apps/api/core/mda/warfare.py",
+    "callee": "httpx.get",
+    "count": 2
+  },
+  {
+    "path": "apps/api/core/notifications.py",
+    "callee": "httpx.post",
+    "count": 2
+  },
+  {
+    "path": "apps/api/core/probability/updater.py",
+    "callee": "urllib.request.urlopen",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/radio/catalog_store.py",
+    "callee": "urlopen",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/radio/discovery.py",
+    "callee": "urlopen",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/scheduler.py",
+    "callee": "httpx.get",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/sensors/adsb.py",
+    "callee": "urllib.request.urlopen",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/sensors/gnss.py",
+    "callee": "urllib.request.urlopen",
+    "count": 1
+  },
+  {
+    "path": "apps/api/core/sensors/ionospheric.py",
+    "callee": "urllib.request.urlopen",
+    "count": 1
+  }
+]

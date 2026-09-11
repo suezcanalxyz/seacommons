@@ -104,6 +104,50 @@ def _fit(landmarks: list[Landmark]) -> Optional[tuple[tuple[float, float], tuple
     return fx, fy
 
 
+def _fit_north_up(landmarks: list[Landmark]) -> Optional[tuple[float, float, float]]:
+    """Fit a north-up Web-Mercator map with one shared pixel/metre scale.
+
+    Slippy maps are conformal. When all recognised labels lie along one
+    coastline (the common Alarm Phone Crete screenshot), fitting X and Y
+    independently makes the weak axis numerically unstable. The shared-scale
+    model can still be solved from the well-spread axis without inventing a
+    second scale. Screen Y is inverted relative to Mercator Y.
+    """
+    if len(landmarks) < 2:
+        return None
+    merc = [_merc(lm.lat, lm.lon) for lm in landmarks]
+    mean_mx = sum(point[0] for point in merc) / len(merc)
+    mean_my = sum(point[1] for point in merc) / len(merc)
+    mean_px = sum(lm.px for lm in landmarks) / len(landmarks)
+    mean_py = sum(lm.py for lm in landmarks) / len(landmarks)
+    numerator = 0.0
+    denominator = 0.0
+    for lm, (mx, my) in zip(landmarks, merc):
+        dx = mx - mean_mx
+        dy = my - mean_my
+        numerator += dx * (lm.px - mean_px) - dy * (lm.py - mean_py)
+        denominator += dx * dx + dy * dy
+    if denominator < 1e-6:
+        return None
+    scale = numerator / denominator
+    if abs(scale) < 1e-12:
+        return None
+    tx = mean_px - scale * mean_mx
+    ty = mean_py + scale * mean_my
+    return scale, tx, ty
+
+
+def _residual_north_up(
+    landmarks: list[Landmark], model: tuple[float, float, float]
+) -> float:
+    scale, tx, ty = model
+    total = 0.0
+    for lm in landmarks:
+        mx, my = _merc(lm.lat, lm.lon)
+        total += math.hypot(scale * mx + tx - lm.px, -scale * my + ty - lm.py)
+    return total / len(landmarks)
+
+
 def _ransac(landmarks: list[Landmark]) -> tuple[list[Landmark], list[str]]:
     """Drop outlier label matches. Tries every pair as a minimal model, keeps
     the largest inlier set, refits on it."""
@@ -148,19 +192,35 @@ def solve_pin_position(
 
     px_spread = max(lm.px for lm in used) - min(lm.px for lm in used)
     py_spread = max(lm.py for lm in used) - min(lm.py for lm in used)
-    if px_spread < _MIN_PIXEL_SPREAD or py_spread < _MIN_PIXEL_SPREAD:
+    if max(px_spread, py_spread) < _MIN_PIXEL_SPREAD:
         return None
 
-    model = _fit(used)
-    if model is None:
-        return None
-    fx, fy = model
-
-    residual = _residual_px(used, fx, fy)
     pin_x, pin_y = pin_px
-    mx = (pin_x - fx[1]) / fx[0]
-    my = (pin_y - fy[1]) / fy[0]
-    lat, lon = _inv_merc(mx, my)
+    north_up = px_spread < _MIN_PIXEL_SPREAD or py_spread < _MIN_PIXEL_SPREAD
+    if north_up:
+        shared = _fit_north_up(used)
+        if shared is None:
+            return None
+        scale, tx, ty = shared
+        residual = _residual_north_up(used, shared)
+        mx = (pin_x - tx) / scale
+        my = (ty - pin_y) / scale
+        lat, lon = _inv_merc(mx, my)
+        m_per_px = abs(1.0 / scale) * math.cos(math.radians(lat))
+        method = "web_mercator_north_up"
+    else:
+        model = _fit(used)
+        if model is None:
+            return None
+        fx, fy = model
+        residual = _residual_px(used, fx, fy)
+        mx = (pin_x - fx[1]) / fx[0]
+        my = (pin_y - fy[1]) / fy[0]
+        lat, lon = _inv_merc(mx, my)
+        m_per_px_x = abs(1.0 / fx[0])
+        m_per_px_y = abs(1.0 / fy[0]) / math.cos(math.radians(lat))
+        m_per_px = (m_per_px_x + m_per_px_y) / 2
+        method = "web_mercator_affine"
     if not (_LAT_RANGE[0] <= lat <= _LAT_RANGE[1] and _LON_RANGE[0] <= lon <= _LON_RANGE[1]):
         return None
 
@@ -171,11 +231,9 @@ def solve_pin_position(
         0.0, left - pin_x, pin_x - right, top - pin_y, pin_y - bottom
     )
 
-    # Propagate: metres-per-pixel at the pin latitude, times (residual +
-    # a fraction of the extrapolation distance).
-    m_per_px_x = abs(1.0 / fx[0])
-    m_per_px_y = abs(1.0 / fy[0]) / math.cos(math.radians(lat))
-    m_per_px = (m_per_px_x + m_per_px_y) / 2
+    # Propagate: ground metres-per-pixel times residual + extrapolation.
+    # The north-up fallback intentionally yields a wide error radius for a
+    # pin far outside the landmark hull instead of pretending to be precise.
     error_m = m_per_px * (residual + 0.5 * extrapolation_px) + 150.0
 
     diagonal_px = math.hypot(*image_size) or 1.0
@@ -197,5 +255,6 @@ def solve_pin_position(
         max_extrapolation_px=round(extrapolation_px, 1),
         estimated_position_error_m=round(error_m, 0),
         confidence=round(confidence, 2),
+        method=method,
         notes=notes,
     )

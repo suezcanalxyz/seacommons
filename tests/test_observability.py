@@ -197,6 +197,7 @@ def test_remote_radio_metrics_accept_bounded_provider_state_outcome() -> None:
 
 def test_cross_modal_metrics_normalize_hostile_labels() -> None:
     from prometheus_client import generate_latest
+
     from core import observability
 
     secret = "receiver-258479000-private@example.com-packet-123"
@@ -208,6 +209,7 @@ def test_cross_modal_metrics_normalize_hostile_labels() -> None:
 
 def test_cross_modal_metrics_accept_bounded_independence_event() -> None:
     from prometheus_client import generate_latest
+
     from core import observability
 
     observability.record_cross_modal_event(
@@ -236,3 +238,39 @@ def test_remote_radio_metrics_accept_failover_lifecycle_outcomes() -> None:
         "standby_promoted", "cooldown_retry",
     ):
         assert f'outcome="{outcome}"' in metrics
+
+
+def test_outbound_http_metrics_use_only_bounded_labels() -> None:
+    from prometheus_client import generate_latest
+
+    from core import observability
+
+    secret = "host.example?token=private-value"
+    observability.record_outbound_request(
+        policy=secret,
+        method="TRACE",
+        outcome=secret,
+    )
+    metrics = generate_latest().decode()
+    assert secret not in metrics
+    assert (
+        'seacommons_outbound_http_requests_total{method="other",outcome="other",policy="other"}'
+        in metrics
+    )
+
+
+def test_outbound_http_metrics_accept_canonical_labels() -> None:
+    from prometheus_client import generate_latest
+
+    from core import observability
+
+    observability.record_outbound_request(
+        policy="public_untrusted",
+        method="GET",
+        outcome="blocked_target",
+    )
+    metrics = generate_latest().decode()
+    assert (
+        'seacommons_outbound_http_requests_total{method="GET",outcome="blocked_target",policy="public_untrusted"}'
+        in metrics
+    )

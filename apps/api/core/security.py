@@ -5,15 +5,16 @@ Keycloak is the reference provider, but only standard JWT/OIDC features are used
 """
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass
-from urllib.request import urlopen
+from urllib.parse import urlsplit
 
 import jwt
 from fastapi import HTTPException, Request, WebSocket, status
 
 from core.config import config
+from core.net.outbound import OperatorInternalClient
+from core.net.policy import JSON_TEXT, OutboundError
 
 
 @dataclass(frozen=True)
@@ -27,7 +28,7 @@ _jwks: tuple[float, dict] | None = None
 
 
 def _claim(claims: dict, dotted_path: str):
-    value = claims
+    value: object = claims
     for part in dotted_path.split("."):
         if not isinstance(value, dict):
             return None
@@ -41,15 +42,43 @@ def _jwks_url() -> str:
     return f"{config.OIDC_ISSUER.rstrip('/')}/protocol/openid-connect/certs"
 
 
-def _load_jwks() -> dict:
+def _jwks_origin_and_target() -> tuple[str, str]:
+    parsed = urlsplit(_jwks_url())
+    if not parsed.scheme or not parsed.netloc:
+        raise OutboundError("invalid_request")
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    target = parsed.path or "/"
+    if parsed.query:
+        target = f"{target}?{parsed.query}"
+    return origin, target
+
+
+def _load_jwks(force_refresh: bool = False) -> dict:
     global _jwks
     now = time.time()
-    if _jwks and now - _jwks[0] < 300:
+    if not force_refresh and _jwks and now - _jwks[0] < 300:
         return _jwks[1]
-    with urlopen(_jwks_url(), timeout=5) as response:  # nosec: operator-configured HTTPS URL
-        data = json.load(response)
+    origin, target = _jwks_origin_and_target()
+    response = OperatorInternalClient(origin, timeout=5.0).request(
+        target, contract=JSON_TEXT
+    )
+    response.raise_for_status()
+    data = response.json()
+    if not isinstance(data, dict) or not isinstance(data.get("keys"), list):
+        raise OutboundError("upstream_error")
     _jwks = (now, data)
     return data
+
+
+def _signing_key_from_jwks(token: str, jwks: dict):
+    header = jwt.get_unverified_header(token)
+    kid = header.get("kid")
+    if not isinstance(kid, str) or not kid:
+        raise KeyError("missing kid")
+    for item in jwks.get("keys", []):
+        if isinstance(item, dict) and item.get("kid") == kid:
+            return jwt.PyJWK.from_dict(item).key
+    raise KeyError("unknown kid")
 
 
 def authenticate(request: Request) -> Principal | None:
@@ -64,7 +93,11 @@ def authenticate(request: Request) -> Principal | None:
 
 def authenticate_token(token: str) -> Principal:
     try:
-        key = jwt.PyJWKClient(_jwks_url(), cache_keys=True).get_signing_key_from_jwt(token).key
+        jwks = _load_jwks()
+        try:
+            key = _signing_key_from_jwks(token, jwks)
+        except KeyError:
+            key = _signing_key_from_jwks(token, _load_jwks(force_refresh=True))
         claims = jwt.decode(
             token,
             key,

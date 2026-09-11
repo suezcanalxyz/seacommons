@@ -127,3 +127,19 @@ def test_linear_degree_fit_would_be_worse_far_from_labels():
 
     assert merc_err < 3.0
     assert merc_err <= lin_err
+
+
+def test_north_up_fallback_recovers_far_south_pin_from_same_latitude_city_labels():
+    """Real Alarm Phone/Crete geometry: two north-coast cities calibrate scale
+    while the distress pin is far south of the label hull. Independent Y fitting
+    is degenerate here; a north-up Web-Mercator map still has one shared scale."""
+    marks = [
+        Landmark("rethimno", 106.0, 94.5, 35.37, 24.47),
+        Landmark("heraklion", 459.0, 104.5, 35.34, 25.13),
+    ]
+    solution = solve_pin_position((443.0, 910.0), marks, image_size=(1080, 1041))
+    assert solution is not None
+    assert solution.method == "web_mercator_north_up"
+    assert 33.8 < solution.lat < 34.4
+    assert 24.8 < solution.lon < 25.4
+    assert solution.estimated_position_error_m > 10_000
