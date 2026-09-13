@@ -1,15 +1,15 @@
 # Current work — Evidence Fusion Development Loop
 
 > **Canonical loop:** `docs/superpowers/plans/2026-09-06-evidence-fusion-development-loop.md`
-> **Current packet:** Packet J — Outbound HTTP / SSRF Hardening v1 — implementation active; production qualification pending
-> **Active packet plan:** `docs/superpowers/plans/2026-09-09-outbound-http-ssrf-hardening-v1.md`
-> **Release-qualified main:** `908dc81`
-> **Production behavior baseline:** `f9ceb46`
+> **Current packet:** none — Packet J accepted/closed
+> **Last closed packet plan:** `docs/superpowers/plans/2026-09-09-outbound-http-ssrf-hardening-v1.md`
+> **Release-qualified main:** `6202aa2`
+> **Production behavior baseline:** `6202aa2`
 > **Production schema:** `0026_radio_ais_associations`
 
 ## Production baseline
 
-Packets H and I are accepted and production-verified. Release-qualified `main` is `908dc81`; the latest production behavior change is `f9ceb46`. Public Live uses the canonical Humanitarian/Maritime split and `/api/v1/live/pipeline` reports the bounded acquisition families `ais`, `first_party`, `partner`, `public_feed`, and `radio`. The AIS runtime remains in the authorized legacy mode; raw AIS context layers are default-off on public Live and remain user-toggleable.
+Packets H, I, and J are accepted and production-verified. Release-qualified `main` and the current production behavior baseline are `6202aa2`. Public Live uses the canonical Humanitarian/Maritime split and `/api/v1/live/pipeline` reports the bounded acquisition families `ais`, `first_party`, `partner`, `public_feed`, and `radio`. The AIS runtime remains in the authorized legacy mode; raw AIS context layers are default-off on public Live and remain user-toggleable.
 
 The Mediterranean radio mesh is live with ephemeral Listen Live audio and managed receiver coverage/failover. The production policy is reconnect-before-failover for transient receiver drops, three desired independent active lineages for the monitored channel when capacity exists, and ranked standby promotion only when reconnect/staleness rules require it. Audio Evidence persistence remains disabled (`AUDIO_EVIDENCE_ENABLED=false`); Listen Live is ephemeral PCM with `no-store` and no persistent audio body.
 
@@ -61,17 +61,17 @@ Release evidence: focused review/privacy/publication `181 passed`; full backend 
 
 ## Current execution packet
 
-Packet J — **Outbound HTTP / SSRF Hardening v1** — is the active implementation packet. Its approved design/spec introduces `PUBLIC_UNTRUSTED`, `PUBLIC_FIXED`, and `OPERATOR_INTERNAL`, pinned DNS/IP connections, manual redirect validation, bounded response contracts, redacted failures, and bounded outbound metrics. Tasks 1–6 are implemented on `feat/outbound-http-ssrf-hardening-v1`; Task 7 release qualification is in progress.
+No packet is currently active. Packet J — **Outbound HTTP / SSRF Hardening v1** — is accepted/closed. PR #164 established the canonical outbound trust boundary and PR #165 added the semantics-preserving Play catalog prefilter required by production qualification. Release-qualified `main` is `6202aa2`; schema remains `0026_radio_ais_associations`.
 
-The v1 high-risk migrations cover untrusted image extraction, X/Twitter media, auto-drift, remote drift worker, OIDC/JWKS, and forensic witnesses. The post-migration legacy inventory currently contains 29 exact path/callee entries representing 44 direct HTTP calls, primarily fixed collectors/integrations to be migrated in later bounded batches. New direct bypasses are blocked by an AST inventory guard; WebSocket URL policy remains explicitly out of scope for Packet J v1.
+Packet J production evidence: exact-head Full CI run `34755443674` completed SUCCESS with `repository`, `api`, `web`, `edge`, `browser-e2e`, and real-host `browser-production-smoke` all green. The API job reports `1715 passed, 2 skipped`; the Humanitarian contract gate reports `58 passed`. Web production dependencies audit at zero known vulnerabilities after the MapLibre 6.5.0 security update. The outbound smoke accepted the public HTTPS release asset and blocked a loopback HTTPS target with `blocked_target`.
 
-Packet I — **Production Browser & Release Qualification v1** — is accepted/closed. PR #155 merged the deterministic Chromium gate and read-only production-smoke path; PR #156 fixed AIS distress beacons that were incorrectly falling through to `context`; PR #157 made manual release qualification skip only the redundant full-history gitleaks step while preserving gitleaks on PR/push. Release-qualified `main` is `908dc81`; the runtime behavior change is `f9ceb46`.
+The v1 trust boundary uses `PUBLIC_UNTRUSTED`, `PUBLIC_FIXED`, and `OPERATOR_INTERNAL`, DNS/IP pinning, manual redirect validation, bounded response contracts, redacted failures, and bounded metrics. The checked-in legacy inventory contains 29 exact path/callee entries representing 44 direct HTTP calls; CI rejects any increase. Fixed collector batches and WebSocket URL governance remain explicit follow-up work rather than hidden exceptions.
 
-Final Packet I evidence: deterministic `browser-e2e` PASS; production `browser-production-smoke` PASS against the real `live.seacommons.org` and `play.seacommons.org` hosts with no route mocks; manual Full CI run `34258991088` completed SUCCESS with `repository`, `api`, `web`, `edge`, `browser-e2e`, and `browser-production-smoke` all green. The production API returned Maritime Safety casualties as canonical `navigation_casualty / #ff4d5e` and AIS distress beacons as `distress / #ff3b3b`.
+Production qualification also closed the Live/Play defects exposed during this packet: Alarm Phone reply monitoring now re-checks durable Humanitarian records rather than the volatile 600-event deque; resolved incidents leave operational Live but remain in Play; Play is a complete public catalog rather than a 24-hour/positioned-only subset; pagination has no fixed 100-page ceiling; and map-pin geolocation has a north-up fallback that propagates large uncertainty instead of false precision. The Pozzallo case `2c39cf93` is resolved and retained in Play with its OCR coordinate; the Crete case `7232dafc` is resolved and retained in Play with `media_pin_landmark` position `34.10776, 25.10054`, approximately 70.5 km uncertainty, and `machine_ocr_unverified`. Both are absent from operational Humanitarian Live.
 
-The Packet I browser pass fixed the public Live regression visible in production: raw AIS moving/stationary/trails start off under a versioned incident-first public layer profile while remaining user-toggleable; Alarm Phone is categorized by semantic role rather than raw `twitter` transport type; and Maritime Safety fusion alerts calculate/render canonical semantic colour from enriched public metadata. No publication, retention or source eligibility rule changed.
+Current Play production verification after PR #165: counts and first page agree at `226` public records (`54` Humanitarian, `172` Maritime), the first page returns all 226 unique records with `next_offset=null`, and both verified historical cases remain present. First-page latency on the Oracle API fell from about 20.5 s before the prefilter to about 4.65 s while preserving the same canonical `public_intel_feature()` publication/privacy gate.
 
-Packet J is authorized and in execution. Do not expand v1 into wholesale migration of all fixed collectors or WebSocket transports; those remain follow-up batches after the canonical HTTP trust boundary is production-qualified.
+Packet I remains accepted/closed with deterministic Chromium as a blocking Full CI gate and a read-only production smoke path. No AIS fusion cutover or audio evidence persistence is authorized; AIS runtime remains legacy and `AUDIO_EVIDENCE_ENABLED=false`.
 
 ## Loop order
 

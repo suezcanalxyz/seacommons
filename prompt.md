@@ -15,11 +15,13 @@ The master loop controls packet order. Humanitarian Verification v1 is closed fo
 
 ## Current packet
 
-Packets H and I are accepted/closed. Release-qualified `main` is `908dc81`, production behavior baseline is `f9ceb46`, and schema remains `0026_radio_ais_associations`. Do not restart H, receiver discovery, or Packet I unless a demonstrated regression requires it.
+Packets H, I, and J are accepted/closed. Release-qualified `main` and production behavior baseline are `6202aa2`; schema remains `0026_radio_ais_associations`. Do not restart closed packets unless a demonstrated regression requires it.
 
-Packet J — **Outbound HTTP / SSRF Hardening v1** — is authorized and active. Approved spec: `docs/superpowers/specs/2026-09-09-outbound-http-ssrf-hardening-v1-design.md`; execution plan: `docs/superpowers/plans/2026-09-09-outbound-http-ssrf-hardening-v1.md`. Tasks 1–6 are implemented on `feat/outbound-http-ssrf-hardening-v1`; Task 7 qualification is in progress. The v1 boundary uses `PUBLIC_UNTRUSTED`, `PUBLIC_FIXED`, and `OPERATOR_INTERNAL`, DNS/IP pinning, manual redirects, bounded response bodies, redacted errors, and bounded metrics.
+Packet J — **Outbound HTTP / SSRF Hardening v1** — is accepted/closed. Approved spec: `docs/superpowers/specs/2026-09-09-outbound-http-ssrf-hardening-v1-design.md`; execution plan: `docs/superpowers/plans/2026-09-09-outbound-http-ssrf-hardening-v1.md`. PR #164 established the boundary and PR #165 added the production-qualified Play prefilter. The v1 boundary uses `PUBLIC_UNTRUSTED`, `PUBLIC_FIXED`, and `OPERATOR_INTERNAL`, DNS/IP pinning, manual redirects, bounded response bodies, redacted errors, and bounded metrics.
 
-Do not expand Packet J v1 into all fixed collectors or WebSocket transports. The post-migration legacy HTTP inventory is explicit and the CI adoption guard must reject new direct `httpx`/`urllib`/`requests` bypasses. Packet I remains closed with deterministic Chromium as a blocking Full CI gate and read-only production smoke PASS on run `34258991088`.
+Final Packet J qualification is run `34755443674`: repository/api/web/edge/browser-e2e/browser-production-smoke all PASS on `6202aa2`; backend `1715 passed, 2 skipped`; Humanitarian contract `58 passed`. The outbound smoke permits the public HTTPS release asset and blocks loopback with `blocked_target`. Play production returns a complete 226/226-record public catalog and both resolved Alarm Phone cases remain in Play while absent from operational Live.
+
+Do not silently expand the closed v1 into all fixed collectors or WebSocket transports. The post-migration legacy HTTP inventory is explicit and the CI adoption guard must reject new direct `httpx`/`urllib`/`requests` bypasses.
 
 Closed H plan: `docs/superpowers/plans/2026-09-07-live-humanitarian-maritime-acquisition-pipeline.md`. Closed I plan: `docs/superpowers/plans/2026-09-08-production-browser-release-qualification-v1.md`.
 
@@ -59,4 +61,4 @@ Production migration, restart, destructive maintenance, remote receiver activati
 
 Audio Evidence v1 is development-complete/review-ready through `90d08e4`; production capture remains disabled and unauthorized. Cross-modal Evidence Fusion v1 is also closed; preserve the established lineage and derived-evidence boundaries.
 
-Production truth at controller update: Packets H and I are accepted; release-qualified `main` is `908dc81`; Packet I runtime behavior is `f9ceb46`; manual qualification run `34258991088` is fully green including real-host `browser-production-smoke`; Alembic is `0026_radio_ais_associations (head)`; the AIS runtime remains legacy and raw AIS context layers are default-off on public Live; the bounded radio mesh and ephemeral Listen Live are active; managed radio failover uses reconnect-before-failover; `AUDIO_EVIDENCE_ENABLED=false`. Public acquisition families are `ais`, `first_party`, `partner`, `public_feed`, and `radio`.
+Production truth at controller update: Packets H, I, and J are accepted; release-qualified `main` and current behavior baseline are `6202aa2`; Packet J manual qualification run `34755443674` is fully green including real-host `browser-production-smoke`; Alembic is `0026_radio_ais_associations (head)`; the AIS runtime remains legacy and raw AIS context layers are default-off on public Live; the bounded radio mesh and ephemeral Listen Live are active; managed radio failover uses reconnect-before-failover; `AUDIO_EVIDENCE_ENABLED=false`. Public acquisition families are `ais`, `first_party`, `partner`, `public_feed`, and `radio`.
