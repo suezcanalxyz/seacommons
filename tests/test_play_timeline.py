@@ -342,3 +342,28 @@ def test_play_catalog_does_not_truncate_public_history_behind_nonpublic_candidat
     assert response.status_code == 200
     assert response.json()["incidents"][0]["incident_id"] == public_id
     assert response.json()["next_offset"] is None
+
+
+def test_play_catalog_prefilters_explicit_internal_rows_before_public_projection(monkeypatch):
+    from core.api.routes import play as play_routes
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+
+    internal_id = f"internal-prefilter-{uuid.uuid4()}"
+    reported = datetime.now(timezone.utc) - timedelta(hours=30)
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=internal_id, timestamp_utc=reported.isoformat(), type="correlated_alert",
+            severity="low", lat=35.0, lon=15.0, title="internal derived", text="",
+            url="", source="SeaCommons", linked_mmsi="", maritime_domain="grey_zone",
+            meta={"publication_status": "internal", "maritime_domain": "grey_zone"},
+        ))
+
+    original = play_routes._is_public_catalog_maritime
+    def checked(event):
+        assert (event.meta or {}).get("publication_status") != "internal"
+        return original(event)
+
+    monkeypatch.setattr(play_routes, "_is_public_catalog_maritime", checked)
+    catalog = play_routes._compute_play_catalog()
+    assert internal_id not in {item["incident_id"] for item in catalog}

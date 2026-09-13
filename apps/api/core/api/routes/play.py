@@ -135,9 +135,13 @@ def _compute_play_catalog() -> list[dict[str, Any]]:
             event = db.get(IntelEventDB, row.incident_id)
             combined.append(_incident_projection(row, event, now=now))
 
+        publication_status = IntelEventDB.meta["publication_status"].as_string()
         rows = (
             db.query(IntelEventDB)
-            .filter(IntelEventDB.type.in_(public_archive_event_types()))
+            .filter(
+                IntelEventDB.type.in_(public_archive_event_types()),
+                (publication_status.is_(None)) | (publication_status != "internal"),
+            )
             .yield_per(1000)
         )
         for event in rows:
