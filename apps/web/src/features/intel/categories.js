@@ -169,6 +169,9 @@ export function categoryOf(type) {
 }
 
 export function signalCategoryOf(properties = {}) {
+  if (typeof properties.incident_type === 'string' && properties.incident_type) {
+    return properties.incident_type;
+  }
   const visual = classifyEventVisual(properties).key;
   const byVisual = {
     humanitarian_alarm_phone: 'distress',
