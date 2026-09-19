@@ -704,7 +704,7 @@ async def live_stream(websocket: WebSocket, mode: str = "humanitarian"):
                 previous_digest = digest
             else:
                 await websocket.send_text('{"type":"ping"}')
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
     except WebSocketDisconnect:
         return
     except Exception:
