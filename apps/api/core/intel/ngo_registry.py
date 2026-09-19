@@ -200,11 +200,10 @@ def _position_status(last_seen: Any, *, now: datetime | None = None) -> str:
 
 
 def ngo_vessel_geojson() -> dict[str, Any]:
-    """Live NGO/coastguard vessel positions as GeoJSON, enriched from the
-    registry above. Shared by the authenticated operator route
-    (/api/v1/intel/ngo) and the public Live route (/api/v1/live/ngo-vessels)
-    so both always agree — AIS positions are public data either way, this
-    is just about which surface exposes them.
+    """Operational NGO/coastguard vessel inventory enriched from the registry.
+
+    This projection is for authenticated operator surfaces. Public Live stays
+    case/activity-first and does not expose the complete fleet inventory.
     """
     from core.vessels.registry import registry  # lazy to avoid circular import
 
