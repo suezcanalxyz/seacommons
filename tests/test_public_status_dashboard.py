@@ -64,7 +64,6 @@ def test_operator_dashboard_requires_gateway(monkeypatch):
 
 
 def test_operator_dashboard_inline_javascript_compiles(monkeypatch, tmp_path):
-    import re
     import shutil
     import subprocess
 
@@ -82,11 +81,11 @@ def test_operator_dashboard_inline_javascript_compiles(monkeypatch, tmp_path):
         headers={"x-seacommons-operator-gateway": "operator-secret"},
     )
     assert response.status_code == 200
-    match = re.search(r"<script>(.*?)</script>", response.text, re.DOTALL)
-    assert match is not None
+    start = response.text.index("<script>") + len("<script>")
+    end = response.text.index("</script>", start)
 
     script = tmp_path / "operator-dashboard.js"
-    script.write_text(match.group(1), encoding="utf-8")
+    script.write_text(response.text[start:end], encoding="utf-8")
     checked = subprocess.run(
         [node, "--check", str(script)],
         capture_output=True,
