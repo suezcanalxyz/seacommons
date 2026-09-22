@@ -58,6 +58,14 @@ export function Header() {
     };
   }, [open]);
 
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
     <header ref={headerRef} className={`site-header ${scrolled ? 'is-scrolled' : ''}`.trim()}>
       <a className="brand" href="#top" aria-label="SeaCommons — home">
