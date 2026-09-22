@@ -22,10 +22,9 @@ const NAV = [
   ['Docs', '/docs'],
   ['Live', 'https://live.seacommons.org'],
   ['Play', 'https://play.seacommons.org'],
-  ['Research', '#research'],
-  ['System', '#system'],
+  ['Humanitarian', '#humanitarian'],
+  ['Maritime', '#maritime'],
   ['Method', '#method'],
-  ['MDA', '#mda'],
   ['Governance', '#governance'],
 ];
 
