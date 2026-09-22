@@ -137,6 +137,12 @@ Environmental inputs can degrade. When a preferred marine source is unavailable,
 
 The same principle applies to all modelling in SeaCommons: derivation is valuable precisely when it remains identifiable as derivation.
 
+### How a reconstruction should explain itself
+
+SeaCommons does not treat motion graphics or a single animated trajectory as sufficient explanation. A useful reconstruction should let the reader see the observed inputs, the modelled outputs, the origin and time window, environmental forcing, parameter versions, assumptions, degraded inputs and uncertainty spread. Time controls should reveal how the result evolves rather than merely replaying a fixed animation.
+
+The interface should also answer a simple question in plain language: what does this reconstruction help us understand about the case? A model that cannot expose its inputs, transformations, uncertainty and analytical purpose should remain an internal experiment rather than a public SeaCommons surface.
+
 ## 09. Privacy, publication and security boundaries
 
 SeaCommons applies privacy before presentation.
