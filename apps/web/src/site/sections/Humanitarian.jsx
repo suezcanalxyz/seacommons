@@ -3,33 +3,33 @@ import { Reveal } from '../../ui/index.js';
 import { SectionLabel, Display } from '../bits.jsx';
 
 const FLOW = [
-  ['01', 'Origin', 'An operational or public report enters with source identity, time, transport and coordinate provenance preserved.'],
-  ['02', 'Claims', 'Deterministic claims such as rescue completed, people rescued, disembarkation or fatalities remain separate from lifecycle state.'],
-  ['03', 'Association', 'Additional NGO, AIS or public evidence is linked only when identity, time, place and source-lineage constraints are compatible.'],
-  ['04', 'Resolution', 'Resolution evidence can support the case record, but one technical signal does not automatically close a Humanitarian incident.'],
+  ['01', 'Report', 'Keep the original source, publication time, wording and any stated position. If the report only identifies an area, SeaCommons keeps an area; it does not invent a point.'],
+  ['02', 'Position', 'Record whether a location was reported directly, extracted from text or media, estimated, or still unknown. An extracted coordinate is not automatically a verified coordinate.'],
+  ['03', 'Cross-check', 'Compare later reports, civil SAR updates, vessel activity and other public evidence. Repeated copies of the same original report remain one source lineage.'],
+  ['04', 'Outcome', 'Add rescue, disembarkation, fatality or other outcome claims when a source actually supports them. AIS activity by itself cannot prove that a rescue happened.'],
 ];
 
 const SOURCES = [
-  'Alarm Phone and operational-origin reporting',
-  'Civil SAR NGOs and verification organisations',
-  'AIS vessel activity and SAR-response context',
+  'Alarm Phone and other operational-origin public reporting',
+  'Civil SAR organisations and verification groups',
+  'AIS tracks for vessel and response context',
   'Public news, RSS and institutional reporting',
-  'Environmental context when relevant to reconstruction',
+  'Weather and ocean data when needed for reconstruction',
 ];
 
 export default function Humanitarian() {
   return (
     <section id="humanitarian-detail" className="section humanitarian">
-      <SectionLabel index="Humanitarian / 003" title="Humanitarian evidence" tone="light" />
+      <SectionLabel index="Humanitarian / 003" title="How a humanitarian case is built" tone="light" />
       <div className="humanitarian__head">
         <Display id="humanitarian-title">
-          A distress report is not a complete case.<br />SeaCommons builds the chain around it.
+          A distress report can be urgent<br />and still be incomplete.
         </Display>
         <Reveal delay={120}>
           <p>
-            Humanitarian evidence can arrive late, through different channels and with uncertain
-            coordinates. SeaCommons keeps those differences explicit, protects sensitive material
-            and only publishes a reduced public projection.
+            Reports can arrive late, use approximate positions, repeat earlier claims or disagree
+            about the outcome. SeaCommons keeps those differences in the record instead of resolving
+            them with a single confidence score.
           </p>
         </Reveal>
       </div>
@@ -47,8 +47,8 @@ export default function Humanitarian() {
       <div className="humanitarian__sources">
         <Reveal>
           <div>
-            <span>Typical evidence</span>
-            <h3>Several sources can describe the same event without being independent.</h3>
+            <span>Evidence used</span>
+            <h3>The source matters as much as the claim.</h3>
           </div>
         </Reveal>
         <Reveal as="ul" stagger={70}>
@@ -57,11 +57,11 @@ export default function Humanitarian() {
       </div>
 
       <Reveal className="humanitarian__rule">
-        <strong>Key rule</strong>
+        <strong>Publication rule</strong>
         <p>
-          Transport is not source independence. The same organisation publishing through X, RSS
-          and email remains one lineage. AIS can support response assessment, but AIS alone does
-          not prove that a rescue was completed.
+          Humanitarian privacy comes before map precision. A private or sensitive position does not
+          become public because a model can estimate it. When the evidence supports only a region,
+          the public record should show a region or no geometry at all.
         </p>
       </Reveal>
     </section>
