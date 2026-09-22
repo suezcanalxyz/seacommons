@@ -3,34 +3,34 @@ import { Reveal } from '../../ui/index.js';
 import { SectionLabel, Display } from '../bits.jsx';
 
 const STEPS = [
-  { n: '01', tag: 'SRC', title: 'Sources', body: 'Public reports, partner inputs, AIS, radio, satellite and environmental observations enter with provenance attached.', foot: 'Raw observations' },
-  { n: '02', tag: 'NORM', title: 'Normalization', body: 'Provider-specific payloads become shared event records without erasing precision, authority or source identity.', foot: 'Canonical events' },
-  { n: '03', tag: 'CUE', title: 'Derived analysis', body: 'Rules and models produce bounded cues such as integrity, rendezvous, coverage or response context.', foot: 'Cues are not findings' },
-  { n: '04', tag: 'CORR', title: 'Correlation', body: 'Identity, time, space and evidence lineage are evaluated before observations are grouped into episodes or hypotheses.', foot: 'Independent lineage matters' },
-  { n: '05', tag: 'PUB', title: 'Public projection', body: 'Privacy, source policy, lifecycle and location precision determine what can cross into the public Live surface.', foot: 'Fail closed' },
-  { n: '06', tag: 'ARC', title: 'Persistent record', body: 'Play preserves public case timelines so later evidence can enrich the record without rewriting what was known before.', foot: 'Traceable history' },
+  { n: '01', tag: 'OBS', title: 'Observation', body: 'An immutable source envelope: who or what supplied it, when SeaCommons received it, and what the source actually contained.', foot: 'No verification implied' },
+  { n: '02', tag: 'EVENT', title: 'Normalised event', body: 'The source is translated into a shared vocabulary while its original authority, precision and lineage stay attached.', foot: 'Comparable, not equal' },
+  { n: '03', tag: 'CUE', title: 'Derived cue', body: 'A rule or model identifies something worth checking: a gap, a rendezvous, a position problem, a radio association or another bounded signal.', foot: 'Still not a finding' },
+  { n: '04', tag: 'EP', title: 'Episode or hypothesis', body: 'Related material is grouped only when identity, time, place and source lineage support the association. Weak associations can expire.', foot: 'Contestable analysis' },
+  { n: '05', tag: 'LIVE', title: 'Public case', body: 'A reduced version crosses the public boundary only after privacy, publication policy, lifecycle and geometry precision checks.', foot: 'Public projection' },
+  { n: '06', tag: 'PLAY', title: 'Archive record', body: 'The case remains in Play with its timeline, so later evidence can add to the record without pretending it was known earlier.', foot: 'History is preserved' },
 ];
 
 const METHOD = [
-  { n: '01', title: 'Provenance', body: 'Every record keeps where it came from, when it arrived and which transformations produced later outputs.' },
-  { n: '02', title: 'Source independence', body: 'Two transports carrying the same underlying observation do not count as two independent confirmations.' },
-  { n: '03', title: 'Uncertainty', body: 'Missing fields, approximate locations, conflicting evidence and degraded coverage remain visible.' },
-  { n: '04', title: 'Contestability', body: 'A case can accumulate support, contradiction or correction without hiding the earlier evidentiary state.' },
+  { n: '01', title: 'Provenance', body: 'The record says where a claim came from and which later outputs depend on it.' },
+  { n: '02', title: 'Independence', body: 'Copies, transports and reprocessing do not manufacture independent corroboration.' },
+  { n: '03', title: 'Precision', body: 'An exact point, an approximate point, an area and an unknown location remain different states.' },
+  { n: '04', title: 'Contradiction', body: 'Later evidence can support, weaken or contradict a case without deleting the earlier state.' },
 ];
 
 export default function SystemView() {
   return (
     <section id="system" className="section systemview">
-      <SectionLabel index="Architecture / 005" title="From evidence to public record" tone="dark" />
+      <SectionLabel index="Architecture / 006" title="The evidence model" tone="dark" />
       <div className="systemview__head">
         <Display id="system-title">
-          One pipeline.<br />No parallel truth.
+          Six stages.<br />Each answers a different question.
         </Display>
         <Reveal delay={120}>
           <p>
-            The database is the durable source of record. Live and Play are projections of the same
-            canonical evidence model, not separate analytical pipelines. Public surfaces receive only
-            the subset allowed by publication and privacy policy.
+            PostgreSQL is the durable system of record. Live and Play read public projections of
+            that record; they do not run separate investigative logic. Edge and browser snapshots
+            can keep the interface available, but they are caches, not a second truth.
           </p>
         </Reveal>
       </div>
@@ -47,16 +47,16 @@ export default function SystemView() {
       </Reveal>
 
       <div id="method" className="method">
-        <SectionLabel index="Method / 005A" title="What the system refuses to collapse" />
+        <SectionLabel index="Method / 006A" title="Four distinctions the interface should never hide" />
         <div className="method__head">
           <Display id="method-title">
-            Evidence stays distinguishable from interpretation.
+            The useful part is not the marker.<br />It is the chain behind it.
           </Display>
           <Reveal delay={120}>
             <p>
-              SeaCommons is useful only if a reader can inspect the chain. Observation, normalized
-              event, derived cue, episode, hypothesis and public case are intentionally different
-              objects with different evidentiary meanings.
+              SeaCommons is designed so a reader can move backwards from a public case to the
+              observations, transformations and uncertainties that produced it. If that chain is
+              missing, the result should not be presented as well established.
             </p>
           </Reveal>
         </div>
