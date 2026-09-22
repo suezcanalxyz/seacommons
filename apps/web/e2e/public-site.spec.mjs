@@ -29,9 +29,9 @@ test('overall strip is one all-time row with four public case totals', async ({ 
 test('homepage routes readers from simple surfaces to technical documentation', async ({ page }) => {
   await page.goto(SITE_URL);
 
-  await expect(page.locator('a[href="https://live.seacommons.org"]').first()).toBeVisible();
-  await expect(page.locator('a[href="https://play.seacommons.org"]').first()).toBeVisible();
-  await expect(page.locator('a[href="/docs"]').first()).toBeVisible();
+  await expect(page.locator('.surface-card[href="https://live.seacommons.org"]')).toBeVisible();
+  await expect(page.locator('.surface-card[href="https://play.seacommons.org"]')).toBeVisible();
+  await expect(page.locator('.surface-card[href="/docs"]')).toBeVisible();
 
   await expect(page.getByRole('heading', { name: /One pipeline/i })).toBeVisible();
   await expect(page.getByText('Source independence', { exact: true })).toBeVisible();
