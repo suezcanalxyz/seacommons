@@ -44,7 +44,7 @@ const WP = [
 export default function Programme() {
   return (
     <section id="research" className="section programme">
-      <SectionLabel index="Pipeline / 005" title="What happens after a source arrives" tone="light" />
+      <SectionLabel index="Pipeline / 006" title="What happens after a source arrives" tone="light" />
       <div className="programme__head">
         <Display id="research-title">
           The system keeps the steps separate<br />because they mean different things.
