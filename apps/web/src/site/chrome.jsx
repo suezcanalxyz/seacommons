@@ -116,17 +116,17 @@ export function Footer() {
       </div>
       <div className="site-footer__cols">
         <div>
-          <span>Programme</span>
-          <a href="#research">Research</a>
-          <a href="#method">Methods</a>
+          <span>Domains</span>
+          <a href="#humanitarian">Humanitarian</a>
+          <a href="#maritime">Maritime</a>
+          <a href="#method">Method</a>
           <a href="#governance">Governance</a>
-          <a href="/docs">Documentation</a>
         </div>
         <div>
           <span>Surfaces</span>
-          <a href="https://play.seacommons.org">Play ↗</a>
           <a href="https://live.seacommons.org">Live ↗</a>
-          <a href="https://github.com/suezcanalxyz/seacommons">GitHub ↗</a>
+          <a href="https://play.seacommons.org">Play ↗</a>
+          <a href="/docs">Documentation</a>
         </div>
         <div>
           <span>Framework</span>
