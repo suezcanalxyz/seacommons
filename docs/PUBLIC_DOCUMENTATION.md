@@ -56,14 +56,48 @@ its host-specific `/docs` route before the institutional `/docs` rewrite.
 
 ## Copy rules
 
-Public copy should distinguish observation from interpretation. In particular:
+Public copy is part of the evidence boundary. It should be written in plain
+language and should describe what the system actually does before describing
+why that work matters.
+
+Editorial rules:
+
+- prefer concrete nouns and verbs over abstract product language;
+- explain a mechanism with an example or limit instead of adding an adjective;
+- avoid stacked slogans, symmetrical headline pairs and generic phrases such as
+  "actionable insights", "trusted intelligence", "uncertainty-aware",
+  "accountable evidence" or similar language when the sentence does not explain
+  the underlying mechanism;
+- do not use three-part rhetorical lists merely for rhythm;
+- one sentence should make one main claim when possible;
+- name the source, transformation, output or failure mode when it matters;
+- say when a capability is partial, experimental, unavailable or planned;
+- never describe planned or experimental work as a current production feature;
+- distinguish current data coverage from the theoretical capability of the
+  architecture;
+- state limitations in the same section as the capability they qualify, not in
+  a distant disclaimer;
+- write for a reader who does not know the internal taxonomy, then provide the
+  technical term after the plain-language explanation;
+- avoid language that implies certainty, intent, wrongdoing or completeness
+  beyond what the evidence supports.
+
+The copy must also preserve SeaCommons domain distinctions:
 
 - a received observation is not a verified incident;
 - a derived cue is not a factual finding;
 - repeated transformations of one lineage do not create independent corroboration;
+- source credibility is not location credibility;
+- an extracted coordinate is not automatically a verified coordinate;
+- an HTTP or provider failure is not an empty dataset;
 - category colour and lifecycle styling are separate;
 - model coordinates remain derived candidates rather than reported geometry;
-- no automated illegality finding is implied by anomaly labels.
+- no automated illegality finding is implied by anomaly labels;
+- Humanitarian privacy takes priority over public map precision.
+
+A useful editorial test is simple: if a sentence could be pasted unchanged
+onto an unrelated AI or OSINT product, rewrite it until it says something
+specific about SeaCommons.
 
 
 ## Simulation and reconstruction presentation
