@@ -5,38 +5,38 @@ import { SectionLabel, Display } from '../bits.jsx';
 const CAPABILITIES = [
   {
     n: 'MAR / 01',
-    tag: 'Integrity',
-    title: 'AIS gaps & dark-activity candidates',
-    body: 'Coverage-aware gaps are treated as investigation cues, never as proof of deliberate concealment.',
-    points: ['Neighbour coverage context', 'Provider health', 'Gap duration and location'],
+    tag: 'AIS',
+    title: 'Gaps in transmission',
+    body: 'A long AIS gap may be interesting, but it can also come from weak reception, provider loss or equipment state. SeaCommons checks the surrounding coverage before treating the gap as a case.',
+    points: ['Track before and after', 'Nearby reception context', 'Provider health'],
     code: 'GAP ≠ INTENT',
     tone: 'blue',
   },
   {
     n: 'MAR / 02',
     tag: 'Identity',
-    title: 'Position & identity integrity',
-    body: 'Frozen, teleporting or otherwise inconsistent tracks become bounded integrity questions that can be compared with other evidence.',
-    points: ['Track consistency', 'Identity context', 'No automatic verdict'],
-    code: 'ID ? = ID',
+    title: 'Position and identity problems',
+    body: 'Frozen positions, impossible jumps and inconsistent identifiers are recorded as integrity problems. They are questions about the track, not automatic claims about the vessel.',
+    points: ['Track consistency', 'Identifier history', 'Alternative explanations'],
+    code: 'TRACK ?',
     tone: 'lime',
   },
   {
     n: 'MAR / 03',
     tag: 'Behaviour',
-    title: 'Transfers, rendezvous & loitering',
-    body: 'Spatial and temporal relationships between vessels are grouped into episodes only when the underlying observations are compatible.',
-    points: ['STS context', 'Loiter patterns', 'Independent lineage checks'],
-    code: 'OBS × OBS',
+    title: 'Rendezvous and loitering',
+    body: 'Close approaches, prolonged co-location and unusual stationary behaviour are compared in time and space. A transfer is only described as such when the available evidence supports that wording.',
+    points: ['Time overlap', 'Distance and speed', 'Independent evidence'],
+    code: 'VESSEL × VESSEL',
     tone: 'paper',
   },
   {
     n: 'MAR / 04',
     tag: 'Context',
-    title: 'Safety, infrastructure & security',
-    body: 'Navigation status, ports, offshore infrastructure, sanctions references, radio and satellite observations can add context to a case.',
-    points: ['Navigation safety', 'Infrastructure proximity', 'Sanctions as context'],
-    code: 'CTX + EVID',
+    title: 'What surrounds the event',
+    body: 'Ports, offshore infrastructure, sanctions references, navigation status, radio and satellite observations can change how a track should be read. Context is stored as context, not as guilt by association.',
+    points: ['Ports and infrastructure', 'Sanctions references', 'Radio and satellite'],
+    code: 'CASE + CONTEXT',
     tone: 'amber',
   },
 ];
@@ -44,16 +44,17 @@ const CAPABILITIES = [
 export default function MDA() {
   return (
     <section id="maritime-detail" className="section programme maritime-detail">
-      <SectionLabel index="Maritime / 006" title="Maritime investigations" tone="light" />
+      <SectionLabel index="Maritime / 004" title="How a maritime investigation starts" tone="light" />
       <div className="maritime-detail__head">
         <Display id="maritime-title">
-          Detect the pattern.<br />Preserve the uncertainty.
+          An anomaly is a reason to look.<br />It is not the answer.
         </Display>
         <Reveal delay={120}>
           <p>
-            SeaCommons combines vessel movement, radio, satellite and contextual observations to
-            identify patterns worth investigating. A pattern is not an accusation: the system keeps
-            coverage limitations, source lineage and alternative explanations visible throughout.
+            SeaCommons looks for patterns in vessel movement and identity, then asks whether the
+            pattern survives basic checks: was there coverage, is the identity stable, is the timing
+            compatible, and is there any independent evidence? Cases that fail those checks should
+            stay weak, expire or never be published.
           </p>
         </Reveal>
       </div>
@@ -76,11 +77,11 @@ export default function MDA() {
       </Reveal>
 
       <Reveal className="maritime-detail__rule">
-        <strong>Key rule</strong>
+        <strong>Corroboration rule</strong>
         <p>
-          More providers do not automatically mean more independent evidence. One AIS broadcast
-          received through two transports remains one AIS lineage. Corroboration requires evidence
-          that is genuinely independent of the same underlying observation.
+          Two providers do not necessarily mean two sources. If both are carrying the same AIS
+          broadcast, SeaCommons still has one AIS lineage. Independent corroboration has to come
+          from evidence that is independent of that broadcast.
         </p>
       </Reveal>
     </section>
