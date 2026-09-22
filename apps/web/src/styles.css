@@ -775,6 +775,7 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 
 .link-button {
   display: inline-flex;
+  text-decoration: none;
   align-items: center;
   justify-content: center;
 }
