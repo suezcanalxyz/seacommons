@@ -43,42 +43,90 @@
     },
     {
       "source": "/docs",
-      "has": [{ "type": "host", "value": "api.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "api.seacommons.org"
+        }
+      ],
       "destination": "/api/proxy?root=docs"
     },
     {
+      "source": "/docs",
+      "destination": "/docs.html"
+    },
+    {
+      "source": "/docs/",
+      "destination": "/docs.html"
+    },
+    {
       "source": "/redoc",
-      "has": [{ "type": "host", "value": "api.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "api.seacommons.org"
+        }
+      ],
       "destination": "/api/proxy?root=redoc"
     },
     {
       "source": "/openapi.json",
-      "has": [{ "type": "host", "value": "api.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "api.seacommons.org"
+        }
+      ],
       "destination": "/api/proxy?root=openapi"
     },
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "api.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "api.seacommons.org"
+        }
+      ],
       "destination": "/api/proxy?health=1"
     },
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "play.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "play.seacommons.org"
+        }
+      ],
       "destination": "/play.html"
     },
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "live.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "live.seacommons.org"
+        }
+      ],
       "destination": "/console.html"
     },
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "engine.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "engine.seacommons.org"
+        }
+      ],
       "destination": "/console.html"
     },
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "console.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "console.seacommons.org"
+        }
+      ],
       "destination": "/console.html"
     },
     {
