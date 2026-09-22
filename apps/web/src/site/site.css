@@ -280,6 +280,19 @@ button:focus-visible {
   .site-header__live { display: none; }
 }
 
+
+#humanitarian,
+#maritime,
+#humanitarian-detail,
+#maritime-detail,
+#sources,
+#research,
+#system,
+#method,
+#governance {
+  scroll-margin-top: calc(var(--header-h) + 18px);
+}
+
 /* ── Hero ────────────────────────────────────────────────────────────────── */
 .hero {
   position: relative;
