@@ -24,6 +24,7 @@ const NAV = [
   ['Play', 'https://play.seacommons.org'],
   ['Humanitarian', '#humanitarian'],
   ['Maritime', '#maritime'],
+  ['Sources', '#sources'],
   ['Method', '#method'],
   ['Governance', '#governance'],
 ];
@@ -112,13 +113,14 @@ export function Footer() {
           <BrandMark small />
           <span>SEA<br />COMMONS</span>
         </a>
-        <p>Open research infrastructure for accountable maritime evidence.</p>
+        <p>Public research infrastructure for humanitarian and maritime evidence.</p>
       </div>
       <div className="site-footer__cols">
         <div>
           <span>Domains</span>
           <a href="#humanitarian">Humanitarian</a>
           <a href="#maritime">Maritime</a>
+          <a href="#sources">Sources</a>
           <a href="#method">Method</a>
           <a href="#governance">Governance</a>
         </div>
@@ -138,7 +140,7 @@ export function Footer() {
         </div>
       </div>
       <div className="site-footer__base">
-        <span>SeaCommons / research prototype</span>
+        <span>SeaCommons / public research infrastructure</span>
         <a href="https://suezcanal.xyz">Developed by suezcanal.xyz</a>
         <span>© 2026</span>
       </div>
