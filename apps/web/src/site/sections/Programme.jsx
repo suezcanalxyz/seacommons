@@ -5,38 +5,38 @@ import { SectionLabel, Display } from '../bits.jsx';
 const WP = [
   {
     n: '01',
-    tag: 'Observe',
-    title: 'Collect heterogeneous evidence',
-    body: 'Public reporting, AIS, maritime radio, satellite observations and environmental context enter as source-bound records.',
-    points: ['Source identity', 'Time and location provenance', 'Privacy classification'],
+    tag: 'Keep',
+    title: 'Store what arrived',
+    body: 'The first record keeps the source, transport, timestamps, payload reference and location precision before interpretation begins.',
+    points: ['Original source', 'Received time', 'Precision and privacy'],
     code: 'SOURCE → OBS',
     tone: 'blue',
   },
   {
     n: '02',
-    tag: 'Normalize',
-    title: 'Translate without flattening',
-    body: 'Provider-specific fields are mapped into a shared vocabulary while authority, precision and lineage remain attached.',
-    points: ['Canonical vocabulary', 'Coordinate precision', 'Transport ≠ source'],
+    tag: 'Translate',
+    title: 'Put different sources in one vocabulary',
+    body: 'Provider-specific fields are normalised so they can be compared. The normalisation does not erase who said what or how precise the original information was.',
+    points: ['Canonical event types', 'Source lineage kept', 'Unknown stays unknown'],
     code: 'OBS → EVENT',
     tone: 'lime',
   },
   {
     n: '03',
-    tag: 'Correlate',
-    title: 'Build episodes and hypotheses',
-    body: 'Compatible observations are grouped using identity, time, space and lineage constraints. Derived cues remain distinguishable from facts.',
-    points: ['Episodes', 'Investigation hypotheses', 'Independent corroboration'],
-    code: 'EVENT → CASE?',
+    tag: 'Test',
+    title: 'Derive cues without promoting them to facts',
+    body: 'Rules and models can flag a gap, a rendezvous, an identity problem or response context. These outputs remain derived cues until other evidence supports a stronger claim.',
+    points: ['Rules and models', 'Counter-indicators', 'Expiry when support disappears'],
+    code: 'EVENT → CUE',
     tone: 'paper',
   },
   {
     n: '04',
     tag: 'Publish',
-    title: 'Project only what is safe',
-    body: 'A reduced public projection powers Live, while Play preserves the persistent public case record and timeline.',
-    points: ['Public publication gate', 'Lifecycle integrity', 'Persistent archive'],
-    code: 'CASE → LIVE / PLAY',
+    title: 'Show only what survives the public rules',
+    body: 'Cases cross into Live only after privacy, lifecycle, source policy and location precision are checked. Play keeps the public history after the immediate Live window.',
+    points: ['Fail closed', 'Versioned lifecycle', 'Persistent archive'],
+    code: 'CASE → PUBLIC',
     tone: 'amber',
   },
 ];
@@ -44,16 +44,16 @@ const WP = [
 export default function Programme() {
   return (
     <section id="research" className="section programme">
-      <SectionLabel index="Pipeline / 004" title="How SeaCommons works" tone="light" />
+      <SectionLabel index="Pipeline / 005" title="What happens after a source arrives" tone="light" />
       <div className="programme__head">
         <Display id="research-title">
-          From source material<br />to a traceable public case.
+          The system keeps the steps separate<br />because they mean different things.
         </Display>
         <Reveal delay={120}>
           <p>
-            SeaCommons does not collapse every signal into one confidence score. Each transformation
-            remains attributable, so a reader can distinguish source material, normalization,
-            derived analysis, correlation and publication.
+            A source observation, a normalised event, a derived cue and a public case are not four
+            names for the same object. SeaCommons keeps the boundaries between them so later readers
+            can see what was received, what software added and what was finally published.
           </p>
         </Reveal>
       </div>
