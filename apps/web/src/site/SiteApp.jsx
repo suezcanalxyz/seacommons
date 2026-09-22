@@ -43,9 +43,9 @@ export default function SiteApp() {
         <OverallCounter />
         <Domains />
         <Humanitarian />
+        <MDA />
         <Programme />
         <SystemView />
-        <MDA />
         <Governance />
         <Closing />
       </main>
