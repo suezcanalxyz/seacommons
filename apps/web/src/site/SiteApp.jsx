@@ -4,6 +4,7 @@ import Hero from './sections/Hero.jsx';
 import OverallCounter from './sections/OverallCounter.jsx';
 import Domains from './sections/Domains.jsx';
 import Humanitarian from './sections/Humanitarian.jsx';
+import Sources from './sections/Sources.jsx';
 import Programme from './sections/Programme.jsx';
 import SystemView from './sections/SystemView.jsx';
 import MDA from './sections/MDA.jsx';
@@ -44,6 +45,7 @@ export default function SiteApp() {
         <Domains />
         <Humanitarian />
         <MDA />
+        <Sources />
         <Programme />
         <SystemView />
         <Governance />
