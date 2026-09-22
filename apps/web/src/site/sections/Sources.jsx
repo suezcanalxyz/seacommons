@@ -13,7 +13,7 @@ const SOURCES = [
     name: 'AIS',
     examples: 'Vessel identity · position · course · speed · reception context',
     use: 'Reconstruct vessel movement, compare response activity, detect gaps and test spatial relationships.',
-    limit: 'No AIS message does not mean no vessel. Reception, provider coverage and equipment state can all produce missing data.',
+    limit: 'Missing AIS positions do not prove that a vessel was absent or deliberately silent. Reception, provider coverage and equipment state can all create gaps.',
   },
   {
     name: 'Maritime radio',
