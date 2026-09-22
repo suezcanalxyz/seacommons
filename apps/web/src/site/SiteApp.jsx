@@ -5,7 +5,6 @@ import OverallCounter from './sections/OverallCounter.jsx';
 import Environments from './sections/Environments.jsx';
 import Programme from './sections/Programme.jsx';
 import SystemView from './sections/SystemView.jsx';
-import Engine from './sections/Engine.jsx';
 import MDA from './sections/MDA.jsx';
 import Governance from './sections/Governance.jsx';
 import Closing from './sections/Closing.jsx';
@@ -44,7 +43,6 @@ export default function SiteApp() {
         <Environments />
         <Programme />
         <SystemView />
-        <Engine />
         <MDA />
         <Governance />
         <Closing />
