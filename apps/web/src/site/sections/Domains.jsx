@@ -6,8 +6,8 @@ const HUMANITARIAN = [
   'Distress and rescue reports',
   'Missing persons and shipwrecks',
   'Pushbacks and migration incidents',
-  'SAR activity and resolution evidence',
-  'NGO and civil-fleet verification',
+  'SAR activity and rescue outcomes',
+  'Civil SAR and NGO verification',
 ];
 
 const MARITIME = [
@@ -22,36 +22,36 @@ const SURFACES = [
   {
     label: 'Live',
     href: 'https://live.seacommons.org',
-    meta: 'Current public cases',
-    body: 'A case-first operational view of Humanitarian and Maritime events that satisfy the public publication gate.',
+    meta: 'What is public now',
+    body: 'Cases that currently pass the public publication rules. Live is case-first: it is not a raw AIS map and it does not expose every observation in the backend.',
   },
   {
     label: 'Play',
     href: 'https://play.seacommons.org',
-    meta: 'Persistent case archive',
-    body: 'The public catalogue of cases, timelines and evidence records. Cases remain inspectable as new information arrives.',
+    meta: 'What remains on record',
+    body: 'The public archive. A case keeps its timeline, evidence and later updates instead of disappearing when the immediate Live window ends.',
   },
   {
     label: 'Docs',
     href: '/docs',
-    meta: 'Technical reference',
-    body: 'Architecture, provenance, verification, source independence, API contracts, privacy boundaries and system limits.',
+    meta: 'How the system works',
+    body: 'The technical reference for source lineage, correlation, public/private boundaries, API contracts, modelling, tests and known limitations.',
   },
 ];
 
 export default function Domains() {
   return (
     <section className="section domains" aria-labelledby="domains-title">
-      <SectionLabel index="Scope / 001" title="Two domains, one evidence model" />
+      <SectionLabel index="Scope / 001" title="What SeaCommons follows" />
       <div className="domains__head">
         <Display id="domains-title">
-          Humanitarian incidents<br />and maritime investigations.
+          Two kinds of cases.<br />Different risks, different rules.
         </Display>
         <Reveal delay={120}>
           <p>
-            SeaCommons collects fragmented maritime evidence and turns it into traceable public
-            cases. The system separates what was observed from what was derived, keeps source
-            lineage visible, and never treats an analytical cue as a factual finding.
+            Humanitarian cases concern people in distress, rescue activity and what happened next.
+            Maritime cases concern vessel behaviour, identity, navigation and other activity worth
+            examining. They share infrastructure, but they do not share the same publication rules.
           </p>
         </Reveal>
       </div>
@@ -62,16 +62,16 @@ export default function Domains() {
             <span>Humanitarian</span>
             <small>People · distress · rescue</small>
           </div>
-          <h3>Events where human safety and rescue context are central.</h3>
+          <h3>Where are people reported to be at risk, and what can we establish about the response?</h3>
           <p>
-            Humanitarian records combine operational reports, civil SAR information, public
-            testimony, vessel context and resolution evidence under stricter privacy and
-            publication rules.
+            A humanitarian case can begin with a call, a public report or a rescue organisation's
+            update. Coordinates may be exact, approximate, area-level or absent. SeaCommons keeps
+            that precision visible and restricts sensitive material before anything becomes public.
           </p>
           <ul>
             {HUMANITARIAN.map((item) => <li key={item}>{item}</li>)}
           </ul>
-          <a href="#humanitarian-detail">How Humanitarian cases are built ↓</a>
+          <a href="#humanitarian-detail">Humanitarian method ↓</a>
         </article>
 
         <article id="maritime" className="domain-card domain-card--maritime">
@@ -79,21 +79,21 @@ export default function Domains() {
             <span>Maritime</span>
             <small>Vessels · behaviour · context</small>
           </div>
-          <h3>Investigations into vessel behaviour, identity and maritime context.</h3>
+          <h3>What is unusual in a vessel's track, identity or operating context, and what else explains it?</h3>
           <p>
-            Maritime cases combine AIS, radio, satellite and contextual sources to surface
-            patterns worth investigating while keeping uncertainty, coverage limitations and
-            source independence explicit.
+            A gap in AIS, a close approach between vessels or a sanctions match is not a conclusion.
+            SeaCommons treats these as reasons to look closer, checks coverage and source lineage,
+            and keeps ordinary explanations visible alongside the suspicious ones.
           </p>
           <ul>
             {MARITIME.map((item) => <li key={item}>{item}</li>)}
           </ul>
-          <a href="#maritime-detail">How Maritime investigations are built ↓</a>
+          <a href="#maritime-detail">Maritime method ↓</a>
         </article>
       </Reveal>
 
       <div className="domains__surfaces">
-        <SectionLabel index="Access / 002" title="Three ways to read SeaCommons" />
+        <SectionLabel index="Access / 002" title="Live, archive and technical reference" />
         <Reveal className="domains__surface-grid" stagger={90}>
           {SURFACES.map((surface) => (
             <SpotlightCard as="a" className="surface-card" href={surface.href} key={surface.label}>
