@@ -13,7 +13,7 @@ const PRINCIPLES = ['Minimise what is stored', 'Keep purpose explicit', 'Review 
 export default function Governance() {
   return (
     <section id="governance" className="section governance">
-      <SectionLabel index="Governance / 007" title="Public does not mean everything" />
+      <SectionLabel index="Governance / 008" title="Public does not mean everything" />
       <div className="governance__grid">
         <Display id="governance-title">
           SeaCommons publishes a reduced record.<br />The sensitive material stays behind it.
