@@ -36,14 +36,13 @@ Engineering documentation remains versioned under `docs/`, with `docs/README.md`
 The institutional site and public docs must reuse canonical public contracts.
 They must not implement a parallel analytics pipeline.
 
-The homepage system view reads:
+The homepage totals strip reads only:
 
-- `GET /api/v1/status?hours=24`
 - `GET /api/v1/play/counts`
 
-The status endpoint already defines the semantics for raw observations,
-normalized events, derived cues, episodes, hypotheses, corroboration, public
-Live, sensor activity and freshness.
+Those values are all-time public catalogue counts and must stay visually comparable on one line. Rolling-window pipeline, sensor and freshness metrics belong in technical/status surfaces, not in the homepage totals strip.
+
+The status endpoint remains the canonical contract for raw observations, normalized events, derived cues, episodes, hypotheses, corroboration, public Live, sensor activity and freshness.
 
 ## Routing
 
@@ -65,3 +64,23 @@ Public copy should distinguish observation from interpretation. In particular:
 - category colour and lifecycle styling are separate;
 - model coordinates remain derived candidates rather than reported geometry;
 - no automated illegality finding is implied by anomaly labels.
+
+
+## Simulation and reconstruction presentation
+
+SeaCommons must not use decorative simulation as a substitute for explanation.
+
+Any future public reconstruction or simulation must expose, in the same interface:
+
+- the observed inputs and their provenance;
+- the explicit modelled outputs, visually separated from observations;
+- the scenario origin and time window;
+- forcing inputs and parameter versions;
+- assumptions and degraded/fallback inputs;
+- a time control that shows how the result evolves;
+- uncertainty or ensemble spread, not only a single path;
+- a plain-language explanation of what changed and why;
+- the analytical question the reconstruction helps answer;
+- links back to the underlying case/evidence record.
+
+A simulation that cannot explain its inputs, transformations, uncertainty and purpose should not be published as a SeaCommons product surface.
