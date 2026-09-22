@@ -21,7 +21,7 @@ const METHOD = [
 export default function SystemView() {
   return (
     <section id="system" className="section systemview">
-      <SectionLabel index="Architecture / 006" title="The evidence model" tone="dark" />
+      <SectionLabel index="Architecture / 007" title="The evidence model" tone="dark" />
       <div className="systemview__head">
         <Display id="system-title">
           Six stages.<br />Each answers a different question.
@@ -47,7 +47,7 @@ export default function SystemView() {
       </Reveal>
 
       <div id="method" className="method">
-        <SectionLabel index="Method / 006A" title="Four distinctions the interface should never hide" />
+        <SectionLabel index="Method / 007A" title="Four distinctions the interface should never hide" />
         <div className="method__head">
           <Display id="method-title">
             The useful part is not the marker.<br />It is the chain behind it.
