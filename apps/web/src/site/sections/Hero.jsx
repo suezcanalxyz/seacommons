@@ -40,8 +40,9 @@ export default function Hero() {
         </h1>
         <Reveal className="hero__intro" delay={200}>
           <p>
-            SeaCommons receives heterogeneous observations, preserves provenance, derives bounded
-            analytical cues and groups related evidence without converting uncertainty into certainty.
+            SeaCommons tracks Humanitarian incidents and Maritime investigations by connecting
+            public reporting, vessel data, radio, satellite and environmental evidence into
+            traceable cases without converting uncertainty into certainty.
           </p>
           <div className="hero__actions">
             <Magnetic>
@@ -56,7 +57,7 @@ export default function Hero() {
         </Reveal>
       </div>
 
-      <a className="hero__scroll" href="#environments" aria-label="Scroll to environments">
+      <a className="hero__scroll" href="#humanitarian" aria-label="Scroll to Humanitarian and Maritime overview">
         <span />
       </a>
     </section>
