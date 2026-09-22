@@ -26,17 +26,23 @@ export default function OverallCounter() {
     let cancelled = false;
     const apiBase = resolveSiteApiBase();
 
-    Promise.allSettled([
-      fetchJson(apiBase, '/api/v1/status?hours=24', undefined, 7000),
-      fetchJson(apiBase, '/api/v1/play/counts', undefined, 7000),
-    ]).then(([statusResult, playResult]) => {
+    async function refresh() {
+      const [statusResult, playResult] = await Promise.allSettled([
+        fetchJson(apiBase, '/api/v1/status?hours=24', undefined, 7000),
+        fetchJson(apiBase, '/api/v1/play/counts', undefined, 7000),
+      ]);
       if (cancelled) return;
       const status = statusResult.status === 'fulfilled' ? statusResult.value : null;
       const play = playResult.status === 'fulfilled' ? playResult.value : null;
       setData({ status, play });
-    });
+    }
 
-    return () => { cancelled = true; };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, []);
 
   const status = data?.status;
@@ -47,7 +53,7 @@ export default function OverallCounter() {
     ['Derived cues', status?.pipeline?.derived_cues, 'Rule/model outputs · not findings'],
     ['Episodes', status?.pipeline?.maritime_episodes, 'Related evidence grouped'],
     ['Live cases', status?.live?.total, `Humanitarian ${formatCount(status?.live?.humanitarian)} · Maritime ${formatCount(status?.live?.maritime)}`],
-    ['Archive', play?.total_count, 'Persisted public case records'],
+    ['Archive · all time', play?.total_count, 'Persisted public case records'],
   ];
 
   const sensorActivity = [
@@ -70,11 +76,11 @@ export default function OverallCounter() {
   return (
     <section className="overall-counter" aria-label="SeaCommons canonical pipeline totals">
       <div className="overall-counter__intro">
-        <span>Canonical pipeline / 24 h</span>
+        <span>Pipeline / 24 h · Archive / all time</span>
         <strong>Evidence in motion</strong>
         <p>
-          These are processing stages, not interchangeable incident counts. Live is the smaller
-          public subset that passes the publication gate.
+          Pipeline and sensor activity use a rolling 24-hour window. Archive is the all-time
+          public case catalog. These counts describe different objects and are not interchangeable.
         </p>
         <small className="overall-counter__freshness">{data ? relativeFreshness(newest) : 'connecting…'}</small>
         <div className="overall-counter__sensors" aria-label="Sensor activity in the last 24 hours">
