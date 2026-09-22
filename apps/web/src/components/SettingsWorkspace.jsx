@@ -35,9 +35,9 @@ export function SettingsWorkspace() {
           SeaCommons documentation is maintained with the SeaCommons codebase. API reference remains generated from the deployed OpenAPI contract.
         </p>
         <div className="action-row">
-          <a href="https://seacommons.org/docs" target="_blank" rel="noopener noreferrer">Docs ↗</a>
-          <a href="https://api.seacommons.org/docs" target="_blank" rel="noopener noreferrer">API ↗</a>
-          <a href="https://github.com/suezcanalxyz/seacommons" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+          <a className="link-button" href="https://seacommons.org/docs" target="_blank" rel="noopener noreferrer">Docs ↗</a>
+          <a className="link-button" href="https://api.seacommons.org/docs" target="_blank" rel="noopener noreferrer">API ↗</a>
+          <a className="link-button" href="https://github.com/suezcanalxyz/seacommons" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
         </div>
       </section>
 
@@ -75,8 +75,8 @@ export function SystemWorkspace({
           <input value={apiBase} onChange={(event) => setApiBase(event.target.value)} placeholder="http://127.0.0.1:8000" />
         </label>
         <div className="action-row" style={{ marginTop: 8 }}>
-          <a href={`${apiBase}/docs`} target="_blank" rel="noopener noreferrer">API docs ↗</a>
-          <a href={`${apiBase}/redoc`} target="_blank" rel="noopener noreferrer">ReDoc ↗</a>
+          <a className="link-button" href={`${apiBase}/docs`} target="_blank" rel="noopener noreferrer">API docs ↗</a>
+          <a className="link-button" href={`${apiBase}/redoc`} target="_blank" rel="noopener noreferrer">ReDoc ↗</a>
         </div>
       </section>
 
