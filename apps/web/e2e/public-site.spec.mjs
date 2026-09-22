@@ -47,7 +47,7 @@ test('homepage states key epistemic and privacy limits plainly', async ({ page }
   await page.goto(SITE_URL);
 
   await expect(page.getByText(/An extracted coordinate is not automatically a verified coordinate/i)).toBeVisible();
-  await expect(page.getByText(/No AIS message does not mean no vessel/i)).toBeVisible();
+  await expect(page.getByText(/Missing AIS positions do not prove that a vessel was absent or deliberately silent/i)).toBeVisible();
   await expect(page.getByText(/Humanitarian privacy comes before map precision/i)).toBeVisible();
   await expect(page.getByText(/can be incomplete, delayed or wrong/i)).toBeVisible();
 });
