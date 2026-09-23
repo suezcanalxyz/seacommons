@@ -738,6 +738,7 @@ def public_signal_collection(
     # do not appear on the rolling Live surface.  This is aggregate-only: no
     # raw text, identifiers or coordinates leave the API.
     humanitarian_candidate_drops: Counter[str] = Counter()
+    humanitarian_eligible_features: list[dict[str, Any]] = []
     for candidate in durable_alarm_phone:
         candidate_domain = candidate.maritime_domain()
         candidate_mode = (
@@ -759,7 +760,13 @@ def public_signal_collection(
         if not lifecycle.is_within_live_retention_window(candidate, now=now):
             humanitarian_candidate_drops["outside_live_window"] += 1
             continue
-        humanitarian_candidate_drops["eligible"] += 1
+        humanitarian_eligible_features.append(candidate_feature)
+
+    deduped_candidate_features = dedupe_public_case_items(humanitarian_eligible_features)
+    deduplicated_count = len(humanitarian_eligible_features) - len(deduped_candidate_features)
+    if deduplicated_count:
+        humanitarian_candidate_drops["duplicate_public_case"] += deduplicated_count
+    humanitarian_candidate_drops["eligible"] = len(deduped_candidate_features)
 
     by_source: dict[str, list[IntelEvent]] = {}
     for event in events:
