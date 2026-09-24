@@ -17,16 +17,16 @@ Every public case belongs to one of two families.
 
 Cases about people in distress, rescue activity and what happened next, for
 example distress, rescue, missing, shipwreck and pushback. The Live legend shows
-these as a Humanitarian family. Live uses category-specific colors and marker
-styles rather than one universal Humanitarian color. Humanitarian privacy comes
+these as a Humanitarian family. The intended category color is red; check the
+current Live legend for marker styles. Humanitarian privacy comes
 before map precision, so a marker may be approximate.
 
 ### Maritime
 
 Cases about vessel behaviour, identity, navigation and other activity, for
 example AIS gaps, position integrity, rendezvous, loitering and navigation
-safety. Live uses category-specific colors and marker styles rather than one
-universal Maritime color. A Maritime label names the type of investigation. It
+safety. The intended convention keeps Maritime markers visually distinct from
+Humanitarian ones. A Maritime label names the type of investigation. It
 is not an accusation.
 
 ## Terms
