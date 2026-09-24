@@ -7,6 +7,8 @@ the newest dated filename.
 ## Public documentation
 
 - [Public documentation contract](PUBLIC_DOCUMENTATION.md) — ownership of `seacommons.org/docs`, public information architecture, routing and metric semantics.
+- [Public glossary](GLOSSARY.md) — plain-language definitions for Humanitarian,
+  Maritime, AIS, dark activity, derived cues, DSC/NAVTEX and corroboration.
 - Public reader entrypoint: **https://seacommons.org/docs**.
 - Generated API reference: **https://api.seacommons.org/docs**.
 

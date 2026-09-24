@@ -63,6 +63,7 @@ flowchart LR
 Read the canonical design docs before diving into the code:
 [Architecture](./docs/ARCHITECTURE.md) ·
 [Data flow](./docs/DATA_FLOW.md) ·
+[Public glossary](./docs/GLOSSARY.md) ·
 [Security model](./docs/SECURITY_MODEL.md) ·
 [Realtime architecture](./docs/REALTIME_ARCHITECTURE.md) ·
 [Testing strategy](./docs/TESTING.md) ·
