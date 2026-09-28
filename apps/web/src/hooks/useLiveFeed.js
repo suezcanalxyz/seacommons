@@ -175,6 +175,21 @@ export function useLiveFeed({
           const features = isPublicLiveHost
             ? receivedSignalFeatures(data.features)
             : data.features;
+          const compatibilityFallback = isPublicLiveHost
+            && data.meta?.compatibility_mode === true;
+
+          // The Vercel compatibility response is deliberately an empty 200 when
+          // the Oracle origin is unreachable. Treating that as a healthy empty
+          // snapshot erases valid cached/live events and makes the map appear
+          // empty during an infrastructure outage. Preserve the last good state
+          // and surface transport degradation instead.
+          if (compatibilityFallback && features.length === 0) {
+            setIntelConnected(false);
+            setIntelMode((previous) => previous === 'ws' ? 'ws' : 'offline');
+            markFeedFailure();
+            return;
+          }
+
           setIntelEvents(features);
           storeCachedEvents(isPublicLiveHost, features, liveMode);
           if (isPublicLiveHost) {
