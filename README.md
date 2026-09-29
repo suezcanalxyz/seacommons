@@ -15,6 +15,14 @@ at production-engineering standard: typed domain contracts, blocking CI
 quality/security gates, realtime reliability invariants encoded as tests, and
 canonical architecture documentation.
 
+## Explore / Contribute
+
+- [Project site](https://seacommons.org) — public overview and product context.
+- [Public Live](https://live.seacommons.org) — read-only public map.
+- [Documentation](https://seacommons.org/docs) — public technical reference.
+- [Good first issues](https://github.com/suezcanalxyz/seacommons/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) — newcomer-friendly tasks.
+- [Contributing guide](./CONTRIBUTING.md) — setup and contribution expectations.
+
 ## Live surfaces
 
 | Surface | URL | What it is |
