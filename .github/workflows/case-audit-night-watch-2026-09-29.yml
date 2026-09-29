@@ -1,0 +1,80 @@
+name: Case audit night watch (2026-09-29)
+
+on:
+  schedule:
+    # GitHub cron is UTC. 21:00 CEST Sep 29 through 08:00 CEST Sep 30.
+    - cron: "0 19-23 29 9 *"
+    - cron: "0 0-6 30 9 *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: case-audit-night-watch-2026-09-29
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Audit public Live and Play case classification
+        run: |
+          mkdir -p artifacts
+          python scripts/night_watch_case_audit.py \
+            --output artifacts/night-watch-report.md \
+            --json-output artifacts/night-watch-report.json \
+            --repo-root .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: case-audit-${{ github.run_id }}
+          path: artifacts/night-watch-report.*
+          if-no-files-found: error
+
+      - name: Update rolling review branch and PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT_BRANCH: automation/night-watch-case-audit-2026-09-29
+          REPORT_PATH: docs/night-watch/2026-09-29-case-audit.md
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "seacommons-night-watch[bot]"
+          git config user.email "seacommons-night-watch[bot]@users.noreply.github.com"
+          git fetch origin "$REPORT_BRANCH" || true
+          if git show-ref --verify --quiet "refs/remotes/origin/$REPORT_BRANCH"; then
+            git checkout -B "$REPORT_BRANCH" "origin/$REPORT_BRANCH"
+            git merge --ff-only "origin/${GITHUB_REF_NAME}" || true
+          else
+            git checkout -b "$REPORT_BRANCH"
+          fi
+          mkdir -p "$(dirname "$REPORT_PATH")"
+          cp artifacts/night-watch-report.md "$REPORT_PATH"
+          git add "$REPORT_PATH"
+          if git diff --cached --quiet; then
+            echo "No report change to commit."
+          else
+            git commit -m "audit: update hourly Live/Play case review"
+            git push --set-upstream origin "$REPORT_BRANCH"
+          fi
+
+          existing="$(gh pr list --head "$REPORT_BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$existing" ]]; then
+            gh pr create \
+              --base main \
+              --head "$REPORT_BRANCH" \
+              --title "audit: overnight Live/Play case classification review" \
+              --body "Rolling privacy-safe audit for the Sep 29-30 night watch. Checks public Live/Play family and case-type classification, surfaces pleasure/passenger/ferry/fishing/tug as contextual review only, and records no distress coordinates. This PR is for human review tomorrow; it does not auto-merge or change case classification."
+          else
+            echo "Updated rolling PR #$existing"
+          fi
