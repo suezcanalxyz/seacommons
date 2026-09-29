@@ -1,0 +1,134 @@
+name: Live + Play night watch (2026-09-29)
+
+on:
+  schedule:
+    # GitHub cron is UTC. 21:00 CEST on Sep 29 through 08:00 CEST on Sep 30.
+    - cron: "0 19-23 29 9 *"
+    - cron: "0 0-6 30 9 *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-play-night-watch
+  cancel-in-progress: false
+
+jobs:
+  window-guard:
+    runs-on: ubuntu-latest
+    outputs:
+      active: ${{ steps.guard.outputs.active }}
+    steps:
+      - id: guard
+        shell: bash
+        run: |
+          if [[ "$(date -u +%Y)" == "2026" ]]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  api:
+    needs: window-guard
+    if: needs.window-guard.outputs.active == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e "apps/api[dev]"
+      - name: Full backend suite
+        run: python -m pytest -q
+      - name: Live publication and taxonomy gates
+        run: >-
+          python -m pytest -q
+          tests/test_live_feed.py
+          tests/test_live_resolved_visibility.py
+          tests/test_live_contracts.py
+          tests/test_live_compartments.py
+          tests/test_live_taxonomy.py
+          tests/test_public_policy.py
+      - name: Database migrations
+        run: python -m alembic upgrade head
+        working-directory: apps/api
+        env:
+          DATABASE_URL: sqlite:////tmp/night_watch_migrations.db
+
+  web:
+    needs: window-guard
+    if: needs.window-guard.outputs.active == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build:unified
+
+  edge:
+    needs: window-guard
+    if: needs.window-guard.outputs.active == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/edge
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/edge/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npx wrangler deploy --dry-run
+
+  browser-e2e:
+    needs: [window-guard, web]
+    if: needs.window-guard.outputs.active == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Deterministic Live/Play browser gate
+        run: npm run test:e2e
+
+  production-smoke:
+    needs: [window-guard, browser-e2e, edge, api]
+    if: needs.window-guard.outputs.active == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Real production smoke for live.seacommons.org and play.seacommons.org
+        run: npm run test:e2e:production
