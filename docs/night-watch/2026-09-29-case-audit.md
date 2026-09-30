@@ -1,54 +1,59 @@
 # SeaCommons night-watch case audit
 
-Updated: 2026-09-30T01:48:05+00:00
+Updated: 2026-09-30T02:51:54+00:00
 
 Privacy-safe review only: no coordinates or current distress locations are recorded. Vessel class is contextual and never an automatic exclusion.
 
 ## Snapshot
 
-- Live public records inspected: 81
+- Live public records inspected: 82
 - Play/archive public records inspected: 4
-- Classification findings: 85
+- Classification findings: 86
 - Vessel-class context reviews: 0
 
 ## Classification findings
 
 | Surface | Public ID | Check | Detail |
 | --- | --- | --- | --- |
-| Live | `episode:subj:imo:9554042:spoofing_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:9741566:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9644055:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9313723:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:mmsi:247070890:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:8645806:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:imo:9303558:safety_episode:1` | unknown_family | safety |
-| Live | `episode:subj:imo:9414503:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:mmsi:226000000:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:1002184:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9968607:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:9936616:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:1012036:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:mmsi:224377530:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:mmsi:224070490:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:mmsi:215000957:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:9566447:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9795921:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9268289:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:9810355:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9250062:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:imo:9900825:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:imo:1012660:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:imo:1046037:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:mmsi:247056620:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:mmsi:244615881:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:mmsi:228364000:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:mmsi:224107960:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:imo:8799944:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:mmsi:228194000:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:imo:9554042:safety_episode:1` | unknown_family | safety |
 | Live | `episode:subj:mmsi:247176300:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9763124:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:mmsi:224005270:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:9714678:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:1012660:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:9993975:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:1046037:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:mmsi:247214300:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:mmsi:247099800:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:mmsi:247056620:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:8991475:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9438767:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:mmsi:224377530:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:mmsi:244615881:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:9303558:safety_episode:1` | unknown_family | safety |
 | Live | `episode:subj:imo:7810143:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:8799944:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:9554042:spoofing_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:mmsi:224070490:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:mmsi:228194000:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:9554042:safety_episode:1` | unknown_family | safety |
+| Live | `episode:subj:mmsi:224005270:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9565041:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9286279:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:imo:9830604:rendezvous_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9391397:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:1010686:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:1001130:safety_episode:1` | unknown_family | safety |
@@ -69,7 +74,6 @@ Privacy-safe review only: no coordinates or current distress locations are recor
 | Live | `episode:subj:mmsi:224072430:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:mmsi:247308420:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9595187:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:imo:8601680:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9932232:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9866005:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:mmsi:238961610:gap_episode:1` | unknown_family | grey_zone |
@@ -78,6 +82,7 @@ Privacy-safe review only: no coordinates or current distress locations are recor
 | Live | `episode:subj:imo:9527776:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9750024:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:8911841:gap_episode:1` | unknown_family | grey_zone |
+| Live | `episode:subj:imo:9458523:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9354777:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:8718017:spoofing_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:mmsi:247120520:spoofing_episode:1` | unknown_family | grey_zone |
@@ -90,10 +95,6 @@ Privacy-safe review only: no coordinates or current distress locations are recor
 | Live | `episode:subj:mmsi:247161600:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9963982:gap_episode:1` | unknown_family | grey_zone |
 | Live | `episode:subj:imo:9350707:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:imo:9496161:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:imo:1111404_subj:imo:9830604:rendezvous_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:mmsi:247620200:gap_episode:1` | unknown_family | grey_zone |
-| Live | `episode:subj:mmsi:238073040:gap_episode:1` | unknown_family | grey_zone |
 | Live | `intel:bc91250d` | unknown_family | sar |
 | Live | `intel:ab8e58a3` | unknown_family | sar |
 | Play | `60ac64bb-e859-4676-bbee-41ee99123032` | missing_family | sar_case |
