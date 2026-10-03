@@ -19,6 +19,8 @@ function useClocks() {
 }
 
 const NAV = [
+  ['Project', '#overview'],
+  ['Partner workspace', '/partners.html'],
   ['Docs', '/docs'],
   ['Live', 'https://live.seacommons.org'],
   ['Play', 'https://play.seacommons.org'],
@@ -132,6 +134,7 @@ export function Footer() {
         </div>
         <div>
           <span>Framework</span>
+          <a href="/partners.html">Partner workspace</a>
           <a href="/docs">Docs</a>
           <a href="https://api.seacommons.org/docs">API reference ↗</a>
           <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0 ↗</a>

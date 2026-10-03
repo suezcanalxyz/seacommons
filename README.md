@@ -18,6 +18,8 @@ canonical architecture documentation.
 ## Explore / Contribute
 
 - [Project site](https://seacommons.org) — public overview and product context.
+- [Partner workspace](./docs/PARTNER_WORKSPACE.md) — authorised email access,
+  private documents, analysis, workflow and milestones.
 - [Public Live](https://live.seacommons.org) — read-only public map.
 - [Documentation](https://seacommons.org/docs) — public technical reference.
 - [Good first issues](https://github.com/suezcanalxyz/seacommons/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) — newcomer-friendly tasks.

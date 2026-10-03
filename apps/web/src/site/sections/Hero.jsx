@@ -34,16 +34,16 @@ export default function Hero() {
       <div className="hero__copy">
         <p className="kicker"><ShinyText static>Humanitarian incidents · Maritime investigations</ShinyText></p>
         <h1 id="hero-title" className="hero__title">
-          <SplitText text="SeaCommons reconstructs maritime incidents" as="span" />
+          <SplitText text="Maritime intelligence" as="span" />
           <br />
-          <em><SplitText text="from incomplete evidence." as="span" delay={520} /></em>
+          <em><SplitText text="with traceable evidence." as="span" delay={520} /></em>
         </h1>
         <Reveal className="hero__intro" delay={200}>
           <p>
-            Public reports, vessel tracks, maritime radio, satellite observations and environmental
-            data rarely arrive together. SeaCommons keeps them as separate pieces of evidence,
-            records where each one came from, and links them only when time, place, identity and
-            source lineage support the connection.
+            SeaCommons is open-source research infrastructure for humanitarian incidents and
+            maritime investigations. It connects public reports with vessel, radio, satellite
+            and environmental evidence to build case records from incomplete evidence,
+            preserving source lineage and uncertainty.
           </p>
           <div className="hero__actions">
             <Magnetic>
@@ -51,8 +51,8 @@ export default function Hero() {
                 Open Live <span aria-hidden="true">↗</span>
               </a>
             </Magnetic>
-            <a className="btn btn--ghost" href="/docs">
-              Documentation <span aria-hidden="true">→</span>
+            <a className="btn btn--ghost" href="/partners.html">
+              Partner workspace <span aria-hidden="true">→</span>
             </a>
           </div>
         </Reveal>

@@ -23,6 +23,11 @@ export default defineConfig({
     launchOptions: { args: [`--host-resolver-rules=${PUBLIC_HOST_RULES}`] },
   },
   webServer: {
+    // Synthetic Auth project. Partner tests intercept every provider request.
+    env: {
+      VITE_PARTNER_SUPABASE_URL: 'https://partner-test.supabase.co',
+      VITE_PARTNER_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test_only',
+    },
     command: 'VITE_APP_PROFILE=live DISABLE_HMR=true npm run dev -- --host 0.0.0.0 --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,

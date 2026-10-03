@@ -25,6 +25,7 @@ export default defineConfig(({mode}) => {
         input: {
           console: path.resolve(__dirname, 'index.html'),
           site: path.resolve(__dirname, 'site.html'),
+          partners: path.resolve(__dirname, 'partners.html'),
           docs: path.resolve(__dirname, 'docs.html'),
           play: path.resolve(__dirname, 'play.html'),
           status: path.resolve(__dirname, 'status.html'),

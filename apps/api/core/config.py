@@ -65,6 +65,12 @@ class SuezCanalConfig(BaseSettings):
     OIDC_ROLES_CLAIM: str = "realm_access.roles"
     OIDC_DEFAULT_ROLES: list[str] = []
     OIDC_ORGANIZATION_CLAIM: str = "organization_id"
+    # Partner workspace auth is independent from the operational OIDC provider.
+    PARTNER_AUTH_ENABLED: bool = False
+    PARTNER_AUTH_ISSUER: str = ""
+    PARTNER_AUTH_AUDIENCE: str = "authenticated"
+    # Server-owned email -> {subject, organization_id, role}. Never browser metadata.
+    PARTNER_ACCOUNTS: dict[str, dict[str, str]] = {}
     DEFAULT_RETENTION_DAYS: int = 365
     TELEGRAM_WEBHOOK_SECRET: str = ""
     META_APP_ID: str = ""

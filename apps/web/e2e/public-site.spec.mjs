@@ -5,7 +5,7 @@ const SITE_URL = 'http://127.0.0.1:4173/site.html';
 test('institutional homepage explains Humanitarian and Maritime without legacy simulation surfaces', async ({ page }) => {
   await page.goto(SITE_URL);
 
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('incomplete evidence');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('traceable evidence');
   await expect(page.locator('#humanitarian')).toContainText('Humanitarian');
   await expect(page.locator('#maritime')).toContainText('Maritime');
 

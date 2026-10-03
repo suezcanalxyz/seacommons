@@ -3,6 +3,7 @@ import { fetchJson } from '../../services/api/client.js';
 import { resolveSiteApiBase } from '../liveApi.js';
 
 function formatCount(value) {
+  if (value == null || value === '') return '—';
   const n = Number(value);
   if (!Number.isFinite(n)) return '—';
   return new Intl.NumberFormat('en-GB').format(n);
@@ -10,6 +11,8 @@ function formatCount(value) {
 
 export default function OverallCounter() {
   const [play, setPlay] = useState(null);
+  const [status, setStatus] = useState('loading');
+  const [fetchedAt, setFetchedAt] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -18,9 +21,17 @@ export default function OverallCounter() {
     async function refresh() {
       try {
         const next = await fetchJson(apiBase, '/api/v1/play/counts', undefined, 7000);
-        if (!cancelled) setPlay(next);
+        if (!cancelled) {
+          setPlay(next);
+          setStatus('available');
+          setFetchedAt(new Date().toISOString());
+        }
       } catch {
-        if (!cancelled) setPlay(null);
+        if (!cancelled) {
+          setPlay(null);
+          setStatus('unavailable');
+          setFetchedAt(null);
+        }
       }
     }
 
@@ -40,13 +51,20 @@ export default function OverallCounter() {
   ];
 
   return (
+    <>
     <section className="overall-counter" aria-label="SeaCommons all-time public case totals">
       {metrics.map(([label, value]) => (
         <div className="overall-counter__metric" key={label}>
           <span>{label}</span>
-          <strong>{play ? formatCount(value) : '…'}</strong>
+          <strong>{play ? formatCount(value) : status === 'loading' ? '…' : '—'}</strong>
         </div>
       ))}
     </section>
+    <p className="overall-counter__context" role="status">
+      Public archive records / not verified outcomes.
+      {' '}{status === 'loading' ? 'Loading totals.' : status === 'unavailable' ? 'Totals currently unavailable.' : `Retrieved ${fetchedAt.slice(11, 19)} UTC.`}
+      {' '}<a href="/status">Source status ↗</a>
+    </p>
+    </>
   );
 }

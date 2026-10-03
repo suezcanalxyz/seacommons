@@ -13,6 +13,36 @@ class Base(DeclarativeBase):
     pass
 
 
+class WorkspaceRecord(Base):
+    """Private documents and work items, scoped to the server-assigned organisation."""
+    __tablename__ = "workspace_records"
+    id = Column(String(36), primary_key=True)
+    organization_id = Column(String(128), nullable=False, index=True)
+    kind = Column(String(24), nullable=False)
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=False, default="")
+    status = Column(String(24), nullable=False, default="draft")
+    owner = Column(String(200), nullable=False, default="")
+    due_on = Column(String(10), nullable=True)
+    version = Column(Integer, nullable=False, default=1)
+    created_by = Column(String(128), nullable=False)
+    updated_by = Column(String(128), nullable=False)
+    created_at = Column(String(32), nullable=False)
+    updated_at = Column(String(32), nullable=False)
+
+
+class WorkspaceRevision(Base):
+    """Private edit history. Body snapshots stay in the protected database."""
+    __tablename__ = "workspace_revisions"
+    id = Column(String(36), primary_key=True)
+    record_id = Column(String(36), nullable=False, index=True)
+    organization_id = Column(String(128), nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    actor = Column(String(128), nullable=False)
+    timestamp = Column(String(32), nullable=False)
+    snapshot = Column(JSON, nullable=False)
+
+
 # docs/prompt.md P0: one lossless width for every column that stores an intel
 # event identity. Generated ids like ``spoof:247384100:circular`` overflowed
 # the old 16-char intel_events.id; the 16 / 32 / 36 spread across the linked
