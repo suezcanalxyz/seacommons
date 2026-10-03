@@ -18,6 +18,8 @@ canonical architecture documentation.
 ## Explore / Contribute
 
 - [Project site](https://seacommons.org) — public overview and product context.
+- [Funding brief](./docs/FUNDING_BRIEF.md) — proposed research pilot, deliverables
+  and evaluation criteria. Web presentation builds at `/funding.html`.
 - [Public Live](https://live.seacommons.org) — read-only public map.
 - [Documentation](https://seacommons.org/docs) — public technical reference.
 - [Good first issues](https://github.com/suezcanalxyz/seacommons/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) — newcomer-friendly tasks.

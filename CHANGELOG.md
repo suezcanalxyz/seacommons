@@ -7,6 +7,11 @@ Keep a Changelog structure; releases are identified by Git tags when published.
 
 ### Added
 
+- Institutional project brief, proposed six-month funding pilot and ten-slide
+  web funding presentation at `/funding.html`, with shared deliverables and
+  evaluation measures. Public totals distinguish unavailable values from zero
+  and show retrieval time. No backend or incident-policy changes.
+
 - OSINT cross-source fusion engine (`core/intel/fusion.py`): every intel event
   now fans out through a new `intel_store.subscribe` hook to a correlation
   engine that runs rules over the recent-event window. A rule that fires emits
