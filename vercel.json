@@ -4,40 +4,134 @@
   "outputDirectory": "apps/web/dist",
   "framework": "vite",
   "rewrites": [
-    { "source": "/api/v1/live/signals", "destination": "/api/live?resource=signals" },
-    { "source": "/api/v1/live/sources", "destination": "/api/live?resource=sources" },
-    { "source": "/api/v1/live/drifts", "destination": "/api/live?resource=drifts" },
-    { "source": "/api/v1/live/archives", "destination": "/api/live?resource=archives" },
-    { "source": "/api/v1/live/archives/:event_id/geojson", "destination": "/api/live?resource=archive&event_id=:event_id" },
-    { "source": "/api/:path*", "destination": "/api/proxy?path=:path*" },
-    { "source": "/health", "destination": "/api/proxy?health=1" },
-    { "source": "/ready", "destination": "/api/proxy?ready=1" },
-    { "source": "/status", "destination": "/status.html" },
-    { "source": "/docs", "has": [{ "type": "host", "value": "api.seacommons.org" }], "destination": "/api/proxy?root=docs" },
-    { "source": "/redoc", "has": [{ "type": "host", "value": "api.seacommons.org" }], "destination": "/api/proxy?root=redoc" },
-    { "source": "/openapi.json", "has": [{ "type": "host", "value": "api.seacommons.org" }], "destination": "/api/proxy?root=openapi" },
-    { "source": "/", "has": [{ "type": "host", "value": "api.seacommons.org" }], "destination": "/api/proxy?health=1" },
+    {
+      "source": "/api/v1/workspace/:path*",
+      "destination": "/api/workspace?path=:path*"
+    },
+    {
+      "source": "/partners",
+      "destination": "/partners.html"
+    },
+    {
+      "source": "/api/v1/live/signals",
+      "destination": "/api/live?resource=signals"
+    },
+    {
+      "source": "/api/v1/live/sources",
+      "destination": "/api/live?resource=sources"
+    },
+    {
+      "source": "/api/v1/live/drifts",
+      "destination": "/api/live?resource=drifts"
+    },
+    {
+      "source": "/api/v1/live/archives",
+      "destination": "/api/live?resource=archives"
+    },
+    {
+      "source": "/api/v1/live/archives/:event_id/geojson",
+      "destination": "/api/live?resource=archive&event_id=:event_id"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/api/proxy?path=:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/proxy?health=1"
+    },
+    {
+      "source": "/ready",
+      "destination": "/api/proxy?ready=1"
+    },
+    {
+      "source": "/status",
+      "destination": "/status.html"
+    },
+    {
+      "source": "/docs",
+      "has": [
+        {
+          "type": "host",
+          "value": "api.seacommons.org"
+        }
+      ],
+      "destination": "/api/proxy?root=docs"
+    },
+    {
+      "source": "/redoc",
+      "has": [
+        {
+          "type": "host",
+          "value": "api.seacommons.org"
+        }
+      ],
+      "destination": "/api/proxy?root=redoc"
+    },
+    {
+      "source": "/openapi.json",
+      "has": [
+        {
+          "type": "host",
+          "value": "api.seacommons.org"
+        }
+      ],
+      "destination": "/api/proxy?root=openapi"
+    },
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "play.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "api.seacommons.org"
+        }
+      ],
+      "destination": "/api/proxy?health=1"
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "play.seacommons.org"
+        }
+      ],
       "destination": "/console.html"
     },
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "live.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "live.seacommons.org"
+        }
+      ],
       "destination": "/console.html"
     },
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "engine.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "engine.seacommons.org"
+        }
+      ],
       "destination": "/console.html"
     },
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "console.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "console.seacommons.org"
+        }
+      ],
       "destination": "/console.html"
     },
-    { "source": "/", "destination": "/site.html" }
+    {
+      "source": "/",
+      "destination": "/site.html"
+    }
   ],
   "env": {
     "VITE_PUBLIC_BASE": "/",
@@ -47,5 +141,12 @@
     "VITE_OIDC_CLIENT_ID": "seacommons-console",
     "VITE_EDGE_API_BASE": "https://seacommons-edge.seacommons.workers.dev",
     "VITE_LIVE_EDGE_BASE": "https://seacommons-edge.seacommons.workers.dev"
-  }
+  },
+  "redirects": [
+    {
+      "source": "/funding.html",
+      "destination": "/partners.html",
+      "permanent": false
+    }
+  ]
 }

@@ -11,7 +11,6 @@ import MDA from './sections/MDA.jsx';
 import Governance from './sections/Governance.jsx';
 import Closing from './sections/Closing.jsx';
 import ProjectOverview from './sections/ProjectOverview.jsx';
-import Funding from './sections/Funding.jsx';
 
 /** Progress bar bound to scroll — a small premium cue, transform-only. */
 function ScrollProgress() {
@@ -52,7 +51,6 @@ export default function SiteApp() {
         <Programme />
         <SystemView />
         <Governance />
-        <Funding />
         <Closing />
       </main>
       <Footer />

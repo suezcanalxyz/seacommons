@@ -7,10 +7,11 @@ Keep a Changelog structure; releases are identified by Git tags when published.
 
 ### Added
 
-- Institutional project brief, proposed six-month funding pilot and ten-slide
-  web funding presentation at `/funding.html`, with shared deliverables and
-  evaluation measures. Public totals distinguish unavailable values from zero
-  and show retrieval time. No backend or incident-policy changes.
+- Customer-facing institutional brief and invite-only partner workspace for
+  documents (including decks), analysis, workflow and milestones. Email OTP
+  uses Supabase Auth and a server-owned email/subject/organisation allowlist.
+  Workspace records and version history stay in the private database. Public
+  totals distinguish unavailable values from zero and show retrieval time.
 
 - OSINT cross-source fusion engine (`core/intel/fusion.py`): every intel event
   now fans out through a new `intel_store.subscribe` hook to a correlation

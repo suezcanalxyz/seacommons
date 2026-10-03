@@ -33,6 +33,7 @@ from core import bootstrap
 from core.api.routes import alerts, drift, anomaly, forensic, integrations, ops, vessels
 from core.api.routes import ingest, probability, weather, zones, intel, cases, governance, live, play, connectors
 from core.api.routes import mda, audit, operator_dashboard, operator_ingestion, status
+from core.api.routes import workspace
 from core.db.session import init_database
 from core.security import READ_ROLES, WRITE_ROLES, require_roles, validate_production_security
 from core.config_validation import validate_configuration
@@ -166,6 +167,10 @@ async def authorization_gate(request, call_next):
         "/api/v1/ingest/meta/whatsapp",
         "/api/v1/ingest/telegram", "/api/v1/ingest/webhook",
     } or (
+        # Dedicated partner auth is enforced in every workspace route, including
+        # when operational AUTH_ENABLED is false. Never use the dev principal.
+        path.startswith("/api/v1/workspace/")
+    ) or (
         # Public Play simulations and the public Live map's "simulate drift"
         # action are resource-bounded by the route's per-IP rate limit and
         # global drift concurrency slot. Operational workspaces, forensic
@@ -214,7 +219,11 @@ async def authorization_gate(request, call_next):
                 require_roles(request, READ_ROLES)
     except HTTPException as exc:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
-    return await call_next(request)
+    response = await call_next(request)
+    if path.startswith("/api/v1/workspace/"):
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Vary"] = "Authorization"
+    return response
 
 # CORS: allow_credentials MUST be False when allow_origins=["*"].
 # Starlette ≥0.40 raises ValueError otherwise (HTTP spec violation).
@@ -259,6 +268,7 @@ app.include_router(audit.router)
 app.include_router(operator_ingestion.router)
 app.include_router(operator_dashboard.router)
 app.include_router(status.router)
+app.include_router(workspace.router)
 
 
 @app.get("/")

@@ -47,12 +47,12 @@ export default function Hero() {
           </p>
           <div className="hero__actions">
             <Magnetic>
-              <a className="btn btn--primary" href="#funding">
-                Explore the project <span aria-hidden="true">→</span>
+              <a className="btn btn--primary" href="https://live.seacommons.org">
+                Open Live <span aria-hidden="true">↗</span>
               </a>
             </Magnetic>
-            <a className="btn btn--ghost" href="https://live.seacommons.org">
-              Open Live <span aria-hidden="true">↗</span>
+            <a className="btn btn--ghost" href="/partners.html">
+              Partner workspace <span aria-hidden="true">→</span>
             </a>
           </div>
         </Reveal>

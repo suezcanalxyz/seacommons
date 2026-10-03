@@ -77,6 +77,10 @@ function requestHeaders(headers, upstreamVirtualHost) {
 }
 
 export default function handler(req, res) {
+  if (upstreamPath(req.query || {}).startsWith('/api/v1/workspace/')) {
+    res.setHeader('cache-control', 'no-store');
+    return res.status(400).json({ detail: 'Use the dedicated workspace endpoint' });
+  }
   const upstreamVirtualHost = selectUpstream(req.headers);
   const upstream = http.request(
     {

@@ -16,26 +16,17 @@ test('failed public totals do not imply zero activity or continuous loading', as
 });
 
 for (const width of [1440, 390]) {
-  test(`funding journey and ten-slide deck are readable at ${width}px`, async ({ page }) => {
+  test(`public site points to partner access without fundraising at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('http://127.0.0.1:4173/site.html');
-    await expect(page.locator('#overview')).toContainText('Current stage');
-    await page.locator('#funding').scrollIntoViewIfNeeded();
-    await expect(page.locator('#funding')).toContainText('Months 5–6');
-    await page.getByRole('link', { name: /Read the funding deck/ }).click();
-    await expect(page).toHaveURL(/funding.html$/);
-    await expect(page.locator('.deck-slide')).toHaveCount(10);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Maritime evidence infrastructure');
-    await expect(page.locator('#slide-5')).toContainText('Requires validation');
-    await expect(page.locator('#slide-8')).toContainText('Proposed measures');
+    await expect(page.locator('#overview')).toContainText('Partner workspace');
+    await expect(page.getByText(/funding|sponsorship|six-month pilot/i)).toHaveCount(0);
+    await page.locator('.hero__actions').getByRole('link', { name: /Partner workspace/ }).click();
+    await expect(page).toHaveURL(/partners.html$/);
+    await expect(page.getByRole('heading', { name: 'Partner workspace' })).toBeVisible();
+    await expect(page.getByLabel('Work email')).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Workspace' })).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    for (const slide of await page.locator('.deck-slide').all()) {
-      expect(await slide.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
-    }
-    await page.emulateMedia({ media: 'print' });
-    for (const slide of await page.locator('.deck-slide').all()) {
-      expect(await slide.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
-    }
   });
 }
