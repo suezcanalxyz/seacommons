@@ -1649,6 +1649,7 @@ class MdaWatch:
             teleport_pattern = None
             coincident_teleport_peers: tuple[str, ...] = ()
             teleport_near_port = None
+            trigger = None
             if reason == "teleport":
                 teleport_pattern = teleport_pattern_pre
                 trigger = self._teleport_trigger(pts)
@@ -1710,6 +1711,20 @@ class MdaWatch:
                     "teleport_pattern": teleport_pattern,
                     "coincident_teleport_peers": list(coincident_teleport_peers),
                     "teleport_near_port": teleport_near_port,
+                    "movement_evidence": (
+                        {
+                            "from": {"lat": trigger["from"][0], "lon": trigger["from"][1]},
+                            "to": {"lat": trigger["to"][0], "lon": trigger["to"][1]},
+                            "distance_km": round(float(trigger["distance_km"]), 2),
+                            "implied_speed_kn": round(float(trigger["implied_speed_kn"]), 1),
+                            "time_delta_s": round(float(
+                                (_parse(pts[trigger["index"] + 1]["ts"]) - _parse(pts[trigger["index"]]["ts"])).total_seconds()
+                            ), 1),
+                            "from_at": str(pts[trigger["index"]]["ts"]),
+                            "to_at": str(pts[trigger["index"] + 1]["ts"]),
+                        }
+                        if trigger is not None else None
+                    ),
                 },
             ), dedup_key=f"spoof:{mmsi}:{reason}:{int(time.time() // 21600)}")
             emitted += 1

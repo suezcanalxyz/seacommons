@@ -69,9 +69,11 @@ def test_restricted_manoeuvrability_states_the_dredger_caveat():
     assert result.confidence < 0.5  # weak signal -- no vessel-role check yet
 
 
-def test_unhandled_kind_returns_none_not_generic_prose():
-    assert build_assessment({"ais_nav_status_kind": "some_future_kind"}) is None
-    assert build_assessment({}) is None
+def test_unhandled_kind_falls_back_to_context_assessment_not_event_type_prose():
+    result = build_assessment({"ais_nav_status_kind": "some_future_kind"})
+    assert result is not None
+    assert "context" in result.interpretation.lower()
+    assert "some_future_kind" not in result.interpretation
 
 
 def test_build_assessment_accepts_an_event_object_not_just_a_dict():

@@ -121,6 +121,24 @@ export function edgeEventToFeature(event) {
       ...(typeof props.area_weather_narrowed === 'boolean'
         ? { area_weather_narrowed: props.area_weather_narrowed }
         : {}),
+      ...(typeof props.linked_mmsi === 'string' ? { linked_mmsi: props.linked_mmsi } : {}),
+      ...(typeof props.mmsi === 'string' ? { mmsi: props.mmsi } : {}),
+      ...(isRecord(props.assessment) ? { assessment: props.assessment } : {}),
+      ...(typeof props.detection_reason === 'string'
+        ? { detection_reason: props.detection_reason } : {}),
+      ...(typeof props.detail === 'string' ? { detail: props.detail } : {}),
+      ...(typeof props.anomaly_type === 'string' ? { anomaly_type: props.anomaly_type } : {}),
+      ...(isRecord(props.movement_evidence)
+        ? { movement_evidence: props.movement_evidence } : {}),
+      ...(Number.isFinite(Number(props.independent_source_count))
+        ? { independent_source_count: Number(props.independent_source_count) } : {}),
+      ...(isRecord(props.offshore_context) ? { offshore_context: props.offshore_context } : {}),
+      ...(typeof props.offshore_rationale === 'string'
+        ? { offshore_rationale: props.offshore_rationale } : {}),
+      ...(isRecord(props.infrastructure) ? { infrastructure: props.infrastructure } : {}),
+      ...(isRecord(props.port_call) ? { port_call: props.port_call } : {}),
+      ...(Number.isFinite(Number(props.latest_speed_kn))
+        ? { latest_speed_kn: Number(props.latest_speed_kn) } : {}),
     },
   };
 }

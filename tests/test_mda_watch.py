@@ -491,6 +491,12 @@ def test_spoofing_teleport_requires_sustained_relocation():
     event = _alerts("ais_anomaly")[0]
     assert event.metadata["anomaly_type"] == "position_jump"
     assert event.metadata["teleport_pattern"] == "sustained_relocation"
+    movement = event.metadata["movement_evidence"]
+    assert movement["distance_km"] > 15
+    assert movement["implied_speed_kn"] > 60
+    assert movement["time_delta_s"] > 0
+    assert set(movement["from"]) == {"lat", "lon"}
+    assert set(movement["to"]) == {"lat", "lon"}
 
 
 def test_spoofing_rejects_single_frame_longitude_glitch():

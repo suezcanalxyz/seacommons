@@ -800,6 +800,17 @@ def _public_intel_feature(
                 "archived" if age_hours >= lifecycle.ARCHIVE_AFTER_HOURS else "active"
             )
 
+    # Preserve canonical vessel identity on the public projection. Several
+    # detector producers store MMSI on IntelEvent.linked_mmsi rather than in
+    # free-form metadata; the edge/browser report needs the same identifier to
+    # load track/context evidence.
+    if (
+        event.linked_mmsi
+        and compartment_for_domain(resolved_domain) != "humanitarian"
+    ):
+        metadata.setdefault("linked_mmsi", str(event.linked_mmsi))
+        metadata.setdefault("mmsi", str(event.linked_mmsi))
+
     # docs/fixes.md M0.2: case-specific EventAssessment, projected as a
     # nested `assessment` object so ConePanel can stop using
     # descriptionOf(props.type) as the event-specific Interpretation.
