@@ -55,6 +55,39 @@ test('preserves lifecycle and explicit area precision from the edge', () => {
   assert.equal(feature.properties.location_precision, 'area_low_confidence');
 });
 
+test('preserves vessel identity, assessment and movement evidence from edge events', () => {
+  const feature = edgeEventToFeature(edgeEvent({
+    type: 'ais_anomaly',
+    properties: {
+      incident_id: 'spoof:372497000:teleport',
+      incident_lifecycle: 'active',
+      title: 'AIS impossible-movement candidate — 372497000',
+      linked_mmsi: '372497000',
+      mmsi: '372497000',
+      anomaly_type: 'position_jump',
+      detection_reason: 'Sustained relocation pattern',
+      assessment: {
+        observation: '625 km relocation over 11 min',
+        interpretation: 'Position integrity anomaly requiring review.',
+        evidence_level: 'derived',
+      },
+      movement_evidence: {
+        from: { lat: 42.1, lon: 7.0 },
+        to: { lat: 36.8, lon: 15.2 },
+        distance_km: 625,
+        time_delta_s: 660,
+        implied_speed_kn: 1840,
+      },
+    },
+  }));
+
+  assert.equal(feature.properties.linked_mmsi, '372497000');
+  assert.equal(feature.properties.mmsi, '372497000');
+  assert.equal(feature.properties.assessment.evidence_level, 'derived');
+  assert.equal(feature.properties.movement_evidence.implied_speed_kn, 1840);
+  assert.equal(feature.properties.detection_reason, 'Sustained relocation pattern');
+});
+
 test('drops malformed events at the edge trust boundary', () => {
   const features = edgeSnapshotToFeatures({
     events: [edgeEvent(), null, { id: 'missing-contract' }, edgeEvent({ geometry: { type: 'Point' } })],

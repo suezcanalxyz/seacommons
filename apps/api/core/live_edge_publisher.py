@@ -319,6 +319,32 @@ def public_event_from_row(
         metadata=metadata,
     )
     from core.domain.incident_taxonomy import taxonomy_fields
+    from core.intel.public_policy import compartment_for_domain
+    from core.intel.assessment import build_assessment
+
+    public_mmsi = (
+        event.linked_mmsi
+        if compartment_for_domain(event.maritime_domain()) != "humanitarian"
+        else ""
+    )
+
+    assessment = build_assessment(event)
+    assessment_payload = (
+        {
+            "observation": assessment.observation,
+            "interpretation": assessment.interpretation,
+            "evidence_level": assessment.evidence_level,
+            "confidence": assessment.confidence,
+            "confidence_basis": assessment.confidence_basis,
+            "supporting_evidence": assessment.supporting_evidence,
+            "contradicting_evidence": assessment.contradicting_evidence,
+            "caveats": assessment.caveats,
+            "recommended_action": assessment.recommended_action,
+            "rule_ids": assessment.rule_ids,
+            "classification_version": assessment.classification_version,
+        }
+        if assessment is not None else None
+    )
 
     taxonomy = taxonomy_fields(
         event_type=event.type,
@@ -357,7 +383,28 @@ def public_event_from_row(
         "resolved_at": incident_state["resolved_at"] if incident_state else None,
         "expired": expired,
         "persons": metadata.get("persons"),
-        "linked_mmsi": event.linked_mmsi,
+        "linked_mmsi": public_mmsi,
+        "mmsi": public_mmsi or (
+            metadata.get("mmsi")
+            if compartment_for_domain(event.maritime_domain()) != "humanitarian"
+            else None
+        ),
+        "assessment": assessment_payload,
+        "detection_reason": metadata.get("detection_reason"),
+        "detail": metadata.get("detail"),
+        "anomaly_type": metadata.get("anomaly_type"),
+        "movement_evidence": metadata.get("movement_evidence"),
+        "reason_codes": metadata.get("reason_codes"),
+        "counter_indicators": metadata.get("counter_indicators"),
+        "evidence_stage": metadata.get("evidence_stage"),
+        "analysis_state": metadata.get("analysis_state"),
+        "independence_groups": metadata.get("independence_groups"),
+        "independent_source_count": metadata.get("independent_source_count"),
+        "offshore_context": metadata.get("offshore_context"),
+        "offshore_rationale": metadata.get("offshore_rationale"),
+        "infrastructure": metadata.get("infrastructure"),
+        "port_call": metadata.get("port_call"),
+        "latest_speed_kn": metadata.get("latest_speed_kn"),
         "last_source_seen_at": metadata.get("last_source_seen_at"),
         "repost_count": repost_count,
         "thread_reposts": [

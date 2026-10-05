@@ -398,9 +398,8 @@ def test_nuc_event_projects_a_case_specific_assessment_block() -> None:
     assert assessment["rule_ids"] == ["not_under_command_sustained"]
 
 
-def test_event_with_no_assessor_omits_the_assessment_block_entirely() -> None:
-    """No generic fallback: an event kind assessment.py has no assessor for
-    (e.g. an operational hazard feed) must not carry an `assessment` key."""
+def test_hazard_event_gets_category_specific_assessment() -> None:
+    """Public hazard context now carries category-specific interpretation."""
     event = IntelEvent(
         id="no-assessor-01",
         type="gdacs",
@@ -422,7 +421,9 @@ def test_event_with_no_assessor_omits_the_assessment_block_entirely() -> None:
     feature = _public_intel_feature(event, allowed_domains=frozenset({"safety"}))
 
     assert feature is not None
-    assert "assessment" not in feature["properties"]
+    assessment = feature["properties"]["assessment"]
+    assert "regional hazard" in assessment["interpretation"].lower()
+    assert assessment["evidence_level"] in {"observed", "corroborated"}
 
 
 def test_unlabelled_context_stays_operator_only() -> None:

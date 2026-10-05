@@ -297,7 +297,20 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
   const props = feature?.properties || {};
   const publicTrack = Array.isArray(props.observed_track) ? props.observed_track : [];
   const dossierTrack = Array.isArray(dossier?.track_points) ? dossier.track_points : [];
-  const observed = (publicTrack.length >= 2 ? publicTrack : dossierTrack)
+  const movementEvidence = props.movement_evidence && typeof props.movement_evidence === 'object'
+    ? props.movement_evidence : null;
+  const triggerTrack = movementEvidence?.from && movementEvidence?.to
+    ? [
+        { ...movementEvidence.from, at: movementEvidence.from_at },
+        { ...movementEvidence.to, at: movementEvidence.to_at },
+      ]
+    : [];
+  const sourceTrack = publicTrack.length >= 2
+    ? publicTrack
+    : triggerTrack.length >= 2
+      ? triggerTrack
+      : dossierTrack;
+  const observed = sourceTrack
     .map((point) => ({ lat: Number(point?.lat), lon: Number(point?.lon) }))
     .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
   const forecast = driftFeature?.geometry?.type === 'LineString'
@@ -375,6 +388,17 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
       </svg>
       <div className="intel-report-legend">
         {observed.length >= 2 && <span><i className="is-observed" /> AIS observed · {observed.length} fixes</span>}
+        {movementEvidence && Number.isFinite(Number(movementEvidence.distance_km)) && (
+          <span>
+            trigger · {Number(movementEvidence.distance_km).toFixed(1)} km
+            {Number.isFinite(Number(movementEvidence.time_delta_s))
+              ? ' / ' + (Number(movementEvidence.time_delta_s) / 60).toFixed(1) + ' min'
+              : ''}
+            {Number.isFinite(Number(movementEvidence.implied_speed_kn))
+              ? ' / ' + Number(movementEvidence.implied_speed_kn).toFixed(0) + ' kn implied'
+              : ''}
+          </span>
+        )}
         {forecast.length >= 2 && <span><i className="is-forecast" /> simulated drift · {forecast.length} steps</span>}
 
       </div>
@@ -689,7 +713,7 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
             </p>
           </>
         ) : (
-          <p className="intel-report-note">{props.detection_reason || props.detail || descriptionOf(props.type)}</p>
+          <p className="intel-report-note">{observationText(props, descriptionOf(props.type))}</p>
         )}
         {props.offshore_context?.offshore && (
           <div className="intel-report-warning">
