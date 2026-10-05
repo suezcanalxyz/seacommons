@@ -21,8 +21,14 @@ for _production_setting in (
     "OBJECT_STORAGE_ENDPOINT",
     "OBJECT_STORAGE_ACCESS_KEY",
     "OBJECT_STORAGE_SECRET_KEY",
+    "AISSTREAM_KEY",
+    "AISSTREAM_NGO_KEY",
 ):
     os.environ[_production_setting] = "false" if _production_setting == "TWIKIT_ENABLED" else ""
+# Never let a pytest process start production monitors just because the shell
+# inherited the VM service environment. Individual bootstrap tests explicitly
+# invoke/mocks the component they exercise.
+os.environ["INTEL_MONITORS_ENABLED"] = "false"
 os.environ["SEACOMMONS_FORENSIC_SYNC"] = "true"
 os.environ["SEACOMMONS_INTEL_PERSIST_SYNC"] = "true"
 
@@ -32,6 +38,12 @@ def pytest_sessionstart(session) -> None:
     from core.db.session import init_database
 
     init_database()
+
+
+@pytest.fixture(autouse=True)
+def _disable_background_api_sync(monkeypatch) -> None:
+    """Do not leave a DB-sync daemon running after TestClient lifespan tests."""
+    monkeypatch.setattr("core.api.main._start_intel_sync_loop", lambda: None)
 
 
 @pytest.fixture(autouse=True)
