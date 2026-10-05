@@ -34,6 +34,38 @@ def test_s1_stac_query_uses_the_current_copernicus_endpoint(monkeypatch):
     assert calls == ["https://stac.dataspace.copernicus.eu/v1/search"]
 
 
+def test_s1_stac_skips_invalid_time_window_without_provider_call(monkeypatch):
+    calls = []
+    monkeypatch.setattr("httpx.post", lambda *args, **kwargs: calls.append((args, kwargs)))
+    now = datetime.now(timezone.utc)
+    assert _recent_s1_scenes(
+        (13.0, 34.0, 14.0, 35.0),
+        now + timedelta(hours=3),
+        until=now,
+    ) == []
+    assert calls == []
+
+
+def test_s1_stac_clamps_bbox_to_wgs84(monkeypatch):
+    calls = []
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"features": []}
+
+    def fake_post(url, json=None, timeout=None):
+        calls.append(json)
+        return _FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+    now = datetime.now(timezone.utc)
+    _recent_s1_scenes((-181.0, -91.0, 181.0, 91.0), now - timedelta(hours=1), until=now)
+    assert calls[0]["bbox"] == [-180.0, -90.0, 180.0, 90.0]
+
+
 def test_gfw_sar_query_uses_4wings_and_classifies_unmatched_locally(monkeypatch):
     calls = []
 

@@ -417,7 +417,9 @@ def test_event_with_no_assessor_omits_the_assessment_block_entirely() -> None:
         },
     )
 
-    feature = _public_intel_feature(event)
+    # This test exercises assessment behaviour, not the default public
+    # compartment profile (which intentionally excludes Safety).
+    feature = _public_intel_feature(event, allowed_domains=frozenset({"safety"}))
 
     assert feature is not None
     assert "assessment" not in feature["properties"]
@@ -1784,6 +1786,37 @@ def test_user_signal_is_private_by_default() -> None:
         lon=14.1,
     )
     assert signal.publication_status == "private"
+
+
+def test_live_archives_include_canonical_play_dossiers(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "core.api.routes.play._get_play_catalog",
+        lambda: [{
+            "incident_id": "episode:test:1",
+            "reported_at": "2026-10-05T09:00:00+00:00",
+            "last_update_at": "2026-10-05T09:30:00+00:00",
+            "case_type": "dark_transit",
+            "domain": "maritime",
+            "geometry": {"type": "Point", "coordinates": [14.1, 35.5]},
+            "verification_status": "single_source_multi_indicator",
+            "evidence_stage": "derived",
+        }],
+    )
+
+    response = client.get("/api/v1/live/archives?limit=20")
+    assert response.status_code == 200
+    dossier = next(
+        item for item in response.json()["archives"]
+        if item["id"] == "episode:test:1"
+    )
+    assert dossier["kind"] == "play_dossier"
+    assert dossier["lat"] == 35.5
+    assert dossier["lon"] == 14.1
+    assert dossier["verification_status"] == "single_source_multi_indicator"
+
+    geo = client.get("/api/v1/live/archives/episode:test:1/geojson")
+    assert geo.status_code == 200
+    assert geo.json()["features"][0]["geometry"]["coordinates"] == [14.1, 35.5]
 
 
 def test_live_routes_remain_public_when_internal_reads_require_auth() -> None:

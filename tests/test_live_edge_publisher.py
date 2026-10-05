@@ -390,6 +390,19 @@ def test_publisher_heartbeat_is_separate_from_event_delivery(tmp_path: Path) -> 
     assert calls[0][2]["X-SeaCommons-Signature"] == signature("secret", body)
 
 
+def test_origin_status_marks_unresponsive_api_degraded(tmp_path: Path) -> None:
+    publisher = _publisher(tmp_path)
+    publisher.client.get = lambda url, timeout=None: SimpleNamespace(
+        status_code=200, json=lambda: {"status": "ok"}
+    )
+    assert publisher.origin_status() == "active"
+
+    publisher.client.get = lambda url, timeout=None: SimpleNamespace(
+        status_code=502, json=lambda: {}
+    )
+    assert publisher.origin_status() == "degraded"
+
+
 def _publisher(tmp_path: Path) -> LiveEdgePublisher:
     return LiveEdgePublisher(
         PublisherSettings(

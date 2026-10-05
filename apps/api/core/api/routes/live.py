@@ -348,6 +348,42 @@ async def live_archives(limit: int = Query(40, ge=1, le=200)):
     except Exception:  # pragma: no cover - archive listing is best-effort
         pass
 
+    # Play's canonical catalog includes public MaritimeEpisode and
+    # InvestigationHypothesis dossiers that do not necessarily own a drift.
+    # Keep this legacy endpoint as a compatibility projection of that catalog
+    # instead of silently limiting Play to completed-drift SAR rows.
+    try:
+        from core.api.routes.play import _get_play_catalog
+
+        for item in _get_play_catalog():
+            incident_id = str(item.get("incident_id") or "").strip()
+            if not incident_id or incident_id in seen:
+                continue
+            geometry = item.get("geometry")
+            lat = lon = None
+            if isinstance(geometry, dict) and geometry.get("type") == "Point":
+                coordinates = geometry.get("coordinates")
+                if isinstance(coordinates, (list, tuple)) and len(coordinates) >= 2:
+                    try:
+                        lon, lat = float(coordinates[0]), float(coordinates[1])
+                    except (TypeError, ValueError):
+                        lat = lon = None
+            archives.append({
+                "id": incident_id,
+                "timestamp": item.get("reported_at") or item.get("last_update_at"),
+                "lat": lat,
+                "lon": lon,
+                "vessel_type": item.get("case_type") or "case",
+                "persons": item.get("people_reported") or 1,
+                "kind": "play_dossier",
+                "domain": item.get("domain"),
+                "verification_status": item.get("verification_status"),
+                "evidence_stage": item.get("evidence_stage"),
+            })
+            seen.add(incident_id)
+    except Exception:  # pragma: no cover - compatibility catalog is best-effort
+        pass
+
     archives.sort(key=lambda a: str(a.get("timestamp") or ""), reverse=True)
     return {
         "archives": archives[:limit],
@@ -390,6 +426,31 @@ async def live_archive_geojson(event_id: str):
     alert_ok = alert is not None and alert.get("status") == "completed"
     drift_ok = bool(drift) and drift.get("status") == "completed"
     if not drift_ok or (alert is not None and not alert_ok):
+        # Canonical Play dossiers may be evidence cases without a drift model.
+        # Resolve their public geometry directly so every item exposed by the
+        # compatibility archive index has a usable map/detail target.
+        try:
+            from core.api.routes.play import _get_play_catalog
+
+            item = next(
+                (
+                    row for row in _get_play_catalog()
+                    if str(row.get("incident_id") or "") == event_id
+                ),
+                None,
+            )
+            geometry = item.get("geometry") if isinstance(item, dict) else None
+            if isinstance(geometry, dict) and geometry.get("type"):
+                return {"type": "FeatureCollection", "features": [{
+                    "type": "Feature",
+                    "geometry": geometry,
+                    "properties": {
+                        "incident_id": event_id,
+                        "kind": "play_dossier",
+                    },
+                }]}
+        except Exception:
+            pass
         raise HTTPException(status_code=404, detail="Archive not found")
     features = [
         feature

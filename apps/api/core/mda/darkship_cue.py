@@ -81,9 +81,29 @@ def _recent_s1_scenes(
         import httpx
 
         end = until or datetime.now(timezone.utc)
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=timezone.utc)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        if end < since:
+            return []
+
+        min_lon, min_lat, max_lon, max_lat = (float(value) for value in bbox)
+        if not all(math.isfinite(value) for value in (min_lon, min_lat, max_lon, max_lat)):
+            return []
+        # STAC bbox must remain inside WGS84 bounds and ordered. Reachable
+        # polygons can approach poles/dateline; clamp the query envelope
+        # rather than sending a provider-invalid request.
+        min_lon = max(-180.0, min(180.0, min_lon))
+        max_lon = max(-180.0, min(180.0, max_lon))
+        min_lat = max(-90.0, min(90.0, min_lat))
+        max_lat = max(-90.0, min(90.0, max_lat))
+        if min_lon >= max_lon or min_lat >= max_lat:
+            return []
+
         body = {
             "collections": ["SENTINEL-1"],
-            "bbox": list(bbox),
+            "bbox": [min_lon, min_lat, max_lon, max_lat],
             "datetime": f"{since.isoformat()}/{end.isoformat()}",
             "limit": 20,
         }
