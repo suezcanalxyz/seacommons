@@ -1788,35 +1788,56 @@ def test_user_signal_is_private_by_default() -> None:
     assert signal.publication_status == "private"
 
 
-def test_live_archives_include_canonical_play_dossiers(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "core.api.routes.play._get_play_catalog",
-        lambda: [{
-            "incident_id": "episode:test:1",
-            "reported_at": "2026-10-05T09:00:00+00:00",
-            "last_update_at": "2026-10-05T09:30:00+00:00",
-            "case_type": "dark_transit",
-            "domain": "maritime",
-            "geometry": {"type": "Point", "coordinates": [14.1, 35.5]},
-            "verification_status": "single_source_multi_indicator",
-            "evidence_stage": "derived",
-        }],
-    )
+def test_live_archives_include_canonical_play_dossiers() -> None:
+    from core.db.models import MaritimeEpisodeDB
+    from core.db.session import session_scope
 
-    response = client.get("/api/v1/live/archives?limit=20")
-    assert response.status_code == 200
-    dossier = next(
-        item for item in response.json()["archives"]
-        if item["id"] == "episode:test:1"
-    )
-    assert dossier["kind"] == "play_dossier"
-    assert dossier["lat"] == 35.5
-    assert dossier["lon"] == 14.1
-    assert dossier["verification_status"] == "single_source_multi_indicator"
+    episode_id = "episode:test:1"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with session_scope() as db:
+        db.query(MaritimeEpisodeDB).filter_by(episode_id=episode_id).delete()
+        db.add(MaritimeEpisodeDB(
+            episode_id=episode_id,
+            episode_family="gap_episode",
+            subject_ids=["subj:test"],
+            start_at=now - timedelta(minutes=30),
+            end_at=now,
+            geometry={"type": "Point", "coordinates": [14.1, 35.5]},
+            observation_ids=[],
+            feature_ids=[],
+            independence_groups=["ais_sensor_lineage"],
+            verification_status="single_source_multi_indicator",
+            behaviour_context={
+                "analysis": {
+                    "publication_state": "published",
+                    "analysis_state": "evidence_candidate",
+                    "resolution_state": "open",
+                },
+            },
+            alternative_explanations=[],
+            evidence_fingerprint="test",
+            method_version="test",
+            status="active",
+        ))
 
-    geo = client.get("/api/v1/live/archives/episode:test:1/geojson")
-    assert geo.status_code == 200
-    assert geo.json()["features"][0]["geometry"]["coordinates"] == [14.1, 35.5]
+    try:
+        response = client.get("/api/v1/live/archives?limit=20")
+        assert response.status_code == 200
+        dossier = next(
+            item for item in response.json()["archives"]
+            if item["id"] == episode_id
+        )
+        assert dossier["kind"] == "play_dossier"
+        assert dossier["lat"] == 35.5
+        assert dossier["lon"] == 14.1
+        assert dossier["verification_status"] == "single_source_multi_indicator"
+
+        geo = client.get(f"/api/v1/live/archives/{episode_id}/geojson")
+        assert geo.status_code == 200
+        assert geo.json()["features"][0]["geometry"]["coordinates"] == [14.1, 35.5]
+    finally:
+        with session_scope() as db:
+            db.query(MaritimeEpisodeDB).filter_by(episode_id=episode_id).delete()
 
 
 def test_live_routes_remain_public_when_internal_reads_require_auth() -> None:

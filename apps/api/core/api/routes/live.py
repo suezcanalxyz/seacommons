@@ -348,40 +348,55 @@ async def live_archives(limit: int = Query(40, ge=1, le=200)):
     except Exception:  # pragma: no cover - archive listing is best-effort
         pass
 
-    # Play's canonical catalog includes public MaritimeEpisode and
-    # InvestigationHypothesis dossiers that do not necessarily own a drift.
-    # Keep this legacy endpoint as a compatibility projection of that catalog
-    # instead of silently limiting Play to completed-drift SAR rows.
+    # Play's canonical MaritimeEpisode dossiers do not necessarily
+    # own a drift. Query the bounded episode table directly instead of building
+    # the complete historical Play catalog (which also scans humanitarian
+    # incidents, raw intel and investigation joins and is too expensive for
+    # this compatibility endpoint's hot path).
     try:
-        from core.api.routes.play import _get_play_catalog
+        from core.api.routes.play import _episode_projection, _is_public_play_episode
+        from core.db.models import MaritimeEpisodeDB
 
-        for item in _get_play_catalog():
-            incident_id = str(item.get("incident_id") or "").strip()
-            if not incident_id or incident_id in seen:
-                continue
-            geometry = item.get("geometry")
-            lat = lon = None
-            if isinstance(geometry, dict) and geometry.get("type") == "Point":
-                coordinates = geometry.get("coordinates")
-                if isinstance(coordinates, (list, tuple)) and len(coordinates) >= 2:
-                    try:
-                        lon, lat = float(coordinates[0]), float(coordinates[1])
-                    except (TypeError, ValueError):
-                        lat = lon = None
-            archives.append({
-                "id": incident_id,
-                "timestamp": item.get("reported_at") or item.get("last_update_at"),
-                "lat": lat,
-                "lon": lon,
-                "vessel_type": item.get("case_type") or "case",
-                "persons": item.get("people_reported") or 1,
-                "kind": "play_dossier",
-                "domain": item.get("domain"),
-                "verification_status": item.get("verification_status"),
-                "evidence_stage": item.get("evidence_stage"),
-            })
-            seen.add(incident_id)
-    except Exception:  # pragma: no cover - compatibility catalog is best-effort
+        with session_scope() as db:
+            episode_rows = (
+                db.query(MaritimeEpisodeDB)
+                .filter(MaritimeEpisodeDB.status != "superseded")
+                .order_by(MaritimeEpisodeDB.end_at.desc())
+                .limit(max(limit * 6, 120))
+                .all()
+            )
+            for episode in episode_rows:
+                if not _is_public_play_episode(episode):
+                    continue
+                item = _episode_projection(episode)
+                incident_id = str(item.get("incident_id") or "").strip()
+                if not incident_id or incident_id in seen:
+                    continue
+                geometry = item.get("geometry")
+                lat = lon = None
+                if isinstance(geometry, dict) and geometry.get("type") == "Point":
+                    coordinates = geometry.get("coordinates")
+                    if isinstance(coordinates, (list, tuple)) and len(coordinates) >= 2:
+                        try:
+                            lon, lat = float(coordinates[0]), float(coordinates[1])
+                        except (TypeError, ValueError):
+                            lat = lon = None
+                archives.append({
+                    "id": incident_id,
+                    "timestamp": item.get("reported_at") or item.get("last_update_at"),
+                    "lat": lat,
+                    "lon": lon,
+                    "vessel_type": item.get("case_type") or "case",
+                    "persons": 1,
+                    "kind": "play_dossier",
+                    "domain": item.get("domain"),
+                    "verification_status": item.get("verification_status"),
+                    "evidence_stage": item.get("evidence_stage"),
+                })
+                seen.add(incident_id)
+                if len(archives) >= limit * 2:
+                    break
+    except Exception:  # pragma: no cover - compatibility episode listing is best-effort
         pass
 
     archives.sort(key=lambda a: str(a.get("timestamp") or ""), reverse=True)
@@ -427,19 +442,20 @@ async def live_archive_geojson(event_id: str):
     drift_ok = bool(drift) and drift.get("status") == "completed"
     if not drift_ok or (alert is not None and not alert_ok):
         # Canonical Play dossiers may be evidence cases without a drift model.
-        # Resolve their public geometry directly so every item exposed by the
-        # compatibility archive index has a usable map/detail target.
+        # Resolve the episode by primary key; never build the full Play catalog
+        # just to fetch one geometry.
         try:
-            from core.api.routes.play import _get_play_catalog
+            from core.api.routes.play import _is_public_play_episode
+            from core.db.models import MaritimeEpisodeDB
+            from core.db.session import session_scope
 
-            item = next(
-                (
-                    row for row in _get_play_catalog()
-                    if str(row.get("incident_id") or "") == event_id
-                ),
-                None,
-            )
-            geometry = item.get("geometry") if isinstance(item, dict) else None
+            with session_scope() as db:
+                episode = db.get(MaritimeEpisodeDB, event_id)
+                geometry = (
+                    episode.geometry
+                    if episode is not None and _is_public_play_episode(episode)
+                    else None
+                )
             if isinstance(geometry, dict) and geometry.get("type"):
                 return {"type": "FeatureCollection", "features": [{
                     "type": "Feature",
