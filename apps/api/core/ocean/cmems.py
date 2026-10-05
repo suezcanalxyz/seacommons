@@ -44,6 +44,7 @@ def fetch_current_point(lat: float, lon: float) -> dict[str, Any] | None:
     start = (datetime.now(timezone.utc) - timedelta(hours=18)).isoformat()
     end = (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat()
 
+    current_ds = None
     try:
         current_ds = copernicusmarine.open_dataset(
             dataset_id=config.CMEMS_CURRENT_DATASET,
@@ -65,6 +66,8 @@ def fetch_current_point(lat: float, lon: float) -> dict[str, Any] | None:
     except Exception as exc:
         logger.warning("CMEMS current fetch failed for %.3f,%.3f: %s", lat, lon, exc)
         return None
+    finally:
+        _close_dataset(current_ds)
 
     current_speed = math.hypot(u, v)
     current_dir = (math.degrees(math.atan2(u, v)) + 360.0) % 360.0
@@ -102,6 +105,7 @@ def fetch_ocean_batch(
     start = window_start.isoformat()
     end = window_end.isoformat()
 
+    current_ds = temp_ds = wave_ds = None
     try:
         current_ds = copernicusmarine.open_dataset(
             dataset_id=config.CMEMS_CURRENT_DATASET,
@@ -148,30 +152,50 @@ def fetch_ocean_batch(
         )
     except Exception as exc:
         logger.warning("CMEMS fetch failed: %s", exc)
+        _close_dataset(current_ds)
+        _close_dataset(temp_ds)
+        _close_dataset(wave_ds)
         return [None for _ in points]
 
     results: list[dict[str, Any] | None] = []
-    for lat, lon in points:
-        try:
-            norm_lon = _normalize_lon(lon)
-            u = _sample_value(current_ds, "uo", lat, norm_lon, at=at)
-            v = _sample_value(current_ds, "vo", lat, norm_lon, at=at)
-            temp = _sample_value(temp_ds, "thetao", lat, norm_lon, at=at)
-            wave = _sample_value(wave_ds, "VHM0", lat, norm_lon, at=at)
+    try:
+        for lat, lon in points:
+            try:
+                norm_lon = _normalize_lon(lon)
+                u = _sample_value(current_ds, "uo", lat, norm_lon, at=at)
+                v = _sample_value(current_ds, "vo", lat, norm_lon, at=at)
+                temp = _sample_value(temp_ds, "thetao", lat, norm_lon, at=at)
+                wave = _sample_value(wave_ds, "VHM0", lat, norm_lon, at=at)
 
-            current_speed = math.hypot(u, v)
-            current_dir = (math.degrees(math.atan2(u, v)) + 360.0) % 360.0
-            results.append({
-                "water_temp_c": round(temp, 2),
-                "current_speed_ms": round(current_speed, 3),
-                "current_dir_deg": round(current_dir, 1),
-                "wave_height_m": round(wave, 2),
-                "source": "cmems",
-            })
+                current_speed = math.hypot(u, v)
+                current_dir = (math.degrees(math.atan2(u, v)) + 360.0) % 360.0
+                results.append({
+                    "water_temp_c": round(temp, 2),
+                    "current_speed_ms": round(current_speed, 3),
+                    "current_dir_deg": round(current_dir, 1),
+                    "wave_height_m": round(wave, 2),
+                    "source": "cmems",
+                })
+            except Exception as exc:
+                logger.debug("CMEMS sample failed for %.3f,%.3f: %s", lat, lon, exc)
+                results.append(None)
+        return results
+    finally:
+        _close_dataset(current_ds)
+        _close_dataset(temp_ds)
+        _close_dataset(wave_ds)
+
+
+def _close_dataset(ds: Any | None) -> None:
+    """Release provider/xarray resources deterministically."""
+    if ds is None:
+        return
+    close = getattr(ds, "close", None)
+    if callable(close):
+        try:
+            close()
         except Exception as exc:
-            logger.debug("CMEMS sample failed for %.3f,%.3f: %s", lat, lon, exc)
-            results.append(None)
-    return results
+            logger.debug("CMEMS dataset close failed: %s", exc)
 
 
 @lru_cache(maxsize=1)
