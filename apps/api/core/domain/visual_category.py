@@ -146,7 +146,7 @@ def classify_visual_category(
         return "identity"
     if re.search(
         r"not_under_command|unable_to_man|restricted_man|aground|engine_failure|"
-        r"mechanical_failure|disabled_vessel",
+        r"mechanical_failure|disabled_vessel|safety_event",
         tokens,
     ):
         return "navigation_casualty"
