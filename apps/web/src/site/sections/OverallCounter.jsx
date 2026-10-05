@@ -9,7 +9,7 @@ function formatCount(value) {
 }
 
 export default function OverallCounter() {
-  const [play, setPlay] = useState(null);
+  const [overall, setOverall] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -17,10 +17,10 @@ export default function OverallCounter() {
 
     async function refresh() {
       try {
-        const next = await fetchJson(apiBase, '/api/v1/play/counts', undefined, 7000);
-        if (!cancelled) setPlay(next);
+        const next = await fetchJson(apiBase, '/api/v1/play/overall', undefined, 15_000);
+        if (!cancelled) setOverall(next);
       } catch {
-        if (!cancelled) setPlay(null);
+        if (!cancelled) setOverall(null);
       }
     }
 
@@ -33,18 +33,18 @@ export default function OverallCounter() {
   }, []);
 
   const metrics = [
-    ['Overall', play?.total_count],
-    ['Humanitarian', play?.humanitarian_count],
-    ['Maritime', play?.maritime_count],
-    ['Investigations', play?.investigation_count],
+    ['Observations', overall?.observations],
+    ['Events', overall?.events],
+    ['Episodes', overall?.episodes],
+    ['Investigations', overall?.investigations],
   ];
 
   return (
-    <section className="overall-counter" aria-label="SeaCommons all-time public case totals">
+    <section className="overall-counter" aria-label="SeaCommons all-time overall corpus totals">
       {metrics.map(([label, value]) => (
         <div className="overall-counter__metric" key={label}>
           <span>{label}</span>
-          <strong>{play ? formatCount(value) : '…'}</strong>
+          <strong>{overall ? formatCount(value) : '…'}</strong>
         </div>
       ))}
     </section>

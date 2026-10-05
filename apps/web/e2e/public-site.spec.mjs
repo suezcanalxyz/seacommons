@@ -15,12 +15,12 @@ test('institutional homepage explains Humanitarian and Maritime without legacy s
   await expect(page.getByText(/drift demonstrator/i)).toHaveCount(0);
 });
 
-test('overall strip is one all-time row with four public case totals', async ({ page }) => {
+test('overall strip is one all-time row with four corpus totals', async ({ page }) => {
   await page.goto(SITE_URL);
 
-  const strip = page.getByRole('region', { name: 'SeaCommons all-time public case totals' });
+  const strip = page.getByRole('region', { name: 'SeaCommons all-time overall corpus totals' });
   await expect(strip).toBeVisible();
-  for (const label of ['Overall', 'Humanitarian', 'Maritime', 'Investigations']) {
+  for (const label of ['Observations', 'Events', 'Episodes', 'Investigations']) {
     await expect(strip.getByText(label, { exact: true })).toBeVisible();
   }
   await expect(strip.getByText(/24 h/i)).toHaveCount(0);

@@ -62,6 +62,7 @@ main{max-width:1920px;margin:auto;padding:22px}.eyebrow{font:700 9px ui-monospac
 </section>
 <section class="panel fleetPanel"><h2>Civil + state SAR fleet <span id="fleetFresh">AIS freshness / operational context</span></h2><div class="fleetGrid" id="sarFleet"></div></section>
 <div class="overallHead"><div><div class="eyebrow">Historical storage / all retained data</div><div class="title">All-time corpus</div></div><div class="overallMeta" id="overallFresh">loading historical inventory…</div></div>
+<section class="panel fleetPanel"><h2>Homepage overall snapshot <span>same all-time source used by public homepage</span></h2><div class="funnel" id="homepageOverall"></div></section>
 <section class="funnel" id="overallFunnel"></section>
 <section class="sensors">
 <div class="sensor"><b>TOTAL AIS FIXES</b><span id="overallAis">–</span></div><div class="sensor"><b>TOTAL RF BURSTS</b><span id="overallRf">–</span></div><div class="sensor"><b>TOTAL RADIO EVENTS</b><span id="overallRadio">–</span></div><div class="sensor"><b>TOTAL SATELLITE OBS.</b><span id="overallSat">–</span></div><div class="sensor"><b>SOURCE NAMES EVER SEEN</b><span id="overallSources">–</span></div>
@@ -122,7 +123,8 @@ function renderFleet(data){
 async function refreshFleet(){try{renderFleet(await get("/api/v1/operator/ingestion/sar-fleet"))}catch(err){$("fleetFresh").textContent="fleet inventory degraded · "+String(err.message||err)}}
 function renderDiagnostics(f){let d=f.diagnostics||{},b=$("diagnostics");let top=(o,n=8)=>Object.entries(o||{}).slice(0,n).map(([k,v])=>esc(k)+": <strong>"+fmt(v)+"</strong>").join("<br>");b.innerHTML="<strong>Hypothesis states</strong><br>"+top(d.hypothesis_states)+"<br><br><strong>Evidence stages</strong><br>"+top(d.hypothesis_evidence_stages)+"<br><br><strong>Episode verification</strong><br>"+top(d.episode_verification)+"<br><br><strong>Counter-indicators</strong><br>"+top(d.hypothesis_counter_indicators)}
 async function refreshOverall(){try{
- let o=await get("/api/v1/operator/ingestion/overall"),s=o.sensor_activity||{},b=o.breakdowns||{},f=o.first_last||{};
+ let o=await get("/api/v1/operator/ingestion/overall"),s=o.sensor_activity||{},b=o.breakdowns||{},f=o.first_last||{},h=o.homepage_overall||{};
+ let homeBox=$("homepageOverall");homeBox.textContent="";[["Observations",h.observations],["Events",h.events],["Episodes",h.episodes],["Investigations",h.investigations]].forEach(([label,count])=>{let d=document.createElement("div");d.className="stage";let l=document.createElement("div");l.className="l";l.textContent=label;let n=document.createElement("div");n.className="n";n.textContent=fmt(count);d.append(l,n);homeBox.append(d)});
  let fake={stages:o.stages||[]};let box=$("overallFunnel");box.textContent="";(fake.stages||[]).forEach(x=>{let d=document.createElement("div");d.className="stage";let l=document.createElement("div");l.className="l";l.textContent=x.label;let n=document.createElement("div");n.className="n";n.textContent=fmt(x.count);d.append(l,n);box.append(d)});
  $("overallAis").textContent=(s.ais_fixes_estimated?"≈ ":"")+fmt(s.ais_fixes);$("overallRf").textContent=fmt(s.radio_bursts);$("overallRadio").textContent=fmt(s.radio_events);$("overallSat").textContent=fmt(s.satellite_observations);$("overallSources").textContent=fmt(s.source_names);
  kvRows("overallRawSources",b.raw_by_source,30);kvRows("overallRawTypes",b.raw_observation_types,30);kvRows("overallEventTypes",b.normalized_event_types,30);

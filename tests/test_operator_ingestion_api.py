@@ -239,6 +239,13 @@ def test_operator_overall_exposes_all_time_corpus(monkeypatch):
         "raw", "normalized", "derived", "episodes", "hypotheses",
         "corroborated", "review_ready",
     ]
+    assert payload["homepage_overall"] == {
+        "scope": "all_time",
+        "observations": next(stage["count"] for stage in payload["stages"] if stage["id"] == "raw"),
+        "events": next(stage["count"] for stage in payload["stages"] if stage["id"] == "normalized"),
+        "episodes": next(stage["count"] for stage in payload["stages"] if stage["id"] == "episodes"),
+        "investigations": next(stage["count"] for stage in payload["stages"] if stage["id"] == "hypotheses"),
+    }
     assert set(payload["sensor_activity"]) >= {
         "ais_fixes", "radio_bursts", "radio_events", "satellite_observations", "source_names",
     }

@@ -1005,6 +1005,13 @@ def operator_overall_corpus(request: Request) -> dict[str, Any]:
             {"id": "corroborated", "label": "Corroborated", "count": corroborated_total},
             {"id": "review_ready", "label": "Review ready", "count": review_ready_total},
         ],
+        "homepage_overall": {
+            "scope": "all_time",
+            "observations": raw_total,
+            "events": normalized_total,
+            "episodes": episodes_total,
+            "investigations": hypothesis_total,
+        },
         "sensor_activity": sensor_activity,
         "first_last": first_last,
         "breakdowns": {

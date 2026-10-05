@@ -560,6 +560,9 @@ _play_counts_cache: dict[str, Any] = {}
 _play_counts_lock = Lock()
 _play_catalog_cache: dict[str, Any] = {}
 _play_catalog_lock = Lock()
+_play_overall_cache: dict[str, Any] = {}
+_play_overall_lock = Lock()
+_PLAY_OVERALL_TTL_S = 300.0
 
 
 def _compute_play_catalog() -> list[dict[str, Any]]:
@@ -822,6 +825,67 @@ def _compute_play_counts() -> dict[str, Any]:
         "investigation_count": investigation_count,
         "generated_at": now.isoformat(),
     }
+
+
+def _compute_overall_counts() -> dict[str, Any]:
+    """All-time retained corpus totals for the institutional homepage.
+
+    These are layer counts, not one-to-one incident conversions. Keeping this
+    separate from the public Play case catalog avoids an expensive full catalog
+    materialization on the homepage hot path.
+    """
+    from sqlalchemy import func
+    from core.db.models import (
+        IntelEventDB,
+        InvestigationHypothesisDB,
+        MaritimeEpisodeDB,
+        SourceObservationDB,
+    )
+    from core.db.session import session_scope
+
+    with session_scope() as db:
+        observations = int(db.query(func.count(SourceObservationDB.observation_id)).scalar() or 0)
+        events = int(db.query(func.count(IntelEventDB.id)).scalar() or 0)
+        episodes = int(
+            db.query(func.count(MaritimeEpisodeDB.episode_id))
+            .filter(MaritimeEpisodeDB.episode_family != "unclassified_episode")
+            .scalar()
+            or 0
+        )
+        investigations = int(
+            db.query(func.count(InvestigationHypothesisDB.hypothesis_id)).scalar() or 0
+        )
+    return {
+        "scope": "all_time",
+        "observations": observations,
+        "events": events,
+        "episodes": episodes,
+        "investigations": investigations,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "interpretation": (
+            "Retained records at distinct evidence layers; counts are not "
+            "one-to-one conversions and are not findings of illegality."
+        ),
+    }
+
+
+@router.get("/overall")
+def play_overall():
+    now_mono = monotonic()
+    cached = _play_overall_cache.get("payload")
+    cached_at = float(_play_overall_cache.get("at") or 0.0)
+    if cached is not None and now_mono - cached_at < _PLAY_OVERALL_TTL_S:
+        return cached
+    with _play_overall_lock:
+        now_mono = monotonic()
+        cached = _play_overall_cache.get("payload")
+        cached_at = float(_play_overall_cache.get("at") or 0.0)
+        if cached is not None and now_mono - cached_at < _PLAY_OVERALL_TTL_S:
+            return cached
+        payload = _compute_overall_counts()
+        _play_overall_cache["payload"] = payload
+        _play_overall_cache["at"] = monotonic()
+        return payload
 
 
 @router.get("/counts")

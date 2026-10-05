@@ -264,6 +264,46 @@ def test_play_index_excludes_raw_historical_security_detector_output():
     assert event_id not in ids
 
 
+def test_play_overall_exposes_all_time_corpus_layers():
+    from core.api.routes import play as play_routes
+
+    play_routes._play_overall_cache.clear()
+    response = TestClient(app).get("/api/v1/play/overall")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["scope"] == "all_time"
+    assert set(payload) >= {
+        "observations", "events", "episodes", "investigations", "generated_at",
+    }
+    assert all(int(payload[key]) >= 0 for key in (
+        "observations", "events", "episodes", "investigations",
+    ))
+    play_routes._play_overall_cache.clear()
+
+
+def test_play_overall_uses_snapshot_cache(monkeypatch):
+    from core.api.routes import play as play_routes
+
+    calls = []
+    monkeypatch.setattr(
+        play_routes,
+        "_compute_overall_counts",
+        lambda: calls.append(1) or {
+            "scope": "all_time",
+            "observations": 10,
+            "events": 5,
+            "episodes": 3,
+            "investigations": 2,
+            "generated_at": "2026-10-05T10:00:00+00:00",
+        },
+    )
+    play_routes._play_overall_cache.clear()
+    assert play_routes.play_overall()["observations"] == 10
+    assert play_routes.play_overall()["observations"] == 10
+    assert len(calls) == 1
+    play_routes._play_overall_cache.clear()
+
+
 def test_play_counts_exposes_real_archive_total():
     _seed_case(lifecycle="resolved", age_hours=72, with_update=False)
     _seed_maritime_play_event(age_hours=30)
