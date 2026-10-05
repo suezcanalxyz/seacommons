@@ -227,10 +227,12 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
                     "episode_id": str(row.episode_id),
                     "episode_family": str(row.episode_family or ""),
                     "geometry": row.geometry,
+                    "subject_ids": list(row.subject_ids or ()),
                     "observation_ids": list(row.observation_ids or ()),
                     "independence_groups": list(row.independence_groups or ()),
                     "verification_status": str(row.verification_status or "single_source_observed"),
                     "behaviour_context": dict(row.behaviour_context or {}),
+                    "alternative_explanations": list(row.alternative_explanations or ()),
                     "end_at": end_at,
                 })
                 if len(rows) >= limit:
@@ -252,7 +254,10 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
                 ).all():
                     event_by_id[event.id] = {
                         "id": event.id,
+                        "type": event.type or "",
+                        "source": event.source or "",
                         "title": event.title or "",
+                        "linked_mmsi": event.linked_mmsi or "",
                         "meta": dict(event.meta or {}),
                     }
     except Exception:
@@ -355,6 +360,55 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
             if source_event is not None and source_event.get("title")
             else family_to_title[family]
         )
+        linked_mmsi = str(
+            (source_event or {}).get("linked_mmsi")
+            or meta.get("linked_mmsi")
+            or meta.get("mmsi")
+            or ""
+        ).strip()
+        if not linked_mmsi:
+            linked_mmsi = next(
+                (
+                    str(subject).removeprefix("subj:mmsi:")
+                    for subject in row.get("subject_ids") or ()
+                    if str(subject).startswith("subj:mmsi:")
+                    and len(str(subject).removeprefix("subj:mmsi:")) == 9
+                ),
+                "",
+            )
+
+        from core.intel.assessment import build_assessment
+
+        assessment_input = {
+            **meta,
+            "type": (source_event or {}).get("type") or event_type,
+            "source": (source_event or {}).get("source") or "SeaCommons episode engine",
+            "linked_mmsi": linked_mmsi,
+            "mmsi": linked_mmsi,
+            "maritime_domain": domain,
+            "anomaly_type": meta.get("anomaly_type") or anomaly,
+            "independence_groups": list(row["independence_groups"]),
+            "independent_source_count": len(row["independence_groups"]),
+            "evidence_stage": "corroborated" if corroborated else "derived",
+            "reason_codes": reason_codes,
+        }
+        episode_assessment = build_assessment(assessment_input)
+        assessment_payload = (
+            {
+                "observation": episode_assessment.observation,
+                "interpretation": episode_assessment.interpretation,
+                "evidence_level": episode_assessment.evidence_level,
+                "confidence": episode_assessment.confidence,
+                "confidence_basis": episode_assessment.confidence_basis,
+                "supporting_evidence": episode_assessment.supporting_evidence,
+                "contradicting_evidence": episode_assessment.contradicting_evidence,
+                "caveats": episode_assessment.caveats,
+                "recommended_action": episode_assessment.recommended_action,
+                "rule_ids": episode_assessment.rule_ids,
+                "classification_version": episode_assessment.classification_version,
+            }
+            if episode_assessment is not None else None
+        )
         public = {
             "type": "Feature",
             "id": str(row["episode_id"]),
@@ -385,6 +439,14 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
                 "publication_state": "published",
                 "resolution_state": ((row["behaviour_context"] or {}).get("analysis") or {}).get("resolution_state") or "open",
                 "reason_codes": reason_codes,
+                "anomaly_type": meta.get("anomaly_type") or anomaly,
+                "linked_mmsi": linked_mmsi or None,
+                "mmsi": linked_mmsi or None,
+                "assessment": assessment_payload,
+                "detection_reason": meta.get("detection_reason"),
+                "detail": meta.get("detail"),
+                "movement_evidence": meta.get("movement_evidence"),
+                "counter_indicators": list(row.get("alternative_explanations") or ()),
                 **({
                     "anomaly_type": meta.get("anomaly_type"),
                     "reception_expectation": meta.get("reception_expectation"),

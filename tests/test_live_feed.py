@@ -2725,6 +2725,10 @@ def test_public_live_projects_open_maritime_episode_dossier() -> None:
         assert props["main_category"] == "maritime"
         assert props["verification_status"] == "single_source_observed"
         assert props["corroborated"] is False
+        assert props["linked_mmsi"] == "970123456"
+        assert props["mmsi"] == "970123456"
+        assert props["assessment"]["classification_version"] == "assessment-v1"
+        assert "safety" in props["assessment"]["interpretation"].lower()
         assert props["public_summary"].startswith("AIS reported an operational safety state")
         assert props["text"] == ""
     finally:

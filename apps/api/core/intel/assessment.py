@@ -316,7 +316,10 @@ def _category_assessment(
             f"AIS position-integrity cue for {mmsi or 'this vessel'}"
             + (f": {', '.join(pieces)}." if pieces else ".")
         )
-        interpretation = "The observed AIS positions are not physically consistent with ordinary vessel movement"
+        interpretation = (
+            (f"Detector evidence: {detection}. " if detection else "")
+            + "The observed AIS positions are not physically consistent with ordinary vessel movement"
+        )
         if pieces:
             interpretation += f" ({'; '.join(pieces)})"
         interpretation += (
