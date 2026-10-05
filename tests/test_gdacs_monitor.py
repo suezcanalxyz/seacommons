@@ -3,6 +3,9 @@
 SourceObservation adapter wiring (docs/fixes.md M1.2)."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from email.utils import format_datetime
+
 import pytest
 
 from core.intel.gdacs_monitor import GDACSMonitor
@@ -15,7 +18,7 @@ def _item(**overrides) -> dict[str, str]:
         "description": "A tropical cyclone over the central Mediterranean.",
         "link": "https://www.gdacs.org/report.aspx?eventid=1001",
         "guid": "gdacs-1001",
-        "pub_date": "Thu, 03 Sep 2026 09:00:00 GMT",
+        "pub_date": format_datetime(datetime.now(timezone.utc), usegmt=True),
         "lat": "35.5",
         "lon": "14.0",
         "alertlevel": "Red",

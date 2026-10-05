@@ -68,6 +68,7 @@ class PublisherSettings:
     request_timeout_seconds: float = 8.0
     max_attempts: int = 20
     heartbeat_seconds: float = 60.0
+    origin_health_url: str = "http://127.0.0.1:8100/health"
     # Prometheus scrape endpoint for this standalone process. 0 disables it
     # (default), so nothing changes for an existing deployment.
     metrics_port: int = 0
@@ -86,6 +87,7 @@ class PublisherSettings:
             request_timeout_seconds=float(os.getenv("LIVE_EDGE_TIMEOUT_SECONDS", "8")),
             max_attempts=max(1, int(os.getenv("LIVE_EDGE_MAX_ATTEMPTS", "20"))),
             heartbeat_seconds=max(30.0, float(os.getenv("LIVE_EDGE_HEARTBEAT_SECONDS", "60"))),
+            origin_health_url=os.getenv("LIVE_ORIGIN_HEALTH_URL", "http://127.0.0.1:8100/health").strip(),
             metrics_port=max(0, int(os.getenv("LIVE_EDGE_METRICS_PORT", "0"))),
         )
 
@@ -563,6 +565,20 @@ class LiveEdgePublisher:
             logger.warning("Live edge heartbeat failed: %s", exc)
             return False
 
+    def origin_status(self) -> str:
+        """Return active only when the public origin process is responsive."""
+        if not self.settings.origin_health_url:
+            return "active"
+        try:
+            response = self.client.get(self.settings.origin_health_url, timeout=2.0)
+            if response.status_code == 200:
+                payload = response.json()
+                if isinstance(payload, dict) and payload.get("status") == "ok":
+                    return "active"
+        except Exception:
+            pass
+        return "degraded"
+
     def run(self) -> None:
         logger.info(
             "Live-first edge publisher started node=%s poll=%.2fs window=%dm",
@@ -599,6 +615,8 @@ class LiveEdgePublisher:
                 )
             except Exception:  # metrics must never break the delivery loop
                 logger.debug("publisher metric update failed", exc_info=True)
+            if cycle_status == "active":
+                cycle_status = self.origin_status()
             self.heartbeat(cycle_status)
             remaining = self.settings.poll_seconds - (time.monotonic() - started)
             if remaining > 0:
