@@ -31,15 +31,25 @@ class _Dataset(dict):
     coords: ClassVar[dict] = {"latitude": (), "longitude": ()}
     dims: ClassVar[dict] = {"latitude": (), "longitude": ()}
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
 
 class _FakeCopernicus:
     def __init__(self):
         self.calls: list[dict] = []
+        self.datasets: list[_Dataset] = []
 
     def open_dataset(self, **kwargs):
         self.calls.append(kwargs)
         values = {"uo": 0.1, "vo": 0.2, "thetao": 18.0, "VHM0": 1.5}
-        return _Dataset({name: _Variable(values[name]) for name in kwargs["variables"]})
+        dataset = _Dataset({name: _Variable(values[name]) for name in kwargs["variables"]})
+        self.datasets.append(dataset)
+        return dataset
 
 
 def test_ocean_batch_requests_the_dataset_surface_level_not_zero(monkeypatch):
@@ -57,6 +67,8 @@ def test_ocean_batch_requests_the_dataset_surface_level_not_zero(monkeypatch):
     assert len(depth_calls) == 2
     assert all(call["minimum_depth"] == 0.49402499198913574 for call in depth_calls)
     assert all(call["maximum_depth"] >= call["minimum_depth"] for call in depth_calls)
+    assert len(fake.datasets) == 3
+    assert all(dataset.closed for dataset in fake.datasets)
 
 
 def test_current_point_requests_the_same_surface_level(monkeypatch):
@@ -68,3 +80,4 @@ def test_current_point_requests_the_same_surface_level(monkeypatch):
 
     assert result is not None
     assert fake.calls[0]["minimum_depth"] == 0.49402499198913574
+    assert fake.datasets[0].closed is True
