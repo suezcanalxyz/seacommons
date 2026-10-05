@@ -288,20 +288,39 @@ def dedupe_public_case_items(items: list[dict[str, Any]], *, window_seconds: int
         da, db = parsed_time(tsa), parsed_time(tsb)
         return da is not None and db is not None and abs((da - db).total_seconds()) <= window_seconds
 
-    ordered = sorted(
-        items,
-        key=lambda item: parsed_time(fields(item)[2]) or datetime.max.replace(tzinfo=UTC),
-    )
+    # Only Alarm Phone point reports can ever satisfy duplicate(). Building
+    # the candidate set first avoids an O(n²) scan across the entire Play
+    # catalog (thousands of unrelated AIS/maritime rows).
+    field_cache = {id(item): fields(item) for item in items}
+    candidates: list[tuple[datetime, dict[str, Any]]] = []
+    for item in items:
+        source, title, timestamp, geometry, item_id = field_cache[id(item)]
+        if source != "alarm_phone" or not item_id:
+            continue
+        if geometry is None or geometry.get("type") != "Point":
+            continue
+        if re.search(r"\b(\d{1,3})\b", title) is None:
+            continue
+        when = parsed_time(timestamp)
+        if when is None:
+            continue
+        candidates.append((when, item))
+
+    candidates.sort(key=lambda entry: entry[0])
     duplicate_ids: set[str] = set()
-    for index, item in enumerate(ordered):
-        item_id = fields(item)[4]
+    for index, (when, item) in enumerate(candidates):
+        item_id = field_cache[id(item)][4]
         if item_id in duplicate_ids:
             continue
-        for later in ordered[index + 1:]:
-            later_id = fields(later)[4]
+        for later_when, later in candidates[index + 1:]:
+            # Candidates are time-ordered, so anything beyond the dedupe
+            # window cannot match this item or any earlier timestamp.
+            if (later_when - when).total_seconds() > window_seconds:
+                break
+            later_id = field_cache[id(later)][4]
             if later_id and duplicate(item, later):
                 duplicate_ids.add(later_id)
-    return [item for item in items if fields(item)[4] not in duplicate_ids]
+    return [item for item in items if field_cache[id(item)][4] not in duplicate_ids]
 
 
 def _ship_type_for_public_feature(props: dict[str, Any]) -> int:
