@@ -4,13 +4,17 @@ import { UserManager, WebStorageStateStore } from 'oidc-client-ts';
 const PUBLIC_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org', 'live.seacommons.org']);
 const CONTROLLED_HOSTS = new Set(['console.seacommons.org', 'engine.seacommons.org', 'futures.seacommons.org']);
 const hostname = window.location.hostname;
-const enabled = CONTROLLED_HOSTS.has(hostname)
+const authRequired = CONTROLLED_HOSTS.has(hostname)
   || (!PUBLIC_HOSTS.has(hostname) && import.meta.env.VITE_AUTH_ENABLED === 'true');
+const authority = import.meta.env.VITE_OIDC_AUTHORITY || '';
+const clientId = import.meta.env.VITE_OIDC_CLIENT_ID || '';
+const providerConfigured = Boolean(authority && clientId);
+const enabled = authRequired && providerConfigured;
 const AuthContext = createContext({ token: null, user: null });
 
 const manager = enabled ? new UserManager({
-  authority: import.meta.env.VITE_OIDC_AUTHORITY || 'https://identity.suezcanal.xyz',
-  client_id: import.meta.env.VITE_OIDC_CLIENT_ID || 'seacommons-futures',
+  authority,
+  client_id: clientId,
   redirect_uri: `${window.location.origin}${import.meta.env.BASE_URL}`,
   post_logout_redirect_uri: `${window.location.origin}${import.meta.env.BASE_URL}`,
   response_type: 'code',
@@ -66,6 +70,17 @@ export function AuthGate({ children }) {
     return () => { active = false; manager.events.removeUserLoaded(onLoaded); };
   }, []);
 
+  if (authRequired && !providerConfigured) {
+    return <main className="auth-screen">
+      <section className="auth-card" aria-labelledby="auth-title">
+        <a className="auth-wordmark" href="https://suezcanal.xyz">SUEZ<span>CANAL</span></a>
+        <p className="auth-kicker">Shared identity</p>
+        <h1 id="auth-title">Access is not configured yet</h1>
+        <p className="auth-copy">This workspace is closed until the Suez identity provider and OAuth client are connected.</p>
+        <div className="auth-meta"><span>fail closed</span><span>no anonymous fallback</span></div>
+      </section>
+    </main>;
+  }
   if (!ready) return <main className="auth-screen auth-screen--loading"><div className="auth-loader" /><p>Establishing a secure session…</p></main>;
   if (enabled && !user) {
     return <main className="auth-screen">
