@@ -287,3 +287,49 @@ def test_ais_ship_type_labels_cover_operational_families():
     assert _ship_type_label(54) == "ANTI_POLLUTION"
     assert _ship_type_label(55) == "LAW_ENFORCEMENT"
     assert _ship_type_label(58) == "MEDICAL_TRANSPORT"
+
+
+def test_reconciler_does_not_treat_ais_registry_as_humanitarian_lineage():
+    from core.db.models import IntelEventDB, MaritimeEpisodeDB
+    from core.db.session import session_scope
+    from core.intel.hypothesis_engine import reconcile_cross_modal_episodes
+
+    now = datetime.now(timezone.utc)
+    mmsi = "987650001"
+    episode_id = "episode:test:ais-registry-not-humanitarian"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id="ais-registry:test:not-humanitarian",
+            timestamp_utc=now.isoformat(),
+            type="ais_spike",
+            severity="low",
+            lat=35.0,
+            lon=14.0,
+            title="AIS registry observation",
+            source="AIS Registry",
+            linked_mmsi=mmsi,
+            meta={"maritime_domain": "sar"},
+            maritime_domain="sar",
+            received_at=now.replace(tzinfo=None),
+            created_at=now.replace(tzinfo=None),
+        ))
+        db.add(MaritimeEpisodeDB(
+            episode_id=episode_id,
+            episode_family="gap_episode",
+            subject_ids=[f"subj:mmsi:{mmsi}"],
+            start_at=now.replace(tzinfo=None),
+            end_at=now.replace(tzinfo=None),
+            geometry={"type": "Point", "coordinates": [14.0, 35.0]},
+            observation_ids=[],
+            feature_ids=[],
+            independence_groups=["modality:ais"],
+            verification_status="single_source_observed",
+            behaviour_context={},
+            alternative_explanations=[],
+            evidence_fingerprint="ais-registry-not-humanitarian",
+            method_version="test",
+            status="active",
+        ))
+
+    result = reconcile_cross_modal_episodes(hours=24, limit=50)
+    assert result["candidates"] == 0

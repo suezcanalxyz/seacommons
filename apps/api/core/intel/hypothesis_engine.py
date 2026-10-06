@@ -21,6 +21,17 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+_INDEPENDENT_HUMANITARIAN_SOURCES = (
+    "alarm phone",
+    "alarm_phone",
+    "sosmedintl",
+    "msf_sea",
+    "seawatchcrew",
+    "sea watch",
+    "sos méditerranée",
+    "sos mediterranee",
+)
+
 from core.intel.episode_store import save_episode
 from core.intel.hypothesis import (
     InvestigationHypothesis,
@@ -144,6 +155,7 @@ def _attach_cross_modal_evidence(
     # opened the episode; exact-MMSI humanitarian reports can arrive later too.
     # Only strong/identity-explicit associations enter the evidence packet.
     if canonical_episode_id:
+        from sqlalchemy import func
         from core.db.models import (
             IntelEventDB, RadioAISAssociationDB, SatelliteObservationDB,
         )
@@ -204,6 +216,9 @@ def _attach_cross_modal_evidence(
                             .filter(
                                 IntelEventDB.linked_mmsi.in_(linked_mmsis),
                                 IntelEventDB.maritime_domain == "sar",
+                                IntelEventDB.source.isnot(None),
+                                IntelEventDB.source != "",
+                                func.lower(IntelEventDB.source).in_(_INDEPENDENT_HUMANITARIAN_SOURCES),
                             )
                             .order_by(IntelEventDB.created_at.desc())
                             .limit(100)
@@ -859,10 +874,15 @@ def reconcile_cross_modal_episodes(*, hours: int = 168, limit: int = 500) -> dic
             if value
         )
 
+        from sqlalchemy import func
+
         humanitarian_query = db.query(IntelEventDB.linked_mmsi).filter(
             IntelEventDB.maritime_domain == "sar",
             IntelEventDB.linked_mmsi.isnot(None),
             IntelEventDB.linked_mmsi != "",
+            IntelEventDB.source.isnot(None),
+            IntelEventDB.source != "",
+            func.lower(IntelEventDB.source).in_(_INDEPENDENT_HUMANITARIAN_SOURCES),
         )
         if cutoff is not None:
             humanitarian_query = humanitarian_query.filter(IntelEventDB.created_at >= cutoff)
