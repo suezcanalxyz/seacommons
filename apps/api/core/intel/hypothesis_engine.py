@@ -15,10 +15,22 @@ Legacy hypothesis rows are never relinked. New rows use a versioned ID
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 import logging
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+_INDEPENDENT_HUMANITARIAN_SOURCES = (
+    "alarm phone",
+    "alarm_phone",
+    "sosmedintl",
+    "msf_sea",
+    "seawatchcrew",
+    "sea watch",
+    "sos méditerranée",
+    "sos mediterranee",
+)
 
 from core.intel.episode_store import save_episode
 from core.intel.hypothesis import (
@@ -143,6 +155,7 @@ def _attach_cross_modal_evidence(
     # opened the episode; exact-MMSI humanitarian reports can arrive later too.
     # Only strong/identity-explicit associations enter the evidence packet.
     if canonical_episode_id:
+        from sqlalchemy import func
         from core.db.models import (
             IntelEventDB, RadioAISAssociationDB, SatelliteObservationDB,
         )
@@ -203,6 +216,9 @@ def _attach_cross_modal_evidence(
                             .filter(
                                 IntelEventDB.linked_mmsi.in_(linked_mmsis),
                                 IntelEventDB.maritime_domain == "sar",
+                                IntelEventDB.source.isnot(None),
+                                IntelEventDB.source != "",
+                                func.lower(IntelEventDB.source).in_(_INDEPENDENT_HUMANITARIAN_SOURCES),
                             )
                             .order_by(IntelEventDB.created_at.desc())
                             .limit(100)
@@ -668,43 +684,13 @@ def evaluate_episode(episode: dict[str, Any]) -> Optional[InvestigationHypothesi
         return None
 
     hypothesis_type = decision.hypothesis_type
-    hypothesis_id = f"hyp:v1:{hypothesis_type}:{episode_id}"
-    existing = get_hypothesis(hypothesis_id)
-    if existing is None:
-        hyp = new_hypothesis(
-            hypothesis_id,
-            hypothesis_type,
-            subject_ids,
-            episode_id=episode_id,
-        )
-    else:
-        if existing.episode_id != episode_id:
-            raise ValueError("v1 hypothesis episode identity mismatch")
-        hyp = existing
+    base_hypothesis_id = f"hyp:v1:{hypothesis_type}:{episode_id}"
+    existing = get_hypothesis(base_hypothesis_id)
 
     evidence_links = tuple(dict.fromkeys((
         *signal_ids,
         *(str(v) for v in (props.get("cross_modal_evidence_ids") or ()) if v),
     )))
-    hyp = replace(
-        hyp,
-        reason_codes=decision.reason_codes,
-        counter_indicators=decision.counter_indicators,
-        evidence_links=evidence_links,
-        evidence_stage=decision.evidence_stage,
-    )
-
-    if hyp.state == "candidate" and decision.may_advance_collecting:
-        from core.observability import record_hypothesis_transition
-
-        hyp = transition(hyp, "collecting", actor="hypothesis_engine_v1")
-        record_hypothesis_transition(hyp.hypothesis_type, hyp.state)
-
-    # Crossing into review_ready is deliberately narrower than entering
-    # collection. High-specificity single-lineage AIS cues and unmatched SAR
-    # candidates may justify investigation, but only independently
-    # corroborated evidence can become a reviewable public case.
-    distinct_evidence = {str(value) for value in hyp.evidence_links if value}
     episode_groups = {
         str(value) for value in (
             props.get("contributing_independence_groups")
@@ -717,6 +703,62 @@ def evaluate_episode(episode: dict[str, Any]) -> Optional[InvestigationHypothesi
         or len(episode_groups) >= 2
         or int(props.get("independent_source_count") or 0) >= 2
     )
+
+    reopened_from: str | None = None
+    if existing is not None and existing.state == "expired" and independently_corroborated:
+        # Expired is intentionally terminal. New independent evidence creates
+        # a new investigation generation instead of rewriting history.
+        digest = hashlib.blake2s(
+            f"{hypothesis_type}|{episode_id}".encode(), digest_size=8
+        ).hexdigest()
+        hypothesis_id = f"hyp:v2:{hypothesis_type}:{digest}"
+        reopened_from = existing.hypothesis_id
+        reopened = get_hypothesis(hypothesis_id)
+        hyp = reopened or new_hypothesis(
+            hypothesis_id,
+            hypothesis_type,
+            subject_ids,
+            episode_id=episode_id,
+        )
+    elif existing is None:
+        hypothesis_id = base_hypothesis_id
+        hyp = new_hypothesis(
+            hypothesis_id,
+            hypothesis_type,
+            subject_ids,
+            episode_id=episode_id,
+        )
+    else:
+        hypothesis_id = base_hypothesis_id
+        if existing.episode_id != episode_id:
+            raise ValueError("v1 hypothesis episode identity mismatch")
+        hyp = existing
+    reason_codes = tuple(decision.reason_codes)
+    if reopened_from:
+        reason_codes = tuple(dict.fromkeys((*reason_codes, "REOPENED_AFTER_INDEPENDENT_CORROBORATION")))
+    hyp = replace(
+        hyp,
+        reason_codes=reason_codes,
+        counter_indicators=decision.counter_indicators,
+        evidence_links=evidence_links,
+        evidence_stage=decision.evidence_stage,
+    )
+    transition_actor = (
+        f"hypothesis_engine_v2_reopen:{reopened_from}"
+        if reopened_from else "hypothesis_engine_v1"
+    )
+
+    if hyp.state == "candidate" and decision.may_advance_collecting:
+        from core.observability import record_hypothesis_transition
+
+        hyp = transition(hyp, "collecting", actor=transition_actor)
+        record_hypothesis_transition(hyp.hypothesis_type, hyp.state)
+
+    # Crossing into review_ready is deliberately narrower than entering
+    # collection. High-specificity single-lineage AIS cues and unmatched SAR
+    # candidates may justify investigation, but only independently
+    # corroborated evidence can become a reviewable public case.
+    distinct_evidence = {str(value) for value in hyp.evidence_links if value}
     if (
         hyp.state == "collecting"
         and independently_corroborated
@@ -726,8 +768,15 @@ def evaluate_episode(episode: dict[str, Any]) -> Optional[InvestigationHypothesi
     ):
         from core.observability import record_hypothesis_transition
 
-        hyp = transition(hyp, "review_ready", actor="hypothesis_engine_v1")
+        hyp = transition(hyp, "review_ready", actor=transition_actor)
         record_hypothesis_transition(hyp.hypothesis_type, hyp.state)
+
+    # Reopened historical investigations stop at review_ready. This preserves
+    # auditability and prevents an old case from re-entering Live merely
+    # because a backfill discovered independent evidence later.
+    if reopened_from and hyp.state == "review_ready":
+        save_hypothesis(hyp)
+        return hyp
 
     # Automatic publication (product decision, 2026-09-21 -- see
     # docs/current_work.md and docs/superpowers/plans/2026-09-21-live-
@@ -775,9 +824,10 @@ def evaluate_episode(episode: dict[str, Any]) -> Optional[InvestigationHypothesi
 def reconcile_cross_modal_episodes(*, hours: int = 168, limit: int = 500) -> dict[str, int]:
     """Re-evaluate canonical episodes after independent evidence arrives later.
 
-    Satellite/radio associations are often produced after the AIS episode that
-    opened the investigation. This bounded reconciler closes that asynchronous
-    loop. Exact-identity humanitarian reports can trigger the same re-evaluation.
+    ``hours <= 0`` enables an explicit historical backfill over all persisted
+    strong associations. The scheduler keeps using the bounded seven-day mode.
+    Expired hypotheses are never mutated back into an active state: qualifying
+    independent evidence opens an auditable v2 investigation generation.
     """
     from datetime import datetime, timedelta, timezone
 
@@ -790,56 +840,55 @@ def reconcile_cross_modal_episodes(*, hours: int = 168, limit: int = 500) -> dic
     from core.db.session import session_scope
     from core.mda.vessel_subject import subject_id_for
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).replace(tzinfo=None)
+    cutoff = (
+        (datetime.now(timezone.utc) - timedelta(hours=hours)).replace(tzinfo=None)
+        if hours > 0 else None
+    )
     candidate_ids: set[str] = set()
     humanitarian_subjects: set[str] = set()
 
     with session_scope() as db:
+        satellite_query = db.query(SatelliteObservationDB.episode_id).filter(
+            SatelliteObservationDB.episode_id.isnot(None),
+            SatelliteObservationDB.association_status == "strong",
+            SatelliteObservationDB.evidence_status == "associated",
+        )
+        if cutoff is not None:
+            satellite_query = satellite_query.filter(SatelliteObservationDB.created_at >= cutoff)
         candidate_ids.update(
             str(value)
-            for (value,) in (
-                db.query(SatelliteObservationDB.episode_id)
-                .filter(
-                    SatelliteObservationDB.created_at >= cutoff,
-                    SatelliteObservationDB.episode_id.isnot(None),
-                    SatelliteObservationDB.association_status == "strong",
-                    SatelliteObservationDB.evidence_status == "associated",
-                )
-                .distinct()
-                .limit(limit)
-                .all()
-            )
+            for (value,) in satellite_query.distinct().limit(limit).all()
             if value
         )
+
+        radio_query = db.query(RadioAISAssociationDB.episode_id).filter(
+            RadioAISAssociationDB.episode_id.isnot(None),
+            RadioAISAssociationDB.match_status == "strong",
+            RadioAISAssociationDB.episode_eligible.is_(True),
+        )
+        if cutoff is not None:
+            radio_query = radio_query.filter(RadioAISAssociationDB.created_at >= cutoff)
         candidate_ids.update(
             str(value)
-            for (value,) in (
-                db.query(RadioAISAssociationDB.episode_id)
-                .filter(
-                    RadioAISAssociationDB.created_at >= cutoff,
-                    RadioAISAssociationDB.episode_id.isnot(None),
-                    RadioAISAssociationDB.match_status == "strong",
-                    RadioAISAssociationDB.episode_eligible.is_(True),
-                )
-                .distinct()
-                .limit(limit)
-                .all()
-            )
+            for (value,) in radio_query.distinct().limit(limit).all()
             if value
         )
+
+        from sqlalchemy import func
+
+        humanitarian_query = db.query(IntelEventDB.linked_mmsi).filter(
+            IntelEventDB.maritime_domain == "sar",
+            IntelEventDB.linked_mmsi.isnot(None),
+            IntelEventDB.linked_mmsi != "",
+            IntelEventDB.source.isnot(None),
+            IntelEventDB.source != "",
+            func.lower(IntelEventDB.source).in_(_INDEPENDENT_HUMANITARIAN_SOURCES),
+        )
+        if cutoff is not None:
+            humanitarian_query = humanitarian_query.filter(IntelEventDB.created_at >= cutoff)
         humanitarian_mmsis = {
             str(value)
-            for (value,) in (
-                db.query(IntelEventDB.linked_mmsi)
-                .filter(
-                    IntelEventDB.created_at >= cutoff,
-                    IntelEventDB.maritime_domain == "sar",
-                    IntelEventDB.linked_mmsi.isnot(None),
-                    IntelEventDB.linked_mmsi != "",
-                )
-                .distinct()
-                .all()
-            )
+            for (value,) in humanitarian_query.distinct().all()
             if value
         }
 
@@ -857,21 +906,46 @@ def reconcile_cross_modal_episodes(*, hours: int = 168, limit: int = 500) -> dic
                 humanitarian_subjects.add(subject)
 
     with session_scope() as db:
-        recent_rows = (
-            db.query(MaritimeEpisodeDB)
-            .filter(
-                MaritimeEpisodeDB.updated_at >= cutoff,
+        rows_by_id: dict[str, Any] = {}
+
+        # Strong satellite/radio associations already carry an exact episode
+        # id, so load those rows directly even when they are old.
+        if candidate_ids:
+            for row in (
+                db.query(MaritimeEpisodeDB)
+                .filter(
+                    MaritimeEpisodeDB.episode_id.in_(sorted(candidate_ids)),
+                    MaritimeEpisodeDB.status == "active",
+                )
+                .all()
+            ):
+                rows_by_id[str(row.episode_id)] = row
+
+        # Humanitarian exact-MMSI closure is subject-based rather than episode-id
+        # based. Keep the scheduler bounded by updated_at; explicit historical
+        # backfill may scan the durable episode table once.
+        if humanitarian_subjects and len(rows_by_id) < limit:
+            humanitarian_query = db.query(MaritimeEpisodeDB).filter(
                 MaritimeEpisodeDB.status == "active",
             )
-            .order_by(MaritimeEpisodeDB.updated_at.desc())
-            .limit(max(limit * 4, 500))
-            .all()
-        )
+            if cutoff is not None:
+                humanitarian_query = humanitarian_query.filter(MaritimeEpisodeDB.updated_at >= cutoff)
+                scan_limit = max(limit * 4, 500)
+            else:
+                scan_limit = max(limit * 20, 50000)
+            for row in humanitarian_query.order_by(MaritimeEpisodeDB.updated_at.desc()).limit(scan_limit):
+                subjects = {str(value) for value in (row.subject_ids or ()) if value}
+                if subjects & humanitarian_subjects:
+                    rows_by_id.setdefault(str(row.episode_id), row)
+                    if len(rows_by_id) >= limit:
+                        break
+
         episode_rows: list[dict[str, Any]] = []
-        for row in recent_rows:
-            subjects = {str(value) for value in (row.subject_ids or ()) if value}
-            if row.episode_id not in candidate_ids and not (subjects & humanitarian_subjects):
-                continue
+        for row in sorted(
+            rows_by_id.values(),
+            key=lambda value: value.updated_at or value.created_at,
+            reverse=True,
+        )[:limit]:
             episode_rows.append({
                 "episode_id": row.episode_id,
                 "episode_family": row.episode_family,
@@ -887,10 +961,8 @@ def reconcile_cross_modal_episodes(*, hours: int = 168, limit: int = 500) -> dic
                 "alternative_explanations": list(row.alternative_explanations or ()),
                 "status": row.status,
             })
-            if len(episode_rows) >= limit:
-                break
 
-    evaluated = updated = skipped = failed = 0
+    evaluated = updated = skipped = failed = reopened = 0
     for row in episode_rows:
         evidence_ids = list(dict.fromkeys([
             *row["observation_ids"],
@@ -939,6 +1011,8 @@ def reconcile_cross_modal_episodes(*, hours: int = 168, limit: int = 500) -> dic
             with session_scope() as db:
                 refreshed = db.get(MaritimeEpisodeDB, row["episode_id"])
                 after = refreshed.verification_status if refreshed is not None else before
+            if hypothesis is not None and hypothesis.hypothesis_id.startswith("hyp:v2:"):
+                reopened += 1
             if after != before or hypothesis is not None:
                 updated += 1
         except Exception:
@@ -948,6 +1022,7 @@ def reconcile_cross_modal_episodes(*, hours: int = 168, limit: int = 500) -> dic
         "candidates": len(episode_rows),
         "evaluated": evaluated,
         "updated": updated,
+        "reopened": reopened,
         "skipped": skipped,
         "failed": failed,
     }
