@@ -243,6 +243,61 @@ def persist_baseline(baseline: BehaviouralBaseline) -> BehaviouralBaseline:
         return _from_row(row)
 
 
+def refresh_recent_baselines(
+    *, limit: int = 12, window_days: int = 30, min_age_hours: float = 24.0,
+) -> dict[str, int]:
+    """Refresh a bounded set of recently-active vessel baselines.
+
+    The scheduler calls this in small batches so historical context becomes a
+    continuously available counter-evidence source without turning baseline
+    construction into a high-memory background scan.
+    """
+    from sqlalchemy import func
+
+    from core.db.models import VesselTrackDB
+
+    now = datetime.now(timezone.utc)
+    recent_cutoff = (now - timedelta(hours=24)).replace(tzinfo=None)
+    with _session_scope() as db:
+        candidates = (
+            db.query(VesselTrackDB.mmsi, func.max(VesselTrackDB.ts).label("last_ts"))
+            .filter(VesselTrackDB.received_at >= recent_cutoff)
+            .group_by(VesselTrackDB.mmsi)
+            .order_by(func.max(VesselTrackDB.ts).desc())
+            .limit(max(1, int(limit) * 4))
+            .all()
+        )
+
+    built = skipped_fresh = insufficient = failed = 0
+    for mmsi, _last_ts in candidates:
+        if built >= limit:
+            break
+        key = str(mmsi or "").strip()
+        if not key:
+            continue
+        try:
+            existing = latest_baseline(key)
+            if existing is not None:
+                end = existing.window_end if existing.window_end.tzinfo else existing.window_end.replace(tzinfo=timezone.utc)
+                if (now - end).total_seconds() < min_age_hours * 3600:
+                    skipped_fresh += 1
+                    continue
+            baseline = build_baseline(key, window_days=window_days, now=now)
+            if baseline is None:
+                insufficient += 1
+                continue
+            persist_baseline(baseline)
+            built += 1
+        except Exception:
+            failed += 1
+    return {
+        "built": built,
+        "skipped_fresh": skipped_fresh,
+        "insufficient_history": insufficient,
+        "failed": failed,
+    }
+
+
 def latest_baseline(mmsi: str) -> BehaviouralBaseline | None:
     from core.db.models import VesselBehaviouralBaselineDB
 

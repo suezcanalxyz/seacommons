@@ -72,6 +72,93 @@ async def vessel_stats():
     return {**registry.stats(), "track_store": track_store.stats()}
 
 
+
+
+
+def _ship_type_name(value) -> str:
+    try:
+        from core.vessels.aisstream import _ship_type_label
+        return _ship_type_label(int(value))
+    except (TypeError, ValueError):
+        text = str(value or "UNKNOWN").strip().upper().replace(" ", "_")
+        return text or "UNKNOWN"
+
+
+def _matches_ship_type(raw_value, requested: str | None) -> bool:
+    if not requested:
+        return True
+    wanted = str(requested).strip().upper().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "RESCUE": "SAR",
+        "SEARCH_AND_RESCUE": "SAR",
+        "SEARCH_RESCUE": "SAR",
+        "LAW": "LAW_ENFORCEMENT",
+        "LAWENFORCEMENT": "LAW_ENFORCEMENT",
+        "POLICE": "LAW_ENFORCEMENT",
+        "NAVY": "MILITARY",
+        "MILITARY_OPS": "MILITARY",
+        "ANTIPOLLUTION": "ANTI_POLLUTION",
+        "ANTI_POLLUTION_VESSEL": "ANTI_POLLUTION",
+        "MEDICAL": "MEDICAL_TRANSPORT",
+    }
+    wanted = aliases.get(wanted, wanted)
+    try:
+        return int(raw_value) == int(wanted)
+    except (TypeError, ValueError):
+        return _ship_type_name(raw_value) == wanted
+
+
+@router.get("/api/v1/vessels/search")
+async def search_vessels(
+    q: str | None = Query(default=None, max_length=120),
+    ship_type: str | None = Query(
+        default=None,
+        description="AIS ship-type code or family label: cargo, tanker, passenger, SAR, tug, etc.",
+    ),
+    active_only: bool = Query(default=True),
+    limit: int = Query(default=100, ge=1, le=1000),
+):
+    """Search current/known vessels by identity text and/or AIS ship type."""
+    from core.vessels.registry import registry
+
+    payload = registry.get_geojson() if active_only else registry.get_last_known_geojson()
+    needle = str(q or "").strip().lower()
+    matches = []
+    for feature in payload.get("features", []):
+        props = feature.get("properties") or {}
+        if not _matches_ship_type(props.get("ship_type"), ship_type):
+            continue
+        haystack = " ".join(
+            str(props.get(key) or "")
+            for key in ("mmsi", "ship_name", "imo", "destination", "flag")
+        ).lower()
+        if needle and needle not in haystack:
+            continue
+        coords = (feature.get("geometry") or {}).get("coordinates") or []
+        matches.append({
+            "mmsi": props.get("mmsi"),
+            "ship_name": props.get("ship_name"),
+            "imo": props.get("imo"),
+            "flag": props.get("flag"),
+            "ship_type": props.get("ship_type"),
+            "ship_type_label": _ship_type_name(props.get("ship_type")),
+            "destination": props.get("destination"),
+            "speed_kn": props.get("speed"),
+            "course_deg": props.get("course"),
+            "nav_status": props.get("nav_status"),
+            "last_seen": props.get("last_seen"),
+            "lat": coords[1] if len(coords) == 2 else None,
+            "lon": coords[0] if len(coords) == 2 else None,
+        })
+    matches.sort(key=lambda row: (str(row.get("ship_type_label") or ""), str(row.get("ship_name") or row.get("mmsi") or "")))
+    return {
+        "query": {"q": q, "ship_type": ship_type, "active_only": active_only},
+        "count": min(limit, len(matches)),
+        "total_matches": len(matches),
+        "vessels": matches[:limit],
+    }
+
+
 @router.get("/api/v1/vessels/{mmsi}/track")
 async def vessel_track(
     mmsi: str,

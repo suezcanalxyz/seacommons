@@ -314,7 +314,7 @@ def test_play_db_routes_are_sync_for_threadpool_isolation():
 
 def test_play_catalog_uses_episode_parent_instead_of_raw_ais_child():
     from core.api.routes import play as play_routes
-    from core.db.models import IntelEventDB, MaritimeEpisodeDB
+    from core.db.models import IntelEventDB, MaritimeEpisodeDB, SatelliteObservationDB
     from core.db.session import session_scope
 
     suffix = uuid.uuid4().hex[:8]
@@ -355,6 +355,22 @@ def test_play_catalog_uses_episode_parent_instead_of_raw_ais_child():
             evidence_fingerprint=f"fingerprint-{suffix}",
             method_version="test", status="active",
         ))
+        db.add(SatelliteObservationDB(
+            observation_id=f"sat:coverage:{suffix}",
+            incident_id=f"unlinked:{suffix}",
+            provider="copernicus",
+            mission="sentinel1",
+            product_id=f"scene:{suffix}",
+            acquisition_time=(reported + timedelta(minutes=30)).isoformat(),
+            discovered_at=(reported + timedelta(hours=1)).replace(tzinfo=None),
+            footprint={"type": "Polygon", "coordinates": []},
+            bbox=[13.5, 35.0, 14.5, 36.0],
+            sensor_type="sar",
+            temporal_relation="nearest",
+            temporal_delta_s=1800.0,
+            evidence_status="contextual",
+            association_status=None,
+        ))
     play_routes._play_catalog_cache.clear()
     play_routes._play_counts_cache.clear()
 
@@ -378,6 +394,13 @@ def test_play_catalog_uses_episode_parent_instead_of_raw_ais_child():
     assert dossier["incident_id"] == episode_id
     assert dossier["archive_decision"] == "open_case"
     assert dossier["evidence_count"] >= 1
+    assert dossier["satellite_review_candidate_count"] >= 1
+    candidate = next(
+        row for row in dossier["satellite_review_candidates"]
+        if row["observation_id"] == f"sat:coverage:{suffix}"
+    )
+    assert candidate["evidence_role"] == "context_only_pending_review"
+    assert dossier["satellite_review_semantics"].startswith("Coverage-only")
     assert {"episode", "evidence"}.issubset(
         {entry["type"] for entry in dossier["timeline"]}
     )

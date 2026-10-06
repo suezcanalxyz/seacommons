@@ -570,6 +570,30 @@ def _job_sar_mission_enrichment() -> None:
         logger.warning("Scheduler sar_mission_enrichment failed: %s", exc)
 
 
+def _job_cross_modal_closure() -> None:
+    """Close asynchronous satellite/radio/humanitarian evidence onto episodes."""
+    try:
+        from core.intel.hypothesis_engine import reconcile_cross_modal_episodes
+
+        result = reconcile_cross_modal_episodes(hours=168, limit=500)
+        if result.get("updated") or result.get("failed"):
+            logger.info("Cross-modal closure reconcile: %s", result)
+    except Exception as exc:
+        logger.warning("Scheduler cross-modal closure failed: %s", exc)
+
+
+def _job_behavioural_baselines() -> None:
+    """Refresh a small rolling batch of AIS behavioural baselines."""
+    try:
+        from core.mda.behavioural_baseline import refresh_recent_baselines
+
+        result = refresh_recent_baselines(limit=12, window_days=30, min_age_hours=24)
+        if result.get("built") or result.get("failed"):
+            logger.info("Behavioural baseline refresh: %s", result)
+    except Exception as exc:
+        logger.warning("Scheduler behavioural baseline refresh failed: %s", exc)
+
+
 def _job_expire_stale_hypotheses() -> None:
     """Close out candidate/collecting hypotheses whose evidence went quiet
     24h+ ago. Keeps Live/Play from holding an investigation open forever
@@ -637,6 +661,14 @@ def start() -> None:
                           id="expire_stale_hypotheses", replace_existing=True,
                           max_instances=1, misfire_grace_time=600)
 
+        scheduler.add_job(_job_cross_modal_closure, IntervalTrigger(minutes=15),
+                          id="cross_modal_closure", replace_existing=True,
+                          max_instances=1, misfire_grace_time=600, next_run_time=_soon())
+
+        scheduler.add_job(_job_behavioural_baselines, IntervalTrigger(hours=6),
+                          id="behavioural_baselines", replace_existing=True,
+                          max_instances=1, misfire_grace_time=1800, next_run_time=_soon())
+
         scheduler.add_job(_job_darkship_cue_refresh, IntervalTrigger(minutes=10),
                           id="darkship_cue_refresh", replace_existing=True,
                           max_instances=1, misfire_grace_time=600, next_run_time=_soon())
@@ -679,7 +711,7 @@ def start() -> None:
         _scheduler = scheduler
         logger.info(
             "Background scheduler started: refresh_news(30m), source_health(15m), "
-            "humanitarian_reconcile(15m), incident_watch(5m), satellite_enrichment(30m), "
+            "humanitarian_reconcile(15m), incident_watch(5m), cross_modal_closure(15m), behavioural_baselines(6h), satellite_enrichment(30m), "
             "iom_incidents(1h), forensic_scan(6h), receiver_discovery(6h), receiver_catalog(15m), "
             "ais_coverage_snapshots(15m), mda_reference(14d), mda_daily(24h) "
             "[drift: manual-only]"

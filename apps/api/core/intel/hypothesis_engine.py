@@ -15,7 +15,10 @@ Legacy hypothesis rows are never relinked. New rows use a versioned ID
 from __future__ import annotations
 
 from dataclasses import replace
+import logging
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 from core.intel.episode_store import save_episode
 from core.intel.hypothesis import (
@@ -27,6 +30,33 @@ from core.intel.hypothesis import (
 from core.intel.hypothesis_eligibility import evaluate_hypothesis_eligibility
 from core.intel.hypothesis_store import get_hypothesis, list_hypotheses, save_hypothesis
 from core.intel.store import IntelEvent, intel_store
+
+
+def _normalize_independence_group(value: Any) -> str:
+    text = str(value or "").strip()
+    aliases = {
+        "ais_sensor_lineage": "modality:ais",
+        "ais": "modality:ais",
+        "gfw_sar": "source:satellite:gfw",
+        "satellite:gfw": "source:satellite:gfw",
+        "radio:dsc": "source:radio:dsc",
+        "radio_transmission": "source:radio:dsc",
+    }
+    return aliases.get(text, text)
+
+
+def _canonical_verification(independence_groups: list[str] | tuple[str, ...], evidence_count: int) -> str:
+    """Verification invariant: corroborated always means >=2 independent lineages."""
+    group_count = len({
+        _normalize_independence_group(value)
+        for value in independence_groups
+        if _normalize_independence_group(value)
+    })
+    if group_count >= 2:
+        return "multi_source_corroborated"
+    if int(evidence_count) >= 2:
+        return "single_source_multi_indicator"
+    return "single_source_observed"
 
 
 def _event_mmsis(event: IntelEvent) -> tuple[str, ...]:
@@ -53,7 +83,7 @@ def _attach_cross_modal_evidence(
     An unmatched SAR detection remains a candidate, never corroborated identity.
     """
     from copy import deepcopy
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
 
     from core.evidence.cross_modal import CrossModalEvidencePacket, EvidenceReference
     from core.evidence.cross_modal_analysis import evaluate_independence
@@ -108,6 +138,130 @@ def _attach_cross_modal_evidence(
                 if satellite.association_status == "unmatched_candidate":
                     reason_codes.add("SATELLITE_CANDIDATE_IN_REACHABLE_AREA")
 
+    # Close the loop with already-persisted independent evidence. Satellite
+    # and radio associations can be created after the detector event that first
+    # opened the episode; exact-MMSI humanitarian reports can arrive later too.
+    # Only strong/identity-explicit associations enter the evidence packet.
+    if canonical_episode_id:
+        from core.db.models import (
+            IntelEventDB, RadioAISAssociationDB, SatelliteObservationDB,
+        )
+        from core.db.session import session_scope
+
+        linked_mmsis = sorted({
+            value
+            for item in events
+            for value in _event_mmsis(item)
+            if value
+        })
+        strong_satellite: list[dict[str, Any]] = []
+        strong_radio: list[dict[str, Any]] = []
+        humanitarian_rows: list[dict[str, Any]] = []
+        try:
+            with session_scope() as db:
+                strong_satellite = [
+                    {
+                        "observation_id": row.observation_id,
+                        "acquisition_time": row.acquisition_time,
+                        "provider": row.provider,
+                    }
+                    for row in (
+                        db.query(SatelliteObservationDB)
+                        .filter(
+                            SatelliteObservationDB.episode_id == canonical_episode_id,
+                            SatelliteObservationDB.association_status == "strong",
+                            SatelliteObservationDB.evidence_status == "associated",
+                        )
+                        .all()
+                    )
+                ]
+                strong_radio = [
+                    {
+                        "observation_id": row.observation_id,
+                        "ais_observed_at": row.ais_observed_at,
+                        "confidence": row.confidence,
+                    }
+                    for row in (
+                        db.query(RadioAISAssociationDB)
+                        .filter(
+                            RadioAISAssociationDB.episode_id == canonical_episode_id,
+                            RadioAISAssociationDB.match_status == "strong",
+                            RadioAISAssociationDB.episode_eligible.is_(True),
+                        )
+                        .all()
+                    )
+                ]
+                if linked_mmsis:
+                    humanitarian_rows = [
+                        {
+                            "id": row.id,
+                            "source": row.source,
+                            "timestamp_utc": row.timestamp_utc,
+                        }
+                        for row in (
+                            db.query(IntelEventDB)
+                            .filter(
+                                IntelEventDB.linked_mmsi.in_(linked_mmsis),
+                                IntelEventDB.maritime_domain == "sar",
+                            )
+                            .order_by(IntelEventDB.created_at.desc())
+                            .limit(100)
+                            .all()
+                        )
+                    ]
+        except Exception as exc:
+            # Cross-modal closure is additive. A temporary DB/provider issue
+            # must never suppress the underlying canonical episode.
+            logger.debug("cross-modal persisted evidence lookup failed for %s: %s", canonical_episode_id, exc)
+
+        for satellite in strong_satellite:
+            det_at = parse_utc(satellite.get("acquisition_time")) or datetime.now(timezone.utc)
+            refs.append(EvidenceReference(
+                evidence_id=str(satellite["observation_id"]),
+                evidence_class="satellite_observation",
+                source_lineage=f"satellite:{satellite.get('provider') or 'unknown'}",
+                modality="satellite",
+                observed_at=det_at,
+                confidence=0.95,
+            ))
+            reason_codes.add("SATELLITE_DETECTION_ASSOCIATED_EXACT_MMSI")
+
+        for association in strong_radio:
+            observed_at = parse_utc(association.get("ais_observed_at")) or datetime.now(timezone.utc)
+            refs.append(EvidenceReference(
+                evidence_id=f"radio:{association['observation_id']}",
+                evidence_class="dsc_message",
+                source_lineage="radio:dsc",
+                modality="radio",
+                observed_at=observed_at,
+                confidence=max(0.0, min(1.0, float(association.get("confidence") or 0.0))),
+            ))
+            reason_codes.add("RADIO_DSC_ASSOCIATED_EXACT_MMSI")
+
+        episode_start = parse_utc(episode_props.get("first_observed_at"))
+        episode_end = parse_utc(episode_props.get("last_observed_at")) or episode_start
+        for row in humanitarian_rows:
+            source = str(row.get("source") or "").strip()
+            if source.lower().startswith("ais") or source.lower().startswith("seacommons"):
+                continue
+            observed_at = parse_utc(row.get("timestamp_utc"))
+            if observed_at is None:
+                continue
+            if episode_start is not None and observed_at < episode_start - timedelta(hours=6):
+                continue
+            if episode_end is not None and observed_at > episode_end + timedelta(hours=6):
+                continue
+            lineage = source.lower().replace(" ", "_") or "unknown"
+            refs.append(EvidenceReference(
+                evidence_id=f"humanitarian:{row['id']}",
+                evidence_class="operational_claim",
+                source_lineage=f"humanitarian:{lineage}",
+                modality="humanitarian",
+                observed_at=observed_at,
+                confidence=0.8,
+            ))
+            reason_codes.add("HUMANITARIAN_REPORT_ASSOCIATED_EXACT_MMSI")
+
     if not refs:
         return episode
     subject_ids = tuple(str(v) for v in ((episode.get("properties") or {}).get("subject_ids") or ()) if v)
@@ -123,9 +277,43 @@ def _attach_cross_modal_evidence(
     props["cross_modal_modalities"] = list(assessment.modalities)
     props["cross_modal_independence_groups"] = list(assessment.independence_groups)
     props["cross_modal_reason_codes"] = sorted(reason_codes)
+
+    # Canonical closure: independent evidence must update the episode fields
+    # that persistence, hypothesis eligibility and Live/Play actually read.
+    # Detector count never substitutes for independent lineage count.
+    existing_groups = {
+        _normalize_independence_group(value)
+        for value in (
+            props.get("independence_groups")
+            or props.get("contributing_independence_groups")
+            or ()
+        )
+        if _normalize_independence_group(value)
+    }
+    canonical_groups = sorted(
+        existing_groups
+        | {
+            _normalize_independence_group(value)
+            for value in assessment.independence_groups
+            if _normalize_independence_group(value)
+        }
+    )
+    evidence_count = max(
+        int(props.get("evidence_count") or 0),
+        len(packet.evidence),
+    )
+    verification_status = _canonical_verification(canonical_groups, evidence_count)
+    if verification_status == "multi_source_corroborated":
+        props["analysis_state"] = "evidence"
+        props["evidence_stage"] = "corroborated"
+    props["independence_groups"] = canonical_groups
+    props["independent_source_count"] = len(canonical_groups)
+    props["evidence_count"] = evidence_count
+    props["verification_status"] = verification_status
     props["cross_modal_investigation_ready"] = (
-        assessment.independent_group_count >= 2
-        and {"ais", "satellite"}.issubset(set(assessment.modalities))
+        len(canonical_groups) >= 2
+        and "ais" in set(assessment.modalities)
+        and bool({"satellite", "radio", "humanitarian"} & set(assessment.modalities))
     )
     return updated
 
@@ -580,6 +768,189 @@ def evaluate_episode(episode: dict[str, Any]) -> Optional[InvestigationHypothesi
 
     save_hypothesis(hyp)
     return hyp
+
+
+
+
+def reconcile_cross_modal_episodes(*, hours: int = 168, limit: int = 500) -> dict[str, int]:
+    """Re-evaluate canonical episodes after independent evidence arrives later.
+
+    Satellite/radio associations are often produced after the AIS episode that
+    opened the investigation. This bounded reconciler closes that asynchronous
+    loop. Exact-identity humanitarian reports can trigger the same re-evaluation.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from core.db.models import (
+        IntelEventDB,
+        MaritimeEpisodeDB,
+        RadioAISAssociationDB,
+        SatelliteObservationDB,
+    )
+    from core.db.session import session_scope
+    from core.mda.vessel_subject import subject_id_for
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).replace(tzinfo=None)
+    candidate_ids: set[str] = set()
+    humanitarian_subjects: set[str] = set()
+
+    with session_scope() as db:
+        candidate_ids.update(
+            str(value)
+            for (value,) in (
+                db.query(SatelliteObservationDB.episode_id)
+                .filter(
+                    SatelliteObservationDB.created_at >= cutoff,
+                    SatelliteObservationDB.episode_id.isnot(None),
+                    SatelliteObservationDB.association_status == "strong",
+                    SatelliteObservationDB.evidence_status == "associated",
+                )
+                .distinct()
+                .limit(limit)
+                .all()
+            )
+            if value
+        )
+        candidate_ids.update(
+            str(value)
+            for (value,) in (
+                db.query(RadioAISAssociationDB.episode_id)
+                .filter(
+                    RadioAISAssociationDB.created_at >= cutoff,
+                    RadioAISAssociationDB.episode_id.isnot(None),
+                    RadioAISAssociationDB.match_status == "strong",
+                    RadioAISAssociationDB.episode_eligible.is_(True),
+                )
+                .distinct()
+                .limit(limit)
+                .all()
+            )
+            if value
+        )
+        humanitarian_mmsis = {
+            str(value)
+            for (value,) in (
+                db.query(IntelEventDB.linked_mmsi)
+                .filter(
+                    IntelEventDB.created_at >= cutoff,
+                    IntelEventDB.maritime_domain == "sar",
+                    IntelEventDB.linked_mmsi.isnot(None),
+                    IntelEventDB.linked_mmsi != "",
+                )
+                .distinct()
+                .all()
+            )
+            if value
+        }
+
+    if humanitarian_mmsis:
+        try:
+            from core.vessels.registry import registry
+
+            cache = getattr(registry, "_cache", {}) or {}
+        except Exception:
+            cache = {}
+        for mmsi in humanitarian_mmsis:
+            humanitarian_subjects.add(f"subj:mmsi:{mmsi}")
+            subject = subject_id_for(imo=(cache.get(mmsi, {}) or {}).get("imo"), mmsi=mmsi)
+            if subject:
+                humanitarian_subjects.add(subject)
+
+    with session_scope() as db:
+        recent_rows = (
+            db.query(MaritimeEpisodeDB)
+            .filter(
+                MaritimeEpisodeDB.updated_at >= cutoff,
+                MaritimeEpisodeDB.status == "active",
+            )
+            .order_by(MaritimeEpisodeDB.updated_at.desc())
+            .limit(max(limit * 4, 500))
+            .all()
+        )
+        episode_rows: list[dict[str, Any]] = []
+        for row in recent_rows:
+            subjects = {str(value) for value in (row.subject_ids or ()) if value}
+            if row.episode_id not in candidate_ids and not (subjects & humanitarian_subjects):
+                continue
+            episode_rows.append({
+                "episode_id": row.episode_id,
+                "episode_family": row.episode_family,
+                "subject_ids": list(row.subject_ids or ()),
+                "start_at": row.start_at,
+                "end_at": row.end_at,
+                "geometry": row.geometry,
+                "observation_ids": list(row.observation_ids or ()),
+                "feature_ids": list(row.feature_ids or ()),
+                "independence_groups": list(row.independence_groups or ()),
+                "verification_status": row.verification_status,
+                "behaviour_context": dict(row.behaviour_context or {}),
+                "alternative_explanations": list(row.alternative_explanations or ()),
+                "status": row.status,
+            })
+            if len(episode_rows) >= limit:
+                break
+
+    evaluated = updated = skipped = failed = 0
+    for row in episode_rows:
+        evidence_ids = list(dict.fromkeys([
+            *row["observation_ids"],
+            *row["feature_ids"],
+        ]))
+        durable_event_ids = [
+            value for value in evidence_ids if intel_store.get_durable(str(value)) is not None
+        ]
+        if not durable_event_ids:
+            skipped += 1
+            continue
+        start_at = row["start_at"]
+        end_at = row["end_at"] or start_at
+        start_iso = start_at.replace(tzinfo=timezone.utc).isoformat() if start_at and start_at.tzinfo is None else start_at.isoformat()
+        end_iso = end_at.replace(tzinfo=timezone.utc).isoformat() if end_at and end_at.tzinfo is None else end_at.isoformat()
+        analysis = (row["behaviour_context"].get("analysis") or {})
+        feature = {
+            "type": "Feature",
+            "geometry": row["geometry"],
+            "properties": {
+                "episode_id": row["episode_id"],
+                "episode_family": row["episode_family"],
+                "subject_ids": row["subject_ids"],
+                "related_signal_ids": durable_event_ids,
+                "observation_ids": durable_event_ids,
+                "feature_ids": row["feature_ids"],
+                "first_observed_at": start_iso,
+                "last_observed_at": end_iso,
+                "verification_status": row["verification_status"],
+                "independence_groups": row["independence_groups"],
+                "independent_source_count": len(set(row["independence_groups"])),
+                "signal_count": len(durable_event_ids),
+                "evidence_count": max(1, len(durable_event_ids)),
+                "analysis_state": analysis.get("analysis_state") or "evidence_candidate",
+                "publication_state": analysis.get("publication_state") or "internal",
+                "resolution_state": analysis.get("resolution_state") or "open",
+                "behaviour_context": row["behaviour_context"],
+                "alternative_explanations": row["alternative_explanations"],
+                "episode_status": row["status"],
+            },
+        }
+        try:
+            before = row["verification_status"]
+            hypothesis = evaluate_episode(feature)
+            evaluated += 1
+            with session_scope() as db:
+                refreshed = db.get(MaritimeEpisodeDB, row["episode_id"])
+                after = refreshed.verification_status if refreshed is not None else before
+            if after != before or hypothesis is not None:
+                updated += 1
+        except Exception:
+            failed += 1
+
+    return {
+        "candidates": len(episode_rows),
+        "evaluated": evaluated,
+        "updated": updated,
+        "skipped": skipped,
+        "failed": failed,
+    }
 
 
 def expire_stale_hypotheses(
