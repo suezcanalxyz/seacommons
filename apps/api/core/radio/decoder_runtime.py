@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import queue
 import subprocess
 import threading
@@ -12,6 +13,52 @@ from typing import Callable, Iterable, Mapping, Protocol
 from core.radio.provider import DecodedRadioMessage
 
 _MAX_EPHEMERAL_FRAME_BYTES = 262_144
+_DSC_TONE_PROBE_INTERVAL = 20
+_DSC_TONE_PROBE_MAX_SAMPLES = 2_400
+
+
+def _goertzel_normalized_power(samples: list[int], sample_rate_hz: int, frequency_hz: float) -> float:
+    """Return tone energy normalized by total sample energy.
+
+    This is diagnostics only: it never creates evidence or a decoded message.
+    """
+    if not samples or sample_rate_hz <= 0:
+        return 0.0
+    omega = 2.0 * math.pi * float(frequency_hz) / float(sample_rate_hz)
+    coeff = 2.0 * math.cos(omega)
+    s_prev = s_prev2 = 0.0
+    total = 0.0
+    for sample in samples:
+        value = float(sample)
+        total += value * value
+        current = value + coeff * s_prev - s_prev2
+        s_prev2, s_prev = s_prev, current
+    if total <= 0.0:
+        return 0.0
+    power = s_prev2 * s_prev2 + s_prev * s_prev - coeff * s_prev * s_prev2
+    return max(0.0, power / (total * max(1, len(samples))))
+
+
+def _dsc_tone_score(frame: "EphemeralRadioFrame") -> float:
+    """Measure aggregate 1615/1785 Hz energy without retaining audio."""
+    if int(frame.frequency_hz) not in _DSC_FREQUENCIES_HZ:
+        return 0.0
+    from array import array
+    from core.radio.pcm import normalize_pcm16le
+
+    pcm = normalize_pcm16le(
+        frame.payload,
+        encoding=frame.encoding,
+        sample_rate_hz=frame.sample_rate_hz,
+    )
+    values = array("h")
+    values.frombytes(pcm.payload)
+    if not values:
+        return 0.0
+    samples = list(values[-_DSC_TONE_PROBE_MAX_SAMPLES:])
+    mark = _goertzel_normalized_power(samples, pcm.sample_rate_hz, 1615.0)
+    space = _goertzel_normalized_power(samples, pcm.sample_rate_hz, 1785.0)
+    return round(mark + space, 8)
 
 
 @dataclass(frozen=True)
@@ -71,6 +118,10 @@ class RadioDecoderRuntime:
         self._invalid = 0
         self._dropped = 0
         self._errors = 0
+        self._tone_probe_frames = 0
+        self._tone_score_sum = 0.0
+        self._tone_score_max = 0.0
+        self._tone_score_last = 0.0
         self._queue: queue.Queue[EphemeralRadioFrame] = queue.Queue(maxsize=max(1, int(queue_size)))
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
@@ -86,6 +137,14 @@ class RadioDecoderRuntime:
             "errors": self._errors,
             "queued": self._queue.qsize(),
             "worker_alive": bool(self._worker and self._worker.is_alive()),
+            "dsc_tone_probe_frames": self._tone_probe_frames,
+            "dsc_tone_score_avg": round(
+                self._tone_score_sum / self._tone_probe_frames, 8
+            ) if self._tone_probe_frames else None,
+            "dsc_tone_score_max": round(self._tone_score_max, 8)
+            if self._tone_probe_frames else None,
+            "dsc_tone_score_last": round(self._tone_score_last, 8)
+            if self._tone_probe_frames else None,
         }
 
     def start(self) -> None:
@@ -138,6 +197,19 @@ class RadioDecoderRuntime:
         if not self.enabled:
             return {"accepted": False, "reason": "disabled"}
         self._frames += 1
+        if (
+            self._frames % _DSC_TONE_PROBE_INTERVAL == 0
+            and int(frame.frequency_hz) in _DSC_FREQUENCIES_HZ
+        ):
+            try:
+                score = _dsc_tone_score(frame)
+                self._tone_probe_frames += 1
+                self._tone_score_sum += score
+                self._tone_score_max = max(self._tone_score_max, score)
+                self._tone_score_last = score
+            except Exception:
+                # Tone diagnostics must never affect decoder acceptance.
+                pass
         decoded = 0
         invalid = 0
         for decoder in self._decoders:
