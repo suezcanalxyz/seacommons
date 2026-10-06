@@ -243,6 +243,32 @@ def persist_baseline(baseline: BehaviouralBaseline) -> BehaviouralBaseline:
         return _from_row(row)
 
 
+def _recent_registry_candidates(
+    *, now: datetime, limit: int, lookback_hours: float = 24.0,
+) -> list[tuple[str, datetime]]:
+    """Select recent vessels without scanning the large track table.
+
+    The persistent vessel registry already tracks the latest source timestamp
+    per MMSI. It is the right bounded selector for deciding *which* historical
+    baselines to refresh; the baseline itself is still built from AIS track
+    history and never from registry summary fields.
+    """
+    from core.vessels.registry import registry
+
+    cutoff = now - timedelta(hours=lookback_hours)
+    cache = getattr(registry, "_cache", {}) or {}
+    candidates: list[tuple[str, datetime]] = []
+    for mmsi, vessel in cache.items():
+        observed = _parse_ts((vessel or {}).get("last_seen"))
+        if observed is None or observed < cutoff:
+            continue
+        key = str(mmsi or "").strip()
+        if key:
+            candidates.append((key, observed))
+    candidates.sort(key=lambda item: item[1], reverse=True)
+    return candidates[:max(1, int(limit))]
+
+
 def refresh_recent_baselines(
     *, limit: int = 12, window_days: int = 30, min_age_hours: float = 24.0,
 ) -> dict[str, int]:
@@ -252,21 +278,8 @@ def refresh_recent_baselines(
     continuously available counter-evidence source without turning baseline
     construction into a high-memory background scan.
     """
-    from sqlalchemy import func
-
-    from core.db.models import VesselTrackDB
-
     now = datetime.now(timezone.utc)
-    recent_cutoff = (now - timedelta(hours=24)).replace(tzinfo=None)
-    with _session_scope() as db:
-        candidates = (
-            db.query(VesselTrackDB.mmsi, func.max(VesselTrackDB.ts).label("last_ts"))
-            .filter(VesselTrackDB.received_at >= recent_cutoff)
-            .group_by(VesselTrackDB.mmsi)
-            .order_by(func.max(VesselTrackDB.ts).desc())
-            .limit(max(1, int(limit) * 4))
-            .all()
-        )
+    candidates = _recent_registry_candidates(now=now, limit=max(1, int(limit) * 4))
 
     built = skipped_fresh = insufficient = failed = 0
     for mmsi, _last_ts in candidates:

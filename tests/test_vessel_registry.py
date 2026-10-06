@@ -113,3 +113,11 @@ def test_older_position_cannot_overwrite_newer_position(tmp_path):
     assert row["last_speed"] == 9.0
     assert row["last_seen"] == newer.isoformat()
     assert row["ship_name"] == "STATIC INFO MAY UPDATE"
+
+
+def test_registry_uses_configured_persistent_state_path(monkeypatch, tmp_path):
+    persistent = tmp_path / "state" / "vessels.db"
+    monkeypatch.setenv("VESSEL_REGISTRY_DB_PATH", str(persistent))
+    reg = VesselRegistry()
+    assert reg._db_path == persistent
+    assert persistent.exists()
