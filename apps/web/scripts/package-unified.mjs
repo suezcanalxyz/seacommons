@@ -16,6 +16,7 @@ const consoleIndex = resolve(distRoot, 'index.html');
 const siteIndex = resolve(distRoot, 'site.html');
 const playIndex = resolve(distRoot, 'play.html');
 const docsIndex = resolve(distRoot, 'docs.html');
+const futuresIndex = resolve(distRoot, 'futures.html');
 
 if (!existsSync(consoleIndex)) {
   throw new Error('Vite build is missing dist/index.html (console entry)');
@@ -29,6 +30,9 @@ if (!existsSync(playIndex)) {
 if (!existsSync(docsIndex)) {
   throw new Error('Vite build is missing dist/docs.html (public docs entry)');
 }
+if (!existsSync(futuresIndex)) {
+  throw new Error('Vite build is missing dist/futures.html (private Futures entry)');
+}
 
 renameSync(consoleIndex, resolve(distRoot, 'console.html'));
 
@@ -36,4 +40,4 @@ for (const directory of ['Assets', 'ThirdParty', 'Widgets', 'Workers']) {
   cpSync(resolve(cesiumRoot, directory), resolve(distRoot, 'cesium', directory), { recursive: true });
 }
 
-console.log('Unified package ready: institutional site + docs + Play timeline + Live console');
+console.log('Unified package ready: institutional site + docs + Play timeline + Live console + Futures');

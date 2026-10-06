@@ -19,14 +19,15 @@ function useClocks() {
 }
 
 const NAV = [
-  ['Docs', '/docs'],
-  ['Live', 'https://live.seacommons.org'],
-  ['Play', 'https://play.seacommons.org'],
-  ['Humanitarian', '#humanitarian'],
-  ['Maritime', '#maritime'],
-  ['Sources', '#sources'],
-  ['Method', '#method'],
-  ['Governance', '#governance'],
+  ['futures', 'https://futures.seacommons.org'],
+  ['docs', '/docs'],
+  ['live', 'https://live.seacommons.org'],
+  ['play', 'https://play.seacommons.org'],
+  ['humanitarian', '#humanitarian'],
+  ['maritime', '#maritime'],
+  ['sources', '#sources'],
+  ['method', '#method'],
+  ['governance', '#governance'],
 ];
 
 export function BrandMark({ small = false }) {
