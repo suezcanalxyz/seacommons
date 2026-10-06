@@ -77,12 +77,12 @@ test('Futures guidebook and tools are native partner surfaces', async ({ page })
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL);
 
-  await page.getByRole('button', { name: /guidebook/i }).click();
+  await page.locator('.future-sidebar nav').getByRole('button', { name: /^guidebook/i }).click();
   await expect(page.getByRole('heading', { name: 'Futures and access' })).toBeVisible();
   await page.getByRole('button', { name: 'Evidence model', exact: true }).click();
   await expect(page.getByText(/An observation is not an incident/i)).toBeVisible();
 
-  await page.getByRole('button', { name: /tools/i }).click();
+  await page.locator('.future-sidebar nav').getByRole('button', { name: /^tools/i }).click();
   await expect(page.getByRole('heading', { name: /Surfaces you can open/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /SeaCommons Live/i })).toHaveAttribute('href', 'https://live.seacommons.org');
   await expect(page.getByText('Research Query', { exact: true })).toBeVisible();
@@ -93,7 +93,7 @@ test('Futures access page states final grant hierarchy without pretending auth i
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL);
 
-  await page.getByRole('button', { name: /access/i }).click();
+  await page.locator('.future-sidebar nav').getByRole('button', { name: /^access/i }).click();
   await expect(page.getByRole('heading', { name: /Full bootstrap access now/i })).toBeVisible();
   await expect(page.getByText(/organisation → system → project \/ subproject → resource or tool/i)).toBeVisible();
   await expect(page.getByText(/final Suez Supabase identity tenant/i)).toBeVisible();
