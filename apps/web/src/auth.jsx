@@ -4,7 +4,11 @@ import { UserManager, WebStorageStateStore } from 'oidc-client-ts';
 const PUBLIC_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org', 'live.seacommons.org']);
 const CONTROLLED_HOSTS = new Set(['console.seacommons.org', 'engine.seacommons.org', 'futures.seacommons.org']);
 const hostname = window.location.hostname;
-const authRequired = CONTROLLED_HOSTS.has(hostname)
+const localReview = hostname === 'localhost' || hostname === '127.0.0.1';
+const futuresSurface = window.location.pathname.endsWith('/futures.html')
+  || Boolean(document.getElementById('futures-root'));
+const authRequired = (!localReview && futuresSurface)
+  || CONTROLLED_HOSTS.has(hostname)
   || (!PUBLIC_HOSTS.has(hostname) && import.meta.env.VITE_AUTH_ENABLED === 'true');
 const authority = import.meta.env.VITE_OIDC_AUTHORITY || '';
 const clientId = import.meta.env.VITE_OIDC_CLIENT_ID || '';
