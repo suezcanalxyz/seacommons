@@ -93,3 +93,49 @@ def test_persist_baseline_is_idempotent_and_latest(monkeypatch):
     with Session(engine) as session:
         assert session.query(VesselBehaviouralBaselineDB).count() == 1
     assert bb.latest_baseline("229113000").baseline_id == baseline.baseline_id
+
+
+def test_recent_registry_candidates_uses_persistent_registry_cache(monkeypatch):
+    from core.mda import behavioural_baseline as bb
+    from core.vessels.registry import registry
+
+    now = datetime(2026, 10, 6, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(registry, "_cache", {
+        "111111111": {"last_seen": (now - timedelta(minutes=5)).isoformat()},
+        "222222222": {"last_seen": (now - timedelta(hours=2)).isoformat()},
+        "333333333": {"last_seen": (now - timedelta(hours=30)).isoformat()},
+        "444444444": {"last_seen": None},
+    })
+
+    rows = bb._recent_registry_candidates(now=now, limit=10)
+    assert [mmsi for mmsi, _ in rows] == ["111111111", "222222222"]
+
+
+def test_refresh_recent_baselines_uses_bounded_registry_selector(monkeypatch):
+    from core.mda import behavioural_baseline as bb
+
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(
+        bb,
+        "_recent_registry_candidates",
+        lambda **kwargs: [("111111111", now), ("222222222", now)],
+    )
+    monkeypatch.setattr(bb, "latest_baseline", lambda mmsi: None)
+    built = []
+
+    def fake_build(mmsi, *, window_days, now):
+        if mmsi == "222222222":
+            return None
+        return object()
+
+    monkeypatch.setattr(bb, "build_baseline", fake_build)
+    monkeypatch.setattr(bb, "persist_baseline", lambda baseline: built.append(baseline))
+
+    result = bb.refresh_recent_baselines(limit=2, window_days=30, min_age_hours=24)
+    assert result == {
+        "built": 1,
+        "skipped_fresh": 0,
+        "insufficient_history": 1,
+        "failed": 0,
+    }
+    assert len(built) == 1

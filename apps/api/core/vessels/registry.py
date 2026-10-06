@@ -11,6 +11,7 @@ Architecture:
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 import time
@@ -20,7 +21,7 @@ from typing import Any
 
 _GEOJSON_CACHE_TTL_S = 10.0  # serve cached GeoJSON for up to 10 s even when dirty
 
-_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "vessels.db"
+_DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "vessels.db"
 
 _CREATE_SQL = """
 CREATE TABLE IF NOT EXISTS vessels (
@@ -130,8 +131,9 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
 class VesselRegistry:
     """Thread-safe vessel registry backed by SQLite with hot in-memory cache."""
 
-    def __init__(self, db_path: Path = _DB_PATH):
-        self._db_path = Path(db_path)
+    def __init__(self, db_path: Path | None = None):
+        configured = os.getenv("VESSEL_REGISTRY_DB_PATH")
+        self._db_path = Path(db_path or configured or _DEFAULT_DB_PATH)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._cache: dict[str, dict] = {}
