@@ -43,7 +43,12 @@
     },
     {
       "source": "/docs",
-      "has": [{ "type": "host", "value": "api.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "api.seacommons.org"
+        }
+      ],
       "destination": "/api/proxy?root=docs"
     },
     {
@@ -56,32 +61,72 @@
     },
     {
       "source": "/redoc",
-      "has": [{ "type": "host", "value": "api.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "api.seacommons.org"
+        }
+      ],
       "destination": "/api/proxy?root=redoc"
     },
     {
       "source": "/openapi.json",
-      "has": [{ "type": "host", "value": "api.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "api.seacommons.org"
+        }
+      ],
       "destination": "/api/proxy?root=openapi"
     },
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "api.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "api.seacommons.org"
+        }
+      ],
       "destination": "/api/proxy?health=1"
     },
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "play.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "futures.seacommons.org"
+        }
+      ],
+      "destination": "/futures.html"
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "host",
+          "value": "play.seacommons.org"
+        }
+      ],
       "destination": "/play.html"
     },
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "live.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "live.seacommons.org"
+        }
+      ],
       "destination": "/console.html"
     },
     {
       "source": "/",
-      "has": [{ "type": "host", "value": "console.seacommons.org" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "console.seacommons.org"
+        }
+      ],
       "destination": "/console.html"
     },
     {
@@ -93,8 +138,8 @@
     "VITE_PUBLIC_BASE": "/",
     "VITE_APP_PROFILE": "demo",
     "VITE_AUTH_ENABLED": "false",
-    "VITE_OIDC_AUTHORITY": "https://auth.seacommons.org",
-    "VITE_OIDC_CLIENT_ID": "seacommons-console",
+    "VITE_OIDC_AUTHORITY": "https://identity.suezcanal.xyz",
+    "VITE_OIDC_CLIENT_ID": "seacommons-futures",
     "VITE_EDGE_API_BASE": "https://seacommons-edge.seacommons.workers.dev",
     "VITE_LIVE_EDGE_BASE": "https://seacommons-edge.seacommons.workers.dev"
   }
