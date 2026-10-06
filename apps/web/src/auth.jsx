@@ -2,15 +2,15 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { UserManager, WebStorageStateStore } from 'oidc-client-ts';
 
 const PUBLIC_HOSTS = new Set(['play.seacommons.org', 'demo.seacommons.org', 'live.seacommons.org']);
-const CONTROLLED_HOSTS = new Set(['console.seacommons.org', 'engine.seacommons.org']);
+const CONTROLLED_HOSTS = new Set(['console.seacommons.org', 'engine.seacommons.org', 'futures.seacommons.org']);
 const hostname = window.location.hostname;
 const enabled = CONTROLLED_HOSTS.has(hostname)
   || (!PUBLIC_HOSTS.has(hostname) && import.meta.env.VITE_AUTH_ENABLED === 'true');
 const AuthContext = createContext({ token: null, user: null });
 
 const manager = enabled ? new UserManager({
-  authority: import.meta.env.VITE_OIDC_AUTHORITY || 'https://auth.seacommons.org',
-  client_id: import.meta.env.VITE_OIDC_CLIENT_ID || 'seacommons-console',
+  authority: import.meta.env.VITE_OIDC_AUTHORITY || 'https://identity.suezcanal.xyz',
+  client_id: import.meta.env.VITE_OIDC_CLIENT_ID || 'seacommons-futures',
   redirect_uri: `${window.location.origin}${import.meta.env.BASE_URL}`,
   post_logout_redirect_uri: `${window.location.origin}${import.meta.env.BASE_URL}`,
   response_type: 'code',
@@ -71,12 +71,12 @@ export function AuthGate({ children }) {
     return <main className="auth-screen">
       <section className="auth-card" aria-labelledby="auth-title">
         <a className="auth-wordmark" href="https://seacommons.org">SEA<span>COMMONS</span></a>
-        <p className="auth-kicker">Controlled research infrastructure</p>
-        <h1 id="auth-title">Operational console</h1>
-        <p className="auth-copy">Access is limited to authorised researchers and operational partners. Sessions and material changes are recorded for accountability.</p>
+        <p className="auth-kicker">Suez Canal identity</p>
+        <h1 id="auth-title">Access Futures</h1>
+        <p className="auth-copy">Continue through the Suez Canal identity layer. Access to projects, subprojects and documents is assigned to your authorised email.</p>
         {error ? <p className="auth-error" role="alert">{error}</p> : null}
-        <button className="auth-primary" onClick={() => { setError(''); manager.signinRedirect(); }}>Continue with institutional access</button>
-        <div className="auth-meta"><span>OIDC / Keycloak</span><span>Research beta</span><span>TLS protected</span></div>
+        <button className="auth-primary" onClick={() => { setError(''); manager.signinRedirect(); }}>continue via suezcanal.xyz</button>
+        <div className="auth-meta"><span>OAuth 2.1 / OIDC</span><span>Suez identity</span><span>TLS protected</span></div>
         <p className="auth-help">Access problems? Contact the programme administrator. This console is not a substitute for official emergency services.</p>
       </section>
     </main>;
