@@ -187,11 +187,12 @@ button:focus-visible {
   .site-header__live-dot.is-sea { animation: none; }
 }
 
-/* Navigation stays behind a compact hamburger on every breakpoint. The
-   drawer opens from the right so site navigation never competes with the
-   editorial content column. */
+/* Full-screen navigation. The menu is deliberately editorial rather than
+   dashboard-like: large lowercase labels, centered in the viewport, with the
+   public site remaining visible through a dark blurred overlay. */
 .site-header__toggle {
   position: relative;
+  z-index: 110;
   width: 42px;
   height: 42px;
   display: grid;
@@ -222,58 +223,62 @@ button:focus-visible {
 
 .site-nav__backdrop {
   position: fixed;
-  inset: var(--header-h) 0 0 0;
+  inset: 0;
   z-index: 88;
   border: 0;
-  background: rgba(0, 0, 0, .46);
+  background: rgba(2, 4, 8, .78);
+  backdrop-filter: blur(18px) saturate(.85);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity .2s ease;
+  transition: opacity .24s ease, visibility 0s linear .24s;
 }
 .site-nav__backdrop.is-open {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+  transition: opacity .24s ease;
 }
 
 .site-nav {
   position: fixed;
-  top: var(--header-h);
-  right: 0;
-  bottom: 0;
-  z-index: 90;
-  width: min(380px, 92vw);
+  inset: 0;
+  z-index: 96;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: 0;
-  padding: 1rem;
-  background: #020408;
-  border-left: 1px solid var(--sc-line);
-  font: 500 .7rem/1 var(--sc-font-mono);
-  letter-spacing: .07em;
-  text-transform: uppercase;
-  transform: translateX(100%);
+  align-items: center;
+  justify-content: center;
+  gap: clamp(.2rem, 1vh, .8rem);
+  padding: calc(var(--header-h) + 1.5rem) var(--pad-x) 2rem;
+  background: transparent;
+  text-align: center;
+  transform: translateY(-10px);
+  opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  overflow-y: auto;
-  transition: transform .28s var(--sc-ease), visibility 0s linear .28s;
+  transition: opacity .22s ease, transform .28s var(--sc-ease), visibility 0s linear .28s;
 }
 .site-nav.is-open {
-  transform: translateX(0);
+  transform: translateY(0);
+  opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  transition: transform .28s var(--sc-ease);
+  transition: opacity .22s ease, transform .28s var(--sc-ease);
 }
 .site-nav a {
   color: var(--sc-paper);
-  padding: 1rem .65rem;
-  border-top: 1px solid var(--sc-line);
-  transition: color .2s, padding-left .2s;
+  padding: .08em .2em;
+  border: 0;
+  font: 500 clamp(2.25rem, 6.2vw, 6.8rem)/.94 var(--sc-font-sans);
+  letter-spacing: -.055em;
+  text-transform: lowercase;
+  transition: color .18s ease, transform .18s ease;
 }
-.site-nav a:last-child { border-bottom: 1px solid var(--sc-line); }
-.site-nav a:hover { color: var(--sc-brand); padding-left: .9rem; }
+.site-nav a:hover,
+.site-nav a:focus-visible {
+  color: var(--sc-brand);
+  transform: translateX(.08em);
+}
 
 @media (max-width: 940px) {
   .site-header__clock { display: none; }
