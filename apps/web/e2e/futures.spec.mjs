@@ -86,7 +86,7 @@ test('Futures guidebook and tools are native partner surfaces', async ({ page })
   await expect(page.getByRole('heading', { name: /Surfaces you can open/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /SeaCommons Live/i })).toHaveAttribute('href', 'https://live.seacommons.org');
   await expect(page.getByText('Research Query', { exact: true })).toBeVisible();
-  await expect(page.getByText('not available yet', { exact: true })).toBeVisible();
+  await expect(page.getByText('not available yet', { exact: true }).first()).toBeVisible();
 });
 
 test('Futures access page states final grant hierarchy without pretending auth is final', async ({ page }) => {
