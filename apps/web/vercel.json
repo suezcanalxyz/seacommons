@@ -138,8 +138,6 @@
     "VITE_PUBLIC_BASE": "/",
     "VITE_APP_PROFILE": "demo",
     "VITE_AUTH_ENABLED": "false",
-    "VITE_OIDC_AUTHORITY": "https://identity.suezcanal.xyz",
-    "VITE_OIDC_CLIENT_ID": "seacommons-futures",
     "VITE_EDGE_API_BASE": "https://seacommons-edge.seacommons.workers.dev",
     "VITE_LIVE_EDGE_BASE": "https://seacommons-edge.seacommons.workers.dev"
   }
