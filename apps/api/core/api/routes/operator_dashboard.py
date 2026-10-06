@@ -60,6 +60,14 @@ main{max-width:1920px;margin:auto;padding:22px}.eyebrow{font:700 9px ui-monospac
 <section class="sensors">
 <div class="sensor"><b>AIS FIXES</b><span id="ais">–</span></div><div class="sensor"><b>RF BURSTS</b><span id="rf">–</span></div><div class="sensor"><b>RADIO EVENTS</b><span id="radio">–</span></div><div class="sensor"><b>SATELLITE OBS.</b><span id="sat">–</span></div><div class="sensor"><b>ACTIVE SOURCE NAMES</b><span id="activeSources">–</span></div>
 </section>
+<div class="eyebrow" style="margin:14px 0 7px">Stabilization SLO / evidence quality</div>
+<section class="sensors">
+<div class="sensor"><b>EPISODE → MULTI-LINEAGE</b><span id="sloMulti">–</span></div>
+<div class="sensor"><b>MULTI-LINEAGE → REVIEW</b><span id="sloReview">–</span></div>
+<div class="sensor"><b>SATELLITE REVIEW QUEUE</b><span id="sloSat">–</span></div>
+<div class="sensor"><b>RADIO DECODE GATE</b><span id="sloRadio">–</span></div>
+<div class="sensor"><b>CORROBORATION INVARIANT</b><span id="sloInvariant">–</span></div>
+</section>
 <section class="panel fleetPanel"><h2>Civil + state SAR fleet <span id="fleetFresh">AIS freshness / operational context</span></h2><div class="fleetGrid" id="sarFleet"></div></section>
 <div class="overallHead"><div><div class="eyebrow">Historical storage / all retained data</div><div class="title">All-time corpus</div></div><div class="overallMeta" id="overallFresh">loading historical inventory…</div></div>
 <section class="funnel" id="overallFunnel"></section>
@@ -139,8 +147,9 @@ function refreshEvents(){return runOnce("events",async()=>{let e=await get("/api
 function refreshAnalysis(){return runOnce("analysis",async()=>{let a=await get("/api/v1/operator/ingestion/analysis?hours=24&limit=80");renderLog("analysisLog",a.items,"analysisRow","analysis");markLive()})}
 function refreshCases(){return runOnce("cases",async()=>{let c=await get("/api/v1/operator/ingestion/cases?hours=168&limit=20");renderCases(c.cases)})}
 function refreshTopology(){return runOnce("topology",async()=>{let m=await get("/api/v1/operator/ingestion/pipeline-map");renderMap(m.chains)})}
+function refreshStabilization(){return runOnce("stabilization",async()=>{let s=await get("/api/v1/operator/ingestion/stabilization?hours=24"),r=s.rates||{},c=s.counts||{},inv=s.invariants||{},radio=s.radio||{};$("sloMulti").textContent=((Number(r.episode_to_multi_lineage||0)*100).toFixed(1))+"%";$("sloReview").textContent=((Number(r.multi_lineage_to_review_ready||0)*100).toFixed(1))+"%";$("sloSat").textContent=fmt(c.satellite_coverage_candidates);$("sloRadio").textContent=radio.ready_for_scale?"READY":(fmt(radio.decoded||0)+" DECODED");$("sloRadio").style.color=radio.ready_for_scale?"var(--mint)":"var(--amber)";$("sloInvariant").textContent=inv.ok?"PASS":"FAIL "+fmt(inv.multi_source_with_lt2_lineages);$("sloInvariant").style.color=inv.ok?"var(--mint)":"var(--red)"})}
 function refreshFast(){refreshOverview();refreshFunnel();refreshRaw();refreshEvents();refreshAnalysis()}
-function refreshSlow(){refreshCases();refreshTopology()}
+function refreshSlow(){refreshCases();refreshTopology();refreshStabilization()}
 refreshFast();refreshSlow();refreshFleet();setTimeout(refreshOverall,1000);setInterval(refreshFast,5000);setInterval(refreshFleet,15000);setInterval(refreshSlow,30000);setInterval(refreshOverall,300000);
 </script>
 </body></html>"""

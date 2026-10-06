@@ -410,6 +410,8 @@ def _public_episode_dossier(db, episode, *, now: datetime) -> dict[str, Any]:
         and row.episode_id
         and str(row.episode_id) == canonical_id
     )
+    from core.intel.correlation_stabilization import satellite_context_for_episode
+    satellite_review_candidates = satellite_context_for_episode(canonical_id)
     return {
         **projection,
         "requested_incident_id": canonical_id,
@@ -417,6 +419,9 @@ def _public_episode_dossier(db, episode, *, now: datetime) -> dict[str, Any]:
         "satellite_count": len(satellites),
         "satellite_evidence_count": satellite_evidence_count,
         "satellite_context_count": len(satellites) - satellite_evidence_count,
+        "satellite_review_candidate_count": len(satellite_review_candidates),
+        "satellite_review_candidates": satellite_review_candidates,
+        "satellite_review_semantics": "Coverage-only scenes are review context, not corroborating evidence.",
         "radio_count": len(radio_rows),
         "radio_evidence_count": radio_evidence_count,
         "radio_context_count": len(radio_rows) - radio_evidence_count,
@@ -1276,6 +1281,11 @@ def play_incident_timeline(incident_id: str):
 
             timeline = [item for item in timeline if item.get("at")]
             timeline.sort(key=lambda item: item["at"])
+            from core.intel.correlation_stabilization import satellite_context_for_episode
+            satellite_review_candidates = (
+                satellite_context_for_episode(canonical_id)
+                if episode is not None else []
+            )
             return {
                 "incident_id": canonical_id,
                 "requested_incident_id": incident_id,
@@ -1310,6 +1320,9 @@ def play_incident_timeline(incident_id: str):
                         and str(row.episode_id) == canonical_id
                     )
                 ),
+                "satellite_review_candidate_count": len(satellite_review_candidates),
+                "satellite_review_candidates": satellite_review_candidates,
+                "satellite_review_semantics": "Coverage-only scenes are review context, not corroborating evidence.",
                 "radio_count": len(radio_rows),
                 "radio_evidence_count": sum(
                     1 for _observation, row in radio_rows

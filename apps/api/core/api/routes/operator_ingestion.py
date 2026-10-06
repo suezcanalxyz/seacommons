@@ -31,6 +31,7 @@ from core.db.models import (
     SatelliteObservationDB,
     SourceObservationDB,
     VesselTrackDB,
+    VesselBehaviouralBaselineDB,
 )
 from core.db.session import session_scope
 from core.api.routes.operator_pipeline import (
@@ -837,6 +838,127 @@ def operator_pipeline_funnel(
         "live_count_cached": live_count_cached,
     }
     return _fast_cache_put("funnel", hours, payload)
+
+
+
+
+@router.get("/satellite-queue")
+def operator_satellite_queue(
+    request: Request,
+    hours: int = Query(168, ge=1, le=720),
+    temporal_hours: float = Query(12.0, ge=0.5, le=48.0),
+    limit: int = Query(100, ge=1, le=500),
+) -> dict[str, Any]:
+    _require_gateway(request)
+    from core.intel.correlation_stabilization import satellite_coverage_queue
+
+    return satellite_coverage_queue(
+        hours=hours, temporal_hours=temporal_hours, limit=limit,
+    )
+
+
+@router.get("/humanitarian-ais-correlation")
+def operator_humanitarian_ais_correlation(
+    request: Request,
+    hours: int = Query(168, ge=1, le=720),
+    radius_nm: float = Query(35.0, ge=1.0, le=150.0),
+    window_hours: float = Query(2.0, ge=0.25, le=12.0),
+    limit: int = Query(50, ge=1, le=250),
+) -> dict[str, Any]:
+    _require_gateway(request)
+    from core.intel.correlation_stabilization import humanitarian_ais_correlation
+
+    return humanitarian_ais_correlation(
+        hours=hours, radius_nm=radius_nm, window_hours=window_hours, limit=limit,
+    )
+
+
+@router.get("/stabilization")
+def operator_stabilization_status(
+    request: Request,
+    hours: int = Query(24, ge=1, le=720),
+) -> dict[str, Any]:
+    """Small set of SLOs for the evidence pipeline stabilization cycle."""
+    _require_gateway(request)
+    funnel = operator_pipeline_funnel(request, hours=hours)
+    stage_counts = {row["id"]: int(row["count"]) for row in funnel["stages"]}
+    cutoff = _since(hours)
+    with session_scope() as db:
+        recent_episodes = (
+            db.query(MaritimeEpisodeDB)
+            .filter(
+                MaritimeEpisodeDB.updated_at >= cutoff,
+                MaritimeEpisodeDB.episode_family != "unclassified_episode",
+            )
+            .limit(5000)
+            .all()
+        )
+        invalid_corroboration = sum(
+            row.verification_status == "multi_source_corroborated"
+            and len(set(row.independence_groups or ())) < 2
+            for row in recent_episodes
+        )
+        baseline_count = int(
+            db.query(func.count(VesselBehaviouralBaselineDB.baseline_id))
+            .filter(VesselBehaviouralBaselineDB.window_end >= cutoff)
+            .scalar()
+            or 0
+        )
+        newest_raw = db.query(func.max(SourceObservationDB.received_at)).scalar()
+        newest_event = db.query(func.max(IntelEventDB.received_at)).scalar()
+
+    from core.intel.correlation_stabilization import satellite_coverage_queue
+    from core.radio.decoder_runtime import radio_decoder_status
+
+    sat_queue = satellite_coverage_queue(hours=min(hours, 168), limit=1)
+    radio = radio_decoder_status()
+    derived = stage_counts.get("derived", 0)
+    episodes = stage_counts.get("episodes", 0)
+    corroborated = stage_counts.get("corroborated", 0)
+    review_ready = stage_counts.get("review_ready", 0)
+
+    def rate(numerator: int, denominator: int) -> float:
+        return round(numerator / denominator, 4) if denominator else 0.0
+
+    decoded = int(radio.get("decoded") or 0)
+    frames = int(radio.get("frames") or 0)
+    decode_ratio = decoded / frames if frames else 0.0
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "lookback_hours": hours,
+        "freshness": {
+            "raw_observation": _dt(newest_raw),
+            "normalized_event": _dt(newest_event),
+        },
+        "rates": {
+            "derived_to_episode": rate(episodes, derived),
+            "episode_to_multi_lineage": rate(corroborated, episodes),
+            "multi_lineage_to_review_ready": rate(review_ready, corroborated),
+        },
+        "counts": {
+            "derived": derived,
+            "episodes": episodes,
+            "corroborated": corroborated,
+            "review_ready": review_ready,
+            "recent_behavioural_baselines": baseline_count,
+            "satellite_coverage_candidates": int(sat_queue.get("total_candidates") or 0),
+        },
+        "invariants": {
+            "multi_source_with_lt2_lineages": int(invalid_corroboration),
+            "ok": invalid_corroboration == 0,
+        },
+        "radio": {
+            **radio,
+            "ready_for_scale": decoded >= 3 and decode_ratio > 0.0,
+            "scale_gate": "Require >=3 repeatable decodes before adding receiver capacity.",
+        },
+        "targets": {
+            "episode_to_multi_lineage": "increase without inflating detector count",
+            "multi_lineage_to_review_ready": "non-zero after independent evidence closure",
+            "invariant_violations": 0,
+            "radio_ready_for_scale": True,
+        },
+    }
 
 
 @router.get("/overall")

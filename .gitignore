@@ -40,3 +40,11 @@ apps/unreal/**/Samples/PixelStreaming/WebServers/*
 
 # Local operational secrets — never committed
 secrets/
+
+# Local diagnostics / runtime artifacts — never source-controlled
+.tmp_*
+.ops_*
+backups/
+apps/web/test-results/
+third_party/radio/**/bin/
+third_party/radio/**/obj/
