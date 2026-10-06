@@ -139,6 +139,13 @@ export function edgeEventToFeature(event) {
       ...(isRecord(props.port_call) ? { port_call: props.port_call } : {}),
       ...(Number.isFinite(Number(props.latest_speed_kn))
         ? { latest_speed_kn: Number(props.latest_speed_kn) } : {}),
+      ...(typeof props.vessel_name === 'string' ? { vessel_name: props.vessel_name } : {}),
+      ...(typeof props.ship_name === 'string' ? { ship_name: props.ship_name } : {}),
+      ...(typeof props.imo === 'string' ? { imo: props.imo } : {}),
+      ...(typeof props.flag === 'string' ? { flag: props.flag } : {}),
+      ...(Number.isFinite(Number(props.ship_type)) ? { ship_type: Number(props.ship_type) } : {}),
+      ...(Number.isFinite(Number(props.latest_nav_status))
+        ? { latest_nav_status: Number(props.latest_nav_status) } : {}),
     },
   };
 }

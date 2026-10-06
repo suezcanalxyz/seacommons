@@ -2727,7 +2727,7 @@ def test_public_live_projects_open_maritime_episode_dossier() -> None:
         assert props["corroborated"] is False
         assert props["linked_mmsi"] == "970123456"
         assert props["mmsi"] == "970123456"
-        assert props["assessment"]["classification_version"] == "assessment-v1"
+        assert props["assessment"]["classification_version"] == "assessment-v2"
         assert "safety" in props["assessment"]["interpretation"].lower()
         assert props["public_summary"].startswith("AIS reported an operational safety state")
         assert props["text"] == ""

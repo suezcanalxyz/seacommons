@@ -34,6 +34,30 @@ function SectionLabel({ children }) {
   );
 }
 
+const REASON_LABELS = Object.freeze({
+  PROLONGED_OFFSHORE_GAP: 'Prolonged offshore reporting gap',
+  LOCAL_AIS_COVERAGE_HEALTHY: 'Nearby AIS coverage remained healthy',
+  COMMUNITY_AIS_COVERAGE_PRESENT: 'Community AIS coverage remained present',
+  TRACK_CORRIDOR_COVERAGE_PRESENT: 'Track corridor retained AIS coverage',
+  SUSTAINED_POSITION_RELOCATION: 'Sustained position relocation',
+  HIGH_CONFIDENCE_POSITION_INTEGRITY_ANOMALY: 'High-confidence position-integrity anomaly',
+  NO_COINCIDENT_MULTI_VESSEL_GLITCH: 'No coincident multi-vessel glitch',
+  OPEN_SEA_CONTEXT: 'Open-sea context',
+  PERSISTENT_AIS_REPORTED_SAFETY_STATE: 'Persistent AIS-reported safety state',
+  REPEATED_AIS_DISTRESS_BEACON: 'Repeated AIS distress beacon',
+  SUSTAINED_OPEN_SEA_RENDEZVOUS: 'Sustained open-sea rendezvous',
+  SUSTAINED_INFRASTRUCTURE_PROXIMITY: 'Sustained infrastructure proximity',
+  SUSTAINED_STS_ZONE_DWELL: 'Sustained STS-zone dwell',
+  STRONG_SANCTIONS_IDENTITY_MATCH: 'Strong sanctions identity match',
+  PRODUCER_PUBLICATION_DECISION: 'Producer publication gate passed',
+});
+
+function reasonCodesLabel(codes = []) {
+  return codes
+    .map((code) => REASON_LABELS[code] || String(code).toLowerCase().replace(/_/g, ' '))
+    .join(' · ');
+}
+
 function Row({ label, value, color, mono }) {
   return (
     <div className="cone-row">
@@ -739,7 +763,7 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
             <small>Proximity and loitering are anomaly context, not proof of interference or intent.</small>
           </div>
         )}
-        {Array.isArray(props.reason_codes) && props.reason_codes.length > 0 && <Row label="Reason codes" value={props.reason_codes.join(' · ')} />}
+        {Array.isArray(props.reason_codes) && props.reason_codes.length > 0 && <Row label="Detector basis" value={reasonCodesLabel(props.reason_codes)} />}
         {Array.isArray(props.counter_indicators) && props.counter_indicators.length > 0 && <Row label="Counter-indicators" value={props.counter_indicators.join(' · ')} />}
         {props.status_note && <p className="intel-report-note">{props.status_note}</p>}
         {!driftFeature && coords && props.drift_eligible && onTriggerIntelDrift && (
