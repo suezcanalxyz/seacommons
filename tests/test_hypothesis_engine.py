@@ -822,3 +822,76 @@ def test_unclassified_episode_is_not_persisted_as_analysis():
     from core.db.session import session_scope
     with session_scope() as db:
         assert db.query(MaritimeEpisodeDB).count() == 0
+
+
+def test_expired_v1_reopens_as_auditable_v2_on_independent_corroboration() -> None:
+    from dataclasses import replace
+
+    from core.db.models import InvestigationHypothesisDB
+    from core.db.session import session_scope
+    from core.intel.hypothesis import new_hypothesis, transition
+    from core.intel.hypothesis_store import get_hypothesis, save_hypothesis
+    from core.intel.store import IntelEvent, intel_store
+
+    mmsi = "211879899"
+    episode_id = "episode:v2:historical-reopen"
+    ais_id = "v2-reopen-ais"
+    report_id = "v2-reopen-report"
+
+    _add_event(ais_id, gap_reason={"hypothesis": "vessel_gap", "confidence": 0.8})
+    intel_store.add(IntelEvent(
+        id=report_id, type="news", severity="medium", lat=35.5, lon=14.1,
+        title="Independent corroborating report", source="Independent report",
+        linked_mmsi=mmsi, metadata={"anomaly_type": "gap", "transport": "rss"},
+    ), dedup_key=report_id)
+
+    base_id = f"hyp:v1:dark_transit:{episode_id}"
+    base = new_hypothesis(
+        base_id, "dark_transit", (f"subj:mmsi:{mmsi}",), episode_id=episode_id,
+    )
+    base = replace(
+        base,
+        reason_codes=("ISOLATED_GAP",),
+        evidence_links=(ais_id,),
+        evidence_stage="derived",
+    )
+    base = transition(base, "collecting", actor="test")
+    base = transition(base, "expired", actor="test-expiry")
+    save_hypothesis(base)
+
+    episode = _episode(
+        "gap_episode", signal_ids=[ais_id, report_id], episode_id=episode_id,
+    )
+    episode["properties"].update({
+        "subject_ids": [f"subj:mmsi:{mmsi}"],
+        "first_observed_at": "2026-09-01T08:00:00+00:00",
+        "last_observed_at": "2026-09-01T08:20:00+00:00",
+        "verification_status": "multi_source_corroborated",
+        "independence_groups": ["ais_sensor_lineage", "secondary_news_reporting"],
+        "independent_source_count": 2,
+    })
+
+    reopened = evaluate_episode(episode)
+    assert reopened is not None
+    assert reopened.hypothesis_id.startswith("hyp:v2:dark_transit:")
+    assert reopened.state == "review_ready"
+    assert reopened.evidence_stage == "corroborated"
+    assert "REOPENED_AFTER_INDEPENDENT_CORROBORATION" in reopened.reason_codes
+    assert any(entry.actor.endswith(base_id) for entry in reopened.audit_history)
+
+    original = get_hypothesis(base_id)
+    assert original is not None
+    assert original.state == "expired"
+
+    again = evaluate_episode(episode)
+    assert again is not None
+    assert again.hypothesis_id == reopened.hypothesis_id
+    assert again.state == "review_ready"
+
+    with session_scope() as db:
+        rows = (
+            db.query(InvestigationHypothesisDB)
+            .filter(InvestigationHypothesisDB.episode_id == episode_id)
+            .all()
+        )
+        assert {row.hypothesis_id for row in rows} == {base_id, reopened.hypothesis_id}
