@@ -1,0 +1,115 @@
+export const proprietaryProjects = [
+  {
+    id: 'seacommons',
+    name: 'SeaCommons',
+    type: 'proprietary',
+    status: 'active development',
+    summary: 'Maritime intelligence infrastructure for evidence, investigation and public accountability.',
+    phase: 'Evidence closure + operational hardening',
+    progress: 72,
+    tags: ['maritime intelligence', 'evidence', 'research infrastructure'],
+    roadmap: ['Cross-modal evidence closure', 'Satellite investigation queue', 'AIS historical baseline', 'Radio decode'],
+    documents: [
+      { title: 'Project overview', kind: 'brief', updated: '06 Oct 2026' },
+      { title: 'System architecture', kind: 'guide', updated: '05 Oct 2026' },
+      { title: 'Development roadmap', kind: 'roadmap', updated: '06 Oct 2026' },
+    ],
+  },
+  {
+    id: 'republic',
+    name: 'Republic',
+    type: 'proprietary',
+    status: 'active',
+    summary: 'Cultural and technological operating framework for Suez Canal Republic projects.',
+    phase: 'Platform architecture',
+    progress: 48,
+    tags: ['culture', 'infrastructure', 'governance'],
+    roadmap: ['Identity layer', 'Project registry', 'Shared access model'],
+    documents: [{ title: 'Republic framework', kind: 'brief', updated: '30 Sep 2026' }],
+  },
+  {
+    id: 'map',
+    name: 'Map',
+    type: 'proprietary',
+    status: 'prototype',
+    summary: 'Shared spatial interface for proprietary research and project tools.',
+    phase: 'Prototype',
+    progress: 36,
+    tags: ['mapping', 'geospatial', 'interface'],
+    roadmap: ['Shared basemap', 'Project layers', 'Partner views'],
+    documents: [{ title: 'Map product note', kind: 'brief', updated: '02 Oct 2026' }],
+  },
+  {
+    id: 'suez',
+    name: 'Suez',
+    type: 'proprietary',
+    status: 'in development',
+    summary: 'Shared operational layer connecting projects, access, documents and future tools.',
+    phase: 'Futures foundation',
+    progress: 31,
+    tags: ['operations', 'identity', 'tools'],
+    roadmap: ['Futures identity', 'Rooms', 'Requests', 'Tool suite'],
+    documents: [{ title: 'Futures architecture', kind: 'architecture', updated: '06 Oct 2026' }],
+  },
+];
+
+export const clientProjects = [
+  {
+    id: 'swimming-cetacea',
+    name: 'Swimming Cetacea',
+    type: 'client',
+    status: 'active',
+    summary: 'Digital infrastructure, SEO expansion, market intelligence and charter development.',
+    phase: 'Growth + infrastructure',
+    progress: 81,
+    tags: ['web', 'seo', 'market intelligence'],
+    roadmap: ['Four-port SEO structure', 'Booking UX', 'Charter expansion', 'Monthly reporting'],
+    documents: [
+      { title: 'Market intelligence', kind: 'deck', updated: '06 Oct 2026' },
+      { title: 'Growth strategy', kind: 'deck', updated: '28 Sep 2026' },
+    ],
+  },
+  {
+    id: 'case-rosa',
+    name: 'Case Rosa',
+    type: 'client',
+    status: 'active',
+    summary: 'Digital positioning and operational growth for the hospitality property portfolio.',
+    phase: 'Market positioning',
+    progress: 57,
+    tags: ['hospitality', 'market', 'web'],
+    roadmap: ['Market benchmark', 'Conversion structure', 'Distribution strategy'],
+    documents: [{ title: 'Market review', kind: 'deck', updated: '06 Oct 2026' }],
+  },
+  {
+    id: 'insulaphilia',
+    name: 'Insulaphilia',
+    type: 'client',
+    status: 'active',
+    summary: 'Project operations, partner management, documentation and digital infrastructure.',
+    phase: 'Operations system',
+    progress: 63,
+    tags: ['operations', 'culture', 'project management'],
+    roadmap: ['Project database', 'Team workflows', 'Document layer'],
+    documents: [{ title: 'Operations overview', kind: 'brief', updated: '01 Oct 2026' }],
+  },
+];
+
+export const allProjects = [...proprietaryProjects, ...clientProjects];
+
+export const timeline = [
+  ['06 Oct 2026', 'Futures', 'Partner workspace architecture initiated'],
+  ['05 Oct 2026', 'SeaCommons', 'Cross-modal closure moved into current development phase'],
+  ['02 Oct 2026', 'Map', 'Shared map product note updated'],
+  ['28 Sep 2026', 'Swimming Cetacea', 'Growth strategy deck updated'],
+];
+
+export const guidebook = [
+  ['Start here', 'Futures and access model'],
+  ['SeaCommons', 'Project overview'],
+  ['SeaCommons', 'Evidence model'],
+  ['SeaCommons', 'System architecture'],
+  ['SeaCommons', 'Development roadmap'],
+  ['Suez', 'Proprietary systems'],
+  ['Operations', 'Partner access'],
+];
