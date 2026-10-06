@@ -78,6 +78,11 @@ test('preserves vessel identity, assessment and movement evidence from edge even
         time_delta_s: 660,
         implied_speed_kn: 1840,
       },
+      vessel_name: 'TEST VESSEL',
+      imo: '9123456',
+      flag: 'MT',
+      ship_type: 70,
+      latest_nav_status: 0,
     },
   }));
 
@@ -86,6 +91,11 @@ test('preserves vessel identity, assessment and movement evidence from edge even
   assert.equal(feature.properties.assessment.evidence_level, 'derived');
   assert.equal(feature.properties.movement_evidence.implied_speed_kn, 1840);
   assert.equal(feature.properties.detection_reason, 'Sustained relocation pattern');
+  assert.equal(feature.properties.vessel_name, 'TEST VESSEL');
+  assert.equal(feature.properties.imo, '9123456');
+  assert.equal(feature.properties.flag, 'MT');
+  assert.equal(feature.properties.ship_type, 70);
+  assert.equal(feature.properties.latest_nav_status, 0);
 });
 
 test('drops malformed events at the edge trust boundary', () => {

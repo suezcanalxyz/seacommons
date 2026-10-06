@@ -379,8 +379,10 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
 
         from core.intel.assessment import build_assessment
 
+        source_meta = dict((source_event or {}).get("meta") or {})
+        evidence_meta = {**source_meta, **meta}
         assessment_input = {
-            **meta,
+            **evidence_meta,
             "type": (source_event or {}).get("type") or event_type,
             "source": (source_event or {}).get("source") or "SeaCommons episode engine",
             "linked_mmsi": linked_mmsi,
@@ -443,9 +445,19 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
                 "linked_mmsi": linked_mmsi or None,
                 "mmsi": linked_mmsi or None,
                 "assessment": assessment_payload,
-                "detection_reason": meta.get("detection_reason"),
-                "detail": meta.get("detail"),
-                "movement_evidence": meta.get("movement_evidence"),
+                "detection_reason": evidence_meta.get("detection_reason"),
+                "detail": evidence_meta.get("detail"),
+                "movement_evidence": evidence_meta.get("movement_evidence"),
+                "offshore_context": evidence_meta.get("offshore_context"),
+                "infrastructure": evidence_meta.get("infrastructure"),
+                "port_call": evidence_meta.get("port_call"),
+                "latest_speed_kn": evidence_meta.get("latest_speed_kn"),
+                "vessel_name": evidence_meta.get("vessel_name") or evidence_meta.get("ship_name"),
+                "ship_name": evidence_meta.get("ship_name") or evidence_meta.get("vessel_name"),
+                "imo": evidence_meta.get("imo"),
+                "flag": evidence_meta.get("flag"),
+                "ship_type": evidence_meta.get("ship_type"),
+                "latest_nav_status": evidence_meta.get("latest_nav_status"),
                 "counter_indicators": list(row.get("alternative_explanations") or ()),
                 **({
                     "anomaly_type": meta.get("anomaly_type"),

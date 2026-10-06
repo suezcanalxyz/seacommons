@@ -31,7 +31,7 @@ from typing import Any
 
 from core.domain.visual_category import classify_visual_category
 
-CLASSIFICATION_VERSION = "assessment-v1"
+CLASSIFICATION_VERSION = "assessment-v2"
 
 
 @dataclass(frozen=True)
@@ -218,26 +218,42 @@ def _assess_rescue_cluster(metadata: dict[str, Any]) -> EventAssessment:
 def _assess_ais_gap(metadata: dict[str, Any]) -> EventAssessment:
     anomaly_type = str(metadata.get("anomaly_type") or "")
     evidence = metadata.get("anomaly_evidence") or {}
-    silence_s = float(evidence.get("silent_seconds") or 0.0)
+    raw_silence = (
+        evidence.get("silent_seconds")
+        or metadata.get("current_silent_seconds")
+        or metadata.get("silent_seconds")
+    )
+    silence_s = float(raw_silence) if raw_silence not in (None, "") else None
     before = evidence.get("nearby_vessels_before")
     after = evidence.get("nearby_vessels_after")
     ratio = evidence.get("local_reporting_ratio")
-    observation = f"AIS silence lasted {silence_s / 60:.0f} min"
+    mmsi = str(metadata.get("linked_mmsi") or metadata.get("mmsi") or "").strip()
+    observation = f"AIS reporting gap detected{f' for {mmsi}' if mmsi else ''}"
+    if silence_s and silence_s > 0:
+        observation += f"; silence {silence_s / 60:.0f} min"
     if before is not None and after is not None:
         observation += f"; nearby reporting {before}->{after}"
     if ratio is not None:
         observation += f"; local reporting ratio {float(ratio):.0%}"
     observation += "."
     coverage = anomaly_type == "coverage_gap"
+    interpretation = (
+        "Nearby AIS traffic also disappeared, making reception or source coverage loss the stronger explanation."
+        if coverage
+        else "The vessel stopped reporting while nearby AIS reception remained comparatively available, making this a vessel-specific continuity anomaly."
+    )
+    if silence_s and silence_s > 0:
+        interpretation += f" The silence interval is {silence_s / 60:.0f} minutes"
+        interpretation += " and is still open." if metadata.get("gap_still_open") else "."
+    expectation = str(metadata.get("reception_expectation") or "").strip().replace("_", " ")
+    if expectation:
+        interpretation += f" Reception expectation was {expectation}."
+    if "PROLONGED_OFFSHORE_GAP" in (metadata.get("reason_codes") or []):
+        interpretation += " The detector also classified the gap as prolonged and offshore."
+    interpretation += " AIS silence alone is not proof of intent and does not establish deliberate dark activity."
     return EventAssessment(
         observation=observation,
-        interpretation=(
-            "Nearby AIS traffic also disappeared, indicating reception or source coverage "
-            "loss rather than vessel-specific intent."
-            if coverage
-            else "The vessel stopped reporting while nearby AIS coverage remained available. "
-            "This is a vessel-specific integrity observation, not proof of intent."
-        ),
+        interpretation=interpretation,
         evidence_level="derived",
         confidence=0.65 if not coverage else 0.45,
         confidence_basis=[
@@ -300,6 +316,45 @@ def _category_assessment(
 
     mmsi = str(linked_mmsi or metadata.get("linked_mmsi") or metadata.get("mmsi") or "").strip()
     movement = metadata.get("movement_evidence") if isinstance(metadata.get("movement_evidence"), dict) else {}
+    offshore = metadata.get("offshore_context") if isinstance(metadata.get("offshore_context"), dict) else {}
+
+    def source_name() -> str:
+        raw = str(source or metadata.get("source") or "").strip()
+        return raw if raw and raw.lower() not in {"seacommons episode engine", "seacommons engine"} else ""
+
+    def lineage_sentence() -> str:
+        if corroborated:
+            return f"{independent} independent evidence lineages currently support the case."
+        return "The case currently rests on a single evidence lineage."
+
+    def offshore_sentence() -> str:
+        if not offshore.get("offshore"):
+            return ""
+        coast = offshore.get("distance_from_coast_km")
+        port = offshore.get("nearest_port")
+        if coast is not None:
+            return f" The trigger occurred about {float(coast):.0f} km from the coast" + (f", nearest {port}." if port else ".")
+        return " The trigger occurred in an offshore context."
+
+    def reason_sentence() -> str:
+        readable = {
+            "PROLONGED_OFFSHORE_GAP": "a prolonged offshore reporting gap",
+            "LOCAL_AIS_COVERAGE_HEALTHY": "nearby AIS reception remained healthy",
+            "COMMUNITY_AIS_COVERAGE_PRESENT": "community AIS coverage remained present",
+            "TRACK_CORRIDOR_COVERAGE_PRESENT": "the recent track corridor retained AIS coverage",
+            "SUSTAINED_POSITION_RELOCATION": "the relocation pattern persisted",
+            "HIGH_CONFIDENCE_POSITION_INTEGRITY_ANOMALY": "the position-integrity detector crossed its high-confidence threshold",
+            "NO_COINCIDENT_MULTI_VESSEL_GLITCH": "no coincident multi-vessel glitch was detected",
+            "OPEN_SEA_CONTEXT": "the trigger occurred in open-sea context",
+            "SUSTAINED_OPEN_SEA_RENDEZVOUS": "close-proximity behaviour persisted in open sea",
+            "SUSTAINED_INFRASTRUCTURE_PROXIMITY": "infrastructure proximity persisted",
+            "SUSTAINED_STS_ZONE_DWELL": "the vessel sustained a dwell inside an STS context zone",
+            "STRONG_SANCTIONS_IDENTITY_MATCH": "the vessel identity produced a strong sanctions-list match",
+        }
+        selected = [readable[code] for code in reasons if code in readable][:3]
+        if not selected:
+            return ""
+        return " Detector context: " + "; ".join(selected) + "."
 
     if category == "spoofing":
         distance_km = movement.get("distance_km")
@@ -327,10 +382,11 @@ def _category_assessment(
             "or an upstream reception problem. "
         )
         interpretation += (
-            "Independent evidence is present, so the anomaly is stronger than a single AIS cue."
+            "Independent evidence is present, so the anomaly is stronger than a single AIS cue. "
             if corroborated
-            else "No independent lineage currently confirms deliberate spoofing."
+            else "No independent lineage currently confirms deliberate spoofing. "
         )
+        interpretation += lineage_sentence() + reason_sentence() + offshore_sentence()
         return assessment(observation, interpretation, confidence=0.8 if corroborated else 0.62,
                           caveat="Impossible movement is evidence of position inconsistency, not proof of intent or spoofing.",
                           basis=["ais_position_sequence", *(["independent_lineage"] if corroborated else [])],
@@ -338,17 +394,30 @@ def _category_assessment(
 
     if category == "ais_gap":
         evidence = metadata.get("anomaly_evidence") if isinstance(metadata.get("anomaly_evidence"), dict) else {}
-        duration = evidence.get("silent_seconds")
+        duration = (
+            evidence.get("silent_seconds")
+            or metadata.get("current_silent_seconds")
+            or metadata.get("silent_seconds")
+        )
+        duration_value = float(duration) if duration not in (None, "") else None
         observation = detection or (
             f"AIS reporting gap for {mmsi or 'this vessel'}"
-            + (f" lasting {float(duration) / 60:.0f} min." if duration else ".")
+            + (f" lasting {duration_value / 60:.0f} min." if duration_value and duration_value > 0 else ".")
         )
         coverage = str(metadata.get("anomaly_type") or "") == "coverage_gap"
+        still_open = bool(metadata.get("gap_still_open"))
+        expectation = str(metadata.get("reception_expectation") or "").strip().replace("_", " ")
         interpretation = (
             "Nearby traffic shows the same reception loss, so this gap is better explained by coverage or source availability than by vessel-specific behaviour."
             if coverage
             else "This vessel stopped reporting while surrounding reception remained comparatively available. The gap is operationally relevant, but AIS silence alone cannot establish deliberate dark activity."
         )
+        if duration_value and duration_value > 0:
+            interpretation += f" The observed silence is currently {duration_value / 60:.0f} minutes long"
+            interpretation += " and remains open." if still_open else "."
+        if expectation:
+            interpretation += f" Reception expectation at the trigger was {expectation}."
+        interpretation += reason_sentence() + offshore_sentence() + " " + lineage_sentence()
         return assessment(observation, interpretation, confidence=0.48 if coverage else 0.68,
                           caveat="AIS silence can result from equipment, reception, source coverage, or deliberate shutdown.",
                           basis=["ais_reporting_continuity", "local_coverage_context"])
@@ -364,9 +433,18 @@ def _category_assessment(
             + (f" for about {float(dwell):.0f} min" if dwell is not None else "")
             + "."
         )
+        interpretation = "The tracks show sustained close-proximity behaviour consistent with a rendezvous or ship-to-ship interaction."
+        if partner:
+            interpretation += f" The paired AIS identity is {partner}."
+        if distance is not None:
+            interpretation += f" Minimum observed separation was about {float(distance):.2f} nm."
+        if dwell is not None:
+            interpretation += f" The close-proximity state persisted for roughly {float(dwell):.0f} minutes."
+        interpretation += " The geometry does not by itself reveal cargo transfer, coordination purpose, or illegality."
+        interpretation += reason_sentence() + offshore_sentence() + " " + lineage_sentence()
         return assessment(
             observation,
-            "The tracks show sustained close-proximity behaviour consistent with a rendezvous or ship-to-ship interaction. The geometry does not by itself reveal cargo transfer, coordination purpose, or illegality.",
+            interpretation,
             confidence=0.72 if corroborated else 0.58,
             caveat="Proximity is behavioural evidence, not proof of transfer or intent.",
             basis=["multi_vessel_ais_geometry"],
@@ -378,9 +456,17 @@ def _category_assessment(
             "Low-mobility or repeated-area dwell detected"
             + (f" for about {float(duration):.0f} min." if duration is not None else ".")
         )
+        interpretation = "The vessel remained in a constrained area longer than expected for a simple transit."
+        if duration is not None:
+            interpretation += f" The dwell lasted about {float(duration):.0f} minutes."
+        speed = metadata.get("latest_speed_kn")
+        if speed is not None:
+            interpretation += f" Latest AIS speed was {float(speed):.1f} kn."
+        interpretation += " Anchoring, waiting orders, fishing, weather, traffic and normal work remain plausible explanations."
+        interpretation += reason_sentence() + offshore_sentence() + " " + lineage_sentence()
         return assessment(
             observation,
-            "The vessel remained in a constrained area longer than expected for a simple transit. Anchoring, waiting orders, fishing, weather, traffic and normal work remain plausible explanations.",
+            interpretation,
             confidence=0.52,
             caveat="Loitering is contextual behaviour and is not inherently suspicious.",
             basis=["ais_dwell_pattern"],
@@ -394,9 +480,18 @@ def _category_assessment(
             f"Sustained vessel activity near {name}"
             + (f" at approximately {float(distance):.1f} km." if distance is not None else ".")
         )
+        interpretation = f"The track places the vessel close to mapped infrastructure ({name})"
+        if distance is not None:
+            interpretation += f", at an observed minimum distance of about {float(distance):.1f} km"
+        interpretation += ", for long enough to merit contextual review."
+        dwell = metadata.get("duration_minutes") or metadata.get("dwell_minutes")
+        if dwell is not None:
+            interpretation += f" The proximity persisted for roughly {float(dwell):.0f} minutes."
+        interpretation += " Proximity alone does not establish interference, surveillance, sabotage, or hostile intent."
+        interpretation += reason_sentence() + " " + lineage_sentence()
         return assessment(
             observation,
-            "The track places the vessel close to mapped infrastructure for long enough to merit contextual review. Proximity alone does not establish interference, surveillance, sabotage, or hostile intent.",
+            interpretation,
             confidence=0.55,
             caveat="Interpret proximity with vessel role, traffic lanes and lawful operations.",
             basis=["ais_track", "infrastructure_geofence"],
@@ -410,19 +505,36 @@ def _category_assessment(
             + (f" during an observed port stay at {port}." if port else ".")
         )
         interpretation = (
-            "A strong vessel identifier links this track to a sanctions-listed identity"
+            f"A vessel identifier{f' ({mmsi})' if mmsi else ''} links this track to sanctions context"
             + (f", with an observed port stay at {port}" if port else "")
-            + ". This is relevant for compliance review, but SeaCommons does not infer sanctions evasion or a legal violation from identity and movement alone."
+            + "."
         )
+        hits = metadata.get("sanctions") if isinstance(metadata.get("sanctions"), list) else []
+        if hits:
+            lists = sorted({str(hit.get("list") or "").strip() for hit in hits if isinstance(hit, dict) and hit.get("list")})
+            if lists:
+                interpretation += f" Matching list context: {', '.join(lists[:3])}."
+        interpretation += " This is relevant for compliance review, but SeaCommons does not infer sanctions evasion or a legal violation from identity and movement alone."
+        interpretation += reason_sentence() + " " + lineage_sentence()
         return assessment(observation, interpretation, confidence=0.82 if metadata.get("sanctions_matched") else 0.62,
                           caveat="Legal applicability depends on jurisdiction, listing scope, ownership and transaction context.",
                           basis=["vessel_identity_match", *(["port_call_observation"] if port else [])])
 
     if category == "identity":
         observation = detection or f"Identity inconsistency detected for {mmsi or 'a vessel record'}."
+        interpretation = "AIS or static identity fields are inconsistent with another observed or reference attribute."
+        mismatch_bits = []
+        for key, label in (("reported_imo", "reported IMO"), ("reference_imo", "reference IMO"), ("reported_flag", "reported flag"), ("reference_flag", "reference flag")):
+            value = metadata.get(key)
+            if value not in (None, ""):
+                mismatch_bits.append(f"{label} {value}")
+        if mismatch_bits:
+            interpretation += " Case values: " + "; ".join(mismatch_bits[:4]) + "."
+        interpretation += " Stale registry data, operator entry error, transponder replacement and deliberate identity manipulation remain competing explanations."
+        interpretation += reason_sentence() + " " + lineage_sentence()
         return assessment(
             observation,
-            "AIS or static identity fields are inconsistent with another observed or reference attribute. Stale registry data, operator entry error, transponder replacement and deliberate identity manipulation remain competing explanations.",
+            interpretation,
             confidence=0.58,
             caveat="Identity mismatches require registry and historical cross-checks before attribution.",
             basis=["ais_identity_fields"],
@@ -441,9 +553,19 @@ def _category_assessment(
     if category in {"humanitarian_alarm_phone", "distress", "iom"}:
         people = metadata.get("people_reported") or metadata.get("persons")
         observation = detection or ("Humanitarian distress report" + (f" involving {people} people." if people is not None else "."))
+        interpretation = "This is a humanitarian case report describing possible danger to people at sea."
+        if people is not None:
+            interpretation += f" The source reports {people} people involved."
+        if source_name():
+            interpretation += f" The current source lineage is {source_name()}."
+        precision = str(metadata.get("location_precision") or "").replace("_", " ").strip()
+        if precision:
+            interpretation += f" Position precision is recorded as {precision}."
+        interpretation += " Source attribution, coordinates, updates and rescue or resolution evidence remain distinct from official confirmation."
+        interpretation += " " + lineage_sentence()
         return assessment(
             observation,
-            "This is a humanitarian case report describing possible danger to people at sea. Source attribution, coordinates, updates and rescue or resolution evidence remain distinct from official confirmation.",
+            interpretation,
             confidence=0.72 if category == "humanitarian_alarm_phone" else 0.6,
             caveat="Reported facts can change as a case develops; later updates should remain visible.",
             basis=["humanitarian_source_report"],
@@ -452,9 +574,18 @@ def _category_assessment(
 
     if category in {"civil_sar", "state_sar", "ngo_activity"}:
         observation = detection or "SAR-related vessel activity observed from AIS or public operational data."
+        interpretation = f"The vessel{f' {mmsi}' if mmsi else ''} is being observed in a search-and-rescue context."
+        org = metadata.get("org") or metadata.get("operator")
+        if org:
+            interpretation += f" Operator context: {org}."
+        speed = metadata.get("latest_speed_kn")
+        if speed is not None:
+            interpretation += f" Latest AIS speed is {float(speed):.1f} kn."
+        interpretation += " Presence, approach or proximity can support a response assessment, but does not by itself prove that a rescue occurred or identify the vessel as the casualty."
+        interpretation += " " + lineage_sentence()
         return assessment(
             observation,
-            "The vessel's location or movement is relevant to a search-and-rescue context. Presence, approach or proximity can support a response assessment, but does not by itself prove that a rescue occurred or identify the vessel as the casualty.",
+            interpretation,
             confidence=0.5,
             caveat="SAR-role interpretation requires case linkage and time-aligned movement.",
             basis=["ais_operational_activity"],
@@ -462,9 +593,13 @@ def _category_assessment(
 
     if category == "piracy":
         observation = detection or "Public-source maritime security incident reported."
+        interpretation = "The source describes a piracy, armed-robbery or maritime-security event."
+        if source_name():
+            interpretation += f" It is currently attributed to the {source_name()} reporting lineage."
+        interpretation += " SeaCommons records the report and its location/time lineage; attribution, actors and legal classification require corroboration. " + lineage_sentence()
         return assessment(
             observation,
-            "The source describes a piracy, armed-robbery or security event. SeaCommons records the report and its location/time lineage; attribution, actors and legal classification require corroboration.",
+            interpretation,
             confidence=0.5,
             caveat="Security reports can be preliminary and should be independently cross-checked.",
             basis=["public_security_report"],
@@ -472,9 +607,13 @@ def _category_assessment(
 
     if category == "environmental":
         observation = detection or "Environmental maritime hazard reported or detected."
+        interpretation = "The event indicates a possible pollution or environmental hazard."
+        if source_name():
+            interpretation += f" The current observation comes from {source_name()}."
+        interpretation += " The record establishes observation/report context, not source attribution, spatial extent, causation or liability. " + lineage_sentence()
         return assessment(
             observation,
-            "The event indicates a possible pollution or environmental hazard. The current record establishes the observation or report context, not source attribution, extent, or liability.",
+            interpretation,
             confidence=0.5,
             caveat="Extent and causation require sensor, imagery or authority corroboration.",
             basis=["environmental_observation"],
@@ -482,9 +621,17 @@ def _category_assessment(
 
     if category == "hazard":
         observation = detection or "GDACS hazard context intersects the maritime operating area."
+        hazard_kind = str(metadata.get("eventtype") or metadata.get("hazard_type") or "").replace("_", " ").strip()
+        country = str(metadata.get("country") or "").strip()
+        interpretation = "This is regional hazard context rather than a vessel incident."
+        if hazard_kind:
+            interpretation += f" Hazard type: {hazard_kind}."
+        if country:
+            interpretation += f" Reported area: {country}."
+        interpretation += " It can affect route deviation, distress plausibility, weather exposure or operational constraints, but does not directly identify a maritime casualty."
         return assessment(
             observation,
-            "This is regional hazard context rather than a vessel incident. It can affect route deviation, distress plausibility, weather exposure or operational constraints, but does not directly identify a maritime casualty.",
+            interpretation,
             confidence=0.65,
             caveat="Hazard context should not be presented as vessel-specific evidence.",
             basis=["gdacs_public_hazard"],
@@ -493,9 +640,13 @@ def _category_assessment(
 
     if category in {"news", "social"}:
         observation = detection or "Public-source report retained as contextual evidence."
+        interpretation = "This item contributes public reporting context."
+        if source_name():
+            interpretation += f" Source: {source_name()}."
+        interpretation += " It is useful for chronology and corroboration, but publication on a news or social source is not itself sensor confirmation of the reported maritime event. " + lineage_sentence()
         return assessment(
             observation,
-            "This item contributes public reporting context. It is useful for chronology and corroboration, but publication on a news or social source is not itself sensor confirmation of the reported maritime event.",
+            interpretation,
             confidence=0.35,
             caveat="Treat public reporting as a separate evidence lineage, not as ground truth.",
             basis=["public_reporting"],
@@ -504,9 +655,13 @@ def _category_assessment(
 
     if category == "context":
         observation = detection or "Maritime contextual observation retained for situational awareness."
+        interpretation = "This record provides context for nearby maritime activity."
+        if source_name():
+            interpretation += f" Source lineage: {source_name()}."
+        interpretation += " It is not currently classified as a stronger incident family and should not be read as an allegation or finding. " + lineage_sentence()
         return assessment(
             observation,
-            "This record provides context for nearby maritime activity. It is not currently classified as a stronger incident family and should not be read as an allegation or finding.",
+            interpretation,
             confidence=0.3,
             caveat="Context records require additional evidence before escalation.",
             basis=["context_observation"],
