@@ -57,20 +57,18 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
   await expect(page.getByText('legacy', { exact: true })).toBeVisible();
 });
 
-test('Futures keeps proprietary and client systems structurally distinct', async ({ page }) => {
+test('Futures is scoped to the SeaCommons workspace only', async ({ page }) => {
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL);
 
-  await page.getByRole('button', { name: /systems/i }).first().click();
-  await expect(page.getByRole('heading', { name: /Two project families/i })).toBeVisible();
+  await page.locator('.future-sidebar nav').getByRole('button', { name: /^project/i }).click();
+  await expect(page.getByRole('heading', { name: /One workspace, one project context/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'SeaCommons', exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'proprietary', exact: true }).click();
-  await expect(page.getByRole('button', { name: /SeaCommons proprietary/i })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Swimming Cetacea client/i })).toHaveCount(0);
-
-  await page.getByRole('button', { name: 'client', exact: true }).click();
-  await expect(page.getByRole('button', { name: /Swimming Cetacea client/i })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Republic proprietary/i })).toHaveCount(0);
+  await expect(page.getByText('Republic', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Swimming Cetacea', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Case Rosa', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Insulaphilia', { exact: true })).toHaveCount(0);
 });
 
 test('Futures guidebook and tools are native partner surfaces', async ({ page }) => {
@@ -85,8 +83,8 @@ test('Futures guidebook and tools are native partner surfaces', async ({ page })
   await page.locator('.future-sidebar nav').getByRole('button', { name: /^tools/i }).click();
   await expect(page.getByRole('heading', { name: /Surfaces you can open/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /SeaCommons Live/i })).toHaveAttribute('href', 'https://live.seacommons.org');
-  await expect(page.getByText('Research Query', { exact: true })).toBeVisible();
-  await expect(page.getByText('not available yet', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: /SeaCommons Play/i })).toHaveAttribute('href', 'https://play.seacommons.org');
+  await expect(page.getByText('Republic', { exact: true })).toHaveCount(0);
 });
 
 test('Futures access page states final grant hierarchy without pretending auth is final', async ({ page }) => {
@@ -95,6 +93,6 @@ test('Futures access page states final grant hierarchy without pretending auth i
 
   await page.locator('.future-sidebar nav').getByRole('button', { name: /^access/i }).click();
   await expect(page.getByRole('heading', { name: /Full bootstrap access now/i })).toBeVisible();
-  await expect(page.getByText(/organisation → system → project \/ subproject → resource or tool/i)).toBeVisible();
+  await expect(page.getByText(/organisation → SeaCommons workspace → project \/ subproject → resource or tool/i)).toBeVisible();
   await expect(page.getByText(/final Suez Supabase identity tenant/i)).toBeVisible();
 });
