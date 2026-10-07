@@ -15,6 +15,19 @@ import {
 
 const NAV = ['overview', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
 
+function readWorkspaceView() {
+  const value = new URLSearchParams(window.location.search).get('view');
+  return NAV.includes(value) ? value : 'overview';
+}
+
+function replaceWorkspaceView(view, { replace = false } = {}) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('view', view);
+  const method = replace ? 'replaceState' : 'pushState';
+  window.history[method]({ view }, '', url);
+}
+
+
 function formatCount(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return '—';
@@ -544,7 +557,23 @@ function Access({ user }) {
 export default function FuturesApp() {
   const { user, signOut } = useAuth();
   const ops = useOperationalData();
-  const [view, setView] = useState('overview');
+  const [view, setView] = useState(() => readWorkspaceView());
+
+  useEffect(() => {
+    replaceWorkspaceView(view, { replace: true });
+
+    const handlePopState = () => setView(readWorkspaceView());
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigate = (nextView) => {
+    if (!NAV.includes(nextView) || nextView === view) return;
+    setView(nextView);
+    replaceWorkspaceView(nextView);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <div className="future-app">
       <aside className="future-sidebar">
@@ -554,7 +583,7 @@ export default function FuturesApp() {
         <div className="future-product"><span>futures</span><small>partner workspace</small></div>
         <nav aria-label="Futures">
           {NAV.map((item) => (
-            <button key={item} className={view === item ? 'is-active' : ''} onClick={() => setView(item)}>
+            <button key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
               <span>{item}</span><i>↗</i>
             </button>
           ))}
