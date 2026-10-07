@@ -100,30 +100,6 @@ function useOperationalData() {
   return { ...snapshot, refresh };
 }
 
-function ProjectCard({ project, active, onOpen }) {
-  return (
-    <button
-      className={`future-project-card ${active ? 'is-active' : ''}`}
-      onClick={() => onOpen(project.id)}
-      aria-pressed={active}
-    >
-      <div className="future-project-card__top">
-        <span>{project.type === 'proprietary' ? 'proprietary system' : 'client project'}</span>
-        <StatusPill state={project.status}>{project.status}</StatusPill>
-      </div>
-      <h3>{project.name}</h3>
-      <p>{project.summary}</p>
-      <div className="future-tag-row">
-        {project.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}
-      </div>
-      <div className="future-project-card__meta">
-        <span>current phase</span>
-        <strong>{project.phase}</strong>
-      </div>
-    </button>
-  );
-}
-
 function WorkstreamList({ project }) {
   return (
     <div className="future-workstreams">
@@ -343,8 +319,8 @@ function Project() {
         <span className="future-eyebrow">SeaCommons project</span>
         <h1>One workspace, one project context.</h1>
         <p>
-          This Futures domain is the private operational workspace for SeaCommons. Republic,
-          Suez-native tools and client work remain outside this workspace even when they share identity infrastructure.
+          This Futures domain is the private operational workspace for SeaCommons.
+          Other Suez products and client work remain outside this workspace even when they share identity infrastructure.
         </p>
       </section>
       <ProjectDetail project={seaCommonsProject} />
@@ -477,8 +453,8 @@ function Tools() {
         <span className="future-eyebrow">tools</span>
         <h1>Surfaces you can open from this workspace.</h1>
         <p>
-          Available tools open on their own product domain. Planned proprietary tools remain visible as roadmap
-          context but cannot be opened until they exist and the user has a grant.
+          This page only exposes SeaCommons surfaces. Other Suez products and tools are managed on their own domains
+          and are not part of the SeaCommons workspace.
         </p>
       </section>
 
@@ -545,7 +521,7 @@ function Access({ user }) {
       </section>
 
       <section className="future-access-table">
-        <header><span>system</span><span>level</span><span>scope</span><span>mode</span></header>
+        <header><span>workspace</span><span>level</span><span>scope</span><span>mode</span></header>
         {accessMatrix.map((row) => (
           <article key={row.system}>
             <strong>{row.system}</strong>
