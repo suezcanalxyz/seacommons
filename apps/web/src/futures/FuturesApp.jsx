@@ -1,21 +1,19 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth.jsx';
 import { fetchJson } from '../services/api/client.js';
 import { resolveSiteApiBase } from '../site/liveApi.js';
 import {
   accessMatrix,
-  allProjects,
-  clientProjects,
   guidebook,
   partnerDocuments,
-  proprietaryProjects,
   roadmap,
+  seaCommonsProject,
   supportAreas,
   timeline,
   tools,
 } from './data.js';
 
-const NAV = ['overview', 'systems', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
+const NAV = ['overview', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
 
 function formatCount(value) {
   const n = Number(value);
@@ -102,30 +100,6 @@ function useOperationalData() {
   return { ...snapshot, refresh };
 }
 
-function ProjectCard({ project, active, onOpen }) {
-  return (
-    <button
-      className={`future-project-card ${active ? 'is-active' : ''}`}
-      onClick={() => onOpen(project.id)}
-      aria-pressed={active}
-    >
-      <div className="future-project-card__top">
-        <span>{project.type === 'proprietary' ? 'proprietary system' : 'client project'}</span>
-        <StatusPill state={project.status}>{project.status}</StatusPill>
-      </div>
-      <h3>{project.name}</h3>
-      <p>{project.summary}</p>
-      <div className="future-tag-row">
-        {project.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}
-      </div>
-      <div className="future-project-card__meta">
-        <span>current phase</span>
-        <strong>{project.phase}</strong>
-      </div>
-    </button>
-  );
-}
-
 function WorkstreamList({ project }) {
   return (
     <div className="future-workstreams">
@@ -151,7 +125,7 @@ function ProjectDetail({ project }) {
     <section className="future-project-detail">
       <header>
         <div>
-          <span className="future-eyebrow">{project.type === 'proprietary' ? 'proprietary system' : 'client project'}</span>
+          <span className="future-eyebrow">SeaCommons workspace</span>
           <h2>{project.name}</h2>
         </div>
         <StatusPill state={project.status}>{project.status}</StatusPill>
@@ -294,15 +268,15 @@ function SourceHealth({ pipeline }) {
   );
 }
 
-function Overview({ ops, onOpenSystem }) {
+function Overview({ ops }) {
   return (
     <>
       <section className="future-hero">
         <span className="future-eyebrow">SeaCommons Futures / partner workspace</span>
-        <h1>Project state, development work and shared systems.</h1>
+        <h1>Project state, development work and operational knowledge.</h1>
         <p>
-          A controlled partner workspace for understanding what exists now, what is being built,
-          which materials are current and which proprietary tools are available.
+          A controlled partner workspace for SeaCommons: what exists now, what is being built,
+          which materials are current and which SeaCommons operational surfaces are available.
         </p>
         <div className="future-hero__meta">
           <StatusPill state={ops.status?.status || 'unknown'}>{ops.status?.status || 'operational feed pending'}</StatusPill>
@@ -316,15 +290,11 @@ function Overview({ ops, onOpenSystem }) {
 
       <section className="future-section">
         <SectionHeader
-          eyebrow="proprietary"
-          title="Systems"
-          copy="Partner-facing systems remain distinct products even when they share identity and permissions."
+          eyebrow="SeaCommons"
+          title="Current development work"
+          copy="The workspace is scoped to SeaCommons only. Other Suez products and client projects live on their own surfaces."
         />
-        <div className="future-card-grid">
-          {proprietaryProjects.map((project) => (
-            <ProjectCard key={project.id} project={project} onOpen={onOpenSystem} />
-          ))}
-        </div>
+        <WorkstreamList project={seaCommonsProject} />
       </section>
 
       <section className="future-section">
@@ -337,62 +307,23 @@ function Overview({ ops, onOpenSystem }) {
         <SourceHealth pipeline={ops.pipeline} />
       </section>
 
-      <section className="future-section">
-        <SectionHeader
-          eyebrow="commercial context"
-          title="Client projects"
-          copy="Visible to the bootstrap administrator, but structurally separate from the proprietary partner systems."
-        />
-        <div className="future-card-grid future-card-grid--client">
-          {clientProjects.map((project) => (
-            <ProjectCard key={project.id} project={project} onOpen={onOpenSystem} />
-          ))}
-        </div>
-      </section>
+
     </>
   );
 }
 
-function Systems({ selectedId, onSelect }) {
-  const [filter, setFilter] = useState('all');
-  const projects = filter === 'proprietary'
-    ? proprietaryProjects
-    : filter === 'client'
-      ? clientProjects
-      : allProjects;
-  const selected = allProjects.find((project) => project.id === selectedId) || projects[0];
-
-  useEffect(() => {
-    if (!projects.some((project) => project.id === selected?.id) && projects[0]) onSelect(projects[0].id);
-  }, [filter, onSelect, projects, selected]);
-
+function Project() {
   return (
     <>
       <section className="future-page-head">
-        <span className="future-eyebrow">systems + projects</span>
-        <h1>Two project families. One permission model.</h1>
+        <span className="future-eyebrow">SeaCommons project</span>
+        <h1>One workspace, one project context.</h1>
         <p>
-          Proprietary systems are partner-facing infrastructure and tools. Client projects are commercial
-          workflows. They can share identity primitives without sharing information architecture.
+          This Futures domain is the private operational workspace for SeaCommons.
+          Other Suez products and client work remain outside this workspace even when they share identity infrastructure.
         </p>
-        <div className="future-segmented" role="group" aria-label="Project type filter">
-          {['all', 'proprietary', 'client'].map((item) => (
-            <button key={item} className={filter === item ? 'is-active' : ''} onClick={() => setFilter(item)}>{item}</button>
-          ))}
-        </div>
       </section>
-
-      <div className="future-system-layout">
-        <aside className="future-system-index">
-          {projects.map((project) => (
-            <button key={project.id} className={project.id === selected?.id ? 'is-active' : ''} onClick={() => onSelect(project.id)}>
-              <span>{project.name}</span>
-              <small>{project.type}</small>
-            </button>
-          ))}
-        </aside>
-        <ProjectDetail project={selected} />
-      </div>
+      <ProjectDetail project={seaCommonsProject} />
     </>
   );
 }
@@ -451,42 +382,22 @@ function Roadmap() {
 }
 
 function Documents() {
-  const allDocs = useMemo(
-    () => allProjects.flatMap((project) => project.documents.map((doc) => ({ ...doc, project: project.name, projectId: project.id, type: project.type }))),
-    [],
-  );
-  const [filter, setFilter] = useState('partner');
-  const docs = filter === 'all'
-    ? allDocs
-    : filter === 'client'
-      ? allDocs.filter((doc) => doc.type === 'client')
-      : partnerDocuments;
-
   return (
     <>
       <section className="future-page-head">
-        <span className="future-eyebrow">documents</span>
-        <h1>Current materials, without file-name archaeology.</h1>
+        <span className="future-eyebrow">SeaCommons documents</span>
+        <h1>Current project materials, without file-name archaeology.</h1>
         <p>
-          Documents are presented by project, type and visibility. Versioning will move into the final
-          Supabase resource model; the workspace already follows that structure.
+          Documents are scoped to SeaCommons and presented by type, visibility and current source.
+          Versioning will move into the final Supabase resource model without changing this workspace boundary.
         </p>
-        <div className="future-segmented" role="group" aria-label="Document filter">
-          {[
-            ['partner', 'proprietary'],
-            ['client', 'client'],
-            ['all', 'all'],
-          ].map(([value, label]) => (
-            <button key={value} className={filter === value ? 'is-active' : ''} onClick={() => setFilter(value)}>{label}</button>
-          ))}
-        </div>
       </section>
 
-      <section className="future-document-table" aria-label="Project documents">
+      <section className="future-document-table" aria-label="SeaCommons project documents">
         <header>
           <span>document</span><span>project</span><span>type</span><span>access</span><span>updated</span>
         </header>
-        {docs.map((doc) => (
+        {partnerDocuments.map((doc) => (
           <article key={doc.projectId + doc.id}>
             <div><strong>{doc.title}</strong><small>{doc.source}</small></div>
             <span>{doc.project}</span>
@@ -542,8 +453,8 @@ function Tools() {
         <span className="future-eyebrow">tools</span>
         <h1>Surfaces you can open from this workspace.</h1>
         <p>
-          Available tools open on their own product domain. Planned proprietary tools remain visible as roadmap
-          context but cannot be opened until they exist and the user has a grant.
+          This page only exposes SeaCommons surfaces. Other Suez products and tools are managed on their own domains
+          and are not part of the SeaCommons workspace.
         </p>
       </section>
 
@@ -598,8 +509,8 @@ function Access({ user }) {
         <span className="future-eyebrow">access</span>
         <h1>Full bootstrap access now. Granular grants next.</h1>
         <p>
-          The UI already distinguishes systems, projects and resources. When the final Suez Supabase identity
-          tenant is connected, those same boundaries become stored membership and access-grant decisions.
+          The workspace already distinguishes SeaCommons project and resource boundaries. When the final Suez Supabase identity
+          tenant is connected, those boundaries become stored membership and access-grant decisions.
         </p>
       </section>
 
@@ -610,7 +521,7 @@ function Access({ user }) {
       </section>
 
       <section className="future-access-table">
-        <header><span>system</span><span>level</span><span>scope</span><span>mode</span></header>
+        <header><span>workspace</span><span>level</span><span>scope</span><span>mode</span></header>
         {accessMatrix.map((row) => (
           <article key={row.system}>
             <strong>{row.system}</strong>
@@ -623,7 +534,7 @@ function Access({ user }) {
 
       <section className="future-access-note">
         <span className="future-eyebrow">final permission hierarchy</span>
-        <p>organisation → system → project / subproject → resource or tool</p>
+        <p>organisation → SeaCommons workspace → project / subproject → resource or tool</p>
         <p>A grant can stop at any level. Access to one document never implies access to the rest of the project.</p>
       </section>
     </>
@@ -634,14 +545,6 @@ export default function FuturesApp() {
   const { user, signOut } = useAuth();
   const ops = useOperationalData();
   const [view, setView] = useState('overview');
-  const [selectedProject, setSelectedProject] = useState('seacommons');
-
-  const openSystem = useCallback((projectId) => {
-    setSelectedProject(projectId);
-    setView('systems');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
-
   return (
     <div className="future-app">
       <aside className="future-sidebar">
@@ -672,8 +575,8 @@ export default function FuturesApp() {
         </header>
 
         <div className="future-content">
-          {view === 'overview' && <Overview ops={ops} onOpenSystem={openSystem} />}
-          {view === 'systems' && <Systems selectedId={selectedProject} onSelect={setSelectedProject} />}
+          {view === 'overview' && <Overview ops={ops} />}
+          {view === 'project' && <Project />}
           {view === 'roadmap' && <Roadmap />}
           {view === 'documents' && <Documents />}
           {view === 'guidebook' && <Guidebook />}
