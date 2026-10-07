@@ -132,7 +132,7 @@ export const guidebook = [
     body: [
       'Identity can be shared through Suez while visual and product context remains SeaCommons.',
       'The access model supports grants at SeaCommons workspace, project, subproject and resource level.',
-      'Access to other Suez products, including Republic, is a separate entitlement on its own product surface and is not implied by SeaCommons access.',
+      'Access to other Suez products is a separate entitlement on its own product surface and is not implied by SeaCommons access.',
     ],
   },
 ];
