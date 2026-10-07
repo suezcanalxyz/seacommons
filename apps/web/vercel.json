@@ -140,5 +140,38 @@
     "VITE_AUTH_ENABLED": "false",
     "VITE_EDGE_API_BASE": "https://seacommons-edge.seacommons.workers.dev",
     "VITE_LIVE_EDGE_BASE": "https://seacommons-edge.seacommons.workers.dev"
-  }
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "futures.seacommons.org"
+        }
+      ],
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store, max-age=0"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow, noarchive"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "same-origin"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        }
+      ]
+    }
+  ]
 }

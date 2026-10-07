@@ -96,3 +96,20 @@ test('Futures access page states final grant hierarchy without pretending auth i
   await expect(page.getByText(/organisation → SeaCommons workspace → project \/ subproject → resource or tool/i)).toBeVisible();
   await expect(page.getByText(/final Suez Supabase identity tenant/i)).toBeVisible();
 });
+
+
+test('Futures navigation is deep-linkable and browser-history aware', async ({ page }) => {
+  await mockOperationalContracts(page);
+  await page.goto(`${FUTURES_URL}?view=roadmap`);
+
+  await expect(page.getByRole('heading', { name: /What is being built/i })).toBeVisible();
+  await expect(page).toHaveURL(/view=roadmap/);
+
+  await page.locator('.future-sidebar nav').getByRole('button', { name: /^project/i }).click();
+  await expect(page.getByRole('heading', { name: /One workspace, one project context/i })).toBeVisible();
+  await expect(page).toHaveURL(/view=project/);
+
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: /What is being built/i })).toBeVisible();
+  await expect(page).toHaveURL(/view=roadmap/);
+});
