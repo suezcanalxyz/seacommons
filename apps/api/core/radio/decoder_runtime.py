@@ -144,7 +144,8 @@ class RadioDecoderRuntime:
             try:
                 outputs = tuple(decoder.decode(frame))
             except Exception:
-                invalid += 1
+                # Decoder failures are runtime faults, not invalid messages.
+                self._errors += 1
                 continue
             for output in outputs[:16]:
                 try:
