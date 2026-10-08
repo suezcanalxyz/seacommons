@@ -22,7 +22,9 @@ const manager = enabled ? new UserManager({
   redirect_uri: `${window.location.origin}${import.meta.env.BASE_URL}`,
   post_logout_redirect_uri: `${window.location.origin}${import.meta.env.BASE_URL}`,
   response_type: 'code',
-  scope: 'openid profile email roles',
+  // Supabase OAuth supports the standard OIDC scopes; roles and workspace grants
+  // must be checked server-side rather than assumed from an unregistered scope.
+  scope: 'openid profile email',
   userStore: new WebStorageStateStore({ store: window.sessionStorage }),
   automaticSilentRenew: true,
 }) : null;
