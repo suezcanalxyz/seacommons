@@ -221,3 +221,19 @@ def test_dsc_bridge_keeps_decoder_state_per_receiver_lineage():
     assert "Dictionary<string, DecoderState>" in source
     assert 'physical_lineage' in source
     assert 'streamKey' in source
+
+
+def test_decoder_crash_counts_as_runtime_error_not_invalid_message():
+    from core.radio.decoder_runtime import RadioDecoderRuntime
+
+    class CrashingDecoder:
+        def decode(self, frame):
+            raise TimeoutError("decoder stalled")
+
+    runtime = RadioDecoderRuntime(
+        enabled=True, decoders=(CrashingDecoder(),), decoded_handler=lambda msg: {},
+    )
+    result = runtime.ingest_frame(_frame())
+    assert result == {"accepted": True, "decoded": 0, "invalid": 0}
+    assert runtime.status()["errors"] == 1
+    assert runtime.status()["invalid"] == 0
