@@ -71,6 +71,11 @@
     },
     {
       "source": "/",
+      "has": [{ "type": "host", "value": "futures.seacommons.org" }],
+      "destination": "/futures.html"
+    },
+    {
+      "source": "/",
       "has": [{ "type": "host", "value": "play.seacommons.org" }],
       "destination": "/play.html"
     },

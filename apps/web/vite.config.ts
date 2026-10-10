@@ -28,6 +28,7 @@ export default defineConfig(({mode}) => {
           docs: path.resolve(__dirname, 'docs.html'),
           play: path.resolve(__dirname, 'play.html'),
           status: path.resolve(__dirname, 'status.html'),
+          futures: path.resolve(__dirname, 'futures.html'),
         },
       },
     },
