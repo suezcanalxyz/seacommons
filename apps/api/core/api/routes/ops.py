@@ -373,6 +373,84 @@ def _drift_breakdown() -> dict:
     }
 
 
+
+# Long-window, database-backed operational history for the Futures Overall view.
+# This counts the retained canonical IntelEvent rows, NOT incident findings,
+# and never derives fake zero values from failed database calls.
+_overall_cache: bytes | None = None
+_overall_cache_ts = 0.0
+_OVERALL_TTL = 900.0
+
+
+def _retained_intel_history() -> dict:
+    from sqlalchemy import func, select
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+
+    month = func.substr(IntelEventDB.timestamp_utc, 1, 7)
+    with session_scope() as db:
+        total, oldest, newest, positioned = db.execute(
+            select(
+                func.count(IntelEventDB.id),
+                func.min(IntelEventDB.timestamp_utc),
+                func.max(IntelEventDB.timestamp_utc),
+                func.count(IntelEventDB.lat),
+            )
+        ).one()
+        by_type = db.execute(
+            select(IntelEventDB.type, func.count(IntelEventDB.id))
+            .group_by(IntelEventDB.type)
+            .order_by(func.count(IntelEventDB.id).desc())
+        ).all()
+        monthly = db.execute(
+            select(month.label("month"), func.count(IntelEventDB.id))
+            .group_by(month)
+            .order_by(month)
+        ).all()
+
+    return {
+        "total_events": int(total),
+        "positioned_events": int(positioned),
+        "unpositioned_events": int(total) - int(positioned),
+        "oldest_event_utc": oldest,
+        "newest_event_utc": newest,
+        "by_type": [{"type": str(category or "unknown"), "count": int(count)}
+                    for category, count in by_type],
+        "monthly": [{"month": str(period), "count": int(count)}
+                    for period, count in monthly if period and len(str(period)) == 7],
+    }
+
+
+@router.get("/api/v1/ops/overall")
+async def ops_overall():
+    """Retained database-wide OSINT history and monthly trend, cached for 15m.
+
+    No raw evidence payload, identifiers, contact information or precise
+    humanitarian geometry are included.
+    """
+    global _overall_cache, _overall_cache_ts
+    if _overall_cache is not None and time.monotonic() - _overall_cache_ts < _OVERALL_TTL:
+        return Response(content=_overall_cache, media_type="application/json")
+    from fastapi import HTTPException
+    try:
+        history = await asyncio.wait_for(
+            asyncio.get_running_loop().run_in_executor(None, _retained_intel_history),
+            timeout=15.0,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Overall data temporarily unavailable") from exc
+    payload = json.dumps({
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "scope": "retained_intel_events",
+        "count_semantics": "All canonical IntelEvent records currently retained in the database. These are not confirmed incidents.",
+        "retention_note": "Overall means all retained historical records; records removed before the retention boundary are not included.",
+        "intel_record": history,
+    }).encode()
+    _overall_cache = payload
+    _overall_cache_ts = time.monotonic()
+    return Response(content=payload, media_type="application/json")
+
+
 @router.get("/api/v1/ops/data-status")
 async def data_status():
     """One place to see what real data SeaCommons has flowing in and what it
