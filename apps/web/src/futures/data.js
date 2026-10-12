@@ -234,5 +234,5 @@ export const supportAreas = [
 ];
 
 export const accessMatrix = [
-  { system: 'SeaCommons', level: 'manage', scope: 'workspace + authorised projects / resources', state: 'bootstrap' },
+  { system: 'SeaCommons', level: 'unverified', scope: 'Public-safe data only; private resource grants require server verification', state: 'not provisioned' },
 ];
