@@ -67,11 +67,12 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
   await page.goto(FUTURES_URL);
 
   await expect(page.getByRole('heading', { name: /From maritime evidence to place-based understanding/i })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'SeaCommons operational status' })).toContainText('226');
+  await expect(page.getByRole('region', { name: 'Overall historical totals' })).toContainText('378,826');
   await expect(page.getByRole('group', { name: 'Analytics time window' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Overall', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('region', { name: 'Overall historical totals' })).toContainText('378,826');
   await page.getByRole('button', { name: '24 hours', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'SeaCommons operational status' })).toContainText('226');
   await expect(page.getByText('raw observations', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'An evidence infrastructure for the sea.' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Application pathways and maturity' })).toContainText('Coastal and island resilience');
