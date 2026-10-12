@@ -41,8 +41,32 @@ const pipelineFixture = {
 
 async function mockOperationalContracts(page) {
   await page.route('**/api/v1/status?hours=24', (route) => route.fulfill({ json: statusFixture }));
+  await page.route('**/api/v1/status?hours=168', (route) => route.fulfill({ json: {
+    ...statusFixture, window_hours: 168, pipeline: { ...statusFixture.pipeline, raw_observations: 1680, parsed_events: 780, derived_cues: 310 },
+  } }));
   await page.route('**/api/v1/play/counts', (route) => route.fulfill({ json: countsFixture }));
   await page.route('**/api/v1/live/pipeline', (route) => route.fulfill({ json: pipelineFixture }));
+  await page.route('**/api/v1/ops/data-status', (route) => route.fulfill({ json: {
+    generated_at: '2026-10-12T12:00:00Z',
+    intel_record: { total_events: 378826, positioned_events: 378107, oldest_event_utc: '2026-05-01T00:00:00Z', newest_event_utc: '2026-10-12T12:00:00Z' },
+    ingestion: { vessels: { total_known: 17895, active_30m: 2767 }, sources: [{ name: 'aisstream_mediterranean', type: 'ais', status: 'active', consecutive_errors: 0 }] },
+    drift: { by_status: { completed: 4 } },
+    compute: { database: 'postgres', job_execution_mode: 'queue' },
+  } }));
+  await page.route('**/api/v1/ops/summary', (route) => route.fulfill({ json: {
+    generated_at: '2026-10-12T12:00:00Z', backend: { image_ocr: { available: true, primary_engine: 'easyocr' }, remote_radio: { configured: 12, started: 3, failed: 1 } },
+    scheduler: { running: true, jobs: [{ id: 'reconcile' }] },
+    sar: { open_alerts: 0, completed_alerts: 4, forensic_packets: 50 },
+  } }));
+  await page.route('**/api/v1/ops/stats', (route) => route.fulfill({ json: { sar: { open_alerts: 0, completed_alerts: 4, forensic_packets: 50 } } }));
+  await page.route('**/api/v1/ops/overall', (route) => route.fulfill({ json: {
+    generated_at: '2026-10-12T12:00:00Z', intel_record: {
+      total_events: 378826, positioned_events: 378107,
+      oldest_event_utc: '2026-05-01T00:00:00Z', newest_event_utc: '2026-10-12T12:00:00Z',
+      monthly: [{ month: '2026-05', count: 32100 }, { month: '2026-06', count: 40100 }, { month: '2026-10', count: 79000 }],
+      by_type: [{ type: 'distress', count: 42 }, { type: 'ais_anomaly', count: 72819 }],
+    },
+  } }));
 }
 
 test('Futures overview uses canonical operational contracts', async ({ page }) => {
@@ -51,6 +75,10 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
 
   await expect(page.getByRole('heading', { name: /From maritime evidence to place-based understanding/i })).toBeVisible();
   await expect(page.getByRole('region', { name: 'SeaCommons operational status' })).toContainText('226');
+  await expect(page.getByRole('group', { name: 'Analytics time window' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Overall', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('region', { name: 'Overall historical totals' })).toContainText('378,826');
+  await page.getByRole('button', { name: '24 hours', exact: true }).click();
   await expect(page.getByText('raw observations', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'An evidence infrastructure for the sea.' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Application pathways and maturity' })).toContainText('Coastal and island resilience');
@@ -142,4 +170,36 @@ test('Futures does not claim administrator grants from a browser session', async
   await expect(page.getByText('not asserted by frontend')).toBeVisible();
   await expect(page.getByText('OIDC identity only')).toBeVisible();
   await expect(page.getByText('full bootstrap access')).toHaveCount(0);
+});
+
+test('Futures switches equal-weight 24 hours / 7 days / Overall panels using real contracts', async ({ page }) => {
+  await mockOperationalContracts(page);
+  await page.goto(FUTURES_URL + '?view=overview');
+  const group = page.getByRole('group', { name: 'Analytics time window' });
+  await expect(group.getByRole('button', { name: 'Overall' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('region', { name: 'Overall historical totals' })).toContainText('378,826');
+  await expect(page.getByRole('region', { name: 'Overall historical totals' })).toContainText('17,895');
+  await group.getByRole('button', { name: '24 hours' }).click();
+  await expect(group.getByRole('button', { name: '24 hours' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText('raw envelopes / 24 hours')).toBeVisible();
+  await expect(page.getByText('240', { exact: true }).first()).toBeVisible();
+  await group.getByRole('button', { name: '7 days' }).click();
+  await expect(group.getByRole('button', { name: '7 days' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText('raw envelopes / 7 days')).toBeVisible();
+  await expect(page.getByText('1,680', { exact: true }).first()).toBeVisible();
+  await group.getByRole('button', { name: 'Overall' }).click();
+  await expect(page.getByRole('region', { name: 'Overall historical totals' })).toContainText('378,826');
+  await expect(page.getByText('raw envelopes / 7 days')).toHaveCount(0);
+});
+
+test('Historical and Operations pages use canonical ops data and never fake unknown totals', async ({ page }) => {
+  await mockOperationalContracts(page);
+  await page.goto(FUTURES_URL + '?view=history');
+  await expect(page.getByRole('heading', { name: /How the record has grown/i })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Monthly retained Intel events' })).toContainText('2026-05');
+  await expect(page.getByText('ais_anomaly')).toBeVisible();
+  await page.locator('.future-sidebar nav').getByRole('button', { name: /^operations/i }).click();
+  await expect(page.getByRole('heading', { name: /The operational system, in one place/i })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Ops source health' })).toContainText('aisstream_mediterranean');
+  await expect(page.getByText('Radio receivers failed')).toBeVisible();
 });
