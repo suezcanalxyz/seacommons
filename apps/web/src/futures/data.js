@@ -78,6 +78,52 @@ export const partnerDocuments = [
   })),
 ];
 
+export const verticalPathways = [
+  {
+    id: 'maritime-evidence',
+    title: 'Maritime evidence',
+    status: 'operational',
+    phase: 'Core infrastructure',
+    detail: 'Traceable AIS, radio, public-source and satellite context; historical timelines, uncertainty and privacy-aware publishing.',
+    inputs: ['SeaCommons operational feeds', 'Canonical case timelines'],
+    output: 'Evidence-aware maritime observatory',
+  },
+  {
+    id: 'island-resilience',
+    title: 'Coastal and island resilience',
+    status: 'pilot design',
+    phase: 'Proposed extension',
+    detail: 'Combine coastal and maritime evidence with territorial indicators, seasonal pressure and context-specific research questions.',
+    inputs: ['Public territorial statistics', 'Geospatial layers', 'Validated field observations'],
+    output: 'A bounded, locally contextualised observatory',
+  },
+  {
+    id: 'participatory-impact',
+    title: 'Participatory impact evaluation',
+    status: 'concept',
+    phase: 'Future vertical',
+    detail: 'Pair transparent quantitative baselines with community-defined indicators, interviews and documented intervention outcomes.',
+    inputs: ['Consented field inputs', 'Project baselines', 'Outcome indicators'],
+    output: 'Auditable impact learning and reporting',
+  },
+  {
+    id: 'resource-systems',
+    title: 'Water, energy and food systems',
+    status: 'concept',
+    phase: 'Future vertical',
+    detail: 'Potential monitoring of decentralised resource projects where local data governance, sensor reliability and maintainability can be demonstrated.',
+    inputs: ['Partner-owned measurements', 'Validated environment data'],
+    output: 'Resource and resilience insights',
+  },
+];
+
+export const pilotFramework = [
+  { label: '01 / Define', text: 'A bounded geography, research question, community safeguards and intended decisions.' },
+  { label: '02 / Baseline', text: 'Source inventory, coverage limits, existing data, field methods and provenance obligations.' },
+  { label: '03 / Pilot', text: 'A reproducible dashboard or dossier, with review checkpoints and no invented observations.' },
+  { label: '04 / Evaluate', text: 'Evidence completeness, usability, technical reliability and locally agreed outcomes.' },
+];
+
 export const presentationSlides = [
   { kicker: 'Introduction', title: 'From observation to accountable evidence.', body: 'Maritime intelligence, humanitarian OSINT and public-interest investigations.', points: ['One provenance-aware evidence model', 'Two public investigative verticals', 'Public and partner interfaces'] },
   { kicker: 'The proposition', title: 'A system for reading maritime evidence.', body: 'Receive heterogeneous observations, correlate source lineages and publish privacy-aware outputs.', points: ['Observe', 'Investigate', 'Explain'] },
@@ -88,8 +134,8 @@ export const presentationSlides = [
   { kicker: 'Products', title: 'Live · Play · Futures · API.', body: 'Separate operational interfaces aligned to source maturity and audience.', points: ['Live: current public cases', 'Play: historical archive and timelines', 'Futures: partner workspace', 'API: typed contracts and analytical outputs'] },
   { kicker: 'Trust', title: 'Designed to show what is unknown.', body: 'SeaCommons preserves contradictions, source freshness and approximate geometry.', points: ['No source-lineage inflation', 'Explicit provenance', 'Privacy-aware public projection'] },
   { kicker: 'Architecture', title: 'A recoverable system, not a collection of dashboards.', body: 'PostgreSQL is canonical; UI and edge are projections.', points: ['Input sources and workers', 'FastAPI and canonical database', 'Durable outbox and public edge'] },
-  { kicker: 'Partner value', title: 'From information access to decision support.', body: 'Scoped collaboration formats designed for public-interest institutions and technical partners.', points: ['Research and evidence case studies', 'Observatories and monitoring', 'Co-designed pilots and integrations'] },
-  { kicker: 'Roadmap', title: 'The next milestone is operational reliability.', body: 'Strengthen repeatability, auditability and evidence quality before coverage expansion.', points: ['Now: cross-modal closure + production SLO', 'Next: humanitarian fusion + AIS baseline + radio decoding', 'Later: expanded coverage and investigation tools'] },
+  { kicker: 'Applied research', title: 'From maritime evidence to territorial questions.', body: 'A first pilot can examine a bounded coast or island through open data, validated field evidence and documented uncertainties.', points: ['Context and baseline research', 'Seasonal and geographical patterns', 'Auditable, locally useful reporting'] },
+  { kicker: 'Expansion pathways', title: 'One method. Carefully bounded verticals.', body: 'Maritime evidence exists now; coastal observatories, participatory impact and resource systems are future possibilities subject to feasibility and governance.', points: ['Now: maritime evidence and reliability', 'Pilot design: coastal and island observatories', 'Future concepts: impact measurement and resource resilience'] },
   { kicker: 'Contact', title: 'Evidence that can be questioned, not merely viewed.', body: 'SeaCommons: public-interest maritime evidence infrastructure.', points: ['seacommons.org', 'live.seacommons.org', 'play.seacommons.org'] },
 ];
 
