@@ -3100,7 +3100,7 @@ function App() {
         vesselSnapshot = data;
       } else {
         const updated = new Map(data.features.map((f) => [f.properties?.mmsi, f]));
-        const merged = vesselSnapshot.features.map((f) => updated.get(f.properties?.mmsi) || f);
+        const merged = vesselSnapshot.features.map((f) => updated.get(f.properties?.mmsi) || f).filter((f) => !isFerryVessel(f));
         data.features.forEach((f) => { if (!vesselSnapshot.features.some((e) => e.properties?.mmsi === f.properties?.mmsi)) merged.push(f); });
         // Expire vessels not seen in any diff for VESSEL_TTL_MS — otherwise a
         // vessel that left the feed stays painted on the map until full reload.
