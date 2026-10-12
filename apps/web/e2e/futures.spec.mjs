@@ -52,6 +52,9 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
   await expect(page.getByRole('heading', { name: /Project state, development work/i })).toBeVisible();
   await expect(page.getByRole('region', { name: 'SeaCommons operational status' })).toContainText('226');
   await expect(page.getByText('raw observations', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'An evidence infrastructure for the sea.' })).toBeVisible();
+  await expect(page.getByText('Evidence stages, not equivalent incident totals.')).toBeVisible();
+  await expect(page.getByText('Live', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('240', { exact: true })).toBeVisible();
   await expect(page.getByText('AIS', { exact: true })).toBeVisible();
   await expect(page.getByText('legacy', { exact: true })).toBeVisible();
@@ -92,7 +95,7 @@ test('Futures access page states final grant hierarchy without pretending auth i
   await page.goto(FUTURES_URL);
 
   await page.locator('.future-sidebar nav').getByRole('button', { name: /^access/i }).click();
-  await expect(page.getByRole('heading', { name: /Full bootstrap access now/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Identity connected\. Resource permissions require verification/i })).toBeVisible();
   await expect(page.getByText(/organisation → SeaCommons workspace → project \/ subproject → resource or tool/i)).toBeVisible();
   await expect(page.getByText(/final Suez Supabase identity tenant/i)).toBeVisible();
 });
@@ -112,4 +115,28 @@ test('Futures navigation is deep-linkable and browser-history aware', async ({ p
   await page.goBack();
   await expect(page.getByRole('heading', { name: /What is being built/i })).toBeVisible();
   await expect(page).toHaveURL(/view=roadmap/);
+});
+
+test('Futures Docs searches resources and opens the native partner presentation', async ({ page }) => {
+  await mockOperationalContracts(page);
+  await page.goto(FUTURES_URL);
+  await page.locator('.future-sidebar nav').getByRole('button', { name: /^docs/i }).click();
+  await expect(page.getByRole('heading', { name: /Documents, presentations and project knowledge/i })).toBeVisible();
+  await expect(page.getByText('SeaCommons partner introduction').first()).toBeVisible();
+  await page.getByRole('button', { name: /view presentation/i }).click();
+  await expect(page.getByRole('region', { name: 'SeaCommons partner presentation' })).toContainText('From observation to accountable evidence.');
+  await page.getByRole('button', { name: /next/i }).click();
+  await expect(page.getByRole('region', { name: 'SeaCommons partner presentation' })).toContainText('A system for reading maritime evidence.');
+  await page.getByRole('button', { name: /close presentation/i }).click();
+  await page.getByPlaceholder('Title, format or topic').fill('architecture');
+  await expect(page.getByRole('region', { name: 'SeaCommons project documents' })).toContainText('System architecture');
+  await expect(page.getByRole('region', { name: 'SeaCommons project documents' })).not.toContainText('Engineering roadmap');
+});
+
+test('Futures does not claim administrator grants from a browser session', async ({ page }) => {
+  await mockOperationalContracts(page);
+  await page.goto(FUTURES_URL + '?view=access');
+  await expect(page.getByText('not asserted by frontend')).toBeVisible();
+  await expect(page.getByText('OIDC identity only')).toBeVisible();
+  await expect(page.getByText('full bootstrap access')).toHaveCount(0);
 });
