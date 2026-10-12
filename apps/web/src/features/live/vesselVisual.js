@@ -49,3 +49,16 @@ export function vesselReportFeature(feature) {
     },
   };
 }
+
+/** Presentation-only exclusion: retain AIS observations and forensic history. */
+export function isFerryVessel(feature) {
+  const p = feature?.properties || {};
+  const raw = p.ship_type ?? p.shipType ?? p.vessel_type;
+  const code = Number(raw);
+  if (raw !== null && raw !== undefined && String(raw).trim() !== ''
+      && Number.isFinite(code) && code >= 60 && code <= 69) return true;
+  const type = String(raw ?? p.type ?? '').trim().toLowerCase();
+  if (/\\b(ferry|ferries|passenger(?:[ _-]+ship)?)\\b/.test(type)) return true;
+  const name = String(p.ship_name ?? p.vessel_name ?? p.name ?? '').trim();
+  return /\\b(ferry|ferries)\\b/i.test(name);
+}
