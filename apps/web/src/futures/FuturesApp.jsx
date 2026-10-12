@@ -6,8 +6,10 @@ import {
   accessMatrix,
   guidebook,
   partnerDocuments,
+  pilotFramework,
   presentationSlides,
   roadmap,
+  verticalPathways,
   seaCommonsProject,
   supportAreas,
   timeline,
@@ -334,15 +336,65 @@ function PlatformSummary({ ops }) {
   </>;
 }
 
+function ApplicationPathways() {
+  return (
+    <section className="future-section future-pathways">
+      <SectionHeader
+        eyebrow="04 / applied research"
+        title="Start at sea. Expand only where the evidence supports it."
+        copy="A modular research approach for public-interest partners. The first pathway uses existing SeaCommons infrastructure; subsequent verticals are proposals, not live data products."
+      />
+      <div className="future-pathway-grid" aria-label="Application pathways and maturity">
+        {verticalPathways.map((item, index) => (
+          <article key={item.id} className={index === 0 ? 'is-operational' : ''}>
+            <header>
+              <span>{item.phase}</span>
+              <StatusPill state={item.status}>{item.status}</StatusPill>
+            </header>
+            <h3>{item.title}</h3>
+            <p>{item.detail}</p>
+            <div className="future-pathway-meta">
+              <small>Potential inputs</small>
+              <span>{item.inputs.join(' · ')}</span>
+            </div>
+            <div className="future-pathway-meta">
+              <small>Intended output</small>
+              <span>{item.output}</span>
+            </div>
+          </article>
+        ))}
+      </div>
+      <p className="future-data-provenance">Future pathways require a separate source assessment, data permissions, verified field methods and an implementation agreement. The platform does not currently measure their impact or outcomes.</p>
+    </section>
+  );
+}
+
+function PilotFramework() {
+  return (
+    <section className="future-section future-pilot">
+      <SectionHeader eyebrow="05 / collaboration model" title="A bounded pilot, built to be evaluated."
+        copy="Translate one concrete question into a reliable, inspectable deliverable rather than an undifferentiated dashboard." />
+      <div className="future-pilot-steps">
+        {pilotFramework.map((step) => (
+          <article key={step.label}>
+            <small>{step.label}</small>
+            <p>{step.text}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Overview({ ops }) {
   return (
     <>
       <section className="future-hero">
         <span className="future-eyebrow">SeaCommons Futures / partner workspace</span>
-        <h1>Project state, development work and operational knowledge.</h1>
+        <h1>From maritime evidence to place-based understanding.</h1>
         <p>
-          A controlled partner workspace for SeaCommons: what exists now, what is being built,
-          which materials are current and which SeaCommons operational surfaces are available.
+          A shared starting point for research, monitoring and responsible collaboration.
+          Explore SeaCommons operational evidence, its current limits and carefully scoped opportunities for territorial applications.
         </p>
         <div className="future-hero__meta">
           <StatusPill state={ops.status?.status || 'unknown'}>{ops.status?.status || 'operational feed pending'}</StatusPill>
@@ -354,6 +406,8 @@ function Overview({ ops }) {
 
       <OperationalStrip ops={ops} />
       <PlatformSummary ops={ops} />
+      <ApplicationPathways />
+      <PilotFramework />
 
       <section className="future-section">
         <SectionHeader
