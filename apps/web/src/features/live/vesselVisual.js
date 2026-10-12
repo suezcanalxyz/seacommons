@@ -58,7 +58,7 @@ export function isFerryVessel(feature) {
   if (raw !== null && raw !== undefined && String(raw).trim() !== ''
       && Number.isFinite(code) && code >= 60 && code <= 69) return true;
   const type = String(raw ?? p.type ?? '').trim().toLowerCase();
-  if (/\\b(ferry|ferries|passenger(?:[ _-]+ship)?)\\b/.test(type)) return true;
+  if (/\b(ferry|ferries|passenger(?:[ _-]+ship)?)\b/.test(type)) return true;
   const name = String(p.ship_name ?? p.vessel_name ?? p.name ?? '').trim();
-  return /\\b(ferry|ferries)\\b/i.test(name);
+  return /\b(ferry|ferries)\b/i.test(name);
 }
