@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import os
-from threading import Lock
+from threading import Lock, Thread
 from time import monotonic
 from typing import Any
 
@@ -829,38 +829,56 @@ def _compute_play_counts() -> dict[str, Any]:
     }
 
 
+def _refresh_play_counts(scope: str) -> None:
+    """Refresh counts off the request path; always release the single-flight lock."""
+    try:
+        payload = _compute_play_counts()
+        # Never publish a snapshot if the visibility scope changed meanwhile.
+        if _play_cache_scope() == scope:
+            _play_counts_cache.update(
+                payload=payload, at=monotonic(), scope=scope
+            )
+    except Exception:
+        # Keep the last known snapshot. A later request can retry.
+        import logging
+        logging.getLogger(__name__).exception("PLAY counts refresh failed")
+    finally:
+        _play_counts_lock.release()
+
+
 @router.get("/counts")
 def play_counts():
-    """Exact archive snapshot, isolated from the async request loop."""
+    """Serve a scope-matched stale snapshot while refreshing in the background."""
     scope = _play_cache_scope()
     now_mono = monotonic()
     cached = _play_counts_cache.get("payload")
-    cached_at = float(_play_counts_cache.get("at") or 0.0)
     cached_scope = str(_play_counts_cache.get("scope") or "")
-    if (
-        cached is not None
-        and cached_scope == scope
-        and now_mono - cached_at < _PLAY_COUNTS_TTL_S
-    ):
+    cached_at = float(_play_counts_cache.get("at") or 0.0)
+    if cached is not None and cached_scope == scope:
+        if now_mono - cached_at >= _PLAY_COUNTS_TTL_S:
+            if _play_counts_lock.acquire(blocking=False):
+                try:
+                    Thread(
+                        target=_refresh_play_counts,
+                        args=(scope,),
+                        name="play-counts-refresh",
+                        daemon=True,
+                    ).start()
+                except Exception:
+                    _play_counts_lock.release()
+                    raise
         return cached
 
+    # Cold start or changed publication scope: never return an unrelated
+    # snapshot. Retain synchronous computation to preserve exact semantics.
     with _play_counts_lock:
-        now_mono = monotonic()
         cached = _play_counts_cache.get("payload")
-        cached_at = float(_play_counts_cache.get("at") or 0.0)
         cached_scope = str(_play_counts_cache.get("scope") or "")
-        if (
-            cached is not None
-            and cached_scope == scope
-            and now_mono - cached_at < _PLAY_COUNTS_TTL_S
-        ):
+        if cached is not None and cached_scope == scope:
             return cached
         payload = _compute_play_counts()
-        _play_counts_cache["payload"] = payload
-        _play_counts_cache["at"] = monotonic()
-        _play_counts_cache["scope"] = scope
+        _play_counts_cache.update(payload=payload, at=monotonic(), scope=scope)
         return payload
-
 
 @router.get("/incidents")
 def play_incidents(
