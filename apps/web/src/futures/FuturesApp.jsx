@@ -16,7 +16,7 @@ import {
   tools,
 } from './data.js';
 
-const NAV = ['overview', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
+const NAV = ['overview', 'history', 'operations', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
 const NAV_LABELS = { documents: 'docs' };
 
 function readWorkspaceView() {
@@ -115,6 +115,153 @@ function useOperationalData() {
   }, [refresh]);
 
   return { ...snapshot, refresh };
+}
+
+function useOverallData() {
+  const [snapshot, setSnapshot] = useState({
+    dataStatus: null, summary: null, stats: null, history: null, updatedAt: null, loading: true, error: null,
+  });
+  const refresh = useCallback(async () => {
+    const base = resolveSiteApiBase();
+    const paths = [
+      '/api/v1/ops/data-status', '/api/v1/ops/summary',
+      '/api/v1/ops/stats', '/api/v1/ops/overall',
+    ];
+    const results = await Promise.allSettled(paths.map((path) => fetchJson(base, path, undefined, path.endsWith('/overall') ? 17000 : 11000)));
+    setSnapshot((previous) => ({
+      dataStatus: results[0].status === 'fulfilled' ? results[0].value : previous.dataStatus,
+      summary: results[1].status === 'fulfilled' ? results[1].value : previous.summary,
+      stats: results[2].status === 'fulfilled' ? results[2].value : previous.stats,
+      history: results[3].status === 'fulfilled' ? results[3].value : previous.history,
+      loading: false,
+      updatedAt: new Date(),
+      error: results.some((result) => result.status === 'rejected') ? 'One or more Ops API contracts are unavailable; displayed values may be from the previous successful refresh.' : null,
+    }));
+  }, []);
+  useEffect(() => {
+    refresh();
+    const timer = window.setInterval(refresh, 300_000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+  return { ...snapshot, refresh };
+}
+
+function formatDateTime(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString() : '—';
+}
+
+function LifetimeOverview({ ops, overall }) {
+  const intel = overall.history?.intel_record || overall.dataStatus?.intel_record || {};
+  const vessels = overall.dataStatus?.ingestion?.vessels || overall.summary?.traffic?.registry || {};
+  const totals = [
+    ['Intel events', intel.total_events, 'all retained observations in the Intel event record'],
+    ['Geolocated events', intel.positioned_events, 'records containing coordinates'],
+    ['Known vessels', vessels.total_known, 'registry records, not simultaneously active vessels'],
+    ['Play archive', ops.counts?.total_count, 'cumulative public case / timeline records'],
+    ['Forensic packets', overall.stats?.sar?.forensic_packets ?? overall.summary?.sar?.forensic_packets, 'current archived packet count'],
+    ['Completed drift runs', overall.dataStatus?.drift?.by_status?.completed, 'historical runs retained in the database'],
+  ];
+  return <section className="future-section future-lifetime" aria-label="Overall historical totals">
+    <SectionHeader eyebrow="overall / database history" title="All retained history. Not just the last seven days."
+      copy="Cumulative database counts and archive inventory, fetched directly from Ops API contracts. Different populations are never added together." />
+    <div className="future-lifetime-grid">
+      {totals.map(([label, value, note]) => <article key={label}><small>{label}</small><strong>{formatCount(value)}</strong><p>{note}</p></article>)}
+    </div>
+    <p className="future-data-provenance">History covered: {formatDateTime(intel.oldest_event_utc || overall.history?.intel_record?.oldest_event_utc)} → {formatDateTime(intel.newest_event_utc)}. All-time means retained records, not files previously deleted or upstream events never collected. {overall.error || ''}</p>
+  </section>;
+}
+
+function HistoricalAnalytics({ overall }) {
+  const intel = overall.history?.intel_record || {};
+  const monthly = Array.isArray(intel.monthly) ? intel.monthly : [];
+  const types = Array.isArray(intel.by_type) ? intel.by_type : [];
+  const max = Math.max(1, ...monthly.map((entry) => Number(entry.count) || 0));
+  return <>
+    <section className="future-page-head">
+      <span className="future-eyebrow">history / complete retained record</span>
+      <h1>How the record has grown.</h1>
+      <p>Cumulative historical analytics over the database's full retention period, not a seven-day window. Each month describes Intel events recorded in that period, not confirmed incidents.</p>
+    </section>
+    <LifetimeOverview ops={{ counts: null }} overall={overall} />
+    <section className="future-section">
+      <SectionHeader eyebrow="historical series" title="Records by month"
+        copy="The complete monthly distribution is calculated by Ops API directly from canonical retained Intel events. No extrapolation or synthetic values." />
+      {monthly.length ? <div className="future-history-chart" role="img" aria-label="Monthly retained Intel events">
+        {monthly.map(({ month, count }) => <div key={month} className="future-history-bar">
+          <span title={month + ': ' + formatCount(count)} style={{ height: (5 + 95 * Number(count) / max) + '%' }} />
+          <small>{month}</small>
+          <strong>{formatCount(count)}</strong>
+        </div>)}
+      </div> : <p className="future-inline-note">The full historical series is unavailable until the /api/v1/ops/overall backend endpoint is deployed. No demo data is substituted.</p>}
+    </section>
+    <section className="future-section">
+      <SectionHeader eyebrow="historical classification" title="Event types across all retained history."
+        copy="Source classifications reflect stored events; they do not establish verified findings." />
+      {types.length ? <div className="future-history-types">
+        {types.map((type) => <article key={type.type}><span>{type.type}</span><strong>{formatCount(type.count)}</strong></article>)}
+      </div> : <p className="future-inline-note">All-time classification totals are not available from the current public API.</p>}
+    </section>
+  </>;
+}
+
+function Operations({ overall }) {
+  const data = overall.dataStatus || {};
+  const summary = overall.summary || {};
+  const stats = overall.stats || {};
+  const sources = Array.isArray(data.ingestion?.sources) ? data.ingestion.sources : [];
+  const vessels = data.ingestion?.vessels || summary.traffic?.registry || {};
+  const radio = summary.backend?.remote_radio || {};
+  const compute = data.compute || {};
+  const scheduler = summary.scheduler || {};
+  const technical = [
+    ['Database', compute.database || summary.backend?.database || 'unavailable'],
+    ['Processing', compute.job_execution_mode || summary.backend?.job_execution_mode || 'unavailable'],
+    ['Available RAM', Number.isFinite(Number(compute.available_ram_mb)) && Number(compute.available_ram_mb) >= 0 ? formatCount(compute.available_ram_mb) + ' MB' : '—'],
+    ['Scheduler', typeof scheduler.running === 'boolean' ? (scheduler.running ? 'running' : 'stopped') : 'unavailable'],
+    ['Scheduled jobs', Array.isArray(scheduler.jobs) ? formatCount(scheduler.jobs.length) : '—'],
+    ['Image OCR', summary.backend?.image_ocr?.available === true ? summary.backend.image_ocr.primary_engine || 'available' : 'unavailable'],
+    ['Radio receivers configured', formatCount(radio.configured)],
+    ['Radio receivers active', formatCount(radio.started)],
+    ['Radio receivers failed', formatCount(radio.failed)],
+    ['Vessels active in 30 minutes', formatCount(vessels.active_30m)],
+    ['SAR alerts open', formatCount(stats.sar?.open_alerts ?? summary.sar?.open_alerts)],
+    ['SAR alerts completed', formatCount(stats.sar?.completed_alerts ?? summary.sar?.completed_alerts)],
+  ];
+  return <>
+    <section className="future-page-head">
+      <span className="future-eyebrow">operations / Ops API</span><h1>The operational system, in one place.</h1>
+      <p>Live operational telemetry from the SeaCommons backend: ingestion, compute, sources, AIS registry, radio, OCR, scheduler, SAR and drift. These metrics describe process health, not humanitarian case verification.</p>
+    </section>
+    <div className="future-library-actions">
+      <button type="button" onClick={overall.refresh}>refresh Ops API ↗</button>
+      <span className="future-data-provenance">Updated {formatDateTime(data.generated_at || summary.generated_at)}. {overall.error || ''}</span>
+    </div>
+    <section className="future-section">
+      <SectionHeader eyebrow="operational telemetry" title="Compute, integrations and processing." />
+      <div className="future-history-types">{technical.map(([label, value]) => <article key={label}><span>{label}</span><strong>{value}</strong></article>)}</div>
+    </section>
+    <section className="future-section">
+      <SectionHeader eyebrow="source registry" title="Ingestion health by source."
+        copy="Process-level status. A connected transport does not mean every source is fresh or independently verified." />
+      {sources.length ? <div className="future-operation-sources" aria-label="Ops source health">
+        {sources.map((source) => <article key={source.name}><div><strong>{source.name}</strong><small>{source.type || 'source'}</small></div>
+          <StatusPill state={source.status}>{source.status || 'unknown'}</StatusPill>
+          <div><small>last poll</small><span>{formatDateTime(source.last_poll_at)}</span></div>
+          <div><small>errors</small><span>{formatCount(source.consecutive_errors)}</span></div>
+        </article>)}
+      </div> : <p className="future-inline-note">No source-registry status returned by Ops API.</p>}
+    </section>
+    <section className="future-section">
+      <SectionHeader eyebrow="drift models" title="Run inventory and model quality." />
+      <div className="future-history-types">
+        {Object.entries(data.drift?.by_status || {}).map(([status, total]) => <article key={status}><span>{status} runs</span><strong>{formatCount(total)}</strong></article>)}
+        {Object.entries(data.drift?.recent_forcing_quality || {}).map(([quality, total]) => <article key={quality}><span>Recent forcing: {quality}</span><strong>{formatCount(total)}</strong></article>)}
+        {Object.entries(data.drift?.recent_models || {}).map(([model, total]) => <article key={model}><span>Recent model: {model}</span><strong>{formatCount(total)}</strong></article>)}
+      </div>
+    </section>
+  </>;
 }
 
 function WorkstreamList({ project }) {
@@ -386,7 +533,7 @@ function PilotFramework() {
   );
 }
 
-function Overview({ ops }) {
+function Overview({ ops, overall }) {
   return (
     <>
       <section className="future-hero">
@@ -404,6 +551,7 @@ function Overview({ ops }) {
         {ops.error ? <p className="future-inline-note">{ops.error} Static project information remains available.</p> : null}
       </section>
 
+      <LifetimeOverview ops={ops} overall={overall} />
       <OperationalStrip ops={ops} />
       <PlatformSummary ops={ops} />
       <ApplicationPathways />
@@ -730,6 +878,7 @@ function Access({ user }) {
 export default function FuturesApp() {
   const { user, signOut } = useAuth();
   const ops = useOperationalData();
+  const overall = useOverallData();
   const [view, setView] = useState(() => readWorkspaceView());
 
   useEffect(() => {
@@ -777,7 +926,9 @@ export default function FuturesApp() {
         </header>
 
         <div className="future-content">
-          {view === 'overview' && <Overview ops={ops} />}
+          {view === 'overview' && <Overview ops={ops} overall={overall} />}
+          {view === 'history' && <HistoricalAnalytics overall={overall} />}
+          {view === 'operations' && <Operations overall={overall} />}
           {view === 'project' && <Project />}
           {view === 'roadmap' && <Roadmap />}
           {view === 'documents' && <Documents />}
