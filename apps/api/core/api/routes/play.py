@@ -846,6 +846,27 @@ def _refresh_play_counts(scope: str) -> None:
         _play_counts_lock.release()
 
 
+def prewarm_play_counts() -> None:
+    """Build the first PLAY snapshot off the HTTP request path after startup.
+
+    Never block readiness or startup on a large archive scan. The existing
+    single-flight lock also protects against a simultaneous cold request.
+    """
+    scope = _play_cache_scope()
+    if not _play_counts_lock.acquire(blocking=False):
+        return
+    try:
+        Thread(
+            target=_refresh_play_counts,
+            args=(scope,),
+            name="play-counts-prewarm",
+            daemon=True,
+        ).start()
+    except Exception:
+        _play_counts_lock.release()
+        raise
+
+
 @router.get("/counts")
 def play_counts():
     """Serve a scope-matched stale snapshot while refreshing in the background."""
