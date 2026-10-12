@@ -161,7 +161,7 @@ async def authorization_gate(request, call_next):
         return JSONResponse(status_code=403, content={"detail": "This operation is disabled in the public demo"})
     public = path in {
         "/", "/health", "/ready", "/metrics", "/docs", "/openapi.json", "/redoc",
-        "/status", "/api/v1/status",
+        "/status", "/api/v1/status", "/api/v1/futures/overall",
         "/api/v1/ingest/twilio/whatsapp", "/api/v1/ingest/twilio/sms",
         "/api/v1/ingest/meta/whatsapp",
         "/api/v1/ingest/telegram", "/api/v1/ingest/webhook",
