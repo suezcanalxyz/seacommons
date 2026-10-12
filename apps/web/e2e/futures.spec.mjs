@@ -58,7 +58,7 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
   await expect(page.getByText(/platform does not currently measure their impact or outcomes/i)).toBeVisible();
   await expect(page.getByText('Evidence stages, not equivalent incident totals.')).toBeVisible();
   await expect(page.getByText('Live', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('240', { exact: true })).toBeVisible();
+  await expect(page.getByText('240', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('AIS', { exact: true })).toBeVisible();
   await expect(page.getByText('legacy', { exact: true })).toBeVisible();
 });
@@ -100,7 +100,7 @@ test('Futures access page states final grant hierarchy without pretending auth i
   await page.locator('.future-sidebar nav').getByRole('button', { name: /^access/i }).click();
   await expect(page.getByRole('heading', { name: /Identity connected\. Resource permissions require verification/i })).toBeVisible();
   await expect(page.getByText(/organisation → SeaCommons workspace → project \/ subproject → resource or tool/i)).toBeVisible();
-  await expect(page.getByText(/final Suez Supabase identity tenant/i)).toBeVisible();
+  await expect(page.getByText(/Workspace membership, resource grants and private API permissions must be independently verified/i)).toBeVisible();
 });
 
 
