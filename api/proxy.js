@@ -5,6 +5,7 @@ const ALLOWED_UPSTREAMS = new Set(['api.seacommons.org', 'demo-api.seacommons.or
 const LIVE_HOSTS = new Set([
   'live.seacommons.org',
   'console.seacommons.org',
+  'futures.seacommons.org',
   'api.seacommons.org',
 ]);
 const HOP_BY_HOP_HEADERS = new Set([
@@ -46,7 +47,7 @@ function requestHostname(headers) {
   return String(headers.host || '').split(':')[0].trim().toLowerCase();
 }
 
-function selectUpstream(headers) {
+export function selectUpstream(headers) {
   const configured = process.env.SEACOMMONS_UPSTREAM_VIRTUAL_HOST;
   if (configured && ALLOWED_UPSTREAMS.has(configured)) return configured;
   return LIVE_HOSTS.has(requestHostname(headers))
