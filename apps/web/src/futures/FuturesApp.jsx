@@ -344,7 +344,7 @@ function ApplicationPathways() {
         title="Start at sea. Expand only where the evidence supports it."
         copy="A modular research approach for public-interest partners. The first pathway uses existing SeaCommons infrastructure; subsequent verticals are proposals, not live data products."
       />
-      <div className="future-pathway-grid" aria-label="Application pathways and maturity">
+      <section className="future-pathway-grid" aria-label="Application pathways and maturity">
         {verticalPathways.map((item, index) => (
           <article key={item.id} className={index === 0 ? 'is-operational' : ''}>
             <header>
@@ -363,7 +363,7 @@ function ApplicationPathways() {
             </div>
           </article>
         ))}
-      </div>
+      </section>
       <p className="future-data-provenance">Future pathways require a separate source assessment, data permissions, verified field methods and an implementation agreement. The platform does not currently measure their impact or outcomes.</p>
     </section>
   );
