@@ -19,8 +19,8 @@ const AuthContext = createContext({ token: null, user: null });
 const manager = enabled ? new UserManager({
   authority,
   client_id: clientId,
-  redirect_uri: `${window.location.origin}${import.meta.env.BASE_URL}`,
-  post_logout_redirect_uri: `${window.location.origin}${import.meta.env.BASE_URL}`,
+  redirect_uri: `${window.location.origin}/`,
+  post_logout_redirect_uri: `${window.location.origin}/`,
   response_type: 'code',
   // Supabase OAuth supports the standard OIDC scopes; roles and workspace grants
   // must be checked server-side rather than assumed from an unregistered scope.
@@ -46,9 +46,14 @@ export function AuthGate({ children }) {
     let active = true;
     const start = async () => {
       try {
-        if (window.location.search.includes('code=') && window.location.search.includes('state=')) {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('error')) {
+          const message = params.get('error_description') || params.get('error') || 'Unknown identity-provider error';
+          throw new Error(`OIDC provider rejected sign-in: ${message}`);
+        }
+        if (params.has('code') && params.has('state')) {
           await manager.signinRedirectCallback();
-          window.history.replaceState({}, document.title, window.location.pathname);
+          window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
         }
         const current = await manager.getUser();
         if (!active) return;
@@ -62,7 +67,7 @@ export function AuthGate({ children }) {
       } catch (error) {
         console.error('OIDC login failed', error);
         if (active) {
-          setError('The identity service did not complete the sign-in request.');
+          setError('Sign-in could not be completed. Please retry; if the problem persists, ask the administrator to check the registered OAuth callback URL.');
           setReady(true);
         }
       }
@@ -96,7 +101,7 @@ export function AuthGate({ children }) {
         <h1 id="auth-title">Access Futures</h1>
         <p className="auth-copy">Continue through the Suez Canal identity layer. Access to projects, subprojects and documents is assigned to your authorised email.</p>
         {error ? <p className="auth-error" role="alert">{error}</p> : null}
-        <button className="auth-primary" onClick={() => { setError(''); manager.signinRedirect(); }}>continue via suezcanal.xyz</button>
+        <button className="auth-primary" onClick={async () => { setError(''); try { await manager.signinRedirect(); } catch (err) { console.error('OIDC redirect failed', err); setError('Unable to reach the identity provider. Please retry.'); } }}>continue via suezcanal.xyz</button>
         <div className="auth-meta"><span>OAuth 2.1 / OIDC</span><span>Suez identity</span><span>TLS protected</span></div>
         <p className="auth-help">Access problems? Contact the programme administrator. This console is not a substitute for official emergency services.</p>
       </section>
