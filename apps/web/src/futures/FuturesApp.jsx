@@ -6,6 +6,7 @@ import {
   accessMatrix,
   guidebook,
   partnerDocuments,
+  presentationSlides,
   roadmap,
   seaCommonsProject,
   supportAreas,
@@ -14,6 +15,7 @@ import {
 } from './data.js';
 
 const NAV = ['overview', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
+const NAV_LABELS = { documents: 'docs' };
 
 function readWorkspaceView() {
   const value = new URLSearchParams(window.location.search).get('view');
@@ -281,6 +283,57 @@ function SourceHealth({ pipeline }) {
   );
 }
 
+function PlatformSummary({ ops }) {
+  const generated = ops.status?.generated_at || ops.counts?.generated_at;
+  const stages = [
+    { label: 'Observed', value: ops.status?.pipeline?.raw_observations, note: 'raw envelopes / 24 h' },
+    { label: 'Normalised', value: ops.status?.pipeline?.parsed_events, note: 'events / 24 h' },
+    { label: 'Analysed', value: ops.status?.pipeline?.derived_cues, note: 'derived cues / 24 h' },
+    { label: 'Corroborated', value: ops.status?.pipeline?.corroborated_episodes, note: 'episodes / 24 h' },
+  ];
+  const products = [
+    { label: 'Live', note: 'Active, privacy-filtered public cases', url: 'https://live.seacommons.org' },
+    { label: 'Play', note: 'Historic public cases and timelines', url: 'https://play.seacommons.org' },
+    { label: 'API', note: 'Typed contracts and service status', url: 'https://seacommons.org/docs' },
+    { label: 'Futures', note: 'Partner workspace and project knowledge', url: null },
+  ];
+  return <>
+    <section className="future-section future-overview-story">
+      <SectionHeader eyebrow="01 / project at a glance" title="An evidence infrastructure for the sea."
+        copy="SeaCommons links heterogeneous observations into traceable maritime investigations, while preserving uncertainty, source independence and the distinction between an observation and a verified finding." />
+      <div className="future-narrative-grid">
+        <article><small>scope</small><h3>Humanitarian OSINT</h3><p>Distress, SAR activity and humanitarian reporting under conservative privacy, provenance and location-precision controls.</p></article>
+        <article><small>scope</small><h3>Maritime Intelligence</h3><p>AIS integrity, vessel behaviour, radio, environmental and satellite investigation context without presuming intent.</p></article>
+        <article><small>method</small><h3>One evidence model</h3><p>Source observation → normalization → derived cue → episode → hypothesis → policy-governed public case.</p></article>
+      </div>
+    </section>
+    <section className="future-section">
+      <SectionHeader eyebrow="02 / measured activity" title="Evidence stages, not equivalent incident totals."
+        copy="All values below are live API measures for the last 24 hours. The Play archive is cumulative and appears separately above." />
+      <div className="future-funnel-grid">
+        {stages.map((stage, index) => <article key={stage.label}>
+          <small>{String(index + 1).padStart(2, '0')} / {stage.label}</small>
+          <strong>{formatCount(stage.value)}</strong>
+          <span>{stage.note}</span>
+        </article>)}
+      </div>
+      <p className="future-data-provenance">Source: canonical SeaCommons API /api/v1/status?hours=24. {generated ? 'Snapshot generated ' + new Date(generated).toLocaleString() + '.' : 'Waiting for timestamp.'} A derived cue is not a factual finding.</p>
+    </section>
+    <section className="future-section">
+      <SectionHeader eyebrow="03 / product ecology" title="Four interfaces, one coherent source of truth."
+        copy="Each surface has a separate purpose and audience. Links below open real SeaCommons services." />
+      <div className="future-product-grid">
+        {products.map((product) => {
+          const content = <><small>SeaCommons / {product.label}</small><h3>{product.label}</h3><p>{product.note}</p><span>{product.url ? 'open surface ↗' : 'you are here'}</span></>;
+          return product.url
+            ? <a key={product.label} href={product.url} target="_blank" rel="noreferrer">{content}</a>
+            : <article key={product.label}>{content}</article>;
+        })}
+      </div>
+    </section>
+  </>;
+}
+
 function Overview({ ops }) {
   return (
     <>
@@ -300,6 +353,7 @@ function Overview({ ops }) {
       </section>
 
       <OperationalStrip ops={ops} />
+      <PlatformSummary ops={ops} />
 
       <section className="future-section">
         <SectionHeader
