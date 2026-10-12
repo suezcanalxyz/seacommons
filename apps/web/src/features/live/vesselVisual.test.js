@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { vesselReportFeature, vesselMotionState } from './vesselVisual.js';
+import { vesselReportFeature, vesselMotionState, isFerryVessel } from './vesselVisual.js';
 
 test('vesselMotionState distinguishes moving and stationary contacts', () => {
   assert.equal(vesselMotionState({ speed: 4.1 }), 'moving');
@@ -31,4 +31,14 @@ test('sanctions arrays are normalized from public overlay metadata', () => {
   });
   assert.equal(feature.properties.sanctions[0].list, 'OFAC_SDN');
   assert.equal(feature.properties.sanctions[0].program, 'RUSSIA-EO14024');
+});
+
+test('LIVE hides ferries without suppressing cargo or unknown vessels', () => {
+  const vessel = (ship_type, ship_name = 'EXAMPLE') => ({ properties: { ship_type, ship_name } });
+  assert.equal(isFerryVessel(vessel(60)), true);
+  assert.equal(isFerryVessel(vessel(69)), true);
+  assert.equal(isFerryVessel(vessel('passenger')), true);
+  assert.equal(isFerryVessel(vessel(null, 'ISLAND FERRY')), true);
+  assert.equal(isFerryVessel(vessel(70, 'CARGO')), false);
+  assert.equal(isFerryVessel(vessel(null, 'OCEAN VIKING')), false);
 });
