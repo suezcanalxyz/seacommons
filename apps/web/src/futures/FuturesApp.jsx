@@ -64,7 +64,7 @@ function SectionHeader({ eyebrow, title, copy, action }) {
   );
 }
 
-function useOperationalData() {
+function useOperationalData(hours = 24) {
   const [snapshot, setSnapshot] = useState({
     status: null,
     counts: null,
@@ -77,7 +77,7 @@ function useOperationalData() {
   const refresh = useCallback(async () => {
     const apiBase = resolveSiteApiBase();
     const requests = await Promise.allSettled([
-      fetchJson(apiBase, '/api/v1/status?hours=24', undefined, 9000),
+      fetchJson(apiBase, `/api/v1/status?hours=${hours}`, undefined, 9000),
       fetchJson(apiBase, '/api/v1/play/counts', undefined, 9000),
       fetchJson(apiBase, '/api/v1/live/pipeline', undefined, 9000),
     ]);
@@ -100,7 +100,7 @@ function useOperationalData() {
           ? 'Some operational contracts are unavailable.'
           : null,
     });
-  }, []);
+  }, [hours]);
 
   useEffect(() => {
     let cancelled = false;
@@ -433,13 +433,14 @@ function SourceHealth({ pipeline }) {
   );
 }
 
-function PlatformSummary({ ops }) {
+function PlatformSummary({ ops, period }) {
+  const windowLabel = period === '7d' ? '7 days' : '24 hours';
   const generated = ops.status?.generated_at || ops.counts?.generated_at;
   const stages = [
-    { label: 'Observed', value: ops.status?.pipeline?.raw_observations, note: 'raw envelopes / 24 h' },
-    { label: 'Normalised', value: ops.status?.pipeline?.parsed_events, note: 'events / 24 h' },
-    { label: 'Analysed', value: ops.status?.pipeline?.derived_cues, note: 'derived cues / 24 h' },
-    { label: 'Corroborated', value: ops.status?.pipeline?.corroborated_episodes, note: 'episodes / 24 h' },
+    { label: 'Observed', value: ops.status?.pipeline?.raw_observations, note: `raw envelopes / ${windowLabel}` },
+    { label: 'Normalised', value: ops.status?.pipeline?.parsed_events, note: `events / ${windowLabel}` },
+    { label: 'Analysed', value: ops.status?.pipeline?.derived_cues, note: `derived cues / ${windowLabel}` },
+    { label: 'Corroborated', value: ops.status?.pipeline?.corroborated_episodes, note: `episodes / ${windowLabel}` },
   ];
   const products = [
     { label: 'Live', note: 'Active, privacy-filtered public cases', url: 'https://live.seacommons.org' },
@@ -457,9 +458,9 @@ function PlatformSummary({ ops }) {
         <article><small>method</small><h3>One evidence model</h3><p>Source observation → normalization → derived cue → episode → hypothesis → policy-governed public case.</p></article>
       </div>
     </section>
-    <section className="future-section">
+    {period !== 'overall' && <section className="future-section">
       <SectionHeader eyebrow="02 / measured activity" title="Evidence stages, not equivalent incident totals."
-        copy="All values below are live API measures for the last 24 hours. The Play archive is cumulative and appears separately above." />
+        copy={`Values are from the selected ${windowLabel} window. The Play archive is cumulative and stays separate.`} />
       <div className="future-funnel-grid">
         {stages.map((stage, index) => <article key={stage.label}>
           <small>{String(index + 1).padStart(2, '0')} / {stage.label}</small>
@@ -467,8 +468,8 @@ function PlatformSummary({ ops }) {
           <span>{stage.note}</span>
         </article>)}
       </div>
-      <p className="future-data-provenance">Source: canonical SeaCommons API /api/v1/status?hours=24. {generated ? 'Snapshot generated ' + new Date(generated).toLocaleString() + '.' : 'Waiting for timestamp.'} A derived cue is not a factual finding.</p>
-    </section>
+      <p className="future-data-provenance">Source: canonical SeaCommons API /api/v1/status?hours={period === '7d' ? 168 : 24}. {generated ? 'Snapshot generated ' + new Date(generated).toLocaleString() + '.' : 'Waiting for timestamp.'} A derived cue is not a factual finding.</p>
+    </section>}
     <section className="future-section">
       <SectionHeader eyebrow="03 / product ecology" title="Four interfaces, one coherent source of truth."
         copy="Each surface has a separate purpose and audience. Links below open real SeaCommons services." />
@@ -534,7 +535,7 @@ function PilotFramework() {
   );
 }
 
-function Overview({ ops, overall }) {
+function Overview({ ops, overall, period, setPeriod }) {
   return (
     <>
       <section className="future-hero">
@@ -552,9 +553,18 @@ function Overview({ ops, overall }) {
         {ops.error ? <p className="future-inline-note">{ops.error} Static project information remains available.</p> : null}
       </section>
 
-      <LifetimeOverview ops={ops} overall={overall} />
+      <section className="future-period-tabs" aria-label="Analytics time period">
+        <div role="group" aria-label="Analytics time window">
+          {[
+            ['24h', '24 hours'], ['7d', '7 days'], ['overall', 'Overall'],
+          ].map(([value, label]) => <button key={value} type="button" aria-pressed={period === value}
+            className={period === value ? 'is-active' : ''} onClick={() => setPeriod(value)}>{label}</button>)}
+        </div>
+        <small>{period === 'overall' ? 'Complete retained history, as archived in the canonical databases' : `Rolling ${period === '7d' ? '7-day' : '24-hour'} window, refreshed from the backend`}</small>
+      </section>
+      {period === 'overall' && <LifetimeOverview ops={ops} overall={overall} />}
       <OperationalStrip ops={ops} />
-      <PlatformSummary ops={ops} />
+      <PlatformSummary ops={ops} period={period} />
       <ApplicationPathways />
       <PilotFramework />
 
@@ -573,7 +583,7 @@ function Overview({ ops, overall }) {
           title="Evidence operations"
           copy="These figures come from the same public-safe contracts used by SeaCommons itself, not a parallel analytics layer."
         />
-        <PipelinePanel status={ops.status} />
+        {period === 'overall' ? <p className="future-inline-note">Current source health appears below. Full-period Intel statistics are shown in Overall above; recent pipeline activity is not a lifetime total.</p> : <PipelinePanel status={ops.status} />}
         <SourceHealth pipeline={ops.pipeline} />
       </section>
 
@@ -878,7 +888,8 @@ function Access({ user }) {
 
 export default function FuturesApp() {
   const { user, signOut } = useAuth();
-  const ops = useOperationalData();
+  const [period, setPeriod] = useState('overall');
+  const ops = useOperationalData(period === '7d' ? 168 : 24);
   const overall = useOverallData();
   const [view, setView] = useState(() => readWorkspaceView());
 
@@ -927,7 +938,7 @@ export default function FuturesApp() {
         </header>
 
         <div className="future-content">
-          {view === 'overview' && <Overview ops={ops} overall={overall} />}
+          {view === 'overview' && <Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} />}
           {view === 'history' && <HistoricalAnalytics overall={overall} />}
           {view === 'operations' && <Operations overall={overall} />}
           {view === 'project' && <Project />}
