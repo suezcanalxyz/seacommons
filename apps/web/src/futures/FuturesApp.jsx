@@ -33,6 +33,7 @@ function replaceWorkspaceView(view, { replace = false } = {}) {
 
 
 function formatCount(value) {
+  if (value === undefined || value === null || value === '') return '—';
   const n = Number(value);
   if (!Number.isFinite(n)) return '—';
   return new Intl.NumberFormat('en-GB').format(n);
