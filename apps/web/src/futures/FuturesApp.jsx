@@ -246,13 +246,13 @@ function Operations({ overall }) {
     <section className="future-section">
       <SectionHeader eyebrow="source registry" title="Ingestion health by source."
         copy="Process-level status. A connected transport does not mean every source is fresh or independently verified." />
-      {sources.length ? <div className="future-operation-sources" aria-label="Ops source health">
+      {sources.length ? <section className="future-operation-sources" aria-label="Ops source health">
         {sources.map((source) => <article key={source.name}><div><strong>{source.name}</strong><small>{source.type || 'source'}</small></div>
           <StatusPill state={source.status}>{source.status || 'unknown'}</StatusPill>
           <div><small>last poll</small><span>{formatDateTime(source.last_poll_at)}</span></div>
           <div><small>errors</small><span>{formatCount(source.consecutive_errors)}</span></div>
         </article>)}
-      </div> : <p className="future-inline-note">No source-registry status returned by Ops API.</p>}
+      </section> : <p className="future-inline-note">No source-registry status returned by Ops API.</p>}
     </section>
     <section className="future-section">
       <SectionHeader eyebrow="drift models" title="Run inventory and model quality." />
