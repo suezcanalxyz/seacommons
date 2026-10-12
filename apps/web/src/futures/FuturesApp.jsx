@@ -151,7 +151,7 @@ function ProjectDetail({ project }) {
       <div className="future-detail-grid">
         <div><span>current phase</span><strong>{project.phase}</strong></div>
         <div><span>workstreams</span><strong>{project.workstreams.length}</strong></div>
-        <div><span>access</span><strong>full · bootstrap admin</strong></div>
+        <div><span>access</span><strong>identity via OIDC; resource grants pending</strong></div>
       </div>
 
       <div className="future-capabilities">
@@ -452,6 +452,9 @@ function Documents() {
   const [query, setQuery] = useState('');
   const [group, setGroup] = useState('all');
   const [deckOpen, setDeckOpen] = useState(false);
+  useEffect(() => {
+    if (deckOpen) window.requestAnimationFrame(() => document.getElementById('futures-deck-viewer')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, [deckOpen]);
   const [slideIndex, setSlideIndex] = useState(0);
   const groups = ['all', ...new Set(partnerDocuments.map((doc) => doc.group))];
   const filtered = partnerDocuments.filter((doc) => {
@@ -485,7 +488,7 @@ function Documents() {
         </div>
       </section>
 
-      {deckOpen && <section className="future-deck-section" aria-label="SeaCommons partner presentation">
+      {deckOpen && <section id="futures-deck-viewer" className="future-deck-section" aria-label="SeaCommons partner presentation">
         <div className="future-deck-toolbar">
           <span>SeaCommons / presentation · {slideIndex + 1} / {presentationSlides.length}</span>
           <button type="button" onClick={() => setDeckOpen(false)} aria-label="Close presentation">close ✕</button>
@@ -519,7 +522,7 @@ function Documents() {
             <article key={doc.projectId + doc.id}>
               <div><strong>{doc.title}</strong><small>{doc.description || doc.source}</small>
                 {doc.deck
-                  ? <button className="future-doc-link" onClick={() => { setDeckOpen(true); setSlideIndex(0); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>view slides ↗</button>
+                  ? <button className="future-doc-link" onClick={() => { setDeckOpen(true); setSlideIndex(0); }}>view slides ↗</button>
                   : doc.href ? <a className="future-doc-link" href={doc.href} target="_blank" rel="noreferrer">open document ↗</a> : <small>restricted / request access</small>}
               </div>
               <span>{doc.project}</span>
@@ -637,17 +640,16 @@ function Access({ user }) {
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">access</span>
-        <h1>Full bootstrap access now. Granular grants next.</h1>
+        <h1>Identity connected. Resource permissions require verification.</h1>
         <p>
-          The workspace already distinguishes SeaCommons project and resource boundaries. When the final Suez Supabase identity
-          tenant is connected, those boundaries become stored membership and access-grant decisions.
+          Suez Account authenticates your identity. Workspace membership, resource grants and private API permissions must be independently verified server-side. The public-safe operational aggregates above do not imply access to confidential case data.
         </p>
       </section>
 
       <section className="future-identity-card">
         <div><span>identity</span><strong>{identity}</strong></div>
-        <div><span>role</span><strong>administrator</strong></div>
-        <div><span>session</span><strong>full bootstrap access</strong></div>
+        <div><span>role</span><strong>not asserted by frontend</strong></div>
+        <div><span>session</span><strong>OIDC identity only</strong></div>
       </section>
 
       <section className="future-access-table">
@@ -706,7 +708,7 @@ export default function FuturesApp() {
           ))}
         </nav>
         <div className="future-sidebar__base">
-          <span>full access</span>
+          <span>OIDC connected</span>
           <button onClick={() => signOut?.()}>sign out</button>
         </div>
       </aside>
