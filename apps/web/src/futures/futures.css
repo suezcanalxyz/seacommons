@@ -557,3 +557,14 @@ a { color: inherit; text-decoration: none; }
 .future-operation-sources article > div span{font-size:12px;overflow-wrap:anywhere;}
 @media(max-width:950px){.future-lifetime-grid {grid-template-columns:repeat(2,minmax(0,1fr));}.future-lifetime-grid article,.future-lifetime-grid article:nth-child(3n){border-right:1px solid var(--f-line-soft);border-bottom:1px solid var(--f-line-soft);}.future-lifetime-grid article:nth-child(2n){border-right:0;}.future-lifetime-grid article:nth-last-child(-n+2){border-bottom:0;}.future-operation-sources article{grid-template-columns:1fr 110px;}}
 @media(max-width:560px){.future-lifetime-grid,.future-history-types{grid-template-columns:1fr;}.future-lifetime-grid article,.future-lifetime-grid article:nth-child(2n),.future-lifetime-grid article:nth-last-child(-n+2){border:0;border-bottom:1px solid var(--f-line-soft);}.future-lifetime-grid article:last-child{border-bottom:0;}.future-operation-sources article{gap:10px;}}
+
+
+/* Equal-weight time-window selection: 24 hours, 7 days and overall */
+.future-period-tabs{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-top:50px;padding:20px 0;border-top:1px solid var(--f-line);border-bottom:1px solid var(--f-line);}
+.future-period-tabs > div{display:grid;grid-template-columns:repeat(3,minmax(110px,1fr));align-items:stretch;gap:0;min-width:min(100%,420px);border:1px solid var(--f-line);}
+.future-period-tabs button{min-height:44px;padding:12px 18px;background:transparent;border:0;border-right:1px solid var(--f-line);color:var(--f-muted);cursor:pointer;font:500 11px/1.3 'DM Mono',monospace;white-space:nowrap;}
+.future-period-tabs button:last-child{border-right:0;}
+.future-period-tabs button.is-active{background:var(--f-accent);color:var(--f-bg);}
+.future-period-tabs button:focus-visible{outline:2px solid var(--f-text);outline-offset:3px;}
+.future-period-tabs small{font:400 10px/1.55 'DM Mono',monospace;color:var(--f-muted);max-width:420px;}
+@media(max-width:550px){.future-period-tabs > div{min-width:100%;grid-template-columns:repeat(3,minmax(0,1fr));}.future-period-tabs button{padding:13px 7px;font-size:10px;}.future-period-tabs small{max-width:100%;}}
