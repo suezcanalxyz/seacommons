@@ -120,7 +120,7 @@ export function AuthGate({ children }) {
             console.error('OIDC sign-in start failed', err);
             setError('Impossibile iniziare l’accesso. Riprova.');
           }
-        }}>Richiedi codice di accesso</button>
+        }}>continue via Suez Canal authorization</button>
         <div className="auth-meta"><span>OAuth 2.1 / OIDC</span><span>Suez identity</span><span>TLS protected</span></div>
         <p className="auth-help">Access problems? Contact the programme administrator. This console is not a substitute for official emergency services.</p>
       </section>
