@@ -75,6 +75,7 @@ function useOperationalData(hours = 24) {
   });
 
   const refresh = useCallback(async () => {
+    setSnapshot((previous) => ({ ...previous, status: null, loading: true }));
     const apiBase = resolveSiteApiBase();
     const requests = await Promise.allSettled([
       fetchJson(apiBase, `/api/v1/status?hours=${hours}`, undefined, 9000),
@@ -120,24 +121,20 @@ function useOperationalData(hours = 24) {
 
 function useOverallData() {
   const [snapshot, setSnapshot] = useState({
-    dataStatus: null, summary: null, stats: null, history: null, updatedAt: null, loading: true, error: null,
+    history: null, updatedAt: null, loading: true, error: null,
   });
   const refresh = useCallback(async () => {
-    const base = resolveSiteApiBase();
-    const paths = [
-      '/api/v1/ops/data-status', '/api/v1/ops/summary',
-      '/api/v1/ops/stats', '/api/v1/ops/overall',
-    ];
-    const results = await Promise.allSettled(paths.map((path) => fetchJson(base, path, undefined, path.endsWith('/overall') ? 17000 : 11000)));
-    setSnapshot((previous) => ({
-      dataStatus: results[0].status === 'fulfilled' ? results[0].value : previous.dataStatus,
-      summary: results[1].status === 'fulfilled' ? results[1].value : previous.summary,
-      stats: results[2].status === 'fulfilled' ? results[2].value : previous.stats,
-      history: results[3].status === 'fulfilled' ? results[3].value : previous.history,
-      loading: false,
-      updatedAt: new Date(),
-      error: results.some((result) => result.status === 'rejected') ? 'One or more Ops API contracts are unavailable; displayed values may be from the previous successful refresh.' : null,
-    }));
+    try {
+      const data = await fetchJson(resolveSiteApiBase(), '/api/v1/futures/overall', undefined, 18000);
+      if (data?.scope !== 'retained_intel_events' || !data?.intel_record) {
+        throw new Error('Unexpected aggregate contract');
+      }
+      setSnapshot({ history: data, updatedAt: new Date(), loading: false, error: null });
+    } catch {
+      // Do not use demo metrics or silently present stale data as current.
+      setSnapshot({ history: null, updatedAt: null, loading: false,
+        error: 'Historical data temporarily unavailable. No demonstration values are substituted.' });
+    }
   }, []);
   useEffect(() => {
     refresh();
@@ -154,113 +151,82 @@ function formatDateTime(value) {
 }
 
 function LifetimeOverview({ ops, overall }) {
-  const intel = overall.history?.intel_record || overall.dataStatus?.intel_record || {};
-  const vessels = overall.dataStatus?.ingestion?.vessels || overall.summary?.traffic?.registry || {};
-  const totals = [
-    ['Intel events', intel.total_events, 'all retained observations in the Intel event record'],
-    ['Geolocated events', intel.positioned_events, 'records containing coordinates'],
-    ['Known vessels', vessels.total_known, 'registry records, not simultaneously active vessels'],
-    ['Play archive', ops.counts?.total_count, 'cumulative public case / timeline records'],
-    ['Forensic packets', overall.stats?.sar?.forensic_packets ?? overall.summary?.sar?.forensic_packets, 'current archived packet count'],
-    ['Completed drift runs', overall.dataStatus?.drift?.by_status?.completed, 'historical runs retained in the database'],
+  const intel = overall.history?.intel_record || {};
+  const geolocated = intel.positioned_events;
+  const total = intel.total_events;
+  const metrics = [
+    ['Historical events', total, 'All retained Intel events, not confirmed incidents'],
+    ['Geolocated events', geolocated, 'Records with stored coordinate fields'],
+    ['Without coordinates', Number.isFinite(Number(total)) && Number.isFinite(Number(geolocated)) ? Number(total)-Number(geolocated) : null, 'Not a missing-case estimate'],
+    ['Play archive', ops.counts?.total_count, 'Cumulative published archive records'],
   ];
   return <section className="future-section future-lifetime" aria-label="Overall historical totals">
-    <SectionHeader eyebrow="overall / database history" title="All retained history. Not just the last seven days."
-      copy="Cumulative database counts and archive inventory, fetched directly from Ops API contracts. Different populations are never added together." />
+    <SectionHeader eyebrow="overall / historical record" title="The cumulative evidence record."
+      copy="All retained database records, with separate public archive totals. These populations measure different stages and cannot be added together." />
     <div className="future-lifetime-grid">
-      {totals.map(([label, value, note]) => <article key={label}><small>{label}</small><strong>{formatCount(value)}</strong><p>{note}</p></article>)}
+      {metrics.map(([label, value, note]) => <article key={label}><small>{label}</small><strong>{formatCount(value)}</strong><p>{note}</p></article>)}
     </div>
-    <p className="future-data-provenance">History covered: {formatDateTime(intel.oldest_event_utc || overall.history?.intel_record?.oldest_event_utc)} → {formatDateTime(intel.newest_event_utc)}. All-time means retained records, not files previously deleted or upstream events never collected. {overall.error || ''}</p>
+    <p className="future-data-provenance">Recorded history: {formatDateTime(intel.oldest_event_utc)} → {formatDateTime(intel.newest_event_utc)}.
+      All-time means retained records, not data deleted before retention. {overall.error || ''}</p>
   </section>;
 }
 
-function HistoricalAnalytics({ overall }) {
-  const intel = overall.history?.intel_record || {};
-  const monthly = Array.isArray(intel.monthly) ? intel.monthly : [];
-  const types = Array.isArray(intel.by_type) ? intel.by_type : [];
-  const max = Math.max(1, ...monthly.map((entry) => Number(entry.count) || 0));
+function HistoricalAnalytics({ ops, overall }) {
+  const record = overall.history?.intel_record || {};
+  const monthly = Array.isArray(record.monthly) ? record.monthly : [];
+  const max = Math.max(1, ...monthly.map(row => Number(row.count)||0));
   return <>
     <section className="future-page-head">
-      <span className="future-eyebrow">history / complete retained record</span>
-      <h1>How the record has grown.</h1>
-      <p>Cumulative historical analytics over the database's full retention period, not a seven-day window. Each month describes Intel events recorded in that period, not confirmed incidents.</p>
+      <span className="future-eyebrow">history / all retained data</span>
+      <h1>Evidence over time.</h1>
+      <p>Longitudinal records calculated from the canonical SeaCommons database. Each month counts retained Intel events, not verified incidents or distress cases.</p>
     </section>
-    <LifetimeOverview ops={{ counts: null }} overall={overall} />
+    <LifetimeOverview ops={ops} overall={overall} />
     <section className="future-section">
-      <SectionHeader eyebrow="historical series" title="Records by month"
-        copy="The complete monthly distribution is calculated by Ops API directly from canonical retained Intel events. No extrapolation or synthetic values." />
+      <SectionHeader eyebrow="history / monthly breakdown" title="A traceable historical timeline."
+        copy="Each bar represents the number of records in its calendar month. No extrapolation or example values." />
       {monthly.length ? <div className="future-history-chart" role="img" aria-label="Monthly retained Intel events">
-        {monthly.map(({ month, count }) => <div key={month} className="future-history-bar">
-          <span title={month + ': ' + formatCount(count)} style={{ height: (5 + 95 * Number(count) / max) + '%' }} />
-          <small>{month}</small>
-          <strong>{formatCount(count)}</strong>
+        {monthly.map(({month,count}) => <div key={month} className="future-history-bar">
+          <span title={month+': '+formatCount(count)} style={{height:(5+95*Number(count)/max)+'%'}} />
+          <small>{month}</small><strong>{formatCount(count)}</strong>
         </div>)}
-      </div> : <p className="future-inline-note">The full historical series is unavailable until the /api/v1/ops/overall backend endpoint is deployed. No demo data is substituted.</p>}
-    </section>
-    <section className="future-section">
-      <SectionHeader eyebrow="historical classification" title="Event types across all retained history."
-        copy="Source classifications reflect stored events; they do not establish verified findings." />
-      {types.length ? <div className="future-history-types">
-        {types.map((type) => <article key={type.type}><span>{type.type}</span><strong>{formatCount(type.count)}</strong></article>)}
-      </div> : <p className="future-inline-note">All-time classification totals are not available from the current public API.</p>}
+      </div> : <p className="future-inline-note">{overall.loading ? 'Loading historical observations…' : overall.error || 'No archived data returned.'}</p>}
     </section>
   </>;
 }
 
-function Operations({ overall }) {
-  const data = overall.dataStatus || {};
-  const summary = overall.summary || {};
-  const stats = overall.stats || {};
-  const sources = Array.isArray(data.ingestion?.sources) ? data.ingestion.sources : [];
-  const vessels = data.ingestion?.vessels || summary.traffic?.registry || {};
-  const radio = summary.backend?.remote_radio || {};
-  const compute = data.compute || {};
-  const scheduler = summary.scheduler || {};
-  const technical = [
-    ['Database', compute.database || summary.backend?.database || 'unavailable'],
-    ['Processing', compute.job_execution_mode || summary.backend?.job_execution_mode || 'unavailable'],
-    ['Available RAM', Number.isFinite(Number(compute.available_ram_mb)) && Number(compute.available_ram_mb) >= 0 ? formatCount(compute.available_ram_mb) + ' MB' : '—'],
-    ['Scheduler', typeof scheduler.running === 'boolean' ? (scheduler.running ? 'running' : 'stopped') : 'unavailable'],
-    ['Scheduled jobs', Array.isArray(scheduler.jobs) ? formatCount(scheduler.jobs.length) : '—'],
-    ['Image OCR', summary.backend?.image_ocr?.available === true ? summary.backend.image_ocr.primary_engine || 'available' : 'unavailable'],
-    ['Radio receivers configured', formatCount(radio.configured)],
-    ['Radio receivers active', formatCount(radio.started)],
-    ['Radio receivers failed', formatCount(radio.failed)],
-    ['Vessels active in 30 minutes', formatCount(vessels.active_30m)],
-    ['SAR alerts open', formatCount(stats.sar?.open_alerts ?? summary.sar?.open_alerts)],
-    ['SAR alerts completed', formatCount(stats.sar?.completed_alerts ?? summary.sar?.completed_alerts)],
+function Operations({ ops }) {
+  const status = ops.status;
+  const sensors = status?.sensor_activity || {};
+  const sourceRows = Array.isArray(ops.pipeline?.sources) ? ops.pipeline.sources : [];
+  const families = [
+    ['AIS positions', sensors.ais_fixes],
+    ['Radio bursts', sensors.radio_bursts],
+    ['Radio events', sensors.radio_events],
+    ['Satellite observations', sensors.satellite_observations],
   ];
   return <>
     <section className="future-page-head">
-      <span className="future-eyebrow">operations / Ops API</span><h1>The operational system, in one place.</h1>
-      <p>Live operational telemetry from the SeaCommons backend: ingestion, compute, sources, AIS registry, radio, OCR, scheduler, SAR and drift. These metrics describe process health, not humanitarian case verification.</p>
+      <span className="future-eyebrow">data operations / evidence quality</span>
+      <h1>Monitor the evidence pipeline.</h1>
+      <p>Public-safe system signals from the canonical SeaCommons API. This panel is for understanding data freshness and evidence stages; administrative controls and confidential source records are not exposed.</p>
     </section>
     <div className="future-library-actions">
-      <button type="button" onClick={overall.refresh}>refresh Ops API ↗</button>
-      <span className="future-data-provenance">Updated {formatDateTime(data.generated_at || summary.generated_at)}. {overall.error || ''}</span>
+      <button type="button" onClick={ops.refresh}>refresh measurements ↗</button>
+      <span className="future-data-provenance">24-hour measurements · generated {formatDateTime(status?.generated_at)} · {ops.error || 'canonical data feed'}</span>
     </div>
     <section className="future-section">
-      <SectionHeader eyebrow="operational telemetry" title="Compute, integrations and processing." />
-      <div className="future-history-types">{technical.map(([label, value]) => <article key={label}><span>{label}</span><strong>{value}</strong></article>)}</div>
+      <SectionHeader eyebrow="evidence pipeline / 24h" title="What the infrastructure has processed."
+        copy="Observation, normalisation and corroboration stages are distinct. A technical signal is not a verified incident." />
+      <PipelinePanel status={status} />
     </section>
     <section className="future-section">
-      <SectionHeader eyebrow="source registry" title="Ingestion health by source."
-        copy="Process-level status. A connected transport does not mean every source is fresh or independently verified." />
-      {sources.length ? <section className="future-operation-sources" aria-label="Ops source health">
-        {sources.map((source) => <article key={source.name}><div><strong>{source.name}</strong><small>{source.type || 'source'}</small></div>
-          <StatusPill state={source.status}>{source.status || 'unknown'}</StatusPill>
-          <div><small>last poll</small><span>{formatDateTime(source.last_poll_at)}</span></div>
-          <div><small>errors</small><span>{formatCount(source.consecutive_errors)}</span></div>
-        </article>)}
-      </section> : <p className="future-inline-note">No source-registry status returned by Ops API.</p>}
-    </section>
-    <section className="future-section">
-      <SectionHeader eyebrow="drift models" title="Run inventory and model quality." />
+      <SectionHeader eyebrow="data sources / 24h" title="Sensor and source coverage." />
       <div className="future-history-types">
-        {Object.entries(data.drift?.by_status || {}).map(([status, total]) => <article key={status}><span>{status} runs</span><strong>{formatCount(total)}</strong></article>)}
-        {Object.entries(data.drift?.recent_forcing_quality || {}).map(([quality, total]) => <article key={quality}><span>Recent forcing: {quality}</span><strong>{formatCount(total)}</strong></article>)}
-        {Object.entries(data.drift?.recent_models || {}).map(([model, total]) => <article key={model}><span>Recent model: {model}</span><strong>{formatCount(total)}</strong></article>)}
+        {families.map(([label,value]) => <article key={label}><span>{label}</span><strong>{formatCount(value)}</strong></article>)}
       </div>
+      <SourceHealth pipeline={ops.pipeline} />
+      {sourceRows.length === 0 && <p className="future-inline-note">Source states are unavailable; no status is inferred.</p>}
     </section>
   </>;
 }
@@ -333,7 +299,7 @@ function ProjectDetail({ project }) {
   );
 }
 
-function OperationalStrip({ ops }) {
+function OperationalStrip({ ops, period = '24h' }) {
   const status = ops.status;
   const counts = ops.counts;
   const pipeline = status?.pipeline || {};
@@ -352,12 +318,12 @@ function OperationalStrip({ ops }) {
         <small>{formatCount(counts?.humanitarian_count)} humanitarian · {formatCount(counts?.maritime_count)} maritime</small>
       </div>
       <div>
-        <span>episodes · 24 h</span>
+        <span>episodes · {period === '7d' ? '7 days' : '24 h'}</span>
         <strong>{formatCount(pipeline?.maritime_episodes)}</strong>
         <small>{formatCount(pipeline?.corroborated_episodes)} corroborated</small>
       </div>
       <div>
-        <span>investigations · 24 h</span>
+        <span>investigations · {period === '7d' ? '7 days' : '24 h'}</span>
         <strong>{formatCount(pipeline?.investigation_hypotheses)}</strong>
         <small>public-safe aggregate</small>
       </div>
@@ -563,7 +529,7 @@ function Overview({ ops, overall, period, setPeriod }) {
         <small>{period === 'overall' ? 'Complete retained history, as archived in the canonical databases' : `Rolling ${period === '7d' ? '7-day' : '24-hour'} window, refreshed from the backend`}</small>
       </section>
       {period === 'overall' && <LifetimeOverview ops={ops} overall={overall} />}
-      <OperationalStrip ops={ops} />
+      {period !== 'overall' && <OperationalStrip ops={ops} period={period} />}
       <PlatformSummary ops={ops} period={period} />
       <ApplicationPathways />
       <PilotFramework />
@@ -691,7 +657,7 @@ function Documents() {
           <p>Our 12-slide presentation explains what the infrastructure does, what the evidence categories mean, production-scale examples, products, partner models and the engineering roadmap.</p>
           <div className="future-library-actions">
             <button type="button" onClick={() => { setDeckOpen(true); setSlideIndex(0); }}>view presentation ↗</button>
-            <a href="https://github.com/suezcanalxyz/seacommons/tree/main/docs/futures/assets" target="_blank" rel="noreferrer">versioned asset register ↗</a>
+            <a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20partner%20materials">request partner materials ↗</a>
           </div>
         </div>
         <div className="future-library-cover" aria-label="SeaCommons presentation cover">
@@ -721,7 +687,7 @@ function Documents() {
 
       <section className="future-section">
         <SectionHeader eyebrow="document register" title="Browse current project material."
-          copy="The public overview opens the SeaCommons documentation site. Repository items require GitHub access; restricted resources are intentionally not linked." />
+          copy="Published materials open from their cited source. Restricted documents are not served by this catalogue and require an explicit resource grant." />
         <div className="future-library-filters">
           <label><span>search documents</span><input type="search" placeholder="Title, format or topic" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
           <label><span>category</span><select value={group} onChange={(event) => setGroup(event.target.value)}>
@@ -749,9 +715,9 @@ function Documents() {
       </section>
 
       <section className="future-library-intake">
-        <div><span className="future-eyebrow">adding materials</span><h3>Version-controlled upload workflow</h3>
-          <p>For now, authorised GitHub collaborators can upload slides and briefs to the private repository and register the reviewed resource in this library. Direct in-app uploads require server-side storage, workspace grants and audited download permissions, and are not yet enabled.</p></div>
-        <a href="https://github.com/suezcanalxyz/seacommons/upload/main/docs/futures/assets" target="_blank" rel="noreferrer">upload in private repository ↗</a>
+        <div><span className="future-eyebrow">partner materials</span><h3>Request a reviewed document</h3>
+          <p>Published reference materials are available above. For a partner brief or an unpublished resource, contact the programme team. Confidential materials are never uploaded to the public source repository. In-app uploads and permissioned downloads will be enabled only after verified private storage and server-side resource grants are in place.</p></div>
+        <a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20document%20request">contact programme team ↗</a>
       </section>
     </>
   );
@@ -889,9 +855,9 @@ function Access({ user }) {
 export default function FuturesApp() {
   const { user, signOut } = useAuth();
   const [period, setPeriod] = useState('overall');
-  const ops = useOperationalData(period === '7d' ? 168 : 24);
-  const overall = useOverallData();
   const [view, setView] = useState(() => readWorkspaceView());
+  const ops = useOperationalData(view === 'operations' ? 24 : period === '7d' ? 168 : 24);
+  const overall = useOverallData();
 
   useEffect(() => {
     replaceWorkspaceView(view, { replace: true });
@@ -939,8 +905,8 @@ export default function FuturesApp() {
 
         <div className="future-content">
           {view === 'overview' && <Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} />}
-          {view === 'history' && <HistoricalAnalytics overall={overall} />}
-          {view === 'operations' && <Operations overall={overall} />}
+          {view === 'history' && <HistoricalAnalytics ops={ops} overall={overall} />}
+          {view === 'operations' && <Operations ops={ops} />}
           {view === 'project' && <Project />}
           {view === 'roadmap' && <Roadmap />}
           {view === 'documents' && <Documents />}

@@ -451,6 +451,37 @@ async def ops_overall():
     return Response(content=payload, media_type="application/json")
 
 
+@router.get("/api/v1/futures/overall")
+async def futures_public_overall():
+    """Public-safe, cumulative analytics for Futures partner review.
+
+    Only aggregate record counts and month buckets are returned. In particular
+    no event types, provenance payload, personal data or case coordinates.
+    Reuses the bounded cached canonical query from the internal overall route.
+    """
+    response = await ops_overall()
+    internal = json.loads(response.body)
+    record = internal["intel_record"]
+    safe = {
+        "generated_at": internal["generated_at"],
+        "scope": "retained_intel_events",
+        "count_semantics": "All retained Intel event records, not verified incidents.",
+        "retention_note": "Does not include events erased by past retention policies.",
+        "intel_record": {
+            "total_events": int(record["total_events"]),
+            "positioned_events": int(record["positioned_events"]),
+            "oldest_event_utc": record["oldest_event_utc"],
+            "newest_event_utc": record["newest_event_utc"],
+            "monthly": record["monthly"],
+        },
+    }
+    return Response(
+        content=json.dumps(safe),
+        media_type="application/json",
+        headers={"Cache-Control": "public, max-age=120"},
+    )
+
+
 @router.get("/api/v1/ops/data-status")
 async def data_status():
     """One place to see what real data SeaCommons has flowing in and what it
