@@ -199,6 +199,7 @@ class JSONLProcessDecoder:
         self._process: subprocess.Popen[str] | None = None
         self._responses: queue.Queue[str | Exception] | None = None
         self._reader: threading.Thread | None = None
+        self._reader_stop = threading.Event()
         self._lock = threading.Lock()
 
     def _ensure_process(self) -> subprocess.Popen[str]:
@@ -216,6 +217,16 @@ class JSONLProcessDecoder:
             close_fds=True,
         )
         responses: queue.Queue[str | Exception] = queue.Queue(maxsize=1)
+        self._reader_stop.clear()
+
+        def enqueue(item: str | Exception) -> bool:
+            while not self._reader_stop.is_set():
+                try:
+                    responses.put(item, timeout=0.1)
+                    return True
+                except queue.Full:
+                    continue
+            return False
 
         def read_responses() -> None:
             assert process.stdout is not None
@@ -223,11 +234,12 @@ class JSONLProcessDecoder:
                 while True:
                     line = process.stdout.readline(self._max_output_chars + 1)
                     if not line:
-                        responses.put(EOFError("decoder process closed stdout"))
+                        enqueue(EOFError("decoder process closed stdout"))
                         return
-                    responses.put(line)
+                    if not enqueue(line):
+                        return
             except Exception as exc:
-                responses.put(exc)
+                enqueue(exc)
 
         reader = threading.Thread(
             target=read_responses,
@@ -293,18 +305,30 @@ class JSONLProcessDecoder:
 
     def close(self) -> None:
         process, self._process = self._process, None
+        reader, self._reader = self._reader, None
+        self._reader_stop.set()
         self._responses = None
-        self._reader = None
         if process is None:
             return
         try:
-            process.terminate()
-            process.wait(timeout=0.5)
-        except Exception:
-            try:
-                process.kill()
-            except Exception:
-                pass
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=0.5)
+        finally:
+            # Closing both pipe ends prevents descriptor accumulation after
+            # decoder timeouts, including when the child has already exited.
+            for stream in (process.stdin, process.stdout):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
+            if reader is not None and reader is not threading.current_thread():
+                reader.join(timeout=1.0)
 
 _decoder_runtime: RadioDecoderRuntime | None = None
 _decoder_runtime_lock = threading.Lock()
