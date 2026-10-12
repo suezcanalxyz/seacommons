@@ -49,10 +49,13 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL);
 
-  await expect(page.getByRole('heading', { name: /Project state, development work/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /From maritime evidence to place-based understanding/i })).toBeVisible();
   await expect(page.getByRole('region', { name: 'SeaCommons operational status' })).toContainText('226');
   await expect(page.getByText('raw observations', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'An evidence infrastructure for the sea.' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Application pathways and maturity' })).toContainText('Coastal and island resilience');
+  await expect(page.getByRole('region', { name: 'Application pathways and maturity' })).toContainText('Future vertical');
+  await expect(page.getByText(/platform does not currently measure their impact or outcomes/i)).toBeVisible();
   await expect(page.getByText('Evidence stages, not equivalent incident totals.')).toBeVisible();
   await expect(page.getByText('Live', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('240', { exact: true })).toBeVisible();
