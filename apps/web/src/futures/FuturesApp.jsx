@@ -6,7 +6,10 @@ import {
   accessMatrix,
   guidebook,
   partnerDocuments,
+  pilotFramework,
+  presentationSlides,
   roadmap,
+  verticalPathways,
   seaCommonsProject,
   supportAreas,
   timeline,
@@ -14,6 +17,7 @@ import {
 } from './data.js';
 
 const NAV = ['overview', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
+const NAV_LABELS = { documents: 'docs' };
 
 function readWorkspaceView() {
   const value = new URLSearchParams(window.location.search).get('view');
@@ -149,7 +153,7 @@ function ProjectDetail({ project }) {
       <div className="future-detail-grid">
         <div><span>current phase</span><strong>{project.phase}</strong></div>
         <div><span>workstreams</span><strong>{project.workstreams.length}</strong></div>
-        <div><span>access</span><strong>full · bootstrap admin</strong></div>
+        <div><span>access</span><strong>identity via OIDC; resource grants pending</strong></div>
       </div>
 
       <div className="future-capabilities">
@@ -281,15 +285,116 @@ function SourceHealth({ pipeline }) {
   );
 }
 
+function PlatformSummary({ ops }) {
+  const generated = ops.status?.generated_at || ops.counts?.generated_at;
+  const stages = [
+    { label: 'Observed', value: ops.status?.pipeline?.raw_observations, note: 'raw envelopes / 24 h' },
+    { label: 'Normalised', value: ops.status?.pipeline?.parsed_events, note: 'events / 24 h' },
+    { label: 'Analysed', value: ops.status?.pipeline?.derived_cues, note: 'derived cues / 24 h' },
+    { label: 'Corroborated', value: ops.status?.pipeline?.corroborated_episodes, note: 'episodes / 24 h' },
+  ];
+  const products = [
+    { label: 'Live', note: 'Active, privacy-filtered public cases', url: 'https://live.seacommons.org' },
+    { label: 'Play', note: 'Historic public cases and timelines', url: 'https://play.seacommons.org' },
+    { label: 'API', note: 'Typed contracts and service status', url: 'https://seacommons.org/docs' },
+    { label: 'Futures', note: 'Partner workspace and project knowledge', url: null },
+  ];
+  return <>
+    <section className="future-section future-overview-story">
+      <SectionHeader eyebrow="01 / project at a glance" title="An evidence infrastructure for the sea."
+        copy="SeaCommons links heterogeneous observations into traceable maritime investigations, while preserving uncertainty, source independence and the distinction between an observation and a verified finding." />
+      <div className="future-narrative-grid">
+        <article><small>scope</small><h3>Humanitarian OSINT</h3><p>Distress, SAR activity and humanitarian reporting under conservative privacy, provenance and location-precision controls.</p></article>
+        <article><small>scope</small><h3>Maritime Intelligence</h3><p>AIS integrity, vessel behaviour, radio, environmental and satellite investigation context without presuming intent.</p></article>
+        <article><small>method</small><h3>One evidence model</h3><p>Source observation → normalization → derived cue → episode → hypothesis → policy-governed public case.</p></article>
+      </div>
+    </section>
+    <section className="future-section">
+      <SectionHeader eyebrow="02 / measured activity" title="Evidence stages, not equivalent incident totals."
+        copy="All values below are live API measures for the last 24 hours. The Play archive is cumulative and appears separately above." />
+      <div className="future-funnel-grid">
+        {stages.map((stage, index) => <article key={stage.label}>
+          <small>{String(index + 1).padStart(2, '0')} / {stage.label}</small>
+          <strong>{formatCount(stage.value)}</strong>
+          <span>{stage.note}</span>
+        </article>)}
+      </div>
+      <p className="future-data-provenance">Source: canonical SeaCommons API /api/v1/status?hours=24. {generated ? 'Snapshot generated ' + new Date(generated).toLocaleString() + '.' : 'Waiting for timestamp.'} A derived cue is not a factual finding.</p>
+    </section>
+    <section className="future-section">
+      <SectionHeader eyebrow="03 / product ecology" title="Four interfaces, one coherent source of truth."
+        copy="Each surface has a separate purpose and audience. Links below open real SeaCommons services." />
+      <div className="future-product-grid">
+        {products.map((product) => {
+          const content = <><small>SeaCommons / {product.label}</small><h3>{product.label}</h3><p>{product.note}</p><span>{product.url ? 'open surface ↗' : 'you are here'}</span></>;
+          return product.url
+            ? <a key={product.label} href={product.url} target="_blank" rel="noreferrer">{content}</a>
+            : <article key={product.label}>{content}</article>;
+        })}
+      </div>
+    </section>
+  </>;
+}
+
+function ApplicationPathways() {
+  return (
+    <section className="future-section future-pathways">
+      <SectionHeader
+        eyebrow="04 / applied research"
+        title="Start at sea. Expand only where the evidence supports it."
+        copy="A modular research approach for public-interest partners. The first pathway uses existing SeaCommons infrastructure; subsequent verticals are proposals, not live data products."
+      />
+      <section className="future-pathway-grid" aria-label="Application pathways and maturity">
+        {verticalPathways.map((item, index) => (
+          <article key={item.id} className={index === 0 ? 'is-operational' : ''}>
+            <header>
+              <span>{item.phase}</span>
+              <StatusPill state={item.status}>{item.status}</StatusPill>
+            </header>
+            <h3>{item.title}</h3>
+            <p>{item.detail}</p>
+            <div className="future-pathway-meta">
+              <small>Potential inputs</small>
+              <span>{item.inputs.join(' · ')}</span>
+            </div>
+            <div className="future-pathway-meta">
+              <small>Intended output</small>
+              <span>{item.output}</span>
+            </div>
+          </article>
+        ))}
+      </section>
+      <p className="future-data-provenance">Future pathways require a separate source assessment, data permissions, verified field methods and an implementation agreement. The platform does not currently measure their impact or outcomes.</p>
+    </section>
+  );
+}
+
+function PilotFramework() {
+  return (
+    <section className="future-section future-pilot">
+      <SectionHeader eyebrow="05 / collaboration model" title="A bounded pilot, built to be evaluated."
+        copy="Translate one concrete question into a reliable, inspectable deliverable rather than an undifferentiated dashboard." />
+      <div className="future-pilot-steps">
+        {pilotFramework.map((step) => (
+          <article key={step.label}>
+            <small>{step.label}</small>
+            <p>{step.text}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Overview({ ops }) {
   return (
     <>
       <section className="future-hero">
         <span className="future-eyebrow">SeaCommons Futures / partner workspace</span>
-        <h1>Project state, development work and operational knowledge.</h1>
+        <h1>From maritime evidence to place-based understanding.</h1>
         <p>
-          A controlled partner workspace for SeaCommons: what exists now, what is being built,
-          which materials are current and which SeaCommons operational surfaces are available.
+          A shared starting point for research, monitoring and responsible collaboration.
+          Explore SeaCommons operational evidence, its current limits and carefully scoped opportunities for territorial applications.
         </p>
         <div className="future-hero__meta">
           <StatusPill state={ops.status?.status || 'unknown'}>{ops.status?.status || 'operational feed pending'}</StatusPill>
@@ -300,6 +405,9 @@ function Overview({ ops }) {
       </section>
 
       <OperationalStrip ops={ops} />
+      <PlatformSummary ops={ops} />
+      <ApplicationPathways />
+      <PilotFramework />
 
       <section className="future-section">
         <SectionHeader
@@ -395,30 +503,96 @@ function Roadmap() {
 }
 
 function Documents() {
+  const [query, setQuery] = useState('');
+  const [group, setGroup] = useState('all');
+  const [deckOpen, setDeckOpen] = useState(false);
+  useEffect(() => {
+    if (deckOpen) window.requestAnimationFrame(() => document.getElementById('futures-deck-viewer')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, [deckOpen]);
+  const [slideIndex, setSlideIndex] = useState(0);
+  const groups = ['all', ...new Set(partnerDocuments.map((doc) => doc.group))];
+  const filtered = partnerDocuments.filter((doc) => {
+    const searchable = [doc.title, doc.source, doc.description, doc.kind].join(' ').toLowerCase();
+    return (group === 'all' || doc.group === group) && searchable.includes(query.trim().toLowerCase());
+  });
+  const currentSlide = presentationSlides[slideIndex];
+
   return (
     <>
       <section className="future-page-head">
-        <span className="future-eyebrow">SeaCommons documents</span>
-        <h1>Current project materials, without file-name archaeology.</h1>
-        <p>
-          Documents are scoped to SeaCommons and presented by type, visibility and current source.
-          Versioning will move into the final Supabase resource model without changing this workspace boundary.
-        </p>
+        <span className="future-eyebrow">SeaCommons / docs library</span>
+        <h1>Documents, presentations and project knowledge.</h1>
+        <p>One curated register for partner decks, briefs, reference documents and release knowledge. Files labelled restricted are not made downloadable through this catalogue.</p>
       </section>
 
-      <section className="future-document-table" aria-label="SeaCommons project documents">
-        <header>
-          <span>document</span><span>project</span><span>type</span><span>access</span><span>updated</span>
-        </header>
-        {partnerDocuments.map((doc) => (
-          <article key={doc.projectId + doc.id}>
-            <div><strong>{doc.title}</strong><small>{doc.source}</small></div>
-            <span>{doc.project}</span>
-            <span>{doc.kind}</span>
-            <StatusPill state={doc.visibility === 'restricted' ? 'warn' : 'active'}>{doc.visibility}</StatusPill>
-            <time>{doc.updated}</time>
-          </article>
-        ))}
+      <section className="future-library-intro">
+        <div>
+          <span className="future-eyebrow">featured / presentation</span>
+          <h2>SeaCommons partner introduction</h2>
+          <p>Our 12-slide presentation explains what the infrastructure does, what the evidence categories mean, production-scale examples, products, partner models and the engineering roadmap.</p>
+          <div className="future-library-actions">
+            <button type="button" onClick={() => { setDeckOpen(true); setSlideIndex(0); }}>view presentation ↗</button>
+            <a href="https://github.com/suezcanalxyz/seacommons/tree/main/docs/futures/assets" target="_blank" rel="noreferrer">versioned asset register ↗</a>
+          </div>
+        </div>
+        <div className="future-library-cover" aria-label="SeaCommons presentation cover">
+          <small>SEACOMMONS / 2026</small>
+          <strong>From observation<br />to accountable<br />evidence.</strong>
+          <span>Partner introduction / 12 slides</span>
+        </div>
+      </section>
+
+      {deckOpen && <section id="futures-deck-viewer" className="future-deck-section" aria-label="SeaCommons partner presentation">
+        <div className="future-deck-toolbar">
+          <span>SeaCommons / presentation · {slideIndex + 1} / {presentationSlides.length}</span>
+          <button type="button" onClick={() => setDeckOpen(false)} aria-label="Close presentation">close ✕</button>
+        </div>
+        <article className="future-deck-slide">
+          <small>{currentSlide.kicker} / {String(slideIndex + 1).padStart(2, '0')}</small>
+          <h2>{currentSlide.title}</h2>
+          <p>{currentSlide.body}</p>
+          <ul>{currentSlide.points.map((point) => <li key={point}>{point}</li>)}</ul>
+        </article>
+        <div className="future-deck-controls">
+          <button type="button" onClick={() => setSlideIndex((n) => Math.max(0, n - 1))} disabled={slideIndex === 0}>← previous</button>
+          <span>Browse the live presentation</span>
+          <button type="button" onClick={() => setSlideIndex((n) => Math.min(presentationSlides.length - 1, n + 1))} disabled={slideIndex === presentationSlides.length - 1}>next →</button>
+        </div>
+      </section>}
+
+      <section className="future-section">
+        <SectionHeader eyebrow="document register" title="Browse current project material."
+          copy="The public overview opens the SeaCommons documentation site. Repository items require GitHub access; restricted resources are intentionally not linked." />
+        <div className="future-library-filters">
+          <label><span>search documents</span><input type="search" placeholder="Title, format or topic" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+          <label><span>category</span><select value={group} onChange={(event) => setGroup(event.target.value)}>
+            {groups.map((item) => <option value={item} key={item}>{item}</option>)}
+          </select></label>
+          <span>{filtered.length} / {partnerDocuments.length} resources</span>
+        </div>
+        <section className="future-document-table" aria-label="SeaCommons project documents">
+          <header><span>document</span><span>project</span><span>type</span><span>access</span><span>updated</span></header>
+          {filtered.map((doc) => (
+            <article key={doc.projectId + doc.id}>
+              <div><strong>{doc.title}</strong><small>{doc.description || doc.source}</small>
+                {doc.deck
+                  ? <button className="future-doc-link" onClick={() => { setDeckOpen(true); setSlideIndex(0); }}>view slides ↗</button>
+                  : doc.href ? <a className="future-doc-link" href={doc.href} target="_blank" rel="noreferrer">open document ↗</a> : <small>restricted / request access</small>}
+              </div>
+              <span>{doc.project}</span>
+              <span>{doc.kind}</span>
+              <StatusPill state={doc.visibility === 'restricted' ? 'warn' : 'active'}>{doc.visibility}</StatusPill>
+              <time>{doc.updated}</time>
+            </article>
+          ))}
+          {filtered.length === 0 && <p className="future-inline-note">No resource matches the selected filters.</p>}
+        </section>
+      </section>
+
+      <section className="future-library-intake">
+        <div><span className="future-eyebrow">adding materials</span><h3>Version-controlled upload workflow</h3>
+          <p>For now, authorised GitHub collaborators can upload slides and briefs to the private repository and register the reviewed resource in this library. Direct in-app uploads require server-side storage, workspace grants and audited download permissions, and are not yet enabled.</p></div>
+        <a href="https://github.com/suezcanalxyz/seacommons/upload/main/docs/futures/assets" target="_blank" rel="noreferrer">upload in private repository ↗</a>
       </section>
     </>
   );
@@ -520,17 +694,16 @@ function Access({ user }) {
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">access</span>
-        <h1>Full bootstrap access now. Granular grants next.</h1>
+        <h1>Identity connected. Resource permissions require verification.</h1>
         <p>
-          The workspace already distinguishes SeaCommons project and resource boundaries. When the final Suez Supabase identity
-          tenant is connected, those boundaries become stored membership and access-grant decisions.
+          Suez Account authenticates your identity. Workspace membership, resource grants and private API permissions must be independently verified server-side. The public-safe operational aggregates above do not imply access to confidential case data.
         </p>
       </section>
 
       <section className="future-identity-card">
         <div><span>identity</span><strong>{identity}</strong></div>
-        <div><span>role</span><strong>administrator</strong></div>
-        <div><span>session</span><strong>full bootstrap access</strong></div>
+        <div><span>role</span><strong>not asserted by frontend</strong></div>
+        <div><span>session</span><strong>OIDC identity only</strong></div>
       </section>
 
       <section className="future-access-table">
@@ -584,12 +757,12 @@ export default function FuturesApp() {
         <nav aria-label="Futures">
           {NAV.map((item) => (
             <button key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
-              <span>{item}</span><i>↗</i>
+              <span>{NAV_LABELS[item] || item}</span><i>↗</i>
             </button>
           ))}
         </nav>
         <div className="future-sidebar__base">
-          <span>full access</span>
+          <span>OIDC connected</span>
           <button onClick={() => signOut?.()}>sign out</button>
         </div>
       </aside>
