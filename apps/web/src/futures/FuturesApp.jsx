@@ -75,6 +75,7 @@ function useOperationalData(hours = 24) {
   });
 
   const refresh = useCallback(async () => {
+    setSnapshot((previous) => ({ ...previous, status: null, loading: true }));
     const apiBase = resolveSiteApiBase();
     const requests = await Promise.allSettled([
       fetchJson(apiBase, `/api/v1/status?hours=${hours}`, undefined, 9000),
@@ -528,7 +529,7 @@ function Overview({ ops, overall, period, setPeriod }) {
         <small>{period === 'overall' ? 'Complete retained history, as archived in the canonical databases' : `Rolling ${period === '7d' ? '7-day' : '24-hour'} window, refreshed from the backend`}</small>
       </section>
       {period === 'overall' && <LifetimeOverview ops={ops} overall={overall} />}
-      <OperationalStrip ops={ops} period={period} />
+      {period !== 'overall' && <OperationalStrip ops={ops} period={period} />}
       <PlatformSummary ops={ops} period={period} />
       <ApplicationPathways />
       <PilotFramework />
@@ -854,9 +855,9 @@ function Access({ user }) {
 export default function FuturesApp() {
   const { user, signOut } = useAuth();
   const [period, setPeriod] = useState('overall');
-  const ops = useOperationalData(period === '7d' ? 168 : 24);
-  const overall = useOverallData();
   const [view, setView] = useState(() => readWorkspaceView());
+  const ops = useOperationalData(view === 'operations' ? 24 : period === '7d' ? 168 : 24);
+  const overall = useOverallData();
 
   useEffect(() => {
     replaceWorkspaceView(view, { replace: true });
