@@ -449,30 +449,93 @@ function Roadmap() {
 }
 
 function Documents() {
+  const [query, setQuery] = useState('');
+  const [group, setGroup] = useState('all');
+  const [deckOpen, setDeckOpen] = useState(false);
+  const [slideIndex, setSlideIndex] = useState(0);
+  const groups = ['all', ...new Set(partnerDocuments.map((doc) => doc.group))];
+  const filtered = partnerDocuments.filter((doc) => {
+    const searchable = [doc.title, doc.source, doc.description, doc.kind].join(' ').toLowerCase();
+    return (group === 'all' || doc.group === group) && searchable.includes(query.trim().toLowerCase());
+  });
+  const currentSlide = presentationSlides[slideIndex];
+
   return (
     <>
       <section className="future-page-head">
-        <span className="future-eyebrow">SeaCommons documents</span>
-        <h1>Current project materials, without file-name archaeology.</h1>
-        <p>
-          Documents are scoped to SeaCommons and presented by type, visibility and current source.
-          Versioning will move into the final Supabase resource model without changing this workspace boundary.
-        </p>
+        <span className="future-eyebrow">SeaCommons / docs library</span>
+        <h1>Documents, presentations and project knowledge.</h1>
+        <p>One curated register for partner decks, briefs, reference documents and release knowledge. Files labelled restricted are not made downloadable through this catalogue.</p>
       </section>
 
-      <section className="future-document-table" aria-label="SeaCommons project documents">
-        <header>
-          <span>document</span><span>project</span><span>type</span><span>access</span><span>updated</span>
-        </header>
-        {partnerDocuments.map((doc) => (
-          <article key={doc.projectId + doc.id}>
-            <div><strong>{doc.title}</strong><small>{doc.source}</small></div>
-            <span>{doc.project}</span>
-            <span>{doc.kind}</span>
-            <StatusPill state={doc.visibility === 'restricted' ? 'warn' : 'active'}>{doc.visibility}</StatusPill>
-            <time>{doc.updated}</time>
-          </article>
-        ))}
+      <section className="future-library-intro">
+        <div>
+          <span className="future-eyebrow">featured / presentation</span>
+          <h2>SeaCommons partner introduction</h2>
+          <p>Our 12-slide presentation explains what the infrastructure does, what the evidence categories mean, production-scale examples, products, partner models and the engineering roadmap.</p>
+          <div className="future-library-actions">
+            <button type="button" onClick={() => { setDeckOpen(true); setSlideIndex(0); }}>view presentation ↗</button>
+            <a href="https://github.com/suezcanalxyz/seacommons/tree/main/docs/futures/assets" target="_blank" rel="noreferrer">versioned asset register ↗</a>
+          </div>
+        </div>
+        <div className="future-library-cover" aria-label="SeaCommons presentation cover">
+          <small>SEACOMMONS / 2026</small>
+          <strong>From observation<br />to accountable<br />evidence.</strong>
+          <span>Partner introduction / 12 slides</span>
+        </div>
+      </section>
+
+      {deckOpen && <section className="future-deck-section" aria-label="SeaCommons partner presentation">
+        <div className="future-deck-toolbar">
+          <span>SeaCommons / presentation · {slideIndex + 1} / {presentationSlides.length}</span>
+          <button type="button" onClick={() => setDeckOpen(false)} aria-label="Close presentation">close ✕</button>
+        </div>
+        <article className="future-deck-slide">
+          <small>{currentSlide.kicker} / {String(slideIndex + 1).padStart(2, '0')}</small>
+          <h2>{currentSlide.title}</h2>
+          <p>{currentSlide.body}</p>
+          <ul>{currentSlide.points.map((point) => <li key={point}>{point}</li>)}</ul>
+        </article>
+        <div className="future-deck-controls">
+          <button type="button" onClick={() => setSlideIndex((n) => Math.max(0, n - 1))} disabled={slideIndex === 0}>← previous</button>
+          <span>Browse the live presentation</span>
+          <button type="button" onClick={() => setSlideIndex((n) => Math.min(presentationSlides.length - 1, n + 1))} disabled={slideIndex === presentationSlides.length - 1}>next →</button>
+        </div>
+      </section>}
+
+      <section className="future-section">
+        <SectionHeader eyebrow="document register" title="Browse current project material."
+          copy="The public overview opens the SeaCommons documentation site. Repository items require GitHub access; restricted resources are intentionally not linked." />
+        <div className="future-library-filters">
+          <label><span>search documents</span><input type="search" placeholder="Title, format or topic" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+          <label><span>category</span><select value={group} onChange={(event) => setGroup(event.target.value)}>
+            {groups.map((item) => <option value={item} key={item}>{item}</option>)}
+          </select></label>
+          <span>{filtered.length} / {partnerDocuments.length} resources</span>
+        </div>
+        <section className="future-document-table" aria-label="SeaCommons project documents">
+          <header><span>document</span><span>project</span><span>type</span><span>access</span><span>updated</span></header>
+          {filtered.map((doc) => (
+            <article key={doc.projectId + doc.id}>
+              <div><strong>{doc.title}</strong><small>{doc.description || doc.source}</small>
+                {doc.deck
+                  ? <button className="future-doc-link" onClick={() => { setDeckOpen(true); setSlideIndex(0); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>view slides ↗</button>
+                  : doc.href ? <a className="future-doc-link" href={doc.href} target="_blank" rel="noreferrer">open document ↗</a> : <small>restricted / request access</small>}
+              </div>
+              <span>{doc.project}</span>
+              <span>{doc.kind}</span>
+              <StatusPill state={doc.visibility === 'restricted' ? 'warn' : 'active'}>{doc.visibility}</StatusPill>
+              <time>{doc.updated}</time>
+            </article>
+          ))}
+          {filtered.length === 0 && <p className="future-inline-note">No resource matches the selected filters.</p>}
+        </section>
+      </section>
+
+      <section className="future-library-intake">
+        <div><span className="future-eyebrow">adding materials</span><h3>Version-controlled upload workflow</h3>
+          <p>For now, authorised GitHub collaborators can upload slides and briefs to the private repository and register the reviewed resource in this library. Direct in-app uploads require server-side storage, workspace grants and audited download permissions, and are not yet enabled.</p></div>
+        <a href="https://github.com/suezcanalxyz/seacommons/upload/main/docs/futures/assets" target="_blank" rel="noreferrer">upload in private repository ↗</a>
       </section>
     </>
   );
@@ -638,7 +701,7 @@ export default function FuturesApp() {
         <nav aria-label="Futures">
           {NAV.map((item) => (
             <button key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
-              <span>{item}</span><i>↗</i>
+              <span>{NAV_LABELS[item] || item}</span><i>↗</i>
             </button>
           ))}
         </nav>
