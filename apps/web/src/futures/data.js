@@ -51,11 +51,47 @@ export const timeline = [
   { date: '21 Sep 2026', project: 'SeaCommons', kind: 'product', title: 'Live / Play taxonomy closure', detail: 'Public incident categories constrained to a closed Humanitarian/Maritime vocabulary.' },
 ];
 
-export const partnerDocuments = seaCommonsProject.documents.map((doc) => ({
-  ...doc,
-  project: 'SeaCommons',
-  projectId: 'seacommons',
-}));
+export const partnerDocuments = [
+  {
+    id: 'seacommons-partner-presentation',
+    project: 'SeaCommons',
+    projectId: 'seacommons',
+    title: 'SeaCommons / partner introduction',
+    description: 'Twelve-slide, partner-facing narrative: mission, evidence model, operating surfaces, audit snapshot and roadmap.',
+    group: 'presentation',
+    kind: 'presentation',
+    visibility: 'partner',
+    source: 'Futures native presentation (editable source available from workspace team)',
+    updated: '12 Oct 2026',
+    deck: true,
+  },
+  ...seaCommonsProject.documents.map((doc) => ({
+    ...doc,
+    project: 'SeaCommons',
+    projectId: 'seacommons',
+    description: doc.kind === 'policy' ? 'Reference material and release / publication constraints.' : 'Current engineering and programme knowledge.',
+    href: doc.visibility === 'restricted'
+      ? null
+      : doc.id === 'project-overview'
+        ? 'https://seacommons.org/docs'
+        : 'https://github.com/suezcanalxyz/seacommons/blob/main/' + doc.source,
+  })),
+];
+
+export const presentationSlides = [
+  { kicker: 'Introduction', title: 'From observation to accountable evidence.', body: 'Maritime intelligence, humanitarian OSINT and public-interest investigations.', points: ['One provenance-aware evidence model', 'Two public investigative verticals', 'Public and partner interfaces'] },
+  { kicker: 'The proposition', title: 'A system for reading maritime evidence.', body: 'Receive heterogeneous observations, correlate source lineages and publish privacy-aware outputs.', points: ['Observe', 'Investigate', 'Explain'] },
+  { kicker: 'The problem', title: 'The sea generates signals, not certainty.', body: 'A missing AIS transmission, distress report or satellite image is not by itself a verified account.', points: ['Fragmented sources', 'False independence', 'Public-risk constraints'] },
+  { kicker: 'Evidence chain', title: 'Each stage has a distinct meaning.', body: 'Numbers across evidence stages are not interchangeable.', points: ['Observation → normalisation', 'Derived cue → episode', 'Hypothesis → policy-governed public case'] },
+  { kicker: 'Production snapshot', title: 'What the infrastructure already processes.', body: 'API-verified snapshot on 12 October 2026. Counts are time-specific; 24-hour processing figures are not archive totals.', points: ['24,069 observations / 24 h', '2,855 normalised events / 24 h', '368 maritime episodes / 24 h', '2,881 Play archive records; 87 humanitarian'] },
+  { kicker: 'Two verticals', title: 'Humanitarian and Maritime. One evidence model.', body: 'Safety rules differ, while timeline, provenance, review and uncertainty remain shared.', points: ['Distress, SAR and humanitarian context', 'Vessel behaviour and maritime context', 'No automatic equivalence between cues and findings'] },
+  { kicker: 'Products', title: 'Live · Play · Futures · API.', body: 'Separate operational interfaces aligned to source maturity and audience.', points: ['Live: current public cases', 'Play: historical archive and timelines', 'Futures: partner workspace', 'API: typed contracts and analytical outputs'] },
+  { kicker: 'Trust', title: 'Designed to show what is unknown.', body: 'SeaCommons preserves contradictions, source freshness and approximate geometry.', points: ['No source-lineage inflation', 'Explicit provenance', 'Privacy-aware public projection'] },
+  { kicker: 'Architecture', title: 'A recoverable system, not a collection of dashboards.', body: 'PostgreSQL is canonical; UI and edge are projections.', points: ['Input sources and workers', 'FastAPI and canonical database', 'Durable outbox and public edge'] },
+  { kicker: 'Partner value', title: 'From information access to decision support.', body: 'Scoped collaboration formats designed for public-interest institutions and technical partners.', points: ['Research and evidence case studies', 'Observatories and monitoring', 'Co-designed pilots and integrations'] },
+  { kicker: 'Roadmap', title: 'The next milestone is operational reliability.', body: 'Strengthen repeatability, auditability and evidence quality before coverage expansion.', points: ['Now: cross-modal closure + production SLO', 'Next: humanitarian fusion + AIS baseline + radio decoding', 'Later: expanded coverage and investigation tools'] },
+  { kicker: 'Contact', title: 'Evidence that can be questioned, not merely viewed.', body: 'SeaCommons: public-interest maritime evidence infrastructure.', points: ['seacommons.org', 'live.seacommons.org', 'play.seacommons.org'] },
+];
 
 export const guidebook = [
   {
