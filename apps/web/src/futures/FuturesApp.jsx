@@ -691,7 +691,7 @@ function Documents() {
           <p>Our 12-slide presentation explains what the infrastructure does, what the evidence categories mean, production-scale examples, products, partner models and the engineering roadmap.</p>
           <div className="future-library-actions">
             <button type="button" onClick={() => { setDeckOpen(true); setSlideIndex(0); }}>view presentation ↗</button>
-            <a href="https://github.com/suezcanalxyz/seacommons/tree/main/docs/futures/assets" target="_blank" rel="noreferrer">versioned asset register ↗</a>
+            <a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20partner%20materials">request partner materials ↗</a>
           </div>
         </div>
         <div className="future-library-cover" aria-label="SeaCommons presentation cover">
@@ -721,7 +721,7 @@ function Documents() {
 
       <section className="future-section">
         <SectionHeader eyebrow="document register" title="Browse current project material."
-          copy="The public overview opens the SeaCommons documentation site. Repository items require GitHub access; restricted resources are intentionally not linked." />
+          copy="Published materials open from their cited source. Restricted documents are not served by this catalogue and require an explicit resource grant." />
         <div className="future-library-filters">
           <label><span>search documents</span><input type="search" placeholder="Title, format or topic" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
           <label><span>category</span><select value={group} onChange={(event) => setGroup(event.target.value)}>
@@ -749,9 +749,9 @@ function Documents() {
       </section>
 
       <section className="future-library-intake">
-        <div><span className="future-eyebrow">adding materials</span><h3>Version-controlled upload workflow</h3>
-          <p>For now, authorised GitHub collaborators can upload slides and briefs to the private repository and register the reviewed resource in this library. Direct in-app uploads require server-side storage, workspace grants and audited download permissions, and are not yet enabled.</p></div>
-        <a href="https://github.com/suezcanalxyz/seacommons/upload/main/docs/futures/assets" target="_blank" rel="noreferrer">upload in private repository ↗</a>
+        <div><span className="future-eyebrow">partner materials</span><h3>Request a reviewed document</h3>
+          <p>Published reference materials are available above. For a partner brief or an unpublished resource, contact the programme team. Confidential materials are never uploaded to the public source repository. In-app uploads and permissioned downloads will be enabled only after verified private storage and server-side resource grants are in place.</p></div>
+        <a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20document%20request">contact programme team ↗</a>
       </section>
     </>
   );
