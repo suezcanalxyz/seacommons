@@ -589,7 +589,7 @@ export default function IntelDashboard({
                   if (filtersActive) return 'No events matching filters';
                   if (feedStatus === 'loading') return 'Connecting to live feed…';
                   if (feedStatus === 'offline') {
-                    return 'Live feed unavailable — reconnecting.';
+                    return 'Live data temporarily unavailable. The last valid snapshot will return when the API recovers.';
                   }
                   if (feedStatus === 'stale' || feedStatus === 'retrying') {
                     return 'Loading latest signals…';
