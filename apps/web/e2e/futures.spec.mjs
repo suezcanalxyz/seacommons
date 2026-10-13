@@ -79,7 +79,7 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
   await expect(page.getByRole('region', { name: 'Application pathways and maturity' })).toContainText('Coastal and island resilience');
   await expect(page.getByRole('region', { name: 'Application pathways and maturity' })).toContainText('Future vertical');
   await expect(page.getByText(/platform does not currently measure their impact or outcomes/i)).toBeVisible();
-  await expect(page.getByText('Evidence stages, not equivalent incident totals.')).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Analytics time window' })).toBeVisible();
   await expect(page.getByText('Live', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('240', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('AIS', { exact: true })).toBeVisible();
