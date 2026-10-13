@@ -1044,6 +1044,7 @@ class FuturesInvitationDB(Base):
     last_name = Column(String(100), nullable=False)
     email = Column(String(320), nullable=False, index=True)
     proposed_by = Column(String(256), nullable=False, index=True)
+    requested_role = Column(String(32), nullable=False, default="viewer")
     status = Column(String(32), nullable=False, default="pending")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     reviewed_at = Column(DateTime)

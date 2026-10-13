@@ -17,9 +17,10 @@ import {
 } from './data.js';
 import { operationalAudit, hardwareNetwork } from './operationalAudit.js';
 import { hardwareBuilds, totalCost } from './hardwareCosts.js';
+import { contributionNeeds } from './contributionNeeds.js';
 
-const NAV = ['overview', 'history', 'operations', 'hardware', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
-const NAV_LABELS = { overview: 'Dashboard', documents: 'docs', hardware: 'Sensors' };
+const NAV = ['overview', 'history', 'operations', 'hardware', 'contributions', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
+const NAV_LABELS = { overview: 'Dashboard', documents: 'docs', hardware: 'Sensors', contributions: 'Contributions' };
 
 function readWorkspaceView() {
   const value = new URLSearchParams(window.location.search).get('view');
@@ -286,6 +287,29 @@ function Hardware() {
     <section className="future-section"><SectionHeader eyebrow="technical sequencing" title="Start with dependable receiving stations."
       copy="First validate one coastal AIS receiver, one radio decoder and resilient storage. Prototype a recoverable Drifter after station-health telemetry and legal/safety requirements are defined. Expand environmental and acoustic sensing only after calibration and maintenance procedures are proven." />
       <p className="future-inline-note">Price anchors: Raspberry Pi official 2026 pricing and RAKwireless GPS tracker listings. EUR component allowances are engineering budgets, not live retailer offers. V4 RTL-SDR has been discontinued, so receiver estimates use the V3 line.</p>
+    </section>
+  </>;
+}
+
+function Contributions() {
+  const [filter, setFilter] = useState('all');
+  const groups = [...new Set(contributionNeeds.map(item => item.group))];
+  const visible = contributionNeeds.filter(item => filter === 'all' || item.group === filter);
+  return <>
+    <section className="future-page-head"><span className="future-eyebrow">infrastructure / interoperability / research</span>
+      <h1>What SeaCommons needs to become more capable.</h1>
+      <p>This is an inventory of technical requirements and opportunities for collaboration, not a donation form. It covers physical Sensors, Oracle and other compute resources, authorized access to existing maritime systems, data infrastructure and open-source engineering. Each requirement explains what it enables and its current maturity.</p>
+    </section>
+    <section className="future-section"><SectionHeader eyebrow="capability inventory" title="From equipment to interoperable systems."
+      copy="A working maritime evidence platform needs more than servers: trusted observations, resilient storage, calibration, repeatable software, source agreements and careful verification. Listed access is not claimed as already granted." />
+      <div className="future-risk-filters"><button type="button" className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}>All requirements</button>{groups.map(group => <button type="button" key={group} className={filter === group ? 'is-active' : ''} onClick={() => setFilter(group)}>{group}</button>)}</div>
+      <div className="future-hardware-grid">{visible.map(item => <article className="future-hardware-card" key={item.name}>
+        <small>{item.group} · {item.readiness}</small><h3>{item.name}</h3>
+        <p><b>Required components or access</b>{item.need}</p><p><b>Operational value</b>{item.use}</p><p><b>Related planning</b>{item.reference}</p>
+      </article>)}</div>
+    </section>
+    <section className="future-section"><SectionHeader eyebrow="responsible integration" title="Requirements before any system is connected."
+      copy="Every external feed or physical device needs explicit permission, a designated operator, documented provenance, security boundaries, source health checks and publication safeguards. Receive-only radio work must respect applicable national law." />
     </section>
   </>;
 }
@@ -890,7 +914,7 @@ function Updates() {
 
 function Invitations() {
   const { token } = useAuth();
-  const [form, setForm] = useState({ first_name: '', last_name: '', email: '' });
+  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', requested_role: 'viewer' });
   const [items, setItems] = useState([]);
   const [message, setMessage] = useState('');
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
@@ -912,7 +936,7 @@ function Invitations() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
-      setForm({ first_name: '', last_name: '', email: '' });
+      setForm({ first_name: '', last_name: '', email: '', requested_role: 'viewer' });
       setMessage('Invitation saved for scheduled review.'); await refresh();
     } catch (error) { setMessage(`Not saved: ${error.message}`); }
   };
@@ -922,10 +946,11 @@ function Invitations() {
       <label>First name<input required maxLength={100} value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} /></label>
       <label>Last name<input required maxLength={100} value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} /></label>
       <label>Email<input required type="email" maxLength={320} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></label>
-      <button type="submit" disabled={!token}>Save invitation</button>
+      <label>Access level<input value="Viewer · read only" readOnly aria-label="Requested access level" /></label>
+      <button type="submit" disabled={!token}>Save Viewer invitation</button>
     </form>
     <p role="status">{message || (!token ? 'Sign in to propose an invitation.' : 'Only authenticated, authorized partners can propose invitations.')}</p>
-    <div>{items.map(item => <article key={item.id}><strong>{item.first_name} {item.last_name}</strong> <span>{item.email}</span> <StatusPill state={item.status}>{item.status}</StatusPill></article>)}</div>
+    <div>{items.map(item => <article key={item.id}><strong>{item.first_name} {item.last_name}</strong> <span>{item.email} · {item.requested_role || 'viewer'}</span> <StatusPill state={item.status}>{item.status}</StatusPill></article>)}</div>
   </section>;
 }
 
@@ -1044,6 +1069,7 @@ export default function FuturesApp() {
           {view === 'history' && <HistoricalAnalytics ops={ops} overall={overall} />}
           {view === 'operations' && <Operations ops={ops} />}
           {view === 'hardware' && <Hardware />}
+          {view === 'contributions' && <Contributions />}
           {view === 'project' && <Project />}
           {view === 'roadmap' && <Roadmap />}
           {view === 'documents' && <Documents />}
@@ -1066,10 +1092,10 @@ export default function FuturesApp() {
         </section>
       </div>}
       <nav className="future-mobile-nav" aria-label="Mobile app navigation">
-        {['overview','operations','hardware','documents','access'].map((item) => (
+        {['overview','operations','hardware','contributions','documents','access'].map((item) => (
           <button type="button" key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
-            <span className="future-mobile-nav-icon" aria-hidden="true">{{overview:'◈',operations:'⌁',hardware:'◉',documents:'▤',access:'◎'}[item]}</span>
-            <span>{({overview:'Dashboard',operations:'Ops',hardware:'Sensors',documents:'Docs',access:'Account'})[item]}</span>
+            <span className="future-mobile-nav-icon" aria-hidden="true">{{overview:'◈',operations:'⌁',hardware:'◉',contributions:'◇',documents:'▤',access:'◎'}[item]}</span>
+            <span>{({overview:'Dashboard',operations:'Ops',hardware:'Sensors',contributions:'Needs',documents:'Docs',access:'Account'})[item]}</span>
           </button>
         ))}
       </nav>

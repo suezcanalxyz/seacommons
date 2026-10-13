@@ -57,6 +57,7 @@ def session_factory():
 # below is accepted by both SQLite and PostgreSQL.
 _ADDITIVE_COLUMNS: list[tuple[str, str, str]] = [
     ("cases", "case_type", "VARCHAR(32) NOT NULL DEFAULT 'distress_sar'"),
+    ("futures_invitations", "requested_role", "VARCHAR(32) NOT NULL DEFAULT 'viewer'"),
 ]
 
 
