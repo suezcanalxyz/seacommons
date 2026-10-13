@@ -1163,6 +1163,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
 
     features: list[dict[str, Any]] = []
     drift_count = 0
+    macro_area_count = 0
     drift_events = {
         event.id: event
         for event in intel_store.persisted_events(
@@ -1214,6 +1215,38 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
 
         eligible, _reason = is_auto_drift_eligible(event)
         if not eligible:
+            # Alarm Phone is a first-party report source, but an area inferred
+            # from named places is not a verified position. Publish the prior
+            # explicitly as a contextual area, without a fabricated centroid
+            # trajectory or quantitative probability density.
+            from core.intel.macro_drift import spatial_prior_for_event
+
+            prior = spatial_prior_for_event(event)
+            if prior["candidate"] and prior["geometry"]:
+                category = visual_category_fields(
+                    source=event.source, event_type=event.type,
+                    maritime_domain=event.maritime_domain(),
+                    humanitarian_case_type=event.metadata.get("humanitarian_case_type"),
+                    metadata=event.metadata,
+                )
+                features.append({
+                    "type": "Feature",
+                    "geometry": prior["geometry"],
+                    "properties": {
+                        "event_id": event.id,
+                        "title": event.title,
+                        "source": "Alarm Phone",
+                        "kind": "macro_search_area",
+                        "trajectory_kind": "spatial_prior_not_simulated_drift",
+                        "probability_calibrated": False,
+                        "physical_drift_computed": False,
+                        "mentioned_places": prior["mentioned_places"],
+                        "location_evidence": prior["location_evidence"],
+                        "uncertainty": prior["uncertainty"],
+                        **category,
+                    },
+                })
+                macro_area_count += 1
             continue
         # docs/updates.md P0.11: the incident's current_drift_id is the ONLY
         # authority for which job publishes -- never rediscovered from
@@ -1288,6 +1321,8 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         "meta": {
             "schema": "org.seacommons.live-drift/v1",
             "drifts": drift_count,
+            "macro_search_areas": macro_area_count,
+            "macro_method": "text_inferred_spatial_prior_not_physical_drift",
             "generated_at": datetime.now(UTC).isoformat(),
             "privacy": "derived geometry and published signal metadata only",
         },
