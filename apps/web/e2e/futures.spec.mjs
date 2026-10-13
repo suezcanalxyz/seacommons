@@ -245,17 +245,39 @@ test('Futures overview method describes maritime and humanitarian uses separatel
 });
 
 
-test('Intelligence explains raw observations, normalization and all sensor families', async ({page}) => {
-  await mockOperationalContracts(page);
-  await page.goto(FUTURES_URL + '?view=intelligence');
-  await expect(page.getByRole('heading', {name:/What the system has actually collected/i})).toBeVisible();
-  await page.getByRole('group', {name:'Intelligence time window'}).getByRole('button', {name:'24 hours'}).click();
-  await expect(page.getByText('Raw observations', {exact:true})).toBeVisible();
-  await expect(page.getByText('AIS positions', {exact:true})).toBeVisible();
-  await expect(page.getByText('Radio bursts', {exact:true})).toBeVisible();
-  await expect(page.getByText('Satellite observations', {exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Explain Raw observations'}).click();
-  await expect(page.getByText('API field: raw_observations')).toBeVisible();
-  await page.getByRole('group', {name:'Intelligence time window'}).getByRole('button',{name:'All-time'}).click();
-  await expect(page.getByText('Retained normalized events')).toBeVisible();
+test('Intelligence matches operator aggregation with 24h 7d overall switching', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/overview?hours=24', route => route.fulfill({json:{
+  generated_at:'2026-10-14T00:19:21Z',lookback_hours:24,
+  pipeline_status:{pipeline:{raw_observations:20591,parsed_events:2646,derived_cues:2609,maritime_episodes:339,investigation_hypotheses:106,corroborated_episodes:6,review_ready:4},sensor_activity:{ais_fixes:636930,radio_bursts:721,radio_events:15,satellite_observations:306,active_source_names:11}},
+  source_observations:{by_source:{AISStream:20397,GFW:155},by_type:{ais_gap:15600}},
+  parsed_events:{by_source:{AISRegistry:2646},by_type:{ais_spike:1532}},
+  acquisition:{}
+ }}));
+ await page.route('**/api/v1/operator/ingestion/overview?hours=168', route => route.fulfill({json:{
+  generated_at:'2026-10-14T00:19:21Z',lookback_hours:168,
+  pipeline_status:{pipeline:{raw_observations:83000,parsed_events:14100},sensor_activity:{ais_fixes:940000}},
+  source_observations:{by_source:{AISStream:81000}},parsed_events:{by_type:{ais_spike:8200}},
+ }}));
+ await page.route('**/api/v1/operator/ingestion/overall',route=>route.fulfill({json:{
+  generated_at:'2026-10-14T00:15:09Z',scope:'all_time',
+  stages:[{id:'raw',count:2371751},{id:'normalized',count:382495},{id:'derived',count:287201},{id:'episodes',count:35245},{id:'hypotheses',count:6924},{id:'corroborated',count:18},{id:'review_ready',count:10}],
+  sensor_activity:{ais_fixes:2884066,ais_fixes_estimated:true,radio_bursts:86283,radio_events:6356,satellite_observations:6793,source_names:36},
+  breakdowns:{raw_by_source:{AISStream:2346069},raw_observation_types:{ais_gap:1808730},normalized_event_types:{ais_spike:142724},episode_families:{gap_episode:12508},hypothesis_states:{collecting:99}},
+  first_last:{raw_first:'2026-09-04T00:00:00Z',raw_latest:'2026-10-14T00:19:21Z'}
+ }}));
+ await page.goto(FUTURES_URL + '?view=intelligence');
+ await expect(page.getByRole('heading',{name:/Evidence, from first signal/i})).toBeVisible();
+ const window=page.getByRole('group',{name:'Intelligence time window'});
+ await window.getByRole('button',{name:'24 hours'}).click();
+ await expect(page.getByText('20,591')).toBeVisible();
+ await page.getByRole('button',{name:'Sources & types'}).click();
+ await expect(page.getByText('20,397')).toBeVisible();
+ await window.getByRole('button',{name:'7 days'}).click();
+ await page.getByRole('button',{name:'Evidence pipeline'}).click();
+ await expect(page.getByText('83,000')).toBeVisible();
+ await window.getByRole('button',{name:'Overall'}).click();
+ await expect(page.getByText('2,371,751')).toBeVisible();
+ await page.getByRole('button',{name:'Sources & types'}).click();
+ await expect(page.getByText('2,346,069')).toBeVisible();
 });
