@@ -23,7 +23,6 @@ import { mdaAnomalyColorExpression, mdaCategoryKey, MDA_ANOMALY_CATEGORIES } fro
 import { AuthGate } from './auth.jsx';
 import CasesWorkspace from './components/CasesWorkspace.jsx';
 import CivilSarFleetPanel from './components/CivilSarFleetPanel.jsx';
-import SanctionsCatalog from './components/SanctionsCatalog.jsx';
 import PlayCesium from './components/PlayCesium.jsx';
 import UnrealPixelStream from './components/UnrealPixelStream.jsx';
 import ArchiveTimeline from './components/ArchiveTimeline.jsx';
@@ -3874,7 +3873,6 @@ function App() {
                     </button>
                   </div>
                 </div>
-                {liveFacets.sanctions && <SanctionsCatalog apiBase={apiBase} />}
                 {signalsExpanded && (
                   <div className="signals-selector__macros" role="group" aria-label="Investigation categories">
                     <div className="signals-selector__role-summary">
