@@ -221,6 +221,11 @@ export default async function handler(req, res) {
       fallback = alertFallback();
     }
     res.setHeader('x-seacommons-live-source', 'compatibility');
+    // Never disguise a failed signals upstream as a healthy empty live feed.
+    if (!resource || resource === 'signals') {
+      res.setHeader('cache-control', 'no-store');
+      return res.status(503).json({ detail: 'Live data temporarily unavailable', upstream_status: upstream.status, retryable: true });
+    }
     return res.status(200).json(fallback);
   } catch {
     return res.status(502).json({ detail: 'SeaCommons live feed unavailable' });

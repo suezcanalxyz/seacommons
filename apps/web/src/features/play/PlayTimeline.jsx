@@ -471,6 +471,7 @@ export default function PlayTimeline({ apiBase }) {
       source: item.source || null, url: item.properties?.url || item.properties?.source_url || null,
       properties: item.properties || {}, geometry: item.geometry || null,
     })),
+    assessment: caseData?.assessment || selectedIncident.assessment || null,
     limitations: 'This report represents evidence available at the selected historical cutoff. Unknown outcomes and unverified observations must not be interpreted as confirmed events.',
   } : null;
   const downloadReport = () => {
@@ -613,6 +614,13 @@ export default function PlayTimeline({ apiBase }) {
             <button type="button" disabled={!selectedIncident?.geometry} onClick={() => { const geometry = selectedIncident?.geometry; if (geometry?.type !== 'Point') return; mapRef.current?.easeTo({ center: geometry.coordinates, zoom: Math.max(9, mapRef.current.getZoom()), duration: 600 }); fallbackMapRef.current?.flyTo({ center: geometry.coordinates, zoom: 9 }); }}>Locate on map +</button>
             <span>{selectedIncident?.source || '—'}</span>
           </section>
+          <section className="play-card play-card--forensic-summary">
+            <p>Forensic assessment</p>
+            <h3>{evidenceLabel(caseData || selectedIncident)}</h3>
+            <p>{caseData?.assessment?.observation || selectedIncident?.assessment?.observation || 'The archive contains a reported incident. Its underlying evidence must be assessed separately from the reported claim.'}</p>
+            <p>{caseData?.assessment?.interpretation || selectedIncident?.assessment?.interpretation || 'This dossier distinguishes the original report, supporting observations, independent confirmation and any unresolved questions.'}</p>
+            <small>Assessment reflects only records available at the selected historical time. It is not an official incident determination.</small>
+          </section>
           <section className="play-card play-card--rows">
             <div><span>Status</span><strong>{statusLabel(status)}</strong></div>
             <div><span>Evidence confidence</span><strong>{evidenceLabel(caseData || selectedIncident)}</strong></div>
@@ -632,6 +640,31 @@ export default function PlayTimeline({ apiBase }) {
             {frame.item ? <div><span>Latest at cutoff</span><strong>{frame.item.type}</strong></div> : null}
             {frameProps.model ? <div><span>Model</span><strong>{frameProps.model}</strong></div> : null}
             {frameProps.reason_code ? <div><span>Reason</span><strong>{frameProps.reason_code}</strong></div> : null}
+          </section>
+          <section className="play-card">
+            <p>Evidence and source review</p>
+            <h3>What supports this case</h3>
+            {(caseData?.assessment?.supporting_evidence || selectedIncident?.assessment?.supporting_evidence || []).length
+              ? (caseData?.assessment?.supporting_evidence || selectedIncident?.assessment?.supporting_evidence).map((item, index) => <span key={index}>• {String(item)}</span>)
+              : <span>No supporting evidence summary has been recorded.</span>}
+            <h3>Contradictions and limitations</h3>
+            {(caseData?.assessment?.contradicting_evidence || selectedIncident?.assessment?.contradicting_evidence || []).length
+              ? (caseData?.assessment?.contradicting_evidence || selectedIncident?.assessment?.contradicting_evidence).map((item, index) => <span key={index}>• {String(item)}</span>)
+              : <span>No contradicting evidence has been recorded. This does not establish that the claim is true.</span>}
+            {(caseData?.assessment?.caveats || selectedIncident?.assessment?.caveats || []).map((item, index) => <span key={index}>Caution: {String(item)}</span>)}
+            <h3>Independent source groups</h3>
+            <span>{caseData?.independence_groups?.length ? caseData.independence_groups.join(' · ') : 'Independent source lineages not documented.'}</span>
+          </section>
+          <section className="play-card">
+            <p>Evidence chronology · {visibleTimeline.length} records</p>
+            {visibleTimeline.length ? visibleTimeline.map((item, index) => (
+              <div key={item.id || index} className="play-dossier-evidence">
+                <time>{itemTime(item.at)}</time>
+                <h3>{item.title || statusLabel(item.type || 'Observation')}</h3>
+                <span>{item.source || 'Source not recorded'} · {statusLabel(item.type || 'evidence')}</span>
+                {(item.properties?.source_url || item.properties?.url) && /^https?:\/\//i.test(item.properties.source_url || item.properties.url) ? <a href={item.properties.source_url || item.properties.url} target="_blank" rel="noreferrer">View original source ↗</a> : null}
+              </div>
+            )) : <span>No dated evidence available at this historical cutoff.</span>}
           </section>
           <section className="play-card">
             <p>Latest evidence at this time</p>
@@ -696,6 +729,11 @@ export default function PlayTimeline({ apiBase }) {
             <p className="play-report-disclaimer">Historical evidence report generated {report.generated_at.slice(0, 16).replace('T', ' ')} UTC. This is not an official incident determination.</p>
             <dl><div><dt>Reported</dt><dd>{report.reported_at || 'Unknown'}</dd></div><div><dt>Source</dt><dd>{report.source || 'Not recorded'}</dd></div><div><dt>Status at selected time</dt><dd>{statusLabel(report.status_at_cutoff)}</dd></div><div><dt>Historical cutoff</dt><dd>{report.cutoff || 'Complete archive'}</dd></div><div><dt>Archive decision</dt><dd>{statusLabel(report.archive_decision || 'unknown')}</dd></div><div><dt>Verification</dt><dd>{statusLabel(report.verification_status || 'not recorded')}</dd></div><div><dt>Independent corroboration</dt><dd>{report.corroborated === null ? 'Not assessed' : report.corroborated ? 'Yes' : 'No'}</dd></div><div><dt>Evidence records</dt><dd>{report.evidence_count_at_cutoff}</dd></div></dl>
             <h2>Assessment and limitations</h2>
+            <p>{report.assessment?.observation || 'Reported incident. Original evidence and interpretation are distinct.'}</p>
+            <p>{report.assessment?.interpretation || 'Independent confirmation and outcomes may remain unknown.'}</p>
+            {(report.assessment?.supporting_evidence || []).map((item, index) => <p key={`support-${index}`}><strong>Supporting:</strong> {String(item)}</p>)}
+            {(report.assessment?.contradicting_evidence || []).map((item, index) => <p key={`against-${index}`}><strong>Contradicting:</strong> {String(item)}</p>)}
+            {(report.assessment?.caveats || []).map((item, index) => <p key={`caveat-${index}`}><strong>Limitation:</strong> {String(item)}</p>)}
             <p>{report.limitations}</p>
             {report.reason_codes.length > 0 && <p><strong>Reason codes:</strong> {report.reason_codes.join(' · ')}</p>}
             {report.counter_indicators.length > 0 && <p><strong>Counter-indicators:</strong> {report.counter_indicators.join(' · ')}</p>}
