@@ -25,17 +25,76 @@ const freshness=[
 function number(value){return value===null||value===undefined?'Not reported':Number.isFinite(Number(value))?new Intl.NumberFormat('en-GB').format(Number(value)):'Not reported'}
 function stamp(value){if(!value)return 'Not reported';const d=new Date(value);return Number.isNaN(d.getTime())?'Not reported':d.toLocaleString()}
 function MetricSet({heading,rows,data}) {const [expanded,setExpanded]=useState(null);return <section className="future-section"><header><h2>{heading}</h2></header><div className="future-intelligence-metrics">{rows.map(([key,label,meaning])=><article key={key} className="future-intelligence-metric"><div className="future-intelligence-metric-top"><span>{label}</span><button type="button" aria-expanded={expanded===key} aria-label={'Explain '+label} onClick={()=>setExpanded(expanded===key?null:key)}>What is this? {expanded===key?'−':'+'}</button></div><strong>{number(data?.[key])}</strong><p>{meaning}</p>{expanded===key&&<div className="future-intelligence-legend"><b>How to read it</b><p>{meaning} The number belongs to its own evidence stage; it is not directly comparable to a case or vessel count. Missing means unavailable, not zero.</p><small>API field: {key}</small></div>}</article>)}</div></section>}
+
+import { fetchJson } from '../services/api/client.js';
+import { resolveSiteApiBase } from '../site/liveApi.js';
+
+const TABS = [['pipeline','Evidence pipeline'],['sources','Sources & types'],['quality','Evidence quality'],['sensors','Sensors & SAR'],['activity','Acquisition & logs']];
+const stageKeys={raw:'raw_observations',normalized:'parsed_events',derived:'derived_cues',episodes:'maritime_episodes',hypotheses:'investigation_hypotheses',corroborated:'corroborated_episodes',review_ready:'review_ready'};
+const stageDescriptions=Object.fromEntries(stages.map(s=>[s[0],s[2]]));
+const sourceHelp={
+  raw_by_source:'Who supplied the original observations. Sources can have different collection rates.',
+  raw_observation_types:'Types of source observations before standardization, including AIS and public reports.',
+  normalized_by_source:'Source attribution on processed Intel events. This is not the raw ingestion count.',
+  normalized_event_types:'Types assigned to standardized events after parsing and classification.',
+  episode_families:'Kinds of related maritime observations recognized by the correlation engine.',
+  episode_verification:'Verification of episodes: one source, multiple indicators, or independent lineages.',
+  hypothesis_types:'Investigation topics; counts are not findings of illegal activity.',
+  hypothesis_states:'Processing state of hypotheses: collecting, candidate or ready for review.',
+  hypothesis_evidence_stages:'Highest evidence level reached by each hypothesis.'
+};
+function Breakdown({title,items,help}) {
+ const entries=Object.entries(items||{}).filter(([,n])=>Number.isFinite(Number(n))).sort((a,b)=>Number(b[1])-Number(a[1]));
+ const max=Math.max(1,...entries.map(x=>Number(x[1])));
+ return <section className="future-section future-intelligence-breakdown"><h2>{title}</h2><p>{help}</p>{entries.length?<div className="future-intelligence-bars">{entries.map(([key,value])=><div className="future-intelligence-bar" key={key}><span title={key}>{key.replaceAll('_',' ')}</span><div><i style={{width:Math.max(1,100*Number(value)/max)+'%'}}/></div><strong>{number(value)}</strong></div>)}</div>:<p>No breakdown currently available for this period.</p>}</section>
+}
+function useOperatorMetrics(period){
+ const [data,setData]=React.useState(null);
+ const [loading,setLoading]=React.useState(false);
+ const [error,setError]=React.useState('');
+ const refresh=React.useCallback(async()=>{
+  setLoading(true);setError('');
+  try{
+   const url=period==='overall'?'/api/v1/futures/intelligence/overall':`/api/v1/futures/intelligence/recent?hours=${period==='7d'?168:24}`;
+   const result=await fetchJson(resolveSiteApiBase(),url,undefined,22000);
+   setData(result);
+  }catch(e){setData(null);setError('Restricted operator data unavailable. An operator/admin API role and deployed endpoint are required.');}
+  finally{setLoading(false);}
+ },[period]);
+ React.useEffect(()=>{refresh();},[refresh]);
+ return {data,loading,error,refresh};
+}
+function StagePanels({rows,lookup}){
+ return <div className="future-intelligence-metrics">{rows.map(([key,title,help])=><article className="future-intelligence-metric" key={key}><span>{title}</span><strong>{number(lookup?.[key])}</strong><p>{help}</p></article>)}</div>
+}
 export default function IntelligenceDashboard({ops,overall,period,setPeriod,navigate}){
- const status=ops.status?.window_hours===(period==='7d'?168:24)?ops.status:null;
- const [showTechnical,setShowTechnical]=useState(false);
- return <><section className="future-page-head"><span className="future-eyebrow">Intelligence / Observations & evidence</span><h1>What the system has actually collected.</h1><p>Start with source observations. Follow them through normalization, analysis and evidence review. Each step has a different meaning: a large number of signals is not a large number of confirmed incidents.</p></section>
- <div className="future-period-tabs" aria-label="Intelligence time window"><div role="group" aria-label="Intelligence time window">{[['24h','24 hours'],['7d','7 days'],['overall','All-time']].map(([id,label])=><button type="button" aria-pressed={period===id} className={period===id?'is-active':''} onClick={()=>setPeriod(id)} key={id}>{label}</button>)}</div><small>{period==='overall'?'All retained records, not events since SeaCommons began operations':period==='7d'?'Rolling 168 hours':'Rolling 24 hours'}</small></div>
- {period==='overall'?<section className="future-section"><header><h2>Retained historical corpus</h2></header><p>The currently available partner-safe overall API covers retained normalized Intel events. The private operator dashboard also contains all-time raw observations, source breakdowns and evidence-stage counts, but these are not exposed through this API. Unavailable values are not estimated.</p><div className="future-intelligence-metrics"><article className="future-intelligence-metric"><span>Retained normalized events</span><strong>{number(overall.history?.intel_record?.total_events)}</strong><p>Canonical Intel event records retained, regardless of the age of the historical events described.</p></article><article className="future-intelligence-metric"><span>Records with coordinates</span><strong>{number(overall.history?.intel_record?.positioned_events)}</strong><p>Records with stored latitude data; not necessarily verified incident locations.</p></article></div><p className="future-data-provenance">Data retrieved: {stamp(overall.updatedAt)}. {overall.error||''}</p><button type="button" onClick={()=>navigate('history')}>Explore history →</button></section>:<>
- <div className="future-intelligence-freshness"><span>{ops.loading?'Loading updated measurements…':ops.error?'Some measurements unavailable; last verified snapshot where present.':'Canonical status feed'}</span><small>Generated {stamp(status?.generated_at)} · Last retrieval {stamp(ops.updatedAt)}</small><button type="button" onClick={ops.refresh}>Refresh</button></div>
- <MetricSet heading="01 / Evidence processing" rows={stages} data={status?.pipeline}/>
- <MetricSet heading="02 / Sensors & source activity" rows={sensors} data={status?.sensor_activity}/>
- <section className="future-section"><header><h2>03 / Data freshness</h2></header><div className="future-intelligence-metrics">{freshness.map(([key,title,meaning])=><article className="future-intelligence-metric" key={key}><span>{title}</span><strong className="future-intelligence-date">{stamp(status?.freshness?.[key])}</strong><p>{meaning}</p></article>)}</div></section>
- <section className="future-section"><header><h2>04 / Where the numbers come from</h2></header><p>Futures reads the public-safe status API. The operator ingestion dashboard provides additional restricted source breakdowns, acquisition channels and case-level review tools. Those private details should only be added behind server-enforced partner permissions, never by storing an operator gateway secret in the frontend.</p><button type="button" onClick={()=>setShowTechnical(!showTechnical)} aria-expanded={showTechnical}>{showTechnical?'Hide':'Show'} API mapping</button>{showTechnical&&<div className="future-intelligence-legend"><p><code>/api/v1/status?hours={period==='7d'?168:24}</code> supplies the recent evidence funnel, sensor counters and freshness. Private operator routes use different permissions and scopes; similarly named metrics can differ between contracts.</p><p>The all-time public endpoint <code>/api/v1/futures/overall</code> currently returns normalized events only, not the private operator’s complete corpus inventory.</p></div>}</section>
- </>}
+ const [tab,setTab]=useState('pipeline');
+ const operator=useOperatorMetrics(period);
+ const isOverall=period==='overall';
+ const raw=operator.data;
+ const status=!isOverall&&ops.status?.window_hours===(period==='7d'?168:24)?ops.status:null;
+ const rawStages=Array.isArray(raw?.stages)?Object.fromEntries(raw.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
+ const pipeline=isOverall?rawStages:(raw?.pipeline_status?.pipeline||status?.pipeline);
+ const sensorsData=isOverall?raw?.sensor_activity:raw?.pipeline_status?.sensor_activity||status?.sensor_activity;
+ const breakdown=isOverall?raw?.breakdowns:{
+   raw_by_source:raw?.source_observations?.by_source,
+   raw_observation_types:raw?.source_observations?.by_type,
+   normalized_by_source:raw?.parsed_events?.by_source,
+   normalized_event_types:raw?.parsed_events?.by_type,
+   hypothesis_states:raw?.hypothesis_states,
+ };
+ const allStages=isOverall?stages.filter(x=>x[0]!=='analysis_outputs'):stages;
+ const specialSensors=isOverall&&sensorsData?{...sensorsData,active_source_names:sensorsData.source_names}:sensorsData;
+ return <><section className="future-page-head"><span className="future-eyebrow">SeaCommons / Intelligence</span><h1>Evidence, from first signal to human review.</h1><p>One canonical pipeline. Follow what was collected, what software inferred and which cases have independent support. The volumes describe different evidence layers; they must not be added together.</p></section>
+ <div className="future-period-tabs" aria-label="Intelligence time window"><div role="group" aria-label="Intelligence time window">{[['24h','24 hours'],['7d','7 days'],['overall','Overall']].map(([id,label])=><button type="button" aria-pressed={period===id} className={period===id?'is-active':''} onClick={()=>setPeriod(id)} key={id}>{label}</button>)}</div><small>{isOverall?'All records currently retained, irrespective of the age of the source event':period==='7d'?'Rolling seven days':'Rolling 24 hours'}</small></div>
+ <nav className="future-intelligence-subnav" aria-label="Intelligence sections">{TABS.map(([key,title])=><button key={key} type="button" className={key===tab?'is-active':''} aria-current={key===tab?'page':undefined} onClick={()=>setTab(key)}>{title}</button>)}</nav>
+ <div className="future-intelligence-freshness"><span>{operator.loading?'Loading operator aggregates…':operator.data?'Verified operator aggregation':operator.error?'Operator aggregation restricted · public-safe fields shown where available':'Awaiting operational data'}</span><small>{operator.data?.generated_at?'Generated '+stamp(operator.data.generated_at):'No operator snapshot available'}</small><button type="button" onClick={operator.refresh}>Refresh</button></div>
+ {operator.error&&<p className="future-inline-note" role="status">{operator.error} This dashboard does not use demonstration totals or hard-coded figures.</p>}
+ {tab==='pipeline'&&<><section className="future-section"><h2>01 / Canonical evidence funnel</h2><p>From raw source messages to independent corroboration and review. Raw records, normalized events, derived cues, episodes and hypotheses describe overlapping processing stages, not sequential case conversion.</p><StagePanels rows={allStages} lookup={pipeline}/></section><section className="future-section"><h2>02 / Collection context</h2><p>In the supplied operator snapshot, raw observations substantially outnumber normalized events. This is expected: high-volume AIS telemetry is filtered and grouped. The dashboard always shows current API values instead of preserving the snapshot as if it were live.</p>{isOverall&&<p>First raw intake: {stamp(raw?.first_last?.raw_first)}. Latest raw intake: {stamp(raw?.first_last?.raw_latest)}. Historical dates inside sources may predate SeaCommons.</p>}</section></>}
+ {tab==='sources'&&<>{Object.entries(sourceHelp).slice(0,4).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown?.[key]} help={help}/>)}</>}
+ {tab==='quality'&&<><section className="future-section"><h2>Evidence quality and decision gates</h2><p>Corroboration requires independent evidence lineages. A model signal or a single AIS anomaly cannot establish intent or illegality. Review readiness is a human-workflow state, not a public verdict.</p><StagePanels rows={stages.filter(x=>['maritime_episodes','investigation_hypotheses','corroborated_episodes','review_ready'].includes(x[0]))} lookup={pipeline}/></section>{Object.entries(sourceHelp).slice(4).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown?.[key]} help={help}/>)}</>}
+ {tab==='sensors'&&<><MetricSet heading="Sensors and signal coverage" rows={sensors} data={specialSensors}/><section className="future-section"><h2>Search and rescue fleet</h2><p>Fleet tracking is distinct from incidents. Live means a fresh AIS position; stale or offline does not mean that a vessel has stopped operating. Sensitive or outdated coordinates remain withheld.</p><p>The fleet inventory requires a separate operator-authorized contract; it is not included in the safe aggregate endpoint yet.</p></section></>}
+ {tab==='activity'&&<><section className="future-section"><h2>Source acquisition</h2><p>Source status describes whether connectors are delivering data. “Degraded” indicates incomplete coverage rather than a verified interruption to an individual mission.</p>{raw?.acquisition?<pre className="future-intelligence-json">{JSON.stringify(raw.acquisition,null,2)}</pre>:<p>Acquisition metadata not returned for this view.</p>}</section><section className="future-section"><h2>Raw → normalized → analysis logs</h2><p>The detailed operator logs and individual investigation chains remain protected. Showing them here requires audited, role-controlled read endpoints; no secret keys are exposed to the browser.</p><p>Latest raw: {stamp(raw?.newest?.source_observation||raw?.pipeline_status?.freshness?.raw_observation||status?.freshness?.raw_observation)}. Latest parsed: {stamp(raw?.newest?.parsed_event||status?.freshness?.parsed_event)}.</p></section></>}
+ <section className="future-section"><h2>Data provenance and interpretation</h2><p>Operator figures are calculated by the same database aggregation functions as the canonical ingestion dashboard. Public fallback figures are drawn from the canonical status feed. Overall operator counts cover the retained corpus; recent values cover ingestion windows. Sensor counts may be estimated when database statistics are used, especially AIS fixes.</p><p>Source evidence is not the same as an incident. Independent corroboration and human review are required before claims become publishable.</p><button type="button" onClick={()=>navigate('history')}>Explore historical collection →</button></section>
  </>;
 }
