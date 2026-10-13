@@ -3991,3 +3991,14 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   transform: rotate(var(--vessel-heading, 0deg)); transform-origin: 50% 58%;
 }
 .seacommons-fallback-vessel-stationary { filter: drop-shadow(0 0 2px rgba(2,19,24,.8)); }
+
+/* Sanctions catalog stays distinct from the fresh-position map overlay. */
+.sanctions-catalog { padding: 12px; border: 1px solid var(--border, #444); border-radius: 8px; margin: 10px 0; }
+.sanctions-catalog__intro, .sanctions-catalog__pager { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.sanctions-catalog input { width: 100%; box-sizing: border-box; padding: 8px; margin: 8px 0; }
+.sanctions-catalog__list { list-style: none; padding: 0; margin: 0; max-height: 260px; overflow-y: auto; }
+.sanctions-catalog__list li { border-top: 1px solid #5555; }
+.sanctions-catalog__list li > button { display: flex; flex-direction: column; width: 100%; text-align: left; padding: 8px 0; background: transparent; color: inherit; border: 0; cursor: pointer; }
+.sanctions-catalog__list small { opacity: .75; }
+.sanctions-catalog__details { font-size: .83em; padding: 0 6px 8px; }
+.sanctions-catalog__pager { padding-top: 8px; }
