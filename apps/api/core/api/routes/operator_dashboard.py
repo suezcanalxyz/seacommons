@@ -13,6 +13,12 @@ router = APIRouter(prefix="/api/v1/operator/ingestion", tags=["operator-ingestio
 
 
 def _require_gateway(request: Request) -> None:
+    # A Futures operator can use the same canonical API with an authenticated
+    # OIDC token. Anonymous requests and normal viewer roles remain rejected.
+    if config.AUTH_ENABLED and request.headers.get("authorization", "").lower().startswith("bearer "):
+        from core.security import require_roles
+        require_roles(request, {"operator", "administrator"})
+        return
     expected = str(config.OPERATOR_GATEWAY_SECRET or "")
     if not expected:
         raise HTTPException(status_code=503, detail="Operator ingestion gateway is not configured")
