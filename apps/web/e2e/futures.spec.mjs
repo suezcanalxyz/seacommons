@@ -5,6 +5,7 @@ const FUTURES_URL = 'http://127.0.0.1:4173/futures.html';
 const statusFixture = {
   service: 'SeaCommons',
   status: 'operational',
+  window_hours: 24,
   live: { total: 12, operational: 9, humanitarian: 4, maritime: 8 },
   pipeline: {
     raw_observations: 240,
@@ -66,7 +67,7 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL);
 
-  await expect(page.getByRole('heading', { name: /From maritime evidence to place-based understanding/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Understand what happens at sea/i })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Overall historical totals' })).toContainText('378,826');
   await expect(page.getByRole('group', { name: 'Analytics time window' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Overall', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -74,11 +75,11 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
   await page.getByRole('button', { name: '24 hours', exact: true }).click();
   await expect(page.getByRole('region', { name: 'SeaCommons operational status' })).toContainText('226');
   await expect(page.getByText('raw observations', { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'An evidence infrastructure for the sea.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /From scattered observations to evidence/i })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Application pathways and maturity' })).toContainText('Coastal and island resilience');
   await expect(page.getByRole('region', { name: 'Application pathways and maturity' })).toContainText('Future vertical');
   await expect(page.getByText(/platform does not currently measure their impact or outcomes/i)).toBeVisible();
-  await expect(page.getByText('Evidence stages, not equivalent incident totals.')).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Analytics time window' })).toBeVisible();
   await expect(page.getByText('Live', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('240', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('AIS', { exact: true })).toBeVisible();
@@ -89,8 +90,8 @@ test('Futures is scoped to the SeaCommons workspace only', async ({ page }) => {
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL);
 
-  await page.locator('.future-sidebar nav').getByRole('button', { name: /^project/i }).click();
-  await expect(page.getByRole('heading', { name: /One workspace, one project context/i })).toBeVisible();
+  await page.goto(FUTURES_URL + '?view=project');
+  await expect(page.getByRole('heading', { name: /What SeaCommons is building/i })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'SeaCommons', exact: true })).toBeVisible();
 
   await expect(page.getByText('Republic', { exact: true })).toHaveCount(0);
@@ -103,15 +104,15 @@ test('Futures guidebook and tools are native partner surfaces', async ({ page })
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL);
 
-  await page.locator('.future-sidebar nav').getByRole('button', { name: /^guidebook/i }).click();
+  await page.goto(FUTURES_URL + '?view=guidebook');
   await expect(page.getByRole('heading', { name: 'Futures and access' })).toBeVisible();
   await page.getByRole('button', { name: 'Evidence model', exact: true }).click();
   await expect(page.getByText(/An observation is not an incident/i)).toBeVisible();
 
-  await page.locator('.future-sidebar nav').getByRole('button', { name: /^tools/i }).click();
+  await page.goto(FUTURES_URL + '?view=tools');
   await expect(page.getByRole('heading', { name: /Surfaces you can open/i })).toBeVisible();
-  await expect(page.getByRole('link', { name: /SeaCommons Live/i })).toHaveAttribute('href', 'https://live.seacommons.org');
-  await expect(page.getByRole('link', { name: /SeaCommons Play/i })).toHaveAttribute('href', 'https://play.seacommons.org');
+  await expect(page.getByRole('link', { name: /SeaCommons Live/i }).first()).toHaveAttribute('href', 'https://live.seacommons.org');
+  await expect(page.getByRole('link', { name: /SeaCommons Play/i }).first()).toHaveAttribute('href', 'https://play.seacommons.org');
   await expect(page.getByText('Republic', { exact: true })).toHaveCount(0);
 });
 
@@ -119,10 +120,10 @@ test('Futures access page states final grant hierarchy without pretending auth i
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL);
 
-  await page.locator('.future-sidebar nav').getByRole('button', { name: /^access/i }).click();
-  await expect(page.getByRole('heading', { name: /Identity connected\. Resource permissions require verification/i })).toBeVisible();
+  await page.goto(FUTURES_URL + '?view=access');
+  await expect(page.getByRole('heading', { name: /Your account and workspace access/i })).toBeVisible();
   await expect(page.getByText(/organisation → SeaCommons workspace → project \/ subproject → resource or tool/i)).toBeVisible();
-  await expect(page.getByText(/Workspace membership, resource grants and private API permissions must be independently verified/i)).toBeVisible();
+  await expect(page.getByText(/A grant can stop at any level/i)).toBeVisible();
 });
 
 
@@ -133,8 +134,8 @@ test('Futures navigation is deep-linkable and browser-history aware', async ({ p
   await expect(page.getByRole('heading', { name: /What is being built/i })).toBeVisible();
   await expect(page).toHaveURL(/view=roadmap/);
 
-  await page.locator('.future-sidebar nav').getByRole('button', { name: /^project/i }).click();
-  await expect(page.getByRole('heading', { name: /One workspace, one project context/i })).toBeVisible();
+  await page.goto(FUTURES_URL + '?view=project');
+  await expect(page.getByRole('heading', { name: /What SeaCommons is building/i })).toBeVisible();
   await expect(page).toHaveURL(/view=project/);
 
   await page.goBack();
@@ -145,13 +146,13 @@ test('Futures navigation is deep-linkable and browser-history aware', async ({ p
 test('Futures Docs searches resources and opens the native partner presentation', async ({ page }) => {
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL);
-  await page.locator('.future-sidebar nav').getByRole('button', { name: /^docs/i }).click();
-  await expect(page.getByRole('heading', { name: /Documents, presentations and project knowledge/i })).toBeVisible();
+  await page.goto(FUTURES_URL + '?view=documents');
+  await expect(page.getByRole('heading', { name: /Documents, presentations and project knowledge|documents and presentations/i })).toBeVisible();
   await expect(page.getByText('SeaCommons partner introduction').first()).toBeVisible();
   await page.getByRole('button', { name: /view presentation/i }).click();
   await expect(page.getByRole('region', { name: 'SeaCommons partner presentation' })).toContainText('From observation to accountable evidence.');
   await page.getByRole('button', { name: /next/i }).click();
-  await expect(page.getByRole('region', { name: 'SeaCommons partner presentation' })).toContainText('A system for reading maritime evidence.');
+  await expect(page.getByRole('region', { name: 'SeaCommons partner presentation' })).toContainText('What can we actually know about events at sea?');
   await page.getByRole('button', { name: /close presentation/i }).click();
   await page.getByPlaceholder('Title, format or topic').fill('architecture');
   await expect(page.getByRole('region', { name: 'SeaCommons project documents' })).toContainText('System architecture');
@@ -189,11 +190,11 @@ test('Futures switches equal-weight 24 hours / 7 days / Overall panels using rea
 test('Historical and Operations pages use canonical ops data and never fake unknown totals', async ({ page }) => {
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL + '?view=history');
-  await expect(page.getByRole('heading', { name: /Evidence over time/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /What has SeaCommons recorded over time/i })).toBeVisible();
   await expect(page.getByRole('img', { name: 'Monthly retained Intel events' })).toContainText('2026-05');
   await expect(page.getByText('2026-06')).toBeVisible();
-  await page.locator('.future-sidebar nav').getByRole('button', { name: /^operations/i }).click();
-  await expect(page.getByRole('heading', { name: /Monitor the evidence pipeline/i })).toBeVisible();
+  await page.goto(FUTURES_URL + '?view=operations');
+  await expect(page.getByRole('heading', { name: /How reliably is SeaCommons working/i })).toBeVisible();
   await expect(page.getByText('AIS', { exact: true })).toBeVisible();
   await expect(page.getByText('Radio bursts', { exact: true }).first()).toBeVisible();
 });
@@ -216,4 +217,29 @@ test('Unavailable Overall is explicitly unknown, never a synthetic zero', async 
   await page.goto(FUTURES_URL + '?view=overall');
   await expect(page.getByRole('region', {name:'Overall historical totals'})).toContainText('Historical data temporarily unavailable');
   await expect(page.getByRole('region', {name:'Overall historical totals'})).toContainText('—');
+});
+
+
+test('Futures Platform connects software, illustrated devices and safe network contributions', async ({page}) => {
+  await mockOperationalContracts(page);
+  await page.goto(FUTURES_URL + '?view=platform');
+  await expect(page.getByRole('heading', {name: /Software, devices and a shared method/i})).toBeVisible();
+  await expect(page.getByRole('link', {name:/Live/i}).first()).toHaveAttribute('href','https://live.seacommons.org');
+  await page.getByRole('button', {name:/Drifter/i}).click();
+  await expect(page.getByRole('heading',{name:'Drifter'})).toBeVisible();
+  await page.getByRole('tab',{name:'Specifications'}).click();
+  await expect(page.getByText('GNSS/GPS position and timestamp')).toBeVisible();
+  await page.goto(FUTURES_URL + '?view=contributions');
+  await expect(page.getByRole('heading',{name:/A network of shared infrastructure/i})).toBeVisible();
+  await expect(page.getByText(/not the intended permanent central point of failure/i)).toBeVisible();
+});
+
+test('Futures overview method describes maritime and humanitarian uses separately', async ({page})=>{
+  await mockOperationalContracts(page);
+  await page.goto(FUTURES_URL + '?view=overview');
+  await expect(page.getByRole('heading',{name:/From scattered observations to evidence/i})).toBeVisible();
+  await expect(page.getByRole('heading',{name:/Understand activity at sea/i})).toBeVisible();
+  await expect(page.getByRole('heading',{name:/Investigate with care/i})).toBeVisible();
+  await page.getByRole('tab',{name:/Filter/i}).click();
+  await expect(page.getByRole('tabpanel')).toContainText(/identify duplicates/i);
 });

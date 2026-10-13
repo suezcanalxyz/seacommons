@@ -397,6 +397,20 @@ def _retained_intel_history() -> dict:
                 func.count(IntelEventDB.lat),
             )
         ).one()
+        # Ingestion chronology is NOT the source event chronology. A source may
+        # describe historical events predating SeaCommons by many years.
+        # CAST + SUBSTR works on both SQLite and PostgreSQL.
+        from sqlalchemy import String, cast
+        ingested_month = func.substr(cast(IntelEventDB.created_at, String), 1, 7)
+        first_ingested, last_ingested = db.execute(
+            select(func.min(IntelEventDB.created_at), func.max(IntelEventDB.created_at))
+        ).one()
+        ingested_monthly = db.execute(
+            select(ingested_month.label("month"), func.count(IntelEventDB.id))
+            .where(IntelEventDB.created_at.is_not(None))
+            .group_by(ingested_month)
+            .order_by(ingested_month)
+        ).all()
         by_type = db.execute(
             select(IntelEventDB.type, func.count(IntelEventDB.id))
             .group_by(IntelEventDB.type)
@@ -412,6 +426,10 @@ def _retained_intel_history() -> dict:
         "total_events": int(total),
         "positioned_events": int(positioned),
         "unpositioned_events": int(total) - int(positioned),
+        "first_ingested_at": first_ingested.isoformat() if first_ingested else None,
+        "last_ingested_at": last_ingested.isoformat() if last_ingested else None,
+        "ingested_monthly": [{"month": str(period), "count": int(count)}
+                             for period, count in ingested_monthly if period and len(str(period)) == 7],
         "oldest_event_utc": oldest,
         "newest_event_utc": newest,
         "by_type": [{"type": str(category or "unknown"), "count": int(count)}
@@ -470,6 +488,9 @@ async def futures_public_overall():
         "intel_record": {
             "total_events": int(record["total_events"]),
             "positioned_events": int(record["positioned_events"]),
+            "first_ingested_at": record.get("first_ingested_at"),
+            "last_ingested_at": record.get("last_ingested_at"),
+            "ingested_monthly": record.get("ingested_monthly", []),
             "oldest_event_utc": record["oldest_event_utc"],
             "newest_event_utc": record["newest_event_utc"],
             "monthly": record["monthly"],

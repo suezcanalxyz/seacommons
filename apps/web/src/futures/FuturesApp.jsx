@@ -16,11 +16,14 @@ import {
   tools,
 } from './data.js';
 import { operationalAudit, hardwareNetwork } from './operationalAudit.js';
+import { MethodExplorer, PlatformNetwork, NetworkContributionsIntro } from './NetworkPlatform.jsx';
 import { hardwareBuilds, totalCost } from './hardwareCosts.js';
 import { contributionNeeds } from './contributionNeeds.js';
 
-const NAV = ['overview', 'history', 'operations', 'hardware', 'contributions', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
-const NAV_LABELS = { overview: 'Dashboard', documents: 'docs', hardware: 'Sensors', contributions: 'Priorities' };
+const NAV = ['overview', 'intelligence', 'platform', 'knowledge', 'development', 'agents', 'contributions', 'history', 'operations', 'hardware', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
+const PRIMARY_NAV = ['overview', 'intelligence', 'platform', 'knowledge', 'development', 'agents', 'contributions'];
+const SUBNAV = { intelligence: [['intelligence','Dashboard'],['history','History'],['operations','Operations']], platform: [['platform','Products & devices'],['hardware','Hardware specifications'],['tools','Software tools']], knowledge: [['knowledge','Knowledge home'],['documents','Documents'],['guidebook','Guidebook']], development: [['development','Development home'],['roadmap','Roadmap'],['updates','Updates']], overview: [['overview','Introduction'],['project','Project details']] };
+const NAV_LABELS = { overview: 'Overview', intelligence:'Intelligence', platform:'Platform', knowledge:'Knowledge', development:'Development', agents:'Agents', documents: 'Docs', hardware: 'Devices', contributions: 'Contributions' };
 
 function readWorkspaceView() {
   const value = new URLSearchParams(window.location.search).get('view');
@@ -175,8 +178,11 @@ function LifetimeOverview({ ops, overall }) {
     <div className="future-lifetime-grid">
       {metrics.map(([label, value, note]) => <article key={label}><small>{label}</small><strong>{formatCount(value)}</strong><p>{note}</p></article>)}
     </div>
-    <p className="future-data-provenance">Recorded history: {formatDateTime(intel.oldest_event_utc)} → {formatDateTime(intel.newest_event_utc)}.
-      All-time means retained records, not data deleted before retention. {overall.error || ''}</p>
+    <div className="future-data-provenance">
+      <p><b>SeaCommons collection:</b> {intel.first_ingested_at ? formatDateTime(intel.first_ingested_at) + ' → ' + formatDateTime(intel.last_ingested_at) : 'Collection start not yet available from the API.'}</p>
+      <p><b>Historical dates contained in the sources:</b> {formatDateTime(intel.oldest_event_utc)} → {formatDateTime(intel.newest_event_utc)}. Source events may predate SeaCommons; they do not indicate when the software began operating.</p>
+      <p>All-time means records currently retained in the database. {overall.error || ''}</p>
+    </div>
   </section>;
 }
 
@@ -194,6 +200,7 @@ function HistoricalAnalytics({ ops, overall }) {
     <section className="future-section">
       <SectionHeader eyebrow="history / monthly breakdown" title="A traceable historical timeline."
         copy="Each bar represents the number of records in its calendar month. No extrapolation or example values." />
+      {Array.isArray(record.ingested_monthly) && record.ingested_monthly.length > 0 && <section className="future-section"><SectionHeader eyebrow="collection growth / ingestion dates" title="How much SeaCommons collected each month." copy="This timeline measures when records entered SeaCommons, not when their source events took place. Peaks may reflect backfills or system changes; fine-tuning milestones should be annotated only when confirmed by engineering records." /><div className="future-history-chart" role="img" aria-label="Monthly SeaCommons ingestion volume">{record.ingested_monthly.map(({month,count}) => <div key={month} className="future-history-bar"><span title={month+': '+formatCount(count)} style={{height:(5+95*Number(count)/Math.max(1,...record.ingested_monthly.map(row=>Number(row.count)||0)))+'%'}} /><small>{month}</small><strong>{formatCount(count)}</strong></div>)}</div></section>}
       {monthly.length ? <div className="future-history-chart" role="img" aria-label="Monthly retained Intel events">
         {monthly.map(({month,count}) => <div key={month} className="future-history-bar">
           <span title={month+': '+formatCount(count)} style={{height:(5+95*Number(count)/max)+'%'}} />
@@ -296,9 +303,10 @@ function Contributions() {
   const groups = [...new Set(contributionNeeds.map(item => item.group))];
   const visible = contributionNeeds.filter(item => filter === 'all' || item.group === filter).sort((a, b) => a.rank - b.rank);
   return <>
-    <section className="future-page-head"><span className="future-eyebrow">SeaCommons / development priorities</span>
-      <h1>What we need next, and why.</h1>
-      <p>A practical list of the resources that would make SeaCommons more reliable and capable. The most urgent work comes first. Costs are planning estimates, not confirmed supplier quotations or existing invoices.</p>
+    <NetworkContributionsIntro />
+    <section className="future-page-head"><span className="future-eyebrow">SeaCommons / resource requirements</span>
+      <h1>Resources that help the network grow.</h1>
+      <p>A resource register for shared nodes, operations and future deployments. Estimated costs describe practical requirements, not a funding campaign.</p>
     </section>
     <section className="future-section"><SectionHeader eyebrow="priority register" title="Keep the platform reliable first."
       copy="Our first priority is protecting the existing service and its history. New sensors and research integrations follow once storage, backup and continuous operation are under control." />
@@ -587,7 +595,7 @@ function PilotFramework() {
   );
 }
 
-function Overview({ ops, overall, period, setPeriod, navigate }) {
+function Overview({ ops, overall, period, setPeriod, navigate, compact = false }) {
   return (
     <>
       <section className="future-hero">
@@ -604,16 +612,8 @@ function Overview({ ops, overall, period, setPeriod, navigate }) {
         {ops.error ? <p className="future-inline-note">{ops.error} Static project information remains available.</p> : null}
       </section>
 
-      <details className="future-explainer">
-        <summary><span><small>START HERE / THE PROJECT EXPLAINED</small><strong>What is SeaCommons?</strong><em>A short introduction for people discovering the platform</em></span><span className="future-explainer-arrow" aria-hidden="true">⌄</span></summary>
-        <div className="future-explainer-content">
-          <p><b>SeaCommons is an open-source maritime intelligence platform.</b> It gathers information from ship-position signals, public reports, humanitarian alerts, radio, satellites and environmental observations to help researchers understand what may be happening at sea.</p>
-          <p><b>How does it work?</b> Software collects observations, standardises times and locations, checks how sources relate and groups potentially connected information into episodes. An episode is a subject for investigation, not proof of an emergency or wrongdoing.</p>
-          <p><b>Why does evidence matter?</b> Each finding should retain its sources, uncertainty and independent corroboration. An AIS gap or a vessel appearing in an area is not, by itself, evidence of intent. Sensitive details are filtered before publication.</p>
-          <p><b>How do I read the numbers?</b> Choose 24 hours or 7 days for recent activity. Overall shows records still retained in the database. The public archive is cumulative and remains the same when you switch recent periods. Counts from different stages must not be added together.</p>
-          <p><b>Where do I go next?</b> Operations explains current system health and unresolved engineering risks. Sensors shows proposed antennas, radio receivers, drifter buoys and estimated costs. Documents contains presentation and reference material. Account controls access and invitations.</p>
-        </div>
-      </details>
+      {!compact && <MethodExplorer />}
+
 
       <section className="future-period-tabs" aria-label="Analytics time period">
         <div role="group" aria-label="Analytics time window">
@@ -634,8 +634,8 @@ function Overview({ ops, overall, period, setPeriod, navigate }) {
           <button type="button" onClick={() => navigate('hardware')}><small>distributed infrastructure / 7 pathways</small><strong>Sensors: equipment and costs ↗</strong><span>AIS and radio antennas, drifters, hydrophones, coastal sensors, compute and field partners.</span></button>
         </div>
       </section>
-      <ApplicationPathways />
-      <PilotFramework />
+      {!compact && <ApplicationPathways />}
+      {!compact && <PilotFramework />}
 
       <section className="future-section">
         <SectionHeader
@@ -888,10 +888,10 @@ function Tools() {
               <div><small>{tool.kind}</small><StatusPill state={tool.state}>{tool.state}</StatusPill></div>
               <h3>{tool.name}</h3>
               <p>{tool.description}</p>
-              <span className="future-tool-grid__cta">{'reference only'}</span>
+              <span className="future-tool-grid__cta">open tool ↗</span>
             </>
           );
-          return <article key={tool.id}>{inner}</article>;
+          return tool.href ? <a key={tool.id} href={tool.href} target="_blank" rel="noopener noreferrer">{inner}</a> : <article key={tool.id}>{inner}</article>;
         })}
       </section>
     </>
@@ -1056,7 +1056,7 @@ export default function FuturesApp() {
         <div className="future-product"><span>futures</span><small>partner workspace</small></div>
         <button type="button" className="future-mobile-account" onClick={() => navigate('access')} aria-label="Open account" aria-current={view === 'access' ? 'page' : undefined}><span aria-hidden="true">◎</span> Account</button>
         <nav aria-label="Futures">
-          {NAV.map((item) => (
+          {PRIMARY_NAV.map((item) => (
             <button key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
               <span>{NAV_LABELS[item] || item}</span><i>↗</i>
             </button>
@@ -1076,6 +1076,12 @@ export default function FuturesApp() {
         </header>
 
         <div className="future-content">
+          {Object.entries(SUBNAV).some(([,items])=>items.some(([id])=>id===view)) && <nav className="future-subnav" aria-label="Section navigation">{(Object.entries(SUBNAV).find(([,items])=>items.some(([id])=>id===view))?.[1] || []).map(([id,label])=><button type="button" key={id} className={id===view?'is-active':''} onClick={()=>navigate(id)}>{label}</button>)}</nav>}
+          {view === 'intelligence' && <><section className="future-page-head"><span className="future-eyebrow">Intelligence / evidence and coverage</span><h1>What the system is recording.</h1><p>Explore current windows, retained history, data coverage and operational health. Values remain linked to their sources and do not represent verified incidents by default.</p></section><Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} compact /></>}
+          {view === 'platform' && <PlatformNetwork />}
+          {view === 'knowledge' && <><section className="future-page-head"><span className="future-eyebrow">Knowledge</span><h1>Learn, review and share.</h1><p>Technical references, practical guides and partner-ready documents in one place.</p></section><Documents /></>}
+          {view === 'development' && <Roadmap />}
+          {view === 'agents' && <><section className="future-page-head"><span className="future-eyebrow">Agents / scheduled workflows</span><h1>Work that can be verified.</h1><p>Scheduled research and engineering tasks will show their next run, execution history, reports and linked code changes when a trusted scheduler feed is connected. No demonstration runs are presented as real.</p></section><section className="future-section"><SectionHeader eyebrow="scheduler status" title="Waiting for a verified execution feed" copy="Task metadata and execution results will be read from the scheduler, not inferred from the roadmap." /></section></>}
           {view === 'overview' && <Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'history' && <HistoricalAnalytics ops={ops} overall={overall} />}
           {view === 'operations' && <Operations ops={ops} />}
@@ -1103,10 +1109,10 @@ export default function FuturesApp() {
         </section>
       </div>}
       <nav className="future-mobile-nav" aria-label="Mobile app navigation">
-        {['overview','operations','hardware','contributions','documents'].map((item) => (
+        {['overview','intelligence','platform','agents','contributions'].map((item) => (
           <button type="button" key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
-            <span className="future-mobile-nav-icon" aria-hidden="true">{{overview:'◈',operations:'⌁',hardware:'◉',contributions:'◇',documents:'▤',access:'◎'}[item]}</span>
-            <span>{({overview:'Dashboard',operations:'Ops',hardware:'Sensors',contributions:'Priorities',documents:'Docs',access:'Account'})[item]}</span>
+            <span className="future-mobile-nav-icon" aria-hidden="true">{{overview:'◈',intelligence:'⌁',platform:'◉',agents:'◇',contributions:'▤',access:'◎'}[item]}</span>
+            <span>{({overview:'Overview',intelligence:'Data',platform:'Platform',agents:'Agents',contributions:'Network',access:'Account'})[item]}</span>
           </button>
         ))}
       </nav>
