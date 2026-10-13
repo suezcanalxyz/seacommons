@@ -409,9 +409,9 @@ function PlatformSummary({ ops, period }) {
     { label: 'Corroborated', value: ops.status?.pipeline?.corroborated_episodes, note: `episodes / ${windowLabel}` },
   ];
   const products = [
-    { label: 'Live', note: 'Active, privacy-filtered public cases', url: 'https://live.seacommons.org' },
-    { label: 'Play', note: 'Historic public cases and timelines', url: 'https://play.seacommons.org' },
-    { label: 'API', note: 'Typed contracts and service status', url: 'https://seacommons.org/docs' },
+    { label: 'Live', note: 'Active, privacy-filtered public cases', url: null },
+    { label: 'Play', note: 'Historic public cases and timelines', url: null },
+    { label: 'API', note: 'Typed contracts and service status', url: null },
     { label: 'Futures', note: 'Partner workspace and project knowledge', url: null },
   ];
   return <>
@@ -438,10 +438,10 @@ function PlatformSummary({ ops, period }) {
     </section>}
     <section className="future-section">
       <SectionHeader eyebrow="03 / product ecology" title="Four interfaces, one coherent source of truth."
-        copy="Each surface has a separate purpose and audience. Links below open real SeaCommons services." />
+        copy="Each SeaCommons surface has a separate purpose and audience. Futures keeps you inside your authenticated partner workspace." />
       <div className="future-product-grid">
         {products.map((product) => {
-          const content = <><small>SeaCommons / {product.label}</small><h3>{product.label}</h3><p>{product.note}</p><span>{product.url ? 'open surface ↗' : 'you are here'}</span></>;
+          const content = <><small>SeaCommons / {product.label}</small><h3>{product.label}</h3><p>{product.note}</p><span>{product.url ? 'open surface ↗' : product.label === 'Futures' ? 'you are here' : 'reference only'}</span></>;
           return product.url
             ? <a key={product.label} href={product.url} target="_blank" rel="noreferrer">{content}</a>
             : <article key={product.label}>{content}</article>;
@@ -751,7 +751,7 @@ function Guidebook() {
         {active.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
         <div className="future-guide__footer">
           <span>native Futures document</span>
-          <a href="https://seacommons.org/docs">public docs ↗</a>
+          <span>Technical documentation is available in the Documents section.</span>
         </div>
       </article>
     </section>
@@ -777,12 +777,10 @@ function Tools() {
               <div><small>{tool.kind}</small><StatusPill state={tool.state}>{tool.state}</StatusPill></div>
               <h3>{tool.name}</h3>
               <p>{tool.description}</p>
-              <span className="future-tool-grid__cta">{tool.href ? 'open ↗' : 'not available yet'}</span>
+              <span className="future-tool-grid__cta">{'reference only'}</span>
             </>
           );
-          return tool.href
-            ? <a key={tool.id} href={tool.href} target="_blank" rel="noreferrer">{inner}</a>
-            : <article key={tool.id}>{inner}</article>;
+          return <article key={tool.id}>{inner}</article>;
         })}
       </section>
     </>
@@ -929,9 +927,9 @@ export default function FuturesApp() {
   return (
     <div className="future-app">
       <aside className="future-sidebar">
-        <a className="future-brand" href="https://seacommons.org" aria-label="SeaCommons home">
+        <button type="button" className="future-brand" onClick={() => navigate('overview')} aria-label="Futures dashboard">
           <i /><span>SEA<br />COMMONS</span>
-        </a>
+        </button>
         <div className="future-product"><span>futures</span><small>partner workspace</small></div>
         <nav aria-label="Futures">
           {NAV.map((item) => (
@@ -950,10 +948,7 @@ export default function FuturesApp() {
       <main className="future-main">
         <header className="future-topbar">
           <div><span>SeaCommons / Futures</span><b>{view}</b></div>
-          <div className="future-topbar__links">
-            <a href="https://live.seacommons.org">live ↗</a>
-            <a href="https://seacommons.org">public site ↗</a>
-          </div>
+          <div className="future-topbar__links"><span>Secure partner workspace</span></div>
         </header>
 
         <div className="future-content">

@@ -65,6 +65,15 @@ export function AuthGate({ children }) {
         const current = await manager.getUser();
         if (!active) return;
         if (!current || current.expired) {
+          if (current?.expired) {
+            try {
+              const refreshed = await manager.signinSilent();
+              if (refreshed && !refreshed.expired) {
+                window.__SEACOMMONS_ACCESS_TOKEN__ = refreshed.access_token;
+                setUser(refreshed); setReady(true); return;
+              }
+            } catch (renewError) { console.warn('OIDC session refresh unavailable', renewError); }
+          }
           setReady(true);
           return;
         }
@@ -83,9 +92,17 @@ export function AuthGate({ children }) {
       window.__SEACOMMONS_ACCESS_TOKEN__ = next.access_token;
       setUser(next);
     };
+    const onUnloaded = () => { delete window.__SEACOMMONS_ACCESS_TOKEN__; setUser(null); };
+    const onExpired = async () => {
+      try { const refreshed = await manager.signinSilent(); if (!refreshed || refreshed.expired) onUnloaded(); }
+      catch { onUnloaded(); }
+    };
     manager.events.addUserLoaded(onLoaded);
+    manager.events.addUserUnloaded(onUnloaded);
+    manager.events.addAccessTokenExpired(onExpired);
     start();
-    return () => { active = false; manager.events.removeUserLoaded(onLoaded); };
+    return () => { active = false; manager.events.removeUserLoaded(onLoaded);
+      manager.events.removeUserUnloaded(onUnloaded); manager.events.removeAccessTokenExpired(onExpired); };
   }, []);
 
   if (authRequired && !providerConfigured) {
@@ -103,7 +120,7 @@ export function AuthGate({ children }) {
   if (enabled && !user) {
     return <main className="auth-screen">
       <section className="auth-card" aria-labelledby="auth-title">
-        <a className="auth-wordmark" href="https://seacommons.org">SEA<span>COMMONS</span></a>
+        <span className="auth-wordmark">SEA<span>COMMONS</span></span>
         <p className="auth-kicker">Suez Canal identity</p>
         <h1 id="auth-title">Access Futures</h1>
         <p className="auth-copy">Continue through the Suez Canal identity layer. Access to projects, subprojects and documents is assigned to your authorised email.</p>
