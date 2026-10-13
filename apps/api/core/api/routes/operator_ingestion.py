@@ -96,11 +96,12 @@ def _fast_table_count(db, model) -> tuple[int, bool]:
 
 
 def _require_gateway(request: Request) -> None:
-    # A Futures operator can use the same canonical API with an authenticated
-    # OIDC token. Anonymous requests and normal viewer roles remain rejected.
+    # Any authenticated Futures user can read the canonical Intelligence data.
+    # Authentication remains mandatory; no second operator role is required.
     if config.AUTH_ENABLED and request.headers.get("authorization", "").lower().startswith("bearer "):
-        from core.security import require_roles
-        require_roles(request, {"operator", "administrator"})
+        from core.security import authenticate
+        if authenticate(request) is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
         return
     expected = str(config.OPERATOR_GATEWAY_SECRET or "")
     if not expected:
