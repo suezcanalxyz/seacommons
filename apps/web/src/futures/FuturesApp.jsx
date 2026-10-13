@@ -16,9 +16,10 @@ import {
   tools,
 } from './data.js';
 import { operationalAudit, hardwareNetwork } from './operationalAudit.js';
+import { hardwareBuilds, totalCost } from './hardwareCosts.js';
 
 const NAV = ['overview', 'history', 'operations', 'hardware', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
-const NAV_LABELS = { documents: 'docs', hardware: 'hardware' };
+const NAV_LABELS = { documents: 'docs', hardware: 'Sensors' };
 
 function readWorkspaceView() {
   const value = new URLSearchParams(window.location.search).get('view');
@@ -252,26 +253,33 @@ function OperationalRiskRegister() {
 
 function Hardware() {
   const [phase, setPhase] = useState('all');
-  const rows = hardwareNetwork.filter(item => phase === 'all' || item.phase.startsWith(phase));
+  const [quantity, setQuantity] = useState({});
+  const rows = hardwareBuilds.filter(item => phase === 'all' || item.phase.startsWith(phase));
+  const euro = value => `€${value.toLocaleString('it-IT')}`;
+  const grandTotal = hardwareBuilds.reduce((sum,item) => sum + totalCost(item) * (quantity[item.id] ?? 1), 0);
   return <>
-    <section className="future-page-head"><span className="future-eyebrow">distributed sensing / partner infrastructure</span>
-      <h1>From software to a distributed maritime sensor network.</h1>
-      <p>SeaCommons can grow beyond public OSINT feeds by incorporating partner-hosted coastal receivers, drifter buoys, environmental instruments and resilient compute. Hardware adds first-hand observations and coverage, not automatic proof of an incident.</p>
+    <section className="future-page-head"><span className="future-eyebrow">hardware / procurement estimates / Oct 2026</span>
+      <h1>Build the SeaCommons sensor network.</h1>
+      <p>Practical bills of materials for AIS, radio, Drifter, coastal environmental sensing and resilient compute. Each estimate separates priced equipment from recurring costs and deployment exclusions. No station is claimed as deployed.</p>
     </section>
-    <section className="future-section"><SectionHeader eyebrow="network architecture" title="Field observation → verified intelligence."
-      copy="Receive and timestamp observations at the edge, validate and sign provenance, transmit over a secure uplink, normalize in the canonical pipeline, correlate with independent evidence, then publish only according to policy." />
-      <div className="future-hardware-chain"><span>antenna / sensor</span><i>→</i><span>edge receiver + GNSS</span><i>→</i><span>secure ingest</span><i>→</i><span>claims / assessment</span><i>→</i><span>LIVE / PLAY</span></div>
+    <section className="future-section"><SectionHeader eyebrow="procurement calculator" title="Network investment scenarios."
+      copy="Editable unit counts. Planning estimates in EUR, not quotations. Hardware subtotal excludes VAT, shipping, field installation, certification and vessel hire." />
+      <div className="future-hardware-total"><span>One of each configuration</span><strong>{euro(hardwareBuilds.reduce((sum,item)=>sum+totalCost(item),0))}</strong><span>Selected quantities</span><strong>{euro(grandTotal)}</strong></div>
+      <div className="future-hardware-quantities">{hardwareBuilds.map(item=><label key={item.id}><span>{item.name}</span><input type="number" min="0" max="100" value={quantity[item.id] ?? 1} onChange={e=>setQuantity({...quantity,[item.id]:Math.min(100,Math.max(0,Number(e.target.value)||0))})}/><b>{euro(totalCost(item)*(quantity[item.id]??1))}</b></label>)}</div>
     </section>
-    <section className="future-section"><SectionHeader eyebrow="open hardware roadmap" title="What we need to build, host and maintain."
-      copy="A phased, open-source-oriented procurement and partner network. These are proposed capabilities, not currently deployed SeaCommons stations." />
-      <div className="future-risk-filters" role="group" aria-label="Hardware development phase">{['all','1','2','3'].map(p => <button key={p} type="button" className={phase===p?'is-active':''} onClick={() => setPhase(p)}>{p==='all'?'All phases':`Phase ${p}`}</button>)}</div>
-      <div className="future-hardware-grid">{rows.map(item => <article key={item.id} className="future-hardware-card"><small>{item.phase} · {item.priority} priority</small><h3>{item.name}</h3><p><b>Equipment</b> {item.equipment}</p><p><b>Data contribution</b> {item.output}</p><p><b>Partners needed</b> {item.partner}</p><p className="future-hardware-caution"><b>Deployment constraints</b> {item.caution}</p></article>)}</div>
+    <section className="future-section"><SectionHeader eyebrow="open hardware roadmap" title="Sensors: component-level costs and technical constraints."
+      copy="Real products are linked where a supplier reference was found; other rows are explicitly labeled planning allowances. Verify supplier availability, shipping and local taxes before purchasing." />
+      <div className="future-risk-filters" role="group" aria-label="Hardware development phase">{['all','1','2','3'].map(p=><button key={p} type="button" className={phase===p?'is-active':''} onClick={()=>setPhase(p)}>{p==='all'?'All phases':`Phase ${p}`}</button>)}</div>
+      <div className="future-hardware-grid">{rows.map(item=><article key={item.id} className="future-hardware-card future-hardware-cost-card">
+        <small>{item.phase}</small><h3>{item.name}</h3><p>{item.purpose}</p>
+        <div className="future-hardware-bom">{item.items.map(([name,count,unit,url,note],i)=><div key={i}><span>{url?<a href={url} target="_blank" rel="noreferrer">{name} ↗</a>:name}<small>{note}</small></span><span>{count} × {euro(unit)}</span><b>{euro(count*unit)}</b></div>)}</div>
+        <div className="future-hardware-subtotal"><span>Equipment subtotal</span><strong>{euro(totalCost(item))}</strong></div>
+        <p><b>Recurring operating costs</b>{item.recurring}</p><p className="future-hardware-caution"><b>Design and procurement note</b>{item.notes}</p>
+      </article>)}</div>
     </section>
-    <section className="future-section"><SectionHeader eyebrow="partnership / beyond VM donations" title="Ways to contribute to the physical network."
-      copy="Partners can donate or host equipment, provide coastal antenna sites, help fabricate and deploy drifters, supply sensors or storage, maintain receivers, contribute open-source firmware, calibration, field data and engineering time." />
-      <div className="future-hardware-chain"><span>host a station</span><span>donate equipment</span><span>prototype a buoy</span><span>calibrate sensors</span><span>provide compute</span><span>maintain open firmware</span></div>
-      <p className="future-inline-note">Each deployment requires a local custodian, safety and legal review, uptime/health telemetry, a maintenance and retrieval plan, and clear rules for data ownership, privacy and publication. Initial pilots should be small and measurable before replication.</p>
-      <a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20hardware%20network%20partnership">propose a hardware partnership ↗</a>
+    <section className="future-section"><SectionHeader eyebrow="technical sequencing" title="Start with dependable receiving stations."
+      copy="First validate one coastal AIS receiver, one radio decoder and resilient storage. Prototype a recoverable Drifter after station-health telemetry and legal/safety requirements are defined. Expand environmental and acoustic sensing only after calibration and maintenance procedures are proven." />
+      <p className="future-inline-note">Price anchors: Raspberry Pi official 2026 pricing and RAKwireless GPS tracker listings. EUR component allowances are engineering budgets, not live retailer offers. V4 RTL-SDR has been discontinued, so receiver estimates use the V3 line.</p>
     </section>
   </>;
 }
@@ -580,7 +588,7 @@ function Overview({ ops, overall, period, setPeriod, navigate }) {
         <SectionHeader eyebrow="workspace priorities" title="Operational reliability and sensor expansion." />
         <div className="future-hardware-grid">
           <button type="button" onClick={() => navigate('operations')}><small>incident register / 10 areas</small><strong>Criticalities and unresolved fixes ↗</strong><span>Passenger vessels, storage pressure, AIS, PLAY, scheduler and publication confidence.</span></button>
-          <button type="button" onClick={() => navigate('hardware')}><small>distributed infrastructure / 7 pathways</small><strong>Hardware and partner network ↗</strong><span>AIS and radio antennas, drifters, hydrophones, coastal sensors, compute and field partners.</span></button>
+          <button type="button" onClick={() => navigate('hardware')}><small>distributed infrastructure / 7 pathways</small><strong>Sensors: equipment and costs ↗</strong><span>AIS and radio antennas, drifters, hydrophones, coastal sensors, compute and field partners.</span></button>
         </div>
       </section>
       <ApplicationPathways />
