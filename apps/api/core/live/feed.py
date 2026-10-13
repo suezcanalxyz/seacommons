@@ -639,6 +639,11 @@ def _attach_cross_modal_evidence(
                     )
                     .all()
                 )
+            # session_scope commits on exit, expiring ORM attributes. Detach
+            # fully loaded scalar rows before the session closes so Live can
+            # enrich its response without DetachedInstanceError.
+            for row in [*satellite_rows, *radio_rows]:
+                db.expunge(row)
     except Exception:
         logger.debug("Cross-modal Live enrichment unavailable", exc_info=True)
         return
