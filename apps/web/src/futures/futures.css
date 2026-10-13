@@ -591,3 +591,5 @@ a { color: inherit; text-decoration: none; }
   button,input,a{touch-action:manipulation}
 }
 @media(display-mode:standalone){.future-topbar__links{display:none}}
+
+.future-brand{border:0;background:transparent;color:inherit;padding:0;cursor:pointer;text-align:left}
