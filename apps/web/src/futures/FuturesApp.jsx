@@ -15,9 +15,10 @@ import {
   timeline,
   tools,
 } from './data.js';
+import { operationalAudit, hardwareNetwork } from './operationalAudit.js';
 
-const NAV = ['overview', 'history', 'operations', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
-const NAV_LABELS = { documents: 'docs' };
+const NAV = ['overview', 'history', 'operations', 'hardware', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
+const NAV_LABELS = { documents: 'docs', hardware: 'hardware' };
 
 function readWorkspaceView() {
   const value = new URLSearchParams(window.location.search).get('view');
@@ -227,6 +228,50 @@ function Operations({ ops }) {
       </div>
       <SourceHealth pipeline={ops.pipeline} />
       {sourceRows.length === 0 && <p className="future-inline-note">Source states are unavailable; no status is inferred.</p>}
+    </section>
+    <OperationalRiskRegister />
+  </>;
+}
+
+function OperationalRiskRegister() {
+  const [priority, setPriority] = useState('all');
+  const rows = operationalAudit.filter(item => priority === 'all' || item.priority === priority);
+  return <section className="future-section future-risk-register">
+    <SectionHeader eyebrow="engineering incident register / historical" title="Known failures, fixes and remaining verification."
+      copy="Evidence-based engineering register from August–October 2026. These are historical findings and open verification tasks, not automatically confirmed live outages. Live health metrics appear above." />
+    <div className="future-risk-filters" role="group" aria-label="Filter engineering issues">
+      {['all','P0','P1','P2'].map(p => <button key={p} type="button" className={priority === p ? 'is-active' : ''} onClick={() => setPriority(p)}>{p === 'all' ? 'All issues' : p}</button>)}
+    </div>
+    <div className="future-risk-list">{rows.map(item => <details key={item.id} className="future-risk-item" defaultOpen={item.priority === 'P0'}>
+      <summary><span className="future-risk-priority">{item.priority}</span><span><strong>{item.title}</strong><small>{item.area} · {item.since}</small></span><span className="future-risk-state">{item.state}</span></summary>
+      <div className="future-risk-body"><p><b>Observed issue:</b> {item.symptom}</p><p><b>Work already done:</b> {item.fixes}</p><p><b>Required validation / next fix:</b> {item.next}</p></div>
+    </details>)}</div>
+    <p className="future-data-provenance">Audit snapshot: 13 Oct 2026. P0 = evidence/publication or recurring availability risk; P1 = functional reliability; P2 = coverage/release maturity. Statuses require runtime verification before closure.</p>
+  </section>;
+}
+
+function Hardware() {
+  const [phase, setPhase] = useState('all');
+  const rows = hardwareNetwork.filter(item => phase === 'all' || item.phase.startsWith(phase));
+  return <>
+    <section className="future-page-head"><span className="future-eyebrow">distributed sensing / partner infrastructure</span>
+      <h1>From software to a distributed maritime sensor network.</h1>
+      <p>SeaCommons can grow beyond public OSINT feeds by incorporating partner-hosted coastal receivers, drifter buoys, environmental instruments and resilient compute. Hardware adds first-hand observations and coverage, not automatic proof of an incident.</p>
+    </section>
+    <section className="future-section"><SectionHeader eyebrow="network architecture" title="Field observation → verified intelligence."
+      copy="Receive and timestamp observations at the edge, validate and sign provenance, transmit over a secure uplink, normalize in the canonical pipeline, correlate with independent evidence, then publish only according to policy." />
+      <div className="future-hardware-chain"><span>antenna / sensor</span><i>→</i><span>edge receiver + GNSS</span><i>→</i><span>secure ingest</span><i>→</i><span>claims / assessment</span><i>→</i><span>LIVE / PLAY</span></div>
+    </section>
+    <section className="future-section"><SectionHeader eyebrow="open hardware roadmap" title="What we need to build, host and maintain."
+      copy="A phased, open-source-oriented procurement and partner network. These are proposed capabilities, not currently deployed SeaCommons stations." />
+      <div className="future-risk-filters" role="group" aria-label="Hardware development phase">{['all','1','2','3'].map(p => <button key={p} type="button" className={phase===p?'is-active':''} onClick={() => setPhase(p)}>{p==='all'?'All phases':`Phase ${p}`}</button>)}</div>
+      <div className="future-hardware-grid">{rows.map(item => <article key={item.id} className="future-hardware-card"><small>{item.phase} · {item.priority} priority</small><h3>{item.name}</h3><p><b>Equipment</b> {item.equipment}</p><p><b>Data contribution</b> {item.output}</p><p><b>Partners needed</b> {item.partner}</p><p className="future-hardware-caution"><b>Deployment constraints</b> {item.caution}</p></article>)}</div>
+    </section>
+    <section className="future-section"><SectionHeader eyebrow="partnership / beyond VM donations" title="Ways to contribute to the physical network."
+      copy="Partners can donate or host equipment, provide coastal antenna sites, help fabricate and deploy drifters, supply sensors or storage, maintain receivers, contribute open-source firmware, calibration, field data and engineering time." />
+      <div className="future-hardware-chain"><span>host a station</span><span>donate equipment</span><span>prototype a buoy</span><span>calibrate sensors</span><span>provide compute</span><span>maintain open firmware</span></div>
+      <p className="future-inline-note">Each deployment requires a local custodian, safety and legal review, uptime/health telemetry, a maintenance and retrieval plan, and clear rules for data ownership, privacy and publication. Initial pilots should be small and measurable before replication.</p>
+      <a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20hardware%20network%20partnership">propose a hardware partnership ↗</a>
     </section>
   </>;
 }
@@ -501,7 +546,7 @@ function PilotFramework() {
   );
 }
 
-function Overview({ ops, overall, period, setPeriod }) {
+function Overview({ ops, overall, period, setPeriod, navigate }) {
   return (
     <>
       <section className="future-hero">
@@ -531,6 +576,13 @@ function Overview({ ops, overall, period, setPeriod }) {
       {period === 'overall' && <LifetimeOverview ops={ops} overall={overall} />}
       {period !== 'overall' && <OperationalStrip ops={ops} period={period} />}
       <PlatformSummary ops={ops} period={period} />
+      <section className="future-section future-dashboard-quicklinks">
+        <SectionHeader eyebrow="workspace priorities" title="Operational reliability and sensor expansion." />
+        <div className="future-hardware-grid">
+          <button type="button" onClick={() => navigate('operations')}><small>incident register / 10 areas</small><strong>Criticalities and unresolved fixes ↗</strong><span>Passenger vessels, storage pressure, AIS, PLAY, scheduler and publication confidence.</span></button>
+          <button type="button" onClick={() => navigate('hardware')}><small>distributed infrastructure / 7 pathways</small><strong>Hardware and partner network ↗</strong><span>AIS and radio antennas, drifters, hydrophones, coastal sensors, compute and field partners.</span></button>
+        </div>
+      </section>
       <ApplicationPathways />
       <PilotFramework />
 
@@ -952,9 +1004,10 @@ export default function FuturesApp() {
         </header>
 
         <div className="future-content">
-          {view === 'overview' && <Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} />}
+          {view === 'overview' && <Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'history' && <HistoricalAnalytics ops={ops} overall={overall} />}
           {view === 'operations' && <Operations ops={ops} />}
+          {view === 'hardware' && <Hardware />}
           {view === 'project' && <Project />}
           {view === 'roadmap' && <Roadmap />}
           {view === 'documents' && <Documents />}
@@ -965,10 +1018,10 @@ export default function FuturesApp() {
         </div>
       </main>
       <nav className="future-mobile-nav" aria-label="Mobile app navigation">
-        {['overview','history','operations','documents','access'].map((item) => (
+        {['overview','operations','hardware','documents','access'].map((item) => (
           <button type="button" key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
-            <span className="future-mobile-nav-icon" aria-hidden="true">{{overview:'◈',history:'▥',operations:'⌁',documents:'▤',access:'◎'}[item]}</span>
-            <span>{({overview:'Home',history:'Data',operations:'Ops',documents:'Docs',access:'Account'})[item]}</span>
+            <span className="future-mobile-nav-icon" aria-hidden="true">{{overview:'◈',operations:'⌁',hardware:'◉',documents:'▤',access:'◎'}[item]}</span>
+            <span>{({overview:'Home',operations:'Ops',hardware:'Sensors',documents:'Docs',access:'Account'})[item]}</span>
           </button>
         ))}
       </nav>
