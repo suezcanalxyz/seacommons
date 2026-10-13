@@ -246,3 +246,44 @@ def test_operator_overall_exposes_all_time_corpus(monkeypatch):
         "raw_by_source", "raw_observation_types", "normalized_event_types",
         "episode_families", "hypothesis_types", "hypothesis_states",
     }
+
+
+def test_futures_operator_bearer_reuses_canonical_ingestion_without_gateway_secret(monkeypatch):
+    """An authenticated operator can read the same canonical API from Futures."""
+    from core.api.main import app
+    from core.config import config
+    from core.security import Principal
+    import core.security as security
+
+    monkeypatch.setattr(config, "AUTH_ENABLED", True)
+    monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "operator-secret")
+    monkeypatch.setattr(
+        security, "authenticate_token",
+        lambda token: Principal(subject="operator-test", roles=frozenset({"operator"}), claims={}),
+    )
+    result = TestClient(app).get(
+        "/api/v1/operator/ingestion/overview?hours=24",
+        headers={"Authorization": "Bearer verified-by-test-jwt"},
+    )
+    assert result.status_code == 200
+    assert "source_observations" in result.json()["counts"]
+
+
+def test_futures_authenticated_viewer_can_read_intelligence(monkeypatch):
+    """Every authenticated Futures viewer sees the same Intelligence metrics."""
+    from core.api.main import app
+    from core.config import config
+    from core.security import Principal
+    import core.security as security
+
+    monkeypatch.setattr(config, "AUTH_ENABLED", True)
+    monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "operator-secret")
+    monkeypatch.setattr(
+        security, "authenticate_token",
+        lambda token: Principal(subject="viewer-test", roles=frozenset({"researcher"}), claims={}),
+    )
+    result = TestClient(app).get(
+        "/api/v1/operator/ingestion/observations?limit=5",
+        headers={"Authorization": "Bearer verified-by-test-jwt"},
+    )
+    assert result.status_code == 200
