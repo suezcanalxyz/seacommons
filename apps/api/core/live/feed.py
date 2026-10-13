@@ -1241,6 +1241,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
                         "probability_calibrated": False,
                         "physical_drift_computed": False,
                         "mentioned_places": prior["mentioned_places"],
+                        "location_clues": prior["location_clues"],
                         "location_evidence": prior["location_evidence"],
                         "uncertainty": prior["uncertainty"],
                         **category,
