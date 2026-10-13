@@ -884,10 +884,10 @@ function Tools() {
               <div><small>{tool.kind}</small><StatusPill state={tool.state}>{tool.state}</StatusPill></div>
               <h3>{tool.name}</h3>
               <p>{tool.description}</p>
-              <span className="future-tool-grid__cta">{'reference only'}</span>
+              <span className="future-tool-grid__cta">open tool ↗</span>
             </>
           );
-          return <article key={tool.id}>{inner}</article>;
+          return tool.href ? <a key={tool.id} href={tool.href} target="_blank" rel="noopener noreferrer">{inner}</a> : <article key={tool.id}>{inner}</article>;
         })}
       </section>
     </>
