@@ -47,14 +47,30 @@ function requestHostname(headers) {
   return String(headers.host || '').split(':')[0].trim().toLowerCase();
 }
 
-function selectUpstream(headers) {
+export function selectUpstream(headers) {
+  // Futures always reads from the canonical operational backend, never demo.
+  if (requestHostname(headers) === 'futures.seacommons.org') return API_VHOST;
   const configured = process.env.SEACOMMONS_UPSTREAM_VIRTUAL_HOST;
   if (configured && ALLOWED_UPSTREAMS.has(configured)) return configured;
   const hostname = requestHostname(headers);
   return LIVE_HOSTS.has(hostname) ? API_VHOST : DEMO_VHOST;
 }
 
-function requestHeaders(headers, upstreamVirtualHost) {
+const FUTURES_PUBLIC_PATHS = new Set([
+  '/api/v1/status',
+  '/api/v1/futures/overall',
+  '/api/v1/play/counts',
+  '/api/v1/live/pipeline',
+]);
+
+export function isFuturesPublicRequest(headers, method, path) {
+  if (requestHostname(headers) !== 'futures.seacommons.org') return true;
+  if (!['GET', 'HEAD'].includes(method)) return false;
+  const pathname = String(path).split('?')[0];
+  return pathname === '/health' || pathname === '/ready' || FUTURES_PUBLIC_PATHS.has(pathname);
+}
+
+function requestHeaders(headers, upstreamVirtualHost, allowInternalSecret = true) {
   const forwarded = {};
   for (const [name, value] of Object.entries(headers)) {
     const lower = name.toLowerCase();
@@ -70,21 +86,27 @@ function requestHeaders(headers, upstreamVirtualHost) {
   // records) is reachable by anyone who curls the API IP directly, since
   // AUTH_ENABLED is fail-open by design for local dev. Unset in Vercel env
   // (or on the backend) disables the check entirely.
-  if (process.env.SEACOMMONS_INTERNAL_PROXY_SECRET) {
+  if (allowInternalSecret && process.env.SEACOMMONS_INTERNAL_PROXY_SECRET) {
     forwarded['x-seacommons-internal'] = process.env.SEACOMMONS_INTERNAL_PROXY_SECRET;
   }
   return forwarded;
 }
 
 export default function handler(req, res) {
+  const path = upstreamPath(req.query || {});
+  if (!isFuturesPublicRequest(req.headers, req.method, path)) {
+    return res.status(403).json({ detail: 'This endpoint is not available from the partner workspace' });
+  }
   const upstreamVirtualHost = selectUpstream(req.headers);
   const upstream = http.request(
     {
       hostname: UPSTREAM_HOST,
       port: UPSTREAM_PORT,
       method: req.method,
-      path: upstreamPath(req.query || {}),
-      headers: requestHeaders(req.headers, upstreamVirtualHost),
+      path,
+      // A browser-visible partner route must NEVER inherit the internal
+      // gateway credential, even when the same Vercel project has it set.
+      headers: requestHeaders(req.headers, upstreamVirtualHost, requestHostname(req.headers) !== 'futures.seacommons.org'),
     },
     (response) => {
       res.statusCode = response.statusCode || 502;
