@@ -5,6 +5,7 @@ const FUTURES_URL = 'http://127.0.0.1:4173/futures.html';
 const statusFixture = {
   service: 'SeaCommons',
   status: 'operational',
+  window_hours: 24,
   live: { total: 12, operational: 9, humanitarian: 4, maritime: 8 },
   pipeline: {
     raw_observations: 240,
@@ -110,8 +111,8 @@ test('Futures guidebook and tools are native partner surfaces', async ({ page })
 
   await page.goto(FUTURES_URL + '?view=tools');
   await expect(page.getByRole('heading', { name: /Surfaces you can open/i })).toBeVisible();
-  await expect(page.getByRole('link', { name: /SeaCommons Live/i })).toHaveAttribute('href', 'https://live.seacommons.org');
-  await expect(page.getByRole('link', { name: /SeaCommons Play/i })).toHaveAttribute('href', 'https://play.seacommons.org');
+  await expect(page.getByRole('link', { name: /SeaCommons Live/i }).first()).toHaveAttribute('href', 'https://live.seacommons.org');
+  await expect(page.getByRole('link', { name: /SeaCommons Play/i }).first()).toHaveAttribute('href', 'https://play.seacommons.org');
   await expect(page.getByText('Republic', { exact: true })).toHaveCount(0);
 });
 
