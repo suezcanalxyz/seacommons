@@ -8,6 +8,7 @@ const stages=[
   ['investigation_hypotheses','Hypotheses','Questions or possible explanations being evaluated, not conclusions.'],
   ['corroborated_episodes','Corroborated episodes','Episodes supported by at least two independent evidence lineages.'],
   ['review_ready','Ready for review','Investigations prepared for human assessment. This does not establish wrongdoing.'],
+  ['public_live','Public Live','Signals currently eligible for public Live publication. A zero is possible even with high ingestion because publication requires separate safeguards.'],
   ['analysis_outputs','Analysis outputs','Episodes and investigation hypotheses processed in the selected window. Overlaps with previous counts; never add them together.']
 ];
 const sensors=[
@@ -30,7 +31,7 @@ import { fetchJson } from '../services/api/client.js';
 import { resolveSiteApiBase } from '../site/liveApi.js';
 
 const TABS = [['pipeline','Evidence pipeline'],['sources','Sources & types'],['quality','Evidence quality'],['sensors','Sensors & SAR'],['activity','Acquisition & logs']];
-const stageKeys={raw:'raw_observations',normalized:'parsed_events',derived:'derived_cues',episodes:'maritime_episodes',hypotheses:'investigation_hypotheses',corroborated:'corroborated_episodes',review_ready:'review_ready'};
+const stageKeys={raw:'raw_observations',normalized:'parsed_events',derived:'derived_cues',episodes:'maritime_episodes',hypotheses:'investigation_hypotheses',corroborated:'corroborated_episodes',review_ready:'review_ready',live:'public_live'};
 const stageDescriptions=Object.fromEntries(stages.map(s=>[s[0],s[2]]));
 const sourceHelp={
   raw_by_source:'Who supplied the original observations. Sources can have different collection rates.',
@@ -130,7 +131,7 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
    episode_families:sections.data?.funnel?.diagnostics?.episode_families,
    hypothesis_types:sections.data?.funnel?.diagnostics?.hypothesis_reason_codes,
  };
- const allStages=stages.filter(x=>x[0]!=='analysis_outputs');
+ const allStages=stages.filter(x=>x[0]!=='analysis_outputs'&&(!isOverall||x[0]!=='public_live'));
  const specialSensors=isOverall&&sensorsData?{...sensorsData,active_source_names:sensorsData.source_names}:sensorsData;
  return <><section className="future-page-head"><span className="future-eyebrow">SeaCommons / Intelligence</span><h1>Evidence, from first signal to human review.</h1><p>One canonical pipeline. Follow what was collected, what software inferred and which cases have independent support. The volumes describe different evidence layers; they must not be added together.</p></section>
  <div className="future-period-tabs" aria-label="Intelligence time window"><div role="group" aria-label="Intelligence time window">{[['24h','24 hours'],['7d','7 days'],['overall','Overall']].map(([id,label])=><button type="button" aria-pressed={period===id} className={period===id?'is-active':''} onClick={()=>setPeriod(id)} key={id}>{label}</button>)}</div><small>{isOverall?'All records currently retained, irrespective of the age of the source event':period==='7d'?'Rolling seven days':'Rolling 24 hours'}</small></div>
