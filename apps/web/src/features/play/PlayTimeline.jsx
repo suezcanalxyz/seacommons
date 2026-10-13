@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { fetchJson } from '../../services/api/client.js';
+import SanctionsCatalog from '../../components/SanctionsCatalog.jsx';
 import { createVesselArrowImage, VESSEL_COLOR } from '../map/vesselMarker.js';
 import { createFallbackMap } from '../map/fallbackRenderer.js';
 import {
@@ -552,6 +553,10 @@ export default function PlayTimeline({ apiBase }) {
             ) : null}
           </div>
         </header>
+        <details className="play-sanctions-section">
+          <summary>Sanctioned vessels · historical registry</summary>
+          <SanctionsCatalog apiBase={apiBase} />
+        </details>
         <div className="live-feed-panel__body play-cases__list">
           {archiveGroups.map((group) => (
             <section className="play-archive-month" key={group.key}>

@@ -57,7 +57,7 @@ async def live_sanctioned_vessels(request: Request):
     from core.vessels.registry import registry
 
     rate_limit(request, max_per_minute=60, scope="live-sanctioned-vessels")
-    current = registry.get_geojson()
+    current = registry.get_last_known_geojson()
     vessel_features = list(current.get("features") or [])
     mmsis = {
         str((feature.get("properties") or {}).get("mmsi") or "").strip()
@@ -76,7 +76,7 @@ async def live_sanctioned_vessels(request: Request):
             "meta": {
                 "total": 0,
                 "generated_at": datetime.now(timezone.utc).isoformat(),
-                "position_policy": "fresh_only_10m",
+                "position_policy": "observed_within_24h",
             },
         }
 
@@ -105,7 +105,7 @@ async def live_sanctioned_vessels(request: Request):
             by_imo.setdefault(str(row["imo"]), []).append(row)
 
     now = datetime.now(timezone.utc)
-    fresh_cutoff = now - timedelta(minutes=10)
+    fresh_cutoff = now - timedelta(hours=24)
     out = []
     for feature in vessel_features:
         properties = dict(feature.get("properties") or {})
@@ -167,7 +167,8 @@ async def live_sanctioned_vessels(request: Request):
                 "sanctions_lists": lists,
                 "sanctions_programs": programs,
                 "match_basis": match_basis,
-                "position_policy": "fresh_only_10m",
+                "position_policy": "observed_within_24h",
+                "ais_status": "live" if now - seen <= timedelta(minutes=10) else "last_observed",
                 "note": (
                     "Public sanctions-list identity match; this does not by itself "
                     "establish unlawful current behaviour."
@@ -181,7 +182,7 @@ async def live_sanctioned_vessels(request: Request):
         "meta": {
             "total": len(out),
             "generated_at": now.isoformat(),
-            "position_policy": "fresh_only_10m",
+            "position_policy": "observed_within_24h",
         },
     }
 
