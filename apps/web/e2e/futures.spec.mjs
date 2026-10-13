@@ -243,3 +243,19 @@ test('Futures overview method describes maritime and humanitarian uses separatel
   await page.getByRole('tab',{name:/Filter/i}).click();
   await expect(page.getByRole('tabpanel')).toContainText(/identify duplicates/i);
 });
+
+
+test('Intelligence explains raw observations, normalization and all sensor families', async ({page}) => {
+  await mockOperationalContracts(page);
+  await page.goto(FUTURES_URL + '?view=intelligence');
+  await expect(page.getByRole('heading', {name:/What the system has actually collected/i})).toBeVisible();
+  await page.getByRole('group', {name:'Intelligence time window'}).getByRole('button', {name:'24 hours'}).click();
+  await expect(page.getByText('Raw observations', {exact:true})).toBeVisible();
+  await expect(page.getByText('AIS positions', {exact:true})).toBeVisible();
+  await expect(page.getByText('Radio bursts', {exact:true})).toBeVisible();
+  await expect(page.getByText('Satellite observations', {exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Explain Raw observations'}).click();
+  await expect(page.getByText('API field: raw_observations')).toBeVisible();
+  await page.getByRole('group', {name:'Intelligence time window'}).getByRole('button',{name:'All-time'}).click();
+  await expect(page.getByText('Retained normalized events')).toBeVisible();
+});
