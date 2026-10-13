@@ -110,7 +110,7 @@ export function useLiveFeed({
   // VM-hosted Intel/Live transport: polling starts immediately and WebSocket
   // takes over when a direct backend origin supports upgrades.
   useEffect(() => {
-    if (isPublicLiveHost && edgeBase && liveMode === 'humanitarian') return undefined;
+    // Public LIVE uses the verified same-origin Oracle API until edge recovery is reliable.
     const wsBase = apiBase.replace(/^http/, 'ws');
     const feedPath = isPublicLiveHost
       ? `/api/v1/live/signals?limit=150&days=${PUBLIC_LIVE_WINDOW_DAYS}&mode=${encodeURIComponent(liveMode)}`
@@ -266,7 +266,7 @@ export function useLiveFeed({
   // Public Live is edge-first. Oracle is a rate-limited backup only after
   // repeated edge failures; cached edge state stays visible during failure.
   useEffect(() => {
-    if (!isPublicLiveHost || !edgeBase || liveMode !== 'humanitarian') return undefined;
+    if (import.meta.env.VITE_LIVE_EDGE_PRIMARY !== 'true') return undefined; // Oracle is the default until edge transport is reliable.
     let alive = true;
     let ws = null;
     let pollTimer = null;
