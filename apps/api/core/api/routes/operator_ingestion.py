@@ -96,6 +96,13 @@ def _fast_table_count(db, model) -> tuple[int, bool]:
 
 
 def _require_gateway(request: Request) -> None:
+    # Any authenticated Futures user can read the canonical Intelligence data.
+    # Authentication remains mandatory; no second operator role is required.
+    if config.AUTH_ENABLED and request.headers.get("authorization", "").lower().startswith("bearer "):
+        from core.security import authenticate
+        if authenticate(request) is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        return
     expected = str(config.OPERATOR_GATEWAY_SECRET or "")
     if not expected:
         raise HTTPException(status_code=503, detail="Operator ingestion gateway is not configured")
@@ -235,6 +242,10 @@ def operator_ingestion_overview(
     hours: int = Query(24, ge=1, le=720),
 ) -> dict[str, Any]:
     _require_gateway(request)
+    return _overview_payload(hours)
+
+
+def _overview_payload(hours: int) -> dict[str, Any]:
     cached = _fast_cache_get("overview", hours)
     if cached is not None:
         return cached
@@ -965,6 +976,10 @@ def operator_stabilization_status(
 def operator_overall_corpus(request: Request) -> dict[str, Any]:
     """Cached all-time corpus inventory for operator capacity/lineage inspection."""
     _require_gateway(request)
+    return _overall_payload()
+
+
+def _overall_payload() -> dict[str, Any]:
     global _overall_cache
     now_mono = time.monotonic()
     with _overall_cache_lock:

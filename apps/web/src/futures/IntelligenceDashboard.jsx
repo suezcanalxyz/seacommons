@@ -1,0 +1,202 @@
+import React, {useState} from 'react';
+
+const stages=[
+  ['raw_observations','Raw observations','Source records received by SeaCommons. They are raw inputs, not confirmed events.'],
+  ['parsed_events','Normalized events','Records converted into the standard SeaCommons format so sources can be compared.'],
+  ['derived_cues','Derived cues','Possible patterns detected by rules or models. A cue is a lead, not proof.'],
+  ['maritime_episodes','Recognized episodes','Groups of related maritime observations that can be investigated together.'],
+  ['investigation_hypotheses','Hypotheses','Questions or possible explanations being evaluated, not conclusions.'],
+  ['corroborated_episodes','Corroborated episodes','Episodes supported by at least two independent evidence lineages.'],
+  ['review_ready','Ready for review','Investigations prepared for human assessment. This does not establish wrongdoing.'],
+  ['public_live','Public Live','Signals currently eligible for public Live publication. A zero is possible even with high ingestion because publication requires separate safeguards.'],
+  ['analysis_outputs','Analysis outputs','Episodes and investigation hypotheses processed in the selected window. Overlaps with previous counts; never add them together.']
+];
+const sensors=[
+  ['ais_fixes','AIS positions','Position reports recorded from vessel AIS transmissions. A position does not indicate an incident.'],
+  ['radio_bursts','Radio bursts','Detected radio signal bursts. A burst may not contain a successfully decoded message.'],
+  ['radio_events','Radio events','Radio observations translated into usable events. Not every burst becomes an event.'],
+  ['satellite_observations','Satellite observations','Actual satellite observations ingested, not all potentially available imagery or search results.'],
+  ['active_source_names','Active data sources','Distinct source names contributing raw observations in the selected period.']
+];
+const freshness=[
+  ['raw_observation','Latest raw observation','Last received source observation.'],
+  ['parsed_event','Latest normalized event','Last received event in the normalized schema.'],
+  ['analysis_output','Latest analysis output','Last recorded analysis result.']
+];
+function number(value){return value===null||value===undefined?'Not reported':Number.isFinite(Number(value))?new Intl.NumberFormat('en-GB').format(Number(value)):'Not reported'}
+function stamp(value){if(!value)return 'Not reported';const d=new Date(value);return Number.isNaN(d.getTime())?'Not reported':d.toLocaleString()}
+function MetricSet({heading,rows,data}) {const [expanded,setExpanded]=useState(null);return <section className="future-section"><header><h2>{heading}</h2></header><div className="future-intelligence-metrics">{rows.map(([key,label,meaning])=><article key={key} className="future-intelligence-metric"><div className="future-intelligence-metric-top"><span>{label}</span><button type="button" aria-expanded={expanded===key} aria-label={'Explain '+label} onClick={()=>setExpanded(expanded===key?null:key)}>What is this? {expanded===key?'−':'+'}</button></div><strong>{number(data?.[key])}</strong><p>{meaning}</p>{expanded===key&&<div className="future-intelligence-legend"><b>How to read it</b><p>{meaning} The number belongs to its own evidence stage; it is not directly comparable to a case or vessel count. Missing means unavailable, not zero.</p><small>API field: {key}</small></div>}</article>)}</div></section>}
+
+import { fetchJson } from '../services/api/client.js';
+import { resolveSiteApiBase } from '../site/liveApi.js';
+
+const TABS = [['pipeline','Evidence pipeline'],['sources','Sources & types'],['quality','Evidence quality'],['sensors','Sensors & SAR'],['activity','Acquisition & logs']];
+const stageKeys={raw:'raw_observations',normalized:'parsed_events',derived:'derived_cues',episodes:'maritime_episodes',hypotheses:'investigation_hypotheses',corroborated:'corroborated_episodes',review_ready:'review_ready',live:'public_live'};
+const stageDescriptions=Object.fromEntries(stages.map(s=>[s[0],s[2]]));
+const sourceHelp={
+  raw_by_source:'Who supplied the original observations. Sources can have different collection rates.',
+  raw_observation_types:'Types of source observations before standardization, including AIS and public reports.',
+  normalized_by_source:'Source attribution on processed Intel events. This is not the raw ingestion count.',
+  normalized_event_types:'Types assigned to standardized events after parsing and classification.',
+  episode_families:'Kinds of related maritime observations recognized by the correlation engine.',
+  episode_verification:'Verification of episodes: one source, multiple indicators, or independent lineages.',
+  hypothesis_types:'Investigation topics; counts are not findings of illegal activity.',
+  hypothesis_counter_indicators:'Evidence pointing to innocent or alternative explanations, or against the current hypothesis.',
+  hypothesis_states:'Processing state of hypotheses: collecting, candidate or ready for review.',
+  hypothesis_evidence_stages:'Highest evidence level reached by each hypothesis.'
+};
+const termGlossary={
+ ais_gap:'An AIS transmission was observed again after sampled silence. This is telemetry, not proof of deliberate concealment.',
+ ais_nav_status:'Navigation status reported by AIS, including voyage and safety-related status messages.',
+ remote_radio_signal:'A radio burst observed by a remote receiver; its contents may not be decoded.',
+ ais_derived_event:'A vessel-related event derived through AIS processing and other data checks.',
+ sanctions_list_match:'Potential identity match against a sanctions list; requires strong identifier verification.',
+ source_post:'A collected source post, which retains provenance but does not prove its claims.',
+ media_attachment:'A media item attached to a source observation, tracked separately from written content.',
+ dsc_message:'Digital Selective Calling message from maritime radio; validity and association require review.',
+ ais_spike:'An unusual AIS movement or position feature selected for further analysis.',
+ correlated_alert:'A software correlation between potentially related source records; not an independently corroborated incident.',
+ ais_rendezvous:'A proximity or meeting-related AIS cue; normal operations can explain the pattern.',
+ ais_anomaly:'An AIS-integrity cue that can arise from reception, equipment, or movement.',
+ vessel_identity:'A recorded change or inconsistency in vessel identification.',
+ vessel_incident:'An event described as involving a vessel; it requires independent verification.',
+ distress:'A distress-related report or status, not automatically a verified rescue case.',
+ rendezvous_episode:'A grouped sequence of possible vessel meeting observations.',
+ gap_episode:'A grouped AIS continuity episode, not a finding of intentional dark activity.',
+ spoofing_episode:'An episode concerning possible position-integrity issues; equipment or reception errors remain alternatives.',
+ unclassified_episode:'An episode that has not yet received a recognized evidence family.',
+ identity_integrity_episode:'A grouped episode concerning possible vessel identity inconsistency.',
+ safety_episode:'A group of safety or navigation-related observations.',
+ dark_transit:'A hypothesis assessing a vessel-specific AIS gap; requires contextual and independent evidence.',
+ position_spoofing:'A hypothesis examining possible false position information.',
+ covert_rendezvous:'A hypothesis about a possible unreported meeting; not proof of unlawful intent.',
+ infrastructure_pattern:'A hypothesis assessing possible activity near maritime infrastructure.',
+ single_source_observed:'An episode supported by one source only.',
+ single_source_multi_indicator:'Multiple indicators from one source, which are not independent corroboration.',
+ multi_source_corroborated:'At least two independently originated evidence lineages support the episode.',
+ collecting:'An investigation is still gathering evidence.',
+ candidate:'An investigation hypothesis is a candidate for additional checks.',
+ review_ready:'Evidence prepared for human review, not a published finding.',
+ derived:'A rule or model produced a cue, not an independently verified claim.'
+};
+function termDescription(key){return termGlossary[key]||'Category recorded by the canonical pipeline. The count is descriptive and does not by itself verify an incident.';}
+function Breakdown({title,items,help}) {
+ const entries=Object.entries(items||{}).filter(([,n])=>Number.isFinite(Number(n))).sort((a,b)=>Number(b[1])-Number(a[1]));
+ const max=Math.max(1,...entries.map(x=>Number(x[1])));
+ return <section className="future-section future-intelligence-breakdown"><h2>{title}</h2><p>{help}</p>{entries.length?<div className="future-intelligence-bars">{entries.map(([key,value])=><div className="future-intelligence-bar" key={key}><span title={key}>{key.replaceAll('_',' ')}</span><div><i style={{width:Math.max(1,100*Number(value)/max)+'%'}}/></div><strong>{number(value)}</strong><small>{termDescription(key)}</small></div>)}</div>:<p>No breakdown currently available for this period.</p>}</section>
+}
+function useOperatorMetrics(period){
+ const [data,setData]=React.useState(null);
+ const seq=React.useRef(0);
+ const [loading,setLoading]=React.useState(false);
+ const [error,setError]=React.useState('');
+ const refresh=React.useCallback(async()=>{
+  const request=++seq.current;
+  setLoading(true);setError('');
+  try{
+   const url=period==='overall'?'/api/v1/operator/ingestion/overall':`/api/v1/operator/ingestion/overview?hours=${period==='7d'?168:24}`;
+   const result=await fetchJson(resolveSiteApiBase(),url,undefined,22000);
+   if(request===seq.current)setData(result);
+  }catch(e){if(request===seq.current){setData(null);setError('Intelligence data unavailable. Check the SeaCommons API connection.');}}
+  finally{if(request===seq.current)setLoading(false);}
+ },[period]);
+ React.useEffect(()=>{refresh();},[refresh]);
+ return {data,loading,error,refresh};
+}
+function useOperatorSections(period,tab) {
+ const [snapshot,setSnapshot]=React.useState({data:null,error:''});
+ React.useEffect(()=>{
+   let active=true;
+   if(period==='overall'){setSnapshot({data:null,error:''});return()=>{active=false;};}
+   const hours=period==='7d'?168:24;
+   const paths=tab==='pipeline'?['funnel']:tab==='sources'?['funnel']:tab==='quality'?['funnel','stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue','humanitarian-ais-correlation']:tab==='activity'?['observations','events','signals','analysis','pipeline-map']:null;
+   if(!paths){setSnapshot({data:null,error:''});return()=>{active=false;};}
+   setSnapshot({data:null,error:''});
+   Promise.allSettled(paths.map(p=>fetchJson(resolveSiteApiBase(),`/api/v1/operator/ingestion/${p}?hours=${hours}&limit=60`,undefined,18000)))
+   .then(results=>{if(!active)return;const data={};let failed=0;results.forEach((v,i)=>{if(v.status==='fulfilled')data[paths[i]]=v.value;else failed++});setSnapshot({data,error:failed?'Some protected sections are unavailable.':''})});
+   return()=>{active=false;};
+ },[period,tab]);
+ return snapshot;
+}
+function SimpleRecords({title,items,description}) {
+ if(!Array.isArray(items)||!items.length)return <section className="future-section"><h2>{title}</h2><p>{description}</p><p>No records currently available.</p></section>;
+ return <section className="future-section"><h2>{title}</h2><p>{description}</p><div className="future-intelligence-records">{items.slice(0,60).map((row,i)=><details key={row.observation_id||row.event_id||row.id||i}><summary><strong>{row.semantic_label||row.title||row.kind||row.type||'Observation'}</strong><span>{stamp(row.received_at||row.timestamp_utc||row.updated_at||row.observed_at)}</span></summary><p>Source: {row.source_name||row.source||row.kind||'Unknown'} · Evidence stage: {row.pipeline_role||row.kind||'Unspecified'}</p><p>Category: {row.observation_type||row.type||row.family||row.status||'Unspecified'}</p><p>Records in this view are observations or hypotheses, not proven incidents.</p></details>)}</div></section>
+}
+const qualityHelp={
+ episode_to_multi_lineage:'Share of recognized episodes independently corroborated. A low rate is not a software failure by itself.',
+ multi_lineage_to_review_ready:'Share of independently corroborated episodes that reached human-review readiness.',
+ derived_to_episode:'Share of derived cues grouped into recognized episodes. A descriptive process ratio.',
+};
+function QualityDiagnostics({data}) {
+ if(!data)return <section className="future-section"><h2>Quality & stabilization</h2><p>Protected quality metrics not available.</p></section>;
+ const entries=Object.entries(data.rates||{});
+ const checks=Object.entries(data.invariants||{});
+ return <section className="future-section"><h2>Pipeline quality checks</h2><p>These are diagnostics, not scores of vessel behavior or evidence of unlawful activity.</p><div className="future-intelligence-metrics">{entries.map(([k,v])=><article className="future-intelligence-metric" key={k}><span>{k.replaceAll('_',' ')}</span><strong>{typeof v==='number'?Number(v*100).toFixed(1)+'%':String(v??'—')}</strong><p>{qualityHelp[k]||'Process rate for the selected window.'}</p></article>)}{checks.map(([k,v])=><article className="future-intelligence-metric" key={k}><span>{k.replaceAll('_',' ')}</span><strong>{typeof v==='boolean'?(v?'PASS':'CHECK'):number(v)}</strong><p>A consistency check for independent evidence lineages.</p></article>)}</div><h3>Radio decoding threshold</h3><p>The radio receiver network should not be expanded on signal volume alone: decodes must be repeatable and verifiable.</p><p>{data.radio?.scale_gate||'Decode quality threshold not reported.'}</p></section>
+}
+function SatelliteCandidates({data}) {
+ const items=Array.isArray(data?.items)?data.items:[];
+ return <section className="future-section"><h2>Satellite coverage review queue</h2><p>These candidates indicate imagery that may overlap a maritime episode in space and time. Coverage is context for analysis; it is not evidence that a particular vessel was detected.</p><p>{number(data?.total_candidates)} candidates in this window · {number(data?.count)} returned for review.</p>{items.length?<div className="future-intelligence-records">{items.map((x,i)=><details key={x.episode_id||i}><summary><strong>{String(x.episode_family||'Episode').replaceAll('_',' ')}</strong><span>Priority {typeof x.priority_score==='number'?x.priority_score.toFixed(2):'unknown'}</span></summary><p>{number(x.scene_count)} relevant scenes · nearest time difference {number(x.nearest_delta_hours)} hours.</p><p>Status: {x.evidence_role||'context only'} · verification: {x.verification_status||'not independently confirmed'}</p><p>Coverage candidates do not identify vessels or corroborate an allegation without additional evidence.</p></details>)}</div>:<p>No satellite coverage candidates were returned, or access is unavailable.</p>}</section>
+}
+function HumanitarianCorrelation({data}) {
+ const items=Array.isArray(data?.items)?data.items:[];
+ return <section className="future-section"><h2>Humanitarian reports & AIS context</h2><p>Cross-checks between reports and nearby AIS tracks help investigators prioritize review. Distance and timing alone cannot identify a rescue vessel or prove involvement in an incident.</p><p>{number(data?.count)} geolocated reports with candidate associations. Search radius: {number(data?.radius_nm)} nautical miles; time window: {number(data?.window_hours)} hours.</p>{items.length?<div className="future-intelligence-records">{items.slice(0,30).map((x,i)=><details key={x.event_id||i}><summary><strong>{x.title||'Humanitarian source report'}</strong><span>{stamp(x.timestamp_utc)}</span></summary><p>Reported by {x.source||'source unavailable'} · {number(x.candidate_count)} contextual AIS associations.</p><p>Possible association does not confirm an incident, vessel identity, rescue action or wrongdoing.</p></details>)}</div>:<p>No contextual matches are reported for this window, or protected data are unavailable.</p>}</section>
+}
+function FleetView({data}) {
+ const features=Array.isArray(data?.features)?data.features:[];
+ return <section className="future-section"><h2>Civil and state SAR fleet</h2><p>Registered {number(data?.meta?.total_registered)} · Live {number(data?.meta?.live_ais)} · Stale {number(data?.meta?.stale_ais)} · Offline {number(data?.meta?.offline)}. Tracker: {data?.meta?.tracking_stream?.connected?'connected':'not confirmed'}.</p><p>The fleet registry shows monitoring status, not whether a vessel is conducting rescue operations. Only recent positions may be plotted; stale coordinates remain withheld.</p>{features.length?<div className="future-intelligence-metrics">{features.map((f,i)=><article className="future-intelligence-metric" key={f.id||i}><span>{f.properties?.ship_name||f.properties?.name||'SAR asset'}</span><strong className="future-intelligence-date">{f.properties?.ais_status||'Status unknown'}</strong><p>{f.properties?.org||'Fleet registration'} · {f.properties?.operator_type==='state_authority'?'state SAR':'civil SAR'}</p></article>)}</div>:<p>{data?'The fleet response does not expose a readable feature list.':'Fleet data unavailable with current permissions.'}</p>}</section>
+}
+function AcquisitionHealth({items}) {
+ const rows=Array.isArray(items)?items:[];
+ const meanings={live:'Feed reporting recent activity; it does not certify every observation.',degraded:'Feed is connected with partial coverage or a known limitation.',offline:'No active telemetry from this feed at the current check.',disabled:'This source has been intentionally disabled.'};
+ return <section className="future-section"><h2>Acquisition health</h2><p>Connection states describe ingestion health, not the truth of reports or the safety status of any vessel.</p>{rows.length?<div className="future-intelligence-metrics">{rows.map((r,i)=><article className="future-intelligence-metric" key={r.family||i}><span>{r.label||r.family||'Source'}</span><strong className="future-intelligence-date">{r.state||'unknown'}</strong><p>{meanings[r.state]||'Current connection status is not available.'}</p></article>)}</div>:<p>Acquisition health is not available from this response.</p>}</section>
+}
+function CaseReview({data}) {
+ const cases=Array.isArray(data?.cases)?data.cases:[];
+ return <section className="future-section"><h2>Investigation evidence chains</h2><p>Real hypotheses, their evidence lineages and blockers. A candidate is not a criminal allegation, a SAR alert or a published case.</p>{cases.length?cases.slice(0,30).map((c,i)=><details key={c.case_id||i} className="future-intelligence-chain"><summary>{c.label||c.hypothesis_type||'Investigation'} · {c.state||'unreviewed'}</summary><p>Evidence stage: {c.evidence_stage||'not reported'} · Verification: {c.verification_status||'not reported'}</p>{Array.isArray(c.independence_groups)&&<p>Independent lineages: {c.independence_groups.join(', ')||'Not established'}</p>}{Array.isArray(c.blockers)&&<p>Why progress is blocked: {c.blockers.join(' · ')||'No blockers reported'}</p>}{Array.isArray(c.evidence)&&<p>Evidence links: {c.evidence.length} recorded references. Their existence does not establish claim truth.</p>}</details>):<p>Case evidence is unavailable with the current Futures access or window.</p>}</section>
+}
+function ParserTopology({data}) {
+ const chains=Array.isArray(data?.chains)?data.chains:[];
+ return <section className="future-section"><h2>Source → observation → episode</h2><p>Each source passes through specific normalization, validation and correlation steps.</p>{chains.length?chains.map((c,i)=><details key={c.id||i} className="future-intelligence-chain"><summary>{c.label||c.title||c.id||'Pipeline'}</summary><p>Inputs: {(c.inputs||[]).join(' · ')||'Not specified'}</p><p>Raw observations: {(c.raw_observations||[]).join(' · ')||'Not specified'}</p><p>Checks: {(c.controls||[]).join(' · ')||'Not specified'}</p></details>):<p>Parser metadata unavailable.</p>}</section>
+}
+function StagePanels({rows,lookup}){
+ return <div className="future-intelligence-metrics">{rows.map(([key,title,help])=><article className="future-intelligence-metric" key={key}><span>{title}</span><strong>{number(lookup?.[key])}</strong><p>{help}</p></article>)}</div>
+}
+export default function IntelligenceDashboard({ops,overall,period,setPeriod,navigate}){
+ const [tab,setTab]=useState('pipeline');
+ const operator=useOperatorMetrics(period);
+ const sections=useOperatorSections(period,tab);
+ const isOverall=period==='overall';
+ const raw=operator.data;
+ const status=!isOverall&&ops.status?.window_hours===(period==='7d'?168:24)?ops.status:null;
+ const rawStages=Array.isArray(raw?.stages)?Object.fromEntries(raw.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
+ const funnelStages=Array.isArray(sections.data?.funnel?.stages)?Object.fromEntries(sections.data.funnel.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
+ const pipeline=isOverall?rawStages:(funnelStages||raw?.pipeline_status?.pipeline||status?.pipeline);
+ const sensorsData=isOverall?raw?.sensor_activity:raw?.pipeline_status?.sensor_activity||status?.sensor_activity;
+ const breakdown=isOverall?raw?.breakdowns:{
+   raw_by_source:raw?.source_observations?.by_source,
+   raw_observation_types:raw?.source_observations?.by_type,
+   normalized_by_source:raw?.parsed_events?.by_source,
+   normalized_event_types:raw?.parsed_events?.by_type,
+   hypothesis_states:sections.data?.funnel?.diagnostics?.hypothesis_states,
+   hypothesis_evidence_stages:sections.data?.funnel?.diagnostics?.hypothesis_evidence_stages,
+   episode_verification:sections.data?.funnel?.diagnostics?.episode_verification,
+   episode_families:sections.data?.funnel?.diagnostics?.episode_families,
+   hypothesis_types:sections.data?.funnel?.diagnostics?.hypothesis_reason_codes,
+   hypothesis_counter_indicators:sections.data?.funnel?.diagnostics?.hypothesis_counter_indicators,
+ };
+ const allStages=stages.filter(x=>x[0]!=='analysis_outputs'&&(!isOverall||x[0]!=='public_live'));
+ const specialSensors=isOverall&&sensorsData?{...sensorsData,active_source_names:sensorsData.source_names}:sensorsData;
+ return <><section className="future-page-head"><span className="future-eyebrow">SeaCommons / Intelligence</span><h1>Evidence, from first signal to human review.</h1><p>One canonical pipeline. Follow what was collected, what software inferred and which cases have independent support. The volumes describe different evidence layers; they must not be added together.</p></section>
+ <div className="future-period-tabs" aria-label="Intelligence time window"><div role="group" aria-label="Intelligence time window">{[['24h','24 hours'],['7d','7 days'],['overall','Overall']].map(([id,label])=><button type="button" aria-pressed={period===id} className={period===id?'is-active':''} onClick={()=>setPeriod(id)} key={id}>{label}</button>)}</div><small>{isOverall?'All records currently retained, irrespective of the age of the source event':period==='7d'?'Rolling seven days':'Rolling 24 hours'}</small></div>
+ <nav className="future-intelligence-subnav" aria-label="Intelligence sections">{TABS.map(([key,title])=><button key={key} type="button" className={key===tab?'is-active':''} aria-current={key===tab?'page':undefined} onClick={()=>setTab(key)}>{title}</button>)}</nav>
+ <div className="future-intelligence-freshness"><span>{operator.loading?'Loading operator aggregates…':operator.data?'Canonical Intelligence data':operator.error?'Intelligence data unavailable · limited fallback':'Awaiting operational data'}</span><small>{operator.data?.generated_at?'Generated '+stamp(operator.data.generated_at):'No operator snapshot available'}</small><button type="button" onClick={operator.refresh}>Refresh</button></div>
+ {operator.error&&<p className="future-inline-note" role="status">{operator.error} This dashboard does not use demonstration totals or hard-coded figures.</p>}
+ {tab==='pipeline'&&<><section className="future-section"><h2>01 / Canonical evidence funnel</h2><p>From raw source messages to independent corroboration and review. Raw records, normalized events, derived cues, episodes and hypotheses describe overlapping processing stages, not sequential case conversion.</p><StagePanels rows={allStages} lookup={pipeline}/></section><section className="future-section"><h2>02 / Collection context</h2><p>In the supplied operator snapshot, raw observations substantially outnumber normalized events. This is expected: high-volume AIS telemetry is filtered and grouped. The dashboard always shows current API values instead of preserving the snapshot as if it were live.</p>{isOverall&&<p>First raw intake: {stamp(raw?.first_last?.raw_first)}. Latest raw intake: {stamp(raw?.first_last?.raw_latest)}. Historical dates inside sources may predate SeaCommons.</p>}</section></>}
+ {tab==='sources'&&<>{Object.entries(sourceHelp).slice(0,4).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown?.[key]} help={help}/>)}</>}
+ {tab==='sensors'&&<><MetricSet heading="Sensors and signal coverage" rows={sensors} data={specialSensors}/><FleetView data={sections.data?.['sar-fleet']}/><SatelliteCandidates data={sections.data?.['satellite-queue']}/><HumanitarianCorrelation data={sections.data?.['humanitarian-ais-correlation']}/></>}
+ {tab==='quality'&&<><QualityDiagnostics data={sections.data?.stabilization}/><CaseReview data={sections.data?.cases}/>{Object.entries(sourceHelp).slice(4).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown?.[key]} help={help}/>)}</>}
+ {tab==='activity'&&<><AcquisitionHealth items={raw?.acquisition}/><SimpleRecords title="01 / Raw ingestion" items={sections.data?.observations?.observations} description="Unprocessed source observations. Reappearance after silence is telemetry, not proof of covert activity."/><SimpleRecords title="02 / Normalized events" items={sections.data?.events?.events} description="Parsed events are standardized source observations, not validated incidents."/><SimpleRecords title="Incoming partner signals" items={sections.data?.signals?.signals} description="External connector inputs are source material, not verified humanitarian or maritime incidents."/><SimpleRecords title="03 / Episodes and hypotheses" items={sections.data?.analysis?.items} description="Investigation candidates and recognized episodes; each requires further independent evidence."/><ParserTopology data={sections.data?.['pipeline-map']}/></>}
+ {sections.error&&<p role="status">{sections.error}</p>}
+ <section className="future-section"><h2>Data provenance and interpretation</h2><p>Operator figures are calculated by the same database aggregation functions as the canonical ingestion dashboard. Public fallback figures are drawn from the canonical status feed. Overall operator counts cover the retained corpus; recent values cover ingestion windows. Sensor counts may be estimated when database statistics are used, especially AIS fixes.</p><p>Source evidence is not the same as an incident. Independent corroboration and human review are required before claims become publishable.</p><button type="button" onClick={()=>navigate('history')}>Explore historical collection →</button></section>
+ </>;
+}
