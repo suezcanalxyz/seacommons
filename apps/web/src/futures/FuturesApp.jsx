@@ -898,6 +898,16 @@ export default function FuturesApp() {
   const { user, signOut } = useAuth();
   const [period, setPeriod] = useState('overall');
   const [view, setView] = useState(() => readWorkspaceView());
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [installed, setInstalled] = useState(false);
+  useEffect(() => {
+    const handlePrompt = (event) => { event.preventDefault(); setInstallPrompt(event); };
+    const handleInstalled = () => { setInstalled(true); setInstallPrompt(null); };
+    window.addEventListener('beforeinstallprompt', handlePrompt);
+    window.addEventListener('appinstalled', handleInstalled);
+    return () => { window.removeEventListener('beforeinstallprompt', handlePrompt); window.removeEventListener('appinstalled', handleInstalled); };
+  }, []);
+  const installApp = async () => { if (!installPrompt) return; await installPrompt.prompt(); setInstallPrompt(null); };
   const ops = useOperationalData(view === 'operations' ? 24 : period === '7d' ? 168 : 24);
   const overall = useOverallData();
 
@@ -930,6 +940,7 @@ export default function FuturesApp() {
             </button>
           ))}
         </nav>
+        {installPrompt && !installed && <button type="button" className="future-install-button" onClick={installApp}>install app ↓</button>}
         <div className="future-sidebar__base">
           <span>OIDC connected</span>
           <button onClick={() => signOut?.()}>sign out</button>
@@ -958,6 +969,14 @@ export default function FuturesApp() {
           {view === 'access' && <Access user={user} />}
         </div>
       </main>
+      <nav className="future-mobile-nav" aria-label="Mobile app navigation">
+        {['overview','history','operations','documents','access'].map((item) => (
+          <button type="button" key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
+            <span className="future-mobile-nav-icon" aria-hidden="true">{{overview:'◈',history:'▥',operations:'⌁',documents:'▤',access:'◎'}[item]}</span>
+            <span>{({overview:'Home',history:'Data',operations:'Ops',documents:'Docs',access:'Account'})[item]}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }

@@ -15,3 +15,9 @@ if (root) {
     </React.StrictMode>,
   );
 }
+
+if ('serviceWorker' in navigator && window.location.hostname === 'futures.seacommons.org') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/futures-sw.js', { scope: '/' }).catch(() => {});
+  });
+}
