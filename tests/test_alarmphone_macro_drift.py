@@ -23,3 +23,10 @@ def test_no_place_is_still_candidate_without_fake_geometry():
 def test_other_source_does_not_masquerade_as_alarm_phone():
     e = IntelEvent(source="unknown", title="Boat near Lampedusa", metadata={"is_distress": True, "area_geojson": {"type": "Polygon", "coordinates": [[[12,34],[13,34],[12,35],[12,34]]]}})
     assert spatial_prior_for_event(e)["candidate"] is False
+
+
+def test_text_clue_roles_distinguish_departure_from_notified_authority():
+    from core.intel.macro_drift import location_clues
+    clues = location_clues("Boat departed from Sfax. We informed the Malta coast guard.")
+    assert any(c["place"] == "sfax" and c["role"] == "possible_departure" for c in clues)
+    assert any(c["place"] == "malta" and c["role"] == "authority_notified" for c in clues)
