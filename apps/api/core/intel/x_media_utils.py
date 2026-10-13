@@ -138,7 +138,7 @@ def _easyocr_image(payload: bytes) -> tuple[Optional[tuple[float, float]], list[
             "word": 1,
         })
     combined = "\n".join(texts)
-    return extract_numeric_coords(combined), boxes, True
+    return _parse_ocr_coordinate(combined), boxes, True
 
 
 def x_id_timestamp(tweet_id: str) -> str:
@@ -229,6 +229,22 @@ def fetch_tweet_photos(tweet_id: str, *, timeout: float = 12.0) -> list[str]:
     return _x_photo_urls(payload)
 
 
+def _parse_ocr_coordinate(text: str) -> Optional[tuple[float, float]]:
+    """Parse a coordinate despite the common OCR double-prime -> degree typo.
+
+    Repair only fully labelled degrees/minutes/seconds coordinates, never
+    partial degree readings, arbitrary numeric text, or inferred map pins.
+    """
+    direct = extract_numeric_coords(text)
+    if direct is not None:
+        return direct
+    repaired = re.sub(
+        r"(\d{1,3}°\s*\d{1,2}['′]\s*\d{1,2}(?:\.\d+)?)[°'′](?=\s*[NSEW]\b)",
+        r'\1"', text, flags=re.IGNORECASE,
+    )
+    return extract_numeric_coords(repaired) if repaired != text else None
+
+
 def consensus_ocr_coordinate(texts: list[str]) -> Optional[tuple[float, float]]:
     """Accept an OCR location only when two independent layout passes agree.
 
@@ -240,7 +256,7 @@ def consensus_ocr_coordinate(texts: list[str]) -> Optional[tuple[float, float]]:
     candidates = [
         candidate
         for text in texts
-        if (candidate := extract_numeric_coords(text)) is not None
+        if (candidate := _parse_ocr_coordinate(text)) is not None
     ]
     cluster = _largest_agreeing_cluster(candidates, tol_m=OCR_CONSENSUS_MAX_DISTANCE_M)
     if len(cluster) >= 2:
@@ -305,7 +321,7 @@ def ocr_png_coordinate(
     # hemisphere-labelled coordinate survives the strict range parser.
     candidates = {
         candidate for text in texts
-        if (candidate := extract_numeric_coords(text)) is not None
+        if (candidate := _parse_ocr_coordinate(text)) is not None
     }
     return (next(iter(candidates)) if len(candidates) == 1 else None), True
 
