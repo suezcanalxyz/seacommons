@@ -730,22 +730,23 @@ function Documents() {
         <div>
           <span className="future-eyebrow">featured / presentation</span>
           <h2>SeaCommons partner introduction</h2>
-          <p>Our 12-slide presentation explains what the infrastructure does, what the evidence categories mean, production-scale examples, products, partner models and the engineering roadmap.</p>
+          <p>A concise nine-slide introduction: the maritime challenge, how evidence is evaluated, the SeaCommons products, current engineering limits and the proposed Sensors network.</p>
           <div className="future-library-actions">
             <button type="button" onClick={() => { setDeckOpen(true); setSlideIndex(0); }}>view presentation ↗</button>
-            <a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20partner%20materials">request partner materials ↗</a>
+            <a href="/SeaCommons_Futures_Introduction_2026.pdf" download="SeaCommons_Futures_Introduction_2026.pdf">download PDF ↓</a>
           </div>
         </div>
         <div className="future-library-cover" aria-label="SeaCommons presentation cover">
           <small>SEACOMMONS / 2026</small>
           <strong>From observation<br />to accountable<br />evidence.</strong>
-          <span>Partner introduction / 12 slides</span>
+          <span>Partner introduction / 9 slides</span>
         </div>
       </section>
 
       {deckOpen && <section id="futures-deck-viewer" className="future-deck-section" aria-label="SeaCommons partner presentation">
         <div className="future-deck-toolbar">
           <span>SeaCommons / presentation · {slideIndex + 1} / {presentationSlides.length}</span>
+          <a href="/SeaCommons_Futures_Introduction_2026.pdf" download="SeaCommons_Futures_Introduction_2026.pdf">download PDF ↓</a>
           <button type="button" onClick={() => setDeckOpen(false)} aria-label="Close presentation">close ✕</button>
         </div>
         <article className="future-deck-slide">
@@ -756,7 +757,7 @@ function Documents() {
         </article>
         <div className="future-deck-controls">
           <button type="button" onClick={() => setSlideIndex((n) => Math.max(0, n - 1))} disabled={slideIndex === 0}>← previous</button>
-          <span>Browse the live presentation</span>
+          <span>Slide {slideIndex + 1} of {presentationSlides.length}</span>
           <button type="button" onClick={() => setSlideIndex((n) => Math.min(presentationSlides.length - 1, n + 1))} disabled={slideIndex === presentationSlides.length - 1}>next →</button>
         </div>
       </section>}
@@ -974,9 +975,20 @@ export default function FuturesApp() {
   const [view, setView] = useState(() => readWorkspaceView());
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const mobile = window.matchMedia('(max-width: 700px)').matches;
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    return mobile && !standalone && window.localStorage.getItem('futures-pwa-guide-dismissed') !== 'yes';
+  });
+  const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const dismissInstallGuide = () => {
+    window.localStorage.setItem('futures-pwa-guide-dismissed', 'yes');
+    setShowInstallGuide(false);
+  };
   useEffect(() => {
     const handlePrompt = (event) => { event.preventDefault(); setInstallPrompt(event); };
-    const handleInstalled = () => { setInstalled(true); setInstallPrompt(null); };
+    const handleInstalled = () => { setInstalled(true); setInstallPrompt(null); setShowInstallGuide(false); };
     window.addEventListener('beforeinstallprompt', handlePrompt);
     window.addEventListener('appinstalled', handleInstalled);
     return () => { window.removeEventListener('beforeinstallprompt', handlePrompt); window.removeEventListener('appinstalled', handleInstalled); };
@@ -1041,6 +1053,18 @@ export default function FuturesApp() {
           {view === 'access' && <Access user={user} />}
         </div>
       </main>
+      {showInstallGuide && !installed && <div className="future-pwa-overlay" role="presentation">
+        <section className="future-pwa-dialog" role="dialog" aria-modal="true" aria-labelledby="future-pwa-title">
+          <div className="future-pwa-heading"><small>FUTURES / MOBILE APP</small><button type="button" onClick={dismissInstallGuide} aria-label="Close installation guide">✕</button></div>
+          <div className="future-pwa-symbol" aria-hidden="true">◈</div>
+          <h2 id="future-pwa-title">Take Futures with you.</h2>
+          <p>Install SeaCommons Futures on your Home Screen for an app-like experience with full-screen navigation and quick access to your workspace.</p>
+          {isIOS ? <ol><li>Open this page in <b>Safari</b>.</li><li>Tap <b>Share</b> (square with an upward arrow).</li><li>Select <b>Add to Home Screen</b>, then tap <b>Add</b>.</li></ol> : <ol><li>Open this page in <b>Chrome</b>.</li><li>Open the browser menu and select <b>Install app</b> or <b>Add to Home screen</b>.</li><li>Confirm installation.</li></ol>}
+          {installPrompt && !isIOS && <button type="button" className="future-pwa-primary" onClick={() => { installApp(); dismissInstallGuide(); }}>Install Futures</button>}
+          <button type="button" className="future-pwa-secondary" onClick={dismissInstallGuide}>Continue in browser</button>
+          <small>You can always install it later from your browser menu.</small>
+        </section>
+      </div>}
       <nav className="future-mobile-nav" aria-label="Mobile app navigation">
         {['overview','operations','hardware','documents','access'].map((item) => (
           <button type="button" key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
