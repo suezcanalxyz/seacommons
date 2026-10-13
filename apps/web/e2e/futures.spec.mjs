@@ -75,7 +75,7 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
   await page.getByRole('button', { name: '24 hours', exact: true }).click();
   await expect(page.getByRole('region', { name: 'SeaCommons operational status' })).toContainText('226');
   await expect(page.getByText('raw observations', { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'An evidence infrastructure for the sea.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /From scattered observations to evidence/i })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Application pathways and maturity' })).toContainText('Coastal and island resilience');
   await expect(page.getByRole('region', { name: 'Application pathways and maturity' })).toContainText('Future vertical');
   await expect(page.getByText(/platform does not currently measure their impact or outcomes/i)).toBeVisible();
@@ -123,7 +123,7 @@ test('Futures access page states final grant hierarchy without pretending auth i
   await page.goto(FUTURES_URL + '?view=access');
   await expect(page.getByRole('heading', { name: /Your account and workspace access/i })).toBeVisible();
   await expect(page.getByText(/organisation → SeaCommons workspace → project \/ subproject → resource or tool/i)).toBeVisible();
-  await expect(page.getByText(/Workspace membership, resource grants and private API permissions must be independently verified/i)).toBeVisible();
+  await expect(page.getByText(/A grant can stop at any level/i)).toBeVisible();
 });
 
 
@@ -152,7 +152,7 @@ test('Futures Docs searches resources and opens the native partner presentation'
   await page.getByRole('button', { name: /view presentation/i }).click();
   await expect(page.getByRole('region', { name: 'SeaCommons partner presentation' })).toContainText('From observation to accountable evidence.');
   await page.getByRole('button', { name: /next/i }).click();
-  await expect(page.getByRole('region', { name: 'SeaCommons partner presentation' })).toContainText('A system for reading maritime evidence.');
+  await expect(page.getByRole('region', { name: 'SeaCommons partner presentation' })).toContainText('What can we actually know about events at sea?');
   await page.getByRole('button', { name: /close presentation/i }).click();
   await page.getByPlaceholder('Title, format or topic').fill('architecture');
   await expect(page.getByRole('region', { name: 'SeaCommons project documents' })).toContainText('System architecture');
