@@ -399,7 +399,9 @@ def _retained_intel_history() -> dict:
         ).one()
         # Ingestion chronology is NOT the source event chronology. A source may
         # describe historical events predating SeaCommons by many years.
-        ingested_month = func.strftime("%Y-%m", IntelEventDB.created_at)
+        # CAST + SUBSTR works on both SQLite and PostgreSQL.
+        from sqlalchemy import String, cast
+        ingested_month = func.substr(cast(IntelEventDB.created_at, String), 1, 7)
         first_ingested, last_ingested = db.execute(
             select(func.min(IntelEventDB.created_at), func.max(IntelEventDB.created_at))
         ).one()
