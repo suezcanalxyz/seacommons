@@ -23,6 +23,13 @@ import {
 } from './timeline.js';
 
 const TIMELINE_MAX = 1000;
+function evidenceLabel(item) {
+  if (item?.corroborated === true || item?.verification_status === 'multi_source_corroborated') return 'Confirmed by independent sources';
+  if (item?.verification_status === 'contested' || item?.evidence_state === 'contested') return 'Conflicting evidence';
+  if (item?.verification_status === 'verified') return 'Verified';
+  if (item?.evidence_stage === 'multi_indicator') return 'Multiple supporting clues';
+  return 'Not independently confirmed';
+}
 
 function evidenceCollection(timeline = []) {
   return {
@@ -103,6 +110,7 @@ export default function PlayTimeline({ apiBase }) {
   const [satelliteMission, setSatelliteMission] = useState('auto');
   const [archiveFilter, setArchiveFilter] = useState('all');
   const [incidentTypeFilter, setIncidentTypeFilter] = useState('all');
+  const [evidenceFilter, setEvidenceFilter] = useState('all');
   const [satelliteOnly, setSatelliteOnly] = useState(false);
   const [sanctionsOnly, setSanctionsOnly] = useState(false);
   const [investigationsOnly, setInvestigationsOnly] = useState(false);
@@ -129,6 +137,9 @@ export default function PlayTimeline({ apiBase }) {
   );
   const filteredIncidents = useMemo(() => categoryIncidents.filter((incident) => {
     if (incidentTypeFilter !== 'all' && incident.incident_type !== incidentTypeFilter) return false;
+    if (evidenceFilter === 'confirmed' && !incident.corroborated && incident.verification_status !== 'multi_source_corroborated') return false;
+    if (evidenceFilter === 'unconfirmed' && (incident.corroborated || incident.verification_status === 'multi_source_corroborated')) return false;
+    if (evidenceFilter === 'conflicting' && incident.verification_status !== 'contested' && incident.evidence_state !== 'contested') return false;
     if (satelliteOnly && !incident.has_satellite) return false;
     if (sanctionsOnly && !incident.sanctions_matched) return false;
     if (investigationsOnly && !incident.investigation) return false;
@@ -136,6 +147,7 @@ export default function PlayTimeline({ apiBase }) {
   }), [
     categoryIncidents,
     incidentTypeFilter,
+    evidenceFilter,
     satelliteOnly,
     sanctionsOnly,
     investigationsOnly,
@@ -517,6 +529,15 @@ export default function PlayTimeline({ apiBase }) {
                 ))}
               </select>
             </label>
+            <label className="play-satellite-selector">
+              <span>Evidence confidence</span>
+              <select value={evidenceFilter} onChange={(event) => setEvidenceFilter(event.target.value)} aria-label="Filter by evidence confidence">
+                <option value="all">All evidence levels</option>
+                <option value="confirmed">Confirmed by independent sources</option>
+                <option value="unconfirmed">Not independently confirmed</option>
+                <option value="conflicting">Conflicting evidence</option>
+              </select>
+            </label>
             <div className="signals-selector__list" aria-label="Evidence facets">
               <button type="button" className={`signals-selector__link ${satelliteOnly ? 'is-active' : ''}`} onClick={() => setSatelliteOnly((value) => !value)}><span className="signals-selector__box" aria-hidden="true" />SATELLITE</button>
               <button type="button" className={`signals-selector__link ${sanctionsOnly ? 'is-active' : ''}`} onClick={() => setSanctionsOnly((value) => !value)}><span className="signals-selector__box" aria-hidden="true" />SANCTIONS</button>
@@ -545,6 +566,7 @@ export default function PlayTimeline({ apiBase }) {
                   >
                     <span className="play-case__time">{itemTime(incident.reported_at)}</span>
                     <strong>{incident.title || 'SeaCommons incident'}</strong>
+                    <span>{evidenceLabel(incident)}</span>
                     <span>{(incident.incident_type || 'context').replace(/_/g, ' ')} · {incident.main_category || incident.domain || 'humanitarian'} · {statusLabel(incidentStatusAtCutoff(incident, globalState.cutoff))}</span>
                     {(Number(counts.drift) > 0 || Number(counts.satellite) > 0) ? (
                       <span className="play-case__evidence">
@@ -564,7 +586,7 @@ export default function PlayTimeline({ apiBase }) {
       <section className="map-stage play-map-stage">
         <div className="map-frame play-map" ref={mapNodeRef} />
         <div className="play-all-badge"><strong>{modeLabel}</strong><span>{archiveTotal != null ? `${archiveTotal} archive` : `${visibleIncidents.length} loaded`}</span></div>
-        {loading ? <div className="play-map-message">Loading temporal evidence…</div> : null}
+        {loading ? <div className="play-map-message" role="status" aria-live="polite">Loading archive and case evidence…</div> : null}
         {error ? <div className="play-map-message is-error">{error}</div> : null}
         {mapError ? <div className="play-map-message is-error">{mapError}</div> : null}
         {selectedId ? (
@@ -588,15 +610,17 @@ export default function PlayTimeline({ apiBase }) {
             <p>{(selectedIncident?.incident_type || caseData?.incident_type || 'incident').replace(/_/g, ' ')} · {selectedIncident?.main_category || selectedIncident?.domain || caseData?.main_category || caseData?.domain || 'maritime'}</p>
             <h2>{selectedIncident?.title || 'SeaCommons incident'}</h2>
             <time>{itemTime(selectedIncident?.reported_at)}</time>
+            <button type="button" disabled={!selectedIncident?.geometry} onClick={() => { const geometry = selectedIncident?.geometry; if (geometry?.type !== 'Point') return; mapRef.current?.easeTo({ center: geometry.coordinates, zoom: Math.max(9, mapRef.current.getZoom()), duration: 600 }); fallbackMapRef.current?.flyTo({ center: geometry.coordinates, zoom: 9 }); }}>Locate on map +</button>
             <span>{selectedIncident?.source || '—'}</span>
           </section>
           <section className="play-card play-card--rows">
             <div><span>Status</span><strong>{statusLabel(status)}</strong></div>
+            <div><span>Evidence confidence</span><strong>{evidenceLabel(caseData || selectedIncident)}</strong></div>
             <div><span>View</span><strong>{modeLabel}</strong></div>
             <div><span>Archive decision</span><strong>{statusLabel(caseData?.archive_decision || selectedIncident?.archive_decision || '—')}</strong></div>
             <div><span>Evidence known</span><strong>{caseData?.evidence_count ?? visibleTimeline.length}</strong></div>
             {caseData?.verification_status ? <div><span>Verification</span><strong>{statusLabel(caseData.verification_status)}</strong></div> : null}
-            {typeof caseData?.corroborated === 'boolean' ? <div><span>Independent corroboration</span><strong>{caseData.corroborated ? 'YES' : 'NO'}</strong></div> : null}
+            {typeof caseData?.corroborated === 'boolean' ? <div><span>Independent sources</span><strong>{caseData.corroborated ? 'Confirmed' : 'Not yet confirmed'}</strong></div> : null}
             {caseData?.independence_groups?.length ? <div><span>Evidence lineages</span><strong>{caseData.independence_groups.join(' · ')}</strong></div> : null}
             {selectedIncident?.evidence_stage || caseData?.evidence_stage ? <div><span>Evidence stage</span><strong>{statusLabel(selectedIncident?.evidence_stage || caseData?.evidence_stage)}</strong></div> : null}
             <div><span>Satellite</span><strong>{caseData?.satellite_count ?? 0}</strong></div>
