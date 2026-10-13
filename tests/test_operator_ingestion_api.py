@@ -269,8 +269,8 @@ def test_futures_operator_bearer_reuses_canonical_ingestion_without_gateway_secr
     assert "source_observations" in result.json()["counts"]
 
 
-def test_futures_viewer_cannot_access_operator_raw_data(monkeypatch):
-    """Viewer role must fail closed even if the user is signed into Futures."""
+def test_futures_authenticated_viewer_can_read_intelligence(monkeypatch):
+    """Every authenticated Futures viewer sees the same Intelligence metrics."""
     from core.api.main import app
     from core.config import config
     from core.security import Principal
@@ -286,4 +286,4 @@ def test_futures_viewer_cannot_access_operator_raw_data(monkeypatch):
         "/api/v1/operator/ingestion/observations?limit=5",
         headers={"Authorization": "Bearer verified-by-test-jwt"},
     )
-    assert result.status_code == 403
+    assert result.status_code == 200
