@@ -55,7 +55,7 @@ function useOperatorMetrics(period){
  const refresh=React.useCallback(async()=>{
   setLoading(true);setError('');
   try{
-   const url=period==='overall'?'/api/v1/futures/intelligence/overall':`/api/v1/futures/intelligence/recent?hours=${period==='7d'?168:24}`;
+   const url=period==='overall'?'/api/v1/operator/ingestion/overall':`/api/v1/operator/ingestion/overview?hours=${period==='7d'?168:24}`;
    const result=await fetchJson(resolveSiteApiBase(),url,undefined,22000);
    setData(result);
   }catch(e){setData(null);setError('Restricted operator data unavailable. An operator/admin API role and deployed endpoint are required.');}
@@ -64,12 +64,31 @@ function useOperatorMetrics(period){
  React.useEffect(()=>{refresh();},[refresh]);
  return {data,loading,error,refresh};
 }
+function useOperatorSections(period,tab) {
+ const [snapshot,setSnapshot]=React.useState({data:null,error:''});
+ React.useEffect(()=>{
+   let active=true;
+   if(period==='overall'){setSnapshot({data:null,error:''});return()=>{active=false;};}
+   const hours=period==='7d'?168:24;
+   const paths=tab==='quality'?['stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue']:tab==='activity'?['stream','analysis','pipeline-map']:null;
+   if(!paths){setSnapshot({data:null,error:''});return()=>{active=false;};}
+   Promise.allSettled(paths.map(p=>fetchJson(resolveSiteApiBase(),`/api/v1/operator/ingestion/${p}?hours=${hours}&limit=60`,undefined,18000)))
+   .then(results=>{if(!active)return;const data={};let failed=0;results.forEach((v,i)=>{if(v.status==='fulfilled')data[paths[i]]=v.value;else failed++});setSnapshot({data,error:failed?'Some protected sections are unavailable.':''})});
+   return()=>{active=false;};
+ },[period,tab]);
+ return snapshot;
+}
+function SimpleRecords({title,items,description}) {
+ if(!Array.isArray(items)||!items.length)return <section className="future-section"><h2>{title}</h2><p>{description}</p><p>No records currently available.</p></section>;
+ return <section className="future-section"><h2>{title}</h2><p>{description}</p><div className="future-intelligence-records">{items.slice(0,60).map((row,i)=><details key={row.observation_id||row.event_id||row.id||i}><summary><strong>{row.semantic_label||row.title||row.kind||row.type||'Observation'}</strong><span>{stamp(row.received_at||row.timestamp_utc||row.updated_at||row.observed_at)}</span></summary><p>Source: {row.source_name||row.source||row.kind||'Unknown'} · Evidence stage: {row.pipeline_role||row.kind||'Unspecified'}</p><p>Category: {row.observation_type||row.type||row.family||row.status||'Unspecified'}</p><p>Records in this view are observations or hypotheses, not proven incidents.</p></details>)}</div></section>
+}
 function StagePanels({rows,lookup}){
  return <div className="future-intelligence-metrics">{rows.map(([key,title,help])=><article className="future-intelligence-metric" key={key}><span>{title}</span><strong>{number(lookup?.[key])}</strong><p>{help}</p></article>)}</div>
 }
 export default function IntelligenceDashboard({ops,overall,period,setPeriod,navigate}){
  const [tab,setTab]=useState('pipeline');
  const operator=useOperatorMetrics(period);
+ const sections=useOperatorSections(period,tab);
  const isOverall=period==='overall';
  const raw=operator.data;
  const status=!isOverall&&ops.status?.window_hours===(period==='7d'?168:24)?ops.status:null;
@@ -93,8 +112,10 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  {tab==='pipeline'&&<><section className="future-section"><h2>01 / Canonical evidence funnel</h2><p>From raw source messages to independent corroboration and review. Raw records, normalized events, derived cues, episodes and hypotheses describe overlapping processing stages, not sequential case conversion.</p><StagePanels rows={allStages} lookup={pipeline}/></section><section className="future-section"><h2>02 / Collection context</h2><p>In the supplied operator snapshot, raw observations substantially outnumber normalized events. This is expected: high-volume AIS telemetry is filtered and grouped. The dashboard always shows current API values instead of preserving the snapshot as if it were live.</p>{isOverall&&<p>First raw intake: {stamp(raw?.first_last?.raw_first)}. Latest raw intake: {stamp(raw?.first_last?.raw_latest)}. Historical dates inside sources may predate SeaCommons.</p>}</section></>}
  {tab==='sources'&&<>{Object.entries(sourceHelp).slice(0,4).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown?.[key]} help={help}/>)}</>}
  {tab==='quality'&&<><section className="future-section"><h2>Evidence quality and decision gates</h2><p>Corroboration requires independent evidence lineages. A model signal or a single AIS anomaly cannot establish intent or illegality. Review readiness is a human-workflow state, not a public verdict.</p><StagePanels rows={stages.filter(x=>['maritime_episodes','investigation_hypotheses','corroborated_episodes','review_ready'].includes(x[0]))} lookup={pipeline}/></section>{Object.entries(sourceHelp).slice(4).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown?.[key]} help={help}/>)}</>}
- {tab==='sensors'&&<><MetricSet heading="Sensors and signal coverage" rows={sensors} data={specialSensors}/><section className="future-section"><h2>Search and rescue fleet</h2><p>Fleet tracking is distinct from incidents. Live means a fresh AIS position; stale or offline does not mean that a vessel has stopped operating. Sensitive or outdated coordinates remain withheld.</p><p>The fleet inventory requires a separate operator-authorized contract; it is not included in the safe aggregate endpoint yet.</p></section></>}
- {tab==='activity'&&<><section className="future-section"><h2>Source acquisition</h2><p>Source status describes whether connectors are delivering data. “Degraded” indicates incomplete coverage rather than a verified interruption to an individual mission.</p>{raw?.acquisition?<pre className="future-intelligence-json">{JSON.stringify(raw.acquisition,null,2)}</pre>:<p>Acquisition metadata not returned for this view.</p>}</section><section className="future-section"><h2>Raw → normalized → analysis logs</h2><p>The detailed operator logs and individual investigation chains remain protected. Showing them here requires audited, role-controlled read endpoints; no secret keys are exposed to the browser.</p><p>Latest raw: {stamp(raw?.newest?.source_observation||raw?.pipeline_status?.freshness?.raw_observation||status?.freshness?.raw_observation)}. Latest parsed: {stamp(raw?.newest?.parsed_event||status?.freshness?.parsed_event)}.</p></section></>}
+ {tab==='sensors'&&<><MetricSet heading="Sensors and signal coverage" rows={sensors} data={specialSensors}/><section className="future-section"><h2>Civil and state search-and-rescue fleet</h2><p>Fresh AIS does not guarantee mission status. Stale and offline positions must not be plotted as current. This inventory is operator-only.</p><p>{sections.data?.['sar-fleet']?'Fleet registry available from the canonical API.':'Fleet data restricted or unavailable.'}</p>{sections.data?.['sar-fleet']&&<div className="future-intelligence-legend"><p>Registry keys: {Object.keys(sections.data['sar-fleet']).join(', ')}. A dedicated SAR fleet component will preserve the server’s freshness filters.</p></div>}</section><section className="future-section"><h2>Satellite review queue</h2><p>These are candidates awaiting validation, not confirmed vessel detections.</p><p>{sections.data?.['satellite-queue']?'Satellite candidate inventory received.':'Satellite queue unavailable.'}</p></section></>}
+ {tab==='quality'&&<><section className="future-section"><h2>Quality and stabilization</h2><p>Evidence quality checks distinguish an observed pattern from independent corroboration and human review. Correlation does not imply intent.</p><StagePanels rows={stages.filter(x=>['maritime_episodes','investigation_hypotheses','corroborated_episodes','review_ready'].includes(x[0]))} lookup={pipeline}/></section>{Object.entries(sourceHelp).slice(4).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown?.[key]} help={help}/>)}{sections.data?.stabilization&&<section className="future-section"><h2>Stabilization diagnostics</h2><p>Operator quality indicators from the same live pipeline. These values describe technical thresholds, not investigative verdicts.</p><pre className="future-intelligence-json">{JSON.stringify(sections.data.stabilization,null,2)}</pre></section>}</>}
+ {tab==='activity'&&<><section className="future-section"><h2>Source acquisition</h2><p>Connector health tracks input availability, not the validity of a claim.</p>{raw?.acquisition?<pre className="future-intelligence-json">{JSON.stringify(raw.acquisition,null,2)}</pre>:<p>Acquisition metadata unavailable.</p>}</section><SimpleRecords title="01 / Raw ingestion" items={sections.data?.stream?.items?.filter(x=>x.kind==='source_observation')} description="Unprocessed source observations. Reappearance after silence is telemetry, not proof of covert activity."/><SimpleRecords title="02 / Normalized events" items={sections.data?.stream?.items?.filter(x=>x.kind==='parsed_event')} description="Parsed events are standardized source observations, not validated incidents."/><SimpleRecords title="03 / Episodes and hypotheses" items={sections.data?.analysis?.items} description="Investigation candidates and recognized episodes; each requires further independent evidence."/><section className="future-section"><h2>Parser topology</h2><p>Source → observation → normalized event → episode → hypothesis. Built-in safeguards cover AIS, satellite, humanitarian reports, RF/radio and identity checks.</p>{sections.data?.['pipeline-map']?<pre className="future-intelligence-json">{JSON.stringify(sections.data['pipeline-map'],null,2)}</pre>:<p>Topology temporarily unavailable.</p>}</section></>}
+ {sections.error&&<p role="status">{sections.error}</p>}
  <section className="future-section"><h2>Data provenance and interpretation</h2><p>Operator figures are calculated by the same database aggregation functions as the canonical ingestion dashboard. Public fallback figures are drawn from the canonical status feed. Overall operator counts cover the retained corpus; recent values cover ingestion windows. Sensor counts may be estimated when database statistics are used, especially AIS fixes.</p><p>Source evidence is not the same as an incident. Independent corroboration and human review are required before claims become publishable.</p><button type="button" onClick={()=>navigate('history')}>Explore historical collection →</button></section>
  </>;
 }
