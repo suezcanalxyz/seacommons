@@ -70,7 +70,7 @@ function useOperatorSections(period,tab) {
    let active=true;
    if(period==='overall'){setSnapshot({data:null,error:''});return()=>{active=false;};}
    const hours=period==='7d'?168:24;
-   const paths=tab==='quality'?['stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue']:tab==='activity'?['stream','analysis','pipeline-map']:null;
+   const paths=tab==='pipeline'?['funnel']:tab==='sources'?['funnel']:tab==='quality'?['funnel','stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue']:tab==='activity'?['stream','analysis','pipeline-map']:null;
    if(!paths){setSnapshot({data:null,error:''});return()=>{active=false;};}
    Promise.allSettled(paths.map(p=>fetchJson(resolveSiteApiBase(),`/api/v1/operator/ingestion/${p}?hours=${hours}&limit=60`,undefined,18000)))
    .then(results=>{if(!active)return;const data={};let failed=0;results.forEach((v,i)=>{if(v.status==='fulfilled')data[paths[i]]=v.value;else failed++});setSnapshot({data,error:failed?'Some protected sections are unavailable.':''})});
@@ -112,16 +112,21 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  const raw=operator.data;
  const status=!isOverall&&ops.status?.window_hours===(period==='7d'?168:24)?ops.status:null;
  const rawStages=Array.isArray(raw?.stages)?Object.fromEntries(raw.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
- const pipeline=isOverall?rawStages:(raw?.pipeline_status?.pipeline||status?.pipeline);
+ const funnelStages=Array.isArray(sections.data?.funnel?.stages)?Object.fromEntries(sections.data.funnel.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
+ const pipeline=isOverall?rawStages:(funnelStages||raw?.pipeline_status?.pipeline||status?.pipeline);
  const sensorsData=isOverall?raw?.sensor_activity:raw?.pipeline_status?.sensor_activity||status?.sensor_activity;
  const breakdown=isOverall?raw?.breakdowns:{
    raw_by_source:raw?.source_observations?.by_source,
    raw_observation_types:raw?.source_observations?.by_type,
    normalized_by_source:raw?.parsed_events?.by_source,
    normalized_event_types:raw?.parsed_events?.by_type,
-   hypothesis_states:raw?.hypothesis_states,
+   hypothesis_states:sections.data?.funnel?.diagnostics?.hypothesis_states,
+   hypothesis_evidence_stages:sections.data?.funnel?.diagnostics?.hypothesis_evidence_stages,
+   episode_verification:sections.data?.funnel?.diagnostics?.episode_verification,
+   episode_families:sections.data?.funnel?.diagnostics?.episode_families,
+   hypothesis_types:sections.data?.funnel?.diagnostics?.hypothesis_reason_codes,
  };
- const allStages=isOverall?stages.filter(x=>x[0]!=='analysis_outputs'):stages;
+ const allStages=stages.filter(x=>x[0]!=='analysis_outputs');
  const specialSensors=isOverall&&sensorsData?{...sensorsData,active_source_names:sensorsData.source_names}:sensorsData;
  return <><section className="future-page-head"><span className="future-eyebrow">SeaCommons / Intelligence</span><h1>Evidence, from first signal to human review.</h1><p>One canonical pipeline. Follow what was collected, what software inferred and which cases have independent support. The volumes describe different evidence layers; they must not be added together.</p></section>
  <div className="future-period-tabs" aria-label="Intelligence time window"><div role="group" aria-label="Intelligence time window">{[['24h','24 hours'],['7d','7 days'],['overall','Overall']].map(([id,label])=><button type="button" aria-pressed={period===id} className={period===id?'is-active':''} onClick={()=>setPeriod(id)} key={id}>{label}</button>)}</div><small>{isOverall?'All records currently retained, irrespective of the age of the source event':period==='7d'?'Rolling seven days':'Rolling 24 hours'}</small></div>
