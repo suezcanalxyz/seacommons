@@ -681,3 +681,13 @@ a { color: inherit; text-decoration: none; }
 .future-intelligence-bar strong{text-align:right;font-variant-numeric:tabular-nums;font-weight:500}
 .future-intelligence-json{font-size:11px;line-height:1.65;overflow:auto;max-height:420px;padding:16px;border:1px solid var(--f-line)}
 @media(max-width:650px){.future-intelligence-subnav{flex-wrap:nowrap;overflow-x:auto}.future-intelligence-subnav button{flex:none}.future-intelligence-bar{grid-template-columns:minmax(86px,2fr) minmax(40px,2fr) auto;gap:7px;font-size:10px}}
+
+
+.future-intelligence-bar small{grid-column:1/-1;color:var(--f-muted);font-size:11px;line-height:1.55;margin:-4px 0 4px}
+.future-intelligence-records{display:grid;gap:7px;margin-top:12px}
+.future-intelligence-records details,.future-intelligence-chain{border:1px solid var(--f-line);padding:13px 16px;background:var(--f-panel);margin:8px 0}
+.future-intelligence-records summary,.future-intelligence-chain summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:14px;line-height:1.5;font-size:12px;overflow-wrap:anywhere}
+.future-intelligence-records summary strong{font-weight:600}
+.future-intelligence-records summary span{color:var(--f-muted);font-size:10px;flex-shrink:0}
+.future-intelligence-records details p,.future-intelligence-chain p{color:var(--f-muted);font-size:12px;line-height:1.6;margin:10px 0 0}
+@media(max-width:650px){.future-intelligence-records summary{flex-direction:column;align-items:flex-start}}
