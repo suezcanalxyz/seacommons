@@ -570,3 +570,24 @@ a { color: inherit; text-decoration: none; }
 @media(max-width:550px){.future-period-tabs > div{min-width:100%;grid-template-columns:repeat(3,minmax(0,1fr));}.future-period-tabs button{padding:13px 7px;font-size:10px;}.future-period-tabs small{max-width:100%;}}
 
 .future-invitations form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;align-items:end}.future-invitations label{display:grid;gap:6px}.future-invitations input{padding:12px;background:#111d26;color:#fff;border:1px solid #3d5360;border-radius:7px}.future-invitations button{padding:12px;background:#d8e8ee;color:#10202b;border:0;border-radius:7px}.future-invitations article{display:flex;flex-wrap:wrap;gap:12px;padding:12px 0;border-bottom:1px solid #35434e}
+
+/* Native-feeling mobile shell for installed Futures PWA. */
+.future-mobile-nav{display:none}.future-install-button{border:1px solid var(--f-line);color:var(--f-accent);background:transparent;border-radius:6px;padding:10px;cursor:pointer}
+@media(max-width:700px){
+  html,body,#futures-root{width:100%;overflow-x:clip}
+  .future-app{min-height:100dvh;padding-bottom:calc(70px + env(safe-area-inset-bottom,0px))}
+  .future-sidebar{position:sticky;top:0;z-index:30;padding:calc(10px + env(safe-area-inset-top,0px)) 18px 10px;min-height:60px;background:rgba(5,8,13,.97);backdrop-filter:blur(20px);overflow:visible;display:flex;justify-content:space-between}
+  .future-brand{display:inline-flex;margin:0}.future-product{margin:0 0 0 12px;min-width:0}.future-product span{font-size:19px}.future-sidebar nav{display:none}.future-sidebar__base{display:none}
+  .future-install-button{margin-left:auto;padding:7px 10px;font-size:11px}
+  .future-topbar{height:43px;padding:0 18px;font-size:9px;gap:8px}.future-topbar__links{gap:10px}
+  .future-content{padding:30px 18px 32px}.future-hero h1,.future-page-head h1{font-size:clamp(35px,10vw,52px);line-height:1.02}
+  .future-mobile-nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));position:fixed;z-index:50;bottom:0;left:0;right:0;min-height:calc(65px + env(safe-area-inset-bottom,0px));padding:7px 6px calc(6px + env(safe-area-inset-bottom,0px));background:rgba(8,14,20,.98);border-top:1px solid var(--f-line);backdrop-filter:blur(18px)}
+  .future-mobile-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0;border:0;border-radius:9px;background:transparent;color:var(--f-muted);font:500 10px/1.2 Inter,Arial,sans-serif;cursor:pointer}
+  .future-mobile-nav button.is-active{background:rgba(153,216,207,.10);color:var(--f-accent)}
+  .future-mobile-nav-icon{font-size:23px;line-height:1.1}
+  .future-kpis,.future-funnel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .future-library-intro,.future-product-grid,.future-pilot-steps{grid-template-columns:1fr}
+  .future-invitations form{grid-template-columns:1fr}
+  button,input,a{touch-action:manipulation}
+}
+@media(display-mode:standalone){.future-topbar__links{display:none}}
