@@ -20,7 +20,7 @@ import { hardwareBuilds, totalCost } from './hardwareCosts.js';
 import { contributionNeeds } from './contributionNeeds.js';
 
 const NAV = ['overview', 'history', 'operations', 'hardware', 'contributions', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
-const NAV_LABELS = { overview: 'Dashboard', documents: 'docs', hardware: 'Sensors', contributions: 'Contributions' };
+const NAV_LABELS = { overview: 'Dashboard', documents: 'docs', hardware: 'Sensors', contributions: 'Priorities' };
 
 function readWorkspaceView() {
   const value = new URLSearchParams(window.location.search).get('view');
@@ -294,19 +294,22 @@ function Hardware() {
 function Contributions() {
   const [filter, setFilter] = useState('all');
   const groups = [...new Set(contributionNeeds.map(item => item.group))];
-  const visible = contributionNeeds.filter(item => filter === 'all' || item.group === filter);
+  const visible = contributionNeeds.filter(item => filter === 'all' || item.group === filter).sort((a, b) => a.rank - b.rank);
   return <>
-    <section className="future-page-head"><span className="future-eyebrow">infrastructure / interoperability / research</span>
-      <h1>What SeaCommons needs to become more capable.</h1>
-      <p>This is an inventory of technical requirements and opportunities for collaboration, not a donation form. It covers physical Sensors, Oracle and other compute resources, authorized access to existing maritime systems, data infrastructure and open-source engineering. Each requirement explains what it enables and its current maturity.</p>
+    <section className="future-page-head"><span className="future-eyebrow">SeaCommons / development priorities</span>
+      <h1>What we need next, and why.</h1>
+      <p>A practical list of the resources that would make SeaCommons more reliable and capable. The most urgent work comes first. Costs are planning estimates, not confirmed supplier quotations or existing invoices.</p>
     </section>
-    <section className="future-section"><SectionHeader eyebrow="capability inventory" title="From equipment to interoperable systems."
-      copy="A working maritime evidence platform needs more than servers: trusted observations, resilient storage, calibration, repeatable software, source agreements and careful verification. Listed access is not claimed as already granted." />
-      <div className="future-risk-filters"><button type="button" className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}>All requirements</button>{groups.map(group => <button type="button" key={group} className={filter === group ? 'is-active' : ''} onClick={() => setFilter(group)}>{group}</button>)}</div>
-      <div className="future-hardware-grid">{visible.map(item => <article className="future-hardware-card" key={item.name}>
-        <small>{item.group} · {item.readiness}</small><h3>{item.name}</h3>
-        <p><b>Required components or access</b>{item.need}</p><p><b>Operational value</b>{item.use}</p><p><b>Related planning</b>{item.reference}</p>
+    <section className="future-section"><SectionHeader eyebrow="priority register" title="Keep the platform reliable first."
+      copy="Our first priority is protecting the existing service and its history. New sensors and research integrations follow once storage, backup and continuous operation are under control." />
+      <div className="future-risk-filters"><button type="button" className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}>All priorities</button>{groups.map(group => <button type="button" key={group} className={filter === group ? 'is-active' : ''} onClick={() => setFilter(group)}>{group}</button>)}</div>
+      <div className="future-priority-list">{visible.map(item => <article className="future-priority-card" key={item.name}>
+        <div className="future-priority-card__meta"><span>Priority {item.rank} · {item.urgency}</span><span>{item.group}</span></div>
+        <h3>{item.name}</h3><p className="future-priority-card__reason">{item.plainReason}</p>
+        <div className="future-priority-card__facts"><div><small>Planning cost</small><strong>{item.cost}</strong></div><div><small>What we need</small><span>{item.need}</span></div></div>
+        <details><summary>Technical scope and current status</summary><p>{item.use}</p><p>{item.reference} · {item.readiness}</p></details>
       </article>)}</div>
+      <p className="future-inline-note">Costs are indicative EUR allowances for planning, exclude tax, shipping, installation and labor unless stated. Oracle pricing and availability depend on the selected region, compute shape, usage and current tenancy. No procurement or partnership is implied.</p>
     </section>
     <section className="future-section"><SectionHeader eyebrow="responsible integration" title="Requirements before any system is connected."
       copy="Every external feed or physical device needs explicit permission, a designated operator, documented provenance, security boundaries, source health checks and publication safeguards. Receive-only radio work must respect applicable national law." />
@@ -731,6 +734,7 @@ function Documents() {
   const [query, setQuery] = useState('');
   const [group, setGroup] = useState('all');
   const [deckOpen, setDeckOpen] = useState(false);
+  const [openDocument, setOpenDocument] = useState(null);
   useEffect(() => {
     if (deckOpen) window.requestAnimationFrame(() => document.getElementById('futures-deck-viewer')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }, [deckOpen]);
@@ -803,7 +807,7 @@ function Documents() {
               <div><strong>{doc.title}</strong><small>{doc.description || doc.source}</small>
                 {doc.deck
                   ? <button className="future-doc-link" onClick={() => { setDeckOpen(true); setSlideIndex(0); }}>view slides ↗</button>
-                  : doc.href ? <a className="future-doc-link" href={doc.href} target="_blank" rel="noreferrer">open document ↗</a> : <small>restricted / request access</small>}
+                  : doc.href ? <button type="button" className="future-doc-link" onClick={() => { setOpenDocument(doc); setDeckOpen(false); }}>read in Futures ↗</button> : <small>restricted / request access</small>}
               </div>
               <span>{doc.project}</span>
               <span>{doc.kind}</span>
@@ -815,6 +819,12 @@ function Documents() {
         </section>
       </section>
 
+      {openDocument && <section className="future-section future-embedded-document" aria-label="Document reader">
+        <div className="future-deck-toolbar"><span>SEA COMMONS / FUTURES / DOCUMENTS</span><button type="button" onClick={() => setOpenDocument(null)}>close reader ✕</button></div>
+        <h2>{openDocument.title}</h2><p>{openDocument.description}</p>
+        <iframe title={openDocument.title} src={openDocument.href} loading="lazy" referrerPolicy="no-referrer" sandbox="allow-scripts allow-forms" />
+        <p className="future-inline-note">Some publishers do not permit embedded viewing. If this source cannot display here, you can <a href={openDocument.href} target="_blank" rel="noreferrer">open the original source</a>.</p>
+      </section>}
       <section className="future-library-intake">
         <div><span className="future-eyebrow">partner materials</span><h3>Request a reviewed document</h3>
           <p>Published reference materials are available above. For a partner brief or an unpublished resource, contact the programme team. Confidential materials are never uploaded to the public source repository. In-app uploads and permissioned downloads will be enabled only after verified private storage and server-side resource grants are in place.</p></div>
@@ -1044,6 +1054,7 @@ export default function FuturesApp() {
           <i /><span>SEA<br />COMMONS</span>
         </button>
         <div className="future-product"><span>futures</span><small>partner workspace</small></div>
+        <button type="button" className="future-mobile-account" onClick={() => navigate('access')} aria-label="Open account" aria-current={view === 'access' ? 'page' : undefined}><span aria-hidden="true">◎</span> Account</button>
         <nav aria-label="Futures">
           {NAV.map((item) => (
             <button key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
@@ -1061,7 +1072,7 @@ export default function FuturesApp() {
       <main className="future-main">
         <header className="future-topbar">
           <div><span>SeaCommons / Futures</span><b>{NAV_LABELS[view] || view}</b></div>
-          <div className="future-topbar__links"><span>Secure partner workspace</span></div>
+          <div className="future-topbar__links"><span>Secure partner workspace</span><button type="button" className="future-topbar-logo" onClick={() => navigate('overview')} aria-label="SeaCommons Futures home"><i aria-hidden="true" /><span>SEA<br />COMMONS</span></button></div>
         </header>
 
         <div className="future-content">
@@ -1092,10 +1103,10 @@ export default function FuturesApp() {
         </section>
       </div>}
       <nav className="future-mobile-nav" aria-label="Mobile app navigation">
-        {['overview','operations','hardware','contributions','documents','access'].map((item) => (
+        {['overview','operations','hardware','contributions','documents'].map((item) => (
           <button type="button" key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
             <span className="future-mobile-nav-icon" aria-hidden="true">{{overview:'◈',operations:'⌁',hardware:'◉',contributions:'◇',documents:'▤',access:'◎'}[item]}</span>
-            <span>{({overview:'Dashboard',operations:'Ops',hardware:'Sensors',contributions:'Needs',documents:'Docs',access:'Account'})[item]}</span>
+            <span>{({overview:'Dashboard',operations:'Ops',hardware:'Sensors',contributions:'Priorities',documents:'Docs',access:'Account'})[item]}</span>
           </button>
         ))}
       </nav>
