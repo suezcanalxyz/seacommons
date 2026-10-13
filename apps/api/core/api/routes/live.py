@@ -186,6 +186,55 @@ async def live_sanctioned_vessels(request: Request):
     }
 
 
+@router.get("/sanctioned-catalog")
+def sanctioned_catalog(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    search: str = Query("", max_length=100),
+):
+    """Paginated public sanctions identity references, independent of AIS freshness.
+
+    Catalog presence means an entry in a source list, never a current vessel
+    position or proof of contemporary unlawful conduct. Historical tracks are
+    intentionally not inferred from a sanctions designation.
+    """
+    from sqlalchemy import func, or_
+
+    from core.db.models import SanctionedVesselDB
+    from core.db.session import session_scope
+
+    with session_scope() as db:
+        query = db.query(SanctionedVesselDB)
+        term = search.strip()
+        if term:
+            escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            needle = f"%{escaped}%"
+            query = query.filter(or_(
+                SanctionedVesselDB.name.ilike(needle, escape="\\"),
+                SanctionedVesselDB.imo == term,
+                SanctionedVesselDB.mmsi == term,
+                SanctionedVesselDB.program.ilike(needle, escape="\\"),
+            ))
+        total = query.with_entities(func.count(SanctionedVesselDB.id)).scalar() or 0
+        rows = query.order_by(SanctionedVesselDB.name, SanctionedVesselDB.id).offset(offset).limit(limit).all()
+        entries = [{
+            "id": row.id,
+            "name": row.name,
+            "imo": row.imo,
+            "mmsi": row.mmsi,
+            "source_list": row.source_list,
+            "program": row.program,
+            "listed_on": row.listed_on,
+            "source_reference": "official_or_aggregated_sanctions_list",
+            "reason_status": "source_detail_not_yet_collected",
+        } for row in rows]
+    return {
+        "entries": entries, "total": total, "limit": limit, "offset": offset,
+        "has_more": offset + len(entries) < total,
+        "note": "Sanctions-list identity entries, not live AIS positions or allegations of current wrongdoing.",
+    }
+
+
 @router.get("/signals/{event_id}/response")
 async def live_signal_response(event_id: str, request: Request):
     """
