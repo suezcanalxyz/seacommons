@@ -625,6 +625,10 @@ def start() -> None:
             return
 
         scheduler = BackgroundScheduler(timezone="UTC")
+        from core.api.routes.futures_invitations import scheduled_review
+        scheduler.add_job(scheduled_review, IntervalTrigger(hours=6),
+                          id="futures_invitation_review", replace_existing=True,
+                          max_instances=1, misfire_grace_time=300)
 
         # Auto-drift disabled — triggered manually via the UI button instead.
         # The 1 GB VM cannot sustain background CMEMS drift jobs without swap exhaustion.
