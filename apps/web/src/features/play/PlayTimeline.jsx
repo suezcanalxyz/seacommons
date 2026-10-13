@@ -95,6 +95,7 @@ export default function PlayTimeline({ apiBase }) {
   const [archiveTotal, setArchiveTotal] = useState(null);
   const [selectedId, setSelectedId] = useState('');
   const [caseData, setCaseData] = useState(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const [globalPosition, setGlobalPosition] = useState(TIMELINE_MAX);
   const [casesOpen, setCasesOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -436,6 +437,40 @@ export default function PlayTimeline({ apiBase }) {
   const frameProps = frame.item?.properties || {};
   const satelliteProps = satellite?.properties || {};
   const modeLabel = cutoffLabel(globalState);
+  const report = selectedIncident ? {
+    schema: 'org.seacommons.play-case-report/v1',
+    generated_at: new Date().toISOString(),
+    case_id: selectedIncident.incident_id,
+    title: selectedIncident.title || 'Maritime incident',
+    reported_at: selectedIncident.reported_at || null,
+    source: selectedIncident.source || null,
+    status_at_cutoff: status,
+    cutoff: globalState.cutoff || null,
+    archive_decision: caseData?.archive_decision || selectedIncident.archive_decision || null,
+    verification_status: caseData?.verification_status || null,
+    corroborated: caseData?.corroborated ?? null,
+    independent_lineages: caseData?.independence_groups || [],
+    reason_codes: dossierReasonCodes,
+    counter_indicators: caseData?.counter_indicators || [],
+    evidence_count_at_cutoff: visibleTimeline.length,
+    geometry: selectedIncident.geometry || null,
+    evidence: visibleTimeline.map((item) => ({
+      id: item.id, at: item.at, type: item.type, title: item.title || '',
+      source: item.source || null, url: item.properties?.url || item.properties?.source_url || null,
+      properties: item.properties || {}, geometry: item.geometry || null,
+    })),
+    limitations: 'This report represents evidence available at the selected historical cutoff. Unknown outcomes and unverified observations must not be interpreted as confirmed events.',
+  } : null;
+  const downloadReport = () => {
+    if (!report) return;
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `seacommons-play-report-${String(report.case_id).replace(/[^a-zA-Z0-9_-]/g, '_')}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <main className={`cop-shell is-live-mode play-public-shell play-shell ${selectedId ? 'has-selection' : ''}`}>
@@ -545,6 +580,7 @@ export default function PlayTimeline({ apiBase }) {
         <div className="play-sheet-handle" />
         <div className="cone-panel-header play-section-head">
           <span>Case dossier</span>
+          <button type="button" className="play-report-trigger" disabled={!selectedIncident || loading} onClick={() => setReportOpen(true)}>Report ↗</button>
           <button className="cone-close-btn" type="button" onClick={() => setSelectedId('')}>×</button>
         </div>
         <div className="play-evidence__scroll">
@@ -623,6 +659,29 @@ export default function PlayTimeline({ apiBase }) {
         </div>
       </aside>
 
+      {reportOpen && report && <div className="play-report-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setReportOpen(false); }}>
+        <section className="play-report-dialog" role="dialog" aria-modal="true" aria-label="Case report">
+          <header className="play-report-actions"><strong>SeaCommons / PLAY / Report</strong><div>
+            <button type="button" onClick={downloadReport}>Download JSON ↓</button>
+            <button type="button" onClick={() => window.print()}>Print / Save PDF ↓</button>
+            <button type="button" onClick={() => setReportOpen(false)}>Close ×</button>
+          </div></header>
+          <article className="play-report-document">
+            <small>SEACOMMONS · EVIDENCE REPORT · {report.case_id}</small>
+            <h1>{report.title}</h1>
+            <p className="play-report-disclaimer">Historical evidence report generated {report.generated_at.slice(0, 16).replace('T', ' ')} UTC. This is not an official incident determination.</p>
+            <dl><div><dt>Reported</dt><dd>{report.reported_at || 'Unknown'}</dd></div><div><dt>Source</dt><dd>{report.source || 'Not recorded'}</dd></div><div><dt>Status at selected time</dt><dd>{statusLabel(report.status_at_cutoff)}</dd></div><div><dt>Historical cutoff</dt><dd>{report.cutoff || 'Complete archive'}</dd></div><div><dt>Archive decision</dt><dd>{statusLabel(report.archive_decision || 'unknown')}</dd></div><div><dt>Verification</dt><dd>{statusLabel(report.verification_status || 'not recorded')}</dd></div><div><dt>Independent corroboration</dt><dd>{report.corroborated === null ? 'Not assessed' : report.corroborated ? 'Yes' : 'No'}</dd></div><div><dt>Evidence records</dt><dd>{report.evidence_count_at_cutoff}</dd></div></dl>
+            <h2>Assessment and limitations</h2>
+            <p>{report.limitations}</p>
+            {report.reason_codes.length > 0 && <p><strong>Reason codes:</strong> {report.reason_codes.join(' · ')}</p>}
+            {report.counter_indicators.length > 0 && <p><strong>Counter-indicators:</strong> {report.counter_indicators.join(' · ')}</p>}
+            {report.independent_lineages.length > 0 && <p><strong>Evidence lineages:</strong> {report.independent_lineages.join(' · ')}</p>}
+            <h2>Chronology and sources</h2>
+            {report.evidence.length === 0 ? <p>No dated evidence is available at this cutoff.</p> : <ol>{report.evidence.map((entry, index) => <li key={`${entry.id || index}-${index}`}><time>{entry.at || 'Undated'}</time><h3>{entry.title || entry.type || 'Observation'}</h3><p>{entry.type || 'evidence'} · {entry.source || 'Source not recorded'}</p>{entry.url && /^https?:\/\//i.test(entry.url) && <a href={entry.url} target="_blank" rel="noreferrer">Original source ↗</a>}</li>)}</ol>}
+            <footer>SeaCommons / PLAY · Report ID {report.case_id} · Generated {report.generated_at}</footer>
+          </article>
+        </section>
+      </div>}
       <footer className="play-timeline-bar">
         <span className="play-timeline-end">{coverage.start ? coverage.start.slice(0, 10) : 'PAST'}</span>
         <button type="button" disabled={globalPosition <= 0} onClick={() => setGlobalPosition((value) => Math.max(0, value - 50))}>←</button>
