@@ -591,7 +591,7 @@ function PilotFramework() {
   );
 }
 
-function Overview({ ops, overall, period, setPeriod, navigate }) {
+function Overview({ ops, overall, period, setPeriod, navigate, compact = false }) {
   return (
     <>
       <section className="future-hero">
@@ -608,17 +608,8 @@ function Overview({ ops, overall, period, setPeriod, navigate }) {
         {ops.error ? <p className="future-inline-note">{ops.error} Static project information remains available.</p> : null}
       </section>
 
-      <MethodExplorer />
-      <details className="future-explainer">
-        <summary><span><small>START HERE / THE PROJECT EXPLAINED</small><strong>What is SeaCommons?</strong><em>A short introduction for people discovering the platform</em></span><span className="future-explainer-arrow" aria-hidden="true">⌄</span></summary>
-        <div className="future-explainer-content">
-          <p><b>SeaCommons is an open-source maritime intelligence platform.</b> It gathers information from ship-position signals, public reports, humanitarian alerts, radio, satellites and environmental observations to help researchers understand what may be happening at sea.</p>
-          <p><b>How does it work?</b> Software collects observations, standardises times and locations, checks how sources relate and groups potentially connected information into episodes. An episode is a subject for investigation, not proof of an emergency or wrongdoing.</p>
-          <p><b>Why does evidence matter?</b> Each finding should retain its sources, uncertainty and independent corroboration. An AIS gap or a vessel appearing in an area is not, by itself, evidence of intent. Sensitive details are filtered before publication.</p>
-          <p><b>How do I read the numbers?</b> Choose 24 hours or 7 days for recent activity. Overall shows records still retained in the database. The public archive is cumulative and remains the same when you switch recent periods. Counts from different stages must not be added together.</p>
-          <p><b>Where do I go next?</b> Operations explains current system health and unresolved engineering risks. Sensors shows proposed antennas, radio receivers, drifter buoys and estimated costs. Documents contains presentation and reference material. Account controls access and invitations.</p>
-        </div>
-      </details>
+      {!compact && <MethodExplorer />}
+
 
       <section className="future-period-tabs" aria-label="Analytics time period">
         <div role="group" aria-label="Analytics time window">
@@ -639,8 +630,8 @@ function Overview({ ops, overall, period, setPeriod, navigate }) {
           <button type="button" onClick={() => navigate('hardware')}><small>distributed infrastructure / 7 pathways</small><strong>Sensors: equipment and costs ↗</strong><span>AIS and radio antennas, drifters, hydrophones, coastal sensors, compute and field partners.</span></button>
         </div>
       </section>
-      <ApplicationPathways />
-      <PilotFramework />
+      {!compact && <ApplicationPathways />}
+      {!compact && <PilotFramework />}
 
       <section className="future-section">
         <SectionHeader
@@ -1082,7 +1073,7 @@ export default function FuturesApp() {
 
         <div className="future-content">
           {Object.entries(SUBNAV).some(([,items])=>items.some(([id])=>id===view)) && <nav className="future-subnav" aria-label="Section navigation">{(Object.entries(SUBNAV).find(([,items])=>items.some(([id])=>id===view))?.[1] || []).map(([id,label])=><button type="button" key={id} className={id===view?'is-active':''} onClick={()=>navigate(id)}>{label}</button>)}</nav>}
-          {view === 'intelligence' && <Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
+          {view === 'intelligence' && <><section className="future-page-head"><span className="future-eyebrow">Intelligence / evidence and coverage</span><h1>What the system is recording.</h1><p>Explore current windows, retained history, data coverage and operational health. Values remain linked to their sources and do not represent verified incidents by default.</p></section><Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} compact /></>}
           {view === 'platform' && <PlatformNetwork />}
           {view === 'knowledge' && <><section className="future-page-head"><span className="future-eyebrow">Knowledge</span><h1>Learn, review and share.</h1><p>Technical references, practical guides and partner-ready documents in one place.</p></section><Documents /></>}
           {view === 'development' && <Roadmap />}
