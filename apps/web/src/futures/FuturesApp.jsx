@@ -17,6 +17,7 @@ import {
 } from './data.js';
 import { operationalAudit, hardwareNetwork } from './operationalAudit.js';
 import { MethodExplorer, PlatformNetwork, NetworkContributionsIntro } from './NetworkPlatform.jsx';
+import IntelligenceDashboard from './IntelligenceDashboard.jsx';
 import { hardwareBuilds, totalCost } from './hardwareCosts.js';
 import { contributionNeeds } from './contributionNeeds.js';
 
@@ -1077,7 +1078,7 @@ export default function FuturesApp() {
 
         <div className="future-content">
           {Object.entries(SUBNAV).some(([,items])=>items.some(([id])=>id===view)) && <nav className="future-subnav" aria-label="Section navigation">{(Object.entries(SUBNAV).find(([,items])=>items.some(([id])=>id===view))?.[1] || []).map(([id,label])=><button type="button" key={id} className={id===view?'is-active':''} onClick={()=>navigate(id)}>{label}</button>)}</nav>}
-          {view === 'intelligence' && <><section className="future-page-head"><span className="future-eyebrow">Intelligence / evidence and coverage</span><h1>What the system is recording.</h1><p>Explore current windows, retained history, data coverage and operational health. Values remain linked to their sources and do not represent verified incidents by default.</p></section><Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} compact /></>}
+          {view === 'intelligence' && <IntelligenceDashboard ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'platform' && <PlatformNetwork />}
           {view === 'knowledge' && <><section className="future-page-head"><span className="future-eyebrow">Knowledge</span><h1>Learn, review and share.</h1><p>Technical references, practical guides and partner-ready documents in one place.</p></section><Documents /></>}
           {view === 'development' && <Roadmap />}
