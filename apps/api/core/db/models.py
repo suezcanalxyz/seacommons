@@ -1036,3 +1036,24 @@ if __name__ == "__main__":
         session.commit()
         count = session.query(ForensicEvent).count()
     print(f"DB models self-test OK: {count} forensic event(s) created")
+
+
+class FuturesInvitationDB(Base):
+    __tablename__ = "futures_invitations"
+    id = Column(String(36), primary_key=True)
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=False)
+    email = Column(String(320), nullable=False, index=True)
+    proposed_by = Column(String(256), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="pending")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    reviewed_at = Column(DateTime)
+
+class FuturesInvitationReviewDB(Base):
+    __tablename__ = "futures_invitation_reviews"
+    id = Column(String(36), primary_key=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    pending = Column(Integer, nullable=False, default=0)
+    preapproved = Column(Integer, nullable=False, default=0)
+    reviewed = Column(Integer, nullable=False, default=0)
+    summary = Column(Text, nullable=False)
