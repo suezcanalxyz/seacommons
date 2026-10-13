@@ -645,11 +645,11 @@ export default function PlayTimeline({ apiBase }) {
             <p>Evidence and source review</p>
             <h3>What supports this case</h3>
             {(caseData?.assessment?.supporting_evidence || selectedIncident?.assessment?.supporting_evidence || []).length
-              ? (caseData?.assessment?.supporting_evidence || selectedIncident?.assessment?.supporting_evidence).map((item, index) => <span key={index}>• {String(item)}</span>)
+              ? (caseData?.assessment?.supporting_evidence || selectedIncident?.assessment?.supporting_evidence || []).map((item, index) => <span key={index}>• {String(item)}</span>)
               : <span>No supporting evidence summary has been recorded.</span>}
             <h3>Contradictions and limitations</h3>
             {(caseData?.assessment?.contradicting_evidence || selectedIncident?.assessment?.contradicting_evidence || []).length
-              ? (caseData?.assessment?.contradicting_evidence || selectedIncident?.assessment?.contradicting_evidence).map((item, index) => <span key={index}>• {String(item)}</span>)
+              ? (caseData?.assessment?.contradicting_evidence || selectedIncident?.assessment?.contradicting_evidence || []).map((item, index) => <span key={index}>• {String(item)}</span>)
               : <span>No contradicting evidence has been recorded. This does not establish that the claim is true.</span>}
             {(caseData?.assessment?.caveats || selectedIncident?.assessment?.caveats || []).map((item, index) => <span key={index}>Caution: {String(item)}</span>)}
             <h3>Independent source groups</h3>
