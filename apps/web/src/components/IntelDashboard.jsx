@@ -592,7 +592,7 @@ export default function IntelDashboard({
                     return 'Live feed unavailable — reconnecting.';
                   }
                   if (feedStatus === 'stale' || feedStatus === 'retrying') {
-                    return 'Connection interrupted — reconnecting.';
+                    return 'Loading latest signals…';
                   }
                   if (publicMode) {
                     return (
