@@ -66,7 +66,7 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL);
 
-  await expect(page.getByRole('heading', { name: /From maritime evidence to place-based understanding/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Understand what happens at sea/i })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Overall historical totals' })).toContainText('378,826');
   await expect(page.getByRole('group', { name: 'Analytics time window' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Overall', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -90,7 +90,7 @@ test('Futures is scoped to the SeaCommons workspace only', async ({ page }) => {
   await page.goto(FUTURES_URL);
 
   await page.goto(FUTURES_URL + '?view=project');
-  await expect(page.getByRole('heading', { name: /One workspace, one project context/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /What SeaCommons is building/i })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'SeaCommons', exact: true })).toBeVisible();
 
   await expect(page.getByText('Republic', { exact: true })).toHaveCount(0);
@@ -120,7 +120,7 @@ test('Futures access page states final grant hierarchy without pretending auth i
   await page.goto(FUTURES_URL);
 
   await page.goto(FUTURES_URL + '?view=access');
-  await expect(page.getByRole('heading', { name: /Identity connected\. Resource permissions require verification/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Your account and workspace access/i })).toBeVisible();
   await expect(page.getByText(/organisation → SeaCommons workspace → project \/ subproject → resource or tool/i)).toBeVisible();
   await expect(page.getByText(/Workspace membership, resource grants and private API permissions must be independently verified/i)).toBeVisible();
 });
@@ -134,7 +134,7 @@ test('Futures navigation is deep-linkable and browser-history aware', async ({ p
   await expect(page).toHaveURL(/view=roadmap/);
 
   await page.goto(FUTURES_URL + '?view=project');
-  await expect(page.getByRole('heading', { name: /One workspace, one project context/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /What SeaCommons is building/i })).toBeVisible();
   await expect(page).toHaveURL(/view=project/);
 
   await page.goBack();
@@ -146,7 +146,7 @@ test('Futures Docs searches resources and opens the native partner presentation'
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL);
   await page.goto(FUTURES_URL + '?view=documents');
-  await expect(page.getByRole('heading', { name: /Documents, presentations and project knowledge/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Documents, presentations and project knowledge|documents and presentations/i })).toBeVisible();
   await expect(page.getByText('SeaCommons partner introduction').first()).toBeVisible();
   await page.getByRole('button', { name: /view presentation/i }).click();
   await expect(page.getByRole('region', { name: 'SeaCommons partner presentation' })).toContainText('From observation to accountable evidence.');
@@ -189,11 +189,11 @@ test('Futures switches equal-weight 24 hours / 7 days / Overall panels using rea
 test('Historical and Operations pages use canonical ops data and never fake unknown totals', async ({ page }) => {
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL + '?view=history');
-  await expect(page.getByRole('heading', { name: /Evidence over time/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /What has SeaCommons recorded over time/i })).toBeVisible();
   await expect(page.getByRole('img', { name: 'Monthly retained Intel events' })).toContainText('2026-05');
   await expect(page.getByText('2026-06')).toBeVisible();
   await page.goto(FUTURES_URL + '?view=operations');
-  await expect(page.getByRole('heading', { name: /Monitor the evidence pipeline/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /How reliably is SeaCommons working/i })).toBeVisible();
   await expect(page.getByText('AIS', { exact: true })).toBeVisible();
   await expect(page.getByText('Radio bursts', { exact: true }).first()).toBeVisible();
 });
