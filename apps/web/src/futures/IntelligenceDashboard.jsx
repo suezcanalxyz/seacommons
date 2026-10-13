@@ -44,23 +44,60 @@ const sourceHelp={
   hypothesis_states:'Processing state of hypotheses: collecting, candidate or ready for review.',
   hypothesis_evidence_stages:'Highest evidence level reached by each hypothesis.'
 };
+const termGlossary={
+ ais_gap:'An AIS transmission was observed again after sampled silence. This is telemetry, not proof of deliberate concealment.',
+ ais_nav_status:'Navigation status reported by AIS, including voyage and safety-related status messages.',
+ remote_radio_signal:'A radio burst observed by a remote receiver; its contents may not be decoded.',
+ ais_derived_event:'A vessel-related event derived through AIS processing and other data checks.',
+ sanctions_list_match:'Potential identity match against a sanctions list; requires strong identifier verification.',
+ source_post:'A collected source post, which retains provenance but does not prove its claims.',
+ media_attachment:'A media item attached to a source observation, tracked separately from written content.',
+ dsc_message:'Digital Selective Calling message from maritime radio; validity and association require review.',
+ ais_spike:'An unusual AIS movement or position feature selected for further analysis.',
+ correlated_alert:'A software correlation between potentially related source records; not an independently corroborated incident.',
+ ais_rendezvous:'A proximity or meeting-related AIS cue; normal operations can explain the pattern.',
+ ais_anomaly:'An AIS-integrity cue that can arise from reception, equipment, or movement.',
+ vessel_identity:'A recorded change or inconsistency in vessel identification.',
+ vessel_incident:'An event described as involving a vessel; it requires independent verification.',
+ distress:'A distress-related report or status, not automatically a verified rescue case.',
+ rendezvous_episode:'A grouped sequence of possible vessel meeting observations.',
+ gap_episode:'A grouped AIS continuity episode, not a finding of intentional dark activity.',
+ spoofing_episode:'An episode concerning possible position-integrity issues; equipment or reception errors remain alternatives.',
+ unclassified_episode:'An episode that has not yet received a recognized evidence family.',
+ identity_integrity_episode:'A grouped episode concerning possible vessel identity inconsistency.',
+ safety_episode:'A group of safety or navigation-related observations.',
+ dark_transit:'A hypothesis assessing a vessel-specific AIS gap; requires contextual and independent evidence.',
+ position_spoofing:'A hypothesis examining possible false position information.',
+ covert_rendezvous:'A hypothesis about a possible unreported meeting; not proof of unlawful intent.',
+ infrastructure_pattern:'A hypothesis assessing possible activity near maritime infrastructure.',
+ single_source_observed:'An episode supported by one source only.',
+ single_source_multi_indicator:'Multiple indicators from one source, which are not independent corroboration.',
+ multi_source_corroborated:'At least two independently originated evidence lineages support the episode.',
+ collecting:'An investigation is still gathering evidence.',
+ candidate:'An investigation hypothesis is a candidate for additional checks.',
+ review_ready:'Evidence prepared for human review, not a published finding.',
+ derived:'A rule or model produced a cue, not an independently verified claim.'
+};
+function termDescription(key){return termGlossary[key]||'Category recorded by the canonical pipeline. The count is descriptive and does not by itself verify an incident.';}
 function Breakdown({title,items,help}) {
  const entries=Object.entries(items||{}).filter(([,n])=>Number.isFinite(Number(n))).sort((a,b)=>Number(b[1])-Number(a[1]));
  const max=Math.max(1,...entries.map(x=>Number(x[1])));
- return <section className="future-section future-intelligence-breakdown"><h2>{title}</h2><p>{help}</p>{entries.length?<div className="future-intelligence-bars">{entries.map(([key,value])=><div className="future-intelligence-bar" key={key}><span title={key}>{key.replaceAll('_',' ')}</span><div><i style={{width:Math.max(1,100*Number(value)/max)+'%'}}/></div><strong>{number(value)}</strong></div>)}</div>:<p>No breakdown currently available for this period.</p>}</section>
+ return <section className="future-section future-intelligence-breakdown"><h2>{title}</h2><p>{help}</p>{entries.length?<div className="future-intelligence-bars">{entries.map(([key,value])=><div className="future-intelligence-bar" key={key}><span title={key}>{key.replaceAll('_',' ')}</span><div><i style={{width:Math.max(1,100*Number(value)/max)+'%'}}/></div><strong>{number(value)}</strong><small>{termDescription(key)}</small></div>)}</div>:<p>No breakdown currently available for this period.</p>}</section>
 }
 function useOperatorMetrics(period){
  const [data,setData]=React.useState(null);
+ const seq=React.useRef(0);
  const [loading,setLoading]=React.useState(false);
  const [error,setError]=React.useState('');
  const refresh=React.useCallback(async()=>{
+  const request=++seq.current;
   setLoading(true);setError('');
   try{
    const url=period==='overall'?'/api/v1/operator/ingestion/overall':`/api/v1/operator/ingestion/overview?hours=${period==='7d'?168:24}`;
    const result=await fetchJson(resolveSiteApiBase(),url,undefined,22000);
-   setData(result);
-  }catch(e){setData(null);setError('Restricted operator data unavailable. An operator/admin API role and deployed endpoint are required.');}
-  finally{setLoading(false);}
+   if(request===seq.current)setData(result);
+  }catch(e){if(request===seq.current){setData(null);setError('Restricted operator data unavailable. An operator/admin API role and deployed endpoint are required.');}}
+  finally{if(request===seq.current)setLoading(false);}
  },[period]);
  React.useEffect(()=>{refresh();},[refresh]);
  return {data,loading,error,refresh};
@@ -73,6 +110,7 @@ function useOperatorSections(period,tab) {
    const hours=period==='7d'?168:24;
    const paths=tab==='pipeline'?['funnel']:tab==='sources'?['funnel']:tab==='quality'?['funnel','stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue','humanitarian-ais-correlation']:tab==='activity'?['stream','signals','analysis','pipeline-map']:null;
    if(!paths){setSnapshot({data:null,error:''});return()=>{active=false;};}
+   setSnapshot({data:null,error:''});
    Promise.allSettled(paths.map(p=>fetchJson(resolveSiteApiBase(),`/api/v1/operator/ingestion/${p}?hours=${hours}&limit=60`,undefined,18000)))
    .then(results=>{if(!active)return;const data={};let failed=0;results.forEach((v,i)=>{if(v.status==='fulfilled')data[paths[i]]=v.value;else failed++});setSnapshot({data,error:failed?'Some protected sections are unavailable.':''})});
    return()=>{active=false;};
