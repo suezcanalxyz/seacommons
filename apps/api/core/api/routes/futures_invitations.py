@@ -18,6 +18,7 @@ class InvitationInput(BaseModel):
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
     email: str = Field(min_length=3, max_length=320, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+    requested_role: str = Field(default="viewer", pattern=r"^viewer$")
 
 
 def identity(request: Request):
@@ -32,7 +33,7 @@ def identity(request: Request):
 
 def serialize(row):
     return dict(id=row.id, first_name=row.first_name, last_name=row.last_name,
-                email=row.email, status=row.status, proposed_by=row.proposed_by,
+                email=row.email, requested_role=row.requested_role, status=row.status, proposed_by=row.proposed_by,
                 created_at=row.created_at.isoformat() if row.created_at else None)
 
 @router.post('', status_code=201)
@@ -45,7 +46,7 @@ def propose(body: InvitationInput, request: Request):
         if previous:
             raise HTTPException(409, 'An invitation for this email is already pending')
         row = FuturesInvitationDB(id=str(uuid.uuid4()), first_name=body.first_name.strip(),
-            last_name=body.last_name.strip(), email=email, proposed_by=principal.subject, status='pending')
+            last_name=body.last_name.strip(), email=email, proposed_by=principal.subject, requested_role="viewer", status='pending')
         db.add(row)
         db.flush()
         return serialize(row)
