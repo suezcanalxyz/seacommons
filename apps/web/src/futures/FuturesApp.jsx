@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth.jsx';
 import { fetchJson } from '../services/api/client.js';
 import { resolveSiteApiBase } from '../site/liveApi.js';
@@ -19,11 +19,11 @@ import { operationalAudit, hardwareNetwork } from './operationalAudit.js';
 import { hardwareBuilds, totalCost } from './hardwareCosts.js';
 
 const NAV = ['overview', 'history', 'operations', 'hardware', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
-const NAV_LABELS = { documents: 'docs', hardware: 'Sensors' };
+const NAV_LABELS = { overview: 'Dashboard', documents: 'docs', hardware: 'Sensors' };
 
 function readWorkspaceView() {
   const value = new URLSearchParams(window.location.search).get('view');
-  return NAV.includes(value) ? value : 'overview';
+  return value === 'dashboard' ? 'overview' : NAV.includes(value) ? value : 'overview';
 }
 
 function replaceWorkspaceView(view, { replace = false } = {}) {
@@ -67,6 +67,7 @@ function SectionHeader({ eyebrow, title, copy, action }) {
 }
 
 function useOperationalData(hours = 24) {
+  const sequence = useRef(0);
   const [snapshot, setSnapshot] = useState({
     status: null,
     counts: null,
@@ -77,32 +78,36 @@ function useOperationalData(hours = 24) {
   });
 
   const refresh = useCallback(async () => {
-    setSnapshot((previous) => ({ ...previous, status: null, loading: true }));
+    const requestId = ++sequence.current;
+    setSnapshot((previous) => ({ ...previous, loading: true }));
     const apiBase = resolveSiteApiBase();
     const requests = await Promise.allSettled([
-      fetchJson(apiBase, `/api/v1/status?hours=${hours}`, undefined, 9000),
+      fetchJson(apiBase, `/api/v1/status?hours=${hours}`, undefined, 18000),
       fetchJson(apiBase, '/api/v1/play/counts', undefined, 9000),
       fetchJson(apiBase, '/api/v1/live/pipeline', undefined, 9000),
     ]);
 
     const [statusResult, countsResult, pipelineResult] = requests;
-    const status = statusResult.status === 'fulfilled' ? statusResult.value : null;
+    let status = statusResult.status === 'fulfilled' ? statusResult.value : null;
+    if (!status) {
+      try { status = await fetchJson(apiBase, `/api/v1/status?hours=${hours}`, undefined, 18000); }
+      catch { /* Report unavailable only after a retry. */ }
+    }
     const counts = countsResult.status === 'fulfilled' ? countsResult.value : null;
     const pipeline = pipelineResult.status === 'fulfilled' ? pipelineResult.value : null;
     const errorCount = requests.filter((result) => result.status === 'rejected').length;
 
-    setSnapshot({
-      status,
-      counts,
-      pipeline,
+    if (requestId !== sequence.current) return;
+    setSnapshot(previous => ({
+      status: status?.window_hours === hours ? status : null,
+      counts: counts || previous.counts,
+      pipeline: pipeline || previous.pipeline,
       loading: false,
-      updatedAt: new Date(),
-      error: errorCount === requests.length
-        ? 'Operational contracts are temporarily unavailable.'
-        : errorCount
-          ? 'Some operational contracts are unavailable.'
-          : null,
-    });
+      updatedAt: status ? new Date() : previous.updatedAt,
+      error: !status || status.window_hours !== hours
+        ? `The ${hours === 24 ? '24-hour' : '7-day'} metrics could not be loaded. Please retry.`
+        : errorCount ? 'Some secondary data sources are unavailable.' : null,
+    }));
   }, [hours]);
 
   useEffect(() => {
@@ -114,6 +119,7 @@ function useOperationalData(hours = 24) {
     const timer = window.setInterval(run, 60_000);
     return () => {
       cancelled = true;
+      sequence.current += 1;
       window.clearInterval(timer);
     };
   }, [refresh]);
@@ -180,7 +186,7 @@ function HistoricalAnalytics({ ops, overall }) {
   return <>
     <section className="future-page-head">
       <span className="future-eyebrow">history / all retained data</span>
-      <h1>Evidence over time.</h1>
+      <h1>What has SeaCommons recorded over time?</h1>
       <p>Longitudinal records calculated from the canonical SeaCommons database. Each month counts retained Intel events, not verified incidents or distress cases.</p>
     </section>
     <LifetimeOverview ops={ops} overall={overall} />
@@ -210,8 +216,8 @@ function Operations({ ops }) {
   return <>
     <section className="future-page-head">
       <span className="future-eyebrow">data operations / evidence quality</span>
-      <h1>Monitor the evidence pipeline.</h1>
-      <p>Public-safe system signals from the canonical SeaCommons API. This panel is for understanding data freshness and evidence stages; administrative controls and confidential source records are not exposed.</p>
+      <h1>How reliably is SeaCommons working?</h1>
+      <p>Operations shows what information the software has received, which processing steps completed and where sources may be delayed. It also documents known technical problems, earlier fixes and what still needs verification. A technical warning is not the same as a confirmed maritime incident.</p>
     </section>
     <div className="future-library-actions">
       <button type="button" onClick={ops.refresh}>refresh measurements ↗</button>
@@ -259,8 +265,8 @@ function Hardware() {
   const grandTotal = hardwareBuilds.reduce((sum,item) => sum + totalCost(item) * (quantity[item.id] ?? 1), 0);
   return <>
     <section className="future-page-head"><span className="future-eyebrow">hardware / procurement estimates / Oct 2026</span>
-      <h1>Build the SeaCommons sensor network.</h1>
-      <p>Practical bills of materials for AIS, radio, Drifter, coastal environmental sensing and resilient compute. Each estimate separates priced equipment from recurring costs and deployment exclusions. No station is claimed as deployed.</p>
+      <h1>How physical sensors could extend SeaCommons.</h1>
+      <p>Sensors is a proposed network of coastal antennas, radio receivers, environmental stations and drifting buoys. These instruments could add direct observations to the existing software. Below you can explore equipment, estimated prices, quantities, recurring costs and practical limits. The proposals are not claims of installed stations.</p>
     </section>
     <section className="future-section"><SectionHeader eyebrow="procurement calculator" title="Network investment scenarios."
       copy="Editable unit counts. Planning estimates in EUR, not quotations. Hardware subtotal excludes VAT, shipping, field installation, certification and vessel hire." />
@@ -356,7 +362,7 @@ function OperationalStrip({ ops, period = '24h' }) {
   const status = ops.status;
   const counts = ops.counts;
   const pipeline = status?.pipeline || {};
-  const serviceState = status?.status || (ops.loading ? 'connecting' : 'unavailable');
+  const serviceState = status?.status || (ops.loading ? 'connecting' : 'metrics unavailable');
 
   return (
     <section className="future-ops-strip" aria-label="SeaCommons operational status">
@@ -366,7 +372,7 @@ function OperationalStrip({ ops, period = '24h' }) {
         <StatusPill state={serviceState}>{ops.loading ? 'connecting' : serviceState}</StatusPill>
       </div>
       <div>
-        <span>public catalogue</span>
+        <span>Public archive · all time</span>
         <strong>{formatCount(counts?.total_count)}</strong>
         <small>{formatCount(counts?.humanitarian_count)} humanitarian · {formatCount(counts?.maritime_count)} maritime</small>
       </div>
@@ -378,7 +384,7 @@ function OperationalStrip({ ops, period = '24h' }) {
       <div>
         <span>investigations · {period === '7d' ? '7 days' : '24 h'}</span>
         <strong>{formatCount(pipeline?.investigation_hypotheses)}</strong>
-        <small>public-safe aggregate</small>
+        <small>Signals under examination, not confirmed incidents</small>
       </div>
     </section>
   );
@@ -469,7 +475,7 @@ function PlatformSummary({ ops, period }) {
   ];
   return <>
     <section className="future-section future-overview-story">
-      <SectionHeader eyebrow="01 / project at a glance" title="An evidence infrastructure for the sea."
+      <SectionHeader eyebrow="01 / project at a glance" title="How SeaCommons turns scattered signals into evidence."
         copy="SeaCommons links heterogeneous observations into traceable maritime investigations, while preserving uncertainty, source independence and the distinction between an observation and a verified finding." />
       <div className="future-narrative-grid">
         <article><small>scope</small><h3>Humanitarian OSINT</h3><p>Distress, SAR activity and humanitarian reporting under conservative privacy, provenance and location-precision controls.</p></article>
@@ -478,7 +484,7 @@ function PlatformSummary({ ops, period }) {
       </div>
     </section>
     {period !== 'overall' && <section className="future-section">
-      <SectionHeader eyebrow="02 / measured activity" title="Evidence stages, not equivalent incident totals."
+      <SectionHeader eyebrow="02 / measured activity" title="How incoming information becomes evidence."
         copy={`Values are from the selected ${windowLabel} window. The Play archive is cumulative and stays separate.`} />
       <div className="future-funnel-grid">
         {stages.map((stage, index) => <article key={stage.label}>
@@ -490,7 +496,7 @@ function PlatformSummary({ ops, period }) {
       <p className="future-data-provenance">Source: canonical SeaCommons API /api/v1/status?hours={period === '7d' ? 168 : 24}. {generated ? 'Snapshot generated ' + new Date(generated).toLocaleString() + '.' : 'Waiting for timestamp.'} A derived cue is not a factual finding.</p>
     </section>}
     <section className="future-section">
-      <SectionHeader eyebrow="03 / product ecology" title="Four interfaces, one coherent source of truth."
+      <SectionHeader eyebrow="03 / product ecology" title="The different parts of SeaCommons."
         copy="Each SeaCommons surface has a separate purpose and audience. Futures keeps you inside your authenticated partner workspace." />
       <div className="future-product-grid">
         {products.map((product) => {
@@ -559,10 +565,9 @@ function Overview({ ops, overall, period, setPeriod, navigate }) {
     <>
       <section className="future-hero">
         <span className="future-eyebrow">SeaCommons Futures / partner workspace</span>
-        <h1>From maritime evidence to place-based understanding.</h1>
+        <h1>Understand what happens at sea, through evidence.</h1>
         <p>
-          A shared starting point for research, monitoring and responsible collaboration.
-          Explore SeaCommons operational evidence, its current limits and carefully scoped opportunities for territorial applications.
+          SeaCommons brings together maritime observations, evaluates their reliability and helps researchers understand complex events without confusing signals with verified facts.
         </p>
         <div className="future-hero__meta">
           <StatusPill state={ops.status?.status || 'unknown'}>{ops.status?.status || 'operational feed pending'}</StatusPill>
@@ -572,6 +577,17 @@ function Overview({ ops, overall, period, setPeriod, navigate }) {
         {ops.error ? <p className="future-inline-note">{ops.error} Static project information remains available.</p> : null}
       </section>
 
+      <details className="future-explainer">
+        <summary><span><small>START HERE / THE PROJECT EXPLAINED</small><strong>What is SeaCommons?</strong><em>A short introduction for people discovering the platform</em></span><span className="future-explainer-arrow" aria-hidden="true">⌄</span></summary>
+        <div className="future-explainer-content">
+          <p><b>SeaCommons is an open-source maritime intelligence platform.</b> It gathers information from ship-position signals, public reports, humanitarian alerts, radio, satellites and environmental observations to help researchers understand what may be happening at sea.</p>
+          <p><b>How does it work?</b> Software collects observations, standardises times and locations, checks how sources relate and groups potentially connected information into episodes. An episode is a subject for investigation, not proof of an emergency or wrongdoing.</p>
+          <p><b>Why does evidence matter?</b> Each finding should retain its sources, uncertainty and independent corroboration. An AIS gap or a vessel appearing in an area is not, by itself, evidence of intent. Sensitive details are filtered before publication.</p>
+          <p><b>How do I read the numbers?</b> Choose 24 hours or 7 days for recent activity. Overall shows records still retained in the database. The public archive is cumulative and remains the same when you switch recent periods. Counts from different stages must not be added together.</p>
+          <p><b>Where do I go next?</b> Operations explains current system health and unresolved engineering risks. Sensors shows proposed antennas, radio receivers, drifter buoys and estimated costs. Documents contains presentation and reference material. Account controls access and invitations.</p>
+        </div>
+      </details>
+
       <section className="future-period-tabs" aria-label="Analytics time period">
         <div role="group" aria-label="Analytics time window">
           {[
@@ -579,7 +595,7 @@ function Overview({ ops, overall, period, setPeriod, navigate }) {
           ].map(([value, label]) => <button key={value} type="button" aria-pressed={period === value}
             className={period === value ? 'is-active' : ''} onClick={() => setPeriod(value)}>{label}</button>)}
         </div>
-        <small>{period === 'overall' ? 'Complete retained history, as archived in the canonical databases' : `Rolling ${period === '7d' ? '7-day' : '24-hour'} window, refreshed from the backend`}</small>
+        <small>{period === 'overall' ? 'Complete retained history in the database, not every observation ever seen' : `Activity recorded in the last ${period === '7d' ? 'seven days' : '24 hours'}, not a count of confirmed incidents`}</small>
       </section>
       {period === 'overall' && <LifetimeOverview ops={ops} overall={overall} />}
       {period !== 'overall' && <OperationalStrip ops={ops} period={period} />}
@@ -623,7 +639,7 @@ function Project() {
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">SeaCommons project</span>
-        <h1>One workspace, one project context.</h1>
+        <h1>What SeaCommons is building, and why.</h1>
         <p>
           This Futures domain is the private operational workspace for SeaCommons.
           Other Suez products and client work remain outside this workspace even when they share identity infrastructure.
@@ -707,7 +723,7 @@ function Documents() {
       <section className="future-page-head">
         <span className="future-eyebrow">SeaCommons / docs library</span>
         <h1>Documents, presentations and project knowledge.</h1>
-        <p>One curated register for partner decks, briefs, reference documents and release knowledge. Files labelled restricted are not made downloadable through this catalogue.</p>
+        <p>This is the reading room for people learning about SeaCommons. Find presentations, project briefs, background research and technical references. A restricted label means a file is listed for context but cannot be downloaded without separate permission.</p>
       </section>
 
       <section className="future-library-intro">
@@ -918,9 +934,9 @@ function Access({ user }) {
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">access</span>
-        <h1>Identity connected. Resource permissions require verification.</h1>
+        <h1>Your account and workspace access.</h1>
         <p>
-          Suez Account authenticates your identity. Workspace membership, resource grants and private API permissions must be independently verified server-side. The public-safe operational aggregates above do not imply access to confidential case data.
+          This page shows which account you are using and how workspace permissions work. Signing in confirms your identity, but it does not automatically grant access to private investigations or documents. You can propose invitations below; every request is reviewed before any access can be granted.
         </p>
       </section>
 
@@ -1007,7 +1023,7 @@ export default function FuturesApp() {
 
       <main className="future-main">
         <header className="future-topbar">
-          <div><span>SeaCommons / Futures</span><b>{view}</b></div>
+          <div><span>SeaCommons / Futures</span><b>{NAV_LABELS[view] || view}</b></div>
           <div className="future-topbar__links"><span>Secure partner workspace</span></div>
         </header>
 
@@ -1029,7 +1045,7 @@ export default function FuturesApp() {
         {['overview','operations','hardware','documents','access'].map((item) => (
           <button type="button" key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
             <span className="future-mobile-nav-icon" aria-hidden="true">{{overview:'◈',operations:'⌁',hardware:'◉',documents:'▤',access:'◎'}[item]}</span>
-            <span>{({overview:'Home',operations:'Ops',hardware:'Sensors',documents:'Docs',access:'Account'})[item]}</span>
+            <span>{({overview:'Dashboard',operations:'Ops',hardware:'Sensors',documents:'Docs',access:'Account'})[item]}</span>
           </button>
         ))}
       </nav>
