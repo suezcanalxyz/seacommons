@@ -235,6 +235,10 @@ def operator_ingestion_overview(
     hours: int = Query(24, ge=1, le=720),
 ) -> dict[str, Any]:
     _require_gateway(request)
+    return _overview_payload(hours)
+
+
+def _overview_payload(hours: int) -> dict[str, Any]:
     cached = _fast_cache_get("overview", hours)
     if cached is not None:
         return cached
@@ -965,6 +969,10 @@ def operator_stabilization_status(
 def operator_overall_corpus(request: Request) -> dict[str, Any]:
     """Cached all-time corpus inventory for operator capacity/lineage inspection."""
     _require_gateway(request)
+    return _overall_payload()
+
+
+def _overall_payload() -> dict[str, Any]:
     global _overall_cache
     now_mono = time.monotonic()
     with _overall_cache_lock:
