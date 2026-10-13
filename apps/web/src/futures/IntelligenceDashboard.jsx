@@ -41,6 +41,7 @@ const sourceHelp={
   episode_families:'Kinds of related maritime observations recognized by the correlation engine.',
   episode_verification:'Verification of episodes: one source, multiple indicators, or independent lineages.',
   hypothesis_types:'Investigation topics; counts are not findings of illegal activity.',
+  hypothesis_counter_indicators:'Evidence pointing to innocent or alternative explanations, or against the current hypothesis.',
   hypothesis_states:'Processing state of hypotheses: collecting, candidate or ready for review.',
   hypothesis_evidence_stages:'Highest evidence level reached by each hypothesis.'
 };
@@ -108,7 +109,7 @@ function useOperatorSections(period,tab) {
    let active=true;
    if(period==='overall'){setSnapshot({data:null,error:''});return()=>{active=false;};}
    const hours=period==='7d'?168:24;
-   const paths=tab==='pipeline'?['funnel']:tab==='sources'?['funnel']:tab==='quality'?['funnel','stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue','humanitarian-ais-correlation']:tab==='activity'?['stream','signals','analysis','pipeline-map']:null;
+   const paths=tab==='pipeline'?['funnel']:tab==='sources'?['funnel']:tab==='quality'?['funnel','stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue','humanitarian-ais-correlation']:tab==='activity'?['observations','events','signals','analysis','pipeline-map']:null;
    if(!paths){setSnapshot({data:null,error:''});return()=>{active=false;};}
    setSnapshot({data:null,error:''});
    Promise.allSettled(paths.map(p=>fetchJson(resolveSiteApiBase(),`/api/v1/operator/ingestion/${p}?hours=${hours}&limit=60`,undefined,18000)))
@@ -173,6 +174,7 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
    episode_verification:sections.data?.funnel?.diagnostics?.episode_verification,
    episode_families:sections.data?.funnel?.diagnostics?.episode_families,
    hypothesis_types:sections.data?.funnel?.diagnostics?.hypothesis_reason_codes,
+   hypothesis_counter_indicators:sections.data?.funnel?.diagnostics?.hypothesis_counter_indicators,
  };
  const allStages=stages.filter(x=>x[0]!=='analysis_outputs'&&(!isOverall||x[0]!=='public_live'));
  const specialSensors=isOverall&&sensorsData?{...sensorsData,active_source_names:sensorsData.source_names}:sensorsData;
@@ -185,7 +187,7 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  {tab==='sources'&&<>{Object.entries(sourceHelp).slice(0,4).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown?.[key]} help={help}/>)}</>}
  {tab==='sensors'&&<><MetricSet heading="Sensors and signal coverage" rows={sensors} data={specialSensors}/><FleetView data={sections.data?.['sar-fleet']}/><section className="future-section"><h2>Humanitarian reports / AIS correlation</h2><p>Temporal and geographical matches between reports and AIS are research candidates. Nearby vessels are not automatically involved in any reported event.</p><p>{sections.data?.['humanitarian-ais-correlation']?'Authenticated correlation analysis received.':'No correlation analysis available with current permissions.'}</p></section><section className="future-section"><h2>Satellite review queue</h2><p>Satellite candidates require independent matching and review; these do not indicate confirmed detections or distress.</p><p>Queue candidates: {number(sections.data?.['satellite-queue']?.total_candidates)}</p></section></>}
  {tab==='quality'&&<><QualityDiagnostics data={sections.data?.stabilization}/><CaseReview data={sections.data?.cases}/>{Object.entries(sourceHelp).slice(4).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown?.[key]} help={help}/>)}</>}
- {tab==='activity'&&<><AcquisitionHealth items={raw?.acquisition}/><SimpleRecords title="01 / Raw ingestion" items={sections.data?.stream?.items?.filter(x=>x.kind==='source_observation')} description="Unprocessed source observations. Reappearance after silence is telemetry, not proof of covert activity."/><SimpleRecords title="02 / Normalized events" items={sections.data?.stream?.items?.filter(x=>x.kind==='parsed_event')} description="Parsed events are standardized source observations, not validated incidents."/><SimpleRecords title="Incoming partner signals" items={sections.data?.signals?.signals} description="External connector inputs are source material, not verified humanitarian or maritime incidents."/><SimpleRecords title="03 / Episodes and hypotheses" items={sections.data?.analysis?.items} description="Investigation candidates and recognized episodes; each requires further independent evidence."/><ParserTopology data={sections.data?.['pipeline-map']}/></>}
+ {tab==='activity'&&<><AcquisitionHealth items={raw?.acquisition}/><SimpleRecords title="01 / Raw ingestion" items={sections.data?.observations?.observations} description="Unprocessed source observations. Reappearance after silence is telemetry, not proof of covert activity."/><SimpleRecords title="02 / Normalized events" items={sections.data?.events?.events} description="Parsed events are standardized source observations, not validated incidents."/><SimpleRecords title="Incoming partner signals" items={sections.data?.signals?.signals} description="External connector inputs are source material, not verified humanitarian or maritime incidents."/><SimpleRecords title="03 / Episodes and hypotheses" items={sections.data?.analysis?.items} description="Investigation candidates and recognized episodes; each requires further independent evidence."/><ParserTopology data={sections.data?.['pipeline-map']}/></>}
  {sections.error&&<p role="status">{sections.error}</p>}
  <section className="future-section"><h2>Data provenance and interpretation</h2><p>Operator figures are calculated by the same database aggregation functions as the canonical ingestion dashboard. Public fallback figures are drawn from the canonical status feed. Overall operator counts cover the retained corpus; recent values cover ingestion windows. Sensor counts may be estimated when database statistics are used, especially AIS fixes.</p><p>Source evidence is not the same as an incident. Independent corroboration and human review are required before claims become publishable.</p><button type="button" onClick={()=>navigate('history')}>Explore historical collection →</button></section>
  </>;
