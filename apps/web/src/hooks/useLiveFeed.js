@@ -118,7 +118,8 @@ export function useLiveFeed({
     const streamPath = isPublicLiveHost
       ? `/api/v1/live/stream?mode=${encodeURIComponent(liveMode)}`
       : '/ws/intel';
-    const pollIntervalMs = isPublicLiveHost ? 5000 : 30000;
+    const pollIntervalMs = isPublicLiveHost ? 15000 : 30000;
+    let consecutivePollFailures = 0;
     let ws = null;
     let pollTimer = null;
     let wsAlive = true;
@@ -197,12 +198,14 @@ export function useLiveFeed({
             if (counts) setLiveModeCounts(counts);
             if (data.meta?.role_counts) setLiveRoleCounts(data.meta.role_counts);
           }
+          consecutivePollFailures = 0;
           setIntelConnected(true);
           setIntelMode((previous) => previous === 'ws' ? 'ws' : 'poll');
           markFeedSuccess(features.length);
         }
       } catch {
         if (!alive || edgeLiveActiveRef.current) return;
+        consecutivePollFailures = Math.min(6, consecutivePollFailures + 1);
         setIntelConnected(false);
         setIntelMode((previous) => previous === 'ws' ? 'ws' : 'offline');
         markFeedFailure();
@@ -216,7 +219,7 @@ export function useLiveFeed({
         await pollOnce();
         if (!alive) break;
         await new Promise((resolve) => {
-          pollTimer = window.setTimeout(resolve, pollIntervalMs);
+          pollTimer = window.setTimeout(resolve, Math.min(120000, pollIntervalMs * (2 ** Math.min(3, consecutivePollFailures))));
         });
       }
       polling = false;
