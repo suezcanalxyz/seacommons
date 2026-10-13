@@ -178,8 +178,11 @@ function LifetimeOverview({ ops, overall }) {
     <div className="future-lifetime-grid">
       {metrics.map(([label, value, note]) => <article key={label}><small>{label}</small><strong>{formatCount(value)}</strong><p>{note}</p></article>)}
     </div>
-    <p className="future-data-provenance">Recorded history: {formatDateTime(intel.oldest_event_utc)} → {formatDateTime(intel.newest_event_utc)}.
-      All-time means retained records, not data deleted before retention. {overall.error || ''}</p>
+    <div className="future-data-provenance">
+      <p><b>SeaCommons collection:</b> {intel.first_ingested_at ? formatDateTime(intel.first_ingested_at) + ' → ' + formatDateTime(intel.last_ingested_at) : 'Collection start not yet available from the API.'}</p>
+      <p><b>Historical dates contained in the sources:</b> {formatDateTime(intel.oldest_event_utc)} → {formatDateTime(intel.newest_event_utc)}. Source events may predate SeaCommons; they do not indicate when the software began operating.</p>
+      <p>All-time means records currently retained in the database. {overall.error || ''}</p>
+    </div>
   </section>;
 }
 
@@ -197,6 +200,7 @@ function HistoricalAnalytics({ ops, overall }) {
     <section className="future-section">
       <SectionHeader eyebrow="history / monthly breakdown" title="A traceable historical timeline."
         copy="Each bar represents the number of records in its calendar month. No extrapolation or example values." />
+      {Array.isArray(record.ingested_monthly) && record.ingested_monthly.length > 0 && <section className="future-section"><SectionHeader eyebrow="collection growth / ingestion dates" title="How much SeaCommons collected each month." copy="This timeline measures when records entered SeaCommons, not when their source events took place. Peaks may reflect backfills or system changes; fine-tuning milestones should be annotated only when confirmed by engineering records." /><div className="future-history-chart" role="img" aria-label="Monthly SeaCommons ingestion volume">{record.ingested_monthly.map(({month,count}) => <div key={month} className="future-history-bar"><span title={month+': '+formatCount(count)} style={{height:(5+95*Number(count)/Math.max(1,...record.ingested_monthly.map(row=>Number(row.count)||0)))+'%'}} /><small>{month}</small><strong>{formatCount(count)}</strong></div>)}</div></section>}
       {monthly.length ? <div className="future-history-chart" role="img" aria-label="Monthly retained Intel events">
         {monthly.map(({month,count}) => <div key={month} className="future-history-bar">
           <span title={month+': '+formatCount(count)} style={{height:(5+95*Number(count)/max)+'%'}} />
