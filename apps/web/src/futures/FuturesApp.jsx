@@ -813,6 +813,47 @@ function Updates() {
   );
 }
 
+function Invitations() {
+  const { token } = useAuth();
+  const [form, setForm] = useState({ first_name: '', last_name: '', email: '' });
+  const [items, setItems] = useState([]);
+  const [message, setMessage] = useState('');
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const refresh = async () => {
+    if (!token) return;
+    try {
+      const response = await fetch('/api/v1/futures/invitations', { headers });
+      if (response.ok) setItems(await response.json());
+      else setMessage(`Invitations API: HTTP ${response.status}`);
+    } catch { setMessage('Invitations API is unavailable.'); }
+  };
+  useEffect(() => { refresh(); }, [token]);
+  const submit = async (event) => {
+    event.preventDefault(); setMessage('Saving invitation…');
+    try {
+      const response = await fetch('/api/v1/futures/invitations', {
+        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+      setForm({ first_name: '', last_name: '', email: '' });
+      setMessage('Invitation saved for scheduled review.'); await refresh();
+    } catch (error) { setMessage(`Not saved: ${error.message}`); }
+  };
+  return <section className="future-section future-invitations">
+    <SectionHeader eyebrow="partner access" title="Invitations" copy="Propose a partner with their first name, last name and email. Requests are reviewed every six hours. No membership is granted automatically." />
+    <form onSubmit={submit}>
+      <label>First name<input required maxLength={100} value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} /></label>
+      <label>Last name<input required maxLength={100} value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} /></label>
+      <label>Email<input required type="email" maxLength={320} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></label>
+      <button type="submit" disabled={!token}>Save invitation</button>
+    </form>
+    <p role="status">{message || (!token ? 'Sign in to propose an invitation.' : 'Only authenticated, authorized partners can propose invitations.')}</p>
+    <div>{items.map(item => <article key={item.id}><strong>{item.first_name} {item.last_name}</strong> <span>{item.email}</span> <StatusPill state={item.status}>{item.status}</StatusPill></article>)}</div>
+  </section>;
+}
+
 function Access({ user }) {
   const identity = user?.profile?.email || user?.profile?.preferred_username || user?.email || 'authorised administrator';
   return (
@@ -843,6 +884,7 @@ function Access({ user }) {
         ))}
       </section>
 
+      <Invitations />
       <section className="future-access-note">
         <span className="future-eyebrow">final permission hierarchy</span>
         <p>organisation → SeaCommons workspace → project / subproject → resource or tool</p>

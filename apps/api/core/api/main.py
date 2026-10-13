@@ -250,6 +250,8 @@ app.include_router(weather.router)
 app.include_router(zones.router)
 app.include_router(intel.router)
 app.include_router(cases.router)
+from core.api.routes import futures_invitations
+app.include_router(futures_invitations.router)
 app.include_router(governance.router)
 app.include_router(live.router)
 app.include_router(play.router)
