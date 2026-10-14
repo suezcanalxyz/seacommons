@@ -71,6 +71,25 @@ function SectionHeader({ eyebrow, title, copy, action }) {
   );
 }
 
+function AgentTaskDashboard() {
+ const [state,setState]=useState({loading:true,data:null,error:''});
+ const reload=useCallback(async()=>{
+  setState(s=>({...s,loading:true,error:''}));
+  try {
+   const data=await fetchJson(resolveSiteApiBase(),'/api/v1/operator/ingestion/scheduled-tasks',undefined,18000);
+   setState({loading:false,data,error:''});
+  } catch {
+   setState({loading:false,data:null,error:'Could not load the protected scheduler snapshot.'});
+  }
+ },[]);
+ useEffect(()=>{reload();},[reload]);
+ const tasks=state.data?.tasks||[];
+ return <><section className="future-page-head"><span className="future-eyebrow">Agents / scheduled workflows</span><h1>Scheduled work.</h1><p>Verified SeaCommons tasks from ChatGPT. This workspace shows a protected read-only snapshot, not a live scheduler connection.</p></section>
+ <section className="future-section"><div className="future-intelligence-freshness"><span>{state.loading?'Loading tasks…':state.error||('ChatGPT Tasks · '+tasks.length+' registered')}</span><small>{state.data?.synced_at?'Snapshot: '+new Date(state.data.synced_at).toLocaleString():'No verified snapshot'}</small><button type="button" onClick={reload}>Refresh</button></div>
+ {tasks.length?<div className="future-agent-grid">{tasks.map((task,i)=><article className="future-agent-card" key={task.title||i}><strong>{task.enabled?'ACTIVE':'PAUSED'}</strong><h3>{task.title}</h3><p>{task.cadence||'Cadence unavailable'} · {task.timezone||'Time zone unavailable'}</p><small>Last execution: {task.last_run?new Date(task.last_run).toLocaleString():'Not reported'}</small><small>Snapshot status: {task.status||'Imported'}</small></article>)}</div>:<p>{state.error||'No synchronized SeaCommons tasks are available. This is not evidence that all ChatGPT tasks have stopped.'}</p>}
+ <p className="future-inline-note">Tasks are managed in ChatGPT. Changes to cadence, activation or notifications do not sync automatically to this read-only snapshot.</p>
+ </section></>;
+}
 function useOperationalData(hours = 24) {
   const sequence = useRef(0);
   const [snapshot, setSnapshot] = useState({
@@ -1097,7 +1116,7 @@ export default function FuturesApp() {
           {view === 'platform' && <PlatformNetwork />}
           {view === 'knowledge' && <><section className="future-page-head"><span className="future-eyebrow">Knowledge</span><h1>Learn, review and share.</h1><p>Technical references, practical guides and partner-ready documents in one place.</p></section><Documents /></>}
           {view === 'development' && <Roadmap />}
-          {view === 'agents' && <><section className="future-page-head"><span className="future-eyebrow">Agents / scheduled workflows</span><h1>Work that can be verified.</h1><p>Scheduled research and engineering tasks will show their next run, execution history, reports and linked code changes when a trusted scheduler feed is connected. No demonstration runs are presented as real.</p></section><section className="future-section"><SectionHeader eyebrow="scheduler status" title="Waiting for a verified execution feed" copy="Task metadata and execution results will be read from the scheduler, not inferred from the roadmap." /></section></>}
+          {view === 'agents' && <AgentTaskDashboard />}
           {view === 'overview' && <Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'history' && <HistoricalAnalytics ops={ops} overall={overall} />}
           {view === 'operations' && <Operations ops={ops} />}
