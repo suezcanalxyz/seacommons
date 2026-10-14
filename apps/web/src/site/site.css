@@ -1090,3 +1090,9 @@ button:focus-visible {
   .source-card:last-child { border-bottom: 0; }
   .source-card header { min-height: 0; }
 }
+
+/* The institutional homepage is an entry point, not a technical report. */
+.hero__intro p{max-width:46ch;color:rgba(245,249,248,.94);font-size:clamp(.96rem,1.1vw,1.08rem);line-height:1.5;text-wrap:pretty}
+.hero__intro{margin-top:1.15rem}
+.hero__actions{margin-top:1.25rem}
+@media(max-width:760px){.hero__intro p{max-width:36ch;font-size:.98rem;line-height:1.55}}

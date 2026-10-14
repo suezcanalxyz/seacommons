@@ -40,10 +40,7 @@ export default function Hero() {
         </h1>
         <Reveal className="hero__intro" delay={200}>
           <p>
-            Public reports, vessel tracks, maritime radio, satellite observations and environmental
-            data rarely arrive together. SeaCommons keeps them as separate pieces of evidence,
-            records where each one came from, and links them only when time, place, identity and
-            source lineage support the connection.
+            SeaCommons brings together maritime reports, vessel movements and sensor observations. Explore current public cases in Live, follow their history in Play, or read the method in Docs.
           </p>
           <div className="hero__actions">
             <Magnetic>
