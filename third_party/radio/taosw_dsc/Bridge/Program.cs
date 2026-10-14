@@ -17,6 +17,7 @@ while ((line = Console.In.ReadLine()) is not null)
     var messages = new List<object>();
     var resets = 0;
     var evictions = 0;
+    var bridgeErrors = 0;
     try
     {
         using var doc = JsonDocument.Parse(line);
@@ -66,8 +67,11 @@ while ((line = Console.In.ReadLine()) is not null)
             }
         }
     }
-    catch { }
-    protocol.WriteLine(JsonSerializer.Serialize(new { messages, continuity_resets = resets, state_evictions = evictions }));
+    catch { bridgeErrors++; }
+    // Only an aggregate count crosses the JSONL boundary; no exception text,
+    // receiver identifiers or raw radio audio are ever emitted.
+    protocol.WriteLine(JsonSerializer.Serialize(new { messages, continuity_resets = resets,
+        state_evictions = evictions, bridge_errors = bridgeErrors }));
 }
 
 static bool IsDscFrequency(int hz)

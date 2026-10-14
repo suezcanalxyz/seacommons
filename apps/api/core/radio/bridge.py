@@ -138,7 +138,8 @@ def radio_acquisition_status() -> dict[str, object]:
         structured_state = "offline"
     elif decoder_frames == 0:
         structured_state = "idle"
-    elif not bool(decoder.get("worker_alive")) or int(decoder.get("errors") or 0) > 0:
+    elif (not bool(decoder.get("worker_alive")) or int(decoder.get("errors") or 0) > 0
+          or int(decoder.get("bridge_errors") or 0) > 0):
         structured_state = "degraded"
     elif int(decoder.get("decoded") or 0) == 0 or (
         "accepted" in decoder and int(decoder.get("accepted") or 0) == 0
