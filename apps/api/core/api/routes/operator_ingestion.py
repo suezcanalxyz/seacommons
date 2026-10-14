@@ -1372,7 +1372,7 @@ def operator_measurement_contract(
             "events_created": {"clock":"created_at","meaning":"Intel records first created within the window."},
             "investigations_created": {"clock":"created_at","meaning":"Hypotheses created within the window and not currently expired/rejected."},
             "investigations_updated": {"clock":"updated_at","meaning":"Non-expired/rejected hypotheses whose latest saved update falls in the window; may include reprocessing with no new evidence."},
-            "investigations_open_now": {"clock":"current state","meaning":"Non-expired/rejected hypotheses currently stored. This is not a windowed count."},
+            "investigations_open_now": {"clock":"current state","meaning":"Current non-expired/non-rejected hypotheses (including assessed or published). Not a windowed count."},
             "investigations_rejected_or_expired_updated": {"clock":"updated_at","meaning":"Rejected or expired hypotheses whose last update falls in the window, omitted from the main funnel."},
             "episodes_created": {"clock":"created_at","meaning":"Classified episodes first created within the window."},
             "episodes_updated": {"clock":"updated_at","meaning":"Classified episodes with latest update in the window; not necessarily newly recognized."},
