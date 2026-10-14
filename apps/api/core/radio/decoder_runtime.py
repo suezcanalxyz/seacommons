@@ -108,6 +108,8 @@ class RadioDecoderRuntime:
         self._frames = 0
         self._decoded = 0
         self._accepted = 0
+        self._dsc_accepted = 0
+        self._navtex_accepted = 0
         self._rejected = 0
         self._invalid = 0
         self._dropped = 0
@@ -190,6 +192,8 @@ class RadioDecoderRuntime:
             "frames": self._frames,
             "decoded": self._decoded,
             "accepted": self._accepted,
+            "dsc_accepted": self._dsc_accepted,
+            "navtex_accepted": self._navtex_accepted,
             "rejected": self._rejected,
             "invalid": self._invalid,
             "dropped": self._dropped,
@@ -302,6 +306,8 @@ class RadioDecoderRuntime:
                 self._audio_clipped += int(bool(quality["clipping"]))
         decoded = 0
         accepted = 0
+        dsc_accepted = 0
+        navtex_accepted = 0
         rejected = 0
         invalid = 0
         for decoder in (self._decoders if decoders is None else decoders):
@@ -337,10 +343,16 @@ class RadioDecoderRuntime:
                 decoded += 1
                 if isinstance(result, Mapping) and result.get("accepted") is True:
                     accepted += 1
+                    if kind == "dsc":
+                        dsc_accepted += 1
+                    elif kind == "navtex":
+                        navtex_accepted += 1
                 else:
                     rejected += 1
         self._decoded += decoded
         self._accepted += accepted
+        self._dsc_accepted += dsc_accepted
+        self._navtex_accepted += navtex_accepted
         self._rejected += rejected
         self._invalid += invalid
         self._record_health("invalid", invalid)
@@ -595,6 +607,15 @@ def runtime_from_config() -> RadioDecoderRuntime:
         )) if decoders else None,
         worker_count=3,
     )
+
+
+def stop_radio_decoder_runtime() -> None:
+    """Release persistent JSONL decoder subprocesses before interpreter exit."""
+    global _decoder_runtime
+    with _decoder_runtime_lock:
+        runtime, _decoder_runtime = _decoder_runtime, None
+    if runtime is not None:
+        runtime.stop()
 
 
 def get_radio_decoder_runtime() -> RadioDecoderRuntime:

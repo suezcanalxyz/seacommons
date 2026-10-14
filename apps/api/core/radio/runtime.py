@@ -194,15 +194,22 @@ class RemoteRadioRuntime:
                     future.result()
 
     def _supervise(self) -> None:
-        while not self._stop_event.wait(self._reconnect_interval_s):
-            if self._failover_enabled:
-                self._failover_once()
-            else:
+        # Only managed failover needs an immediate first pass to fill missing
+        # receiver replicas from standbys. Preserve legacy reconnect cadence.
+        if not self._failover_enabled:
+            while not self._stop_event.wait(self._reconnect_interval_s):
                 self._reconnect_disconnected_once()
+            return
+        while not self._stop_event.is_set():
+            self._failover_once()
+            if self._stop_event.wait(self._reconnect_interval_s):
+                break
 
     def _failover_once(self) -> None:
         from core.observability import record_remote_radio_event
 
+        if self._stop_event.is_set():
+            return
         now_mono = self._monotonic()
         with self._lock:
             for entry in self._managed_entries.values():
@@ -283,7 +290,7 @@ class RemoteRadioRuntime:
             record_remote_radio_event(provider=provider, state="disconnected", outcome="failover")
 
         for target, receiver_ids in tuple(self._managed_channels.items()):
-            while True:
+            while not self._stop_event.is_set():
                 active_count = sum(
                     1
                     for receiver_id in receiver_ids
@@ -332,6 +339,11 @@ class RemoteRadioRuntime:
                         provider=provider, state="disconnected", outcome="start_failed"
                     )
                     continue
+                if self._stop_event.is_set():
+                    # A connect attempt may outlive the shutdown supervisor
+                    # join timeout. Do not leak this late socket into exit.
+                    candidate.adapter.stop()
+                    return
                 candidate.state = "active"
                 candidate.activated_at = self._utcnow()
                 with self._lock:
@@ -376,17 +388,16 @@ class RemoteRadioRuntime:
         with self._lock:
             supervisor = self._supervisor
             self._supervisor = None
-            if self._failover_enabled and self._managed_entries:
-                adapters = tuple(
-                    (entry.descriptor, entry.adapter) for entry in self._managed_entries.values()
-                )
-            else:
-                adapters = tuple(self._adapters)
+        if supervisor is not None and supervisor is not threading.current_thread():
+            supervisor.join(timeout=2.0)
+        with self._lock:
+            # Only connected/started receivers hold sockets and background
+            # readers. Stopping all 12 standby candidates serially can cost
+            # >30s even when only 3 are active, tripping systemd's timeout.
+            adapters = tuple(self._adapters)
             self._adapters.clear()
             self._managed_entries.clear()
             self._managed_channels.clear()
-        if supervisor is not None and supervisor is not threading.current_thread():
-            supervisor.join(timeout=2.0)
         for _descriptor, adapter in adapters:
             try:
                 adapter.stop()
@@ -535,6 +546,14 @@ def start_remote_radio_from_config() -> RemoteRadioRuntime:
 
     register_radio_acquisition_status()
     return _runtime
+
+
+def stop_remote_radio() -> None:
+    """Stop managed receiver sockets/readers and allow clean startup later."""
+    global _runtime
+    runtime, _runtime = _runtime, None
+    if runtime is not None:
+        runtime.stop()
 
 
 def get_remote_radio_status(*, include_receivers: bool = False) -> dict[str, object]:
