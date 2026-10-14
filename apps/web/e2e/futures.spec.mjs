@@ -132,7 +132,7 @@ test('Futures navigation is deep-linkable and browser-history aware', async ({ p
   await mockOperationalContracts(page);
   await page.goto(`${FUTURES_URL}?view=roadmap`);
 
-  await expect(page.getByRole('heading', { name: /What is being built/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Development, step by step/i })).toBeVisible();
   await expect(page).toHaveURL(/view=roadmap/);
 
   await page.goto(FUTURES_URL + '?view=project');
@@ -224,7 +224,7 @@ test('Unavailable Overall is explicitly unknown, never a synthetic zero', async 
 test('Futures Platform connects software, illustrated devices and safe network contributions', async ({page}) => {
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL + '?view=platform');
-  await expect(page.getByRole('heading', {name: /Software, devices and a shared method/i})).toBeVisible();
+  await expect(page.getByRole('heading', {name: /One evidence system. Four ways to use it/i})).toBeVisible();
   await expect(page.getByRole('link', {name:/Live/i}).first()).toHaveAttribute('href','https://live.seacommons.org');
   await page.getByRole('button', {name:/Drifter/i}).click();
   await expect(page.getByRole('heading',{name:'Drifter'})).toBeVisible();
