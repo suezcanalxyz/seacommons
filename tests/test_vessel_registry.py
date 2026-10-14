@@ -121,3 +121,24 @@ def test_registry_uses_configured_persistent_state_path(monkeypatch, tmp_path):
     reg = VesselRegistry()
     assert reg._db_path == persistent
     assert persistent.exists()
+
+
+def test_public_vessel_positions_exclude_passenger_and_pleasure_even_from_old_cache(tmp_path):
+    from core.vessels.ais_provider import is_excluded_ship_type
+    assert all(is_excluded_ship_type(code) for code in [37, *range(60, 70)])
+    assert all(not is_excluded_ship_type(code) for code in [None, 0, 30, 36, 51, 70, 80])
+    reg = VesselRegistry(db_path=tmp_path / "scope.db")
+    now = datetime.now(timezone.utc)
+    reg.upsert("111000001", lat=35.0, lon=12.0, last_seen=now)
+    reg.upsert("111000001", ship_type=60)
+    reg.upsert("111000002", lat=35.1, lon=12.1, ship_type=37, last_seen=now)
+    reg.upsert("111000003", lat=35.2, lon=12.2, ship_type=70, last_seen=now)
+    # A still-cached old coordinate must not bypass the public view.
+    assert reg._cache["111000001"]["last_lat"] == 35.0
+    assert reg._cache.get("111000002", {}).get("last_lat") is None
+    assert reg._cache["111000003"]["last_lat"] == 35.2
+    assert {x["properties"]["mmsi"] for x in reg.get_geojson()["features"]} == {"111000003"}
+    assert {x["properties"]["mmsi"] for x in reg.get_geojson(since=now.isoformat())["features"]} == {"111000003"}
+    assert {x["properties"]["mmsi"] for x in reg.get_last_known_geojson()["features"]} == {"111000003"}
+    reg.upsert("111000001", lat=99.0, lon=98.0, last_seen=now)
+    assert reg._cache["111000001"]["last_lat"] == 35.0

@@ -1064,6 +1064,17 @@ def public_signal_collection(
             security_index[feature_id] = len(features_by_mode["security"])
             features_by_mode["security"].append(feature)
 
+    # Final authority covers published hypotheses/open dossiers that bypass
+    # the regular case gate and may be rehydrated from historical caches.
+    # Never allow excluded AIS classes back into any LIVE mode or count.
+    from core.vessels.ais_provider import is_excluded_live_vessel
+
+    for bucket in features_by_mode:
+        features_by_mode[bucket] = [
+            feature for feature in features_by_mode[bucket]
+            if not is_excluded_live_vessel(feature.get("properties") or {})
+        ]
+
     for mode_name in ("security", "safety"):
         features_by_mode[mode_name].sort(
             key=lambda f: str((f.get("properties") or {}).get("timestamp_utc") or ""),

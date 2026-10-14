@@ -29,6 +29,8 @@ logger = logging.getLogger(__name__)
 # `_position_hooks` remains as an alias because existing tests/internal tools
 # reset it directly; wrappers resynchronise the bus if that alias is replaced.
 from core.vessels import ais_bus as _ais_bus
+from core.vessels.ais_provider import is_excluded_ship_type
+
 _position_hooks = _ais_bus._position_hooks
 
 
@@ -300,6 +302,11 @@ class AISStreamClient:
             return
 
         if mtype == "PositionReport":
+            # Do not dispatch passenger or pleasure AIS traffic to *any*
+            # observer, including MDA, legacy hooks and provider callbacks.
+            type_row = (getattr(registry, "_cache", {}) or {}).get(mmsi, {})
+            if is_excluded_ship_type(type_row.get("ship_type")):
+                return
             pr = msg.get("Message", {}).get("PositionReport", {})
             lat = pr.get("Latitude") or meta.get("latitude")
             lon = pr.get("Longitude") or meta.get("longitude")

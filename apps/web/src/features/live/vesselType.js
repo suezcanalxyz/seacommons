@@ -33,3 +33,14 @@ export function shipTypeLabel(value) {
   else if (code >= 80 && code <= 89) label = 'Tanker';
   return `${label} (${code})`;
 }
+
+
+/** Scope decision used defensively by incremental AIS map snapshots. */
+export function isExcludedVesselType(value) {
+  if (value == null || value === '') return false;
+  const code = Number(value);
+  if (Number.isInteger(code)) return code === 37 || (code >= 60 && code <= 69);
+  const label = String(value).trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return ['pleasure', 'pleasure_craft', 'pleasure_vessel', 'recreational_craft',
+    'recreational_vessel', 'passenger', 'passenger_ship', 'passenger_vessel'].includes(label);
+}
