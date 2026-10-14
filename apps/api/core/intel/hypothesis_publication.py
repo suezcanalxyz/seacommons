@@ -29,7 +29,7 @@ _HYPOTHESIS_SUMMARY = {
 }
 
 
-def _record_for_hypothesis(hypothesis: InvestigationHypothesis) -> dict[str, Any]:
+def _record_for_hypothesis(hypothesis: InvestigationHypothesis) -> dict[str, Any] | None:
     """The minimal canonical record core.intel.publication_policy needs --
     built from the hypothesis's own evidence_links, never from vessel
     identity: a published hypothesis is about a behaviour pattern, not a
@@ -37,6 +37,25 @@ def _record_for_hypothesis(hypothesis: InvestigationHypothesis) -> dict[str, Any
     /project_public_maritime_assessed's own _VESSEL_IDENTITY_FIELDS strip)."""
     events = [e for e in (intel_store.get_durable(sid) for sid in hypothesis.evidence_links) if e is not None]
     events.sort(key=lambda e: e.timestamp_utc)
+
+    # The public hypothesis intentionally omits identifying MMSIs. Apply the
+    # canonical passenger/pleasure scope BEFORE projection while the linked
+    # AIS evidence and confidential subject IDs are still available. Historic
+    # published hypotheses therefore cannot bypass the LIVE vessel filter.
+    from core.vessels.ais_provider import is_excluded_live_vessel
+
+    for subject in hypothesis.subject_ids:
+        text = str(subject)
+        if text.startswith("subj:mmsi:") and is_excluded_live_vessel(
+            {"linked_mmsi": text.removeprefix("subj:mmsi:")}
+        ):
+            return None
+    for event in events:
+        info = dict(event.metadata or {})
+        if event.linked_mmsi:
+            info["linked_mmsi"] = event.linked_mmsi
+        if is_excluded_live_vessel(info):
+            return None
     latest = events[-1] if events else None
     return {
         "id": hypothesis.hypothesis_id,
@@ -74,6 +93,8 @@ def public_hypothesis_collection(limit: int = 100) -> dict[str, Any]:
         if hypothesis.live_expires_at is not None and not is_live_retained(hypothesis.live_expires_at, now=now):
             continue
         record = _record_for_hypothesis(hypothesis)
+        if record is None:
+            continue
         projected = project_public_maritime_assessed(record, hypothesis=hypothesis)
         if projected is None or projected.get("lat") is None or projected.get("lon") is None:
             continue

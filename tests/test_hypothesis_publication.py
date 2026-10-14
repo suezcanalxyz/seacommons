@@ -89,3 +89,29 @@ def test_a_hypothesis_forced_published_without_evidence_is_still_excluded():
 
     result = public_hypothesis_collection()
     assert result["features"] == []
+
+
+def test_published_hypothesis_with_excluded_subject_is_withheld_before_identity_is_redacted(monkeypatch):
+    from core.intel.hypothesis_publication import _record_for_hypothesis
+    from core.vessels import registry as registry_module
+
+    monkeypatch.setitem(registry_module.registry._cache, "211879870", {"ship_type": 60})
+    h = new_hypothesis("hyp:test:passenger", "dark_transit", ("subj:mmsi:211879870",))
+    assert _record_for_hypothesis(h) is None
+    monkeypatch.setitem(registry_module.registry._cache, "211879870", {"ship_type": 37})
+    assert _record_for_hypothesis(h) is None
+    monkeypatch.setitem(registry_module.registry._cache, "211879870", {"ship_type": 70})
+    assert _record_for_hypothesis(h) is not None
+
+
+def test_published_hypothesis_with_excluded_evidence_is_withheld(monkeypatch):
+    from core.intel.hypothesis_publication import _record_for_hypothesis
+    from core.intel import hypothesis_publication
+
+    h = new_hypothesis("hyp:test:evidence", "dark_transit", ("subj:imo:9999999",))
+    h = replace(h, evidence_links=("e1",))
+    e = IntelEvent(id="e1", linked_mmsi="000000000", metadata={"ship_type": 66})
+    monkeypatch.setattr(hypothesis_publication.intel_store, "get_durable", lambda _: e)
+    assert _record_for_hypothesis(h) is None
+    e.metadata = {"ship_type": 80}
+    assert _record_for_hypothesis(h) is not None
