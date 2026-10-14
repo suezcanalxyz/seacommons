@@ -150,6 +150,7 @@ class OpenWebRXAdapter:
         self._frequency_hz: int | None = None
         self._mode: str | None = None
         self._session_id = ""
+        self._audio_sequence = 0
         self._center_freq_hz: int | None = None
         self._sample_rate_hz: int | None = None
         self._audio_compression: str | None = None
@@ -163,6 +164,7 @@ class OpenWebRXAdapter:
                 return
             self._error = None
             self._session_id = uuid.uuid4().hex
+            self._audio_sequence = 0
             self._center_freq_hz = None
             self._sample_rate_hz = None
             self._audio_compression = None
@@ -271,10 +273,16 @@ class OpenWebRXAdapter:
                 frequency_hz = self._frequency_hz
                 mode = self._mode
                 audio_compression = self._audio_compression
+                session_id = self._session_id
             if frequency_hz is None or mode is None or len(message) <= 1:
                 return
             if str(audio_compression or '').strip().lower() not in {'none', 'off', 'false', '0'}:
                 return
+            # Count at the acquisition boundary, before submit_frame can drop
+            # a PCM packet. Missing queue frames will create a sequence gap.
+            with self._lock:
+                self._audio_sequence = (self._audio_sequence + 1) & 0xFFFFFFFF
+                sequence = self._audio_sequence
             try:
                 from core.radio.decoder_runtime import EphemeralRadioFrame, submit_ephemeral_frame
                 submit_ephemeral_frame(EphemeralRadioFrame(
@@ -283,7 +291,8 @@ class OpenWebRXAdapter:
                     mode=mode, observed_at=datetime.now(timezone.utc),
                     sample_rate_hz=48_000 if message[0] == 0x04 else 12_000,
                     encoding="openwebrx_pcm_s16le", payload=message[1:],
-                    source_terms=self._descriptor.source_terms,
+                    source_terms=self._descriptor.source_terms, session_id=session_id,
+                    sequence=sequence,
                 ))
             except Exception:
                 pass

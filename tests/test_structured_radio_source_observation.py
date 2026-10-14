@@ -157,3 +157,18 @@ def test_bridge_never_creates_humanitarian_incident_or_lifecycle_transition():
         persist_navtex_observation(db, _navtex(decoder_message_id="navtex-no-side-effect"))
         assert db.query(HumanitarianIncidentDB).count() == before_incidents
         assert db.query(IncidentTransitionDB).count() == before_transitions
+
+
+def test_same_dsc_symbols_retransmitted_later_create_distinct_observations():
+    from datetime import timedelta
+    from core.db.session import session_scope
+    from core.radio.structured_source_observation import persist_dsc_observation
+    original = _dsc(decoder_message_id="taosw_same_symbols")
+    with session_scope() as db:
+        a = persist_dsc_observation(db, original)
+        replay = persist_dsc_observation(db, original)
+        later = persist_dsc_observation(db, _dsc(decoder_message_id="taosw_same_symbols",
+                                         observed_at=original.observed_at + timedelta(minutes=4)))
+    assert replay.observation_id == a.observation_id
+    assert later.observation_id != a.observation_id
+    assert not later.replayed

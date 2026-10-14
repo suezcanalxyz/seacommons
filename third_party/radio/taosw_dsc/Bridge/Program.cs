@@ -8,12 +8,15 @@ using TAOSW.DSC_Decoder.Core.TAOSW.DSC_Decoder.Core;
 
 var protocol = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
 Console.SetOut(TextWriter.Null);
+const int MaxStreamStates = 64;
 var states = new Dictionary<string, DecoderState>();
 
 string? line;
 while ((line = Console.In.ReadLine()) is not null)
 {
     var messages = new List<object>();
+    var resets = 0;
+    var evictions = 0;
     try
     {
         using var doc = JsonDocument.Parse(line);
@@ -31,11 +34,28 @@ while ((line = Console.In.ReadLine()) is not null)
                 : null;
             var streamKey = $"{lineage ?? receiver ?? "unknown"}|{frequency}|{rate}";
             var pcm = Convert.FromBase64String(root.GetProperty("payload_b64").GetString() ?? "");
-            if (pcm.Length > 0 && pcm.Length % 2 == 0)
+            if (pcm.Length > 0 && pcm.Length % 2 == 0 && pcm.Length <= 262144)
             {
-                if (!states.TryGetValue(streamKey, out var state))
+                var session = root.TryGetProperty("session_id", out var sessionElement) && sessionElement.ValueKind == JsonValueKind.String
+                    ? sessionElement.GetString() : null;
+                uint? sequence = root.TryGetProperty("sequence", out var sequenceElement) && sequenceElement.ValueKind == JsonValueKind.Number
+                    && sequenceElement.TryGetUInt32(out var seq) ? seq : null;
+                var observedAt = root.TryGetProperty("observed_at", out var observedElement) && observedElement.ValueKind == JsonValueKind.String
+                    && DateTimeOffset.TryParse(observedElement.GetString(), out var observed) ? observed : DateTimeOffset.MinValue;
+                if (!states.TryGetValue(streamKey, out var state) ||
+                    state.NeedsReset(session, sequence, observedAt))
+                {
+                    if (state is not null) resets++;
+                    if (!states.ContainsKey(streamKey) && states.Count >= MaxStreamStates)
+                    {
+                        var oldest = states.MinBy(item => item.Value.LastUsedUtc).Key;
+                        states.Remove(oldest);
+                        evictions++;
+                    }
                     states[streamKey] = state = new DecoderState(rate);
+                }
                 state.Process(pcm);
+                state.MarkFrame(session, sequence, observedAt, pcm.Length / 2);
                 var emitted = new HashSet<string>();
                 foreach (var msg in state.Drain())
                 {
@@ -47,7 +67,7 @@ while ((line = Console.In.ReadLine()) is not null)
         }
     }
     catch { }
-    protocol.WriteLine(JsonSerializer.Serialize(new { messages }));
+    protocol.WriteLine(JsonSerializer.Serialize(new { messages, continuity_resets = resets, state_evictions = evictions }));
 }
 
 static bool IsDscFrequency(int hz)
@@ -101,6 +121,35 @@ sealed class DecoderState
     readonly int samplesPerSymbol;
     readonly List<float> pendingSamples = new();
     readonly ConcurrentQueue<DSCMessage> pending = new();
+    readonly int sampleRate;
+    string? lastSession;
+    uint? lastSequence;
+    DateTimeOffset lastObservedAt = DateTimeOffset.MinValue;
+    double lastFrameDurationS;
+    public DateTimeOffset LastUsedUtc { get; private set; } = DateTimeOffset.UtcNow;
+
+    public bool NeedsReset(string? session, uint? sequence, DateTimeOffset observedAt)
+    {
+        if (DateTimeOffset.UtcNow - LastUsedUtc > TimeSpan.FromMinutes(10)) return true;
+        if (lastSession != null && session != null && lastSession != session) return true;
+        if (lastSequence.HasValue && sequence.HasValue &&
+            sequence.Value != unchecked(lastSequence.Value + 1)) return true;
+        if (lastObservedAt != DateTimeOffset.MinValue && observedAt != DateTimeOffset.MinValue)
+        {
+            var seconds = (observedAt - lastObservedAt).TotalSeconds;
+            if (seconds < -0.2 || seconds > Math.Max(0.25, lastFrameDurationS * 4 + 0.05)) return true;
+        }
+        return false;
+    }
+
+    public void MarkFrame(string? session, uint? sequence, DateTimeOffset observedAt, int samples)
+    {
+        lastSession = session;
+        lastSequence = sequence;
+        lastObservedAt = observedAt;
+        lastFrameDurationS = (double)samples / sampleRate;
+        LastUsedUtc = DateTimeOffset.UtcNow;
+    }
 
     public DecoderState(int sampleRate)
     {
@@ -109,6 +158,7 @@ sealed class DecoderState
         // The tones are fixed, so bypass the FFT auto-tuner entirely.
         if (sampleRate < 100 || sampleRate % 100 != 0)
             throw new ArgumentException("DSC sample rate must be divisible by 100", nameof(sampleRate));
+        this.sampleRate = sampleRate;
         samplesPerSymbol = sampleRate / 100;
         decoder = new DSCDecoder(100, sampleRate);
         gmdss = Enumerable.Range(0, DSCDecoder.SlideWindowsNumber).Select(_ => new GMDSSDecoder()).ToArray();

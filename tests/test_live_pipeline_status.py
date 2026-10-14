@@ -270,3 +270,18 @@ def test_structured_radio_is_degraded_when_frames_flow_but_nothing_decodes(monke
 
     assert status["state"] == "live"
     assert status["structured_state"] == "degraded"
+
+
+def test_decoded_without_accepted_safety_observations_is_not_structured_live(monkeypatch):
+    from core.radio.bridge import radio_acquisition_status
+    from core.config import config
+    monkeypatch.setattr(config, "STRUCTURED_RADIO_ENABLED", True)
+    monkeypatch.setattr("core.radio.runtime.get_remote_radio_status", lambda include_receivers=False: {
+        "enabled": True, "started": 1, "configured": 1, "failed": 0,
+        "receivers": [{"receiver_id":"r", "state":"connected"}],
+    })
+    monkeypatch.setattr("core.radio.decoder_runtime.radio_decoder_status", lambda: {
+        "enabled": True, "decoders": 2, "frames": 100, "decoded": 4,
+        "accepted": 0, "rejected": 4, "errors": 0, "dropped": 0, "worker_alive": True,
+    })
+    assert radio_acquisition_status()["structured_state"] == "degraded"
