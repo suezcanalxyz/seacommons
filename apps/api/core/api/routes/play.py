@@ -303,6 +303,61 @@ def _canonical_voyage_evidence(
 
 
 
+
+def _evidence_audit(timeline: list[dict[str, Any]], *, independent_lineages: list[str] | None = None,
+                    counter_indicators: list[str] | None = None) -> dict[str, Any]:
+    """Analyst audit over the existing canonical timeline; no shadow evidence graph.
+
+    Completeness here is metadata coverage, not confidence in the allegation.
+    Satellite search footprints are context, not independent confirmations.
+    """
+    lineage_count = len({str(lineage) for lineage in (independent_lineages or []) if str(lineage).strip()})
+    counts = {key: 0 for key in ("dated", "located", "linked_source", "direct_observation", "modelled", "context_only")}
+    records = []
+    for item in timeline:
+        if not isinstance(item, dict):
+            continue
+        at = _iso(item.get("at"))
+        prop = item.get("properties") or {}
+        geometry = item.get("geometry")
+        role = str(prop.get("evidence_role") or "")
+        kind = str(item.get("type") or "")
+        link = prop.get("source_url") or prop.get("url")
+        # Do not automatically assume source provenance from a generated title.
+        if at:
+            counts["dated"] += 1
+        if isinstance(geometry, dict) and geometry.get("coordinates"):
+            counts["located"] += 1
+        if isinstance(link, str) and link.startswith(("https://", "http://")):
+            counts["linked_source"] += 1
+        if kind == "satellite" and role != "evidence":
+            category = "context_only"
+        elif kind in {"drift", "hypothesis", "episode", "sar_mission_assessment"}:
+            category = "modelled"
+        else:
+            category = "direct_observation"
+        counts[category] += 1
+        records.append({"evidence_id": str(item.get("id") or ""), "at": at,
+                        "category": category, "has_geometry": bool(geometry),
+                        "has_source_url": bool(link and str(link).startswith(("https://", "http://")))})
+    review = []
+    if not records:
+        review.append("No dated timeline evidence available")
+    if counts["linked_source"] == 0:
+        review.append("Original source links are not present in the public timeline")
+    if counts["located"] == 0:
+        review.append("No geolocated observation is available")
+    if lineage_count < 2:
+        review.append("Independent-source corroboration has not been established")
+    review.append("Review alternatives: receiver coverage loss, AIS equipment fault, and independent sightings")
+    return {"method_version": "play_evidence_audit_v1", "lineage_count": lineage_count,
+            "timeline_items": len(records), "counts": counts, "records": records,
+            "counter_indicators": list(counter_indicators or []),
+            "next_checks": review,
+            "interpretation": "Metadata completeness is not a probability or a finding of deliberate behaviour"}
+
+
+
 def _public_episode_dossier(db, episode, *, now: datetime) -> dict[str, Any]:
     from sqlalchemy import or_
     from core.db.models import (
@@ -499,6 +554,7 @@ def _public_episode_dossier(db, episode, *, now: datetime) -> dict[str, Any]:
         "drift_count": len(drifts),
         "evidence_count": len(evidence_events) + satellite_evidence_count + radio_evidence_count,
         "timeline": timeline,
+        "evidence_audit": _evidence_audit(timeline, independent_lineages=list(episode.independence_groups or [])),
         "generated_at": now.isoformat(),
     }
 
@@ -1435,7 +1491,11 @@ def play_incident_timeline(incident_id: str):
                     )
                 ),
                 "drift_count": len(drifts),
-                "timeline": timeline, "generated_at": now.isoformat(),
+                "timeline": timeline,
+                "evidence_audit": _evidence_audit(
+                    timeline, independent_lineages=list(projection.get("independence_groups") or []),
+                    counter_indicators=list(hypothesis.counter_indicators or [])),
+                "generated_at": now.isoformat(),
             }
 
         incident = db.get(HumanitarianIncidentDB, incident_id)

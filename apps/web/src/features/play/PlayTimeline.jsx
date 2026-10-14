@@ -668,6 +668,12 @@ export default function PlayTimeline({ apiBase }) {
             {reportEvidence.length ? <ol className="play-report-chronology">{reportEvidence.map((item, index) => <li key={item.id || `${item.at}-${index}`}><time>{itemTime(item.at)} UTC</time><strong>{String(item.type || 'Observation').replaceAll('_', ' ')}</strong><span>{humanizeDetectorText(item.title || item.properties?.description || 'Recorded evidence')}</span>{(item.properties?.source_url || item.properties?.url) && <a href={item.properties.source_url || item.properties.url} target="_blank" rel="noreferrer">Original source ↗</a>}</li>)}</ol> : <p className="play-report-prose">No detailed sequence of observations is available yet.</p>}
             <h3>Evidence and assessment</h3>
             <p className="play-report-prose">Verification: {statusLabel(caseData?.verification_status || 'unknown')}. {caseData?.independence_groups?.length ? `${caseData.independence_groups.length} recorded source lineage(s).` : 'Independent source lineages have not been documented.'} {dossierReasonCodes.length ? `Recorded detector grounds: ${dossierReasonCodes.map((code) => code.toLowerCase().replaceAll('_', ' ')).join('; ')}.` : ''}</p>
+            {caseData?.evidence_audit && <>
+              <h3>Source provenance and verification gaps</h3>
+              <p className="play-report-prose">{caseData.evidence_audit.counts?.direct_observation || 0} direct timeline item(s), {caseData.evidence_audit.counts?.modelled || 0} modelled item(s), {caseData.evidence_audit.counts?.context_only || 0} context-only item(s). Source links: {caseData.evidence_audit.counts?.linked_source || 0}. These counts measure documentation, not confidence.</p>
+              <ul className="play-report-chronology">{(caseData.evidence_audit.next_checks || []).map((check, i) => <li key={`${i}-${check}`}>{check}</li>)}</ul>
+              {(caseData.evidence_audit.counter_indicators || []).length > 0 && <p className="play-report-prose">Recorded counter-indicators: {caseData.evidence_audit.counter_indicators.join('; ')}</p>}
+            </>}
             <h3>Limitations and next checks</h3>
             <p className="play-report-prose">This reconstruction contains only information available at the selected historical cutoff. Missing AIS, satellite, radio or other records must not be interpreted as evidence that an activity did not occur. A modelled drift is not an observed vessel track. Reported circumstances, assessed hypotheses and verified outcomes remain separate.</p>
           </section>
