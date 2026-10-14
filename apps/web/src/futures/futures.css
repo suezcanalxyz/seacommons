@@ -851,3 +851,7 @@ a { color: inherit; text-decoration: none; }
  .future-section{margin:11px 0!important;padding:8px 0!important}
 }
 @media(prefers-reduced-motion:reduce){.future-app *, .future-app *::before,.future-app *::after{transition:none!important;scroll-behavior:auto!important}}
+
+.future-intelligence-tagline{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 0;color:var(--f-muted);font-size:10px}
+.future-intelligence-tagline+.future-period-tabs{margin-top:8px!important}
+@media(max-width:760px){.future-intelligence-tagline>span:last-child{display:none}}
