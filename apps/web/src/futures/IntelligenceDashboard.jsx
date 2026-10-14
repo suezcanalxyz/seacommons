@@ -125,7 +125,7 @@ const measurementRows=[
  ['events_created','Normalized created','New normalized event rows inserted during this time window.'],
  ['investigations_created','New investigations','Hypotheses first created in this window, excluding those now expired or rejected.'],
  ['investigations_updated','Investigations updated','Existing or newly created hypotheses whose latest saved update falls inside the window. Repeat processing can change this.'],
- ['investigations_open_now','Open investigations now','Current stock of hypotheses not expired or rejected. It is not a historical count for the selected period.'],
+ ['investigations_open_now','Current non-expired investigations','Current stock of hypotheses not expired or rejected, including assessed and published records. Not a windowed activity total.'],
  ['investigations_rejected_or_expired_updated','Excluded hypotheses updated','Rejected or expired hypotheses whose last update occurred in the window; not included in active investigations.'],
  ['episodes_created','New episodes','Classified episodes first created in this window.'],
  ['episodes_updated','Episodes updated','Classified episodes last modified in this window; older episodes may be included.'],
