@@ -37,7 +37,7 @@ import { mergeIntelDriftUpdate } from './features/live/normalize.js';
 import { receiverChannelLabel } from './features/live/pipelineStatus.js';
 import { initialLayerVisibility, layerVisibilityStorageKey } from './features/live/layerDefaults.js';
 import { splitObservedTrackSegments } from './features/live/observedTrack.js';
-import { vesselReportFeature } from './features/live/vesselVisual.js';
+import { vesselReportFeature, isFerryVessel } from './features/live/vesselVisual.js';
 import { createVesselArrowImage } from './features/map/vesselMarker.js';
 import { publicBasemapSource } from './features/map/publicBasemap.js';
 import { createFallbackMap } from './features/map/fallbackRenderer.js';
@@ -3092,6 +3092,7 @@ function App() {
       const timeoutMs = isFirst ? 20000 : 12000;
       const data = await fetchJson(apiBase, url, undefined, timeoutMs);
       if (!data?.features) return;
+      data.features = data.features.filter((feature) => !isFerryVessel(feature));
       lastVesselTs = new Date().toISOString();
       const now = Date.now();
       data.features.forEach((f) => { if (f.properties?.mmsi) seenAt.set(f.properties.mmsi, now); });
@@ -3099,11 +3100,12 @@ function App() {
         vesselSnapshot = data;
       } else {
         const updated = new Map(data.features.map((f) => [f.properties?.mmsi, f]));
-        const merged = vesselSnapshot.features.map((f) => updated.get(f.properties?.mmsi) || f);
+        const merged = vesselSnapshot.features.map((f) => updated.get(f.properties?.mmsi) || f).filter((f) => !isFerryVessel(f));
         data.features.forEach((f) => { if (!vesselSnapshot.features.some((e) => e.properties?.mmsi === f.properties?.mmsi)) merged.push(f); });
         // Expire vessels not seen in any diff for VESSEL_TTL_MS — otherwise a
         // vessel that left the feed stays painted on the map until full reload.
         const fresh = merged.filter((f) => {
+          if (isFerryVessel(f)) return false;
           const ts = seenAt.get(f.properties?.mmsi);
           return ts === undefined || (now - ts) < VESSEL_TTL_MS;
         });
