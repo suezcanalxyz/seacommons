@@ -221,3 +221,39 @@ def test_dsc_bridge_keeps_decoder_state_per_receiver_lineage():
     assert "Dictionary<string, DecoderState>" in source
     assert 'physical_lineage' in source
     assert 'streamKey' in source
+
+
+def test_dsc_tone_probe_reports_energy_without_creating_evidence():
+    import math
+    from array import array
+
+    from core.radio.decoder_runtime import RadioDecoderRuntime, _dsc_tone_score
+
+    rate = 12_000
+    samples = array("h")
+    for index in range(2400):
+        t = index / rate
+        value = int(12000 * math.sin(2 * math.pi * 1615 * t))
+        samples.append(value)
+    # Kiwi SND PCM is network-order signed 16-bit.
+    payload = array("h", samples)
+    import sys
+    if sys.byteorder == "little":
+        payload.byteswap()
+    frame = _frame(payload.tobytes())
+    score = _dsc_tone_score(frame)
+    assert score > 0.1
+
+    class EmptyDecoder:
+        def decode(self, _frame):
+            return ()
+
+    runtime = RadioDecoderRuntime(
+        enabled=True, decoders=(EmptyDecoder(),), decoded_handler=lambda msg: {}
+    )
+    for _ in range(20):
+        runtime.ingest_frame(frame)
+    status = runtime.status()
+    assert status["decoded"] == 0
+    assert status["dsc_tone_probe_frames"] == 1
+    assert status["dsc_tone_score_max"] > 0.1
