@@ -1114,7 +1114,7 @@ export default function FuturesApp() {
           {Object.entries(SUBNAV).some(([,items])=>items.some(([id])=>id===view)) && <nav className="future-subnav" aria-label="Section navigation">{(Object.entries(SUBNAV).find(([,items])=>items.some(([id])=>id===view))?.[1] || []).map(([id,label])=><button type="button" key={id} className={id===view?'is-active':''} onClick={()=>navigate(id)}>{label}</button>)}</nav>}
           {view === 'intelligence' && <IntelligenceDashboard ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'platform' && <PlatformNetwork />}
-          {view === 'knowledge' && <><section className="future-page-head"><span className="future-eyebrow">Knowledge</span><h1>Learn, review and share.</h1><p>Technical references, practical guides and partner-ready documents in one place.</p></section><Documents /></>}
+          {view === 'knowledge' && <Documents />}
           {view === 'development' && <Roadmap />}
           {view === 'agents' && <AgentTaskDashboard />}
           {view === 'overview' && <Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
