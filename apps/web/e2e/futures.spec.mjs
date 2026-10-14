@@ -271,14 +271,14 @@ test('Intelligence matches operator aggregation with 24h 7d overall switching', 
  await expect(page.getByRole('heading',{name:/Evidence, from first signal/i})).toBeVisible();
  const window=page.getByRole('group',{name:'Intelligence time window'});
  await window.getByRole('button',{name:'24 hours'}).click();
- await expect(page.getByText('20,591')).toBeVisible();
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).getByText('20,591')).toBeVisible();
  await page.getByRole('button',{name:'Sources & types'}).click();
  await expect(page.getByText('20,397')).toBeVisible();
  await window.getByRole('button',{name:'7 days'}).click();
  await page.getByRole('button',{name:'Evidence pipeline'}).click();
- await expect(page.getByText('83,000')).toBeVisible();
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).getByText('83,000')).toBeVisible();
  await window.getByRole('button',{name:'Overall'}).click();
- await expect(page.getByText('2,371,751')).toBeVisible();
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).getByText('2,371,751')).toBeVisible();
  await page.getByRole('button',{name:'Sources & types'}).click();
  await expect(page.getByText('2,346,069')).toBeVisible();
 });
