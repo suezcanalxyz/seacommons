@@ -45,6 +45,16 @@ _scheduler = None
 _scheduler_lock = threading.Lock()
 
 
+def _job_alarmphone_drift_reconcile() -> None:
+    try:
+        from core.intel.drift_watchdog import reconcile
+
+        result = reconcile(launch=_available_ram_mb() >= 1600)
+        logger.info("Alarm Phone drift reconciliation: %s", result)
+    except Exception:
+        logger.exception("Alarm Phone drift reconciliation failed")
+
+
 # ── Job: drift pending events ─────────────────────────────────────────────────
 
 def _available_ram_mb() -> int:
@@ -630,9 +640,15 @@ def start() -> None:
                           id="futures_invitation_review", replace_existing=True,
                           max_instances=1, misfire_grace_time=300)
 
-        # Auto-drift disabled — triggered manually via the UI button instead.
-        # The 1 GB VM cannot sustain background CMEMS drift jobs without swap exhaustion.
-        # scheduler.add_job(_job_drift_pending, ...)
+        # Durable recovery watchdog. It never starts more than one model per
+        # cycle and honours the shared drift semaphore. Legacy 1GB unlimited
+        # high/critical scheduler stays disabled.
+        scheduler.add_job(
+            _job_alarmphone_drift_reconcile, IntervalTrigger(minutes=5),
+            id="alarmphone_drift_reconcile", replace_existing=True,
+            max_instances=1, coalesce=True, misfire_grace_time=120,
+            next_run_time=_soon(),
+        )
 
         scheduler.add_job(_job_refresh_news,   IntervalTrigger(minutes=30),
                           id="refresh_news",   replace_existing=True,
