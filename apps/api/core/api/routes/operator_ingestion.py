@@ -1385,3 +1385,33 @@ def operator_measurement_contract(
         ],
     }
     return _fast_cache_put("measurements", hours, payload)
+
+
+@router.get("/scheduled-tasks")
+def futures_scheduled_tasks(request: Request) -> dict[str, Any]:
+    """Read-only ChatGPT task snapshot, private to authenticated Futures users.
+
+    The export is provisioned outside the Git repository, contains no credentials
+    or prompts, and is explicitly a snapshot rather than a live scheduler API.
+    """
+    _require_gateway(request)
+    import json
+    import os
+    from pathlib import Path
+
+    file_path = Path(os.environ.get(
+        "SEACOMMONS_FUTURES_TASK_SNAPSHOT",
+        "/home/ubuntu/seacommons/data/futures-scheduled-tasks.json",
+    ))
+    try:
+        raw = json.loads(file_path.read_text(encoding="utf-8"))
+        tasks = raw.get("tasks", [])
+        if not isinstance(tasks, list):
+            raise ValueError("Invalid scheduler task shape")
+        allowed = {"title", "enabled", "cadence", "last_run", "timezone", "status"}
+        clean = [{k: row[k] for k in allowed if k in row} for row in tasks if isinstance(row, dict)]
+        return {"source": "ChatGPT Tasks snapshot", "live_sync": False,
+                "synced_at": raw.get("synced_at"), "tasks": clean}
+    except (FileNotFoundError, PermissionError, ValueError, json.JSONDecodeError):
+        return {"source": "ChatGPT Tasks", "live_sync": False,
+                "synced_at": None, "tasks": [], "status": "not_connected"}
