@@ -7,6 +7,7 @@ import sys
 import json
 import hashlib
 import queue
+import re
 import subprocess
 import threading
 import time
@@ -161,6 +162,24 @@ class RadioDecoderRuntime:
         return summary
 
     def status(self) -> dict[str, object]:
+        reasons = {name: 0 for name in ("sequence_gap", "session", "timestamp_gap", "stale")}
+        sources: dict[str, dict[str, int]] = {}
+        for group in self._decoder_sets:
+            for decoder in group:
+                snapshot = getattr(decoder, "continuity_status", None)
+                if not callable(snapshot):
+                    continue
+                item_reasons, item_sources = snapshot()
+                for name in reasons:
+                    reasons[name] += int(item_reasons.get(name, 0))
+                for receiver, details in item_sources.items():
+                    values = sources.setdefault(receiver, {name: 0 for name in reasons})
+                    for name in reasons:
+                        values[name] += int(details.get(name, 0))
+        public_sources = [
+            {"receiver_id": receiver, "resets": sum(details.values()), **details}
+            for receiver, details in sorted(sources.items()) if sum(details.values()) > 0
+        ][:16]
         recent = self._recent_health()
         with self._shard_metrics_lock:
             frames_by_shard = list(self._frames_by_shard)
@@ -199,6 +218,8 @@ class RadioDecoderRuntime:
             "recent_drop_ratio": round(recent["dropped"] / max(1, recent["frames"] + recent["dropped"]), 6),
             "queue_capacity_per_shard": self._queues[0].maxsize,
             "continuity_resets": sum(int(getattr(d, "continuity_resets", 0)) for group in self._decoder_sets for d in group),
+            "continuity_reset_reasons": reasons,
+            "continuity_reset_sources": public_sources,
             "state_evictions": sum(int(getattr(d, "state_evictions", 0)) for group in self._decoder_sets for d in group),
             "bridge_errors": sum(int(getattr(d, "bridge_errors", 0)) for group in self._decoder_sets for d in group),
         }
@@ -355,6 +376,14 @@ class JSONLProcessDecoder:
         self.continuity_resets = 0
         self.state_evictions = 0
         self.bridge_errors = 0
+        self._continuity_lock = threading.Lock()
+        self._reset_reasons = {key: 0 for key in ("sequence_gap", "session", "timestamp_gap", "stale")}
+        self._reset_receivers: dict[str, dict[str, int]] = {}
+
+    def continuity_status(self) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
+        with self._continuity_lock:
+            return (dict(self._reset_reasons),
+                    {key: dict(values) for key, values in self._reset_receivers.items()})
 
     def _ensure_process(self) -> subprocess.Popen[str]:
         process = self._process
@@ -461,6 +490,19 @@ class JSONLProcessDecoder:
                 count = payload.get(key)
                 if isinstance(count, int) and not isinstance(count, bool) and 0 <= count <= 64:
                     setattr(self, attribute, getattr(self, attribute) + count)
+            reason = payload.get("reset_reason")
+            if payload.get("continuity_resets") == 1 and isinstance(reason, str) and reason in self._reset_reasons:
+                with self._continuity_lock:
+                    self._reset_reasons[reason] += 1
+                    # Receiver IDs already appear in the public catalog.
+                    # Never expose private physical_lineage or raw audio.
+                    receiver = frame.receiver_id
+                    if re.fullmatch(r"[a-z0-9_]{1,64}", receiver):
+                        if receiver in self._reset_receivers or len(self._reset_receivers) < 16:
+                            counts = self._reset_receivers.setdefault(
+                                receiver, {key: 0 for key in self._reset_reasons}
+                            )
+                            counts[reason] += 1
         messages = payload.get("messages", []) if isinstance(payload, Mapping) else []
         if not isinstance(messages, list):
             raise ValueError("decoder messages must be a list")

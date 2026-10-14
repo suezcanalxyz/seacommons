@@ -450,3 +450,54 @@ def test_decoder_recent_health_window_expires_without_reseting_lifetime(monkeypa
     runtime.ingest_frame(_frame())
     assert runtime.status()['recent_frames'] == 1
     assert runtime.status()['recent_drop_ratio'] == 0
+
+
+def test_public_receiver_continuity_reasons_and_sources_are_bounded(tmp_path):
+    import sys
+    from dataclasses import replace
+    from core.acquisition.status import _sanitize_decoder
+    from core.radio.decoder_runtime import JSONLProcessDecoder, RadioDecoderRuntime
+
+    script = tmp_path / "bridge.py"
+    script.write_text(
+        "import json,sys\n"
+        "for line in sys.stdin:\n"
+        " d=json.loads(line)\n"
+        " print(json.dumps({'messages':[], 'continuity_resets':1, "
+        "'reset_reason':'sequence_gap'}),flush=True)\n"
+    )
+    decoder = JSONLProcessDecoder((sys.executable, str(script)), timeout_s=3)
+    runtime = RadioDecoderRuntime(enabled=True, decoders=(decoder,),
+                                  decoded_handler=lambda msg: {"accepted": False})
+    try:
+        assert tuple(decoder.decode(replace(_frame(), receiver_id="mallorca_hf_monitor"))) == ()
+        assert tuple(decoder.decode(replace(_frame(), receiver_id="zakynthos_hf_monitor"))) == ()
+        status = runtime.status()
+        assert status["continuity_resets"] == 2
+        assert status["continuity_reset_reasons"]["sequence_gap"] == 2
+        by_id = {row["receiver_id"]: row for row in status["continuity_reset_sources"]}
+        assert by_id["mallorca_hf_monitor"]["sequence_gap"] == 1
+        assert by_id["zakynthos_hf_monitor"]["resets"] == 1
+        safe = _sanitize_decoder({**status, "private_lineage": "SECRET"})
+        assert safe["continuity_reset_sources"] == status["continuity_reset_sources"]
+        assert "SECRET" not in str(safe)
+    finally:
+        decoder.close()
+
+
+def test_public_receiver_continuity_metadata_blocks_untrusted_labels():
+    from core.acquisition.status import _sanitize_decoder
+
+    safe = _sanitize_decoder({
+        "continuity_reset_reasons": {"sequence_gap": 1, "other": "secret"},
+        "continuity_reset_sources": [
+            {"receiver_id": "https://private.example/", "resets": 1},
+            {"receiver_id": "valid_receiver_1", "resets": 2,
+             "sequence_gap": 1, "sensitive": "private-lineage"},
+        ],
+    })
+    assert safe["continuity_reset_reasons"] == {"sequence_gap": 1}
+    assert safe["continuity_reset_sources"] == [
+        {"receiver_id": "valid_receiver_1", "resets": 2, "sequence_gap": 1}
+    ]
+    assert "private" not in str(safe)
