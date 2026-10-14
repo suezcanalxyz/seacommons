@@ -101,8 +101,68 @@ def test_recent_tracks_batches_and_limits_each_mmsi(store):
     assert tracks["111001111"][-1]["lat"] == 35.03
 
 
-def test_prune(store):
+def test_prune(store, monkeypatch):
+    from core import object_store
+    from core.config import config
+    monkeypatch.setattr(config, 'OBJECT_STORAGE_ENDPOINT', 'test.local')
+    monkeypatch.setattr(config, 'OBJECT_STORAGE_ACCESS_KEY', 'test-key')
+    monkeypatch.setattr(config, 'OBJECT_STORAGE_SECRET_KEY', 'test-secret')
+    payloads = {}
+    monkeypatch.setattr(object_store, 'put', lambda key, data, mime: payloads.__setitem__(key, data))
+    monkeypatch.setattr(object_store, 'get', lambda key: payloads[key])
     old = datetime.now(timezone.utc) - timedelta(days=90)
     _pos(store, "111000888", 35.0, 18.0, recv=old)
     assert store.prune(older_than_days=60) == 1
     assert store.track("111000888") == []
+
+
+def test_old_ais_is_deleted_only_after_verified_cold_archival(monkeypatch):
+    import gzip
+    import json
+    from core.config import config
+    from core import object_store
+    from core.db.models import VesselTrackDB
+    from core.db.session import session_scope
+
+    monkeypatch.setattr(config, 'OBJECT_STORAGE_ENDPOINT', 'test.local')
+    monkeypatch.setattr(config, 'OBJECT_STORAGE_ACCESS_KEY', 'test-key')
+    monkeypatch.setattr(config, 'OBJECT_STORAGE_SECRET_KEY', 'test-secret')
+    archive = {}
+    monkeypatch.setattr(object_store, 'put', lambda key, data, content_type: archive.__setitem__(key, data))
+    monkeypatch.setattr(object_store, 'get', lambda key: archive[key])
+
+    old = datetime.now(timezone.utc) - timedelta(days=90)
+    with session_scope() as db:
+        db.add(VesselTrackDB(mmsi='111765432', ts=old, received_at=old,
+                             lat=35.1, lon=14.1, source='aisstream'))
+    store = TrackStore()
+    count = store.prune(older_than_days=60)
+    assert count >= 1
+    assert archive
+    retained = [r for raw in archive.values()
+                for r in json.loads(gzip.decompress(raw))['rows'] if r['mmsi'] == '111765432']
+    assert len(retained) == 1
+    with session_scope() as db:
+        assert db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == '111765432').count() == 0
+
+
+def test_cold_archive_failure_preserves_original_rows(monkeypatch):
+    from core.config import config
+    from core import object_store
+    from core.db.models import VesselTrackDB
+    from core.db.session import session_scope
+
+    monkeypatch.setattr(config, 'OBJECT_STORAGE_ENDPOINT', 'test.local')
+    monkeypatch.setattr(config, 'OBJECT_STORAGE_ACCESS_KEY', 'test-key')
+    monkeypatch.setattr(config, 'OBJECT_STORAGE_SECRET_KEY', 'test-secret')
+    def fail(*_args):
+        raise RuntimeError('storage unavailable')
+    monkeypatch.setattr(object_store, 'put', fail)
+    old = datetime.now(timezone.utc) - timedelta(days=90)
+    with session_scope() as db:
+        db.add(VesselTrackDB(mmsi='111765433', ts=old, received_at=old,
+                             lat=35.2, lon=14.2, source='aisstream'))
+    assert TrackStore().prune(older_than_days=60) == 0
+    with session_scope() as db:
+        assert db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == '111765433').count() == 1
+        db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == '111765433').delete()
