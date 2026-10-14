@@ -343,7 +343,10 @@ def _overview_payload(hours: int) -> dict[str, Any]:
         )
         hypotheses_total = int(
             db.query(func.count(InvestigationHypothesisDB.hypothesis_id))
-            .filter(InvestigationHypothesisDB.updated_at >= cutoff)
+            .filter(
+                InvestigationHypothesisDB.updated_at >= cutoff,
+                InvestigationHypothesisDB.state.notin_(("expired", "rejected")),
+            )
             .scalar()
             or 0
         )
