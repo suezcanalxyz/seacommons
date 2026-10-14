@@ -84,7 +84,7 @@ function useOperationalData(hours = 24) {
 
   const refresh = useCallback(async () => {
     const requestId = ++sequence.current;
-    setSnapshot((previous) => ({ ...previous, loading: true }));
+    setSnapshot((previous) => ({ ...previous, loading: true, status: previous.status?.window_hours === hours ? previous.status : null }));
     const apiBase = resolveSiteApiBase();
     const requests = await Promise.allSettled([
       fetchJson(apiBase, `/api/v1/status?hours=${hours}`, undefined, 18000),
@@ -105,10 +105,10 @@ function useOperationalData(hours = 24) {
     if (requestId !== sequence.current) return;
     setSnapshot(previous => ({
       status: status?.window_hours === hours ? status : null,
-      counts: counts || previous.counts,
-      pipeline: pipeline || previous.pipeline,
+      counts,
+      pipeline,
       loading: false,
-      updatedAt: status ? new Date() : previous.updatedAt,
+      updatedAt: status?.window_hours === hours ? new Date() : null,
       error: !status || status.window_hours !== hours
         ? `The ${hours === 24 ? '24-hour' : '7-day'} metrics could not be loaded. Please retry.`
         : errorCount ? 'Some secondary data sources are unavailable.' : null,
@@ -408,9 +408,9 @@ function OperationalStrip({ ops, period = '24h' }) {
         <StatusPill state={serviceState}>{ops.loading ? 'connecting' : serviceState}</StatusPill>
       </div>
       <div>
-        <span>Public archive · all time</span>
-        <strong>{formatCount(counts?.total_count)}</strong>
-        <small>{formatCount(counts?.humanitarian_count)} humanitarian · {formatCount(counts?.maritime_count)} maritime</small>
+        <span>Raw observations · {period === '7d' ? '7 days' : '24 h'}</span>
+        <strong>{formatCount(pipeline?.raw_observations)}</strong>
+        <small>Source inputs received in this time window</small>
       </div>
       <div>
         <span>episodes · {period === '7d' ? '7 days' : '24 h'}</span>
@@ -426,7 +426,7 @@ function OperationalStrip({ ops, period = '24h' }) {
   );
 }
 
-function PipelinePanel({ status }) {
+function PipelinePanel({ status, period = '24h' }) {
   const pipeline = status?.pipeline || {};
   const sensors = status?.sensor_activity || {};
   const rows = [
@@ -447,13 +447,13 @@ function PipelinePanel({ status }) {
   return (
     <div className="future-metric-panels">
       <section className="future-metric-panel">
-        <span className="future-eyebrow">evidence pipeline · 24 h</span>
+        <span className="future-eyebrow">evidence pipeline · {period === '7d' ? '7 days' : '24 h'}</span>
         <div className="future-metric-list">
           {rows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{formatCount(value)}</strong></div>)}
         </div>
       </section>
       <section className="future-metric-panel">
-        <span className="future-eyebrow">sensor activity · 24 h</span>
+        <span className="future-eyebrow">sensor activity · {period === '7d' ? '7 days' : '24 h'}</span>
         <div className="future-metric-list">
           {sensorRows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{formatCount(value)}</strong></div>)}
         </div>
@@ -496,7 +496,7 @@ function SourceHealth({ pipeline }) {
 
 function PlatformSummary({ ops, period }) {
   const windowLabel = period === '7d' ? '7 days' : '24 hours';
-  const generated = ops.status?.generated_at || ops.counts?.generated_at;
+  const generated = ops.status?.generated_at;
   const stages = [
     { label: 'Observed', value: ops.status?.pipeline?.raw_observations, note: `raw envelopes / ${windowLabel}` },
     { label: 'Normalised', value: ops.status?.pipeline?.parsed_events, note: `events / ${windowLabel}` },
@@ -653,7 +653,7 @@ function Overview({ ops, overall, period, setPeriod, navigate, compact = false }
           title="Evidence operations"
           copy="These figures come from the same public-safe contracts used by SeaCommons itself, not a parallel analytics layer."
         />
-        {period === 'overall' ? <p className="future-inline-note">Current source health appears below. Full-period Intel statistics are shown in Overall above; recent pipeline activity is not a lifetime total.</p> : <PipelinePanel status={ops.status} />}
+        {period === 'overall' ? <p className="future-inline-note">Current source health appears below. Full-period Intel statistics are shown in Overall above; recent pipeline activity is not a lifetime total.</p> : <PipelinePanel status={ops.status} period={period} />}
         <SourceHealth pipeline={ops.pipeline} />
       </section>
 

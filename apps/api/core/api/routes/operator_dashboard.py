@@ -13,11 +13,11 @@ router = APIRouter(prefix="/api/v1/operator/ingestion", tags=["operator-ingestio
 
 
 def _require_gateway(request: Request) -> None:
-    # One Futures login: any authenticated user may read Intelligence.
-    if config.AUTH_ENABLED and request.headers.get("authorization", "").lower().startswith("bearer "):
-        from core.security import authenticate
-        if authenticate(request) is None:
-            raise HTTPException(status_code=401, detail="Authentication required")
+    # The same verified Futures session grants access to Intelligence.
+    # Preserve the legacy gateway only for internal compatibility.
+    if request.headers.get("authorization", "").lower().startswith("bearer "):
+        from core.security import require_futures_identity
+        require_futures_identity(request)
         return
     expected = str(config.OPERATOR_GATEWAY_SECRET or "")
     if not expected:

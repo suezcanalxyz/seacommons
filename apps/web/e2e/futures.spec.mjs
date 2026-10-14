@@ -73,7 +73,8 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
   await expect(page.getByRole('button', { name: 'Overall', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('region', { name: 'Overall historical totals' })).toContainText('378,826');
   await page.getByRole('button', { name: '24 hours', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'SeaCommons operational status' })).toContainText('226');
+  await expect(page.getByRole('region', { name: 'SeaCommons operational status' })).toContainText('240');
+  await expect(page.getByRole('region', { name: 'SeaCommons operational status' })).not.toContainText('Public archive');
   await expect(page.getByText('raw observations', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: /From scattered observations to evidence/i })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Application pathways and maturity' })).toContainText('Coastal and island resilience');
