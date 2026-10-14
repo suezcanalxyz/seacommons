@@ -169,6 +169,31 @@ function sourceFallback(summary) {
   };
 }
 
+// Cache only successful public Live projections at the CDN. Browser storage is
+// never authoritative; failed/compatibility responses always stay uncached.
+// TTLs remain below the 120s operational vessel refresh horizon.
+const PUBLIC_LIVE_CACHE_TTLS = Object.freeze({
+  signals: 15,
+  sources: 30,
+  drifts: 25,
+  archives: 60,
+  archive: 60,
+});
+
+export function publicLiveCacheSeconds(resource, headers = {}) {
+  if (headers.authorization || headers.cookie || headers['x-api-key']) return 0;
+  return PUBLIC_LIVE_CACHE_TTLS[resource] || PUBLIC_LIVE_CACHE_TTLS.signals;
+}
+
+function cachePublishedResponse(req, res, resource) {
+  const seconds = publicLiveCacheSeconds(resource, req.headers || {});
+  if (!seconds) return;
+  // CDN-Cache-Control is read by Vercel's CDN; browsers must revalidate.
+  res.setHeader('cache-control', 'public, max-age=0, must-revalidate');
+  res.setHeader('cdn-cache-control', `public, s-maxage=${seconds}, stale-while-revalidate=${Math.min(seconds, 30)}`);
+  res.setHeader('x-seacommons-public-cache', `${seconds}s`);
+}
+
 export function normalizeLiveMode(requestedMode) {
   if (requestedMode === 'security') return 'maritime';
   return ['humanitarian', 'maritime', 'all'].includes(requestedMode) ? requestedMode : 'humanitarian';
@@ -205,6 +230,7 @@ export default async function handler(req, res) {
     const upstream = await requestJson(upstreamPath);
     if (upstream.status === 200 && upstream.data) {
       res.setHeader('x-seacommons-live-source', 'engine');
+      cachePublishedResponse(req, res, resource);
       return res.status(200).json(upstream.data);
     }
 
