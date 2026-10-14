@@ -84,7 +84,7 @@ function useOperationalData(hours = 24) {
 
   const refresh = useCallback(async () => {
     const requestId = ++sequence.current;
-    setSnapshot((previous) => ({ ...previous, loading: true }));
+    setSnapshot((previous) => ({ ...previous, loading: true, status: previous.status?.window_hours === hours ? previous.status : null }));
     const apiBase = resolveSiteApiBase();
     const requests = await Promise.allSettled([
       fetchJson(apiBase, `/api/v1/status?hours=${hours}`, undefined, 18000),
