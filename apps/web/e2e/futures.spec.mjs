@@ -267,6 +267,13 @@ test('Intelligence matches operator aggregation with 24h 7d overall switching', 
   breakdowns:{raw_by_source:{AISStream:2346069},raw_observation_types:{ais_gap:1808730},normalized_event_types:{ais_spike:142724},episode_families:{gap_episode:12508},hypothesis_states:{collecting:99}},
   first_last:{raw_first:'2026-09-04T00:00:00Z',raw_latest:'2026-10-14T00:19:21Z'}
  }}));
+ await page.route('**/api/v1/operator/ingestion/overall-metrics',route=>route.fulfill({json:{
+  generated_at:'2026-10-14T00:15:09Z',scope:'all_time',
+  stages:[{id:'raw',count:2371751},{id:'normalized',count:382495},{id:'derived',count:287201},{id:'episodes',count:35245},{id:'hypotheses',count:6924},{id:'corroborated',count:18},{id:'review_ready',count:10}],
+  sensor_activity:{ais_fixes:2884066,ais_fixes_estimated:true,radio_bursts:86283,radio_events:6356,satellite_observations:6793,source_names:36},
+  breakdowns:{raw_by_source:{AISStream:2346069},raw_observation_types:{ais_gap:1808730},normalized_event_types:{ais_spike:142724},episode_families:{gap_episode:12508},hypothesis_states:{collecting:99}},
+  first_last:{raw_first:'2026-09-04T00:00:00Z',raw_latest:'2026-10-14T00:19:21Z'}
+ }}));
  await page.goto(FUTURES_URL + '?view=intelligence');
  await expect(page.getByRole('heading',{name:/Evidence, from first signal/i})).toBeVisible();
  const window=page.getByRole('group',{name:'Intelligence time window'});
@@ -299,4 +306,19 @@ test('Intelligence presents all twelve measures together for every time window',
  await expect(grid).toContainText('7 days');
  await periods.getByRole('button',{name:'Overall'}).click();
  await expect(grid).toContainText('Overall');
+});
+
+test('Agents displays protected scheduler snapshot with two real task records', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/scheduled-tasks',route=>route.fulfill({json:{
+   source:'ChatGPT Tasks snapshot',live_sync:false,synced_at:'2026-10-14T13:48:33Z',
+   tasks:[
+     {title:'SeaCommons Forensic Repair Loop',enabled:true,cadence:'Every 3 hours',timezone:'Europe/Rome'},
+     {title:'SeaCommons Upgrade Research',enabled:true,cadence:'Daily 09:00',timezone:'Europe/Malta'},
+   ]
+ }}));
+ await page.goto(FUTURES_URL+'?view=agents');
+ await expect(page.getByText('SeaCommons Forensic Repair Loop')).toBeVisible();
+ await expect(page.getByText('SeaCommons Upgrade Research')).toBeVisible();
+ await expect(page.getByText(/read-only snapshot/i)).toBeVisible();
 });
