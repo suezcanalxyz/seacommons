@@ -12,7 +12,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Query
-from sqlalchemy import func
+from sqlalchemy import func, or_
+from core.intel.measurement_definitions import DERIVED_EVENT_TYPES, DERIVED_ANALYSIS_STATES
 
 from core.db.models import (
     IntelEventDB,
@@ -84,14 +85,15 @@ def build_public_status(hours: int = 24) -> dict[str, Any]:
             .scalar()
             or 0
         )
+        analysis_state = IntelEventDB.meta["analysis_state"].as_string()
         derived_total_raw = (
             db.query(func.count(IntelEventDB.id))
             .filter(
                 IntelEventDB.received_at >= cutoff,
-                IntelEventDB.type.in_((
-                    "ais_anomaly", "ais_rendezvous", "correlated_alert",
-                    "dark_candidate", "vessel_identity", "sar_model",
-                )),
+                or_(
+                    IntelEventDB.type.in_(DERIVED_EVENT_TYPES),
+                    analysis_state.in_(DERIVED_ANALYSIS_STATES),
+                ),
             )
             .scalar()
             or 0

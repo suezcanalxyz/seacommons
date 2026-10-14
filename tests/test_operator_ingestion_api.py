@@ -304,3 +304,33 @@ def test_futures_invalid_bearer_fails_closed(monkeypatch):
         headers={"Authorization": "Bearer invalid-token"},
     )
     assert response.status_code == 401
+
+
+def test_measurement_contract_explains_clocks_and_separates_created_updated(monkeypatch):
+    from core.api.main import app
+    from core.config import config
+
+    monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "operator-secret")
+    response = TestClient(app).get(
+        "/api/v1/operator/ingestion/measurements?hours=24",
+        headers={"x-seacommons-operator-gateway": "operator-secret"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["contract_version"] == 1
+    assert payload["window_hours"] == 24
+    assert payload["scope"] == "rolling"
+    assert payload["counts"]["investigations_created"] <= payload["counts"]["investigations_updated"] + payload["counts"]["investigations_open_now"]
+    assert payload["definitions"]["investigations_created"]["clock"] == "created_at"
+    assert payload["definitions"]["investigations_updated"]["clock"] == "updated_at"
+    assert payload["definitions"]["ais_positions_received"]["clock"] == "received_at"
+    assert payload["definitions"]["ais_positions_observed"]["clock"] == "ts"
+    assert payload["definitions"]["investigations_open_now"]["clock"] == "current state"
+
+
+def test_measurement_contract_rejects_unauthenticated_access(monkeypatch):
+    from core.api.main import app
+    from core.config import config
+    monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "operator-secret")
+    response = TestClient(app).get("/api/v1/operator/ingestion/measurements?hours=24")
+    assert response.status_code == 401

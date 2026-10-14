@@ -343,7 +343,10 @@ def _overview_payload(hours: int) -> dict[str, Any]:
         )
         hypotheses_total = int(
             db.query(func.count(InvestigationHypothesisDB.hypothesis_id))
-            .filter(InvestigationHypothesisDB.updated_at >= cutoff)
+            .filter(
+                InvestigationHypothesisDB.updated_at >= cutoff,
+                InvestigationHypothesisDB.state.notin_(("expired", "rejected")),
+            )
             .scalar()
             or 0
         )
@@ -589,14 +592,7 @@ def operator_analysis_outputs(
     }
 
 
-_DERIVED_EVENT_TYPES = frozenset({
-    "ais_anomaly",
-    "ais_rendezvous",
-    "correlated_alert",
-    "dark_candidate",
-    "vessel_identity",
-    "sar_model",
-})
+from core.intel.measurement_definitions import DERIVED_EVENT_TYPES as _DERIVED_EVENT_TYPES, DERIVED_ANALYSIS_STATES
 
 
 def _count_pairs(rows: list[tuple[Any, Any]]) -> dict[str, int]:
@@ -667,7 +663,7 @@ def operator_pipeline_funnel(
                 IntelEventDB.received_at >= cutoff,
                 or_(
                     IntelEventDB.type.in_(_DERIVED_EVENT_TYPES),
-                    analysis_state.in_(("anomaly", "evidence_candidate", "evidence")),
+                    analysis_state.in_(DERIVED_ANALYSIS_STATES),
                 ),
             )
             .scalar()
@@ -996,7 +992,7 @@ def _overall_payload() -> dict[str, Any]:
             .filter(
                 or_(
                     IntelEventDB.type.in_(_DERIVED_EVENT_TYPES),
-                    analysis_state.in_(("anomaly", "evidence_candidate", "evidence")),
+                    analysis_state.in_(DERIVED_ANALYSIS_STATES),
                 )
             )
             .scalar()
@@ -1294,3 +1290,98 @@ def operator_case_evidence_chains(
             "Evidence lineage and blockers are exposed so operators can see why a case has or has not advanced."
         ),
     }
+
+
+@router.get("/measurements")
+def operator_measurement_contract(
+    request: Request,
+    hours: int = Query(24, ge=1, le=168),
+) -> dict[str, Any]:
+    """Canonical temporal comparison. Windows use one as-of cutoff and explicit clock semantics.
+
+    Created counts measure records first created. Updated counts measure rows whose latest
+    update fell within the window, not transitions or new evidence. Source ingestion is
+    measured at receipt, while AIS track coverage is measured at source time.
+    """
+    _require_gateway(request)
+    cached = _fast_cache_get("measurements", hours)
+    if cached is not None:
+        return cached
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    cutoff = now - timedelta(hours=hours)
+    with session_scope() as db:
+        def count(model, field, *conditions):
+            return int(db.query(func.count()).select_from(model).filter(field >= cutoff, field <= now, *conditions).scalar() or 0)
+
+        active = InvestigationHypothesisDB.state.notin_(("expired", "rejected"))
+        classified = MaritimeEpisodeDB.episode_family != "unclassified_episode"
+        new_hypotheses = count(InvestigationHypothesisDB, InvestigationHypothesisDB.created_at, active)
+        updated_hypotheses = count(InvestigationHypothesisDB, InvestigationHypothesisDB.updated_at, active)
+        new_episodes = count(MaritimeEpisodeDB, MaritimeEpisodeDB.created_at, classified)
+        updated_episodes = count(MaritimeEpisodeDB, MaritimeEpisodeDB.updated_at, classified)
+        current_open_hypotheses = int(db.query(func.count()).select_from(InvestigationHypothesisDB).filter(active).scalar() or 0)
+        excluded_hypotheses = count(
+            InvestigationHypothesisDB, InvestigationHypothesisDB.updated_at,
+            InvestigationHypothesisDB.state.in_(("expired", "rejected")),
+        )
+        observations_received = count(SourceObservationDB, SourceObservationDB.received_at)
+        events_received = count(IntelEventDB, IntelEventDB.received_at)
+        events_created = count(IntelEventDB, IntelEventDB.created_at)
+        ais_observed = count(VesselTrackDB, VesselTrackDB.ts)
+        ais_received = count(VesselTrackDB, VesselTrackDB.received_at)
+        corroborated_updated = count(
+            MaritimeEpisodeDB, MaritimeEpisodeDB.updated_at, classified,
+            MaritimeEpisodeDB.verification_status == "multi_source_corroborated",
+        )
+        review_ready_updated = count(
+            InvestigationHypothesisDB, InvestigationHypothesisDB.updated_at,
+            InvestigationHypothesisDB.state.in_(("review_ready", "assessed", "published")),
+        )
+        raw_sources = dict(
+            db.query(SourceObservationDB.source_name, func.count())
+            .filter(SourceObservationDB.received_at >= cutoff, SourceObservationDB.received_at <= now)
+            .group_by(SourceObservationDB.source_name).order_by(func.count().desc()).limit(40).all()
+        )
+    payload = {
+        "contract_version": 1, "scope": "rolling", "window_hours": hours,
+        "as_of": now.replace(tzinfo=timezone.utc).isoformat(),
+        "window_start": cutoff.replace(tzinfo=timezone.utc).isoformat(),
+        "counts": {
+            "observations_received": observations_received,
+            "events_received": events_received,
+            "events_created": events_created,
+            "investigations_created": new_hypotheses,
+            "investigations_updated": updated_hypotheses,
+            "investigations_open_now": current_open_hypotheses,
+            "investigations_rejected_or_expired_updated": excluded_hypotheses,
+            "episodes_created": new_episodes,
+            "episodes_updated": updated_episodes,
+            "corroborated_episodes_updated": corroborated_updated,
+            "investigations_review_ready_updated": review_ready_updated,
+            "ais_positions_observed": ais_observed,
+            "ais_positions_received": ais_received,
+        },
+        "sources": {str(key): int(value) for key, value in raw_sources.items()},
+        "definitions": {
+            "observations_received": {"clock":"received_at","meaning":"Deduplicated raw source observation rows received within the window."},
+            "events_received": {"clock":"received_at","meaning":"Normalized Intel records received in the window. Not all raw inputs produce an event."},
+            "events_created": {"clock":"created_at","meaning":"Intel records first created within the window."},
+            "investigations_created": {"clock":"created_at","meaning":"Hypotheses created within the window and not currently expired/rejected."},
+            "investigations_updated": {"clock":"updated_at","meaning":"Non-expired/rejected hypotheses whose latest saved update falls in the window; may include reprocessing with no new evidence."},
+            "investigations_open_now": {"clock":"current state","meaning":"Current non-expired/non-rejected hypotheses (including assessed or published). Not a windowed count."},
+            "investigations_rejected_or_expired_updated": {"clock":"updated_at","meaning":"Rejected or expired hypotheses whose last update falls in the window, omitted from the main funnel."},
+            "episodes_created": {"clock":"created_at","meaning":"Classified episodes first created within the window."},
+            "episodes_updated": {"clock":"updated_at","meaning":"Classified episodes with latest update in the window; not necessarily newly recognized."},
+            "corroborated_episodes_updated": {"clock":"updated_at","meaning":"Episodes currently tagged multi-source corroborated and updated in the window, not transitions into that state."},
+            "investigations_review_ready_updated": {"clock":"updated_at","meaning":"Hypotheses currently in review-ready, assessed or published state and updated in the window; not new transitions."},
+            "ais_positions_observed": {"clock":"ts","meaning":"Stored AIS track positions whose source observation time falls within the window."},
+            "ais_positions_received": {"clock":"received_at","meaning":"AIS track rows actually received by SeaCommons in the window."},
+        },
+        "limitations": [
+            "Created/updated are current-row snapshots, not event-sourced transition counts.",
+            "Current open is a stock, so it does not become a seven-day total.",
+            "All values are retained rows, not an immutable lifetime ingestion ledger.",
+            "Raw, normalized, derived and episodes are overlapping populations; do not sum or divide as conversion rates.",
+        ],
+    }
+    return _fast_cache_put("measurements", hours, payload)
