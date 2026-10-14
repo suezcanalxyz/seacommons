@@ -69,7 +69,7 @@ export function publicProxyCacheSeconds(headers, method, path, status = 200, ups
   const pathname = String(path).split('?')[0];
   if (['seacommons.org', 'play.seacommons.org'].includes(host)) {
     if (pathname === '/api/v1/play/counts') return 45;
-    if (pathname === '/api/v1/play/incidents' || (pathname.startsWith('/api/v1/play/incidents/') && pathname.endsWith('/timeline') && pathname.split('/').length === 8)) return 30;
+    if (pathname === '/api/v1/play/incidents' || (pathname.startsWith('/api/v1/play/incidents/') && pathname.endsWith('/timeline') && pathname.split('/').length === 7)) return 30;
   }
   if (host === 'live.seacommons.org') {
     if (pathname === '/api/v1/live/pipeline') return 20;
