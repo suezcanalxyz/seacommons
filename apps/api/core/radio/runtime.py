@@ -470,6 +470,7 @@ class RemoteRadioRuntime:
                     "active": sum(
                         1 for receiver_id in receiver_ids
                         if managed_entries[receiver_id].state == "active"
+                        and bool(getattr(health_by_receiver.get(receiver_id), "connected", False))
                     ),
                     "standby": sum(
                         1 for receiver_id in receiver_ids

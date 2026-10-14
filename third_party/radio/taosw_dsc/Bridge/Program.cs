@@ -16,6 +16,7 @@ while ((line = Console.In.ReadLine()) is not null)
 {
     var messages = new List<object>();
     var resets = 0;
+    string? resetReason = null;
     var evictions = 0;
     var bridgeErrors = 0;
     try
@@ -43,10 +44,11 @@ while ((line = Console.In.ReadLine()) is not null)
                     && sequenceElement.TryGetUInt32(out var seq) ? seq : null;
                 var observedAt = root.TryGetProperty("observed_at", out var observedElement) && observedElement.ValueKind == JsonValueKind.String
                     && DateTimeOffset.TryParse(observedElement.GetString(), out var observed) ? observed : DateTimeOffset.MinValue;
-                if (!states.TryGetValue(streamKey, out var state) ||
-                    state.NeedsReset(session, sequence, observedAt))
+                states.TryGetValue(streamKey, out var state);
+                resetReason = state?.ResetReason(session, sequence, observedAt);
+                if (state is null || resetReason is not null)
                 {
-                    if (state is not null) resets++;
+                    if (resetReason is not null) resets++;
                     if (!states.ContainsKey(streamKey) && states.Count >= MaxStreamStates)
                     {
                         var oldest = states.MinBy(item => item.Value.LastUsedUtc).Key;
@@ -71,7 +73,7 @@ while ((line = Console.In.ReadLine()) is not null)
     // Only an aggregate count crosses the JSONL boundary; no exception text,
     // receiver identifiers or raw radio audio are ever emitted.
     protocol.WriteLine(JsonSerializer.Serialize(new { messages, continuity_resets = resets,
-        state_evictions = evictions, bridge_errors = bridgeErrors }));
+        reset_reason = resetReason, state_evictions = evictions, bridge_errors = bridgeErrors }));
 }
 
 static bool IsDscFrequency(int hz)
@@ -133,18 +135,25 @@ sealed class DecoderState
     double lastFrameDurationS;
     public DateTimeOffset LastUsedUtc { get; private set; } = DateTimeOffset.UtcNow;
 
-    public bool NeedsReset(string? session, uint? sequence, DateTimeOffset observedAt)
+    public string? ResetReason(string? session, uint? sequence, DateTimeOffset observedAt)
     {
-        if (DateTimeOffset.UtcNow - LastUsedUtc > TimeSpan.FromMinutes(10)) return true;
-        if (lastSession != null && session != null && lastSession != session) return true;
-        if (lastSequence.HasValue && sequence.HasValue &&
-            sequence.Value != unchecked(lastSequence.Value + 1)) return true;
+        if (DateTimeOffset.UtcNow - LastUsedUtc > TimeSpan.FromMinutes(10)) return "stale";
+        if (lastSession != null && session != null && lastSession != session) return "session";
+        if (lastSequence.HasValue && sequence.HasValue)
+        {
+            // A contiguous hardware packet sequence is stronger proof of PCM
+            // continuity than wall-clock arrival time, which can jitter or
+            // bunch up while the websocket/network buffers packets. Do not
+            // discard valid GMDSS symbol state because of scheduler delays.
+            return sequence.Value != unchecked(lastSequence.Value + 1) ? "sequence_gap" : null;
+        }
         if (lastObservedAt != DateTimeOffset.MinValue && observedAt != DateTimeOffset.MinValue)
         {
             var seconds = (observedAt - lastObservedAt).TotalSeconds;
-            if (seconds < -0.2 || seconds > Math.Max(0.25, lastFrameDurationS * 4 + 0.05)) return true;
+            if (seconds < -0.2 || seconds > Math.Max(0.25, lastFrameDurationS * 4 + 0.05))
+                return "timestamp_gap";
         }
-        return false;
+        return null;
     }
 
     public void MarkFrame(string? session, uint? sequence, DateTimeOffset observedAt, int samples)

@@ -157,8 +157,27 @@ def check(dll: Path) -> None:
     assert answers[-1].get("bridge_errors") == 1, "malformed PCM not diagnosed"
     assert all(row.get("continuity_resets") == 0 for row in answers[:len(chunks)]), "symbol boundary reset"
     assert answers[len(chunks)].get("continuity_resets") == 1, "sequence gap not detected"
+    assert answers[len(chunks)].get("reset_reason") == "sequence_gap", "gap diagnostic missing"
     assert answers[len(chunks)+1].get("continuity_resets") == 1, "session reconnect not detected"
+    assert answers[len(chunks)+1].get("reset_reason") == "session", "session diagnostic missing"
     assert sum(row.get("state_evictions", 0) for row in answers) >= 1, "stream state unbounded"
+    # Upstream network scheduling may delay two contiguous audio envelopes by
+    # seconds. Hardware sequence continuity proves no PCM was lost: do not
+    # spuriously reset a valid DSC phasing train because of arrival jitter.
+    jitter_packets = [
+        envelope(zeros, index=0, sequence=100, lineage="jitter-test", offset_ms=0),
+        envelope(zeros, index=1, sequence=101, lineage="jitter-test", offset_ms=2500),
+        envelope(zeros, index=2, sequence=103, lineage="jitter-test", offset_ms=2515),
+    ]
+    jitter = subprocess.run(
+        ["dotnet", str(dll.resolve())],
+        input="\n".join(json.dumps(packet) for packet in jitter_packets) + "\n",
+        capture_output=True, text=True, timeout=8, check=True,
+    )
+    jitter_rows = [json.loads(line) for line in jitter.stdout.splitlines()]
+    assert len(jitter_rows) == 3
+    assert jitter_rows[1].get("continuity_resets") == 0, "false reset on contiguous sequence"
+    assert jitter_rows[2].get("reset_reason") == "sequence_gap", "real sequence gap missed"
     print(f"DSC bridge offline contract passed ({len(packets)} JSONL responses, no transmissions)")
 
 

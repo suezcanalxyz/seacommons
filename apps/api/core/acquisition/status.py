@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import threading
 import math
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -77,6 +78,28 @@ def _sanitize_decoder(value: Any) -> dict[str, Any]:
         ):
             out[key] = list(item)
     audio = value.get("audio_quality")
+    reasons = value.get("continuity_reset_reasons")
+    allowed_reasons = ("sequence_gap", "session", "timestamp_gap", "stale")
+    if isinstance(reasons, dict):
+        out["continuity_reset_reasons"] = {
+            key: reasons[key] for key in allowed_reasons
+            if type(reasons.get(key)) is int and reasons[key] >= 0
+        }
+    sources = value.get("continuity_reset_sources")
+    if isinstance(sources, list) and len(sources) <= 16:
+        safe_sources = []
+        for item in sources:
+            if not isinstance(item, dict):
+                continue
+            receiver = item.get("receiver_id")
+            if not isinstance(receiver, str) or not re.fullmatch(r"[a-z0-9_]{1,64}", receiver):
+                continue
+            row = {"receiver_id": receiver}
+            for key in ("resets", *allowed_reasons):
+                if type(item.get(key)) is int and item[key] >= 0:
+                    row[key] = item[key]
+            safe_sources.append(row)
+        out["continuity_reset_sources"] = safe_sources
     if isinstance(audio, dict):
         safe_audio: dict[str, Any] = {}
         for key in _ALLOWED_AUDIO_COUNTERS:
