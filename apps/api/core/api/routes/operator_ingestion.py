@@ -592,14 +592,7 @@ def operator_analysis_outputs(
     }
 
 
-_DERIVED_EVENT_TYPES = frozenset({
-    "ais_anomaly",
-    "ais_rendezvous",
-    "correlated_alert",
-    "dark_candidate",
-    "vessel_identity",
-    "sar_model",
-})
+from core.intel.measurement_definitions import DERIVED_EVENT_TYPES as _DERIVED_EVENT_TYPES, DERIVED_ANALYSIS_STATES
 
 
 def _count_pairs(rows: list[tuple[Any, Any]]) -> dict[str, int]:
@@ -670,7 +663,7 @@ def operator_pipeline_funnel(
                 IntelEventDB.received_at >= cutoff,
                 or_(
                     IntelEventDB.type.in_(_DERIVED_EVENT_TYPES),
-                    analysis_state.in_(("anomaly", "evidence_candidate", "evidence")),
+                    analysis_state.in_(DERIVED_ANALYSIS_STATES),
                 ),
             )
             .scalar()
@@ -999,7 +992,7 @@ def _overall_payload() -> dict[str, Any]:
             .filter(
                 or_(
                     IntelEventDB.type.in_(_DERIVED_EVENT_TYPES),
-                    analysis_state.in_(("anomaly", "evidence_candidate", "evidence")),
+                    analysis_state.in_(DERIVED_ANALYSIS_STATES),
                 )
             )
             .scalar()
