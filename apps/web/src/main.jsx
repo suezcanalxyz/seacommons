@@ -38,6 +38,7 @@ import { receiverChannelLabel } from './features/live/pipelineStatus.js';
 import { initialLayerVisibility, layerVisibilityStorageKey } from './features/live/layerDefaults.js';
 import { splitObservedTrackSegments } from './features/live/observedTrack.js';
 import { vesselReportFeature } from './features/live/vesselVisual.js';
+import { isExcludedVesselType } from './features/live/vesselType.js';
 import { createVesselArrowImage } from './features/map/vesselMarker.js';
 import { publicBasemapSource } from './features/map/publicBasemap.js';
 import { createFallbackMap } from './features/map/fallbackRenderer.js';
@@ -3092,15 +3093,21 @@ function App() {
       const timeoutMs = isFirst ? 20000 : 12000;
       const data = await fetchJson(apiBase, url, undefined, timeoutMs);
       if (!data?.features) return;
+      // Defense in depth: purge old cached passenger/pleasure entries even
+      // when a newer server filters them out of incremental AIS responses.
+      const scopeFeatures = data.features.filter((feature) =>
+        !isExcludedVesselType(feature?.properties?.ship_type));
       lastVesselTs = new Date().toISOString();
       const now = Date.now();
-      data.features.forEach((f) => { if (f.properties?.mmsi) seenAt.set(f.properties.mmsi, now); });
+      scopeFeatures.forEach((f) => { if (f.properties?.mmsi) seenAt.set(f.properties.mmsi, now); });
       if (!vesselSnapshot) {
-        vesselSnapshot = data;
+        vesselSnapshot = { ...data, features: scopeFeatures };
       } else {
-        const updated = new Map(data.features.map((f) => [f.properties?.mmsi, f]));
-        const merged = vesselSnapshot.features.map((f) => updated.get(f.properties?.mmsi) || f);
-        data.features.forEach((f) => { if (!vesselSnapshot.features.some((e) => e.properties?.mmsi === f.properties?.mmsi)) merged.push(f); });
+        const updated = new Map(scopeFeatures.map((f) => [f.properties?.mmsi, f]));
+        const prior = vesselSnapshot.features.filter((f) =>
+          !isExcludedVesselType(f?.properties?.ship_type));
+        const merged = prior.map((f) => updated.get(f.properties?.mmsi) || f);
+        scopeFeatures.forEach((f) => { if (!prior.some((e) => e.properties?.mmsi === f.properties?.mmsi)) merged.push(f); });
         // Expire vessels not seen in any diff for VESSEL_TTL_MS — otherwise a
         // vessel that left the feed stays painted on the map until full reload.
         const fresh = merged.filter((f) => {

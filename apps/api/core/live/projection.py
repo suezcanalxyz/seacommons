@@ -354,6 +354,10 @@ def is_useful_public_case_feature(feature: dict[str, Any] | None) -> bool:
     if not feature:
         return False
     props = feature.get("properties") or {}
+    from core.vessels.ais_provider import is_excluded_live_vessel
+
+    if is_excluded_live_vessel(props):
+        return False
     event_type = str(props.get("type") or "")
     anomaly_type = str(props.get("anomaly_type") or "")
     if (
