@@ -140,7 +140,7 @@ test('Futures navigation is deep-linkable and browser-history aware', async ({ p
   await expect(page).toHaveURL(/view=project/);
 
   await page.goBack();
-  await expect(page.getByRole('heading', { name: /What is being built/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Development, step by step/i })).toBeVisible();
   await expect(page).toHaveURL(/view=roadmap/);
 });
 
