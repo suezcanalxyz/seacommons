@@ -731,3 +731,11 @@ a { color: inherit; text-decoration: none; }
 @media(max-width:1100px){.future-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.future-content{padding-top:12px}.future-page-head h1,.future-hero h1{font-size:clamp(24px,6vw,35px)!important}.future-intelligence-unified-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.future-agent-grid{grid-template-columns:1fr}.future-section{scroll-margin-top:105px}}
 @media(max-width:470px){.future-intelligence-unified-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.future-intelligence-headline .future-intelligence-metric{padding:10px}.future-intelligence-metric strong{font-size:clamp(19px,5.5vw,29px)}.future-intelligence-metric p{font-size:10px;line-height:1.4}.future-intelligence-metric-top{flex-wrap:wrap}}
+
+
+/* Gentle viewport-sized progression between compact Futures sections. */
+@media(min-width:761px) and (prefers-reduced-motion:no-preference){
+ html:has(.future-app){scroll-snap-type:y proximity;scroll-padding-top:108px}
+ .future-content>.future-section,.future-content>.future-page-head,.future-intelligence-headline{scroll-snap-align:start}
+}
+@media(prefers-reduced-motion:reduce){html:has(.future-app){scroll-behavior:auto}}
