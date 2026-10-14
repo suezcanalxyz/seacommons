@@ -170,7 +170,18 @@ def validate_production_security() -> None:
 # Verify asymmetric JWT signatures against the issuer's published JWKs.
 # Never accept a client-declared role or a bearer token without verification.
 _FUTURES_ISSUER = "https://sqnoevmxqwbtovvuzdxf.supabase.co/auth/v1"
-_FUTURES_AUDIENCES = ["authenticated"]
+def _futures_audiences() -> list[str]:
+    """Accept only the Supabase user audience or the configured public OIDC client."""
+    import os
+    from pathlib import Path
+
+    public_client_id = os.environ.get("SEACOMMONS_FUTURES_OIDC_CLIENT_ID", "").strip()
+    if not public_client_id:
+        try:
+            public_client_id = Path("/home/ubuntu/seacommons/data/futures-oidc-client-id.txt").read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            pass
+    return ["authenticated", public_client_id] if public_client_id else ["authenticated"]
 _futures_jwks_client: jwt.PyJWKClient | None = None
 
 
@@ -194,7 +205,7 @@ def require_futures_identity(request: Request) -> Principal:
         signing_key = _futures_jwks_client.get_signing_key_from_jwt(token)
         claims = jwt.decode(
             token, signing_key.key, algorithms=["ES256"],
-            issuer=_FUTURES_ISSUER, audience=_FUTURES_AUDIENCES,
+            issuer=_FUTURES_ISSUER, audience=_futures_audiences(),
             options={"require": ["exp", "iat", "sub", "aud", "iss"]},
             leeway=30,
         )
