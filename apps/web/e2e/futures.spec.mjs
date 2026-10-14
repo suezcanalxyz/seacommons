@@ -275,7 +275,7 @@ test('Intelligence matches operator aggregation with 24h 7d overall switching', 
   first_last:{raw_first:'2026-09-04T00:00:00Z',raw_latest:'2026-10-14T00:19:21Z'}
  }}));
  await page.goto(FUTURES_URL + '?view=intelligence');
- await expect(page.getByRole('heading',{name:'Intelligence',exact:true})).toBeVisible();
+ await expect(page.getByText('SeaCommons / Intelligence',{exact:true})).toBeVisible();
  const window=page.getByRole('group',{name:'Intelligence time window'});
  await window.getByRole('button',{name:'24 hours'}).click();
  await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).getByText('20,591')).toBeVisible();

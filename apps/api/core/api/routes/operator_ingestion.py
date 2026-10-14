@@ -1419,49 +1419,98 @@ def futures_scheduled_tasks(request: Request) -> dict[str, Any]:
 
 @router.get("/overall-metrics")
 def operator_overall_metrics(request: Request) -> dict[str, Any]:
-    """Lightweight all-retained headline counts; no expensive category breakdown queries."""
+    """Bounded, independently recoverable retained-record counters for Futures Overall.
+
+    Each SQL query has its own savepoint and PostgreSQL statement deadline; one
+    costly metric must never blank every other metric. Missing values are null.
+    Estimated planner totals are explicitly marked, never presented as exact.
+    """
     _require_gateway(request)
     cached = _fast_cache_get("overall_metrics", 0)
     if cached is not None:
         return cached
+
     from core.intel.measurement_definitions import DERIVED_EVENT_TYPES, DERIVED_ANALYSIS_STATES
-    from sqlalchemy import or_
+
     analysis_state = IntelEventDB.meta["analysis_state"].as_string()
     anomaly_type = IntelEventDB.meta["anomaly_type"].as_string()
+    unavailable = []
+    estimated_fields = []
+
     with session_scope() as db:
-        def n(model, *conditions):
-            return int(db.query(func.count()).select_from(model).filter(*conditions).scalar() or 0)
-        raw = n(SourceObservationDB)
-        parsed = n(IntelEventDB)
-        derived = n(IntelEventDB, or_(
+        pg = db.get_bind().dialect.name == "postgresql"
+
+        def n(name, model, *conditions):
+            try:
+                with db.begin_nested():
+                    if pg:
+                        db.execute(text("SET LOCAL statement_timeout = '1600ms'"))
+                    result = db.query(func.count()).select_from(model).filter(*conditions).scalar()
+                    return int(result or 0)
+            except Exception:
+                unavailable.append(name)
+                return None
+
+        def total(name, model):
+            if pg:
+                try:
+                    with db.begin_nested():
+                        db.execute(text("SET LOCAL statement_timeout = '1600ms'"))
+                        estimate, _ = _fast_table_count(db, model)
+                        estimated_fields.append(name)
+                        return estimate
+                except Exception:
+                    unavailable.append(name)
+                    return None
+            return n(name, model)
+
+        raw = total("raw_observations", SourceObservationDB)
+        parsed = total("parsed_events", IntelEventDB)
+        derived = n("derived_cues", IntelEventDB, or_(
             IntelEventDB.type.in_(DERIVED_EVENT_TYPES),
             analysis_state.in_(DERIVED_ANALYSIS_STATES),
         ))
-        legacy_gap = n(IntelEventDB, IntelEventDB.type=="ais_anomaly", IntelEventDB.source=="ais",
-                       IntelEventDB.id.like("aisanom:%"), anomaly_type=="gap")
+        legacy_gap = n("legacy_gap", IntelEventDB,
+                       IntelEventDB.type == "ais_anomaly", IntelEventDB.source == "ais",
+                       IntelEventDB.id.like("aisanom:%"), anomaly_type == "gap")
+        derived_count = max(0, derived - legacy_gap) if derived is not None and legacy_gap is not None else None
+        if derived_count is None:
+            unavailable.append("derived_cues")
         classified = MaritimeEpisodeDB.episode_family != "unclassified_episode"
-        episodes = n(MaritimeEpisodeDB, classified)
-        hypotheses = n(InvestigationHypothesisDB)
-        corroborated = n(MaritimeEpisodeDB, classified,
-                         MaritimeEpisodeDB.verification_status=="multi_source_corroborated")
-        ready = n(InvestigationHypothesisDB,
+        episodes = n("maritime_episodes", MaritimeEpisodeDB, classified)
+        hypotheses = n("investigation_hypotheses", InvestigationHypothesisDB)
+        corroborated = n("corroborated_episodes", MaritimeEpisodeDB, classified,
+                         MaritimeEpisodeDB.verification_status == "multi_source_corroborated")
+        ready = n("review_ready", InvestigationHypothesisDB,
                   InvestigationHypothesisDB.state.in_(("review_ready","assessed","published")))
-        ais, estimated = _fast_table_count(db, VesselTrackDB)
-        radio_bursts = n(RadioBurstDB)
-        radio_events = n(RadioEventDB)
-        satellite = n(SatelliteObservationDB)
-        source_names = int(db.query(func.count(func.distinct(SourceObservationDB.source_name))).scalar() or 0)
+        ais = total("ais_fixes", VesselTrackDB)
+        radio_bursts = n("radio_bursts", RadioBurstDB)
+        radio_events = n("radio_events", RadioEventDB)
+        satellite = n("satellite_observations", SatelliteObservationDB)
+        # Number of distinct sources, not the number of observations.
+        try:
+            with db.begin_nested():
+                if pg:
+                    db.execute(text("SET LOCAL statement_timeout = '1600ms'"))
+                source_names = int(db.query(func.count(func.distinct(SourceObservationDB.source_name))).scalar() or 0)
+        except Exception:
+            unavailable.append("source_names")
+            source_names = None
     payload = {
-        "scope":"all_time","generated_at":datetime.now(timezone.utc).isoformat(),
-        "stages":[
+        "scope": "all_time", "generated_at": datetime.now(timezone.utc).isoformat(),
+        "stages": [
             {"id":"raw","count":raw},{"id":"normalized","count":parsed},
-            {"id":"derived","count":max(0,derived-legacy_gap)},
-            {"id":"episodes","count":episodes},{"id":"hypotheses","count":hypotheses},
-            {"id":"corroborated","count":corroborated},{"id":"review_ready","count":ready},
+            {"id":"derived","count":derived_count},{"id":"episodes","count":episodes},
+            {"id":"hypotheses","count":hypotheses},{"id":"corroborated","count":corroborated},
+            {"id":"review_ready","count":ready},
         ],
-        "sensor_activity":{"ais_fixes":ais,"ais_fixes_estimated":estimated,
+        "sensor_activity": {
+            "ais_fixes":ais,"ais_fixes_estimated": "ais_fixes" in estimated_fields,
             "radio_bursts":radio_bursts,"radio_events":radio_events,
-            "satellite_observations":satellite,"source_names":source_names},
-        "retention_semantics":"Retained database rows; not lifetime ingest history.",
+            "satellite_observations":satellite,"source_names":source_names,
+        },
+        "estimated_fields": estimated_fields, "unavailable_fields": sorted(set(unavailable)),
+        "retention_semantics": "Currently retained records, not immutable lifetime intake.",
     }
-    return _fast_cache_put("overall_metrics",0,payload)
+    # Do not retain partial results for longer than the fast aggregation TTL.
+    return _fast_cache_put("overall_metrics", 0, payload)
