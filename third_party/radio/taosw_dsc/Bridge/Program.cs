@@ -122,6 +122,7 @@ sealed class DecoderState
     const float SpaceHz = 1785;
     readonly DSCDecoder decoder;
     readonly GMDSSDecoder[] gmdss;
+    readonly GMDSSDecoder[] invertedGmdss;
     readonly int samplesPerSymbol;
     readonly List<float> pendingSamples = new();
     readonly ConcurrentQueue<DSCMessage> pending = new();
@@ -166,7 +167,12 @@ sealed class DecoderState
         samplesPerSymbol = sampleRate / 100;
         decoder = new DSCDecoder(100, sampleRate);
         gmdss = Enumerable.Range(0, DSCDecoder.SlideWindowsNumber).Select(_ => new GMDSSDecoder()).ToArray();
-        foreach (var item in gmdss) item.OnMessageDecoded += msg => pending.Enqueue(msg);
+        // Some receiver chains invert FSK mark/space polarity. Test both
+        // physical polarities against the same DSC phasing + vertical ECC
+        // requirements. Never treat a mere FSK tone as a decoded message.
+        invertedGmdss = Enumerable.Range(0, DSCDecoder.SlideWindowsNumber).Select(_ => new GMDSSDecoder()).ToArray();
+        foreach (var item in gmdss.Concat(invertedGmdss))
+            item.OnMessageDecoded += msg => pending.Enqueue(msg);
     }
 
     public void Process(byte[] pcm)
@@ -187,7 +193,11 @@ sealed class DecoderState
         var aligned = pendingSamples.GetRange(0, alignedCount).ToArray();
         pendingSamples.RemoveRange(0, alignedCount);
         var bits = decoder.DecodeFSK(aligned, MarkHz, SpaceHz);
-        for (var i = 0; i < Math.Min(bits.Length, gmdss.Length); i++) gmdss[i].AddBits(bits[i]);
+        for (var i = 0; i < Math.Min(bits.Length, gmdss.Length); i++)
+        {
+            gmdss[i].AddBits(bits[i]);
+            invertedGmdss[i].AddBits(bits[i].Select(static bit => bit ^ 1));
+        }
     }
 
     public IEnumerable<DSCMessage> Drain()
