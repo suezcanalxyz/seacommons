@@ -2356,7 +2356,7 @@ def test_live_sanctioned_vessels_is_fresh_strong_identifier_subset(monkeypatch):
             },
         ],
     }
-    monkeypatch.setattr(registry, "get_geojson", lambda: fake)
+    monkeypatch.setattr(registry, "get_last_known_geojson", lambda: fake)
 
     with session_scope() as db:
         db.query(SanctionedVesselDB).filter(
