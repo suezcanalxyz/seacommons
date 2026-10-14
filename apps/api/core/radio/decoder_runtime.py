@@ -5,6 +5,7 @@ import math
 from array import array
 import sys
 import json
+import hashlib
 import queue
 import subprocess
 import threading
@@ -90,6 +91,8 @@ class RadioDecoderRuntime:
         decoders: Iterable[RadioDecoder] = (),
         decoded_handler: Callable[[DecodedRadioMessage], dict[str, object]],
         queue_size: int = 32,
+        decoder_factory: Callable[[], Iterable[RadioDecoder]] | None = None,
+        worker_count: int = 1,
     ) -> None:
         self.enabled = bool(enabled)
         self._decoders = tuple(decoders)
@@ -105,7 +108,16 @@ class RadioDecoderRuntime:
         self._audio_invalid = 0
         self._audio_duration_ms = 0.0
         self._audio_rms_sum = 0.0
-        self._queue: queue.Queue[EphemeralRadioFrame] = queue.Queue(maxsize=max(1, int(queue_size)))
+        # One FIFO per shard, selected by physical lineage. All frames from a
+        # receiver remain ordered and are decoded by the same persistent process.
+        # Existing direct/isolated callers retain one worker and one queue.
+        shards = max(1, min(int(worker_count), 4)) if decoder_factory else 1
+        self._queues = tuple(queue.Queue(maxsize=max(1, int(queue_size))) for _ in range(shards))
+        self._queue = self._queues[0]  # backward compatible single-shard runtime
+        self._decoder_sets = [self._decoders]
+        for _ in range(shards - 1):
+            self._decoder_sets.append(tuple(decoder_factory()))
+        self._workers: list[threading.Thread] = []
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
 
@@ -128,57 +140,66 @@ class RadioDecoderRuntime:
                 "sampling_interval_frames": 64,
                 "note": "Sampled signal quality only; not a decoded transmission or an RF SNR measurement",
             },
-            "queued": self._queue.qsize(),
-            "worker_alive": bool(self._worker and self._worker.is_alive()),
+            "queued": sum(q.qsize() for q in self._queues),
+            "worker_alive": bool(self._workers) and all(w.is_alive() for w in self._workers),
+            "worker_count": len(self._queues),
+            "queues": [q.qsize() for q in self._queues],
         }
 
     def start(self) -> None:
-        if not self.enabled or self._worker is not None:
+        if not self.enabled or self._workers:
             return
         self._stop.clear()
-        self._worker = threading.Thread(target=self._run, daemon=True, name="radio-decoder")
-        self._worker.start()
+        for i, (q, decoders) in enumerate(zip(self._queues, self._decoder_sets)):
+            worker = threading.Thread(target=self._run, args=(q, decoders), daemon=True,
+                                      name=f"radio-decoder-{i}")
+            self._workers.append(worker)
+            worker.start()
+        self._worker = self._workers[0]
 
     def submit_frame(self, frame: EphemeralRadioFrame) -> bool:
         if not self.enabled:
             return False
         self.start()
         try:
-            self._queue.put_nowait(frame)
+            lineage = frame.physical_lineage.encode("utf-8")
+            shard = int.from_bytes(hashlib.blake2s(lineage, digest_size=4).digest(), "big") % len(self._queues)
+            self._queues[shard].put_nowait(frame)
             return True
         except queue.Full:
             self._dropped += 1
             return False
 
-    def _run(self) -> None:
+    def _run(self, q: queue.Queue[EphemeralRadioFrame], decoders: tuple[RadioDecoder, ...]) -> None:
         while not self._stop.is_set():
             try:
-                frame = self._queue.get(timeout=0.1)
+                frame = q.get(timeout=0.1)
             except queue.Empty:
                 continue
             try:
-                self.ingest_frame(frame)
+                self.ingest_frame(frame, decoders=decoders)
             except Exception:
-                # A malformed decoder response or downstream persistence error
-                # must never kill the one bounded decoder worker silently.
                 self._errors += 1
             finally:
-                self._queue.task_done()
+                q.task_done()
 
     def stop(self) -> None:
         self._stop.set()
-        worker, self._worker = self._worker, None
-        if worker is not None and worker is not threading.current_thread():
-            worker.join(timeout=2.0)
-        for decoder in self._decoders:
-            close = getattr(decoder, "close", None)
-            if callable(close):
-                try:
-                    close()
-                except Exception:
-                    pass
+        workers, self._workers = self._workers, []
+        self._worker = None
+        for worker in workers:
+            if worker is not threading.current_thread():
+                worker.join(timeout=2.0)
+        for decoders in self._decoder_sets:
+            for decoder in decoders:
+                close = getattr(decoder, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
 
-    def ingest_frame(self, frame: EphemeralRadioFrame) -> dict[str, object]:
+    def ingest_frame(self, frame: EphemeralRadioFrame, *, decoders: tuple[RadioDecoder, ...] | None = None) -> dict[str, object]:
         if not self.enabled:
             return {"accepted": False, "reason": "disabled"}
         self._frames += 1
@@ -194,7 +215,7 @@ class RadioDecoderRuntime:
                 self._audio_clipped += int(bool(quality["clipping"]))
         decoded = 0
         invalid = 0
-        for decoder in self._decoders:
+        for decoder in (self._decoders if decoders is None else decoders):
             try:
                 outputs = tuple(decoder.decode(frame))
             except Exception:
@@ -433,6 +454,14 @@ def runtime_from_config() -> RadioDecoderRuntime:
         decoders=decoders,
         decoded_handler=handle_decoded_radio_message,
         queue_size=config.RADIO_DECODER_QUEUE_SIZE,
+        decoder_factory=(lambda: tuple(
+            JSONLProcessDecoder(
+                tuple(raw), timeout_s=config.RADIO_DECODER_TIMEOUT_S,
+                accepted_frequencies_hz=_builtin_decoder_frequencies(tuple(raw)),
+            ) for raw in commands[:4] if isinstance(raw, list) and raw
+            and all(isinstance(v, str) and v for v in raw)
+        )) if decoders else None,
+        worker_count=3,
     )
 
 
