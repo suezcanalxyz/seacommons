@@ -118,7 +118,7 @@ A **single analysis chain** is authoritative; new UX views must not establish sh
 | Evidence track | `voyage_evidence` in the existing Play dossier | Reuse track-store readings, mark AIS gaps as absent stored fixes and port calls as inferred, bounded to 7 days and 3 already-published vessel identities |
 | Live | Existing publication projections | Operational horizon, not the lifetime repository of all history |
 
-**Privacy gate:** Never promote MMSIs obtained only through internal radio associations into public investigations. A public voyage enrichment may use only published case subject identities. No raw classified radio or internal evidence references may be smuggled through `voyage_evidence`.
+**Privacy gate:** Never promote MMSIs obtained only through internal radio associations into public investigations. A public voyage enrichment may use only expressly published hypothesis case subjects; review-ready cases and episode-only views stay redacted. No raw classified radio or internal evidence references may be smuggled through `voyage_evidence`.
 
 **Evidence validity:** A gap between two retained AIS fixes may come from collection or retention. A drawn segment does not assert the precise route and a port call does not establish loading/unloading. The UI historical cutoff must constrain visible AIS records. The reception expectation model and existing episode evidence stages remain distinct from vessel intent or cargo hypotheses.
 
