@@ -39,6 +39,7 @@ class MediaOcrQueue:
         self._workers = max(1, workers)
         self._maxsize = max(1, maxsize)
         self._executor: ThreadPoolExecutor | None = None
+        self._closed = False
         self._lock = threading.Lock()
         self._pending: dict[str, float] = {}  # job_key -> enqueued monotonic ts
         self._inflight: set[str] = set()
@@ -56,11 +57,9 @@ class MediaOcrQueue:
         return executor
 
     def submit(self, job_key: str, fn: Callable[[], None]) -> str:
-        """Enqueue a dedup'd OCR job.
-
-        Returns one of ``queued`` | ``deduplicated`` | ``deferred_queue_full``
-        | ``dropped``.
-        """
+        """Enqueue a dedup'd OCR job or reject it during shutdown."""
+        if self._closed:
+            return "dropped"
         self._ensure_executor()
         with self._lock:
             if self._is_known_locked(job_key):
@@ -109,6 +108,8 @@ class MediaOcrQueue:
                 self._drain_one_deferred_locked()
 
     def _drain_one_deferred_locked(self) -> None:
+        if self._closed:
+            return
         while self._deferred and len(self._pending) + len(self._inflight) < self._maxsize:
             job_key, fn = self._deferred.popleft()
             if job_key in self._pending or job_key in self._inflight:
@@ -126,9 +127,24 @@ class MediaOcrQueue:
                 "oldest_job_seconds": now - oldest,
             }
 
+    def shutdown(self) -> None:
+        """Cancel queued jobs and prevent new work during interpreter exit.
+
+        Running OCR operations already have subprocess timeouts. Do not wait
+        here: an API shutdown must not block on external image processing.
+        """
+        with self._lock:
+            self._closed = True
+            executor, self._executor = self._executor, None
+            self._pending.clear()
+            self._deferred.clear()
+        if executor is not None:
+            executor.shutdown(wait=False, cancel_futures=True)
+
     def reset(self) -> None:
         """Test-only: drop backlog and rebuild the pool."""
         with self._lock:
+            self._closed = False
             executor, self._executor = self._executor, None
             self._pending.clear()
             self._inflight.clear()

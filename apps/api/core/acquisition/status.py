@@ -15,7 +15,7 @@ _providers: dict[str, tuple[str, StatusProvider]] = {}
 _ALLOWED_DETAIL_FIELDS = frozenset(
     {
         "mode", "configured", "started", "failed", "last_observation_at",
-        "receivers", "channels", "structured_enabled", "structured_state", "decoder",
+        "receivers", "channels", "structured_enabled", "structured_state", "decoder", "pipeline",
     }
 )
 _ALLOWED_RECEIVER_FIELDS = frozenset(
@@ -40,7 +40,7 @@ _ALLOWED_CHANNEL_FIELDS = frozenset(
 # Radio status is a public endpoint. Never expose receiver lineages, decoder
 # commands, raw PCM, payload bodies or free-form internal diagnostics here.
 _ALLOWED_DECODER_COUNTERS = frozenset({
-    "decoders", "frames", "decoded", "accepted", "rejected", "invalid",
+    "decoders", "frames", "decoded", "accepted", "dsc_accepted", "navtex_accepted", "rejected", "invalid",
     "dropped", "errors", "queued", "worker_count", "continuity_resets",
     "state_evictions", "bridge_errors", "recent_window_s",
     "recent_frames", "recent_dropped", "recent_invalid", "recent_errors",
@@ -147,6 +147,45 @@ def _sanitize_channels(value: Any) -> list[dict[str, Any]]:
     return rows
 
 
+_RADIO_STAGE_LABELS = {
+    "reception": "Radio reception",
+    "demodulation": "DSC signal processing",
+    "validation": "Verified DSC messages",
+    "evidence": "Persisted DSC evidence",
+    "ais_correlation": "Strong AIS correlations",
+    "episode": "Linked investigations",
+    "safety_review": "Distress candidates requiring review",
+}
+_RADIO_STAGE_IDS = frozenset(_RADIO_STAGE_LABELS)
+_RADIO_STAGE_STATES = frozenset({
+    "live", "listening", "idle", "degraded", "offline", "disabled",
+    "verified", "awaiting_message", "recorded", "correlated", "awaiting_match",
+    "linked", "review_required", "none_verified",
+})
+
+
+def _sanitize_radio_pipeline(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    stages = value.get("stages")
+    if not isinstance(stages, list) or len(stages) > 7:
+        return {}
+    safe = []
+    for stage in stages:
+        if not isinstance(stage, dict) or stage.get("id") not in _RADIO_STAGE_IDS:
+            continue
+        if stage.get("state") not in _RADIO_STAGE_STATES:
+            continue
+        count = stage.get("count")
+        if type(count) is not int or count < 0:
+            continue
+        safe.append({"id": stage["id"],
+                     "label": _RADIO_STAGE_LABELS[stage["id"]],
+                     "state": stage["state"], "count": count})
+    return {"name": "Maritime radio evidence", "count_scope": "since_process_start",
+            "stages": safe}
+
+
 def acquisition_status_sources() -> list[dict[str, Any]]:
     with _lock:
         items = tuple(sorted(_providers.items()))
@@ -169,6 +208,8 @@ def acquisition_status_sources() -> list[dict[str, Any]]:
                 public_detail[key] = _sanitize_channels(detail[key])
             elif key == "decoder":
                 public_detail[key] = _sanitize_decoder(detail[key])
+            elif key == "pipeline":
+                public_detail[key] = _sanitize_radio_pipeline(detail[key])
             else:
                 public_detail[key] = detail[key]
         result.append({"family": family, "label": label, "state": state, **public_detail})

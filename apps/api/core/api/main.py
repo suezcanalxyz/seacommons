@@ -85,11 +85,10 @@ async def lifespan(app: FastAPI):
         _start_intel_sync_loop()
     yield
     logger.info("Seacommons API shutting down")
-    try:
-        from core.scheduler import stop as scheduler_stop
-        scheduler_stop()
-    except Exception:
-        pass
+    from core.api.lifecycle import stop_background_services
+
+    failed = stop_background_services()
+    logger.info("Background shutdown finished (failed=%s)", failed)
 
 
 def _start_intel_sync_loop() -> None:

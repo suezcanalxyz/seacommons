@@ -641,6 +641,7 @@ async def live_receiver_mesh(
         "decoder": acquisition["decoder"],
         "structured_enabled": acquisition["structured_enabled"],
         "structured_state": acquisition["structured_state"],
+        "pipeline": acquisition["pipeline"],
     }
 
 

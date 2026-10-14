@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 
 from core.radio.ais_association import (
     associate_and_persist_dsc,
@@ -12,6 +13,14 @@ from core.radio.burst import RadioBurstDetector
 from core.radio.provider import DecodedRadioMessage, RadioObservation
 
 _burst_detector = RadioBurstDetector()
+_radio_pipeline_lock = threading.Lock()
+_radio_correlations = {"ais_strong_matches": 0, "episodes_linked": 0}
+
+
+def radio_correlation_status() -> dict[str, int]:
+    with _radio_pipeline_lock:
+        return dict(_radio_correlations)
+
 
 
 def _persist_radio_observation(observation: RadioObservation) -> None:
@@ -91,6 +100,11 @@ def handle_decoded_radio_message(message: DecodedRadioMessage) -> dict[str, obje
             except Exception:
                 association = None
             if association is not None:
+                if association.match_status == "strong":
+                    with _radio_pipeline_lock:
+                        _radio_correlations["ais_strong_matches"] += 1
+                        if association.episode_id:
+                            _radio_correlations["episodes_linked"] += 1
                 result["ais_association"] = public_association(association)
                 if association.episode_id:
                     # A strong radio↔AIS match enriches an existing canonical
@@ -108,6 +122,8 @@ def radio_acquisition_status() -> dict[str, object]:
     from core.config import config
     from core.radio.decoder_runtime import radio_decoder_status
     from core.radio.runtime import get_remote_radio_status
+    from core.radio.pipeline import public_radio_pipeline
+    from core.radio.structured_runtime import get_structured_radio_runtime
 
     status = get_remote_radio_status(include_receivers=True)
     channels = list(status.get("channels") or [])
@@ -174,6 +190,14 @@ def radio_acquisition_status() -> dict[str, object]:
         "failed": int(status.get("failed") or 0),
         "receivers": list(status.get("receivers") or []),
         "channels": list(status.get("channels") or []),
+        "pipeline": public_radio_pipeline(
+            radio_state=state,
+            structured_state=structured_state,
+            active_receivers=int(status.get("started") or 0),
+            decoder=decoder,
+            structured=get_structured_radio_runtime().status(),
+            correlations=radio_correlation_status(),
+        ),
     }
 
 

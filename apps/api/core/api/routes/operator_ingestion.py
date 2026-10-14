@@ -927,8 +927,11 @@ def operator_stabilization_status(
         return round(numerator / denominator, 4) if denominator else 0.0
 
     decoded = int(radio.get("decoded") or 0)
+    accepted = int(radio.get("dsc_accepted") or 0)
     frames = int(radio.get("frames") or 0)
     decode_ratio = decoded / frames if frames else 0.0
+    from core.radio.bridge import radio_acquisition_status
+    radio_acquisition = radio_acquisition_status()
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "lookback_hours": hours,
@@ -955,8 +958,13 @@ def operator_stabilization_status(
         },
         "radio": {
             **radio,
-            "ready_for_scale": decoded >= 3 and decode_ratio > 0.0,
-            "scale_gate": "Require >=3 repeatable decodes before adding receiver capacity.",
+            "ready_for_scale": (
+                accepted >= 3 and decode_ratio > 0.0
+                and int(radio.get("recent_dropped") or 0) == 0
+                and radio_acquisition["state"] == "live"
+            ),
+            "scale_gate": "Require >=3 accepted DSC observations, full receiver coverage and no recent packet loss.",
+            "pipeline": radio_acquisition["pipeline"],
         },
         "targets": {
             "episode_to_multi_lineage": "increase without inflating detector count",

@@ -377,6 +377,17 @@ def get_ngo_client() -> AISStreamClient | None:
     return _ngo_client
 
 
+def stop_clients() -> None:
+    """Stop both AISStream subscriptions without clearing track history."""
+    global _client, _ngo_client
+    clients = (_client, _ngo_client)
+    _client = None
+    _ngo_client = None
+    for client in clients:
+        if client is not None:
+            client.stop()
+
+
 def start(
     api_key: str, *, ngo_api_key: str = "", on_observation=None, on_health=None,
     publish_legacy: bool = True,
