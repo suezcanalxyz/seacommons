@@ -64,12 +64,12 @@ export function publicProxyCacheSeconds(headers, method, path, status = 200, ups
   if (!['GET', 'HEAD'].includes(method) || status !== 200) return 0;
   if (headers.authorization || headers.cookie || headers['x-api-key']) return 0;
   if (upstreamHeaders['set-cookie']) return 0;
-  if (/(?:^|,|\\s)(?:authorization|cookie|\\*)(?:,|$|\\s)/i.test(String(upstreamHeaders.vary || ''))) return 0;
+  if (String(upstreamHeaders.vary || '').split(',').some(item => ['authorization', 'cookie', '*'].includes(item.trim().toLowerCase()))) return 0;
   const host = requestHostname(headers);
   const pathname = String(path).split('?')[0];
   if (['seacommons.org', 'play.seacommons.org'].includes(host)) {
     if (pathname === '/api/v1/play/counts') return 45;
-    if (pathname === '/api/v1/play/incidents' || /^\\/api\\/v1\\/play\\/incidents\\/[^/]+\\/timeline$/.test(pathname)) return 30;
+    if (pathname === '/api/v1/play/incidents' || (pathname.startsWith('/api/v1/play/incidents/') && pathname.endsWith('/timeline') && pathname.split('/').length === 8)) return 30;
   }
   if (host === 'live.seacommons.org') {
     if (pathname === '/api/v1/live/pipeline') return 20;
