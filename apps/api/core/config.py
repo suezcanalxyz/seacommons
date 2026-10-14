@@ -218,6 +218,8 @@ class SuezCanalConfig(BaseSettings):
     DRIFT_WORKER_URL: str = ""
     DRIFT_WORKER_SECRET: str = ""
     DRIFT_WORKER_TIMEOUT_S: float = 90.0
+    # When offloaded, prevent API OOM from silent local heavy-model fallback.
+    DRIFT_WORKER_REQUIRE_REMOTE: bool = False
     # Where intel monitors reach the API's own HTTP routes (e.g. to trigger
     # auto-drift). Defaults to same-host — only needs changing when monitors
     # run as a standalone process on a different VM than the API. Point this
