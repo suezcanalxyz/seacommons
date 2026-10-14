@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import base64
+import math
+from array import array
+import sys
 import json
 import queue
 import subprocess
@@ -50,6 +53,31 @@ class EphemeralRadioFrame:
         }
 
 
+def _pcm_quality(frame: EphemeralRadioFrame) -> dict[str, object]:
+    """Ephemeral coarse audio diagnostics; samples and identifiers are not retained."""
+    data = frame.payload
+    duration_ms = round(1000 * (len(data) // 2) / frame.sample_rate_hz, 1)
+    result: dict[str, object] = {"duration_ms": duration_ms, "bytes": len(data), "valid_pcm": False}
+    if not data or len(data) % 2 or frame.encoding not in {"kiwi_snd_raw", "openwebrx_pcm_s16le", "pcm_s16le"}:
+        return result
+    # Sample at a bounded stride rather than accumulating raw audio in memory.
+    # Signed magnitude is endian-independent for clipping only; RMS needs correct order.
+    samples = array("h")
+    samples.frombytes(data)
+    byteorder = "big" if frame.encoding == "kiwi_snd_raw" else "little"
+    if sys.byteorder != byteorder:
+        samples.byteswap()
+    stride = max(1, len(samples) // 1024)
+    sampled = samples[::stride]
+    if not sampled:
+        return result
+    rms = math.sqrt(sum(float(x) * float(x) for x in sampled) / len(sampled)) / 32768
+    clipped = sum(abs(x) >= 32500 for x in sampled) / len(sampled)
+    result.update(valid_pcm=True, rms=round(rms, 5), clipped_fraction=round(clipped, 4),
+                  silent=rms < 0.002, clipping=clipped > 0.02)
+    return result
+
+
 class RadioDecoder(Protocol):
     def decode(self, frame: EphemeralRadioFrame) -> Iterable[Mapping[str, object]]: ...
 
@@ -71,6 +99,12 @@ class RadioDecoderRuntime:
         self._invalid = 0
         self._dropped = 0
         self._errors = 0
+        self._audio_sampled = 0
+        self._audio_silent = 0
+        self._audio_clipped = 0
+        self._audio_invalid = 0
+        self._audio_duration_ms = 0.0
+        self._audio_rms_sum = 0.0
         self._queue: queue.Queue[EphemeralRadioFrame] = queue.Queue(maxsize=max(1, int(queue_size)))
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
@@ -84,6 +118,16 @@ class RadioDecoderRuntime:
             "invalid": self._invalid,
             "dropped": self._dropped,
             "errors": self._errors,
+            "audio_quality": {
+                "sampled_frames": self._audio_sampled,
+                "silent_frames": self._audio_silent,
+                "clipped_frames": self._audio_clipped,
+                "invalid_pcm_frames": self._audio_invalid,
+                "sampled_duration_s": round(self._audio_duration_ms / 1000, 1),
+                "mean_rms": round(self._audio_rms_sum / max(1, self._audio_sampled - self._audio_invalid), 5),
+                "sampling_interval_frames": 64,
+                "note": "Sampled signal quality only; not a decoded transmission or an RF SNR measurement",
+            },
             "queued": self._queue.qsize(),
             "worker_alive": bool(self._worker and self._worker.is_alive()),
         }
@@ -138,6 +182,16 @@ class RadioDecoderRuntime:
         if not self.enabled:
             return {"accepted": False, "reason": "disabled"}
         self._frames += 1
+        if self._frames % 64 == 1:
+            quality = _pcm_quality(frame)
+            self._audio_sampled += 1
+            self._audio_duration_ms += float(quality["duration_ms"])
+            if not quality["valid_pcm"]:
+                self._audio_invalid += 1
+            else:
+                self._audio_rms_sum += float(quality["rms"])
+                self._audio_silent += int(bool(quality["silent"]))
+                self._audio_clipped += int(bool(quality["clipping"]))
         decoded = 0
         invalid = 0
         for decoder in self._decoders:
