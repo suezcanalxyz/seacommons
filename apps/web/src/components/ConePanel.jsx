@@ -9,6 +9,7 @@ import {
   observationText,
 } from '../features/live/assessmentPresentation.js';
 import { shipTypeLabel } from '../features/live/vesselType.js';
+import { detectorEvidence, humanizeDetectorText } from '../features/live/reportNarrative.js';
 import { liveListenHttpUrl, pcm16leToFloat32 } from '../features/live/radioListen.js';
 
 const HORIZON = {
@@ -977,13 +978,16 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
       ) : (
         <div className="cone-section">
           <SectionLabel>Evidence & forensic assessment</SectionLabel>
-          <Row label="Observation" value={observationText(props, eventType)} />
+          <p className="intel-report-note"><strong>Observed event</strong></p>
+          <p className="intel-report-prose">{humanizeDetectorText(observationText(props, eventType))}</p>
+          {detectorEvidence(props).gap != null && <Row label="AIS interruption" value={`${Math.floor(detectorEvidence(props).gap / 60)} h ${Math.round(detectorEvidence(props).gap % 60)} min`} />}
+          {detectorEvidence(props).details.length > 0 && <div className="intel-report-summary"><strong>Why it matters</strong><ul>{detectorEvidence(props).details.map((detail) => <li key={detail}>{detail}</li>)}</ul></div>}
           {/* docs/fixes.md M0.2: descriptionOf(type) is category help text
               only now -- the case-specific EventAssessment.interpretation
               (built from this event's own evidence, not a canned string
               per type) takes priority when the backend produced one. */}
-          <Row label="Interpretation" value={interpretationText(props, descriptionOf(props.type))} />
-          {caveatsText(props) && <Row label="Caveats" value={caveatsText(props)} />}
+          <div className="intel-report-summary"><strong>Assessment</strong><p>{detectorEvidence(props).interpretation}</p>{!props.reason_codes?.length && <p>{humanizeDetectorText(interpretationText(props, descriptionOf(props.type)))}</p>}</div>
+          <div className="intel-report-summary"><strong>Limits of the evidence</strong><p>{humanizeDetectorText(caveatsText(props)) || detectorEvidence(props).limitations}</p></div>
           <Row label="Evidence level" value={String(evidenceLevel).replace(/_/g, ' ')} />
           <Row
             label="Confidence"
