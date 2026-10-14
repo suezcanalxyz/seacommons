@@ -68,9 +68,9 @@ def test_weather_narrows_when_report_claims_it_and_data_confirms(monkeypatch):
     monkeypatch.setattr("core.ocean.cmems.cmems_enabled", lambda: True)
     monkeypatch.setattr("core.ocean.cmems.fetch_ocean_batch", fake_batch)
 
-    unnarrowed = area_extract.extract_area("boat in distress off #Libya")
+    unnarrowed = area_extract.extract_area("boat in distress off #Lampedusa")
     narrowed = area_extract.extract_area(
-        "boat in severe weather and distress off #Libya"
+        "boat in severe weather and distress off #Lampedusa"
     )
 
     assert unnarrowed is not None and narrowed is not None
@@ -108,3 +108,15 @@ def test_weather_not_checked_when_report_never_mentions_it(monkeypatch):
     area_extract.extract_area("boat in distress off #Libya")
 
     assert not called, "CMEMS must never be queried unless the report itself claims weather"
+
+
+def test_wide_area_skips_optional_cmems_wave_fetch(monkeypatch):
+    """A broad SAR text prior must survive memory-unsafe CMEMS dimensions."""
+    from core.intel import area_extract
+    from core.ocean import cmems
+    called = []
+    monkeypatch.setattr(cmems, 'cmems_enabled', lambda: True)
+    monkeypatch.setattr(cmems, 'fetch_ocean_batch', lambda *a, **kw: called.append(True))
+    assert area_extract._filter_by_wave_height([(35.0, 14.0), (36.5, 14.0)], None) == []
+    assert area_extract._filter_by_wave_height([(35.0 + i * .01, 14.0) for i in range(65)], None) == []
+    assert called == []
