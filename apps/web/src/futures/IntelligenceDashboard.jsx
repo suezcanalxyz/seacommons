@@ -23,9 +23,9 @@ const freshness=[
   ['parsed_event','Latest normalized event','Last received event in the normalized schema.'],
   ['analysis_output','Latest analysis output','Last recorded analysis result.']
 ];
-function number(value){return value===null||value===undefined?'Not reported':Number.isFinite(Number(value))?new Intl.NumberFormat('en-GB').format(Number(value)):'Not reported'}
+function number(value){return value===null||value===undefined?'Unavailable':Number.isFinite(Number(value))?new Intl.NumberFormat('en-GB').format(Number(value)):'Not reported'}
 function stamp(value){if(!value)return 'Not reported';const d=new Date(value);return Number.isNaN(d.getTime())?'Not reported':d.toLocaleString()}
-function MetricSet({heading,rows,data}) {const [expanded,setExpanded]=useState(null);return <section className="future-section"><header><h2>{heading}</h2></header><div className="future-intelligence-metrics">{rows.map(([key,label,meaning])=><article key={key} className="future-intelligence-metric"><div className="future-intelligence-metric-top"><span>{label}</span><button type="button" aria-expanded={expanded===key} aria-label={'Explain '+label} onClick={()=>setExpanded(expanded===key?null:key)}>What is this? {expanded===key?'−':'+'}</button></div><strong>{number(data?.[key])}</strong><p>{meaning}</p>{expanded===key&&<div className="future-intelligence-legend"><b>How to read it</b><p>{meaning} The number belongs to its own evidence stage; it is not directly comparable to a case or vessel count. Missing means unavailable, not zero.</p><small>API field: {key}</small></div>}</article>)}</div></section>}
+function MetricSet({heading,rows,data}) {const [expanded,setExpanded]=useState(null);return <section className="future-section"><header><h2>{heading}</h2></header><div className="future-intelligence-metrics">{rows.map(([key,label,meaning])=><article key={key} className="future-intelligence-metric"><div className="future-intelligence-metric-top"><span><GlossaryTerm label={label}/></span><button type="button" aria-expanded={expanded===key} aria-label={'Explain '+label} onClick={()=>setExpanded(expanded===key?null:key)}>What is this? {expanded===key?'−':'+'}</button></div><strong>{number(data?.[key])}</strong><p>{meaning}</p>{expanded===key&&<div className="future-intelligence-legend"><b>How to read it</b><p>{meaning} The number belongs to its own evidence stage; it is not directly comparable to a case or vessel count. Missing means unavailable, not zero.</p><small>API field: {key}</small></div>}</article>)}</div></section>}
 
 import { fetchJson } from '../services/api/client.js';
 import { resolveSiteApiBase } from '../site/liveApi.js';
@@ -167,7 +167,7 @@ function MeasurementContract({period}) {
   {period==='overall'?<p>Overall shows retained records. It is not an immutable historical ingestion total. Created-versus-updated measures apply to the 24-hour and 7-day windows.</p>:<>
    <p className="future-data-provenance">{state.loading?'Loading canonical measurements…':state.error||'As of '+stamp(data?.as_of)+' · window start '+stamp(data?.window_start)+' · contract v'+(data?.contract_version||'?')}</p>
    <div className="future-intelligence-metrics">{measurementRows.map(([key,title,desc])=><article className="future-intelligence-metric" key={key}>
-    <span>{title}</span><strong>{number(data?.counts?.[key])}</strong>
+    <span>{title}</span><strong>{state.loading?'Loading…':number(data?.counts?.[key])}</strong>
     <p>{desc}</p><small>Clock: {data?.definitions?.[key]?.clock||'not available'}</small>
    </article>)}</div>
    {data?.sources&&<Breakdown title="Contributing raw sources" items={data.sources} help="Source groups count original observations received within the same period. Multiple source families need not generate equivalent numbers of normalized events."/>}
@@ -189,16 +189,26 @@ const headlineMetrics=[
  ['satellite_observations','Satellite observations','Satellite observations discovered by the system, not all images available.'],
  ['active_source_names','Active source names','Number of distinct sources contributing retained raw observations in the selected period.'],
 ];
-function IntelligenceMetricGrid({period,pipeline,sensorsData,loadedAt,estimated}) {
+const termExplanations={
+ 'AIS positions':'Automatic Identification System positions reported by vessels and received by monitoring networks. A missing position does not by itself prove concealment.',
+ 'Derived cues':'Signals flagged by analytical rules or models as worthy of examination. These are leads, not confirmed incidents.',
+ 'Corroborated episodes':'Related observations with supporting evidence from genuinely independent source lineages.',
+ 'Investigation hypotheses':'Possible explanations being evaluated. They are not confirmed events or allegations.',
+ 'Normalized events':'Incoming records translated into a shared schema so independent formats can be compared without losing their origin.',
+ 'Radio bursts':'Short received radio transmissions or fragments, including those not yet decoded into meaningful events.',
+ 'Review ready':'Material organized for human examination. It does not imply that the investigation has reached a conclusion.',
+};
+function GlossaryTerm({label}){const meaning=termExplanations[label];return meaning?<span className="future-glossary-term" tabIndex={0} aria-label={label+': '+meaning}>{label}<span className="future-glossary-definition" role="tooltip">{meaning}</span></span>:label;}
+function IntelligenceMetricGrid({period,pipeline,sensorsData,loadedAt,estimated,loading=false}) {
  const [expanded,setExpanded]=useState(null);
  const source={...sensorsData,...pipeline};
  return <section className="future-section future-intelligence-headline" aria-label="Intelligence metric dashboard">
    <header className="future-kpi-heading"><div><span className="future-eyebrow">Intelligence / metrics</span><h2>Evidence activity</h2></div><p>12 live measures · distinct evidence layers · not additive. Select a period above; open Info for definitions.</p></header>
    <div className="future-intelligence-metrics future-intelligence-unified-grid">{headlineMetrics.map(([key,label,definition])=><article className="future-intelligence-metric" key={key}>
      <div className="future-intelligence-metric-top"><span>{label}</span><button type="button" aria-expanded={expanded===key} aria-label={'Explain '+label} onClick={()=>setExpanded(expanded===key?null:key)}>{expanded===key?'Less −':'Info +'}</button></div>
-     <strong>{number(source?.[key])}{estimated&&key==='ais_fixes'&&source?.[key]!=null?' ≈':''}</strong>
+     <strong aria-live="polite">{loading&&source?.[key]==null?'Loading…':number(source?.[key])}{estimated&&key==='ais_fixes'&&source?.[key]!=null?' ≈':''}</strong>
      <p>{definition}</p>
-     {expanded===key&&<div className="future-intelligence-legend"><b>How to interpret</b><p>{definition} {period==='overall'?'Overall is the currently retained corpus, not a permanent lifetime ledger.':'This is a rolling '+(period==='7d'?'168-hour':'24-hour')+' window. Different measures can use receipt, observation or last-update timestamps.'}</p><small>Field: {key}</small></div>}
+     {expanded===key&&<div className="future-intelligence-legend"><b>How to interpret</b><p>{definition} {period==='overall'?'Overall is the currently retained corpus, not a permanent lifetime ledger.':'This is a rolling '+(period==='7d'?'168-hour':'24-hour')+' window. Different measures can use receipt, observation or last-update timestamps.'}</p><small>Definition: {label}</small></div>}
    </article>)}</div>
    <p className="future-data-provenance">Period: {period==='overall'?'Overall · retained records':period==='7d'?'7 days · rolling 168 h':'24 hours · rolling'} · API generated: {stamp(loadedAt)}{estimated?' · AIS historical total estimated':''}. Unavailable means not reported, never zero.</p>
  </section>;
@@ -277,7 +287,7 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
 
  <div className="future-intelligence-freshness"><span>{operator.loading?'Updating metrics…':operator.data?(operator.data.fallback_public?'Evidence overview · detailed analysis pending':'Evidence updated'):operator.error?'Evidence temporarily unavailable':'Loading evidence'}</span><small>{operator.data?.generated_at?'Generated '+stamp(operator.data.generated_at):'Updates pending'}</small><button type="button" onClick={operator.refresh}>Refresh</button></div>
  {operator.error&&<p className="future-inline-note" role="status">{operator.error} Please try refreshing the data.</p>}
- <IntelligenceMetricGrid period={period} pipeline={pipeline} sensorsData={specialSensors} loadedAt={raw?.generated_at||status?.generated_at} estimated={Boolean(isOverall&&sensorsData?.ais_fixes_estimated)}/>
+ <IntelligenceMetricGrid period={period} pipeline={pipeline} sensorsData={specialSensors} loadedAt={raw?.generated_at||status?.generated_at} loading={operator.loading} estimated={Boolean(isOverall&&sensorsData?.ais_fixes_estimated)}/>
  <section className="future-intelligence-explainer" aria-label="Intelligence evidence guide"><div><span className="future-eyebrow">Reading the data</span><h2>From signals to assessed evidence</h2></div><p>Raw intake counts information received, normalized records make sources comparable, and analytical cues highlight leads. Episodes group related observations; investigations remain hypotheses until their evidence and uncertainty have been assessed. These layers overlap, so counts are never added together.</p></section>
  <nav className="future-intelligence-subnav" aria-label="Intelligence sections">{TABS.map(([key,title])=><button key={key} type="button" aria-pressed={key===tab} className={key===tab?'is-active':''} onClick={()=>setTab(key)}>{title}</button>)}</nav>
  {tab==='pipeline'&&<section className="future-section future-intelligence-explanation"><h2>How to read the evidence pipeline</h2><p>Read each card according to its measurement clock, source and evidential threshold. Received records describe intake, updated episodes and hypotheses describe processing activity, and corroborated episodes are a separate verification state.</p><details><summary>Measurement clocks, confidence and limitations</summary><p>Received measures ingestion time; created measures new records; updated includes previous records processed again; observed uses the source timestamp. Consequently an investigation updated today is not necessarily new. Missing data never means zero.</p><p>24 hours and 7 days are rolling windows. Overall counts retained records, not immutable lifetime intake. AIS historical counts may use database estimates. Publication requires separate safeguards, so corroboration and review readiness are not public incident totals.</p>{isOverall&&<p>First stored intake: {stamp(raw?.first_last?.raw_first)}. Latest stored intake: {stamp(raw?.first_last?.raw_latest)}.</p>}</details></section>}
