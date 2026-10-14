@@ -375,3 +375,12 @@ def test_overall_metrics_has_all_twelve_headline_measurements(monkeypatch):
     assert len(payload["stages"]) == 7
     for key in ("ais_fixes", "radio_bursts", "radio_events", "satellite_observations", "source_names"):
         assert key in payload["sensor_activity"]
+
+
+def test_futures_audience_accepts_only_configured_oidc_client(monkeypatch):
+    from core import security
+    monkeypatch.setenv("SEACOMMONS_FUTURES_OIDC_CLIENT_ID", "test-authorized-client")
+    assert security._futures_audiences() == ["authenticated", "test-authorized-client"]
+    monkeypatch.setenv("SEACOMMONS_FUTURES_OIDC_CLIENT_ID", "another-authorized-client")
+    assert "test-authorized-client" not in security._futures_audiences()
+    assert "another-authorized-client" in security._futures_audiences()
