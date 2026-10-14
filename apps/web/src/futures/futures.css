@@ -691,3 +691,8 @@ a { color: inherit; text-decoration: none; }
 .future-intelligence-records summary span{color:var(--f-muted);font-size:10px;flex-shrink:0}
 .future-intelligence-records details p,.future-intelligence-chain p{color:var(--f-muted);font-size:12px;line-height:1.6;margin:10px 0 0}
 @media(max-width:650px){.future-intelligence-records summary{flex-direction:column;align-items:flex-start}}
+
+
+/* Keep the section tabs visible during scroll across every Futures section. */
+.future-subnav{position:sticky;top:62px;z-index:11;background:rgba(5,8,13,.97);backdrop-filter:blur(18px);padding:13px 0 15px;margin-top:-14px}
+@media(max-width:760px){.future-subnav{top:60px;padding:10px 0;margin-top:0}}
