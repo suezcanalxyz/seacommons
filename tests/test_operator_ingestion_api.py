@@ -258,8 +258,8 @@ def test_futures_operator_bearer_reuses_canonical_ingestion_without_gateway_secr
     monkeypatch.setattr(config, "AUTH_ENABLED", True)
     monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "operator-secret")
     monkeypatch.setattr(
-        security, "authenticate_token",
-        lambda token: Principal(subject="operator-test", roles=frozenset({"operator"}), claims={}),
+        security, "require_futures_identity",
+        lambda request: Principal(subject="operator-test", roles=frozenset({"futures_viewer"}), claims={}),
     )
     result = TestClient(app).get(
         "/api/v1/operator/ingestion/overview?hours=24",
@@ -279,11 +279,28 @@ def test_futures_authenticated_viewer_can_read_intelligence(monkeypatch):
     monkeypatch.setattr(config, "AUTH_ENABLED", True)
     monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "operator-secret")
     monkeypatch.setattr(
-        security, "authenticate_token",
-        lambda token: Principal(subject="viewer-test", roles=frozenset({"researcher"}), claims={}),
+        security, "require_futures_identity",
+        lambda request: Principal(subject="viewer-test", roles=frozenset({"futures_viewer"}), claims={}),
     )
     result = TestClient(app).get(
         "/api/v1/operator/ingestion/observations?limit=5",
         headers={"Authorization": "Bearer verified-by-test-jwt"},
     )
     assert result.status_code == 200
+
+
+def test_futures_invalid_bearer_fails_closed(monkeypatch):
+    from core.api.main import app
+    from core.config import config
+    import core.security as security
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "operator-secret")
+    def invalid_session(_request):
+        raise HTTPException(status_code=401, detail="Invalid Futures session")
+    monkeypatch.setattr(security, "require_futures_identity", invalid_session)
+    response = TestClient(app).get(
+        "/api/v1/operator/ingestion/overview?hours=24",
+        headers={"Authorization": "Bearer invalid-token"},
+    )
+    assert response.status_code == 401
