@@ -104,19 +104,19 @@ function useOperatorMetrics(period){
  return {data,loading,error,refresh};
 }
 function useOperatorSections(period,tab) {
- const [snapshot,setSnapshot]=React.useState({data:null,error:''});
+ const [snapshot,setSnapshot]=React.useState({data:null,error:'',key:''});
  React.useEffect(()=>{
    let active=true;
-   if(period==='overall'){setSnapshot({data:null,error:''});return()=>{active=false;};}
+   if(period==='overall'){setSnapshot({data:null,error:'',key:period+':'+tab});return()=>{active=false;};}
    const hours=period==='7d'?168:24;
    const paths=tab==='pipeline'?['funnel']:tab==='sources'?['funnel']:tab==='quality'?['funnel','stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue','humanitarian-ais-correlation']:tab==='activity'?['observations','events','signals','analysis','pipeline-map']:null;
    if(!paths){setSnapshot({data:null,error:''});return()=>{active=false;};}
-   setSnapshot({data:null,error:''});
+   setSnapshot({data:null,error:'',key:period+':'+tab});
    Promise.allSettled(paths.map(p=>fetchJson(resolveSiteApiBase(),`/api/v1/operator/ingestion/${p}?hours=${hours}&limit=60`,undefined,18000)))
-   .then(results=>{if(!active)return;const data={};let failed=0;results.forEach((v,i)=>{if(v.status==='fulfilled')data[paths[i]]=v.value;else failed++});setSnapshot({data,error:failed?'Some protected sections are unavailable.':''})});
+   .then(results=>{if(!active)return;const data={};let failed=0;results.forEach((v,i)=>{if(v.status==='fulfilled')data[paths[i]]=v.value;else failed++});setSnapshot({data,error:failed?'Some protected sections are unavailable.':'',key:period+':'+tab})});
    return()=>{active=false;};
  },[period,tab]);
- return snapshot;
+ return snapshot.key===period+':'+tab ? snapshot : {data:null,error:''};
 }
 function SimpleRecords({title,items,description}) {
  if(!Array.isArray(items)||!items.length)return <section className="future-section"><h2>{title}</h2><p>{description}</p><p>No records currently available.</p></section>;
@@ -166,7 +166,8 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  const operator=useOperatorMetrics(period);
  const sections=useOperatorSections(period,tab);
  const isOverall=period==='overall';
- const raw=operator.data;
+ const expectedHours=period==='7d'?168:24;
+ const raw=operator.data && (isOverall ? operator.data.scope==='all_time' : operator.data.lookback_hours===expectedHours) ? operator.data : null;
  const status=!isOverall&&ops.status?.window_hours===(period==='7d'?168:24)?ops.status:null;
  const rawStages=Array.isArray(raw?.stages)?Object.fromEntries(raw.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
  const funnelStages=Array.isArray(sections.data?.funnel?.stages)?Object.fromEntries(sections.data.funnel.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
