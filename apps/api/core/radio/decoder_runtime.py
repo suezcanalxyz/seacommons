@@ -9,6 +9,7 @@ import hashlib
 import queue
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Iterable, Mapping, Protocol
@@ -124,6 +125,11 @@ class RadioDecoderRuntime:
         self._frames_by_shard = [0] * shards
         self._drops_by_shard = [0] * shards
         self._shard_metrics_lock = threading.Lock()
+        # Per-second bounded ring for genuine current health. Lifetime losses
+        # include startup/reconnect bursts and must not force perpetual degraded.
+        self._health_lock = threading.Lock()
+        self._health_window_s = 30
+        self._health_ring: list[tuple[int, dict[str, int]]] = [(-1, {}) for _ in range(30)]
         self._queue = self._queues[0]  # backward compatible single-shard runtime
         self._decoder_sets = [self._decoders]
         for _ in range(shards - 1):
@@ -132,7 +138,30 @@ class RadioDecoderRuntime:
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
 
+    def _record_health(self, metric: str, amount: int = 1) -> None:
+        if amount <= 0:
+            return
+        sec = int(time.monotonic())
+        index = sec % self._health_window_s
+        with self._health_lock:
+            epoch, values = self._health_ring[index]
+            if epoch != sec:
+                values = {}
+                self._health_ring[index] = (sec, values)
+            values[metric] = values.get(metric, 0) + amount
+
+    def _recent_health(self) -> dict[str, int]:
+        now = int(time.monotonic())
+        summary = {"frames": 0, "dropped": 0, "invalid": 0, "errors": 0}
+        with self._health_lock:
+            for epoch, values in self._health_ring:
+                if now - self._health_window_s < epoch <= now:
+                    for metric in summary:
+                        summary[metric] += values.get(metric, 0)
+        return summary
+
     def status(self) -> dict[str, object]:
+        recent = self._recent_health()
         with self._shard_metrics_lock:
             frames_by_shard = list(self._frames_by_shard)
             drops_by_shard = list(self._drops_by_shard)
@@ -162,6 +191,13 @@ class RadioDecoderRuntime:
             "queues": [q.qsize() for q in self._queues],
             "frames_by_shard": frames_by_shard,
             "drops_by_shard": drops_by_shard,
+            "recent_window_s": self._health_window_s,
+            "recent_frames": recent["frames"],
+            "recent_dropped": recent["dropped"],
+            "recent_invalid": recent["invalid"],
+            "recent_errors": recent["errors"],
+            "recent_drop_ratio": round(recent["dropped"] / max(1, recent["frames"] + recent["dropped"]), 6),
+            "queue_capacity_per_shard": self._queues[0].maxsize,
             "continuity_resets": sum(int(getattr(d, "continuity_resets", 0)) for group in self._decoder_sets for d in group),
             "state_evictions": sum(int(getattr(d, "state_evictions", 0)) for group in self._decoder_sets for d in group),
             "bridge_errors": sum(int(getattr(d, "bridge_errors", 0)) for group in self._decoder_sets for d in group),
@@ -190,6 +226,7 @@ class RadioDecoderRuntime:
         except queue.Full:
             with self._shard_metrics_lock:
                 self._drops_by_shard[shard] += 1
+            self._record_health("dropped")
             self._dropped += 1
             return False
 
@@ -206,6 +243,7 @@ class RadioDecoderRuntime:
                 with self._shard_metrics_lock:
                     self._frames_by_shard[shard_index] += 1
             except Exception:
+                self._record_health("errors")
                 self._errors += 1
             finally:
                 q.task_done()
@@ -230,6 +268,7 @@ class RadioDecoderRuntime:
         if not self.enabled:
             return {"accepted": False, "reason": "disabled"}
         self._frames += 1
+        self._record_health("frames")
         if self._frames % 64 == 1:
             quality = _pcm_quality(frame)
             self._audio_sampled += 1
@@ -283,6 +322,7 @@ class RadioDecoderRuntime:
         self._accepted += accepted
         self._rejected += rejected
         self._invalid += invalid
+        self._record_health("invalid", invalid)
         return {"accepted": True, "decoded": decoded, "invalid": invalid,
                 "persisted": accepted, "rejected": rejected}
 
@@ -501,7 +541,9 @@ def runtime_from_config() -> RadioDecoderRuntime:
         enabled=bool(config.RADIO_DECODER_ENABLED and decoders),
         decoders=decoders,
         decoded_handler=handle_decoded_radio_message,
-        queue_size=config.RADIO_DECODER_QUEUE_SIZE,
+        # 32 frames/shard proved too small for short receiver jitter bursts;
+        # 96 remains bounded and covers ~2 seconds at typical HF audio rates.
+        queue_size=max(96, int(config.RADIO_DECODER_QUEUE_SIZE)),
         decoder_factory=(lambda: tuple(
             JSONLProcessDecoder(
                 tuple(raw), timeout_s=config.RADIO_DECODER_TIMEOUT_S,

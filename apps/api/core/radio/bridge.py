@@ -141,14 +141,27 @@ def radio_acquisition_status() -> dict[str, object]:
     elif (not bool(decoder.get("worker_alive")) or int(decoder.get("errors") or 0) > 0
           or int(decoder.get("bridge_errors") or 0) > 0):
         structured_state = "degraded"
-    elif int(decoder.get("decoded") or 0) == 0 or (
-        "accepted" in decoder and int(decoder.get("accepted") or 0) == 0
-    ):
-        # RF transport can be healthy while semantic DSC extraction is not.
-        # Do not label structured radio "live" merely because frames are
-        # flowing; that would hide the exact failure mode that prevents radio
-        # evidence from entering the investigation pipeline.
+    elif int(decoder.get("recent_frames") or 0) == 0:
+        # No current audio cannot be healthy merely because lifetime frame
+        # counters still contain historical data.
         structured_state = "degraded"
+    elif int(decoder.get("recent_errors") or 0) > 0:
+        structured_state = "degraded"
+    elif (
+        int(decoder.get("recent_dropped") or 0) >= 3
+        and float(decoder.get("recent_drop_ratio") or 0) > 0.01
+    ):
+        structured_state = "degraded"
+    elif int(decoder.get("queue_capacity_per_shard") or 0) > 0 and any(
+        int(value) >= 0.85 * int(decoder["queue_capacity_per_shard"])
+        for value in decoder.get("queues") or ()
+    ):
+        structured_state = "degraded"
+    elif int(decoder.get("accepted") or 0) == 0:
+        # RF audio / decoding workers are healthy, but a verified semantic
+        # message has not yet been received. Never infer successful DSC from
+        # noise or silence; no synthetic emergency incident is published.
+        structured_state = "listening"
     else:
         structured_state = "live"
     return {
