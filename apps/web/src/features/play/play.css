@@ -267,3 +267,5 @@
 .play-report-chronology li > * {display:block; margin-top:3px;}
 .play-report-chronology time {opacity:.7; font:10px var(--font-mono)}
 .play-report-chronology a {color:var(--live-accent)}
+.play-voyage-card {padding:10px;border:1px solid rgba(138,194,180,.23);border-radius:7px;display:flex;flex-direction:column;gap:9px}
+.play-voyage-card > strong {font-size:11px;color:#b4ebdc}

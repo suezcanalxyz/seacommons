@@ -104,3 +104,22 @@ The executable tests for these invariants live in `tests/test_live_contracts.py`
 - [Production operations](PRODUCTION_RUNBOOK.md)
 
 Historical audits and deployment evidence are indexed in [docs/README.md](README.md).
+
+## Canonical investigation upgrade (October 2026)
+
+A **single analysis chain** is authoritative; new UX views must not establish shadow stores or duplicate detector APIs.
+
+| Concern | Canonical existing owner | Rule |
+|---|---|---|
+| Raw AIS positions | `VesselTrackDB` through `core.vessels.track_store` | Timestamps and original receiving source preserved; 60-day retention is not a permanent archive |
+| Derived maritime evidence | `MaritimeEpisodeDB` with its evidence/feature IDs | Preserve episode identity; no second case table |
+| Investigative hypothesis | `InvestigationHypothesisDB` and hypothesis publication gate | The state, counter-indicators, and independent evidence lineages remain authoritative |
+| Play report | `/api/v1/play/incidents/{id}/timeline` | Extend the existing canonical dossier payload and report UI, not a parallel report endpoint |
+| Evidence track | `voyage_evidence` in the existing Play dossier | Reuse track-store readings, mark AIS gaps as absent stored fixes and port calls as inferred, bounded to 7 days and 3 already-published vessel identities |
+| Live | Existing publication projections | Operational horizon, not the lifetime repository of all history |
+
+**Privacy gate:** Never promote MMSIs obtained only through internal radio associations into public investigations. A public voyage enrichment may use only published case subject identities. No raw classified radio or internal evidence references may be smuggled through `voyage_evidence`.
+
+**Evidence validity:** A gap between two retained AIS fixes may come from collection or retention. A drawn segment does not assert the precise route and a port call does not establish loading/unloading. The UI historical cutoff must constrain visible AIS records. The reception expectation model and existing episode evidence stages remain distinct from vessel intent or cargo hypotheses.
+
+**Not yet built:** Permanent cold-storage raw observations; independently calibrated AIS-gap benchmark; multi-seed physical humanitarian macro-drift; comprehensive external cargo manifests and primary sanctions grounds; independent review of 20 real-world incidents. These are milestones, not already delivered features.

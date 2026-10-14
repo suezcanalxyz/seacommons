@@ -412,7 +412,16 @@ export default function PlayTimeline({ apiBase }) {
     const map = mapRef.current;
     if (!mapReady || !map) return;
     map.getSource('play-incidents')?.setData(incidentCollection(filteredIncidents));
-    map.getSource('play-evidence')?.setData(evidenceCollection(visibleTimeline));
+    const datedEvidence = evidenceCollection(visibleTimeline);
+    voyageVessels.forEach((v) => {
+      const coordinates = v.track_points.map((p) => [Number(p.lon), Number(p.lat)])
+        .filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
+      if (coordinates.length >= 2) datedEvidence.features.push({
+        type: 'Feature', geometry: {type: 'LineString', coordinates},
+        properties: {kind: 'observed_ais_track', mmsi: v.mmsi},
+      });
+    });
+    map.getSource('play-evidence')?.setData(datedEvidence);
     map.getSource('play-satellite-footprints')?.setData(satelliteFootprintCollection(visibleTimeline));
     if (map.getLayer('play-incidents')) {
       map.setPaintProperty('play-incidents', 'circle-radius', ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5]);
@@ -432,7 +441,7 @@ export default function PlayTimeline({ apiBase }) {
         duration: 450,
       });
     }
-  }, [mapReady, filteredIncidents, visibleTimeline, selectedId, selectedIncident, satellite]);
+  }, [mapReady, filteredIncidents, visibleTimeline, selectedId, selectedIncident, satellite, voyageVessels]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -449,6 +458,10 @@ export default function PlayTimeline({ apiBase }) {
 
   const status = selectedIncident ? incidentStatusAtCutoff(selectedIncident, globalState.cutoff) : 'outcome_unknown';
   const reportTrack = useMemo(() => timelineReport(visibleTimeline), [visibleTimeline]);
+  const voyageVessels = useMemo(() => (caseData?.voyage_evidence?.vessels || []).map((v) => ({
+    ...v, track_points: (v.track_points || []).filter((p) =>
+      !globalState.cutoff || Date.parse(p.at) <= Date.parse(globalState.cutoff)),
+  })), [caseData?.voyage_evidence, globalState.cutoff]);
   const reportEvidence = visibleTimeline.filter((item) => item?.type !== 'satellite');
   const frameProps = frame.item?.properties || {};
   const satelliteProps = satellite?.properties || {};
@@ -641,6 +654,16 @@ export default function PlayTimeline({ apiBase }) {
                 <span>Last mapped point: {reportTrack.positions.at(-1).coordinates[1]?.toFixed?.(4) ?? reportTrack.positions.at(-1).coordinates[1]}, {reportTrack.positions.at(-1).coordinates[0]?.toFixed?.(4) ?? reportTrack.positions.at(-1).coordinates[0]}</span>
               </div>
             </> : <p className="play-report-prose">No observed trajectory is documented in this case at the selected cutoff. SeaCommons will not reconstruct a route from missing positions.</p>}
+            {voyageVessels.length > 0 && <>
+              <h3>Verified AIS records and voyage reconstruction</h3>
+              {voyageVessels.map((v) => <div className="play-voyage-card" key={v.mmsi}>
+                <strong>MMSI {v.mmsi} · {v.track_points.length} stored AIS fixes at this cutoff</strong>
+                {v.track_points.length >= 2 && <p className="play-report-prose">First received position: {itemTime(v.track_points[0].at)} UTC, {v.track_points[0].lat.toFixed(4)}, {v.track_points[0].lon.toFixed(4)}. Latest received position: {itemTime(v.track_points.at(-1).at)} UTC, {v.track_points.at(-1).lat.toFixed(4)}, {v.track_points.at(-1).lon.toFixed(4)}.</p>}
+                {v.observed_gaps?.filter((g) => !globalState.cutoff || Date.parse(g.to) <= Date.parse(globalState.cutoff)).map((g, i) => <p key={i} className="play-report-prose">No stored AIS fixes between {itemTime(g.from)} and {itemTime(g.to)} UTC ({g.duration_min} min). Cause unknown.</p>)}
+                {v.ais_derived_port_calls?.filter((call) => !globalState.cutoff || Date.parse(call.arrived_at) <= Date.parse(globalState.cutoff)).map((call, i) => <p key={i} className="play-report-prose">AIS-derived port approach: {call.port}, first observed {itemTime(call.arrived_at)} UTC. Not an official port authority confirmation.</p>)}
+                <p className="play-report-prose">{v.limits}</p>
+              </div>)}
+            </>}
             <h3>Chronology</h3>
             {reportEvidence.length ? <ol className="play-report-chronology">{reportEvidence.map((item, index) => <li key={item.id || `${item.at}-${index}`}><time>{itemTime(item.at)} UTC</time><strong>{String(item.type || 'Observation').replaceAll('_', ' ')}</strong><span>{humanizeDetectorText(item.title || item.properties?.description || 'Recorded evidence')}</span>{(item.properties?.source_url || item.properties?.url) && <a href={item.properties.source_url || item.properties.url} target="_blank" rel="noreferrer">Original source ↗</a>}</li>)}</ol> : <p className="play-report-prose">No detailed sequence of observations is available yet.</p>}
             <h3>Evidence and assessment</h3>
