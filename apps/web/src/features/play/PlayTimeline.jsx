@@ -223,7 +223,7 @@ export default function PlayTimeline({ apiBase }) {
       }
     }
     loadIncidents({ full: true });
-    const timer = window.setInterval(() => loadIncidents({ full: false }), 60_000);
+    const timer = window.setInterval(() => { if (document.visibilityState !== 'hidden') loadIncidents({ full: false }); }, 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [apiBase]);
 
@@ -240,7 +240,7 @@ export default function PlayTimeline({ apiBase }) {
       }
     }
     loadCounts();
-    const timer = window.setInterval(loadCounts, 60_000);
+    const timer = window.setInterval(() => { if (document.visibilityState !== 'hidden') loadCounts(); }, 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [apiBase]);
 
