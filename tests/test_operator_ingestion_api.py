@@ -334,3 +334,44 @@ def test_measurement_contract_rejects_unauthenticated_access(monkeypatch):
     monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "operator-secret")
     response = TestClient(app).get("/api/v1/operator/ingestion/measurements?hours=24")
     assert response.status_code == 401
+
+
+def test_futures_readonly_agent_snapshot(monkeypatch, tmp_path):
+    import json
+    from core.api.main import app
+    from core.config import config
+
+    tasks_file = tmp_path / "tasks.json"
+    tasks_file.write_text(json.dumps({
+        "synced_at": "2026-10-14T13:48:33Z",
+        "tasks": [{
+            "title": "SeaCommons Forensic Repair Loop",
+            "enabled": True, "cadence": "Every 3 hours",
+            "last_run": "2026-10-14T13:48:10Z", "timezone": "Europe/Rome",
+            "prompt": "PRIVATE NEVER FORWARD",
+        }],
+    }))
+    monkeypatch.setenv("SEACOMMONS_FUTURES_TASK_SNAPSHOT", str(tasks_file))
+    monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "test-gateway")
+    client = TestClient(app)
+    assert client.get("/api/v1/operator/ingestion/scheduled-tasks").status_code == 401
+    result = client.get("/api/v1/operator/ingestion/scheduled-tasks", headers={"x-seacommons-operator-gateway": "test-gateway"})
+    assert result.status_code == 200
+    assert result.json()["live_sync"] is False
+    assert result.json()["tasks"][0]["title"] == "SeaCommons Forensic Repair Loop"
+    assert "prompt" not in result.json()["tasks"][0]
+
+
+def test_overall_metrics_has_all_twelve_headline_measurements(monkeypatch):
+    from core.api.main import app
+    from core.config import config
+    monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "test-gateway")
+    client = TestClient(app)
+    assert client.get("/api/v1/operator/ingestion/overall-metrics").status_code == 401
+    result = client.get("/api/v1/operator/ingestion/overall-metrics", headers={"x-seacommons-operator-gateway": "test-gateway"})
+    assert result.status_code == 200
+    payload = result.json()
+    assert payload["scope"] == "all_time"
+    assert len(payload["stages"]) == 7
+    for key in ("ais_fixes", "radio_bursts", "radio_events", "satellite_observations", "source_names"):
+        assert key in payload["sensor_activity"]
