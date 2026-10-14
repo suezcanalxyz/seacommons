@@ -6,6 +6,9 @@
  * pointing the site at it was a bug (verified: TCP connect times out there,
  * while seacommons.org/api/v1/live/signals returns 200 through the rewrite). */
 export function resolveSiteApiBase() {
+  // Authenticated Futures must always use its own same-origin API gateway.
+  // An inherited API override must never route its Intelligence to legacy hosts.
+  if (window.location.hostname === 'futures.seacommons.org') return window.location.origin;
   const envBase = import.meta.env.VITE_API_BASE;
   if (envBase) return envBase.replace(/\/$/, '');
   const { protocol, hostname, origin } = window.location;
