@@ -194,6 +194,18 @@ def _filter_by_wave_height(
 
     if not cmems_enabled():
         return []
+    # The sea-only grid can span hundreds of samples or several degrees when
+    # an Alarm Phone report names a broad corridor. CMEMS open_dataset loads
+    # the *bounding box*, not just requested coordinates: unrestricted fetches
+    # can exceed the 5 GiB API memory cgroup and OOM-kill all Live services.
+    # This optional wave-based *narrowing* must never jeopardise ingestion or
+    # the broad source-derived search area. Fail open to the original polygon.
+    if len(points) > 64 or (
+        points and (max(p[0] for p in points) - min(p[0] for p in points) > 1.0
+                    or max(p[1] for p in points) - min(p[1] for p in points) > 1.0)
+    ):
+        logger.info("area_extract: broad CMEMS wave refinement skipped to protect API memory")
+        return []
     try:
         results = fetch_ocean_batch(points, at=report_time)
     except Exception as exc:
