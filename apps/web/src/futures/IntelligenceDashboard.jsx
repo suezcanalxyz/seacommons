@@ -118,6 +118,48 @@ function useOperatorSections(period,tab) {
  },[period,tab]);
  return snapshot.key===period+':'+tab ? snapshot : {data:null,error:''};
 }
+
+const measurementRows=[
+ ['observations_received','Raw received','Original source envelopes received during this time window.'],
+ ['events_received','Normalized received','Standardized records received. Not a percentage conversion of raw observations.'],
+ ['events_created','Normalized created','New normalized event rows inserted during this time window.'],
+ ['investigations_created','New investigations','Hypotheses first created in this window, excluding those now expired or rejected.'],
+ ['investigations_updated','Investigations updated','Existing or newly created hypotheses whose latest saved update falls inside the window. Repeat processing can change this.'],
+ ['investigations_open_now','Open investigations now','Current stock of hypotheses not expired or rejected. It is not a historical count for the selected period.'],
+ ['investigations_rejected_or_expired_updated','Excluded hypotheses updated','Rejected or expired hypotheses whose last update occurred in the window; not included in active investigations.'],
+ ['episodes_created','New episodes','Classified episodes first created in this window.'],
+ ['episodes_updated','Episodes updated','Classified episodes last modified in this window; older episodes may be included.'],
+ ['corroborated_episodes_updated','Corroborated episodes updated','Episodes with independent-lineage corroboration and a recent update, not new corroboration transitions.'],
+ ['investigations_review_ready_updated','Review-ready hypotheses updated','Hypotheses in review-ready, assessed or published state and modified within the window.'],
+ ['ais_positions_observed','AIS positions observed','Stored vessel positions timestamped by the AIS source in the selected window.'],
+ ['ais_positions_received','AIS positions received','AIS track rows actually received by SeaCommons in the selected window.'],
+];
+function MeasurementContract({period}) {
+ const [state,setState]=React.useState({period:null,data:null,loading:true,error:''});
+ React.useEffect(()=>{
+  if(period==='overall'){setState({period,data:null,loading:false,error:''});return;}
+  let alive=true;const hours=period==='7d'?168:24;
+  setState({period,data:null,loading:true,error:''});
+  fetchJson(resolveSiteApiBase(),`/api/v1/operator/ingestion/measurements?hours=${hours}`,undefined,30000)
+   .then(data=>{if(alive)setState({period,data,loading:false,error:''});})
+   .catch(()=>{if(alive)setState({period,data:null,loading:false,error:'Measurement contract unavailable. Historical aggregates below remain separate.'});});
+  return()=>{alive=false;};
+ },[period]);
+ const data=state.period===period?state.data:null;
+ return <section className="future-section" aria-label="Measurement definitions">
+  <h2>Measurement contract / what these numbers actually mean</h2>
+  <p>One as-of time, distinct clocks. A new investigation is not the same as an updated one. The current open total is a stock, not a windowed activity total.</p>
+  {period==='overall'?<p>Overall shows retained records. It is not an immutable historical ingestion total. Created-versus-updated measures apply to the 24-hour and 7-day windows.</p>:<>
+   <p className="future-data-provenance">{state.loading?'Loading canonical measurements…':state.error||'As of '+stamp(data?.as_of)+' · window start '+stamp(data?.window_start)+' · contract v'+(data?.contract_version||'?')}</p>
+   <div className="future-intelligence-metrics">{measurementRows.map(([key,title,desc])=><article className="future-intelligence-metric" key={key}>
+    <span>{title}</span><strong>{number(data?.counts?.[key])}</strong>
+    <p>{desc}</p><small>Clock: {data?.definitions?.[key]?.clock||'not available'}</small>
+   </article>)}</div>
+   {data?.sources&&<Breakdown title="Contributing raw sources" items={data.sources} help="Source groups count original observations received within the same period. Multiple source families need not generate equivalent numbers of normalized events."/>}
+  </>}
+  <p className="future-data-provenance">Rows are not additive. Historical data, current states, model cues and published cases represent different populations. Updated rows can reflect automated reprocessing without new evidence.</p>
+ </section>;
+}
 function SimpleRecords({title,items,description}) {
  if(!Array.isArray(items)||!items.length)return <section className="future-section"><h2>{title}</h2><p>{description}</p><p>No records currently available.</p></section>;
  return <section className="future-section"><h2>{title}</h2><p>{description}</p><div className="future-intelligence-records">{items.slice(0,60).map((row,i)=><details key={row.observation_id||row.event_id||row.id||i}><summary><strong>{row.semantic_label||row.title||row.kind||row.type||'Observation'}</strong><span>{stamp(row.received_at||row.timestamp_utc||row.updated_at||row.observed_at)}</span></summary><p>Source: {row.source_name||row.source||row.kind||'Unknown'} · Evidence stage: {row.pipeline_role||row.kind||'Unspecified'}</p><p>Category: {row.observation_type||row.type||row.family||row.status||'Unspecified'}</p><p>Records in this view are observations or hypotheses, not proven incidents.</p></details>)}</div></section>
@@ -192,7 +234,7 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  <nav className="future-intelligence-subnav" aria-label="Intelligence sections">{TABS.map(([key,title])=><button key={key} type="button" className={key===tab?'is-active':''} aria-current={key===tab?'page':undefined} onClick={()=>setTab(key)}>{title}</button>)}</nav>
  <div className="future-intelligence-freshness"><span>{operator.loading?'Loading operator aggregates…':operator.data?'Canonical Intelligence data':operator.error?'Intelligence data unavailable · limited fallback':'Awaiting operational data'}</span><small>{operator.data?.generated_at?'Generated '+stamp(operator.data.generated_at):'No operator snapshot available'}</small><button type="button" onClick={operator.refresh}>Refresh</button></div>
  {operator.error&&<p className="future-inline-note" role="status">{operator.error} This dashboard does not use demonstration totals or hard-coded figures.</p>}
- {tab==='pipeline'&&<><section className="future-section"><h2>01 / Canonical evidence funnel</h2><p>From raw source messages to independent corroboration and review. Raw records, normalized events, derived cues, episodes and hypotheses describe overlapping processing stages, not sequential case conversion.</p><StagePanels rows={allStages} lookup={pipeline}/></section><section className="future-section"><h2>02 / Collection context</h2><p>In the supplied operator snapshot, raw observations substantially outnumber normalized events. This is expected: high-volume AIS telemetry is filtered and grouped. The dashboard always shows current API values instead of preserving the snapshot as if it were live.</p>{isOverall&&<p>First raw intake: {stamp(raw?.first_last?.raw_first)}. Latest raw intake: {stamp(raw?.first_last?.raw_latest)}. Historical dates inside sources may predate SeaCommons.</p>}</section></>}
+ {tab==='pipeline'&&<><MeasurementContract period={period}/><section className="future-section"><h2>01 / Canonical evidence funnel</h2><p>From raw source messages to independent corroboration and review. Raw records, normalized events, derived cues, episodes and hypotheses describe overlapping processing stages, not sequential case conversion.</p><StagePanels rows={allStages} lookup={pipeline}/></section><section className="future-section"><h2>02 / Collection context</h2><p>In the supplied operator snapshot, raw observations substantially outnumber normalized events. This is expected: high-volume AIS telemetry is filtered and grouped. The dashboard always shows current API values instead of preserving the snapshot as if it were live.</p>{isOverall&&<p>First raw intake: {stamp(raw?.first_last?.raw_first)}. Latest raw intake: {stamp(raw?.first_last?.raw_latest)}. Historical dates inside sources may predate SeaCommons.</p>}</section></>}
  {tab==='sources'&&<>{Object.entries(sourceHelp).slice(0,4).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown?.[key]} help={help}/>)}</>}
  {tab==='sensors'&&<><MetricSet heading="Sensors and signal coverage" rows={sensors} data={specialSensors}/><FleetView data={sections.data?.['sar-fleet']}/><SatelliteCandidates data={sections.data?.['satellite-queue']}/><HumanitarianCorrelation data={sections.data?.['humanitarian-ais-correlation']}/></>}
  {tab==='quality'&&<><QualityDiagnostics data={sections.data?.stabilization}/><CaseReview data={sections.data?.cases}/>{Object.entries(sourceHelp).slice(4).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown?.[key]} help={help}/>)}</>}
