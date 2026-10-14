@@ -9,7 +9,11 @@ export async function fetchJson(base, path, options, timeoutMs = 12000) {
     timeoutMs,
   );
   try {
-    const token = window.__SEACOMMONS_ACCESS_TOKEN__;
+    // Protected Futures measurements use the provider-signed identity token,
+    // while other APIs continue to receive the access token.
+    const isFuturesOperator = path.startsWith('/api/v1/operator/');
+    const token = (isFuturesOperator && window.__SEACOMMONS_ID_TOKEN__)
+      || window.__SEACOMMONS_ACCESS_TOKEN__;
     const headers = {
       ...(options?.headers || {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
