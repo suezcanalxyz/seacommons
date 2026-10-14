@@ -104,7 +104,16 @@ function useOperatorMetrics(period){
      const status=await fetchJson(resolveSiteApiBase(),`/api/v1/status?hours=${hours}`,undefined,30000);
      if(request===seq.current){setData({lookback_hours:hours,generated_at:status.generated_at,pipeline_status:{pipeline:status.pipeline,sensor_activity:status.sensor_activity},fallback_public:true});setError('');}
     }catch{if(request===seq.current){setData(null);setError('Intelligence data unavailable. Check the SeaCommons API connection.');}}
-   }else if(request===seq.current){setData(null);setError('Historical data currently unavailable. Retry the Overall summary.');}
+   }else {
+    try {
+     // The established historical endpoint is a recovery path when the
+     // optimized inventory is unavailable. Both require the same OIDC identity.
+     const historical=await fetchJson(resolveSiteApiBase(),'/api/v1/operator/ingestion/overall',undefined,26000);
+     if(request===seq.current){setData(historical);setError('');}
+    }catch{
+     if(request===seq.current){setData(null);setError('The historical inventory is temporarily unavailable. Retry in a moment.');}
+    }
+   }
   }
   finally{if(request===seq.current)setLoading(false);}
  },[period]);

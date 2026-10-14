@@ -47,6 +47,7 @@ export function AuthGate({ children }) {
       window.localStorage.removeItem(rememberKey);
       await manager?.removeUser();
       window.__SEACOMMONS_ACCESS_TOKEN__ = null;
+      window.__SEACOMMONS_ID_TOKEN__ = null;
       return manager?.signoutRedirect();
     },
   }), [user]);
@@ -70,6 +71,7 @@ export function AuthGate({ children }) {
               const refreshed = await manager.signinSilent();
               if (refreshed && !refreshed.expired) {
                 window.__SEACOMMONS_ACCESS_TOKEN__ = refreshed.access_token;
+                window.__SEACOMMONS_ID_TOKEN__ = refreshed.id_token;
                 setUser(refreshed); setReady(true); return;
               }
             } catch (renewError) { console.warn('OIDC session refresh unavailable', renewError); }
@@ -78,6 +80,7 @@ export function AuthGate({ children }) {
           return;
         }
         window.__SEACOMMONS_ACCESS_TOKEN__ = current.access_token;
+        window.__SEACOMMONS_ID_TOKEN__ = current.id_token;
         setUser(current);
         setReady(true);
       } catch (error) {
@@ -90,9 +93,10 @@ export function AuthGate({ children }) {
     };
     const onLoaded = (next) => {
       window.__SEACOMMONS_ACCESS_TOKEN__ = next.access_token;
+      window.__SEACOMMONS_ID_TOKEN__ = next.id_token;
       setUser(next);
     };
-    const onUnloaded = () => { delete window.__SEACOMMONS_ACCESS_TOKEN__; setUser(null); };
+    const onUnloaded = () => { delete window.__SEACOMMONS_ACCESS_TOKEN__; delete window.__SEACOMMONS_ID_TOKEN__; setUser(null); };
     const onExpired = async () => {
       try { const refreshed = await manager.signinSilent(); if (!refreshed || refreshed.expired) onUnloaded(); }
       catch { onUnloaded(); }
