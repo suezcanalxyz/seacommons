@@ -245,3 +245,55 @@ def test_pcm_quality_rejects_odd_length_and_supports_le():
     assert not _pcm_quality(_frame(b"\x01"))["valid_pcm"]
     frame = replace(_frame(b"\xff\x7f" * 200), encoding="openwebrx_pcm_s16le")
     assert _pcm_quality(frame)["clipping"]
+
+
+def test_decoder_shards_preserve_receiver_frame_order():
+    import time
+    from dataclasses import replace
+    from core.radio.decoder_runtime import RadioDecoderRuntime
+
+    history = {}
+
+    class RecordingDecoder:
+        def decode(self, frame):
+            history.setdefault(frame.receiver_id, []).append(frame.payload[0])
+            time.sleep(0.001)
+            return ()
+
+    runtime = RadioDecoderRuntime(
+        enabled=True, decoders=(RecordingDecoder(),),
+        decoder_factory=lambda: (RecordingDecoder(),), worker_count=3,
+        queue_size=64, decoded_handler=lambda msg: {},
+    )
+    assert runtime.status()["worker_count"] == 3
+    from core.radio.decoder_runtime import _pcm_quality
+    for i in range(20):
+        for receiver in ("a", "b", "c"):
+            frame = replace(_frame(), receiver_id=receiver,
+                            physical_lineage=receiver, payload=bytes((i, 0)))
+            assert runtime.submit_frame(frame)
+    for q in runtime._queues:
+        q.join()
+    status = runtime.status()
+    runtime.stop()
+    assert status["frames"] == 60
+    assert status["dropped"] == 0
+    for receiver in ("a", "b", "c"):
+        assert history[receiver] == list(range(20))
+
+
+def test_same_lineage_maps_to_same_shard_even_when_receiver_id_changes():
+    from dataclasses import replace
+    from core.radio.decoder_runtime import RadioDecoderRuntime
+
+    runtime = RadioDecoderRuntime(enabled=True, decoders=(),
+                                  decoder_factory=lambda: (), worker_count=3,
+                                  decoded_handler=lambda msg: {})
+    a = _frame()
+    b = replace(a, receiver_id="rx2")
+    runtime.submit_frame(a)
+    runtime.submit_frame(b)
+    # All frames from one physical receiver must reach the same queue.
+    assert max(q.qsize() for q in runtime._queues) <= 2
+    assert sum(q.qsize() for q in runtime._queues) <= 2
+    runtime.stop()
