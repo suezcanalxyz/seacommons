@@ -257,3 +257,13 @@
 
 .play-sanctions-section { margin: 8px 12px 12px; border: 1px solid #7775; border-radius: 6px; }
 .play-sanctions-section > summary { padding: 12px; cursor: pointer; font-weight: 600; }
+
+.play-report-section { display:flex; flex-direction:column; gap:10px; }
+.play-report-section h3 { color:#e8fff7; font-size:13px; margin:6px 0 0; font-weight:650; }
+.play-report-section .play-report-prose { color:rgba(230,245,239,.82); font:12px/1.65 var(--font-display); text-transform:none; letter-spacing:normal; margin:0; overflow-wrap:anywhere; }
+.play-report-locations {display:flex; flex-direction:column; gap:5px; font:11px/1.5 var(--font-mono); color:rgba(232,255,247,.7)}
+.play-report-chronology {display:flex; flex-direction:column; gap:12px; padding-left:20px; margin:0; color:#d8f5ed;}
+.play-report-chronology li {font:11px/1.5 var(--font-display); padding-left:3px;}
+.play-report-chronology li > * {display:block; margin-top:3px;}
+.play-report-chronology time {opacity:.7; font:10px var(--font-mono)}
+.play-report-chronology a {color:var(--live-accent)}

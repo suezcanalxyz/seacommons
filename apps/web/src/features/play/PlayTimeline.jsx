@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { fetchJson } from '../../services/api/client.js';
+import { timelineReport, humanizeDetectorText } from '../live/reportNarrative.js';
 import SanctionsCatalog from '../../components/SanctionsCatalog.jsx';
 import { createVesselArrowImage, VESSEL_COLOR } from '../map/vesselMarker.js';
 import { createFallbackMap } from '../map/fallbackRenderer.js';
@@ -447,6 +448,8 @@ export default function PlayTimeline({ apiBase }) {
   }, [mapReady, satelliteVisible, contextDay, satelliteContextMission]);
 
   const status = selectedIncident ? incidentStatusAtCutoff(selectedIncident, globalState.cutoff) : 'outcome_unknown';
+  const reportTrack = useMemo(() => timelineReport(visibleTimeline), [visibleTimeline]);
+  const reportEvidence = visibleTimeline.filter((item) => item?.type !== 'satellite');
   const frameProps = frame.item?.properties || {};
   const satelliteProps = satellite?.properties || {};
   const modeLabel = cutoffLabel(globalState);
@@ -625,6 +628,25 @@ export default function PlayTimeline({ apiBase }) {
             <p>{caseData?.assessment?.observation || selectedIncident?.assessment?.observation || 'The archive contains a reported incident. Its underlying evidence must be assessed separately from the reported claim.'}</p>
             <p>{caseData?.assessment?.interpretation || selectedIncident?.assessment?.interpretation || 'This dossier distinguishes the original report, supporting observations, independent confirmation and any unresolved questions.'}</p>
             <small>Assessment reflects only records available at the selected historical time. It is not an official incident determination.</small>
+          </section>
+          <section className="play-card play-report-section">
+            <p>Forensic report · reconstructed at selected cutoff</p>
+            <h3>Executive summary</h3>
+            <p className="play-report-prose">{selectedIncident?.title || 'Maritime incident recorded in the SeaCommons archive.'} Reported {itemTime(selectedIncident?.reported_at)} UTC. The archive records {visibleTimeline.length} dated evidence item(s) at this cutoff. {caseData?.corroborated === true ? 'Independent corroboration is recorded.' : 'Independent corroboration is not established from the available record.'}</p>
+            <h3>Trajectory and geographical evidence</h3>
+            {reportTrack.positions.length > 0 ? <>
+              <p className="play-report-prose">{reportTrack.positions.length} mapped observation point(s) or geometry vertices are preserved in the selected evidence. These are not necessarily successive AIS fixes; a line may represent a modelled path rather than observed travel.</p>
+              <div className="play-report-locations">
+                <span>First mapped point: {reportTrack.positions[0].coordinates[1]?.toFixed?.(4) ?? reportTrack.positions[0].coordinates[1]}, {reportTrack.positions[0].coordinates[0]?.toFixed?.(4) ?? reportTrack.positions[0].coordinates[0]}</span>
+                <span>Last mapped point: {reportTrack.positions.at(-1).coordinates[1]?.toFixed?.(4) ?? reportTrack.positions.at(-1).coordinates[1]}, {reportTrack.positions.at(-1).coordinates[0]?.toFixed?.(4) ?? reportTrack.positions.at(-1).coordinates[0]}</span>
+              </div>
+            </> : <p className="play-report-prose">No observed trajectory is documented in this case at the selected cutoff. SeaCommons will not reconstruct a route from missing positions.</p>}
+            <h3>Chronology</h3>
+            {reportEvidence.length ? <ol className="play-report-chronology">{reportEvidence.map((item, index) => <li key={item.id || `${item.at}-${index}`}><time>{itemTime(item.at)} UTC</time><strong>{String(item.type || 'Observation').replaceAll('_', ' ')}</strong><span>{humanizeDetectorText(item.title || item.properties?.description || 'Recorded evidence')}</span>{(item.properties?.source_url || item.properties?.url) && <a href={item.properties.source_url || item.properties.url} target="_blank" rel="noreferrer">Original source ↗</a>}</li>)}</ol> : <p className="play-report-prose">No detailed sequence of observations is available yet.</p>}
+            <h3>Evidence and assessment</h3>
+            <p className="play-report-prose">Verification: {statusLabel(caseData?.verification_status || 'unknown')}. {caseData?.independence_groups?.length ? `${caseData.independence_groups.length} recorded source lineage(s).` : 'Independent source lineages have not been documented.'} {dossierReasonCodes.length ? `Recorded detector grounds: ${dossierReasonCodes.map((code) => code.toLowerCase().replaceAll('_', ' ')).join('; ')}.` : ''}</p>
+            <h3>Limitations and next checks</h3>
+            <p className="play-report-prose">This reconstruction contains only information available at the selected historical cutoff. Missing AIS, satellite, radio or other records must not be interpreted as evidence that an activity did not occur. A modelled drift is not an observed vessel track. Reported circumstances, assessed hypotheses and verified outcomes remain separate.</p>
           </section>
           <section className="play-card play-card--rows">
             <div><span>Status</span><strong>{statusLabel(status)}</strong></div>
