@@ -1304,6 +1304,9 @@ def operator_measurement_contract(
     measured at receipt, while AIS track coverage is measured at source time.
     """
     _require_gateway(request)
+    cached = _fast_cache_get("measurements", hours)
+    if cached is not None:
+        return cached
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     cutoff = now - timedelta(hours=hours)
     with session_scope() as db:
@@ -1339,7 +1342,7 @@ def operator_measurement_contract(
             .filter(SourceObservationDB.received_at >= cutoff, SourceObservationDB.received_at <= now)
             .group_by(SourceObservationDB.source_name).order_by(func.count().desc()).limit(40).all()
         )
-    return {
+    payload = {
         "contract_version": 1, "scope": "rolling", "window_hours": hours,
         "as_of": now.replace(tzinfo=timezone.utc).isoformat(),
         "window_start": cutoff.replace(tzinfo=timezone.utc).isoformat(),
@@ -1381,3 +1384,4 @@ def operator_measurement_contract(
             "Raw, normalized, derived and episodes are overlapping populations; do not sum or divide as conversion rates.",
         ],
     }
+    return _fast_cache_put("measurements", hours, payload)
