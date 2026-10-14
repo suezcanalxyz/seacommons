@@ -297,3 +297,12 @@ def test_same_lineage_maps_to_same_shard_even_when_receiver_id_changes():
     assert max(q.qsize() for q in runtime._queues) <= 2
     assert sum(q.qsize() for q in runtime._queues) <= 2
     runtime.stop()
+
+
+def test_dsc_bridge_buffers_incomplete_symbol_windows():
+    from pathlib import Path
+    source = Path('third_party/radio/taosw_dsc/Bridge/Program.cs').read_text()
+    assert 'pendingSamples.AddRange(signal)' in source
+    assert 'pendingSamples.Count / samplesPerSymbol * samplesPerSymbol' in source
+    assert 'decoder.DecodeFSK(aligned, MarkHz, SpaceHz)' in source
+    assert 'pendingSamples.RemoveRange(0, alignedCount)' in source

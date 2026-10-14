@@ -98,6 +98,8 @@ sealed class DecoderState
     const float SpaceHz = 1785;
     readonly DSCDecoder decoder;
     readonly GMDSSDecoder[] gmdss;
+    readonly int samplesPerSymbol;
+    readonly List<float> pendingSamples = new();
     readonly ConcurrentQueue<DSCMessage> pending = new();
 
     public DecoderState(int sampleRate)
@@ -105,6 +107,9 @@ sealed class DecoderState
         // MF/HF DSC receivers stay on the assigned RF channel. J2B
         // demodulation yields the standard 1615/1785 Hz audio pair directly.
         // The tones are fixed, so bypass the FFT auto-tuner entirely.
+        if (sampleRate < 100 || sampleRate % 100 != 0)
+            throw new ArgumentException("DSC sample rate must be divisible by 100", nameof(sampleRate));
+        samplesPerSymbol = sampleRate / 100;
         decoder = new DSCDecoder(100, sampleRate);
         gmdss = Enumerable.Range(0, DSCDecoder.SlideWindowsNumber).Select(_ => new GMDSSDecoder()).ToArray();
         foreach (var item in gmdss) item.OnMessageDecoded += msg => pending.Enqueue(msg);
@@ -118,7 +123,16 @@ sealed class DecoderState
             short sample = (short)(pcm[i * 2] | (pcm[i * 2 + 1] << 8));
             signal[i] = sample / 32768f;
         }
-        var bits = decoder.DecodeFSK(signal, MarkHz, SpaceHz);
+        // DSC is 100 baud. Incoming WebSDR audio packets are not guaranteed
+        // to contain a whole number of 10 ms symbols. The upstream decoder
+        // rounds partial trailing windows up, inventing bits and breaking phase.
+        // Keep at most one partial symbol between packets in this stream.
+        pendingSamples.AddRange(signal);
+        var alignedCount = pendingSamples.Count / samplesPerSymbol * samplesPerSymbol;
+        if (alignedCount == 0) return;
+        var aligned = pendingSamples.GetRange(0, alignedCount).ToArray();
+        pendingSamples.RemoveRange(0, alignedCount);
+        var bits = decoder.DecodeFSK(aligned, MarkHz, SpaceHz);
         for (var i = 0; i < Math.Min(bits.Length, gmdss.Length); i++) gmdss[i].AddBits(bits[i]);
     }
 
