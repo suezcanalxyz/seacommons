@@ -335,3 +335,58 @@ def test_public_decoder_diagnostics_rejects_unbounded_or_nonfinite_values():
     assert "decode_ratio" not in safe
     assert "drop_ratio" not in safe
     assert safe["audio_quality"] == {}
+
+
+def test_structured_radio_listening_requires_recent_healthy_audio_not_a_fake_decode(monkeypatch):
+    from core.config import config
+    from core.radio import decoder_runtime, runtime as radio_runtime
+    from core.radio.bridge import radio_acquisition_status
+
+    monkeypatch.setattr(config, "STRUCTURED_RADIO_ENABLED", True)
+    monkeypatch.setattr(radio_runtime, "get_remote_radio_status", lambda include_receivers=False: {
+        "enabled": True, "configured": 3, "started": 3, "failed": 0,
+        "receivers": [{"receiver_id": "one", "state": "connected"}],
+        "channels": [{"channel_kind": "monitor", "desired": 3, "active": 3}],
+    })
+    status = {
+        "enabled": True, "decoders": 2, "worker_alive": True,
+        "frames": 5000, "decoded": 0, "accepted": 0,
+        "invalid": 13, "dropped": 113, "errors": 0,
+        "bridge_errors": 0, "recent_frames": 650, "recent_dropped": 0,
+        "recent_drop_ratio": 0.0, "recent_errors": 0,
+        "queue_capacity_per_shard": 96, "queues": [0, 1, 0],
+    }
+    monkeypatch.setattr(decoder_runtime, "radio_decoder_status", lambda: dict(status))
+    first = radio_acquisition_status()
+    assert first["state"] == "live"
+    assert first["structured_state"] == "listening"
+    assert first["decoder"]["decoded"] == 0
+    assert first["decoder"]["accepted"] == 0
+    # Real backpressure must never be disguised as listening.
+    status.update(recent_dropped=28, recent_drop_ratio=0.041)
+    assert radio_acquisition_status()["structured_state"] == "degraded"
+    status.update(recent_dropped=0, recent_drop_ratio=0, queues=[90, 0, 0])
+    assert radio_acquisition_status()["structured_state"] == "degraded"
+    status.update(queues=[0, 0, 0], recent_frames=0)
+    assert radio_acquisition_status()["structured_state"] == "degraded"
+    status.update(recent_frames=650, errors=1)
+    assert radio_acquisition_status()["structured_state"] == "degraded"
+    status.update(errors=0, bridge_errors=1)
+    assert radio_acquisition_status()["structured_state"] == "degraded"
+    status.update(bridge_errors=0, accepted=1, decoded=1)
+    assert radio_acquisition_status()["structured_state"] == "live"
+
+
+def test_public_radio_pipeline_exposes_bounded_recent_health_without_secrets():
+    from core.acquisition.status import _sanitize_decoder
+    status = _sanitize_decoder({
+        "recent_window_s": 30, "recent_frames": 900, "recent_dropped": 2,
+        "recent_errors": 0, "recent_invalid": 0,
+        "recent_drop_ratio": 0.0022, "queue_capacity_per_shard": 96,
+        "private_receiver_id": "hidden", "raw_audio": "private",
+    })
+    assert status == {
+        "recent_window_s": 30, "recent_frames": 900, "recent_dropped": 2,
+        "recent_errors": 0, "recent_invalid": 0,
+        "recent_drop_ratio": 0.0022, "queue_capacity_per_shard": 96,
+    }

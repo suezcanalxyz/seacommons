@@ -426,3 +426,27 @@ def test_decoder_metrics_track_per_shard_activity_and_bounded_drops():
     assert status["dropped"] > 0
     assert sum(status["queues"]) == 0
     assert all(isinstance(value, int) for value in status["drops_by_shard"])
+
+
+def test_decoder_recent_health_window_expires_without_reseting_lifetime(monkeypatch):
+    from core.radio import decoder_runtime as dr
+    from core.radio.decoder_runtime import RadioDecoderRuntime
+    monkeypatch.setattr(dr.time, 'monotonic', lambda: 1500.0)
+    runtime = RadioDecoderRuntime(enabled=True, decoders=(),
+                                  decoded_handler=lambda msg: {"accepted": False},
+                                  queue_size=1)
+    for _ in range(4):
+        runtime.ingest_frame(_frame())
+    runtime._record_health('dropped', 3)
+    first = runtime.status()
+    assert first['recent_frames'] == 4
+    assert first['recent_dropped'] == 3
+    assert first['recent_drop_ratio'] == round(3 / 7, 6)
+    monkeypatch.setattr(dr.time, 'monotonic', lambda: 1531.0)
+    status = runtime.status()
+    assert status['frames'] == 4
+    assert status['recent_frames'] == 0
+    assert status['recent_dropped'] == 0
+    runtime.ingest_frame(_frame())
+    assert runtime.status()['recent_frames'] == 1
+    assert runtime.status()['recent_drop_ratio'] == 0

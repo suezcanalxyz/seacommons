@@ -41,14 +41,16 @@ _ALLOWED_CHANNEL_FIELDS = frozenset(
 _ALLOWED_DECODER_COUNTERS = frozenset({
     "decoders", "frames", "decoded", "accepted", "rejected", "invalid",
     "dropped", "errors", "queued", "worker_count", "continuity_resets",
-    "state_evictions", "bridge_errors",
+    "state_evictions", "bridge_errors", "recent_window_s",
+    "recent_frames", "recent_dropped", "recent_invalid", "recent_errors",
+    "queue_capacity_per_shard",
 })
 _ALLOWED_AUDIO_COUNTERS = frozenset({
     "sampled_frames", "silent_frames", "clipped_frames",
     "invalid_pcm_frames", "sampling_interval_frames",
 })
 _ALLOWED_AUDIO_MEASUREMENTS = frozenset({"sampled_duration_s", "mean_rms"})
-_ALLOWED_DECODER_RATIOS = frozenset({"decode_ratio", "drop_ratio"})
+_ALLOWED_DECODER_RATIOS = frozenset({"decode_ratio", "drop_ratio", "recent_drop_ratio"})
 _ALLOWED_DECODER_SHARDS = frozenset({"queues", "frames_by_shard", "drops_by_shard"})
 
 
