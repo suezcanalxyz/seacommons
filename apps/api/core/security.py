@@ -164,3 +164,42 @@ def validate_production_security() -> None:
         missing.append("JOB_EXECUTION_MODE=queue")
     if missing:
         raise RuntimeError("Unsafe production configuration: " + ", ".join(missing))
+
+
+# Futures uses the same Supabase OIDC login as the partner workspace.
+# Verify asymmetric JWT signatures against the issuer's published JWKs.
+# Never accept a client-declared role or a bearer token without verification.
+_FUTURES_ISSUER = "https://sqnoevmxqwbtovvuzdxf.supabase.co/auth/v1"
+_FUTURES_AUDIENCES = ["authenticated", "7e54bb3f-4095-483b-bc86-3e441388a963"]
+_futures_jwks_client: jwt.PyJWKClient | None = None
+
+
+def require_futures_identity(request: Request) -> Principal:
+    """Authenticate one Futures sign-in, without an extra operator role."""
+    global _futures_jwks_client
+    authorization = request.headers.get("authorization", "")
+    if not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Futures sign-in required")
+    token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Futures sign-in required")
+    try:
+        if _futures_jwks_client is None:
+            _futures_jwks_client = jwt.PyJWKClient(
+                _FUTURES_ISSUER + "/.well-known/jwks.json",
+                cache_jwk_set=True,
+                lifespan=300,
+                timeout=4,
+            )
+        signing_key = _futures_jwks_client.get_signing_key_from_jwt(token)
+        claims = jwt.decode(
+            token, signing_key.key, algorithms=["ES256"],
+            issuer=_FUTURES_ISSUER, audience=_FUTURES_AUDIENCES,
+            options={"require": ["exp", "iat", "sub", "aud", "iss"]},
+            leeway=30,
+        )
+        if claims.get("role") not in (None, "authenticated"):
+            raise ValueError("Unexpected token role")
+        return Principal(str(claims["sub"]), frozenset({"futures_viewer"}), claims)
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Invalid Futures session") from exc
