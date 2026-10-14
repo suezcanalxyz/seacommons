@@ -83,3 +83,23 @@ def test_remote_drift_outbound_failure_keeps_in_process_fallback(monkeypatch) ->
         35.0, 14.0, datetime.now(timezone.utc), 6, "ocean_sar", {}, False
     )
     assert result is None
+
+
+def test_offloaded_worker_unavailable_does_not_start_heavy_local_model(monkeypatch) -> None:
+    monkeypatch.setattr(config, "DRIFT_WORKER_URL", "http://10.0.0.5:9000")
+    monkeypatch.setattr(config, "DRIFT_WORKER_REQUIRE_REMOTE", True)
+    monkeypatch.setattr(engine_module, "_remote_compute", lambda *_args, **_kwargs: None)
+    def local_must_not_run(*_args, **_kwargs):
+        raise AssertionError("local heavy OpenDrift model unexpectedly launched")
+    monkeypatch.setattr(engine_module.DriftEngine, "_opendrift", local_must_not_run)
+    import pytest
+    with pytest.raises(RuntimeError, match="Remote drift worker unavailable"):
+        engine_module.DriftEngine().compute(35.0, 14.0, datetime.now(timezone.utc))
+
+
+def test_optional_worker_retains_legacy_local_fallback_when_explicitly_enabled(monkeypatch) -> None:
+    monkeypatch.setattr(config, "DRIFT_WORKER_URL", "http://10.0.0.5:9000")
+    monkeypatch.setattr(config, "DRIFT_WORKER_REQUIRE_REMOTE", False)
+    monkeypatch.setattr(engine_module, "_remote_compute", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(engine_module.DriftEngine, "_opendrift", lambda *_args, **_kwargs: "fallback-ok")
+    assert engine_module.DriftEngine().compute(35.0, 14.0, datetime.now(timezone.utc)) == "fallback-ok"

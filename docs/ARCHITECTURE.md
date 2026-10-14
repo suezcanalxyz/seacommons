@@ -123,3 +123,7 @@ A **single analysis chain** is authoritative; new UX views must not establish sh
 **Evidence validity:** A gap between two retained AIS fixes may come from collection or retention. A drawn segment does not assert the precise route and a port call does not establish loading/unloading. The UI historical cutoff must constrain visible AIS records. The reception expectation model and existing episode evidence stages remain distinct from vessel intent or cargo hypotheses.
 
 **Not yet built:** Permanent cold-storage raw observations; independently calibrated AIS-gap benchmark; multi-seed physical humanitarian macro-drift; comprehensive external cargo manifests and primary sanctions grounds; independent review of 20 real-world incidents. These are milestones, not already delivered features.
+
+### Remote OpenDrift resilience
+
+`core.worker_service` remains the **only** compute-worker implementation and `core.drift.engine._remote_compute` is its canonical client. When a dedicated worker is operational, set `DRIFT_WORKER_URL`, `DRIFT_WORKER_SECRET` and `DRIFT_WORKER_REQUIRE_REMOTE=true` on the API. Then a worker failure becomes an explicit retriable computation failure, rather than a silent local OpenDrift/CMEMS run within the API memory cgroup. The flag defaults false until the worker is independently deployed and validated. Do not configure the same host as the remote worker and describe it as memory isolation. A real multi-origin probabilistic area ensemble is not provided by this flag alone.
