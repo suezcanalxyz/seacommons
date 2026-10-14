@@ -160,6 +160,34 @@ function MeasurementContract({period}) {
   <p className="future-data-provenance">Rows are not additive. Historical data, current states, model cues and published cases represent different populations. Updated rows can reflect automated reprocessing without new evidence.</p>
  </section>;
 }
+const headlineMetrics=[
+ ['raw_observations','Raw observations','Original source records received in the period, before normalization.'],
+ ['parsed_events','Normalized events','Source data converted into comparable Intel events. This is not an incident count.'],
+ ['derived_cues','Derived cues','Events flagged by analytical rules or models after legacy-gap exclusions. Leads, not findings.'],
+ ['maritime_episodes','Recognized episodes','Classified clusters of related observations; for 24h/7d, those updated in the window.'],
+ ['investigation_hypotheses','Investigation hypotheses','Non-expired/non-rejected hypotheses last updated in the selected window; not necessarily newly created. Overall includes retained historical hypotheses.'],
+ ['corroborated_episodes','Corroborated episodes','Classified episodes currently supported by independent evidence lineages; recent counts use last update.'],
+ ['review_ready','Review ready','Hypotheses now in review-ready, assessed or published state; recent counts use last update. Not verified wrongdoing.'],
+ ['ais_fixes','AIS positions','Stored AIS position records timestamped within the selected window. Overall may be an estimate.'],
+ ['radio_bursts','Radio bursts','Captured radio bursts, including transmissions that could not be decoded.'],
+ ['radio_events','Radio events','Radio observations decoded or turned into usable events. Not all bursts qualify.'],
+ ['satellite_observations','Satellite observations','Satellite observations discovered by the system, not all images available.'],
+ ['active_source_names','Active source names','Number of distinct sources contributing retained raw observations in the selected period.'],
+];
+function IntelligenceMetricGrid({period,pipeline,sensorsData,loadedAt,estimated}) {
+ const [expanded,setExpanded]=useState(null);
+ const source={...sensorsData,...pipeline};
+ return <section className="future-section future-intelligence-headline" aria-label="Intelligence metric dashboard">
+   <header><h2>Intelligence at a glance</h2><p>All twelve canonical measures in one view. Switch 24 hours, 7 days or Overall above to update the entire grid. Numbers describe distinct evidence layers and must never be added together.</p></header>
+   <div className="future-intelligence-metrics future-intelligence-unified-grid">{headlineMetrics.map(([key,label,definition])=><article className="future-intelligence-metric" key={key}>
+     <div className="future-intelligence-metric-top"><span>{label}</span><button type="button" aria-expanded={expanded===key} aria-label={'Explain '+label} onClick={()=>setExpanded(expanded===key?null:key)}>{expanded===key?'Less −':'Info +'}</button></div>
+     <strong>{number(source?.[key])}{estimated&&key==='ais_fixes'&&source?.[key]!=null?' ≈':''}</strong>
+     <p>{definition}</p>
+     {expanded===key&&<div className="future-intelligence-legend"><b>How to interpret</b><p>{definition} {period==='overall'?'Overall is the currently retained corpus, not a permanent lifetime ledger.':'This is a rolling '+(period==='7d'?'168-hour':'24-hour')+' window. Different measures can use receipt, observation or last-update timestamps.'}</p><small>Field: {key}</small></div>}
+   </article>)}</div>
+   <p className="future-data-provenance">Period: {period==='overall'?'Overall · retained records':period==='7d'?'7 days · rolling 168 h':'24 hours · rolling'} · API generated: {stamp(loadedAt)}{estimated?' · AIS historical total estimated':''}. Unavailable means not reported, never zero.</p>
+ </section>;
+}
 function SimpleRecords({title,items,description}) {
  if(!Array.isArray(items)||!items.length)return <section className="future-section"><h2>{title}</h2><p>{description}</p><p>No records currently available.</p></section>;
  return <section className="future-section"><h2>{title}</h2><p>{description}</p><div className="future-intelligence-records">{items.slice(0,60).map((row,i)=><details key={row.observation_id||row.event_id||row.id||i}><summary><strong>{row.semantic_label||row.title||row.kind||row.type||'Observation'}</strong><span>{stamp(row.received_at||row.timestamp_utc||row.updated_at||row.observed_at)}</span></summary><p>Source: {row.source_name||row.source||row.kind||'Unknown'} · Evidence stage: {row.pipeline_role||row.kind||'Unspecified'}</p><p>Category: {row.observation_type||row.type||row.family||row.status||'Unspecified'}</p><p>Records in this view are observations or hypotheses, not proven incidents.</p></details>)}</div></section>
@@ -234,6 +262,7 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  <nav className="future-intelligence-subnav" aria-label="Intelligence sections">{TABS.map(([key,title])=><button key={key} type="button" className={key===tab?'is-active':''} aria-current={key===tab?'page':undefined} onClick={()=>setTab(key)}>{title}</button>)}</nav>
  <div className="future-intelligence-freshness"><span>{operator.loading?'Loading operator aggregates…':operator.data?'Canonical Intelligence data':operator.error?'Intelligence data unavailable · limited fallback':'Awaiting operational data'}</span><small>{operator.data?.generated_at?'Generated '+stamp(operator.data.generated_at):'No operator snapshot available'}</small><button type="button" onClick={operator.refresh}>Refresh</button></div>
  {operator.error&&<p className="future-inline-note" role="status">{operator.error} This dashboard does not use demonstration totals or hard-coded figures.</p>}
+ <IntelligenceMetricGrid period={period} pipeline={pipeline} sensorsData={specialSensors} loadedAt={raw?.generated_at||status?.generated_at} estimated={Boolean(isOverall&&sensorsData?.ais_fixes_estimated)}/>
  {tab==='pipeline'&&<><MeasurementContract period={period}/><section className="future-section"><h2>01 / Canonical evidence funnel</h2><p>From raw source messages to independent corroboration and review. Raw records, normalized events, derived cues, episodes and hypotheses describe overlapping processing stages, not sequential case conversion.</p><StagePanels rows={allStages} lookup={pipeline}/></section><section className="future-section"><h2>02 / Collection context</h2><p>In the supplied operator snapshot, raw observations substantially outnumber normalized events. This is expected: high-volume AIS telemetry is filtered and grouped. The dashboard always shows current API values instead of preserving the snapshot as if it were live.</p>{isOverall&&<p>First raw intake: {stamp(raw?.first_last?.raw_first)}. Latest raw intake: {stamp(raw?.first_last?.raw_latest)}. Historical dates inside sources may predate SeaCommons.</p>}</section></>}
  {tab==='sources'&&<>{Object.entries(sourceHelp).slice(0,4).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown?.[key]} help={help}/>)}</>}
  {tab==='sensors'&&<><MetricSet heading="Sensors and signal coverage" rows={sensors} data={specialSensors}/><FleetView data={sections.data?.['sar-fleet']}/><SatelliteCandidates data={sections.data?.['satellite-queue']}/><HumanitarianCorrelation data={sections.data?.['humanitarian-ais-correlation']}/></>}
