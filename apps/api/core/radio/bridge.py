@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 
 from core.radio.ais_association import (
     associate_and_persist_dsc,
@@ -48,18 +49,20 @@ def handle_radio_observation(observation: RadioObservation) -> None:
 
 
 def _raw_evidence_ref(message: DecodedRadioMessage) -> str:
+    """Receiver- and reception-scoped decoder output reference, NOT retained raw audio."""
+    # Upstream TAOSW IDs hash message symbols only and repeat for later
+    # retransmissions or independent receivers. Never use them globally alone.
     native = message.provider_message_id
     if not native:
-        material = "|".join(
-            (
-                message.kind,
-                message.physical_lineage,
-                message.observed_at.isoformat(),
-                str(message.frequency_hz),
-            )
-        )
-        native = hashlib.blake2s(material.encode("utf-8"), digest_size=12).hexdigest()
-    return f"radio-decoded:{message.provider}:{native}"
+        encoded = json.dumps(message.payload, sort_keys=True, separators=(",", ":"), default=str)
+        native = hashlib.blake2s(encoded.encode("utf-8"), digest_size=12).hexdigest()
+    identity = "|".join((
+        message.kind, message.provider, message.physical_lineage,
+        message.observed_at.isoformat(timespec="seconds"),
+        str(message.frequency_hz), native,
+    ))
+    digest = hashlib.blake2s(identity.encode("utf-8"), digest_size=16).hexdigest()
+    return f"radio-decoded:{message.provider}:{digest}"
 
 
 def get_structured_radio_runtime():
@@ -137,7 +140,9 @@ def radio_acquisition_status() -> dict[str, object]:
         structured_state = "idle"
     elif not bool(decoder.get("worker_alive")) or int(decoder.get("errors") or 0) > 0:
         structured_state = "degraded"
-    elif int(decoder.get("decoded") or 0) == 0:
+    elif int(decoder.get("decoded") or 0) == 0 or (
+        "accepted" in decoder and int(decoder.get("accepted") or 0) == 0
+    ):
         # RF transport can be healthy while semantic DSC extraction is not.
         # Do not label structured radio "live" merely because frames are
         # flowing; that would hide the exact failure mode that prevents radio

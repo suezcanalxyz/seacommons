@@ -68,7 +68,12 @@ def _persist(
         observation_type=observation_type,
         source_name=_source_name(physical_lineage),
         source_policy=_SOURCE_POLICY,
-        source_id=f"{observation_type}:{decoder_message_id}",
+        # A DSC retransmission with identical symbols minutes later is a new
+        # reception, not a replay of the same immutable observation. Within
+        # the same second the same receiver / decoder ID remains idempotent.
+        source_id=(f"{observation_type}:{decoder_message_id}:{observed_at[:19]}"
+                   if observation_type == "dsc_message"
+                   else f"{observation_type}:{decoder_message_id}"),
         observed_at=observed_at,
         raw_payload=encoded,
         raw_payload_ref=raw_evidence_ref,

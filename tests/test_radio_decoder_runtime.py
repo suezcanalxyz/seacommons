@@ -306,3 +306,81 @@ def test_dsc_bridge_buffers_incomplete_symbol_windows():
     assert 'pendingSamples.Count / samplesPerSymbol * samplesPerSymbol' in source
     assert 'decoder.DecodeFSK(aligned, MarkHz, SpaceHz)' in source
     assert 'pendingSamples.RemoveRange(0, alignedCount)' in source
+
+
+def test_decoder_rejects_invalid_audio_sequence_metadata():
+    from dataclasses import replace
+    import pytest
+    assert replace(_frame(), sequence=0).sequence == 0
+    assert replace(_frame(), sequence=0xFFFFFFFF).sequence == 0xFFFFFFFF
+    with pytest.raises(ValueError, match="sequence"):
+        replace(_frame(), sequence=-1)
+    with pytest.raises(ValueError, match="sequence"):
+        replace(_frame(), sequence=0x100000000)
+    with pytest.raises(ValueError, match="session"):
+        replace(_frame(), session_id="a" * 129)
+
+
+def test_decoder_counts_persisted_separately_from_decoded_candidates():
+    from core.radio.decoder_runtime import RadioDecoderRuntime
+    class FakeDecoder:
+        def decode(self, frame):
+            return ({"kind": "dsc", "payload": {"category": "routine"}},)
+    runtime = RadioDecoderRuntime(enabled=True, decoders=(FakeDecoder(),),
+                                  decoded_handler=lambda msg: {"accepted": False})
+    response = runtime.ingest_frame(_frame())
+    assert response["decoded"] == 1 and response["persisted"] == 0
+    assert runtime.status()["decoded"] == 1
+    assert runtime.status()["accepted"] == 0
+    assert runtime.status()["rejected"] == 1
+
+
+def test_kiwi_audio_frame_includes_session_and_network_sequence(monkeypatch):
+    from core.radio import decoder_runtime
+    from core.radio.kiwisdr import KiwiSDRAdapter
+    from tests.test_kiwisdr_adapter import FakeKiwiTransport, _descriptor, _snd_frame
+    frames = []
+    monkeypatch.setattr(decoder_runtime, "submit_ephemeral_frame", lambda frame: frames.append(frame) or True)
+    transport = FakeKiwiTransport()
+    adapter = KiwiSDRAdapter(_descriptor(), on_observation=lambda obs: None, transport=transport)
+    adapter.start(); adapter.tune(2_187_500, "usb")
+    transport.emit(b"MSG audio_init=0 audio_rate=12000")
+    transport.emit(_snd_frame(sequence=101, audio=b"\x01\x02"))
+    assert frames[0].session_id
+    assert frames[0].sequence == 101
+
+
+def test_openwebrx_sequence_detects_queue_drop(monkeypatch):
+    from core.radio import decoder_runtime
+    from core.radio.openwebrx import OpenWebRXAdapter
+    from tests.test_openwebrx_adapter import FakeTransport, descriptor
+    seen = []
+    def fake_submit(frame):
+        seen.append(frame)
+        return len(seen) != 2
+    monkeypatch.setattr(decoder_runtime, "submit_ephemeral_frame", fake_submit)
+    transport = FakeTransport()
+    adapter = OpenWebRXAdapter(descriptor(), on_observation=lambda obs: None, transport=transport)
+    adapter.start()
+    transport.on_message({"type":"config", "value":{"center_freq":2200000,
+                          "samp_rate":200000, "audio_compression":"none"}})
+    adapter.tune(2_187_500, "usb")
+    for i in range(3): transport.on_message(b"\x02\x00\x00")
+    assert len({x.session_id for x in seen}) == 1
+    assert list(x.sequence for x in seen) == [1, 2, 3]
+    assert [x.sequence for i,x in enumerate(seen) if i != 1] == [1, 3]
+
+
+def test_process_decoder_reads_bounded_discontinuity_metrics(tmp_path):
+    import sys
+    from core.radio.decoder_runtime import JSONLProcessDecoder
+    script = tmp_path / "decoder.py"
+    script.write_text("import json,sys\nfor line in sys.stdin:\n d=json.loads(line); print(json.dumps({'messages':[], 'continuity_resets':1 if d['session_id'] == 'changed' else 0, 'state_evictions':0}),flush=True)\n")
+    from dataclasses import replace
+    decoder = JSONLProcessDecoder((sys.executable, str(script)), timeout_s=3)
+    try:
+        assert tuple(decoder.decode(replace(_frame(), session_id="changed", sequence=7))) == ()
+        assert decoder.continuity_resets == 1
+        assert decoder.state_evictions == 0
+    finally:
+        decoder.close()

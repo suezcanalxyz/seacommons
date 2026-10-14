@@ -284,6 +284,7 @@ class KiwiSDRAdapter:
                     physical_lineage=self._descriptor.physical_lineage, frequency_hz=frequency_hz,
                     mode=mode, observed_at=observed_at, sample_rate_hz=audio_rate_hz,
                     encoding="kiwi_snd_raw", payload=audio_payload, source_terms=self._descriptor.source_terms,
+                    session_id=session_id, sequence=sequence,
                 ))
             except Exception:
                 pass

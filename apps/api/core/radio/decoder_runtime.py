@@ -30,6 +30,8 @@ class EphemeralRadioFrame:
     encoding: str
     payload: bytes
     source_terms: str | None = None
+    session_id: str | None = None
+    sequence: int | None = None
 
     def __post_init__(self) -> None:
         if not self.receiver_id.strip() or not self.provider.strip() or not self.physical_lineage.strip():
@@ -40,6 +42,10 @@ class EphemeralRadioFrame:
             raise ValueError("observed_at must be timezone-aware")
         if not isinstance(self.payload, bytes) or len(self.payload) > _MAX_EPHEMERAL_FRAME_BYTES:
             raise ValueError("payload exceeds ephemeral frame bound")
+        if self.session_id is not None and len(self.session_id) > 128:
+            raise ValueError("audio session identifier too long")
+        if self.sequence is not None and not (0 <= self.sequence <= 0xFFFFFFFF):
+            raise ValueError("invalid audio packet sequence")
 
     def public_metadata(self) -> dict[str, object]:
         return {
@@ -99,6 +105,8 @@ class RadioDecoderRuntime:
         self._decoded_handler = decoded_handler
         self._frames = 0
         self._decoded = 0
+        self._accepted = 0
+        self._rejected = 0
         self._invalid = 0
         self._dropped = 0
         self._errors = 0
@@ -127,6 +135,8 @@ class RadioDecoderRuntime:
             "decoders": len(self._decoders),
             "frames": self._frames,
             "decoded": self._decoded,
+            "accepted": self._accepted,
+            "rejected": self._rejected,
             "invalid": self._invalid,
             "dropped": self._dropped,
             "errors": self._errors,
@@ -144,6 +154,8 @@ class RadioDecoderRuntime:
             "worker_alive": bool(self._workers) and all(w.is_alive() for w in self._workers),
             "worker_count": len(self._queues),
             "queues": [q.qsize() for q in self._queues],
+            "continuity_resets": sum(int(getattr(d, "continuity_resets", 0)) for group in self._decoder_sets for d in group),
+            "state_evictions": sum(int(getattr(d, "state_evictions", 0)) for group in self._decoder_sets for d in group),
         }
 
     def start(self) -> None:
@@ -214,6 +226,8 @@ class RadioDecoderRuntime:
                 self._audio_silent += int(bool(quality["silent"]))
                 self._audio_clipped += int(bool(quality["clipping"]))
         decoded = 0
+        accepted = 0
+        rejected = 0
         invalid = 0
         for decoder in (self._decoders if decoders is None else decoders):
             try:
@@ -241,14 +255,21 @@ class RadioDecoderRuntime:
                     invalid += 1
                     continue
                 try:
-                    self._decoded_handler(message)
+                    result = self._decoded_handler(message)
                 except Exception:
                     self._errors += 1
                     continue
                 decoded += 1
+                if isinstance(result, Mapping) and result.get("accepted") is True:
+                    accepted += 1
+                else:
+                    rejected += 1
         self._decoded += decoded
+        self._accepted += accepted
+        self._rejected += rejected
         self._invalid += invalid
-        return {"accepted": True, "decoded": decoded, "invalid": invalid}
+        return {"accepted": True, "decoded": decoded, "invalid": invalid,
+                "persisted": accepted, "rejected": rejected}
 
 class JSONLProcessDecoder:
     """Persistent bounded JSONL decoder subprocess. No shell, no file persistence."""
@@ -276,6 +297,8 @@ class JSONLProcessDecoder:
         self._reader: threading.Thread | None = None
         self._reader_stop = threading.Event()
         self._lock = threading.Lock()
+        self.continuity_resets = 0
+        self.state_evictions = 0
 
     def _ensure_process(self) -> subprocess.Popen[str]:
         process = self._process
@@ -352,6 +375,8 @@ class JSONLProcessDecoder:
             "sample_rate_hz": pcm.sample_rate_hz,
             "encoding": pcm.encoding,
             "payload_b64": base64.b64encode(pcm.payload).decode("ascii"),
+            "session_id": frame.session_id,
+            "sequence": frame.sequence,
         }
         with self._lock:
             process = self._ensure_process()
@@ -373,6 +398,12 @@ class JSONLProcessDecoder:
                 self.close()
                 raise ValueError("decoder output exceeds bound")
         payload = json.loads(line)
+        if isinstance(payload, Mapping):
+            for key, attribute in (("continuity_resets", "continuity_resets"),
+                                   ("state_evictions", "state_evictions")):
+                count = payload.get(key)
+                if isinstance(count, int) and not isinstance(count, bool) and 0 <= count <= 64:
+                    setattr(self, attribute, getattr(self, attribute) + count)
         messages = payload.get("messages", []) if isinstance(payload, Mapping) else []
         if not isinstance(messages, list):
             raise ValueError("decoder messages must be a list")
