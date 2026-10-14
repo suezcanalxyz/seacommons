@@ -707,3 +707,35 @@ a { color: inherit; text-decoration: none; }
 @media(max-width:1100px){.future-intelligence-unified-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:760px){.future-intelligence-unified-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.future-intelligence-unified-grid{grid-template-columns:1fr}.future-intelligence-headline .future-intelligence-metric{min-height:0}}
+
+/* Compact responsive Futures: complete sections occupy predictable viewport slices. */
+.future-content{padding-top:20px;padding-bottom:28px}
+.future-page-head{margin-bottom:18px}
+.future-page-head h1,.future-hero h1{font-size:clamp(26px,3.1vw,43px)!important;line-height:1.12;letter-spacing:-.045em;max-width:22ch}
+.future-page-head p,.future-hero p{font-size:clamp(12px,1vw,14px);line-height:1.5;max-width:76ch}
+.future-section{padding-top:16px;padding-bottom:16px;margin-top:12px;margin-bottom:12px;scroll-margin-top:110px}
+.future-section h2,.future-section h3{font-size:clamp(15px,1.5vw,21px);line-height:1.25;margin-bottom:8px}
+.future-section p{line-height:1.52}
+.future-intelligence-headline .future-intelligence-metric{min-height:0;padding:12px;gap:7px}
+.future-intelligence-unified-grid{gap:8px;grid-template-columns:repeat(4,minmax(0,1fr))}
+.future-intelligence-metric strong{font-size:clamp(23px,2.2vw,36px);line-height:1.1}
+.future-intelligence-metric p{font-size:11px;line-height:1.42}
+.future-intelligence-subnav{padding:9px 0 13px;gap:5px}
+.future-period-tabs{margin-block:9px}
+.future-intelligence-freshness{padding:8px 0}
+.future-agent-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.future-agent-card{border:1px solid var(--f-line);background:var(--f-panel);padding:14px;display:grid;gap:7px}
+.future-agent-card h3{margin:0;font-size:14px;line-height:1.3}
+.future-agent-card p,.future-agent-card small{font-size:11px;line-height:1.45;color:var(--f-muted)}
+.future-agent-card strong{font-size:11px;color:var(--f-accent)}
+@media(max-width:1100px){.future-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.future-content{padding-top:12px}.future-page-head h1,.future-hero h1{font-size:clamp(24px,6vw,35px)!important}.future-intelligence-unified-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.future-agent-grid{grid-template-columns:1fr}.future-section{scroll-margin-top:105px}}
+@media(max-width:470px){.future-intelligence-unified-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.future-intelligence-headline .future-intelligence-metric{padding:10px}.future-intelligence-metric strong{font-size:clamp(19px,5.5vw,29px)}.future-intelligence-metric p{font-size:10px;line-height:1.4}.future-intelligence-metric-top{flex-wrap:wrap}}
+
+
+/* Gentle viewport-sized progression between compact Futures sections. */
+@media(min-width:761px) and (prefers-reduced-motion:no-preference){
+ html:has(.future-app){scroll-snap-type:y proximity;scroll-padding-top:108px}
+ .future-content>.future-section,.future-content>.future-page-head,.future-intelligence-headline{scroll-snap-align:start}
+}
+@media(prefers-reduced-motion:reduce){html:has(.future-app){scroll-behavior:auto}}
