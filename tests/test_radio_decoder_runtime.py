@@ -384,3 +384,16 @@ def test_process_decoder_reads_bounded_discontinuity_metrics(tmp_path):
         assert decoder.state_evictions == 0
     finally:
         decoder.close()
+
+
+def test_decoder_reports_bridge_error_counts_without_details(tmp_path):
+    import sys
+    from core.radio.decoder_runtime import JSONLProcessDecoder
+    script = tmp_path / 'fake_bridge.py'
+    script.write_text("import sys,json\nfor line in sys.stdin:\n print(json.dumps({'messages':[], 'bridge_errors':1}),flush=True)\n")
+    decoder = JSONLProcessDecoder((sys.executable, str(script)), timeout_s=3)
+    try:
+        assert tuple(decoder.decode(_frame())) == ()
+        assert decoder.bridge_errors == 1
+    finally:
+        decoder.close()

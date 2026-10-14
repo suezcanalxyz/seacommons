@@ -156,6 +156,7 @@ class RadioDecoderRuntime:
             "queues": [q.qsize() for q in self._queues],
             "continuity_resets": sum(int(getattr(d, "continuity_resets", 0)) for group in self._decoder_sets for d in group),
             "state_evictions": sum(int(getattr(d, "state_evictions", 0)) for group in self._decoder_sets for d in group),
+            "bridge_errors": sum(int(getattr(d, "bridge_errors", 0)) for group in self._decoder_sets for d in group),
         }
 
     def start(self) -> None:
@@ -299,6 +300,7 @@ class JSONLProcessDecoder:
         self._lock = threading.Lock()
         self.continuity_resets = 0
         self.state_evictions = 0
+        self.bridge_errors = 0
 
     def _ensure_process(self) -> subprocess.Popen[str]:
         process = self._process
@@ -400,7 +402,8 @@ class JSONLProcessDecoder:
         payload = json.loads(line)
         if isinstance(payload, Mapping):
             for key, attribute in (("continuity_resets", "continuity_resets"),
-                                   ("state_evictions", "state_evictions")):
+                                   ("state_evictions", "state_evictions"),
+                                   ("bridge_errors", "bridge_errors")):
                 count = payload.get(key)
                 if isinstance(count, int) and not isinstance(count, bool) and 0 <= count <= 64:
                     setattr(self, attribute, getattr(self, attribute) + count)
