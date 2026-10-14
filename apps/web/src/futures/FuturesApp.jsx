@@ -118,13 +118,18 @@ function useOperationalData(hours = 24) {
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      if (!cancelled) await refresh();
+      if (!cancelled && document.visibilityState !== 'hidden') await refresh();
     };
     run();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') run();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     const timer = window.setInterval(run, 60_000);
     return () => {
       cancelled = true;
       sequence.current += 1;
+      document.removeEventListener('visibilitychange', onVisibility);
       window.clearInterval(timer);
     };
   }, [refresh]);
@@ -150,9 +155,19 @@ function useOverallData() {
     }
   }, []);
   useEffect(() => {
-    refresh();
-    const timer = window.setInterval(refresh, 300_000);
-    return () => window.clearInterval(timer);
+    const run = () => {
+      if (document.visibilityState !== 'hidden') refresh();
+    };
+    run();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') run();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    const timer = window.setInterval(run, 300_000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.clearInterval(timer);
+    };
   }, [refresh]);
   return { ...snapshot, refresh };
 }
