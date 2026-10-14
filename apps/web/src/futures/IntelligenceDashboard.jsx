@@ -94,8 +94,8 @@ function useOperatorMetrics(period){
   const request=++seq.current;
   setLoading(true);setError('');
   try{
-   const url=period==='overall'?'/api/v1/operator/ingestion/overall':`/api/v1/operator/ingestion/overview?hours=${period==='7d'?168:24}`;
-   const result=await fetchJson(resolveSiteApiBase(),url,undefined,22000);
+   const url=period==='overall'?'/api/v1/operator/ingestion/overall-metrics':`/api/v1/operator/ingestion/overview?hours=${period==='7d'?168:24}`;
+   const result=await fetchJson(resolveSiteApiBase(),url,undefined,period==='overall'?35000:30000);
    if(request===seq.current)setData(result);
   }catch(e){if(request===seq.current){setData(null);setError('Intelligence data unavailable. Check the SeaCommons API connection.');}}
   finally{if(request===seq.current)setLoading(false);}
@@ -107,7 +107,14 @@ function useOperatorSections(period,tab) {
  const [snapshot,setSnapshot]=React.useState({data:null,error:'',key:''});
  React.useEffect(()=>{
    let active=true;
-   if(period==='overall'){setSnapshot({data:null,error:'',key:period+':'+tab});return()=>{active=false;};}
+   if(period==='overall'){
+    if(tab!=='sources'&&tab!=='quality'){setSnapshot({data:null,error:'',key:period+':'+tab});return()=>{active=false;};}
+    setSnapshot({data:null,error:'',key:period+':'+tab});
+    fetchJson(resolveSiteApiBase(),'/api/v1/operator/ingestion/overall',undefined,50000)
+      .then(overall=>{if(active)setSnapshot({data:{overall},error:'',key:period+':'+tab});})
+      .catch(()=>{if(active)setSnapshot({data:null,error:'Detailed historical breakdown temporarily unavailable.',key:period+':'+tab});});
+    return()=>{active=false;};
+   }
    const hours=period==='7d'?168:24;
    const paths=tab==='pipeline'?['funnel']:tab==='sources'?['funnel']:tab==='quality'?['funnel','stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue','humanitarian-ais-correlation']:tab==='activity'?['observations','events','signals','analysis','pipeline-map']:null;
    if(!paths){setSnapshot({data:null,error:''});return()=>{active=false;};}
@@ -241,9 +248,9 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  const status=!isOverall&&ops.status?.window_hours===(period==='7d'?168:24)?ops.status:null;
  const rawStages=Array.isArray(raw?.stages)?Object.fromEntries(raw.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
  const funnelStages=Array.isArray(sections.data?.funnel?.stages)?Object.fromEntries(sections.data.funnel.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
- const pipeline=isOverall?rawStages:(funnelStages||raw?.pipeline_status?.pipeline||status?.pipeline);
- const sensorsData=isOverall?raw?.sensor_activity:raw?.pipeline_status?.sensor_activity||status?.sensor_activity;
- const breakdown=isOverall?raw?.breakdowns:{
+ const pipeline=isOverall?rawStages:(funnelStages||status?.pipeline||raw?.pipeline_status?.pipeline);
+ const sensorsData=isOverall?raw?.sensor_activity:(status?.sensor_activity||raw?.pipeline_status?.sensor_activity);
+ const breakdown=isOverall?sections.data?.overall?.breakdowns:{
    raw_by_source:raw?.source_observations?.by_source,
    raw_observation_types:raw?.source_observations?.by_type,
    normalized_by_source:raw?.parsed_events?.by_source,
