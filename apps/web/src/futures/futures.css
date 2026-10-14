@@ -696,3 +696,14 @@ a { color: inherit; text-decoration: none; }
 /* Keep the section tabs visible during scroll across every Futures section. */
 .future-subnav{position:sticky;top:62px;z-index:11;background:rgba(5,8,13,.97);backdrop-filter:blur(18px);padding:13px 0 15px;margin-top:-14px}
 @media(max-width:760px){.future-subnav{top:60px;padding:10px 0;margin-top:0}}
+
+
+/* Unified Intelligence overview: twelve comparable tiles, one synchronized time switch. */
+.future-intelligence-unified-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.future-intelligence-headline{margin-top:18px}
+.future-intelligence-headline header p{max-width:850px}
+.future-intelligence-headline .future-intelligence-metric{min-height:196px}
+.future-intelligence-headline .future-intelligence-metric strong{font-variant-numeric:tabular-nums}
+@media(max-width:1100px){.future-intelligence-unified-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){.future-intelligence-unified-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.future-intelligence-unified-grid{grid-template-columns:1fr}.future-intelligence-headline .future-intelligence-metric{min-height:0}}
