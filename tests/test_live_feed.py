@@ -2384,13 +2384,16 @@ def test_live_sanctioned_vessels_is_fresh_strong_identifier_subset(monkeypatch):
     response = client.get("/api/v1/live/sanctioned-vessels")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["meta"]["position_policy"] == "fresh_only_10m"
-    assert payload["meta"]["total"] == 1
-    feature = payload["features"][0]
+    assert payload["meta"]["position_policy"] == "observed_within_24h"
+    assert payload["meta"]["total"] == 2
+    feature = next(f for f in payload["features"] if f["properties"]["mmsi"] == "211000991")
     assert feature["properties"]["mmsi"] == "211000991"
     assert feature["properties"]["sanctions_matched"] is True
     assert feature["properties"]["match_basis"] == ["mmsi", "imo"]
     assert feature["properties"]["position_age_s"] < 600
+    stale = next(f for f in payload["features"] if f["properties"]["mmsi"] == "211000992")
+    assert stale["properties"]["ais_status"] == "last_observed"
+    assert stale["properties"]["position_age_s"] >= 600
     assert "does not by itself establish unlawful" in feature["properties"]["note"]
 
     with session_scope() as db:
