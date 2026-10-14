@@ -234,6 +234,66 @@ def _episode_projection(episode, evidence_event=None) -> dict[str, Any]:
 
 
 
+
+def _canonical_voyage_evidence(
+    mmsis: set[str], *, start_at: datetime | str | None, end_at: datetime | str | None,
+) -> dict[str, Any]:
+    """Enrich the existing Play dossier, not a parallel case or report database.
+
+    AIS fixes are observed. Gaps are reception absences, and port calls remain
+    AIS-inferred, never independently confirmed cargo operations.
+    """
+    from core.vessels.track_store import track_store
+    from core.api.routes.mda import _derive_recent_port_calls
+
+    start = parse_utc(str(start_at)) if start_at else None
+    end = parse_utc(str(end_at)) if end_at else None
+    if start is None:
+        return {"status": "no_time_window", "vessels": [], "method_version": "play-voyage-v1"}
+    end = end or start
+    # A bounded evidence window protects the API even on multi-year cases.
+    since = start - timedelta(hours=6)
+    until = min(end + timedelta(hours=6), since + timedelta(days=7))
+    vessels = []
+    for mmsi in sorted(m for m in mmsis if len(m) == 9 and m.isdigit())[:3]:
+        fixes = track_store.track(mmsi, since=since, until=until, limit=600)
+        observations = []
+        for point in fixes:
+            ts = _iso(point.get("ts"))
+            try:
+                lat, lon = float(point["lat"]), float(point["lon"])
+                if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                    continue
+            except (ValueError, TypeError, KeyError):
+                continue
+            observations.append({
+                "at": ts, "lat": lat, "lon": lon,
+                "sog": point.get("sog"), "source": point.get("source"),
+            })
+        gaps = []
+        for before, after in zip(observations, observations[1:]):
+            prev, nxt = parse_utc(before["at"]), parse_utc(after["at"])
+            if prev and nxt and (nxt - prev).total_seconds() >= 3600:
+                gaps.append({"from": before["at"], "to": after["at"],
+                             "duration_min": round((nxt - prev).total_seconds() / 60),
+                             "interpretation": "no_stored_AIS_fixes_between_observations"})
+        vessels.append({
+            "mmsi": mmsi,
+            "track_points": observations,
+            "observed_fix_count": len(observations),
+            "observed_gaps": gaps[:20],
+            "ais_derived_port_calls": _derive_recent_port_calls(fixes),
+            "track_line": ({"type": "LineString", "coordinates": [[p["lon"], p["lat"]] for p in observations]}
+                           if len(observations) >= 2 else None),
+            "limits": "A straight line between fixes is a visual connection, not the observed route. "
+                      "No fix does not imply deliberate AIS shutdown. Port calls do not prove cargo transfer.",
+        })
+    return {"status": "available" if any(v["observed_fix_count"] for v in vessels) else "no_retained_ais_fixes",
+            "method_version": "play-voyage-v1", "window_start": _iso(since),
+            "window_end": _iso(until), "vessels": vessels}
+
+
+
 def _public_episode_dossier(db, episode, *, now: datetime) -> dict[str, Any]:
     from sqlalchemy import or_
     from core.db.models import (
@@ -415,6 +475,10 @@ def _public_episode_dossier(db, episode, *, now: datetime) -> dict[str, Any]:
     return {
         **projection,
         "requested_incident_id": canonical_id,
+        "voyage_evidence": _canonical_voyage_evidence(
+            set(map(str, episode.subject_ids or [])),
+            start_at=episode.start_at, end_at=episode.end_at,
+        ),
         "sar_mission_count": 0,
         "satellite_count": len(satellites),
         "satellite_evidence_count": satellite_evidence_count,
@@ -1321,6 +1385,11 @@ def play_incident_timeline(incident_id: str):
                 "corroborated": projection.get("corroborated"),
                 "independence_groups": projection.get("independence_groups"),
                 "evidence_count": projection.get("evidence_count"),
+                "voyage_evidence": _canonical_voyage_evidence(
+                    set(map(str, episode.subject_ids or [])) if episode is not None else set(),
+                    start_at=episode.start_at if episode is not None else projection.get("reported_at"),
+                    end_at=episode.end_at if episode is not None else projection.get("last_update_at"),
+                ),
                 "reason_codes": projection.get("reason_codes"),
                 "counter_indicators": projection.get("counter_indicators"),
                 "satellite_count": len(satellites),
