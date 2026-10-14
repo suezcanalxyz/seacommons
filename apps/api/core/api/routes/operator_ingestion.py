@@ -1415,3 +1415,53 @@ def futures_scheduled_tasks(request: Request) -> dict[str, Any]:
     except (FileNotFoundError, PermissionError, ValueError, json.JSONDecodeError):
         return {"source": "ChatGPT Tasks", "live_sync": False,
                 "synced_at": None, "tasks": [], "status": "not_connected"}
+
+
+@router.get("/overall-metrics")
+def operator_overall_metrics(request: Request) -> dict[str, Any]:
+    """Lightweight all-retained headline counts; no expensive category breakdown queries."""
+    _require_gateway(request)
+    cached = _fast_cache_get("overall_metrics", 0)
+    if cached is not None:
+        return cached
+    from core.intel.measurement_definitions import DERIVED_EVENT_TYPES, DERIVED_ANALYSIS_STATES
+    from sqlalchemy import or_
+    analysis_state = IntelEventDB.meta["analysis_state"].as_string()
+    anomaly_type = IntelEventDB.meta["anomaly_type"].as_string()
+    with session_scope() as db:
+        def n(model, *conditions):
+            return int(db.query(func.count()).select_from(model).filter(*conditions).scalar() or 0)
+        raw = n(SourceObservationDB)
+        parsed = n(IntelEventDB)
+        derived = n(IntelEventDB, or_(
+            IntelEventDB.type.in_(DERIVED_EVENT_TYPES),
+            analysis_state.in_(DERIVED_ANALYSIS_STATES),
+        ))
+        legacy_gap = n(IntelEventDB, IntelEventDB.type=="ais_anomaly", IntelEventDB.source=="ais",
+                       IntelEventDB.id.like("aisanom:%"), anomaly_type=="gap")
+        classified = MaritimeEpisodeDB.episode_family != "unclassified_episode"
+        episodes = n(MaritimeEpisodeDB, classified)
+        hypotheses = n(InvestigationHypothesisDB)
+        corroborated = n(MaritimeEpisodeDB, classified,
+                         MaritimeEpisodeDB.verification_status=="multi_source_corroborated")
+        ready = n(InvestigationHypothesisDB,
+                  InvestigationHypothesisDB.state.in_(("review_ready","assessed","published")))
+        ais, estimated = _fast_table_count(db, VesselTrackDB)
+        radio_bursts = n(RadioBurstDB)
+        radio_events = n(RadioEventDB)
+        satellite = n(SatelliteObservationDB)
+        source_names = int(db.query(func.count(func.distinct(SourceObservationDB.source_name))).scalar() or 0)
+    payload = {
+        "scope":"all_time","generated_at":datetime.now(timezone.utc).isoformat(),
+        "stages":[
+            {"id":"raw","count":raw},{"id":"normalized","count":parsed},
+            {"id":"derived","count":max(0,derived-legacy_gap)},
+            {"id":"episodes","count":episodes},{"id":"hypotheses","count":hypotheses},
+            {"id":"corroborated","count":corroborated},{"id":"review_ready","count":ready},
+        ],
+        "sensor_activity":{"ais_fixes":ais,"ais_fixes_estimated":estimated,
+            "radio_bursts":radio_bursts,"radio_events":radio_events,
+            "satellite_observations":satellite,"source_names":source_names},
+        "retention_semantics":"Retained database rows; not lifetime ingest history.",
+    }
+    return _fast_cache_put("overall_metrics",0,payload)
