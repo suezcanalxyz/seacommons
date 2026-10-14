@@ -739,3 +739,14 @@ a { color: inherit; text-decoration: none; }
  .future-content>.future-section,.future-content>.future-page-head,.future-intelligence-headline{scroll-snap-align:start}
 }
 @media(prefers-reduced-motion:reduce){html:has(.future-app){scroll-behavior:auto}}
+
+
+/* Full-width editorial copy and a single visual hierarchy across Futures. */
+.future-page-head,.future-page-head>p,.future-hero,.future-hero>p,
+.future-content>.future-section>p,.future-intelligence-explanation>p{max-width:none;width:100%}
+.future-page-head h1,.future-hero h1{max-width:none}
+.future-content{width:100%;box-sizing:border-box}
+.future-intelligence-explanation{display:grid;gap:12px}
+.future-intelligence-explanation details{padding:12px 16px;border:1px solid var(--f-line);max-width:100%}
+.future-intelligence-explanation summary{cursor:pointer;color:var(--f-text);font-size:13px}
+.future-intelligence-explanation details p{max-width:none;font-size:12px;line-height:1.55;color:var(--f-muted)}
