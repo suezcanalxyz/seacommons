@@ -121,6 +121,9 @@ class RadioDecoderRuntime:
         # Existing direct/isolated callers retain one worker and one queue.
         shards = max(1, min(int(worker_count), 4)) if decoder_factory else 1
         self._queues = tuple(queue.Queue(maxsize=max(1, int(queue_size))) for _ in range(shards))
+        self._frames_by_shard = [0] * shards
+        self._drops_by_shard = [0] * shards
+        self._shard_metrics_lock = threading.Lock()
         self._queue = self._queues[0]  # backward compatible single-shard runtime
         self._decoder_sets = [self._decoders]
         for _ in range(shards - 1):
@@ -130,6 +133,9 @@ class RadioDecoderRuntime:
         self._worker: threading.Thread | None = None
 
     def status(self) -> dict[str, object]:
+        with self._shard_metrics_lock:
+            frames_by_shard = list(self._frames_by_shard)
+            drops_by_shard = list(self._drops_by_shard)
         return {
             "enabled": self.enabled,
             "decoders": len(self._decoders),
@@ -154,6 +160,8 @@ class RadioDecoderRuntime:
             "worker_alive": bool(self._workers) and all(w.is_alive() for w in self._workers),
             "worker_count": len(self._queues),
             "queues": [q.qsize() for q in self._queues],
+            "frames_by_shard": frames_by_shard,
+            "drops_by_shard": drops_by_shard,
             "continuity_resets": sum(int(getattr(d, "continuity_resets", 0)) for group in self._decoder_sets for d in group),
             "state_evictions": sum(int(getattr(d, "state_evictions", 0)) for group in self._decoder_sets for d in group),
             "bridge_errors": sum(int(getattr(d, "bridge_errors", 0)) for group in self._decoder_sets for d in group),
@@ -164,7 +172,7 @@ class RadioDecoderRuntime:
             return
         self._stop.clear()
         for i, (q, decoders) in enumerate(zip(self._queues, self._decoder_sets)):
-            worker = threading.Thread(target=self._run, args=(q, decoders), daemon=True,
+            worker = threading.Thread(target=self._run, args=(q, decoders, i), daemon=True,
                                       name=f"radio-decoder-{i}")
             self._workers.append(worker)
             worker.start()
@@ -180,10 +188,12 @@ class RadioDecoderRuntime:
             self._queues[shard].put_nowait(frame)
             return True
         except queue.Full:
+            with self._shard_metrics_lock:
+                self._drops_by_shard[shard] += 1
             self._dropped += 1
             return False
 
-    def _run(self, q: queue.Queue[EphemeralRadioFrame], decoders: tuple[RadioDecoder, ...]) -> None:
+    def _run(self, q: queue.Queue[EphemeralRadioFrame], decoders: tuple[RadioDecoder, ...], shard_index: int) -> None:
         while not self._stop.is_set():
             try:
                 frame = q.get(timeout=0.1)
@@ -191,6 +201,10 @@ class RadioDecoderRuntime:
                 continue
             try:
                 self.ingest_frame(frame, decoders=decoders)
+                # Per-shard rates reveal hash collisions/backpressure without
+                # identifying source receivers or retaining their raw audio.
+                with self._shard_metrics_lock:
+                    self._frames_by_shard[shard_index] += 1
             except Exception:
                 self._errors += 1
             finally:
