@@ -1487,7 +1487,6 @@ def operator_overall_metrics(request: Request) -> dict[str, Any]:
         radio_bursts = n("radio_bursts", RadioBurstDB)
         radio_events = n("radio_events", RadioEventDB)
         satellite = n("satellite_observations", SatelliteObservationDB)
-        source_names = n("source_names", SourceObservationDB)
         # Number of distinct sources, not the number of observations.
         try:
             with db.begin_nested():
