@@ -254,8 +254,17 @@ def _canonical_voyage_evidence(
     # A bounded evidence window protects the API even on multi-year cases.
     since = start - timedelta(hours=6)
     until = min(end + timedelta(hours=6), since + timedelta(days=7))
+    # Canonical episode identities are typed: subj:mmsi:NNNNNNNNN and
+    # subj:imo:NNNNNNN. Only the explicit MMSI subject may be resolved here;
+    # never guess MMSI from an IMO or private radio association.
+    public_mmsis = set()
+    for subject in mmsis:
+        token = str(subject)
+        candidate = token.removeprefix("subj:mmsi:") if token.startswith("subj:mmsi:") else token
+        if len(candidate) == 9 and candidate.isdigit():
+            public_mmsis.add(candidate)
     vessels = []
-    for mmsi in sorted(m for m in mmsis if len(m) == 9 and m.isdigit())[:3]:
+    for mmsi in sorted(public_mmsis)[:3]:
         fixes = track_store.track(mmsi, since=since, until=until, limit=600)
         observations = []
         for point in fixes:
@@ -475,10 +484,8 @@ def _public_episode_dossier(db, episode, *, now: datetime) -> dict[str, Any]:
     return {
         **projection,
         "requested_incident_id": canonical_id,
-        "voyage_evidence": _canonical_voyage_evidence(
-            set(map(str, episode.subject_ids or [])),
-            start_at=episode.start_at, end_at=episode.end_at,
-        ),
+        # Episode-only public view has no approved vessel disclosure decision.
+        "voyage_evidence": {"status": "publication_gate_required", "vessels": []},
         "sar_mission_count": 0,
         "satellite_count": len(satellites),
         "satellite_evidence_count": satellite_evidence_count,
@@ -1389,7 +1396,9 @@ def play_incident_timeline(incident_id: str):
                     set(map(str, episode.subject_ids or [])) if episode is not None else set(),
                     start_at=episode.start_at if episode is not None else projection.get("reported_at"),
                     end_at=episode.end_at if episode is not None else projection.get("last_update_at"),
-                ),
+                ) if hypothesis.state == "published" else {
+                    "status": "publication_gate_required", "vessels": [],
+                },
                 "reason_codes": projection.get("reason_codes"),
                 "counter_indicators": projection.get("counter_indicators"),
                 "satellite_count": len(satellites),
