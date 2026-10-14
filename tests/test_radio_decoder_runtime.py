@@ -397,3 +397,32 @@ def test_decoder_reports_bridge_error_counts_without_details(tmp_path):
         assert decoder.bridge_errors == 1
     finally:
         decoder.close()
+
+
+def test_decoder_metrics_track_per_shard_activity_and_bounded_drops():
+    import time
+    from core.radio.decoder_runtime import RadioDecoderRuntime
+
+    class SlowDecoder:
+        def decode(self, frame):
+            time.sleep(0.004)
+            return ()
+
+    runtime = RadioDecoderRuntime(enabled=True,
+                                  decoders=(SlowDecoder(),),
+                                  decoder_factory=lambda: (SlowDecoder(),),
+                                  worker_count=3, queue_size=2,
+                                  decoded_handler=lambda msg: {"accepted": False})
+    for _ in range(40):
+        runtime.submit_frame(_frame())
+    for q in runtime._queues:
+        q.join()
+    status = runtime.status()
+    runtime.stop()
+    assert status["worker_count"] == 3
+    assert len(status["frames_by_shard"]) == 3
+    assert sum(status["frames_by_shard"]) == status["frames"]
+    assert sum(status["drops_by_shard"]) == status["dropped"]
+    assert status["dropped"] > 0
+    assert sum(status["queues"]) == 0
+    assert all(isinstance(value, int) for value in status["drops_by_shard"])

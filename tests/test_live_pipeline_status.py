@@ -285,3 +285,53 @@ def test_decoded_without_accepted_safety_observations_is_not_structured_live(mon
         "accepted": 0, "rejected": 4, "errors": 0, "dropped": 0, "worker_alive": True,
     })
     assert radio_acquisition_status()["structured_state"] == "degraded"
+
+
+def test_public_decoder_diagnostics_are_bounded_and_do_not_leak_private_data():
+    from core.acquisition.status import _sanitize_decoder
+    raw = {
+        "enabled": True, "worker_alive": True, "worker_count": 3,
+        "frames": 101, "accepted": 1, "rejected": 2, "decoded": 3,
+        "dropped": 4, "continuity_resets": 5, "state_evictions": 6,
+        "bridge_errors": 7, "queues": [1, 0, 2],
+        "frames_by_shard": [45, 50, 6], "drops_by_shard": [1, 3, 0],
+        "audio_quality": {
+            "sampled_frames": 10, "silent_frames": 2,
+            "clipped_frames": 0, "invalid_pcm_frames": 1,
+            "mean_rms": 0.118, "sampled_duration_s": 4.3,
+            "sampling_interval_frames": 64, "receiver_name": "SECRET",
+            "note": "private operator telemetry"},
+        "command": "/secret/dotnet", "payload": "RAW AUDIO",
+        "secret": "sensitive", "lineages": ["private-rx"],
+    }
+    safe = _sanitize_decoder(raw)
+    for key in ("bridge_errors", "continuity_resets", "state_evictions", "accepted",
+                "rejected", "worker_count", "frames_by_shard", "drops_by_shard", "audio_quality"):
+        assert key in safe
+    assert safe["audio_quality"]["mean_rms"] == 0.118
+    assert safe["queues"] == [1, 0, 2]
+    assert "SECRET" not in str(safe)
+    assert "private" not in str(safe).lower()
+    assert "RAW AUDIO" not in str(safe)
+    assert "command" not in str(safe)
+    assert "note" not in safe["audio_quality"]
+
+
+def test_public_decoder_diagnostics_rejects_unbounded_or_nonfinite_values():
+    from core.acquisition.status import _sanitize_decoder
+    safe = _sanitize_decoder({
+        "worker_count": "3", "frames": -1,
+        "queues": list(range(200)), "drops_by_shard": [0, "private"],
+        "frames_by_shard": [-1],
+        "decode_ratio": float("nan"), "drop_ratio": 2,
+        "audio_quality": {"sampled_frames": True, "mean_rms": float("inf"),
+                          "note": "private detail"},
+    })
+    assert "worker_count" not in safe
+    assert "frames" not in safe
+    assert "queues" not in safe
+    assert "drops_by_shard" not in safe
+    assert "frames_by_shard" not in safe
+    assert "decode_ratio" not in safe
+    assert "drop_ratio" not in safe
+    assert safe["audio_quality"] == {}

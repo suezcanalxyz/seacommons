@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -35,15 +36,57 @@ _ALLOWED_CHANNEL_FIELDS = frozenset(
         "active", "standby", "cooldown", "failovers",
     }
 )
-_ALLOWED_DECODER_FIELDS = frozenset(
-    {"enabled", "decoders", "frames", "decoded", "invalid", "dropped", "errors", "queued", "worker_alive", "decode_ratio", "drop_ratio"}
-)
+# Radio status is a public endpoint. Never expose receiver lineages, decoder
+# commands, raw PCM, payload bodies or free-form internal diagnostics here.
+_ALLOWED_DECODER_COUNTERS = frozenset({
+    "decoders", "frames", "decoded", "accepted", "rejected", "invalid",
+    "dropped", "errors", "queued", "worker_count", "continuity_resets",
+    "state_evictions", "bridge_errors",
+})
+_ALLOWED_AUDIO_COUNTERS = frozenset({
+    "sampled_frames", "silent_frames", "clipped_frames",
+    "invalid_pcm_frames", "sampling_interval_frames",
+})
+_ALLOWED_AUDIO_MEASUREMENTS = frozenset({"sampled_duration_s", "mean_rms"})
+_ALLOWED_DECODER_RATIOS = frozenset({"decode_ratio", "drop_ratio"})
+_ALLOWED_DECODER_SHARDS = frozenset({"queues", "frames_by_shard", "drops_by_shard"})
 
 
 def _sanitize_decoder(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
-    return {key: value.get(key) for key in _ALLOWED_DECODER_FIELDS if key in value}
+    out: dict[str, Any] = {}
+    for key in ("enabled", "worker_alive"):
+        if isinstance(value.get(key), bool):
+            out[key] = value[key]
+    for key in _ALLOWED_DECODER_COUNTERS:
+        item = value.get(key)
+        if type(item) is int and item >= 0:
+            out[key] = item
+    for key in _ALLOWED_DECODER_RATIOS:
+        item = value.get(key)
+        if type(item) in (float, int) and math.isfinite(item) and 0 <= item <= 1:
+            out[key] = round(float(item), 6)
+    # No arbitrary lists or identifiers. Maximum four worker shards by design.
+    for key in _ALLOWED_DECODER_SHARDS:
+        item = value.get(key)
+        if isinstance(item, (tuple, list)) and len(item) <= 4 and all(
+            type(n) is int and n >= 0 for n in item
+        ):
+            out[key] = list(item)
+    audio = value.get("audio_quality")
+    if isinstance(audio, dict):
+        safe_audio: dict[str, Any] = {}
+        for key in _ALLOWED_AUDIO_COUNTERS:
+            item = audio.get(key)
+            if type(item) is int and item >= 0:
+                safe_audio[key] = item
+        for key in _ALLOWED_AUDIO_MEASUREMENTS:
+            item = audio.get(key)
+            if type(item) in (float, int) and math.isfinite(item) and item >= 0:
+                safe_audio[key] = round(float(item), 5)
+        out["audio_quality"] = safe_audio
+    return out
 
 
 def register_acquisition_status(family: str, label: str, provider: StatusProvider) -> None:
