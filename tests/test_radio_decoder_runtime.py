@@ -221,3 +221,27 @@ def test_dsc_bridge_keeps_decoder_state_per_receiver_lineage():
     assert "Dictionary<string, DecoderState>" in source
     assert 'physical_lineage' in source
     assert 'streamKey' in source
+
+
+def test_pcm_quality_reports_silence_and_clipping_without_audio_persistence():
+    from core.radio.decoder_runtime import _pcm_quality, RadioDecoderRuntime
+    silence = _frame(b"\x00\x00" * 300)
+    q = _pcm_quality(silence)
+    assert q["valid_pcm"] and q["silent"] and not q["clipping"]
+    loud = _frame(b"\x7f\xff" * 300)  # network-order full-scale positive
+    q = _pcm_quality(loud)
+    assert q["valid_pcm"] and q["clipping"] and not q["silent"]
+    runtime = RadioDecoderRuntime(enabled=True, decoders=[], decoded_handler=lambda msg: {})
+    runtime.ingest_frame(silence)
+    status = runtime.status()
+    assert status["audio_quality"]["sampled_frames"] == 1
+    assert status["audio_quality"]["silent_frames"] == 1
+    assert "payload" not in repr(status)
+
+
+def test_pcm_quality_rejects_odd_length_and_supports_le():
+    from core.radio.decoder_runtime import _pcm_quality
+    from dataclasses import replace
+    assert not _pcm_quality(_frame(b"\x01"))["valid_pcm"]
+    frame = replace(_frame(b"\xff\x7f" * 200), encoding="openwebrx_pcm_s16le")
+    assert _pcm_quality(frame)["clipping"]
