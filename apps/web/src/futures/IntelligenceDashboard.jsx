@@ -97,7 +97,15 @@ function useOperatorMetrics(period){
    const url=period==='overall'?'/api/v1/operator/ingestion/overall-metrics':`/api/v1/operator/ingestion/overview?hours=${period==='7d'?168:24}`;
    const result=await fetchJson(resolveSiteApiBase(),url,undefined,period==='overall'?35000:30000);
    if(request===seq.current)setData(result);
-  }catch(e){if(request===seq.current){setData(null);setError('Intelligence data unavailable. Check the SeaCommons API connection.');}}
+  }catch(e){
+   if(period!=='overall'){
+    try{
+     const hours=period==='7d'?168:24;
+     const status=await fetchJson(resolveSiteApiBase(),`/api/v1/status?hours=${hours}`,undefined,30000);
+     if(request===seq.current){setData({lookback_hours:hours,generated_at:status.generated_at,pipeline_status:{pipeline:status.pipeline,sensor_activity:status.sensor_activity},fallback_public:true});setError('');}
+    }catch{if(request===seq.current){setData(null);setError('Intelligence data unavailable. Check the SeaCommons API connection.');}}
+   }else if(request===seq.current){setData(null);setError('Historical data currently unavailable. Retry the Overall summary.');}
+  }
   finally{if(request===seq.current)setLoading(false);}
  },[period]);
  React.useEffect(()=>{refresh();},[refresh]);
@@ -267,7 +275,7 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  return <><section className="future-page-head"><span className="future-eyebrow">SeaCommons / Intelligence</span><h1>Evidence, from first signal to human review.</h1><p>One canonical pipeline. Follow what was collected, what software inferred and which cases have independent support. The volumes describe different evidence layers; they must not be added together.</p></section>
  <div className="future-period-tabs" aria-label="Intelligence time window"><div role="group" aria-label="Intelligence time window">{[['24h','24 hours'],['7d','7 days'],['overall','Overall']].map(([id,label])=><button type="button" aria-pressed={period===id} className={period===id?'is-active':''} onClick={()=>setPeriod(id)} key={id}>{label}</button>)}</div><small>{isOverall?'All records currently retained, irrespective of the age of the source event':period==='7d'?'Rolling seven days':'Rolling 24 hours'}</small></div>
  <nav className="future-intelligence-subnav" aria-label="Intelligence sections">{TABS.map(([key,title])=><button key={key} type="button" className={key===tab?'is-active':''} aria-current={key===tab?'page':undefined} onClick={()=>setTab(key)}>{title}</button>)}</nav>
- <div className="future-intelligence-freshness"><span>{operator.loading?'Loading operator aggregates…':operator.data?'Canonical Intelligence data':operator.error?'Intelligence data unavailable · limited fallback':'Awaiting operational data'}</span><small>{operator.data?.generated_at?'Generated '+stamp(operator.data.generated_at):'No operator snapshot available'}</small><button type="button" onClick={operator.refresh}>Refresh</button></div>
+ <div className="future-intelligence-freshness"><span>{operator.loading?'Loading operator aggregates…':operator.data?(operator.data.fallback_public?'Canonical public status · operator details unavailable':'Canonical Intelligence data'):operator.error?'Intelligence data unavailable · limited fallback':'Awaiting operational data'}</span><small>{operator.data?.generated_at?'Generated '+stamp(operator.data.generated_at):'No operator snapshot available'}</small><button type="button" onClick={operator.refresh}>Refresh</button></div>
  {operator.error&&<p className="future-inline-note" role="status">{operator.error} This dashboard does not use demonstration totals or hard-coded figures.</p>}
  <IntelligenceMetricGrid period={period} pipeline={pipeline} sensorsData={specialSensors} loadedAt={raw?.generated_at||status?.generated_at} estimated={Boolean(isOverall&&sensorsData?.ais_fixes_estimated)}/>
  {tab==='pipeline'&&<><MeasurementContract period={period}/><section className="future-section"><h2>01 / Canonical evidence funnel</h2><p>From raw source messages to independent corroboration and review. Raw records, normalized events, derived cues, episodes and hypotheses describe overlapping processing stages, not sequential case conversion.</p><StagePanels rows={allStages} lookup={pipeline}/></section><section className="future-section"><h2>02 / Collection context</h2><p>In the supplied operator snapshot, raw observations substantially outnumber normalized events. This is expected: high-volume AIS telemetry is filtered and grouped. The dashboard always shows current API values instead of preserving the snapshot as if it were live.</p>{isOverall&&<p>First raw intake: {stamp(raw?.first_last?.raw_first)}. Latest raw intake: {stamp(raw?.first_last?.raw_latest)}. Historical dates inside sources may predate SeaCommons.</p>}</section></>}
