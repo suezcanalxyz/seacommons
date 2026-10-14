@@ -320,5 +320,5 @@ test('Agents displays protected scheduler snapshot with two real task records', 
  await page.goto(FUTURES_URL+'?view=agents');
  await expect(page.getByText('SeaCommons Forensic Repair Loop')).toBeVisible();
  await expect(page.getByText('SeaCommons Upgrade Research')).toBeVisible();
- await expect(page.getByText(/read-only snapshot/i)).toBeVisible();
+ await expect(page.getByText(/read-only snapshot/i).first()).toBeVisible();
 });
