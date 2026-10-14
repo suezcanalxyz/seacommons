@@ -255,8 +255,11 @@ namespace TAOSW.DSC_Decoder.Core
                 cursor++;
             }
 
-            int dxCursor = 6;
-            foreach (var _dx in dxStream.Skip(6))
+            // Seven DX phasing characters (125) precede the first DSC
+            // information format specifier. Skip *all* seven; skipping only
+            // six prepends 125 as the format and rejects every valid call.
+            int dxCursor = 7;
+            foreach (var _dx in dxStream.Skip(7))
             {
 
                 if (_dx != -1) symbols.Add(_dx);
