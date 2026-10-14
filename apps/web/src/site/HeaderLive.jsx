@@ -34,8 +34,11 @@ export default function HeaderLive() {
   useEffect(() => {
     aliveRef.current = true;
     const apiBase = resolveSiteApiBase();
+    let inFlight = false;
 
     async function poll() {
+      if (document.visibilityState === 'hidden' || inFlight) return;
+      inFlight = true;
       try {
         const data = await fetchJson(apiBase, '/api/v1/live/signals?limit=30&days=2', undefined, 6000);
         if (!aliveRef.current) return;
@@ -48,13 +51,20 @@ export default function HeaderLive() {
       } catch {
         if (!aliveRef.current) return;
         setFailed(true);
+      } finally {
+        inFlight = false;
       }
     }
 
     poll();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') poll();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     const timer = window.setInterval(poll, POLL_MS);
     return () => {
       aliveRef.current = false;
+      document.removeEventListener('visibilitychange', onVisibility);
       window.clearInterval(timer);
     };
   }, []);

@@ -169,6 +169,8 @@ export function useLiveFeed({
     }
 
     async function pollOnce() {
+      // Background tabs do not need to keep invoking Vercel functions.
+      if (document.visibilityState === 'hidden') return;
       try {
         const data = await fetchJson(apiBase, feedPath);
         if (!alive || edgeLiveActiveRef.current) return;
@@ -403,7 +405,7 @@ export function useLiveFeed({
     let alive = true;
     let timer = null;
     async function refreshPipeline() {
-      try {
+      if (document.visibilityState !== 'hidden') try {
         const payload = await fetchJson(apiBase, '/api/v1/live/pipeline', undefined, 5000);
         if (alive) setPipelineSources(normalizePipelineSources(payload));
       } catch {

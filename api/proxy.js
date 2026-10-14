@@ -58,6 +58,26 @@ export function selectUpstream(headers) {
     : 'demo-api.seacommons.org';
 }
 
+// Only explicitly published, anonymous read contracts may be cached.
+// Futures/operator data and all mutations must pass through uncached.
+export function publicProxyCacheSeconds(headers, method, path, status = 200, upstreamHeaders = {}) {
+  if (!['GET', 'HEAD'].includes(method) || status !== 200) return 0;
+  if (headers.authorization || headers.cookie || headers['x-api-key']) return 0;
+  if (upstreamHeaders['set-cookie']) return 0;
+  if (String(upstreamHeaders.vary || '').split(',').some(item => ['authorization', 'cookie', '*'].includes(item.trim().toLowerCase()))) return 0;
+  const host = requestHostname(headers);
+  const pathname = String(path).split('?')[0];
+  if (['seacommons.org', 'play.seacommons.org'].includes(host)) {
+    if (pathname === '/api/v1/play/counts') return 45;
+    if (pathname === '/api/v1/play/incidents' || (pathname.startsWith('/api/v1/play/incidents/') && pathname.endsWith('/timeline') && pathname.split('/').length === 7)) return 30;
+  }
+  if (host === 'live.seacommons.org') {
+    if (pathname === '/api/v1/live/pipeline') return 20;
+    if (['/api/v1/live/platforms', '/api/v1/live/ngo-vessels', '/api/v1/live/sanctioned-vessels'].includes(pathname)) return 15;
+  }
+  return 0;
+}
+
 function requestHeaders(headers, upstreamVirtualHost) {
   const forwarded = {};
   for (const [name, value] of Object.entries(headers)) {
@@ -73,30 +93,32 @@ function requestHeaders(headers, upstreamVirtualHost) {
 
 export default function handler(req, res) {
   const upstreamVirtualHost = selectUpstream(req.headers);
+  const path = upstreamPath(req.query || {});
   const upstream = http.request(
     {
       hostname: UPSTREAM_HOST,
       port: 80,
       method: req.method,
-      path: upstreamPath(req.query || {}),
+      path,
       headers: requestHeaders(req.headers, upstreamVirtualHost),
     },
     (response) => {
       res.statusCode = response.statusCode || 502;
       for (const [name, value] of Object.entries(response.headers)) {
         const lower = name.toLowerCase();
-        if (lower === 'cache-control') continue; // forced below, never trust upstream's
+        if (['cache-control', 'cdn-cache-control', 'vercel-cdn-cache-control'].includes(lower)) continue; // never trust upstream cache directives
         if (!HOP_BY_HOP_HEADERS.has(lower) && value !== undefined) {
           res.setHeader(name, value);
         }
       }
-      // Unlike api/live.js's dedicated signals/sources/drifts/archives paths,
-      // this generic catch-all has no per-resource logic to reason about —
-      // every route through it (ngo-vessels, platforms, anything not given
-      // its own named vercel.json rewrite) must never be cached by the
-      // browser or Vercel's edge, or a stale AIS/platform snapshot could
-      // silently outlive its own 120s refresh cycle.
-      res.setHeader('cache-control', 'no-store');
+      const seconds = publicProxyCacheSeconds(req.headers, req.method, path, res.statusCode, response.headers);
+      if (seconds) {
+        res.setHeader('cache-control', 'public, max-age=0, must-revalidate');
+        res.setHeader('cdn-cache-control', `public, s-maxage=${seconds}, stale-while-revalidate=${Math.min(seconds, 30)}`);
+        res.setHeader('x-seacommons-public-cache', `${seconds}s`);
+      } else {
+        res.setHeader('cache-control', 'no-store');
+      }
       res.setHeader('x-seacommons-proxy', upstreamVirtualHost);
       response.pipe(res);
     },

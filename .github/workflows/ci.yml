@@ -78,6 +78,8 @@ jobs:
         run: npm run lint:js:full
         continue-on-error: true
       - run: npm test
+      - name: Test Vercel proxy cache privacy boundaries
+        run: node --test ../../api/*.test.mjs
       - run: npm run build:unified
       - name: audit production dependencies
         run: npm audit --omit=dev --audit-level=high
