@@ -123,3 +123,9 @@ A **single analysis chain** is authoritative; new UX views must not establish sh
 **Evidence validity:** A gap between two retained AIS fixes may come from collection or retention. A drawn segment does not assert the precise route and a port call does not establish loading/unloading. The UI historical cutoff must constrain visible AIS records. The reception expectation model and existing episode evidence stages remain distinct from vessel intent or cargo hypotheses.
 
 **Not yet built:** Permanent cold-storage raw observations; independently calibrated AIS-gap benchmark; multi-seed physical humanitarian macro-drift; comprehensive external cargo manifests and primary sanctions grounds; independent review of 20 real-world incidents. These are milestones, not already delivered features.
+
+### AIS raw-track cold retention (implementation, activation gated)
+
+`core.vessels.track_store.TrackStore.prune` now exports bounded, immutable `cold/ais-tracks/v1/<year>/<id-range>-<sha256>.json.gz` records through `core.object_store` **before** deleting the corresponding original hot-table rows. It retrieves the compressed artifact and compares SHA-256 prior to a committed delete; storage failure preserves SQL rows. This extends the canonical track history lifecycle rather than creating a parallel DB/service.
+
+Deployment gate: **object-store connectivity must succeed from the Oracle VM** and a retrieval/replay reader must be validated before this can be called a fully searchable permanent archive. As of 2026-10-14 the configured Cloudflare R2 endpoint fails TLS handshake from the VM, so cold retention is not operational. Never claim archived history exists without a completed successful batch and verifiable object key. The 60-day hot-store limit is not retroactive recovery of observations already deleted.

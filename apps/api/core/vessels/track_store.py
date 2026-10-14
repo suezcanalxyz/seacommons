@@ -6,7 +6,8 @@ rendezvous (STS) / loiter / spoof-pattern / identity-drift detection all need a
 *history*. This module subscribes to the single shared AIS position hook
 (`core/vessels/aisstream.register_position_hook`), throttles to at most one row
 per MMSI per `VESSEL_TRACK_MIN_INTERVAL_S`, buffers, and bulk-inserts into
-`vessel_tracks` on an interval. A daily prune keeps a rolling window.
+`vessel_tracks` on an interval. A bounded, verified archival prune moves expired fixes into the canonical
+private object store before releasing hot-table rows.
 
 Fast reads that don't need the DB (last-seen, silence sweep) are served from an
 in-memory `_last` dict kept in step with the writes.
@@ -176,20 +177,63 @@ class TrackStore:
             return 0
 
     def prune(self, older_than_days: Optional[int] = None) -> int:
+        """Archive verified compressed AIS batches before deleting from hot storage.
+
+        Uses the existing configured private object store, no shadow SQL table.
+        Object PUT+GET hash round-trip precedes DB delete. Failure is fail-closed.
+        Each run is bounded to prevent memory spikes in the Live API process.
+        """
+        import gzip
+        import hashlib
+        import json
+
         days = older_than_days or int(getattr(config, "VESSEL_TRACK_RETENTION_DAYS", 60))
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        try:
-            from core.db.models import VesselTrackDB
-            from core.db.session import session_scope
-
-            with session_scope() as db:
-                n = db.query(VesselTrackDB).filter(VesselTrackDB.ts < cutoff).delete(synchronize_session=False)
-            if n:
-                logger.info("TrackStore: pruned %d track rows older than %dd", n, days)
-            return n
-        except Exception as exc:  # pragma: no cover
-            logger.warning("TrackStore prune failed: %s", exc)
+        if not (config.OBJECT_STORAGE_ENDPOINT and config.OBJECT_STORAGE_ACCESS_KEY
+                and config.OBJECT_STORAGE_SECRET_KEY):
+            logger.warning("AIS prune postponed: durable object-storage credentials unavailable")
             return 0
+        from core.db.models import VesselTrackDB
+        from core.db.session import session_scope
+        from core import object_store
+
+        archived = 0
+        try:
+            for _batch in range(8):
+                with session_scope() as db:
+                    rows = (db.query(VesselTrackDB)
+                            .filter(VesselTrackDB.ts < cutoff)
+                            .order_by(VesselTrackDB.id.asc())
+                            .limit(2000).all())
+                    if not rows:
+                        break
+                    payload = [{
+                        "id": row.id, "mmsi": row.mmsi,
+                        "ts": row.ts.isoformat(), "received_at": row.received_at.isoformat(),
+                        "lat": row.lat, "lon": row.lon, "sog": row.sog,
+                        "cog": row.cog, "heading": row.heading,
+                        "nav_status": row.nav_status, "source": row.source,
+                    } for row in rows]
+                    plain = json.dumps({"schema": "vessel_tracks_v1", "rows": payload},
+                                       sort_keys=True, separators=(",", ":")).encode("utf-8")
+                    compressed = gzip.compress(plain, mtime=0)
+                    digest = hashlib.sha256(compressed).hexdigest()
+                    key = (f"cold/ais-tracks/v1/{rows[0].ts.year:04d}/"
+                           f"{rows[0].id}-{rows[-1].id}-{digest[:20]}.json.gz")
+                    object_store.put(key, compressed, "application/gzip")
+                    verified = object_store.get(key)
+                    if hashlib.sha256(verified).hexdigest() != digest:
+                        raise ValueError("AIS cold archive integrity check failed")
+                    ids = [r.id for r in rows]
+                    n = (db.query(VesselTrackDB).filter(VesselTrackDB.id.in_(ids),
+                              VesselTrackDB.ts < cutoff).delete(synchronize_session=False))
+                archived += n
+                logger.info("AIS cold archive verified and committed key=%s rows=%s", key, n)
+                if len(rows) < 2000:
+                    break
+        except Exception:
+            logger.exception("AIS archival aborted; unverified rows preserved in DB")
+        return archived
 
     def hydrate_recent_last_seen(self, *, max_age_hours: float = 12.0) -> int:
         """Restore the latest persisted fix per MMSI into the in-memory gap index.
