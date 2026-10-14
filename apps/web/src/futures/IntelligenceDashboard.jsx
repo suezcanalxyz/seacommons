@@ -96,7 +96,7 @@ function useOperatorMetrics(period){
   try{
    const url=period==='overall'?'/api/v1/operator/ingestion/overall-metrics':`/api/v1/operator/ingestion/overview?hours=${period==='7d'?168:24}`;
    const result=await fetchJson(resolveSiteApiBase(),url,undefined,period==='overall'?35000:30000);
-   if(request===seq.current)setData(result);
+   if(request===seq.current){setData(result);setError('');}
   }catch(e){
    if(period!=='overall'){
     try{
@@ -272,7 +272,7 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  };
  const allStages=stages.filter(x=>x[0]!=='analysis_outputs'&&(!isOverall||x[0]!=='public_live'));
  const specialSensors=isOverall&&sensorsData?{...sensorsData,active_source_names:sensorsData.source_names}:sensorsData;
- return <><section className="future-page-head future-intelligence-compact-head"><span className="future-eyebrow">SeaCommons / Intelligence</span><h1>Intelligence</h1><p>Collection, inference and human review. Distinct metrics, traceable evidence.</p></section>
+ return <><div className="future-intelligence-tagline"><span className="future-eyebrow">SeaCommons / Intelligence</span><span>Collection · inference · review</span></div>
  <div className="future-period-tabs" aria-label="Intelligence time window"><div role="group" aria-label="Intelligence time window">{[['24h','24 hours'],['7d','7 days'],['overall','Overall']].map(([id,label])=><button type="button" aria-pressed={period===id} className={period===id?'is-active':''} onClick={()=>setPeriod(id)} key={id}>{label}</button>)}</div><small>{isOverall?'All records currently retained, irrespective of the age of the source event':period==='7d'?'Rolling seven days':'Rolling 24 hours'}</small></div>
  <nav className="future-intelligence-subnav" aria-label="Intelligence sections">{TABS.map(([key,title])=><button key={key} type="button" aria-pressed={key===tab} className={key===tab?'is-active':''} onClick={()=>setTab(key)}>{title}</button>)}</nav>
  <div className="future-intelligence-freshness"><span>{operator.loading?'Loading operator aggregates…':operator.data?(operator.data.fallback_public?'Canonical public status · operator details unavailable':'Canonical Intelligence data'):operator.error?'Intelligence data unavailable · limited fallback':'Awaiting operational data'}</span><small>{operator.data?.generated_at?'Generated '+stamp(operator.data.generated_at):'No operator snapshot available'}</small><button type="button" onClick={operator.refresh}>Refresh</button></div>
