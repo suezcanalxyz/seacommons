@@ -381,3 +381,18 @@ test('Intelligence metric glossary remains operable and contained on a phone vie
  expect(box.x).toBeGreaterThanOrEqual(-1);
  expect(box.x+box.width).toBeLessThanOrEqual(392);
 });
+
+test('Agents shows loading rather than an empty registry while the snapshot request is pending', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/scheduled-tasks',async route=>{
+   await new Promise(resolve=>setTimeout(resolve,700));
+   await route.fulfill({json:{source:'ChatGPT Tasks snapshot',live_sync:false,synced_at:'2026-10-15T12:00:00Z',tasks:[
+    {title:'SeaCommons Forensic Repair Loop',enabled:true,cadence:'Every 3 hours',timezone:'Europe/Rome'},
+   ]}});
+ });
+ await page.goto(FUTURES_URL+'?view=agents');
+ await expect(page.getByText('Loading scheduled tasks…')).toBeVisible();
+ await expect(page.getByText(/No synchronized SeaCommons tasks/)).toHaveCount(0);
+ await expect(page.getByText('SeaCommons Forensic Repair Loop')).toBeVisible();
+ await expect(page.getByText('Loading scheduled tasks…')).toHaveCount(0);
+});
