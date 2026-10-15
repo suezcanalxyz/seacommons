@@ -464,13 +464,14 @@ test('Platform device study distinguishes engineering concept from photographed 
 
 test('An expired evidence identity is distinguished from a database outage', async ({page}) => {
  await mockOperationalContracts(page);
- let protectedOverallRequests=0;
+ let primaryOverallRequests=0;
+ let secondProtectedEndpointRequests=0;
  await page.route('**/api/v1/operator/ingestion/overall-metrics', route=>{
-   protectedOverallRequests++;
+   primaryOverallRequests++;
    return route.fulfill({status:401,json:{detail:'Invalid Futures session'}});
  });
  await page.route('**/api/v1/operator/ingestion/overall', route=>{
-   protectedOverallRequests++;
+   secondProtectedEndpointRequests++;
    return route.fulfill({status:401,json:{detail:'Invalid Futures session'}});
  });
  await page.goto(FUTURES_URL+'?view=intelligence');
@@ -478,7 +479,8 @@ test('An expired evidence identity is distinguished from a database outage', asy
  await expect(page.getByRole('alert')).toContainText('rejected this session');
  await expect(page.getByRole('button',{name:/Review account access/})).toBeVisible();
  await expect(page.getByRole('status').filter({hasText:'Partial Overall evidence'})).toContainText('378,826');
- expect(protectedOverallRequests).toBe(1); // no pointless second private endpoint on 401
+ expect(primaryOverallRequests).toBeGreaterThanOrEqual(1); // StrictMode can remount the same effect
+ expect(secondProtectedEndpointRequests).toBe(0); // never fallback to another private endpoint on 401
 });
 
 test('An invalid historical count cannot silently become zero', async ({page})=>{
