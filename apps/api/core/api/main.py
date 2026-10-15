@@ -37,9 +37,12 @@ from core.db.session import init_database
 from core.security import READ_ROLES, WRITE_ROLES, require_roles, validate_production_security
 from core.config_validation import validate_configuration
 from core.observability import configure_logging, metrics_middleware
+from core.health_logging import SuccessfulLocalHealthAccessFilter
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 configure_logging()
+if os.getenv("SEACOMMONS_LOG_HEALTH_SUCCESSES", "").lower() not in {"1", "true", "yes"}:
+    logging.getLogger("uvicorn.access").addFilter(SuccessfulLocalHealthAccessFilter())
 logger = logging.getLogger("seacommons.api")
 
 
