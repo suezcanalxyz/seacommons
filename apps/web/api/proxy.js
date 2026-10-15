@@ -77,7 +77,7 @@ export function isFuturesAllowedRequest(headers, method, path) {
   if (pathname.includes('%') || pathname.includes('\\') || /\/\.{1,2}(?:\/|$)|\/\//.test(pathname)) return false;
   if (FUTURES_PUBLIC_READ_PATHS.has(pathname)) return true;
   const authorization = headers.authorization;
-  const bearer = typeof authorization === 'string' && /^Bearer\\s+\\S+$/i.test(authorization);
+  const bearer = typeof authorization === 'string' && /^Bearer\s+\S+$/i.test(authorization);
   return bearer && pathname.startsWith('/api/v1/operator/ingestion/');
 }
 
