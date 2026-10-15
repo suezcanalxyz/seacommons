@@ -1,6 +1,6 @@
 # SeaCommons storage and ingestion architecture (ADR, 2026-10-15)
 
-**Programme:** #334, Oracle capacity #336, AIS integrity #333, R2 probe #337, log noise #338.  
+**Programme:** #334, Oracle capacity #336, AIS integrity #333, R2 probe #337, log noise #338.
 **Status:** PROPOSED; components require independent review, CI, recovery tests and controlled rollout. This is the target architecture, not a statement that production has migrated.
 
 ## Architectural decision
