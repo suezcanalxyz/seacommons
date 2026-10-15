@@ -81,6 +81,11 @@ class TrackStore:
                 reserved_disk_bytes=int(
                     os.getenv("SEACOMMONS_AIS_SPOOL_DISK_RESERVE_BYTES", str(2 * 1024**3))
                 ),
+                allow_temporary_test_path=(
+                    bool(os.getenv("PYTEST_CURRENT_TEST"))
+                    and config.RUNTIME_PROFILE.lower() not in {"production", "prod"}
+                    and os.getenv("SEACOMMONS_AIS_SPOOL_ALLOW_TMP_FOR_TESTS") == "true"
+                ),
             )
             logger.info("AIS durable spool enabled, pending=%d", self._spool.stats()["pending"])
 
