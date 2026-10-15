@@ -403,3 +403,19 @@ test('Agents shows loading rather than an empty registry while the snapshot requ
  await expect(page.getByText('SeaCommons Forensic Repair Loop')).toBeVisible();
  await expect(page.getByText('Loading scheduled tasks…')).toHaveCount(0);
 });
+
+
+test('Intelligence labels the real source and clearly distinguishes loading, results and retry', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/overview?hours=24', route=>route.fulfill({json:{
+   lookback_hours:24,generated_at:'2026-10-15T12:00:00Z',
+   pipeline_status:{pipeline:{raw_observations:125,parsed_events:27},sensor_activity:{ais_fixes:411}},
+ }}));
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ await expect(page.getByLabel('Evidence data provenance')).toContainText('Protected evidence API');
+ await expect(page.getByLabel('Evidence data provenance')).toContainText('Rolling 24 hours');
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=raw_observations]')).toContainText('125');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'7 days'}).click();
+ await expect(page.getByLabel('Evidence data provenance')).toContainText('Rolling 168 hours');
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=raw_observations]')).not.toContainText('125');
+});
