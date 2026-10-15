@@ -275,15 +275,19 @@ def test_gap_scan_suppresses_common_port_wide_outage():
 
 
 def test_reappeared_gap_is_persisted_resolved_and_re_evaluated(monkeypatch):
-    from core.db.models import IntelEventDB, VesselTrackDB
+    from core.db.models import IntelEventDB, MaritimeEpisodeDB, VesselTrackDB
+    from core.db.session import engine
+    MaritimeEpisodeDB.__table__.create(bind=engine(), checkfirst=True)
     from core.db.session import session_scope
 
     mmsi = "111009901"
     event_id = f"aisgap:{mmsi}"
+    episode_id = f"episode:test:reappeared:{mmsi}"
     now = datetime.now(timezone.utc)
     emitted_at = now - timedelta(hours=1)
     with session_scope() as db:
         db.query(IntelEventDB).filter(IntelEventDB.id == event_id).delete()
+        db.query(MaritimeEpisodeDB).filter_by(episode_id=episode_id).delete()
         db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == mmsi).delete()
         db.add(IntelEventDB(
             id=event_id,
@@ -303,6 +307,27 @@ def test_reappeared_gap_is_persisted_resolved_and_re_evaluated(monkeypatch):
                 "analysis_state": "evidence_candidate",
                 "resolution_state": "open",
             },
+        ))
+        db.add(MaritimeEpisodeDB(
+            episode_id=episode_id,
+            episode_family="gap_episode",
+            subject_ids=[f"subj:mmsi:{mmsi}"],
+            start_at=(emitted_at - timedelta(hours=4)).replace(tzinfo=None),
+            end_at=emitted_at.replace(tzinfo=None),
+            geometry={"type": "Point", "coordinates": [15.0, 35.0]},
+            observation_ids=[f"ais:{event_id}"],
+            feature_ids=[],
+            independence_groups=["ais_sensor_lineage"],
+            verification_status="single_source_observed",
+            behaviour_context={"analysis": {
+                "resolution_state": "open",
+                "publication_state": "published",
+                "analysis_state": "evidence_candidate",
+            }},
+            alternative_explanations=[],
+            evidence_fingerprint="reappearance-test",
+            method_version="test",
+            status="active",
         ))
         db.add(VesselTrackDB(
             mmsi=mmsi,
@@ -332,6 +357,11 @@ def test_reappeared_gap_is_persisted_resolved_and_re_evaluated(monkeypatch):
         assert row.meta["gap_still_open"] is False
         assert row.meta["gap_reappearance_confirmed"] is True
         assert row.meta["resolution_state"] == "resolved"
+        episode = db.get(MaritimeEpisodeDB, episode_id)
+        assert episode.status == "resolved"
+        assert episode.behaviour_context["analysis"]["resolution_state"] == "resolved"
+        assert episode.behaviour_context["analysis"]["gap_reappearance_confirmed"] is True
+        db.delete(episode)
         db.delete(row)
         db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == mmsi).delete()
 

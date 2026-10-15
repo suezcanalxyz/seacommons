@@ -71,15 +71,18 @@ const FUTURES_PUBLIC_READ_PATHS = new Set([
 
 export function isFuturesAllowedRequest(headers, method, path) {
   if (requestHostname(headers) !== 'futures.seacommons.org') return true;
-  if (!['GET', 'HEAD'].includes(method)) return false;
+  if (!['GET', 'HEAD', 'POST'].includes(method)) return false;
   const pathname = String(path || '').split('?')[0];
   // Refuse ambiguous route spellings before either proxy or backend can
   // normalize/decode them into a more privileged path.
   if (pathname.includes('%') || pathname.includes('\\') || /\/\.{1,2}(?:\/|$)|\/\//.test(pathname)) return false;
-  if (FUTURES_PUBLIC_READ_PATHS.has(pathname)) return true;
+  if (['GET', 'HEAD'].includes(method) && FUTURES_PUBLIC_READ_PATHS.has(pathname)) return true;
   const authorization = headers.authorization;
   const bearer = typeof authorization === 'string' && /^Bearer\s+\S+$/i.test(authorization);
-  return bearer && pathname.startsWith('/api/v1/operator/ingestion/');
+  if (!bearer) return false;
+  if (pathname === '/api/v1/operator/ais-reviews') return method === 'GET' || method === 'POST';
+  if (pathname === '/api/v1/operator/ais-reviews/lookup') return method === 'GET';
+  return method === 'GET' && pathname.startsWith('/api/v1/operator/ingestion/');
 }
 
 // Only explicitly published, anonymous read contracts may be cached.

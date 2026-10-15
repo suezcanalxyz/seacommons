@@ -264,6 +264,33 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
         logger.exception("Failed to project open MaritimeEpisode dossiers")
         return []
 
+    # Read the canonical AIS registry, never a third-party tracking widget.
+    # A published episode is an immutable *event location*, not a vessel's
+    # position. If a later AIS fix proves a reporting gap has ended, the
+    # historical dossier belongs in Play, not in an active Live gap. This
+    # read-side guard prevents slow MDA scans / delayed durable reconciliation
+    # from continuing to advertise a known-reappeared vessel as dark.
+    from core.vessels.registry import registry
+
+    candidate_mmsis = {
+        str(event.get("linked_mmsi") or "").strip()
+        for event in event_by_id.values()
+        if str(event.get("linked_mmsi") or "").strip()
+    }
+    candidate_mmsis.update(
+        str(subject).removeprefix("subj:mmsi:")
+        for row in rows for subject in row.get("subject_ids") or ()
+        if str(subject).startswith("subj:mmsi:")
+    )
+    latest_ais_by_mmsi = {}
+    if candidate_mmsis:
+        for vessel in registry.get_last_known_geojson(candidate_mmsis).get("features", []):
+            properties = vessel.get("properties") or {}
+            mmsi = str(properties.get("mmsi") or "").strip()
+            observed = _parse_live_timestamp(properties.get("last_seen"))
+            if mmsi and observed is not None and observed <= now + timedelta(minutes=5):
+                latest_ais_by_mmsi[mmsi] = (observed, vessel)
+
     family_to_anomaly = {
         "gap_episode": "long_gap",
         "rendezvous_episode": "ais_rendezvous",
@@ -376,6 +403,13 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
                 ),
                 "",
             )
+
+        latest_ais = latest_ais_by_mmsi.get(linked_mmsi)
+        if (family == "gap_episode" and latest_ais is not None
+                and latest_ais[0] > row["end_at"] + timedelta(minutes=5)):
+            # The AIS fix is a later direct observation, not a prediction.
+            # Keep the original event coordinates intact in Play.
+            continue
 
         from core.intel.assessment import build_assessment
 

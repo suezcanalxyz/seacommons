@@ -536,3 +536,42 @@ test('Overall path is a public fixed endpoint, not a token or operator shortcut'
  expect(seen.length).toBeGreaterThan(0);
  expect(seen.every(x=>x.url.endsWith('/api/v1/futures/intelligence-overall'))).toBe(true);
 });
+
+test('Futures side-by-side AIS map selects a Live case and targets VesselFinder by IMO', async ({ page }) => {
+  await mockOperationalContracts(page);
+  await page.route('**/api/v1/live/signals?*', (route) => route.fulfill({ json: {
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature', id: 'episode:subj:imo:9316359:gap_episode:1',
+      geometry: { type:'Point', coordinates: [-1.15086,37.16512] },
+      properties: {
+        id:'episode:subj:imo:9316359:gap_episode:1', title:'AIS gap - MSC SPRING III',
+        linked_mmsi:'636017239', imo:'9316359', anomaly_type:'long_gap',
+        timestamp_utc:'2026-10-15T03:40:06Z',
+      },
+    }],
+  } }));
+  await page.route('**/api/v1/operator/ais-reviews/lookup?*', (route) => route.fulfill({ json: {
+    vessels: [{mmsi:'636017239',imo:'9316359',ship_name:'MSC SPRING III',
+      lat:35.9845, lon:-5.5212,last_seen:'2026-10-15T12:24:45Z'}],
+  } }));
+  await page.route('**/api/v1/operator/ais-reviews?*', (route) =>
+    route.fulfill({ json: { case_id:'episode:subj:imo:9316359:gap_episode:1', reviews:[], count:0 } }));
+
+  await page.goto(FUTURES_URL + '?view=ais-check');
+  await expect(page.getByRole('heading', {name:'AIS cross-check.'})).toBeVisible();
+  await expect(page.getByRole('application', {name:'SeaCommons Live maritime cases map'})).toBeVisible();
+  await expect(page.locator('iframe[title*="VesselFinder"]')).toHaveCount(0);
+  await page.getByRole('button',{name:/AIS gap - MSC SPRING III/i}).click();
+  await expect(page.locator('iframe[title*="VesselFinder"]')).toHaveAttribute('sandbox','allow-scripts');
+  await expect(page.locator('iframe[title*="VesselFinder"]')).toHaveAttribute('referrerpolicy','no-referrer');
+  const html = await page.locator('iframe[title*="VesselFinder"]').getAttribute('srcdoc');
+  expect(html).toContain('var imo="9316359"');
+  await expect(page.getByText('5.52120° W', {exact:false})).toBeVisible();
+  await expect(page.getByText('Anomaly’s historical location', {exact:false})).toBeVisible();
+  await page.getByText('False positive').click();
+  await page.getByText('Consistent', {exact:true}).click();
+  await expect(page.getByRole('button',{name:'Save evidence review'})).toBeDisabled();
+  await page.getByPlaceholder(/Explain what was observed/).fill('The gap coincides with known coverage limitations and the vessel resumed transmissions.');
+  await expect(page.getByRole('button',{name:'Save evidence review'})).toBeEnabled();
+});

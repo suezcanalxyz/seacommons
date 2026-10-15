@@ -2566,7 +2566,7 @@ def test_single_lineage_position_integrity_evidence_does_not_bypass_hypothesis_g
     ) is None
 
 
-def test_public_live_hides_legacy_gap_without_strong_reception_expectation() -> None:
+def test_public_live_hides_legacy_gap_without_strong_reception_expectation(monkeypatch) -> None:
     from core.db.models import IntelEventDB, MaritimeEpisodeDB
     from core.db.session import engine, session_scope
     from core.live.feed import _published_open_episode_features
@@ -2672,6 +2672,28 @@ def test_public_live_hides_legacy_gap_without_strong_reception_expectation() -> 
             "STRONG_RECEPTION_EXPECTATION",
             "PROLONGED_OFFSHORE_GAP",
         ]
+
+        # A fresh observed AIS return must immediately suppress an open Live
+        # gap, even if the durable MDA resolver has not run yet. The original
+        # dossier geometry remains available for the historical Play archive.
+        from core.vessels.registry import registry
+
+        with session_scope() as db:
+            row = db.get(MaritimeEpisodeDB, strong_episode)
+            row.end_at = now - timedelta(minutes=20)
+
+        monkeypatch.setattr(
+            registry, "get_last_known_geojson",
+            lambda mmsis=None: {"features": [{
+                "geometry": {"type": "Point", "coordinates": [15.0, 36.0]},
+                "properties": {
+                    "mmsi": "111000222",
+                    "last_seen": datetime.now(timezone.utc).isoformat(),
+                },
+            }]},
+        )
+        after_return = _published_open_episode_features(500)
+        assert strong_episode not in {feature["id"] for feature in after_return}
     finally:
         with session_scope() as db:
             for episode_id in (legacy_episode, strong_episode):

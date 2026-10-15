@@ -45,6 +45,22 @@ describe('Futures production proxy security boundary', () => {
     assert.equal(isFuturesAllowedRequest({ ...futures, authorization: 'Bearer ' }, 'GET', '/api/v1/operator/ingestion/overall'), false);
   });
 
+  it('allows only signed AIS review reads, single-vessel lookup and human review writes', () => {
+    const signed = {...futures, authorization: 'Bearer signed.id.token'};
+    const paths = ['/api/v1/operator/ais-reviews',
+      '/api/v1/operator/ais-reviews/lookup?imo=9316359'];
+    for (const path of paths) {
+      assert.equal(isFuturesAllowedRequest(signed, 'GET', path), true, path);
+      assert.equal(isFuturesAllowedRequest(futures, 'GET', path), false, path);
+    }
+    assert.equal(isFuturesAllowedRequest(signed, 'POST', '/api/v1/operator/ais-reviews'), true);
+    assert.equal(isFuturesAllowedRequest(futures, 'POST', '/api/v1/operator/ais-reviews'), false);
+    assert.equal(isFuturesAllowedRequest(signed, 'POST', '/api/v1/operator/ais-reviews/lookup'), false);
+    assert.equal(isFuturesAllowedRequest(signed, 'POST', '/api/v1/operator/ingestion/overall'), false);
+    assert.equal(isFuturesAllowedRequest(signed, 'GET', '/api/v1/vessels/search?q=9316359'), false);
+    assert.equal(isFuturesAllowedRequest(signed, 'GET', '/api/v1/operator/ais-reviews/..%2fadmin'), false);
+  });
+
   it('rejects encoded and ambiguous paths rather than relying on upstream normalization', () => {
     const signed = { ...futures, authorization: 'Bearer signed.id.token' };
     for (const path of [
