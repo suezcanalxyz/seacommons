@@ -434,6 +434,7 @@ test('Intelligence labels the real source and clearly distinguishes loading, res
 
 test('Overall explains partial retained history instead of a blank intelligence dashboard', async ({page}) => {
  await mockOperationalContracts(page);
+ await page.route('**/api/v1/futures/intelligence-overall',route=>route.fulfill({status:503,json:{detail:'Unavailable'}}));
  await page.route('**/api/v1/operator/ingestion/**', route=>route.fulfill({status:401,json:{detail:'Sign-in required'}}));
  await page.goto(FUTURES_URL+'?view=intelligence');
  await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'Overall'}).click();
