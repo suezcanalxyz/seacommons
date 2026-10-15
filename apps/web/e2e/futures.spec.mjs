@@ -460,3 +460,58 @@ test('Platform device study distinguishes engineering concept from photographed 
  await expect(page.getByRole('heading',{name:'Engineering readiness and acceptance'})).toBeVisible();
  await expect(page.getByRole('link',{name:/actual manufacturer product and images/i})).toBeVisible();
 });
+
+
+test('An expired evidence identity is distinguished from a database outage', async ({page}) => {
+ await mockOperationalContracts(page);
+ let protectedOverallRequests=0;
+ await page.route('**/api/v1/operator/ingestion/overall-metrics', route=>{
+   protectedOverallRequests++;
+   return route.fulfill({status:401,json:{detail:'Invalid Futures session'}});
+ });
+ await page.route('**/api/v1/operator/ingestion/overall', route=>{
+   protectedOverallRequests++;
+   return route.fulfill({status:401,json:{detail:'Invalid Futures session'}});
+ });
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'Overall'}).click();
+ await expect(page.getByRole('alert')).toContainText('rejected this session');
+ await expect(page.getByRole('button',{name:/Review account access/})).toBeVisible();
+ await expect(page.getByRole('status').filter({hasText:'Partial Overall evidence'})).toContainText('378,826');
+ expect(protectedOverallRequests).toBe(1); // no pointless second private endpoint on 401
+});
+
+test('An invalid historical count cannot silently become zero', async ({page})=>{
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/futures/overall',route=>route.fulfill({
+  json:{scope:'retained_intel_events',generated_at:'2026-10-15T12:00:00Z',intel_record:{total_events:null,positioned_events:0}},
+ }));
+ await page.route('**/api/v1/operator/ingestion/overall-metrics',route=>route.fulfill({status:401,json:{detail:'Invalid Futures session'}}));
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'Overall'}).click();
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=parsed_events]')).toContainText('Unavailable');
+ await expect(page.getByText('Partial Overall evidence:')).toHaveCount(0);
+});
+
+test('Device selection does not contain nested glossary buttons, and invitation access is truthful',async({page})=>{
+ await mockOperationalContracts(page);
+ await page.goto(FUTURES_URL+'?view=platform');
+ await expect(page.locator('.future-device-card .future-educational-trigger')).toHaveCount(0);
+ await page.getByRole('button',{name:/Coastal receiver/i}).click();
+ await expect(page.getByRole('button',{name:/Coastal receiver/i})).toHaveAttribute('aria-pressed','true');
+ await page.goto(FUTURES_URL+'?view=access');
+ await expect(page.getByRole('region',{name:'Viewer invitations availability'})).toContainText('not enabled');
+ await expect(page.getByRole('button',{name:/Save Viewer invitation/})).toHaveCount(0);
+ await expect(page.getByRole('link',{name:/Contact the workspace administrator/})).toHaveAttribute('href',/^mailto:/);
+});
+
+test('Agents labels aged imported states as snapshots, not live schedules', async ({page})=>{
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/scheduled-tasks',route=>route.fulfill({
+  json:{source:'ChatGPT Tasks snapshot',live_sync:false,synced_at:'2026-01-01T00:00:00Z',
+    tasks:[{title:'SeaCommons CI review',enabled:true,cadence:'Daily',timezone:'Europe/Rome'}]},
+ }));
+ await page.goto(FUTURES_URL+'?view=agents');
+ await expect(page.getByText('ENABLED IN SNAPSHOT')).toBeVisible();
+ await expect(page.getByText(/Snapshot older than 24 hours/)).toBeVisible();
+});

@@ -51,3 +51,13 @@ test('does not expose an HTML proxy error as application JSON', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('preserves authentication status for an actionable error', async () => {
+  const oldWindow=globalThis.window, oldFetch=globalThis.fetch;
+  globalThis.window=browserWindow('expired');
+  globalThis.fetch=async()=>new Response(JSON.stringify({detail:'Invalid Futures session'}),{status:401});
+  try {
+    await assert.rejects(fetchJson('https://api.example','/api/v1/operator/ingestion/overall-metrics'),
+      error=>error.status===401 && /Invalid Futures session/.test(error.message));
+  } finally {globalThis.window=oldWindow;globalThis.fetch=oldFetch;}
+});
