@@ -20,7 +20,7 @@ describe('Futures production proxy security boundary', () => {
   it('permits only known public, read-only evidence contracts anonymously', () => {
     for (const path of [
       '/health', '/ready', '/api/v1/status?hours=24',
-      '/api/v1/status?hours=168', '/api/v1/futures/overall',
+      '/api/v1/status?hours=168', '/api/v1/futures/overall', '/api/v1/futures/intelligence-overall',
       '/api/v1/play/counts', '/api/v1/live/pipeline',
     ]) {
       assert.equal(isFuturesAllowedRequest(futures, 'GET', path), true, path);
@@ -32,6 +32,7 @@ describe('Futures production proxy security boundary', () => {
       '/api/v1/forensic', '/docs', '/openapi.json',
     ]) assert.equal(isFuturesAllowedRequest(futures, 'GET', path), false, path);
     assert.equal(isFuturesAllowedRequest(futures, 'POST', '/api/v1/status'), false);
+    assert.equal(isFuturesAllowedRequest(futures, 'POST', '/api/v1/futures/intelligence-overall'), false);
   });
 
   it('allows OIDC-bearing Intelligence reads without bypassing backend identity verification', () => {

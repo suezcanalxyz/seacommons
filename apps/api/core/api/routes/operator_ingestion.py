@@ -55,7 +55,7 @@ def _fast_cache_get(kind: str, hours: int) -> dict[str, Any] | None:
     now_mono = time.monotonic()
     with _fast_cache_lock:
         cached = _fast_cache.get((kind, hours))
-        if cached and now_mono - cached[0] < _OPERATOR_FAST_CACHE_TTL_S:
+        if cached and now_mono - cached[0] < (_OVERALL_CACHE_TTL_S if kind == "overall_metrics" else _OPERATOR_FAST_CACHE_TTL_S):
             return cached[1]
     return None
 
@@ -1425,15 +1425,13 @@ def futures_scheduled_tasks(request: Request) -> dict[str, Any]:
                 "synced_at": None, "tasks": [], "status": "not_connected"}
 
 
-@router.get("/overall-metrics")
-def operator_overall_metrics(request: Request) -> dict[str, Any]:
+def _overall_metrics_aggregate() -> dict[str, Any]:
     """Bounded, independently recoverable retained-record counters for Futures Overall.
 
     Each SQL query has its own savepoint and PostgreSQL statement deadline; one
     costly metric must never blank every other metric. Missing values are null.
     Estimated planner totals are explicitly marked, never presented as exact.
     """
-    _require_gateway(request)
     cached = _fast_cache_get("overall_metrics", 0)
     if cached is not None:
         return cached
@@ -1522,3 +1520,39 @@ def operator_overall_metrics(request: Request) -> dict[str, Any]:
     }
     # Do not retain partial results for longer than the fast aggregation TTL.
     return _fast_cache_put("overall_metrics", 0, payload)
+
+
+# The public endpoint uses the same canonical calculation as the protected
+# operator endpoint. Never copy a gateway secret or a simulated Request.
+_PUBLIC_OVERALL_METRIC_LOCK = threading.Lock()
+
+
+def public_futures_overall_metrics() -> dict[str, Any]:
+    """Anonymous, strictly aggregate-only retained Overall with bounded refresh."""
+    with _PUBLIC_OVERALL_METRIC_LOCK:
+        computed = _overall_metrics_aggregate()
+    # Make the response schema an explicit projection; no raw/case/source records.
+    stage_keys = ("raw", "normalized", "derived", "episodes", "hypotheses", "corroborated", "review_ready")
+    sensor_keys = ("ais_fixes", "radio_bursts", "radio_events", "satellite_observations", "source_names")
+    stages = {row["id"]: row.get("count") for row in computed.get("stages", []) if isinstance(row, dict)}
+    sensors = computed.get("sensor_activity", {})
+    if not isinstance(sensors, dict):
+        sensors = {}
+    return {
+        "scope": "all_time",
+        "access": "public_aggregate",
+        "source": "canonical_retained_inventory",
+        "generated_at": computed["generated_at"],
+        "retention_semantics": "Currently retained records, not immutable lifetime intake or verified incidents.",
+        "stages": [{"id": key, "count": stages.get(key)} for key in stage_keys],
+        "sensor_activity": {key: sensors.get(key) for key in sensor_keys},
+        "estimated_fields": [key for key in computed.get("estimated_fields", []) if key in ("raw_observations", "parsed_events", "ais_fixes")],
+        "unavailable_fields": [key for key in computed.get("unavailable_fields", []) if key in (*stage_keys, *sensor_keys, "legacy_gap")],
+    }
+
+
+@router.get("/overall-metrics")
+def operator_overall_metrics(request: Request) -> dict[str, Any]:
+    """Private operator alias: preserve gateway authentication and shape."""
+    _require_gateway(request)
+    return _overall_metrics_aggregate()

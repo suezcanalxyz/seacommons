@@ -64,6 +64,7 @@ const FUTURES_PUBLIC_READ_PATHS = new Set([
   '/ready',
   '/api/v1/status',
   '/api/v1/futures/overall',
+  '/api/v1/futures/intelligence-overall',
   '/api/v1/play/counts',
   '/api/v1/live/pipeline',
 ]);

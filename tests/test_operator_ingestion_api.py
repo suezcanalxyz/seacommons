@@ -384,3 +384,30 @@ def test_futures_audience_accepts_only_configured_oidc_client(monkeypatch):
     monkeypatch.setenv("SEACOMMONS_FUTURES_OIDC_CLIENT_ID", "another-authorized-client")
     assert "test-authorized-client" not in security._futures_audiences()
     assert "another-authorized-client" in security._futures_audiences()
+
+
+def test_public_intelligence_overall_is_aggregate_only_and_keeps_private_route_closed(monkeypatch):
+    from core.api.main import app
+    from core.api.routes import operator_ingestion
+    from core.config import config
+    monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "test-gateway")
+    monkeypatch.setattr(operator_ingestion, "_overall_metrics_aggregate", lambda:{
+        "scope":"all_time", "generated_at":"2026-10-15T16:00:00+00:00",
+        "stages":[{"id":name,"count":index+5} for index,name in enumerate((
+          "raw","normalized","derived","episodes","hypotheses","corroborated","review_ready"))],
+        "sensor_activity":{"ais_fixes":530,"radio_bursts":20,"radio_events":4,
+            "satellite_observations":6,"source_names":3,"extra_unpublished_field":999},
+        "estimated_fields":["ais_fixes"],"unavailable_fields":[],
+        "extra_unpublished_data":{"identifier":"not included"},
+    })
+    client=TestClient(app)
+    response=client.get("/api/v1/futures/intelligence-overall")
+    assert response.status_code==200
+    data=response.json()
+    assert data["access"]=="public_aggregate"
+    assert len(data["stages"])==7
+    assert set(data["sensor_activity"])=={"ais_fixes","radio_bursts","radio_events","satellite_observations","source_names"}
+    assert data["estimated_fields"]==["ais_fixes"]
+    assert "extra_unpublished_data" not in data
+    assert "extra_unpublished_field" not in data["sensor_activity"]
+    assert client.get("/api/v1/operator/ingestion/overall-metrics").status_code==401

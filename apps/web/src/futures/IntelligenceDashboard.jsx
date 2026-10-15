@@ -103,23 +103,24 @@ function useOperatorMetrics(period){
     errorKind,warning:''});
   };
   try{
-   const url=period==='overall'?'/api/v1/operator/ingestion/overall-metrics':`/api/v1/operator/ingestion/overview?hours=${period==='7d'?168:24}`;
+   const url=period==='overall'?'/api/v1/futures/intelligence-overall':`/api/v1/operator/ingestion/overview?hours=${period==='7d'?168:24}`;
    const result=await fetchJson(resolveSiteApiBase(),url,undefined,period==='overall'?35000:30000);
    const valid=period==='overall'
-    ? result?.scope==='all_time'&&Array.isArray(result?.stages)&&result?.sensor_activity
+    ? result?.scope==='all_time'&&result?.access==='public_aggregate'&&Array.isArray(result?.stages)&&result?.stages.length===7&&result?.sensor_activity&&Number.isFinite(Date.parse(result?.generated_at))
     : result?.lookback_hours===(period==='7d'?168:24)&&result?.pipeline_status?.pipeline;
    if(!valid)throw new Error('Unexpected measurement contract');
-   accept(result,'operator');
+   accept(result,period==='overall'?'public-aggregate':'operator');
   }catch(error){
    const authRejected=error?.status===401||error?.status===403;
    // A denied OIDC identity cannot be repaired by retrying a second protected endpoint.
-   if(authRejected&&period==='overall'){fail('authentication');return;}
+   if(period==='overall'){
+    // Public aggregate failed. The independent retained IntelEvent contract can
+    // still populate only the normalized record tile; never ask for OIDC.
+    fail('unavailable');
+    return;
+   }
    try{
-    if(period==='overall'){
-     const historical=await fetchJson(resolveSiteApiBase(),'/api/v1/operator/ingestion/overall',undefined,26000);
-     if(historical?.scope!=='all_time'||!Array.isArray(historical?.stages))throw new Error('Unexpected historical contract',{cause:error});
-     accept(historical,'historical','The fast historical summary was unavailable; a second authenticated inventory was used.');
-    }else{
+    {
      const hours=period==='7d'?168:24;
      const status=await fetchJson(resolveSiteApiBase(),'/api/v1/status?hours='+hours,undefined,30000);
      if(status?.window_hours!==hours||!status?.pipeline)throw new Error('Unexpected public status contract',{cause:error});
@@ -137,11 +138,10 @@ function useOperatorSections(period,tab) {
  React.useEffect(()=>{
    let active=true;
    if(period==='overall'){
-    if(tab!=='sources'&&tab!=='quality'){setSnapshot({data:null,error:'',key:period+':'+tab});return()=>{active=false;};}
-    setSnapshot({data:null,error:'',key:period+':'+tab});
-    fetchJson(resolveSiteApiBase(),'/api/v1/operator/ingestion/overall',undefined,50000)
-      .then(overall=>{if(active)setSnapshot({data:{overall},error:'',key:period+':'+tab});})
-      .catch(()=>{if(active)setSnapshot({data:null,error:'Historical breakdown is temporarily unavailable. The main indicators remain accessible.',key:period+':'+tab});});
+    // The twelve aggregate measurements are public. Raw-source names and case
+    // evidence remain private, and must never be fetched for a public period.
+    setSnapshot({data:null,error:tab==='sources'||tab==='quality'
+      ? 'Overall publishes summary counts only. Source-specific records and case evidence remain restricted.': '',key:period+':'+tab});
     return()=>{active=false;};
    }
    const hours=period==='7d'?168:24;
@@ -362,7 +362,7 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  const allStages=stages.filter(x=>x[0]!=='analysis_outputs'&&(!isOverall||x[0]!=='public_live'));
  const specialSensors=isOverall&&sensorsData?{...sensorsData,active_source_names:sensorsData.source_names}:sensorsData;
  const dataSource=raw?operator.source:(retainedFallback?'public-retained':(!isOverall&&status?'public':null));
- const evidenceSourceLabel=dataSource==='operator'?'Protected evidence API':dataSource==='historical'?'Historical evidence inventory':dataSource==='public'?'Public operational status':dataSource==='public-retained'?'Public retained Intel-event inventory':'No verified source';
+ const evidenceSourceLabel=dataSource==='public-aggregate'?'Public historical aggregates':dataSource==='operator'?'Protected evidence API':dataSource==='historical'?'Historical evidence inventory':dataSource==='public'?'Public operational status':dataSource==='public-retained'?'Public retained Intel-event inventory':'No verified source';
  const evidenceWindowLabel=isOverall?'Retained record inventory':period==='7d'?'Rolling 168 hours':'Rolling 24 hours';
  const evidenceTimestamp=raw?.generated_at||(isOverall?retained?.generated_at:status?.generated_at);
 
@@ -379,7 +379,7 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  </div>
  {operator.error&&<p className="future-inline-note" role="alert">{operator.error} {operator.errorKind==='authentication'&&<button type="button" onClick={()=>navigate('access')}>Review account access →</button>}</p>}
  {operator.warning&&<p className="future-inline-note" role="status">{operator.warning} Protected and public records must not be treated as equivalent.</p>}
- {retainedFallback&&<p className="future-evidence-partial" role="status">Partial Overall evidence: {number(validRetained?.total)} retained normalized Intel-event records are independently available. The remaining measures require the protected historical service and are shown as unavailable rather than invented. <button type="button" disabled={operator.loading} onClick={operator.refresh}>Retry full inventory</button></p>}
+ {retainedFallback&&<p className="future-evidence-partial" role="status">Partial Overall evidence: {number(validRetained?.total)} retained normalized Intel-event records are independently available. The remaining measures are temporarily unavailable from the public aggregate service and are shown as unavailable rather than invented. <button type="button" disabled={operator.loading} onClick={operator.refresh}>Retry full inventory</button></p>}
  <IntelligenceMetricGrid period={period} pipeline={pipeline} sensorsData={specialSensors} loadedAt={evidenceTimestamp} loading={operator.loading&&!retainedFallback} source={dataSource} estimatedFields={isOverall?raw?.estimated_fields|| (sensorsData?.ais_fixes_estimated?['ais_fixes']:[]):[]}/>
  <section className="future-intelligence-explainer" aria-label="Intelligence evidence guide"><div><span className="future-eyebrow">Reading the data</span><h2>From signals to assessed evidence</h2></div><p>Raw intake counts information received, normalized records make sources comparable, and analytical cues highlight leads. Episodes group related observations; investigations remain hypotheses until their evidence and uncertainty have been assessed. These layers overlap, so counts are never added together.</p></section>
  <nav className="future-intelligence-subnav" aria-label="Intelligence sections">{TABS.map(([key,title])=><button key={key} type="button" aria-pressed={key===tab} className={key===tab?'is-active':''} onClick={()=>setTab(key)}>{title}</button>)}</nav>
@@ -389,6 +389,6 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  {tab==='quality'&&<><section className="future-section future-quality-summary"><h2>Evidence quality</h2><p>Verification, independent lineages and investigation readiness. Figures above are evidence activity, not findings.</p>{!sections.data?.stabilization&&!sections.data?.cases&&<p className="future-empty-description">This view compares source reliability, evidence independence and the readiness of cases for human assessment. No detailed quality assessment is available for this period.</p>}</section>{sections.data?.stabilization&&<QualityDiagnostics data={sections.data.stabilization}/>}{sections.data?.cases&&<CaseReview data={sections.data.cases}/>}{Object.entries(sourceHelp).slice(4).filter(([key])=>breakdown?.[key]&&Object.keys(breakdown[key]).length>0).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown[key]} help={help}/>)}</>}
  {tab==='activity'&&<><AcquisitionHealth items={raw?.acquisition}/><SimpleRecords title="01 / Raw ingestion" items={sections.data?.observations?.observations} description="Unprocessed source observations. Reappearance after silence is telemetry, not proof of covert activity."/><SimpleRecords title="02 / Normalized events" items={sections.data?.events?.events} description="Parsed events are standardized source observations, not validated incidents."/><SimpleRecords title="Incoming partner signals" items={sections.data?.signals?.signals} description="External connector inputs are source material, not verified humanitarian or maritime incidents."/><SimpleRecords title="03 / Episodes and hypotheses" items={sections.data?.analysis?.items} description="Investigation candidates and recognized episodes; each requires further independent evidence."/><ParserTopology data={sections.data?.['pipeline-map']}/></>}
  {sections.error&&<p role="status">{sections.error}</p>}
- <section className="future-section"><h2>Data provenance and interpretation</h2><p><GlossaryText>Operator figures are calculated by the same database aggregation functions as the canonical ingestion dashboard. Public fallback figures are drawn from the canonical status feed. Overall operator counts cover the retained corpus; recent values cover ingestion windows. Sensor counts may be estimated when database statistics are used, especially AIS fixes.</GlossaryText></p><p>Source evidence is not the same as an incident. Independent corroboration and human review are required before claims become publishable.</p><button type="button" onClick={()=>navigate('history')}>Explore historical collection →</button></section>
+ <section className="future-section"><h2>Data provenance and interpretation</h2><p><GlossaryText>Operator figures are calculated by the same database aggregation functions as the canonical ingestion dashboard. Public fallback figures are drawn from the canonical status feed. Overall headline counts come from a public, privacy-safe retained inventory. Recent detailed metrics may use protected operator endpoints. All figures refer to different stages and clocks. Sensor counts may be estimated when database statistics are used, especially AIS fixes.</GlossaryText></p><p>Source evidence is not the same as an incident. Independent corroboration and human review are required before claims become publishable.</p><button type="button" onClick={()=>navigate('history')}>Explore historical collection →</button></section>
  </>;
 }
