@@ -204,3 +204,26 @@ def test_inactive_api_import_does_not_open_shared_spool(monkeypatch, tmp_path):
     consumer = TrackStore()
     assert consumer._spool is None
     assert not (tmp_path / "unused.sqlite3").exists()
+
+
+def test_durable_spool_failure_blocks_all_upstream_sensor_startup(monkeypatch):
+    from core import bootstrap
+    from core.config import config
+
+    feeds_started = []
+    monkeypatch.setenv("SEACOMMONS_AIS_SPOOL_ENABLED", "true")
+    monkeypatch.setattr(config, "INTEL_ENABLED", True)
+    monkeypatch.setattr(config, "VESSEL_TRACK_ENABLED", True)
+    monkeypatch.setattr(
+        track_store_module.track_store, "start",
+        lambda: (_ for _ in ()).throw(RuntimeError("spool unavailable")),
+    )
+    monkeypatch.setattr(
+        bootstrap, "_start_ais_feeds", lambda: feeds_started.append("ais")
+    )
+    monkeypatch.setattr(
+        bootstrap, "_start_remote_radio", lambda: feeds_started.append("radio")
+    )
+    with pytest.raises(RuntimeError, match="spool unavailable"):
+        bootstrap.start_background_sensors()
+    assert feeds_started == []
