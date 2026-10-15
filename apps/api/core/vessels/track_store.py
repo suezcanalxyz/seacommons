@@ -57,6 +57,7 @@ class TrackStore:
     def __init__(self) -> None:
         self._buffer: list[dict[str, Any]] = []
         self._buf_lock = threading.Lock()
+        self._flush_lock = threading.Lock()
         self._last: dict[str, _Last] = {}
         self._last_write_epoch: dict[str, float] = {}
         self._running = False
@@ -161,22 +162,27 @@ class TrackStore:
                     logger.warning("TrackStore prune error: %s", exc)
 
     def flush(self) -> int:
-        with self._buf_lock:
-            if not self._buffer:
-                return 0
-            rows, self._buffer = self._buffer, []
-        try:
-            from core.db.models import VesselTrackDB
-            from core.db.session import session_scope
-
-            with session_scope() as db:
-                db.bulk_insert_mappings(VesselTrackDB, rows)
-            return len(rows)
-        except Exception as exc:
+        # Serialize concurrent flushes; a failed batch must retain its order.
+        with self._flush_lock:
             with self._buf_lock:
-                self._buffer = rows + self._buffer
-            logger.error("TrackStore: bulk insert failed (%d rows requeued in memory; restart still risks loss): %s", len(rows), exc)
-            return 0
+                if not self._buffer:
+                    return 0
+                rows, self._buffer = self._buffer, []
+            try:
+                from core.db.models import VesselTrackDB
+                from core.db.session import session_scope
+
+                with session_scope() as db:
+                    db.bulk_insert_mappings(VesselTrackDB, rows)
+                return len(rows)
+            except Exception as exc:
+                with self._buf_lock:
+                    self._buffer = rows + self._buffer
+                logger.error(
+                    "TrackStore: bulk insert failed (%d rows requeued in memory; restart still risks loss): %s",
+                    len(rows), exc,
+                )
+                return 0
 
     def prune(self, older_than_days: Optional[int] = None) -> int:
         """Archive verified compressed AIS batches before deleting from hot storage.
