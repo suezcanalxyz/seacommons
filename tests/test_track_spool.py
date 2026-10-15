@@ -35,6 +35,7 @@ def durable_store(monkeypatch, tmp_path):
     monkeypatch.setenv("SEACOMMONS_AIS_SPOOL_MAX_BYTES", "1000000")
     monkeypatch.setattr(track_store_module, "_SYNC", False)
     instance = TrackStore()
+    instance._ensure_spool()
     yield instance
     instance._spool.close()
 
@@ -179,7 +180,7 @@ def test_missing_spool_path_rejects_enabled_mode(monkeypatch):
     monkeypatch.setenv("SEACOMMONS_AIS_SPOOL_ENABLED", "true")
     monkeypatch.delenv("SEACOMMONS_AIS_SPOOL_PATH", raising=False)
     with pytest.raises(RuntimeError, match="SPOOL_PATH"):
-        TrackStore()
+        TrackStore()._ensure_spool()
 
 
 def test_worker_fails_closed_if_durable_spool_cannot_start(monkeypatch):
@@ -195,3 +196,11 @@ def test_worker_fails_closed_if_durable_spool_cannot_start(monkeypatch):
             twitter_enabled=False, news_enabled=False, ais_enabled=True,
             gdacs_enabled=False,
         )
+
+
+def test_inactive_api_import_does_not_open_shared_spool(monkeypatch, tmp_path):
+    monkeypatch.setenv("SEACOMMONS_AIS_SPOOL_ENABLED", "true")
+    monkeypatch.setenv("SEACOMMONS_AIS_SPOOL_PATH", str(tmp_path / "unused.sqlite3"))
+    consumer = TrackStore()
+    assert consumer._spool is None
+    assert not (tmp_path / "unused.sqlite3").exists()
