@@ -253,7 +253,7 @@ function IntelligenceMetricGrid({period,pipeline,sensorsData,loadedAt,estimatedF
      <strong className={loading?'future-metric-loading':''} data-metric={key}>{loading?'Loading…':hasValue?(isEstimated?'≈ ':'')+number(value):'Unavailable'}</strong>
      <p>{definition}</p>
      {expanded===key&&<div className="future-intelligence-legend"><b>Counting method</b>
-      <p><strong>Time basis:</strong> {clock}. {overall?'Counts describe the currently retained database, not every observation ever received.':'Records are assigned to this window using the indicated time field.'}</p>
+      <p><b>Time basis:</b> {clock}. {overall?'Counts describe the currently retained database, not every observation ever received.':'Records are assigned to this window using the indicated time field.'}</p>
       <p>{!loading&&!hasValue?'This measure cannot currently be established; it is not zero.':isEstimated?'This is a database estimate, not an exact row count.':'This number describes records or analytical states, not verified maritime incidents.'}</p>
      </div>}
     </article>;
