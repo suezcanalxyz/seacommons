@@ -411,3 +411,23 @@ def test_public_intelligence_overall_is_aggregate_only_and_keeps_private_route_c
     assert "extra_unpublished_data" not in data
     assert "extra_unpublished_field" not in data["sensor_activity"]
     assert client.get("/api/v1/operator/ingestion/overall-metrics").status_code==401
+
+
+def test_public_overall_passes_operational_middleware_without_internal_proxy_header(monkeypatch):
+    from core.api.main import app
+    from core.api.routes import operator_ingestion
+    from core.config import config
+    monkeypatch.setattr(config, "INTERNAL_PROXY_SECRET", "test-internal-secret")
+    monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "test-operator-secret")
+    monkeypatch.setattr(operator_ingestion, "_overall_metrics_aggregate", lambda:{
+        "scope":"all_time", "generated_at":"2026-10-15T17:00:00+00:00",
+        "stages":[{"id":item,"count":i} for i,item in enumerate((
+            "raw","normalized","derived","episodes","hypotheses","corroborated","review_ready"))],
+        "sensor_activity":{"ais_fixes":22,"radio_bursts":0,"radio_events":0,"satellite_observations":0,"source_names":1},
+        "estimated_fields":["ais_fixes"],"unavailable_fields":[],
+    })
+    client=TestClient(app)
+    assert client.get("/api/v1/futures/intelligence-overall").status_code==200
+    assert client.get("/api/v1/operator/ingestion/overall-metrics").status_code==401
+    assert client.get("/api/v1/ops/summary").status_code==401
+    assert client.post("/api/v1/futures/intelligence-overall").status_code in (405, 403)
