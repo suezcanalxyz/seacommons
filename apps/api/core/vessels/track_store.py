@@ -63,8 +63,23 @@ class TrackStore:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._last_prune = 0.0
+        self._spool_enabled = os.getenv(
+            "SEACOMMONS_AIS_SPOOL_ENABLED", ""
+        ).strip().lower() in {"1", "true", "yes"}
         self._spool = None
-        if os.getenv("SEACOMMONS_AIS_SPOOL_ENABLED", "").strip().lower() in {"1", "true", "yes"}:
+        self._spool_init_lock = threading.Lock()
+
+    def _ensure_spool(self) -> None:
+        """Open the spool only for the actual ingest worker.
+
+        API/Futures imports of the singleton must not open a second SQLite
+        handle just because the worker shares a global environment file.
+        """
+        if not self._spool_enabled or self._spool is not None:
+            return
+        with self._spool_init_lock:
+            if self._spool is not None:
+                return
             from pathlib import Path
             from core.vessels.track_spool import SQLiteTrackSpool
 
@@ -87,13 +102,14 @@ class TrackStore:
                     and os.getenv("SEACOMMONS_AIS_SPOOL_ALLOW_TMP_FOR_TESTS") == "true"
                 ),
             )
-            logger.info("AIS durable spool enabled, pending=%d", self._spool.stats()["pending"])
+            logger.info("AIS durable spool opened, pending=%d", self._spool.stats()["pending"])
 
     # ── ingest ────────────────────────────────────────────────────────────────
 
     def start(self) -> None:
         if self._running or not getattr(config, "VESSEL_TRACK_ENABLED", True):
             return
+        self._ensure_spool()
         self._running = True
         try:
             hydrated = self.hydrate_recent_last_seen(max_age_hours=12.0)
@@ -158,6 +174,7 @@ class TrackStore:
             "nav_status": int(nav_status) if nav_status is not None else None,
             "source": str(source or "aisstream")[:24],
         }
+        self._ensure_spool()
         if self._spool is not None:
             try:
                 # Never accept/throttle a fix before the crash-durable spool commits.
@@ -204,6 +221,7 @@ class TrackStore:
 
     def flush(self) -> int:
         # Serialize concurrent flushes; a failed batch must retain its order.
+        self._ensure_spool()
         with self._flush_lock:
             if self._spool is not None:
                 return self._flush_spool()
