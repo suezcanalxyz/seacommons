@@ -195,8 +195,15 @@ class TrackStore:
         import hashlib
         import json
 
-        if os.getenv("AIS_PRUNE_APPROVED", "").strip().lower() != "true":
-            logger.warning("AIS prune blocked: AIS_PRUNE_APPROVED is not true")
+        # Fail closed: approval requires both a deliberate enable switch and a
+        # documented policy identifier. Neither is set by default.
+        approved = os.getenv("AIS_PRUNE_APPROVED", "").strip().lower() == "true"
+        policy_id = os.getenv("AIS_RETENTION_POLICY_ID", "").strip()
+        if not approved or not policy_id:
+            logger.warning(
+                "AIS prune blocked: approved retention policy is required "
+                "(enabled=%s, policy_id_present=%s)", approved, bool(policy_id),
+            )
             return 0
         days = older_than_days or int(getattr(config, "VESSEL_TRACK_RETENTION_DAYS", 60))
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
