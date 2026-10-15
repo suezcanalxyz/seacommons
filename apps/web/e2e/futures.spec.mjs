@@ -47,6 +47,16 @@ async function mockOperationalContracts(page) {
   } }));
   await page.route('**/api/v1/play/counts', (route) => route.fulfill({ json: countsFixture }));
   await page.route('**/api/v1/live/pipeline', (route) => route.fulfill({ json: pipelineFixture }));
+  await page.route('**/api/v1/futures/intelligence-overall',route=>route.fulfill({json:{
+    scope:'all_time',access:'public_aggregate',source:'canonical_retained_inventory',
+    generated_at:'2026-10-15T16:00:00Z',retention_semantics:'Currently retained records',
+    stages:[{id:'raw',count:2371751},{id:'normalized',count:382495},{id:'derived',count:287201},
+            {id:'episodes',count:35245},{id:'hypotheses',count:6924},
+            {id:'corroborated',count:18},{id:'review_ready',count:10}],
+    sensor_activity:{ais_fixes:2884066,radio_bursts:86283,radio_events:6356,
+        satellite_observations:6793,source_names:36},
+    estimated_fields:['ais_fixes'],unavailable_fields:[],
+  }}));
   await page.route('**/api/v1/futures/overall', (route) => route.fulfill({ json: {
     generated_at: '2026-10-12T12:00:00Z',
     scope: 'retained_intel_events',
@@ -287,7 +297,7 @@ test('Intelligence matches operator aggregation with 24h 7d overall switching', 
  await window.getByRole('button',{name:'Overall'}).click();
  await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).getByText('2,371,751')).toBeVisible();
  await page.getByRole('button',{name:'Sources & types'}).click();
- await expect(page.getByText('2,346,069')).toBeVisible();
+ await expect(page.getByText(/Overall publishes summary counts only/)).toBeVisible();
 });
 
 
@@ -339,11 +349,11 @@ test('Intelligence rejects a mismatched time window and uses the matching status
 
 test('Intelligence loading is distinct from missing data and glossary works by click', async ({page}) => {
  await mockOperationalContracts(page);
- await page.route('**/api/v1/operator/ingestion/overall-metrics',async route=>{
+ await page.route('**/api/v1/futures/intelligence-overall',async route=>{
    await new Promise(resolve=>setTimeout(resolve,850));
    await route.fulfill({json:{
-     scope:'all_time',generated_at:'2026-10-15T12:00:00Z',
-     stages:[{id:'raw',count:123456},{id:'normalized',count:76543}],
+     scope:'all_time',access:'public_aggregate',generated_at:'2026-10-15T12:00:00Z',
+     stages:[{id:'raw',count:123456},{id:'normalized',count:76543},{id:'derived',count:null},{id:'episodes',count:null},{id:'hypotheses',count:null},{id:'corroborated',count:null},{id:'review_ready',count:null}],
      sensor_activity:{ais_fixes:987654,source_names:21},
      estimated_fields:['ais_fixes'],
    }});
@@ -462,25 +472,22 @@ test('Platform device study distinguishes engineering concept from photographed 
 });
 
 
-test('An expired evidence identity is distinguished from a database outage', async ({page}) => {
+test('Overall loads all 12 aggregate measurements without asking private identity', async ({page}) => {
  await mockOperationalContracts(page);
- let primaryOverallRequests=0;
- let secondProtectedEndpointRequests=0;
- await page.route('**/api/v1/operator/ingestion/overall-metrics', route=>{
-   primaryOverallRequests++;
-   return route.fulfill({status:401,json:{detail:'Invalid Futures session'}});
- });
- await page.route('**/api/v1/operator/ingestion/overall', route=>{
-   secondProtectedEndpointRequests++;
-   return route.fulfill({status:401,json:{detail:'Invalid Futures session'}});
+ let protectedRequests=0;
+ await page.route('**/api/v1/operator/ingestion/**',route=>{
+  protectedRequests++;
+  return route.fulfill({status:401,json:{detail:'Protected evidence requires login'}});
  });
  await page.goto(FUTURES_URL+'?view=intelligence');
  await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'Overall'}).click();
- await expect(page.getByRole('alert')).toContainText('rejected this session');
- await expect(page.getByRole('button',{name:/Review account access/})).toBeVisible();
- await expect(page.getByRole('status').filter({hasText:'Partial Overall evidence'})).toContainText('378,826');
- expect(primaryOverallRequests).toBeGreaterThanOrEqual(1); // StrictMode can remount the same effect
- expect(secondProtectedEndpointRequests).toBe(0); // never fallback to another private endpoint on 401
+ const grid=page.getByRole('region',{name:'Intelligence metric dashboard'});
+ await expect(grid.locator('[data-metric=raw_observations]')).toContainText('2,371,751');
+ await expect(grid.locator('[data-metric=parsed_events]')).toContainText('382,495');
+ await expect(grid.locator('[data-metric=active_source_names]')).toContainText('36');
+ await expect(page.getByLabel('Evidence data provenance')).toContainText('Public historical aggregates');
+ await expect(page.getByText('Partial Overall evidence:')).toHaveCount(0);
+ expect(protectedRequests).toBe(0);
 });
 
 test('An invalid historical count cannot silently become zero', async ({page})=>{
@@ -488,7 +495,7 @@ test('An invalid historical count cannot silently become zero', async ({page})=>
  await page.route('**/api/v1/futures/overall',route=>route.fulfill({
   json:{scope:'retained_intel_events',generated_at:'2026-10-15T12:00:00Z',intel_record:{total_events:null,positioned_events:0}},
  }));
- await page.route('**/api/v1/operator/ingestion/overall-metrics',route=>route.fulfill({status:401,json:{detail:'Invalid Futures session'}}));
+ await page.route('**/api/v1/futures/intelligence-overall',route=>route.fulfill({status:503,json:{detail:'Historical aggregate unavailable'}}));
  await page.goto(FUTURES_URL+'?view=intelligence');
  await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'Overall'}).click();
  await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=parsed_events]')).toContainText('Unavailable');
@@ -516,4 +523,15 @@ test('Agents labels aged imported states as snapshots, not live schedules', asyn
  await page.goto(FUTURES_URL+'?view=agents');
  await expect(page.getByText('ENABLED IN SNAPSHOT')).toBeVisible();
  await expect(page.getByText(/Snapshot older than 24 hours/)).toBeVisible();
+});
+
+test('Overall path is a public fixed endpoint, not a token or operator shortcut',async({page})=>{
+ await mockOperationalContracts(page);
+ const seen=[];
+ page.on('request',request=>{if(request.url().includes('intelligence-overall'))seen.push({url:request.url(),headers:request.headers()});});
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'Overall'}).click();
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=raw_observations]')).toContainText('2,371,751');
+ expect(seen.length).toBeGreaterThan(0);
+ expect(seen.every(x=>x.url.endsWith('/api/v1/futures/intelligence-overall'))).toBe(true);
 });
