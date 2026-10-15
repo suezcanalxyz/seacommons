@@ -916,3 +916,10 @@ html:has(.future-app){scroll-snap-type:none!important;scroll-padding-top:135px}
 .future-intelligence-legend b{font-weight:600;color:var(--f-text)}
 @media(max-width:760px){.future-glossary-definition{width:min(250px,74vw)}.future-intelligence-metric:nth-child(even) .future-glossary-definition{left:auto;right:0}}
 @media(prefers-reduced-motion:reduce){.future-metric-loading{animation:none}}
+
+/* Optional mobile installation help: never interrupt first access to data. */
+.future-install-shortcut{display:none}
+@media(max-width:760px){
+ .future-install-shortcut{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:5px 8px;border:1px solid var(--f-line);background:transparent;color:var(--f-text);font:10px/1.2 'DM Mono',monospace;cursor:pointer}
+ .future-install-shortcut:focus-visible{outline:2px solid var(--f-accent);outline-offset:3px}
+}
