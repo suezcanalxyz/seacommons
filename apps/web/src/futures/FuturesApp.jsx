@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import GlossaryText from './GlossaryText.jsx';
 import { useAuth } from '../auth.jsx';
 import { fetchJson } from '../services/api/client.js';
 import { resolveSiteApiBase } from '../site/liveApi.js';
@@ -328,7 +329,7 @@ function Hardware() {
     </section>
     <section className="future-section"><SectionHeader eyebrow="technical sequencing" title="Start with dependable receiving stations."
       copy="First validate one coastal AIS receiver, one radio decoder and resilient storage. Prototype a recoverable Drifter after station-health telemetry and legal/safety requirements are defined. Expand environmental and acoustic sensing only after calibration and maintenance procedures are proven." />
-      <p className="future-inline-note">Price anchors: Raspberry Pi official 2026 pricing and RAKwireless GPS tracker listings. EUR component allowances are engineering budgets, not live retailer offers. V4 RTL-SDR has been discontinued, so receiver estimates use the V3 line.</p>
+      <p className="future-inline-note"><GlossaryText>Price anchors: Raspberry Pi official 2026 pricing and RAKwireless GPS tracker listings. EUR component allowances are engineering budgets, not live retailer offers. V4 RTL-SDR has been discontinued, so receiver estimates use the V3 line.</GlossaryText></p>
     </section>
   </>;
 }
@@ -341,18 +342,18 @@ function Contributions() {
     <NetworkContributionsIntro />
     <section className="future-page-head"><span className="future-eyebrow">SeaCommons / resource requirements</span>
       <h1>Resources that help the network grow.</h1>
-      <p>A resource register for shared nodes, operations and future deployments. Estimated costs describe practical requirements, not a funding campaign.</p>
+      <p>This is the contribution pathway: what a partner can make available, who maintains it, which verification proves it was useful and the genuine cost. Hardware design belongs to Platform; future delivery sequencing belongs to Roadmap.</p>
     </section>
     <section className="future-section"><SectionHeader eyebrow="priority register" title="Keep the platform reliable first."
       copy="Our first priority is protecting the existing service and its history. New sensors and research integrations follow once storage, backup and continuous operation are under control." />
       <div className="future-risk-filters"><button type="button" className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}>All priorities</button>{groups.map(group => <button type="button" key={group} className={filter === group ? 'is-active' : ''} onClick={() => setFilter(group)}>{group}</button>)}</div>
       <div className="future-priority-list">{visible.map(item => <article className="future-priority-card" key={item.name}>
         <div className="future-priority-card__meta"><span>Priority {item.rank} · {item.urgency}</span><span>{item.group}</span></div>
-        <h3>{item.name}</h3><p className="future-priority-card__reason">{item.plainReason}</p>
-        <div className="future-priority-card__facts"><div><small>Planning cost</small><strong>{item.cost}</strong></div><div><small>What we need</small><span>{item.need}</span></div></div>
-        <details><summary>Technical scope and current status</summary><p>{item.use}</p><p>{item.reference} · {item.readiness}</p></details>
+        <h3>{item.name}</h3><p className="future-priority-card__reason"><GlossaryText>{item.plainReason}</GlossaryText></p>
+        <div className="future-priority-card__facts"><div><small>Indicative cost / contribution</small><strong>{item.cost}</strong></div><div><small>What would be provided</small><span><GlossaryText>{item.need}</GlossaryText></span></div></div>
+        <details><summary>Partner action and proof of success</summary><p><b>What this enables:</b> <GlossaryText>{item.use}</GlossaryText></p><p><b>Practical role:</b> <GlossaryText>{item.partnerRole||'Agree the actual scope, operator, permissions, useful inputs and maintenance responsibilities before any integration.'}</GlossaryText></p><p><b>Acceptance evidence:</b> {item.acceptance||'A documented pilot showing that the source or capability works, with access rules, technical limits, operation cost and a named maintainer.'}</p><p>{item.reference} · {item.readiness}</p></details>
       </article>)}</div>
-      <p className="future-inline-note">Costs are indicative EUR allowances for planning, exclude tax, shipping, installation and labor unless stated. Oracle pricing and availability depend on the selected region, compute shape, usage and current tenancy. No procurement or partnership is implied.</p>
+      <p className="future-inline-note">Free tier is €0 only for eligible use within published limits; a payment card may be required to open the account. Other prices are indicative EUR planning allowances, not quotations. Taxes, shipping, installation, labour and any excess cloud usage are separate. No procurement or partnership is implied.</p>
     </section>
     <section className="future-section"><SectionHeader eyebrow="responsible integration" title="Requirements before any system is connected."
       copy="Every external feed or physical device needs explicit permission, a designated operator, documented provenance, security boundaries, source health checks and publication safeguards. Receive-only radio work must respect applicable national law." />
@@ -548,8 +549,8 @@ function PlatformSummary({ ops, period }) {
       <SectionHeader eyebrow="01 / project at a glance" title="How SeaCommons turns scattered signals into evidence."
         copy="SeaCommons links heterogeneous observations into traceable maritime investigations, while preserving uncertainty, source independence and the distinction between an observation and a verified finding." />
       <div className="future-narrative-grid">
-        <article><small>scope</small><h3>Humanitarian OSINT</h3><p>Distress, SAR activity and humanitarian reporting under conservative privacy, provenance and location-precision controls.</p></article>
-        <article><small>scope</small><h3>Maritime Intelligence</h3><p>AIS integrity, vessel behaviour, radio, environmental and satellite investigation context without presuming intent.</p></article>
+        <article><small>scope</small><h3>Humanitarian OSINT</h3><p><GlossaryText>Distress, SAR activity and humanitarian reporting under conservative privacy, provenance and location-precision controls.</GlossaryText></p></article>
+        <article><small>scope</small><h3>Maritime Intelligence</h3><p><GlossaryText>AIS integrity, vessel behaviour, radio, environmental and satellite investigation context without presuming intent.</GlossaryText></p></article>
         <article><small>method</small><h3>One evidence model</h3><p>Source observation → normalization → derived cue → episode → hypothesis → policy-governed public case.</p></article>
       </div>
     </section>
@@ -712,6 +713,27 @@ function Project() {
   );
 }
 
+const deliveryLenses = [
+ {area:'Evidence integrity',now:'Source observations, normalized events, derived cues and review states have separate data meanings.',gap:'More independent source verification and counter-evidence must be assessed before stronger claims.',proof:'Trace one sampled claim from raw input to lineage, review and publication rule.',question:'Can another reviewer reproduce the conclusion without trusting a screenshot?'},
+ {area:'Operational resilience',now:'Live and Play operate as separate public surfaces backed by a canonical API.',gap:'Single-host risks, log growth, retention decisions and restart-safe archival still require measured closure.',proof:'Perform a test restore, simulate ingestion restart and measure bytes/day of recoverable storage.',question:'Can observations survive a network or server failure without being silently lost?'},
+ {area:'Measurement contract',now:'24-hour, rolling 7-day and retained historical views exist as distinct populations.',gap:'Source time, reception time, database creation and update time must never be mixed in a single count.',proof:'Compare a sample of dashboard totals with independent database reference queries, with consistent as-of timestamps.',question:'What exactly is counted, over which interval and with what denominator?'},
+ {area:'External interoperability',now:'The SeaCommons evidence pipeline is modular; partner integrations are possible through scoped APIs.',gap:'New verticals require fresh domain schemas, permits, rights, consent and operator responsibility.',proof:'Connect a synthetic test feed through a documented schema, authentication boundary and audit trail.',question:'Can a partner reuse a module without inheriting sensitive maritime records?'},
+];
+function DevelopmentHome({navigate}) {
+ return <>
+  <section className="future-page-head"><span className="future-eyebrow">Development / engineering assessment</span><h1>What is dependable, what is unresolved, and how we will know.</h1><p>Development is the technical maturity and decision record. Roadmap is the proposed sequence of future delivery; Updates records changes that have already happened. None of the three should be mistaken for live sensor evidence.</p></section>
+  <section className="future-section"><SectionHeader eyebrow="Evaluation framework" title="Four questions before the system scales." copy="Each topic makes a current capability, a real limitation and an independently checkable result visible to reviewers."/>
+    <div className="future-domain-grid">{deliveryLenses.map(x=><article key={x.area}><small>ENGINEERING / EVALUATION</small><h3>{x.area}</h3><p><b>Current basis:</b> <GlossaryText>{x.now}</GlossaryText></p><p><b>Open constraint:</b> <GlossaryText>{x.gap}</GlossaryText></p><p><b>Required evidence:</b> <GlossaryText>{x.proof}</GlossaryText></p><p className="future-factual-note">{x.question}</p></article>)}</div>
+  </section>
+  <section className="future-section"><SectionHeader eyebrow="Release governance" title="A pilot is ready only when its evidence is reproducible." copy="Software release, field prototype and research conclusion are separate acceptance decisions."/>
+   <div className="future-architecture-flow"><span><b>1 / Traceable source</b><p>Consent, license, device identity, acquisition clock and raw provenance.</p></span><span><b>2 / Measured behavior</b><p>Repeatable tests, observability, failure budgets and documented counter-cases.</p></span><span><b>3 / Human review</b><p>Independent interpretation and explicit limitations before public conclusions.</p></span><span><b>4 / Maintenance owner</b><p>One named custodian, security updates, costs and a recovery path.</p></span></div>
+  </section>
+  <section className="future-section"><SectionHeader eyebrow="Explore the evidence" title="Three complementary records."/>
+   <div className="future-support-grid"><article><h3>Roadmap</h3><p>Dependencies, expected duration and evidence required to close each planned work package.</p><button type="button" onClick={()=>navigate('roadmap')}>Examine the planned work →</button></article><article><h3>Updates</h3><p>Versioned changes with a verification source and the problem they resolve.</p><button type="button" onClick={()=>navigate('updates')}>Read verified changes →</button></article><article><h3>Operations</h3><p>Observed service activity, historically recorded defects and remaining verification tasks.</p><button type="button" onClick={()=>navigate('operations')}>Inspect operations →</button></article></div>
+  </section>
+ </>;
+}
+
 const developmentSteps = [
  {name:'Operational reliability',duration:'1–2 weeks',state:'ongoing',dependency:'Existing infrastructure and access to recovery backups',deliverable:'Recovery-tested hosting and monitored storage',description:'Document the data footprint, apply bounded retention and test restoring the evidence store. Make system interruptions visible before users lose access.',acceptance:'Successful restore test, storage alerts and a continuous service-health baseline.'},
  {name:'Measurement quality',duration:'2–3 weeks',state:'active',dependency:'Reliable observation storage and versioned metric definitions',deliverable:'Reconciled activity metrics for 24h, 7d and Overall',description:'Separate newly created records from updates, source observation times and automated processing. Verify that each dashboard metric uses a clearly defined population.',acceptance:'Independent reference queries agree with published measures and estimates are identified.'},
@@ -870,18 +892,29 @@ function Guidebook() {
   );
 }
 
+const transferableModules = [
+ {name:'Acquisition adapters',state:'Established maritime core; adaptable',function:'Connect data feeds through rate-limited ingestion, source identifiers, timestamps, licenses and retry-aware acquisition.',reuse:'Public records, civic indicators, environmental datasets and field-research submissions.',gate:'A new adapter needs a permissioned source, tested schema and documented acquisition failures.'},
+ {name:'Evidence & provenance ledger',state:'Established core; domain schemas required',function:'Retain original records and transformations so an auditor can distinguish source claims from software-derived statements.',reuse:'Cultural heritage documentation, participatory research and climate-observation registries.',gate:'New use cases must define consent, retention, data protection and reviewer authority.'},
+ {name:'Geospatial correlation',state:'Established maritime methods; adaptable',function:'Compare time, distance, uncertainty and independent sources without turning proximity into a causal claim.',reuse:'Island infrastructure, coastal resilience, distributed field sites and public-space research.',gate:'Geographic coverage, coordinate quality and baseline assumptions must be evaluated per pilot.'},
+ {name:'Radio and device ingestion',state:'Specialist pipeline / active validation',function:'Receive selected radio and sensor formats, preserve capture metadata, and test decoders against known fixtures.',reuse:'Community sensor stations, environmental instrumentation and local research networks.',gate:'Regulatory limits, supported equipment, calibration and maintenance need field validation.'},
+ {name:'Simulation & environmental context',state:'Research capability',function:'Join metocean inputs, drift assumptions and observed positions to construct reproducible scenarios with uncertainty.',reuse:'Coastal environmental monitoring, training exercises and geographically bounded impact studies.',gate:'A model result must be compared with reference observations before operational interpretation.'},
+ {name:'Publishing & partner workspaces',state:'Operational SeaCommons surfaces; reusable patterns',function:'Separate restricted raw evidence from privacy-filtered public maps, histories, reports and role-aware collaboration.',reuse:'Civic observatories, academic research portals and local cultural infrastructure.',gate:'A new workspace needs its own information model, access policy, editorial governance and audit.'},
+];
 function Tools() {
   return (
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">tools</span>
-        <h1>Surfaces you can open from this workspace.</h1>
+        <h1>Reusable software modules, not just websites.</h1>
         <p>
-          This page only exposes SeaCommons surfaces. Other Suez products and tools are managed on their own domains
-          and are not part of the SeaCommons workspace.
+          SeaCommons is one implementation of a modular software architecture. The modules below describe which methods can be adapted to other research and civic sectors, and which are still subject to new validation. Other projects are not automatically part of this authenticated workspace.
         </p>
       </section>
 
+      <section className="future-section"><SectionHeader eyebrow="Transferable toolkit" title="Six modules; multiple potential sectors." copy="Each row distinguishes actual SeaCommons capabilities from the extra implementation, legal and domain work needed to reuse a pattern elsewhere."/>
+      <div className="future-domain-grid">{transferableModules.map(m=><article key={m.name}><small>{m.state}</small><h3>{m.name}</h3><p><b>What it does:</b> <GlossaryText>{m.function}</GlossaryText></p><p><b>Where it could transfer:</b> <GlossaryText>{m.reuse}</GlossaryText></p><p className="future-factual-note"><b>Before reuse:</b> <GlossaryText>{m.gate}</GlossaryText></p></article>)}</div>
+      <p className="future-factual-note">Transferability is an engineering opportunity, not a claim of completed deployments in every listed sector. New fields require distinct funding, methods, permissions and domain verification.</p></section>
+      <section className="future-section"><SectionHeader eyebrow="Available product surfaces" title="Operational entry points and their access boundaries." copy="These are actual SeaCommons interfaces; they are different from the transferable modules above."/></section>
       <section className="future-tool-grid">
         {tools.map((tool) => {
           const inner = (
@@ -905,7 +938,7 @@ function Updates() {
       <section className="future-page-head">
         <span className="future-eyebrow">updates</span>
         <h1>A readable development history.</h1>
-        <p>Important changes are recorded as project events so partners can understand what changed without reading commit logs.</p>
+        <p>Evidence-led engineering decisions, not promotional announcements. Each update explains what changed, why it matters, what remains unverified and where the technical record can be checked.</p>
       </section>
       <section className="future-update-list">
         {timeline.map((item) => (
@@ -914,7 +947,10 @@ function Updates() {
             <div>
               <div><span>{item.project}</span><small>{item.kind}</small></div>
               <h3>{item.title}</h3>
-              <p>{item.detail}</p>
+              <p><GlossaryText>{item.detail}</GlossaryText></p>
+              {item.impact&&<p><b>What changes for a partner:</b> {item.impact}</p>}
+              {item.limit&&<p className="future-factual-note"><b>Still to verify:</b> {item.limit}</p>}
+              {item.proof&&<a href={item.proof} target="_blank" rel="noopener noreferrer">Review the source change ↗</a>}
             </div>
           </article>
         ))}
@@ -1076,7 +1112,7 @@ export default function FuturesApp() {
           {view === 'intelligence' && <IntelligenceDashboard ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'platform' && <PlatformNetwork />}
           {view === 'knowledge' && <Documents />}
-          {view === 'development' && <Roadmap />}
+          {view === 'development' && <DevelopmentHome navigate={navigate} />}
           {view === 'agents' && <AgentTaskDashboard />}
           {view === 'overview' && <Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'history' && <HistoricalAnalytics ops={ops} overall={overall} />}

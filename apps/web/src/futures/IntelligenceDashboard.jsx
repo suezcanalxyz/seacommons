@@ -1,4 +1,5 @@
 import React, {useState} from 'react';
+import GlossaryText from './GlossaryText.jsx';
 
 const stages=[
   ['raw_observations','Raw observations','Source records received by SeaCommons. They are raw inputs, not confirmed events.'],
@@ -230,6 +231,20 @@ function GlossaryTerm({label}){
   <span className="future-glossary-definition" id={tooltipId} role="tooltip">{meaning}</span>
  </span>;
 }
+const metricInterpretation = {
+ raw_observations: {how:'Count of incoming source envelopes registered within the selected period. A collected post and a receiver packet are separate envelopes; duplicates and repeated arrivals can still contribute.',example:'This measures collection workload, not distinct vessels or confirmed events.',limits:'Received-at time. Do not divide it by the number of investigations to calculate a detection rate.'},
+ parsed_events: {how:'Normalized Intel-event records received or retained after source-specific parsing. Several records can describe the same real-world occurrence.',example:'A report and a position message may each become normalized events without representing two incidents.',limits:'Received-at time in 24h/7d; retained normalized-event inventory in the public Overall fallback.'},
+ derived_cues: {how:'Rule- or model-generated observations suggesting a possible pattern worthy of closer examination.',example:'An AIS discontinuity can create a cue even when shore reception is poor.',limits:'Received-at time. A cue is not independent corroboration or evidence of intent.'},
+ maritime_episodes: {how:'Recognized groups of related observations assembled into one time-and-place context.',example:'Multiple position observations might be grouped into one possible continuity episode.',limits:'Updated-at time for rolling periods, including previously created episodes revisited today.'},
+ investigation_hypotheses: {how:'Non-expired, non-rejected propositions being evaluated against evidence and alternative explanations.',example:'An unusual track might justify testing a reception hypothesis, not publishing wrongdoing.',limits:'Updated-at time. This is not a count of newly opened investigations.'},
+ corroborated_episodes: {how:'Episodes whose supporting inputs come from genuinely independent evidence origins after lineage checks.',example:'Two websites copying one original AIS feed are not two independent witnesses.',limits:'Updated-at time. Corroboration is not an institutional or legal finding.'},
+ review_ready: {how:'Hypotheses that reached an internal review stage, including records reassessed during the selected period.',example:'A reviewer can receive a dossier with supporting sources and known counter-indicators.',limits:'Updated-at time. Ready for review is not the same as reviewed, approved or publicly released.'},
+ ais_fixes: {how:'Stored AIS vessel position rows with an observation timestamp in the window; historical totals may use database planner estimates.',example:'A single vessel can transmit hundreds of position messages in one day.',limits:'Source observation time, not unique vessels. ≈ marks an estimated inventory rather than an exact count.'},
+ radio_bursts: {how:'Radio-frequency bursts captured by receivers before decoding or message validation.',example:'A burst may be noise or an incomplete transmission and produce no usable message.',limits:'Capture/creation time. Never present radio bursts as verified distress calls.'},
+ radio_events: {how:'Radio observations successfully decoded and stored as structured events.',example:'A valid DSC message can become an event; several other captured bursts cannot.',limits:'Creation time. One decoded radio event does not prove a rescue or emergency.'},
+ satellite_observations: {how:'Satellite scenes or observation records actually discovered and registered for contextual analysis.',example:'A candidate satellite scene can cover the area without identifying a specific vessel.',limits:'Discovery time. The count is not the number of verified detections.'},
+ active_source_names: {how:'Number of distinct source-name identifiers contributing received raw material during the window.',example:'One active feed can supply thousands of records while another supplies one.',limits:'Distinct-source count, not a count of independent lineages or continuously healthy sensors.'},
+};
 function IntelligenceMetricGrid({period,pipeline,sensorsData,loadedAt,estimatedFields=[],loading=false,source=null}) {
  const [expanded,setExpanded]=useState(null);
  const measurements={...sensorsData,...pipeline};
@@ -246,15 +261,18 @@ function IntelligenceMetricGrid({period,pipeline,sensorsData,loadedAt,estimatedF
     const hasValue=value!==null&&value!==undefined&&Number.isFinite(Number(value));
     const isEstimated=estimatedFields.includes(key)||key==='ais_fixes'&&overall&&estimatedFields.includes('ais_fixes');
     const clock=overall?'Retained record inventory':metricClocks[key]||'Source-defined time';
+    const teaching=metricInterpretation[key];
     return <article className={'future-intelligence-metric'+(!loading&&!hasValue?' is-unavailable':'')} key={key}>
      <div className="future-intelligence-metric-top"><span><GlossaryTerm label={label}/></span>
       <button type="button" aria-expanded={expanded===key} aria-label={'Counting method for '+label}
        onClick={()=>setExpanded(expanded===key?null:key)}>{expanded===key?'Close −':'Info +'}</button></div>
      <strong className={!hasValue&&loading?'future-metric-loading':''} data-metric={key}>{hasValue?(isEstimated?'≈ ':'')+number(value):loading?'Loading…':'Unavailable'}</strong>
-     <p>{definition}</p>
-     {expanded===key&&<div className="future-intelligence-legend"><b>Counting method</b>
-      <p><b>Time basis:</b> {clock}. {overall?'Counts describe the currently retained database, not every observation ever received.':'Records are assigned to this window using the indicated time field.'}</p>
-      <p>{!loading&&!hasValue?'This measure cannot currently be established; it is not zero.':isEstimated?'This is a database estimate, not an exact row count.':'This number describes records or analytical states, not verified maritime incidents.'}</p>
+     <p><GlossaryText>{definition}</GlossaryText></p>
+     {expanded===key&&<div className="future-intelligence-legend"><b>How to read this measure</b>
+      <p><GlossaryText>{teaching.how}</GlossaryText></p>
+      <p><b>Concrete example:</b> <GlossaryText>{teaching.example}</GlossaryText></p>
+      <p><b>Counting clock:</b> {clock}. <GlossaryText>{teaching.limits}</GlossaryText></p>
+      <p>{!loading&&!hasValue?'Source missing: this is unknown, not zero.':isEstimated?'Approximate historical database estimate.':'A recorded value, subject to the source and temporal scope above.'}</p>
      </div>}
     </article>;
    })}</div>
@@ -282,7 +300,7 @@ function SatelliteCandidates({data}) {
 }
 function HumanitarianCorrelation({data}) {
  const items=Array.isArray(data?.items)?data.items:[];
- return <section className="future-section"><h2>Humanitarian reports & AIS context</h2><p>Cross-checks between reports and nearby AIS tracks help investigators prioritize review. Distance and timing alone cannot identify a rescue vessel or prove involvement in an incident.</p><p>{number(data?.count)} geolocated reports with candidate associations. Search radius: {number(data?.radius_nm)} nautical miles; time window: {number(data?.window_hours)} hours.</p>{items.length?<div className="future-intelligence-records">{items.slice(0,30).map((x,i)=><details key={x.event_id||i}><summary><strong>{x.title||'Humanitarian source report'}</strong><span>{stamp(x.timestamp_utc)}</span></summary><p>Reported by {x.source||'source unavailable'} · {number(x.candidate_count)} contextual AIS associations.</p><p>Possible association does not confirm an incident, vessel identity, rescue action or wrongdoing.</p></details>)}</div>:<p>No contextual matches are reported for this window, or protected data are unavailable.</p>}</section>
+ return <section className="future-section"><h2>Humanitarian reports & AIS context</h2><p><GlossaryText>Cross-checks between reports and nearby AIS tracks help investigators prioritize review. Distance and timing alone cannot identify a rescue vessel or prove involvement in an incident.</GlossaryText></p><p>{number(data?.count)} geolocated reports with candidate associations. Search radius: {number(data?.radius_nm)} nautical miles; time window: {number(data?.window_hours)} hours.</p>{items.length?<div className="future-intelligence-records">{items.slice(0,30).map((x,i)=><details key={x.event_id||i}><summary><strong>{x.title||'Humanitarian source report'}</strong><span>{stamp(x.timestamp_utc)}</span></summary><p>Reported by {x.source||'source unavailable'} · {number(x.candidate_count)} contextual AIS associations.</p><p>Possible association does not confirm an incident, vessel identity, rescue action or wrongdoing.</p></details>)}</div>:<p>No contextual matches are reported for this window, or protected data are unavailable.</p>}</section>
 }
 function FleetView({data}) {
  const features=Array.isArray(data?.features)?data.features:[];
@@ -295,7 +313,7 @@ function AcquisitionHealth({items}) {
 }
 function CaseReview({data}) {
  const cases=Array.isArray(data?.cases)?data.cases:[];
- return <section className="future-section"><h2>Investigation evidence chains</h2><p>Real hypotheses, their evidence lineages and blockers. A candidate is not a criminal allegation, a SAR alert or a published case.</p>{cases.length?cases.slice(0,30).map((c,i)=><details key={c.case_id||i} className="future-intelligence-chain"><summary>{c.label||c.hypothesis_type||'Investigation'} · {c.state||'unreviewed'}</summary><p>Evidence stage: {c.evidence_stage||'not reported'} · Verification: {c.verification_status||'not reported'}</p>{Array.isArray(c.independence_groups)&&<p>Independent lineages: {c.independence_groups.join(', ')||'Not established'}</p>}{Array.isArray(c.blockers)&&<p>Why progress is blocked: {c.blockers.join(' · ')||'No blockers reported'}</p>}{Array.isArray(c.evidence)&&<p>Evidence links: {c.evidence.length} recorded references. Their existence does not establish claim truth.</p>}</details>):<p className="future-empty-description">No reviewable evidence-chain details were returned for this period. This does not imply zero investigations.</p>}</section>
+ return <section className="future-section"><h2>Investigation evidence chains</h2><p><GlossaryText>Real hypotheses, their evidence lineages and blockers. A candidate is not a criminal allegation, a SAR alert or a published case.</GlossaryText></p>{cases.length?cases.slice(0,30).map((c,i)=><details key={c.case_id||i} className="future-intelligence-chain"><summary>{c.label||c.hypothesis_type||'Investigation'} · {c.state||'unreviewed'}</summary><p>Evidence stage: {c.evidence_stage||'not reported'} · Verification: {c.verification_status||'not reported'}</p>{Array.isArray(c.independence_groups)&&<p>Independent lineages: {c.independence_groups.join(', ')||'Not established'}</p>}{Array.isArray(c.blockers)&&<p>Why progress is blocked: {c.blockers.join(' · ')||'No blockers reported'}</p>}{Array.isArray(c.evidence)&&<p>Evidence links: {c.evidence.length} recorded references. Their existence does not establish claim truth.</p>}</details>):<p className="future-empty-description">No reviewable evidence-chain details were returned for this period. This does not imply zero investigations.</p>}</section>
 }
 function ParserTopology({data}) {
  const chains=Array.isArray(data?.chains)?data.chains:[];
@@ -314,7 +332,14 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  const status=!isOverall&&ops.status?.window_hours===(period==='7d'?168:24)?ops.status:null;
  const rawStages=Array.isArray(raw?.stages)?Object.fromEntries(raw.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
  const funnelStages=Array.isArray(sections.data?.funnel?.stages)?Object.fromEntries(sections.data.funnel.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
- const pipeline=isOverall?rawStages:(raw?.pipeline_status?.pipeline||status?.pipeline||funnelStages);
+ // The public retained IntelEvent inventory remains a reliable, narrowly scoped
+ // Overall reference when the expensive private all-time metric endpoint fails.
+ // Only the normalized-event tile is populated: never invent the other 11.
+ const retained=overall?.history?.scope==='retained_intel_events' ? overall.history : null;
+ const fallbackTotal=Number(retained?.intel_record?.total_events);
+ const retainedFallback=isOverall&&!raw&&Number.isFinite(fallbackTotal)
+   ? {parsed_events:fallbackTotal} : null;
+ const pipeline=isOverall?(rawStages||retainedFallback):(raw?.pipeline_status?.pipeline||status?.pipeline||funnelStages);
  const sensorsData=isOverall?raw?.sensor_activity:(raw?.pipeline_status?.sensor_activity||status?.sensor_activity);
  const breakdown=isOverall?sections.data?.overall?.breakdowns:{
    raw_by_source:raw?.source_observations?.by_source,
@@ -330,32 +355,33 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  };
  const allStages=stages.filter(x=>x[0]!=='analysis_outputs'&&(!isOverall||x[0]!=='public_live'));
  const specialSensors=isOverall&&sensorsData?{...sensorsData,active_source_names:sensorsData.source_names}:sensorsData;
- const dataSource=raw?operator.source:(!isOverall&&status?'public':null);
- const evidenceSourceLabel=dataSource==='operator'?'Protected evidence API':dataSource==='historical'?'Historical evidence inventory':dataSource==='public'?'Public operational status':'No verified source';
+ const dataSource=raw?operator.source:(retainedFallback?'public-retained':(!isOverall&&status?'public':null));
+ const evidenceSourceLabel=dataSource==='operator'?'Protected evidence API':dataSource==='historical'?'Historical evidence inventory':dataSource==='public'?'Public operational status':dataSource==='public-retained'?'Public retained Intel-event inventory':'No verified source';
  const evidenceWindowLabel=isOverall?'Retained record inventory':period==='7d'?'Rolling 168 hours':'Rolling 24 hours';
- const evidenceTimestamp=raw?.generated_at||(!isOverall?status?.generated_at:null);
+ const evidenceTimestamp=raw?.generated_at||(isOverall?retained?.generated_at:status?.generated_at);
 
  return <><div className="future-intelligence-tagline"><span className="future-eyebrow">SeaCommons / Intelligence</span><span>Collection · inference · review</span></div>
  <div className="future-period-tabs" aria-label="Intelligence time window"><div role="group" aria-label="Intelligence time window">{[['24h','24 hours'],['7d','7 days'],['overall','Overall']].map(([id,label])=><button type="button" aria-pressed={period===id} className={period===id?'is-active':''} onClick={()=>setPeriod(id)} key={id}>{label}</button>)}</div><small>{isOverall?'All records currently retained, irrespective of the age of the source event':period==='7d'?'Rolling seven days':'Rolling 24 hours'}</small></div>
 
  <div className="future-intelligence-freshness future-evidence-provenance" aria-label="Evidence data provenance">
   <div className="future-evidence-provenance-main">
-   <strong>{operator.loading?'Loading evidence…':dataSource?'Evidence available':'Evidence unavailable'}</strong>
+   <strong>{operator.loading&&!retainedFallback?'Loading evidence…':retainedFallback?'Partial historical evidence':dataSource?'Evidence available':'Evidence unavailable'}</strong>
    <span>{evidenceWindowLabel} · {evidenceSourceLabel}</span>
   </div>
   <small>{evidenceTimestamp?'Updated '+stamp(evidenceTimestamp):operator.loading?'Request in progress':'No verified update time'}</small>
   <button type="button" disabled={operator.loading} onClick={operator.refresh}>{operator.loading?'Loading…':operator.error?'Retry':'Refresh'}</button>
  </div>
  {operator.error&&<p className="future-inline-note" role="alert">The requested evidence could not be retrieved. No result has been inferred or replaced with zero. Check your connection and retry.</p>}
- <IntelligenceMetricGrid period={period} pipeline={pipeline} sensorsData={specialSensors} loadedAt={raw?.generated_at||status?.generated_at} loading={operator.loading} source={operator.source||(!isOverall&&status?'public':null)} estimatedFields={isOverall?raw?.estimated_fields|| (sensorsData?.ais_fixes_estimated?['ais_fixes']:[]):[]}/>
+ {retainedFallback&&<p className="future-evidence-partial" role="status">Partial Overall evidence: {number(fallbackTotal)} retained normalized Intel-event records are independently available. The remaining measures require the protected historical service and are shown as unavailable rather than invented. <button type="button" disabled={operator.loading} onClick={operator.refresh}>Retry full inventory</button></p>}
+ <IntelligenceMetricGrid period={period} pipeline={pipeline} sensorsData={specialSensors} loadedAt={evidenceTimestamp} loading={operator.loading&&!retainedFallback} source={dataSource} estimatedFields={isOverall?raw?.estimated_fields|| (sensorsData?.ais_fixes_estimated?['ais_fixes']:[]):[]}/>
  <section className="future-intelligence-explainer" aria-label="Intelligence evidence guide"><div><span className="future-eyebrow">Reading the data</span><h2>From signals to assessed evidence</h2></div><p>Raw intake counts information received, normalized records make sources comparable, and analytical cues highlight leads. Episodes group related observations; investigations remain hypotheses until their evidence and uncertainty have been assessed. These layers overlap, so counts are never added together.</p></section>
  <nav className="future-intelligence-subnav" aria-label="Intelligence sections">{TABS.map(([key,title])=><button key={key} type="button" aria-pressed={key===tab} className={key===tab?'is-active':''} onClick={()=>setTab(key)}>{title}</button>)}</nav>
- {tab==='pipeline'&&<section className="future-section future-intelligence-explanation"><h2>How to read the evidence pipeline</h2><p>Read each card according to its measurement clock, source and evidential threshold. Received records describe intake, updated episodes and hypotheses describe processing activity, and corroborated episodes are a separate verification state.</p><details><summary>Measurement clocks, confidence and limitations</summary><p>Received measures ingestion time; created measures new records; updated includes previous records processed again; observed uses the source timestamp. Consequently an investigation updated today is not necessarily new. Missing data never means zero.</p><p>24 hours and 7 days are rolling windows. Overall counts retained records, not immutable lifetime intake. AIS historical counts may use database estimates. Publication requires separate safeguards, so corroboration and review readiness are not public incident totals.</p>{isOverall&&<p>First stored intake: {stamp(raw?.first_last?.raw_first)}. Latest stored intake: {stamp(raw?.first_last?.raw_latest)}.</p>}</details></section>}
+ {tab==='pipeline'&&<section className="future-section future-intelligence-explanation"><h2>How to read the evidence pipeline</h2><p>Read each card according to its measurement clock, source and evidential threshold. Received records describe intake, updated episodes and hypotheses describe processing activity, and corroborated episodes are a separate verification state.</p><details><summary>Measurement clocks, confidence and limitations</summary><p>Received measures ingestion time; created measures new records; updated includes previous records processed again; observed uses the source timestamp. Consequently an investigation updated today is not necessarily new. Missing data never means zero.</p><p><GlossaryText>24 hours and 7 days are rolling windows. Overall counts retained records, not immutable lifetime intake. AIS historical counts may use database estimates. Publication requires separate safeguards, so corroboration and review readiness are not public incident totals.</GlossaryText></p>{isOverall&&<p>First stored intake: {stamp(raw?.first_last?.raw_first)}. Latest stored intake: {stamp(raw?.first_last?.raw_latest)}.</p>}</details></section>}
  {tab==='sources'&&<>{Object.entries(sourceHelp).slice(0,4).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown?.[key]} help={help}/>)}</>}
  {tab==='sensors'&&<><MetricSet heading="Sensors and signal coverage" rows={sensors} data={specialSensors}/><FleetView data={sections.data?.['sar-fleet']}/><SatelliteCandidates data={sections.data?.['satellite-queue']}/><HumanitarianCorrelation data={sections.data?.['humanitarian-ais-correlation']}/></>}
  {tab==='quality'&&<><section className="future-section future-quality-summary"><h2>Evidence quality</h2><p>Verification, independent lineages and investigation readiness. Figures above are evidence activity, not findings.</p>{!sections.data?.stabilization&&!sections.data?.cases&&<p className="future-empty-description">This view compares source reliability, evidence independence and the readiness of cases for human assessment. No detailed quality assessment is available for this period.</p>}</section>{sections.data?.stabilization&&<QualityDiagnostics data={sections.data.stabilization}/>}{sections.data?.cases&&<CaseReview data={sections.data.cases}/>}{Object.entries(sourceHelp).slice(4).filter(([key])=>breakdown?.[key]&&Object.keys(breakdown[key]).length>0).map(([key,help])=><Breakdown key={key} title={key.replaceAll('_',' ')} items={breakdown[key]} help={help}/>)}</>}
  {tab==='activity'&&<><AcquisitionHealth items={raw?.acquisition}/><SimpleRecords title="01 / Raw ingestion" items={sections.data?.observations?.observations} description="Unprocessed source observations. Reappearance after silence is telemetry, not proof of covert activity."/><SimpleRecords title="02 / Normalized events" items={sections.data?.events?.events} description="Parsed events are standardized source observations, not validated incidents."/><SimpleRecords title="Incoming partner signals" items={sections.data?.signals?.signals} description="External connector inputs are source material, not verified humanitarian or maritime incidents."/><SimpleRecords title="03 / Episodes and hypotheses" items={sections.data?.analysis?.items} description="Investigation candidates and recognized episodes; each requires further independent evidence."/><ParserTopology data={sections.data?.['pipeline-map']}/></>}
  {sections.error&&<p role="status">{sections.error}</p>}
- <section className="future-section"><h2>Data provenance and interpretation</h2><p>Operator figures are calculated by the same database aggregation functions as the canonical ingestion dashboard. Public fallback figures are drawn from the canonical status feed. Overall operator counts cover the retained corpus; recent values cover ingestion windows. Sensor counts may be estimated when database statistics are used, especially AIS fixes.</p><p>Source evidence is not the same as an incident. Independent corroboration and human review are required before claims become publishable.</p><button type="button" onClick={()=>navigate('history')}>Explore historical collection →</button></section>
+ <section className="future-section"><h2>Data provenance and interpretation</h2><p><GlossaryText>Operator figures are calculated by the same database aggregation functions as the canonical ingestion dashboard. Public fallback figures are drawn from the canonical status feed. Overall operator counts cover the retained corpus; recent values cover ingestion windows. Sensor counts may be estimated when database statistics are used, especially AIS fixes.</GlossaryText></p><p>Source evidence is not the same as an incident. Independent corroboration and human review are required before claims become publishable.</p><button type="button" onClick={()=>navigate('history')}>Explore historical collection →</button></section>
  </>;
 }
