@@ -29,6 +29,7 @@ def _sample(mmsi="123456789"):
 @pytest.fixture
 def durable_store(monkeypatch, tmp_path):
     monkeypatch.setenv("SEACOMMONS_AIS_SPOOL_ENABLED", "true")
+    monkeypatch.setenv("SEACOMMONS_AIS_SPOOL_ALLOW_TMP_FOR_TESTS", "true")
     monkeypatch.setenv("SEACOMMONS_AIS_SPOOL_PATH", str(tmp_path / "ais.sqlite3"))
     monkeypatch.setenv("SEACOMMONS_AIS_SPOOL_DISK_RESERVE_BYTES", "0")
     monkeypatch.setenv("SEACOMMONS_AIS_SPOOL_MAX_BYTES", "1000000")
@@ -40,11 +41,11 @@ def durable_store(monkeypatch, tmp_path):
 
 def test_enqueue_survives_reopen_and_retains_timestamp_and_provenance(tmp_path):
     path = tmp_path / "spool.sqlite3"
-    first = SQLiteTrackSpool(path, reserved_disk_bytes=0)
+    first = SQLiteTrackSpool(path, reserved_disk_bytes=0, allow_temporary_test_path=True)
     first.enqueue(_sample())
     first.close()
 
-    reopened = SQLiteTrackSpool(path, reserved_disk_bytes=0)
+    reopened = SQLiteTrackSpool(path, reserved_disk_bytes=0, allow_temporary_test_path=True)
     batch = reopened.claim()
     assert batch.count == 1
     assert batch.rows[0] == _sample()
@@ -56,7 +57,7 @@ def test_enqueue_survives_reopen_and_retains_timestamp_and_provenance(tmp_path):
 
 
 def test_frozen_batch_does_not_change_when_new_rows_arrive(tmp_path):
-    spool = SQLiteTrackSpool(tmp_path / "spool.sqlite3", reserved_disk_bytes=0)
+    spool = SQLiteTrackSpool(tmp_path / "spool.sqlite3", reserved_disk_bytes=0, allow_temporary_test_path=True)
     spool.enqueue(_sample("123456780"))
     frozen = spool.claim()
     spool.enqueue(_sample("123456781"))
@@ -73,7 +74,7 @@ def test_frozen_batch_does_not_change_when_new_rows_arrive(tmp_path):
 def test_spool_enforces_capacity_without_accepting_lost_rows(tmp_path):
     spool = SQLiteTrackSpool(
         tmp_path / "spool.sqlite3", max_payload_bytes=64,
-        reserved_disk_bytes=0,
+        reserved_disk_bytes=0, allow_temporary_test_path=True,
     )
     with pytest.raises(TrackSpoolFull):
         spool.enqueue(_sample())
@@ -84,6 +85,7 @@ def test_spool_enforces_capacity_without_accepting_lost_rows(tmp_path):
 def test_disk_reserve_is_fail_closed(monkeypatch, tmp_path):
     spool = SQLiteTrackSpool(
         tmp_path / "spool.sqlite3", reserved_disk_bytes=1024,
+        allow_temporary_test_path=True,
     )
     monkeypatch.setattr(
         "core.vessels.track_spool.os.statvfs",
