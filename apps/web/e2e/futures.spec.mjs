@@ -368,6 +368,8 @@ test('Intelligence metric glossary remains operable and contained on a phone vie
  await page.goto(FUTURES_URL+'?view=intelligence');
  const grid=page.getByRole('region',{name:'Intelligence metric dashboard'});
  await expect(grid).toBeVisible();
+ // PWA guidance is not allowed to block a user's first visit.
+ await expect(page.getByRole('dialog',{name:'Take Futures with you.'})).toHaveCount(0);
  const term=grid.getByRole('button',{name:'AIS positions',exact:true});
  await term.scrollIntoViewIfNeeded();
  await term.click();
@@ -380,6 +382,11 @@ test('Intelligence metric glossary remains operable and contained on a phone vie
  const box=await grid.boundingBox();
  expect(box.x).toBeGreaterThanOrEqual(-1);
  expect(box.x+box.width).toBeLessThanOrEqual(392);
+ const install=page.getByRole('button',{name:'How to install Futures'});
+ await install.click();
+ await expect(page.getByRole('dialog',{name:'Take Futures with you.'})).toBeVisible();
+ await page.getByRole('button',{name:'Continue in browser'}).click();
+ await expect(page.getByRole('dialog',{name:'Take Futures with you.'})).toHaveCount(0);
 });
 
 test('Agents shows loading rather than an empty registry while the snapshot request is pending', async ({page}) => {
