@@ -173,7 +173,9 @@ class TrackStore:
                 db.bulk_insert_mappings(VesselTrackDB, rows)
             return len(rows)
         except Exception as exc:
-            logger.warning("TrackStore: bulk insert failed (%d rows dropped): %s", len(rows), exc)
+            with self._buf_lock:
+                self._buffer = rows + self._buffer
+            logger.error("TrackStore: bulk insert failed (%d rows requeued in memory; restart still risks loss): %s", len(rows), exc)
             return 0
 
     def prune(self, older_than_days: Optional[int] = None) -> int:
@@ -187,6 +189,9 @@ class TrackStore:
         import hashlib
         import json
 
+        if os.getenv("AIS_PRUNE_APPROVED", "").strip().lower() != "true":
+            logger.warning("AIS prune blocked: AIS_PRUNE_APPROVED is not true")
+            return 0
         days = older_than_days or int(getattr(config, "VESSEL_TRACK_RETENTION_DAYS", 60))
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         if not (config.OBJECT_STORAGE_ENDPOINT and config.OBJECT_STORAGE_ACCESS_KEY
