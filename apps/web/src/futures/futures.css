@@ -910,3 +910,24 @@ html:has(.future-app){scroll-snap-type:none!important;scroll-padding-top:135px}
 .future-glossary-term:focus-visible{outline:2px solid var(--f-accent);outline-offset:3px}
 .future-intelligence-metric:nth-child(4n) .future-glossary-definition{left:auto;right:0}
 @media(max-width:760px){.future-glossary-definition{width:min(260px,74vw)}.future-intelligence-metric:nth-child(even) .future-glossary-definition{left:auto;right:0}}
+
+/* Intelligence: internal visual AIS cross-check. Third-party script runs only inside a sandboxed iframe. */
+.future-ais-check { display: grid; gap: 22px; }
+.future-ais-form { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+.future-ais-form label { display: grid; flex: 1 1 180px; gap: 8px; color: var(--f-muted); font-size: 12px; }
+.future-ais-form input { width: 100%; min-height: 42px; border: 1px solid var(--f-line); border-radius: 5px; padding: 10px 12px; background: var(--f-panel-2); color: var(--f-text); }
+.future-ais-form button { min-height: 42px; border: 1px solid var(--f-accent); padding: 9px 15px; border-radius: 5px; background: var(--f-accent); color: var(--f-bg); cursor: pointer; font-weight: 600; }
+.future-ais-form button:disabled { opacity: .45; cursor: not-allowed; }
+.future-ais-grid { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.6fr); gap: 20px; align-items: stretch; }
+.future-ais-grid article { min-width: 0; border: 1px solid var(--f-line); border-radius: 8px; padding: 20px; background: var(--f-panel); }
+.future-ais-grid h3 { font-size: 19px; line-height: 1.3; margin: 10px 0 18px; }
+.future-ais-grid p { overflow-wrap: anywhere; }
+.future-ais-local dl { margin: 16px 0; display: grid; gap: 9px; }
+.future-ais-local dl div { display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--f-line-soft); gap: 12px; padding-bottom: 9px; }
+.future-ais-local dt { color: var(--f-muted); font-size: 12px; }
+.future-ais-local dd { margin: 0; font-variant-numeric: tabular-nums; font-size: 13px; text-align: right; }
+.future-ais-freshness { font-size: 12px; font-weight: 600; color: var(--f-accent); }
+.future-ais-external iframe { border: 1px solid var(--f-line); display: block; width: 100%; height: 470px; border-radius: 5px; background: var(--f-panel-2); }
+.future-ais-grid .future-data-provenance { font-size: 12px; line-height: 1.6; color: var(--f-muted); }
+.future-ais-grid .future-data-provenance a { text-decoration: underline; text-underline-offset: 2px; }
+@media (max-width: 950px) { .future-ais-grid { grid-template-columns: 1fr; } }

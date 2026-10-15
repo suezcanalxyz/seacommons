@@ -18,13 +18,14 @@ import {
 import { operationalAudit, hardwareNetwork } from './operationalAudit.js';
 import { MethodExplorer, PlatformNetwork, NetworkContributionsIntro } from './NetworkPlatform.jsx';
 import IntelligenceDashboard from './IntelligenceDashboard.jsx';
+import AisCrossCheck from './AisCrossCheck.jsx';
 import { hardwareBuilds, totalCost } from './hardwareCosts.js';
 import { contributionNeeds } from './contributionNeeds.js';
 
-const NAV = ['overview', 'intelligence', 'platform', 'knowledge', 'development', 'agents', 'contributions', 'history', 'operations', 'hardware', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
+const NAV = ['overview', 'intelligence', 'platform', 'knowledge', 'development', 'agents', 'contributions', 'history', 'operations', 'ais-check', 'hardware', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
 const PRIMARY_NAV = ['overview', 'intelligence', 'platform', 'knowledge', 'development', 'agents', 'contributions'];
-const SUBNAV = { intelligence: [['intelligence','Dashboard'],['history','History'],['operations','Operations']], platform: [['platform','Products & devices'],['hardware','Hardware specifications'],['tools','Software tools']], knowledge: [['knowledge','Knowledge home'],['documents','Documents'],['guidebook','Guidebook']], development: [['development','Development home'],['roadmap','Roadmap'],['updates','Updates']], overview: [['overview','Introduction'],['project','Project details']] };
-const NAV_LABELS = { overview: 'Overview', intelligence:'Intelligence', platform:'Platform', knowledge:'Knowledge', development:'Development', agents:'Agents', documents: 'Docs', hardware: 'Devices', contributions: 'Contributions' };
+const SUBNAV = { intelligence: [['intelligence','Dashboard'],['history','History'],['operations','Operations'],['ais-check','AIS cross-check']], platform: [['platform','Products & devices'],['hardware','Hardware specifications'],['tools','Software tools']], knowledge: [['knowledge','Knowledge home'],['documents','Documents'],['guidebook','Guidebook']], development: [['development','Development home'],['roadmap','Roadmap'],['updates','Updates']], overview: [['overview','Introduction'],['project','Project details']] };
+const NAV_LABELS = { overview: 'Overview', intelligence:'Intelligence', 'ais-check':'AIS cross-check', platform:'Platform', knowledge:'Knowledge', development:'Development', agents:'Agents', documents: 'Docs', hardware: 'Devices', contributions: 'Contributions' };
 
 function readWorkspaceView() {
   const value = new URLSearchParams(window.location.search).get('view');
@@ -1086,6 +1087,7 @@ export default function FuturesApp() {
           {view === 'overview' && <Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'history' && <HistoricalAnalytics ops={ops} overall={overall} />}
           {view === 'operations' && <Operations ops={ops} />}
+          {view === 'ais-check' && <AisCrossCheck />}
           {view === 'hardware' && <Hardware />}
           {view === 'contributions' && <Contributions />}
           {view === 'project' && <Project />}

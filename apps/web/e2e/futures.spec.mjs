@@ -322,3 +322,23 @@ test('Agents displays protected scheduler snapshot with two real task records', 
  await expect(page.getByText('SeaCommons Upgrade Research')).toBeVisible();
  await expect(page.getByText(/read-only snapshot/i).first()).toBeVisible();
 });
+
+test('Futures AIS cross-check is private, opt-in and never scrapes the external map', async ({ page }) => {
+  await mockOperationalContracts(page);
+  await page.route('**/api/v1/vessels/search?*', (route) => route.fulfill({ json: {
+    count: 1,
+    vessels: [{ mmsi: '636017239', imo: '9316359', ship_name: 'MSC SPRING III',
+      lat: 35.9845, lon: -5.5212, speed_kn: 15.9, course_deg: 257.2,
+      last_seen: '2026-10-15T12:24:45Z' }],
+  } }));
+  await page.goto(FUTURES_URL + '?view=ais-check');
+
+  await expect(page.getByRole('heading', { name: 'Compare a vessel’s AIS position.' })).toBeVisible();
+  await expect(page.locator('iframe[title*="VesselFinder"]')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Load comparison' }).click();
+  await expect(page.getByText('MSC SPRING III')).toBeVisible();
+  await expect(page.getByText('5.52120° W')).toBeVisible();
+  const frame = page.locator('iframe[title*="VesselFinder"]');
+  await expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
+  await expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
+});
