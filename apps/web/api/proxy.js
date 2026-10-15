@@ -56,6 +56,31 @@ export function selectUpstream(headers) {
   return LIVE_HOSTS.has(hostname) ? API_VHOST : DEMO_VHOST;
 }
 
+// Futures is a partner workspace, not a browser-accessible internal gateway.
+// Public evidence endpoints are explicit; private ingestion reads require a
+// bearer identity which is verified by the API, not by this routing check.
+const FUTURES_PUBLIC_READ_PATHS = new Set([
+  '/health',
+  '/ready',
+  '/api/v1/status',
+  '/api/v1/futures/overall',
+  '/api/v1/play/counts',
+  '/api/v1/live/pipeline',
+]);
+
+export function isFuturesAllowedRequest(headers, method, path) {
+  if (requestHostname(headers) !== 'futures.seacommons.org') return true;
+  if (!['GET', 'HEAD'].includes(method)) return false;
+  const pathname = String(path || '').split('?')[0];
+  // Refuse ambiguous route spellings before either proxy or backend can
+  // normalize/decode them into a more privileged path.
+  if (pathname.includes('%') || pathname.includes('\\') || /\/\.{1,2}(?:\/|$)|\/\//.test(pathname)) return false;
+  if (FUTURES_PUBLIC_READ_PATHS.has(pathname)) return true;
+  const authorization = headers.authorization;
+  const bearer = typeof authorization === 'string' && /^Bearer\\s+\\S+$/i.test(authorization);
+  return bearer && pathname.startsWith('/api/v1/operator/ingestion/');
+}
+
 // Only explicitly published, anonymous read contracts may be cached.
 // Futures/operator data and all mutations must pass through uncached.
 export function publicProxyCacheSeconds(headers, method, path, status = 200, upstreamHeaders = {}) {
@@ -76,11 +101,12 @@ export function publicProxyCacheSeconds(headers, method, path, status = 200, ups
   return 0;
 }
 
-function requestHeaders(headers, upstreamVirtualHost) {
+export function requestHeaders(headers, upstreamVirtualHost, futures = false) {
   const forwarded = {};
   for (const [name, value] of Object.entries(headers)) {
     const lower = name.toLowerCase();
-    if (lower === 'host' || HOP_BY_HOP_HEADERS.has(lower)) continue;
+    if (lower === 'host' || HOP_BY_HOP_HEADERS.has(lower) || lower === 'x-seacommons-internal' || lower === 'x-seacommons-operator-gateway') continue;
+    if (futures && lower === 'cookie') continue;
     if (value !== undefined) forwarded[name] = value;
   }
   forwarded.host = upstreamVirtualHost;
@@ -92,22 +118,26 @@ function requestHeaders(headers, upstreamVirtualHost) {
   // records) is reachable by anyone who curls the API IP directly, since
   // AUTH_ENABLED is fail-open by design for local dev. Unset in Vercel env
   // (or on the backend) disables the check entirely.
-  if (process.env.SEACOMMONS_INTERNAL_PROXY_SECRET) {
+  if (!futures && process.env.SEACOMMONS_INTERNAL_PROXY_SECRET) {
     forwarded['x-seacommons-internal'] = process.env.SEACOMMONS_INTERNAL_PROXY_SECRET;
   }
   return forwarded;
 }
 
 export default function handler(req, res) {
-  const upstreamVirtualHost = selectUpstream(req.headers);
   const path = upstreamPath(req.query || {});
+  if (!isFuturesAllowedRequest(req.headers, req.method, path)) {
+    return res.status(403).json({ detail: 'This endpoint is not available from Futures without verified access' });
+  }
+  const futures = requestHostname(req.headers) === 'futures.seacommons.org';
+  const upstreamVirtualHost = selectUpstream(req.headers);
   const upstream = http.request(
     {
       hostname: UPSTREAM_HOST,
       port: UPSTREAM_PORT,
       method: req.method,
       path,
-      headers: requestHeaders(req.headers, upstreamVirtualHost),
+      headers: requestHeaders(req.headers, upstreamVirtualHost, futures),
     },
     (response) => {
       res.statusCode = response.statusCode || 502;
