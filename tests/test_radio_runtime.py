@@ -728,3 +728,32 @@ def test_managed_failover_uses_activation_grace_over_stale_previous_session_time
     assert adapters["managed_3"].started is False
     assert runtime.status()["channels"][0]["failovers"] == 0
     runtime.stop()
+
+
+def test_managed_channel_active_requires_actual_receiver_connection():
+    from core.radio.runtime import RemoteRadioRuntime
+
+    adapters = {}
+    def factory(descriptor, _callback):
+        adapter = FakeAdapter(descriptor)
+        adapters[descriptor.receiver_id] = adapter
+        return adapter
+
+    runtime = RemoteRadioRuntime(
+        enabled=True, descriptors=tuple(_managed_descriptor(i) for i in range(5)),
+        max_receivers=5, adapter_factory=factory, failover_enabled=True,
+        channel_replicas=3, reconnect_interval_s=60.0,
+    )
+    try:
+        runtime.start()
+        assert runtime.status()["channels"][0]["active"] == 3
+        # A receiver can disconnect *between* supervisor cycles. Do not
+        # continue claiming all desired radio replicas are connected.
+        adapters["managed_0"].started = False
+        status = runtime.status(include_receivers=True)
+        assert status["started"] == 2
+        assert status["channels"][0]["active"] == 2
+        assert any(row["state"] == "disconnected"
+                   for row in status["receivers"])
+    finally:
+        runtime.stop()

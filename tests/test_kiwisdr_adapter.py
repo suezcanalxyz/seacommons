@@ -208,3 +208,12 @@ def test_audio_init_completes_kiwi_handshake_and_reapplies_configured_tune():
     assert any(message.startswith("SET agc=1 ") for message in transport.sent)
     tune_messages = [message for message in transport.sent if message.startswith("SET mod=usb ")]
     assert len(tune_messages) >= 2
+
+
+def test_mf_hf_dsc_kiwi_usb_tunes_below_nominal_channel():
+    from core.radio.kiwisdr import KiwiSDRAdapter
+    transport = FakeKiwiTransport()
+    adapter = KiwiSDRAdapter(_descriptor(), on_observation=lambda obs: None, transport=transport)
+    adapter.start(); adapter.tune(2_187_500, "usb")
+    assert any("freq=2185.8" in text for text in transport.sent)
+    assert not any("freq=2187.5" in text for text in transport.sent)

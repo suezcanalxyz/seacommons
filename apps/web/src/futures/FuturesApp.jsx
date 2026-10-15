@@ -71,6 +71,25 @@ function SectionHeader({ eyebrow, title, copy, action }) {
   );
 }
 
+function AgentTaskDashboard() {
+ const [state,setState]=useState({loading:true,data:null,error:''});
+ const reload=useCallback(async()=>{
+  setState(s=>({...s,loading:true,error:''}));
+  try {
+   const data=await fetchJson(resolveSiteApiBase(),'/api/v1/operator/ingestion/scheduled-tasks',undefined,18000);
+   setState({loading:false,data,error:''});
+  } catch {
+   setState({loading:false,data:null,error:'Could not load the protected scheduler snapshot.'});
+  }
+ },[]);
+ useEffect(()=>{reload();},[reload]);
+ const tasks=state.data?.tasks||[];
+ return <><section className="future-page-head"><span className="future-eyebrow">Agents / scheduled workflows</span><h1>Scheduled work.</h1><p>Verified SeaCommons tasks from ChatGPT. This workspace shows a protected read-only snapshot, not a live scheduler connection.</p></section>
+ <section className="future-section"><div className="future-intelligence-freshness"><span>{state.loading?'Loading tasks…':state.error||('ChatGPT Tasks · '+tasks.length+' registered')}</span><small>{state.data?.synced_at?'Snapshot: '+new Date(state.data.synced_at).toLocaleString():'No verified snapshot'}</small><button type="button" onClick={reload}>Refresh</button></div>
+ {tasks.length?<div className="future-agent-grid">{tasks.map((task,i)=><article className="future-agent-card" key={task.title||i}><strong>{task.enabled?'ACTIVE':'PAUSED'}</strong><h3>{task.title}</h3><p>{task.cadence||'Cadence unavailable'} · {task.timezone||'Time zone unavailable'}</p><small>Last execution: {task.last_run?new Date(task.last_run).toLocaleString():'Not reported'}</small><small>Snapshot status: {task.status||'Imported'}</small></article>)}</div>:<p>{state.error||'No synchronized SeaCommons tasks are available. This is not evidence that all ChatGPT tasks have stopped.'}</p>}
+ <p className="future-inline-note">Tasks are managed in ChatGPT. Changes to cadence, activation or notifications do not sync automatically to this read-only snapshot.</p>
+ </section></>;
+}
 function useOperationalData(hours = 24) {
   const sequence = useRef(0);
   const [snapshot, setSnapshot] = useState({
@@ -118,13 +137,18 @@ function useOperationalData(hours = 24) {
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      if (!cancelled) await refresh();
+      if (!cancelled && document.visibilityState !== 'hidden') await refresh();
     };
     run();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') run();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     const timer = window.setInterval(run, 60_000);
     return () => {
       cancelled = true;
       sequence.current += 1;
+      document.removeEventListener('visibilitychange', onVisibility);
       window.clearInterval(timer);
     };
   }, [refresh]);
@@ -150,9 +174,19 @@ function useOverallData() {
     }
   }, []);
   useEffect(() => {
-    refresh();
-    const timer = window.setInterval(refresh, 300_000);
-    return () => window.clearInterval(timer);
+    const run = () => {
+      if (document.visibilityState !== 'hidden') refresh();
+    };
+    run();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') run();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    const timer = window.setInterval(run, 300_000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.clearInterval(timer);
+    };
   }, [refresh]);
   return { ...snapshot, refresh };
 }
@@ -678,57 +712,23 @@ function Project() {
   );
 }
 
+const developmentSteps = [
+ {name:'Operational reliability',duration:'1–2 weeks',state:'ongoing',dependency:'Existing infrastructure and access to recovery backups',deliverable:'Recovery-tested hosting and monitored storage',description:'Document the data footprint, apply bounded retention and test restoring the evidence store. Make system interruptions visible before users lose access.',acceptance:'Successful restore test, storage alerts and a continuous service-health baseline.'},
+ {name:'Measurement quality',duration:'2–3 weeks',state:'active',dependency:'Reliable observation storage and versioned metric definitions',deliverable:'Reconciled activity metrics for 24h, 7d and Overall',description:'Separate newly created records from updates, source observation times and automated processing. Verify that each dashboard metric uses a clearly defined population.',acceptance:'Independent reference queries agree with published measures and estimates are identified.'},
+ {name:'Cross-source evidence',duration:'3–5 weeks',state:'active',dependency:'Verified source lineage and consistent measurements',deliverable:'Reviewable AIS, radio, satellite and humanitarian evidence chains',description:'Connect related observations while preventing dependent sources from being counted as independent corroboration. Record counter-evidence, uncertainty and reviewer decisions.',acceptance:'Representative investigations can be reproduced from source through assessed episode.'},
+ {name:'Radio decoding and sensor validation',duration:'2–4 weeks',state:'planned',dependency:'Stable storage, receiver samples and quality criteria',deliverable:'Measured decode quality and field-device acceptance tests',description:'Evaluate repeatable radio decoding, coverage, timing accuracy and receiver health before expansion. Validate proposed coastal and drifting devices separately from existing software.',acceptance:'Documented sample-set results, failure modes and a maintainable pilot configuration.'},
+ {name:'Partner interoperability',duration:'3–6 weeks',state:'planned',dependency:'Stable evidence contracts and tested access policies',deliverable:'Reproducible partner integration and documentation',description:'Provide versioned data interfaces, permissions, provenance records and onboarding workflows for authorized external feeds and collaborators.',acceptance:'A partner can integrate a sample source, review access boundaries and trace the resulting data.'},
+ {name:'Field pilots and evaluation',duration:'4–8 weeks per pilot',state:'later',dependency:'Instrument reliability, local permissions and assigned operators',deliverable:'Evidence-backed pilot report and deployment decision',description:'Run a bounded trial with clear geographic coverage, maintenance responsibilities, calibration and public-interest outcomes. Evaluate performance before scaling.',acceptance:'Coverage, uptime, costs, evidence value and operating responsibilities are documented.'},
+];
 function Roadmap() {
-  const lanes = [
-    ['now', roadmap.now],
-    ['next', roadmap.next],
-    ['later', roadmap.later],
-  ];
-
-  return (
-    <>
-      <section className="future-page-head">
-        <span className="future-eyebrow">development roadmap</span>
-        <h1>What is being built, in what order, and why.</h1>
-        <p>
-          Roadmap items represent active engineering priorities and planned dependencies.
-          They are not promises of completed capability.
-        </p>
-      </section>
-
-      <section className="future-roadmap-board">
-        {lanes.map(([label, items]) => (
-          <div className="future-roadmap-lane" key={label}>
-            <header><span>{label}</span><strong>{items.length}</strong></header>
-            {items.map((item) => (
-              <article key={item.project + item.title}>
-                <div><small>{item.project}</small><StatusPill state={item.state}>{item.state}</StatusPill></div>
-                <h3>{item.title}</h3>
-                <p>{item.detail}</p>
-              </article>
-            ))}
-          </div>
-        ))}
-      </section>
-
-      <section className="future-section">
-        <SectionHeader
-          eyebrow="development needs"
-          title="Where support compounds"
-          copy="Operational needs are shown as project requirements, not as a grant-specific funding template."
-        />
-        <div className="future-support-grid">
-          {supportAreas.map((item) => (
-            <article key={item.area}>
-              <StatusPill state={item.status}>{item.status}</StatusPill>
-              <h3>{item.area}</h3>
-              <p>{item.need}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-    </>
-  );
+ return <>
+  <section className="future-page-head future-development-intro"><span className="future-eyebrow">Development / delivery pathway</span><h1>Development, step by step.</h1><p>A dependency-led plan with indicative implementation times. Durations represent focused engineering work after prerequisites are ready; phases may overlap, and they are not fixed delivery dates.</p></section>
+  <section className="future-section future-roadmap-timeline" aria-label="SeaCommons development stages"><header><div><span className="future-eyebrow">Implementation pathway</span><h2>Six connected work packages</h2><p>Each phase names its outcome, prerequisites and an objective way to verify completion. The durations are estimates, not commitments.</p></div></header>
+   <div className="future-roadmap-steps">{developmentSteps.map((step,index)=><article key={step.name} className="future-roadmap-step"><div className="future-roadmap-step-index"><span>{String(index+1).padStart(2,'0')}</span><i aria-hidden="true"/></div><div className="future-roadmap-step-body"><div className="future-roadmap-step-head"><div><h3>{step.name}</h3><p>{step.deliverable}</p></div><div className="future-roadmap-step-meta"><strong>{step.duration}</strong><StatusPill state={step.state}>{step.state}</StatusPill></div></div><p>{step.description}</p><details><summary>Dependencies and completion criteria</summary><dl><dt>Prerequisites</dt><dd>{step.dependency}</dd><dt>Completion check</dt><dd>{step.acceptance}</dd></dl></details></div></article>)}</div>
+   <p className="future-inline-note">Time estimates exclude partner approvals, procurement lead times and field permits. Each next phase begins when its prerequisites have been validated.</p>
+  </section>
+  <section className="future-section"><SectionHeader eyebrow="Partner contributions" title="What accelerates delivery" copy="Support is grouped by operational need, with clear responsibilities rather than repeated product categories."/><div className="future-support-grid">{supportAreas.map(item=><article key={item.area}><StatusPill state={item.status}>{item.status}</StatusPill><h3>{item.area}</h3><p>{item.need}</p></article>)}</div></section>
+ </>;
 }
 
 function Documents() {
@@ -1080,9 +1080,9 @@ export default function FuturesApp() {
           {Object.entries(SUBNAV).some(([,items])=>items.some(([id])=>id===view)) && <nav className="future-subnav" aria-label="Section navigation">{(Object.entries(SUBNAV).find(([,items])=>items.some(([id])=>id===view))?.[1] || []).map(([id,label])=><button type="button" key={id} className={id===view?'is-active':''} onClick={()=>navigate(id)}>{label}</button>)}</nav>}
           {view === 'intelligence' && <IntelligenceDashboard ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'platform' && <PlatformNetwork />}
-          {view === 'knowledge' && <><section className="future-page-head"><span className="future-eyebrow">Knowledge</span><h1>Learn, review and share.</h1><p>Technical references, practical guides and partner-ready documents in one place.</p></section><Documents /></>}
+          {view === 'knowledge' && <Documents />}
           {view === 'development' && <Roadmap />}
-          {view === 'agents' && <><section className="future-page-head"><span className="future-eyebrow">Agents / scheduled workflows</span><h1>Work that can be verified.</h1><p>Scheduled research and engineering tasks will show their next run, execution history, reports and linked code changes when a trusted scheduler feed is connected. No demonstration runs are presented as real.</p></section><section className="future-section"><SectionHeader eyebrow="scheduler status" title="Waiting for a verified execution feed" copy="Task metadata and execution results will be read from the scheduler, not inferred from the roadmap." /></section></>}
+          {view === 'agents' && <AgentTaskDashboard />}
           {view === 'overview' && <Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'history' && <HistoricalAnalytics ops={ops} overall={overall} />}
           {view === 'operations' && <Operations ops={ops} />}

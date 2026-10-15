@@ -25,13 +25,14 @@ def test_s1_stac_query_uses_the_current_copernicus_endpoint(monkeypatch):
             return {"features": []}
 
     def fake_post(url, json=None, timeout=None):
-        calls.append(url)
+        calls.append((url, json))
         return _FakeResponse()
 
     monkeypatch.setattr("httpx.post", fake_post)
     _recent_s1_scenes((13.0, 34.0, 14.0, 35.0), datetime.now(timezone.utc))
 
-    assert calls == ["https://stac.dataspace.copernicus.eu/v1/search"]
+    assert calls[0][0] == "https://stac.dataspace.copernicus.eu/v1/search"
+    assert calls[0][1]["collections"] == ["sentinel-1-grd"]
 
 
 def test_s1_stac_skips_invalid_time_window_without_provider_call(monkeypatch):
@@ -173,3 +174,14 @@ def test_unmatched_sar_detection_is_worded_as_a_candidate_not_a_confirmation(mon
     assert "not a confirmed" in recommendation
     assert "is confirmed" not in recommendation
     assert "confirmed dark vessel" not in recommendation
+
+
+def test_s1_stac_grd_scene_without_product_type_is_retained(monkeypatch):
+    class Response:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"features": [{"id": "S1_SCENE", "properties": {"datetime": "2026-10-12T00:00:00Z"}, "geometry": {"type": "Polygon", "coordinates": []}}]}
+    monkeypatch.setattr("httpx.post", lambda *args, **kwargs: Response())
+    result = _recent_s1_scenes((13,34,14,35), datetime(2026,10,11,tzinfo=timezone.utc), until=datetime(2026,10,13,tzinfo=timezone.utc))
+    assert len(result) == 1
+    assert result[0]["id"] == "S1_SCENE"

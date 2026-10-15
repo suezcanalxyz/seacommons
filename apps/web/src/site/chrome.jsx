@@ -19,7 +19,6 @@ function useClocks() {
 }
 
 const NAV = [
-  ['futures', 'https://futures.seacommons.org'],
   ['docs', '/docs'],
   ['live', 'https://live.seacommons.org'],
   ['play', 'https://play.seacommons.org'],

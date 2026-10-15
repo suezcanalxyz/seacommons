@@ -696,3 +696,217 @@ a { color: inherit; text-decoration: none; }
 /* Keep the section tabs visible during scroll across every Futures section. */
 .future-subnav{position:sticky;top:62px;z-index:11;background:rgba(5,8,13,.97);backdrop-filter:blur(18px);padding:13px 0 15px;margin-top:-14px}
 @media(max-width:760px){.future-subnav{top:60px;padding:10px 0;margin-top:0}}
+
+
+/* Unified Intelligence overview: twelve comparable tiles, one synchronized time switch. */
+.future-intelligence-unified-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.future-intelligence-headline{margin-top:18px}
+.future-intelligence-headline header p{max-width:850px}
+.future-intelligence-headline .future-intelligence-metric{min-height:196px}
+.future-intelligence-headline .future-intelligence-metric strong{font-variant-numeric:tabular-nums}
+@media(max-width:1100px){.future-intelligence-unified-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:760px){.future-intelligence-unified-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.future-intelligence-unified-grid{grid-template-columns:1fr}.future-intelligence-headline .future-intelligence-metric{min-height:0}}
+
+/* Compact responsive Futures: complete sections occupy predictable viewport slices. */
+.future-content{padding-top:20px;padding-bottom:28px}
+.future-page-head{margin-bottom:18px}
+.future-page-head h1,.future-hero h1{font-size:clamp(26px,3.1vw,43px)!important;line-height:1.12;letter-spacing:-.045em;max-width:22ch}
+.future-page-head p,.future-hero p{font-size:clamp(12px,1vw,14px);line-height:1.5;max-width:76ch}
+.future-section{padding-top:16px;padding-bottom:16px;margin-top:12px;margin-bottom:12px;scroll-margin-top:110px}
+.future-section h2,.future-section h3{font-size:clamp(15px,1.5vw,21px);line-height:1.25;margin-bottom:8px}
+.future-section p{line-height:1.52}
+.future-intelligence-headline .future-intelligence-metric{min-height:0;padding:12px;gap:7px}
+.future-intelligence-unified-grid{gap:8px;grid-template-columns:repeat(4,minmax(0,1fr))}
+.future-intelligence-metric strong{font-size:clamp(23px,2.2vw,36px);line-height:1.1}
+.future-intelligence-metric p{font-size:11px;line-height:1.42}
+.future-intelligence-subnav{padding:9px 0 13px;gap:5px}
+.future-period-tabs{margin-block:9px}
+.future-intelligence-freshness{padding:8px 0}
+.future-agent-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.future-agent-card{border:1px solid var(--f-line);background:var(--f-panel);padding:14px;display:grid;gap:7px}
+.future-agent-card h3{margin:0;font-size:14px;line-height:1.3}
+.future-agent-card p,.future-agent-card small{font-size:11px;line-height:1.45;color:var(--f-muted)}
+.future-agent-card strong{font-size:11px;color:var(--f-accent)}
+@media(max-width:1100px){.future-agent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.future-content{padding-top:12px}.future-page-head h1,.future-hero h1{font-size:clamp(24px,6vw,35px)!important}.future-intelligence-unified-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.future-agent-grid{grid-template-columns:1fr}.future-section{scroll-margin-top:105px}}
+@media(max-width:470px){.future-intelligence-unified-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.future-intelligence-headline .future-intelligence-metric{padding:10px}.future-intelligence-metric strong{font-size:clamp(19px,5.5vw,29px)}.future-intelligence-metric p{font-size:10px;line-height:1.4}.future-intelligence-metric-top{flex-wrap:wrap}}
+
+
+/* Gentle viewport-sized progression between compact Futures sections. */
+@media(min-width:761px) and (prefers-reduced-motion:no-preference){
+ html:has(.future-app){scroll-snap-type:y proximity;scroll-padding-top:108px}
+ .future-content>.future-section,.future-content>.future-page-head,.future-intelligence-headline{scroll-snap-align:start}
+}
+@media(prefers-reduced-motion:reduce){html:has(.future-app){scroll-behavior:auto}}
+
+
+/* Full-width editorial copy and a single visual hierarchy across Futures. */
+.future-page-head,.future-page-head>p,.future-hero,.future-hero>p,
+.future-content>.future-section>p,.future-intelligence-explanation>p{max-width:none;width:100%}
+.future-page-head h1,.future-hero h1{max-width:none}
+.future-content{width:100%;box-sizing:border-box}
+.future-intelligence-explanation{display:grid;gap:12px}
+.future-intelligence-explanation details{padding:12px 16px;border:1px solid var(--f-line);max-width:100%}
+.future-intelligence-explanation summary{cursor:pointer;color:var(--f-text);font-size:13px}
+.future-intelligence-explanation details p{max-width:none;font-size:12px;line-height:1.55;color:var(--f-muted)}
+
+
+/* Futures visual system v2: dense, readable, content-first workspace. */
+.future-intelligence-compact-head{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin:4px 0 0!important;padding:0!important}
+.future-intelligence-compact-head .future-eyebrow{font-size:9px;white-space:nowrap}
+.future-intelligence-compact-head h1{font-size:clamp(24px,2.5vw,34px)!important;line-height:1.12!important;letter-spacing:-.035em!important;margin:0!important;max-width:none}
+.future-intelligence-compact-head p{font-size:12px!important;line-height:1.4!important;margin:0!important;flex:1 1 320px;max-width:none}
+.future-intelligence-compact-head+.future-period-tabs{margin:12px 0 0!important;padding:9px 0!important;gap:10px}
+.future-period-tabs>div{min-width:0;width:auto;grid-template-columns:repeat(3,minmax(88px,112px));border-color:var(--f-line)}
+.future-period-tabs button{min-height:34px!important;padding:7px 12px!important;font-size:11px}
+.future-period-tabs>small{font-size:10px}
+.future-intelligence-subnav{position:sticky;top:64px;z-index:12;display:flex;align-items:center;gap:4px!important;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;padding:8px 0!important;margin:0!important;background:var(--f-bg,#05080d);border-bottom:1px solid var(--f-line)}
+.future-intelligence-subnav button{border:0!important;border-bottom:2px solid transparent!important;padding:9px 13px!important;font-size:11px!important;white-space:nowrap;flex:none;background:transparent!important;color:var(--f-muted)!important}
+.future-intelligence-subnav button:hover{color:var(--f-text)!important;background:var(--f-panel)!important}
+.future-intelligence-subnav button.is-active{color:var(--f-text)!important;border-bottom-color:var(--f-accent)!important;background:var(--f-panel)!important}
+.future-intelligence-freshness{padding:9px 0!important;gap:8px;font-size:11px}
+.future-intelligence-headline{margin:10px 0!important;padding:0!important}
+.future-kpi-heading{display:flex!important;justify-content:space-between;align-items:end!important;gap:14px;margin:0 0 10px!important;width:100%}
+.future-kpi-heading>div{display:grid;gap:2px;flex-shrink:0}
+.future-kpi-heading h2{font-size:17px!important;line-height:1.2!important;margin:0!important;letter-spacing:-.025em}
+.future-kpi-heading p{font-size:11px!important;line-height:1.45!important;margin:0!important;max-width:610px;text-align:right;color:var(--f-muted)}
+.future-intelligence-unified-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:7px!important}
+.future-intelligence-headline .future-intelligence-metric{min-height:0!important;padding:12px 13px!important;gap:5px!important;border-color:var(--f-line);transition:border-color .18s ease,background .18s ease}
+.future-intelligence-headline .future-intelligence-metric:hover{border-color:var(--f-accent);background:var(--f-panel)}
+.future-intelligence-headline .future-intelligence-metric strong{font-size:clamp(23px,2.05vw,34px)!important;line-height:1.1!important;letter-spacing:-.035em}
+.future-intelligence-metric-top{align-items:center}
+.future-intelligence-metric-top span{font-size:9px!important;letter-spacing:.04em!important;line-height:1.4!important}
+.future-intelligence-metric-top button{font-size:10px;padding:3px 0;white-space:nowrap}
+.future-intelligence-headline .future-intelligence-metric>p{font-size:10px!important;line-height:1.42!important;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.future-intelligence-headline .future-intelligence-metric:has(.future-intelligence-legend)>p{-webkit-line-clamp:unset;display:block}
+.future-intelligence-headline .future-data-provenance{font-size:10px;margin-top:10px}
+.future-section{margin:16px 0!important;padding:12px 0!important}
+.future-section>header{margin-bottom:10px!important}
+.future-section h2{font-size:clamp(15px,1.6vw,20px)!important;line-height:1.28!important}
+.future-section>p,.future-section>header p{font-size:12px;line-height:1.5}
+.future-empty-insight{padding:14px!important;border:1px solid var(--f-line);background:var(--f-panel)}
+.future-empty-insight h2{font-size:14px!important;margin:0 0 4px!important}
+.future-empty-insight p,.future-empty-description{font-size:11px!important;color:var(--f-muted)!important}
+@media(max-width:1100px){.future-intelligence-unified-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+@media(max-width:760px){
+ .future-intelligence-compact-head{display:grid;gap:3px}
+ .future-intelligence-compact-head h1{font-size:26px!important}
+ .future-intelligence-compact-head p{flex:auto}
+ .future-intelligence-subnav{top:55px;margin-inline:-12px!important;padding-inline:12px!important}
+ .future-kpi-heading{align-items:start!important;display:grid!important;gap:5px}
+ .future-kpi-heading p{text-align:left}
+ .future-intelligence-unified-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+ .future-period-tabs{flex-wrap:wrap}
+ .future-period-tabs>div{width:100%;grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:410px){.future-intelligence-headline .future-intelligence-metric{padding:10px!important}.future-intelligence-headline .future-intelligence-metric strong{font-size:23px!important}.future-intelligence-metric-top span{font-size:9px!important}}
+
+
+/* Global product polish: restrained hierarchy, consistent density, no presentation-scale typography. */
+.future-app{--f-line:rgba(255,255,255,.115);--f-panel:#0b1017}
+.future-content{max-width:1680px;padding:20px clamp(18px,2.4vw,38px) 54px}
+.future-sidebar{padding:19px 12px 13px}
+.future-product{margin:31px 6px 18px}
+.future-product span{font-size:22px}
+.future-sidebar nav button{padding:9px 10px;font-size:13px;line-height:1.3}
+.future-topbar{height:54px;padding:0 20px}
+.future-subnav{top:54px!important;padding:9px 0!important;margin-top:0!important}
+.future-hero,.future-page-head{max-width:none;width:100%;margin:4px 0 16px!important}
+.future-page-head h1,.future-hero h1{font-size:clamp(24px,2.65vw,39px)!important;line-height:1.14!important;letter-spacing:-.045em!important;margin:6px 0 8px!important}
+.future-page-head>p,.future-hero>p{font-size:13px!important;line-height:1.5!important;max-width:100%!important}
+.future-section{margin:16px 0!important;padding:10px 0!important}
+.future-section>header{margin-bottom:12px!important}
+.future-section>header h2,.future-project-groups h2,.future-section h2{font-size:clamp(16px,1.4vw,21px)!important}
+.future-section-head h2{font-size:clamp(18px,1.75vw,24px)!important}
+.future-section-head p,.future-section>p{font-size:12px;line-height:1.5}
+.future-card-grid{gap:10px}
+.future-project-card{min-height:180px;padding:16px;transition:border-color .16s ease,background .16s ease}
+.future-project-card h3{font-size:clamp(19px,1.8vw,25px);margin:16px 0 6px}
+.future-project-card p{font-size:12px;line-height:1.5;margin:0}
+.future-project-groups{gap:22px;margin:26px 0}
+.future-card-grid--compact .future-project-card{min-height:150px}
+.future-project-detail{margin-top:30px;padding-top:20px}
+.future-project-detail h2{font-size:clamp(22px,2.5vw,35px)}
+.future-project-lead{font-size:13px;margin:12px 0 18px}
+.future-kpis{margin:20px 0 28px}
+.future-kpis div{min-height:95px;padding:12px 12px 10px 0}
+.future-kpis strong{font-size:clamp(26px,2.8vw,36px)}
+.future-detail-grid div,.future-empty-grid div,.future-access-card div{min-height:84px}
+.future-agent-card{min-height:135px}
+.future-intelligence-subnav{top:54px}
+.future-intelligence-compact-head{margin-top:4px!important}
+.future-section button,.future-content a,.future-sidebar button{touch-action:manipulation}
+.future-content button:focus-visible,.future-content a:focus-visible,.future-sidebar button:focus-visible{outline:2px solid var(--f-accent);outline-offset:3px}
+@media(max-width:1100px){.future-project-groups{grid-template-columns:1fr;gap:14px}.future-content{padding-inline:18px}}
+@media(max-width:760px){
+ .future-content{padding:12px 14px calc(85px + env(safe-area-inset-bottom,0px))}
+ .future-topbar{height:48px;padding-inline:12px}
+ .future-subnav,.future-intelligence-subnav{top:48px!important}
+ .future-page-head h1,.future-hero h1{font-size:clamp(23px,6vw,32px)!important}
+ .future-project-card{min-height:0;padding:14px}
+ .future-project-card h3{margin:10px 0 5px;font-size:20px}
+ .future-project-groups{gap:12px;margin:18px 0}
+ .future-kpis{margin:12px 0 18px}
+ .future-section{margin:11px 0!important;padding:8px 0!important}
+}
+@media(prefers-reduced-motion:reduce){.future-app *, .future-app *::before,.future-app *::after{transition:none!important;scroll-behavior:auto!important}}
+
+.future-intelligence-tagline{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 0;color:var(--f-muted);font-size:10px}
+.future-intelligence-tagline+.future-period-tabs{margin-top:8px!important}
+@media(max-width:760px){.future-intelligence-tagline>span:last-child{display:none}}
+
+/* Avoid sticky-header obstruction of period controls and focus targets. */
+html:has(.future-app){scroll-snap-type:none!important;scroll-padding-top:135px}
+.future-period-tabs{scroll-margin-top:135px;position:relative;z-index:1}
+.future-period-tabs button{scroll-margin-top:135px}
+.future-intelligence-subnav{scroll-margin-top:120px}
+
+
+/* Partner-ready information architecture: product explanation and sequenced delivery. */
+.future-product-guide{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.future-product-guide-card{display:flex;flex-direction:column;gap:10px;min-width:0;background:var(--f-panel);border:1px solid var(--f-line);padding:19px}
+.future-product-guide-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.future-product-guide-top a{font-size:20px;font-weight:500;letter-spacing:-.04em}
+.future-product-guide-top a:hover{text-decoration:underline;text-underline-offset:4px}
+.future-product-guide-lead{font-size:13px;line-height:1.6;color:var(--f-text);margin:0}
+.future-product-guide-detail{display:grid;gap:5px}
+.future-product-guide-detail strong{font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--f-accent);margin-top:8px}
+.future-product-guide-detail p,.future-product-guide-detail li{font-size:12px;line-height:1.55;color:var(--f-muted)}
+.future-product-guide-detail p,.future-product-guide-detail ul{margin:0}
+.future-product-guide-detail ul{padding-left:19px}
+.future-product-guide-limit{border-top:1px solid var(--f-line);padding-top:9px;margin:auto 0 0;font-size:11px;line-height:1.5;color:var(--f-muted)}
+.future-product-guide-limit b{color:var(--f-text)}
+.future-device-question{font-size:13px;line-height:1.5;margin:5px 0 10px}
+.future-device-guide{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.future-device-guide p{padding:13px;background:var(--f-panel);border:1px solid var(--f-line);font-size:12px;line-height:1.6;color:var(--f-muted);margin:0}
+.future-device-guide b{display:block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--f-accent);margin-bottom:5px}
+.future-intelligence-explainer{display:grid;grid-template-columns:minmax(170px,.32fr) minmax(0,1fr);gap:18px;align-items:start;padding:14px 0 12px;border-bottom:1px solid var(--f-line)}
+.future-intelligence-explainer h2{font-size:17px;line-height:1.2;letter-spacing:-.025em;margin:4px 0 0}
+.future-intelligence-explainer p{font-size:12px;line-height:1.65;color:var(--f-muted);margin:0}
+.future-intelligence-explainer+.future-intelligence-subnav{position:sticky;top:54px}
+.future-roadmap-steps{display:grid;gap:0}
+.future-roadmap-step{display:grid;grid-template-columns:58px minmax(0,1fr);gap:16px}
+.future-roadmap-step-index{display:flex;align-items:center;flex-direction:column;gap:9px;color:var(--f-accent);font:12px 'DM Mono',monospace}
+.future-roadmap-step-index i{display:block;flex:1;width:1px;min-height:26px;background:var(--f-line)}
+.future-roadmap-step:last-child .future-roadmap-step-index i{display:none}
+.future-roadmap-step-body{padding:0 0 20px;margin-bottom:16px;border-bottom:1px solid var(--f-line)}
+.future-roadmap-step-head{display:flex;justify-content:space-between;align-items:start;gap:16px}
+.future-roadmap-step-head h3{font-size:18px;letter-spacing:-.03em;margin:0 0 4px;font-weight:500}
+.future-roadmap-step-head p,.future-roadmap-step-body>p{font-size:12px;line-height:1.6;color:var(--f-muted);margin:0 0 9px}
+.future-roadmap-step-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;white-space:nowrap}
+.future-roadmap-step-meta strong{font:12px 'DM Mono',monospace;color:var(--f-accent)}
+.future-roadmap-step details{margin-top:9px;padding:9px 0;border-top:1px solid var(--f-line-soft)}
+.future-roadmap-step summary{font-size:11px;cursor:pointer;color:var(--f-text)}
+.future-roadmap-step dl{display:grid;grid-template-columns:140px minmax(0,1fr);gap:9px;margin:12px 0;font-size:12px;line-height:1.5}
+.future-roadmap-step dt{color:var(--f-accent)}.future-roadmap-step dd{margin:0;color:var(--f-muted)}
+@media(max-width:840px){.future-product-guide{grid-template-columns:1fr}.future-intelligence-explainer{grid-template-columns:1fr;gap:5px}}
+@media(max-width:600px){.future-device-guide{grid-template-columns:1fr}.future-roadmap-step{grid-template-columns:30px minmax(0,1fr);gap:9px}.future-roadmap-step-head{display:grid}.future-roadmap-step-meta{justify-content:flex-start}.future-roadmap-step dl{grid-template-columns:1fr;gap:3px}.future-product-guide-card{padding:14px}.future-intelligence-explainer+.future-intelligence-subnav{top:48px}}
+
+/* Keyboard and pointer accessible metric glossary. */
+.future-glossary-term{display:inline;position:relative;cursor:help;text-decoration:underline dotted currentColor;text-underline-offset:3px}
+.future-glossary-definition{display:none;position:absolute;z-index:40;top:calc(100% + 9px);left:0;width:min(300px,75vw);padding:12px 14px;background:#17232d;border:1px solid var(--f-accent);box-shadow:0 12px 36px rgba(0,0,0,.35);color:#f3f8f9;font-size:12px;line-height:1.5;text-transform:none;letter-spacing:0;white-space:normal;font-weight:400}
+.future-glossary-term:hover .future-glossary-definition,.future-glossary-term:focus .future-glossary-definition,.future-glossary-term:focus-within .future-glossary-definition{display:block}
+.future-glossary-term:focus-visible{outline:2px solid var(--f-accent);outline-offset:3px}
+.future-intelligence-metric:nth-child(4n) .future-glossary-definition{left:auto;right:0}
+@media(max-width:760px){.future-glossary-definition{width:min(260px,74vw)}.future-intelligence-metric:nth-child(even) .future-glossary-definition{left:auto;right:0}}

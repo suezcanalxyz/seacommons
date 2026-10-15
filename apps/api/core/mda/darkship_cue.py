@@ -102,7 +102,7 @@ def _recent_s1_scenes(
             return []
 
         body = {
-            "collections": ["SENTINEL-1"],
+            "collections": ["sentinel-1-grd"],
             "bbox": [min_lon, min_lat, max_lon, max_lat],
             "datetime": f"{since.isoformat()}/{end.isoformat()}",
             "limit": 20,
@@ -116,8 +116,8 @@ def _recent_s1_scenes(
         out = []
         for f in feats:
             props = f.get("properties", {})
-            if "GRD" not in str(props.get("productType", f.get("id", ""))):
-                continue
+            # The query is already constrained to the GRD collection.
+            # Product-specific fields vary between Copernicus catalogue versions.
             out.append({
                 "id": f.get("id"),
                 "acquired": props.get("datetime") or props.get("startTimeFromAscendingNode"),

@@ -304,3 +304,83 @@ def test_futures_invalid_bearer_fails_closed(monkeypatch):
         headers={"Authorization": "Bearer invalid-token"},
     )
     assert response.status_code == 401
+
+
+def test_measurement_contract_explains_clocks_and_separates_created_updated(monkeypatch):
+    from core.api.main import app
+    from core.config import config
+
+    monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "operator-secret")
+    response = TestClient(app).get(
+        "/api/v1/operator/ingestion/measurements?hours=24",
+        headers={"x-seacommons-operator-gateway": "operator-secret"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["contract_version"] == 1
+    assert payload["window_hours"] == 24
+    assert payload["scope"] == "rolling"
+    assert payload["counts"]["investigations_created"] <= payload["counts"]["investigations_updated"] + payload["counts"]["investigations_open_now"]
+    assert payload["definitions"]["investigations_created"]["clock"] == "created_at"
+    assert payload["definitions"]["investigations_updated"]["clock"] == "updated_at"
+    assert payload["definitions"]["ais_positions_received"]["clock"] == "received_at"
+    assert payload["definitions"]["ais_positions_observed"]["clock"] == "ts"
+    assert payload["definitions"]["investigations_open_now"]["clock"] == "current state"
+
+
+def test_measurement_contract_rejects_unauthenticated_access(monkeypatch):
+    from core.api.main import app
+    from core.config import config
+    monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "operator-secret")
+    response = TestClient(app).get("/api/v1/operator/ingestion/measurements?hours=24")
+    assert response.status_code == 401
+
+
+def test_futures_readonly_agent_snapshot(monkeypatch, tmp_path):
+    import json
+    from core.api.main import app
+    from core.config import config
+
+    tasks_file = tmp_path / "tasks.json"
+    tasks_file.write_text(json.dumps({
+        "synced_at": "2026-10-14T13:48:33Z",
+        "tasks": [{
+            "title": "SeaCommons Forensic Repair Loop",
+            "enabled": True, "cadence": "Every 3 hours",
+            "last_run": "2026-10-14T13:48:10Z", "timezone": "Europe/Rome",
+            "prompt": "PRIVATE NEVER FORWARD",
+        }],
+    }))
+    monkeypatch.setenv("SEACOMMONS_FUTURES_TASK_SNAPSHOT", str(tasks_file))
+    monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "test-gateway")
+    client = TestClient(app)
+    assert client.get("/api/v1/operator/ingestion/scheduled-tasks").status_code == 401
+    result = client.get("/api/v1/operator/ingestion/scheduled-tasks", headers={"x-seacommons-operator-gateway": "test-gateway"})
+    assert result.status_code == 200
+    assert result.json()["live_sync"] is False
+    assert result.json()["tasks"][0]["title"] == "SeaCommons Forensic Repair Loop"
+    assert "prompt" not in result.json()["tasks"][0]
+
+
+def test_overall_metrics_has_all_twelve_headline_measurements(monkeypatch):
+    from core.api.main import app
+    from core.config import config
+    monkeypatch.setattr(config, "OPERATOR_GATEWAY_SECRET", "test-gateway")
+    client = TestClient(app)
+    assert client.get("/api/v1/operator/ingestion/overall-metrics").status_code == 401
+    result = client.get("/api/v1/operator/ingestion/overall-metrics", headers={"x-seacommons-operator-gateway": "test-gateway"})
+    assert result.status_code == 200
+    payload = result.json()
+    assert payload["scope"] == "all_time"
+    assert len(payload["stages"]) == 7
+    for key in ("ais_fixes", "radio_bursts", "radio_events", "satellite_observations", "source_names"):
+        assert key in payload["sensor_activity"]
+
+
+def test_futures_audience_accepts_only_configured_oidc_client(monkeypatch):
+    from core import security
+    monkeypatch.setenv("SEACOMMONS_FUTURES_OIDC_CLIENT_ID", "test-authorized-client")
+    assert security._futures_audiences() == ["authenticated", "test-authorized-client"]
+    monkeypatch.setenv("SEACOMMONS_FUTURES_OIDC_CLIENT_ID", "another-authorized-client")
+    assert "test-authorized-client" not in security._futures_audiences()
+    assert "another-authorized-client" in security._futures_audiences()

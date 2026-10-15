@@ -242,3 +242,17 @@ def test_ngo_stream_reuses_primary_key_when_override_is_unset(monkeypatch):
     finally:
         aisstream._client = old_client
         aisstream._ngo_client = old_ngo_client
+
+
+def test_aisstream_does_not_dispatch_known_passenger_or_pleasure_positions():
+    observed = []
+    registry = _Registry()
+    registry._cache = {"111111111": {"ship_type": 60}, "222222222": {"ship_type": 37}}
+    client = AISStreamClient("dummy", on_observation=observed.append,
+                             publish_legacy=False)
+    client._handle(_position_message(mmsi="111111111"), registry)
+    client._handle(_position_message(mmsi="222222222"), registry)
+    assert observed == []
+    assert registry.rows == []
+    client._handle(_position_message(mmsi="333333333"), registry)
+    assert len(observed) == 1

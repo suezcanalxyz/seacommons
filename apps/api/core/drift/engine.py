@@ -72,6 +72,12 @@ class DriftEngine:
         remote = _remote_compute(lat, lon, time_utc, duration_h, domain, config, backtrack=False)
         if remote is not None:
             return remote
+        if (runtime_config.DRIFT_WORKER_URL
+                and runtime_config.DRIFT_WORKER_REQUIRE_REMOTE
+                and domain != "ballistic"):
+            # The API must not run a heavy OpenDrift simulation locally when
+            # an isolated worker is configured but temporarily unavailable.
+            raise RuntimeError("Remote drift worker unavailable; compute deferred")
         if domain == "ballistic":
             return self._ballistic(lat, lon, time_utc, config or {})
         return self._opendrift(lat, lon, time_utc, duration_h, domain, config or {})

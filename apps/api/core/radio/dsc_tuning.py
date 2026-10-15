@@ -18,11 +18,18 @@ DSC_BAUD = 100
 
 
 def receiver_carrier_hz(assigned_frequency_hz: int, mode: str) -> int:
-    """Return the actual RF tuning frequency for MF/HF DSC.
+    """Return the SDR dial frequency, not the nominal DSC channel label.
 
-    The DSC channel value is the assigned receive frequency. For J2B the
-    demodulated SSB audio itself is centred at 1700 Hz (1615/1785 Hz tones);
-    the receiver must therefore stay on the assigned RF frequency rather than
-    subtracting the audio centre frequency.
+    For a conventional USB SDR receiver the MF/HF DSC RF components are
+    centred around the nominal DSC channel (+/- 85 Hz). The demodulator
+    needs its USB reference 1700 Hz *below* that RF centre so that the
+    decoded audio contains the expected 1615/1785 Hz AFSK pair. Keep the
+    nominal frequency on all observations, evidence, and public labels.
+
+    Only documented MF/HF DSC channels in USB mode are corrected. Other
+    applications (NAVTEX AM, non-DSC, etc.) must not be retuned silently.
     """
-    return int(assigned_frequency_hz)
+    assigned = int(assigned_frequency_hz)
+    if assigned in HF_DSC_ASSIGNED_FREQUENCIES_HZ and str(mode).strip().lower() == "usb":
+        return assigned - DSC_AUDIO_CENTER_HZ
+    return assigned

@@ -132,7 +132,7 @@ test('Futures navigation is deep-linkable and browser-history aware', async ({ p
   await mockOperationalContracts(page);
   await page.goto(`${FUTURES_URL}?view=roadmap`);
 
-  await expect(page.getByRole('heading', { name: /What is being built/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Development, step by step/i })).toBeVisible();
   await expect(page).toHaveURL(/view=roadmap/);
 
   await page.goto(FUTURES_URL + '?view=project');
@@ -140,7 +140,7 @@ test('Futures navigation is deep-linkable and browser-history aware', async ({ p
   await expect(page).toHaveURL(/view=project/);
 
   await page.goBack();
-  await expect(page.getByRole('heading', { name: /What is being built/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Development, step by step/i })).toBeVisible();
   await expect(page).toHaveURL(/view=roadmap/);
 });
 
@@ -224,7 +224,7 @@ test('Unavailable Overall is explicitly unknown, never a synthetic zero', async 
 test('Futures Platform connects software, illustrated devices and safe network contributions', async ({page}) => {
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL + '?view=platform');
-  await expect(page.getByRole('heading', {name: /Software, devices and a shared method/i})).toBeVisible();
+  await expect(page.getByRole('heading', {name: /One evidence system. Four ways to use it/i})).toBeVisible();
   await expect(page.getByRole('link', {name:/Live/i}).first()).toHaveAttribute('href','https://live.seacommons.org');
   await page.getByRole('button', {name:/Drifter/i}).click();
   await expect(page.getByRole('heading',{name:'Drifter'})).toBeVisible();
@@ -267,18 +267,58 @@ test('Intelligence matches operator aggregation with 24h 7d overall switching', 
   breakdowns:{raw_by_source:{AISStream:2346069},raw_observation_types:{ais_gap:1808730},normalized_event_types:{ais_spike:142724},episode_families:{gap_episode:12508},hypothesis_states:{collecting:99}},
   first_last:{raw_first:'2026-09-04T00:00:00Z',raw_latest:'2026-10-14T00:19:21Z'}
  }}));
+ await page.route('**/api/v1/operator/ingestion/overall-metrics',route=>route.fulfill({json:{
+  generated_at:'2026-10-14T00:15:09Z',scope:'all_time',
+  stages:[{id:'raw',count:2371751},{id:'normalized',count:382495},{id:'derived',count:287201},{id:'episodes',count:35245},{id:'hypotheses',count:6924},{id:'corroborated',count:18},{id:'review_ready',count:10}],
+  sensor_activity:{ais_fixes:2884066,ais_fixes_estimated:true,radio_bursts:86283,radio_events:6356,satellite_observations:6793,source_names:36},
+  breakdowns:{raw_by_source:{AISStream:2346069},raw_observation_types:{ais_gap:1808730},normalized_event_types:{ais_spike:142724},episode_families:{gap_episode:12508},hypothesis_states:{collecting:99}},
+  first_last:{raw_first:'2026-09-04T00:00:00Z',raw_latest:'2026-10-14T00:19:21Z'}
+ }}));
  await page.goto(FUTURES_URL + '?view=intelligence');
- await expect(page.getByRole('heading',{name:/Evidence, from first signal/i})).toBeVisible();
+ await expect(page.getByText('SeaCommons / Intelligence',{exact:true})).toBeVisible();
  const window=page.getByRole('group',{name:'Intelligence time window'});
  await window.getByRole('button',{name:'24 hours'}).click();
- await expect(page.getByText('20,591')).toBeVisible();
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).getByText('20,591')).toBeVisible();
  await page.getByRole('button',{name:'Sources & types'}).click();
  await expect(page.getByText('20,397')).toBeVisible();
  await window.getByRole('button',{name:'7 days'}).click();
  await page.getByRole('button',{name:'Evidence pipeline'}).click();
- await expect(page.getByText('83,000')).toBeVisible();
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).getByText('83,000')).toBeVisible();
  await window.getByRole('button',{name:'Overall'}).click();
- await expect(page.getByText('2,371,751')).toBeVisible();
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).getByText('2,371,751')).toBeVisible();
  await page.getByRole('button',{name:'Sources & types'}).click();
  await expect(page.getByText('2,346,069')).toBeVisible();
+});
+
+
+test('Intelligence presents all twelve measures together for every time window', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.goto(FUTURES_URL + '?view=intelligence');
+ const grid=page.getByRole('region',{name:'Intelligence metric dashboard'});
+ await expect(grid).toBeVisible();
+ for(const name of ['Raw observations','Normalized events','Derived cues','Recognized episodes','Investigation hypotheses','Corroborated episodes','Review ready','AIS positions','Radio bursts','Radio events','Satellite observations','Active source names']){
+   await expect(grid.getByText(name,{exact:true})).toBeVisible();
+ }
+ const periods=page.getByRole('group',{name:'Intelligence time window'});
+ await periods.getByRole('button',{name:'24 hours'}).click();
+ await expect(grid).toContainText('24 hours');
+ await periods.getByRole('button',{name:'7 days'}).click();
+ await expect(grid).toContainText('7 days');
+ await periods.getByRole('button',{name:'Overall'}).click();
+ await expect(grid).toContainText('Overall');
+});
+
+test('Agents displays protected scheduler snapshot with two real task records', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/scheduled-tasks',route=>route.fulfill({json:{
+   source:'ChatGPT Tasks snapshot',live_sync:false,synced_at:'2026-10-14T13:48:33Z',
+   tasks:[
+     {title:'SeaCommons Forensic Repair Loop',enabled:true,cadence:'Every 3 hours',timezone:'Europe/Rome'},
+     {title:'SeaCommons Upgrade Research',enabled:true,cadence:'Daily 09:00',timezone:'Europe/Malta'},
+   ]
+ }}));
+ await page.goto(FUTURES_URL+'?view=agents');
+ await expect(page.getByText('SeaCommons Forensic Repair Loop')).toBeVisible();
+ await expect(page.getByText('SeaCommons Upgrade Research')).toBeVisible();
+ await expect(page.getByText(/read-only snapshot/i).first()).toBeVisible();
 });

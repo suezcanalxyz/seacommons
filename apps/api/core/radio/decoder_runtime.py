@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import base64
+import math
+from array import array
+import sys
 import json
+import hashlib
 import queue
+import re
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Iterable, Mapping, Protocol
@@ -26,6 +32,8 @@ class EphemeralRadioFrame:
     encoding: str
     payload: bytes
     source_terms: str | None = None
+    session_id: str | None = None
+    sequence: int | None = None
 
     def __post_init__(self) -> None:
         if not self.receiver_id.strip() or not self.provider.strip() or not self.physical_lineage.strip():
@@ -36,6 +44,10 @@ class EphemeralRadioFrame:
             raise ValueError("observed_at must be timezone-aware")
         if not isinstance(self.payload, bytes) or len(self.payload) > _MAX_EPHEMERAL_FRAME_BYTES:
             raise ValueError("payload exceeds ephemeral frame bound")
+        if self.session_id is not None and len(self.session_id) > 128:
+            raise ValueError("audio session identifier too long")
+        if self.sequence is not None and not (0 <= self.sequence <= 0xFFFFFFFF):
+            raise ValueError("invalid audio packet sequence")
 
     def public_metadata(self) -> dict[str, object]:
         return {
@@ -50,6 +62,31 @@ class EphemeralRadioFrame:
         }
 
 
+def _pcm_quality(frame: EphemeralRadioFrame) -> dict[str, object]:
+    """Ephemeral coarse audio diagnostics; samples and identifiers are not retained."""
+    data = frame.payload
+    duration_ms = round(1000 * (len(data) // 2) / frame.sample_rate_hz, 1)
+    result: dict[str, object] = {"duration_ms": duration_ms, "bytes": len(data), "valid_pcm": False}
+    if not data or len(data) % 2 or frame.encoding not in {"kiwi_snd_raw", "openwebrx_pcm_s16le", "pcm_s16le"}:
+        return result
+    # Sample at a bounded stride rather than accumulating raw audio in memory.
+    # Signed magnitude is endian-independent for clipping only; RMS needs correct order.
+    samples = array("h")
+    samples.frombytes(data)
+    byteorder = "big" if frame.encoding == "kiwi_snd_raw" else "little"
+    if sys.byteorder != byteorder:
+        samples.byteswap()
+    stride = max(1, len(samples) // 1024)
+    sampled = samples[::stride]
+    if not sampled:
+        return result
+    rms = math.sqrt(sum(float(x) * float(x) for x in sampled) / len(sampled)) / 32768
+    clipped = sum(abs(x) >= 32500 for x in sampled) / len(sampled)
+    result.update(valid_pcm=True, rms=round(rms, 5), clipped_fraction=round(clipped, 4),
+                  silent=rms < 0.002, clipping=clipped > 0.02)
+    return result
+
+
 class RadioDecoder(Protocol):
     def decode(self, frame: EphemeralRadioFrame) -> Iterable[Mapping[str, object]]: ...
 
@@ -62,85 +99,218 @@ class RadioDecoderRuntime:
         decoders: Iterable[RadioDecoder] = (),
         decoded_handler: Callable[[DecodedRadioMessage], dict[str, object]],
         queue_size: int = 32,
+        decoder_factory: Callable[[], Iterable[RadioDecoder]] | None = None,
+        worker_count: int = 1,
     ) -> None:
         self.enabled = bool(enabled)
         self._decoders = tuple(decoders)
         self._decoded_handler = decoded_handler
         self._frames = 0
         self._decoded = 0
+        self._accepted = 0
+        self._dsc_accepted = 0
+        self._navtex_accepted = 0
+        self._rejected = 0
         self._invalid = 0
         self._dropped = 0
         self._errors = 0
-        self._queue: queue.Queue[EphemeralRadioFrame] = queue.Queue(maxsize=max(1, int(queue_size)))
+        self._audio_sampled = 0
+        self._audio_silent = 0
+        self._audio_clipped = 0
+        self._audio_invalid = 0
+        self._audio_duration_ms = 0.0
+        self._audio_rms_sum = 0.0
+        # One FIFO per shard, selected by physical lineage. All frames from a
+        # receiver remain ordered and are decoded by the same persistent process.
+        # Existing direct/isolated callers retain one worker and one queue.
+        shards = max(1, min(int(worker_count), 4)) if decoder_factory else 1
+        self._queues = tuple(queue.Queue(maxsize=max(1, int(queue_size))) for _ in range(shards))
+        self._frames_by_shard = [0] * shards
+        self._drops_by_shard = [0] * shards
+        self._shard_metrics_lock = threading.Lock()
+        # Per-second bounded ring for genuine current health. Lifetime losses
+        # include startup/reconnect bursts and must not force perpetual degraded.
+        self._health_lock = threading.Lock()
+        self._health_window_s = 30
+        self._health_ring: list[tuple[int, dict[str, int]]] = [(-1, {}) for _ in range(30)]
+        self._queue = self._queues[0]  # backward compatible single-shard runtime
+        self._decoder_sets = [self._decoders]
+        for _ in range(shards - 1):
+            self._decoder_sets.append(tuple(decoder_factory()))
+        self._workers: list[threading.Thread] = []
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
 
+    def _record_health(self, metric: str, amount: int = 1) -> None:
+        if amount <= 0:
+            return
+        sec = int(time.monotonic())
+        index = sec % self._health_window_s
+        with self._health_lock:
+            epoch, values = self._health_ring[index]
+            if epoch != sec:
+                values = {}
+                self._health_ring[index] = (sec, values)
+            values[metric] = values.get(metric, 0) + amount
+
+    def _recent_health(self) -> dict[str, int]:
+        now = int(time.monotonic())
+        summary = {"frames": 0, "dropped": 0, "invalid": 0, "errors": 0}
+        with self._health_lock:
+            for epoch, values in self._health_ring:
+                if now - self._health_window_s < epoch <= now:
+                    for metric in summary:
+                        summary[metric] += values.get(metric, 0)
+        return summary
+
     def status(self) -> dict[str, object]:
+        reasons = {name: 0 for name in ("sequence_gap", "session", "timestamp_gap", "stale")}
+        sources: dict[str, dict[str, int]] = {}
+        for group in self._decoder_sets:
+            for decoder in group:
+                snapshot = getattr(decoder, "continuity_status", None)
+                if not callable(snapshot):
+                    continue
+                item_reasons, item_sources = snapshot()
+                for name in reasons:
+                    reasons[name] += int(item_reasons.get(name, 0))
+                for receiver, details in item_sources.items():
+                    values = sources.setdefault(receiver, {name: 0 for name in reasons})
+                    for name in reasons:
+                        values[name] += int(details.get(name, 0))
+        public_sources = [
+            {"receiver_id": receiver, "resets": sum(details.values()), **details}
+            for receiver, details in sorted(sources.items()) if sum(details.values()) > 0
+        ][:16]
+        recent = self._recent_health()
+        with self._shard_metrics_lock:
+            frames_by_shard = list(self._frames_by_shard)
+            drops_by_shard = list(self._drops_by_shard)
         return {
             "enabled": self.enabled,
             "decoders": len(self._decoders),
             "frames": self._frames,
             "decoded": self._decoded,
+            "accepted": self._accepted,
+            "dsc_accepted": self._dsc_accepted,
+            "navtex_accepted": self._navtex_accepted,
+            "rejected": self._rejected,
             "invalid": self._invalid,
             "dropped": self._dropped,
             "errors": self._errors,
-            "queued": self._queue.qsize(),
-            "worker_alive": bool(self._worker and self._worker.is_alive()),
+            "audio_quality": {
+                "sampled_frames": self._audio_sampled,
+                "silent_frames": self._audio_silent,
+                "clipped_frames": self._audio_clipped,
+                "invalid_pcm_frames": self._audio_invalid,
+                "sampled_duration_s": round(self._audio_duration_ms / 1000, 1),
+                "mean_rms": round(self._audio_rms_sum / max(1, self._audio_sampled - self._audio_invalid), 5),
+                "sampling_interval_frames": 64,
+                "note": "Sampled signal quality only; not a decoded transmission or an RF SNR measurement",
+            },
+            "queued": sum(q.qsize() for q in self._queues),
+            "worker_alive": bool(self._workers) and all(w.is_alive() for w in self._workers),
+            "worker_count": len(self._queues),
+            "queues": [q.qsize() for q in self._queues],
+            "frames_by_shard": frames_by_shard,
+            "drops_by_shard": drops_by_shard,
+            "recent_window_s": self._health_window_s,
+            "recent_frames": recent["frames"],
+            "recent_dropped": recent["dropped"],
+            "recent_invalid": recent["invalid"],
+            "recent_errors": recent["errors"],
+            "recent_drop_ratio": round(recent["dropped"] / max(1, recent["frames"] + recent["dropped"]), 6),
+            "queue_capacity_per_shard": self._queues[0].maxsize,
+            "continuity_resets": sum(int(getattr(d, "continuity_resets", 0)) for group in self._decoder_sets for d in group),
+            "continuity_reset_reasons": reasons,
+            "continuity_reset_sources": public_sources,
+            "state_evictions": sum(int(getattr(d, "state_evictions", 0)) for group in self._decoder_sets for d in group),
+            "bridge_errors": sum(int(getattr(d, "bridge_errors", 0)) for group in self._decoder_sets for d in group),
         }
 
     def start(self) -> None:
-        if not self.enabled or self._worker is not None:
+        if not self.enabled or self._workers:
             return
         self._stop.clear()
-        self._worker = threading.Thread(target=self._run, daemon=True, name="radio-decoder")
-        self._worker.start()
+        for i, (q, decoders) in enumerate(zip(self._queues, self._decoder_sets)):
+            worker = threading.Thread(target=self._run, args=(q, decoders, i), daemon=True,
+                                      name=f"radio-decoder-{i}")
+            self._workers.append(worker)
+            worker.start()
+        self._worker = self._workers[0]
 
     def submit_frame(self, frame: EphemeralRadioFrame) -> bool:
         if not self.enabled:
             return False
         self.start()
         try:
-            self._queue.put_nowait(frame)
+            lineage = frame.physical_lineage.encode("utf-8")
+            shard = int.from_bytes(hashlib.blake2s(lineage, digest_size=4).digest(), "big") % len(self._queues)
+            self._queues[shard].put_nowait(frame)
             return True
         except queue.Full:
+            with self._shard_metrics_lock:
+                self._drops_by_shard[shard] += 1
+            self._record_health("dropped")
             self._dropped += 1
             return False
 
-    def _run(self) -> None:
+    def _run(self, q: queue.Queue[EphemeralRadioFrame], decoders: tuple[RadioDecoder, ...], shard_index: int) -> None:
         while not self._stop.is_set():
             try:
-                frame = self._queue.get(timeout=0.1)
+                frame = q.get(timeout=0.1)
             except queue.Empty:
                 continue
             try:
-                self.ingest_frame(frame)
+                self.ingest_frame(frame, decoders=decoders)
+                # Per-shard rates reveal hash collisions/backpressure without
+                # identifying source receivers or retaining their raw audio.
+                with self._shard_metrics_lock:
+                    self._frames_by_shard[shard_index] += 1
             except Exception:
-                # A malformed decoder response or downstream persistence error
-                # must never kill the one bounded decoder worker silently.
+                self._record_health("errors")
                 self._errors += 1
             finally:
-                self._queue.task_done()
+                q.task_done()
 
     def stop(self) -> None:
         self._stop.set()
-        worker, self._worker = self._worker, None
-        if worker is not None and worker is not threading.current_thread():
-            worker.join(timeout=2.0)
-        for decoder in self._decoders:
-            close = getattr(decoder, "close", None)
-            if callable(close):
-                try:
-                    close()
-                except Exception:
-                    pass
+        workers, self._workers = self._workers, []
+        self._worker = None
+        for worker in workers:
+            if worker is not threading.current_thread():
+                worker.join(timeout=2.0)
+        for decoders in self._decoder_sets:
+            for decoder in decoders:
+                close = getattr(decoder, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
 
-    def ingest_frame(self, frame: EphemeralRadioFrame) -> dict[str, object]:
+    def ingest_frame(self, frame: EphemeralRadioFrame, *, decoders: tuple[RadioDecoder, ...] | None = None) -> dict[str, object]:
         if not self.enabled:
             return {"accepted": False, "reason": "disabled"}
         self._frames += 1
+        self._record_health("frames")
+        if self._frames % 64 == 1:
+            quality = _pcm_quality(frame)
+            self._audio_sampled += 1
+            self._audio_duration_ms += float(quality["duration_ms"])
+            if not quality["valid_pcm"]:
+                self._audio_invalid += 1
+            else:
+                self._audio_rms_sum += float(quality["rms"])
+                self._audio_silent += int(bool(quality["silent"]))
+                self._audio_clipped += int(bool(quality["clipping"]))
         decoded = 0
+        accepted = 0
+        dsc_accepted = 0
+        navtex_accepted = 0
+        rejected = 0
         invalid = 0
-        for decoder in self._decoders:
+        for decoder in (self._decoders if decoders is None else decoders):
             try:
                 outputs = tuple(decoder.decode(frame))
             except Exception:
@@ -166,14 +336,28 @@ class RadioDecoderRuntime:
                     invalid += 1
                     continue
                 try:
-                    self._decoded_handler(message)
+                    result = self._decoded_handler(message)
                 except Exception:
                     self._errors += 1
                     continue
                 decoded += 1
+                if isinstance(result, Mapping) and result.get("accepted") is True:
+                    accepted += 1
+                    if kind == "dsc":
+                        dsc_accepted += 1
+                    elif kind == "navtex":
+                        navtex_accepted += 1
+                else:
+                    rejected += 1
         self._decoded += decoded
+        self._accepted += accepted
+        self._dsc_accepted += dsc_accepted
+        self._navtex_accepted += navtex_accepted
+        self._rejected += rejected
         self._invalid += invalid
-        return {"accepted": True, "decoded": decoded, "invalid": invalid}
+        self._record_health("invalid", invalid)
+        return {"accepted": True, "decoded": decoded, "invalid": invalid,
+                "persisted": accepted, "rejected": rejected}
 
 class JSONLProcessDecoder:
     """Persistent bounded JSONL decoder subprocess. No shell, no file persistence."""
@@ -201,6 +385,17 @@ class JSONLProcessDecoder:
         self._reader: threading.Thread | None = None
         self._reader_stop = threading.Event()
         self._lock = threading.Lock()
+        self.continuity_resets = 0
+        self.state_evictions = 0
+        self.bridge_errors = 0
+        self._continuity_lock = threading.Lock()
+        self._reset_reasons = {key: 0 for key in ("sequence_gap", "session", "timestamp_gap", "stale")}
+        self._reset_receivers: dict[str, dict[str, int]] = {}
+
+    def continuity_status(self) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
+        with self._continuity_lock:
+            return (dict(self._reset_reasons),
+                    {key: dict(values) for key, values in self._reset_receivers.items()})
 
     def _ensure_process(self) -> subprocess.Popen[str]:
         process = self._process
@@ -277,6 +472,8 @@ class JSONLProcessDecoder:
             "sample_rate_hz": pcm.sample_rate_hz,
             "encoding": pcm.encoding,
             "payload_b64": base64.b64encode(pcm.payload).decode("ascii"),
+            "session_id": frame.session_id,
+            "sequence": frame.sequence,
         }
         with self._lock:
             process = self._ensure_process()
@@ -298,6 +495,26 @@ class JSONLProcessDecoder:
                 self.close()
                 raise ValueError("decoder output exceeds bound")
         payload = json.loads(line)
+        if isinstance(payload, Mapping):
+            for key, attribute in (("continuity_resets", "continuity_resets"),
+                                   ("state_evictions", "state_evictions"),
+                                   ("bridge_errors", "bridge_errors")):
+                count = payload.get(key)
+                if isinstance(count, int) and not isinstance(count, bool) and 0 <= count <= 64:
+                    setattr(self, attribute, getattr(self, attribute) + count)
+            reason = payload.get("reset_reason")
+            if payload.get("continuity_resets") == 1 and isinstance(reason, str) and reason in self._reset_reasons:
+                with self._continuity_lock:
+                    self._reset_reasons[reason] += 1
+                    # Receiver IDs already appear in the public catalog.
+                    # Never expose private physical_lineage or raw audio.
+                    receiver = frame.receiver_id
+                    if re.fullmatch(r"[a-z0-9_]{1,64}", receiver):
+                        if receiver in self._reset_receivers or len(self._reset_receivers) < 16:
+                            counts = self._reset_receivers.setdefault(
+                                receiver, {key: 0 for key in self._reset_reasons}
+                            )
+                            counts[reason] += 1
         messages = payload.get("messages", []) if isinstance(payload, Mapping) else []
         if not isinstance(messages, list):
             raise ValueError("decoder messages must be a list")
@@ -378,8 +595,27 @@ def runtime_from_config() -> RadioDecoderRuntime:
         enabled=bool(config.RADIO_DECODER_ENABLED and decoders),
         decoders=decoders,
         decoded_handler=handle_decoded_radio_message,
-        queue_size=config.RADIO_DECODER_QUEUE_SIZE,
+        # 32 frames/shard proved too small for short receiver jitter bursts;
+        # 96 remains bounded and covers ~2 seconds at typical HF audio rates.
+        queue_size=max(96, int(config.RADIO_DECODER_QUEUE_SIZE)),
+        decoder_factory=(lambda: tuple(
+            JSONLProcessDecoder(
+                tuple(raw), timeout_s=config.RADIO_DECODER_TIMEOUT_S,
+                accepted_frequencies_hz=_builtin_decoder_frequencies(tuple(raw)),
+            ) for raw in commands[:4] if isinstance(raw, list) and raw
+            and all(isinstance(v, str) and v for v in raw)
+        )) if decoders else None,
+        worker_count=3,
     )
+
+
+def stop_radio_decoder_runtime() -> None:
+    """Release persistent JSONL decoder subprocesses before interpreter exit."""
+    global _decoder_runtime
+    with _decoder_runtime_lock:
+        runtime, _decoder_runtime = _decoder_runtime, None
+    if runtime is not None:
+        runtime.stop()
 
 
 def get_radio_decoder_runtime() -> RadioDecoderRuntime:

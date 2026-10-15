@@ -60,6 +60,23 @@ jobs:
         run: python -m pip_audit . --strict
         working-directory: apps/api
 
+  radio-dotnet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Build canonical MF/HF DSC JSONL bridge
+        run: >-
+          dotnet build
+          third_party/radio/taosw_dsc/Bridge/SeaCommonsDscBridge.csproj
+          -c Release --nologo
+      - name: Verify bounded DSC frame, gap, session and error protocol
+        run: >-
+          python3 scripts/check_dsc_bridge_contract.py
+          third_party/radio/taosw_dsc/Bridge/bin/Release/net8.0/SeaCommonsDscBridge.dll
+
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -78,6 +95,8 @@ jobs:
         run: npm run lint:js:full
         continue-on-error: true
       - run: npm test
+      - name: Test Vercel proxy cache privacy boundaries
+        run: node --test ../../api/*.test.mjs api/*.test.mjs
       - run: npm run build:unified
       - name: audit production dependencies
         run: npm audit --omit=dev --audit-level=high

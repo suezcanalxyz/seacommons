@@ -119,3 +119,31 @@ def test_decoded_message_rejects_kind_payload_mismatch():
         DecodedRadioMessage(kind="dsc", payload="raw audio", **common)
     with pytest.raises(ValueError, match="NAVTEX payload"):
         DecodedRadioMessage(kind="navtex", payload={"text": "not a block"}, **common)
+
+
+def test_decoder_output_refs_are_scoped_to_receiver_and_reception():
+    from dataclasses import replace
+    from datetime import timedelta
+    from core.radio.bridge import _raw_evidence_ref
+    from core.radio.provider import DecodedRadioMessage
+    baseline = DecodedRadioMessage(
+        kind="dsc", receiver_id="r1", provider="kiwisdr", physical_lineage="lineage_1",
+        frequency_hz=2187500, mode="usb", observed_at=datetime(2026, 10, 14, 10, tzinfo=timezone.utc),
+        payload={"category":"routine"}, provider_message_id="taosw_symbols_identical",
+    )
+    first = _raw_evidence_ref(baseline)
+    assert first == _raw_evidence_ref(baseline)
+    assert first != _raw_evidence_ref(replace(baseline, physical_lineage="lineage_2"))
+    assert first != _raw_evidence_ref(replace(baseline, observed_at=baseline.observed_at + timedelta(minutes=4)))
+    assert "lineage_1" not in first  # hash only, no receiver identities
+
+
+def test_decoder_reference_without_native_id_distinguishes_payloads():
+    from dataclasses import replace
+    from core.radio.bridge import _raw_evidence_ref
+    from core.radio.provider import DecodedRadioMessage
+    message = DecodedRadioMessage(kind="dsc", receiver_id="r", provider="kiwisdr",
+         physical_lineage="lineage", frequency_hz=2187500, mode="usb",
+         observed_at=datetime(2026,10,14,12,tzinfo=timezone.utc),
+         payload={"category":"routine"}, provider_message_id=None)
+    assert _raw_evidence_ref(message) != _raw_evidence_ref(replace(message, payload={"category":"distress"}))

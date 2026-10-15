@@ -12,6 +12,8 @@ class StructuredRadioRuntime:
         self._accepted = 0
         self._projected = 0
         self._failed = 0
+        self._dsc_persisted = 0
+        self._navtex_persisted = 0
 
     def status(self) -> dict[str, int | bool]:
         return {
@@ -19,6 +21,8 @@ class StructuredRadioRuntime:
             "accepted": self._accepted,
             "projected": self._projected,
             "failed": self._failed,
+            "dsc_persisted": self._dsc_persisted,
+            "navtex_persisted": self._navtex_persisted,
         }
 
     def ingest_dsc(self, payload: Mapping[str, Any], **context: Any) -> dict[str, Any]:
@@ -58,6 +62,7 @@ class StructuredRadioRuntime:
             return {"accepted": False, "reason": "persist_failed"}
 
         self._accepted += 1
+        self._dsc_persisted += 1
         if projected:
             self._projected += 1
             record_structured_radio_event(kind="dsc", outcome="projected")
@@ -121,6 +126,7 @@ class StructuredRadioRuntime:
             return {"accepted": False, "reason": "persist_failed"}
 
         self._accepted += 1
+        self._navtex_persisted += 1
         record_structured_radio_event(kind="navtex", outcome="context_only")
         return {
             "accepted": True,

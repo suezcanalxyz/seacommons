@@ -270,3 +270,123 @@ def test_structured_radio_is_degraded_when_frames_flow_but_nothing_decodes(monke
 
     assert status["state"] == "live"
     assert status["structured_state"] == "degraded"
+
+
+def test_decoded_without_accepted_safety_observations_is_not_structured_live(monkeypatch):
+    from core.radio.bridge import radio_acquisition_status
+    from core.config import config
+    monkeypatch.setattr(config, "STRUCTURED_RADIO_ENABLED", True)
+    monkeypatch.setattr("core.radio.runtime.get_remote_radio_status", lambda include_receivers=False: {
+        "enabled": True, "started": 1, "configured": 1, "failed": 0,
+        "receivers": [{"receiver_id":"r", "state":"connected"}],
+    })
+    monkeypatch.setattr("core.radio.decoder_runtime.radio_decoder_status", lambda: {
+        "enabled": True, "decoders": 2, "frames": 100, "decoded": 4,
+        "accepted": 0, "rejected": 4, "errors": 0, "dropped": 0, "worker_alive": True,
+    })
+    assert radio_acquisition_status()["structured_state"] == "degraded"
+
+
+def test_public_decoder_diagnostics_are_bounded_and_do_not_leak_private_data():
+    from core.acquisition.status import _sanitize_decoder
+    raw = {
+        "enabled": True, "worker_alive": True, "worker_count": 3,
+        "frames": 101, "accepted": 1, "rejected": 2, "decoded": 3,
+        "dropped": 4, "continuity_resets": 5, "state_evictions": 6,
+        "bridge_errors": 7, "queues": [1, 0, 2],
+        "frames_by_shard": [45, 50, 6], "drops_by_shard": [1, 3, 0],
+        "audio_quality": {
+            "sampled_frames": 10, "silent_frames": 2,
+            "clipped_frames": 0, "invalid_pcm_frames": 1,
+            "mean_rms": 0.118, "sampled_duration_s": 4.3,
+            "sampling_interval_frames": 64, "receiver_name": "SECRET",
+            "note": "private operator telemetry"},
+        "command": "/secret/dotnet", "payload": "RAW AUDIO",
+        "secret": "sensitive", "lineages": ["private-rx"],
+    }
+    safe = _sanitize_decoder(raw)
+    for key in ("bridge_errors", "continuity_resets", "state_evictions", "accepted",
+                "rejected", "worker_count", "frames_by_shard", "drops_by_shard", "audio_quality"):
+        assert key in safe
+    assert safe["audio_quality"]["mean_rms"] == 0.118
+    assert safe["queues"] == [1, 0, 2]
+    assert "SECRET" not in str(safe)
+    assert "private" not in str(safe).lower()
+    assert "RAW AUDIO" not in str(safe)
+    assert "command" not in str(safe)
+    assert "note" not in safe["audio_quality"]
+
+
+def test_public_decoder_diagnostics_rejects_unbounded_or_nonfinite_values():
+    from core.acquisition.status import _sanitize_decoder
+    safe = _sanitize_decoder({
+        "worker_count": "3", "frames": -1,
+        "queues": list(range(200)), "drops_by_shard": [0, "private"],
+        "frames_by_shard": [-1],
+        "decode_ratio": float("nan"), "drop_ratio": 2,
+        "audio_quality": {"sampled_frames": True, "mean_rms": float("inf"),
+                          "note": "private detail"},
+    })
+    assert "worker_count" not in safe
+    assert "frames" not in safe
+    assert "queues" not in safe
+    assert "drops_by_shard" not in safe
+    assert "frames_by_shard" not in safe
+    assert "decode_ratio" not in safe
+    assert "drop_ratio" not in safe
+    assert safe["audio_quality"] == {}
+
+
+def test_structured_radio_listening_requires_recent_healthy_audio_not_a_fake_decode(monkeypatch):
+    from core.config import config
+    from core.radio import decoder_runtime, runtime as radio_runtime
+    from core.radio.bridge import radio_acquisition_status
+
+    monkeypatch.setattr(config, "STRUCTURED_RADIO_ENABLED", True)
+    monkeypatch.setattr(radio_runtime, "get_remote_radio_status", lambda include_receivers=False: {
+        "enabled": True, "configured": 3, "started": 3, "failed": 0,
+        "receivers": [{"receiver_id": "one", "state": "connected"}],
+        "channels": [{"channel_kind": "monitor", "desired": 3, "active": 3}],
+    })
+    status = {
+        "enabled": True, "decoders": 2, "worker_alive": True,
+        "frames": 5000, "decoded": 0, "accepted": 0,
+        "invalid": 13, "dropped": 113, "errors": 0,
+        "bridge_errors": 0, "recent_frames": 650, "recent_dropped": 0,
+        "recent_drop_ratio": 0.0, "recent_errors": 0,
+        "queue_capacity_per_shard": 96, "queues": [0, 1, 0],
+    }
+    monkeypatch.setattr(decoder_runtime, "radio_decoder_status", lambda: dict(status))
+    first = radio_acquisition_status()
+    assert first["state"] == "live"
+    assert first["structured_state"] == "listening"
+    assert first["decoder"]["decoded"] == 0
+    assert first["decoder"]["accepted"] == 0
+    # Real backpressure must never be disguised as listening.
+    status.update(recent_dropped=28, recent_drop_ratio=0.041)
+    assert radio_acquisition_status()["structured_state"] == "degraded"
+    status.update(recent_dropped=0, recent_drop_ratio=0, queues=[90, 0, 0])
+    assert radio_acquisition_status()["structured_state"] == "degraded"
+    status.update(queues=[0, 0, 0], recent_frames=0)
+    assert radio_acquisition_status()["structured_state"] == "degraded"
+    status.update(recent_frames=650, errors=1)
+    assert radio_acquisition_status()["structured_state"] == "degraded"
+    status.update(errors=0, bridge_errors=1)
+    assert radio_acquisition_status()["structured_state"] == "degraded"
+    status.update(bridge_errors=0, accepted=1, decoded=1)
+    assert radio_acquisition_status()["structured_state"] == "live"
+
+
+def test_public_radio_pipeline_exposes_bounded_recent_health_without_secrets():
+    from core.acquisition.status import _sanitize_decoder
+    status = _sanitize_decoder({
+        "recent_window_s": 30, "recent_frames": 900, "recent_dropped": 2,
+        "recent_errors": 0, "recent_invalid": 0,
+        "recent_drop_ratio": 0.0022, "queue_capacity_per_shard": 96,
+        "private_receiver_id": "hidden", "raw_audio": "private",
+    })
+    assert status == {
+        "recent_window_s": 30, "recent_frames": 900, "recent_dropped": 2,
+        "recent_errors": 0, "recent_invalid": 0,
+        "recent_drop_ratio": 0.0022, "queue_capacity_per_shard": 96,
+    }

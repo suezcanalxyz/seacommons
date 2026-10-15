@@ -243,4 +243,4 @@ def test_live_receiver_mesh_exposes_decoder_observability(monkeypatch):
     for field in ("enabled", "decoders", "frames", "decoded", "invalid", "dropped", "errors", "queued", "worker_alive"):
         assert field in payload["decoder"], field
     assert "structured_enabled" in payload
-    assert payload["structured_state"] in {"disabled", "offline", "idle", "degraded", "live"}
+    assert payload["structured_state"] in {"disabled", "offline", "idle", "degraded", "listening", "live"}

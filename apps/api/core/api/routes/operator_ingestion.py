@@ -343,7 +343,10 @@ def _overview_payload(hours: int) -> dict[str, Any]:
         )
         hypotheses_total = int(
             db.query(func.count(InvestigationHypothesisDB.hypothesis_id))
-            .filter(InvestigationHypothesisDB.updated_at >= cutoff)
+            .filter(
+                InvestigationHypothesisDB.updated_at >= cutoff,
+                InvestigationHypothesisDB.state.notin_(("expired", "rejected")),
+            )
             .scalar()
             or 0
         )
@@ -589,14 +592,7 @@ def operator_analysis_outputs(
     }
 
 
-_DERIVED_EVENT_TYPES = frozenset({
-    "ais_anomaly",
-    "ais_rendezvous",
-    "correlated_alert",
-    "dark_candidate",
-    "vessel_identity",
-    "sar_model",
-})
+from core.intel.measurement_definitions import DERIVED_EVENT_TYPES as _DERIVED_EVENT_TYPES, DERIVED_ANALYSIS_STATES
 
 
 def _count_pairs(rows: list[tuple[Any, Any]]) -> dict[str, int]:
@@ -667,7 +663,7 @@ def operator_pipeline_funnel(
                 IntelEventDB.received_at >= cutoff,
                 or_(
                     IntelEventDB.type.in_(_DERIVED_EVENT_TYPES),
-                    analysis_state.in_(("anomaly", "evidence_candidate", "evidence")),
+                    analysis_state.in_(DERIVED_ANALYSIS_STATES),
                 ),
             )
             .scalar()
@@ -931,8 +927,11 @@ def operator_stabilization_status(
         return round(numerator / denominator, 4) if denominator else 0.0
 
     decoded = int(radio.get("decoded") or 0)
+    accepted = int(radio.get("dsc_accepted") or 0)
     frames = int(radio.get("frames") or 0)
     decode_ratio = decoded / frames if frames else 0.0
+    from core.radio.bridge import radio_acquisition_status
+    radio_acquisition = radio_acquisition_status()
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "lookback_hours": hours,
@@ -959,8 +958,13 @@ def operator_stabilization_status(
         },
         "radio": {
             **radio,
-            "ready_for_scale": decoded >= 3 and decode_ratio > 0.0,
-            "scale_gate": "Require >=3 repeatable decodes before adding receiver capacity.",
+            "ready_for_scale": (
+                accepted >= 3 and decode_ratio > 0.0
+                and int(radio.get("recent_dropped") or 0) == 0
+                and radio_acquisition["state"] == "live"
+            ),
+            "scale_gate": "Require >=3 accepted DSC observations, full receiver coverage and no recent packet loss.",
+            "pipeline": radio_acquisition["pipeline"],
         },
         "targets": {
             "episode_to_multi_lineage": "increase without inflating detector count",
@@ -996,7 +1000,7 @@ def _overall_payload() -> dict[str, Any]:
             .filter(
                 or_(
                     IntelEventDB.type.in_(_DERIVED_EVENT_TYPES),
-                    analysis_state.in_(("anomaly", "evidence_candidate", "evidence")),
+                    analysis_state.in_(DERIVED_ANALYSIS_STATES),
                 )
             )
             .scalar()
@@ -1294,3 +1298,227 @@ def operator_case_evidence_chains(
             "Evidence lineage and blockers are exposed so operators can see why a case has or has not advanced."
         ),
     }
+
+
+@router.get("/measurements")
+def operator_measurement_contract(
+    request: Request,
+    hours: int = Query(24, ge=1, le=168),
+) -> dict[str, Any]:
+    """Canonical temporal comparison. Windows use one as-of cutoff and explicit clock semantics.
+
+    Created counts measure records first created. Updated counts measure rows whose latest
+    update fell within the window, not transitions or new evidence. Source ingestion is
+    measured at receipt, while AIS track coverage is measured at source time.
+    """
+    _require_gateway(request)
+    cached = _fast_cache_get("measurements", hours)
+    if cached is not None:
+        return cached
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    cutoff = now - timedelta(hours=hours)
+    with session_scope() as db:
+        def count(model, field, *conditions):
+            return int(db.query(func.count()).select_from(model).filter(field >= cutoff, field <= now, *conditions).scalar() or 0)
+
+        active = InvestigationHypothesisDB.state.notin_(("expired", "rejected"))
+        classified = MaritimeEpisodeDB.episode_family != "unclassified_episode"
+        new_hypotheses = count(InvestigationHypothesisDB, InvestigationHypothesisDB.created_at, active)
+        updated_hypotheses = count(InvestigationHypothesisDB, InvestigationHypothesisDB.updated_at, active)
+        new_episodes = count(MaritimeEpisodeDB, MaritimeEpisodeDB.created_at, classified)
+        updated_episodes = count(MaritimeEpisodeDB, MaritimeEpisodeDB.updated_at, classified)
+        current_open_hypotheses = int(db.query(func.count()).select_from(InvestigationHypothesisDB).filter(active).scalar() or 0)
+        excluded_hypotheses = count(
+            InvestigationHypothesisDB, InvestigationHypothesisDB.updated_at,
+            InvestigationHypothesisDB.state.in_(("expired", "rejected")),
+        )
+        observations_received = count(SourceObservationDB, SourceObservationDB.received_at)
+        events_received = count(IntelEventDB, IntelEventDB.received_at)
+        events_created = count(IntelEventDB, IntelEventDB.created_at)
+        ais_observed = count(VesselTrackDB, VesselTrackDB.ts)
+        ais_received = count(VesselTrackDB, VesselTrackDB.received_at)
+        corroborated_updated = count(
+            MaritimeEpisodeDB, MaritimeEpisodeDB.updated_at, classified,
+            MaritimeEpisodeDB.verification_status == "multi_source_corroborated",
+        )
+        review_ready_updated = count(
+            InvestigationHypothesisDB, InvestigationHypothesisDB.updated_at,
+            InvestigationHypothesisDB.state.in_(("review_ready", "assessed", "published")),
+        )
+        raw_sources = dict(
+            db.query(SourceObservationDB.source_name, func.count())
+            .filter(SourceObservationDB.received_at >= cutoff, SourceObservationDB.received_at <= now)
+            .group_by(SourceObservationDB.source_name).order_by(func.count().desc()).limit(40).all()
+        )
+    payload = {
+        "contract_version": 1, "scope": "rolling", "window_hours": hours,
+        "as_of": now.replace(tzinfo=timezone.utc).isoformat(),
+        "window_start": cutoff.replace(tzinfo=timezone.utc).isoformat(),
+        "counts": {
+            "observations_received": observations_received,
+            "events_received": events_received,
+            "events_created": events_created,
+            "investigations_created": new_hypotheses,
+            "investigations_updated": updated_hypotheses,
+            "investigations_open_now": current_open_hypotheses,
+            "investigations_rejected_or_expired_updated": excluded_hypotheses,
+            "episodes_created": new_episodes,
+            "episodes_updated": updated_episodes,
+            "corroborated_episodes_updated": corroborated_updated,
+            "investigations_review_ready_updated": review_ready_updated,
+            "ais_positions_observed": ais_observed,
+            "ais_positions_received": ais_received,
+        },
+        "sources": {str(key): int(value) for key, value in raw_sources.items()},
+        "definitions": {
+            "observations_received": {"clock":"received_at","meaning":"Deduplicated raw source observation rows received within the window."},
+            "events_received": {"clock":"received_at","meaning":"Normalized Intel records received in the window. Not all raw inputs produce an event."},
+            "events_created": {"clock":"created_at","meaning":"Intel records first created within the window."},
+            "investigations_created": {"clock":"created_at","meaning":"Hypotheses created within the window and not currently expired/rejected."},
+            "investigations_updated": {"clock":"updated_at","meaning":"Non-expired/rejected hypotheses whose latest saved update falls in the window; may include reprocessing with no new evidence."},
+            "investigations_open_now": {"clock":"current state","meaning":"Current non-expired/non-rejected hypotheses (including assessed or published). Not a windowed count."},
+            "investigations_rejected_or_expired_updated": {"clock":"updated_at","meaning":"Rejected or expired hypotheses whose last update falls in the window, omitted from the main funnel."},
+            "episodes_created": {"clock":"created_at","meaning":"Classified episodes first created within the window."},
+            "episodes_updated": {"clock":"updated_at","meaning":"Classified episodes with latest update in the window; not necessarily newly recognized."},
+            "corroborated_episodes_updated": {"clock":"updated_at","meaning":"Episodes currently tagged multi-source corroborated and updated in the window, not transitions into that state."},
+            "investigations_review_ready_updated": {"clock":"updated_at","meaning":"Hypotheses currently in review-ready, assessed or published state and updated in the window; not new transitions."},
+            "ais_positions_observed": {"clock":"ts","meaning":"Stored AIS track positions whose source observation time falls within the window."},
+            "ais_positions_received": {"clock":"received_at","meaning":"AIS track rows actually received by SeaCommons in the window."},
+        },
+        "limitations": [
+            "Created/updated are current-row snapshots, not event-sourced transition counts.",
+            "Current open is a stock, so it does not become a seven-day total.",
+            "All values are retained rows, not an immutable lifetime ingestion ledger.",
+            "Raw, normalized, derived and episodes are overlapping populations; do not sum or divide as conversion rates.",
+        ],
+    }
+    return _fast_cache_put("measurements", hours, payload)
+
+
+@router.get("/scheduled-tasks")
+def futures_scheduled_tasks(request: Request) -> dict[str, Any]:
+    """Read-only ChatGPT task snapshot, private to authenticated Futures users.
+
+    The export is provisioned outside the Git repository, contains no credentials
+    or prompts, and is explicitly a snapshot rather than a live scheduler API.
+    """
+    _require_gateway(request)
+    import json
+    import os
+    from pathlib import Path
+
+    file_path = Path(os.environ.get(
+        "SEACOMMONS_FUTURES_TASK_SNAPSHOT",
+        "/home/ubuntu/seacommons/data/futures-scheduled-tasks.json",
+    ))
+    try:
+        raw = json.loads(file_path.read_text(encoding="utf-8"))
+        tasks = raw.get("tasks", [])
+        if not isinstance(tasks, list):
+            raise ValueError("Invalid scheduler task shape")
+        allowed = {"title", "enabled", "cadence", "last_run", "timezone", "status"}
+        clean = [{k: row[k] for k in allowed if k in row} for row in tasks if isinstance(row, dict)]
+        return {"source": "ChatGPT Tasks snapshot", "live_sync": False,
+                "synced_at": raw.get("synced_at"), "tasks": clean}
+    except (FileNotFoundError, PermissionError, ValueError, json.JSONDecodeError):
+        return {"source": "ChatGPT Tasks", "live_sync": False,
+                "synced_at": None, "tasks": [], "status": "not_connected"}
+
+
+@router.get("/overall-metrics")
+def operator_overall_metrics(request: Request) -> dict[str, Any]:
+    """Bounded, independently recoverable retained-record counters for Futures Overall.
+
+    Each SQL query has its own savepoint and PostgreSQL statement deadline; one
+    costly metric must never blank every other metric. Missing values are null.
+    Estimated planner totals are explicitly marked, never presented as exact.
+    """
+    _require_gateway(request)
+    cached = _fast_cache_get("overall_metrics", 0)
+    if cached is not None:
+        return cached
+
+    from core.intel.measurement_definitions import DERIVED_EVENT_TYPES, DERIVED_ANALYSIS_STATES
+
+    analysis_state = IntelEventDB.meta["analysis_state"].as_string()
+    anomaly_type = IntelEventDB.meta["anomaly_type"].as_string()
+    unavailable = []
+    estimated_fields = []
+
+    with session_scope() as db:
+        pg = db.get_bind().dialect.name == "postgresql"
+
+        def n(name, model, *conditions):
+            try:
+                with db.begin_nested():
+                    if pg:
+                        db.execute(text("SET LOCAL statement_timeout = '1600ms'"))
+                    result = db.query(func.count()).select_from(model).filter(*conditions).scalar()
+                    return int(result or 0)
+            except Exception:
+                unavailable.append(name)
+                return None
+
+        def total(name, model):
+            if pg:
+                try:
+                    with db.begin_nested():
+                        db.execute(text("SET LOCAL statement_timeout = '1600ms'"))
+                        estimate, _ = _fast_table_count(db, model)
+                        estimated_fields.append(name)
+                        return estimate
+                except Exception:
+                    unavailable.append(name)
+                    return None
+            return n(name, model)
+
+        raw = total("raw_observations", SourceObservationDB)
+        parsed = total("parsed_events", IntelEventDB)
+        derived = n("derived_cues", IntelEventDB, or_(
+            IntelEventDB.type.in_(DERIVED_EVENT_TYPES),
+            analysis_state.in_(DERIVED_ANALYSIS_STATES),
+        ))
+        legacy_gap = n("legacy_gap", IntelEventDB,
+                       IntelEventDB.type == "ais_anomaly", IntelEventDB.source == "ais",
+                       IntelEventDB.id.like("aisanom:%"), anomaly_type == "gap")
+        derived_count = max(0, derived - legacy_gap) if derived is not None and legacy_gap is not None else None
+        if derived_count is None:
+            unavailable.append("derived_cues")
+        classified = MaritimeEpisodeDB.episode_family != "unclassified_episode"
+        episodes = n("maritime_episodes", MaritimeEpisodeDB, classified)
+        hypotheses = n("investigation_hypotheses", InvestigationHypothesisDB)
+        corroborated = n("corroborated_episodes", MaritimeEpisodeDB, classified,
+                         MaritimeEpisodeDB.verification_status == "multi_source_corroborated")
+        ready = n("review_ready", InvestigationHypothesisDB,
+                  InvestigationHypothesisDB.state.in_(("review_ready","assessed","published")))
+        ais = total("ais_fixes", VesselTrackDB)
+        radio_bursts = n("radio_bursts", RadioBurstDB)
+        radio_events = n("radio_events", RadioEventDB)
+        satellite = n("satellite_observations", SatelliteObservationDB)
+        # Number of distinct sources, not the number of observations.
+        try:
+            with db.begin_nested():
+                if pg:
+                    db.execute(text("SET LOCAL statement_timeout = '1600ms'"))
+                source_names = int(db.query(func.count(func.distinct(SourceObservationDB.source_name))).scalar() or 0)
+        except Exception:
+            unavailable.append("source_names")
+            source_names = None
+    payload = {
+        "scope": "all_time", "generated_at": datetime.now(timezone.utc).isoformat(),
+        "stages": [
+            {"id":"raw","count":raw},{"id":"normalized","count":parsed},
+            {"id":"derived","count":derived_count},{"id":"episodes","count":episodes},
+            {"id":"hypotheses","count":hypotheses},{"id":"corroborated","count":corroborated},
+            {"id":"review_ready","count":ready},
+        ],
+        "sensor_activity": {
+            "ais_fixes":ais,"ais_fixes_estimated": "ais_fixes" in estimated_fields,
+            "radio_bursts":radio_bursts,"radio_events":radio_events,
+            "satellite_observations":satellite,"source_names":source_names,
+        },
+        "estimated_fields": estimated_fields, "unavailable_fields": sorted(set(unavailable)),
+        "retention_semantics": "Currently retained records, not immutable lifetime intake.",
+    }
+    # Do not retain partial results for longer than the fast aggregation TTL.
+    return _fast_cache_put("overall_metrics", 0, payload)

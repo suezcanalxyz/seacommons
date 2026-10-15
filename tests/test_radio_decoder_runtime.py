@@ -221,3 +221,283 @@ def test_dsc_bridge_keeps_decoder_state_per_receiver_lineage():
     assert "Dictionary<string, DecoderState>" in source
     assert 'physical_lineage' in source
     assert 'streamKey' in source
+
+
+def test_pcm_quality_reports_silence_and_clipping_without_audio_persistence():
+    from core.radio.decoder_runtime import _pcm_quality, RadioDecoderRuntime
+    silence = _frame(b"\x00\x00" * 300)
+    q = _pcm_quality(silence)
+    assert q["valid_pcm"] and q["silent"] and not q["clipping"]
+    loud = _frame(b"\x7f\xff" * 300)  # network-order full-scale positive
+    q = _pcm_quality(loud)
+    assert q["valid_pcm"] and q["clipping"] and not q["silent"]
+    runtime = RadioDecoderRuntime(enabled=True, decoders=[], decoded_handler=lambda msg: {})
+    runtime.ingest_frame(silence)
+    status = runtime.status()
+    assert status["audio_quality"]["sampled_frames"] == 1
+    assert status["audio_quality"]["silent_frames"] == 1
+    assert "payload" not in repr(status)
+
+
+def test_pcm_quality_rejects_odd_length_and_supports_le():
+    from core.radio.decoder_runtime import _pcm_quality
+    from dataclasses import replace
+    assert not _pcm_quality(_frame(b"\x01"))["valid_pcm"]
+    frame = replace(_frame(b"\xff\x7f" * 200), encoding="openwebrx_pcm_s16le")
+    assert _pcm_quality(frame)["clipping"]
+
+
+def test_decoder_shards_preserve_receiver_frame_order():
+    import time
+    from dataclasses import replace
+    from core.radio.decoder_runtime import RadioDecoderRuntime
+
+    history = {}
+
+    class RecordingDecoder:
+        def decode(self, frame):
+            history.setdefault(frame.receiver_id, []).append(frame.payload[0])
+            time.sleep(0.001)
+            return ()
+
+    runtime = RadioDecoderRuntime(
+        enabled=True, decoders=(RecordingDecoder(),),
+        decoder_factory=lambda: (RecordingDecoder(),), worker_count=3,
+        queue_size=64, decoded_handler=lambda msg: {},
+    )
+    assert runtime.status()["worker_count"] == 3
+    from core.radio.decoder_runtime import _pcm_quality
+    for i in range(20):
+        for receiver in ("a", "b", "c"):
+            frame = replace(_frame(), receiver_id=receiver,
+                            physical_lineage=receiver, payload=bytes((i, 0)))
+            assert runtime.submit_frame(frame)
+    for q in runtime._queues:
+        q.join()
+    status = runtime.status()
+    runtime.stop()
+    assert status["frames"] == 60
+    assert status["dropped"] == 0
+    for receiver in ("a", "b", "c"):
+        assert history[receiver] == list(range(20))
+
+
+def test_same_lineage_maps_to_same_shard_even_when_receiver_id_changes():
+    from dataclasses import replace
+    from core.radio.decoder_runtime import RadioDecoderRuntime
+
+    runtime = RadioDecoderRuntime(enabled=True, decoders=(),
+                                  decoder_factory=lambda: (), worker_count=3,
+                                  decoded_handler=lambda msg: {})
+    a = _frame()
+    b = replace(a, receiver_id="rx2")
+    runtime.submit_frame(a)
+    runtime.submit_frame(b)
+    # All frames from one physical receiver must reach the same queue.
+    assert max(q.qsize() for q in runtime._queues) <= 2
+    assert sum(q.qsize() for q in runtime._queues) <= 2
+    runtime.stop()
+
+
+def test_dsc_bridge_buffers_incomplete_symbol_windows():
+    from pathlib import Path
+    source = Path('third_party/radio/taosw_dsc/Bridge/Program.cs').read_text()
+    assert 'pendingSamples.AddRange(signal)' in source
+    assert 'pendingSamples.Count / samplesPerSymbol * samplesPerSymbol' in source
+    assert 'decoder.DecodeFSK(aligned, MarkHz, SpaceHz)' in source
+    assert 'pendingSamples.RemoveRange(0, alignedCount)' in source
+
+
+def test_decoder_rejects_invalid_audio_sequence_metadata():
+    from dataclasses import replace
+    import pytest
+    assert replace(_frame(), sequence=0).sequence == 0
+    assert replace(_frame(), sequence=0xFFFFFFFF).sequence == 0xFFFFFFFF
+    with pytest.raises(ValueError, match="sequence"):
+        replace(_frame(), sequence=-1)
+    with pytest.raises(ValueError, match="sequence"):
+        replace(_frame(), sequence=0x100000000)
+    with pytest.raises(ValueError, match="session"):
+        replace(_frame(), session_id="a" * 129)
+
+
+def test_decoder_counts_persisted_separately_from_decoded_candidates():
+    from core.radio.decoder_runtime import RadioDecoderRuntime
+    class FakeDecoder:
+        def decode(self, frame):
+            return ({"kind": "dsc", "payload": {"category": "routine"}},)
+    runtime = RadioDecoderRuntime(enabled=True, decoders=(FakeDecoder(),),
+                                  decoded_handler=lambda msg: {"accepted": False})
+    response = runtime.ingest_frame(_frame())
+    assert response["decoded"] == 1 and response["persisted"] == 0
+    assert runtime.status()["decoded"] == 1
+    assert runtime.status()["accepted"] == 0
+    assert runtime.status()["rejected"] == 1
+
+
+def test_kiwi_audio_frame_includes_session_and_network_sequence(monkeypatch):
+    from core.radio import decoder_runtime
+    from core.radio.kiwisdr import KiwiSDRAdapter
+    from tests.test_kiwisdr_adapter import FakeKiwiTransport, _descriptor, _snd_frame
+    frames = []
+    monkeypatch.setattr(decoder_runtime, "submit_ephemeral_frame", lambda frame: frames.append(frame) or True)
+    transport = FakeKiwiTransport()
+    adapter = KiwiSDRAdapter(_descriptor(), on_observation=lambda obs: None, transport=transport)
+    adapter.start(); adapter.tune(2_187_500, "usb")
+    transport.emit(b"MSG audio_init=0 audio_rate=12000")
+    transport.emit(_snd_frame(sequence=101, audio=b"\x01\x02"))
+    assert frames[0].session_id
+    assert frames[0].sequence == 101
+
+
+def test_openwebrx_sequence_detects_queue_drop(monkeypatch):
+    from core.radio import decoder_runtime
+    from core.radio.openwebrx import OpenWebRXAdapter
+    from tests.test_openwebrx_adapter import FakeTransport, descriptor
+    seen = []
+    def fake_submit(frame):
+        seen.append(frame)
+        return len(seen) != 2
+    monkeypatch.setattr(decoder_runtime, "submit_ephemeral_frame", fake_submit)
+    transport = FakeTransport()
+    adapter = OpenWebRXAdapter(descriptor(), on_observation=lambda obs: None, transport=transport)
+    adapter.start()
+    transport.on_message({"type":"config", "value":{"center_freq":2200000,
+                          "samp_rate":200000, "audio_compression":"none"}})
+    adapter.tune(2_187_500, "usb")
+    for i in range(3): transport.on_message(b"\x02\x00\x00")
+    assert len({x.session_id for x in seen}) == 1
+    assert list(x.sequence for x in seen) == [1, 2, 3]
+    assert [x.sequence for i,x in enumerate(seen) if i != 1] == [1, 3]
+
+
+def test_process_decoder_reads_bounded_discontinuity_metrics(tmp_path):
+    import sys
+    from core.radio.decoder_runtime import JSONLProcessDecoder
+    script = tmp_path / "decoder.py"
+    script.write_text("import json,sys\nfor line in sys.stdin:\n d=json.loads(line); print(json.dumps({'messages':[], 'continuity_resets':1 if d['session_id'] == 'changed' else 0, 'state_evictions':0}),flush=True)\n")
+    from dataclasses import replace
+    decoder = JSONLProcessDecoder((sys.executable, str(script)), timeout_s=3)
+    try:
+        assert tuple(decoder.decode(replace(_frame(), session_id="changed", sequence=7))) == ()
+        assert decoder.continuity_resets == 1
+        assert decoder.state_evictions == 0
+    finally:
+        decoder.close()
+
+
+def test_decoder_reports_bridge_error_counts_without_details(tmp_path):
+    import sys
+    from core.radio.decoder_runtime import JSONLProcessDecoder
+    script = tmp_path / 'fake_bridge.py'
+    script.write_text("import sys,json\nfor line in sys.stdin:\n print(json.dumps({'messages':[], 'bridge_errors':1}),flush=True)\n")
+    decoder = JSONLProcessDecoder((sys.executable, str(script)), timeout_s=3)
+    try:
+        assert tuple(decoder.decode(_frame())) == ()
+        assert decoder.bridge_errors == 1
+    finally:
+        decoder.close()
+
+
+def test_decoder_metrics_track_per_shard_activity_and_bounded_drops():
+    import time
+    from core.radio.decoder_runtime import RadioDecoderRuntime
+
+    class SlowDecoder:
+        def decode(self, frame):
+            time.sleep(0.004)
+            return ()
+
+    runtime = RadioDecoderRuntime(enabled=True,
+                                  decoders=(SlowDecoder(),),
+                                  decoder_factory=lambda: (SlowDecoder(),),
+                                  worker_count=3, queue_size=2,
+                                  decoded_handler=lambda msg: {"accepted": False})
+    for _ in range(40):
+        runtime.submit_frame(_frame())
+    for q in runtime._queues:
+        q.join()
+    status = runtime.status()
+    runtime.stop()
+    assert status["worker_count"] == 3
+    assert len(status["frames_by_shard"]) == 3
+    assert sum(status["frames_by_shard"]) == status["frames"]
+    assert sum(status["drops_by_shard"]) == status["dropped"]
+    assert status["dropped"] > 0
+    assert sum(status["queues"]) == 0
+    assert all(isinstance(value, int) for value in status["drops_by_shard"])
+
+
+def test_decoder_recent_health_window_expires_without_reseting_lifetime(monkeypatch):
+    from core.radio import decoder_runtime as dr
+    from core.radio.decoder_runtime import RadioDecoderRuntime
+    monkeypatch.setattr(dr.time, 'monotonic', lambda: 1500.0)
+    runtime = RadioDecoderRuntime(enabled=True, decoders=(),
+                                  decoded_handler=lambda msg: {"accepted": False},
+                                  queue_size=1)
+    for _ in range(4):
+        runtime.ingest_frame(_frame())
+    runtime._record_health('dropped', 3)
+    first = runtime.status()
+    assert first['recent_frames'] == 4
+    assert first['recent_dropped'] == 3
+    assert first['recent_drop_ratio'] == round(3 / 7, 6)
+    monkeypatch.setattr(dr.time, 'monotonic', lambda: 1531.0)
+    status = runtime.status()
+    assert status['frames'] == 4
+    assert status['recent_frames'] == 0
+    assert status['recent_dropped'] == 0
+    runtime.ingest_frame(_frame())
+    assert runtime.status()['recent_frames'] == 1
+    assert runtime.status()['recent_drop_ratio'] == 0
+
+
+def test_public_receiver_continuity_reasons_and_sources_are_bounded(tmp_path):
+    import sys
+    from dataclasses import replace
+    from core.acquisition.status import _sanitize_decoder
+    from core.radio.decoder_runtime import JSONLProcessDecoder, RadioDecoderRuntime
+
+    script = tmp_path / "bridge.py"
+    script.write_text(
+        "import json,sys\n"
+        "for line in sys.stdin:\n"
+        " d=json.loads(line)\n"
+        " print(json.dumps({'messages':[], 'continuity_resets':1, "
+        "'reset_reason':'sequence_gap'}),flush=True)\n"
+    )
+    decoder = JSONLProcessDecoder((sys.executable, str(script)), timeout_s=3)
+    runtime = RadioDecoderRuntime(enabled=True, decoders=(decoder,),
+                                  decoded_handler=lambda msg: {"accepted": False})
+    try:
+        assert tuple(decoder.decode(replace(_frame(), receiver_id="mallorca_hf_monitor"))) == ()
+        assert tuple(decoder.decode(replace(_frame(), receiver_id="zakynthos_hf_monitor"))) == ()
+        status = runtime.status()
+        assert status["continuity_resets"] == 2
+        assert status["continuity_reset_reasons"]["sequence_gap"] == 2
+        by_id = {row["receiver_id"]: row for row in status["continuity_reset_sources"]}
+        assert by_id["mallorca_hf_monitor"]["sequence_gap"] == 1
+        assert by_id["zakynthos_hf_monitor"]["resets"] == 1
+        safe = _sanitize_decoder({**status, "private_lineage": "SECRET"})
+        assert safe["continuity_reset_sources"] == status["continuity_reset_sources"]
+        assert "SECRET" not in str(safe)
+    finally:
+        decoder.close()
+
+
+def test_public_receiver_continuity_metadata_blocks_untrusted_labels():
+    from core.acquisition.status import _sanitize_decoder
+
+    safe = _sanitize_decoder({
+        "continuity_reset_reasons": {"sequence_gap": 1, "other": "secret"},
+        "continuity_reset_sources": [
+            {"receiver_id": "https://private.example/", "resets": 1},
+            {"receiver_id": "valid_receiver_1", "resets": 2,
+             "sequence_gap": 1, "sensitive": "private-lineage"},
+        ],
+    })
+    assert safe["continuity_reset_reasons"] == {"sequence_gap": 1}
+    assert safe["continuity_reset_sources"] == [
+        {"receiver_id": "valid_receiver_1", "resets": 2, "sequence_gap": 1}
+    ]
+    assert "private" not in str(safe)

@@ -1090,3 +1090,18 @@ button:focus-visible {
   .source-card:last-child { border-bottom: 0; }
   .source-card header { min-height: 0; }
 }
+
+/* The institutional homepage is an entry point, not a technical report. */
+.hero__intro p{max-width:46ch;color:rgba(245,249,248,.94);font-size:clamp(.96rem,1.1vw,1.08rem);line-height:1.5;text-wrap:pretty}
+.hero__intro{margin-top:1.15rem}
+.hero__actions{margin-top:1.25rem}
+@media(max-width:760px){.hero__intro p{max-width:36ch;font-size:.98rem;line-height:1.55}}
+
+/* Consistent editorial measure for title and supporting copy across video contrast. */
+.hero__copy{width:min(920px,calc(100vw - 2 * var(--pad-x)));max-width:100%;isolation:isolate}
+.hero__copy::before{content:"";position:absolute;inset:-46px -30px -38px -85px;z-index:-1;pointer-events:none;background:linear-gradient(90deg,rgba(4,9,16,.69) 0%,rgba(4,9,16,.53) 38%,rgba(4,9,16,.22) 72%,transparent 100%);filter:blur(22px)}
+.hero__title,.hero__intro,.hero__intro p{width:100%;max-width:100%;text-align:left}
+.hero__title{max-width:100%;text-wrap:balance}
+.hero__intro p{max-width:100%;color:#f7f9f7;font-size:clamp(1rem,1.22vw,1.13rem);line-height:1.54;text-shadow:0 1px 12px rgba(0,0,0,.58);text-wrap:pretty}
+.hero__title em{color:#d0e5fc}
+@media(max-width:760px){.hero__copy{width:calc(100vw - 2 * var(--pad-x))}.hero__copy::before{inset:-30px -12px -30px -25px;background:linear-gradient(90deg,rgba(4,9,16,.72),rgba(4,9,16,.38) 85%,transparent)}.hero__intro p{max-width:100%;font-size:1rem}}

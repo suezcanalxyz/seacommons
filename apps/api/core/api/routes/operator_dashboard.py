@@ -74,6 +74,9 @@ main{max-width:1920px;margin:auto;padding:22px}.eyebrow{font:700 9px ui-monospac
 <div class="sensor"><b>RADIO DECODE GATE</b><span id="sloRadio">–</span></div>
 <div class="sensor"><b>CORROBORATION INVARIANT</b><span id="sloInvariant">–</span></div>
 </section>
+<div class="eyebrow" style="margin:14px 0 7px">Maritime radio / evidence pipeline</div>
+<div class="subtitle">Radio reception is not a verified DSC event. Each stage is shown separately; counters below describe this process since startup, not historical totals.</div>
+<section class="sensors" id="radioStages"><div class="sensor"><b>RADIO PIPELINE</b><span>loading</span></div></section>
 <section class="panel fleetPanel"><h2>Civil + state SAR fleet <span id="fleetFresh">AIS freshness / operational context</span></h2><div class="fleetGrid" id="sarFleet"></div></section>
 <div class="overallHead"><div><div class="eyebrow">Historical storage / all retained data</div><div class="title">All-time corpus</div></div><div class="overallMeta" id="overallFresh">loading historical inventory…</div></div>
 <section class="funnel" id="overallFunnel"></section>
@@ -153,7 +156,20 @@ function refreshEvents(){return runOnce("events",async()=>{let e=await get("/api
 function refreshAnalysis(){return runOnce("analysis",async()=>{let a=await get("/api/v1/operator/ingestion/analysis?hours=24&limit=80");renderLog("analysisLog",a.items,"analysisRow","analysis");markLive()})}
 function refreshCases(){return runOnce("cases",async()=>{let c=await get("/api/v1/operator/ingestion/cases?hours=168&limit=20");renderCases(c.cases)})}
 function refreshTopology(){return runOnce("topology",async()=>{let m=await get("/api/v1/operator/ingestion/pipeline-map");renderMap(m.chains)})}
-function refreshStabilization(){return runOnce("stabilization",async()=>{let s=await get("/api/v1/operator/ingestion/stabilization?hours=24"),r=s.rates||{},c=s.counts||{},inv=s.invariants||{},radio=s.radio||{};$("sloMulti").textContent=((Number(r.episode_to_multi_lineage||0)*100).toFixed(1))+"%";$("sloReview").textContent=((Number(r.multi_lineage_to_review_ready||0)*100).toFixed(1))+"%";$("sloSat").textContent=fmt(c.satellite_coverage_candidates);$("sloRadio").textContent=radio.ready_for_scale?"READY":(fmt(radio.decoded||0)+" DECODED");$("sloRadio").style.color=radio.ready_for_scale?"var(--mint)":"var(--amber)";$("sloInvariant").textContent=inv.ok?"PASS":"FAIL "+fmt(inv.multi_source_with_lt2_lineages);$("sloInvariant").style.color=inv.ok?"var(--mint)":"var(--red)"})}
+function renderRadioStages(pipeline){
+ let target=$("radioStages");target.textContent="";
+ let stages=Array.isArray(pipeline?.stages)?pipeline.stages:[];
+ if(!stages.length){target.textContent="Radio pipeline status unavailable";return}
+ stages.forEach(stage=>{
+  let item=document.createElement("div");item.className="sensor";
+  let label=document.createElement("b");label.textContent=String(stage.label||stage.id||"");
+  let count=document.createElement("span");count.textContent=fmt(stage.count);
+  let state=document.createElement("small");state.className="detail";
+  state.textContent=String(stage.state||"unknown").replaceAll("_"," ");
+  item.append(label,count,state);target.append(item);
+ });
+}
+function refreshStabilization(){return runOnce("stabilization",async()=>{let s=await get("/api/v1/operator/ingestion/stabilization?hours=24"),r=s.rates||{},c=s.counts||{},inv=s.invariants||{},radio=s.radio||{};$("sloMulti").textContent=((Number(r.episode_to_multi_lineage||0)*100).toFixed(1))+"%";$("sloReview").textContent=((Number(r.multi_lineage_to_review_ready||0)*100).toFixed(1))+"%";$("sloSat").textContent=fmt(c.satellite_coverage_candidates);$("sloRadio").textContent=radio.ready_for_scale?"READY":(fmt(radio.decoded||0)+" DECODED");$("sloRadio").style.color=radio.ready_for_scale?"var(--mint)":"var(--amber)";renderRadioStages(radio.pipeline);$("sloInvariant").textContent=inv.ok?"PASS":"FAIL "+fmt(inv.multi_source_with_lt2_lineages);$("sloInvariant").style.color=inv.ok?"var(--mint)":"var(--red)"})}
 function refreshFast(){refreshOverview();refreshFunnel();refreshRaw();refreshEvents();refreshAnalysis()}
 function refreshSlow(){refreshCases();refreshTopology();refreshStabilization()}
 refreshFast();refreshSlow();refreshFleet();setTimeout(refreshOverall,1000);setInterval(refreshFast,5000);setInterval(refreshFleet,15000);setInterval(refreshSlow,30000);setInterval(refreshOverall,300000);

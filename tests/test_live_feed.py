@@ -2737,3 +2737,23 @@ def test_public_live_projects_open_maritime_episode_dossier() -> None:
     finally:
         with session_scope() as db:
             db.query(MaritimeEpisodeDB).filter_by(episode_id=episode_id).delete()
+
+
+def test_live_case_gate_blocks_passenger_pleasure_even_when_corroborated(monkeypatch):
+    from core.live.projection import is_useful_public_case_feature
+    from core.vessels import registry as registry_module
+    from core.vessels.ais_provider import is_excluded_live_vessel
+
+    feature = {"geometry": {"type": "Point", "coordinates": [14.0, 35.0]},
+               "properties": {"type": "ais_anomaly", "anomaly_type": "rendezvous",
+                              "hypothesis_type": "covert_rendezvous", "linked_mmsi": "123123123",
+                              "independent_source_count": 3}}
+    for ship_type in (37, 60, 66, 69, "passenger ship", "pleasure craft"):
+        feature["properties"]["ship_type"] = ship_type
+        assert is_excluded_live_vessel(feature["properties"])
+        assert is_useful_public_case_feature(feature) is False
+    feature["properties"].pop("ship_type")
+    monkeypatch.setitem(registry_module.registry._cache, "123123123", {"ship_type": 65})
+    assert is_useful_public_case_feature(feature) is False
+    feature["properties"]["linked_mmsi"] = "123123124"
+    assert not is_excluded_live_vessel(feature["properties"])

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import threading
 
 from core.radio.ais_association import (
     associate_and_persist_dsc,
@@ -11,6 +13,14 @@ from core.radio.burst import RadioBurstDetector
 from core.radio.provider import DecodedRadioMessage, RadioObservation
 
 _burst_detector = RadioBurstDetector()
+_radio_pipeline_lock = threading.Lock()
+_radio_correlations = {"ais_strong_matches": 0, "episodes_linked": 0}
+
+
+def radio_correlation_status() -> dict[str, int]:
+    with _radio_pipeline_lock:
+        return dict(_radio_correlations)
+
 
 
 def _persist_radio_observation(observation: RadioObservation) -> None:
@@ -48,18 +58,20 @@ def handle_radio_observation(observation: RadioObservation) -> None:
 
 
 def _raw_evidence_ref(message: DecodedRadioMessage) -> str:
+    """Receiver- and reception-scoped decoder output reference, NOT retained raw audio."""
+    # Upstream TAOSW IDs hash message symbols only and repeat for later
+    # retransmissions or independent receivers. Never use them globally alone.
     native = message.provider_message_id
     if not native:
-        material = "|".join(
-            (
-                message.kind,
-                message.physical_lineage,
-                message.observed_at.isoformat(),
-                str(message.frequency_hz),
-            )
-        )
-        native = hashlib.blake2s(material.encode("utf-8"), digest_size=12).hexdigest()
-    return f"radio-decoded:{message.provider}:{native}"
+        encoded = json.dumps(message.payload, sort_keys=True, separators=(",", ":"), default=str)
+        native = hashlib.blake2s(encoded.encode("utf-8"), digest_size=12).hexdigest()
+    identity = "|".join((
+        message.kind, message.provider, message.physical_lineage,
+        message.observed_at.isoformat(timespec="seconds"),
+        str(message.frequency_hz), native,
+    ))
+    digest = hashlib.blake2s(identity.encode("utf-8"), digest_size=16).hexdigest()
+    return f"radio-decoded:{message.provider}:{digest}"
 
 
 def get_structured_radio_runtime():
@@ -88,6 +100,11 @@ def handle_decoded_radio_message(message: DecodedRadioMessage) -> dict[str, obje
             except Exception:
                 association = None
             if association is not None:
+                if association.match_status == "strong":
+                    with _radio_pipeline_lock:
+                        _radio_correlations["ais_strong_matches"] += 1
+                        if association.episode_id:
+                            _radio_correlations["episodes_linked"] += 1
                 result["ais_association"] = public_association(association)
                 if association.episode_id:
                     # A strong radio↔AIS match enriches an existing canonical
@@ -105,6 +122,8 @@ def radio_acquisition_status() -> dict[str, object]:
     from core.config import config
     from core.radio.decoder_runtime import radio_decoder_status
     from core.radio.runtime import get_remote_radio_status
+    from core.radio.pipeline import public_radio_pipeline
+    from core.radio.structured_runtime import get_structured_radio_runtime
 
     status = get_remote_radio_status(include_receivers=True)
     channels = list(status.get("channels") or [])
@@ -135,14 +154,30 @@ def radio_acquisition_status() -> dict[str, object]:
         structured_state = "offline"
     elif decoder_frames == 0:
         structured_state = "idle"
-    elif not bool(decoder.get("worker_alive")) or int(decoder.get("errors") or 0) > 0:
+    elif (not bool(decoder.get("worker_alive")) or int(decoder.get("errors") or 0) > 0
+          or int(decoder.get("bridge_errors") or 0) > 0):
         structured_state = "degraded"
-    elif int(decoder.get("decoded") or 0) == 0:
-        # RF transport can be healthy while semantic DSC extraction is not.
-        # Do not label structured radio "live" merely because frames are
-        # flowing; that would hide the exact failure mode that prevents radio
-        # evidence from entering the investigation pipeline.
+    elif int(decoder.get("recent_frames") or 0) == 0:
+        # No current audio cannot be healthy merely because lifetime frame
+        # counters still contain historical data.
         structured_state = "degraded"
+    elif int(decoder.get("recent_errors") or 0) > 0:
+        structured_state = "degraded"
+    elif (
+        int(decoder.get("recent_dropped") or 0) >= 3
+        and float(decoder.get("recent_drop_ratio") or 0) > 0.01
+    ):
+        structured_state = "degraded"
+    elif int(decoder.get("queue_capacity_per_shard") or 0) > 0 and any(
+        int(value) >= 0.85 * int(decoder["queue_capacity_per_shard"])
+        for value in decoder.get("queues") or ()
+    ):
+        structured_state = "degraded"
+    elif int(decoder.get("accepted") or 0) == 0:
+        # RF audio / decoding workers are healthy, but a verified semantic
+        # message has not yet been received. Never infer successful DSC from
+        # noise or silence; no synthetic emergency incident is published.
+        structured_state = "listening"
     else:
         structured_state = "live"
     return {
@@ -155,6 +190,14 @@ def radio_acquisition_status() -> dict[str, object]:
         "failed": int(status.get("failed") or 0),
         "receivers": list(status.get("receivers") or []),
         "channels": list(status.get("channels") or []),
+        "pipeline": public_radio_pipeline(
+            radio_state=state,
+            structured_state=structured_state,
+            active_receivers=int(status.get("started") or 0),
+            decoder=decoder,
+            structured=get_structured_radio_runtime().status(),
+            correlations=radio_correlation_status(),
+        ),
     }
 
 

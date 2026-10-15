@@ -19,6 +19,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
+from core.vessels.ais_provider import is_excluded_ship_type
+
 _GEOJSON_CACHE_TTL_S = 10.0  # serve cached GeoJSON for up to 10 s even when dirty
 
 _DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "vessels.db"
@@ -219,6 +221,12 @@ class VesselRegistry:
 
         with self._lock:
             existing = self._cache.get(mmsi, {})
+            if has_position and is_excluded_ship_type(
+                ship_type if ship_type is not None else existing.get("ship_type")
+            ):
+                # Keep AIS static classification only; never ingest more
+                # positions from passenger/pleasure classes once identified.
+                return
 
             # Position state is monotonic in source time. Concurrent providers
             # and reconnects can deliver an older fix after a newer one; the
@@ -312,6 +320,8 @@ class VesselRegistry:
 
         features = []
         for v in vessels:
+            if is_excluded_ship_type(v.get("ship_type")):
+                continue
             if v.get("last_lat") is None or v.get("last_lon") is None:
                 continue
             features.append({
@@ -388,6 +398,8 @@ class VesselRegistry:
 
         features = []
         for v in vessels:
+            if is_excluded_ship_type(v.get("ship_type")):
+                continue
             if v.get("last_lat") is None or v.get("last_lon") is None:
                 continue
             mmsi = str(v["mmsi"])
