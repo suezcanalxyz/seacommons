@@ -360,3 +360,24 @@ test('Intelligence loading is distinct from missing data and glossary works by c
  await expect(grid.getByText('≈ 987,654',{exact:true})).toBeVisible();
  await expect(grid).not.toContainText('Not reported');
 });
+
+
+test('Intelligence metric glossary remains operable and contained on a phone viewport', async ({page}) => {
+ await page.setViewportSize({width:390,height:844});
+ await mockOperationalContracts(page);
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ const grid=page.getByRole('region',{name:'Intelligence metric dashboard'});
+ await expect(grid).toBeVisible();
+ const term=grid.getByRole('button',{name:'AIS positions',exact:true});
+ await term.scrollIntoViewIfNeeded();
+ await term.click();
+ const tooltip=grid.getByRole('tooltip');
+ await expect(tooltip).toBeVisible();
+ const rect=await tooltip.boundingBox();
+ expect(rect).not.toBeNull();
+ expect(rect.x).toBeGreaterThanOrEqual(-1);
+ expect(rect.x+rect.width).toBeLessThanOrEqual(392);
+ const box=await grid.boundingBox();
+ expect(box.x).toBeGreaterThanOrEqual(-1);
+ expect(box.x+box.width).toBeLessThanOrEqual(392);
+});
