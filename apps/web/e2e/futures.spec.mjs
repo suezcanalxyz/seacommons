@@ -322,3 +322,84 @@ test('Agents displays protected scheduler snapshot with two real task records', 
  await expect(page.getByText('SeaCommons Upgrade Research')).toBeVisible();
  await expect(page.getByText(/read-only snapshot/i).first()).toBeVisible();
 });
+
+test('Intelligence rejects a mismatched time window and uses the matching status evidence', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/overview?hours=168',route=>route.fulfill({json:{
+   lookback_hours:24,generated_at:'2026-10-15T12:00:00Z',
+   pipeline_status:{pipeline:{raw_observations:999999},sensor_activity:{}},
+ }}));
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ const grid=page.getByRole('region',{name:'Intelligence metric dashboard'});
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'7 days'}).click();
+ await expect(grid.getByText('1,680',{exact:true})).toBeVisible();
+ await expect(grid).not.toContainText('999,999');
+ await expect(grid).toContainText('public operational summary');
+});
+
+test('Intelligence loading is distinct from missing data and glossary works by click', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/overall-metrics',async route=>{
+   await new Promise(resolve=>setTimeout(resolve,850));
+   await route.fulfill({json:{
+     scope:'all_time',generated_at:'2026-10-15T12:00:00Z',
+     stages:[{id:'raw',count:123456},{id:'normalized',count:76543}],
+     sensor_activity:{ais_fixes:987654,source_names:21},
+     estimated_fields:['ais_fixes'],
+   }});
+ });
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ const grid=page.getByRole('region',{name:'Intelligence metric dashboard'});
+ const aisTerm=grid.getByRole('button',{name:'AIS positions',exact:true});
+ await aisTerm.click();
+ await expect(aisTerm).toHaveAttribute('aria-expanded','true');
+ await expect(grid.getByRole('tooltip')).toContainText('Automatic Identification System');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'Overall'}).click();
+ await expect(grid.getByText('Loading…').first()).toBeVisible();
+ await expect(grid.getByText('123,456',{exact:true})).toBeVisible();
+ await expect(grid.getByText('≈ 987,654',{exact:true})).toBeVisible();
+ await expect(grid).not.toContainText('Not reported');
+});
+
+
+test('Intelligence metric glossary remains operable and contained on a phone viewport', async ({page}) => {
+ await page.setViewportSize({width:390,height:844});
+ await mockOperationalContracts(page);
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ const grid=page.getByRole('region',{name:'Intelligence metric dashboard'});
+ await expect(grid).toBeVisible();
+ // PWA guidance is not allowed to block a user's first visit.
+ await expect(page.getByRole('dialog',{name:'Take Futures with you.'})).toHaveCount(0);
+ const term=grid.getByRole('button',{name:'AIS positions',exact:true});
+ await term.scrollIntoViewIfNeeded();
+ await term.click();
+ const tooltip=grid.getByRole('tooltip');
+ await expect(tooltip).toBeVisible();
+ const rect=await tooltip.boundingBox();
+ expect(rect).not.toBeNull();
+ expect(rect.x).toBeGreaterThanOrEqual(-1);
+ expect(rect.x+rect.width).toBeLessThanOrEqual(392);
+ const box=await grid.boundingBox();
+ expect(box.x).toBeGreaterThanOrEqual(-1);
+ expect(box.x+box.width).toBeLessThanOrEqual(392);
+ const install=page.getByRole('button',{name:'How to install Futures'});
+ await install.click();
+ await expect(page.getByRole('dialog',{name:'Take Futures with you.'})).toBeVisible();
+ await page.getByRole('button',{name:'Continue in browser'}).click();
+ await expect(page.getByRole('dialog',{name:'Take Futures with you.'})).toHaveCount(0);
+});
+
+test('Agents shows loading rather than an empty registry while the snapshot request is pending', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/scheduled-tasks',async route=>{
+   await new Promise(resolve=>setTimeout(resolve,700));
+   await route.fulfill({json:{source:'ChatGPT Tasks snapshot',live_sync:false,synced_at:'2026-10-15T12:00:00Z',tasks:[
+    {title:'SeaCommons Forensic Repair Loop',enabled:true,cadence:'Every 3 hours',timezone:'Europe/Rome'},
+   ]}});
+ });
+ await page.goto(FUTURES_URL+'?view=agents');
+ await expect(page.getByText('Loading scheduled tasks…')).toBeVisible();
+ await expect(page.getByText(/No synchronized SeaCommons tasks/)).toHaveCount(0);
+ await expect(page.getByText('SeaCommons Forensic Repair Loop')).toBeVisible();
+ await expect(page.getByText('Loading scheduled tasks…')).toHaveCount(0);
+});

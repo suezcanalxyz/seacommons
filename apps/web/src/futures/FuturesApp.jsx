@@ -85,8 +85,8 @@ function AgentTaskDashboard() {
  useEffect(()=>{reload();},[reload]);
  const tasks=state.data?.tasks||[];
  return <><section className="future-page-head"><span className="future-eyebrow">Agents / scheduled workflows</span><h1>Scheduled work.</h1><p>Verified SeaCommons tasks from ChatGPT. This workspace shows a protected read-only snapshot, not a live scheduler connection.</p></section>
- <section className="future-section"><div className="future-intelligence-freshness"><span>{state.loading?'Loading tasks…':state.error||('ChatGPT Tasks · '+tasks.length+' registered')}</span><small>{state.data?.synced_at?'Snapshot: '+new Date(state.data.synced_at).toLocaleString():'No verified snapshot'}</small><button type="button" onClick={reload}>Refresh</button></div>
- {tasks.length?<div className="future-agent-grid">{tasks.map((task,i)=><article className="future-agent-card" key={task.title||i}><strong>{task.enabled?'ACTIVE':'PAUSED'}</strong><h3>{task.title}</h3><p>{task.cadence||'Cadence unavailable'} · {task.timezone||'Time zone unavailable'}</p><small>Last execution: {task.last_run?new Date(task.last_run).toLocaleString():'Not reported'}</small><small>Snapshot status: {task.status||'Imported'}</small></article>)}</div>:<p>{state.error||'No synchronized SeaCommons tasks are available. This is not evidence that all ChatGPT tasks have stopped.'}</p>}
+ <section className="future-section" aria-busy={state.loading}><div className="future-intelligence-freshness"><span>{state.loading?'Loading tasks…':state.error||('ChatGPT Tasks · '+tasks.length+' registered')}</span><small>{state.data?.synced_at?'Snapshot: '+new Date(state.data.synced_at).toLocaleString():'No verified snapshot'}</small><button type="button" disabled={state.loading} onClick={reload}>Refresh</button></div>
+ {state.loading?<p role="status">Loading scheduled tasks…</p>:tasks.length?<div className="future-agent-grid">{tasks.map((task,i)=><article className="future-agent-card" key={task.title||i}><strong>{task.enabled?'ACTIVE':'PAUSED'}</strong><h3>{task.title}</h3><p>{task.cadence||'Cadence unavailable'} · {task.timezone||'Time zone unavailable'}</p><small>Last execution: {task.last_run?new Date(task.last_run).toLocaleString():'Not reported'}</small><small>Snapshot status: {task.status||'Imported'}</small></article>)}</div>:<p>{state.error||'No synchronized SeaCommons tasks are available. This is not evidence that all ChatGPT tasks have stopped.'}</p>}
  <p className="future-inline-note">Tasks are managed in ChatGPT. Changes to cadence, activation or notifications do not sync automatically to this read-only snapshot.</p>
  </section></>;
 }
@@ -1011,15 +1011,10 @@ export default function FuturesApp() {
   const [view, setView] = useState(() => readWorkspaceView());
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
-  const [showInstallGuide, setShowInstallGuide] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    const mobile = window.matchMedia('(max-width: 700px)').matches;
-    const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-    return mobile && !standalone && window.localStorage.getItem('futures-pwa-guide-dismissed') !== 'yes';
-  });
+  // Installation help is opt-in: never block a partner's first mobile visit.
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
   const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
   const dismissInstallGuide = () => {
-    window.localStorage.setItem('futures-pwa-guide-dismissed', 'yes');
     setShowInstallGuide(false);
   };
   useEffect(() => {
@@ -1073,7 +1068,7 @@ export default function FuturesApp() {
       <main className="future-main">
         <header className="future-topbar">
           <div><span>SeaCommons / Futures</span><b>{NAV_LABELS[view] || view}</b></div>
-          <div className="future-topbar__links"><span>Secure partner workspace</span><button type="button" className="future-topbar-logo" onClick={() => navigate('overview')} aria-label="SeaCommons Futures home"><i aria-hidden="true" /><span>SEA<br />COMMONS</span></button></div>
+          <div className="future-topbar__links"><span>Secure partner workspace</span>{!installed&&<button type="button" className="future-install-shortcut" aria-label="How to install Futures" onClick={()=>setShowInstallGuide(true)}>Install</button>}<button type="button" className="future-topbar-logo" onClick={() => navigate('overview')} aria-label="SeaCommons Futures home"><i aria-hidden="true" /><span>SEA<br />COMMONS</span></button></div>
         </header>
 
         <div className="future-content">

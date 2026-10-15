@@ -23,8 +23,8 @@ const freshness=[
   ['parsed_event','Latest normalized event','Last received event in the normalized schema.'],
   ['analysis_output','Latest analysis output','Last recorded analysis result.']
 ];
-function number(value){return value===null||value===undefined?'Unavailable':Number.isFinite(Number(value))?new Intl.NumberFormat('en-GB').format(Number(value)):'Not reported'}
-function stamp(value){if(!value)return 'Not reported';const d=new Date(value);return Number.isNaN(d.getTime())?'Not reported':d.toLocaleString()}
+function number(value){return value===null||value===undefined?'Unavailable':Number.isFinite(Number(value))?new Intl.NumberFormat('en-GB').format(Number(value)):'Unavailable'}
+function stamp(value){if(!value)return 'Unavailable';const d=new Date(value);return Number.isNaN(d.getTime())?'Unavailable':d.toLocaleString()}
 function MetricSet({heading,rows,data}) {const [expanded,setExpanded]=useState(null);return <section className="future-section"><header><h2>{heading}</h2></header><div className="future-intelligence-metrics">{rows.map(([key,label,meaning])=><article key={key} className="future-intelligence-metric"><div className="future-intelligence-metric-top"><span><GlossaryTerm label={label}/></span><button type="button" aria-expanded={expanded===key} aria-label={'Explain '+label} onClick={()=>setExpanded(expanded===key?null:key)}>What is this? {expanded===key?'−':'+'}</button></div><strong>{number(data?.[key])}</strong><p>{meaning}</p>{expanded===key&&<div className="future-intelligence-legend"><b>How to read it</b><p>{meaning} The number belongs to its own evidence stage; it is not directly comparable to a case or vessel count. Missing means unavailable, not zero.</p><small>API field: {key}</small></div>}</article>)}</div></section>}
 
 import { fetchJson } from '../services/api/client.js';
@@ -86,39 +86,43 @@ function Breakdown({title,items,help}) {
  return <section className="future-section future-intelligence-breakdown"><h2>{title}</h2><p>{help}</p>{entries.length?<div className="future-intelligence-bars">{entries.map(([key,value])=><div className="future-intelligence-bar" key={key}><span title={key}>{key.replaceAll('_',' ')}</span><div><i style={{width:Math.max(1,100*Number(value)/max)+'%'}}/></div><strong>{number(value)}</strong><small>{termDescription(key)}</small></div>)}</div>:<p>No breakdown currently available for this period.</p>}</section>
 }
 function useOperatorMetrics(period){
- const [data,setData]=React.useState(null);
+ const [snapshot,setSnapshot]=React.useState({period:null,data:null,loading:true,error:'',source:null});
  const seq=React.useRef(0);
- const [loading,setLoading]=React.useState(false);
- const [error,setError]=React.useState('');
  const refresh=React.useCallback(async()=>{
   const request=++seq.current;
-  setLoading(true);setError('');
+  // Never show a previous window's numbers or timestamp as current.
+  setSnapshot({period,data:null,loading:true,error:'',source:null});
+  const accept=(data,source)=>{
+   if(request===seq.current)setSnapshot({period,data,source,loading:false,error:''});
+  };
+  const fail=()=>{
+   if(request===seq.current)setSnapshot({period,data:null,source:null,loading:false,error:'Metrics could not be loaded for this period. Please retry.'});
+  };
   try{
    const url=period==='overall'?'/api/v1/operator/ingestion/overall-metrics':`/api/v1/operator/ingestion/overview?hours=${period==='7d'?168:24}`;
    const result=await fetchJson(resolveSiteApiBase(),url,undefined,period==='overall'?35000:30000);
-   if(request===seq.current){setData(result);setError('');}
-  }catch(e){
-   if(period!=='overall'){
-    try{
+   const valid=period==='overall'
+    ? result?.scope==='all_time'&&Array.isArray(result?.stages)&&result?.sensor_activity
+    : result?.lookback_hours===(period==='7d'?168:24)&&result?.pipeline_status?.pipeline;
+   if(!valid)throw new Error('Unexpected measurement contract');
+   accept(result,'operator');
+  }catch{
+   try{
+    if(period==='overall'){
+     const historical=await fetchJson(resolveSiteApiBase(),'/api/v1/operator/ingestion/overall',undefined,26000);
+     if(historical?.scope!=='all_time'||!Array.isArray(historical?.stages))throw new Error('Unexpected historical contract');
+     accept(historical,'historical');
+    }else{
      const hours=period==='7d'?168:24;
      const status=await fetchJson(resolveSiteApiBase(),`/api/v1/status?hours=${hours}`,undefined,30000);
-     if(request===seq.current){setData({lookback_hours:hours,generated_at:status.generated_at,pipeline_status:{pipeline:status.pipeline,sensor_activity:status.sensor_activity},fallback_public:true});setError('');}
-    }catch{if(request===seq.current){setData(null);setError('Intelligence data unavailable. Check the SeaCommons API connection.');}}
-   }else {
-    try {
-     // The established historical endpoint is a recovery path when the
-     // optimized inventory is unavailable. Both require the same OIDC identity.
-     const historical=await fetchJson(resolveSiteApiBase(),'/api/v1/operator/ingestion/overall',undefined,26000);
-     if(request===seq.current){setData(historical);setError('');}
-    }catch{
-     if(request===seq.current){setData(null);setError('The historical inventory is temporarily unavailable. Retry in a moment.');}
+     if(status?.window_hours!==hours||!status?.pipeline)throw new Error('Unexpected public status contract');
+     accept({lookback_hours:hours,generated_at:status.generated_at,pipeline_status:{pipeline:status.pipeline,sensor_activity:status.sensor_activity},fallback_public:true},'public');
     }
-   }
+   }catch{fail();}
   }
-  finally{if(request===seq.current)setLoading(false);}
  },[period]);
- React.useEffect(()=>{refresh();},[refresh]);
- return {data,loading,error,refresh};
+ React.useEffect(()=>{refresh();return()=>{seq.current+=1;};},[refresh]);
+ return snapshot.period===period?{...snapshot,refresh}:{period,data:null,source:null,loading:true,error:'',refresh};
 }
 function useOperatorSections(period,tab) {
  const [snapshot,setSnapshot]=React.useState({data:null,error:'',key:''});
@@ -133,8 +137,8 @@ function useOperatorSections(period,tab) {
     return()=>{active=false;};
    }
    const hours=period==='7d'?168:24;
-   const paths=tab==='pipeline'?['funnel']:tab==='sources'?['funnel']:tab==='quality'?['funnel','stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue','humanitarian-ais-correlation']:tab==='activity'?['observations','events','signals','analysis','pipeline-map']:null;
-   if(!paths){setSnapshot({data:null,error:''});return()=>{active=false;};}
+   const paths=tab==='pipeline'?[]:tab==='sources'?['funnel']:tab==='quality'?['funnel','stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue','humanitarian-ais-correlation']:tab==='activity'?['observations','events','signals','analysis','pipeline-map']:null;
+   if(!paths||!paths.length){setSnapshot({data:{},error:'',key:period+':'+tab});return()=>{active=false;};}
    setSnapshot({data:null,error:'',key:period+':'+tab});
    Promise.allSettled(paths.map(p=>fetchJson(resolveSiteApiBase(),`/api/v1/operator/ingestion/${p}?hours=${hours}&limit=60`,undefined,18000)))
    .then(results=>{if(!active)return;const data={};let failed=0;results.forEach((v,i)=>{if(v.status==='fulfilled')data[paths[i]]=v.value;else failed++});setSnapshot({data,error:failed?'Some detailed evidence views are temporarily unavailable.':'',key:period+':'+tab})});
@@ -207,19 +211,54 @@ const termExplanations={
  'Radio bursts':'Short received radio transmissions or fragments, including those not yet decoded into meaningful events.',
  'Review ready':'Material organized for human examination. It does not imply that the investigation has reached a conclusion.',
 };
-function GlossaryTerm({label}){const meaning=termExplanations[label];return meaning?<span className="future-glossary-term" tabIndex={0} aria-label={label+': '+meaning}>{label}<span className="future-glossary-definition" role="tooltip">{meaning}</span></span>:label;}
-function IntelligenceMetricGrid({period,pipeline,sensorsData,loadedAt,estimated,loading=false}) {
+const metricClocks={
+ raw_observations:'received_at',parsed_events:'received_at',derived_cues:'received_at',
+ maritime_episodes:'updated_at',investigation_hypotheses:'updated_at',
+ corroborated_episodes:'updated_at',review_ready:'updated_at',
+ ais_fixes:'AIS observation time',radio_bursts:'created_at',radio_events:'created_at',
+ satellite_observations:'discovered_at',active_source_names:'received_at (distinct sources)',
+};
+function GlossaryTerm({label}){
+ const meaning=termExplanations[label];
+ const [expanded,setExpanded]=useState(false);
+ const tooltipId=React.useId();
+ if(!meaning)return label;
+ return <span className={'future-glossary-wrap'+(expanded?' is-open':'')}>
+  <button type="button" className="future-glossary-term" aria-expanded={expanded} aria-describedby={tooltipId}
+   onClick={()=>setExpanded(open=>!open)} onKeyDown={event=>{if(event.key==='Escape')setExpanded(false)}}
+   onBlur={()=>setExpanded(false)}>{label}</button>
+  <span className="future-glossary-definition" id={tooltipId} role="tooltip">{meaning}</span>
+ </span>;
+}
+function IntelligenceMetricGrid({period,pipeline,sensorsData,loadedAt,estimatedFields=[],loading=false,source=null}) {
  const [expanded,setExpanded]=useState(null);
- const source={...sensorsData,...pipeline};
- return <section className="future-section future-intelligence-headline" aria-label="Intelligence metric dashboard">
-   <header className="future-kpi-heading"><div><span className="future-eyebrow">Intelligence / metrics</span><h2>Evidence activity</h2></div><p>12 live measures · distinct evidence layers · not additive. Select a period above; open Info for definitions.</p></header>
-   <div className="future-intelligence-metrics future-intelligence-unified-grid">{headlineMetrics.map(([key,label,definition])=><article className="future-intelligence-metric" key={key}>
-     <div className="future-intelligence-metric-top"><span>{label}</span><button type="button" aria-expanded={expanded===key} aria-label={'Explain '+label} onClick={()=>setExpanded(expanded===key?null:key)}>{expanded===key?'Less −':'Info +'}</button></div>
-     <strong aria-live="polite">{loading&&source?.[key]==null?'Loading…':number(source?.[key])}{estimated&&key==='ais_fixes'&&source?.[key]!=null?' ≈':''}</strong>
+ const measurements={...sensorsData,...pipeline};
+ const overall=period==='overall';
+ const scopeText=overall?'Retained records, subject to data retention':period==='7d'?'Rolling 7 days':'Rolling 24 hours';
+ const countsAvailable=headlineMetrics.filter(([key])=>measurements?.[key]!==null&&measurements?.[key]!==undefined).length;
+ const report=loading?(countsAvailable?'Updating measurements · available values shown':'Updating measurements'):countsAvailable===0?'Measurements unavailable':countsAvailable<12?'Partial measurements':'Measurements available';
+ return <section className="future-section future-intelligence-headline" aria-label="Intelligence metric dashboard" aria-busy={loading}>
+   <header className="future-kpi-heading"><div><span className="future-eyebrow">Intelligence / measurements</span><h2>Evidence activity</h2></div>
+    <p>{scopeText} · 12 distinct measures, never additive. Select a term for its definition; expand Info for its counting method.</p></header>
+   <p className="future-metric-status" role="status" aria-live="polite">{report}{!loading&&source==='public'?' · public operational summary':''}{!loading&&countsAvailable>0?' · '+countsAvailable+' of 12 measures available':''}</p>
+   <div className="future-intelligence-metrics future-intelligence-unified-grid">{headlineMetrics.map(([key,label,definition])=>{
+    const value=measurements?.[key];
+    const hasValue=value!==null&&value!==undefined&&Number.isFinite(Number(value));
+    const isEstimated=estimatedFields.includes(key)||key==='ais_fixes'&&overall&&estimatedFields.includes('ais_fixes');
+    const clock=overall?'Retained record inventory':metricClocks[key]||'Source-defined time';
+    return <article className={'future-intelligence-metric'+(!loading&&!hasValue?' is-unavailable':'')} key={key}>
+     <div className="future-intelligence-metric-top"><span><GlossaryTerm label={label}/></span>
+      <button type="button" aria-expanded={expanded===key} aria-label={'Counting method for '+label}
+       onClick={()=>setExpanded(expanded===key?null:key)}>{expanded===key?'Close −':'Info +'}</button></div>
+     <strong className={!hasValue&&loading?'future-metric-loading':''} data-metric={key}>{hasValue?(isEstimated?'≈ ':'')+number(value):loading?'Loading…':'Unavailable'}</strong>
      <p>{definition}</p>
-     {expanded===key&&<div className="future-intelligence-legend"><b>How to interpret</b><p>{definition} {period==='overall'?'Overall is the currently retained corpus, not a permanent lifetime ledger.':'This is a rolling '+(period==='7d'?'168-hour':'24-hour')+' window. Different measures can use receipt, observation or last-update timestamps.'}</p><small>Definition: {label}</small></div>}
-   </article>)}</div>
-   <p className="future-data-provenance">Period: {period==='overall'?'Overall · retained records':period==='7d'?'7 days · rolling 168 h':'24 hours · rolling'} · API generated: {stamp(loadedAt)}{estimated?' · AIS historical total estimated':''}. Unavailable means not reported, never zero.</p>
+     {expanded===key&&<div className="future-intelligence-legend"><b>Counting method</b>
+      <p><b>Time basis:</b> {clock}. {overall?'Counts describe the currently retained database, not every observation ever received.':'Records are assigned to this window using the indicated time field.'}</p>
+      <p>{!loading&&!hasValue?'This measure cannot currently be established; it is not zero.':isEstimated?'This is a database estimate, not an exact row count.':'This number describes records or analytical states, not verified maritime incidents.'}</p>
+     </div>}
+    </article>;
+   })}</div>
+   <p className="future-data-provenance">{scopeText} · Last source update: {stamp(loadedAt)}{estimatedFields.length?' · Estimates marked ≈':''}. An unavailable value never means zero.</p>
  </section>;
 }
 function SimpleRecords({title,items,description}) {
@@ -275,7 +314,7 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  const status=!isOverall&&ops.status?.window_hours===(period==='7d'?168:24)?ops.status:null;
  const rawStages=Array.isArray(raw?.stages)?Object.fromEntries(raw.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
  const funnelStages=Array.isArray(sections.data?.funnel?.stages)?Object.fromEntries(sections.data.funnel.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
- const pipeline=isOverall?rawStages:(funnelStages||raw?.pipeline_status?.pipeline||status?.pipeline);
+ const pipeline=isOverall?rawStages:(raw?.pipeline_status?.pipeline||status?.pipeline||funnelStages);
  const sensorsData=isOverall?raw?.sensor_activity:(raw?.pipeline_status?.sensor_activity||status?.sensor_activity);
  const breakdown=isOverall?sections.data?.overall?.breakdowns:{
    raw_by_source:raw?.source_observations?.by_source,
@@ -294,9 +333,9 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  return <><div className="future-intelligence-tagline"><span className="future-eyebrow">SeaCommons / Intelligence</span><span>Collection · inference · review</span></div>
  <div className="future-period-tabs" aria-label="Intelligence time window"><div role="group" aria-label="Intelligence time window">{[['24h','24 hours'],['7d','7 days'],['overall','Overall']].map(([id,label])=><button type="button" aria-pressed={period===id} className={period===id?'is-active':''} onClick={()=>setPeriod(id)} key={id}>{label}</button>)}</div><small>{isOverall?'All records currently retained, irrespective of the age of the source event':period==='7d'?'Rolling seven days':'Rolling 24 hours'}</small></div>
 
- <div className="future-intelligence-freshness"><span>{operator.loading?'Updating metrics…':operator.data?(operator.data.fallback_public?'Evidence overview · detailed analysis pending':'Evidence updated'):operator.error?'Evidence temporarily unavailable':'Loading evidence'}</span><small>{operator.data?.generated_at?'Generated '+stamp(operator.data.generated_at):'Updates pending'}</small><button type="button" onClick={operator.refresh}>Refresh</button></div>
+ <div className="future-intelligence-freshness"><span>{operator.loading?'Updating metrics…':operator.data?(operator.source==='public'?'Public evidence summary':'Evidence updated'):operator.error?'Evidence temporarily unavailable':'Loading evidence'}</span><small>{operator.data?.generated_at?'Generated '+stamp(operator.data.generated_at):'Updates pending'}</small><button type="button" onClick={operator.refresh}>Refresh</button></div>
  {operator.error&&<p className="future-inline-note" role="status">{operator.error} Please try refreshing the data.</p>}
- <IntelligenceMetricGrid period={period} pipeline={pipeline} sensorsData={specialSensors} loadedAt={raw?.generated_at||status?.generated_at} loading={operator.loading} estimated={Boolean(isOverall&&sensorsData?.ais_fixes_estimated)}/>
+ <IntelligenceMetricGrid period={period} pipeline={pipeline} sensorsData={specialSensors} loadedAt={raw?.generated_at||status?.generated_at} loading={operator.loading} source={operator.source||(!isOverall&&status?'public':null)} estimatedFields={isOverall?raw?.estimated_fields|| (sensorsData?.ais_fixes_estimated?['ais_fixes']:[]):[]}/>
  <section className="future-intelligence-explainer" aria-label="Intelligence evidence guide"><div><span className="future-eyebrow">Reading the data</span><h2>From signals to assessed evidence</h2></div><p>Raw intake counts information received, normalized records make sources comparable, and analytical cues highlight leads. Episodes group related observations; investigations remain hypotheses until their evidence and uncertainty have been assessed. These layers overlap, so counts are never added together.</p></section>
  <nav className="future-intelligence-subnav" aria-label="Intelligence sections">{TABS.map(([key,title])=><button key={key} type="button" aria-pressed={key===tab} className={key===tab?'is-active':''} onClick={()=>setTab(key)}>{title}</button>)}</nav>
  {tab==='pipeline'&&<section className="future-section future-intelligence-explanation"><h2>How to read the evidence pipeline</h2><p>Read each card according to its measurement clock, source and evidential threshold. Received records describe intake, updated episodes and hypotheses describe processing activity, and corroborated episodes are a separate verification state.</p><details><summary>Measurement clocks, confidence and limitations</summary><p>Received measures ingestion time; created measures new records; updated includes previous records processed again; observed uses the source timestamp. Consequently an investigation updated today is not necessarily new. Missing data never means zero.</p><p>24 hours and 7 days are rolling windows. Overall counts retained records, not immutable lifetime intake. AIS historical counts may use database estimates. Publication requires separate safeguards, so corroboration and review readiness are not public incident totals.</p>{isOverall&&<p>First stored intake: {stamp(raw?.first_last?.raw_first)}. Latest stored intake: {stamp(raw?.first_last?.raw_latest)}.</p>}</details></section>}
