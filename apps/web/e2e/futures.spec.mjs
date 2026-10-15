@@ -412,6 +412,7 @@ test('Intelligence labels the real source and clearly distinguishes loading, res
    pipeline_status:{pipeline:{raw_observations:125,parsed_events:27},sensor_activity:{ais_fixes:411}},
  }}));
  await page.goto(FUTURES_URL+'?view=intelligence');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'24 hours'}).click();
  await expect(page.getByLabel('Evidence data provenance')).toContainText('Protected evidence API');
  await expect(page.getByLabel('Evidence data provenance')).toContainText('Rolling 24 hours');
  await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=raw_observations]')).toContainText('125');
