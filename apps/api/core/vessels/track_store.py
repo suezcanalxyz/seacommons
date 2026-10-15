@@ -29,6 +29,10 @@ from core.config import config
 logger = logging.getLogger(__name__)
 
 _FLUSH_INTERVAL_S = 10
+# Human-controlled release gate. Keep False until a retention policy, verified
+# archive restore and PostgreSQL concurrency test have all been approved.
+# Environment variables alone must never authorize evidence deletion.
+_RETENTION_RELEASE_AUTHORIZED = False
 _SYNC = os.getenv("SEACOMMONS_TRACK_STORE_SYNC", "").lower() in {"1", "true", "yes"}
 
 
@@ -190,8 +194,11 @@ class TrackStore:
         import hashlib
         import json
 
-        # Evidence retention is OFF unless explicitly authorized by operations.
-        # An object-store checksum alone is not a retention/restore approval.
+        # A legacy environment flag alone must not authorize deletion.
+        # This code-level gate is intentionally disabled in this release.
+        if not _RETENTION_RELEASE_AUTHORIZED:
+            logger.info("AIS prune disabled: retention policy and restore not release-approved")
+            return 0
         if os.getenv("AIS_PRUNE_APPROVED", "").strip().lower() not in {"1", "true", "yes"}:
             logger.info("AIS prune skipped: AIS_PRUNE_APPROVED is not enabled")
             return 0
