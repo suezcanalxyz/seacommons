@@ -1500,8 +1500,31 @@ def _overall_metrics_aggregate() -> dict[str, Any]:
                     db.execute(text("SET LOCAL statement_timeout = '1600ms'"))
                 source_names = int(db.query(func.count(func.distinct(SourceObservationDB.source_name))).scalar() or 0)
         except Exception:
-            unavailable.append("source_names")
             source_names = None
+            if pg:
+                # A full DISTINCT scan can exceed the bounded query budget.
+                # PostgreSQL statistics give a documented approximate
+                # cardinality instead of an invented zero or a long timeout.
+                try:
+                    with db.begin_nested():
+                        db.execute(text("SET LOCAL statement_timeout = '1000ms'"))
+                        nd = db.execute(
+                            text("SELECT n_distinct FROM pg_stats "
+                                 "WHERE schemaname=current_schema() "
+                                 "AND tablename=:tbl AND attname='source_name' LIMIT 1"),
+                            {"tbl": SourceObservationDB.__tablename__},
+                        ).scalar()
+                        if nd is not None and float(nd) > 0:
+                            source_names = max(1, int(round(float(nd))))
+                        elif nd is not None and float(nd) < 0:
+                            size, _ = _fast_table_count(db, SourceObservationDB)
+                            source_names = max(1, int(round(-float(nd) * size)))
+                        if source_names is not None:
+                            estimated_fields.append("active_source_names")
+                except Exception:
+                    source_names = None
+            if source_names is None:
+                unavailable.append("source_names")
     payload = {
         "scope": "all_time", "generated_at": datetime.now(timezone.utc).isoformat(),
         "stages": [
@@ -1546,7 +1569,7 @@ def public_futures_overall_metrics() -> dict[str, Any]:
         "retention_semantics": "Currently retained records, not immutable lifetime intake or verified incidents.",
         "stages": [{"id": key, "count": stages.get(key)} for key in stage_keys],
         "sensor_activity": {key: sensors.get(key) for key in sensor_keys},
-        "estimated_fields": [key for key in computed.get("estimated_fields", []) if key in ("raw_observations", "parsed_events", "ais_fixes")],
+        "estimated_fields": [key for key in computed.get("estimated_fields", []) if key in ("raw_observations", "parsed_events", "ais_fixes", "active_source_names")],
         "unavailable_fields": [key for key in computed.get("unavailable_fields", []) if key in (*stage_keys, *sensor_keys, "legacy_gap")],
     }
 
