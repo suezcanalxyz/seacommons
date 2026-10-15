@@ -1011,15 +1011,10 @@ export default function FuturesApp() {
   const [view, setView] = useState(() => readWorkspaceView());
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
-  const [showInstallGuide, setShowInstallGuide] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    const mobile = window.matchMedia('(max-width: 700px)').matches;
-    const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-    return mobile && !standalone && window.localStorage.getItem('futures-pwa-guide-dismissed') !== 'yes';
-  });
+  // Installation help is opt-in: never block a partner's first mobile visit.
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
   const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
   const dismissInstallGuide = () => {
-    window.localStorage.setItem('futures-pwa-guide-dismissed', 'yes');
     setShowInstallGuide(false);
   };
   useEffect(() => {
@@ -1073,7 +1068,7 @@ export default function FuturesApp() {
       <main className="future-main">
         <header className="future-topbar">
           <div><span>SeaCommons / Futures</span><b>{NAV_LABELS[view] || view}</b></div>
-          <div className="future-topbar__links"><span>Secure partner workspace</span><button type="button" className="future-topbar-logo" onClick={() => navigate('overview')} aria-label="SeaCommons Futures home"><i aria-hidden="true" /><span>SEA<br />COMMONS</span></button></div>
+          <div className="future-topbar__links"><span>Secure partner workspace</span>{!installed&&<button type="button" className="future-install-shortcut" aria-label="How to install Futures" onClick={()=>setShowInstallGuide(true)}>Install</button>}<button type="button" className="future-topbar-logo" onClick={() => navigate('overview')} aria-label="SeaCommons Futures home"><i aria-hidden="true" /><span>SEA<br />COMMONS</span></button></div>
         </header>
 
         <div className="future-content">
