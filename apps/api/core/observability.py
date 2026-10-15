@@ -118,6 +118,10 @@ AIS_SPOOL_BYTES = Gauge(
     "seacommons_ais_spool_pending_payload_bytes",
     "Uncommitted AIS spool payload bytes (excludes SQLite/WAL overhead)",
 )
+AIS_SPOOL_OLDEST_AGE = Gauge(
+    "seacommons_ais_spool_oldest_pending_seconds",
+    "Age in seconds of the oldest unacknowledged AIS fix",
+)
 AIS_SPOOL_EVENTS = Counter(
     "seacommons_ais_spool_events_total",
     "Durable AIS spool events by bounded stage and outcome",
@@ -133,6 +137,7 @@ def record_ais_spool_stats(stats: dict[str, int]) -> None:
     try:
         AIS_SPOOL_PENDING.set(stats["pending"])
         AIS_SPOOL_BYTES.set(stats["pending_payload_bytes"])
+        AIS_SPOOL_OLDEST_AGE.set(stats["oldest_pending_age_seconds"])
     except Exception:
         pass  # Telemetry must never prevent durable evidence writes.
 
