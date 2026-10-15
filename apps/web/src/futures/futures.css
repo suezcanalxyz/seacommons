@@ -934,3 +934,26 @@ html:has(.future-app){scroll-snap-type:none!important;scroll-padding-top:135px}
 .future-evidence-provenance button{min-height:32px;min-width:70px;font-size:11px}
 .future-evidence-provenance button:disabled{cursor:wait;opacity:.65}
 @media(max-width:760px){.future-evidence-provenance{gap:7px}.future-evidence-provenance-main{width:100%}.future-evidence-provenance small{margin-left:0}}
+
+/* Short technical explanations are discoverable by hover, keyboard and touch. */
+.future-educational-term{display:inline;position:relative}
+.future-educational-trigger{font:inherit;line-height:inherit;color:inherit;padding:0 0 1px;border:0;border-bottom:1px dotted var(--f-accent);background:transparent;cursor:help;text-align:inherit}
+.future-educational-trigger:focus-visible{outline:2px solid var(--f-accent);outline-offset:2px}
+.future-educational-tooltip{display:none;position:absolute;z-index:110;top:calc(100% + 6px);left:0;width:min(295px,67vw);min-width:190px;padding:11px 13px;text-align:left;white-space:normal;font:12px/1.5 Inter,Arial,sans-serif;font-weight:400;letter-spacing:normal;text-transform:none;color:#f5f7f8;background:#17232d;border:1px solid var(--f-accent);box-shadow:0 12px 26px #0008;pointer-events:none}
+.future-educational-term:hover .future-educational-tooltip,.future-educational-term:focus-within .future-educational-tooltip,.future-educational-term.is-open .future-educational-tooltip,.future-glossary-wrap:focus-within .future-glossary-definition{display:block}
+.future-factual-note{font-size:12px;line-height:1.65;border-left:2px solid var(--f-accent);padding:9px 14px;color:var(--f-muted)}
+.future-architecture-flow{display:flex;gap:8px;flex-wrap:wrap}
+.future-architecture-flow span{flex:1 1 125px;border:1px solid var(--f-line);padding:12px 14px;background:var(--f-panel);font-size:12px;line-height:1.5}
+.future-device-reference{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:14px;border-top:1px solid var(--f-line)}
+.future-device-reference a{color:var(--f-accent);text-decoration:underline;text-underline-offset:3px}
+.future-evidence-partial{border-left:2px solid var(--f-accent);padding:10px 14px}
+@media(max-width:680px){.future-device-reference{grid-template-columns:1fr}.future-educational-tooltip{width:min(250px,62vw)}}
+
+.future-drifter-blueprint{height:100%;min-height:175px;position:relative;display:flex;align-items:center;justify-content:center;flex-direction:column;background:linear-gradient(#102a31 0%,#102a31 49%,#18414b 49%,#12313c 100%);color:#ccebe8;font:9px/1.5 'DM Mono',monospace;letter-spacing:.07em;overflow:hidden}
+.future-blueprint-label{position:absolute;left:8px;top:8px;font-size:8px;white-space:nowrap}
+.future-blueprint-antenna{font-size:8px;border-left:2px solid #91e0c3;padding-left:4px}
+.future-blueprint-float{border:2px solid #91e0c3;border-radius:43% 43% 30% 30%;width:72px;height:58px;display:grid;place-content:center;text-align:center;background:#255159;font-size:8px}
+.future-blueprint-tether{height:35px;border-left:2px dashed #91e0c3}
+.future-blueprint-drogue{border:1px solid #91e0c3;padding:4px 10px;transform:perspective(60px) rotateX(12deg)}
+.future-device-reference h4{font-size:14px;margin:0 0 8px}
+.future-architecture-flow small{display:block;color:var(--f-accent);margin-bottom:6px}

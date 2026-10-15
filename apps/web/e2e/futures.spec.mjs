@@ -420,3 +420,43 @@ test('Intelligence labels the real source and clearly distinguishes loading, res
  await expect(page.getByLabel('Evidence data provenance')).toContainText('Rolling 168 hours');
  await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=raw_observations]')).not.toContainText('125');
 });
+
+
+test('Overall explains partial retained history instead of a blank intelligence dashboard', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/**', route=>route.fulfill({status:401,json:{detail:'Sign-in required'}}));
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'Overall'}).click();
+ await expect(page.getByRole('status').filter({hasText:'Partial Overall evidence'})).toBeVisible();
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=parsed_events]')).toContainText('378,826');
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=ais_fixes]')).toContainText('Unavailable');
+ await expect(page.getByLabel('Evidence data provenance')).toContainText('Public retained Intel-event inventory');
+});
+
+test('Technical glossary defines individual terms with hover alone and accessible focus', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.goto(FUTURES_URL+'?view=contributions');
+ const term=page.getByRole('button',{name:'OCPU',exact:true}).first();
+ await term.scrollIntoViewIfNeeded();
+ await term.hover();
+ await expect(term.locator('xpath=..').getByRole('tooltip')).toBeVisible();
+ await term.focus();
+ await expect(term.locator('xpath=..').getByRole('tooltip')).toBeVisible();
+});
+
+test('Development and Roadmap are different editorial views with distinct evidence', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.goto(FUTURES_URL+'?view=development');
+ await expect(page.getByRole('heading',{name:/What is dependable, what is unresolved/i})).toBeVisible();
+ await expect(page.getByText(/Four questions before the system scales/i)).toBeVisible();
+ await page.getByRole('button',{name:'Roadmap',exact:true}).first().click();
+ await expect(page.getByRole('heading',{name:'Development, step by step.'})).toBeVisible();
+});
+
+test('Platform device study distinguishes engineering concept from photographed reference', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.goto(FUTURES_URL+'?view=platform');
+ await expect(page.getByLabel(/Engineering concept diagram/)).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Engineering readiness and acceptance'})).toBeVisible();
+ await expect(page.getByRole('link',{name:/actual manufacturer product and images/i})).toBeVisible();
+});
