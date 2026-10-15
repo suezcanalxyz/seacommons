@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from core.config import config
+from core.observability import record_ais_spool_event, record_ais_spool_stats
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,10 @@ class TrackStore:
                     and os.getenv("SEACOMMONS_AIS_SPOOL_ALLOW_TMP_FOR_TESTS") == "true"
                 ),
             )
-            logger.info("AIS durable spool opened, pending=%d", self._spool.stats()["pending"])
+            stats = self._spool.stats()
+            record_ais_spool_stats(stats)
+            record_ais_spool_event("startup", "ok")
+            logger.info("AIS durable spool opened, pending=%d", stats["pending"])
 
     # ── ingest ────────────────────────────────────────────────────────────────
 
@@ -179,7 +183,10 @@ class TrackStore:
             try:
                 # Never accept/throttle a fix before the crash-durable spool commits.
                 self._spool.enqueue(row)
+                record_ais_spool_event("enqueue", "ok")
+                record_ais_spool_stats(self._spool.stats())
             except Exception:
+                record_ais_spool_event("enqueue", "rejected")
                 logger.critical(
                     "AIS_TRACK_SPOOL_UNAVAILABLE: fix not accepted; upstream replay "
                     "is not guaranteed", exc_info=True,
@@ -259,9 +266,11 @@ class TrackStore:
             batch = self._spool.claim(limit=1000)
             if batch is None:
                 return 0
+            replayed = False
             with session_scope() as db:
                 receipt = db.get(VesselTrackIngestBatchDB, batch.batch_id)
                 if receipt is not None:
+                    replayed = True
                     if (
                         receipt.payload_sha256 != batch.sha256
                         or receipt.row_count != batch.count
@@ -276,8 +285,11 @@ class TrackStore:
                     ))
             # If this crashes, the receipt above makes the next replay safe.
             self._spool.acknowledge(batch)
+            record_ais_spool_stats(self._spool.stats())
+            record_ais_spool_event("flush", "replayed" if replayed else "ok")
             return batch.count
         except Exception:
+            record_ais_spool_event("flush", "error")
             logger.exception("AIS_TRACK_SPOOL_FLUSH_FAILED: batch retained for retry")
             return 0
 
