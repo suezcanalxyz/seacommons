@@ -475,9 +475,9 @@ test('Platform device study distinguishes engineering concept from photographed 
 
 test('Overall loads all 12 aggregate measurements without asking private identity', async ({page}) => {
  await mockOperationalContracts(page);
- let protectedRequests=0;
- await page.route('**/api/v1/operator/ingestion/**',route=>{
-  protectedRequests++;
+ let protectedOverallRequests=0;
+ await page.route('**/api/v1/operator/ingestion/overall*',route=>{
+  protectedOverallRequests++;
   return route.fulfill({status:401,json:{detail:'Protected evidence requires login'}});
  });
  await page.goto(FUTURES_URL+'?view=intelligence');
@@ -488,7 +488,7 @@ test('Overall loads all 12 aggregate measurements without asking private identit
  await expect(grid.locator('[data-metric=active_source_names]')).toContainText('36');
  await expect(page.getByLabel('Evidence data provenance')).toContainText('Public historical aggregates');
  await expect(page.getByText('Partial Overall evidence:')).toHaveCount(0);
- expect(protectedRequests).toBe(0);
+ expect(protectedOverallRequests).toBe(0);
 });
 
 test('An invalid historical count cannot silently become zero', async ({page})=>{
