@@ -173,16 +173,10 @@ class TrackStore:
                 db.bulk_insert_mappings(VesselTrackDB, rows)
             return len(rows)
         except Exception as exc:
-            # Preserve original order and any positions received during the failed
-            # transaction. This protects transient DB outages, but is NOT durable
-            # across process termination; a disk-backed ingest queue remains P0.
-            with self._buf_lock:
-                self._buffer[:0] = rows
-                pending = len(self._buffer)
-            logger.error(
-                "TrackStore: bulk insert failed (%d rows retained in RAM, %d pending): %s",
-                len(rows), pending, exc,
-            )
+            # Fail-fast until the durable, idempotent ingest spool is available.
+            # Requeuing this batch in RAM is unsafe after an ambiguous DB commit:
+            # it can duplicate evidence or block later observations indefinitely.
+            logger.error("TrackStore: bulk insert failed (%d rows not persisted): %s", len(rows), exc)
             return 0
 
     def prune(self, older_than_days: Optional[int] = None) -> int:
