@@ -744,6 +744,10 @@ def test_managed_channel_active_requires_actual_receiver_connection():
         max_receivers=5, adapter_factory=factory, failover_enabled=True,
         channel_replicas=3, reconnect_interval_s=60.0,
     )
+    # The managed supervisor has an intentionally immediate first pass.
+    # Hold it idle so the snapshot below truly represents a disconnect
+    # *between* cycles, not a racing automatic failover to a standby.
+    runtime._supervise = lambda: runtime._stop_event.wait()
     try:
         runtime.start()
         assert runtime.status()["channels"][0]["active"] == 3
