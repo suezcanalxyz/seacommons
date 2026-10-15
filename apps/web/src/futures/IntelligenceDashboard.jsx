@@ -23,8 +23,8 @@ const freshness=[
   ['parsed_event','Latest normalized event','Last received event in the normalized schema.'],
   ['analysis_output','Latest analysis output','Last recorded analysis result.']
 ];
-function number(value){return value===null||value===undefined?'Unavailable':Number.isFinite(Number(value))?new Intl.NumberFormat('en-GB').format(Number(value)):'Not reported'}
-function stamp(value){if(!value)return 'Not reported';const d=new Date(value);return Number.isNaN(d.getTime())?'Not reported':d.toLocaleString()}
+function number(value){return value===null||value===undefined?'Unavailable':Number.isFinite(Number(value))?new Intl.NumberFormat('en-GB').format(Number(value)):'Unavailable'}
+function stamp(value){if(!value)return 'Unavailable';const d=new Date(value);return Number.isNaN(d.getTime())?'Unavailable':d.toLocaleString()}
 function MetricSet({heading,rows,data}) {const [expanded,setExpanded]=useState(null);return <section className="future-section"><header><h2>{heading}</h2></header><div className="future-intelligence-metrics">{rows.map(([key,label,meaning])=><article key={key} className="future-intelligence-metric"><div className="future-intelligence-metric-top"><span><GlossaryTerm label={label}/></span><button type="button" aria-expanded={expanded===key} aria-label={'Explain '+label} onClick={()=>setExpanded(expanded===key?null:key)}>What is this? {expanded===key?'−':'+'}</button></div><strong>{number(data?.[key])}</strong><p>{meaning}</p>{expanded===key&&<div className="future-intelligence-legend"><b>How to read it</b><p>{meaning} The number belongs to its own evidence stage; it is not directly comparable to a case or vessel count. Missing means unavailable, not zero.</p><small>API field: {key}</small></div>}</article>)}</div></section>}
 
 import { fetchJson } from '../services/api/client.js';
@@ -86,39 +86,43 @@ function Breakdown({title,items,help}) {
  return <section className="future-section future-intelligence-breakdown"><h2>{title}</h2><p>{help}</p>{entries.length?<div className="future-intelligence-bars">{entries.map(([key,value])=><div className="future-intelligence-bar" key={key}><span title={key}>{key.replaceAll('_',' ')}</span><div><i style={{width:Math.max(1,100*Number(value)/max)+'%'}}/></div><strong>{number(value)}</strong><small>{termDescription(key)}</small></div>)}</div>:<p>No breakdown currently available for this period.</p>}</section>
 }
 function useOperatorMetrics(period){
- const [data,setData]=React.useState(null);
+ const [snapshot,setSnapshot]=React.useState({period:null,data:null,loading:true,error:'',source:null});
  const seq=React.useRef(0);
- const [loading,setLoading]=React.useState(false);
- const [error,setError]=React.useState('');
  const refresh=React.useCallback(async()=>{
   const request=++seq.current;
-  setLoading(true);setError('');
+  // Never show a previous window's numbers or timestamp as current.
+  setSnapshot({period,data:null,loading:true,error:'',source:null});
+  const accept=(data,source)=>{
+   if(request===seq.current)setSnapshot({period,data,source,loading:false,error:''});
+  };
+  const fail=()=>{
+   if(request===seq.current)setSnapshot({period,data:null,source:null,loading:false,error:'Metrics could not be loaded for this period. Please retry.'});
+  };
   try{
    const url=period==='overall'?'/api/v1/operator/ingestion/overall-metrics':`/api/v1/operator/ingestion/overview?hours=${period==='7d'?168:24}`;
    const result=await fetchJson(resolveSiteApiBase(),url,undefined,period==='overall'?35000:30000);
-   if(request===seq.current){setData(result);setError('');}
-  }catch(e){
-   if(period!=='overall'){
-    try{
+   const valid=period==='overall'
+    ? result?.scope==='all_time'&&Array.isArray(result?.stages)&&result?.sensor_activity
+    : result?.lookback_hours===(period==='7d'?168:24)&&result?.pipeline_status?.pipeline;
+   if(!valid)throw new Error('Unexpected measurement contract');
+   accept(result,'operator');
+  }catch{
+   try{
+    if(period==='overall'){
+     const historical=await fetchJson(resolveSiteApiBase(),'/api/v1/operator/ingestion/overall',undefined,26000);
+     if(historical?.scope!=='all_time'||!Array.isArray(historical?.stages))throw new Error('Unexpected historical contract');
+     accept(historical,'historical');
+    }else{
      const hours=period==='7d'?168:24;
      const status=await fetchJson(resolveSiteApiBase(),`/api/v1/status?hours=${hours}`,undefined,30000);
-     if(request===seq.current){setData({lookback_hours:hours,generated_at:status.generated_at,pipeline_status:{pipeline:status.pipeline,sensor_activity:status.sensor_activity},fallback_public:true});setError('');}
-    }catch{if(request===seq.current){setData(null);setError('Intelligence data unavailable. Check the SeaCommons API connection.');}}
-   }else {
-    try {
-     // The established historical endpoint is a recovery path when the
-     // optimized inventory is unavailable. Both require the same OIDC identity.
-     const historical=await fetchJson(resolveSiteApiBase(),'/api/v1/operator/ingestion/overall',undefined,26000);
-     if(request===seq.current){setData(historical);setError('');}
-    }catch{
-     if(request===seq.current){setData(null);setError('The historical inventory is temporarily unavailable. Retry in a moment.');}
+     if(status?.window_hours!==hours||!status?.pipeline)throw new Error('Unexpected public status contract');
+     accept({lookback_hours:hours,generated_at:status.generated_at,pipeline_status:{pipeline:status.pipeline,sensor_activity:status.sensor_activity},fallback_public:true},'public');
     }
-   }
+   }catch{fail();}
   }
-  finally{if(request===seq.current)setLoading(false);}
  },[period]);
- React.useEffect(()=>{refresh();},[refresh]);
- return {data,loading,error,refresh};
+ React.useEffect(()=>{refresh();return()=>{seq.current+=1;};},[refresh]);
+ return snapshot.period===period?{...snapshot,refresh}:{period,data:null,source:null,loading:true,error:'',refresh};
 }
 function useOperatorSections(period,tab) {
  const [snapshot,setSnapshot]=React.useState({data:null,error:'',key:''});
@@ -133,8 +137,8 @@ function useOperatorSections(period,tab) {
     return()=>{active=false;};
    }
    const hours=period==='7d'?168:24;
-   const paths=tab==='pipeline'?['funnel']:tab==='sources'?['funnel']:tab==='quality'?['funnel','stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue','humanitarian-ais-correlation']:tab==='activity'?['observations','events','signals','analysis','pipeline-map']:null;
-   if(!paths){setSnapshot({data:null,error:''});return()=>{active=false;};}
+   const paths=tab==='pipeline'?[]:tab==='sources'?['funnel']:tab==='quality'?['funnel','stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue','humanitarian-ais-correlation']:tab==='activity'?['observations','events','signals','analysis','pipeline-map']:null;
+   if(!paths||!paths.length){setSnapshot({data:{},error:'',key:period+':'+tab});return()=>{active=false;};}
    setSnapshot({data:null,error:'',key:period+':'+tab});
    Promise.allSettled(paths.map(p=>fetchJson(resolveSiteApiBase(),`/api/v1/operator/ingestion/${p}?hours=${hours}&limit=60`,undefined,18000)))
    .then(results=>{if(!active)return;const data={};let failed=0;results.forEach((v,i)=>{if(v.status==='fulfilled')data[paths[i]]=v.value;else failed++});setSnapshot({data,error:failed?'Some detailed evidence views are temporarily unavailable.':'',key:period+':'+tab})});
@@ -275,7 +279,7 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  const status=!isOverall&&ops.status?.window_hours===(period==='7d'?168:24)?ops.status:null;
  const rawStages=Array.isArray(raw?.stages)?Object.fromEntries(raw.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
  const funnelStages=Array.isArray(sections.data?.funnel?.stages)?Object.fromEntries(sections.data.funnel.stages.map(s=>[stageKeys[s.id]||s.id,s.count])):null;
- const pipeline=isOverall?rawStages:(funnelStages||raw?.pipeline_status?.pipeline||status?.pipeline);
+ const pipeline=isOverall?rawStages:(raw?.pipeline_status?.pipeline||status?.pipeline||funnelStages);
  const sensorsData=isOverall?raw?.sensor_activity:(raw?.pipeline_status?.sensor_activity||status?.sensor_activity);
  const breakdown=isOverall?sections.data?.overall?.breakdowns:{
    raw_by_source:raw?.source_observations?.by_source,
