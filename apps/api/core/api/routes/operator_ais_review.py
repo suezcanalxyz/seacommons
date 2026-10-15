@@ -137,6 +137,41 @@ def _serialize(row: AISCaseReviewDB) -> dict:
     }
 
 
+@router.get("/lookup")
+def vessel_lookup(
+    request: Request,
+    imo: str = Query(default="", max_length=7),
+    mmsi: str = Query(default="", max_length=9),
+) -> dict:
+    # Viewers may inspect one identity, never the fleet or an unfiltered AIS dump.
+    # Authentication is distinct from review-write permissions.
+    require_futures_identity(request)
+    rate_limit(request, max_per_minute=40, scope="ais-review-lookup")
+    if not ((len(imo) == 7 and imo.isdigit()) or (len(mmsi) == 9 and mmsi.isdigit())):
+        raise HTTPException(status_code=422, detail="Valid IMO or MMSI required")
+    from core.vessels.registry import registry
+
+    result = []
+    for item in registry.get_last_known_geojson().get("features", []):
+        p = item.get("properties") or {}
+        if ((imo and str(p.get("imo") or "") == imo)
+                or (mmsi and str(p.get("mmsi") or "") == mmsi)):
+            coords = (item.get("geometry") or {}).get("coordinates") or []
+            result.append({
+                "imo": str(p.get("imo") or ""),
+                "mmsi": str(p.get("mmsi") or ""),
+                "ship_name": p.get("ship_name"),
+                "last_seen": p.get("last_seen"),
+                "speed_kn": p.get("speed"),
+                "course_deg": p.get("course"),
+                "lon": coords[0] if len(coords) == 2 else None,
+                "lat": coords[1] if len(coords) == 2 else None,
+            })
+            if len(result) >= 3:
+                break
+    return {"vessels": result, "count": len(result), "source": "SeaCommons registry"}
+
+
 @router.get("")
 def list_reviews(request: Request, case_id: str = Query(..., min_length=5, max_length=128),
                  limit: int = Query(30, ge=1, le=100)) -> dict:

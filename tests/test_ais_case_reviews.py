@@ -97,3 +97,23 @@ def test_forged_case_or_unsupported_label_never_persists(monkeypatch):
     missing_reason = _payload()
     missing_reason["explanation"] = "fake"
     assert client.post("/api/v1/operator/ais-reviews", json=missing_reason).status_code == 422
+
+
+def test_private_single_vessel_lookup_does_not_enumerate_fleet(monkeypatch):
+    _auth(monkeypatch)
+    from core.vessels.registry import registry
+
+    monkeypatch.setattr(registry, "get_last_known_geojson", lambda *args, **kwargs: {
+        "features": [
+            {"geometry": {"type": "Point", "coordinates": [-5.5212, 35.9845]},
+             "properties": {"imo": "9316359", "mmsi": "636017239",
+                 "ship_name": "MSC SPRING III", "last_seen": "2026-10-15T12:24:45Z"}},
+            {"geometry": {"type": "Point", "coordinates": [12.2, 35.1]},
+             "properties": {"imo": "1234567", "mmsi": "123456789", "ship_name": "OTHER"}},
+        ],
+    })
+    result = client.get("/api/v1/operator/ais-reviews/lookup", params={"imo": "9316359"})
+    assert result.status_code == 200, result.text
+    assert result.json()["count"] == 1
+    assert result.json()["vessels"][0]["lon"] == -5.5212
+    assert client.get("/api/v1/operator/ais-reviews/lookup").status_code == 422

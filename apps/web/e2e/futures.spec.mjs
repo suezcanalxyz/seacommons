@@ -47,6 +47,16 @@ async function mockOperationalContracts(page) {
   } }));
   await page.route('**/api/v1/play/counts', (route) => route.fulfill({ json: countsFixture }));
   await page.route('**/api/v1/live/pipeline', (route) => route.fulfill({ json: pipelineFixture }));
+  await page.route('**/api/v1/futures/intelligence-overall',route=>route.fulfill({json:{
+    scope:'all_time',access:'public_aggregate',source:'canonical_retained_inventory',
+    generated_at:'2026-10-15T16:00:00Z',retention_semantics:'Currently retained records',
+    stages:[{id:'raw',count:2371751},{id:'normalized',count:382495},{id:'derived',count:287201},
+            {id:'episodes',count:35245},{id:'hypotheses',count:6924},
+            {id:'corroborated',count:18},{id:'review_ready',count:10}],
+    sensor_activity:{ais_fixes:2884066,radio_bursts:86283,radio_events:6356,
+        satellite_observations:6793,source_names:36},
+    estimated_fields:['ais_fixes'],unavailable_fields:[],
+  }}));
   await page.route('**/api/v1/futures/overall', (route) => route.fulfill({ json: {
     generated_at: '2026-10-12T12:00:00Z',
     scope: 'retained_intel_events',
@@ -83,7 +93,7 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
   await expect(page.getByRole('group', { name: 'Analytics time window' })).toBeVisible();
   await expect(page.getByText('Live', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('240', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('AIS', { exact: true })).toBeVisible();
+  await expect(page.getByText('AIS', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('legacy', { exact: true })).toBeVisible();
 });
 
@@ -111,7 +121,7 @@ test('Futures guidebook and tools are native partner surfaces', async ({ page })
   await expect(page.getByText(/An observation is not an incident/i)).toBeVisible();
 
   await page.goto(FUTURES_URL + '?view=tools');
-  await expect(page.getByRole('heading', { name: /Surfaces you can open/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Reusable software modules, not just websites/i })).toBeVisible();
   await expect(page.getByRole('link', { name: /SeaCommons Live/i }).first()).toHaveAttribute('href', 'https://live.seacommons.org');
   await expect(page.getByRole('link', { name: /SeaCommons Play/i }).first()).toHaveAttribute('href', 'https://play.seacommons.org');
   await expect(page.getByText('Republic', { exact: true })).toHaveCount(0);
@@ -232,7 +242,7 @@ test('Futures Platform connects software, illustrated devices and safe network c
   await expect(page.getByText('GNSS/GPS position and timestamp')).toBeVisible();
   await page.goto(FUTURES_URL + '?view=contributions');
   await expect(page.getByRole('heading',{name:/A network of shared infrastructure/i})).toBeVisible();
-  await expect(page.getByText(/not the intended permanent central point of failure/i)).toBeVisible();
+  await expect(page.getByText(/not our sole production host/i)).toBeVisible();
 });
 
 test('Futures overview method describes maritime and humanitarian uses separately', async ({page})=>{
@@ -287,7 +297,7 @@ test('Intelligence matches operator aggregation with 24h 7d overall switching', 
  await window.getByRole('button',{name:'Overall'}).click();
  await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).getByText('2,371,751')).toBeVisible();
  await page.getByRole('button',{name:'Sources & types'}).click();
- await expect(page.getByText('2,346,069')).toBeVisible();
+ await expect(page.getByText(/Overall publishes summary counts only/)).toBeVisible();
 });
 
 
@@ -323,6 +333,209 @@ test('Agents displays protected scheduler snapshot with two real task records', 
  await expect(page.getByText(/read-only snapshot/i).first()).toBeVisible();
 });
 
+test('Intelligence rejects a mismatched time window and uses the matching status evidence', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/overview?hours=168',route=>route.fulfill({json:{
+   lookback_hours:24,generated_at:'2026-10-15T12:00:00Z',
+   pipeline_status:{pipeline:{raw_observations:999999},sensor_activity:{}},
+ }}));
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ const grid=page.getByRole('region',{name:'Intelligence metric dashboard'});
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'7 days'}).click();
+ await expect(grid.getByText('1,680',{exact:true})).toBeVisible();
+ await expect(grid).not.toContainText('999,999');
+ await expect(grid).toContainText('public operational summary');
+});
+
+test('Intelligence loading is distinct from missing data and glossary works by click', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/futures/intelligence-overall',async route=>{
+   await new Promise(resolve=>setTimeout(resolve,850));
+   await route.fulfill({json:{
+     scope:'all_time',access:'public_aggregate',generated_at:'2026-10-15T12:00:00Z',
+     stages:[{id:'raw',count:123456},{id:'normalized',count:76543},{id:'derived',count:null},{id:'episodes',count:null},{id:'hypotheses',count:null},{id:'corroborated',count:null},{id:'review_ready',count:null}],
+     sensor_activity:{ais_fixes:987654,source_names:21},
+     estimated_fields:['ais_fixes'],
+   }});
+ });
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ const grid=page.getByRole('region',{name:'Intelligence metric dashboard'});
+ const aisTerm=grid.getByRole('button',{name:'AIS positions',exact:true});
+ await aisTerm.click();
+ await expect(aisTerm).toHaveAttribute('aria-expanded','true');
+ await expect(grid.getByRole('tooltip')).toContainText('Automatic Identification System');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'Overall'}).click();
+ await expect(grid).toBeVisible(); // Partial retained inventory may be available during full Overall loading.
+ await expect(grid.getByText('123,456',{exact:true})).toBeVisible();
+ await expect(grid.getByText('≈ 987,654',{exact:true})).toBeVisible();
+ await expect(grid).not.toContainText('Not reported');
+});
+
+
+test('Intelligence metric glossary remains operable and contained on a phone viewport', async ({page}) => {
+ await page.setViewportSize({width:390,height:844});
+ await mockOperationalContracts(page);
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ const grid=page.getByRole('region',{name:'Intelligence metric dashboard'});
+ await expect(grid).toBeVisible();
+ // PWA guidance is not allowed to block a user's first visit.
+ await expect(page.getByRole('dialog',{name:'Take Futures with you.'})).toHaveCount(0);
+ const term=grid.getByRole('button',{name:'AIS positions',exact:true});
+ await term.scrollIntoViewIfNeeded();
+ await term.click();
+ const tooltip=grid.getByRole('tooltip');
+ await expect(tooltip).toBeVisible();
+ const rect=await tooltip.boundingBox();
+ expect(rect).not.toBeNull();
+ expect(rect.x).toBeGreaterThanOrEqual(-1);
+ expect(rect.x+rect.width).toBeLessThanOrEqual(392);
+ const box=await grid.boundingBox();
+ expect(box.x).toBeGreaterThanOrEqual(-1);
+ expect(box.x+box.width).toBeLessThanOrEqual(392);
+ const install=page.getByRole('button',{name:'How to install Futures'});
+ await install.click();
+ await expect(page.getByRole('dialog',{name:'Take Futures with you.'})).toBeVisible();
+ await page.getByRole('button',{name:'Continue in browser'}).click();
+ await expect(page.getByRole('dialog',{name:'Take Futures with you.'})).toHaveCount(0);
+});
+
+test('Agents shows loading rather than an empty registry while the snapshot request is pending', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/scheduled-tasks',async route=>{
+   await new Promise(resolve=>setTimeout(resolve,700));
+   await route.fulfill({json:{source:'ChatGPT Tasks snapshot',live_sync:false,synced_at:'2026-10-15T12:00:00Z',tasks:[
+    {title:'SeaCommons Forensic Repair Loop',enabled:true,cadence:'Every 3 hours',timezone:'Europe/Rome'},
+   ]}});
+ });
+ await page.goto(FUTURES_URL+'?view=agents');
+ await expect(page.getByText('Loading scheduled tasks…')).toBeVisible();
+ await expect(page.getByText(/No synchronized SeaCommons tasks/)).toHaveCount(0);
+ await expect(page.getByText('SeaCommons Forensic Repair Loop')).toBeVisible();
+ await expect(page.getByText('Loading scheduled tasks…')).toHaveCount(0);
+});
+
+
+test('Intelligence labels the real source and clearly distinguishes loading, results and retry', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/overview?hours=24', route=>route.fulfill({json:{
+   lookback_hours:24,generated_at:'2026-10-15T12:00:00Z',
+   pipeline_status:{pipeline:{raw_observations:125,parsed_events:27},sensor_activity:{ais_fixes:411}},
+ }}));
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'24 hours'}).click();
+ await expect(page.getByLabel('Evidence data provenance')).toContainText('Protected evidence API');
+ await expect(page.getByLabel('Evidence data provenance')).toContainText('Rolling 24 hours');
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=raw_observations]')).toContainText('125');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'7 days'}).click();
+ await expect(page.getByLabel('Evidence data provenance')).toContainText('Rolling 168 hours');
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=raw_observations]')).not.toContainText('125');
+});
+
+
+test('Overall explains partial retained history instead of a blank intelligence dashboard', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/futures/intelligence-overall',route=>route.fulfill({status:503,json:{detail:'Unavailable'}}));
+ await page.route('**/api/v1/operator/ingestion/**', route=>route.fulfill({status:401,json:{detail:'Sign-in required'}}));
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'Overall'}).click();
+ await expect(page.getByRole('status').filter({hasText:'Partial Overall evidence'})).toBeVisible();
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=parsed_events]')).toContainText('378,826');
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=ais_fixes]')).toContainText('Unavailable');
+ await expect(page.getByLabel('Evidence data provenance')).toContainText('Public retained Intel-event inventory');
+});
+
+test('Technical glossary defines individual terms with hover alone and accessible focus', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.goto(FUTURES_URL+'?view=contributions');
+ const term=page.getByRole('button',{name:'OCPU',exact:true}).first();
+ await term.scrollIntoViewIfNeeded();
+ await term.hover();
+ await expect(term.locator('xpath=..').getByRole('tooltip')).toBeVisible();
+ await term.focus();
+ await expect(term.locator('xpath=..').getByRole('tooltip')).toBeVisible();
+});
+
+test('Development and Roadmap are different editorial views with distinct evidence', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.goto(FUTURES_URL+'?view=development');
+ await expect(page.getByRole('heading',{name:/What is dependable, what is unresolved/i})).toBeVisible();
+ await expect(page.getByText(/Four questions before the system scales/i)).toBeVisible();
+ await page.getByRole('button',{name:'Roadmap',exact:true}).first().click();
+ await expect(page.getByRole('heading',{name:'Development, step by step.'})).toBeVisible();
+});
+
+test('Platform device study distinguishes engineering concept from photographed reference', async ({page}) => {
+ await mockOperationalContracts(page);
+ await page.goto(FUTURES_URL+'?view=platform');
+ await expect(page.getByLabel(/Engineering concept diagram/)).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Engineering readiness and acceptance'})).toBeVisible();
+ await expect(page.getByRole('link',{name:/actual manufacturer product and images/i})).toBeVisible();
+});
+
+
+test('Overall loads all 12 aggregate measurements without asking private identity', async ({page}) => {
+ await mockOperationalContracts(page);
+ let protectedOverallRequests=0;
+ await page.route('**/api/v1/operator/ingestion/overall*',route=>{
+  protectedOverallRequests++;
+  return route.fulfill({status:401,json:{detail:'Protected evidence requires login'}});
+ });
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'Overall'}).click();
+ const grid=page.getByRole('region',{name:'Intelligence metric dashboard'});
+ await expect(grid.locator('[data-metric=raw_observations]')).toContainText('2,371,751');
+ await expect(grid.locator('[data-metric=parsed_events]')).toContainText('382,495');
+ await expect(grid.locator('[data-metric=active_source_names]')).toContainText('36');
+ await expect(page.getByLabel('Evidence data provenance')).toContainText('Public historical aggregates');
+ await expect(page.getByText('Partial Overall evidence:')).toHaveCount(0);
+ expect(protectedOverallRequests).toBe(0);
+});
+
+test('An invalid historical count cannot silently become zero', async ({page})=>{
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/futures/overall',route=>route.fulfill({
+  json:{scope:'retained_intel_events',generated_at:'2026-10-15T12:00:00Z',intel_record:{total_events:null,positioned_events:0}},
+ }));
+ await page.route('**/api/v1/futures/intelligence-overall',route=>route.fulfill({status:503,json:{detail:'Historical aggregate unavailable'}}));
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'Overall'}).click();
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=parsed_events]')).toContainText('Unavailable');
+ await expect(page.getByText('Partial Overall evidence:')).toHaveCount(0);
+});
+
+test('Device selection does not contain nested glossary buttons, and invitation access is truthful',async({page})=>{
+ await mockOperationalContracts(page);
+ await page.goto(FUTURES_URL+'?view=platform');
+ await expect(page.locator('.future-device-card .future-educational-trigger')).toHaveCount(0);
+ await page.getByRole('button',{name:/Coastal receiver/i}).click();
+ await expect(page.getByRole('button',{name:/Coastal receiver/i})).toHaveAttribute('aria-pressed','true');
+ await page.goto(FUTURES_URL+'?view=access');
+ await expect(page.getByRole('region',{name:'Viewer invitations availability'})).toContainText('not enabled');
+ await expect(page.getByRole('button',{name:/Save Viewer invitation/})).toHaveCount(0);
+ await expect(page.getByRole('link',{name:/Contact the workspace administrator/})).toHaveAttribute('href',/^mailto:/);
+});
+
+test('Agents labels aged imported states as snapshots, not live schedules', async ({page})=>{
+ await mockOperationalContracts(page);
+ await page.route('**/api/v1/operator/ingestion/scheduled-tasks',route=>route.fulfill({
+  json:{source:'ChatGPT Tasks snapshot',live_sync:false,synced_at:'2026-01-01T00:00:00Z',
+    tasks:[{title:'SeaCommons CI review',enabled:true,cadence:'Daily',timezone:'Europe/Rome'}]},
+ }));
+ await page.goto(FUTURES_URL+'?view=agents');
+ await expect(page.getByText('ENABLED IN SNAPSHOT')).toBeVisible();
+ await expect(page.getByText(/Snapshot older than 24 hours/)).toBeVisible();
+});
+
+test('Overall path is a public fixed endpoint, not a token or operator shortcut',async({page})=>{
+ await mockOperationalContracts(page);
+ const seen=[];
+ page.on('request',request=>{if(request.url().includes('intelligence-overall'))seen.push({url:request.url(),headers:request.headers()});});
+ await page.goto(FUTURES_URL+'?view=intelligence');
+ await page.getByRole('group',{name:'Intelligence time window'}).getByRole('button',{name:'Overall'}).click();
+ await expect(page.getByRole('region',{name:'Intelligence metric dashboard'}).locator('[data-metric=raw_observations]')).toContainText('2,371,751');
+ expect(seen.length).toBeGreaterThan(0);
+ expect(seen.every(x=>x.url.endsWith('/api/v1/futures/intelligence-overall'))).toBe(true);
+});
 
 test('Futures side-by-side AIS map selects a Live case and targets VesselFinder by IMO', async ({ page }) => {
   await mockOperationalContracts(page);
@@ -338,7 +551,7 @@ test('Futures side-by-side AIS map selects a Live case and targets VesselFinder 
       },
     }],
   } }));
-  await page.route('**/api/v1/vessels/search?*', (route) => route.fulfill({ json: {
+  await page.route('**/api/v1/operator/ais-reviews/lookup?*', (route) => route.fulfill({ json: {
     vessels: [{mmsi:'636017239',imo:'9316359',ship_name:'MSC SPRING III',
       lat:35.9845, lon:-5.5212,last_seen:'2026-10-15T12:24:45Z'}],
   } }));

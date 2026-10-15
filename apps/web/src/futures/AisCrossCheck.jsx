@@ -232,8 +232,8 @@ export default function AisCrossCheck() {
       const id = identity.imo || identity.mmsi;
       setAIS((old) => ({...old,loading:true}));
       try {
-        const data = await fetchJson(resolveSiteApiBase(), '/api/v1/vessels/search?q=' +
-          encodeURIComponent(id) + '&active_only=false&limit=30', undefined, 12000);
+        const data = await fetchJson(resolveSiteApiBase(), API_BASE + '/lookup?' +
+          (identity.imo ? 'imo=' : 'mmsi=') + encodeURIComponent(id), undefined, 12000);
         const vessels = Array.isArray(data.vessels) ? data.vessels : [];
         const vessel = vessels.find((item) => String(item.imo || '') === identity.imo
           || String(item.mmsi || '') === identity.mmsi);

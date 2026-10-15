@@ -161,7 +161,7 @@ async def authorization_gate(request, call_next):
         return JSONResponse(status_code=403, content={"detail": "This operation is disabled in the public demo"})
     public = path in {
         "/", "/health", "/ready", "/metrics", "/docs", "/openapi.json", "/redoc",
-        "/status", "/api/v1/status", "/api/v1/futures/overall",
+        "/status", "/api/v1/status", "/api/v1/futures/overall", "/api/v1/futures/intelligence-overall",
         "/api/v1/ingest/twilio/whatsapp", "/api/v1/ingest/twilio/sms",
         "/api/v1/ingest/meta/whatsapp",
         "/api/v1/ingest/telegram", "/api/v1/ingest/webhook",
@@ -190,7 +190,13 @@ async def authorization_gate(request, call_next):
         # checked inside the AIS review handler. Unlike the public Live
         # GET route, this remains private even for read-only operations.
         request.method in {"GET", "POST", "OPTIONS"}
-        and path == "/api/v1/operator/ais-reviews"
+        and (
+            path == "/api/v1/operator/ais-reviews"
+            or (
+                request.method in {"GET", "OPTIONS"}
+                and path == "/api/v1/operator/ais-reviews/lookup"
+            )
+        )
     ) or (
         # docs/prompt.md P1 C: the media route is an EXPLICIT public contract,
         # not an accident of the proxy header. It serves only the re-encoded

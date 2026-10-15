@@ -28,7 +28,9 @@ export async function fetchJson(base, path, options, timeoutMs = 12000) {
       const message = text && !text.trimStart().startsWith('<')
         ? text
         : `HTTP ${response.status} — backend unavailable`;
-      throw new Error(message);
+      const failure = new Error(message);
+      failure.status = response.status;
+      throw failure;
     }
     const text = await response.text();
     if (!text || text.trimStart().startsWith('<')) {

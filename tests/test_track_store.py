@@ -102,6 +102,9 @@ def test_recent_tracks_batches_and_limits_each_mmsi(store):
 
 
 def test_prune(store, monkeypatch):
+    monkeypatch.setenv('AIS_PRUNE_APPROVED', '1')
+    from core.vessels import track_store as track_store_module
+    monkeypatch.setattr(track_store_module, '_RETENTION_RELEASE_AUTHORIZED', True)
     from core import object_store
     from core.config import config
     monkeypatch.setattr(config, 'OBJECT_STORAGE_ENDPOINT', 'test.local')
@@ -117,6 +120,9 @@ def test_prune(store, monkeypatch):
 
 
 def test_old_ais_is_deleted_only_after_verified_cold_archival(monkeypatch):
+    monkeypatch.setenv('AIS_PRUNE_APPROVED', '1')
+    from core.vessels import track_store as track_store_module
+    monkeypatch.setattr(track_store_module, '_RETENTION_RELEASE_AUTHORIZED', True)
     import gzip
     import json
     from core.config import config
@@ -147,6 +153,9 @@ def test_old_ais_is_deleted_only_after_verified_cold_archival(monkeypatch):
 
 
 def test_cold_archive_failure_preserves_original_rows(monkeypatch):
+    monkeypatch.setenv('AIS_PRUNE_APPROVED', '1')
+    from core.vessels import track_store as track_store_module
+    monkeypatch.setattr(track_store_module, '_RETENTION_RELEASE_AUTHORIZED', True)
     from core.config import config
     from core import object_store
     from core.db.models import VesselTrackDB
@@ -166,3 +175,44 @@ def test_cold_archive_failure_preserves_original_rows(monkeypatch):
     with session_scope() as db:
         assert db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == '111765433').count() == 1
         db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == '111765433').delete()
+
+
+def test_prune_requires_explicit_approval(monkeypatch):
+    """Scheduled pruning must not delete historical evidence by default."""
+    from core.vessels import track_store as track_store_module
+    monkeypatch.setattr(track_store_module, '_RETENTION_RELEASE_AUTHORIZED', True)
+    from core import object_store
+    from core.db.models import VesselTrackDB
+    from core.db.session import session_scope
+
+    monkeypatch.delenv("AIS_PRUNE_APPROVED", raising=False)
+    monkeypatch.setattr(
+        object_store, "put",
+        lambda *_args: pytest.fail("unapproved pruning accessed object storage"),
+    )
+    old = datetime.now(timezone.utc) - timedelta(days=90)
+    with session_scope() as db:
+        db.add(VesselTrackDB(mmsi="980001231", ts=old, received_at=old,
+                             lat=33.0, lon=16.0, source="test"))
+    assert TrackStore().prune(older_than_days=60) == 0
+    with session_scope() as db:
+        assert db.query(VesselTrackDB).filter(
+            VesselTrackDB.mmsi == "980001231"
+        ).count() == 1
+        db.query(VesselTrackDB).filter(
+            VesselTrackDB.mmsi == "980001231"
+        ).delete()
+
+
+def test_retention_release_gate_blocks_legacy_env_override(monkeypatch):
+    """An old production env flag cannot activate unapproved evidence deletion."""
+    from core import object_store
+    from core.vessels import track_store as track_store_module
+
+    monkeypatch.setenv("AIS_PRUNE_APPROVED", "1")
+    monkeypatch.setattr(track_store_module, "_RETENTION_RELEASE_AUTHORIZED", False)
+    monkeypatch.setattr(
+        object_store, "put",
+        lambda *_args: pytest.fail("retention policy gate bypassed"),
+    )
+    assert TrackStore().prune(older_than_days=60) == 0

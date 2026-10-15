@@ -73,3 +73,15 @@ This desk is a manual visual reference, not a licensed data feed.
 - browser test selecting a Live case and verifying a newly targeted iframe
 - CI completed and production test using a real authorized reviewer
 - preservation of historical Play dossier geometry and isolation from AI training
+
+## Futures gateway contract
+
+The frontend uses `GET /api/v1/live/signals?mode=maritime` through the
+existing public-only Live rewrite. A separate *signed, narrowly scoped*
+`GET /api/v1/operator/ais-reviews/lookup?imo=...` or `?mmsi=...`
+serves a single canonical registry vessel snapshot to Futures; full fleet
+enumeration and `/api/v1/vessels/search` stay blocked at the Futures
+gateway. `GET/POST /api/v1/operator/ais-reviews` are also explicitly
+allowed through the proxy with a bearer, but the upstream API separately
+validates the signature and reviewers-only write allowlist.
+The proxy has negative allowlist tests for untrusted methods and paths.
