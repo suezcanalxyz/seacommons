@@ -83,6 +83,21 @@ class VesselTrackDB(Base):
     )
 
 
+class VesselTrackIngestBatchDB(Base):
+    """Transactional receipt for one durable SQLite spool batch.
+
+    A PostgreSQL transaction inserts the track rows and this receipt together.
+    If the API dies after commit but before SQLite acknowledgement, replay
+    checks this receipt and avoids inserting the same track rows again.
+    Receipts must not be TTL-deleted while spool recovery is possible.
+    """
+    __tablename__ = "vessel_track_ingest_batches"
+    batch_id = Column(String(64), primary_key=True)
+    payload_sha256 = Column(String(64), nullable=False)
+    row_count = Column(Integer, nullable=False)
+    committed_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 class VesselBehaviouralBaselineDB(Base):
     """Versioned analytical baseline derived from vessel track evidence."""
     __tablename__ = "vessel_behavioural_baselines"
