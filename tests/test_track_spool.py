@@ -180,3 +180,18 @@ def test_missing_spool_path_rejects_enabled_mode(monkeypatch):
     monkeypatch.delenv("SEACOMMONS_AIS_SPOOL_PATH", raising=False)
     with pytest.raises(RuntimeError, match="SPOOL_PATH"):
         TrackStore()
+
+
+def test_worker_fails_closed_if_durable_spool_cannot_start(monkeypatch):
+    from core.intel.engine import IntelEngine
+
+    def unavailable():
+        raise RuntimeError("simulated durable queue failure")
+
+    monkeypatch.setenv("SEACOMMONS_AIS_SPOOL_ENABLED", "true")
+    monkeypatch.setattr(track_store_module.track_store, "start", unavailable)
+    with pytest.raises(RuntimeError, match="durable queue failure"):
+        IntelEngine().start(
+            twitter_enabled=False, news_enabled=False, ais_enabled=True,
+            gdacs_enabled=False,
+        )
