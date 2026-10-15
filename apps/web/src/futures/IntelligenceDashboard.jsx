@@ -234,7 +234,7 @@ function IntelligenceMetricGrid({period,pipeline,sensorsData,loadedAt,estimatedF
  const [expanded,setExpanded]=useState(null);
  const measurements={...sensorsData,...pipeline};
  const overall=period==='overall';
- const scopeText=overall?'Retained records, subject to data retention':period==='7d'?'Rolling seven days':'Rolling 24 hours';
+ const scopeText=overall?'Retained records, subject to data retention':period==='7d'?'Rolling 7 days':'Rolling 24 hours';
  const countsAvailable=headlineMetrics.filter(([key])=>measurements?.[key]!==null&&measurements?.[key]!==undefined).length;
  const report=loading?'Updating measurements':countsAvailable===0?'Measurements unavailable':countsAvailable<12?'Partial measurements':'Measurements available';
  return <section className="future-section future-intelligence-headline" aria-label="Intelligence metric dashboard" aria-busy={loading}>
