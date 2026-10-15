@@ -102,6 +102,7 @@ def test_recent_tracks_batches_and_limits_each_mmsi(store):
 
 
 def test_prune(store, monkeypatch):
+    monkeypatch.setenv('AIS_PRUNE_APPROVED', '1')
     from core import object_store
     from core.config import config
     monkeypatch.setattr(config, 'OBJECT_STORAGE_ENDPOINT', 'test.local')
@@ -117,6 +118,7 @@ def test_prune(store, monkeypatch):
 
 
 def test_old_ais_is_deleted_only_after_verified_cold_archival(monkeypatch):
+    monkeypatch.setenv('AIS_PRUNE_APPROVED', '1')
     import gzip
     import json
     from core.config import config
@@ -147,6 +149,7 @@ def test_old_ais_is_deleted_only_after_verified_cold_archival(monkeypatch):
 
 
 def test_cold_archive_failure_preserves_original_rows(monkeypatch):
+    monkeypatch.setenv('AIS_PRUNE_APPROVED', '1')
     from core.config import config
     from core import object_store
     from core.db.models import VesselTrackDB
@@ -166,3 +169,63 @@ def test_cold_archive_failure_preserves_original_rows(monkeypatch):
     with session_scope() as db:
         assert db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == '111765433').count() == 1
         db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == '111765433').delete()
+
+
+def test_prune_requires_explicit_approval(monkeypatch):
+    """Scheduled pruning must not delete historical evidence by default."""
+    from core import object_store
+    from core.db.models import VesselTrackDB
+    from core.db.session import session_scope
+
+    monkeypatch.delenv("AIS_PRUNE_APPROVED", raising=False)
+    monkeypatch.setattr(
+        object_store, "put",
+        lambda *_args: pytest.fail("unapproved pruning accessed object storage"),
+    )
+    old = datetime.now(timezone.utc) - timedelta(days=90)
+    with session_scope() as db:
+        db.add(VesselTrackDB(mmsi="980001231", ts=old, received_at=old,
+                             lat=33.0, lon=16.0, source="test"))
+    assert TrackStore().prune(older_than_days=60) == 0
+    with session_scope() as db:
+        assert db.query(VesselTrackDB).filter(
+            VesselTrackDB.mmsi == "980001231"
+        ).count() == 1
+        db.query(VesselTrackDB).filter(
+            VesselTrackDB.mmsi == "980001231"
+        ).delete()
+
+
+def test_failed_flush_retains_rows_received_during_failure(monkeypatch):
+    """Transient DB failure must not discard the first batch or arrivals during retry."""
+    from contextlib import contextmanager
+    from core.db import session as db_session
+    from core.vessels import track_store as track_store_module
+
+    original_scope = db_session.session_scope
+    monkeypatch.setattr(track_store_module, "_SYNC", False)
+    buffered = TrackStore()
+    now = datetime.now(timezone.utc)
+    buffered.on_position("980001234", "FIRST", 35.0, 18.0, received_at=now)
+
+    class FailingSession:
+        def bulk_insert_mappings(self, *_args):
+            buffered.on_position(
+                "980001235", "SECOND", 36.0, 19.0, received_at=now
+            )
+            raise RuntimeError("simulated database outage")
+
+    @contextmanager
+    def failed_scope():
+        yield FailingSession()
+
+    monkeypatch.setattr(db_session, "session_scope", failed_scope)
+    assert buffered.flush() == 0
+    assert [row["mmsi"] for row in buffered._buffer] == [
+        "980001234", "980001235"
+    ]
+
+    monkeypatch.setattr(db_session, "session_scope", original_scope)
+    assert buffered.flush() == 2
+    assert buffered.track("980001234")[0]["lat"] == 35.0
+    assert buffered.track("980001235")[0]["lat"] == 36.0
