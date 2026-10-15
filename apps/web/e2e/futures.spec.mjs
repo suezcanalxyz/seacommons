@@ -568,7 +568,7 @@ test('Futures side-by-side AIS map selects a Live case and targets VesselFinder 
   const html = await page.locator('iframe[title*="VesselFinder"]').getAttribute('srcdoc');
   expect(html).toContain('var imo="9316359"');
   await expect(page.getByText('5.52120° W', {exact:false})).toBeVisible();
-  await expect(page.getByText('Anomaly’s historical location', {exact:false})).toHaveCount(0);
+  await expect(page.getByText('Anomaly’s historical location', {exact:false})).toBeVisible();
   await page.getByText('False positive').click();
   await page.getByText('Consistent', {exact:true}).click();
   await expect(page.getByRole('button',{name:'Save evidence review'})).toBeDisabled();
