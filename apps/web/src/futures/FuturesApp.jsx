@@ -329,7 +329,7 @@ function Hardware() {
     </section>
     <section className="future-section"><SectionHeader eyebrow="technical sequencing" title="Start with dependable receiving stations."
       copy="First validate one coastal AIS receiver, one radio decoder and resilient storage. Prototype a recoverable Drifter after station-health telemetry and legal/safety requirements are defined. Expand environmental and acoustic sensing only after calibration and maintenance procedures are proven." />
-      <p className="future-inline-note">Price anchors: Raspberry Pi official 2026 pricing and RAKwireless GPS tracker listings. EUR component allowances are engineering budgets, not live retailer offers. V4 RTL-SDR has been discontinued, so receiver estimates use the V3 line.</p>
+      <p className="future-inline-note"><GlossaryText>Price anchors: Raspberry Pi official 2026 pricing and RAKwireless GPS tracker listings. EUR component allowances are engineering budgets, not live retailer offers. V4 RTL-SDR has been discontinued, so receiver estimates use the V3 line.</GlossaryText></p>
     </section>
   </>;
 }
@@ -549,8 +549,8 @@ function PlatformSummary({ ops, period }) {
       <SectionHeader eyebrow="01 / project at a glance" title="How SeaCommons turns scattered signals into evidence."
         copy="SeaCommons links heterogeneous observations into traceable maritime investigations, while preserving uncertainty, source independence and the distinction between an observation and a verified finding." />
       <div className="future-narrative-grid">
-        <article><small>scope</small><h3>Humanitarian OSINT</h3><p>Distress, SAR activity and humanitarian reporting under conservative privacy, provenance and location-precision controls.</p></article>
-        <article><small>scope</small><h3>Maritime Intelligence</h3><p>AIS integrity, vessel behaviour, radio, environmental and satellite investigation context without presuming intent.</p></article>
+        <article><small>scope</small><h3>Humanitarian OSINT</h3><p><GlossaryText>Distress, SAR activity and humanitarian reporting under conservative privacy, provenance and location-precision controls.</GlossaryText></p></article>
+        <article><small>scope</small><h3>Maritime Intelligence</h3><p><GlossaryText>AIS integrity, vessel behaviour, radio, environmental and satellite investigation context without presuming intent.</GlossaryText></p></article>
         <article><small>method</small><h3>One evidence model</h3><p>Source observation → normalization → derived cue → episode → hypothesis → policy-governed public case.</p></article>
       </div>
     </section>
