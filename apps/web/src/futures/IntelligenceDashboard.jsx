@@ -1,5 +1,6 @@
 import React, {useState} from 'react';
 import GlossaryText from './GlossaryText.jsx';
+import { retainedEvidence, retainedMetricFallback } from './retainedEvidence.js';
 
 const stages=[
   ['raw_observations','Raw observations','Source records received by SeaCommons. They are raw inputs, not confirmed events.'],
@@ -87,17 +88,19 @@ function Breakdown({title,items,help}) {
  return <section className="future-section future-intelligence-breakdown"><h2>{title}</h2><p>{help}</p>{entries.length?<div className="future-intelligence-bars">{entries.map(([key,value])=><div className="future-intelligence-bar" key={key}><span title={key}>{key.replaceAll('_',' ')}</span><div><i style={{width:Math.max(1,100*Number(value)/max)+'%'}}/></div><strong>{number(value)}</strong><small>{termDescription(key)}</small></div>)}</div>:<p>No breakdown currently available for this period.</p>}</section>
 }
 function useOperatorMetrics(period){
- const [snapshot,setSnapshot]=React.useState({period:null,data:null,loading:true,error:'',source:null});
+ const [snapshot,setSnapshot]=React.useState({period:null,data:null,loading:true,error:'',source:null,errorKind:null,warning:''});
  const seq=React.useRef(0);
  const refresh=React.useCallback(async()=>{
   const request=++seq.current;
   // Never show a previous window's numbers or timestamp as current.
-  setSnapshot({period,data:null,loading:true,error:'',source:null});
-  const accept=(data,source)=>{
-   if(request===seq.current)setSnapshot({period,data,source,loading:false,error:''});
+  setSnapshot({period,data:null,loading:true,error:'',source:null,errorKind:null,warning:''});
+  const accept=(data,source,warning='')=>{
+   if(request===seq.current)setSnapshot({period,data,source,loading:false,error:'',errorKind:null,warning});
   };
-  const fail=()=>{
-   if(request===seq.current)setSnapshot({period,data:null,source:null,loading:false,error:'Metrics could not be loaded for this period. Please retry.'});
+  const fail=(errorKind='unavailable')=>{
+   if(request===seq.current)setSnapshot({period,data:null,source:null,loading:false,
+    error: errorKind==='authentication'?'The protected evidence service rejected this session. Sign out and sign in again, or ask an administrator to verify your access.':'The requested evidence service is temporarily unavailable.',
+    errorKind,warning:''});
   };
   try{
    const url=period==='overall'?'/api/v1/operator/ingestion/overall-metrics':`/api/v1/operator/ingestion/overview?hours=${period==='7d'?168:24}`;
@@ -107,23 +110,27 @@ function useOperatorMetrics(period){
     : result?.lookback_hours===(period==='7d'?168:24)&&result?.pipeline_status?.pipeline;
    if(!valid)throw new Error('Unexpected measurement contract');
    accept(result,'operator');
-  }catch{
+  }catch(error){
+   const authRejected=error?.status===401||error?.status===403;
+   // A denied OIDC identity cannot be repaired by retrying a second protected endpoint.
+   if(authRejected&&period==='overall'){fail('authentication');return;}
    try{
     if(period==='overall'){
      const historical=await fetchJson(resolveSiteApiBase(),'/api/v1/operator/ingestion/overall',undefined,26000);
-     if(historical?.scope!=='all_time'||!Array.isArray(historical?.stages))throw new Error('Unexpected historical contract');
-     accept(historical,'historical');
+     if(historical?.scope!=='all_time'||!Array.isArray(historical?.stages))throw new Error('Unexpected historical contract',{cause:error});
+     accept(historical,'historical','The fast historical summary was unavailable; a second authenticated inventory was used.');
     }else{
      const hours=period==='7d'?168:24;
-     const status=await fetchJson(resolveSiteApiBase(),`/api/v1/status?hours=${hours}`,undefined,30000);
-     if(status?.window_hours!==hours||!status?.pipeline)throw new Error('Unexpected public status contract');
-     accept({lookback_hours:hours,generated_at:status.generated_at,pipeline_status:{pipeline:status.pipeline,sensor_activity:status.sensor_activity},fallback_public:true},'public');
+     const status=await fetchJson(resolveSiteApiBase(),'/api/v1/status?hours='+hours,undefined,30000);
+     if(status?.window_hours!==hours||!status?.pipeline)throw new Error('Unexpected public status contract',{cause:error});
+     accept({lookback_hours:hours,generated_at:status.generated_at,pipeline_status:{pipeline:status.pipeline,sensor_activity:status.sensor_activity},fallback_public:true},'public',
+      authRejected?'The protected service rejected this session; only public operational measures are shown.':'The protected service is unavailable; only public operational measures are shown.');
     }
-   }catch{fail();}
+   }catch{fail(authRejected?'authentication':'unavailable');}
   }
  },[period]);
  React.useEffect(()=>{refresh();return()=>{seq.current+=1;};},[refresh]);
- return snapshot.period===period?{...snapshot,refresh}:{period,data:null,source:null,loading:true,error:'',refresh};
+ return snapshot.period===period?{...snapshot,refresh}:{period,data:null,source:null,loading:true,error:'',errorKind:null,warning:'',refresh};
 }
 function useOperatorSections(period,tab) {
  const [snapshot,setSnapshot]=React.useState({data:null,error:'',key:''});
@@ -336,9 +343,8 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  // Overall reference when the expensive private all-time metric endpoint fails.
  // Only the normalized-event tile is populated: never invent the other 11.
  const retained=overall?.history?.scope==='retained_intel_events' ? overall.history : null;
- const fallbackTotal=Number(retained?.intel_record?.total_events);
- const retainedFallback=isOverall&&!raw&&Number.isFinite(fallbackTotal)
-   ? {parsed_events:fallbackTotal} : null;
+ const validRetained=retainedEvidence(retained);
+ const retainedFallback=isOverall&&!raw?retainedMetricFallback(retained):null;
  const pipeline=isOverall?(rawStages||retainedFallback):(raw?.pipeline_status?.pipeline||status?.pipeline||funnelStages);
  const sensorsData=isOverall?raw?.sensor_activity:(raw?.pipeline_status?.sensor_activity||status?.sensor_activity);
  const breakdown=isOverall?sections.data?.overall?.breakdowns:{
@@ -371,8 +377,9 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
   <small>{evidenceTimestamp?'Updated '+stamp(evidenceTimestamp):operator.loading?'Request in progress':'No verified update time'}</small>
   <button type="button" disabled={operator.loading} onClick={operator.refresh}>{operator.loading?'Loading…':operator.error?'Retry':'Refresh'}</button>
  </div>
- {operator.error&&<p className="future-inline-note" role="alert">The requested evidence could not be retrieved. No result has been inferred or replaced with zero. Check your connection and retry.</p>}
- {retainedFallback&&<p className="future-evidence-partial" role="status">Partial Overall evidence: {number(fallbackTotal)} retained normalized Intel-event records are independently available. The remaining measures require the protected historical service and are shown as unavailable rather than invented. <button type="button" disabled={operator.loading} onClick={operator.refresh}>Retry full inventory</button></p>}
+ {operator.error&&<p className="future-inline-note" role="alert">{operator.error} {operator.errorKind==='authentication'&&<button type="button" onClick={()=>navigate('access')}>Review account access →</button>}</p>}
+ {operator.warning&&<p className="future-inline-note" role="status">{operator.warning} Protected and public records must not be treated as equivalent.</p>}
+ {retainedFallback&&<p className="future-evidence-partial" role="status">Partial Overall evidence: {number(validRetained?.total)} retained normalized Intel-event records are independently available. The remaining measures require the protected historical service and are shown as unavailable rather than invented. <button type="button" disabled={operator.loading} onClick={operator.refresh}>Retry full inventory</button></p>}
  <IntelligenceMetricGrid period={period} pipeline={pipeline} sensorsData={specialSensors} loadedAt={evidenceTimestamp} loading={operator.loading&&!retainedFallback} source={dataSource} estimatedFields={isOverall?raw?.estimated_fields|| (sensorsData?.ais_fixes_estimated?['ais_fixes']:[]):[]}/>
  <section className="future-intelligence-explainer" aria-label="Intelligence evidence guide"><div><span className="future-eyebrow">Reading the data</span><h2>From signals to assessed evidence</h2></div><p>Raw intake counts information received, normalized records make sources comparable, and analytical cues highlight leads. Episodes group related observations; investigations remain hypotheses until their evidence and uncertainty have been assessed. These layers overlap, so counts are never added together.</p></section>
  <nav className="future-intelligence-subnav" aria-label="Intelligence sections">{TABS.map(([key,title])=><button key={key} type="button" aria-pressed={key===tab} className={key===tab?'is-active':''} onClick={()=>setTab(key)}>{title}</button>)}</nav>

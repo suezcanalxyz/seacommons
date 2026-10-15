@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import GlossaryText from './GlossaryText.jsx';
+import { retainedEvidence } from './retainedEvidence.js';
 import { useAuth } from '../auth.jsx';
 import { fetchJson } from '../services/api/client.js';
 import { resolveSiteApiBase } from '../site/liveApi.js';
@@ -85,9 +86,12 @@ function AgentTaskDashboard() {
  },[]);
  useEffect(()=>{reload();},[reload]);
  const tasks=state.data?.tasks||[];
+ const syncedAt=state.data?.synced_at ? Date.parse(state.data.synced_at) : NaN;
+ const stale=Number.isFinite(syncedAt)&&Date.now()-syncedAt>24*60*60*1000;
  return <><section className="future-page-head"><span className="future-eyebrow">Agents / scheduled workflows</span><h1>Scheduled work.</h1><p>Verified SeaCommons tasks from ChatGPT. This workspace shows a protected read-only snapshot, not a live scheduler connection.</p></section>
  <section className="future-section" aria-busy={state.loading}><div className="future-intelligence-freshness"><span>{state.loading?'Loading tasks…':state.error||('ChatGPT Tasks · '+tasks.length+' registered')}</span><small>{state.data?.synced_at?'Snapshot: '+new Date(state.data.synced_at).toLocaleString():'No verified snapshot'}</small><button type="button" disabled={state.loading} onClick={reload}>Refresh</button></div>
- {state.loading?<p role="status">Loading scheduled tasks…</p>:tasks.length?<div className="future-agent-grid">{tasks.map((task,i)=><article className="future-agent-card" key={task.title||i}><strong>{task.enabled?'ACTIVE':'PAUSED'}</strong><h3>{task.title}</h3><p>{task.cadence||'Cadence unavailable'} · {task.timezone||'Time zone unavailable'}</p><small>Last execution: {task.last_run?new Date(task.last_run).toLocaleString():'Not reported'}</small><small>Snapshot status: {task.status||'Imported'}</small></article>)}</div>:<p>{state.error||'No synchronized SeaCommons tasks are available. This is not evidence that all ChatGPT tasks have stopped.'}</p>}
+ {state.loading?<p role="status">Loading scheduled tasks…</p>:tasks.length?<div className="future-agent-grid">{tasks.map((task,i)=><article className="future-agent-card" key={task.title||i}><strong>{task.enabled?'ENABLED IN SNAPSHOT':'PAUSED IN SNAPSHOT'}</strong><h3>{task.title}</h3><p>{task.cadence||'Cadence unavailable'} · {task.timezone||'Time zone unavailable'}</p><small>Last execution: {task.last_run?new Date(task.last_run).toLocaleString():'Not reported'}</small><small>Snapshot status: {task.status||'Imported'}</small></article>)}</div>:<p>{state.error||'No synchronized SeaCommons tasks are available. This is not evidence that all ChatGPT tasks have stopped.'}</p>}
+ {stale&&<p role="status" className="future-factual-note">Snapshot older than 24 hours. ENABLED describes the last imported state, not a live check of this task.</p>}
  <p className="future-inline-note">Tasks are managed in ChatGPT. Changes to cadence, activation or notifications do not sync automatically to this read-only snapshot.</p>
  </section></>;
 }
@@ -164,7 +168,7 @@ function useOverallData() {
   const refresh = useCallback(async () => {
     try {
       const data = await fetchJson(resolveSiteApiBase(), '/api/v1/futures/overall', undefined, 18000);
-      if (data?.scope !== 'retained_intel_events' || !data?.intel_record) {
+      if (!retainedEvidence(data)) {
         throw new Error('Unexpected aggregate contract');
       }
       setSnapshot({ history: data, updatedAt: new Date(), loading: false, error: null });
@@ -200,12 +204,13 @@ function formatDateTime(value) {
 
 function LifetimeOverview({ ops, overall }) {
   const intel = overall.history?.intel_record || {};
-  const geolocated = intel.positioned_events;
-  const total = intel.total_events;
+  const validated = retainedEvidence(overall.history);
+  const geolocated = validated?.positioned ?? null;
+  const total = validated?.total ?? null;
   const metrics = [
     ['Historical events', total, 'All retained Intel events, not confirmed incidents'],
     ['Geolocated events', geolocated, 'Records with stored coordinate fields'],
-    ['Without coordinates', Number.isFinite(Number(total)) && Number.isFinite(Number(geolocated)) ? Number(total)-Number(geolocated) : null, 'Not a missing-case estimate'],
+    ['Without coordinates', validated ? total-geolocated : null, 'Not a missing-case estimate'],
     ['Play archive', ops.counts?.total_count, 'Cumulative published archive records'],
   ];
   return <section className="future-section future-lifetime" aria-label="Overall historical totals">
@@ -217,7 +222,7 @@ function LifetimeOverview({ ops, overall }) {
     <div className="future-data-provenance">
       <p><b>SeaCommons collection:</b> {intel.first_ingested_at ? formatDateTime(intel.first_ingested_at) + ' → ' + formatDateTime(intel.last_ingested_at) : 'Collection start not yet available from the API.'}</p>
       <p><b>Historical dates contained in the sources:</b> {formatDateTime(intel.oldest_event_utc)} → {formatDateTime(intel.newest_event_utc)}. Source events may predate SeaCommons; they do not indicate when the software began operating.</p>
-      <p>All-time means records currently retained in the database. {overall.error || ''}</p>
+      <p>All-time means records currently retained in the database. {validated ? 'Inventory generated '+formatDateTime(validated.generatedAt)+'.' : 'Verified history is unavailable.'} {overall.error || ''}</p>
     </div>
   </section>;
 }
@@ -893,12 +898,12 @@ function Guidebook() {
 }
 
 const transferableModules = [
- {name:'Acquisition adapters',state:'Established maritime core; adaptable',function:'Connect data feeds through rate-limited ingestion, source identifiers, timestamps, licenses and retry-aware acquisition.',reuse:'Public records, civic indicators, environmental datasets and field-research submissions.',gate:'A new adapter needs a permissioned source, tested schema and documented acquisition failures.'},
- {name:'Evidence & provenance ledger',state:'Established core; domain schemas required',function:'Retain original records and transformations so an auditor can distinguish source claims from software-derived statements.',reuse:'Cultural heritage documentation, participatory research and climate-observation registries.',gate:'New use cases must define consent, retention, data protection and reviewer authority.'},
- {name:'Geospatial correlation',state:'Established maritime methods; adaptable',function:'Compare time, distance, uncertainty and independent sources without turning proximity into a causal claim.',reuse:'Island infrastructure, coastal resilience, distributed field sites and public-space research.',gate:'Geographic coverage, coordinate quality and baseline assumptions must be evaluated per pilot.'},
- {name:'Radio and device ingestion',state:'Specialist pipeline / active validation',function:'Receive selected radio and sensor formats, preserve capture metadata, and test decoders against known fixtures.',reuse:'Community sensor stations, environmental instrumentation and local research networks.',gate:'Regulatory limits, supported equipment, calibration and maintenance need field validation.'},
- {name:'Simulation & environmental context',state:'Research capability',function:'Join metocean inputs, drift assumptions and observed positions to construct reproducible scenarios with uncertainty.',reuse:'Coastal environmental monitoring, training exercises and geographically bounded impact studies.',gate:'A model result must be compared with reference observations before operational interpretation.'},
- {name:'Publishing & partner workspaces',state:'Operational SeaCommons surfaces; reusable patterns',function:'Separate restricted raw evidence from privacy-filtered public maps, histories, reports and role-aware collaboration.',reuse:'Civic observatories, academic research portals and local cultural infrastructure.',gate:'A new workspace needs its own information model, access policy, editorial governance and audit.'},
+ {codeReference:'apps/api/core/acquisition',name:'Acquisition adapters',state:'Established maritime core; adaptable',function:'Connect data feeds through rate-limited ingestion, source identifiers, timestamps, licenses and retry-aware acquisition.',reuse:'Public records, civic indicators, environmental datasets and field-research submissions.',gate:'A new adapter needs a permissioned source, tested schema and documented acquisition failures.'},
+ {codeReference:'apps/api/core/intel',name:'Evidence & provenance ledger',state:'Established core; domain schemas required',function:'Retain original records and transformations so an auditor can distinguish source claims from software-derived statements.',reuse:'Cultural heritage documentation, participatory research and climate-observation registries.',gate:'New use cases must define consent, retention, data protection and reviewer authority.'},
+ {codeReference:'apps/api/core/intel',name:'Geospatial correlation',state:'Established maritime methods; adaptable',function:'Compare time, distance, uncertainty and independent sources without turning proximity into a causal claim.',reuse:'Island infrastructure, coastal resilience, distributed field sites and public-space research.',gate:'Geographic coverage, coordinate quality and baseline assumptions must be evaluated per pilot.'},
+ {codeReference:'apps/api/core/radio',name:'Radio and device ingestion',state:'Specialist pipeline / active validation',function:'Receive selected radio and sensor formats, preserve capture metadata, and test decoders against known fixtures.',reuse:'Community sensor stations, environmental instrumentation and local research networks.',gate:'Regulatory limits, supported equipment, calibration and maintenance need field validation.'},
+ {codeReference:'apps/api/core/drift',name:'Simulation & environmental context',state:'Research capability',function:'Join metocean inputs, drift assumptions and observed positions to construct reproducible scenarios with uncertainty.',reuse:'Coastal environmental monitoring, training exercises and geographically bounded impact studies.',gate:'A model result must be compared with reference observations before operational interpretation.'},
+ {codeReference:'apps/web/src/futures',name:'Publishing & partner workspaces',state:'Operational SeaCommons surfaces; reusable patterns',function:'Separate restricted raw evidence from privacy-filtered public maps, histories, reports and role-aware collaboration.',reuse:'Civic observatories, academic research portals and local cultural infrastructure.',gate:'A new workspace needs its own information model, access policy, editorial governance and audit.'},
 ];
 function Tools() {
   return (
@@ -912,7 +917,7 @@ function Tools() {
       </section>
 
       <section className="future-section"><SectionHeader eyebrow="Transferable toolkit" title="Six modules; multiple potential sectors." copy="Each row distinguishes actual SeaCommons capabilities from the extra implementation, legal and domain work needed to reuse a pattern elsewhere."/>
-      <div className="future-domain-grid">{transferableModules.map(m=><article key={m.name}><small>{m.state}</small><h3>{m.name}</h3><p><b>What it does:</b> <GlossaryText>{m.function}</GlossaryText></p><p><b>Where it could transfer:</b> <GlossaryText>{m.reuse}</GlossaryText></p><p className="future-factual-note"><b>Before reuse:</b> <GlossaryText>{m.gate}</GlossaryText></p></article>)}</div>
+      <div className="future-domain-grid">{transferableModules.map(m=><article key={m.name}><small>{m.state}</small><h3>{m.name}</h3><p><b>What it does:</b> <GlossaryText>{m.function}</GlossaryText></p><p><b>Where it could transfer:</b> <GlossaryText>{m.reuse}</GlossaryText></p><p className="future-factual-note"><b>Before reuse:</b> <GlossaryText>{m.gate}</GlossaryText></p><a href={"https://github.com/suezcanalxyz/seacommons/tree/main/"+m.codeReference} target="_blank" rel="noopener noreferrer">Inspect source module ↗</a></article>)}</div>
       <p className="future-factual-note">Transferability is an engineering opportunity, not a claim of completed deployments in every listed sector. New fields require distinct funding, methods, permissions and domain verification.</p></section>
       <section className="future-section"><SectionHeader eyebrow="Available product surfaces" title="Operational entry points and their access boundaries." copy="These are actual SeaCommons interfaces; they are different from the transferable modules above."/></section>
       <section className="future-tool-grid">
@@ -960,47 +965,15 @@ function Updates() {
 }
 
 function Invitations() {
-  const { token } = useAuth();
-  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', requested_role: 'viewer' });
-  const [items, setItems] = useState([]);
-  const [message, setMessage] = useState('');
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  const refresh = async () => {
-    if (!token) return;
-    try {
-      const response = await fetch('/api/v1/futures/invitations', { headers });
-      if (response.ok) setItems(await response.json());
-      else setMessage(`Invitations API: HTTP ${response.status}`);
-    } catch { setMessage('Invitations API is unavailable.'); }
-  };
-  useEffect(() => { refresh(); }, [token]);
-  const submit = async (event) => {
-    event.preventDefault(); setMessage('Saving invitation…');
-    try {
-      const response = await fetch('/api/v1/futures/invitations', {
-        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
-      setForm({ first_name: '', last_name: '', email: '', requested_role: 'viewer' });
-      setMessage('Invitation saved for scheduled review.'); await refresh();
-    } catch (error) { setMessage(`Not saved: ${error.message}`); }
-  };
-  return <section className="future-section future-invitations">
-    <SectionHeader eyebrow="partner access" title="Invitations" copy="Propose a partner with their first name, last name and email. Requests are reviewed every six hours. No membership is granted automatically." />
-    <form onSubmit={submit}>
-      <label>First name<input required maxLength={100} value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} /></label>
-      <label>Last name<input required maxLength={100} value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} /></label>
-      <label>Email<input required type="email" maxLength={320} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></label>
-      <label>Access level<input value="Viewer · read only" readOnly aria-label="Requested access level" /></label>
-      <button type="submit" disabled={!token}>Save Viewer invitation</button>
-    </form>
-    <p role="status">{message || (!token ? 'Sign in to propose an invitation.' : 'Only authenticated, authorized partners can propose invitations.')}</p>
-    <div>{items.map(item => <article key={item.id}><strong>{item.first_name} {item.last_name}</strong> <span>{item.email} · {item.requested_role || 'viewer'}</span> <StatusPill state={item.status}>{item.status}</StatusPill></article>)}</div>
+  return <section className="future-section future-invitations" aria-label="Viewer invitations availability">
+    <SectionHeader eyebrow="partner access / manual review" title="Request Viewer access"
+      copy="Viewer invitations require explicit administrator approval and server-side membership controls. Signing in does not grant access to private evidence or permit invitations." />
+    <p className="future-factual-note" role="status">The invitation submission service is not enabled for this workspace. No invitation can be saved or approved from this page today. This is a documented access limitation, not a pending invitation.</p>
+    <p>To propose a partner, provide their name, institutional email and intended purpose directly to the workspace administrator. Do not send credentials, API keys or protected evidence in an email.</p>
+    <a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20Futures%20Viewer%20access">Contact the workspace administrator ↗</a>
+    <p className="future-data-provenance">Activation criteria: OIDC authorization enforced on the invitation API, restricted roles, audited approvals, read-only scope and an end-to-end test. Access remains manual until all conditions pass.</p>
   </section>;
 }
-
 function Access({ user }) {
   const identity = user?.profile?.email || user?.profile?.preferred_username || user?.email || 'authorised administrator';
   return (
