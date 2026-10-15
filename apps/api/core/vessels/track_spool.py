@@ -14,6 +14,7 @@ import json
 import os
 import sqlite3
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -83,17 +84,28 @@ class SQLiteTrackSpool:
                 "CREATE TABLE IF NOT EXISTS pending ("
                 "seq INTEGER PRIMARY KEY AUTOINCREMENT,"
                 "payload TEXT NOT NULL, payload_bytes INTEGER NOT NULL,"
-                "batch_id TEXT)"
+                "batch_id TEXT, enqueued_at REAL NOT NULL DEFAULT 0)"
             )
+            fields = {
+                col[1] for col in self._conn.execute("PRAGMA table_info(pending)")
+            }
+            if "enqueued_at" not in fields:
+                # An older test/rollout spool may already exist.
+                self._conn.execute(
+                    "ALTER TABLE pending ADD COLUMN "
+                    "enqueued_at REAL NOT NULL DEFAULT 0"
+                )
             self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS ix_ais_spool_batch "
                 "ON pending(batch_id, seq)"
             )
-        self._pending_payload_bytes = int(
-            self._conn.execute(
-                "SELECT COALESCE(SUM(payload_bytes), 0) FROM pending"
-            ).fetchone()[0]
-        )
+        count, size, oldest = self._conn.execute(
+            "SELECT COUNT(*),COALESCE(SUM(payload_bytes),0),"
+            "MIN(enqueued_at) FROM pending"
+        ).fetchone()
+        self._pending_count = int(count)
+        self._pending_payload_bytes = int(size)
+        self._oldest_enqueued_at = oldest
 
     def enqueue(self, row: dict[str, Any]) -> int:
         """Return only after SQLite has durably committed the new fix."""
@@ -108,11 +120,14 @@ class SQLiteTrackSpool:
                 raise TrackSpoolFull("AIS disk reserve reached; ingestion must alert")
             with self._conn:
                 cur = self._conn.execute(
-                    "INSERT INTO pending(payload,payload_bytes,batch_id) "
-                    "VALUES (?, ?, NULL)",
-                    (payload, size),
+                    "INSERT INTO pending(payload,payload_bytes,batch_id,enqueued_at) "
+                    "VALUES (?, ?, NULL, ?)",
+                    (payload, size, time.time()),
                 )
             self._pending_payload_bytes += size
+            self._pending_count += 1
+            if self._oldest_enqueued_at is None:
+                self._oldest_enqueued_at = time.time()
             return int(cur.lastrowid)
 
     def claim(self, limit: int = 1000) -> FrozenBatch | None:
@@ -186,13 +201,21 @@ class SQLiteTrackSpool:
                 if removed.rowcount != batch.count:
                     raise RuntimeError("AIS spool partial ack: rolling back")
             self._pending_payload_bytes -= int(current[1])
+            self._pending_count -= batch.count
+            oldest = self._conn.execute(
+                "SELECT enqueued_at FROM pending ORDER BY seq LIMIT 1"
+            ).fetchone()
+            self._oldest_enqueued_at = oldest[0] if oldest else None
 
     def stats(self) -> dict[str, int]:
         with self._lock:
-            pending = int(self._conn.execute("SELECT COUNT(*) FROM pending").fetchone()[0])
+            oldest_age = max(
+                0, int(time.time() - self._oldest_enqueued_at)
+            ) if self._oldest_enqueued_at is not None else 0
             return {
-                "pending": pending,
+                "pending": self._pending_count,
                 "pending_payload_bytes": self._pending_payload_bytes,
+                "oldest_pending_age_seconds": oldest_age,
                 "capacity_bytes": self.max_payload_bytes,
                 "disk_reserve_bytes": self.reserved_disk_bytes,
             }
