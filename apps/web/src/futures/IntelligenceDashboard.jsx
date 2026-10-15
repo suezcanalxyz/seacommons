@@ -330,11 +330,23 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  };
  const allStages=stages.filter(x=>x[0]!=='analysis_outputs'&&(!isOverall||x[0]!=='public_live'));
  const specialSensors=isOverall&&sensorsData?{...sensorsData,active_source_names:sensorsData.source_names}:sensorsData;
+ const dataSource=raw?operator.source:(!isOverall&&status?'public':null);
+ const evidenceSourceLabel=dataSource==='operator'?'Protected evidence API':dataSource==='historical'?'Historical evidence inventory':dataSource==='public'?'Public operational status':'No verified source';
+ const evidenceWindowLabel=isOverall?'Retained record inventory':period==='7d'?'Rolling 168 hours':'Rolling 24 hours';
+ const evidenceTimestamp=raw?.generated_at||(!isOverall?status?.generated_at:null);
+
  return <><div className="future-intelligence-tagline"><span className="future-eyebrow">SeaCommons / Intelligence</span><span>Collection · inference · review</span></div>
  <div className="future-period-tabs" aria-label="Intelligence time window"><div role="group" aria-label="Intelligence time window">{[['24h','24 hours'],['7d','7 days'],['overall','Overall']].map(([id,label])=><button type="button" aria-pressed={period===id} className={period===id?'is-active':''} onClick={()=>setPeriod(id)} key={id}>{label}</button>)}</div><small>{isOverall?'All records currently retained, irrespective of the age of the source event':period==='7d'?'Rolling seven days':'Rolling 24 hours'}</small></div>
 
- <div className="future-intelligence-freshness"><span>{operator.loading?'Updating metrics…':operator.data?(operator.source==='public'?'Public evidence summary':'Evidence updated'):operator.error?'Evidence temporarily unavailable':'Loading evidence'}</span><small>{operator.data?.generated_at?'Generated '+stamp(operator.data.generated_at):'Updates pending'}</small><button type="button" onClick={operator.refresh}>Refresh</button></div>
- {operator.error&&<p className="future-inline-note" role="status">{operator.error} Please try refreshing the data.</p>}
+ <div className="future-intelligence-freshness future-evidence-provenance" aria-label="Evidence data provenance">
+  <div className="future-evidence-provenance-main">
+   <strong>{operator.loading?'Loading evidence…':dataSource?'Evidence available':'Evidence unavailable'}</strong>
+   <span>{evidenceWindowLabel} · {evidenceSourceLabel}</span>
+  </div>
+  <small>{evidenceTimestamp?'Updated '+stamp(evidenceTimestamp):operator.loading?'Request in progress':'No verified update time'}</small>
+  <button type="button" disabled={operator.loading} onClick={operator.refresh}>{operator.loading?'Loading…':operator.error?'Retry':'Refresh'}</button>
+ </div>
+ {operator.error&&<p className="future-inline-note" role="alert">The requested evidence could not be retrieved. No result has been inferred or replaced with zero. Check your connection and retry.</p>}
  <IntelligenceMetricGrid period={period} pipeline={pipeline} sensorsData={specialSensors} loadedAt={raw?.generated_at||status?.generated_at} loading={operator.loading} source={operator.source||(!isOverall&&status?'public':null)} estimatedFields={isOverall?raw?.estimated_fields|| (sensorsData?.ais_fixes_estimated?['ais_fixes']:[]):[]}/>
  <section className="future-intelligence-explainer" aria-label="Intelligence evidence guide"><div><span className="future-eyebrow">Reading the data</span><h2>From signals to assessed evidence</h2></div><p>Raw intake counts information received, normalized records make sources comparable, and analytical cues highlight leads. Episodes group related observations; investigations remain hypotheses until their evidence and uncertainty have been assessed. These layers overlap, so counts are never added together.</p></section>
  <nav className="future-intelligence-subnav" aria-label="Intelligence sections">{TABS.map(([key,title])=><button key={key} type="button" aria-pressed={key===tab} className={key===tab?'is-active':''} onClick={()=>setTab(key)}>{title}</button>)}</nav>
