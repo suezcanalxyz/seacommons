@@ -83,7 +83,7 @@ test('Futures overview uses canonical operational contracts', async ({ page }) =
   await expect(page.getByRole('group', { name: 'Analytics time window' })).toBeVisible();
   await expect(page.getByText('Live', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('240', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('AIS', { exact: true })).toBeVisible();
+  await expect(page.getByText('AIS', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('legacy', { exact: true })).toBeVisible();
 });
 
