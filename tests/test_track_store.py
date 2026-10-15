@@ -103,6 +103,8 @@ def test_recent_tracks_batches_and_limits_each_mmsi(store):
 
 def test_prune(store, monkeypatch):
     from core import object_store
+    monkeypatch.setenv("AIS_PRUNE_APPROVED", "true")
+    monkeypatch.setenv("AIS_RETENTION_POLICY_ID", "test-policy-2026")
     from core.config import config
     monkeypatch.setattr(config, 'OBJECT_STORAGE_ENDPOINT', 'test.local')
     monkeypatch.setattr(config, 'OBJECT_STORAGE_ACCESS_KEY', 'test-key')
@@ -119,6 +121,8 @@ def test_prune(store, monkeypatch):
 def test_old_ais_is_deleted_only_after_verified_cold_archival(monkeypatch):
     import gzip
     import json
+    monkeypatch.setenv("AIS_PRUNE_APPROVED", "true")
+    monkeypatch.setenv("AIS_RETENTION_POLICY_ID", "test-policy-2026")
     from core.config import config
     from core import object_store
     from core.db.models import VesselTrackDB
@@ -147,6 +151,8 @@ def test_old_ais_is_deleted_only_after_verified_cold_archival(monkeypatch):
 
 
 def test_cold_archive_failure_preserves_original_rows(monkeypatch):
+    monkeypatch.setenv("AIS_PRUNE_APPROVED", "true")
+    monkeypatch.setenv("AIS_RETENTION_POLICY_ID", "test-policy-2026")
     from core.config import config
     from core import object_store
     from core.db.models import VesselTrackDB
@@ -166,3 +172,57 @@ def test_cold_archive_failure_preserves_original_rows(monkeypatch):
     with session_scope() as db:
         assert db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == '111765433').count() == 1
         db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == '111765433').delete()
+
+
+def test_prune_requires_explicit_policy_id(monkeypatch):
+    """Neither a default nor an enable flag alone authorizes deletion."""
+    from core import object_store
+
+    monkeypatch.delenv("AIS_PRUNE_APPROVED", raising=False)
+    monkeypatch.delenv("AIS_RETENTION_POLICY_ID", raising=False)
+    monkeypatch.setattr(object_store, "put", lambda *_: pytest.fail("unapproved archive PUT"))
+    assert TrackStore().prune(older_than_days=1) == 0
+
+    monkeypatch.setenv("AIS_PRUNE_APPROVED", "true")
+    assert TrackStore().prune(older_than_days=1) == 0
+
+    monkeypatch.delenv("AIS_PRUNE_APPROVED")
+    monkeypatch.setenv("AIS_RETENTION_POLICY_ID", "test-policy-2026")
+    assert TrackStore().prune(older_than_days=1) == 0
+
+
+def test_failed_flush_requeues_in_order_and_recovers(monkeypatch):
+    """A transient DB failure must not discard in-memory observations."""
+    from contextlib import contextmanager
+    from core.db import session as db_session
+
+    attempts = []
+    persisted = []
+
+    class FakeSession:
+        def bulk_insert_mappings(self, model, rows):
+            attempts.append([r["mmsi"] for r in rows])
+            if len(attempts) == 1:
+                raise RuntimeError("transient database outage")
+            persisted.extend(r["mmsi"] for r in rows)
+
+    @contextmanager
+    def fake_session_scope():
+        yield FakeSession()
+
+    monkeypatch.setattr(db_session, "session_scope", fake_session_scope)
+    store = TrackStore()
+    store._buffer = [
+        {"mmsi": "111000001"},
+        {"mmsi": "111000002"},
+    ]
+    assert store.flush() == 0
+    assert [r["mmsi"] for r in store._buffer] == ["111000001", "111000002"]
+    store._buffer.append({"mmsi": "111000003"})
+    assert store.flush() == 3
+    assert store._buffer == []
+    assert attempts == [
+        ["111000001", "111000002"],
+        ["111000001", "111000002", "111000003"],
+    ]
+    assert persisted == ["111000001", "111000002", "111000003"]
