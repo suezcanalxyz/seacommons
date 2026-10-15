@@ -8,7 +8,7 @@
   --f-line: rgba(255,255,255,.12);
   --f-line-soft: rgba(255,255,255,.07);
   --f-text: #f1f1ec;
-  --f-muted: #8e969f;
+  --f-muted: #b1bbc5;
   --f-accent: #99d8cf;
   --f-sidebar: 238px;
   font-family: Inter, Arial, sans-serif;
@@ -778,7 +778,7 @@ a { color: inherit; text-decoration: none; }
 .future-intelligence-metric-top{align-items:center}
 .future-intelligence-metric-top span{font-size:9px!important;letter-spacing:.04em!important;line-height:1.4!important}
 .future-intelligence-metric-top button{font-size:10px;padding:3px 0;white-space:nowrap}
-.future-intelligence-headline .future-intelligence-metric>p{font-size:10px!important;line-height:1.42!important;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.future-intelligence-headline .future-intelligence-metric>p{font-size:11px!important;line-height:1.47!important;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .future-intelligence-headline .future-intelligence-metric:has(.future-intelligence-legend)>p{-webkit-line-clamp:unset;display:block}
 .future-intelligence-headline .future-data-provenance{font-size:10px;margin-top:10px}
 .future-section{margin:16px 0!important;padding:12px 0!important}
@@ -903,10 +903,16 @@ html:has(.future-app){scroll-snap-type:none!important;scroll-padding-top:135px}
 @media(max-width:840px){.future-product-guide{grid-template-columns:1fr}.future-intelligence-explainer{grid-template-columns:1fr;gap:5px}}
 @media(max-width:600px){.future-device-guide{grid-template-columns:1fr}.future-roadmap-step{grid-template-columns:30px minmax(0,1fr);gap:9px}.future-roadmap-step-head{display:grid}.future-roadmap-step-meta{justify-content:flex-start}.future-roadmap-step dl{grid-template-columns:1fr;gap:3px}.future-product-guide-card{padding:14px}.future-intelligence-explainer+.future-intelligence-subnav{top:48px}}
 
-/* Keyboard and pointer accessible metric glossary. */
-.future-glossary-term{display:inline;position:relative;cursor:help;text-decoration:underline dotted currentColor;text-underline-offset:3px}
-.future-glossary-definition{display:none;position:absolute;z-index:40;top:calc(100% + 9px);left:0;width:min(300px,75vw);padding:12px 14px;background:#17232d;border:1px solid var(--f-accent);box-shadow:0 12px 36px rgba(0,0,0,.35);color:#f3f8f9;font-size:12px;line-height:1.5;text-transform:none;letter-spacing:0;white-space:normal;font-weight:400}
-.future-glossary-term:hover .future-glossary-definition,.future-glossary-term:focus .future-glossary-definition,.future-glossary-term:focus-within .future-glossary-definition{display:block}
+/* Accessible definitions: hover for desktop, click for touch, Enter/Space for keyboard. */
+.future-glossary-wrap{position:relative;display:inline}
+.future-intelligence-metric-top .future-glossary-term{font:inherit;line-height:inherit;color:inherit;text-transform:inherit;letter-spacing:inherit;display:inline;text-align:left;padding:0;border:0;background:none;cursor:help;text-decoration:underline dotted;text-underline-offset:3px}
 .future-glossary-term:focus-visible{outline:2px solid var(--f-accent);outline-offset:3px}
+.future-glossary-definition{display:none;position:absolute;z-index:60;top:calc(100% + 8px);left:0;width:min(290px,74vw);padding:11px 13px;background:#17232d;border:1px solid var(--f-accent);box-shadow:0 12px 32px rgba(0,0,0,.35);color:#f3f8f9;font:12px/1.5 Inter,Arial,sans-serif;text-align:left;text-transform:none;letter-spacing:0;white-space:normal;pointer-events:none}
+.future-glossary-wrap:hover .future-glossary-definition,.future-glossary-wrap.is-open .future-glossary-definition{display:block}
 .future-intelligence-metric:nth-child(4n) .future-glossary-definition{left:auto;right:0}
-@media(max-width:760px){.future-glossary-definition{width:min(260px,74vw)}.future-intelligence-metric:nth-child(even) .future-glossary-definition{left:auto;right:0}}
+.future-metric-status{font-size:11px;line-height:1.45;margin:4px 0 7px;color:var(--f-muted)}
+.future-intelligence-metric.is-unavailable>strong{font-size:clamp(18px,1.55vw,24px)}
+.future-intelligence-metric .future-metric-loading{font-size:clamp(18px,1.5vw,24px);color:var(--f-muted)}
+.future-intelligence-legend b{font-weight:600;color:var(--f-text)}
+@media(max-width:760px){.future-glossary-definition{width:min(250px,74vw)}.future-intelligence-metric:nth-child(even) .future-glossary-definition{left:auto;right:0}}
+@media(prefers-reduced-motion:reduce){.future-metric-loading{animation:none}}
