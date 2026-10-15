@@ -35,7 +35,6 @@ def _feature():
 
 
 def _auth(monkeypatch):
-    monkeypatch.setenv("SEACOMMONS_AIS_REVIEWER_EMAILS", "reviewer@example.org")
     monkeypatch.setattr(module, "require_futures_identity",
         lambda _request: Principal("sub:reviewer-test", frozenset({"futures_viewer"}), {
             "email": "reviewer@example.org", "email_verified": True,
@@ -76,14 +75,22 @@ def test_reviews_are_append_only_snapshots_and_not_new_ais_evidence(monkeypatch)
         db.query(AISCaseReviewDB).filter(AISCaseReviewDB.review_id == doc["review_id"]).delete()
 
 
-def test_reviewer_identity_and_allowlist_fail_closed(monkeypatch):
+def test_every_authenticated_futures_user_can_review_but_anonymous_cannot(monkeypatch):
     _auth(monkeypatch)
-    monkeypatch.delenv("SEACOMMONS_AIS_REVIEWER_EMAILS")
-    denied = client.post("/api/v1/operator/ais-reviews", json=_payload())
-    assert denied.status_code == 503
-    assert client.get("/api/v1/operator/ais-reviews", params={"case_id": CASE_ID}).status_code == 503
-    monkeypatch.setenv("SEACOMMONS_AIS_REVIEWER_EMAILS", "another@example.org")
-    assert client.post("/api/v1/operator/ais-reviews", json=_payload()).status_code == 403
+    # A signed partner viewer can review without an administrative email list.
+    sample = client.post("/api/v1/operator/ais-reviews", json=_payload())
+    assert sample.status_code == 201, sample.text
+    review_id = sample.json()["review_id"]
+    try:
+        def deny(_request):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=401, detail="Futures sign-in required")
+        monkeypatch.setattr(module, "require_futures_identity", deny)
+        assert client.post("/api/v1/operator/ais-reviews", json=_payload()).status_code == 401
+        assert client.get("/api/v1/operator/ais-reviews", params={"case_id": CASE_ID}).status_code == 401
+    finally:
+        with session_scope() as db:
+            db.query(AISCaseReviewDB).filter(AISCaseReviewDB.review_id == review_id).delete()
 
 
 def test_forged_case_or_unsupported_label_never_persists(monkeypatch):

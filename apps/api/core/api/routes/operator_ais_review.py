@@ -6,7 +6,6 @@ source, public incident determination or online training instruction.
 """
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -48,19 +47,8 @@ class ReviewInput(BaseModel):
 
 
 def _reviewer(request: Request) -> str:
-    # Do not conflate Futures' read-only partner login with write permission.
-    principal = require_futures_identity(request)
-    email = str(principal.claims.get("email") or "").strip().lower()
-    allowed = {
-        value.strip().lower()
-        for value in os.getenv("SEACOMMONS_AIS_REVIEWER_EMAILS", "").split(",")
-        if value.strip()
-    }
-    if not allowed:
-        raise HTTPException(status_code=503, detail="AIS reviewer access is not configured")
-    if not email or email not in allowed or principal.claims.get("email_verified") is False:
-        raise HTTPException(status_code=403, detail="AIS review requires an approved reviewer")
-    return principal.subject
+    """All valid Futures identities can review; preserve verified attribution."""
+    return require_futures_identity(request).subject
 
 
 def _case_snapshot(case_id: str) -> dict:

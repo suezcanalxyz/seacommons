@@ -38,11 +38,10 @@ evidence and time-window stratification before thresholds/models change.
 ## Access control and deployment
 
 The UI is within the OIDC-protected Futures workspace. Its review API is
-**not** granted to all Futures viewers. Backend verifies the provider-signed
-Futures identity again and requires the signed email in
-`SEACOMMONS_AIS_REVIEWER_EMAILS` (comma-separated allowlist).
-Empty/missing configuration fails closed with HTTP 503. Unauthorized reviewers
-receive HTTP 403. Do not add secrets or reviewer tokens to public source.
+granted to every signed-in Futures viewer. Backend verifies the provider-signed
+Futures identity again and permits all authenticated Futures users to read and submit reviews.
+Each entry is attributed to the signed OIDC subject. Unauthenticated
+requests fail closed with HTTP 401. Do not add reviewer tokens to public source.
 
 The new `ais_case_reviews` table is created on API startup via
 `init_database` / SQLAlchemy metadata. Deploy only after CI, schema-init
