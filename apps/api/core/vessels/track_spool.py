@@ -56,9 +56,12 @@ class SQLiteTrackSpool:
     def __init__(
         self, path: str | Path, *, max_payload_bytes: int = 512 * 1024 * 1024,
         reserved_disk_bytes: int = 2 * 1024 * 1024 * 1024,
+        allow_temporary_test_path: bool = False,
     ) -> None:
         self.path = Path(path)
-        if not self.path.is_absolute() or "/tmp/" in str(self.path) + "/":
+        if not self.path.is_absolute() or (
+            "/tmp/" in str(self.path) + "/" and not allow_temporary_test_path
+        ):
             raise ValueError("AIS spool requires an absolute, persistent, non-/tmp path")
         if max_payload_bytes <= 0 or reserved_disk_bytes < 0:
             raise ValueError("AIS spool capacity limits must be non-negative")
