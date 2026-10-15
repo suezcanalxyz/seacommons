@@ -730,7 +730,7 @@ def test_managed_failover_uses_activation_grace_over_stale_previous_session_time
     runtime.stop()
 
 
-def test_managed_channel_active_requires_actual_receiver_connection():
+def test_managed_channel_active_requires_actual_receiver_connection(monkeypatch):
     from core.radio.runtime import RemoteRadioRuntime
 
     adapters = {}
@@ -744,6 +744,9 @@ def test_managed_channel_active_requires_actual_receiver_connection():
         max_receivers=5, adapter_factory=factory, failover_enabled=True,
         channel_replicas=3, reconnect_interval_s=60.0,
     )
+    # Freeze the supervisor after initial activation to observe the disconnected
+    # snapshot deterministically rather than racing its automatic recovery.
+    monkeypatch.setattr(runtime, "_supervise", lambda: runtime._stop_event.wait())
     try:
         runtime.start()
         assert runtime.status()["channels"][0]["active"] == 3

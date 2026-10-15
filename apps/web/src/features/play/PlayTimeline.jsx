@@ -160,6 +160,11 @@ export default function PlayTimeline({ apiBase }) {
     () => visibleIncidents.find((item) => item.incident_id === selectedId) || null,
     [visibleIncidents, selectedId],
   );
+  // Derived voyage evidence must exist before the map effect depends on it.
+  const voyageVessels = useMemo(() => (caseData?.voyage_evidence?.vessels || []).map((v) => ({
+    ...v, track_points: (v.track_points || []).filter((p) =>
+      !globalState.cutoff || Date.parse(p.at) <= Date.parse(globalState.cutoff)),
+  })), [caseData?.voyage_evidence, globalState.cutoff]);
   const contextDay = useMemo(() => {
     const value = globalState.cutoff || selectedIncident?.reported_at || coverage.end;
     return value ? String(value).slice(0, 10) : new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
@@ -458,10 +463,6 @@ export default function PlayTimeline({ apiBase }) {
 
   const status = selectedIncident ? incidentStatusAtCutoff(selectedIncident, globalState.cutoff) : 'outcome_unknown';
   const reportTrack = useMemo(() => timelineReport(visibleTimeline), [visibleTimeline]);
-  const voyageVessels = useMemo(() => (caseData?.voyage_evidence?.vessels || []).map((v) => ({
-    ...v, track_points: (v.track_points || []).filter((p) =>
-      !globalState.cutoff || Date.parse(p.at) <= Date.parse(globalState.cutoff)),
-  })), [caseData?.voyage_evidence, globalState.cutoff]);
   const reportEvidence = visibleTimeline.filter((item) => item?.type !== 'satellite');
   const frameProps = frame.item?.properties || {};
   const satelliteProps = satellite?.properties || {};
