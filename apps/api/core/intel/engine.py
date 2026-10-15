@@ -9,6 +9,7 @@ Usage (called once at API startup):
 from __future__ import annotations
 
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,14 @@ class IntelEngine:
                 self._track_store = track_store
                 logger.info("IntelEngine: AIS track store started")
             except Exception as exc:
+                if os.getenv("SEACOMMONS_AIS_SPOOL_ENABLED", "").lower() in {
+                    "true", "1", "yes",
+                }:
+                    logger.critical(
+                        "AIS tracking cannot start in durable mode; stopping worker "
+                        "rather than silently losing track observations", exc_info=True,
+                    )
+                    raise
                 logger.warning("IntelEngine: AIS track store failed to start: %s", exc)
 
             try:
