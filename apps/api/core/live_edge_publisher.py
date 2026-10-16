@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from core.health_logging import SuccessfulOriginHealthRequestFilter
+
 from core.domain.live_contracts import (
     FEDERATED_EVENT_SCHEMA,
     VerificationStatus,
@@ -676,6 +678,10 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     settings = PublisherSettings.from_env()
+    if os.getenv("SEACOMMONS_LOG_HEALTH_SUCCESSES", "").lower() not in {"1", "true", "yes"}:
+        logging.getLogger("httpx").addFilter(
+            SuccessfulOriginHealthRequestFilter(settings.origin_health_url)
+        )
     if settings.metrics_port:
         from prometheus_client import start_http_server
 
