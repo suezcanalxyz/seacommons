@@ -64,6 +64,12 @@ async function mockOperationalContracts(page) {
       total_events: 378826, positioned_events: 378107,
       oldest_event_utc: '2026-05-01T00:00:00Z',
       newest_event_utc: '2026-10-12T12:00:00Z',
+      first_ingested_at: '2026-06-01T00:00:00Z',
+      last_ingested_at: '2026-10-12T12:00:00Z',
+      ingested_monthly: [
+        { month: '2026-06', count: 40100 },
+        { month: '2026-10', count: 79000 },
+      ],
       monthly: [
         { month: '2026-05', count: 32100 },
         { month: '2026-06', count: 40100 },
@@ -201,9 +207,9 @@ test('Futures switches equal-weight 24 hours / 7 days / Overall panels using rea
 test('Historical and Operations pages use canonical ops data and never fake unknown totals', async ({ page }) => {
   await mockOperationalContracts(page);
   await page.goto(FUTURES_URL + '?view=history');
-  await expect(page.getByRole('heading', { name: /What has SeaCommons recorded over time/i })).toBeVisible();
-  await expect(page.getByRole('img', { name: 'Monthly retained Intel events' })).toContainText('2026-05');
-  await expect(page.getByText('2026-06')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /SeaCommons collection, month by month/i })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Monthly SeaCommons ingestion volume' })).toContainText('Jun 2026');
+  await expect(page.getByRole('img', { name: 'Monthly SeaCommons ingestion volume' })).toContainText('Oct 2026');
   await page.goto(FUTURES_URL + '?view=operations');
   await expect(page.getByRole('heading', { name: /How reliably is SeaCommons working/i })).toBeVisible();
   await expect(page.getByText('AIS', { exact: true })).toBeVisible();
@@ -564,7 +570,7 @@ test('Intelligence reading guide uses distinct concise cards',async ({page})=>{
   const guide=page.getByRole('region',{name:'Intelligence evidence guide'});
   await expect(guide.locator('article')).toHaveCount(4);
   await expect(guide.getByRole('heading',{name:'Signals are inputs.'})).toBeVisible();
-  await expect(guide.getByRole('heading',{name:'Counts use different clocks.'})).toHaveCount(0);
+  await expect(guide.getByRole('heading',{name:'Counts use different clocks.'})).toBeVisible();
 });
 
 test('Futures side-by-side AIS map selects a Live case and targets VesselFinder by IMO', async ({ page }) => {
