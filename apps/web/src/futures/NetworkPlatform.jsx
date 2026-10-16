@@ -11,22 +11,71 @@ export const deviceCatalogue = [
 ];
 
 const stages = [
-  ['Collect', 'Connect satellite, AIS, radio, environmental and public-report sources. Every observation is stored with its origin and time.'],
-  ['Filter', 'Standardise formats, check completeness, identify duplicates and keep uncertainty visible.'],
-  ['Correlate', 'Compare location, time and independent evidence to discover possible relationships, not automatic proof.'],
-  ['Analyse', 'Build timelines, spatial comparisons and simulations such as drift models, with recorded assumptions.'],
-  ['Review', 'Distinguish observations, hypotheses and reviewed findings before presenting a claim.'],
-  ['Publish', 'Share appropriate outcomes through Live, Play, research reports and APIs, with privacy controls.'],
+  {
+    "title": "Collect",
+    "summary": "SeaCommons starts with observations that differ in timing, coverage and reliability. Maritime inputs include AIS vessel messages, humanitarian and public reports, and weather or ocean datasets used to interpret activity at sea.",
+    "process": "Each accepted record retains its source, available timestamps, vessel or place identifiers and provenance. Some feeds stream continuously; others arrive through periodic retrieval or partner submissions. Satellite products and remote radio observations depend on authorised, configured access rather than blanket live coverage.",
+    "boundary": "An incoming report is not a verified event. Missing AIS positions may indicate reception or provider gaps; proposed field sensors are not yet an operational network."
+  },
+  {
+    "title": "Filter",
+    "summary": "Different providers can report the same movement in different formats or at different times. SeaCommons prepares those records for comparison without erasing their origins.",
+    "process": "The pipeline normalises fields and timestamps, checks usable positions, identifies repeats and preserves upstream lineage. It also considers source health, stale updates and incomplete coverage before an observation contributes to later analysis.",
+    "boundary": "Removing duplicates is not the same as disproving a report. A silent or unavailable feed must never be interpreted automatically as a vessel turning off its transponder."
+  },
+  {
+    "title": "Correlate",
+    "summary": "A vessel position, a humanitarian report and a weather observation can describe related circumstances without independently proving the same event.",
+    "process": "SeaCommons compares time windows, locations, vessel identities and source lineage to propose associations between observations and cases. Corroboration depends on genuinely independent origins, not on how many websites repeat a single upstream message.",
+    "boundary": "A proximity match or repeated claim is a lead for investigation, not proof of contact, rescue, intent or wrongdoing."
+  },
+  {
+    "title": "Analyse",
+    "summary": "Once observations are organised, SeaCommons can examine sequences of movement, gaps, surrounding conditions and competing explanations.",
+    "process": "Analysis builds timelines and spatial comparisons, and can use wind and current fields for drift or reconstruction scenarios. Derived coordinates, model settings and degraded fallback conditions need to remain distinguishable from measured positions.",
+    "boundary": "A simulation explores possible trajectories under stated assumptions; it cannot establish the actual route or fate of a vessel or person by itself."
+  },
+  {
+    "title": "Review",
+    "summary": "The method separates what a source reported, what software inferred and what an investigator can substantiate.",
+    "process": "Cases can be inspected against underlying records, time and location uncertainty, source independence and conflicting evidence. Humanitarian claims require particular care because premature certainty or precise public coordinates can create harm.",
+    "boundary": "An anomaly, automated classification or proposed association is not a verified incident or a finding of unlawful behaviour. Review and lifecycle status remain distinct."
+  },
+  {
+    "title": "Publish",
+    "summary": "Publication is a controlled decision, not an automatic final step for every observation processed by SeaCommons.",
+    "process": "Eligible, privacy-filtered cases can appear in public Live; retained public records can be explored in Play. Documented APIs expose appropriately scoped data while private and sensitive material stays restricted.",
+    "boundary": "Public maps may reduce location precision or withhold details. An absence from Live or Play does not mean that no observation or incident exists."
+  }
 ];
 
 export function MethodExplorer() {
   const [selected, setSelected] = useState(0);
+  const stage = stages[selected];
+  const focusStage = (event, index) => {
+    const tabs = event.currentTarget.parentElement.querySelectorAll('[role="tab"]');
+    tabs[index]?.focus();
+    setSelected(index);
+  };
+  const handleStageKeyDown = (event, index) => {
+    let next = index;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % stages.length;
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + stages.length) % stages.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = stages.length - 1;
+    else return;
+    event.preventDefault();
+    focusStage(event, next);
+  };
   return <section className="future-section future-network-section">
-    <header><div><span className="future-eyebrow">What is SeaCommons? / The method</span><h2>From scattered observations to evidence people can inspect.</h2><p>SeaCommons is software for collecting and comparing information from many different places. Instead of treating every signal as a fact, it records where the information came from, filters noise and helps people review what the information can actually support.</p></div></header>
-    <div className="future-method-controls" role="tablist" aria-label="Data processing method">
-      {stages.map(([title],index) => <button type="button" role="tab" aria-selected={selected===index} className={selected===index?'is-active':''} key={title} onClick={()=>setSelected(index)}><small>0{index+1}</small>{title}</button>)}
+    <header><div><span className="future-eyebrow">What is SeaCommons? / The method</span><h2>From scattered observations to evidence people can inspect.</h2><p>SeaCommons builds traceable accounts from uneven maritime and humanitarian information. These six stages explain how an incoming observation can be compared, interpreted and reviewed without turning an uncertain signal into an unsupported claim.</p></div></header>
+    <div className="future-method-controls" role="tablist" aria-label="Six stages of the SeaCommons method">
+      {stages.map((item,index) => <button type="button" role="tab" id={'method-tab-' + index} aria-controls="method-panel" aria-selected={selected===index} tabIndex={selected===index?0:-1} className={selected===index?'is-active':''} key={item.title} onClick={()=>setSelected(index)} onKeyDown={(event)=>handleStageKeyDown(event,index)}><small>{String(index+1).padStart(2,'0')}</small><span>{item.title}</span></button>)}
     </div>
-    <div className="future-network-detail" role="tabpanel"><strong>{stages[selected][0]}</strong><p>{stages[selected][1]}</p></div>
+    <div className="future-network-detail" id="method-panel" role="tabpanel" aria-labelledby={'method-tab-' + selected} tabIndex={0}>
+      <div className="future-method-detail-intro"><span className="future-eyebrow">Stage {String(selected+1).padStart(2,'0')} / 06</span><h3>{stage.title}</h3><p>{stage.summary}</p></div>
+      <div className="future-method-detail-grid"><div><small>HOW IT WORKS</small><p>{stage.process}</p></div><div><small>WHAT IT DOES NOT PROVE</small><p>{stage.boundary}</p></div></div>
+    </div>
     <div className="future-domain-grid">
       <article><small>01 / MARITIME</small><h3>Understand activity at sea.</h3><p>Connect vessel positions, radio observations, weather and satellite context. Build time-based views, compare sources and explore possible movement through modelling.</p></article>
       <article><small>02 / HUMANITARIAN</small><h3>Investigate with care.</h3><p>Study reported maritime events and humanitarian evidence without confusing a technical signal with a verified rescue or incident. Support reviewable timelines and protect sensitive information.</p></article>
