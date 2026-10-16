@@ -58,7 +58,7 @@ export function MethodExplorer() {
     setSelected(index);
   };
   const handleStageKeyDown = (event, index) => {
-    let next = index;
+    let next;
     if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % stages.length;
     else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index - 1 + stages.length) % stages.length;
     else if (event.key === 'Home') next = 0;
