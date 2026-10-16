@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchJson } from '../services/api/client.js';
 import { resolveSiteApiBase } from '../site/liveApi.js';
-import { validIMO, validMMSI, vesselFinderEmbedHtml } from './aisCrossCheck.js';
+import { validIMO, validMMSI, isolatedVesselFinderFrameUrl, vesselFinderPageUrl } from './aisCrossCheck.js';
 import {
   aisFreshness, caseIdentity, caseKey, coordsText, renderTime, reviewableCases,
 } from './aisCaseReview.js';
@@ -30,8 +30,8 @@ function LiveCasesMap({ cases, selectedId, onSelect }) {
         center: [36.4, 14.2], zoom: 5, minZoom: 3, maxZoom: 15,
         zoomControl: true, scrollWheelZoom: true,
       });
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
         maxZoom: 19,
       }).addTo(map);
       mapRef.current = map;
@@ -190,6 +190,7 @@ export default function AisCrossCheck() {
   const selected = useMemo(() => known.find((c) => caseKey(c) === selectedId) || null, [known, selectedId]);
   const identity = selected ? caseIdentity(selected) : manualSelection;
   const externalKey = identity && (identity.imo || identity.mmsi);
+  const externalUrl = identity ? vesselFinderPageUrl(identity) : '';
   const selectedCoords = selected?.geometry?.coordinates;
 
   const refresh = useCallback(async (quiet = false) => {
@@ -328,18 +329,24 @@ export default function AisCrossCheck() {
           <div><span className="future-eyebrow">02 / independent visual reference</span><h2>VesselFinder</h2></div>
           <button type="button" onClick={()=>setEmbedCycle(v=>v+1)} disabled={!externalKey}>Reload map</button>
         </div>
-        {identity && externalKey ? (
+        {identity && externalKey ? <>
+          <div className="future-ais-external-action">
+            <strong>Selected vessel: {identity.imo ? 'IMO '+identity.imo : 'MMSI '+identity.mmsi}</strong>
+            <a href={externalUrl} target="_blank" rel="noopener noreferrer">
+              {identity.imo ? 'Open this vessel on VesselFinder ↗' : 'Search by MMSI on VesselFinder ↗'}
+            </a>
+          </div>
           <iframe key={externalKey + ':' + embedCycle} title="VesselFinder vessel map, visual inspection only"
-            sandbox="allow-scripts" referrerPolicy="no-referrer" loading="eager"
-            srcDoc={vesselFinderEmbedHtml(identity)} />
-        ) : <div className="future-ais-blank">Select a case or enter an IMO/MMSI to focus VesselFinder on that vessel.</div>}
+            sandbox="allow-scripts allow-same-origin" referrerPolicy="no-referrer" loading="eager"
+            src={isolatedVesselFinderFrameUrl(identity)} />
+        </> : <div className="future-ais-blank">Select a case or enter an IMO/MMSI to focus VesselFinder on that vessel.</div>}
         <form className="future-ais-jump" onSubmit={selectByIdentifier}>
           <label>Direct IMO/MMSI<input aria-label="Direct IMO or MMSI" value={manualIdentifier}
             onChange={event=>setManualIdentifier(event.target.value.replace(/\D/g,'').slice(0,9))}
             placeholder="9316359 / 636017239" /></label>
           <button type="submit" disabled={!validIMO(manualIdentifier) && !validMMSI(manualIdentifier)}>Find vessel</button>
         </form>
-        <p className="future-ais-notice">Selecting a Live case reloads the official widget for its IMO/MMSI. VesselFinder controls its own zoom and reported positions. Its embedded map cannot be read back or programmatically panned across origins.</p>
+        <p className="future-ais-notice">Selecting a Live case or map marker targets the official VesselFinder widget by IMO/MMSI. If the provider blocks the embedded view, use the selected-vessel link above. VesselFinder controls its own zoom and positions; these cannot be inspected or panned programmatically across origins.</p>
         <label className="future-ais-attestation"><input type="checkbox" checked={checkedExternal} disabled={!externalKey}
           onChange={(event)=>setCheckedExternal(event.target.checked)} />
           I personally inspected the external map for this case.

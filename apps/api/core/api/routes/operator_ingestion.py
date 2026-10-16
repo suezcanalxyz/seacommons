@@ -358,6 +358,48 @@ def _overview_payload(hours: int) -> dict[str, Any]:
             key=lambda value: value or datetime.min,
         )
 
+        # Use the same rolling clocks, category predicates and lineage rules
+        # as the evidence funnel. The previous hot-path payload omitted these
+        # three fields, rendering genuine measurements as "Unavailable".
+        analysis_state = IntelEventDB.meta["analysis_state"].as_string()
+        anomaly_type = IntelEventDB.meta["anomaly_type"].as_string()
+        derived_cues_raw = int(
+            db.query(func.count(IntelEventDB.id))
+            .filter(
+                IntelEventDB.received_at >= cutoff,
+                or_(
+                    IntelEventDB.type.in_(_DERIVED_EVENT_TYPES),
+                    analysis_state.in_(DERIVED_ANALYSIS_STATES),
+                ),
+            ).scalar() or 0
+        )
+        legacy_ais_gap_context = int(
+            db.query(func.count(IntelEventDB.id))
+            .filter(
+                IntelEventDB.received_at >= cutoff,
+                IntelEventDB.type == "ais_anomaly",
+                IntelEventDB.source == "ais",
+                IntelEventDB.id.like("aisanom:%"),
+                anomaly_type == "gap",
+            ).scalar() or 0
+        )
+        derived_cues = max(0, derived_cues_raw - legacy_ais_gap_context)
+        corroborated_episodes = int(
+            db.query(func.count(MaritimeEpisodeDB.episode_id))
+            .filter(
+                MaritimeEpisodeDB.updated_at >= cutoff,
+                MaritimeEpisodeDB.episode_family != "unclassified_episode",
+                MaritimeEpisodeDB.verification_status == "multi_source_corroborated",
+            ).scalar() or 0
+        )
+        review_ready = int(
+            db.query(func.count(InvestigationHypothesisDB.hypothesis_id))
+            .filter(
+                InvestigationHypothesisDB.updated_at >= cutoff,
+                InvestigationHypothesisDB.state.in_(("review_ready", "assessed", "published")),
+            ).scalar() or 0
+        )
+
     try:
         from core.acquisition.status import acquisition_status_sources
         acquisition = acquisition_status_sources()
@@ -400,6 +442,9 @@ def _overview_payload(hours: int) -> dict[str, Any]:
                 "analysis_outputs": int(episodes_total + hypotheses_total),
                 "maritime_episodes": int(episodes_total),
                 "investigation_hypotheses": int(hypotheses_total),
+                "derived_cues": derived_cues,
+                "corroborated_episodes": corroborated_episodes,
+                "review_ready": review_ready,
             },
             "sensor_activity": {
                 "ais_fixes": ais_fixes,

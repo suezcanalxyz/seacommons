@@ -24,3 +24,21 @@ export function vesselFinderEmbedHtml({ imo = '', mmsi = '' }) {
     '</body></html>',
   ].join('');
 }
+
+/** A human-operated fallback, not a programmatic AIS feed. */
+export function vesselFinderPageUrl({imo='',mmsi=''}) {
+  const safeIMO=validIMO(imo) ? String(imo).trim() : '';
+  const safeMMSI=validMMSI(mmsi) ? String(mmsi).trim() : '';
+  if (!safeIMO && !safeMMSI) return '';
+  // VesselFinder's public vessel detail URL is keyed by IMO. Its MMSI-only
+  // search is left to the provider: never fabricate a deep link for that ID.
+  return safeIMO ? 'https://www.vesselfinder.com/vessels/details/'+safeIMO
+    : 'https://www.vesselfinder.com/vessels';
+}
+
+export function isolatedVesselFinderFrameUrl(identity) {
+  // A data: frame has an opaque origin. Combined with the sandbox below,
+  // this permits the official widget to use its browser APIs without granting
+  // the third-party script access to the authenticated Futures origin.
+  return 'data:text/html;charset=utf-8,'+encodeURIComponent(vesselFinderEmbedHtml(identity));
+}

@@ -26,7 +26,7 @@ import { contributionNeeds } from './contributionNeeds.js';
 
 const NAV = ['overview', 'intelligence', 'platform', 'knowledge', 'development', 'agents', 'contributions', 'history', 'operations', 'ais-check', 'hardware', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
 const PRIMARY_NAV = ['overview', 'intelligence', 'platform', 'knowledge', 'development', 'agents', 'contributions'];
-const SUBNAV = { intelligence: [['intelligence','Dashboard'],['history','History'],['operations','Operations'],['ais-check','AIS cross-check']], platform: [['platform','Products & devices'],['hardware','Hardware specifications'],['tools','Software tools']], knowledge: [['knowledge','Knowledge home'],['documents','Documents'],['guidebook','Guidebook']], development: [['development','Development home'],['roadmap','Roadmap'],['updates','Updates']], overview: [['overview','Introduction'],['project','Project details']] };
+const SUBNAV = { intelligence: [['intelligence','Dashboard'],['history','Timeline'],['operations','Operations'],['ais-check','AIS cross-check']], platform: [['platform','Products & devices'],['hardware','Hardware specifications'],['tools','Software tools']], knowledge: [['knowledge','Knowledge home'],['documents','Documents'],['guidebook','Guidebook']], development: [['development','Development home'],['roadmap','Roadmap'],['updates','Updates']], overview: [['overview','Introduction'],['project','Project details']] };
 const NAV_LABELS = { overview: 'Overview', intelligence:'Intelligence', 'ais-check':'AIS cross-check', platform:'Platform', knowledge:'Knowledge', development:'Development', agents:'Agents', documents: 'Docs', hardware: 'Devices', contributions: 'Contributions' };
 
 function readWorkspaceView() {
@@ -228,27 +228,36 @@ function LifetimeOverview({ ops, overall }) {
   </section>;
 }
 
-function HistoricalAnalytics({ ops, overall }) {
+function HistoricalAnalytics({ overall }) {
+  // The event's timestamp can describe a historical ship or report years
+  // before SeaCommons existed. Only canonical ingestion (created_at) is a
+  // measurement of SeaCommons collection activity.
+  const productStart = '2026-02';
   const record = overall.history?.intel_record || {};
-  const monthly = Array.isArray(record.monthly) ? record.monthly : [];
-  const max = Math.max(1, ...monthly.map(row => Number(row.count)||0));
+  const monthly = (Array.isArray(record.ingested_monthly) ? record.ingested_monthly : [])
+    .filter(row => /^\d{4}-\d{2}$/.test(String(row.month)) && row.month >= productStart
+      && Number.isSafeInteger(Number(row.count)) && Number(row.count) >= 0);
+  const max = Math.max(1, ...monthly.map(row => Number(row.count)));
+  const first = monthly[0]?.month || '';
+  const last = monthly[monthly.length-1]?.month || '';
   return <>
     <section className="future-page-head">
-      <span className="future-eyebrow">history / all retained data</span>
-      <h1>What has SeaCommons recorded over time?</h1>
-      <p>Longitudinal records calculated from the canonical SeaCommons database. Each month counts retained Intel events, not verified incidents or distress cases.</p>
+      <span className="future-eyebrow">Intelligence / collection timeline</span>
+      <h1>SeaCommons collection, month by month.</h1>
+      <p>Monthly volumes from records actually ingested by SeaCommons, not the historical dates described inside them. The view is scoped to the project period beginning in 2026, without repeating the Overall dashboard.</p>
     </section>
-    <LifetimeOverview ops={ops} overall={overall} />
-    <section className="future-section">
-      <SectionHeader eyebrow="history / monthly breakdown" title="A traceable historical timeline."
-        copy="Each bar represents the number of records in its calendar month. No extrapolation or example values." />
-      {Array.isArray(record.ingested_monthly) && record.ingested_monthly.length > 0 && <section className="future-section"><SectionHeader eyebrow="collection growth / ingestion dates" title="How much SeaCommons collected each month." copy="This timeline measures when records entered SeaCommons, not when their source events took place. Peaks may reflect backfills or system changes; fine-tuning milestones should be annotated only when confirmed by engineering records." /><div className="future-history-chart" role="img" aria-label="Monthly SeaCommons ingestion volume">{record.ingested_monthly.map(({month,count}) => <div key={month} className="future-history-bar"><span title={month+': '+formatCount(count)} style={{height:(5+95*Number(count)/Math.max(1,...record.ingested_monthly.map(row=>Number(row.count)||0)))+'%'}} /><small>{month}</small><strong>{formatCount(count)}</strong></div>)}</div></section>}
-      {monthly.length ? <div className="future-history-chart" role="img" aria-label="Monthly retained Intel events">
-        {monthly.map(({month,count}) => <div key={month} className="future-history-bar">
-          <span title={month+': '+formatCount(count)} style={{height:(5+95*Number(count)/max)+'%'}} />
-          <small>{month}</small><strong>{formatCount(count)}</strong>
+    <section className="future-section" aria-label="Monthly SeaCommons collection timeline">
+      <SectionHeader eyebrow="collection / ingestion time" title="Monthly collected records"
+        copy="Each month shows retained normalized Intel records by database creation date. Backfills can increase a month’s count; deletion or retention can reduce it. These are not incident counts." />
+      {first && <p className="future-data-provenance">Recorded months: {first} to {last}. Earliest retained ingestion: {formatDateTime(record.first_ingested_at)}. Snapshot: {formatDateTime(overall.history?.generated_at)}.</p>}
+      {monthly.length ? <div className="future-history-chart future-collection-timeline" role="img" aria-label="Monthly SeaCommons ingestion volume">
+        {monthly.map(({month,count})=><div key={month} className="future-history-bar">
+          <span title={month+': '+formatCount(count)+' records'} style={{height:(5+95*Number(count)/max)+'%'}}/>
+          <small>{new Date(month+'-01T00:00:00Z').toLocaleDateString('en-GB',{month:'short',year:'numeric',timeZone:'UTC'})}</small>
+          <strong>{formatCount(count)}</strong>
         </div>)}
-      </div> : <p className="future-inline-note">{overall.loading ? 'Loading historical observations…' : overall.error || 'No archived data returned.'}</p>}
+      </div> : <p className="future-inline-note">{overall.loading?'Loading collection timeline…':overall.error||'No retained ingestion-month records returned for the SeaCommons project period.'}</p>}
+      <p className="future-data-provenance">The start boundary is an editorial project-era filter (February 2026), not a claim that sensors or ingestion were live that month. Months with no returned records are not filled with invented zeroes. Source-event chronology may reach earlier years and is intentionally excluded.</p>
     </section>
   </>;
 }
@@ -294,8 +303,8 @@ function OperationalRiskRegister() {
   const [priority, setPriority] = useState('all');
   const rows = operationalAudit.filter(item => priority === 'all' || item.priority === priority);
   return <section className="future-section future-risk-register">
-    <SectionHeader eyebrow="engineering incident register / historical" title="Known failures, fixes and remaining verification."
-      copy="Evidence-based engineering register from August–October 2026. These are historical findings and open verification tasks, not automatically confirmed live outages. Live health metrics appear above." />
+    <SectionHeader eyebrow="Operations / continuous improvement" title="Fine-tuning"
+      copy="Technical issues, improvements and validation. Review earlier fixes and unresolved checks by priority. These are historical findings and open verification tasks, not automatically confirmed live outages. Live source health appears above." />
     <div className="future-risk-filters" role="group" aria-label="Filter engineering issues">
       {['all','P0','P1','P2'].map(p => <button key={p} type="button" className={priority === p ? 'is-active' : ''} onClick={() => setPriority(p)}>{p === 'all' ? 'All issues' : p}</button>)}
     </div>
