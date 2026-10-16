@@ -9,7 +9,7 @@ Left: the current, public-eligible maritime Live cases (15s refresh), with
 a selectable GeoJSON map and searchable case list.
 Right: the official VesselFinder third-party widget, re-created for the
 selected ship's verified IMO/MMSI. A direct IMO/MMSI input is available.
-The script only runs inside an isolated, sandboxed iframe. We neither read
+The official script runs in a sandboxed, data-URL iframe with an opaque origin. The `allow-same-origin` flag is safe here only because `data:` documents cannot acquire the authenticated parent page's origin. It may still be blocked by the provider or browser. We neither read
 nor scrape its DOM, JavaScript or network responses. No automatic provider
 data extraction, equivalence check or independent corroboration is claimed.
 
@@ -56,8 +56,7 @@ VesselFinder's documented embed parameters (`imo` / `mmsi` and
 `show_track`) allow selecting one ship, but the provider retains control
 of its own map viewport/zoom. Browser cross-origin isolation prevents
 synchronizing the provider's mouse events or extracting its coordinates.
-The sandbox may be blocked by the provider or content-security policy: if so,
-show the official external-link alternative, not a scraped fallback.
+The embed may be blocked by the provider, browser policy or third-party cookie restrictions. The interface provides a selected-vessel direct detail link for valid IMO (and the official vessel search for MMSI-only cases). It never scrapes, mirrors, or treats provider maps as machine-readable evidence. The SeaCommons map uses OpenStreetMap tiles, replacing the CARTO tile endpoint that now requires a key.
 
 License any machine-readable VesselFinder API integration separately,
 including approval of SeaCommons' intended maritime-intelligence use.
