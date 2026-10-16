@@ -149,6 +149,22 @@ class MaritimeEpisodeDB(Base):
     )
 
 
+class AISCaseReviewDB(Base):
+    """Append-only human evaluation labels; excluded from the evidence pipeline."""
+    __tablename__ = "ais_case_reviews"
+    review_id = Column(String(36), primary_key=True)
+    case_id = Column(String(128), nullable=False, index=True)
+    mmsi = Column(String(16), nullable=False)
+    imo = Column(String(16), nullable=False, default="")
+    reviewer_sub = Column(String(128), nullable=False)
+    verdict = Column(String(24), nullable=False)
+    position_check = Column(String(24), nullable=False)
+    explanation = Column(Text, nullable=False)
+    external_visual_reference_checked = Column(Boolean, nullable=False, default=False)
+    case_snapshot = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+
+
 class SanctionedVesselDB(Base):
     """Aggregated sanctioned-vessel reference (OpenSanctions + OFAC SDN), rebuilt
     daily by core.mda.identity.refresh_sanctions()."""

@@ -33,6 +33,7 @@ from core import bootstrap
 from core.api.routes import alerts, drift, anomaly, forensic, integrations, ops, vessels
 from core.api.routes import ingest, probability, weather, zones, intel, cases, governance, live, play, connectors
 from core.api.routes import mda, audit, operator_dashboard, operator_ingestion, status
+from core.api.routes import operator_ais_review
 from core.db.session import init_database
 from core.security import READ_ROLES, WRITE_ROLES, require_roles, validate_production_security
 from core.config_validation import validate_configuration
@@ -160,7 +161,7 @@ async def authorization_gate(request, call_next):
         return JSONResponse(status_code=403, content={"detail": "This operation is disabled in the public demo"})
     public = path in {
         "/", "/health", "/ready", "/metrics", "/docs", "/openapi.json", "/redoc",
-        "/status", "/api/v1/status", "/api/v1/futures/overall",
+        "/status", "/api/v1/status", "/api/v1/futures/overall", "/api/v1/futures/intelligence-overall",
         "/api/v1/ingest/twilio/whatsapp", "/api/v1/ingest/twilio/sms",
         "/api/v1/ingest/meta/whatsapp",
         "/api/v1/ingest/telegram", "/api/v1/ingest/webhook",
@@ -184,6 +185,18 @@ async def authorization_gate(request, call_next):
         # but the route still fails closed without the server-side credential.
         request.method in {"GET", "HEAD", "OPTIONS"}
         and path.startswith("/api/v1/operator/ingestion")
+    ) or (
+        # Signed Futures access and reviewer-specific allowlist are both
+        # checked inside the AIS review handler. Unlike the public Live
+        # GET route, this remains private even for read-only operations.
+        request.method in {"GET", "POST", "OPTIONS"}
+        and (
+            path == "/api/v1/operator/ais-reviews"
+            or (
+                request.method in {"GET", "OPTIONS"}
+                and path == "/api/v1/operator/ais-reviews/lookup"
+            )
+        )
     ) or (
         # docs/prompt.md P1 C: the media route is an EXPLICIT public contract,
         # not an accident of the proxy header. It serves only the re-encoded
@@ -258,6 +271,7 @@ app.include_router(connectors.router)
 app.include_router(mda.router)
 app.include_router(audit.router)
 app.include_router(operator_ingestion.router)
+app.include_router(operator_ais_review.router)
 app.include_router(operator_dashboard.router)
 app.include_router(status.router)
 

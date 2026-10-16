@@ -936,11 +936,12 @@ class MdaWatch:
         lifecycle changes; a reappearance is not evidence that the original
         silence was intentional.
         """
-        from core.db.models import IntelEventDB, VesselTrackDB
+        from core.db.models import IntelEventDB, MaritimeEpisodeDB, VesselTrackDB
         from core.db.session import session_scope
 
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat()
         resolved: list[IntelEvent] = []
+        reappeared_by_event: dict[str, datetime] = {}
         with session_scope() as db:
             anomaly = IntelEventDB.meta["anomaly_type"].as_string()
             rows = (
@@ -997,6 +998,7 @@ class MdaWatch:
                     "resolved_at": datetime.now(timezone.utc).isoformat(),
                 })
                 row.meta = metadata
+                reappeared_by_event[str(row.id)] = latest_utc
                 resolved.append(IntelEvent(
                     id=row.id,
                     timestamp_utc=row.timestamp_utc,
@@ -1011,6 +1013,49 @@ class MdaWatch:
                     linked_mmsi=row.linked_mmsi or "",
                     metadata=metadata,
                 ))
+            # Episode projections have their own durable lifecycle. Resolving
+            # only IntelEventDB leaves a published MaritimeEpisode permanently
+            # open even after an independently observed AIS reappearance.
+            if reappeared_by_event:
+                open_episodes = (
+                    db.query(MaritimeEpisodeDB)
+                    .filter(
+                        MaritimeEpisodeDB.episode_family == "gap_episode",
+                        MaritimeEpisodeDB.end_at >= (
+                            datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+                        ).replace(tzinfo=None),
+                    )
+                    .order_by(MaritimeEpisodeDB.end_at.desc())
+                    .limit(2000)
+                    .all()
+                )
+                for episode in open_episodes:
+                    analysis = dict((episode.behaviour_context or {}).get("analysis") or {})
+                    if analysis.get("resolution_state") == "resolved":
+                        continue
+                    observation_ids = {
+                        str(raw).removeprefix("ais:")
+                        for raw in episode.observation_ids or ()
+                    }
+                    recovered_at = next(
+                        (
+                            stamp for event_id, stamp in reappeared_by_event.items()
+                            if event_id in observation_ids
+                            and stamp > episode.end_at.replace(tzinfo=timezone.utc)
+                        ),
+                        None,
+                    )
+                    if recovered_at is None:
+                        continue
+                    context = dict(episode.behaviour_context or {})
+                    analysis.update({
+                        "resolution_state": "resolved",
+                        "gap_reappearance_confirmed": True,
+                        "gap_reappeared_at": recovered_at.isoformat(),
+                    })
+                    context["analysis"] = analysis
+                    episode.behaviour_context = context
+                    episode.status = "resolved"
             db.flush()
 
         for event in resolved:

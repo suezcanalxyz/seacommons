@@ -469,6 +469,21 @@ async def ops_overall():
     return Response(content=payload, media_type="application/json")
 
 
+@router.get("/api/v1/futures/intelligence-overall")
+def futures_public_intelligence_overall():
+    """Aggregated all-time measurements, anonymous and devoid of record identifiers.
+
+    Only canonical counts are exposed. Detailed cases, lineages and source
+    inventories remain exclusively within the protected operator API.
+    """
+    from core.api.routes.operator_ingestion import public_futures_overall_metrics
+    return Response(
+        content=json.dumps(public_futures_overall_metrics()),
+        media_type="application/json",
+        headers={"Cache-Control": "public, max-age=60"},
+    )
+
+
 @router.get("/api/v1/futures/overall")
 async def futures_public_overall():
     """Public-safe, cumulative analytics for Futures partner review.

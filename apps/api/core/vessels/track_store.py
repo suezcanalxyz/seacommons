@@ -30,6 +30,10 @@ from core.observability import record_ais_spool_event, record_ais_spool_stats
 logger = logging.getLogger(__name__)
 
 _FLUSH_INTERVAL_S = 10
+# Human-controlled release gate. Keep False until a retention policy, verified
+# archive restore and PostgreSQL concurrency test have all been approved.
+# Environment variables alone must never authorize evidence deletion.
+_RETENTION_RELEASE_AUTHORIZED = False
 _SYNC = os.getenv("SEACOMMONS_TRACK_STORE_SYNC", "").lower() in {"1", "true", "yes"}
 
 
@@ -304,15 +308,14 @@ class TrackStore:
         import hashlib
         import json
 
-        # Fail closed: approval requires both a deliberate enable switch and a
-        # documented policy identifier. Neither is set by default.
-        approved = os.getenv("AIS_PRUNE_APPROVED", "").strip().lower() == "true"
+        # The environment may not override the release-level evidence retention gate.
+        if not _RETENTION_RELEASE_AUTHORIZED:
+            logger.info("AIS prune disabled: retention policy and restore not release-approved")
+            return 0
+        approved = os.getenv("AIS_PRUNE_APPROVED", "").strip().lower() in {"1", "true", "yes"}
         policy_id = os.getenv("AIS_RETENTION_POLICY_ID", "").strip()
         if not approved or not policy_id:
-            logger.warning(
-                "AIS prune blocked: approved retention policy is required "
-                "(enabled=%s, policy_id_present=%s)", approved, bool(policy_id),
-            )
+            logger.warning("AIS prune blocked: explicit approval and retention policy ID required")
             return 0
         days = older_than_days or int(getattr(config, "VESSEL_TRACK_RETENTION_DAYS", 60))
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -331,7 +334,8 @@ class TrackStore:
                     rows = (db.query(VesselTrackDB)
                             .filter(VesselTrackDB.ts < cutoff)
                             .order_by(VesselTrackDB.id.asc())
-                            .limit(2000).all())
+                            .limit(2000)
+                            .with_for_update(skip_locked=True).all())
                     if not rows:
                         break
                     payload = [{
@@ -354,6 +358,10 @@ class TrackStore:
                     ids = [r.id for r in rows]
                     n = (db.query(VesselTrackDB).filter(VesselTrackDB.id.in_(ids),
                               VesselTrackDB.ts < cutoff).delete(synchronize_session=False))
+                    if n != len(rows):
+                        raise RuntimeError(
+                            f"AIS archive/delete count mismatch: archived={len(rows)}, deleted={n}"
+                        )
                 archived += n
                 logger.info("AIS cold archive verified and committed key=%s rows=%s", key, n)
                 if len(rows) < 2000:
