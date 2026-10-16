@@ -111,6 +111,50 @@ EDGE_PROJECTION_MISMATCH = Counter(
     "seacommons_edge_projection_mismatch_total",
     "VM-edge projection parity check failures (M9)",
 )
+AIS_SPOOL_PENDING = Gauge(
+    "seacommons_ais_spool_pending", "Uncommitted AIS positions in durable spool",
+)
+AIS_SPOOL_BYTES = Gauge(
+    "seacommons_ais_spool_pending_payload_bytes",
+    "Uncommitted AIS spool payload bytes (excludes SQLite/WAL overhead)",
+)
+AIS_SPOOL_OLDEST_AGE = Gauge(
+    "seacommons_ais_spool_oldest_pending_seconds",
+    "Age in seconds of the oldest unacknowledged AIS fix",
+)
+AIS_SPOOL_EVENTS = Counter(
+    "seacommons_ais_spool_events_total",
+    "Durable AIS spool events by bounded stage and outcome",
+    ["stage", "outcome"],
+)
+AIS_SPOOL_LAST_COMMIT = Gauge(
+    "seacommons_ais_spool_last_pg_commit_unix",
+    "Last successful PostgreSQL commit or receipt replay for AIS spool",
+)
+
+
+def record_ais_spool_stats(stats: dict[str, int]) -> None:
+    try:
+        AIS_SPOOL_PENDING.set(stats["pending"])
+        AIS_SPOOL_BYTES.set(stats["pending_payload_bytes"])
+        AIS_SPOOL_OLDEST_AGE.set(stats["oldest_pending_age_seconds"])
+    except Exception:
+        pass  # Telemetry must never prevent durable evidence writes.
+
+
+def record_ais_spool_event(stage: str, outcome: str) -> None:
+    if stage not in {"enqueue", "flush", "startup"}:
+        return
+    if outcome not in {"ok", "rejected", "error", "replayed"}:
+        return
+    try:
+        AIS_SPOOL_EVENTS.labels(stage, outcome).inc()
+        if stage == "flush" and outcome in {"ok", "replayed"}:
+            AIS_SPOOL_LAST_COMMIT.set(time.time())
+    except Exception:
+        pass
+
+
 AIS_FUSION_OBSERVATIONS = Counter(
     "seacommons_ais_fusion_observations_total",
     "Normalized AIS observations by bounded provider/upstream/runtime outcome",

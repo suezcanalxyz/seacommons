@@ -30,6 +30,7 @@ for _production_setting in (
 # invoke/mocks the component they exercise.
 os.environ["INTEL_MONITORS_ENABLED"] = "false"
 os.environ["SEACOMMONS_FORENSIC_SYNC"] = "true"
+os.environ["SEACOMMONS_TRACK_STORE_SYNC"] = "1"
 os.environ["SEACOMMONS_INTEL_PERSIST_SYNC"] = "true"
 
 

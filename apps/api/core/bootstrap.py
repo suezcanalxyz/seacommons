@@ -8,6 +8,7 @@ co-located single-process deployment.
 from __future__ import annotations
 
 import logging
+import os
 
 from core.config import config
 
@@ -46,6 +47,21 @@ def reset_stale_computing_jobs() -> None:
 
 def start_background_sensors() -> None:
     """Start enabled sensor background threads (AIS feeds, correlation engine, etc)."""
+    # In durable mode the TrackStore must open SQLite and attach the AIS
+    # position hook BEFORE any upstream socket begins delivering positions.
+    # The call is intentionally outside try/except: if the spool fails, the
+    # whole worker must not start its feeds and silently lose observations.
+    if (
+        os.getenv("SEACOMMONS_AIS_SPOOL_ENABLED", "").strip().lower()
+        in {"1", "true", "yes"}
+        and config.INTEL_ENABLED
+        and config.VESSEL_TRACK_ENABLED
+    ):
+        from core.vessels.track_store import track_store
+
+        track_store.start()
+        logger.info("AIS durable spool ready before source startup")
+
     try:
         if config.TID_ENABLED:
             from core.sensors.ionospheric import IonosphericMonitor

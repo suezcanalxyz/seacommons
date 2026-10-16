@@ -73,7 +73,9 @@ def test_lossless_event_id_downgrade_is_blocked(tmp_path):
 
     url = f"sqlite:///{tmp_path / 'block.db'}"
     cfg = _config(url)
-    alembic_command.upgrade(cfg, "head")
+    # Test revision 0004 directly: newer safe/blocked downgrades may otherwise
+    # stop the walk before it reaches the widening-only event-ID migration.
+    alembic_command.upgrade(cfg, "0004_lossless_event_ids")
     with pytest.raises(Exception, match="widening-only"):
         alembic_command.downgrade(cfg, "0003_intel_composite_idx")
 
@@ -89,3 +91,11 @@ def test_vessel_behavioural_baseline_migration_roundtrip(tmp_path):
 
     alembic_command.upgrade(cfg, "0020_vessel_baselines")
     assert "vessel_behavioural_baselines" in _schema(create_engine(url))
+
+
+def test_ais_spool_receipt_downgrade_is_blocked(tmp_path):
+    url = f"sqlite:///{tmp_path / 'spool_receipts.db'}"
+    cfg = _config(url)
+    alembic_command.upgrade(cfg, "head")
+    with pytest.raises(Exception, match="AIS receipt downgrade"):
+        alembic_command.downgrade(cfg, "0031_source_obs_lineage_idx")

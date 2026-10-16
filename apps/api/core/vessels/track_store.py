@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from core.config import config
+from core.observability import record_ais_spool_event, record_ais_spool_stats
 
 logger = logging.getLogger(__name__)
 
@@ -61,17 +62,62 @@ class TrackStore:
     def __init__(self) -> None:
         self._buffer: list[dict[str, Any]] = []
         self._buf_lock = threading.Lock()
+        self._flush_lock = threading.Lock()
         self._last: dict[str, _Last] = {}
         self._last_write_epoch: dict[str, float] = {}
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._last_prune = 0.0
+        self._spool_enabled = os.getenv(
+            "SEACOMMONS_AIS_SPOOL_ENABLED", ""
+        ).strip().lower() in {"1", "true", "yes"}
+        self._spool = None
+        self._spool_init_lock = threading.Lock()
+
+    def _ensure_spool(self) -> None:
+        """Open the spool only for the actual ingest worker.
+
+        API/Futures imports of the singleton must not open a second SQLite
+        handle just because the worker shares a global environment file.
+        """
+        if not self._spool_enabled or self._spool is not None:
+            return
+        with self._spool_init_lock:
+            if self._spool is not None:
+                return
+            from pathlib import Path
+            from core.vessels.track_spool import SQLiteTrackSpool
+
+            path = os.getenv("SEACOMMONS_AIS_SPOOL_PATH", "").strip()
+            if not path:
+                raise RuntimeError(
+                    "SEACOMMONS_AIS_SPOOL_PATH is required in durable spool mode"
+                )
+            self._spool = SQLiteTrackSpool(
+                Path(path),
+                max_payload_bytes=int(
+                    os.getenv("SEACOMMONS_AIS_SPOOL_MAX_BYTES", str(512 * 1024 * 1024))
+                ),
+                reserved_disk_bytes=int(
+                    os.getenv("SEACOMMONS_AIS_SPOOL_DISK_RESERVE_BYTES", str(2 * 1024**3))
+                ),
+                allow_temporary_test_path=(
+                    bool(os.getenv("PYTEST_CURRENT_TEST"))
+                    and config.RUNTIME_PROFILE.lower() not in {"production", "prod"}
+                    and os.getenv("SEACOMMONS_AIS_SPOOL_ALLOW_TMP_FOR_TESTS") == "true"
+                ),
+            )
+            stats = self._spool.stats()
+            record_ais_spool_stats(stats)
+            record_ais_spool_event("startup", "ok")
+            logger.info("AIS durable spool opened, pending=%d", stats["pending"])
 
     # ── ingest ────────────────────────────────────────────────────────────────
 
     def start(self) -> None:
         if self._running or not getattr(config, "VESSEL_TRACK_ENABLED", True):
             return
+        self._ensure_spool()
         self._running = True
         try:
             hydrated = self.hydrate_recent_last_seen(max_age_hours=12.0)
@@ -121,10 +167,11 @@ class TrackStore:
             if since < interval and not status_changed and not jumped:
                 keep = False
 
-        self._last[mmsi] = _Last(lat, lon, sog_v, now_epoch, nav_status, name or (prev.name if prev else ""))
         if not keep:
+            self._last[mmsi] = _Last(
+                lat, lon, sog_v, now_epoch, nav_status, name or (prev.name if prev else "")
+            )
             return
-        self._last_write_epoch[mmsi] = now_epoch
 
         row = {
             "mmsi": mmsi, "ts": ts, "received_at": recv,
@@ -135,8 +182,27 @@ class TrackStore:
             "nav_status": int(nav_status) if nav_status is not None else None,
             "source": str(source or "aisstream")[:24],
         }
-        with self._buf_lock:
-            self._buffer.append(row)
+        self._ensure_spool()
+        if self._spool is not None:
+            try:
+                # Never accept/throttle a fix before the crash-durable spool commits.
+                self._spool.enqueue(row)
+                record_ais_spool_event("enqueue", "ok")
+                record_ais_spool_stats(self._spool.stats())
+            except Exception:
+                record_ais_spool_event("enqueue", "rejected")
+                logger.critical(
+                    "AIS_TRACK_SPOOL_UNAVAILABLE: fix not accepted; upstream replay "
+                    "is not guaranteed", exc_info=True,
+                )
+                raise
+        else:
+            with self._buf_lock:
+                self._buffer.append(row)
+        self._last[mmsi] = _Last(
+            lat, lon, sog_v, now_epoch, nav_status, name or (prev.name if prev else "")
+        )
+        self._last_write_epoch[mmsi] = now_epoch
         if _SYNC:
             self.flush()
 
@@ -165,22 +231,70 @@ class TrackStore:
                     logger.warning("TrackStore prune error: %s", exc)
 
     def flush(self) -> int:
-        with self._buf_lock:
-            if not self._buffer:
-                return 0
-            rows, self._buffer = self._buffer, []
-        try:
-            from core.db.models import VesselTrackDB
-            from core.db.session import session_scope
+        # Serialize concurrent flushes; a failed batch must retain its order.
+        self._ensure_spool()
+        with self._flush_lock:
+            if self._spool is not None:
+                return self._flush_spool()
+            with self._buf_lock:
+                if not self._buffer:
+                    return 0
+                rows, self._buffer = self._buffer, []
+            try:
+                from core.db.models import VesselTrackDB
+                from core.db.session import session_scope
 
+                with session_scope() as db:
+                    db.bulk_insert_mappings(VesselTrackDB, rows)
+                return len(rows)
+            except Exception as exc:
+                with self._buf_lock:
+                    self._buffer = rows + self._buffer
+                logger.error(
+                    "TrackStore: bulk insert failed (%d rows requeued in memory; restart still risks loss): %s",
+                    len(rows), exc,
+                )
+                return 0
+
+    def _flush_spool(self) -> int:
+        """Exactly-once committed delivery across PostgreSQL/SQLite restarts.
+
+        Never acknowledge the local spool until the database transaction has
+        committed both the original observations and its durable receipt.
+        """
+        from core.db.models import VesselTrackDB, VesselTrackIngestBatchDB
+        from core.db.session import session_scope
+
+        assert self._spool is not None
+        try:
+            batch = self._spool.claim(limit=1000)
+            if batch is None:
+                return 0
+            replayed = False
             with session_scope() as db:
-                db.bulk_insert_mappings(VesselTrackDB, rows)
-            return len(rows)
-        except Exception as exc:
-            # Fail-fast until the durable, idempotent ingest spool is available.
-            # Requeuing this batch in RAM is unsafe after an ambiguous DB commit:
-            # it can duplicate evidence or block later observations indefinitely.
-            logger.error("TrackStore: bulk insert failed (%d rows not persisted): %s", len(rows), exc)
+                receipt = db.get(VesselTrackIngestBatchDB, batch.batch_id)
+                if receipt is not None:
+                    replayed = True
+                    if (
+                        receipt.payload_sha256 != batch.sha256
+                        or receipt.row_count != batch.count
+                    ):
+                        raise RuntimeError("AIS spool receipt integrity mismatch")
+                else:
+                    db.bulk_insert_mappings(VesselTrackDB, list(batch.rows))
+                    db.add(VesselTrackIngestBatchDB(
+                        batch_id=batch.batch_id,
+                        payload_sha256=batch.sha256,
+                        row_count=batch.count,
+                    ))
+            # If this crashes, the receipt above makes the next replay safe.
+            self._spool.acknowledge(batch)
+            record_ais_spool_stats(self._spool.stats())
+            record_ais_spool_event("flush", "replayed" if replayed else "ok")
+            return batch.count
+        except Exception:
+            record_ais_spool_event("flush", "error")
+            logger.exception("AIS_TRACK_SPOOL_FLUSH_FAILED: batch retained for retry")
             return 0
 
     def prune(self, older_than_days: Optional[int] = None) -> int:
@@ -194,15 +308,15 @@ class TrackStore:
         import hashlib
         import json
 
-        # A legacy environment flag alone must not authorize deletion.
-        # This code-level gate is intentionally disabled in this release.
+        # The environment may not override the release-level evidence retention gate.
         if not _RETENTION_RELEASE_AUTHORIZED:
             logger.info("AIS prune disabled: retention policy and restore not release-approved")
             return 0
-        if os.getenv("AIS_PRUNE_APPROVED", "").strip().lower() not in {"1", "true", "yes"}:
-            logger.info("AIS prune skipped: AIS_PRUNE_APPROVED is not enabled")
+        approved = os.getenv("AIS_PRUNE_APPROVED", "").strip().lower() in {"1", "true", "yes"}
+        policy_id = os.getenv("AIS_RETENTION_POLICY_ID", "").strip()
+        if not approved or not policy_id:
+            logger.warning("AIS prune blocked: explicit approval and retention policy ID required")
             return 0
-
         days = older_than_days or int(getattr(config, "VESSEL_TRACK_RETENTION_DAYS", 60))
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         if not (config.OBJECT_STORAGE_ENDPOINT and config.OBJECT_STORAGE_ACCESS_KEY
@@ -440,7 +554,12 @@ class TrackStore:
             total = distinct = 0
         with self._buf_lock:
             pending = len(self._buffer)
-        return {"rows": total, "mmsi": distinct, "tracked_live": len(self._last), "buffer": pending}
+        spool_stats = self._spool.stats() if self._spool is not None else None
+        return {
+            "rows": total, "mmsi": distinct, "tracked_live": len(self._last),
+            "buffer": spool_stats["pending"] if spool_stats else pending,
+            "durable_spool": spool_stats,
+        }
 
 
 def _row_dict(r: Any) -> dict[str, Any]:
