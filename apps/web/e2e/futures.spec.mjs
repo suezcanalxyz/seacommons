@@ -537,6 +537,36 @@ test('Overall path is a public fixed endpoint, not a token or operator shortcut'
  expect(seen.every(x=>x.url.endsWith('/api/v1/futures/intelligence-overall'))).toBe(true);
 });
 
+test('Futures monthly timeline uses ingestion dates and never repeats pre-project source-event years', async ({page})=>{
+  await mockOperationalContracts(page);
+  await page.route('**/api/v1/futures/overall',route=>route.fulfill({json:{
+    scope:'retained_intel_events', generated_at:'2026-10-16T00:00:00Z',
+    intel_record:{
+      total_events:320,positioned_events:10,first_ingested_at:'2026-07-02T00:00:00Z',
+      oldest_event_utc:'2013-06-01T00:00:00Z',newest_event_utc:'2026-10-15T00:00:00Z',
+      monthly:[{month:'2013-06',count:125},{month:'2026-10',count:195}],
+      ingested_monthly:[{month:'2026-07',count:40},{month:'2026-10',count:280}],
+    },
+  }}));
+  await page.goto(FUTURES_URL+'?view=history');
+  await expect(page.getByRole('heading',{name:/collection, month by month/i})).toBeVisible();
+  const timeline=page.getByRole('region',{name:'Monthly SeaCommons collection timeline'});
+  await expect(timeline).toBeVisible();
+  await expect(timeline).toContainText('Jul 2026');
+  await expect(timeline).toContainText('Oct 2026');
+  await expect(timeline).not.toContainText('2013');
+  await expect(page.getByText(/overall historical record/i)).toHaveCount(0);
+});
+
+test('Intelligence reading guide uses distinct concise cards',async ({page})=>{
+  await mockOperationalContracts(page);
+  await page.goto(FUTURES_URL+'?view=intelligence');
+  const guide=page.getByRole('region',{name:'Intelligence evidence guide'});
+  await expect(guide.locator('article')).toHaveCount(4);
+  await expect(guide.getByRole('heading',{name:'Signals are inputs.'})).toBeVisible();
+  await expect(guide.getByRole('heading',{name:'Counts use different clocks.'})).toHaveCount(0);
+});
+
 test('Futures side-by-side AIS map selects a Live case and targets VesselFinder by IMO', async ({ page }) => {
   await mockOperationalContracts(page);
   await page.route('**/api/v1/live/signals?*', (route) => route.fulfill({ json: {
@@ -563,10 +593,13 @@ test('Futures side-by-side AIS map selects a Live case and targets VesselFinder 
   await expect(page.getByRole('application', {name:'SeaCommons Live maritime cases map'})).toBeVisible();
   await expect(page.locator('iframe[title*="VesselFinder"]')).toHaveCount(0);
   await page.getByRole('button',{name:/AIS gap - MSC SPRING III/i}).click();
-  await expect(page.locator('iframe[title*="VesselFinder"]')).toHaveAttribute('sandbox','allow-scripts');
+  await expect(page.locator('iframe[title*="VesselFinder"]')).toHaveAttribute('sandbox','allow-scripts allow-same-origin');
   await expect(page.locator('iframe[title*="VesselFinder"]')).toHaveAttribute('referrerpolicy','no-referrer');
-  const html = await page.locator('iframe[title*="VesselFinder"]').getAttribute('srcdoc');
-  expect(html).toContain('var imo="9316359"');
+  const embedUrl = await page.locator('iframe[title*="VesselFinder"]').getAttribute('src');
+  expect(embedUrl).toMatch(/^data:text\/html;charset=utf-8,/);
+  expect(decodeURIComponent(embedUrl.split(',').slice(1).join(','))).toContain('var imo="9316359"');
+  await expect(page.getByRole('link',{name:/Open this vessel on VesselFinder/i}))
+    .toHaveAttribute('href','https://www.vesselfinder.com/vessels/details/9316359');
   await expect(page.getByText('5.52120° W', {exact:false})).toBeVisible();
   await expect(page.getByText('Anomaly’s historical location', {exact:false})).toBeVisible();
   await page.getByText('False positive').click();
