@@ -397,7 +397,7 @@ def test_public_intelligence_overall_is_aggregate_only_and_keeps_private_route_c
           "raw","normalized","derived","episodes","hypotheses","corroborated","review_ready"))],
         "sensor_activity":{"ais_fixes":530,"radio_bursts":20,"radio_events":4,
             "satellite_observations":6,"source_names":3,"extra_unpublished_field":999},
-        "estimated_fields":["ais_fixes"],"unavailable_fields":[],
+        "estimated_fields":["ais_fixes","active_source_names"],"unavailable_fields":[],
         "extra_unpublished_data":{"identifier":"not included"},
     })
     client=TestClient(app)
@@ -407,7 +407,7 @@ def test_public_intelligence_overall_is_aggregate_only_and_keeps_private_route_c
     assert data["access"]=="public_aggregate"
     assert len(data["stages"])==7
     assert set(data["sensor_activity"])=={"ais_fixes","radio_bursts","radio_events","satellite_observations","source_names"}
-    assert data["estimated_fields"]==["ais_fixes"]
+    assert data["estimated_fields"]==["ais_fixes","active_source_names"]
     assert "extra_unpublished_data" not in data
     assert "extra_unpublished_field" not in data["sensor_activity"]
     assert client.get("/api/v1/operator/ingestion/overall-metrics").status_code==401
