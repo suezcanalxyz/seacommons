@@ -20,7 +20,7 @@ const stages = [
   {
     "title": "Filter",
     "summary": "Different providers can report the same movement in different formats or at different times. SeaCommons prepares those records for comparison without erasing their origins.",
-    "process": "The pipeline normalises fields and timestamps, checks usable positions, identifies repeats and preserves upstream lineage. It also considers source health, stale updates and incomplete coverage before an observation contributes to later analysis.",
+    "process": "The pipeline normalises fields and timestamps, checks usable positions and uses source identifiers to identify duplicates while preserving upstream lineage. It also considers source health, stale updates and incomplete coverage before an observation contributes to later analysis.",
     "boundary": "Removing duplicates is not the same as disproving a report. A silent or unavailable feed must never be interpreted automatically as a vessel turning off its transponder."
   },
   {
