@@ -620,12 +620,21 @@ a { color: inherit; text-decoration: none; }
 .future-subnav{display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--f-line);padding-bottom:15px;margin-bottom:32px}
 .future-subnav button{background:transparent;border:1px solid var(--f-line);border-radius:999px;color:var(--f-muted);padding:9px 13px;cursor:pointer;font-size:12px}
 .future-subnav button.is-active,.future-subnav button:hover{color:var(--f-text);border-color:var(--f-accent)}
-.future-method-controls{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:22px 0 12px}
-.future-method-controls button{border:1px solid var(--f-line);background:var(--f-panel);color:var(--f-text);padding:20px 8px;cursor:pointer;display:grid;gap:18px;text-align:left;min-width:0;font-size:13px}
-.future-method-controls button small{font:10px 'DM Mono',monospace;color:var(--f-muted)}
+.future-method-controls{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px;margin:20px 0 10px}
+.future-method-controls button{display:flex;align-items:center;gap:10px;min-height:52px;min-width:0;padding:10px 12px;border:1px solid var(--f-line);background:var(--f-panel);color:var(--f-text);cursor:pointer;text-align:left;font-size:13px;font-weight:500}
+.future-method-controls button small{flex:none;font:10px 'DM Mono',monospace;color:var(--f-muted)}
+.future-method-controls button span{min-width:0}
 .future-method-controls button.is-active{border-color:var(--f-accent);background:#122024}
-.future-network-detail{padding:24px;border:1px solid var(--f-line);background:var(--f-panel-2)}
-.future-network-detail strong{font-size:21px;font-weight:500}.future-network-detail p{color:var(--f-muted);line-height:1.6;max-width:800px}
+.future-method-controls button.is-active small{color:var(--f-accent)}
+.future-method-controls button:focus-visible{outline:2px solid var(--f-accent);outline-offset:2px}
+.future-network-detail{padding:24px 26px;border:1px solid var(--f-line);background:var(--f-panel-2)}
+.future-method-detail-intro h3{font-size:24px;font-weight:500;letter-spacing:-.025em;margin:9px 0}
+.future-network-detail p{color:var(--f-muted);line-height:1.65;margin:0}
+.future-method-detail-intro p{max-width:940px;font-size:14px}
+.future-method-detail-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:32px;margin-top:22px;padding-top:18px;border-top:1px solid var(--f-line)}
+.future-method-detail-grid>div{min-width:0}
+.future-method-detail-grid small{display:block;font:10px 'DM Mono',monospace;letter-spacing:.04em;color:var(--f-accent);margin-bottom:10px}
+.future-method-detail-grid p{font-size:13px}
 .future-domain-grid,.future-network-products{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:20px}
 .future-domain-grid article,.future-network-products a{display:block;border:1px solid var(--f-line);background:var(--f-panel);padding:24px;min-width:0}
 .future-domain-grid small{font:10px 'DM Mono',monospace;color:var(--f-accent)}
@@ -649,7 +658,7 @@ a { color: inherit; text-decoration: none; }
 .future-device-specs div{border-top:1px solid var(--f-line);padding-top:12px}
 .future-device-specs dt{color:var(--f-accent);font-size:12px}.future-device-specs dd{margin:8px 0 0;color:var(--f-muted);font-size:13px}
 @media(max-width:1000px){.future-method-controls{grid-template-columns:repeat(3,1fr)}.future-device-grid{grid-template-columns:1fr}}
-@media(max-width:700px){.future-domain-grid,.future-network-products,.future-device-specs{grid-template-columns:1fr}.future-method-controls{grid-template-columns:repeat(3,minmax(0,1fr))}.future-device-card{grid-template-columns:105px minmax(0,1fr)}.future-device-card img{min-height:160px}.future-device-card>span{padding:12px}.future-device-card strong{font-size:17px}.future-subnav{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin}.future-subnav button{flex-shrink:0}}
+@media(max-width:700px){.future-domain-grid,.future-network-products,.future-device-specs{grid-template-columns:1fr}.future-method-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.future-method-detail-grid{grid-template-columns:1fr;gap:16px}.future-network-detail{padding:20px}.future-device-card{grid-template-columns:105px minmax(0,1fr)}.future-device-card img{min-height:160px}.future-device-card>span{padding:12px}.future-device-card strong{font-size:17px}.future-subnav{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin}.future-subnav button{flex-shrink:0}}
 
 
 /* Intelligence: evidence-first metric families, explanatory legends and clear provenance. */
