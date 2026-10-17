@@ -84,6 +84,13 @@ async def lifespan(app: FastAPI):
         # any metadata updates to events already cached) into this process.
         logger.info("Intel monitors disabled here (INTEL_MONITORS_ENABLED=false) — syncing from DB instead")
         _start_intel_sync_loop()
+    # Warm PLAY's public counts in a bounded background thread. A large
+    # archive must not delay readiness or the first ordinary LIVE request.
+    try:
+        from core.api.routes.play import prewarm_play_counts
+        prewarm_play_counts()
+    except Exception:
+        logger.exception("PLAY counts prewarm could not start")
     yield
     logger.info("Seacommons API shutting down")
     from core.api.lifecycle import stop_background_services
