@@ -605,7 +605,7 @@ function observedTrackCourse(points) {
 }
 
 function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(isPublicLiveHost);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activePanel, setActivePanel] = useState(
     isPublicLiveHost ? 'osint' : APP_PROFILE === 'demo' ? 'sim' : 'live',
   );
@@ -673,7 +673,7 @@ function App() {
     liveMode,
     onCriticalDistress: (props) => {
       setActivePanel('osint');
-      setSidebarOpen(true);
+      // Keep the map unobstructed on incoming alerts.
       if (props?.type === 'correlated_alert') {
         setAlertFlash(props);
         playAlertBeep();
@@ -3657,9 +3657,9 @@ function App() {
           <button
             className="cone-reopen-btn"
             onClick={() => setConePanelHidden(false)}
-            title="Open drift panel"
+            title="Open selected report" aria-label="Open selected report"
           >
-            SAR ›
+            REPORT ↗
           </button>
         )}
 

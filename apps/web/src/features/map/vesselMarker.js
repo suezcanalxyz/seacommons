@@ -10,10 +10,10 @@ export function createVesselArrowImage(size = 48) {
   ctx.fillStyle = '#ffffff';
   const cx = size / 2;
   ctx.beginPath();
+  // Pointed vessel triangle, heading aligned to its bow (top).
   ctx.moveTo(cx, 3);
-  ctx.lineTo(size - 6, size - 4);
-  ctx.lineTo(cx, size - 11);
-  ctx.lineTo(6, size - 4);
+  ctx.lineTo(size - 5, size - 5);
+  ctx.lineTo(5, size - 5);
   ctx.closePath();
   ctx.fill();
   const idata = ctx.getImageData(0, 0, size, size);
