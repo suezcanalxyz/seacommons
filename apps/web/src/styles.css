@@ -4057,3 +4057,13 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 
 /* Leaflet maritime intelligence markers match vessel triangles. */
 .seacommons-fallback-signal-icon .seacommons-fallback-vessel-arrow { border-left-width: 8px; border-right-width: 8px; border-bottom-width: 19px; margin: 1px 0 0 3px; }
+
+/* Mobile LIVE: native-feeling report sheet, without a dead strip above its title. */
+@media (max-width: 680px) {
+  .cop-shell.is-live-mode .cone-panel::before { content: none; display: none; }
+  .cop-shell.is-live-mode .cone-panel { top: 34dvh; padding-top: 0; border-radius: 14px 14px 0 0; background: #071219; }
+  .cop-shell.is-live-mode .cone-panel .cone-panel-header { position: sticky; top: 0; margin: 0; padding: 12px 16px 10px; min-height: 0; background: #071219; border-bottom: 1px solid rgba(157, 218, 217, .18); }
+  .cop-shell.is-live-mode .cone-panel .cone-panel-header::before { content: ''; position: absolute; width: 32px; height: 3px; border-radius: 2px; background: rgba(174, 210, 210, .45); left: calc(50% - 16px); top: 3px; }
+  .cop-shell.is-live-mode .cone-panel .cone-panel-header .section-kicker { letter-spacing: .15em; }
+  .cop-shell.is-live-mode .cone-panel .cone-close-btn { min-width: 44px; min-height: 44px; font-size: 22px; }
+}
