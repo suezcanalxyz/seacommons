@@ -605,7 +605,7 @@ function observedTrackCourse(points) {
 }
 
 function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => isPublicLiveHost && !window.matchMedia('(max-width: 680px)').matches);
   const [activePanel, setActivePanel] = useState(
     isPublicLiveHost ? 'osint' : APP_PROFILE === 'demo' ? 'sim' : 'live',
   );
