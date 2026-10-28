@@ -66,9 +66,25 @@ function markerStyle(feature) {
 
 function vesselHeading(feature) {
   const p = feature?.properties || {};
-  const raw = p.latest_heading ?? p.heading_deg ?? p.heading ?? p.latest_course ?? p.course ?? p.cog ?? 0;
-  const value = Number(raw);
-  return Number.isFinite(value) ? ((value % 360) + 360) % 360 : 0;
+  const raw = p.latest_heading ?? p.heading_deg ?? p.heading ?? p.latest_course ?? p.course ?? p.cog;
+  if (raw !== undefined && raw !== null && raw !== '') {
+    const value = Number(raw);
+    if (Number.isFinite(value) && value >= 0 && value < 360) return value;
+  }
+  // Derive course only from real successive observed AIS positions.
+  const track = p.observed_track;
+  if (Array.isArray(track) && track.length >= 2) {
+    const a = track[track.length - 2], b = track[track.length - 1];
+    const lat1 = Number(a.lat) * Math.PI / 180;
+    const lat2 = Number(b.lat) * Math.PI / 180;
+    const delta = (Number(b.lon) - Number(a.lon)) * Math.PI / 180;
+    if ([lat1, lat2, delta].every(Number.isFinite) && (a.lat !== b.lat || a.lon !== b.lon)) {
+      const y = Math.sin(delta) * Math.cos(lat2);
+      const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(delta);
+      return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    }
+  }
+  return null; // Never invent a northbound heading when direction is unknown.
 }
 
 function vesselIsStationary(feature) {
@@ -168,9 +184,9 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
         }
         if (isVesselAssociatedSignal(feature) && L.divIcon && L.marker) {
           const icon = L.divIcon({
-            className: 'seacommons-fallback-vessel-icon seacommons-fallback-signal-icon',
-            html: `<span class="seacommons-fallback-vessel-arrow" style="--vessel-heading:${vesselHeading(feature)}deg;--vessel-color:${semanticColor(feature)}"></span>`,
-            iconSize: [22, 22], iconAnchor: [11, 11],
+            className: `seacommons-fallback-vessel-icon seacommons-fallback-signal-icon${vesselHeading(feature) === null ? ' is-direction-unknown' : ''}`,
+            html: `<span class="seacommons-fallback-vessel-arrow" style="--vessel-heading:${vesselHeading(feature) ?? 0}deg;--vessel-color:${semanticColor(feature)}"></span>`,
+            iconSize: [16, 16], iconAnchor: [8, 8],
           });
           const marker = L.marker([Number(lat), Number(lon)], { icon, keyboard: true }).addTo(markers);
           bindSelection(marker, feature, onFeatureSelect);
@@ -198,8 +214,8 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
         const icon = L.divIcon({
           className: `seacommons-fallback-vessel-icon${stationary ? ' is-stationary' : ''}`,
           html: `<span class="seacommons-fallback-vessel-arrow" style="--vessel-heading:${heading}deg;--vessel-color:${color}"></span>`,
-          iconSize: [22, 22],
-          iconAnchor: [11, 11],
+          iconSize: [16, 16],
+          iconAnchor: [8, 8],
         });
         const marker = L.marker([Number(lat), Number(lon)], { icon, keyboard: true }).addTo(markers);
         bindSelection(marker, feature, onFeatureSelect);

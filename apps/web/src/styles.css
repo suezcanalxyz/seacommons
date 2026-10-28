@@ -4057,3 +4057,8 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 
 /* Leaflet maritime intelligence markers match vessel triangles. */
 .seacommons-fallback-signal-icon .seacommons-fallback-vessel-arrow { border-left-width: 8px; border-right-width: 8px; border-bottom-width: 19px; margin: 1px 0 0 3px; }
+
+/* Compact directional marks; a diamond means course unavailable, not northbound. */
+.seacommons-fallback-vessel-icon .seacommons-fallback-vessel-arrow { border-left-width: 5px; border-right-width: 5px; border-bottom-width: 12px; margin: 2px 0 0 3px; }
+.seacommons-fallback-signal-icon .seacommons-fallback-vessel-arrow { border-left-width: 5px; border-right-width: 5px; border-bottom-width: 12px; margin: 2px 0 0 3px; }
+.seacommons-fallback-vessel-icon.is-direction-unknown .seacommons-fallback-vessel-arrow { border: 0; width: 8px; height: 8px; margin: 4px; background: var(--vessel-color, #60a5fa); transform: rotate(45deg); }
