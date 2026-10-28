@@ -136,8 +136,28 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
   }
   L.tileLayer(PUBLIC_SEAMARK_TILE_URL, { detectRetina: true, maxZoom: 19, maxNativeZoom: 18, opacity: 0.95, crossOrigin: true }).addTo(map);
   const markers = L.layerGroup().addTo(map);
+  // Persisted humanitarian drift is separate from the incident marker refresh.
+  const driftLayers = L.layerGroup().addTo(map);
 
   return {
+    setDrifts(collection) {
+      driftLayers.clearLayers();
+      for (const feature of collection?.features || []) {
+        const geometry = feature?.geometry;
+        if (!geometry) continue;
+        const color = feature.properties?.visual_color || '#ff5a57';
+        if (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon') {
+          for (const polygon of leafletPolygonCoordinates(geometry)) {
+            L.polygon(polygon, { color, weight: 2, opacity: .85, fillColor: color, fillOpacity: .15, interactive: false }).addTo(driftLayers);
+          }
+        } else if (geometry.type === 'LineString' && Array.isArray(geometry.coordinates)) {
+          L.polyline(geometry.coordinates.map(([lon, lat]) => [Number(lat), Number(lon)]), { color, weight: 2.5, opacity: .9, dashArray: '5 6', interactive: false }).addTo(driftLayers);
+        } else if (geometry.type === 'Point' && Array.isArray(geometry.coordinates)) {
+          const [lon, lat] = geometry.coordinates;
+          L.circleMarker([Number(lat), Number(lon)], { radius: 5, color: '#06151d', weight: 2, fillColor: color, fillOpacity: 1, interactive: false }).addTo(driftLayers);
+        }
+      }
+    },
     setFeatures(payload) {
       const { incidents, vessels } = normalizePayload(payload);
       markers.clearLayers();

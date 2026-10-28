@@ -4072,3 +4072,9 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .seacommons-fallback-vessel-icon .seacommons-fallback-vessel-arrow,
 .seacommons-fallback-signal-icon .seacommons-fallback-vessel-arrow { border-left-width: 4px; border-right-width: 4px; border-bottom-width: 10px; margin: 3px 0 0 5px; }
 .seacommons-fallback-vessel-icon.is-direction-unknown .seacommons-fallback-vessel-arrow { border: 0; width: 7px; height: 7px; margin: 5px; background: var(--vessel-color, #60a5fa); transform: rotate(45deg); }
+
+/* Compact mobile LIVE map control. */
+@media (max-width: 680px) {
+  .cop-shell.is-live-mode .live-feed-toggle { min-height: 36px; padding: 8px 11px; font-size: 9px; letter-spacing: .12em; gap: 7px; }
+  .cop-shell.is-live-mode .live-feed-toggle::after { font-size: 14px; margin-left: 7px; }
+}

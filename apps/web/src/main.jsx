@@ -2999,6 +2999,12 @@ function App() {
     return () => { alive = false; };
   }, [apiBase, layerVis.ais_trails, mapReady, resolvedMapPanel]);
 
+  // Leaflet fallback must render the same persisted drift features as MapLibre.
+  useEffect(() => {
+    if (!fallbackReady || !fallbackMapRef.current) return;
+    fallbackMapRef.current.setDrifts(displayedIntelDrifts);
+  }, [fallbackReady, displayedIntelDrifts]);
+
   // Intel drift traces map layer
   useEffect(() => {
     const map = mapRef.current;
