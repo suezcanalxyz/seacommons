@@ -135,9 +135,35 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
     L.tileLayer(PUBLIC_BASEMAP_LABEL_URL, { ...retinaTiles, opacity: 0.9 }).addTo(map);
   }
   L.tileLayer(PUBLIC_SEAMARK_TILE_URL, { detectRetina: true, maxZoom: 19, maxNativeZoom: 18, opacity: 0.95, crossOrigin: true }).addTo(map);
+  const driftsLayer = L.layerGroup().addTo(map);
   const markers = L.layerGroup().addTo(map);
 
   return {
+    setDrifts(collection) {
+      driftsLayer.clearLayers();
+      for (const feature of collection?.features || []) {
+        const geometry = feature?.geometry;
+        if (!geometry?.coordinates) continue;
+        const color = String(feature.properties?.visual_color || '#ff5a57');
+        const coordinates = geometry.coordinates;
+        if (geometry.type === 'LineString' && coordinates.length > 1) {
+          L.polyline(coordinates.map(([lon, lat]) => [lat, lon]), {
+            color, weight: 2.5, opacity: 0.92, dashArray: '7 6', interactive: false,
+          }).addTo(driftsLayer);
+        } else if (geometry.type === 'Polygon') {
+          for (const ring of leafletPolygonCoordinates(geometry)) {
+            L.polygon(ring, { color, weight: 1.5, opacity: 0.75, fillColor: color,
+              fillOpacity: 0.13, interactive: false }).addTo(driftsLayer);
+          }
+        } else if (geometry.type === 'Point') {
+          const [lon, lat] = coordinates;
+          if (Number.isFinite(Number(lon)) && Number.isFinite(Number(lat))) {
+            L.circleMarker([lat, lon], { radius: 4, color, weight: 1.5,
+              fillColor: color, fillOpacity: 0.9, interactive: false }).addTo(driftsLayer);
+          }
+        }
+      }
+    },
     setFeatures(payload) {
       const { incidents, vessels } = normalizePayload(payload);
       markers.clearLayers();
