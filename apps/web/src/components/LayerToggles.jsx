@@ -27,7 +27,7 @@ export const LAYER_GROUPS = [
   { key: 'sar',         label: 'Distress signals', layers: ['intel-events-layer', 'intel-events-halo', 'intel-distress-core', 'intel-distress-pulse', 'intel-distress-area', 'intel-distress-polygon-fill', 'intel-distress-polygon-outline', 'live-nearby-vessels-layer', 'live-nearby-vessels-halo', 'ngo-response-lines-layer', 'ngo-response-points-layer'] },
   { key: 'fused',       label: 'Correlated alerts', layers: ['intel-fused-core', 'intel-fused-pulse', 'intel-vessel-core', 'intel-vessel-pulse'] },
   { key: 'observed_tracks', label: 'Observed AIS trajectories', layers: ['intel-observed-track-line'] },
-  { key: 'drift_models', label: 'Drift forecasts', layers: ['intel-drift-cone', 'intel-drift-line', 'intel-drift-point'] },
+  { key: 'drift_models', label: 'Drift forecasts', layers: ['intel-drift-cone', 'intel-drift-line', 'intel-drift-point', 'intel-current-estimate-halo', 'intel-current-estimate'] },
   { key: 'simulation', label: 'Manual simulation', layers: ['sar-case-cone', 'sar-case-line', 'sar-case-traj-arrows', 'sar-case-points'] },
   ...INTEL_CATEGORY_GROUPS,
   { key: 'spikes',      label: 'AIS anomalies',  layers: ['intel-spike-layer'], defaultOff: true },
