@@ -862,6 +862,8 @@ function App() {
   }
 
   function selectIntelReport(feature) {
+    // On mobile the feed must give way to the report bottom sheet.
+    if (isPublicLiveHost && window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(false);
     setActivePanel('osint');
     if (!window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
     setMapPanel({ type: 'intel', feature });
