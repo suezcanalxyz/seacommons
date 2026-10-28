@@ -43,6 +43,15 @@ function semanticColor(feature) {
   return '#38bdf8';
 }
 
+function isVesselAssociatedSignal(feature) {
+  const p = feature?.properties || {};
+  const domain = String(p.domain || p.macro_domain || p.maritime_domain || '').toLowerCase();
+  const kind = String(p.type || p.event_type || p.category || p.signal_category || '').toLowerCase();
+  const text = String(p.title || p.event || '').toLowerCase();
+  if (domain === 'humanitarian' || String(p.source || '').toLowerCase().includes('alarm_phone')) return false;
+  return /ais|vessel|ship|navigation|collision|grounding|dark_candidate|reporting_gap/.test(`${kind} ${text}`);
+}
+
 function markerStyle(feature) {
   const color = semanticColor(feature);
   return {
@@ -157,11 +166,21 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
             renderer: incidentRenderer,
           }).on('click', () => onFeatureSelect?.(feature)).addTo(markers);
         }
-        const marker = L.circleMarker(
-          [Number(lat), Number(lon)],
-          { ...markerStyle(feature), renderer: incidentRenderer },
-        ).addTo(markers);
-        bindSelection(marker, feature, onFeatureSelect);
+        if (isVesselAssociatedSignal(feature) && L.divIcon && L.marker) {
+          const icon = L.divIcon({
+            className: 'seacommons-fallback-vessel-icon seacommons-fallback-signal-icon',
+            html: `<span class="seacommons-fallback-vessel-arrow" style="--vessel-heading:${vesselHeading(feature)}deg;--vessel-color:${semanticColor(feature)}"></span>`,
+            iconSize: [22, 22], iconAnchor: [11, 11],
+          });
+          const marker = L.marker([Number(lat), Number(lon)], { icon, keyboard: true }).addTo(markers);
+          bindSelection(marker, feature, onFeatureSelect);
+        } else {
+          const marker = L.circleMarker(
+            [Number(lat), Number(lon)],
+            { ...markerStyle(feature), renderer: incidentRenderer },
+          ).addTo(markers);
+          bindSelection(marker, feature, onFeatureSelect);
+        }
       }
       for (const feature of pointFeatures(vessels)) {
         const [lon, lat] = feature.geometry.coordinates;
