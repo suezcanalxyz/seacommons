@@ -3645,7 +3645,10 @@ function App() {
         {['cone', 'trajectory', 'intel', 'radio_receiver', 'radio_message'].includes(mapPanel?.type) && !conePanelHidden && (
           <MapFloatingPanel
             panel={resolvedMapPanel}
-            onClose={() => setConePanelHidden(true)}
+            onClose={() => {
+              setConePanelHidden(true);
+              if (isPublicLiveHost && window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(true);
+            }}
             onComputeDrift={null}
             apiBase={apiBase}
             publicMode={isPublicLiveHost}

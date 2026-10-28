@@ -66,9 +66,10 @@ function markerStyle(feature) {
 
 function vesselHeading(feature) {
   const p = feature?.properties || {};
-  const raw = p.latest_heading ?? p.heading_deg ?? p.heading ?? p.latest_course ?? p.course ?? p.cog ?? 0;
+  const raw = p.latest_heading ?? p.heading_deg ?? p.heading ?? p.latest_course ?? p.course ?? p.cog;
+  if (raw === null || raw === undefined || raw === '') return null;
   const value = Number(raw);
-  return Number.isFinite(value) ? ((value % 360) + 360) % 360 : 0;
+  return Number.isFinite(value) && value >= 0 && value < 360 ? value : null;
 }
 
 function vesselIsStationary(feature) {
@@ -167,10 +168,11 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
           }).on('click', () => onFeatureSelect?.(feature)).addTo(markers);
         }
         if (isVesselAssociatedSignal(feature) && L.divIcon && L.marker) {
+          const heading = vesselHeading(feature);
           const icon = L.divIcon({
-            className: 'seacommons-fallback-vessel-icon seacommons-fallback-signal-icon',
-            html: `<span class="seacommons-fallback-vessel-arrow" style="--vessel-heading:${vesselHeading(feature)}deg;--vessel-color:${semanticColor(feature)}"></span>`,
-            iconSize: [22, 22], iconAnchor: [11, 11],
+            className: `seacommons-fallback-vessel-icon seacommons-fallback-signal-icon${heading === null ? ' is-direction-unknown' : ''}`,
+            html: `<span class="seacommons-fallback-vessel-arrow" style="--vessel-heading:${heading ?? 0}deg;--vessel-color:${semanticColor(feature)}"></span>`,
+            iconSize: [18, 18], iconAnchor: [9, 9],
           });
           const marker = L.marker([Number(lat), Number(lon)], { icon, keyboard: true }).addTo(markers);
           bindSelection(marker, feature, onFeatureSelect);
@@ -193,10 +195,10 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
           bindSelection(marker, feature, onFeatureSelect);
           continue;
         }
-        const heading = stationary ? 0 : vesselHeading(feature);
+        const heading = vesselHeading(feature);
         const color = vesselColor(feature);
         const icon = L.divIcon({
-          className: `seacommons-fallback-vessel-icon${stationary ? ' is-stationary' : ''}`,
+          className: `seacommons-fallback-vessel-icon${stationary ? ' is-stationary' : ''}${heading === null ? ' is-direction-unknown' : ''}`,
           html: `<span class="seacommons-fallback-vessel-arrow" style="--vessel-heading:${heading}deg;--vessel-color:${color}"></span>`,
           iconSize: [22, 22],
           iconAnchor: [11, 11],

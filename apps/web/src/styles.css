@@ -4067,3 +4067,8 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   .cop-shell.is-live-mode .cone-panel .cone-panel-header .section-kicker { letter-spacing: .15em; }
   .cop-shell.is-live-mode .cone-panel .cone-close-btn { min-width: 44px; min-height: 44px; font-size: 22px; }
 }
+
+/* Compact mobile vessel marks: never pretend unknown heading means north. */
+.seacommons-fallback-vessel-icon .seacommons-fallback-vessel-arrow,
+.seacommons-fallback-signal-icon .seacommons-fallback-vessel-arrow { border-left-width: 4px; border-right-width: 4px; border-bottom-width: 10px; margin: 3px 0 0 5px; }
+.seacommons-fallback-vessel-icon.is-direction-unknown .seacommons-fallback-vessel-arrow { border: 0; width: 7px; height: 7px; margin: 5px; background: var(--vessel-color, #60a5fa); transform: rotate(45deg); }
