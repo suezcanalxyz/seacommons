@@ -114,7 +114,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
   if (!leaflet) await import('leaflet/dist/leaflet.css');
   const module = leaflet || await import('leaflet');
   const L = module.default || module;
-  const map = L.map(container, { zoomControl: true, attributionControl: false, preferCanvas: true });
+  const map = L.map(container, { zoomControl: false, attributionControl: false, preferCanvas: true });
   map.setView([Number(center[1]), Number(center[0])], zoom);
   // Incident geometry must remain a real DOM target for keyboard/pointer
   // interaction and accessibility even when the map prefers Canvas globally.
