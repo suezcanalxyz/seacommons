@@ -2735,6 +2735,13 @@ function App() {
     }
   }, [fallbackReady, visibleLivePointFeatures, fallbackVesselFeatures]);
 
+  // The Leaflet mobile fallback is a separate renderer: MapLibre drift layers
+  // never reach it. Keep published humanitarian forecast geometries visible.
+  useEffect(() => {
+    if (!fallbackReady || !fallbackMapRef.current) return;
+    fallbackMapRef.current.setDrifts(displayedIntelDrifts);
+  }, [fallbackReady, displayedIntelDrifts]);
+
   // Intel events map layer — the backend's `kind` is "distress" (active),
   // "resolved" or "archived" (all three still distress-tier, pulsing, colored
   // by incident_lifecycle — see LIFECYCLE_* expressions above) or "context"
