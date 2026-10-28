@@ -120,12 +120,13 @@ function normalizePayload(payload) {
   return { incidents: payload?.incidents || [], vessels: payload?.vessels || [] };
 }
 
-export async function createFallbackMap({ container, center, zoom, onFeatureSelect, leaflet }) {
+export async function createFallbackMap({ container, center, zoom, onFeatureSelect, onBackgroundClick, leaflet }) {
   if (!leaflet) await import('leaflet/dist/leaflet.css');
   const module = leaflet || await import('leaflet');
   const L = module.default || module;
   const map = L.map(container, { zoomControl: false, attributionControl: false, preferCanvas: true });
   map.setView([Number(center[1]), Number(center[0])], zoom);
+  map.on?.('click', (event) => { if (!event.originalEvent?.target?.closest?.('.leaflet-interactive, .leaflet-marker-icon')) onBackgroundClick?.(); });
   // Incident geometry must remain a real DOM target for keyboard/pointer
   // interaction and accessibility even when the map prefers Canvas globally.
   const incidentRenderer = typeof L.svg === 'function' ? L.svg({ padding: 0.5 }) : undefined;
@@ -225,13 +226,29 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
         const color = vesselColor(feature);
         const icon = L.divIcon({
           className: `seacommons-fallback-vessel-icon${stationary ? ' is-stationary' : ''}${heading === null ? ' is-direction-unknown' : ''}`,
-          html: `<span class="seacommons-fallback-vessel-arrow" style="--vessel-heading:${heading}deg;--vessel-color:${color}"></span>`,
+          html: `<span class="seacommons-fallback-vessel-arrow" style="--vessel-heading:${heading ?? 0}deg;--vessel-color:${color}"></span>`,
           iconSize: [22, 22],
           iconAnchor: [11, 11],
         });
         const marker = L.marker([Number(lat), Number(lon)], { icon, keyboard: true }).addTo(markers);
         bindSelection(marker, feature, onFeatureSelect);
       }
+    },
+    focusReport(feature, drifts = []) {
+      const p = feature?.properties || {};
+      const id = String(p.id || p.intel_event_id || '').replace(/^intel:/, '');
+      const related = (drifts?.features || []).filter((item) => id && String(item.properties?.intel_event_id || '').replace(/^intel:/, '') === id);
+      const points = [];
+      const collect = (coordinates) => {
+        if (!Array.isArray(coordinates)) return;
+        if (coordinates.length >= 2 && typeof coordinates[0] === 'number' && typeof coordinates[1] === 'number') points.push([coordinates[1], coordinates[0]]);
+        else for (const child of coordinates) collect(child);
+      };
+      for (const item of (related.length ? related : [feature])) collect(item.geometry?.coordinates);
+      if (!points.length) return;
+      const bounds = L.latLngBounds(points);
+      map.invalidateSize();
+      map.fitBounds(bounds, { paddingTopLeft: [22, 22], paddingBottomRight: [22, Math.round(map.getSize().y * 0.69)], maxZoom: related.length ? 10 : 11, animate: true });
     },
     fitFeatures(payload) {
       const { incidents, vessels } = normalizePayload(payload);

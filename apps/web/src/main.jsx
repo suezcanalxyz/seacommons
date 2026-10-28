@@ -918,6 +918,11 @@ function App() {
   }, [conePanelHidden, mapReady, resolvedMapPanel]);
 
   useEffect(() => {
+    if (!isPublicLiveHost || !fallbackReady || conePanelHidden || !resolvedMapPanel || !window.matchMedia('(max-width: 680px)').matches) return;
+    fallbackMapRef.current?.focusReport?.(resolvedMapPanel.feature, displayedIntelDrifts);
+  }, [fallbackReady, conePanelHidden, resolvedMapPanel, displayedIntelDrifts]);
+
+  useEffect(() => {
     if (mapPanel?.type === 'cone') setConePanelHidden(false);
   }, [mapPanel]);
 
@@ -2445,7 +2450,14 @@ function App() {
             map.flyTo({ center: [14.3, 35.8], zoom: 6.3, duration: 2400, essential: true });
             return;
           }
-          if (isPublicLiveHost) return;
+          if (isPublicLiveHost) {
+            const selectable = ['intel-drift-line', 'intel-drift-point', 'intel-current-estimate', 'intel-events-layer', 'intel-vessel-core', 'intel-fused-core', 'intel-spike-layer', ...INTEL_MAP_CATEGORIES.map((c) => `intel-cat-${c.key}`)].filter((id) => map.getLayer(id));
+            if (!map.queryRenderedFeatures(event.point, { layers: selectable }).length) {
+              setConePanelHidden(true);
+              setSidebarOpen(false);
+            }
+            return;
+          }
           const hit = map.queryRenderedFeatures(event.point, {
             layers: ['sar-case-cone', 'sar-case-points', 'vessels-layer', 'vessels-ngo', 'proximity-vessels-layer', 'intel-events-layer', 'intel-fused-core', 'intel-vessel-core', 'intel-spike-layer',
               ...INTEL_MAP_CATEGORIES.map((c) => `intel-cat-${c.key}`)].filter((l) => map.getLayer(l)),
@@ -2502,6 +2514,11 @@ function App() {
         center: APP_PROFILE === 'live' ? [15.2, 36.1] : [14.3, 31.0],
         zoom: APP_PROFILE === 'live' ? 4.15 : 1.9,
         onFeatureSelect: selectIntelReport,
+        onBackgroundClick: () => {
+          if (!isPublicLiveHost) return;
+          setConePanelHidden(true);
+          setSidebarOpen(false);
+        },
       });
       if (disposed) { fallback.destroy(); return; }
       fallbackMapRef.current = fallback;
