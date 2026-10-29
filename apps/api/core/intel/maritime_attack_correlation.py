@@ -124,6 +124,8 @@ def correlate(
     if anchor.uncertainty_km < 0:
         raise ValueError("Negative spatial uncertainty")
     _utc(anchor.occurred_at)
+    if _identity_match(subject, anchor.vessel) in {"conflict", "unknown"}:
+        return Correlation("no_match", anchor.kind, "", (), (), (), ("anchor_identity_conflict",))
     valid: list[IncidentClaim] = []
     strong_identity = False
     contradictions: list[str] = []
@@ -157,7 +159,12 @@ def correlate(
 
     if not valid:
         return Correlation("no_match", anchor.kind, "", (), (), (), tuple(contradictions))
-    groups = tuple(sorted({claim.source_group for claim in valid if claim.source_group.strip()}))
+    # One document cannot become two independent sources via mislabeled groups.
+    groups_by_url: dict[str, str] = {}
+    for claim in valid:
+        if claim.source_url:
+            groups_by_url.setdefault(claim.source_url, claim.source_group)
+    groups = tuple(sorted({group for group in groups_by_url.values() if group.strip()}))
     has_urls = all(claim.source_url.startswith(("https://", "http://")) for claim in valid)
     corroborated = len(groups) >= 2 and strong_identity and has_urls
     status = "corroborated" if corroborated else "candidate"
