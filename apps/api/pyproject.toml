@@ -37,6 +37,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+archive = ["pyarrow>=17.0", "duckdb>=1.0"]
 sdr = ["pyrtlsdr>=0.3"]
 ocr = ["easyocr==1.7.2"]
 tid = [
