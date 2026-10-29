@@ -34,6 +34,21 @@ const BASE_ROWS = [
   { shape: 'ring',   color: '#8bf0c5', label: 'Drift projection' },
 ];
 
+const EVIDENCE_ROWS = [
+  {
+    label: 'Observation',
+    description: 'A received source report or measurement. It does not by itself confirm an incident.',
+  },
+  {
+    label: 'Derived cue',
+    description: 'An inference produced from observations. It is a lead for investigation, not a finding.',
+  },
+  {
+    label: 'Corroborated',
+    description: 'At least two independent evidence lineages support the same episode or claim; this is not certainty.',
+  },
+];
+
 export default function Legend() {
   const [open, setOpen] = useState(false);
   return (
@@ -58,9 +73,18 @@ export default function Legend() {
           <div className="legend-row"><Swatch shape="circle" color="#a78bfa" /><span><strong>Active receiver</strong><small>Public SDR currently contributing to the acquisition mesh</small></span></div>
           <div className="legend-row"><Swatch shape="circle" color="#94a3b8" /><span><strong>Known receiver</strong><small>Eligible, standby or temporarily unavailable station</small></span></div>
           <div className="legend-row"><Swatch shape="ring" color="#ff3b3b" /><span><strong>Decoded DSC</strong><small>Only geolocated structured messages become map points</small></span></div>
-          <div className="legend-panel-title">Signal semantics</div>
-          <div className="legend-row"><Swatch shape="circle" color="#ff3b3b" /><span>Humanitarian / distress</span></div>
-          <div className="legend-row"><Swatch shape="diamond" color="#f59e0b" /><span>Maritime warning / context</span></div>
+          <div className="legend-panel-title">Case families</div>
+          <div className="legend-row"><Swatch shape="circle" color="#ff3b3b" /><span><strong>Humanitarian</strong><small>Distress, rescue and what happened next. Privacy may make positions approximate.</small></span></div>
+          <div className="legend-row"><Swatch shape="diamond" color="#f59e0b" /><span><strong>Maritime</strong><small>Vessel behaviour, identity, navigation and context. A Maritime label is not an accusation.</small></span></div>
+          <div className="legend-panel-title">Evidence semantics</div>
+          {EVIDENCE_ROWS.map((row) => (
+            <div key={row.label} className="legend-row legend-row--defined">
+              <span>
+                <strong>{row.label}</strong>
+                <small>{row.description}</small>
+              </span>
+            </div>
+          ))}
           <div className="legend-panel-title">OSINT signals</div>
           {SIGNAL_CATEGORIES.filter((c) => c.key !== 'other').map((cat) => (
             <div key={cat.key} className="legend-row legend-row--defined" title={cat.description}>
