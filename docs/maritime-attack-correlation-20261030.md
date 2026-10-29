@@ -16,6 +16,15 @@ Date: 2026-10-30. This is an **unwired, pure-function staging prototype**, not a
 - Direct incident search found no attack alert for the vessel in intel_events and zero matching regional alert_events/anomaly_events in the previous manual audit. That is a failure to detect the attack, not a failure to track the vessel.
 - A wide source_observations JSON-text scan timed out at 30 seconds. Do not run unindexed broad JSON scans against production. Prefer indexed time/source/identity candidate retrieval followed by bounded matching.
 
+## Additional 30 October audit
+
+- Black Sea `intel_events` in the last 72 hours continue to show AIS gaps and circular-track/spoofing indicators (e.g. GAZ DYNAMIC, AH UNION, TIGANI, DANIA J on 29 October), **not automatically attacks**. These are contextual signals requiring independent incident reports.
+- Broad `ILIKE '%ABLE%'` vessel search produced false positives from `cable` and `unable` in ordinary anomaly titles. Name matching must use token boundaries or exact registry identity, never arbitrary substrings.
+- Even after excluding that ambiguous name, a broad four-vessel `ILIKE` query exceeded PostgreSQL's 8-second statement timeout. This is an indexed-retrieval problem; avoid adding more expensive scans until a migration and EXPLAIN/space review.
+- MARAD currently lists active advisory 2026-012 for the Black Sea and 2026-013 for the Red Sea, as of 30 October 2026. Its Red Sea guidance notes that AIS can legitimately be disabled for security, further invalidating any direct gap=attack assumption.
+  https://www.maritime.dot.gov/msci-advisories
+  https://www.maritime.dot.gov/msci/2026-013-red-sea-bab-el-mandeb-strait-gulf-aden-arabian-sea-and-somali-basin-houthi-attacks
+
 ## Proposed evidence model
 
 Persist three distinct times: occurred_at (event), published_at (source), received_at (ingestion). Preserve URL, original authority, source document/observation IDs, content hash, claimed vessel identity, uncertainty radius, original language, retractions, and reviewer actions.
