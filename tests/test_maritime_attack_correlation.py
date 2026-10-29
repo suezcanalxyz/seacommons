@@ -94,6 +94,19 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
                                  report("b", "prosecutor", name_only)])
         self.assertEqual(result.status, "candidate")
 
+    def test_same_document_cannot_be_two_independent_sources(self):
+        from dataclasses import replace
+        first = report("a", "publisher_one")
+        second = replace(report("b", "publisher_two"), source_url=first.source_url)
+        result = correlate(JET, [first, second])
+        self.assertEqual(result.status, "candidate")
+
+    def test_unrelated_anchor_cannot_bootstrap_later_claim(self):
+        unrelated = report("unrelated", "source_one", VesselRef(imo="1234567", name="OTHER"))
+        related = report("related", "source_two")
+        result = correlate(JET, [unrelated, related])
+        self.assertEqual(result.status, "no_match")
+
     def test_ais_far_away_not_accepted(self):
         result = correlate(JET, [report("mod", "bulgarian_mod")],
                            [AISFix(JET.mmsi, dt(28, 10), 35.59084, 28.23322)])
