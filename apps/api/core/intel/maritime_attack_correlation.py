@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from math import asin, cos, isfinite, radians, sin, sqrt
 from typing import Sequence
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+import ipaddress
 
 
 @dataclass(frozen=True)
@@ -129,6 +131,41 @@ def _validate_claim_location(claim: IncidentClaim) -> None:
         raise ValueError("Invalid time uncertainty")
 
 
+
+def _canonical_source_url(value: str) -> str:
+    """Normalize article aliases for evidence deduplication, not for fetching.
+
+    Query identifiers remain intact, but common tracking parameters and URL
+    fragments cannot manufacture an additional independent report.
+    """
+    try:
+        parsed = urlsplit(value.strip())
+        if parsed.scheme.lower() != "https" or not parsed.hostname:
+            return ""
+        if parsed.username is not None or parsed.password is not None:
+            return ""
+        host = parsed.hostname.lower().rstrip(".")
+        if host in {"localhost"} or host.endswith((".local", ".internal")):
+            return ""
+        try:
+            address = ipaddress.ip_address(host)
+            if not address.is_global:
+                return ""
+        except ValueError:
+            pass
+        port = parsed.port  # raises ValueError on malformed ports
+        authority = host if port in (None, 443) else f"{host}:{port}"
+        path = parsed.path.rstrip("/") or "/"
+        query = urlencode(sorted(
+            (key, val) for key, val in parse_qsl(parsed.query, keep_blank_values=True)
+            if not key.lower().startswith("utm_")
+            and key.lower() not in {"fbclid", "gclid", "msclkid", "mc_cid", "mc_eid"}
+        ))
+        return urlunsplit(("https", authority, path, query, ""))
+    except (ValueError, AttributeError):
+        return ""
+
+
 def correlate(
     subject: VesselRef,
     claims: Sequence[IncidentClaim],
@@ -214,12 +251,13 @@ def correlate(
     seen_document_urls: set[str] = set()
     for claim in valid:
         origin = (claim.origin_report_id or "").strip()
-        if not origin or not claim.source_url or claim.source_url in seen_document_urls:
+        canonical_url = _canonical_source_url(claim.source_url)
+        if not origin or not canonical_url or canonical_url in seen_document_urls:
             continue
-        seen_document_urls.add(claim.source_url)
+        seen_document_urls.add(canonical_url)
         groups_by_origin.setdefault(origin, claim.source_group.strip())
     groups = tuple(sorted({group for group in groups_by_origin.values() if group}))
-    has_urls = all(claim.source_url.startswith("https://") for claim in valid)
+    has_urls = all(_canonical_source_url(claim.source_url) for claim in valid)
     corroborated = len(groups) >= 2 and strong_identity and has_urls
     status = "corroborated" if corroborated else "candidate"
     color = (_COLORS.get(anchor.kind, _COLORS["other"]) if corroborated else _COLORS["candidate"])
