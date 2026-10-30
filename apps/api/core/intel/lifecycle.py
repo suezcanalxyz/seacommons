@@ -70,6 +70,19 @@ def parse_utc(value: str) -> Optional[datetime]:
 # and was true of every real cross-post resolution case seen in practice.
 _MIN_SHARED_KEYWORDS_FOR_RESOLUTION_MATCH = 2
 
+# A matching place and generic distress vocabulary do not establish that a
+# rescue concerns the same boat. When both reports state a headcount and the
+# headcounts conflict, fail closed rather than resolve a potentially unrelated
+# case. A changed headcount requires independent case-level verification.
+_REPORTED_PARTY_SIZE_RE = re.compile(
+    r"\\b(\\d{1,4})\\s+(?:people|persons|personnes|persone|personas|passengers|migrants)\\b",
+    re.I,
+)
+
+
+def _reported_party_sizes(text: str) -> set[int]:
+    return {int(value) for value in _REPORTED_PARTY_SIZE_RE.findall(text or "")}
+
 
 def has_resolution_signal(
     event: IntelEvent, same_source: list[IntelEvent], *, now: Optional[datetime] = None,
@@ -77,6 +90,7 @@ def has_resolution_signal(
     """True if a credible later same-source post reports resolution."""
     event_time = parse_utc(event.timestamp_utc)
     event_kw = text_keywords(event.text or event.title)
+    event_party_sizes = _reported_party_sizes(event.text or event.title)
     future_limit = _future_limit(now) if now is not None else None
     if event_time is None or not event_kw:
         return False
@@ -87,6 +101,10 @@ def has_resolution_signal(
     for other in same_source:
         if other.id == event.id:
             continue
+        # This function must never turn an independent NGO's unrelated post
+        # into a same-source resolution, even if a caller passes a mixed list.
+        if str(other.source).strip().casefold() != str(event.source).strip().casefold():
+            continue
         other_time = parse_utc(other.timestamp_utc)
         if other_time is None or other_time <= event_time:
             continue
@@ -95,6 +113,9 @@ def has_resolution_signal(
         if other_time - event_time > timedelta(days=RESOLUTION_LOOKBACK_DAYS):
             continue
         other_text = other.text or other.title
+        other_party_sizes = _reported_party_sizes(other_text)
+        if event_party_sizes and other_party_sizes and event_party_sizes.isdisjoint(other_party_sizes):
+            continue
         if len(event_kw & text_keywords(other_text)) < _MIN_SHARED_KEYWORDS_FOR_RESOLUTION_MATCH:
             continue
         outcome = _outcome_from_text(other_text)
