@@ -64,6 +64,16 @@ def lineage_for_event(event) -> EvidenceLineage:
     if event_type in {"ais_anomaly", "ais_spike", "ais_rendezvous"}:
         return EvidenceLineage(source_name, "ais", "ais_sensor_lineage", "ais")
 
+    # An RSS/news item that explicitly republishes AIS telemetry is not an
+    # independent witness merely because it arrived through a news channel.
+    # Honour provenance before applying the secondary-reporting fallback.
+    if event_type == "news" or transport == "rss":
+        origin = str(metadata.get("source_lineage") or "").strip().lower()
+        if origin in {"ais", "ais_derived", "ais_derived_event", "ais_sensor_lineage"}:
+            return EvidenceLineage(source_name, "ais_derived_event", "ais_sensor_lineage", "ais")
+        if metadata.get("derived") is True:
+            return EvidenceLineage(source_name, "secondary_reporting", "unknown", "public_report")
+
     profile = get_source_profile(source_name)
     if profile is None and (event_type == "news" or transport == "rss"):
         return EvidenceLineage(source_name, "secondary_reporting", "secondary_news_reporting", "public_report")
