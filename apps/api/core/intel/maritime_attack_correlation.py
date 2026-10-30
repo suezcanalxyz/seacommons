@@ -293,20 +293,62 @@ def correlate(
     _utc(anchor.occurred_at)
     if _identity_match(subject, anchor.vessel) in {"conflict", "unknown"}:
         return Correlation("no_match", anchor.kind, "", (), (), (), ("anchor_identity_conflict",))
-    # A report with impossible publication/receipt chronology cannot define
-    # the incident's time window. Otherwise a bad first report could veto two
-    # independent, valid observations simply by appearing first in the feed.
-    # Preserve the original claim for contradiction reporting below.
-    if _chronology_issues(anchor):
-        for possible_anchor in claims[1:]:
-            if possible_anchor.kind != anchor.kind:
+    # Pick an incident-time reference by corroborated neighborhood rather
+    # than arrival order. A chronologically plausible but wrong first report
+    # must not split two independent primary observations into false negatives.
+    # This selects an anchor only; pairwise checks below remain mandatory.
+    # Preserve the original first-report identity veto (never bootstrap an
+    # unrelated vessel into an incident merely via later matching reports).
+    anchor_options: list[tuple[tuple, IncidentClaim]] = []
+    for possible in claims:
+        if possible.kind != anchor.kind:
+            continue
+        if _identity_match(subject, possible.vessel) in {"conflict", "unknown"}:
+            continue
+        _validate_claim_location(possible)
+        if _chronology_issues(possible):
+            continue
+        compatible_count = 0
+        original_documents: set[tuple[str, str]] = set()
+        document_urls: set[str] = set()
+        max_minutes = 360 if possible.kind == "sinking" else 90
+        for peer in claims:
+            if peer.kind != possible.kind:
                 continue
-            if _identity_match(subject, possible_anchor.vessel) in {"conflict", "unknown"}:
+            if _identity_match(subject, peer.vessel) in {"conflict", "unknown"}:
                 continue
-            _validate_claim_location(possible_anchor)
-            if not _chronology_issues(possible_anchor):
-                anchor = possible_anchor
-                break
+            _validate_claim_location(peer)
+            if _chronology_issues(peer):
+                continue
+            if abs((_utc(peer.occurred_at) - _utc(possible.occurred_at)).total_seconds()) / 60 > (
+                max_minutes + peer.time_uncertainty_minutes + possible.time_uncertainty_minutes
+            ):
+                continue
+            if possible.lat is not None and peer.lat is not None and (
+                _km(possible.lat, possible.lon, peer.lat, peer.lon)
+                > 35.0 + possible.uncertainty_km + peer.uncertainty_km
+            ):
+                continue
+            compatible_count += 1
+            origin = (peer.origin_report_id or "").strip()
+            group = peer.source_group.strip()
+            url = _canonical_source_url(peer.source_url)
+            if origin and group and url and url not in document_urls:
+                original_documents.add((origin, group))
+                document_urls.add(url)
+        independent_groups = {group for _, group in original_documents}
+        score = (
+            len(independent_groups),
+            compatible_count,
+            -possible.time_uncertainty_minutes,
+            -possible.uncertainty_km,
+            _identity_match(subject, possible.vessel) == "strong",
+            -_utc(possible.occurred_at).timestamp(),
+            possible.claim_id,
+        )
+        anchor_options.append((score, possible))
+    if anchor_options:
+        anchor = max(anchor_options, key=lambda item: item[0])[1]
     valid: list[IncidentClaim] = []
     strong_identity = False
     contradictions: list[str] = []
