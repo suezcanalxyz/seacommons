@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
+import json
 import math
 from typing import Any, Literal
 
@@ -44,19 +45,32 @@ class SatelliteObservation:
 
 
 def _merged_provenance(existing: dict[str, Any] | None, incoming: dict[str, Any] | None) -> dict[str, Any]:
-    merged = dict(existing or {})
-    incoming = dict(incoming or {})
+    # Provider lineage is untrusted JSON. Malformed containers or nested
+    # case-target fields must not abort an otherwise valid satellite ingest.
+    merged = dict(existing) if isinstance(existing, dict) else {}
+    incoming = dict(incoming) if isinstance(incoming, dict) else {}
     for key, value in incoming.items():
         if key != "case_targets":
             merged[key] = value
     targets = []
     seen = set()
-    for row in [*(merged.get("case_targets") or []), *(incoming.get("case_targets") or [])]:
+    previous_targets = merged.get("case_targets")
+    new_targets = incoming.get("case_targets")
+    for row in [
+        *(previous_targets if isinstance(previous_targets, list) else []),
+        *(new_targets if isinstance(new_targets, list) else []),
+    ]:
         if not isinstance(row, dict):
             continue
-        key = (
-            row.get("role"), row.get("lat"), row.get("lon"), row.get("at"),
-            row.get("search_direction"), row.get("drift_id"), row.get("trajectory_index"),
+        # A tuple containing a provider-supplied list/dict is unhashable.
+        # Canonical JSON retains the established seven-field deduplication
+        # identity while tolerating nested JSON values.
+        key = json.dumps(
+            [
+                row.get("role"), row.get("lat"), row.get("lon"), row.get("at"),
+                row.get("search_direction"), row.get("drift_id"), row.get("trajectory_index"),
+            ],
+            sort_keys=True, separators=(",", ":"), default=str,
         )
         if key in seen:
             continue
