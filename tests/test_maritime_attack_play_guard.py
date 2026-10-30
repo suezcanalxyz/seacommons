@@ -10,12 +10,18 @@ from core.intel.maritime_attack_play_guard import (
 )
 
 
+_DEFAULT_GROUPS = object()
+
+
 def episode(family="maritime_attack_episode", status="multi_source_corroborated",
-            groups=None):
+            groups=_DEFAULT_GROUPS):
     return SimpleNamespace(
         episode_family=family,
         verification_status=status,
-        independence_groups=["bulgarian_mod", "independent_rescue"] if groups is None else groups,
+        independence_groups=(
+            ["bulgarian_mod", "independent_rescue"]
+            if groups is _DEFAULT_GROUPS else groups
+        ),
     )
 
 
