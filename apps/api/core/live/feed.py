@@ -1318,6 +1318,21 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         drift = get_drift(job_id)
         if not drift or not _is_publishable_live_drift(drift):
             continue
+        # A completed model run is not an indefinitely current position.
+        # Once its final forecast sample is in the past, neither the old
+        # trajectory/cone nor a frozen "model_horizon_reached" point belongs
+        # on Live. Preserve the stored run for Play/forensic review; a fresh
+        # coordinate or forcing update must generate a new current drift.
+        # _is_publishable_live_drift already rejects missing time arrays for
+        # real runs; the conditional also accommodates lightweight legacy
+        # test fixtures that replace that validator.
+        forecast_times = (
+            (drift.get("trajectory") or {}).get("properties") or {}
+        ).get("timestamps_utc") or []
+        if forecast_times:
+            forecast_end = lifecycle.parse_utc(str(forecast_times[-1]))
+            if forecast_end is None or now >= forecast_end:
+                continue
         metadata = drift.get("metadata") or {}
         # The drift inherits its origin signal's semantic category (Alarm Phone
         # drift is red because the origin is Alarm Phone), never a severity.
