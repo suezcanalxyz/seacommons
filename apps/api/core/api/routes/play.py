@@ -599,7 +599,13 @@ def _public_episode_dossier(db, episode, *, now: datetime) -> dict[str, Any]:
         "drift_count": len(drifts),
         "evidence_count": len(evidence_events) + satellite_evidence_count + radio_evidence_count,
         "timeline": timeline,
-        "evidence_audit": _evidence_audit(timeline, independent_lineages=list(episode.independence_groups or [])),
+        "evidence_audit": _evidence_audit(
+            timeline,
+            independent_lineages=(
+                list(episode.independence_groups or [])
+                if projection.get("corroborated") else []
+            ),
+        ),
         "generated_at": now.isoformat(),
     }
 
@@ -1568,7 +1574,11 @@ def play_incident_timeline(incident_id: str):
                 "drift_count": len(drifts),
                 "timeline": timeline,
                 "evidence_audit": _evidence_audit(
-                    timeline, independent_lineages=list(projection.get("independence_groups") or []),
+                    timeline,
+                    independent_lineages=(
+                        list(projection.get("independence_groups") or [])
+                        if projection.get("corroborated") else []
+                    ),
                     counter_indicators=list(hypothesis.counter_indicators or [])),
                 "generated_at": now.isoformat(),
             }
