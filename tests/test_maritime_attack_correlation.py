@@ -122,7 +122,7 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         """Different publishers repeating one document are not two witnesses."""
         from dataclasses import replace
         a = report("mod", "bulgarian_mod")
-        b = report("reprint", "newsroom", source_id="reprint")
+        b = report("reprint", "newsroom")
         a = replace(a, origin_report_id="ministry_release_20261028")
         b = replace(b, origin_report_id="ministry_release_20261028")
         result = correlate(JET, [a, b])
