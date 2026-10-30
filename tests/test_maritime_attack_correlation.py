@@ -159,7 +159,8 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
     def test_distinct_attacks_three_hours_apart_not_merged(self):
         from dataclasses import replace
         a = report("first", "ministry")
-        b = replace(report("second", "coast_guard"), occurred_at=dt(28, 13))
+        b = replace(report("second", "coast_guard"), occurred_at=dt(28, 13),
+                    published_at=dt(28, 14), received_at=dt(28, 14, 30))
         result = correlate(JET, [a, b])
         self.assertEqual(result.status, "candidate")
         self.assertIn("temporal_conflict:second", result.contradicting)
