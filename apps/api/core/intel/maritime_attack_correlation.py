@@ -354,7 +354,11 @@ def correlate(
     contradictions: list[str] = []
     seen_ids: set[str] = set()
 
-    for claim in claims:
+    # Process the selected anchor first. Otherwise a distant, plausible
+    # first-arriving report could still occupy the accepted cluster before
+    # the consensus anchor is evaluated, defeating anchor selection.
+    ordered_claims = [anchor] + [claim for claim in claims if claim is not anchor]
+    for claim in ordered_claims:
         if claim.claim_id in seen_ids:
             continue
         seen_ids.add(claim.claim_id)
