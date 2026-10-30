@@ -25,12 +25,13 @@ def has_distinct_independence_groups(groups: object) -> bool:
     return len({group.strip().casefold() for group in groups}) >= 2
 
 
-def episode_corroborated_for_play(episode: object | None) -> bool:
+def episode_corroborated_for_play(episode: object | None, *, independence_verified: bool = False) -> bool:
     """Fail closed for attack episodes; preserve legacy non-attack behavior.
 
     An attack is never labelled corroborated merely because it has two rows
-    or two unverified lineage labels. A positive label also does NOT authorize
-    PLAY -> LIVE promotion or publication.
+    or two unverified lineage labels. Explicit verification must come from the
+    bounded canonical provenance audit, not caller-supplied source labels.
+    A positive label does NOT authorize PLAY -> LIVE promotion or publication.
     """
     if episode is None:
         return False
@@ -41,6 +42,7 @@ def episode_corroborated_for_play(episode: object | None) -> bool:
         return (
             status == "multi_source_corroborated"
             and has_distinct_independence_groups(groups)
+            and independence_verified is True
         )
     # Outside the attack family this staging change must not silently
     # reclassify existing humanitarian or other maritime evidence.
