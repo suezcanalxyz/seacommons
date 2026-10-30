@@ -24,7 +24,7 @@ def _fresh_hypotheses():
         db.query(InvestigationHypothesisDB).delete()
 
 
-def _publish_spoofing_hypothesis(*, independent_news: bool = False):
+def _publish_spoofing_hypothesis(*, independent_news: bool = False, news_derived_from_ais: bool = False):
     now = datetime.now(timezone.utc).isoformat()
     for event_id, lat, lon in (("spoof-a", 35.0, 14.0), ("spoof-b", 35.1, 14.1)):
         is_news = independent_news and event_id == "spoof-b"
@@ -38,7 +38,7 @@ def _publish_spoofing_hypothesis(*, independent_news: bool = False):
                 "maritime_domain": "grey_zone",
                 "publication_status": "published",
                 "source_policy": "operator_published",
-                **({"transport": "rss"} if is_news else {}),
+                **({"transport": "rss", **({"source_lineage": "ais_sensor_lineage"} if news_derived_from_ais else {})} if is_news else {}),
             },
         ), dedup_key=event_id)
     h = new_hypothesis(
@@ -95,3 +95,20 @@ def test_live_hypothesis_requires_independent_news_for_corroborated_facet():
     }
     assert "mmsi" not in props
     assert "linked_mmsi" not in props
+
+
+def test_live_hypothesis_republished_ais_news_is_not_independent():
+    hypothesis_id = _publish_spoofing_hypothesis(
+        independent_news=True, news_derived_from_ais=True
+    )
+    collection = public_signal_collection(mode="maritime", days=1, limit=50)
+    feature = next(
+        f for f in collection["features"]
+        if f["properties"].get("hypothesis_id") == hypothesis_id
+    )
+    props = feature["properties"]
+    assert props["verification_status"] == "single_source_multi_indicator"
+    assert props["corroborated"] is False
+    assert "corroborated" not in props["facets"]
+    assert props["independent_source_count"] == 1
+    assert props["independence_groups"] == ["ais_sensor_lineage"]
