@@ -75,7 +75,7 @@ _MIN_SHARED_KEYWORDS_FOR_RESOLUTION_MATCH = 2
 # headcounts conflict, fail closed rather than resolve a potentially unrelated
 # case. A changed headcount requires independent case-level verification.
 _REPORTED_PARTY_SIZE_RE = re.compile(
-    r"\\b(\\d{1,4})\\s+(?:people|persons|personnes|persone|personas|passengers|migrants)\\b",
+    r"\b(\d{1,4})\s+(?:people|persons|personnes|persone|personas|passengers|migrants)\b",
     re.I,
 )
 
