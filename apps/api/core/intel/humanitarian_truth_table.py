@@ -107,9 +107,20 @@ def compute_anomaly_flags(
     if lifecycle in ("resolved", "archived") and drift_visible:
         flags.append("DRIFT_AFTER_RESOLUTION")
 
+    # PostgreSQL TIMESTAMP WITHOUT TIME ZONE commonly returns naive UTC
+    # datetimes for DriftResultDB.created_at. Comparing one with the aware
+    # UTC audit clock raises TypeError and aborts the entire truth table.
+    # Interpret naive persisted timestamps as UTC, never as host-local time.
+    audit_now = now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now.astimezone(timezone.utc)
     if lifecycle == "active" and any(
         d.created_at is not None
-        and (now - d.created_at).total_seconds() > stale_drift_after_hours * 3600
+        and (
+            audit_now - (
+                d.created_at.replace(tzinfo=timezone.utc)
+                if d.created_at.tzinfo is None
+                else d.created_at.astimezone(timezone.utc)
+            )
+        ).total_seconds() > stale_drift_after_hours * 3600
         for d in completed
     ):
         flags.append("STALE_DRIFT")
