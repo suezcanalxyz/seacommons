@@ -329,5 +329,44 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertIn("invalid_ais_fix_timestamp", result.contradicting)
 
 
+    def test_malformed_third_url_does_not_veto_two_primary_reports(self):
+        from dataclasses import replace
+        a = report("navy_primary", "navy")
+        b = report("mrcc_primary", "coast_guard")
+        bad = replace(report("bad_reprint", "untrusted"), source_url="http://example.org/incident")
+        result = correlate(JET, [a, b, bad])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(len(result.independent_groups), 2)
+        self.assertIn("invalid_source_url:bad_reprint", result.contradicting)
+        self.assertFalse(result.publication_allowed)
+
+    def test_unattributable_strong_identifier_cannot_launder_name_only_reports(self):
+        from dataclasses import replace
+        bad = replace(report("bad_id", "unknown"), source_url="http://example.org/incident")
+        name = VesselRef(name="CONTSHIP JET")
+        a = report("name_a", "navy", name)
+        b = report("name_b", "coast_guard", name)
+        result = correlate(JET, [bad, a, b])
+        self.assertEqual(result.status, "candidate")
+        self.assertIn("invalid_source_url:bad_id", result.contradicting)
+
+    def test_receipt_before_incident_without_publication_is_quarantined(self):
+        from dataclasses import replace
+        a = report("valid", "navy")
+        bad = replace(report("premature", "coast_guard"),
+                      published_at=None, received_at=dt(28, 9))
+        result = correlate(JET, [a, bad])
+        self.assertEqual(result.status, "candidate")
+        self.assertIn("receipt_before_incident:premature", result.contradicting)
+        self.assertNotIn("premature", result.claim_ids)
+
+    def test_naive_ais_gap_does_not_crash_correlation(self):
+        bad = AISGap(JET.mmsi, datetime(2026, 10, 28, 10), "bad_gap")
+        result = correlate(JET, [report("navy", "navy")], ais_gaps=[bad])
+        self.assertEqual(result.status, "candidate")
+        self.assertIn("invalid_ais_gap_timestamp:bad_gap", result.contradicting)
+        self.assertEqual(result.related_gap_ids, ())
+
+
 if __name__ == "__main__":
     unittest.main()
