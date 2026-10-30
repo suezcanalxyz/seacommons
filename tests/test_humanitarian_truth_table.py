@@ -285,3 +285,63 @@ def test_batch_drift_index_handles_overlapping_prefixed_case_ids():
 def test_batch_drift_index_empty_case_set():
     from core.intel.humanitarian_truth_table import index_drift_summaries
     assert index_drift_summaries([], []) == {}
+
+
+def test_same_source_followup_batch_filters_source_self_and_lookback():
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import index_recent_same_source_followups
+
+    def item(id, source, days):
+        return SimpleNamespace(
+            id=id, source=source, created_at=_NOW.replace(tzinfo=None) + timedelta(days=days),
+        )
+
+    case = item("distress", "Alarm Phone", 0)
+    rows = [
+        item("future-followup", "Alarm Phone", 1),
+        item("old", "Alarm Phone", -15),
+        item("other-source", "Sea Watch", 1),
+        case,
+        item("boundary", "Alarm Phone", -14),
+    ]
+    matched = index_recent_same_source_followups([case], rows)
+    assert [r.id for r in matched["distress"]] == ["future-followup", "boundary"]
+
+
+def test_same_source_followup_batch_retains_latest_50_without_current_case():
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import index_recent_same_source_followups
+
+    now = _NOW.replace(tzinfo=None)
+    case = SimpleNamespace(id="case", source="Alarm Phone", created_at=now)
+    rows = [
+        SimpleNamespace(
+            id=f"followup-{i:02d}", source="Alarm Phone",
+            created_at=now + timedelta(minutes=i + 1),
+        )
+        for i in range(60)
+    ]
+    rows.append(case)
+    matched = index_recent_same_source_followups([case], rows)
+    assert len(matched["case"]) == 50
+    assert matched["case"][0].id == "followup-59"
+    assert matched["case"][-1].id == "followup-10"
+
+
+def test_same_source_followup_batch_handles_multiple_cases_and_no_rows():
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import index_recent_same_source_followups
+
+    now = _NOW.replace(tzinfo=None)
+    cases = [
+        SimpleNamespace(id="a", source="A", created_at=now),
+        SimpleNamespace(id="b", source="B", created_at=now),
+    ]
+    source_rows = [
+        SimpleNamespace(id="followup-a", source="A", created_at=now + timedelta(hours=1)),
+        SimpleNamespace(id="followup-b", source="B", created_at=now + timedelta(hours=2)),
+    ]
+    result = index_recent_same_source_followups(cases, source_rows)
+    assert [row.id for row in result["a"]] == ["followup-a"]
+    assert [row.id for row in result["b"]] == ["followup-b"]
+    assert index_recent_same_source_followups([], []) == {}
