@@ -96,6 +96,50 @@ def test_malformed_repost_cannot_override_valid_resolution():
     assert distress_lifecycle(event, now=NOW, same_source=[]) == "resolved"
 
 
+def test_ambiguous_reply_cannot_undo_confirmed_rescue():
+    from core.intel.lifecycle import distress_lifecycle, latest_own_reply_outcome
+
+    event = _distress(
+        (NOW - timedelta(hours=3)).isoformat(),
+        reposts=[
+            {"posted_at": (NOW - timedelta(hours=2)).isoformat(),
+             "note": "The people were rescued and are safe."},
+            {"posted_at": (NOW - timedelta(hours=1)).isoformat(),
+             "note": "Thank you to all the volunteers."},
+        ],
+    )
+    assert latest_own_reply_outcome(event, now=NOW) == "resolved"
+    assert distress_lifecycle(event, now=NOW, same_source=[]) == "resolved"
+
+
+def test_later_decisive_danger_still_reopens_after_ambiguous_reply():
+    from core.intel.lifecycle import distress_lifecycle
+
+    event = _distress(
+        (NOW - timedelta(hours=4)).isoformat(),
+        reposts=[
+            {"posted_at": (NOW - timedelta(hours=3)).isoformat(),
+             "note": "The people were rescued and are safe."},
+            {"posted_at": (NOW - timedelta(hours=2)).isoformat(),
+             "note": "Thank you to all the volunteers."},
+            {"posted_at": (NOW - timedelta(hours=1)).isoformat(),
+             "note": "They are still in distress and taking on water."},
+        ],
+    )
+    assert distress_lifecycle(event, now=NOW, same_source=[]) == "active"
+
+
+def test_only_ambiguous_reply_still_requires_review():
+    from core.intel.lifecycle import latest_own_reply_outcome
+
+    event = _distress(
+        (NOW - timedelta(hours=2)).isoformat(),
+        reposts=[{"posted_at": (NOW - timedelta(hours=1)).isoformat(),
+                  "note": "Thank you to all the volunteers."}],
+    )
+    assert latest_own_reply_outcome(event, now=NOW) == "needs_review"
+
+
 def test_future_same_source_resolution_cannot_close_current_distress():
     from core.intel.lifecycle import distress_lifecycle
 
