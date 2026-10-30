@@ -149,6 +149,9 @@ def correlate(
             continue
         if claim.published_at is not None:
             published = _utc(claim.published_at)
+            if (_utc(claim.occurred_at) - published).total_seconds() > (claim.time_uncertainty_minutes + 5) * 60:
+                contradictions.append("publication_before_incident:" + claim.claim_id)
+                continue
             if claim.received_at is not None:
                 received = _utc(claim.received_at)
                 if (published - received).total_seconds() > 300:
