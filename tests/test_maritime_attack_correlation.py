@@ -304,5 +304,30 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
                 self.assertEqual(result.status, "candidate")
 
 
+    def test_nonfinite_ais_fix_never_becomes_spatial_support(self):
+        a = report("first", "navy")
+        bad = AISFix(JET.mmsi, dt(28, 10), float("nan"), 28.8)
+        result = correlate(JET, [a], [bad])
+        self.assertEqual(result.status, "candidate")
+        self.assertIsNone(result.nearest_ais_km)
+        self.assertIn("invalid_ais_fix_coordinates", result.contradicting)
+        self.assertNotIn("ais_spatiotemporal_context_not_attack_proof", result.supporting)
+
+    def test_out_of_range_ais_fix_does_not_veto_real_reports(self):
+        a = report("first", "navy")
+        b = report("second", "coast_guard")
+        bad = AISFix(JET.mmsi, dt(28, 10), 110.0, 28.8)
+        result = correlate(JET, [a, b], [bad])
+        self.assertEqual(result.status, "corroborated")
+        self.assertIn("invalid_ais_fix_coordinates", result.contradicting)
+
+    def test_naive_ais_fix_is_quarantined(self):
+        a = report("first", "navy")
+        bad = AISFix(JET.mmsi, datetime(2026, 10, 28, 10), 43.25, 28.8)
+        result = correlate(JET, [a], [bad])
+        self.assertIsNone(result.nearest_ais_km)
+        self.assertIn("invalid_ais_fix_timestamp", result.contradicting)
+
+
 if __name__ == "__main__":
     unittest.main()
