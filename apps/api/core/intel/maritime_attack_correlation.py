@@ -166,6 +166,66 @@ def _canonical_source_url(value: str) -> str:
         return ""
 
 
+def claim_from_source_observation(observation: object, extracted: dict) -> IncidentClaim | None:
+    """Convert a reviewed extraction from the canonical immutable observation.
+
+    This is a pure staging adapter: it does not fetch, persist, publish or
+    infer an attack from AIS. In particular, a model-extracted publisher name
+    is NEVER an independent-source group. Only explicitly VERIFIED provenance
+    attached by a source adapter/operator may supply that authority.
+    """
+    kind = str(extracted.get("kind") or "").lower().strip()
+    occurred = extracted.get("occurred_at")
+    if kind not in _KINDS or not occurred:
+        return None
+
+    def parsed_utc(value: object, *, stored_naive_utc: bool = False) -> datetime:
+        if isinstance(value, datetime):
+            result = value
+        elif isinstance(value, str):
+            result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        else:
+            raise ValueError("Invalid claim timestamp")
+        # SourceObservationDB.received_at is stored as naive UTC by the
+        # canonical DB model. Do not extend this exception to event dates.
+        if stored_naive_utc and result.tzinfo is None:
+            result = result.replace(tzinfo=timezone.utc)
+        return _utc(result)
+
+    provenance = getattr(observation, "provenance", {}) or {}
+    if not isinstance(provenance, dict):
+        provenance = {}
+    verified = provenance.get("origin_authority_verified") is True
+    group = str(provenance.get("originating_authority_id") or "").strip() if verified else ""
+    original_id = str(provenance.get("original_report_id") or "").strip() if verified else ""
+    published_raw = provenance.get("published_at")
+    received_raw = getattr(observation, "received_at", None)
+    vessel = VesselRef(
+        imo=str(extracted.get("imo") or "").strip(),
+        mmsi=str(extracted.get("mmsi") or "").strip(),
+        name=str(extracted.get("vessel_name") or "").strip(),
+    )
+    if not (vessel.imo or vessel.mmsi or vessel.name):
+        return None
+    claim = IncidentClaim(
+        claim_id=str(getattr(observation, "observation_id")),
+        kind=kind,
+        occurred_at=parsed_utc(occurred),
+        source_group=group,
+        source_url=str(getattr(observation, "source_url", "") or ""),
+        vessel=vessel,
+        lat=extracted.get("lat"),
+        lon=extracted.get("lon"),
+        uncertainty_km=float(extracted.get("uncertainty_km") or 0),
+        published_at=parsed_utc(published_raw) if published_raw else None,
+        received_at=parsed_utc(received_raw, stored_naive_utc=True) if received_raw else None,
+        origin_report_id=original_id or None,
+        time_uncertainty_minutes=float(extracted.get("time_uncertainty_minutes") or 0),
+    )
+    _validate_claim_location(claim)
+    return claim
+
+
 def correlate(
     subject: VesselRef,
     claims: Sequence[IncidentClaim],
