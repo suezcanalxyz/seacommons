@@ -219,3 +219,33 @@ def test_humanitarian_truth_table_route_exposes_the_real_audit() -> None:
     assert "rows" in payload
     assert "not_yet_computable_flags" in payload
     assert set(payload["not_yet_computable_flags"]) == set(NOT_YET_COMPUTABLE)
+
+
+def test_recent_completed_drift_does_not_inherit_staleness_from_older_one():
+    """An older completed result cannot make a fresh update look stale."""
+    flags = compute_anomaly_flags(
+        lifecycle="active",
+        drifts=[
+            DriftSummary("old", "completed", _NOW - timedelta(hours=30)),
+            DriftSummary("new", "completed", _NOW - timedelta(hours=1)),
+        ],
+        marker_visible=True, drift_visible=True,
+        source_status="active", now=_NOW,
+    )
+    assert "MULTIPLE_CURRENT_DRIFTS" in flags
+    assert "STALE_DRIFT" not in flags
+
+
+def test_all_completed_drifts_stale_remains_flagged():
+    """Old-only results still require a fresh drift estimate."""
+    flags = compute_anomaly_flags(
+        lifecycle="active",
+        drifts=[
+            DriftSummary("old-1", "completed", _NOW - timedelta(hours=30)),
+            DriftSummary("old-2", "completed", _NOW - timedelta(hours=26)),
+        ],
+        marker_visible=True, drift_visible=True,
+        source_status="active", now=_NOW,
+    )
+    assert "MULTIPLE_CURRENT_DRIFTS" in flags
+    assert "STALE_DRIFT" in flags
