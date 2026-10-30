@@ -12,7 +12,9 @@ from fastapi import APIRouter, HTTPException, Query
 from core.domain.incident_taxonomy import taxonomy_fields
 from core.intel.humanitarian_incident import public_incident_status
 from core.intel.lifecycle import parse_utc
-from core.intel.maritime_attack_play_guard import episode_corroborated_for_play
+from core.intel.maritime_attack_play_guard import (
+    _ATTACK_FAMILIES, episode_corroborated_for_play,
+)
 from core.intel.public_policy import domains_for_mode
 from core.intel.store import IntelEvent
 from core.live.projection import (
@@ -160,6 +162,50 @@ def _is_public_play_episode(episode) -> bool:
         and analysis.get("publication_state") == "published"
         and analysis.get("analysis_state") in {"evidence_candidate", "evidence"}
     )
+
+
+def _apply_attack_provenance_audit(
+    projection: dict[str, Any], episode: Any, audit: Any,
+) -> dict[str, Any]:
+    """Apply a verified canonical lineage result to PLAY labels only.
+
+    The audit cannot publish an incident or alter the canonical episode.
+    Unknown/missing lineage always leaves attack corroboration unverified.
+    Non-attack families retain their existing classification.
+    """
+    if episode is None or str(episode.episode_family or "") not in _ATTACK_FAMILIES:
+        return projection
+    verified = audit is not None and getattr(audit, "verified", False) is True
+    corroborated = episode_corroborated_for_play(
+        episode, independence_verified=verified,
+    )
+    projection["corroborated"] = corroborated
+    if not corroborated and projection.get("evidence_stage") == "corroborated":
+        projection["evidence_stage"] = "derived"
+    elif corroborated:
+        projection["evidence_stage"] = "corroborated"
+    projection["provenance_audit_status"] = (
+        "verified" if corroborated else "requires_review"
+    )
+    return projection
+
+
+def _audit_attack_projection_db(
+    projection: dict[str, Any], episode: Any, db: Any,
+) -> dict[str, Any]:
+    """Bounded SELECT-only dossier audit; database errors fail closed."""
+    if episode is None or str(episode.episode_family or "") not in _ATTACK_FAMILIES:
+        return projection
+    try:
+        from core.intel.maritime_attack_independence_readonly import (
+            audit_attack_episode_independence_db,
+        )
+        audit = audit_attack_episode_independence_db(episode, db)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Attack provenance audit unavailable")
+        audit = None
+    return _apply_attack_provenance_audit(projection, episode, audit)
 
 
 def _episode_projection(episode, evidence_event=None) -> dict[str, Any]:
@@ -396,6 +442,7 @@ def _public_episode_dossier(db, episode, *, now: datetime) -> dict[str, Any]:
     projection = _episode_projection(
         episode, evidence_event=evidence_events[0] if evidence_events else None
     )
+    projection = _audit_attack_projection_db(projection, episode, db)
 
     timeline = [{
         "id": canonical_id,
@@ -892,6 +939,37 @@ def _compute_play_catalog() -> list[dict[str, Any]]:
             }
             item["has_satellite"] = satellite_count > 0
 
+        # One bounded canonical provenance read per batch, not an N+1 query
+        # for each public attack episode. Do not touch humanitarian cases.
+        attack_episodes = {
+            str(episode.episode_id): episode
+            for episode in (
+                *episode_rows,
+                *(ep for _hyp, ep in investigations if ep is not None),
+            )
+            if str(episode.episode_family or "") in _ATTACK_FAMILIES
+        }
+        if attack_episodes:
+            try:
+                from core.intel.maritime_attack_batch_readonly import (
+                    audit_attack_episodes_independence_db,
+                )
+                attack_audits = audit_attack_episodes_independence_db(
+                    tuple(attack_episodes.values()), db,
+                )
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception(
+                    "PLAY attack provenance batch audit unavailable"
+                )
+                attack_audits = {}
+            for item in combined:
+                episode = attack_episodes.get(str(item.get("episode_id") or ""))
+                if episode is not None:
+                    _apply_attack_provenance_audit(
+                        item, episode, attack_audits.get(str(episode.episode_id)),
+                    )
+
     combined.sort(
         key=lambda item: str(item.get("last_update_at") or item.get("reported_at") or ""),
         reverse=True,
@@ -1269,6 +1347,7 @@ def play_incident_timeline(incident_id: str):
             projection = _investigation_projection(
                 hypothesis, episode, evidence_event=primary_evidence
             )
+            projection = _audit_attack_projection_db(projection, episode, db)
             canonical_id = str(projection["incident_id"])
             timeline = [{
                 "id": canonical_id,
