@@ -34,6 +34,9 @@ class IncidentClaim:
     uncertainty_km: float = 0.0
     published_at: datetime | None = None
     received_at: datetime | None = None
+    # The originating document/case identifier, shared by syndicated copies.
+    # A publisher URL is not sufficient proof of independent reporting.
+    origin_report_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +66,10 @@ class Correlation:
     nearest_ais_km: float | None = None
     nearest_ais_minutes: float | None = None
     related_gap_ids: tuple[str, ...] = ()
+    # Provenance is retained even when the claim is only a review candidate.
+    source_evidence: tuple[dict[str, str | None], ...] = ()
+    publication_allowed: bool = False
+    requires_operator_review: bool = True
 
 
 _KINDS = frozenset({"attack", "sinking", "explosion", "collision", "piracy"})
@@ -138,6 +145,13 @@ def correlate(
         if claim.kind != anchor.kind:
             contradictions.append("different_incident_kind:" + claim.claim_id)
             continue
+        if claim.published_at is not None:
+            published = _utc(claim.published_at)
+            if claim.received_at is not None:
+                received = _utc(claim.received_at)
+                if (published - received).total_seconds() > 300:
+                    contradictions.append("publication_after_receipt:" + claim.claim_id)
+                    continue
         if claim.uncertainty_km < 0:
             raise ValueError("Negative spatial uncertainty")
         delta_h = abs((_utc(claim.occurred_at) - _utc(anchor.occurred_at)).total_seconds()) / 3600
@@ -159,13 +173,15 @@ def correlate(
 
     if not valid:
         return Correlation("no_match", anchor.kind, "", (), (), (), tuple(contradictions))
-    # One document cannot become two independent sources via mislabeled groups.
-    groups_by_url: dict[str, str] = {}
+    # Count ORIGINAL reporting chains, not articles or republisher domains.
+    # A single original document may be syndicated under many URLs/groups.
+    groups_by_origin: dict[str, str] = {}
     for claim in valid:
         if claim.source_url:
-            groups_by_url.setdefault(claim.source_url, claim.source_group)
-    groups = tuple(sorted({group for group in groups_by_url.values() if group.strip()}))
-    has_urls = all(claim.source_url.startswith(("https://", "http://")) for claim in valid)
+            origin = (claim.origin_report_id or "").strip() or claim.source_url
+            groups_by_origin.setdefault(origin, claim.source_group.strip())
+    groups = tuple(sorted({group for group in groups_by_origin.values() if group}))
+    has_urls = all(claim.source_url.startswith("https://") for claim in valid)
     corroborated = len(groups) >= 2 and strong_identity and has_urls
     status = "corroborated" if corroborated else "candidate"
     color = (_COLORS.get(anchor.kind, _COLORS["other"]) if corroborated else _COLORS["candidate"])
@@ -209,4 +225,15 @@ def correlate(
         nearest[0] if nearest else None,
         nearest[1] if nearest else None,
         gap_ids,
+        tuple({
+            "claim_id": claim.claim_id,
+            "source_url": claim.source_url,
+            "source_group": claim.source_group,
+            "origin_report_id": claim.origin_report_id,
+            "occurred_at": _utc(claim.occurred_at).isoformat(),
+            "published_at": (_utc(claim.published_at).isoformat()
+                             if claim.published_at is not None else None),
+            "received_at": (_utc(claim.received_at).isoformat()
+                            if claim.received_at is not None else None),
+        } for claim in valid),
     )
