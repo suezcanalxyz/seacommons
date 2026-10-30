@@ -392,7 +392,7 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
 
 
     def test_invalid_imo_cannot_establish_strong_identity(self):
-        bad = VesselRef(imo="1234567", name="CONTSHIP JET")
+        bad = VesselRef(imo="1234560", name="CONTSHIP JET")
         result = correlate(bad, [report("bad_a", "navy", bad),
                                  report("bad_b", "mrcc", bad)])
         self.assertEqual(result.status, "candidate")
