@@ -223,6 +223,43 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertEqual(result.status, "candidate")
         self.assertIn("publication_before_incident:second", result.contradicting)
 
+    def test_unlocated_anchor_cannot_join_distant_reports(self):
+        from dataclasses import replace
+        anchor = replace(report("anchor", "unknown"), lat=None, lon=None,
+                         origin_report_id=None)
+        black_sea = report("black_sea", "coast_guard", lat=43.25, lon=28.8)
+        pacific = report("pacific", "navy", lat=15.0, lon=130.0)
+        result = correlate(JET, [anchor, black_sea, pacific])
+        self.assertEqual(result.status, "candidate")
+        self.assertIn("spatial_conflict:pacific", result.contradicting)
+        self.assertNotIn("pacific", result.claim_ids)
+
+    def test_wide_anchor_time_does_not_join_distinct_attacks(self):
+        from dataclasses import replace
+        anchor = replace(report("anchor", "unknown"), lat=None, lon=None,
+                         origin_report_id=None, time_uncertainty_minutes=180)
+        early = replace(report("early", "navy"), occurred_at=dt(28, 8))
+        late = replace(report("late", "coast_guard"), occurred_at=dt(28, 12),
+                       published_at=dt(28, 13), received_at=dt(28, 13, 30))
+        result = correlate(JET, [anchor, early, late])
+        self.assertEqual(result.status, "candidate")
+        self.assertIn("temporal_conflict:late", result.contradicting)
+
+    def test_malformed_location_is_rejected(self):
+        from dataclasses import replace
+        for lat, lon in ((91.0, 28.8), (43.25, None), (float("nan"), 28.8),
+                         (43.25, float("inf"))):
+            with self.subTest(lat=lat, lon=lon):
+                with self.assertRaises(ValueError):
+                    correlate(JET, [replace(report("bad", "mod"), lat=lat, lon=lon)])
+
+    def test_nonfinite_uncertainty_is_rejected(self):
+        from dataclasses import replace
+        for key in ("uncertainty_km", "time_uncertainty_minutes"):
+            with self.subTest(key=key):
+                with self.assertRaises(ValueError):
+                    correlate(JET, [replace(report("bad", "mod"), **{key: float("nan")})])
+
     def test_http_link_cannot_auto_corroborate(self):
         from dataclasses import replace
         a = report("mod", "bulgarian_mod")
