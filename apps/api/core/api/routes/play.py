@@ -947,6 +947,10 @@ def _compute_play_catalog() -> list[dict[str, Any]]:
 
         # One bounded canonical provenance read per batch, not an N+1 query
         # for each public attack episode. Do not touch humanitarian cases.
+        visible_episode_ids = {
+            str(item.get("episode_id"))
+            for item in combined if item.get("episode_id")
+        }
         attack_episodes = {
             str(episode.episode_id): episode
             for episode in (
@@ -954,6 +958,7 @@ def _compute_play_catalog() -> list[dict[str, Any]]:
                 *(ep for _hyp, ep in investigations if ep is not None),
             )
             if str(episode.episode_family or "") in _ATTACK_FAMILIES
+            and str(episode.episode_id) in visible_episode_ids
         }
         if attack_episodes:
             try:
