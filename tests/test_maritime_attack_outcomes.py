@@ -16,7 +16,7 @@ def at(day, hour, month=10):
     return datetime(2026, month, day, hour, tzinfo=timezone.utc)
 
 
-ATTACK = IncidentClaim(
+# Synthetic unit-test timestamps and source-independence labels: the fixture\n# does not assert that real-world sinking corroboration has been established.\nATTACK = IncidentClaim(
     "bg_mod_20261028", "attack", at(28, 10),
     "bg_mod_military_observation", "https://www.mod.bg/news9664",
     JET, 43.25, 28.8, 25.0, at(28, 11), at(28, 12),
@@ -149,6 +149,21 @@ class MaritimeAttackOutcomeTests(unittest.TestCase):
         self.assertIn("ais_not_causal_evidence", result.reason_codes)
         self.assertNotIn("aggressor", result.__dict__)
         self.assertFalse(result.publication_allowed)
+
+
+    def test_no_match_correlation_cannot_be_relabelled_candidate_update(self):
+        result = evaluate(sinking_corr=corr(SINKING, "no_match"))
+        self.assertEqual(result.reason_codes, ("unusable_correlation_status",))
+
+    def test_conflicting_mmsi_between_reports_is_veto_even_if_imo_matches(self):
+        imo_only = VesselRef(imo=JET.imo, name=JET.name)
+        conflicting = replace(
+            SINKING, vessel=VesselRef(imo=JET.imo, mmsi="123456789", name=JET.name)
+        )
+        result = reconcile_reported_sinking(
+            imo_only, ATTACK, conflicting, corr(ATTACK), corr(conflicting), REVIEW,
+        )
+        self.assertEqual(result.reason_codes, ("strong_vessel_identity_required",))
 
 
 if __name__ == "__main__":
