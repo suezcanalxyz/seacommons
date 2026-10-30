@@ -82,6 +82,16 @@ def reconcile_against_existing_episode(
         return _reject(link, "canonical_episode_not_attack")
     if str(getattr(episode, "status", "") or "") not in {"active", "resolved"}:
         return _reject(link, "canonical_episode_inactive")
+    # A real persisted row is not necessarily a corroborated attack. Do not
+    # attach a seemingly corroborated outcome to a single-source/contested
+    # episode, or to repeated copies of the same independence group.
+    if str(getattr(episode, "verification_status", "") or "") != "multi_source_corroborated":
+        return _reject(link, "canonical_attack_not_corroborated")
+    groups = getattr(episode, "independence_groups", None)
+    if (not isinstance(groups, (list, tuple))
+            or len({group.strip() for group in groups if isinstance(group, str)
+                    and group.strip()}) < 2):
+        return _reject(link, "canonical_attack_independence_incomplete")
     if not str(getattr(episode, "evidence_fingerprint", "") or "").strip():
         return _reject(link, "canonical_episode_missing_fingerprint")
     observations = getattr(episode, "observation_ids", None)
