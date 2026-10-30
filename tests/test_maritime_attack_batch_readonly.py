@@ -173,6 +173,21 @@ class BatchAuditTests(unittest.TestCase):
             self.assertIn(expected.pop(node.name), called, node.name)
         self.assertEqual(expected, {})
 
+    def test_catalog_limits_audits_to_visible_episodes(self):
+        path = Path(__file__).resolve().parents[1] / "apps/api/core/api/routes/play.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_compute_play_catalog"
+        )
+        visible_filter = [
+            node for node in ast.walk(function)
+            if isinstance(node, ast.Compare)
+            and any(isinstance(item, ast.Name) and item.id == "visible_episode_ids"
+                    for item in node.comparators)
+        ]
+        self.assertTrue(visible_filter, "Private episodes must not trigger catalog lineage reads")
+
     def test_dossier_evidence_audit_uses_effective_corroboration(self):
         path = Path(__file__).resolve().parents[1] / "apps/api/core/api/routes/play.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
