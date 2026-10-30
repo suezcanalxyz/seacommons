@@ -1244,13 +1244,21 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         # an active-looking pulsing drift cone still on the map reads as
         # "still adrift, still searching", which is exactly wrong for a
         # case that's already been rescued or gone stale.
-        explicit_state = str(event.metadata.get("incident_lifecycle") or "").lower()
-        state = explicit_state or lifecycle.distress_lifecycle(
-            event,
-            now=now,
-            same_source=by_source.get(event.source, []),
+        # The public marker and its drift must share the same canonical
+        # HumanitarianIncident authority. Raw event metadata may contain an
+        # ingestion-time "active" value even after the incident's last verified
+        # update has expired; trusting it here leaves an obsolete search cone
+        # on Live while the marker reports outcome_unknown. Preserve
+        # needs_review while it is inside the existing Live window.
+        from core.intel.humanitarian_incident import resolve_public_incident_state
+
+        incident_state = resolve_public_incident_state(
+            event, now=now, same_source=by_source.get(event.source, [])
         )
-        if state in _DRIFT_HIDDEN_LIFECYCLES:
+        if (
+            incident_state["lifecycle"] in _DRIFT_HIDDEN_LIFECYCLES
+            or incident_state["incident_status"] not in ("active", "needs_review")
+        ):
             continue
         # Only a real extracted maritime point is a drift origin. A region-only
         # Alarm Phone incident keeps its red search area (signal feed) but must
