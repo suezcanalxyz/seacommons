@@ -47,7 +47,7 @@ def _row(status=None, episode=None, evidence="contextual"):
          (None, None, "contextual")),
         # Strong identity requires an actual canonical episode identifier.
         ("unmatched_candidate", None, "contextual", "strong", None, "associated",
-         ("strong", None, "contextual")),
+         ("provider_matched_unresolved", None, "contextual")),
     ],
 )
 def test_replay_never_fabricates_or_silently_changes_episode(
