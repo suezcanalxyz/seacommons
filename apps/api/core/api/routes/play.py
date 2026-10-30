@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from core.domain.incident_taxonomy import taxonomy_fields
 from core.intel.humanitarian_incident import public_incident_status
 from core.intel.lifecycle import parse_utc
+from core.intel.maritime_attack_play_guard import episode_corroborated_for_play
 from core.intel.public_policy import domains_for_mode
 from core.intel.store import IntelEvent
 from core.live.projection import (
@@ -183,10 +184,7 @@ def _episode_projection(episode, evidence_event=None) -> dict[str, Any]:
     }.get(str(episode.episode_family or ""), str(episode.episode_family or "maritime_episode"))
     independence_groups = list(episode.independence_groups or [])
     verification_status = str(episode.verification_status or "single_source_observed")
-    corroborated = (
-        verification_status == "multi_source_corroborated"
-        or len(independence_groups) >= 2
-    )
+    corroborated = episode_corroborated_for_play(episode)
     evidence_stage = "corroborated" if corroborated else "derived"
     title = (
         evidence_event.title
@@ -645,9 +643,7 @@ def _investigation_projection(hypothesis, episode=None, evidence_event=None) -> 
     # evidence-link/detector count. core.intel.fusion.verification_for_event_ids
     # is the canonical classifier that already produces both of these fields
     # on the episode; Play only ever reads them, never re-derives its own.
-    corroborated = (
-        verification_status == "multi_source_corroborated" or len(independence_groups) >= 2
-    )
+    corroborated = episode_corroborated_for_play(episode)
     canonical_id = (
         str(episode.episode_id) if episode is not None else hypothesis.hypothesis_id
     )
