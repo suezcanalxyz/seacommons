@@ -1,0 +1,28 @@
+name: Maritime attack correlation staging tests
+
+on:
+  push:
+    branches:
+      - feature/maritime-attack-correlation-20261030
+    paths:
+      - apps/api/core/intel/maritime_attack_correlation.py
+      - tests/test_maritime_attack_correlation.py
+      - .github/workflows/maritime-attack-correlation-staging.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  correlation-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests (pure, no production credentials)
+        env:
+          PYTHONPATH: apps/api
+        run: python -m unittest discover -s tests -p 'test_maritime_attack_correlation.py' -v
