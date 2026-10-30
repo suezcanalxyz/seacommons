@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.intel.satellite_observation import _reconcile_association
+from core.intel.satellite_observation import _merged_provenance, _reconcile_association
 
 
 def _row(status=None, episode=None, evidence="contextual"):
@@ -61,3 +61,40 @@ def test_replay_never_fabricates_or_silently_changes_episode(
         existing.episode_id,
         existing.evidence_status,
     ) == expected
+
+
+def test_nested_case_target_is_deduplicated_without_hash_error():
+    """Provider JSON may contain nested target attributes, not just scalars."""
+    target = {
+        "role": {"kind": "drift", "labels": ["primary", "secondary"]},
+        "lat": [35.5, 35.6], "lon": 14.2, "at": {"utc": "2026-10-30T00:00:00Z"},
+        "search_direction": ["forward"], "drift_id": "drift:1",
+        "trajectory_index": {"index": 0}, "note": "first source",
+    }
+    replay = dict(target, note="second source")
+    merged = _merged_provenance(
+        {"case_targets": [target]},
+        {"case_targets": [replay]},
+    )
+    assert merged["case_targets"] == [target]
+
+
+def test_malformed_case_target_containers_do_not_abort_ingestion():
+    merged = _merged_provenance(
+        {"case_targets": {"role": "invalid"}, "source": "existing"},
+        {"case_targets": [{"role": "valid", "lat": 35.5}, "bad", None]},
+    )
+    assert merged["source"] == "existing"
+    assert merged["case_targets"] == [{"role": "valid", "lat": 35.5}]
+    assert _merged_provenance([], {"case_targets": []}) == {}
+    assert _merged_provenance({"source": "kept"}, ["malformed"]) == {"source": "kept"}
+
+
+def test_scalar_case_target_replay_keeps_existing_identity_fields():
+    target = {"role": "last_seen", "lat": 35.5, "lon": 14.2, "at": "2026-10-30T00:00:00Z"}
+    merged = _merged_provenance(
+        {"case_targets": [target], "provider": "original"},
+        {"case_targets": [dict(target, extra="new")], "provider": "latest"},
+    )
+    assert merged["provider"] == "latest"
+    assert merged["case_targets"] == [target]
