@@ -213,6 +213,38 @@ def index_drift_summaries(
     return indexed
 
 
+def index_recent_same_source_followups(
+    case_rows: list[Any], source_rows: list[Any], *,
+    lookback_days: int = 14, max_per_case: int = 50,
+) -> dict[str, list[Any]]:
+    """Find the newest eligible same-source posts for each audited case.
+
+    Callers need only the newest (max_per_case + 1) rows per source:
+    removing the case itself still leaves up to max_per_case follow-ups.
+    This bounds memory and avoids a PostgreSQL round trip for every case.
+    Matching here is only a *candidate* for the shared lifecycle resolver,
+    not evidence of the same maritime incident.
+    """
+    from datetime import timedelta
+
+    by_source: dict[str, list[Any]] = {}
+    for other in source_rows:
+        by_source.setdefault(other.source, []).append(other)
+    for source_rows_for_one in by_source.values():
+        source_rows_for_one.sort(
+            key=lambda other: (other.created_at, str(other.id)), reverse=True,
+        )
+
+    indexed: dict[str, list[Any]] = {}
+    for row in case_rows:
+        cutoff = row.created_at - timedelta(days=lookback_days)
+        indexed[row.id] = [
+            other for other in by_source.get(row.source, [])
+            if other.id != row.id and other.created_at >= cutoff
+        ][:max_per_case]
+    return indexed
+
+
 def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
     """The real, live-wired entry point: queries IntelEventDB for
     Humanitarian-service events (core.intel.service_taxonomy.
@@ -278,6 +310,30 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
         ) if aliases else []
         drifts_by_case = index_drift_summaries(case_ids, drift_rows)
 
+        # Group by source, not case: each source query fetches at most 51
+        # newest rows, enough to exclude the current case and retain 50
+        # follow-up candidates. This replaces N per-case PostgreSQL queries
+        # without broad, unbounded scans of high-volume news sources.
+        source_groups: dict[str, list[Any]] = {}
+        for row, _, _ in candidates:
+            source_groups.setdefault(row.source, []).append(row)
+        recent_source_rows: list[Any] = []
+        for source, group in source_groups.items():
+            oldest_cutoff = min(row.created_at for row in group) - timedelta(days=14)
+            recent_source_rows.extend(
+                db.query(IntelEventDB)
+                .filter(
+                    IntelEventDB.source == source,
+                    IntelEventDB.created_at >= oldest_cutoff,
+                )
+                .order_by(IntelEventDB.created_at.desc(), IntelEventDB.id.desc())
+                .limit(51)
+                .all()
+            )
+        followups_by_case = index_recent_same_source_followups(
+            [row for row, _, _ in candidates], recent_source_rows,
+        )
+
         for row, event, classification in candidates:
             same_source = [
                 IntelEvent(
@@ -285,11 +341,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
                     text=other.text or "", title=other.title,
                     metadata=dict(other.meta or {}),
                 )
-                for other in db.query(IntelEventDB).filter(
-                    IntelEventDB.source == row.source,
-                    IntelEventDB.id != row.id,
-                    IntelEventDB.created_at >= row.created_at - timedelta(days=14),
-                ).limit(50).all()
+                for other in followups_by_case[row.id]
             ]
             lifecycle = distress_lifecycle(event, now=now, same_source=same_source)
 
