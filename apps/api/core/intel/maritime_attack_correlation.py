@@ -37,6 +37,8 @@ class IncidentClaim:
     # The originating document/case identifier, shared by syndicated copies.
     # A publisher URL is not sufficient proof of independent reporting.
     origin_report_id: str | None = None
+    # Precision of reported event time, not ingestion latency.
+    time_uncertainty_minutes: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -128,8 +130,8 @@ def correlate(
     anchor = claims[0]
     if anchor.kind not in _KINDS:
         raise ValueError("Unsupported maritime incident kind")
-    if anchor.uncertainty_km < 0:
-        raise ValueError("Negative spatial uncertainty")
+    if anchor.uncertainty_km < 0 or anchor.time_uncertainty_minutes < 0:
+        raise ValueError("Negative incident uncertainty")
     _utc(anchor.occurred_at)
     if _identity_match(subject, anchor.vessel) in {"conflict", "unknown"}:
         return Correlation("no_match", anchor.kind, "", (), (), (), ("anchor_identity_conflict",))
@@ -152,10 +154,12 @@ def correlate(
                 if (published - received).total_seconds() > 300:
                     contradictions.append("publication_after_receipt:" + claim.claim_id)
                     continue
-        if claim.uncertainty_km < 0:
-            raise ValueError("Negative spatial uncertainty")
-        delta_h = abs((_utc(claim.occurred_at) - _utc(anchor.occurred_at)).total_seconds()) / 3600
-        if delta_h > 6:
+        if claim.uncertainty_km < 0 or claim.time_uncertainty_minutes < 0:
+            raise ValueError("Negative incident uncertainty")
+        delta_minutes = abs((_utc(claim.occurred_at) - _utc(anchor.occurred_at)).total_seconds()) / 60
+        # Separate attacks hours apart must not collapse into one episode.
+        max_minutes = 360 if anchor.kind == "sinking" else 90
+        if delta_minutes > max_minutes + anchor.time_uncertainty_minutes + claim.time_uncertainty_minutes:
             contradictions.append("temporal_conflict:" + claim.claim_id)
             continue
         identity = _identity_match(subject, claim.vessel)
@@ -212,6 +216,24 @@ def correlate(
                     continue
                 if nearest is None or (minutes, distance) < (nearest[1], nearest[0]):
                     nearest = (distance, minutes)
+    # Contradictory AIS is not proof an attack did not occur: it may be
+    # spoofed or replayed. Flag it and require human review instead.
+    ais_spatial_conflict = False
+    if subject.mmsi:
+        for claim in valid:
+            if claim.lat is None or claim.lon is None:
+                continue
+            for fix in ais_fixes:
+                if fix.mmsi != subject.mmsi:
+                    continue
+                offset = abs((_utc(fix.observed_at) - _utc(claim.occurred_at)).total_seconds()) / 60
+                if offset <= 30 + claim.time_uncertainty_minutes:
+                    if _km(fix.lat, fix.lon, claim.lat, claim.lon) > 100 + claim.uncertainty_km:
+                        ais_spatial_conflict = True
+    if ais_spatial_conflict:
+        contradictions.append("ais_position_conflict_needs_review")
+        status = "candidate"
+        color = _COLORS["candidate"]
     if nearest is not None:
         support.append("ais_spatiotemporal_context_not_attack_proof")
 
@@ -235,6 +257,7 @@ def correlate(
             "source_url": claim.source_url,
             "source_group": claim.source_group,
             "origin_report_id": claim.origin_report_id,
+            "time_uncertainty_minutes": str(claim.time_uncertainty_minutes),
             "occurred_at": _utc(claim.occurred_at).isoformat(),
             "published_at": (_utc(claim.published_at).isoformat()
                              if claim.published_at is not None else None),
