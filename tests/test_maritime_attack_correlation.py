@@ -270,5 +270,39 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertFalse(result.publication_allowed)
 
 
+    def test_tracking_aliases_cannot_double_corroborate(self):
+        from dataclasses import replace
+        a = replace(report("first", "navy"), source_url="https://example.org/report?id=4&utm_source=x")
+        b = replace(report("second", "press"), source_url="https://EXAMPLE.org/report/?id=4#top")
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(len(result.independent_groups), 1)
+
+    def test_distinct_article_query_identifiers_stay_distinct(self):
+        from dataclasses import replace
+        a = replace(report("first", "navy"), source_url="https://example.org/report?id=4")
+        b = replace(report("second", "coast_guard"), source_url="https://example.org/report?id=5")
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "corroborated")
+
+    def test_malformed_https_without_hostname_cannot_corroborate(self):
+        from dataclasses import replace
+        a = report("first", "navy")
+        b = replace(report("second", "coast_guard"), source_url="https://")
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "candidate")
+        self.assertFalse(result.publication_allowed)
+
+    def test_local_and_credentialed_urls_cannot_corroborate(self):
+        from dataclasses import replace
+        a = report("first", "navy")
+        for url in ("https://localhost/news", "https://127.0.0.1/report",
+                    "https://user:password@example.org/report"):
+            with self.subTest(url=url):
+                b = replace(report("second", "coast_guard"), source_url=url)
+                result = correlate(JET, [a, b])
+                self.assertEqual(result.status, "candidate")
+
+
 if __name__ == "__main__":
     unittest.main()
