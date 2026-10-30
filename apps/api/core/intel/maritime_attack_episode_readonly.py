@@ -16,6 +16,7 @@ from core.intel.maritime_attack_correlation import (
 from core.intel.maritime_attack_outcomes import (
     OutcomeAssociation, ReviewedOutcomeLink, reconcile_reported_sinking,
 )
+from core.intel.maritime_attack_play_guard import has_distinct_independence_groups
 
 # Closed allowlist: never treat an AIS gap, distress/drift or generic safety
 # episode as an already-established hostile attack.
@@ -88,9 +89,7 @@ def reconcile_against_existing_episode(
     if str(getattr(episode, "verification_status", "") or "") != "multi_source_corroborated":
         return _reject(link, "canonical_attack_not_corroborated")
     groups = getattr(episode, "independence_groups", None)
-    if (not isinstance(groups, (list, tuple))
-            or len({group.strip() for group in groups if isinstance(group, str)
-                    and group.strip()}) < 2):
+    if not has_distinct_independence_groups(groups):
         return _reject(link, "canonical_attack_independence_incomplete")
     if not str(getattr(episode, "evidence_fingerprint", "") or "").strip():
         return _reject(link, "canonical_episode_missing_fingerprint")
