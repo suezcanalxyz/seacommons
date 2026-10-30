@@ -80,6 +80,10 @@ def has_resolution_signal(
     future_limit = _future_limit(now) if now is not None else None
     if event_time is None or not event_kw:
         return False
+    # Consider the latest *decisive* matched follow-up, not the first rescue
+    # found in an arbitrarily ordered source feed. A later credible distress
+    # update can reopen a case; an ambiguous acknowledgement cannot.
+    latest_decisive: Optional[tuple[datetime, str]] = None
     for other in same_source:
         if other.id == event.id:
             continue
@@ -88,13 +92,17 @@ def has_resolution_signal(
             continue
         if future_limit is not None and other_time > future_limit:
             continue
-        if (other_time - event_time).days > RESOLUTION_LOOKBACK_DAYS:
+        if other_time - event_time > timedelta(days=RESOLUTION_LOOKBACK_DAYS):
             continue
-        if not is_concluded_incident(other.text or other.title):
+        other_text = other.text or other.title
+        if len(event_kw & text_keywords(other_text)) < _MIN_SHARED_KEYWORDS_FOR_RESOLUTION_MATCH:
             continue
-        if len(event_kw & text_keywords(other.text or other.title)) >= _MIN_SHARED_KEYWORDS_FOR_RESOLUTION_MATCH:
-            return True
-    return False
+        outcome = _outcome_from_text(other_text)
+        if outcome is None:
+            continue
+        if latest_decisive is None or other_time > latest_decisive[0]:
+            latest_decisive = (other_time, outcome)
+    return latest_decisive is not None and latest_decisive[1] == IncidentLifecycle.RESOLVED.value
 
 
 def has_own_reply_resolution(event: IntelEvent) -> bool:
