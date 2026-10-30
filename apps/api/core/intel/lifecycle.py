@@ -128,14 +128,28 @@ def latest_own_reply_outcome(event: IntelEvent) -> Optional[str]:
     return _outcome_from_text(textual_replies[-1]) or IncidentLifecycle.NEEDS_REVIEW.value
 
 
-def _latest_activity_time(event: IntelEvent) -> Optional[datetime]:
+def _latest_activity_time(
+    event: IntelEvent, *, now: Optional[datetime] = None,
+) -> Optional[datetime]:
+    """Latest credible observation, excluding source-clock timestamps in the future.
+
+    A malformed repost dated years ahead must not keep a humanitarian distress
+    in the rolling Live window indefinitely. Keep valid older observations
+    rather than allowing a single bad update to hide an otherwise fresh case.
+    """
     timestamps = [parse_utc(event.timestamp_utc)]
     timestamps.extend(
         parse_utc(str(repost.get("posted_at") or ""))
         for repost in event.metadata.get("thread_reposts") or []
+        if isinstance(repost, dict)
     )
     timestamps.append(parse_utc(str(event.metadata.get("last_repost_at") or "")))
     observed = [value for value in timestamps if value is not None]
+    if now is not None:
+        now_utc = now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now.astimezone(timezone.utc)
+        from datetime import timedelta
+        future_limit = now_utc + timedelta(minutes=5)
+        observed = [value for value in observed if value <= future_limit]
     return max(observed) if observed else None
 
 
@@ -188,7 +202,7 @@ def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[In
         state = IncidentLifecycle.RESOLVED.value
     if state in {IncidentLifecycle.RESOLVED.value, IncidentLifecycle.NEEDS_REVIEW.value}:
         return state
-    observed = _latest_activity_time(event)
+    observed = _latest_activity_time(event, now=now)
     age_hours = (now - observed).total_seconds() / 3600 if observed else 0
     return (
         IncidentLifecycle.ARCHIVED.value
@@ -205,9 +219,10 @@ def is_within_live_retention_window(event: IntelEvent, *, now: datetime) -> bool
     the 24-hour window, while downstream response/drift logic can still stop
     treating it as active immediately.
     """
-    observed = _latest_activity_time(event)
+    observed = _latest_activity_time(event, now=now)
     if observed is None:
-        return True
+        # No credible timestamp: do not advertise a case as currently Live.
+        return False
     age_hours = (now - observed).total_seconds() / 3600
     return age_hours < DISTRESS_LIVE_MAX_AGE_HOURS
 
