@@ -160,3 +160,56 @@ def test_credible_same_source_resolution_still_closes_case():
     followup.id = "valid-resolution"
     followup.text = "40 people rescued south of Lampedusa and safe"
     assert distress_lifecycle(event, now=NOW, same_source=[followup]) == "resolved"
+
+
+def _cross_post(hours_ago, identifier, text):
+    event = _distress((NOW - timedelta(hours=hours_ago)).isoformat())
+    event.id = identifier
+    event.text = text
+    return event
+
+
+def test_later_matched_danger_reopens_cross_post_rescue():
+    from core.intel.lifecycle import distress_lifecycle, has_resolution_signal
+
+    original = _cross_post(4, "original", "40 people in distress south of Lampedusa")
+    rescue = _cross_post(3, "rescue", "40 people rescued south of Lampedusa and safe")
+    danger = _cross_post(2, "danger", "40 people still in distress south of Lampedusa")
+    assert not has_resolution_signal(original, [rescue, danger], now=NOW)
+    assert distress_lifecycle(original, now=NOW, same_source=[rescue, danger]) == "active"
+
+
+def test_cross_post_outcome_does_not_depend_on_feed_order():
+    from core.intel.lifecycle import has_resolution_signal
+
+    original = _cross_post(4, "original", "40 people in distress south of Lampedusa")
+    rescue = _cross_post(3, "rescue", "40 people rescued south of Lampedusa and safe")
+    danger = _cross_post(2, "danger", "40 people still in distress south of Lampedusa")
+    assert not has_resolution_signal(original, [danger, rescue], now=NOW)
+
+
+def test_later_matched_rescue_closes_after_earlier_danger():
+    from core.intel.lifecycle import distress_lifecycle
+
+    original = _cross_post(4, "original", "40 people in distress south of Lampedusa")
+    danger = _cross_post(3, "danger", "40 people still in distress south of Lampedusa")
+    rescue = _cross_post(2, "rescue", "40 people rescued south of Lampedusa and safe")
+    assert distress_lifecycle(original, now=NOW, same_source=[rescue, danger]) == "resolved"
+
+
+def test_ambiguous_cross_post_does_not_erase_matched_rescue():
+    from core.intel.lifecycle import has_resolution_signal
+
+    original = _cross_post(4, "original", "40 people in distress south of Lampedusa")
+    rescue = _cross_post(3, "rescue", "40 people rescued south of Lampedusa and safe")
+    thanks = _cross_post(2, "thanks", "40 people south of Lampedusa: thank you for the update")
+    assert has_resolution_signal(original, [thanks, rescue], now=NOW)
+
+
+def test_future_matched_danger_cannot_reopen_credible_cross_post_rescue():
+    from core.intel.lifecycle import distress_lifecycle
+
+    original = _cross_post(4, "original", "40 people in distress south of Lampedusa")
+    rescue = _cross_post(3, "rescue", "40 people rescued south of Lampedusa and safe")
+    future = _cross_post(-48, "future-danger", "40 people still in distress south of Lampedusa")
+    assert distress_lifecycle(original, now=NOW, same_source=[future, rescue]) == "resolved"
