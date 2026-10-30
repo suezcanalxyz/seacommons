@@ -30,7 +30,7 @@ def _publish_spoofing_hypothesis(*, independent_news: bool = False):
         is_news = independent_news and event_id == "spoof-b"
         intel_store.add(IntelEvent(
             id=event_id, type="news" if is_news else "ais_anomaly", severity="high",
-            lat=lat, lon=lon, title="independent report" if is_news else "raw spoof detector output",
+            lat=lat, lon=lon, title="independent report" if is_news else f"raw spoof detector output {event_id}",
             source="Independent maritime news" if is_news else "mda",
             timestamp_utc=now, linked_mmsi="211879870",
             metadata={
