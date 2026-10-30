@@ -368,5 +368,28 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertEqual(result.related_gap_ids, ())
 
 
+    def test_unattributed_reprint_cannot_reserve_primary_origin(self):
+        from dataclasses import replace
+        unlabelled = replace(report("unlabelled", ""), origin_report_id="origin_a")
+        primary = replace(report("primary", "navy"), origin_report_id="origin_a")
+        independent = replace(report("independent", "mrcc"), origin_report_id="origin_b")
+        result = correlate(JET, [unlabelled, primary, independent])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(result.independent_groups, ("mrcc", "navy"))
+        self.assertFalse(result.publication_allowed)
+
+    def test_unattributed_same_url_cannot_reserve_document(self):
+        from dataclasses import replace
+        unlabelled = replace(report("unlabelled", ""), source_url="https://example.org/primary",
+                             origin_report_id="origin_a")
+        primary = replace(report("primary", "navy"), source_url="https://example.org/primary",
+                          origin_report_id="origin_a")
+        independent = report("independent", "mrcc")
+        result = correlate(JET, [unlabelled, primary, independent])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(result.independent_groups, ("mrcc", "navy"))
+        self.assertFalse(result.publication_allowed)
+
+
 if __name__ == "__main__":
     unittest.main()
