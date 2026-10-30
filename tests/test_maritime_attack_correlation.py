@@ -497,6 +497,26 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
 
 
 
+    def test_syndicated_authority_alias_does_not_count_twice(self):
+        from dataclasses import replace
+        a = replace(report("copy", "newsroom"), origin_report_id="same")
+        b = replace(report("original", "navy"), origin_report_id="same")
+        c = report("second_navy", "navy")
+        result = correlate(JET, [a, b, c])
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(result.independent_groups, ("navy",))
+
+    def test_authority_alias_does_not_block_independent_mrcc(self):
+        from dataclasses import replace
+        a = replace(report("copy", "newsroom"), origin_report_id="same")
+        b = replace(report("original", "navy"), origin_report_id="same")
+        c = report("second_navy", "navy")
+        d = report("mrcc", "mrcc")
+        result = correlate(JET, [a, b, c, d])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(result.independent_groups, ("mrcc", "navy"))
+
+
 class MaritimeAttackLineageTests(unittest.TestCase):
     """Lineage input is a read-only projection of canonical lineage_edges."""
 
