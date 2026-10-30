@@ -95,15 +95,39 @@ def _name(value: str) -> str:
     return "".join(char for char in value.upper() if char.isalnum())
 
 
+def _valid_imo(value: str) -> bool:
+    """IMO ship identifier: six digits plus the official check digit."""
+    return (
+        len(value) == 7 and value.isascii() and value.isdigit()
+        and sum(int(digit) * (7 - i) for i, digit in enumerate(value[:6])) % 10
+            == int(value[6])
+    )
+
+
+def _valid_mmsi(value: str) -> bool:
+    """Reject incomplete, nonnumeric and placeholder MMSI values."""
+    return (
+        len(value) == 9 and value.isascii() and value.isdigit()
+        and value != "000000000"
+    )
+
+
+def _normalized_identifier(value: object, prefix: str) -> str:
+    result = str(value or "").strip()
+    if result.upper().startswith(prefix):
+        result = result[len(prefix):].lstrip(" :#-")
+    return result
+
+
 def _identity_match(subject: VesselRef, reported: VesselRef) -> str:
     """An explicit contradictory IMO/MMSI is a veto, even when names match."""
     if subject.imo and reported.imo and subject.imo != reported.imo:
         return "conflict"
     if subject.mmsi and reported.mmsi and subject.mmsi != reported.mmsi:
         return "conflict"
-    if subject.imo and reported.imo and subject.imo == reported.imo:
+    if subject.imo and reported.imo and subject.imo == reported.imo and _valid_imo(subject.imo):
         return "strong"
-    if subject.mmsi and reported.mmsi and subject.mmsi == reported.mmsi:
+    if subject.mmsi and reported.mmsi and subject.mmsi == reported.mmsi and _valid_mmsi(subject.mmsi):
         return "strong"
     if subject.name and reported.name and _name(subject.name) == _name(reported.name):
         return "weak"
@@ -201,10 +225,16 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
     published_raw = provenance.get("published_at")
     received_raw = getattr(observation, "received_at", None)
     vessel = VesselRef(
-        imo=str(extracted.get("imo") or "").strip(),
-        mmsi=str(extracted.get("mmsi") or "").strip(),
+        imo=_normalized_identifier(extracted.get("imo"), "IMO"),
+        mmsi=_normalized_identifier(extracted.get("mmsi"), "MMSI"),
         name=str(extracted.get("vessel_name") or "").strip(),
     )
+    # Never promote a claim using a malformed or placeholder vessel ID.
+    # Keep the original SourceObservation unchanged for operator review.
+    if vessel.imo and not _valid_imo(vessel.imo):
+        raise ValueError("Invalid IMO check digit or format")
+    if vessel.mmsi and not _valid_mmsi(vessel.mmsi):
+        raise ValueError("Invalid MMSI format")
     if not (vessel.imo or vessel.mmsi or vessel.name):
         return None
     claim = IncidentClaim(
