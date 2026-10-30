@@ -173,6 +173,29 @@ class BatchAuditTests(unittest.TestCase):
             self.assertIn(expected.pop(node.name), called, node.name)
         self.assertEqual(expected, {})
 
+    def test_dossier_evidence_audit_uses_effective_corroboration(self):
+        path = Path(__file__).resolve().parents[1] / "apps/api/core/api/routes/play.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        expected = {"_public_episode_dossier", "play_incident_timeline"}
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef) or node.name not in expected:
+                continue
+            calls = [
+                child for child in ast.walk(node)
+                if isinstance(child, ast.Call)
+                and isinstance(child.func, ast.Name)
+                and child.func.id == "_evidence_audit"
+            ]
+            self.assertEqual(len(calls), 1, node.name)
+            keyword = next(
+                (k for k in calls[0].keywords if k.arg == "independent_lineages"),
+                None,
+            )
+            self.assertIsNotNone(keyword, node.name)
+            self.assertIsInstance(keyword.value, ast.IfExp, node.name)
+            expected.remove(node.name)
+        self.assertFalse(expected)
+
     def test_overlarge_lineage_fails_closed(self):
         result = audit_attack_episodes_independence(
             [episode("jet", "a", "b")],
