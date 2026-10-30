@@ -96,7 +96,11 @@ def _is_fresh_sar_activity(event: IntelEvent, *, now: datetime) -> bool:
         return False
     if observed.tzinfo is None:
         observed = observed.replace(tzinfo=UTC)
-    return now - observed.astimezone(UTC) <= _SAR_ACTIVITY_LIVE_TTL
+    # Reject future-dated source observations beyond a small clock-skew margin.
+    # Otherwise a broken source clock can keep a SAR activity marker on Live
+    # indefinitely. Retain up to five minutes of tolerated clock skew.
+    age = now.astimezone(UTC) - observed.astimezone(UTC)
+    return -timedelta(minutes=5) <= age <= _SAR_ACTIVITY_LIVE_TTL
 
 
 def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
