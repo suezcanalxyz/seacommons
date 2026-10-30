@@ -155,7 +155,13 @@ def latest_own_reply_outcome(
     ]
     if not textual_replies:
         return None
-    return _outcome_from_text(textual_replies[-1]) or IncidentLifecycle.NEEDS_REVIEW.value
+    # An ambiguous acknowledgement must not erase an earlier decisive rescue
+    # or danger update. Only a later *decisive* reply can change the outcome.
+    for note in reversed(textual_replies):
+        outcome = _outcome_from_text(note)
+        if outcome is not None:
+            return outcome
+    return IncidentLifecycle.NEEDS_REVIEW.value
 
 
 def _latest_activity_time(
