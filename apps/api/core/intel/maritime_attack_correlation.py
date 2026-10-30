@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from math import asin, cos, radians, sin, sqrt
+from math import asin, cos, isfinite, radians, sin, sqrt
 from typing import Sequence
 
 
@@ -114,6 +114,21 @@ def _km(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float:
     return 12742.0 * asin(min(1.0, sqrt(h)))
 
 
+def _validate_claim_location(claim: IncidentClaim) -> None:
+    """Reject malformed coordinates rather than treating them as uncertainty."""
+    if (claim.lat is None) != (claim.lon is None):
+        raise ValueError("Latitude and longitude must both be supplied")
+    if claim.lat is not None and (
+        not isfinite(claim.lat) or not isfinite(claim.lon)
+        or not -90 <= claim.lat <= 90 or not -180 <= claim.lon <= 180
+    ):
+        raise ValueError("Invalid incident coordinates")
+    if not isfinite(claim.uncertainty_km) or claim.uncertainty_km < 0:
+        raise ValueError("Invalid location uncertainty")
+    if not isfinite(claim.time_uncertainty_minutes) or claim.time_uncertainty_minutes < 0:
+        raise ValueError("Invalid time uncertainty")
+
+
 def correlate(
     subject: VesselRef,
     claims: Sequence[IncidentClaim],
@@ -130,8 +145,7 @@ def correlate(
     anchor = claims[0]
     if anchor.kind not in _KINDS:
         raise ValueError("Unsupported maritime incident kind")
-    if anchor.uncertainty_km < 0 or anchor.time_uncertainty_minutes < 0:
-        raise ValueError("Negative incident uncertainty")
+    _validate_claim_location(anchor)
     _utc(anchor.occurred_at)
     if _identity_match(subject, anchor.vessel) in {"conflict", "unknown"}:
         return Correlation("no_match", anchor.kind, "", (), (), (), ("anchor_identity_conflict",))
@@ -147,8 +161,7 @@ def correlate(
         if claim.kind != anchor.kind:
             contradictions.append("different_incident_kind:" + claim.claim_id)
             continue
-        if claim.uncertainty_km < 0 or claim.time_uncertainty_minutes < 0:
-            raise ValueError("Negative incident uncertainty")
+        _validate_claim_location(claim)
         if claim.published_at is not None:
             published = _utc(claim.published_at)
             if (_utc(claim.occurred_at) - published).total_seconds() > (claim.time_uncertainty_minutes + 5) * 60:
@@ -169,12 +182,25 @@ def correlate(
         if identity in {"conflict", "unknown"}:
             contradictions.append("identity_" + identity + ":" + claim.claim_id)
             continue
-        if (anchor.lat is not None and anchor.lon is not None
-                and claim.lat is not None and claim.lon is not None):
-            distance = _km(anchor.lat, anchor.lon, claim.lat, claim.lon)
-            if distance > 35.0 + anchor.uncertainty_km + claim.uncertainty_km:
-                contradictions.append("spatial_conflict:" + claim.claim_id)
-                continue
+        # Compare against EVERY accepted observation. An unlocated anchor
+        # must not permit two incompatible locations to corroborate each other.
+        if any(
+            prior.lat is not None and claim.lat is not None
+            and _km(prior.lat, prior.lon, claim.lat, claim.lon)
+                > 35.0 + prior.uncertainty_km + claim.uncertainty_km
+            for prior in valid
+        ):
+            contradictions.append("spatial_conflict:" + claim.claim_id)
+            continue
+        # Apply the same pairwise rule to event times, not just the anchor.
+        if any(
+            abs((_utc(prior.occurred_at) - _utc(claim.occurred_at)).total_seconds()) / 60
+                > (360 if anchor.kind == "sinking" else 90)
+                  + prior.time_uncertainty_minutes + claim.time_uncertainty_minutes
+            for prior in valid
+        ):
+            contradictions.append("temporal_conflict:" + claim.claim_id)
+            continue
         strong_identity |= identity == "strong"
         valid.append(claim)
 
