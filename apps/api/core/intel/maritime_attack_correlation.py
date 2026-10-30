@@ -259,10 +259,13 @@ def correlate(
     for claim in valid:
         origin = (claim.origin_report_id or "").strip()
         canonical_url = _canonical_source_url(claim.source_url)
-        if not origin or not canonical_url or canonical_url in seen_document_urls:
+        group = claim.source_group.strip()
+        # An unlabelled reprint cannot reserve an origin or document URL:
+        # a later properly attributed primary report must remain eligible.
+        if not origin or not canonical_url or not group or canonical_url in seen_document_urls:
             continue
         seen_document_urls.add(canonical_url)
-        groups_by_origin.setdefault(origin, claim.source_group.strip())
+        groups_by_origin.setdefault(origin, group)
     groups = tuple(sorted({group for group in groups_by_origin.values() if group}))
     # An unrelated malformed URL is quarantined, not a veto against two
     # independently attributable primary documents. Conversely, a strong
