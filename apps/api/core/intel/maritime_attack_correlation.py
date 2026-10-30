@@ -307,22 +307,43 @@ def _independent_document_groups(
     reporting group even if syndicated under different authority labels.
     Distinct documents from the same original authority also count once.
     """
-    seen_origins: set[str] = set()
-    seen_urls: set[str] = set()
-    by_lineage: dict[str, set[str]] = {}
+    # Merge authority labels whenever evidence shares an originating
+    # document, canonical URL, or verified lineage. Dropping duplicate
+    # documents before merging their authority labels is order-dependent:
+    # a syndicated copy could otherwise masquerade as an independent
+    # authority when a second document from the real origin is present.
+    parent: dict[str, str] = {}
+    origin_owner: dict[str, str] = {}
+    url_owner: dict[str, str] = {}
+    lineage_owner: dict[str, str] = {}
+
+    def find(group: str) -> str:
+        parent.setdefault(group, group)
+        while parent[group] != group:
+            parent[group] = parent[parent[group]]
+            group = parent[group]
+        return group
+
+    def union(left: str, right: str) -> None:
+        a, b = find(left), find(right)
+        if a != b:
+            parent[max(a, b)] = min(a, b)
+
     for claim in claims:
         origin = (claim.origin_report_id or "").strip()
         group = claim.source_group.strip()
         url = _canonical_source_url(claim.source_url)
         if not origin or not group or not url:
             continue
-        if origin in seen_origins or url in seen_urls:
-            continue
-        seen_origins.add(origin)
-        seen_urls.add(url)
-        root = lineage_roots.get(claim.claim_id, claim.claim_id)
-        by_lineage.setdefault(root, set()).add(group)
-    return tuple(sorted({min(groups) for groups in by_lineage.values()}))
+        find(group)
+        lineage = lineage_roots.get(claim.claim_id, claim.claim_id)
+        for owners, key in ((origin_owner, origin), (url_owner, url),
+                            (lineage_owner, lineage)):
+            if key in owners:
+                union(group, owners[key])
+            else:
+                owners[key] = group
+    return tuple(sorted({find(group) for group in parent}))
 
 
 def correlate(
