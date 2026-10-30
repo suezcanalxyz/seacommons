@@ -267,12 +267,29 @@ def correlate(
     if len(groups) >= 2:
         support.append("independent_source_groups")
 
+    # Invalid AIS telemetry must not become supporting evidence or bypass
+    # distance checks (NaN comparisons are otherwise always false).
+    valid_ais_fixes: list[AISFix] = []
+    for fix in ais_fixes:
+        if (
+            not isfinite(fix.lat) or not isfinite(fix.lon)
+            or not -90 <= fix.lat <= 90 or not -180 <= fix.lon <= 180
+        ):
+            contradictions.append("invalid_ais_fix_coordinates")
+            continue
+        try:
+            _utc(fix.observed_at)
+        except (ValueError, TypeError, AttributeError):
+            contradictions.append("invalid_ais_fix_timestamp")
+            continue
+        valid_ais_fixes.append(fix)
+
     nearest: tuple[float, float] | None = None
     if subject.mmsi:
         for claim in valid:
             if claim.lat is None or claim.lon is None:
                 continue
-            for fix in ais_fixes:
+            for fix in valid_ais_fixes:
                 if fix.mmsi != subject.mmsi:
                     continue
                 minutes = abs((_utc(fix.observed_at) - _utc(claim.occurred_at)).total_seconds()) / 60
@@ -290,7 +307,7 @@ def correlate(
         for claim in valid:
             if claim.lat is None or claim.lon is None:
                 continue
-            for fix in ais_fixes:
+            for fix in valid_ais_fixes:
                 if fix.mmsi != subject.mmsi:
                     continue
                 offset = abs((_utc(fix.observed_at) - _utc(claim.occurred_at)).total_seconds()) / 60
