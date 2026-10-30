@@ -173,13 +173,18 @@ def correlate(
 
     if not valid:
         return Correlation("no_match", anchor.kind, "", (), (), (), tuple(contradictions))
-    # Count ORIGINAL reporting chains, not articles or republisher domains.
-    # A single original document may be syndicated under many URLs/groups.
+    # Corroboration requires an EXPLICIT original document/case identifier.
+    # Source names and URLs alone do not establish editorial independence.
+    # A single document cannot count twice even if different origins are
+    # accidentally assigned to the same URL, or if it is syndicated.
     groups_by_origin: dict[str, str] = {}
+    seen_document_urls: set[str] = set()
     for claim in valid:
-        if claim.source_url:
-            origin = (claim.origin_report_id or "").strip() or claim.source_url
-            groups_by_origin.setdefault(origin, claim.source_group.strip())
+        origin = (claim.origin_report_id or "").strip()
+        if not origin or not claim.source_url or claim.source_url in seen_document_urls:
+            continue
+        seen_document_urls.add(claim.source_url)
+        groups_by_origin.setdefault(origin, claim.source_group.strip())
     groups = tuple(sorted({group for group in groups_by_origin.values() if group}))
     has_urls = all(claim.source_url.startswith("https://") for claim in valid)
     corroborated = len(groups) >= 2 and strong_identity and has_urls
