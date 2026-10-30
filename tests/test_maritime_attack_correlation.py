@@ -391,6 +391,21 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertFalse(result.publication_allowed)
 
 
+    def test_invalid_imo_cannot_establish_strong_identity(self):
+        bad = VesselRef(imo="1234567", name="CONTSHIP JET")
+        result = correlate(bad, [report("bad_a", "navy", bad),
+                                 report("bad_b", "mrcc", bad)])
+        self.assertEqual(result.status, "candidate")
+        self.assertNotIn("strong_vessel_identifier", result.supporting)
+
+    def test_placeholder_mmsi_cannot_establish_strong_identity(self):
+        bad = VesselRef(mmsi="000000000", name="CONTSHIP JET")
+        result = correlate(bad, [report("bad_a", "navy", bad),
+                                 report("bad_b", "mrcc", bad)])
+        self.assertEqual(result.status, "candidate")
+        self.assertNotIn("strong_vessel_identifier", result.supporting)
+
+
 class SourceObservationAdapterTests(unittest.TestCase):
     """Pure adapter tests; no DB credentials, network, writes or schedulers."""
 
@@ -463,6 +478,35 @@ class SourceObservationAdapterTests(unittest.TestCase):
         self.assertIsNone(claim_from_source_observation(
             self.observation("navy"), {"kind": "attack",
                 "occurred_at": "2026-10-28T10:00:00Z"}))
+
+
+    def test_imo_and_mmsi_labels_are_normalized(self):
+        from core.intel.maritime_attack_correlation import claim_from_source_observation
+        extraction = {**self.extraction(), "imo": "IMO: 9348625",
+                      "mmsi": "MMSI 636019532"}
+        claim = claim_from_source_observation(self.observation("navy"), extraction)
+        self.assertEqual(claim.vessel.imo, "9348625")
+        self.assertEqual(claim.vessel.mmsi, "636019532")
+
+    def test_invalid_imo_checksum_fails_closed(self):
+        from core.intel.maritime_attack_correlation import claim_from_source_observation
+        extraction = {**self.extraction(), "imo": "9348624"}
+        with self.assertRaisesRegex(ValueError, "Invalid IMO"):
+            claim_from_source_observation(self.observation("navy"), extraction)
+
+    def test_placeholder_mmsi_fails_closed(self):
+        from core.intel.maritime_attack_correlation import claim_from_source_observation
+        extraction = {**self.extraction(), "mmsi": "000000000"}
+        with self.assertRaisesRegex(ValueError, "Invalid MMSI"):
+            claim_from_source_observation(self.observation("navy"), extraction)
+
+    def test_incomplete_or_unicode_mmsi_fails_closed(self):
+        from core.intel.maritime_attack_correlation import claim_from_source_observation
+        for mmsi in ("63601953", "６３６０１９５３２"):
+            with self.subTest(mmsi=mmsi):
+                extraction = {**self.extraction(), "mmsi": mmsi}
+                with self.assertRaisesRegex(ValueError, "Invalid MMSI"):
+                    claim_from_source_observation(self.observation("navy"), extraction)
 
 
 if __name__ == "__main__":
