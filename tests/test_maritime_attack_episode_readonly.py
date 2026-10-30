@@ -45,6 +45,8 @@ def episode(**overrides):
         episode_id=LINK.attack_episode_id,
         episode_family="maritime_attack_episode",
         status="active",
+        verification_status="multi_source_corroborated",
+        independence_groups=["bg_military_observation", "independent_maritime_observation"],
         evidence_fingerprint="a" * 64,
         observation_ids=[ATTACK.claim_id],
         subject_ids=["imo:9348625", "mmsi:636019532"],
@@ -85,6 +87,40 @@ class CanonicalEpisodeGuardTests(unittest.TestCase):
     def test_superseded_episode_is_not_reused(self):
         result = evaluate(episode(status="superseded"), use_default=False)
         self.assertEqual(result.reason_codes, ("canonical_episode_inactive",))
+
+    def test_single_source_episode_cannot_anchor_sinking_update(self):
+        result = evaluate(
+            episode(verification_status="single_source_observed"),
+            use_default=False,
+        )
+        self.assertEqual(result.reason_codes, ("canonical_attack_not_corroborated",))
+        self.assertFalse(result.publication_allowed)
+
+    def test_contested_episode_cannot_anchor_sinking_update(self):
+        result = evaluate(
+            episode(verification_status="contested"),
+            use_default=False,
+        )
+        self.assertEqual(result.reason_codes, ("canonical_attack_not_corroborated",))
+
+    def test_missing_or_repeated_independence_groups_fail_closed(self):
+        for groups in ([], None, ["same", "same"], ["same", " "], ["same", 7]):
+            with self.subTest(groups=groups):
+                result = evaluate(
+                    episode(independence_groups=groups), use_default=False,
+                )
+                self.assertEqual(
+                    result.reason_codes,
+                    ("canonical_attack_independence_incomplete",),
+                )
+
+    def test_two_distinct_independence_groups_preserve_valid_jet_outcome(self):
+        result = evaluate(
+            episode(independence_groups=["navy_observation", "independent_rescue"]),
+            use_default=False,
+        )
+        self.assertEqual(result.status, "corroborated_update")
+        self.assertFalse(result.publication_allowed)
 
     def test_missing_evidence_fingerprint_fails_closed(self):
         result = evaluate(episode(evidence_fingerprint=""), use_default=False)
