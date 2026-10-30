@@ -256,6 +256,23 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
     return claim
 
 
+
+def _chronology_issues(claim: IncidentClaim) -> tuple[str, ...]:
+    """Report all temporal contradictions without trusting ingestion order."""
+    received = _utc(claim.received_at) if claim.received_at is not None else None
+    published = _utc(claim.published_at) if claim.published_at is not None else None
+    occurred = _utc(claim.occurred_at)
+    tolerance_seconds = (claim.time_uncertainty_minutes + 5) * 60
+    issues: list[str] = []
+    if received is not None and (occurred - received).total_seconds() > tolerance_seconds:
+        issues.append("receipt_before_incident:" + claim.claim_id)
+    if published is not None and (occurred - published).total_seconds() > tolerance_seconds:
+        issues.append("publication_before_incident:" + claim.claim_id)
+    if published is not None and received is not None and (published - received).total_seconds() > 300:
+        issues.append("publication_after_receipt:" + claim.claim_id)
+    return tuple(issues)
+
+
 def correlate(
     subject: VesselRef,
     claims: Sequence[IncidentClaim],
@@ -276,6 +293,20 @@ def correlate(
     _utc(anchor.occurred_at)
     if _identity_match(subject, anchor.vessel) in {"conflict", "unknown"}:
         return Correlation("no_match", anchor.kind, "", (), (), (), ("anchor_identity_conflict",))
+    # A report with impossible publication/receipt chronology cannot define
+    # the incident's time window. Otherwise a bad first report could veto two
+    # independent, valid observations simply by appearing first in the feed.
+    # Preserve the original claim for contradiction reporting below.
+    if _chronology_issues(anchor):
+        for possible_anchor in claims[1:]:
+            if possible_anchor.kind != anchor.kind:
+                continue
+            if _identity_match(subject, possible_anchor.vessel) in {"conflict", "unknown"}:
+                continue
+            _validate_claim_location(possible_anchor)
+            if not _chronology_issues(possible_anchor):
+                anchor = possible_anchor
+                break
     valid: list[IncidentClaim] = []
     strong_identity = False
     contradictions: list[str] = []
@@ -289,24 +320,11 @@ def correlate(
             contradictions.append("different_incident_kind:" + claim.claim_id)
             continue
         _validate_claim_location(claim)
-        # Check the entire chronology before quarantining the report.
-        # Recording every violation avoids hiding a publication inconsistency
-        # behind an earlier receipt inconsistency (and vice versa).
-        invalid_chronology = False
-        received = _utc(claim.received_at) if claim.received_at is not None else None
-        published = _utc(claim.published_at) if claim.published_at is not None else None
-        occurred = _utc(claim.occurred_at)
-        tolerance_seconds = (claim.time_uncertainty_minutes + 5) * 60
-        if received is not None and (occurred - received).total_seconds() > tolerance_seconds:
-            contradictions.append("receipt_before_incident:" + claim.claim_id)
-            invalid_chronology = True
-        if published is not None and (occurred - published).total_seconds() > tolerance_seconds:
-            contradictions.append("publication_before_incident:" + claim.claim_id)
-            invalid_chronology = True
-        if published is not None and received is not None and (published - received).total_seconds() > 300:
-            contradictions.append("publication_after_receipt:" + claim.claim_id)
-            invalid_chronology = True
-        if invalid_chronology:
+        # Quarantine invalid chronology, but preserve every reason in the
+        # audit result. This uses the same check as anchor selection.
+        chronology_issues = _chronology_issues(claim)
+        if chronology_issues:
+            contradictions.extend(chronology_issues)
             continue
         delta_minutes = abs((_utc(claim.occurred_at) - _utc(anchor.occurred_at)).total_seconds()) / 60
         # Separate attacks hours apart must not collapse into one episode.
