@@ -156,6 +156,45 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertEqual(result.status, "candidate")
         self.assertIn("publication_after_receipt:second", result.contradicting)
 
+    def test_distinct_attacks_three_hours_apart_not_merged(self):
+        from dataclasses import replace
+        a = report("first", "ministry")
+        b = replace(report("second", "coast_guard"), occurred_at=dt(28, 13))
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "candidate")
+        self.assertIn("temporal_conflict:second", result.contradicting)
+
+    def test_approximate_time_can_overlap_with_uncertainty(self):
+        from dataclasses import replace
+        a = replace(report("first", "ministry"), time_uncertainty_minutes=40)
+        b = replace(report("second", "coast_guard"),
+                    occurred_at=dt(28, 12), time_uncertainty_minutes=40)
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(result.source_evidence[0]["time_uncertainty_minutes"], "40")
+
+    def test_contradictory_ais_needs_review_not_attack_disproof(self):
+        a = report("first", "ministry")
+        b = report("second", "coast_guard")
+        distant = AISFix(JET.mmsi, dt(28, 10), 35.59084, 28.23322)
+        result = correlate(JET, [a, b], [distant])
+        self.assertEqual(result.status, "candidate")
+        self.assertIn("ais_position_conflict_needs_review", result.contradicting)
+        self.assertFalse(result.publication_allowed)
+
+    def test_ais_conflict_outside_event_window_does_not_veto(self):
+        a = report("first", "ministry")
+        b = report("second", "coast_guard")
+        distant = AISFix(JET.mmsi, dt(28, 12), 35.59084, 28.23322)
+        result = correlate(JET, [a, b], [distant])
+        self.assertEqual(result.status, "corroborated")
+
+    def test_negative_time_uncertainty_rejected(self):
+        from dataclasses import replace
+        bad = replace(report("first", "ministry"), time_uncertainty_minutes=-1)
+        with self.assertRaises(ValueError):
+            correlate(JET, [bad])
+
     def test_http_link_cannot_auto_corroborate(self):
         from dataclasses import replace
         a = report("mod", "bulgarian_mod")
