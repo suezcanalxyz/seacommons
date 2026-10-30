@@ -250,3 +250,53 @@ def test_conflicting_french_headcount_blocks_cross_post_resolution():
     # The group-size contradiction is a safety gate independent of the
     # language-specific outcome classifier.
     assert not has_resolution_signal(original, [unrelated], now=NOW)
+
+
+def test_pre_origin_rescue_reply_cannot_resolve_later_distress():
+    """An older reply is not a causal follow-up to the founding report."""
+    from core.intel.lifecycle import distress_lifecycle, latest_own_reply_outcome
+
+    event = _distress(
+        (NOW - timedelta(hours=2)).isoformat(),
+        reposts=[{
+            "posted_at": (NOW - timedelta(hours=3)).isoformat(),
+            "note": "The people were rescued and are safe.",
+        }],
+    )
+    assert latest_own_reply_outcome(event, now=NOW) is None
+    assert distress_lifecycle(event, now=NOW, same_source=[]) == "active"
+
+
+def test_pre_origin_danger_reply_cannot_reopen_later_resolved_report():
+    from core.intel.lifecycle import distress_lifecycle, latest_own_reply_outcome
+
+    event = _distress(
+        (NOW - timedelta(hours=2)).isoformat(),
+        reposts=[{
+            "posted_at": (NOW - timedelta(hours=3)).isoformat(),
+            "note": "They are still in distress and taking on water.",
+        }],
+    )
+    event.text = "The people were rescued and are safe."
+    assert latest_own_reply_outcome(event, now=NOW) is None
+    assert distress_lifecycle(event, now=NOW, same_source=[]) == "resolved"
+
+
+def test_valid_post_origin_rescue_reply_remains_decisive():
+    from core.intel.lifecycle import distress_lifecycle, latest_own_reply_outcome
+
+    event = _distress(
+        (NOW - timedelta(hours=3)).isoformat(),
+        reposts=[
+            {
+                "posted_at": (NOW - timedelta(hours=4)).isoformat(),
+                "note": "They are still in distress and taking on water.",
+            },
+            {
+                "posted_at": (NOW - timedelta(hours=1)).isoformat(),
+                "note": "The people were rescued and are safe.",
+            },
+        ],
+    )
+    assert latest_own_reply_outcome(event, now=NOW) == "resolved"
+    assert distress_lifecycle(event, now=NOW, same_source=[]) == "resolved"
