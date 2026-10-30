@@ -137,6 +137,36 @@ def _reconcile_association(existing: Any, incoming: SatelliteObservation) -> Non
         existing.evidence_status = "contextual"
 
 
+def _reconcile_observation_replay(existing: Any, incoming: SatelliteObservation) -> None:
+    """Reconcile association and provenance together, preserving conflict lineage."""
+    previous = existing.provenance if isinstance(existing.provenance, dict) else {}
+    previous_status = existing.association_status
+    previous_episode = existing.episode_id
+    merged = _merged_provenance(previous, incoming.provenance)
+    _reconcile_association(existing, incoming)
+
+    if existing.association_status == "conflict":
+        # A later replay must not replace the original reason for quarantine.
+        merged["association_method"] = "conflict_requires_review"
+        if previous_status == "conflict" and isinstance(previous.get("association_conflict"), dict):
+            merged["association_conflict"] = previous["association_conflict"]
+        else:
+            merged["association_conflict"] = {
+                "previous_status": previous_status,
+                "previous_episode_id": previous_episode,
+                "incoming_status": incoming.association_status,
+                "incoming_episode_id": incoming.episode_id,
+            }
+    elif previous_status == "strong" and existing.association_status == "strong":
+        # Contextual replays must not erase the provenance of a retained link.
+        if incoming.association_status != "strong":
+            for key in ("association_method", "provider_matched"):
+                if key in previous:
+                    merged[key] = previous[key]
+
+    existing.provenance = merged
+
+
 def persist_observations(observations: list[SatelliteObservation]) -> int:
     """Persist scene metadata idempotently while merging case-target lineage."""
     from core.db.models import SatelliteObservationDB
@@ -148,8 +178,7 @@ def persist_observations(observations: list[SatelliteObservation]) -> int:
         for observation in observations:
             existing = db.get(SatelliteObservationDB, observation.observation_id)
             if existing is not None:
-                existing.provenance = _merged_provenance(existing.provenance, observation.provenance)
-                _reconcile_association(existing, observation)
+                _reconcile_observation_replay(existing, observation)
                 continue
             discovered = parse_utc(observation.discovered_at)
             db.add(SatelliteObservationDB(
