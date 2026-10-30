@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import json
+import math
 from typing import Any, Literal
 
 TemporalRelation = Literal["reverse", "nearest", "forward"]
@@ -43,19 +45,33 @@ class SatelliteObservation:
 
 
 def _merged_provenance(existing: dict[str, Any] | None, incoming: dict[str, Any] | None) -> dict[str, Any]:
-    merged = dict(existing or {})
-    incoming = dict(incoming or {})
+    # Provider lineage is untrusted JSON. Malformed containers or nested
+    # case-target fields must not abort an otherwise valid satellite ingest.
+    merged = dict(existing) if isinstance(existing, dict) else {}
+    incoming = dict(incoming) if isinstance(incoming, dict) else {}
     for key, value in incoming.items():
-        if key != "case_targets":
+        # Conflict lineage is computed locally, never accepted from a provider.
+        if key not in ("case_targets", "association_conflict"):
             merged[key] = value
     targets = []
     seen = set()
-    for row in [*(merged.get("case_targets") or []), *(incoming.get("case_targets") or [])]:
+    previous_targets = merged.get("case_targets")
+    new_targets = incoming.get("case_targets")
+    for row in [
+        *(previous_targets if isinstance(previous_targets, list) else []),
+        *(new_targets if isinstance(new_targets, list) else []),
+    ]:
         if not isinstance(row, dict):
             continue
-        key = (
-            row.get("role"), row.get("lat"), row.get("lon"), row.get("at"),
-            row.get("search_direction"), row.get("drift_id"), row.get("trajectory_index"),
+        # A tuple containing a provider-supplied list/dict is unhashable.
+        # Canonical JSON retains the established seven-field deduplication
+        # identity while tolerating nested JSON values.
+        key = json.dumps(
+            [
+                row.get("role"), row.get("lat"), row.get("lon"), row.get("at"),
+                row.get("search_direction"), row.get("drift_id"), row.get("trajectory_index"),
+            ],
+            sort_keys=True, separators=(",", ":"), default=str,
         )
         if key in seen:
             continue
@@ -64,6 +80,92 @@ def _merged_provenance(existing: dict[str, Any] | None, incoming: dict[str, Any]
     if targets:
         merged["case_targets"] = targets
     return merged
+
+
+def _reconcile_association(existing: Any, incoming: SatelliteObservation) -> None:
+    """Keep replayed SAR evidence consistent; quarantine contradictory matches.
+
+    A contextual replay must not erase a valid strong match. An explicit
+    conflict, or two different strong episode identities for one observation,
+    instead invalidates automatic corroboration until human review.
+    """
+    old_status = existing.association_status
+    new_status = incoming.association_status
+
+    # Once contradictory evidence is recorded, a routine ingest must not
+    # silently re-promote the same observation to a confirmed identity.
+    if old_status == "conflict":
+        existing.episode_id = None
+        existing.evidence_status = "contextual"
+        return
+
+    if new_status == "conflict" and old_status == "strong":
+        existing.association_status = "conflict"
+        existing.episode_id = None
+        existing.evidence_status = "contextual"
+        return
+
+    if new_status == "strong" and incoming.episode_id:
+        if (
+            old_status == "strong"
+            and existing.episode_id
+            and existing.episode_id != incoming.episode_id
+        ):
+            existing.association_status = "conflict"
+            existing.episode_id = None
+            existing.evidence_status = "contextual"
+            return
+        existing.association_status = "strong"
+        existing.episode_id = incoming.episode_id
+        existing.evidence_status = "associated"
+        return
+
+    if old_status == "strong" and existing.episode_id:
+        # No demotion for an ordinary unmatched/contextual replay.
+        return
+
+    if new_status == "strong" and not incoming.episode_id:
+        # A provider flag without a canonical parent is not corroboration.
+        new_status = "provider_matched_unresolved"
+    if new_status:
+        existing.association_status = new_status
+    # A non-strong observation must never acquire an episode identity solely
+    # because an upstream record provided an episode_id field.
+    existing.episode_id = None
+    if incoming.evidence_status not in ("contextual", "associated"):
+        existing.evidence_status = incoming.evidence_status
+    else:
+        existing.evidence_status = "contextual"
+
+
+def _reconcile_observation_replay(existing: Any, incoming: SatelliteObservation) -> None:
+    """Reconcile association and provenance together, preserving conflict lineage."""
+    previous = existing.provenance if isinstance(existing.provenance, dict) else {}
+    previous_status = existing.association_status
+    previous_episode = existing.episode_id
+    merged = _merged_provenance(previous, incoming.provenance)
+    _reconcile_association(existing, incoming)
+
+    if existing.association_status == "conflict":
+        # A later replay must not replace the original reason for quarantine.
+        merged["association_method"] = "conflict_requires_review"
+        if previous_status == "conflict" and isinstance(previous.get("association_conflict"), dict):
+            merged["association_conflict"] = previous["association_conflict"]
+        else:
+            merged["association_conflict"] = {
+                "previous_status": previous_status,
+                "previous_episode_id": previous_episode,
+                "incoming_status": incoming.association_status,
+                "incoming_episode_id": incoming.episode_id,
+            }
+    elif previous_status == "strong" and existing.association_status == "strong":
+        # Contextual replays must not erase the provenance of a retained link.
+        if incoming.association_status != "strong":
+            for key in ("association_method", "provider_matched"):
+                if key in previous:
+                    merged[key] = previous[key]
+
+    existing.provenance = merged
 
 
 def persist_observations(observations: list[SatelliteObservation]) -> int:
@@ -77,15 +179,7 @@ def persist_observations(observations: list[SatelliteObservation]) -> int:
         for observation in observations:
             existing = db.get(SatelliteObservationDB, observation.observation_id)
             if existing is not None:
-                existing.provenance = _merged_provenance(existing.provenance, observation.provenance)
-                # Association is monotonic: a later resolver may promote a
-                # contextual scene/detection, but a replay must not erase it.
-                if observation.episode_id:
-                    existing.episode_id = observation.episode_id
-                if observation.association_status:
-                    existing.association_status = observation.association_status
-                if observation.evidence_status != "contextual":
-                    existing.evidence_status = observation.evidence_status
+                _reconcile_observation_replay(existing, observation)
                 continue
             discovered = parse_utc(observation.discovered_at)
             db.add(SatelliteObservationDB(
@@ -154,7 +248,38 @@ def list_incident_observations(incident_id: str) -> list[SatelliteObservation]:
 
 def _valid_mmsi(value: Any) -> str:
     text = str(value or "").strip()
-    return text if len(text) == 9 and text.isdigit() else ""
+    return text if len(text) == 9 and text.isascii() and text.isdecimal() else ""
+
+
+def _valid_detection_position(lat: Any, lon: Any) -> tuple[float, float] | None:
+    """Reject non-finite, malformed and out-of-WGS84 SAR target coordinates."""
+    if isinstance(lat, bool) or isinstance(lon, bool):
+        return None
+    try:
+        latitude, longitude = float(lat), float(lon)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not (math.isfinite(latitude) and math.isfinite(longitude)):
+        return None
+    if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
+        return None
+    return latitude, longitude
+
+
+def _valid_acquisition_time(value: Any, now: datetime) -> str | None:
+    """Require an actual timezone-qualified acquisition, never fabricate 'now'."""
+    if not isinstance(value, str) or "T" not in value:
+        return None
+    try:
+        observed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if observed.tzinfo is None:
+        return None
+    observed = observed.astimezone(timezone.utc)
+    if observed > now + timedelta(minutes=5):
+        return None
+    return observed.isoformat()
 
 
 def materialize_sar_detections(
@@ -178,17 +303,20 @@ def materialize_sar_detections(
     detections = [d for d in raw if isinstance(d, dict)]
     expected = _valid_mmsi(expected_mmsi)
     observations: list[SatelliteObservation] = []
-    now = datetime.now(timezone.utc).isoformat()
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
     for detection in detections:
-        lat, lon = detection.get("lat"), detection.get("lon")
-        if lat is None or lon is None:
+        position = _valid_detection_position(detection.get("lat"), detection.get("lon"))
+        timestamp = _valid_acquisition_time(detection.get("timestamp"), now_dt)
+        if position is None or timestamp is None:
             continue
-        timestamp = str(detection.get("timestamp") or now)
+        lat, lon = position
         digest = hashlib.blake2s(
             f"{incident_id}:{timestamp}:{lat}:{lon}".encode(), digest_size=16,
         ).hexdigest()
         detected = _valid_mmsi(detection.get("mmsi"))
-        provider_matched = bool(detection.get("matched"))
+        # JSON boolean only: e.g. the string "false" must not promote a target.
+        provider_matched = detection.get("matched") is True
         if provider_matched and expected and detected == expected and episode_id:
             association_status = "strong"
             linked_episode = episode_id
