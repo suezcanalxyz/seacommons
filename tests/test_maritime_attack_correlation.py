@@ -406,6 +406,42 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertNotIn("strong_vessel_identifier", result.supporting)
 
 
+
+    def test_invalid_first_report_cannot_veto_two_valid_primary_reports(self):
+        from dataclasses import replace
+        invalid = replace(report("premature", "untrusted"), occurred_at=dt(28, 13))
+        navy = report("navy", "navy")
+        mrcc = report("mrcc", "mrcc")
+        result = correlate(JET, [invalid, navy, mrcc])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(result.claim_ids, ("navy", "mrcc"))
+        self.assertIn("receipt_before_incident:premature", result.contradicting)
+        self.assertIn("publication_before_incident:premature", result.contradicting)
+        self.assertFalse(result.publication_allowed)
+
+    def test_invalid_report_position_does_not_change_corroboration(self):
+        from dataclasses import replace
+        invalid = replace(report("premature", "untrusted"), occurred_at=dt(28, 13))
+        navy = report("navy", "navy")
+        mrcc = report("mrcc", "mrcc")
+        first = correlate(JET, [invalid, navy, mrcc])
+        last = correlate(JET, [navy, mrcc, invalid])
+        self.assertEqual(first.status, last.status)
+        self.assertEqual(first.independent_groups, last.independent_groups)
+        self.assertEqual(first.claim_ids, last.claim_ids)
+
+    def test_all_chronologically_invalid_reports_fail_closed(self):
+        from dataclasses import replace
+        invalid_a = replace(report("bad_a", "navy"), occurred_at=dt(28, 13))
+        invalid_b = replace(report("bad_b", "mrcc"), occurred_at=dt(28, 14))
+        result = correlate(JET, [invalid_a, invalid_b])
+        self.assertEqual(result.status, "no_match")
+        self.assertEqual(result.claim_ids, ())
+        self.assertFalse(result.publication_allowed)
+        self.assertIn("receipt_before_incident:bad_a", result.contradicting)
+        self.assertIn("receipt_before_incident:bad_b", result.contradicting)
+
+
 class SourceObservationAdapterTests(unittest.TestCase):
     """Pure adapter tests; no DB credentials, network, writes or schedulers."""
 
