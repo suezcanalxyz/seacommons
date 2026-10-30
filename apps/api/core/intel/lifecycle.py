@@ -9,7 +9,7 @@ exactly one place this policy is defined.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from core.domain.live_contracts import IncidentLifecycle
@@ -71,10 +71,13 @@ def parse_utc(value: str) -> Optional[datetime]:
 _MIN_SHARED_KEYWORDS_FOR_RESOLUTION_MATCH = 2
 
 
-def has_resolution_signal(event: IntelEvent, same_source: list[IntelEvent]) -> bool:
-    """True if a later post from the same source reports this incident resolved."""
+def has_resolution_signal(
+    event: IntelEvent, same_source: list[IntelEvent], *, now: Optional[datetime] = None,
+) -> bool:
+    """True if a credible later same-source post reports resolution."""
     event_time = parse_utc(event.timestamp_utc)
     event_kw = text_keywords(event.text or event.title)
+    future_limit = _future_limit(now) if now is not None else None
     if event_time is None or not event_kw:
         return False
     for other in same_source:
@@ -82,6 +85,8 @@ def has_resolution_signal(event: IntelEvent, same_source: list[IntelEvent]) -> b
             continue
         other_time = parse_utc(other.timestamp_utc)
         if other_time is None or other_time <= event_time:
+            continue
+        if future_limit is not None and other_time > future_limit:
             continue
         if (other_time - event_time).days > RESOLUTION_LOOKBACK_DAYS:
             continue
@@ -111,10 +116,35 @@ def _outcome_from_text(text: str) -> Optional[str]:
     return None
 
 
-def latest_own_reply_outcome(event: IntelEvent) -> Optional[str]:
-    """Outcome of the latest textual self-reply, allowing review or reopen."""
-    replies = sorted(
-        event.metadata.get("thread_reposts") or [],
+def _future_limit(now: datetime) -> datetime:
+    """Upper bound for a source timestamp, including small clock skew."""
+    now_utc = now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now.astimezone(timezone.utc)
+    return now_utc + timedelta(minutes=5)
+
+
+def latest_own_reply_outcome(
+    event: IntelEvent, *, now: Optional[datetime] = None,
+) -> Optional[str]:
+    """Outcome of the latest credible textual self-reply, allowing reopen.
+
+    The same temporal gate used by Live retention must govern lifecycle
+    decisions: a future-dated reply cannot prematurely resolve or reopen a
+    case. Undated/malformed provider entries are not lifecycle evidence when
+    an evaluation clock is supplied; they remain in the underlying record.
+    """
+    future_limit = _future_limit(now) if now is not None else None
+    replies = [
+        repost for repost in (event.metadata.get("thread_reposts") or [])
+        if isinstance(repost, dict)
+        and (
+            future_limit is None
+            or (
+                (posted := parse_utc(str(repost.get("posted_at") or ""))) is not None
+                and posted <= future_limit
+            )
+        )
+    ]
+    replies.sort(
         key=lambda repost: parse_utc(str(repost.get("posted_at") or ""))
         or datetime.min.replace(tzinfo=timezone.utc),
     )
@@ -147,13 +177,14 @@ def _latest_activity_time(
     observed = [value for value in timestamps if value is not None]
     if now is not None:
         now_utc = now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now.astimezone(timezone.utc)
-        from datetime import timedelta
         future_limit = now_utc + timedelta(minutes=5)
         observed = [value for value in observed if value <= future_limit]
     return max(observed) if observed else None
 
 
-def is_directly_concluded(event: IntelEvent) -> bool:
+def is_directly_concluded(
+    event: IntelEvent, *, now: Optional[datetime] = None,
+) -> bool:
     """Whether this incident carries its own structurally reliable conclusion.
 
     A later explicit danger update can reopen a concluded case. An ambiguous
@@ -162,7 +193,7 @@ def is_directly_concluded(event: IntelEvent) -> bool:
     open or ambiguous.
     """
     original_outcome = _outcome_from_text(event.text or event.title)
-    reply_outcome = latest_own_reply_outcome(event)
+    reply_outcome = latest_own_reply_outcome(event, now=now)
     if reply_outcome == IncidentLifecycle.ACTIVE.value:
         return False
     if reply_outcome == IncidentLifecycle.RESOLVED.value:
@@ -189,7 +220,7 @@ def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[In
     """
     original_outcome = _outcome_from_text(event.text or event.title)
     state = original_outcome or IncidentLifecycle.ACTIVE.value
-    reply_outcome = latest_own_reply_outcome(event)
+    reply_outcome = latest_own_reply_outcome(event, now=now)
     if reply_outcome == IncidentLifecycle.ACTIVE.value:
         state = IncidentLifecycle.ACTIVE.value
     elif reply_outcome == IncidentLifecycle.RESOLVED.value:
@@ -198,7 +229,7 @@ def distress_lifecycle(event: IntelEvent, *, now: datetime, same_source: list[In
         # Do not let a non-decisive comment overwrite a known final outcome.
         if original_outcome != IncidentLifecycle.RESOLVED.value:
             state = IncidentLifecycle.NEEDS_REVIEW.value
-    elif has_resolution_signal(event, same_source):
+    elif has_resolution_signal(event, same_source, now=now):
         state = IncidentLifecycle.RESOLVED.value
     if state in {IncidentLifecycle.RESOLVED.value, IncidentLifecycle.NEEDS_REVIEW.value}:
         return state
@@ -234,6 +265,6 @@ def is_within_live_window(event: IntelEvent, *, now: datetime) -> bool:
     internals. Public timeline retention should use
     is_within_live_retention_window instead.
     """
-    if is_directly_concluded(event):
+    if is_directly_concluded(event, now=now):
         return False
     return is_within_live_retention_window(event, now=now)
