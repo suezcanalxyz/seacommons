@@ -88,6 +88,34 @@ def test_uncatalogued_rss_news_has_conservative_reporting_lineage():
     assert lineage.independence_group == "secondary_news_reporting"
 
 
+
+def test_rss_republishing_ais_does_not_count_as_independent_news():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    event = _event(
+        "Uncatalogued maritime bulletin",
+        event_type="news",
+        metadata={"transport": "rss", "source_lineage": "ais_sensor_lineage"},
+    )
+    lineage = lineage_for_event(event)
+    assert lineage.source_family == "ais_derived_event"
+    assert lineage.sensor_family == "ais"
+    assert lineage.independence_group == "ais_sensor_lineage"
+
+
+def test_rss_derived_without_known_origin_fails_closed():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    event = _event(
+        "Uncatalogued maritime bulletin",
+        event_type="news",
+        metadata={"transport": "rss", "derived": True},
+    )
+    lineage = lineage_for_event(event)
+    assert lineage.independence_group == "unknown"
+    assert lineage.sensor_family == "public_report"
+
+
 def test_sqlalchemy_event_uses_json_meta_for_lineage():
     from core.db.models import IntelEventDB
     from core.intel.evidence_lineage import lineage_for_event
