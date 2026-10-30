@@ -112,7 +112,11 @@ def compute_anomaly_flags(
     # UTC audit clock raises TypeError and aborts the entire truth table.
     # Interpret naive persisted timestamps as UTC, never as host-local time.
     audit_now = now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now.astimezone(timezone.utc)
-    if lifecycle == "active" and any(
+    # An older completed drift is not evidence that the *latest* completed
+    # estimate is stale. Multiple completed rows are separately flagged as
+    # MULTIPLE_CURRENT_DRIFTS until supersession ownership is available.
+    # Require every completed estimate to be old before marking STALE_DRIFT.
+    if lifecycle == "active" and completed and all(
         d.created_at is not None
         and (
             audit_now - (
