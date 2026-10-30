@@ -26,8 +26,16 @@ def episode(family="maritime_attack_episode", status="multi_source_corroborated"
 
 
 class AttackPlayGuardTests(unittest.TestCase):
-    def test_contship_jet_valid_two_lineages_is_only_a_label(self):
-        self.assertTrue(episode_corroborated_for_play(episode()))
+    def test_contship_jet_two_labels_without_audit_fail_closed(self):
+        self.assertFalse(episode_corroborated_for_play(episode()))
+
+    def test_contship_jet_verified_audit_allows_display_label_only(self):
+        self.assertTrue(episode_corroborated_for_play(
+            episode(), independence_verified=True))
+
+    def test_truthy_non_boolean_audit_is_rejected(self):
+        self.assertFalse(episode_corroborated_for_play(
+            episode(), independence_verified=1))
 
     def test_attack_single_source_status_is_not_corroborated(self):
         self.assertFalse(episode_corroborated_for_play(
