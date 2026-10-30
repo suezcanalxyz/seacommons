@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Pure regression tests for bounded batch audits; no DB or network."""
+import ast
+from pathlib import Path
 import unittest
 from types import SimpleNamespace as Row
 
@@ -152,6 +154,43 @@ class BatchAuditTests(unittest.TestCase):
         self.assertEqual(len(result), 9)
         self.assertTrue(all(x.reason == "batch_episode_limit" for x in result.values()))
         self.assertFalse(calls["observations"])
+
+    def test_play_catalog_and_dossiers_invoke_real_audit(self):
+        path = Path(__file__).resolve().parents[1] / "apps/api/core/api/routes/play.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        expected = {
+            "_compute_play_catalog": "audit_attack_episodes_independence_db",
+            "_public_episode_dossier": "_audit_attack_projection_db",
+            "play_incident_timeline": "_audit_attack_projection_db",
+        }
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef) or node.name not in expected:
+                continue
+            called = {
+                child.func.id for child in ast.walk(node)
+                if isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
+            }
+            self.assertIn(expected.pop(node.name), called, node.name)
+        self.assertEqual(expected, {})
+
+    def test_overlarge_lineage_fails_closed(self):
+        result = audit_attack_episodes_independence(
+            [episode("jet", "a", "b")],
+            lambda ids: [obs("a", "a", "1"), obs("b", "b", "2")],
+            lambda ids: [edge("a", f"ancestor_{i}") for i in range(2050)]
+            if "a" in ids else [],
+        )
+        self.assertEqual(result["jet"].reason, "batch_node_limit")
+
+    def test_unknown_relation_does_not_become_proof(self):
+        result = audit_attack_episodes_independence(
+            [episode("jet", "a", "b")],
+            lambda ids: [obs("a", "a", "1"), obs("b", "b", "2")],
+            lambda ids: [Row(from_observation_id="a", to_observation_id="b",
+                             relation="quotes", method_version="unverified",
+                             confidence=0.1)] if "a" in ids else [],
+        )
+        self.assertEqual(result["jet"].reason, "unverified_lineage_edge")
 
     def test_no_episodes_does_not_fetch(self):
         result, calls = batch([], [])
