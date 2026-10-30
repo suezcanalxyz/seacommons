@@ -495,6 +495,64 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertFalse(result.publication_allowed)
 
 
+
+
+class MaritimeAttackLineageTests(unittest.TestCase):
+    """Lineage input is a read-only projection of canonical lineage_edges."""
+
+    def test_syndicated_copy_with_new_url_and_origin_is_not_independent(self):
+        original = report("original", "navy")
+        reprint = report("reprint", "newsroom")
+        result = correlate(JET, [original, reprint],
+                           lineage_edges=[("reprint", "original")])
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(len(result.independent_groups), 1)
+        self.assertIn("derived_source_not_independent", result.contradicting)
+        self.assertEqual(result.source_evidence[1]["lineage_root"], "original")
+
+    def test_indirect_derivation_through_unselected_intermediate_collapses(self):
+        original = report("original", "navy")
+        reprint = report("reprint", "newsroom")
+        result = correlate(JET, [original, reprint], lineage_edges=[
+            ("reprint", "wire_intermediate"), ("wire_intermediate", "original"),
+        ])
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(len(result.independent_groups), 1)
+
+    def test_third_independent_primary_can_corroborate(self):
+        original = report("original", "navy")
+        reprint = report("reprint", "newsroom")
+        mrcc = report("mrcc", "coast_guard")
+        result = correlate(JET, [original, reprint, mrcc],
+                           lineage_edges=[("reprint", "original")])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(result.independent_groups, ("coast_guard", "navy"))
+        self.assertFalse(result.publication_allowed)
+
+    def test_lineage_collapsing_is_arrival_order_invariant(self):
+        original, reprint = report("original", "navy"), report("reprint", "newsroom")
+        mrcc = report("mrcc", "coast_guard")
+        for claims in ([reprint, mrcc, original], [mrcc, original, reprint],
+                       [original, reprint, mrcc]):
+            with self.subTest(order=[claim.claim_id for claim in claims]):
+                result = correlate(JET, claims,
+                                   lineage_edges=[("reprint", "original")])
+                self.assertEqual(result.status, "corroborated")
+                self.assertEqual(result.independent_groups, ("coast_guard", "navy"))
+
+    def test_three_syndicated_distant_reports_do_not_hijack_two_primaries(self):
+        distant = [report("copy_" + str(i), "outlet_" + str(i),
+                          lat=15.0, lon=130.0) for i in range(3)]
+        navy, mrcc = report("navy", "navy"), report("mrcc", "mrcc")
+        result = correlate(JET, [*distant, navy, mrcc], lineage_edges=[
+            ("copy_1", "copy_0"), ("copy_2", "copy_1"),
+        ])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(set(result.claim_ids), {"navy", "mrcc"})
+        self.assertEqual(result.independent_groups, ("mrcc", "navy"))
+        self.assertIn("spatial_conflict:copy_0", result.contradicting)
+
+
 class SourceObservationAdapterTests(unittest.TestCase):
     """Pure adapter tests; no DB credentials, network, writes or schedulers."""
 
