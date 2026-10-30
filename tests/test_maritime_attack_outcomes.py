@@ -16,7 +16,9 @@ def at(day, hour, month=10):
     return datetime(2026, month, day, hour, tzinfo=timezone.utc)
 
 
-# Synthetic unit-test timestamps and source-independence labels: the fixture\n# does not assert that real-world sinking corroboration has been established.\nATTACK = IncidentClaim(
+# Synthetic unit-test timestamps and source-independence labels: the fixture
+# does not assert that real-world sinking corroboration has been established.
+ATTACK = IncidentClaim(
     "bg_mod_20261028", "attack", at(28, 10),
     "bg_mod_military_observation", "https://www.mod.bg/news9664",
     JET, 43.25, 28.8, 25.0, at(28, 11), at(28, 12),
