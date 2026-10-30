@@ -50,7 +50,8 @@ def _merged_provenance(existing: dict[str, Any] | None, incoming: dict[str, Any]
     merged = dict(existing) if isinstance(existing, dict) else {}
     incoming = dict(incoming) if isinstance(incoming, dict) else {}
     for key, value in incoming.items():
-        if key != "case_targets":
+        # Conflict lineage is computed locally, never accepted from a provider.
+        if key not in ("case_targets", "association_conflict"):
             merged[key] = value
     targets = []
     seen = set()
