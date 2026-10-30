@@ -104,7 +104,7 @@ class CanonicalEpisodeGuardTests(unittest.TestCase):
         self.assertEqual(result.reason_codes, ("canonical_attack_not_corroborated",))
 
     def test_missing_or_repeated_independence_groups_fail_closed(self):
-        for groups in ([], None, ["same", "same"], ["same", " "], ["same", 7]):
+        for groups in ([], None, ["same", "same"], ["UKMTO", " ukmto "], ["same", " "], ["same", 7]):
             with self.subTest(groups=groups):
                 result = evaluate(
                     episode(independence_groups=groups), use_default=False,
