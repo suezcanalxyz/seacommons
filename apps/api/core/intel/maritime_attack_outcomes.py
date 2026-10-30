@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Sequence
 
 from core.intel.maritime_attack_correlation import (
     Correlation, IncidentClaim, VesselRef, _canonical_source_url,
@@ -93,10 +92,14 @@ def reconcile_reported_sinking(
             or attack_correlation.incident_type != "attack"
             or sinking_correlation.incident_type != "sinking"):
         return _rejected(link, "correlation_does_not_include_claim")
+    if (attack_correlation.status not in {"candidate", "corroborated"}
+            or sinking_correlation.status not in {"candidate", "corroborated"}):
+        return _rejected(link, "unusable_correlation_status")
     if ((subject.imo and not _valid_imo(subject.imo))
             or (subject.mmsi and not _valid_mmsi(subject.mmsi))
             or _identity_match(subject, attack.vessel) != "strong"
-            or _identity_match(subject, sinking.vessel) != "strong"):
+            or _identity_match(subject, sinking.vessel) != "strong"
+            or _identity_match(attack.vessel, sinking.vessel) == "conflict"):
         return _rejected(link, "strong_vessel_identity_required")
     if not all(
         claim.origin_report_id and claim.source_group
