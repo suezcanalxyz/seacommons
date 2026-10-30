@@ -19,7 +19,7 @@ def report(identifier, group, vessel=JET, *, kind="attack", lat=43.25, lon=28.8,
     return IncidentClaim(
         identifier, kind, when or dt(28, 10), group,
         url or "https://example.org/" + identifier,
-        vessel, lat, lon, 5.0, dt(28, 11), dt(28, 11, 30),
+        vessel, lat, lon, 5.0, dt(28, 11), dt(28, 11, 30), identifier,
     )
 
 
@@ -117,6 +117,14 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
                             "mod", "https://example.org", JET)
         with self.assertRaises(ValueError):
             correlate(JET, [bad])
+
+    def test_unknown_original_report_provenance_cannot_corroborate(self):
+        from dataclasses import replace
+        a = replace(report("a", "publisher_one"), origin_report_id=None)
+        b = replace(report("b", "publisher_two"), origin_report_id=None)
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(result.independent_groups, ())
 
     def test_syndicated_original_across_different_urls_and_groups(self):
         """Different publishers repeating one document are not two witnesses."""
