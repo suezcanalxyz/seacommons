@@ -107,6 +107,28 @@ class MaritimeAttackLineageReadOnlyTests(unittest.TestCase):
         self.assertEqual(result.status, "candidate")
         self.assertEqual(len(result.independent_groups), 1)
 
+    def test_self_referential_lineage_fails_closed(self):
+        lineage = load_verified_lineage(
+            ["mod", "mrcc"], reader([edge("mod", "mod")]))
+        self.assertFalse(lineage.complete)
+        self.assertEqual(lineage.reason, "lineage_cycle_detected")
+
+    def test_cycle_blocks_two_otherwise_independent_authorities(self):
+        result = correlate_with_verified_lineage(
+            JET, [claim("mod", "mod"), claim("mrcc", "mrcc")],
+            reader([edge("mod", "intermediate"),
+                    edge("intermediate", "mod")]))
+        self.assertEqual(result.status, "candidate")
+        self.assertFalse(result.publication_allowed)
+        self.assertIn("lineage_cycle_detected", result.contradicting)
+
+    def test_acyclic_shared_ancestor_is_not_a_cycle(self):
+        lineage = load_verified_lineage(
+            ["a"], reader([edge("a", "b"), edge("a", "c"),
+                           edge("b", "root"), edge("c", "root")]))
+        self.assertTrue(lineage.complete)
+        self.assertEqual(len(lineage.edges), 4)
+
     def test_read_scope_only_claims_and_ancestors(self):
         calls = []
         lineage = load_verified_lineage(
