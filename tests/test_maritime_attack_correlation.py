@@ -26,10 +26,23 @@ def report(identifier, group, vessel=JET, *, kind="attack", lat=43.25, lon=28.8,
 class MaritimeAttackCorrelationTests(unittest.TestCase):
     def test_contship_jet_28_october_regression(self):
         """Two original authorities + proximate AIS => corroborated attack."""
+        # Primary government documents, not fictional prosecutor evidence.
+        # MOD reports naval/airborne observation; MTC reports the separate
+        # maritime rescue-coordination signal. Independence must be audited.
         claims = [
-            report("bulgarian_mod", "bulgarian_mod"),
-            report("bulgarian_prosecutor", "bulgarian_prosecutor",
-                   VesselRef(name="CONTSHIP JET")),
+            IncidentClaim(
+                "bg_mod_20261028", "attack", dt(28, 10),
+                "bg_mod_military_observation", "https://www.mod.bg/news9664",
+                JET, 43.25, 28.8, 5.0, dt(28, 11), dt(28, 11, 30),
+                "bg_mod_news9664",
+            ),
+            IncidentClaim(
+                "bg_mtc_20261028", "attack", dt(28, 10),
+                "bg_mtc_mrcc_signal",
+                "https://www.mtc.government.bg/bg/category/1/18-chlenniyat-ekipazh-na-konteynerovoza-contship-jet-e-spasen",
+                VesselRef(name="CONTSHIP JET"), 43.25, 28.8, 5.0,
+                dt(28, 11), dt(28, 11, 30), "bg_mtc_rescue_signal",
+            ),
         ]
         ais = [AISFix(JET.mmsi, dt(28, 9, 59, 22), 43.265927, 28.814900)]
         old_gap = [AISGap(JET.mmsi, dt(26, 12, 24), "aisgap:636019532")]
