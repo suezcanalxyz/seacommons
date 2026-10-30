@@ -118,6 +118,45 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             correlate(JET, [bad])
 
+    def test_syndicated_original_across_different_urls_and_groups(self):
+        """Different publishers repeating one document are not two witnesses."""
+        from dataclasses import replace
+        a = report("mod", "bulgarian_mod")
+        b = report("reprint", "newsroom", source_id="reprint")
+        a = replace(a, origin_report_id="ministry_release_20261028")
+        b = replace(b, origin_report_id="ministry_release_20261028")
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(len(result.independent_groups), 1)
+
+    def test_provenance_event_publication_reception_preserved(self):
+        result = correlate(JET, [report("mod", "bulgarian_mod")])
+        self.assertEqual(len(result.source_evidence), 1)
+        row = result.source_evidence[0]
+        self.assertEqual(row["occurred_at"], dt(28, 10).isoformat())
+        self.assertEqual(row["published_at"], dt(28, 11).isoformat())
+        self.assertEqual(row["received_at"], dt(28, 11, 30).isoformat())
+        self.assertFalse(result.publication_allowed)
+        self.assertTrue(result.requires_operator_review)
+
+    def test_impossible_publication_receipt_order_excluded(self):
+        from dataclasses import replace
+        a = report("mod", "bulgarian_mod")
+        bad = replace(report("second", "independent"),
+                      received_at=dt(28, 10, 30))
+        result = correlate(JET, [a, bad])
+        self.assertEqual(result.status, "candidate")
+        self.assertIn("publication_after_receipt:second", result.contradicting)
+
+    def test_http_link_cannot_auto_corroborate(self):
+        from dataclasses import replace
+        a = report("mod", "bulgarian_mod")
+        b = replace(report("second", "independent"),
+                    source_url="http://example.org/second")
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "candidate")
+        self.assertFalse(result.publication_allowed)
+
 
 if __name__ == "__main__":
     unittest.main()
