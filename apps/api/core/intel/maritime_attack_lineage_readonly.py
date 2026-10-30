@@ -29,6 +29,39 @@ class LineageResult:
     visited_nodes: int = 0
 
 
+
+def _has_derivation_cycle(edges: Iterable[tuple[str, str]]) -> bool:
+    """A derived_from chain must be acyclic; cyclic provenance is untrustworthy.
+
+    Traverse only the bounded graph already fetched from canonical lineage.
+    No database reads, inference from source labels, or recursion are needed.
+    """
+    ancestors: dict[str, set[str]] = {}
+    for derived, original in edges:
+        ancestors.setdefault(derived, set()).add(original)
+    complete: set[str] = set()
+    active: set[str] = set()
+    for root in sorted(ancestors):
+        if root in complete:
+            continue
+        stack = [(root, False)]
+        while stack:
+            node, leaving = stack.pop()
+            if leaving:
+                active.discard(node)
+                complete.add(node)
+                continue
+            if node in active:
+                return True
+            if node in complete:
+                continue
+            active.add(node)
+            stack.append((node, True))
+            for ancestor in sorted(ancestors.get(node, ()), reverse=True):
+                stack.append((ancestor, False))
+    return False
+
+
 def load_verified_lineage(
     claim_ids: Sequence[str],
     fetch_rows: Callable[[tuple[str, ...]], Iterable[object]],
@@ -75,6 +108,8 @@ def load_verified_lineage(
             if original not in visited:
                 new_nodes.add(original)
         if not new_nodes:
+            if _has_derivation_cycle(edges):
+                return LineageResult(tuple(sorted(edges)), False, "lineage_cycle_detected", len(visited))
             return LineageResult(tuple(sorted(edges)), True, visited_nodes=len(visited))
         if len(visited | new_nodes) > max_nodes:
             return LineageResult(tuple(sorted(edges)), False, "lineage_node_limit", len(visited | new_nodes))
