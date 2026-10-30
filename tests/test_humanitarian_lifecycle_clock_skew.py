@@ -213,3 +213,40 @@ def test_future_matched_danger_cannot_reopen_credible_cross_post_rescue():
     rescue = _cross_post(3, "rescue", "40 people rescued south of Lampedusa and safe")
     future = _cross_post(-48, "future-danger", "40 people still in distress south of Lampedusa")
     assert distress_lifecycle(original, now=NOW, same_source=[future, rescue]) == "resolved"
+
+
+def test_conflicting_group_sizes_cannot_resolve_unrelated_boat():
+    """Shared geography cannot close a 40-person case using a 62-person rescue."""
+    from core.intel.lifecycle import distress_lifecycle, has_resolution_signal
+
+    original = _cross_post(4, "original-40", "40 people in distress south of Lampedusa")
+    unrelated = _cross_post(2, "rescue-62", "62 people rescued south of Lampedusa and safe")
+    assert not has_resolution_signal(original, [unrelated], now=NOW)
+    assert distress_lifecycle(original, now=NOW, same_source=[unrelated]) == "active"
+
+
+def test_matching_group_size_still_allows_same_source_resolution():
+    from core.intel.lifecycle import has_resolution_signal
+
+    original = _cross_post(4, "original-40", "40 people in distress south of Lampedusa")
+    rescue = _cross_post(2, "rescue-40", "40 people rescued south of Lampedusa and safe")
+    assert has_resolution_signal(original, [rescue], now=NOW)
+
+
+def test_mixed_source_rescue_cannot_be_treated_as_same_source_followup():
+    from core.intel.lifecycle import has_resolution_signal
+
+    original = _cross_post(4, "original-40", "40 people in distress south of Lampedusa")
+    other_ngo = _cross_post(2, "other-ngo", "40 people rescued south of Lampedusa and safe")
+    other_ngo.source = "unrelated_ngo"
+    assert not has_resolution_signal(original, [other_ngo], now=NOW)
+
+
+def test_conflicting_french_headcount_blocks_cross_post_resolution():
+    from core.intel.lifecycle import has_resolution_signal
+
+    original = _cross_post(4, "original-40", "40 personnes en détresse au large de Lampedusa")
+    unrelated = _cross_post(2, "rescue-62", "62 personnes secourues au large de Lampedusa")
+    # The group-size contradiction is a safety gate independent of the
+    # language-specific outcome classifier.
+    assert not has_resolution_signal(original, [unrelated], now=NOW)
