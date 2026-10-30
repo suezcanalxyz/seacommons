@@ -147,6 +147,8 @@ def correlate(
         if claim.kind != anchor.kind:
             contradictions.append("different_incident_kind:" + claim.claim_id)
             continue
+        if claim.uncertainty_km < 0 or claim.time_uncertainty_minutes < 0:
+            raise ValueError("Negative incident uncertainty")
         if claim.published_at is not None:
             published = _utc(claim.published_at)
             if (_utc(claim.occurred_at) - published).total_seconds() > (claim.time_uncertainty_minutes + 5) * 60:
@@ -157,8 +159,6 @@ def correlate(
                 if (published - received).total_seconds() > 300:
                     contradictions.append("publication_after_receipt:" + claim.claim_id)
                     continue
-        if claim.uncertainty_km < 0 or claim.time_uncertainty_minutes < 0:
-            raise ValueError("Negative incident uncertainty")
         delta_minutes = abs((_utc(claim.occurred_at) - _utc(anchor.occurred_at)).total_seconds()) / 60
         # Separate attacks hours apart must not collapse into one episode.
         max_minutes = 360 if anchor.kind == "sinking" else 90
