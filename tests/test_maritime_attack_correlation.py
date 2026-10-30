@@ -442,6 +442,59 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertIn("receipt_before_incident:bad_b", result.contradicting)
 
 
+    def test_plausible_but_misdated_first_report_cannot_split_two_primaries(self):
+        from dataclasses import replace
+        misdated = replace(
+            report("misdated", "unverified"),
+            occurred_at=dt(28, 13), published_at=dt(28, 14),
+            received_at=dt(28, 14, 30), origin_report_id=None,
+        )
+        navy = report("navy", "navy")
+        mrcc = report("mrcc", "mrcc")
+        result = correlate(JET, [misdated, navy, mrcc])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(result.claim_ids, ("navy", "mrcc"))
+        self.assertIn("temporal_conflict:misdated", result.contradicting)
+        self.assertFalse(result.publication_allowed)
+
+    def test_misdated_report_arrival_order_cannot_change_consensus(self):
+        from dataclasses import replace
+        misdated = replace(
+            report("misdated", "unverified"),
+            occurred_at=dt(28, 13), published_at=dt(28, 14),
+            received_at=dt(28, 14, 30), origin_report_id=None,
+        )
+        navy, mrcc = report("navy", "navy"), report("mrcc", "mrcc")
+        for claims in ([misdated, navy, mrcc], [mrcc, misdated, navy],
+                       [navy, mrcc, misdated]):
+            with self.subTest(ids=[c.claim_id for c in claims]):
+                result = correlate(JET, claims)
+                self.assertEqual(result.status, "corroborated")
+                self.assertEqual(set(result.claim_ids), {"navy", "mrcc"})
+                self.assertEqual(result.independent_groups, ("mrcc", "navy"))
+                self.assertIn("temporal_conflict:misdated", result.contradicting)
+
+    def test_plausible_distant_first_report_does_not_hijack_incident(self):
+        from dataclasses import replace
+        distant = replace(report("distant", "unverified"), lat=15.0, lon=130.0,
+                          origin_report_id=None)
+        navy, mrcc = report("navy", "navy"), report("mrcc", "mrcc")
+        result = correlate(JET, [distant, navy, mrcc])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(result.claim_ids, ("navy", "mrcc"))
+        self.assertIn("spatial_conflict:distant", result.contradicting)
+
+    def test_two_mutually_incompatible_primary_reports_never_corroborate(self):
+        from dataclasses import replace
+        navy = report("navy", "navy")
+        mrcc = replace(report("mrcc", "mrcc"), occurred_at=dt(28, 13),
+                       published_at=dt(28, 14), received_at=dt(28, 14, 30))
+        result = correlate(JET, [mrcc, navy])
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(len(result.independent_groups), 1)
+        self.assertFalse(result.publication_allowed)
+
+
 class SourceObservationAdapterTests(unittest.TestCase):
     """Pure adapter tests; no DB credentials, network, writes or schedulers."""
 
