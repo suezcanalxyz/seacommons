@@ -289,23 +289,25 @@ def correlate(
             contradictions.append("different_incident_kind:" + claim.claim_id)
             continue
         _validate_claim_location(claim)
-        # A report cannot have been received before the claimed event,
-        # even when the publisher omitted a publication timestamp.
-        if claim.received_at is not None:
-            received = _utc(claim.received_at)
-            if (_utc(claim.occurred_at) - received).total_seconds() > (claim.time_uncertainty_minutes + 5) * 60:
-                contradictions.append("receipt_before_incident:" + claim.claim_id)
-                continue
-        if claim.published_at is not None:
-            published = _utc(claim.published_at)
-            if (_utc(claim.occurred_at) - published).total_seconds() > (claim.time_uncertainty_minutes + 5) * 60:
-                contradictions.append("publication_before_incident:" + claim.claim_id)
-                continue
-            if claim.received_at is not None:
-                received = _utc(claim.received_at)
-                if (published - received).total_seconds() > 300:
-                    contradictions.append("publication_after_receipt:" + claim.claim_id)
-                    continue
+        # Check the entire chronology before quarantining the report.
+        # Recording every violation avoids hiding a publication inconsistency
+        # behind an earlier receipt inconsistency (and vice versa).
+        invalid_chronology = False
+        received = _utc(claim.received_at) if claim.received_at is not None else None
+        published = _utc(claim.published_at) if claim.published_at is not None else None
+        occurred = _utc(claim.occurred_at)
+        tolerance_seconds = (claim.time_uncertainty_minutes + 5) * 60
+        if received is not None and (occurred - received).total_seconds() > tolerance_seconds:
+            contradictions.append("receipt_before_incident:" + claim.claim_id)
+            invalid_chronology = True
+        if published is not None and (occurred - published).total_seconds() > tolerance_seconds:
+            contradictions.append("publication_before_incident:" + claim.claim_id)
+            invalid_chronology = True
+        if published is not None and received is not None and (published - received).total_seconds() > 300:
+            contradictions.append("publication_after_receipt:" + claim.claim_id)
+            invalid_chronology = True
+        if invalid_chronology:
+            continue
         delta_minutes = abs((_utc(claim.occurred_at) - _utc(anchor.occurred_at)).total_seconds()) / 60
         # Separate attacks hours apart must not collapse into one episode.
         max_minutes = 360 if anchor.kind == "sinking" else 90
