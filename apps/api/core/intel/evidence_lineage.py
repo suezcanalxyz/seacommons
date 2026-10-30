@@ -55,6 +55,13 @@ def lineage_for_event(event) -> EvidenceLineage:
     transport = str(metadata.get("transport") or "").strip().lower()
     event_type = str(getattr(event, "type", "") or "").strip().lower()
 
+    # A social repost explicitly derived from AIS is still AIS telemetry,
+    # not an independent eyewitness just because its transport is social.
+    # Check declared provenance before classifying the publication platform.
+    origin = str(metadata.get("source_lineage") or "").strip().lower()
+    if origin in {"ais", "ais_derived", "ais_derived_event", "ais_sensor_lineage"}:
+        return EvidenceLineage(source_name, "ais_derived_event", "ais_sensor_lineage", "ais")
+
     if platform in {"x", "twitter"}:
         return EvidenceLineage(source_name, "social_public_reports", "x_twitter_platform", "public_report")
     if platform == "mastodon":
@@ -68,9 +75,6 @@ def lineage_for_event(event) -> EvidenceLineage:
     # independent witness merely because it arrived through a news channel.
     # Honour provenance before applying the secondary-reporting fallback.
     if event_type == "news" or transport == "rss":
-        origin = str(metadata.get("source_lineage") or "").strip().lower()
-        if origin in {"ais", "ais_derived", "ais_derived_event", "ais_sensor_lineage"}:
-            return EvidenceLineage(source_name, "ais_derived_event", "ais_sensor_lineage", "ais")
         if metadata.get("derived") is True:
             return EvidenceLineage(source_name, "secondary_reporting", "unknown", "public_report")
 
