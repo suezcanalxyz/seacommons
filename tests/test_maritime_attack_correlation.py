@@ -168,7 +168,8 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         from dataclasses import replace
         a = replace(report("first", "ministry"), time_uncertainty_minutes=40)
         b = replace(report("second", "coast_guard"),
-                    occurred_at=dt(28, 12), time_uncertainty_minutes=40)
+                    occurred_at=dt(28, 12), time_uncertainty_minutes=40,
+                    published_at=dt(28, 13), received_at=dt(28, 13, 30))
         result = correlate(JET, [a, b])
         self.assertEqual(result.status, "corroborated")
         self.assertEqual(result.source_evidence[0]["time_uncertainty_minutes"], "40")
@@ -194,6 +195,17 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         bad = replace(report("first", "ministry"), time_uncertainty_minutes=-1)
         with self.assertRaises(ValueError):
             correlate(JET, [bad])
+
+    def test_publication_before_attack_is_rejected(self):
+        from dataclasses import replace
+        a = report("first", "ministry")
+        b = replace(report("second", "coast_guard"),
+                    occurred_at=dt(28, 12), published_at=dt(28, 11),
+                    received_at=dt(28, 11, 30),
+                    time_uncertainty_minutes=0)
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "candidate")
+        self.assertIn("publication_before_incident:second", result.contradicting)
 
     def test_http_link_cannot_auto_corroborate(self):
         from dataclasses import replace
