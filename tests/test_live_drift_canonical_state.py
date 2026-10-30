@@ -152,3 +152,82 @@ def test_recent_repost_does_not_resurrect_stale_canonical_drift(monkeypatch):
         feature.get("properties", {}).get("intel_event_id") == event.id
         for feature in features
     )
+
+
+def test_expired_model_horizon_cannot_publish_a_current_position(monkeypatch):
+    """An active case may outlive the forecast; its expired cone must not."""
+    from core.live.feed import public_drift_collection
+
+    now = datetime.now(timezone.utc)
+    event = IntelEvent(
+        id="active-with-expired-model",
+        type="distress",
+        severity="high",
+        lat=35.5,
+        lon=14.1,
+        title="Reported maritime distress",
+        text="Reported maritime distress",
+        source="alarm_phone",
+        timestamp_utc=(now - timedelta(hours=1)).isoformat(),
+        metadata={
+            "is_distress": True,
+            "source_policy": "official_api",
+            "coordinate_source": "media_ocr_text",
+            "coordinate_review_status": "machine_ocr_unverified",
+            "location_status": "positioned",
+            "maritime_domain": "sar",
+            "incident_lifecycle": "active",
+        },
+    )
+    incident = {
+        "incident_id": event.id,
+        "lifecycle": "active",
+        "incident_status": "active",
+        "reported_at": event.timestamp_utc,
+        "last_update_at": event.timestamp_utc,
+        "state_changed_at": None,
+        "resolved_at": None,
+    }
+    monkeypatch.setattr("core.live.feed.intel_store.persisted_events", lambda **kwargs: [])
+    monkeypatch.setattr("core.live.feed.intel_store.events", lambda **kwargs: [event])
+    monkeypatch.setattr(
+        "core.intel.humanitarian_incident.get_incident", lambda _id: incident
+    )
+    monkeypatch.setattr(
+        "core.intel.drift_service.is_auto_drift_eligible",
+        lambda _event: (True, "eligible"),
+    )
+    monkeypatch.setattr(
+        "core.intel.drift_ownership.get_current_drift_id",
+        lambda _id: "expired-model-job",
+    )
+    monkeypatch.setattr("core.live.feed._is_publishable_live_drift", lambda _drift: True)
+
+    forecast = {
+        "trajectory": {
+            "type": "Feature",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[14.0, 35.0], [14.1, 35.1]],
+            },
+            "properties": {},
+        },
+        "cone_24h": None,
+        "impact_point": None,
+        "metadata": {"published": True},
+    }
+    monkeypatch.setattr("core.db.store.get_drift", lambda _job_id: forecast)
+
+    start = (now - timedelta(hours=2)).isoformat()
+    for end, expected in (
+        ((now - timedelta(minutes=1)).isoformat(), False),
+        ((now + timedelta(hours=1)).isoformat(), True),
+        ("not-a-timestamp", False),
+    ):
+        forecast["trajectory"]["properties"]["timestamps_utc"] = [start, end]
+        features = public_drift_collection(limit=20)["features"]
+        visible = any(
+            feature.get("properties", {}).get("intel_event_id") == event.id
+            for feature in features
+        )
+        assert visible is expected, f"forecast end={end}"
