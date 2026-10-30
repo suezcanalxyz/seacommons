@@ -188,6 +188,31 @@ def build_case_row(
     )
 
 
+
+def index_drift_summaries(
+    case_ids: list[str], drift_rows: list[Any],
+) -> dict[str, list[DriftSummary]]:
+    """Associate one batch of persisted drift rows with audited event IDs.
+
+    Historical DriftResultDB.event_id may use the raw ID or 'intel:' alias.
+    A collision between aliases must not silently omit either audit case.
+    """
+    indexed: dict[str, list[DriftSummary]] = {case_id: [] for case_id in case_ids}
+    alias_to_cases: dict[str, set[str]] = {}
+    for case_id in case_ids:
+        for alias in (case_id, f"intel:{case_id}"):
+            alias_to_cases.setdefault(alias, set()).add(case_id)
+    for drift in drift_rows:
+        summary = DriftSummary(
+            drift_id=drift.drift_id,
+            status=drift.status or "unknown",
+            created_at=drift.created_at,
+        )
+        for case_id in alias_to_cases.get(drift.event_id, ()):
+            indexed[case_id].append(summary)
+    return indexed
+
+
 def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
     """The real, live-wired entry point: queries IntelEventDB for
     Humanitarian-service events (core.intel.service_taxonomy.
@@ -225,6 +250,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             .limit(limit)
             .all()
         )
+        candidates = []
         for row in db_rows:
             event = IntelEvent(
                 id=row.id, type=row.type, severity=row.severity, lat=row.lat, lon=row.lon,
@@ -237,7 +263,22 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
                 continue
             if not is_within_live_window(event, now=now):
                 continue
+            candidates.append((row, event, classification))
 
+        # One bounded query replaces a separate DriftResultDB query per
+        # humanitarian case, reducing DB round trips under Oracle CPU pressure.
+        case_ids = [row.id for row, _, _ in candidates]
+        aliases = list(dict.fromkeys(
+            alias for case_id in case_ids for alias in (case_id, f"intel:{case_id}")
+        ))
+        drift_rows = (
+            db.query(DriftResultDB)
+            .filter(DriftResultDB.event_id.in_(aliases))
+            .all()
+        ) if aliases else []
+        drifts_by_case = index_drift_summaries(case_ids, drift_rows)
+
+        for row, event, classification in candidates:
             same_source = [
                 IntelEvent(
                     id=other.id, timestamp_utc=other.timestamp_utc,
@@ -252,15 +293,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             ]
             lifecycle = distress_lifecycle(event, now=now, same_source=same_source)
 
-            drift_rows = (
-                db.query(DriftResultDB)
-                .filter(DriftResultDB.event_id.in_([row.id, f"intel:{row.id}"]))
-                .all()
-            )
-            drifts = [
-                DriftSummary(drift_id=d.drift_id, status=d.status or "unknown", created_at=d.created_at)
-                for d in drift_rows
-            ]
+            drifts = drifts_by_case[row.id]
 
             source_status_entry = source_registry.get(row.source)
             source_status = source_status_entry.status if source_status_entry else "unknown"
