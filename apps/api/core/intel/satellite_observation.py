@@ -67,6 +67,59 @@ def _merged_provenance(existing: dict[str, Any] | None, incoming: dict[str, Any]
     return merged
 
 
+def _reconcile_association(existing: Any, incoming: SatelliteObservation) -> None:
+    """Keep replayed SAR evidence consistent; quarantine contradictory matches.
+
+    A contextual replay must not erase a valid strong match. An explicit
+    conflict, or two different strong episode identities for one observation,
+    instead invalidates automatic corroboration until human review.
+    """
+    old_status = existing.association_status
+    new_status = incoming.association_status
+
+    # Once contradictory evidence is recorded, a routine ingest must not
+    # silently re-promote the same observation to a confirmed identity.
+    if old_status == "conflict":
+        existing.episode_id = None
+        existing.evidence_status = "contextual"
+        return
+
+    if new_status == "conflict" and old_status == "strong":
+        existing.association_status = "conflict"
+        existing.episode_id = None
+        existing.evidence_status = "contextual"
+        return
+
+    if new_status == "strong" and incoming.episode_id:
+        if (
+            old_status == "strong"
+            and existing.episode_id
+            and existing.episode_id != incoming.episode_id
+        ):
+            existing.association_status = "conflict"
+            existing.episode_id = None
+            existing.evidence_status = "contextual"
+            return
+        existing.association_status = "strong"
+        existing.episode_id = incoming.episode_id
+        existing.evidence_status = "associated"
+        return
+
+    if old_status == "strong" and existing.episode_id:
+        # No demotion for an ordinary unmatched/contextual replay.
+        return
+
+    if new_status:
+        existing.association_status = new_status
+    # A non-strong observation must never acquire an episode identity solely
+    # because an upstream record provided an episode_id field.
+    existing.episode_id = None
+    if incoming.evidence_status not in ("contextual", "associated"):
+        existing.evidence_status = incoming.evidence_status
+    else:
+        existing.evidence_status = "contextual"
+
+
 def persist_observations(observations: list[SatelliteObservation]) -> int:
     """Persist scene metadata idempotently while merging case-target lineage."""
     from core.db.models import SatelliteObservationDB
@@ -79,14 +132,7 @@ def persist_observations(observations: list[SatelliteObservation]) -> int:
             existing = db.get(SatelliteObservationDB, observation.observation_id)
             if existing is not None:
                 existing.provenance = _merged_provenance(existing.provenance, observation.provenance)
-                # Association is monotonic: a later resolver may promote a
-                # contextual scene/detection, but a replay must not erase it.
-                if observation.episode_id:
-                    existing.episode_id = observation.episode_id
-                if observation.association_status:
-                    existing.association_status = observation.association_status
-                if observation.evidence_status != "contextual":
-                    existing.evidence_status = observation.evidence_status
+                _reconcile_association(existing, observation)
                 continue
             discovered = parse_utc(observation.discovered_at)
             db.add(SatelliteObservationDB(
