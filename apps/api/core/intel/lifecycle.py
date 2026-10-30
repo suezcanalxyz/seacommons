@@ -162,16 +162,23 @@ def latest_own_reply_outcome(
     an evaluation clock is supplied; they remain in the underlying record.
     """
     future_limit = _future_limit(now) if now is not None else None
+    original_time = parse_utc(event.timestamp_utc)
+
+    def credible_reply(repost: dict) -> bool:
+        posted = parse_utc(str(repost.get("posted_at") or ""))
+        if posted is None:
+            # Preserve legacy undated-reply compatibility only for callers
+            # that do not supply an evaluation clock.
+            return future_limit is None
+        # A self-reply preceding the founding report cannot causally resolve
+        # or reopen that report, even if the provider attached it to the thread.
+        if original_time is not None and posted < original_time:
+            return False
+        return future_limit is None or posted <= future_limit
+
     replies = [
         repost for repost in (event.metadata.get("thread_reposts") or [])
-        if isinstance(repost, dict)
-        and (
-            future_limit is None
-            or (
-                (posted := parse_utc(str(repost.get("posted_at") or ""))) is not None
-                and posted <= future_limit
-            )
-        )
+        if isinstance(repost, dict) and credible_reply(repost)
     ]
     replies.sort(
         key=lambda repost: parse_utc(str(repost.get("posted_at") or ""))
