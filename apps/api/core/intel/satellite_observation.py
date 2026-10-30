@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import math
 from typing import Any, Literal
 
 TemporalRelation = Literal["reverse", "nearest", "forward"]
@@ -154,7 +155,38 @@ def list_incident_observations(incident_id: str) -> list[SatelliteObservation]:
 
 def _valid_mmsi(value: Any) -> str:
     text = str(value or "").strip()
-    return text if len(text) == 9 and text.isdigit() else ""
+    return text if len(text) == 9 and text.isascii() and text.isdecimal() else ""
+
+
+def _valid_detection_position(lat: Any, lon: Any) -> tuple[float, float] | None:
+    """Reject non-finite, malformed and out-of-WGS84 SAR target coordinates."""
+    if isinstance(lat, bool) or isinstance(lon, bool):
+        return None
+    try:
+        latitude, longitude = float(lat), float(lon)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not (math.isfinite(latitude) and math.isfinite(longitude)):
+        return None
+    if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
+        return None
+    return latitude, longitude
+
+
+def _valid_acquisition_time(value: Any, now: datetime) -> str | None:
+    """Require an actual timezone-qualified acquisition, never fabricate 'now'."""
+    if not isinstance(value, str) or "T" not in value:
+        return None
+    try:
+        observed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if observed.tzinfo is None:
+        return None
+    observed = observed.astimezone(timezone.utc)
+    if observed > now + timedelta(minutes=5):
+        return None
+    return observed.isoformat()
 
 
 def materialize_sar_detections(
@@ -178,17 +210,20 @@ def materialize_sar_detections(
     detections = [d for d in raw if isinstance(d, dict)]
     expected = _valid_mmsi(expected_mmsi)
     observations: list[SatelliteObservation] = []
-    now = datetime.now(timezone.utc).isoformat()
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
     for detection in detections:
-        lat, lon = detection.get("lat"), detection.get("lon")
-        if lat is None or lon is None:
+        position = _valid_detection_position(detection.get("lat"), detection.get("lon"))
+        timestamp = _valid_acquisition_time(detection.get("timestamp"), now_dt)
+        if position is None or timestamp is None:
             continue
-        timestamp = str(detection.get("timestamp") or now)
+        lat, lon = position
         digest = hashlib.blake2s(
             f"{incident_id}:{timestamp}:{lat}:{lon}".encode(), digest_size=16,
         ).hexdigest()
         detected = _valid_mmsi(detection.get("mmsi"))
-        provider_matched = bool(detection.get("matched"))
+        # JSON boolean only: e.g. the string "false" must not promote a target.
+        provider_matched = detection.get("matched") is True
         if provider_matched and expected and detected == expected and episode_id:
             association_status = "strong"
             linked_episode = episode_id
