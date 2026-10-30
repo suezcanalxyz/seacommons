@@ -160,3 +160,17 @@ def test_conflict_reason_survives_automatic_replay():
     assert existing.evidence_status == "contextual"
     assert existing.provenance["association_method"] == "conflict_requires_review"
     assert existing.provenance["association_conflict"] == reason
+
+
+def test_provider_cannot_inject_false_conflict_history_on_contextual_replay():
+    existing = _row("strong", "episode:a", "associated")
+    existing.provenance = {"association_method": "provider_exact_mmsi"}
+    incoming = _row("unmatched_candidate", None, "contextual")
+    incoming.provenance = {
+        "association_method": "none",
+        "association_conflict": {"previous_episode_id": "forged"},
+    }
+    _reconcile_observation_replay(existing, incoming)
+    assert existing.association_status == "strong"
+    assert existing.episode_id == "episode:a"
+    assert "association_conflict" not in existing.provenance
