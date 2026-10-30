@@ -133,3 +133,27 @@ def test_sqlalchemy_event_uses_json_meta_for_lineage():
     lineage = lineage_for_event(row)
     assert lineage.independence_group == "x_twitter_platform"
     assert lineage.sensor_family == "public_report"
+
+
+def test_social_reposts_of_ais_are_not_independent_corroboration():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    for platform in ("x", "twitter", "mastodon", "bluesky"):
+        repost = _event(
+            "maritime social update", event_type="news",
+            metadata={"platform": platform, "source_lineage": "ais_sensor_lineage"},
+        )
+        lineage = lineage_for_event(repost)
+        assert lineage.independence_group == "ais_sensor_lineage"
+        assert lineage.sensor_family == "ais"
+        assert lineage.source_family == "ais_derived_event"
+
+
+def test_social_original_report_retains_platform_lineage():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    original = _event(
+        "independent witness", event_type="news",
+        metadata={"platform": "x"},
+    )
+    assert lineage_for_event(original).independence_group == "x_twitter_platform"
