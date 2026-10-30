@@ -9,7 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.intel.satellite_observation import _merged_provenance, _reconcile_association
+from core.intel.satellite_observation import (
+    _merged_provenance, _reconcile_association, _reconcile_observation_replay,
+)
 
 
 def _row(status=None, episode=None, evidence="contextual"):
@@ -98,3 +100,63 @@ def test_scalar_case_target_replay_keeps_existing_identity_fields():
     )
     assert merged["provider"] == "latest"
     assert merged["case_targets"] == [target]
+
+
+def test_contextual_replay_preserves_strong_match_provenance_and_merges_targets():
+    existing = _row("strong", "episode:a", "associated")
+    existing.provenance = {
+        "association_method": "provider_exact_mmsi",
+        "provider_matched": True,
+        "case_targets": [{"role": "last_seen", "lat": 35.5}],
+    }
+    incoming = _row("unmatched_candidate", None, "contextual")
+    incoming.provenance = {
+        "association_method": "none", "provider_matched": False,
+        "case_targets": [{"role": "drift", "lat": 35.6}],
+    }
+    _reconcile_observation_replay(existing, incoming)
+    assert (existing.association_status, existing.episode_id, existing.evidence_status) == (
+        "strong", "episode:a", "associated",
+    )
+    assert existing.provenance["association_method"] == "provider_exact_mmsi"
+    assert existing.provenance["provider_matched"] is True
+    assert len(existing.provenance["case_targets"]) == 2
+
+
+def test_conflicting_episode_records_quarantine_reason_in_provenance():
+    existing = _row("strong", "episode:a", "associated")
+    existing.provenance = {"association_method": "provider_exact_mmsi"}
+    incoming = _row("strong", "episode:b", "associated")
+    incoming.provenance = {"association_method": "provider_exact_mmsi"}
+    _reconcile_observation_replay(existing, incoming)
+    assert (existing.association_status, existing.episode_id, existing.evidence_status) == (
+        "conflict", None, "contextual",
+    )
+    assert existing.provenance["association_method"] == "conflict_requires_review"
+    assert existing.provenance["association_conflict"] == {
+        "previous_status": "strong",
+        "previous_episode_id": "episode:a",
+        "incoming_status": "strong",
+        "incoming_episode_id": "episode:b",
+    }
+
+
+def test_conflict_reason_survives_automatic_replay():
+    existing = _row("strong", "episode:a", "associated")
+    existing.provenance = {"association_method": "provider_exact_mmsi"}
+    incoming = _row("strong", "episode:b", "associated")
+    incoming.provenance = {"association_method": "provider_exact_mmsi"}
+    _reconcile_observation_replay(existing, incoming)
+    reason = dict(existing.provenance["association_conflict"])
+
+    later = _row("strong", "episode:c", "associated")
+    later.provenance = {
+        "association_method": "provider_exact_mmsi",
+        "association_conflict": {"previous_episode_id": "forged"},
+    }
+    _reconcile_observation_replay(existing, later)
+    assert existing.association_status == "conflict"
+    assert existing.episode_id is None
+    assert existing.evidence_status == "contextual"
+    assert existing.provenance["association_method"] == "conflict_requires_review"
+    assert existing.provenance["association_conflict"] == reason
