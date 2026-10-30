@@ -12,6 +12,7 @@ on:
       - apps/api/core/intel/maritime_attack_episode_readonly.py
       - apps/api/core/intel/maritime_attack_play_guard.py
       - apps/api/core/intel/maritime_attack_independence_readonly.py
+      - apps/api/core/intel/maritime_attack_batch_readonly.py
       - apps/api/core/api/routes/play.py
       - tests/test_maritime_attack_correlation.py
       - tests/test_maritime_attack_lineage_readonly.py
@@ -20,6 +21,7 @@ on:
       - tests/test_maritime_attack_episode_readonly.py
       - tests/test_maritime_attack_play_guard.py
       - tests/test_maritime_attack_independence_readonly.py
+      - tests/test_maritime_attack_batch_readonly.py
       - .github/workflows/maritime-attack-correlation-staging.yml
   workflow_dispatch:
 
