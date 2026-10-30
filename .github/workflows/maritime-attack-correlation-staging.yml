@@ -6,7 +6,9 @@ on:
       - feature/maritime-attack-correlation-20261030
     paths:
       - apps/api/core/intel/maritime_attack_correlation.py
+      - apps/api/core/intel/maritime_attack_lineage_readonly.py
       - tests/test_maritime_attack_correlation.py
+      - tests/test_maritime_attack_lineage_readonly.py
       - .github/workflows/maritime-attack-correlation-staging.yml
   workflow_dispatch:
 
@@ -25,4 +27,4 @@ jobs:
       - name: Unit tests (pure, no production credentials)
         env:
           PYTHONPATH: apps/api
-        run: python -m unittest discover -s tests -p 'test_maritime_attack_correlation.py' -v
+        run: python -m unittest discover -s tests -p 'test_maritime_attack*.py' -v
