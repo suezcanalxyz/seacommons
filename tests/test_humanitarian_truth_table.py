@@ -249,3 +249,39 @@ def test_all_completed_drifts_stale_remains_flagged():
     )
     assert "MULTIPLE_CURRENT_DRIFTS" in flags
     assert "STALE_DRIFT" in flags
+
+
+def test_batch_drift_index_matches_raw_and_prefixed_event_ids():
+    """One bounded drift query must preserve both persisted event-id forms."""
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import index_drift_summaries
+
+    rows = [
+        SimpleNamespace(event_id="e1", drift_id="d1", status="completed", created_at=_NOW),
+        SimpleNamespace(event_id="intel:e1", drift_id="d2", status="completed", created_at=_NOW),
+        SimpleNamespace(event_id="e2", drift_id="d3", status="pending", created_at=None),
+        SimpleNamespace(event_id="unrelated", drift_id="d4", status="completed", created_at=_NOW),
+    ]
+    indexed = index_drift_summaries(["e1", "e2"], rows)
+    assert [d.drift_id for d in indexed["e1"]] == ["d1", "d2"]
+    assert [d.drift_id for d in indexed["e2"]] == ["d3"]
+    assert all(d.drift_id != "d4" for items in indexed.values() for d in items)
+
+
+def test_batch_drift_index_handles_overlapping_prefixed_case_ids():
+    """An alias shared by two case identifiers must not drop either audit row."""
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import index_drift_summaries
+
+    row = SimpleNamespace(
+        event_id="intel:e1", drift_id="d1", status=None, created_at=None,
+    )
+    indexed = index_drift_summaries(["e1", "intel:e1"], [row])
+    assert [d.drift_id for d in indexed["e1"]] == ["d1"]
+    assert [d.drift_id for d in indexed["intel:e1"]] == ["d1"]
+    assert indexed["e1"][0].status == "unknown"
+
+
+def test_batch_drift_index_empty_case_set():
+    from core.intel.humanitarian_truth_table import index_drift_summaries
+    assert index_drift_summaries([], []) == {}
