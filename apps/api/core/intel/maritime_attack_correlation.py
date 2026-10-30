@@ -273,11 +273,64 @@ def _chronology_issues(claim: IncidentClaim) -> tuple[str, ...]:
     return tuple(issues)
 
 
+def _lineage_components(edges: Sequence[tuple[str, str]]) -> dict[str, str]:
+    """Collapse verified derived_from/quotation chains, including intermediates.
+
+    Edges are supplied by the caller from the canonical append-only lineage
+    table; this pure function does not query or mutate that table. Unknown
+    nodes are harmless, but a derived report must NEVER count as a second
+    original source. The lexicographically smallest ID is a stable root.
+    """
+    parent: dict[str, str] = {}
+
+    def find(identifier: str) -> str:
+        parent.setdefault(identifier, identifier)
+        if parent[identifier] != identifier:
+            parent[identifier] = find(parent[identifier])
+        return parent[identifier]
+
+    for derived, original in edges:
+        if not derived or not original:
+            continue
+        left, right = find(derived), find(original)
+        if left != right:
+            parent[max(left, right)] = min(left, right)
+    return {identifier: find(identifier) for identifier in parent}
+
+
+def _independent_document_groups(
+    claims: Sequence[IncidentClaim], lineage_roots: dict[str, str],
+) -> tuple[str, ...]:
+    """Count attributable original documents, not mirrored URLs or outlets.
+
+    All claims connected through a verified lineage chain count as one
+    reporting group even if syndicated under different authority labels.
+    Distinct documents from the same original authority also count once.
+    """
+    seen_origins: set[str] = set()
+    seen_urls: set[str] = set()
+    by_lineage: dict[str, set[str]] = {}
+    for claim in claims:
+        origin = (claim.origin_report_id or "").strip()
+        group = claim.source_group.strip()
+        url = _canonical_source_url(claim.source_url)
+        if not origin or not group or not url:
+            continue
+        if origin in seen_origins or url in seen_urls:
+            continue
+        seen_origins.add(origin)
+        seen_urls.add(url)
+        root = lineage_roots.get(claim.claim_id, claim.claim_id)
+        by_lineage.setdefault(root, set()).add(group)
+    return tuple(sorted({min(groups) for groups in by_lineage.values()}))
+
+
 def correlate(
     subject: VesselRef,
     claims: Sequence[IncidentClaim],
     ais_fixes: Sequence[AISFix] = (),
     ais_gaps: Sequence[AISGap] = (),
+    lineage_edges: Sequence[tuple[str, str]] = (),
 ) -> Correlation:
     """Correlate one claimed incident without promoting or mutating PLAY.
 
@@ -293,6 +346,9 @@ def correlate(
     _utc(anchor.occurred_at)
     if _identity_match(subject, anchor.vessel) in {"conflict", "unknown"}:
         return Correlation("no_match", anchor.kind, "", (), (), (), ("anchor_identity_conflict",))
+    # Edges must come from canonical, verified derived_from/quotes records.
+    # This argument is pure input: no database access or new collector.
+    lineage_roots = _lineage_components(lineage_edges)
     # Pick an incident-time reference by corroborated neighborhood rather
     # than arrival order. A chronologically plausible but wrong first report
     # must not split two independent primary observations into false negatives.
@@ -308,9 +364,7 @@ def correlate(
         _validate_claim_location(possible)
         if _chronology_issues(possible):
             continue
-        compatible_count = 0
-        original_documents: set[tuple[str, str]] = set()
-        document_urls: set[str] = set()
+        compatible_peers: list[IncidentClaim] = []
         max_minutes = 360 if possible.kind == "sinking" else 90
         for peer in claims:
             if peer.kind != possible.kind:
@@ -329,17 +383,11 @@ def correlate(
                 > 35.0 + possible.uncertainty_km + peer.uncertainty_km
             ):
                 continue
-            compatible_count += 1
-            origin = (peer.origin_report_id or "").strip()
-            group = peer.source_group.strip()
-            url = _canonical_source_url(peer.source_url)
-            if origin and group and url and url not in document_urls:
-                original_documents.add((origin, group))
-                document_urls.add(url)
-        independent_groups = {group for _, group in original_documents}
+            compatible_peers.append(peer)
+        independent_groups = _independent_document_groups(compatible_peers, lineage_roots)
         score = (
             len(independent_groups),
-            compatible_count,
+            len(compatible_peers),
             -possible.time_uncertainty_minutes,
             -possible.uncertainty_km,
             _identity_match(subject, possible.vessel) == "strong",
@@ -410,19 +458,9 @@ def correlate(
     # Source names and URLs alone do not establish editorial independence.
     # A single document cannot count twice even if different origins are
     # accidentally assigned to the same URL, or if it is syndicated.
-    groups_by_origin: dict[str, str] = {}
-    seen_document_urls: set[str] = set()
-    for claim in valid:
-        origin = (claim.origin_report_id or "").strip()
-        canonical_url = _canonical_source_url(claim.source_url)
-        group = claim.source_group.strip()
-        # An unlabelled reprint cannot reserve an origin or document URL:
-        # a later properly attributed primary report must remain eligible.
-        if not origin or not canonical_url or not group or canonical_url in seen_document_urls:
-            continue
-        seen_document_urls.add(canonical_url)
-        groups_by_origin.setdefault(origin, group)
-    groups = tuple(sorted({group for group in groups_by_origin.values() if group}))
+    groups = _independent_document_groups(valid, lineage_roots)
+    if len(groups) < len(_independent_document_groups(valid, {})):
+        contradictions.append("derived_source_not_independent")
     # An unrelated malformed URL is quarantined, not a veto against two
     # independently attributable primary documents. Conversely, a strong
     # vessel ID from an invalid URL cannot launder two name-only reports.
@@ -526,6 +564,7 @@ def correlate(
             "source_url": claim.source_url,
             "source_group": claim.source_group,
             "origin_report_id": claim.origin_report_id,
+            "lineage_root": lineage_roots.get(claim.claim_id, claim.claim_id),
             "time_uncertainty_minutes": str(claim.time_uncertainty_minutes),
             "occurred_at": _utc(claim.occurred_at).isoformat(),
             "published_at": (_utc(claim.published_at).isoformat()
