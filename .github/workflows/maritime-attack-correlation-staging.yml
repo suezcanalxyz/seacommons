@@ -8,9 +8,11 @@ on:
       - apps/api/core/intel/maritime_attack_correlation.py
       - apps/api/core/intel/maritime_attack_lineage_readonly.py
       - apps/api/core/intel/maritime_attack_observation_readonly.py
+      - apps/api/core/intel/maritime_attack_outcomes.py
       - tests/test_maritime_attack_correlation.py
       - tests/test_maritime_attack_lineage_readonly.py
       - tests/test_maritime_attack_observation_readonly.py
+      - tests/test_maritime_attack_outcomes.py
       - .github/workflows/maritime-attack-correlation-staging.yml
   workflow_dispatch:
 
