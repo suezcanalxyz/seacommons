@@ -109,6 +109,9 @@ def _reconcile_association(existing: Any, incoming: SatelliteObservation) -> Non
         # No demotion for an ordinary unmatched/contextual replay.
         return
 
+    if new_status == "strong" and not incoming.episode_id:
+        # A provider flag without a canonical parent is not corroboration.
+        new_status = "provider_matched_unresolved"
     if new_status:
         existing.association_status = new_status
     # A non-strong observation must never acquire an episode identity solely
