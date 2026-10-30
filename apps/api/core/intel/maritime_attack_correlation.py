@@ -300,7 +300,7 @@ def correlate(
     # Preserve the original first-report identity veto (never bootstrap an
     # unrelated vessel into an incident merely via later matching reports).
     anchor_options: list[tuple[tuple, IncidentClaim]] = []
-    for possible in claims:
+    for arrival_index, possible in enumerate(claims):
         if possible.kind != anchor.kind:
             continue
         if _identity_match(subject, possible.vessel) in {"conflict", "unknown"}:
@@ -344,7 +344,7 @@ def correlate(
             -possible.uncertainty_km,
             _identity_match(subject, possible.vessel) == "strong",
             -_utc(possible.occurred_at).timestamp(),
-            possible.claim_id,
+            -arrival_index,  # preserve existing behavior on exact ties
         )
         anchor_options.append((score, possible))
     if anchor_options:
