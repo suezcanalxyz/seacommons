@@ -391,5 +391,79 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertFalse(result.publication_allowed)
 
 
+class SourceObservationAdapterTests(unittest.TestCase):
+    """Pure adapter tests; no DB credentials, network, writes or schedulers."""
+
+    @staticmethod
+    def observation(identifier, *, verified=True, authority="navy",
+                    report="navy-20261028", published="2026-10-28T11:00:00+00:00"):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            observation_id="obs:" + identifier,
+            source_url="https://example.org/" + identifier,
+            received_at="2026-10-28T11:30:00",  # DB's documented naive UTC
+            provenance={
+                "origin_authority_verified": verified,
+                "originating_authority_id": authority,
+                "original_report_id": report,
+                "published_at": published,
+            },
+        )
+
+    @staticmethod
+    def extraction():
+        return {"kind": "attack", "occurred_at": "2026-10-28T10:00:00Z",
+                "imo": "9348625", "mmsi": "636019532",
+                "vessel_name": "CONTSHIP JET"}
+
+    def test_verified_independent_observations_corroborate_without_ais(self):
+        from core.intel.maritime_attack_correlation import claim_from_source_observation
+        a = claim_from_source_observation(self.observation("navy"), self.extraction())
+        b = claim_from_source_observation(
+            self.observation("mrcc", authority="mrcc", report="mrcc-20261028"),
+            self.extraction())
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(result.related_gap_ids, ())
+        self.assertFalse(result.publication_allowed)
+
+    def test_unverified_extracted_publisher_does_not_create_independence(self):
+        from core.intel.maritime_attack_correlation import claim_from_source_observation
+        a = claim_from_source_observation(
+            self.observation("navy", verified=False), self.extraction())
+        b = claim_from_source_observation(
+            self.observation("mrcc", verified=False, authority="mrcc"), self.extraction())
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(result.independent_groups, ())
+
+    def test_canonical_naive_utc_receipt_is_normalized(self):
+        from core.intel.maritime_attack_correlation import claim_from_source_observation
+        claim = claim_from_source_observation(self.observation("navy"), self.extraction())
+        self.assertEqual(claim.received_at, dt(28, 11, 30))
+        self.assertEqual(claim.published_at, dt(28, 11))
+        self.assertEqual(claim.claim_id, "obs:navy")
+
+    def test_naive_event_time_fails_closed(self):
+        from core.intel.maritime_attack_correlation import claim_from_source_observation
+        extracted = {**self.extraction(), "occurred_at": "2026-10-28T10:00:00"}
+        with self.assertRaises(ValueError):
+            claim_from_source_observation(self.observation("navy"), extracted)
+
+    def test_invalid_extracted_geometry_fails_closed(self):
+        from core.intel.maritime_attack_correlation import claim_from_source_observation
+        extracted = {**self.extraction(), "lat": 110.0, "lon": 28.8}
+        with self.assertRaises(ValueError):
+            claim_from_source_observation(self.observation("navy"), extracted)
+
+    def test_context_advisory_and_unidentified_vessel_do_not_become_claims(self):
+        from core.intel.maritime_attack_correlation import claim_from_source_observation
+        self.assertIsNone(claim_from_source_observation(
+            self.observation("navy"), {**self.extraction(), "kind": "advisory"}))
+        self.assertIsNone(claim_from_source_observation(
+            self.observation("navy"), {"kind": "attack",
+                "occurred_at": "2026-10-28T10:00:00Z"}))
+
+
 if __name__ == "__main__":
     unittest.main()
