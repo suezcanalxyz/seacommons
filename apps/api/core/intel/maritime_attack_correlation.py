@@ -199,6 +199,13 @@ def correlate(
             contradictions.append("different_incident_kind:" + claim.claim_id)
             continue
         _validate_claim_location(claim)
+        # A report cannot have been received before the claimed event,
+        # even when the publisher omitted a publication timestamp.
+        if claim.received_at is not None:
+            received = _utc(claim.received_at)
+            if (_utc(claim.occurred_at) - received).total_seconds() > (claim.time_uncertainty_minutes + 5) * 60:
+                contradictions.append("receipt_before_incident:" + claim.claim_id)
+                continue
         if claim.published_at is not None:
             published = _utc(claim.published_at)
             if (_utc(claim.occurred_at) - published).total_seconds() > (claim.time_uncertainty_minutes + 5) * 60:
@@ -257,8 +264,20 @@ def correlate(
         seen_document_urls.add(canonical_url)
         groups_by_origin.setdefault(origin, claim.source_group.strip())
     groups = tuple(sorted({group for group in groups_by_origin.values() if group}))
-    has_urls = all(_canonical_source_url(claim.source_url) for claim in valid)
-    corroborated = len(groups) >= 2 and strong_identity and has_urls
+    # An unrelated malformed URL is quarantined, not a veto against two
+    # independently attributable primary documents. Conversely, a strong
+    # vessel ID from an invalid URL cannot launder two name-only reports.
+    for claim in valid:
+        if not _canonical_source_url(claim.source_url):
+            contradictions.append("invalid_source_url:" + claim.claim_id)
+    attributable_strong_identity = any(
+        _identity_match(subject, claim.vessel) == "strong"
+        and bool((claim.origin_report_id or "").strip())
+        and bool(claim.source_group.strip())
+        and bool(_canonical_source_url(claim.source_url))
+        for claim in valid
+    )
+    corroborated = len(groups) >= 2 and attributable_strong_identity
     status = "corroborated" if corroborated else "candidate"
     color = (_COLORS.get(anchor.kind, _COLORS["other"]) if corroborated else _COLORS["candidate"])
     support = ["incident_claim", "vessel_identity_matched"]
@@ -322,11 +341,18 @@ def correlate(
         support.append("ais_spatiotemporal_context_not_attack_proof")
 
     # Gap signals only add context if temporally proximate; never upgrade status.
-    gap_ids = tuple(sorted({
-        gap.event_id for gap in ais_gaps
-        if gap.mmsi == subject.mmsi
-        and abs((_utc(gap.observed_at) - _utc(anchor.occurred_at)).total_seconds()) <= 6 * 3600
-    }))
+    valid_gap_ids: set[str] = set()
+    for gap in ais_gaps:
+        if gap.mmsi != subject.mmsi:
+            continue
+        try:
+            gap_time = _utc(gap.observed_at)
+        except (ValueError, TypeError, AttributeError):
+            contradictions.append("invalid_ais_gap_timestamp:" + gap.event_id)
+            continue
+        if abs((gap_time - _utc(anchor.occurred_at)).total_seconds()) <= 6 * 3600:
+            valid_gap_ids.add(gap.event_id)
+    gap_ids = tuple(sorted(valid_gap_ids))
     if gap_ids:
         support.append("proximate_ais_gap_context_not_attack_proof")
     return Correlation(
