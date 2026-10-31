@@ -78,14 +78,25 @@ def persist_observations(observations: list[SatelliteObservation]) -> int:
             existing = db.get(SatelliteObservationDB, observation.observation_id)
             if existing is not None:
                 existing.provenance = _merged_provenance(existing.provenance, observation.provenance)
-                # Association is monotonic: a later resolver may promote a
-                # contextual scene/detection, but a replay must not erase it.
-                if observation.episode_id:
+                # Contextual replays must not downgrade a previously verified
+                # episode link. An explicit provider identity conflict, however,
+                # invalidates that link and requires a fresh review.
+                if observation.association_status == "conflict":
+                    existing.episode_id = None
+                    existing.association_status = "conflict"
+                    existing.evidence_status = "contextual"
+                elif observation.episode_id:
                     existing.episode_id = observation.episode_id
-                if observation.association_status:
-                    existing.association_status = observation.association_status
-                if observation.evidence_status != "contextual":
-                    existing.evidence_status = observation.evidence_status
+                    if observation.association_status:
+                        existing.association_status = observation.association_status
+                    if observation.evidence_status != "contextual":
+                        existing.evidence_status = observation.evidence_status
+                elif not existing.episode_id:
+                    # Preserve explicit conflicts across later weak replays.
+                    if observation.association_status and existing.association_status != "conflict":
+                        existing.association_status = observation.association_status
+                    if observation.evidence_status != "contextual":
+                        existing.evidence_status = observation.evidence_status
                 continue
             discovered = parse_utc(observation.discovered_at)
             db.add(SatelliteObservationDB(
