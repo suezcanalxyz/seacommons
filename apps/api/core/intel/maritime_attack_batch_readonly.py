@@ -13,7 +13,9 @@ from typing import Callable, Iterable, Sequence
 from core.intel.maritime_attack_independence_readonly import (
     IndependenceAudit, audit_attack_episode_independence,
 )
-from core.intel.maritime_attack_play_guard import _ATTACK_FAMILIES
+from core.intel.maritime_attack_play_guard import (
+    _ATTACK_FAMILIES, has_distinct_independence_groups,
+)
 
 _MAX_EPISODES = 8
 _MAX_OBSERVATIONS_PER_EPISODE = 32
@@ -54,6 +56,14 @@ def audit_attack_episodes_independence(
     for key, episode in zip(keys, items):
         if str(getattr(episode, "episode_family", "") or "") not in _ATTACK_FAMILIES:
             results[key] = IndependenceAudit(False, reason="not_attack_episode")
+            continue
+        # Match the single-episode preflight before touching PostgreSQL.
+        # A candidate or duplicate canonical label cannot be corroborated,
+        # so it must not trigger expensive observation/lineage traversal.
+        if (str(getattr(episode, "verification_status", "") or "") != "multi_source_corroborated"
+                or not has_distinct_independence_groups(
+                    getattr(episode, "independence_groups", None))):
+            results[key] = IndependenceAudit(False, reason="canonical_verification_incomplete")
             continue
         raw = getattr(episode, "observation_ids", None)
         if (not isinstance(raw, (tuple, list))
