@@ -47,15 +47,41 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         ais = [AISFix(JET.mmsi, dt(28, 9, 59, 22), 43.265927, 28.814900)]
         old_gap = [AISGap(JET.mmsi, dt(26, 12, 24), "aisgap:636019532")]
         result = correlate(JET, claims, ais, old_gap)
-        self.assertEqual(result.status, "corroborated")
+        # The official reports establish the event, but exact publication
+        # and SeaCommons reception times are not available. Keep the two
+        # provenance chains visible; do not mark them auto-corroborated.
+        self.assertEqual(result.status, "candidate")
+        self.assertIn("corroboration_chronology_incomplete", result.contradicting)
         self.assertEqual(result.incident_type, "attack")
-        self.assertEqual(result.color_token, "maritime_attack_coral")
+        self.assertEqual(result.color_token, "maritime_incident_candidate_orange")
         # No invented incident coordinate: the official reports specify a
         # relative location, not a precise latitude/longitude. The AIS fix
         # is retained separately and cannot self-corroborate the attack.
         self.assertIsNone(result.nearest_ais_km)
         self.assertEqual(result.related_gap_ids, ())
         self.assertEqual(len(result.independent_groups), 2)
+
+    def test_missing_reception_time_cannot_complete_two_source_corroboration(self):
+        from dataclasses import replace
+        navy = report("navy", "navy")
+        mrcc = replace(report("mrcc", "mrcc"), received_at=None)
+        result = correlate(JET, [navy, mrcc])
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(len(result.independent_groups), 2)
+        self.assertIn("corroboration_chronology_incomplete", result.contradicting)
+        self.assertEqual(len(result.source_evidence), 2)
+        self.assertIsNone(result.source_evidence[1]["received_at"])
+        self.assertFalse(result.publication_allowed)
+
+    def test_missing_publication_time_cannot_complete_two_source_corroboration(self):
+        from dataclasses import replace
+        navy = report("navy", "navy")
+        mrcc = replace(report("mrcc", "mrcc"), published_at=None)
+        result = correlate(JET, [navy, mrcc])
+        self.assertEqual(result.status, "candidate")
+        self.assertIn("corroboration_chronology_incomplete", result.contradicting)
+        self.assertEqual(len(result.independent_groups), 2)
+        self.assertFalse(result.publication_allowed)
 
     def test_azini_161_single_piracy_alert_is_not_military_attack(self):
         # MSCIO 161/26 reports a hijacking, but its dated position is a
