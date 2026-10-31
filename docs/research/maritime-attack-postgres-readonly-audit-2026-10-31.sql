@@ -30,7 +30,8 @@ WHERE timestamp_utc >= '2026-10-01' AND timestamp_utc < '2026-11-01'
   AND (title ILIKE '%attack%' OR title ILIKE '%struck%'
        OR title ILIKE '%sunk%' OR title ILIKE '%drone%'
        OR title ILIKE '%missile%' OR title ILIKE '%explosion%'
-       OR title ILIKE '%CONTSHIP%')
+       OR title ILIKE '%hijack%' OR title ILIKE '%piracy%'
+       OR title ILIKE '%AZINI%' OR title ILIKE '%CONTSHIP%')
 ORDER BY timestamp_utc DESC LIMIT 100;
 
 -- 2b. LIVE projection eligibility and staleness (no humanitarian reclassification).
