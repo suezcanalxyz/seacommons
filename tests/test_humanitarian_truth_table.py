@@ -543,3 +543,35 @@ def test_visible_live_humanitarian_coverage_handles_empty_and_prefix_ids():
         "live_visible_features_with_audit_row_count": 0,
         "live_visible_features_without_audit_row_count": 0,
     }
+
+
+def test_visible_humanitarian_case_ids_excludes_non_distress_context():
+    """Context observations in Humanitarian Live are not distress audit rows."""
+    from core.intel.humanitarian_truth_table import (
+        summarize_visible_case_coverage,
+        visible_humanitarian_case_ids,
+    )
+
+    features = [
+        {"properties": {"id": "intel:distress-1", "kind": "distress"}},
+        {"properties": {"id": "intel:distress-2", "kind": "distress"}},
+        {"properties": {"id": "intel:ngo-activity", "kind": "context"}},
+        {"properties": {"id": "intel:weather", "kind": "context"}},
+        {"properties": {"id": "", "kind": "distress"}},
+        {"properties": {}},
+    ]
+    case_ids = visible_humanitarian_case_ids(features)
+    assert case_ids == {"intel:distress-1", "intel:distress-2"}
+    assert summarize_visible_case_coverage(case_ids, ["distress-1"]) == {
+        "live_visible_feature_count": 2,
+        "live_visible_features_with_audit_row_count": 1,
+        "live_visible_features_without_audit_row_count": 1,
+    }
+
+
+def test_visible_humanitarian_case_ids_handles_context_only_feed():
+    from core.intel.humanitarian_truth_table import visible_humanitarian_case_ids
+
+    assert visible_humanitarian_case_ids([
+        {"properties": {"id": "intel:context-only", "kind": "context"}},
+    ]) == set()
