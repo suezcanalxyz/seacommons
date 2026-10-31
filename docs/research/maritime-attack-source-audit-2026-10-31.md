@@ -29,6 +29,33 @@ reported facts and a source's independent corroboration are different questions.
   ministry names differ.
 - Do not infer a perpetrator from a drone type, geography or AIS gaps.
 
+## Black Sea: CONTSHIP JET, prosecutorial record (29 October)
+
+- Bulgarian Prosecutor's Office, Military District Prosecutor Sofia, dated
+  2026-10-29:
+  https://prb.bg/bg/news/aktualno/80101-voenno-okrazhna-prokuratura-sofiya-obrazuva-dosadebno-proizvodstvo-za-napadeniet
+- Opened pre-trial proceedings concerning the naval-drone attack on the
+  Liberian-flagged CONTSHIP JET in Bulgaria's Black Sea EEZ. The case was
+  referred by Military Police Varna; investigators intend to interview crew
+  members and establish ownership, cargo, route and damage.
+- This is **an independently published procedural development**, not proof
+  that the prosecutor independently observed the original attack. Do not count
+  it as a second original attack witness without examining the underlying
+  investigation records. No perpetrator is identified or proven.
+- Source availability checked 2026-10-31. Exact article publication clock time,
+  licensing for full-text republication and SeaCommons collector receipt are
+  unknown. Preserve the link and extracted facts, not a full-text copy.
+
+## Staging guard update (31 October)
+
+- Canonical provenance audit and reviewed-observation correlation now strip
+  surrounding whitespace and casefold the `service` field before rejecting
+  `humanitarian`. This prevents a padded value such as ` HUMANITARIAN ` from
+  being relabelled as attack evidence. Two regression tests cover both paths.
+- This is staging-only, does not modify historical rows, and does not change
+  LIVE/PLAY publication policy. CI and Oracle runtime verification must be
+  reported separately.
+
 ## Black Sea: KHORYV (negative causal control)
 
 - Bulgarian VTMIS NAVWARN 766/26, same VTMIS page above.
