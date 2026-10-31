@@ -126,12 +126,20 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
         )
         from core.domain.incident_taxonomy import taxonomy_fields
 
+        # The public hypothesis has already resolved independent lineages
+        # from its evidence links. Never upgrade an assessed/corroborated
+        # evidence *stage* into a multi-source verification claim.
+        verification = str(props.get("verification_status") or "single_source_observed")
+        groups = list(props.get("independence_groups") or ())
         taxonomy = taxonomy_fields(
             event_type="ais_anomaly",
             maritime_domain="grey_zone",
             metadata={
                 "anomaly_type": anomaly_type,
                 "evidence_stage": props.get("evidence_stage"),
+                "verification_status": verification,
+                "independence_groups": groups,
+                "independent_source_count": len(groups),
             },
             hypothesis_type=hypothesis_type,
         )
@@ -155,11 +163,7 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
                 "kind": LiveSignalKind.CONTEXT.value,
                 "severity": "medium",
                 "tier": IntelTier.SIGNAL.value,
-                "verification_status": (
-                    VerificationStatus.MULTI_SOURCE_CORROBORATED.value
-                    if props.get("evidence_stage") == "corroborated"
-                    else str(props.get("evidence_stage") or "assessed")
-                ),
+                "verification_status": verification,
                 "publication_status": PublicationStatus.PUBLISHED.value,
                 "source_policy": SourcePolicy.OPERATOR_PUBLISHED.value,
                 "title": str(props.get("title") or "Reviewed maritime intelligence")[:255],
@@ -171,6 +175,8 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
                 "maritime_domain": "grey_zone",
                 "hypothesis_type": hypothesis_type,
                 "hypothesis_state": "published",
+                "independence_groups": groups,
+                "independent_source_count": len(groups),
                 "reason_codes": list(props.get("reason_codes") or ()),
                 "evidence_stage": props.get("evidence_stage"),
                 "caveats": list(props.get("caveats") or ()),

@@ -55,14 +55,43 @@ def lineage_for_event(event) -> EvidenceLineage:
     transport = str(metadata.get("transport") or "").strip().lower()
     event_type = str(getattr(event, "type", "") or "").strip().lower()
 
+    # A social repost explicitly derived from AIS is still AIS telemetry,
+    # not an independent eyewitness just because its transport is social.
+    # Check declared provenance before classifying the publication platform.
+    origin = str(metadata.get("source_lineage") or "").strip().lower()
+    # Feed adapters may serialize boolean provenance as text. Never promote
+    # a declared repost to an independent source because "true" is a string.
+    derived_flag = metadata.get("derived")
+    is_derived = derived_flag is True or (
+        isinstance(derived_flag, str)
+        and derived_flag.strip().lower() in {"true", "yes", "1"}
+    )
+    if origin in {"ais", "ais_derived", "ais_derived_event", "ais_sensor_lineage"}:
+        return EvidenceLineage(source_name, "ais_derived_event", "ais_sensor_lineage", "ais")
+
+    # Detector output remains AIS-derived even if a social transport is set.
+    # Transport is not evidence of an independent sensor or eyewitness.
+    if event_type in {"ais_anomaly", "ais_spike", "ais_rendezvous"}:
+        return EvidenceLineage(source_name, "ais", "ais_sensor_lineage", "ais")
+
+    # A repost with declared derivation but no known origin cannot count as
+    # independent corroboration merely because it appears on social media.
+    if platform in {"x", "twitter", "mastodon", "bluesky"} and is_derived:
+        return EvidenceLineage(source_name, "social_public_reports", "unknown", "public_report")
+
     if platform in {"x", "twitter"}:
         return EvidenceLineage(source_name, "social_public_reports", "x_twitter_platform", "public_report")
     if platform == "mastodon":
         return EvidenceLineage(source_name, "social_public_reports", "mastodon_platform", "public_report")
     if platform == "bluesky":
         return EvidenceLineage(source_name, "social_public_reports", "bluesky_platform", "public_report")
-    if event_type in {"ais_anomaly", "ais_spike", "ais_rendezvous"}:
-        return EvidenceLineage(source_name, "ais", "ais_sensor_lineage", "ais")
+
+    # An RSS/news item that explicitly republishes AIS telemetry is not an
+    # independent witness merely because it arrived through a news channel.
+    # Honour provenance before applying the secondary-reporting fallback.
+    if event_type == "news" or transport == "rss":
+        if is_derived:
+            return EvidenceLineage(source_name, "secondary_reporting", "unknown", "public_report")
 
     profile = get_source_profile(source_name)
     if profile is None and (event_type == "news" or transport == "rss"):

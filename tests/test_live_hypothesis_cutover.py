@@ -24,18 +24,21 @@ def _fresh_hypotheses():
         db.query(InvestigationHypothesisDB).delete()
 
 
-def _publish_spoofing_hypothesis():
+def _publish_spoofing_hypothesis(*, independent_news: bool = False, news_derived_from_ais: bool = False):
     now = datetime.now(timezone.utc).isoformat()
     for event_id, lat, lon in (("spoof-a", 35.0, 14.0), ("spoof-b", 35.1, 14.1)):
+        is_news = independent_news and event_id == "spoof-b"
         intel_store.add(IntelEvent(
-            id=event_id, type="ais_anomaly", severity="high",
-            lat=lat, lon=lon, title="raw spoof detector output",
-            source="mda", timestamp_utc=now, linked_mmsi="211879870",
+            id=event_id, type="news" if is_news else "ais_anomaly", severity="high",
+            lat=lat, lon=lon, title="independent report" if is_news else f"raw spoof detector output {event_id}",
+            source="Independent maritime news" if is_news else "mda",
+            timestamp_utc=now, linked_mmsi="211879870",
             metadata={
                 "anomaly_type": "position_jump",
                 "maritime_domain": "grey_zone",
                 "publication_status": "published",
                 "source_policy": "operator_published",
+                **({"transport": "rss", **({"source_lineage": "ais_sensor_lineage"} if news_derived_from_ais else {})} if is_news else {}),
             },
         ), dedup_key=event_id)
     h = new_hypothesis(
@@ -67,6 +70,45 @@ def test_live_security_uses_published_hypothesis_not_raw_detector_events():
     assert feature["properties"]["hypothesis_type"] == "position_spoofing"
     assert feature["properties"]["hypothesis_state"] == "published"
     assert feature["properties"]["visual_category"] == "spoofing"
-    assert feature["properties"]["verification_status"] == "multi_source_corroborated"
+    assert feature["properties"]["verification_status"] == "single_source_multi_indicator"
+    assert feature["properties"]["corroborated"] is False
+    assert "corroborated" not in feature["properties"]["facets"]
+    assert feature["properties"]["independent_source_count"] == 1
     assert "mmsi" not in feature["properties"]
     assert "linked_mmsi" not in feature["properties"]
+
+
+def test_live_hypothesis_requires_independent_news_for_corroborated_facet():
+    hypothesis_id = _publish_spoofing_hypothesis(independent_news=True)
+    collection = public_signal_collection(mode="maritime", days=1, limit=50)
+    feature = next(
+        f for f in collection["features"]
+        if f["properties"].get("hypothesis_id") == hypothesis_id
+    )
+    props = feature["properties"]
+    assert props["verification_status"] == "multi_source_corroborated"
+    assert props["corroborated"] is True
+    assert "corroborated" in props["facets"]
+    assert props["independent_source_count"] == 2
+    assert set(props["independence_groups"]) == {
+        "ais_sensor_lineage", "secondary_news_reporting",
+    }
+    assert "mmsi" not in props
+    assert "linked_mmsi" not in props
+
+
+def test_live_hypothesis_republished_ais_news_is_not_independent():
+    hypothesis_id = _publish_spoofing_hypothesis(
+        independent_news=True, news_derived_from_ais=True
+    )
+    collection = public_signal_collection(mode="maritime", days=1, limit=50)
+    feature = next(
+        f for f in collection["features"]
+        if f["properties"].get("hypothesis_id") == hypothesis_id
+    )
+    props = feature["properties"]
+    assert props["verification_status"] == "single_source_multi_indicator"
+    assert props["corroborated"] is False
+    assert "corroborated" not in props["facets"]
+    assert props["independent_source_count"] == 1
+    assert props["independence_groups"] == ["ais_sensor_lineage"]

@@ -98,6 +98,18 @@ def public_hypothesis_collection(limit: int = 100) -> dict[str, Any]:
         projected = project_public_maritime_assessed(record, hypothesis=hypothesis)
         if projected is None or projected.get("lat") is None or projected.get("lon") is None:
             continue
+        # Evidence maturity is not independent-source corroboration. Resolve
+        # lineage from the private evidence links, and expose only aggregate
+        # public labels, never the raw identifiers or vessel identity.
+        from core.intel.fusion import verification_for_event_ids
+
+        verification, groups, evidence_count = verification_for_event_ids(
+            list(hypothesis.evidence_links)
+        )
+        projected["verification_status"] = verification
+        projected["independence_groups"] = groups
+        projected["independent_source_count"] = len(groups)
+        projected["evidence_count"] = evidence_count
         # The hypothesis remains the assessment record, but the persisted
         # MaritimeEpisode is the canonical public case parent.
         projected["hypothesis_id"] = hypothesis.hypothesis_id
