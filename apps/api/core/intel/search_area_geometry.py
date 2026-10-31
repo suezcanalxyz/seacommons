@@ -28,25 +28,25 @@ def valid_search_area_geometry(value: Any) -> bool:
     if not isinstance(value, dict) or value.get("type") not in {"Polygon", "MultiPolygon"}:
         return False
     coordinates = value.get("coordinates")
-    if not isinstance(coordinates, list) or not coordinates:
+    if not isinstance(coordinates, (list, tuple)) or not coordinates:
         return False
     polygons = [coordinates] if value["type"] == "Polygon" else coordinates
     if len(polygons) > _MAX_POLYGONS:
         return False
     vertices = 0
     for polygon in polygons:
-        if not isinstance(polygon, list) or not polygon or len(polygon) > _MAX_RINGS:
+        if not isinstance(polygon, (list, tuple)) or not polygon or len(polygon) > _MAX_RINGS:
             return False
         for ring in polygon:
-            if not isinstance(ring, list) or len(ring) < 4:
+            if not isinstance(ring, (list, tuple)) or len(ring) < 4:
                 return False
             vertices += len(ring)
             if vertices > _MAX_VERTICES:
                 return False
             points: list[tuple[float, float]] = []
-            ring_dimension = len(ring[0]) if isinstance(ring[0], list) else 0
+            ring_dimension = len(ring[0]) if isinstance(ring[0], (list, tuple)) else 0
             for position in ring:
-                if not isinstance(position, list) or len(position) not in (2, 3) or len(position) != ring_dimension:
+                if not isinstance(position, (list, tuple)) or len(position) not in (2, 3) or len(position) != ring_dimension:
                     return False
                 if any(not _finite_number(number) for number in position):
                     return False
