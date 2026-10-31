@@ -205,6 +205,32 @@ def test_run_humanitarian_truth_table_audit_finds_a_real_open_case_dropped_from_
     assert "OPEN_CASE_DROPPED_FROM_LIVE" in match.anomaly_flags
 
 
+def test_truth_table_keeps_recent_resolved_cases_in_audit():
+    """A resolved report remains auditable for a lingering published drift."""
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+
+    event_id = f"pytest-resolved-audit-{uuid.uuid4()}"
+    now = datetime.now(timezone.utc)
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=event_id, timestamp_utc=now.isoformat(), type="distress", severity="low",
+            lat=35.5, lon=14.1, title="Rescue completed",
+            text="All 47 people aboard the Zenobia near Lampedusa were rescued and are now safe.",
+            source=f"pytest-resolved-source-{uuid.uuid4()}",
+            meta={"is_distress": True},
+            created_at=now.replace(tzinfo=None), maritime_domain="sar",
+        ))
+
+    result = run_humanitarian_truth_table_audit(limit=500)
+    match = next((row for row in result["rows"] if row.candidate_incident_id == event_id), None)
+    assert match is not None, "Recent resolved cases must not disappear before anomaly checks"
+    assert match.lifecycle == "resolved"
+
+
 def test_humanitarian_truth_table_route_exposes_the_real_audit() -> None:
     """docs/updates.md P0.1: the real GET /api/v1/audit/humanitarian-
     truth-table route, exercised end to end via FastAPI, not just the
