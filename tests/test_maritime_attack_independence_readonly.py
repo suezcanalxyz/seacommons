@@ -255,5 +255,40 @@ class IndependenceAuditTests(unittest.TestCase):
         self.assertEqual(result.reason, "duplicate_observation_ids")
 
 
+    def test_conflicting_publication_aliases_cannot_corrobate(self):
+        a = observation("mod", "navy", "one")
+        b = observation("mrcc", "rescue", "two")
+        a.observed_at = "2026-10-28T10:00:00Z"
+        a.received_at = "2026-10-28T13:00:00Z"
+        a.provenance["published_at_utc"] = "2026-10-28T11:00:00Z"
+        a.provenance["published_at"] = "2026-10-28T12:00:00Z"
+        self.assertEqual(audit([a, b]).reason, "conflicting_publication_timestamps")
+
+    def test_equivalent_publication_aliases_with_offsets_pass(self):
+        a = observation("mod", "navy", "one")
+        b = observation("mrcc", "rescue", "two")
+        a.observed_at = "2026-10-28T10:00:00Z"
+        a.received_at = "2026-10-28T13:00:00Z"
+        a.provenance["published_at_utc"] = "2026-10-28T11:00:00Z"
+        a.provenance["published_at"] = "2026-10-28T14:00:00+03:00"
+        self.assertTrue(audit([a, b]).verified)
+
+    def test_date_only_observed_at_is_not_precise_evidence(self):
+        a = observation("mod", "navy", "one")
+        b = observation("mrcc", "rescue", "two")
+        a.observed_at = "2026-10-28"
+        a.received_at = "2026-10-28T13:00:00Z"
+        self.assertEqual(audit([a, b]).reason, "invalid_observation_chronology")
+
+    def test_date_only_secondary_publication_alias_is_not_ignored(self):
+        a = observation("mod", "navy", "one")
+        b = observation("mrcc", "rescue", "two")
+        a.observed_at = "2026-10-28T10:00:00Z"
+        a.received_at = "2026-10-28T13:00:00Z"
+        a.provenance["published_at_utc"] = "2026-10-28T11:00:00Z"
+        a.provenance["published_at"] = "2026-10-28"
+        self.assertEqual(audit([a, b]).reason, "invalid_publication_timestamp")
+
+
 if __name__ == "__main__":
     unittest.main()
