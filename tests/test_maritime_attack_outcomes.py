@@ -69,6 +69,39 @@ class MaritimeAttackOutcomeTests(unittest.TestCase):
         self.assertFalse(result.publication_allowed)
         self.assertTrue(result.requires_operator_review)
 
+    def test_contship_navwarn_768_26_real_sinking_clock_is_same_episode(self):
+        # Primary Bulgarian VTMIS NAVWARN 768/26: 28 Oct 2026, 20:30 UTC,
+        # wreck 43-07.80N 028-45.36E. This is a documented OUTCOME, not
+        # another attack. Operator review and corroboration are simulated;
+        # no production record or real approval is implied by this fixture.
+        navwarn = replace(
+            SINKING,
+            occurred_at=datetime(2026, 10, 28, 20, 30, tzinfo=timezone.utc),
+            lat=43 + 7.80 / 60, lon=28 + 45.36 / 60,
+            source_group="bulgaria_vtmis_navwarn",
+            source_url="https://www.vtmis.bg/wx/wx_eng.htm",
+            origin_report_id="NAVWARN-768/26",
+            published_at=None, received_at=None,
+        )
+        reviewed = replace(
+            REVIEW, outcome_claim_id=navwarn.claim_id,
+            evidence_claim_id=navwarn.claim_id,
+            evidence_url=navwarn.source_url,
+        )
+        result = evaluate(
+            sinking=navwarn, link=reviewed,
+            sinking_corr=corr(navwarn, "candidate"),
+        )
+        self.assertEqual(result.status, "candidate_update")
+        self.assertEqual(result.attack_episode_id, REVIEW.attack_episode_id)
+        self.assertEqual(result.outcome_key, REVIEW.attack_episode_id + ":outcome:sinking")
+        self.assertEqual(result.source_evidence[1]["occurred_at"],
+                         "2026-10-28T20:30:00+00:00")
+        self.assertEqual(result.source_evidence[1]["origin_report_id"], "NAVWARN-768/26")
+        self.assertIsNone(result.source_evidence[1]["published_at"])
+        self.assertIsNone(result.source_evidence[1]["received_at"])
+        self.assertFalse(result.publication_allowed)
+
     def test_evidence_keeps_both_original_documents_and_three_timestamps(self):
         result = evaluate()
         self.assertEqual(len(result.source_evidence), 2)
