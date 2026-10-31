@@ -4,6 +4,43 @@ Staging research record only. No source was imported into production, no databas
 record was changed, and no publication decision is implied. An incident's
 reported facts and a source's independent corroboration are different questions.
 
+## Gulf of Aden / Somali Basin: AZINI, MSCIO 161/26 (31 October review)
+
+- Official alert: https://mscio.eu/alerts/197 ; classification **PIRACY**.
+- Reported hijacking of fishing vessel **AZINI** on 2026-10-29 at approximately
+  09:00 UTC off northeastern Somalia. Vessel IMO/MMSI and exact hijacking
+  coordinates are **not established** by this alert. Crew welfare unknown.
+- The 09°42'N, 053°55'E coordinate is explicitly a **last reported position
+  at 2026-10-30T04:00:00Z**, not a geocoded hijacking event. UPDATE01 gives
+  09°47'N, 055°45'E as a later reported position **without a verified UTC fix
+  timestamp**. Do not calculate speed, interpolate a trajectory, create a
+  drift polygon, or substitute either position for the incident location.
+- The public alert page displays 2026-10-31 09:24, timezone not established;
+  the original release and update clock times and SeaCommons collector receipt
+  remain unknown. No ingestion-latency estimate is justified.
+- Potential use as a pirate mothership is a **warning, not an observed attack**.
+  ATALANTA is investigating. Do not merge this case with MSCIO 160/26's
+  separate armed-skiff approach on 30 October, and do not map it as a military
+  `maritime_attack`. This remains a **single-source piracy candidate**.
+- Source terms: https://mscio.eu/terms-of-service/ prohibit general
+  redistribution/publication of site contents. Store the link and limited
+  structured references for internal review; do not mirror the text or
+  automatically publish an incident without legal and evidentiary review.
+
+## Pure correlator consistency patch (31 October)
+
+- `maritime_attack_correlation.py` now applies the same cosmetic-separator
+  authority equivalence as PLAY and the canonical provenance audit:
+  `Bulgarian_Navy`, `bulgarian navy`, `BULGARIAN-NAVY` represent one
+  original authority. Internal group keys retain underscore formatting.
+- Reviewed `SourceObservation` conversion validates both `published_at_utc`
+  and `published_at` where present, rejects contradictory UTC instants
+  (more than five minutes apart), and retains an `_utc`-only timestamp.
+- Six new pure-Python regression cases cover authority aliases, genuinely
+  independent origins, publication aliases, and AZINI's piracy classification.
+  These changes are **staging-only**. CI and database runtime validation must
+  be reported separately; no production ingest or promotion is implied.
+
 ## Black Sea: CONTSHIP JET
 
 - Vessel: CONTSHIP JET, IMO 9348625, MMSI 636019532 (MMSI is the regression
