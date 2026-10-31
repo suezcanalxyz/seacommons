@@ -69,6 +69,8 @@ def reconcile_against_existing_episode(
     sinking_correlation: Correlation,
     link: ReviewedOutcomeLink,
     episode: object | None,
+    *,
+    independence_verified: bool = False,
 ) -> OutcomeAssociation:
     """Validate the actual persisted episode before reconciling an outcome.
 
@@ -91,6 +93,11 @@ def reconcile_against_existing_episode(
     groups = getattr(episode, "independence_groups", None)
     if not has_distinct_independence_groups(groups):
         return _reject(link, "canonical_attack_independence_incomplete")
+    # Canonical labels alone are not evidence of independent origins. Require
+    # an explicit, read-only SourceObservation + lineage audit, just as PLAY
+    # does. This pure helper cannot certify provenance by itself.
+    if independence_verified is not True:
+        return _reject(link, "canonical_attack_provenance_unverified")
     if not str(getattr(episode, "evidence_fingerprint", "") or "").strip():
         return _reject(link, "canonical_episode_missing_fingerprint")
     observations = getattr(episode, "observation_ids", None)
@@ -137,6 +144,21 @@ def reconcile_against_db_episode(
         .limit(1)
         .one_or_none()
     )
+    # Preflight cheap canonical checks without querying lineage. Only a
+    # plausible episode may trigger the bounded, SELECT-only provenance audit.
+    preflight = reconcile_against_existing_episode(
+        subject, attack, sinking, attack_correlation, sinking_correlation,
+        link, episode,
+    )
+    if preflight.reason_codes != ("canonical_attack_provenance_unverified",):
+        return preflight
+    from core.intel.maritime_attack_independence_readonly import (
+        audit_attack_episode_independence_db,
+    )
+    audit = audit_attack_episode_independence_db(episode, db)
+    if not audit.verified:
+        return _reject(link, "canonical_attack_provenance_unverified:" + audit.reason)
     return reconcile_against_existing_episode(
-        subject, attack, sinking, attack_correlation, sinking_correlation, link, episode,
+        subject, attack, sinking, attack_correlation, sinking_correlation,
+        link, episode, independence_verified=True,
     )
