@@ -51,7 +51,11 @@ class PostgresAuditSqlTests(unittest.TestCase):
                       "operational_tier", "verification_status"):
             self.assertIn(field, self.sql)
             self.assertRegex(self.models, rf"\b{field}\s*= Column\(")
-        self.assertIn("maritime_domain IS DISTINCT FROM 'humanitarian'", self.sql)
+        # The normalized predicate is stricter than the old literal:
+        # padded/mixed-case HUMANITARIAN must never enter attack audits.
+        self.assertGreaterEqual(self.sql.count("lower(btrim(maritime_domain))"), 4)
+        self.assertIn("lower(btrim(service)) <> 'humanitarian'", self.sql)
+        self.assertNotIn("maritime_domain IS DISTINCT FROM 'humanitarian'", self.sql)
         self.assertIn("636019532", self.sql)
 
     def test_avoid_unbounded_forensic_or_humanitarian_payloads(self):
