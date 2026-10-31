@@ -534,16 +534,28 @@ def correlate(
         if claim.time_uncertainty_minutes <= max_time_uncertainty
         and (claim.lat is None or claim.uncertainty_km <= 250)
     ]
-    precise_groups = _independent_document_groups(precise_claims, lineage_roots)
+    precision_groups = _independent_document_groups(precise_claims, lineage_roots)
+    # The canonical PostgreSQL provenance audit requires publication AND
+    # reception chronology. Apply the same fail-closed rule here: a report
+    # with unknown ingestion time remains visible as evidence, but cannot
+    # supply one of the two independent corroborating origins. Do not invent
+    # a publication clock time from a date-only press release.
+    chronology_claims = [
+        claim for claim in precise_claims
+        if claim.published_at is not None and claim.received_at is not None
+    ]
+    precise_groups = _independent_document_groups(chronology_claims, lineage_roots)
     precise_strong_identity = any(
         _identity_match(subject, claim.vessel) == "strong"
         and bool((claim.origin_report_id or "").strip())
         and bool(claim.source_group.strip())
         and bool(_canonical_source_url(claim.source_url))
-        for claim in precise_claims
+        for claim in chronology_claims
     )
-    if len(groups) >= 2 and len(precise_groups) < 2:
+    if len(groups) >= 2 and len(precision_groups) < 2:
         contradictions.append("corroboration_precision_insufficient")
+    if len(precision_groups) >= 2 and len(precise_groups) < 2:
+        contradictions.append("corroboration_chronology_incomplete")
     corroborated = len(precise_groups) >= 2 and precise_strong_identity
     status = "corroborated" if corroborated else "candidate"
     color = (_COLORS.get(anchor.kind, _COLORS["other"]) if corroborated else _COLORS["candidate"])
