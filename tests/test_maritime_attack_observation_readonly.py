@@ -92,6 +92,12 @@ class ReviewedObservationReadOnlyTests(unittest.TestCase):
         self.assertIsNone(result.correlation)
         self.assertEqual(result.blocked_reasons, ("humanitarian_domain_excluded",))
 
+    def test_padded_humanitarian_service_blocks_reviewed_attack(self):
+        rows = [self.rows[0], observation("mrcc", "mrcc", service=" HUMANITARIAN  ")]
+        result = evaluate(["mod", "mrcc"], rows, self.extractions)
+        self.assertIsNone(result.correlation)
+        self.assertEqual(result.blocked_reasons, ("humanitarian_domain_excluded",))
+
     def test_malformed_imo_blocks_entire_batch(self):
         extracts = dict(self.extractions)
         extracts["mrcc"] = extraction(imo="1234560")
