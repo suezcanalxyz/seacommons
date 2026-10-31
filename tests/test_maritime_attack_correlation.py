@@ -684,6 +684,53 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertFalse(result.publication_allowed)
 
 
+    def test_same_imo_conflicting_mmsi_never_double_corroborates(self):
+        # IMO-only subject: two documents match IMO but disagree on MMSI.
+        # A matching name or IMO must not conceal this identity conflict.
+        subject = VesselRef(imo=JET.imo, name=JET.name)
+        a = report("imo_primary", "navy", JET)
+        b = report("mmsi_conflict", "mrcc", VesselRef(
+            imo=JET.imo, mmsi="352002473", name=JET.name,
+        ))
+        for claims in ([a, b], [b, a]):
+            with self.subTest(order=[claim.claim_id for claim in claims]):
+                result = correlate(subject, claims)
+                self.assertEqual(result.status, "candidate")
+                self.assertEqual(len(result.claim_ids), 1)
+                self.assertTrue(any(
+                    reason.startswith("cross_claim_vessel_identifier_conflict:")
+                    for reason in result.contradicting
+                ))
+                self.assertFalse(result.publication_allowed)
+
+    def test_same_mmsi_conflicting_imo_never_double_corroborates(self):
+        # MMSI-only subject: a different vessel IMO cannot be laundered
+        # into the incident by a matching MMSI and name.
+        subject = VesselRef(mmsi=JET.mmsi, name=JET.name)
+        a = report("mmsi_primary", "navy", JET)
+        b = report("imo_conflict", "mrcc", VesselRef(
+            imo="8138712", mmsi=JET.mmsi, name=JET.name,
+        ))
+        for claims in ([a, b], [b, a]):
+            with self.subTest(order=[claim.claim_id for claim in claims]):
+                result = correlate(subject, claims)
+                self.assertEqual(result.status, "candidate")
+                self.assertEqual(len(result.claim_ids), 1)
+                self.assertTrue(any(
+                    reason.startswith("cross_claim_vessel_identifier_conflict:")
+                    for reason in result.contradicting
+                ))
+
+    def test_name_only_report_without_identifier_conflict_remains_eligible(self):
+        subject = VesselRef(imo=JET.imo, name=JET.name)
+        primary = report("imo_primary", "navy", JET)
+        independent = report("name_primary", "mrcc", VesselRef(name=JET.name))
+        result = correlate(subject, [primary, independent])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(len(result.independent_groups), 2)
+        self.assertFalse(result.publication_allowed)
+
+
 class MaritimeAttackLineageTests(unittest.TestCase):
     """Lineage input is a read-only projection of canonical lineage_edges."""
 
