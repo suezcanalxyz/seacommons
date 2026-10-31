@@ -88,6 +88,34 @@ def test_uncatalogued_rss_news_has_conservative_reporting_lineage():
     assert lineage.independence_group == "secondary_news_reporting"
 
 
+
+def test_rss_republishing_ais_does_not_count_as_independent_news():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    event = _event(
+        "Uncatalogued maritime bulletin",
+        event_type="news",
+        metadata={"transport": "rss", "source_lineage": "ais_sensor_lineage"},
+    )
+    lineage = lineage_for_event(event)
+    assert lineage.source_family == "ais_derived_event"
+    assert lineage.sensor_family == "ais"
+    assert lineage.independence_group == "ais_sensor_lineage"
+
+
+def test_rss_derived_without_known_origin_fails_closed():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    event = _event(
+        "Uncatalogued maritime bulletin",
+        event_type="news",
+        metadata={"transport": "rss", "derived": True},
+    )
+    lineage = lineage_for_event(event)
+    assert lineage.independence_group == "unknown"
+    assert lineage.sensor_family == "public_report"
+
+
 def test_sqlalchemy_event_uses_json_meta_for_lineage():
     from core.db.models import IntelEventDB
     from core.intel.evidence_lineage import lineage_for_event
@@ -105,3 +133,75 @@ def test_sqlalchemy_event_uses_json_meta_for_lineage():
     lineage = lineage_for_event(row)
     assert lineage.independence_group == "x_twitter_platform"
     assert lineage.sensor_family == "public_report"
+
+
+def test_social_reposts_of_ais_are_not_independent_corroboration():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    for platform in ("x", "twitter", "mastodon", "bluesky"):
+        repost = _event(
+            "maritime social update", event_type="news",
+            metadata={"platform": platform, "source_lineage": "ais_sensor_lineage"},
+        )
+        lineage = lineage_for_event(repost)
+        assert lineage.independence_group == "ais_sensor_lineage"
+        assert lineage.sensor_family == "ais"
+        assert lineage.source_family == "ais_derived_event"
+
+
+def test_social_original_report_retains_platform_lineage():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    original = _event(
+        "independent witness", event_type="news",
+        metadata={"platform": "x"},
+    )
+    assert lineage_for_event(original).independence_group == "x_twitter_platform"
+
+def test_social_derived_without_origin_fails_closed():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    for platform in ("x", "twitter", "mastodon", "bluesky"):
+        repost = _event(
+            "unattributed social repost", event_type="news",
+            metadata={"platform": platform, "derived": True},
+        )
+        lineage = lineage_for_event(repost)
+        assert lineage.independence_group == "unknown"
+        assert lineage.sensor_family == "public_report"
+
+
+def test_ais_detector_on_social_transport_remains_ais_lineage():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    event = _event(
+        "AIS anomaly mirrored on social", event_type="ais_anomaly",
+        metadata={"platform": "x", "derived": True},
+    )
+    lineage = lineage_for_event(event)
+    assert lineage.independence_group == "ais_sensor_lineage"
+    assert lineage.sensor_family == "ais"
+
+
+def test_serialized_derived_flags_fail_closed_for_social_and_rss():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    for flag in ("true", " TRUE ", "yes", "1"):
+        for metadata in ({"platform": "x"}, {"platform": "mastodon"}, {"transport": "rss"}):
+            repost = _event(
+                "reposted vessel update", event_type="news",
+                metadata={**metadata, "derived": flag},
+            )
+            lineage = lineage_for_event(repost)
+            assert lineage.independence_group == "unknown"
+            assert lineage.sensor_family == "public_report"
+
+
+def test_serialized_false_is_not_misread_as_derived():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    original = _event(
+        "firsthand report", event_type="news",
+        metadata={"platform": "x", "derived": "false"},
+    )
+    assert lineage_for_event(original).independence_group == "x_twitter_platform"
