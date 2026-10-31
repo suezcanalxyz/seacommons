@@ -263,3 +263,68 @@ def test_provider_identity_conflict_invalidates_satellite_link_and_survives_weak
     assert stored[0].episode_id is None
     assert stored[0].association_status == "conflict"
     assert stored[0].evidence_status == "contextual"
+
+
+@pytest.mark.parametrize(
+    ("matched", "expected_status"),
+    [
+        ("false", "unmatched_candidate"),
+        ("False", "unmatched_candidate"),
+        ("0", "unmatched_candidate"),
+        ("no", "unmatched_candidate"),
+        ("true", "strong"),
+        ("YES", "strong"),
+        (True, "strong"),
+        (False, "unmatched_candidate"),
+    ],
+)
+def test_provider_matched_flag_is_parsed_explicitly(matched, expected_status):
+    """String 'false' must never be truthy and create a false vessel association."""
+    from core.intel.satellite_observation import materialize_sar_detections
+
+    observations = materialize_sar_detections(
+        incident_id="sat-assoc-test-provider-flag",
+        cue={"gfw_sar_detections": [{
+            "lat": 35.53, "lon": 14.15,
+            "timestamp": "2026-09-17T10:15:00+00:00",
+            "matched": matched, "mmsi": "211879870",
+        }]},
+        expected_mmsi="211879870",
+        episode_id="episode:test:provider-flag",
+    )
+    assert len(observations) == 1
+    obs = observations[0]
+    assert obs.association_status == expected_status
+    assert obs.episode_id == (
+        "episode:test:provider-flag" if expected_status == "strong" else None
+    )
+
+
+@pytest.mark.parametrize(
+    ("lat", "lon"),
+    [
+        ("not-a-number", 14.15),
+        (35.53, "not-a-number"),
+        (float("nan"), 14.15),
+        (35.53, float("inf")),
+        (91, 14.15),
+        (-91, 14.15),
+        (35.53, 181),
+        (35.53, -181),
+        (True, 14.15),
+    ],
+)
+def test_invalid_provider_coordinates_are_skipped_not_persisted(lat, lon):
+    from core.intel.satellite_observation import materialize_sar_detections
+
+    observations = materialize_sar_detections(
+        incident_id="sat-assoc-test-invalid-coordinates",
+        cue={"gfw_sar_detections": [{
+            "lat": lat, "lon": lon,
+            "timestamp": "2026-09-17T10:15:00+00:00",
+            "matched": True, "mmsi": "211879870",
+        }]},
+        expected_mmsi="211879870",
+        episode_id="episode:test:invalid-coordinates",
+    )
+    assert observations == []
