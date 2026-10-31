@@ -142,9 +142,21 @@ def reconcile_reported_sinking(
         and (claim.lat is None or claim.uncertainty_km <= 250)
         for claim in (attack, sinking)
     )
+    # Uncertainty intervals must establish the ordering, not merely permit
+    # it. An outcome can be attached as a candidate when intervals overlap,
+    # but cannot be called corroborated if sinking may predate the attack.
+    attack_earliest = attack_at - timedelta(minutes=attack.time_uncertainty_minutes)
+    attack_latest = attack_at + timedelta(minutes=attack.time_uncertainty_minutes)
+    sinking_earliest = sinking_at - timedelta(minutes=sinking.time_uncertainty_minutes)
+    sinking_latest = sinking_at + timedelta(minutes=sinking.time_uncertainty_minutes)
+    sequence_certain = sinking_earliest > attack_latest
+    followup_certain = (sinking_latest - attack_earliest) <= timedelta(
+        days=max_followup_days
+    )
     corroborated = (attack_correlation.status == "corroborated"
                     and sinking_correlation.status == "corroborated"
-                    and chronology_complete and precision_qualified)
+                    and chronology_complete and precision_qualified
+                    and sequence_certain and followup_certain)
     evidence: list[dict[str, str | None]] = []
     for claim in (attack, sinking):
         evidence.append({
@@ -169,6 +181,10 @@ def reconcile_reported_sinking(
         reasons.append("outcome_chronology_incomplete")
     if not precision_qualified:
         reasons.append("outcome_precision_insufficient")
+    if not sequence_certain:
+        reasons.append("outcome_temporal_order_ambiguous")
+    if not followup_certain:
+        reasons.append("outcome_followup_window_ambiguous")
     if not corroborated:
         reasons.append("independent_corroboration_incomplete")
     reasons.append("publication_requires_separate_review")
