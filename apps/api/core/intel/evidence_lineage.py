@@ -62,14 +62,22 @@ def lineage_for_event(event) -> EvidenceLineage:
     if origin in {"ais", "ais_derived", "ais_derived_event", "ais_sensor_lineage"}:
         return EvidenceLineage(source_name, "ais_derived_event", "ais_sensor_lineage", "ais")
 
+    # Detector output remains AIS-derived even if a social transport is set.
+    # Transport is not evidence of an independent sensor or eyewitness.
+    if event_type in {"ais_anomaly", "ais_spike", "ais_rendezvous"}:
+        return EvidenceLineage(source_name, "ais", "ais_sensor_lineage", "ais")
+
+    # A repost with declared derivation but no known origin cannot count as
+    # independent corroboration merely because it appears on social media.
+    if platform in {"x", "twitter", "mastodon", "bluesky"} and metadata.get("derived") is True:
+        return EvidenceLineage(source_name, "social_public_reports", "unknown", "public_report")
+
     if platform in {"x", "twitter"}:
         return EvidenceLineage(source_name, "social_public_reports", "x_twitter_platform", "public_report")
     if platform == "mastodon":
         return EvidenceLineage(source_name, "social_public_reports", "mastodon_platform", "public_report")
     if platform == "bluesky":
         return EvidenceLineage(source_name, "social_public_reports", "bluesky_platform", "public_report")
-    if event_type in {"ais_anomaly", "ais_spike", "ais_rendezvous"}:
-        return EvidenceLineage(source_name, "ais", "ais_sensor_lineage", "ais")
 
     # An RSS/news item that explicitly republishes AIS telemetry is not an
     # independent witness merely because it arrived through a news channel.
