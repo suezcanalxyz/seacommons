@@ -47,6 +47,10 @@ def corr(claim, status="corroborated"):
                 if claim.published_at is not None else None,
             "received_at": claim.received_at.isoformat()
                 if claim.received_at is not None else None,
+            "lat": str(claim.lat) if claim.lat is not None else None,
+            "lon": str(claim.lon) if claim.lon is not None else None,
+            "uncertainty_km": str(claim.uncertainty_km),
+            "time_uncertainty_minutes": str(claim.time_uncertainty_minutes),
         },),
     )
 
@@ -274,6 +278,52 @@ class MaritimeAttackOutcomeTests(unittest.TestCase):
                     result.reason_codes,
                 )
                 self.assertFalse(result.publication_allowed)
+
+    def test_cached_corroboration_changed_geometry_or_precision_fails_closed(self):
+        # An upstream corroboration is bound to the original incident
+        # geometry and uncertainty, not just the URL and document clocks.
+        for field, wrong in (
+            ("lat", "44.0"),
+            ("lon", "29.0"),
+            ("uncertainty_km", "0.0"),
+            ("time_uncertainty_minutes", "120.0"),
+        ):
+            with self.subTest(field=field):
+                original = corr(SINKING)
+                evidence = dict(original.source_evidence[0])
+                evidence[field] = wrong
+                stale = replace(original, source_evidence=(evidence,))
+                result = evaluate(sinking_corr=stale)
+                self.assertEqual(result.status, "candidate_update")
+                self.assertIn("outcome_correlation_provenance_mismatch", result.reason_codes)
+                self.assertFalse(result.publication_allowed)
+
+    def test_cached_corroboration_missing_geometry_metadata_fails_closed(self):
+        # Legacy cache entries without complete geometry/precision fields
+        # must be recomputed rather than being trusted as corroborated.
+        for field in ("lat", "lon", "uncertainty_km", "time_uncertainty_minutes"):
+            with self.subTest(field=field):
+                original = corr(SINKING)
+                evidence = dict(original.source_evidence[0])
+                evidence.pop(field)
+                stale = replace(original, source_evidence=(evidence,))
+                result = evaluate(sinking_corr=stale)
+                self.assertEqual(result.status, "candidate_update")
+                self.assertIn("outcome_correlation_provenance_mismatch", result.reason_codes)
+
+    def test_unlocated_claim_requires_explicit_null_geometry(self):
+        unlocated = replace(SINKING, lat=None, lon=None)
+        original = corr(unlocated)
+        self.assertEqual(
+            evaluate(sinking=unlocated, sinking_corr=original).status,
+            "corroborated_update",
+        )
+        evidence = dict(original.source_evidence[0])
+        evidence["lat"] = "0.0"  # Not interchangeable with missing coordinates.
+        stale = replace(original, source_evidence=(evidence,))
+        result = evaluate(sinking=unlocated, sinking_corr=stale)
+        self.assertEqual(result.status, "candidate_update")
+        self.assertIn("outcome_correlation_provenance_mismatch", result.reason_codes)
 
     def test_cached_corroboration_missing_claim_evidence_fails_closed(self):
         stale = replace(corr(SINKING), source_evidence=())
