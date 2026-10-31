@@ -156,8 +156,16 @@ def reconcile_reported_sinking(
         elapsed + uncertainty_seconds
         <= timedelta(days=max_followup_days).total_seconds()
     )
+    # An upstream status label alone is not evidence of two independent
+    # origins. This guard also protects against a stale or malformed cached
+    # Correlation supplied by a future caller of the staging adapter.
+    independent_groups_complete = all(
+        len(set(correlation.independent_groups)) >= 2
+        for correlation in (attack_correlation, sinking_correlation)
+    )
     corroborated = (attack_correlation.status == "corroborated"
                     and sinking_correlation.status == "corroborated"
+                    and independent_groups_complete
                     and chronology_complete and precision_qualified
                     and sequence_certain and followup_certain)
     evidence: list[dict[str, str | None]] = []
@@ -188,6 +196,8 @@ def reconcile_reported_sinking(
         reasons.append("outcome_temporal_order_ambiguous")
     if not followup_certain:
         reasons.append("outcome_followup_window_ambiguous")
+    if not independent_groups_complete:
+        reasons.append("outcome_independent_groups_insufficient")
     if not corroborated:
         reasons.append("independent_corroboration_incomplete")
     reasons.append("publication_requires_separate_review")
