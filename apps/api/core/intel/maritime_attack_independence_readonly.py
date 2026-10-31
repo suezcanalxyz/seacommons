@@ -44,7 +44,12 @@ def _utc_observation_time(value: object) -> datetime:
     if isinstance(value, datetime):
         parsed = value
     elif isinstance(value, str) and value.strip():
-        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        raw = value.strip()
+        # A date without a clock time cannot certify minute-level provenance.
+        # Legacy PostgreSQL naive datetimes remain supported as UTC.
+        if not (("T" in raw or " " in raw) and ":" in raw):
+            raise ValueError("Timestamp lacks a time component")
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     else:
         raise ValueError("Missing or invalid observation timestamp")
     if parsed.tzinfo is None:
@@ -73,16 +78,22 @@ def _observation_chronology_issue(row: object, *, require_complete: bool = False
         return "observation_after_receipt"
     provenance = getattr(row, "provenance", None)
     if isinstance(provenance, dict):
-        published_raw = provenance.get("published_at_utc")
-        if published_raw is None:
-            published_raw = provenance.get("published_at")
-        if published_raw is not None:
-            try:
-                published = _utc_observation_time(published_raw)
-            except (ValueError, TypeError, OverflowError):
-                return "invalid_publication_timestamp"
-            if published > received + tolerance:
-                return "publication_after_receipt"
+        # Both aliases can be present in older source adapters. Never accept
+        # the convenient one while ignoring a contradictory second timestamp.
+        publications = []
+        for key in ("published_at_utc", "published_at"):
+            raw = provenance.get(key)
+            if raw is not None:
+                try:
+                    publications.append(_utc_observation_time(raw))
+                except (ValueError, TypeError, OverflowError):
+                    return "invalid_publication_timestamp"
+        if len(publications) == 2 and abs(
+            (publications[0] - publications[1]).total_seconds()
+        ) > tolerance.total_seconds():
+            return "conflicting_publication_timestamps"
+        if any(published > received + tolerance for published in publications):
+            return "publication_after_receipt"
     return ""
 
 
