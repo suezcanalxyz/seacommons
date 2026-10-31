@@ -453,6 +453,10 @@ collector ingestion or PostgreSQL verification was performed.
   empty client-side listing as zero actual incidents.** The collector
   needs an explicit HTML/API availability check and a fallback to
   individual source URLs; no authenticated/private endpoint assumed.
+  Direct text-fetch attempts of https://mscio.eu/alerts/196 ,
+  https://mscio.eu/alerts/197 , https://mscio.eu/alerts/198 , and
+  https://mscio.eu/alerts/199 **failed in this run**. Therefore current
+  item-level availability is unverified; this does not prove deletion.
 - **UKMTO source availability, 31 October:** the public index
   https://www.ukmto.org/recent-incidents likewise rendered `0 reports`
   in a text-only fetch. This is an extraction/access limitation, not
