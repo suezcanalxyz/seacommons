@@ -121,6 +121,43 @@ class MaritimeAttackOutcomeTests(unittest.TestCase):
         result = evaluate(attack_corr=corr(ATTACK, "candidate"))
         self.assertEqual(result.status, "candidate_update")
 
+    def test_missing_outcome_clocks_cannot_launder_corroborated_status(self):
+        # Upstream status flags cannot replace actual publication and receipt
+        # timestamps for either the attack or its later sinking.
+        for field in ("published_at", "received_at"):
+            with self.subTest(field=field):
+                unclocked = replace(SINKING, **{field: None})
+                result = evaluate(
+                    sinking=unclocked, sinking_corr=corr(unclocked, "corroborated")
+                )
+                self.assertEqual(result.status, "candidate_update")
+                self.assertIn("outcome_chronology_incomplete", result.reason_codes)
+                self.assertFalse(result.publication_allowed)
+
+    def test_missing_attack_clock_also_downgrades_sinking_outcome(self):
+        unclocked = replace(ATTACK, received_at=None)
+        result = evaluate(
+            attack=unclocked, attack_corr=corr(unclocked, "corroborated")
+        )
+        self.assertEqual(result.status, "candidate_update")
+        self.assertIn("outcome_chronology_incomplete", result.reason_codes)
+
+    def test_coarse_outcome_time_or_position_never_auto_corroborates(self):
+        # Broad uncertainty is retained for review but cannot establish a
+        # precise attack-to-sinking sequence, even with a reviewed link.
+        for kwargs in (
+            {"time_uncertainty_minutes": 1440},
+            {"uncertainty_km": 10000},
+        ):
+            with self.subTest(kwargs=kwargs):
+                coarse = replace(SINKING, **kwargs)
+                result = evaluate(
+                    sinking=coarse, sinking_corr=corr(coarse, "corroborated")
+                )
+                self.assertEqual(result.status, "candidate_update")
+                self.assertIn("outcome_precision_insufficient", result.reason_codes)
+                self.assertFalse(result.publication_allowed)
+
     def test_no_review_is_rejected(self):
         self.assertEqual(evaluate(link=replace(REVIEW, verified=False)).status, "rejected")
         self.assertEqual(evaluate(link=replace(REVIEW, reviewed_by="")).status, "rejected")
