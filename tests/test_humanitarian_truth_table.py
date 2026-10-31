@@ -245,6 +245,12 @@ def test_humanitarian_truth_table_route_exposes_the_real_audit() -> None:
     assert "rows" in payload
     assert "not_yet_computable_flags" in payload
     assert set(payload["not_yet_computable_flags"]) == set(NOT_YET_COMPUTABLE)
+    assert payload["live_visible_feature_count"] >= 0
+    assert (
+        payload["live_visible_features_with_audit_row_count"]
+        + payload["live_visible_features_without_audit_row_count"]
+        == payload["live_visible_feature_count"]
+    )
 
 
 def test_recent_completed_drift_does_not_inherit_staleness_from_older_one():
