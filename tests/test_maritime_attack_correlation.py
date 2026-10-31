@@ -897,5 +897,49 @@ class SourceObservationAdapterTests(unittest.TestCase):
         self.assertIn("independent_source_groups", result.supporting)
 
 
+    def test_larger_imprecise_cluster_cannot_hijack_two_precise_origins(self):
+        # Three independent but day-level, temporally distant reports should
+        # not defeat two precise original witnesses to a separate attack.
+        # This is a false-negative guard, not a relaxation of corroboration.
+        from dataclasses import replace
+        navy, mrcc = report("precise_navy", "navy"), report("precise_mrcc", "mrcc")
+        vague = [
+            replace(
+                report(f"vague_{i}", f"vague_authority_{i}"),
+                occurred_at=dt(30, 10),
+                published_at=dt(30, 12),
+                received_at=dt(30, 12, 30),
+                time_uncertainty_minutes=1440,
+            )
+            for i in range(3)
+        ]
+        for claims in (
+            [*vague, navy, mrcc],
+            [navy, *vague, mrcc],
+            [mrcc, navy, *reversed(vague)],
+        ):
+            with self.subTest(order=[claim.claim_id for claim in claims]):
+                result = correlate(JET, claims)
+                self.assertEqual(result.status, "corroborated")
+                self.assertEqual(set(result.claim_ids), {"precise_navy", "precise_mrcc"})
+                self.assertEqual(result.independent_groups, ("mrcc", "navy"))
+                self.assertFalse(result.publication_allowed)
+
+    def test_unclocked_majority_cannot_hijack_two_precise_origins(self):
+        from dataclasses import replace
+        navy, mrcc = report("clocked_navy", "navy"), report("clocked_mrcc", "mrcc")
+        unclocked = [
+            replace(
+                report(f"unclocked_{i}", f"unknown_{i}"),
+                occurred_at=dt(30, 10), published_at=None, received_at=None,
+            )
+            for i in range(3)
+        ]
+        result = correlate(JET, [*unclocked, navy, mrcc])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(set(result.claim_ids), {"clocked_navy", "clocked_mrcc"})
+        self.assertFalse(result.publication_allowed)
+
+
 if __name__ == "__main__":
     unittest.main()
