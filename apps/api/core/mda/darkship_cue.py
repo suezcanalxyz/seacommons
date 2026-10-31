@@ -248,7 +248,7 @@ def _gfw_sar_in_area(
                         "lat": lat,
                         "lon": lon,
                         "matched": matched,
-                        "timestamp": observed_at.isoformat(),
+                        "timestamp": observed_at.isoformat().replace("+00:00", "Z"),
                         "mmsi": mmsi or None,
                         "vessel_id": vessel_id or None,
                         "dataset": str(dataset_key),
