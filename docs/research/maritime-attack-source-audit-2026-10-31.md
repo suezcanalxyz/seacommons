@@ -1,5 +1,42 @@
 # Maritime attack correlation: source audit (2026-10-31 UTC)
 
+## Chronology fail-closed regression (31 October, staging only)
+
+- The pure correlator now matches the canonical PostgreSQL provenance audit:
+  **both publication and reception timestamps are mandatory** to count an
+  original report toward automatic two-source corroboration. Event time
+  remains mandatory with timezone and uncertainty. Missing clock times are
+  retained as null, never fabricated as midnight or inferred from web crawls.
+- Reports missing either clock remain incident **candidates** with original
+  URLs, authority groups, event times, coordinates and uncertainty, and the
+  reason corroboration_chronology_incomplete. Original source groups are
+  displayed for human review. AIS gaps remain context, not attack proof.
+- CONTSHIP JET government reports currently have dates but no independently
+  established publication clock times or SeaCommons collector reception
+  timestamps. The pure regression therefore expects **candidate**, not
+  automatic corroborated. This does **not** dispute the documented attack;
+  the automated provenance gate is simply not yet satisfied.
+- Two new regression cases cover missing reception and publication clocks.
+  Full CI and Oracle LIVE/PLAY validation remain separate checks.
+- MSCIO ALERT 163/26: https://mscio.eu/alerts/199 , page dated 2026-10-30
+  (display clock 22:22; timezone not established), describes a time-late
+  report of an outbound Strait of Hormuz tanker projectile strike on
+  28 October. IMO/MMSI, precise event UTC time and independent reporting
+  chain are unknown. Do not geocode or promote automatically.
+- MSCIO ALERT 160/26: https://mscio.eu/alerts/196 , event reported at
+  2026-10-30T02:25Z near 11°57.4'N 045°04.5'E, armed-skiff approach with
+  **no shots fired and no boarding**. Suspicious activity, not attack.
+  Web publication clocks are not SeaCommons receipt timestamps.
+- MARAD 2026-012:
+  https://www.maritime.dot.gov/msci/2026-012-black-sea-and-sea-azov-military-combat-operations
+  is a regional risk advisory, not a corroborating CONTSHIP JET witness.
+  MARAD 2026-015 documents AIS spoofing and disruption:
+  https://www.maritime.dot.gov/msci/2026-015-global-us-maritime-advisory-updates-resources-and-contacts
+- Public MSCIO access does not establish an unrestricted republication
+  license. Retain links and limited structured facts, not mirrored text.
+  Collector latency remains **unmeasured** without Oracle timestamps.
+
+
 Staging research record only. No source was imported into production, no database
 record was changed, and no publication decision is implied. An incident's
 reported facts and a source's independent corroboration are different questions.
