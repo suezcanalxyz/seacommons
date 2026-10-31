@@ -524,6 +524,30 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertEqual(result.independent_groups, ("bulgarian_navy",))
         self.assertFalse(result.publication_allowed)
 
+    def test_authority_separator_variants_are_one_origin_in_pure_correlator(self):
+        # Distinct document IDs cannot turn cosmetic authority aliases into
+        # independent evidence, even before the database provenance audit.
+        claims = [
+            report("navy_underscore", "Bulgarian_Navy"),
+            report("navy_space", " bulgarian navy "),
+            report("navy_hyphen", "BULGARIAN-NAVY"),
+        ]
+        result = correlate(JET, claims)
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(result.independent_groups, ("bulgarian_navy",))
+        self.assertFalse(result.publication_allowed)
+
+    def test_authority_separator_alias_still_allows_distinct_rescue_origin(self):
+        claims = [
+            report("navy_underscore", "Bulgarian_Navy"),
+            report("navy_hyphen", "BULGARIAN-NAVY"),
+            report("mrcc", "independent_mrcc"),
+        ]
+        result = correlate(JET, claims)
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(result.independent_groups, ("bulgarian_navy", "independent_mrcc"))
+        self.assertFalse(result.publication_allowed)
+
     def test_original_report_case_alias_cannot_launder_reprint(self):
         from dataclasses import replace
         a = replace(report("reprint", "newsroom"), origin_report_id="NAVWARN-768/26")
