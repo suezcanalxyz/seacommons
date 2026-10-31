@@ -179,6 +179,36 @@ class IndependenceAuditTests(unittest.TestCase):
         a.provenance["published_at"] = "not-a-timestamp"
         self.assertEqual(audit([a, b]).reason, "invalid_publication_timestamp")
 
+    def test_strict_canonical_audit_rejects_both_missing_timestamps(self):
+        rows = [
+            observation("mod", "navy", "one"),
+            observation("mrcc", "rescue", "two"),
+        ]
+        result = audit_attack_episode_independence(
+            episode(),
+            lambda ids: rows,
+            lambda ids: [],
+            require_chronology=True,
+        )
+        self.assertFalse(result.verified)
+        self.assertEqual(result.reason, "missing_observation_chronology")
+
+    def test_strict_canonical_audit_accepts_valid_timestamps(self):
+        rows = [
+            observation("mod", "navy", "one"),
+            observation("mrcc", "rescue", "two"),
+        ]
+        for row in rows:
+            row.observed_at = "2026-10-28T10:00:00Z"
+            row.received_at = datetime(2026, 10, 28, 11, 0, tzinfo=timezone.utc)
+        result = audit_attack_episode_independence(
+            episode(),
+            lambda ids: rows,
+            lambda ids: [],
+            require_chronology=True,
+        )
+        self.assertTrue(result.verified)
+
     def test_missing_half_of_observation_timeline_blocks(self):
         a = observation("mod", "navy", "one")
         b = observation("mrcc", "rescue", "two")
