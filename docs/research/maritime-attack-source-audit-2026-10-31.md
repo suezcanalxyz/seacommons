@@ -521,3 +521,26 @@ collector ingestion or PostgreSQL verification was performed.
   preservation of location uncertainty. Code, tests and SQL remain staging-only.
   No collector, scheduler, VM cron, historical record update or production
   deployment was introduced. Verify the latest GitHub Actions run separately.
+
+
+## New 72-hour candidate: AL MAYEDA, Persian Gulf (31 October review)
+
+- Indian public-service broadcaster Akashvani reports that Minister Sarbananda
+  Sonowal described a **projectile attack on 2026-10-30** against Marshall
+  Islands-flagged LNG carrier **M/T AL MAYEDA** in the Persian Gulf. All 25
+  crew, including six Indian nationals, were reported safe:
+  https://newsonair.gov.in/six-indians-safe-after-attack-on-lng-carrier-in-persian-gulf/
+- Vessel directories associate the name with **IMO 9397298** (valid check
+  digit) and **MMSI 538003356**, but these identifiers are not independently
+  stated in the Akashvani article. Treat as provisional entity resolution,
+  requiring registry/flag-state confirmation:
+  https://rynda.io/vessels/9397298-al-mayeda
+- The report does **not** give an exact incident UTC hour or coordinate.
+  Third-party AIS records must remain separate observations, not be substituted
+  for the attack location or used to invent an incident time.
+- The Akashvani article and other reports repeating the same ministerial
+  statement are **one reporting chain**, not multiple independent witnesses.
+  The incident remains an **external candidate pending original report,
+  independent corroboration and Oracle record matching**. No perpetrator
+  attribution, no automatic merge with the unnamed Lavan Island projectile
+  report (MSCIO 162/26), and no LIVE/PLAY promotion.
