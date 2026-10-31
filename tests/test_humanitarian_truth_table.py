@@ -672,3 +672,60 @@ def test_visible_distress_coverage_reports_persisted_exclusion_reasons(monkeypat
     assert result["live_visible_db_rows_omitted_by_case_limit_count"] == 0
     assert result["live_visible_ids_without_persisted_row_count"] == 1
     assert result["live_visible_features_without_audit_row_count"] == 3
+
+
+
+def test_visible_drift_event_ids_supports_both_public_geometry_contracts():
+    """A drift's origin is not the optional GeoJSON feature ID."""
+    from core.intel.humanitarian_truth_table import visible_humanitarian_drift_event_ids
+
+    features = [
+        {"properties": {"event_id": "case-macro", "kind": "macro_search_area"}},
+        {"properties": {"intel_event_id": "case-physical", "type": "trajectory"}},
+        {"properties": {"event_id": "intel:case-prefixed"}},
+        {"properties": {"event_id": "case-agree", "intel_event_id": "intel:case-agree"}},
+        {"properties": {"id": "drift-geometry-only"}},
+        {"properties": {"event_id": "case-a", "intel_event_id": "case-b"}},
+        {"properties": {"event_id": ""}},
+    ]
+    assert visible_humanitarian_drift_event_ids(features) == {
+        "case-macro", "case-physical", "case-prefixed", "case-agree",
+    }
+
+
+def test_audit_detects_resolved_case_with_published_macro_drift(monkeypatch):
+    """A published macro area must not disappear from the drift anomaly audit."""
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+    import core.live.feed as live_feed
+
+    now = datetime.now(timezone.utc)
+    token = uuid.uuid4().hex[:12]
+    case_id = f"pytest-resolved-macro-drift-{token}"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=case_id, timestamp_utc=now.isoformat(), type="distress",
+            severity="high", lat=35.5, lon=14.1,
+            title="Rescue completed",
+            text="All 47 people aboard the Zenobia near Lampedusa were rescued and are now safe.",
+            source=f"pytest-resolved-macro-{token}", meta={"is_distress": True},
+            created_at=now.replace(tzinfo=None), maritime_domain="sar",
+        ))
+
+    monkeypatch.setattr(live_feed, "public_signal_collection", lambda **_kw: {
+        "features": [{"properties": {"id": f"intel:{case_id}", "kind": "distress"}}],
+    })
+    monkeypatch.setattr(live_feed, "public_drift_collection", lambda **_kw: {
+        "features": [{
+            "type": "Feature",
+            "properties": {"event_id": case_id, "kind": "macro_search_area"},
+        }],
+    })
+    result = run_humanitarian_truth_table_audit(limit=1)
+    row = next(row for row in result["rows"] if row.candidate_incident_id == case_id)
+    assert row.lifecycle == "resolved"
+    assert row.drift_visible is True
+    assert "DRIFT_AFTER_RESOLUTION" in row.anomaly_flags
