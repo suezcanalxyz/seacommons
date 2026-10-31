@@ -4,6 +4,7 @@
 -- Run in an explicitly read-only PostgreSQL connection with least-privilege credentials.
 -- All statements are SELECT; statement_timeout prevents runaway scans.
 -- Avoid dumping raw humanitarian content or unredacted forensic sensor payloads.
+-- Normalize service/domain case and whitespace: padded HUMANITARIAN is excluded.
 BEGIN READ ONLY;
 SET LOCAL statement_timeout = '5000ms';
 SET LOCAL lock_timeout = '1000ms';
@@ -18,7 +19,7 @@ SELECT id, timestamp_utc, source_timestamp_utc, received_at, created_at,
 FROM intel_events
 WHERE timestamp_utc >= to_char(now() AT TIME ZONE 'UTC' - interval '72 hours', 'YYYY-MM-DD"T"HH24:MI:SS')
   AND timestamp_utc < to_char(now() AT TIME ZONE 'UTC' + interval '5 minutes', 'YYYY-MM-DD"T"HH24:MI:SS')
-  AND (maritime_domain IS DISTINCT FROM 'humanitarian')
+  AND (coalesce(lower(btrim(maritime_domain)), '') <> 'humanitarian')
 ORDER BY timestamp_utc DESC LIMIT 100;
 
 -- 2. October retro: candidate headlines and identifiers, no full-text dump.
@@ -26,7 +27,7 @@ SELECT id, timestamp_utc, source_timestamp_utc, received_at,
        type, source, linked_mmsi, title, url, lat, lon
 FROM intel_events
 WHERE timestamp_utc >= '2026-10-01' AND timestamp_utc < '2026-11-01'
-  AND (maritime_domain IS DISTINCT FROM 'humanitarian')
+  AND (coalesce(lower(btrim(maritime_domain)), '') <> 'humanitarian')
   AND (title ILIKE '%attack%' OR title ILIKE '%struck%'
        OR title ILIKE '%sunk%' OR title ILIKE '%drone%'
        OR title ILIKE '%missile%' OR title ILIKE '%explosion%'
@@ -41,7 +42,7 @@ SELECT id, timestamp_utc, source_timestamp_utc, received_at, operational_tier,
        live_expires_at, maritime_domain, type, linked_mmsi, url
 FROM intel_events
 WHERE last_qualified_observation_at >= (now() AT TIME ZONE 'UTC' - interval '72 hours')
-  AND maritime_domain IS DISTINCT FROM 'humanitarian'
+  AND coalesce(lower(btrim(maritime_domain)), '') <> 'humanitarian'
 ORDER BY last_qualified_observation_at DESC LIMIT 100;
 
 -- 2c. CONTSHIP JET indexed MMSI lookup, with a bounded title fallback.
@@ -52,7 +53,7 @@ FROM intel_events
 WHERE timestamp_utc >= '2026-10-27'
   AND timestamp_utc < '2026-11-01'
   AND (linked_mmsi = '636019532' OR title ILIKE '%CONTSHIP JET%')
-  AND maritime_domain IS DISTINCT FROM 'humanitarian'
+  AND coalesce(lower(btrim(maritime_domain)), '') <> 'humanitarian'
 ORDER BY timestamp_utc DESC LIMIT 100;
 
 -- 3. CONTSHIP JET AIS: include reported time AND receipt time to detect stale/replayed positions.
@@ -111,7 +112,7 @@ SELECT observation_id, service, lane, source_name, source_id,
        source_url, observed_at, received_at, provenance
 FROM source_observations
 WHERE received_at >= (now() AT TIME ZONE 'UTC' - interval '72 hours')
-  AND service <> 'humanitarian'
+  AND service IS NOT NULL AND lower(btrim(service)) <> 'humanitarian'
 ORDER BY received_at DESC LIMIT 100;
 
 -- 9. Indexed lineage lookup only for the selected CONTSHIP observation IDs.
