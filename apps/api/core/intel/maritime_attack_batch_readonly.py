@@ -35,11 +35,14 @@ def audit_attack_episodes_independence(
     episodes: Sequence[object],
     fetch_observations: Callable[[tuple[str, ...]], Iterable[object]],
     fetch_lineage: Callable[[tuple[str, ...]], Iterable[object]],
+    *,
+    require_chronology: bool = False,
 ) -> dict[str, IndependenceAudit]:
     """Batch at most eight attacks and preserve each episode's own proof.
 
     The caller must not interpret missing results as successful verification.
     A bad shared fetch invalidates the whole batch, never just the bad rows.
+    Database adapters require complete chronology for each observation.
     """
     items = tuple(episodes)
     if not items:
@@ -130,6 +133,7 @@ def audit_attack_episodes_independence(
         key = str(getattr(episode, "episode_id"))
         results[key] = audit_attack_episode_independence(
             episode, cached_observations, cached_lineage,
+            require_chronology=require_chronology,
         )
     return results
 
@@ -163,6 +167,6 @@ def audit_attack_episodes_independence_db(
                     .limit(_MAX_TOTAL_EDGES + 1).all())
 
         results.update(audit_attack_episodes_independence(
-            chunk, observations, lineage,
+            chunk, observations, lineage, require_chronology=True,
         ))
     return results
