@@ -122,6 +122,30 @@ class BatchAuditTests(unittest.TestCase):
         self.assertEqual(calls["observations"], [("mod", "rescue")])
         self.assertTrue(all("a" not in ids and "b" not in ids for ids in calls["lineage"]))
 
+    def test_strict_batch_rejects_missing_canonical_timestamps(self):
+        rows = [obs("mod", "navy", "one"), obs("mrcc", "rescue", "two")]
+        result = audit_attack_episodes_independence(
+            [episode("jet", "mod", "mrcc")],
+            lambda ids: rows,
+            lambda ids: [],
+            require_chronology=True,
+        )
+        self.assertFalse(result["jet"].verified)
+        self.assertEqual(result["jet"].reason, "missing_observation_chronology")
+
+    def test_strict_batch_preserves_two_valid_originals(self):
+        rows = [obs("mod", "navy", "one"), obs("mrcc", "rescue", "two")]
+        for row in rows:
+            row.observed_at = "2026-10-28T10:00:00Z"
+            row.received_at = "2026-10-28T11:00:00Z"
+        result = audit_attack_episodes_independence(
+            [episode("jet", "mod", "mrcc")],
+            lambda ids: rows,
+            lambda ids: [],
+            require_chronology=True,
+        )
+        self.assertTrue(result["jet"].verified)
+
     def test_missing_observation_fails_closed(self):
         result, _ = batch([episode("jet", "a", "b")], [obs("a", "a", "1")])
         self.assertEqual(result["jet"].reason, "missing_or_duplicate_observations")
