@@ -68,7 +68,7 @@ def correlate_reviewed_observations(
         observation = found[identifier]
         # Humanitarian distress/drift is a separate domain. Never reclassify
         # it as a military attack through this staging adapter.
-        if str(getattr(observation, "service", "")).lower() == "humanitarian":
+        if str(getattr(observation, "service", "") or "").strip().casefold() == "humanitarian":
             return ObservationCorrelationResult(None, ids, len(rows), ("humanitarian_domain_excluded",))
         try:
             claim = claim_from_source_observation(
