@@ -116,6 +116,13 @@ class IndependenceAuditTests(unittest.TestCase):
                 observation("mrcc", "mrcc", "2")]
         self.assertEqual(audit(rows).reason, "humanitarian_domain_excluded")
 
+    def test_padded_humanitarian_service_cannot_corrobate_attack(self):
+        rows = [observation("mod", "navy", "1"),
+                observation("mrcc", "rescue", "2", service="  HuMaNiTaRiAn  ")]
+        result = audit(rows)
+        self.assertFalse(result.verified)
+        self.assertEqual(result.reason, "humanitarian_domain_excluded")
+
     def test_cycle_blocks_even_distinct_authorities(self):
         rows = [observation("mod", "mod", "1"), observation("mrcc", "mrcc", "2")]
         self.assertEqual(audit(rows, [edge("mod", "x"), edge("x", "mod")]).reason,
