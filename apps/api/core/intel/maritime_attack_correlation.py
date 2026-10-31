@@ -79,7 +79,7 @@ class Correlation:
 _KINDS = frozenset({"attack", "sinking", "explosion", "collision", "piracy"})
 _COLORS = {
     "candidate": "maritime_incident_candidate_orange",
-    "attack": "maritime_attack_red",
+    "attack": "maritime_attack_coral",
     "sinking": "maritime_sinking_bordeaux",
     "other": "maritime_incident_red",
 }

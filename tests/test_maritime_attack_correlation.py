@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import unittest
 
 from core.intel.maritime_attack_correlation import (
-    AISFix, AISGap, IncidentClaim, VesselRef, correlate,
+    AISFix, AISGap, IncidentClaim, VesselRef, correlate, claim_from_source_observation,
 )
 
 UTC = timezone.utc
@@ -49,13 +49,30 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         result = correlate(JET, claims, ais, old_gap)
         self.assertEqual(result.status, "corroborated")
         self.assertEqual(result.incident_type, "attack")
-        self.assertEqual(result.color_token, "maritime_attack_red")
+        self.assertEqual(result.color_token, "maritime_attack_coral")
         # No invented incident coordinate: the official reports specify a
         # relative location, not a precise latitude/longitude. The AIS fix
         # is retained separately and cannot self-corroborate the attack.
         self.assertIsNone(result.nearest_ais_km)
         self.assertEqual(result.related_gap_ids, ())
         self.assertEqual(len(result.independent_groups), 2)
+
+    def test_mscio_160_armed_approach_without_shots_is_not_attack(self):
+        """MSCIO 160/26 is suspicious activity, not a proven attack."""
+        from types import SimpleNamespace
+        observation = SimpleNamespace(
+            observation_id="MSCIO-160-26",
+            source_url="https://mscio.eu/alerts/196",
+            received_at=dt(30, 10),
+            provenance={"origin_authority_verified": True,
+                        "originating_authority_id": "mscio",
+                        "original_report_id": "160/26"},
+        )
+        extracted = {"kind": "suspicious_activity",
+                     "occurred_at": dt(30, 2, 25),
+                     "vessel_name": "UNIDENTIFIED MERCHANT VESSEL",
+                     "lat": 11.956667, "lon": 45.075}
+        self.assertIsNone(claim_from_source_observation(observation, extracted))
 
     def test_one_official_source_and_ais_is_not_corroboration(self):
         result = correlate(JET, [report("mod", "bulgarian_mod")],

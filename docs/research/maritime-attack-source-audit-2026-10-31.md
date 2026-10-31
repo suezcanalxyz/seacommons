@@ -126,3 +126,38 @@ humanitarian_incidents, forensic_events, source_observations, lineage_edges
 and maritime_episodes for 2026-10-28 through 2026-10-31 and all of October.
 Compare LIVE/PLAY public projections and the incident review trail.
 No production write or deploy is authorized.
+
+## Additional official alerts checked 31 October (72-hour window)
+
+- **MSCIO 160/26, Gulf of Aden**, event **2026-10-30T02:25:00Z**,
+  position 11°57.4'N 045°04.5'E (approximately 11.956667 N, 45.075 E):
+  https://mscio.eu/alerts/196
+  Two suspicious craft approached a merchant vessel; one skiff reportedly
+  carried a mounted weapon. **No shots fired, no boarding attempted**, vessel
+  continued its voyage. Operation ATALANTA is investigating. Classify
+  `suspicious_activity`, **not an attack**. No verified IMO/MMSI.
+  Site displays 30 October 09:10; publication timezone not established.
+  SeaCommons receipt timestamp unknown.
+- **MSCIO 162/26, Arabian Gulf**, event **2026-10-30T18:00:00Z**,
+  40 NM south of Lavan Island, Iran:
+  https://mscio.eu/alerts/198
+  Vessel reportedly struck on port side by unknown projectile, causing fire;
+  crew safe, environmental impact not reported. Site displays 30 October 22:17
+  (timezone not established). This likely refers to the same original report
+  as UKMTO **188-26**. Treat as a *single provisional episode*, not two
+  independently corroborated reports. Vessel name, IMO/MMSI and SeaCommons
+  receipt timestamp unknown. No perpetrator attribution.
+- **MSCIO 163/26, Strait of Hormuz**, **time-late** report of an event on
+  **28 October 2026**, without exact event hour:
+  https://mscio.eu/alerts/199
+  Crude oil tanker reportedly struck by unknown projectile on outbound
+  transit. Site displays 30 October 22:22 (timezone not established).
+  No IMO/MMSI or exact event time. Do not automatically merge with MSCIO
+  158/26 (29 October 16:00 UTC), MSCIO 159/26 (29 October 22:12 UTC), or
+  MSCIO 162/26 (30 October 18:00 UTC). Missing identity and time must remain
+  explicit uncertainty; do not fabricate an exact point or latency.
+
+These three are **external candidates**, not database matches. The MSCIO
+site is publicly readable, but its terms restrict redistribution; use only
+minimal factual indexing and source links pending legal review. No automated
+collector ingestion or PostgreSQL verification was performed.
