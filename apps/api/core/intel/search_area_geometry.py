@@ -35,8 +35,9 @@ def valid_search_area_geometry(value: Any) -> bool:
             if vertices > _MAX_VERTICES:
                 return False
             points: list[tuple[float, float]] = []
+            ring_dimension = len(ring[0]) if isinstance(ring[0], list) else 0
             for position in ring:
-                if not isinstance(position, list) or len(position) not in (2, 3):
+                if not isinstance(position, list) or len(position) not in (2, 3) or len(position) != ring_dimension:
                     return False
                 if any(
                     isinstance(number, bool)
