@@ -168,6 +168,30 @@ def _valid_mmsi(value: Any) -> str:
     return text if len(text) == 9 and text.isdigit() else ""
 
 
+def _provider_matched(value: Any) -> bool:
+    """Accept only explicit positive provider flags; never bool("false")."""
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "1"}
+    return isinstance(value, int) and value == 1
+
+
+def _valid_coordinate(value: Any, maximum: float) -> float | None:
+    """Reject malformed, non-finite, or out-of-WGS84 provider coordinates."""
+    import math
+
+    if isinstance(value, bool):
+        return None
+    try:
+        coordinate = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(coordinate) or abs(coordinate) > maximum:
+        return None
+    return coordinate
+
+
 def materialize_sar_detections(
     *,
     incident_id: str,
@@ -192,14 +216,16 @@ def materialize_sar_detections(
     now = datetime.now(timezone.utc).isoformat()
     for detection in detections:
         lat, lon = detection.get("lat"), detection.get("lon")
-        if lat is None or lon is None:
+        valid_lat = _valid_coordinate(lat, 90.0)
+        valid_lon = _valid_coordinate(lon, 180.0)
+        if valid_lat is None or valid_lon is None:
             continue
         timestamp = str(detection.get("timestamp") or now)
         digest = hashlib.blake2s(
             f"{incident_id}:{timestamp}:{lat}:{lon}".encode(), digest_size=16,
         ).hexdigest()
         detected = _valid_mmsi(detection.get("mmsi"))
-        provider_matched = bool(detection.get("matched"))
+        provider_matched = _provider_matched(detection.get("matched"))
         if provider_matched and expected and detected == expected and episode_id:
             association_status = "strong"
             linked_episode = episode_id
@@ -229,7 +255,7 @@ def materialize_sar_detections(
             product_id=f"gfw_sar:{digest}",
             acquisition_time=timestamp,
             discovered_at=now,
-            footprint={"type": "Point", "coordinates": [float(lon), float(lat)]},
+            footprint={"type": "Point", "coordinates": [valid_lon, valid_lat]},
             bbox=None,
             sensor_type="sar",
             temporal_relation="nearest",
