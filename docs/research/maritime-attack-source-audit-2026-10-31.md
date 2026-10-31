@@ -1,5 +1,50 @@
 # Maritime attack correlation: source audit (2026-10-31 UTC)
 
+## 31 October evening: Black Sea retrospective, ABLE and EMIL (staging only)
+
+- **ABLE**: Bulgarian Ministry of Defence inspection report dated 2026-10-09:
+  https://www.mod.bg/news9637 . Inspectors documented serious fire damage and
+  a flooded engine room; the ministry described a surface-drone strike but
+  explicitly said drone fragments were not recovered and perpetrator
+  attribution was not established. This is a primary inspection finding,
+  not an independent second source for the initial strike.
+- Bulgarian Ministry of Transport follow-up dated 2026-10-14:
+  https://www.mtc.government.bg/bg/category/1/korabt-able-napusna-blgarskata-izklyuchitelna-ikonomicheska-zona
+  dates the **ABLE attack to the night of 2026-10-06**, around 70 NM east of
+  Byala, and states that the Palau-flagged vessel left the Bulgarian EEZ
+  around 01:10 on 14 October, about 33 NM east of Ahtopol. The clock's
+  timezone is not established. The departure is a later vessel movement,
+  **not a second attack**. IMO, MMSI, attack UTC time and attack coordinates
+  remain unverified. Ministry of Defence and Transport statements may share
+  investigative inputs; do not count them as independent attack witnesses
+  without examining their originating evidence.
+- **EMIL**: Bulgarian Ministry of Defence report dated 2026-10-04:
+  https://www.mod.bg/news9616 . The vessel was reportedly hit by a drone
+  near Odesa on **2026-08-05**, suffered fire/system failure and was
+  abandoned; the ministry observed it drifting around 40 NM east of Shabla
+  on 4 October. The October observation is a **drifting vessel/hazard
+  follow-up**, not an October attack. No synthetic October attack timestamp
+  or exact AIS/drift geometry should be created.
+- **MSCIO 149/26** (2026-10-17):
+  https://mscio.eu/alerts/185 . The public category is *Suspicious Activity*,
+  but the narrative reports an approaching craft **opening fire** before
+  retreating. Flag this discrepancy for human review rather than trusting
+  the category label alone; it is not evidence of a military perpetrator.
+  Exact incident UTC time, vessel IMO/MMSI and second original witness remain
+  unverified.
+- **Sinking outcome gate:** `maritime_attack_outcomes.py` now keeps an
+  operator-reviewed attack→sinking relation at `candidate_update` if either
+  underlying report lacks publication or reception clocks, or if its event
+  uncertainty exceeds the correlator's 180-minute attack / 360-minute
+  sinking or 250-km located-event thresholds. An upstream `corroborated`
+  label alone cannot bypass this gate. Source documents remain visible;
+  no historical rows or production publication flags are changed.
+- Source-site publication dates do not supply SeaCommons `received_at`;
+  **Oracle collector latency remains unmeasured** because the authorized
+  Desktop Commander session reports a usage pause. No PostgreSQL query
+  was run. Do not claim LIVE/PLAY end-to-end validation from GitHub CI.
+
+
 ## Chronology fail-closed regression (31 October, staging only)
 
 - The pure correlator now matches the canonical PostgreSQL provenance audit:
