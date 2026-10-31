@@ -181,3 +181,27 @@ def test_ais_detector_on_social_transport_remains_ais_lineage():
     lineage = lineage_for_event(event)
     assert lineage.independence_group == "ais_sensor_lineage"
     assert lineage.sensor_family == "ais"
+
+
+def test_serialized_derived_flags_fail_closed_for_social_and_rss():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    for flag in ("true", " TRUE ", "yes", "1"):
+        for metadata in ({"platform": "x"}, {"platform": "mastodon"}, {"transport": "rss"}):
+            repost = _event(
+                "reposted vessel update", event_type="news",
+                metadata={**metadata, "derived": flag},
+            )
+            lineage = lineage_for_event(repost)
+            assert lineage.independence_group == "unknown"
+            assert lineage.sensor_family == "public_report"
+
+
+def test_serialized_false_is_not_misread_as_derived():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    original = _event(
+        "firsthand report", event_type="news",
+        metadata={"platform": "x", "derived": "false"},
+    )
+    assert lineage_for_event(original).independence_group == "x_twitter_platform"
