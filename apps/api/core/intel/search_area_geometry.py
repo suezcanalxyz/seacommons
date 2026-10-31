@@ -54,7 +54,14 @@ def valid_search_area_geometry(value: Any) -> bool:
                 if not (-180 <= lon <= 180 and -90 <= lat <= 90):
                     return False
                 points.append((float(lon), float(lat)))
-            if points[0] != points[-1] or len(set(points[:-1])) < 3:
+            # GeoJSON linear rings must close on the entire position, not
+            # merely longitude/latitude: a 3D start/end altitude mismatch is
+            # not a closed ring. Reject repeated interior vertices too; these
+            # create zero-length edges or self-touching search boundaries.
+            if tuple(ring[0]) != tuple(ring[-1]):
+                return False
+            unique_vertices = set(points[:-1])
+            if len(unique_vertices) < 3 or len(unique_vertices) != len(points) - 1:
                 return False
             # Distinct vertices alone do not guarantee an actual search area:
             # collinear and some self-crossing closed rings enclose zero signed
