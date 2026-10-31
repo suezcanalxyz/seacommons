@@ -16,7 +16,7 @@ from core.intel.maritime_attack_correlation import (
 )
 from core.intel.maritime_attack_lineage_readonly import load_verified_lineage
 from core.intel.maritime_attack_play_guard import (
-    _ATTACK_FAMILIES, has_distinct_independence_groups,
+    _ATTACK_FAMILIES, _canonical_authority_key, has_distinct_independence_groups,
 )
 
 
@@ -150,7 +150,7 @@ def audit_attack_episode_independence(
         provenance = getattr(row, "provenance", None)
         if not isinstance(provenance, dict) or provenance.get("origin_authority_verified") is not True:
             return IndependenceAudit(False, reason="origin_not_verified", observations_checked=len(rows))
-        authority = str(provenance.get("originating_authority_id") or "").strip().casefold()
+        authority = _canonical_authority_key(str(provenance.get("originating_authority_id") or ""))
         document = str(provenance.get("original_report_id") or "").strip().casefold()
         url = _source_url_key(getattr(row, "source_url", None))
         if not authority or not document or not url:
