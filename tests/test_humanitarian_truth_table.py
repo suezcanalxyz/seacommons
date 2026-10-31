@@ -449,3 +449,61 @@ def test_same_source_followup_batch_handles_multiple_cases_and_no_rows():
     assert [row.id for row in result["a"]] == ["followup-a"]
     assert [row.id for row in result["b"]] == ["followup-b"]
     assert index_recent_same_source_followups([], []) == {}
+
+
+def test_same_source_followup_batch_exposes_51st_candidate_for_audit():
+    """A 50-post lifecycle window cannot certify a 51st same-source update."""
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import index_recent_same_source_followups
+
+    now = _NOW.replace(tzinfo=None)
+    case = SimpleNamespace(id="case-cap", source="Alarm Phone", created_at=now)
+    posts = [
+        SimpleNamespace(
+            id=f"cap-{i}", source="Alarm Phone",
+            created_at=now + timedelta(minutes=i + 1),
+        )
+        for i in range(51)
+    ]
+    assert len(index_recent_same_source_followups([case], posts)["case-cap"]) == 50
+    assert len(index_recent_same_source_followups(
+        [case], posts, max_per_case=51,
+    )["case-cap"]) == 51
+
+
+def test_humanitarian_audit_reports_per_case_followup_candidate_truncation():
+    """Source-level truncation alone does not identify affected case windows."""
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+
+    now = datetime.now(timezone.utc)
+    token = uuid.uuid4().hex[:12]
+    source = f"pytest-followup-cap-{token}"
+    case_id = f"pytest-cap-case-{token}"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=case_id, timestamp_utc=(now - timedelta(minutes=2)).isoformat(),
+            type="distress", severity="high", lat=35.5, lon=14.1,
+            title="Distress reported", text="Boat in distress",
+            source=source, meta={"is_distress": True},
+            created_at=(now - timedelta(minutes=2)).replace(tzinfo=None),
+            maritime_domain="sar",
+        ))
+        for i in range(60):
+            db.add(IntelEventDB(
+                id=f"pytest-cap-news-{token}-{i}",
+                timestamp_utc=(now - timedelta(minutes=1, seconds=59-i)).isoformat(),
+                type="news", severity="low", title="Unrelated report",
+                text="Unrelated report", source=source,
+                meta={"service": "maritime", "lane": "intelligence"},
+                created_at=(now - timedelta(seconds=60-i)).replace(tzinfo=None),
+                maritime_domain="grey_zone",
+            ))
+
+    result = run_humanitarian_truth_table_audit(limit=50)
+    assert any(row.candidate_incident_id == case_id for row in result["rows"])
+    assert result["followup_candidate_window_truncated_case_count"] >= 1
+    assert result["followup_coverage_incomplete_source_count"] >= 1
