@@ -101,6 +101,14 @@ class BatchAuditTests(unittest.TestCase):
         self.assertFalse(calls["observations"])
         self.assertFalse(calls["lineage"])
 
+    def test_separator_alias_groups_skip_batch_database_reads(self):
+        case = episode("jet", "mod", "rescue")
+        case.independence_groups = ["Bulgarian_Navy", "bulgarian navy"]
+        result, calls = batch([case], [])
+        self.assertEqual(result["jet"].reason, "canonical_verification_incomplete")
+        self.assertFalse(calls["observations"])
+        self.assertFalse(calls["lineage"])
+
     def test_mixed_batch_only_fetches_eligible_attack(self):
         blocked = episode("blocked", "a", "b")
         blocked.verification_status = "candidate"
