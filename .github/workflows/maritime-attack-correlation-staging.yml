@@ -19,6 +19,7 @@ on:
       - apps/web/src/features/intel/categories.js
       - apps/web/src/main.jsx
       - tests/test_maritime_attack_visual_taxonomy.py
+      - apps/web/src/features/intel/categories.attack.test.js
       - tests/test_maritime_attack_correlation.py
       - tests/test_maritime_attack_lineage_readonly.py
       - tests/test_maritime_attack_observation_readonly.py
@@ -46,3 +47,20 @@ jobs:
         env:
           PYTHONPATH: apps/api
         run: python -m unittest discover -s tests -p 'test_maritime_attack*.py' -v
+
+  frontend-attack-taxonomy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install frontend dependencies (staging only)
+        run: npm ci --prefix apps/web
+      - name: Verify attack colors, false positives and humanitarian isolation
+        run: node --test apps/web/src/features/intel/categories.attack.test.js
+      - name: Build frontend without deploying
+        run: npm run build --prefix apps/web
