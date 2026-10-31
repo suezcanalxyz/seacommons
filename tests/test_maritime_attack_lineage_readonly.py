@@ -19,6 +19,10 @@ def claim(identifier, authority):
         claim_id=identifier, kind="attack", occurred_at=OCCURRED,
         source_group=authority, source_url="https://example.org/" + identifier,
         vessel=JET, origin_report_id="original:" + identifier,
+        # Synthetic, explicit provenance clocks: these tests isolate lineage
+        # independence rather than the separate chronology fail-closed gate.
+        published_at=datetime(2026, 10, 28, 11, tzinfo=UTC),
+        received_at=datetime(2026, 10, 28, 11, 30, tzinfo=UTC),
     )
 
 
