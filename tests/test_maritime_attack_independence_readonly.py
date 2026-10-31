@@ -99,10 +99,27 @@ class IndependenceAuditTests(unittest.TestCase):
         self.assertEqual(audit(rows, [edge("mrcc", "mod", relation="quotes")]).reason,
                          "unverified_lineage_edge")
 
-    def test_same_url_not_two_sources(self):
-        rows = [observation("mod", "mod", "1", "https://a.test/report?ref=1"),
-                observation("mrcc", "mrcc", "2", "https://a.test/report?ref=2")]
+    def test_tracking_aliases_not_two_sources(self):
+        rows = [observation("mod", "mod", "1", "https://a.test/report?id=42&utm_source=a"),
+                observation("mrcc", "mrcc", "2", "https://a.test/report?id=42&utm_source=b#section")]
         self.assertEqual(audit(rows).reason, "shared_original_source")
+
+    def test_distinct_query_identified_reports_not_falsely_merged(self):
+        rows = [observation("mod", "mod", "1", "https://a.test/report?id=41"),
+                observation("mrcc", "mrcc", "2", "https://a.test/report?id=42")]
+        result = audit(rows)
+        self.assertTrue(result.verified)
+        self.assertEqual(len(result.groups), 2)
+
+    def test_same_original_report_id_still_collapses_distinct_urls(self):
+        rows = [observation("mod", "mod", "original-42", "https://a.test/report?id=41"),
+                observation("mrcc", "mrcc", "original-42", "https://b.test/report?id=42")]
+        self.assertEqual(audit(rows).reason, "shared_original_source")
+
+    def test_malformed_url_never_counts_as_verified_origin(self):
+        rows = [observation("mod", "mod", "1", "http://a.test/report?id=41"),
+                observation("mrcc", "mrcc", "2", "https://b.test/report?id=42")]
+        self.assertEqual(audit(rows).reason, "missing_original_provenance")
 
     def test_malformed_episode_labels_block_without_fetch(self):
         calls = []
