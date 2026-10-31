@@ -82,16 +82,22 @@ def channel_of(event: IntelEvent) -> Optional[str]:
     if event.metadata.get("coordinate_source") == "place_centroid":
         return None
     if event.type == "ais_spike":
-        # Generic stops/loitering are not evidence for a distress position.
-        # Only movement from a known rescue/NGO vessel or a rescue cluster can
-        # independently corroborate the reported area.
-        rescue_types = {"ngo_search_pattern", "rescue_cluster"}
-        if (
-            event.metadata.get("spike_type") in rescue_types
-            or bool(event.metadata.get("vessel_role"))
-            or bool(event.metadata.get("org"))
-        ):
+        # A generic stop/loiter is not distress evidence even when the vessel
+        # belongs to an NGO or coastguard. A generic convergence is likewise
+        # not a rescue merely because the spike has an "org" string.
+        spike_type = str(event.metadata.get("spike_type") or "").strip().lower()
+        if spike_type not in {"ngo_search_pattern", "rescue_cluster"}:
+            return None
+        role = str(event.metadata.get("vessel_role") or "").strip().lower().replace("_", "-")
+        if role in {"sar", "sar-support", "coastguard", "rescue"}:
             return "ais_rescue_movement"
+        # Some historical detector events lack role metadata but still carry
+        # a registry-confirmed responder MMSI. Never infer this from "org".
+        if event.linked_mmsi:
+            from core.intel.ngo_registry import is_ngo
+
+            if is_ngo(event.linked_mmsi):
+                return "ais_rescue_movement"
         return None
     if event.type == "news" or event.metadata.get("transport") == "rss":
         return "news"
