@@ -166,6 +166,20 @@ class IndependenceAuditTests(unittest.TestCase):
         a.received_at = datetime(2026, 10, 28, 11, 0)
         self.assertTrue(audit([a, b]).verified)
 
+    def test_offset_publication_later_than_utc_receipt_blocks(self):
+        a = observation("mod", "navy", "one")
+        b = observation("mrcc", "rescue", "two")
+        a.observed_at = "2026-10-28T10:00:00Z"
+        a.received_at = datetime(2026, 10, 28, 11, 0, tzinfo=timezone.utc)
+        # 14:30 +03:00 is 11:30 UTC, later than the 11:00 UTC receipt.
+        a.provenance["published_at"] = "2026-10-28T14:30:00+03:00"
+        self.assertEqual(audit([a, b]).reason, "publication_after_receipt")
+
+    def test_string_verified_flag_cannot_establish_independence(self):
+        a = observation("mod", "navy", "one", verified="true")
+        b = observation("mrcc", "rescue", "two")
+        self.assertEqual(audit([a, b]).reason, "origin_not_verified")
+
     def test_malformed_episode_labels_block_without_fetch(self):
         calls = []
         result = audit_attack_episode_independence(
