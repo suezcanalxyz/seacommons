@@ -52,17 +52,17 @@ def _utc_observation_time(value: object) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _observation_chronology_issue(row: object) -> str:
+def _observation_chronology_issue(row: object, *, require_complete: bool = False) -> str:
     """Reject impossible event/publication/receipt ordering without DB writes.
 
-    Legacy test fixtures may omit timestamps; canonical persisted observations
-    carry observed_at and received_at. A five-minute clock-skew allowance
+    Pure legacy fixtures may omit both timestamps; database-backed audits
+    require both canonical observed_at and received_at. A five-minute allowance
     avoids treating minor upstream clock drift as fabricated evidence.
     """
     observed_raw = getattr(row, "observed_at", None)
     received_raw = getattr(row, "received_at", None)
     if observed_raw is None and received_raw is None:
-        return ""
+        return "missing_observation_chronology" if require_complete else ""
     try:
         observed = _utc_observation_time(observed_raw)
         received = _utc_observation_time(received_raw)
@@ -92,10 +92,13 @@ def audit_attack_episode_independence(
     fetch_lineage: Callable[[tuple[str, ...]], Iterable[object]],
     *,
     max_observations: int = 32,
+    require_chronology: bool = False,
 ) -> IndependenceAudit:
     """Verify a selected episode's independent original reports, fail closed.
 
     Requires explicit, operator-verified origin metadata on every observation.
+    Database adapters enforce complete event/receipt chronology even if pure
+    legacy test fixtures omit both timestamps.
     The graph is read only from the supplied bounded fetchers. Different
     publishers of one original report or a verified derivation count once.
     """
@@ -142,7 +145,7 @@ def audit_attack_episode_independence(
     seen: dict[tuple[str, str], str] = {}
     for identifier in ids:
         row = by_id[identifier]
-        chronology_issue = _observation_chronology_issue(row)
+        chronology_issue = _observation_chronology_issue(row, require_complete=require_chronology)
         if chronology_issue:
             return IndependenceAudit(False, reason=chronology_issue, observations_checked=len(rows))
         if str(getattr(row, "service", "") or "").casefold() == "humanitarian":
@@ -181,4 +184,6 @@ def audit_attack_episode_independence_db(episode: object, db: object) -> Indepen
                 .order_by(LineageEdgeDB.from_observation_id, LineageEdgeDB.to_observation_id)
                 .limit(1025).all())
 
-    return audit_attack_episode_independence(episode, observations, lineage)
+    return audit_attack_episode_independence(
+        episode, observations, lineage, require_chronology=True,
+    )
