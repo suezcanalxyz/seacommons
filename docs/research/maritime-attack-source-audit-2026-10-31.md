@@ -224,3 +224,44 @@ collector ingestion or PostgreSQL verification was performed.
   ingestion rights nor SeaCommons receipt latency were established. The
   remote Oracle connector reported **0% available calls**, so no database
   queries, AIS verification, or LIVE/PLAY end-to-end certification occurred.
+
+## 31 October: authority-alias hardening and newly checked primary sources
+
+- Staging corroboration now canonicalizes cosmetic whitespace, underscore and
+  hyphen differences in **authority identity labels** in both PLAY preflight
+  and SourceObservation origin verification. For example, `Bulgarian_Navy`,
+  `BULGARIAN-NAVY` and `bulgarian navy` count as **one authority**.
+  Original report IDs, raw source URLs and provenance metadata are preserved;
+  report IDs are **not** aggressively punctuation-normalized. This is a
+  conservative false-positive guard, not a proof of independent origin.
+  Four new regression cases cover preflight, direct audit and batch preflight.
+- **Bulgarian Ministry of Defence, 13 October 2026:** a public statement
+  explicitly refers to **two merchant vessels struck overnight** in the
+  Black Sea. This is a useful *official retrospective discovery lead*, not
+  two independently resolved vessel incidents: names, IMO/MMSI, exact event
+  positions and independent source lineage are not established by this
+  statement alone. Do not create two canonical attacks from this statement
+  without matching primary reports:
+  https://www.mod.bg/news9641
+- **MSCIO 148/26**, event **2026-10-16T19:22:00Z**, approximately **78 NM
+  northeast of Al Jubayl, Saudi Arabia**: a tanker was reportedly attacked
+  by a rocket-propelled grenade from a small boat, with aft-port-quarter
+  damage and crew safe. Original public notice:
+  https://mscio.eu/alerts/184
+  The vessel IMO/MMSI and independence of the originating report are not
+  verified. Treat as an **October retrospective candidate**, not a
+  corroborated database incident.
+- **MSCIO 162/26** (30 October 18:00 UTC, south of Lavan) and
+  **MSCIO 159/26** (29 October 22:12 UTC, northeast of Khasab) remain
+  separate incident candidates. A second provider repeating the same
+  initial vessel report is not automatically an independent source.
+  Original notices: https://mscio.eu/alerts/198 and
+  https://mscio.eu/alerts/195 .
+- **MARAD 2026-012** is active through 2027-03-22, but is a regional
+  advisory rather than incident-level evidence:
+  https://www.maritime.dot.gov/msci/2026-012-black-sea-and-sea-azov-military-combat-operations
+- PostgreSQL Oracle, AIS, LIVE/PLAY and collector-receipt latency were not
+  measured: the authorized remote connector still reports 0% available
+  monthly calls. This is a documented access limitation, not evidence of a
+  database outage. No historical record, scheduler or production service
+  was modified. Full CI for these new commits is not yet certified.
