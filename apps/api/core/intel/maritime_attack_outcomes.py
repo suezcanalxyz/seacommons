@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 
+from core.intel.maritime_attack_play_guard import has_distinct_independence_groups
+
 from core.intel.maritime_attack_correlation import (
     Correlation, IncidentClaim, VesselRef, _canonical_source_url,
     _chronology_issues, _identity_match, _km, _utc, _valid_imo,
@@ -160,7 +162,7 @@ def reconcile_reported_sinking(
     # origins. This guard also protects against a stale or malformed cached
     # Correlation supplied by a future caller of the staging adapter.
     independent_groups_complete = all(
-        len(set(correlation.independent_groups)) >= 2
+        has_distinct_independence_groups(correlation.independent_groups)
         for correlation in (attack_correlation, sinking_correlation)
     )
     corroborated = (attack_correlation.status == "corroborated"
