@@ -180,12 +180,28 @@ def _apply_attack_provenance_audit(
         episode, independence_verified=verified,
     )
     projection["corroborated"] = corroborated
-    if not corroborated and projection.get("evidence_stage") == "corroborated":
-        projection["evidence_stage"] = "derived"
-    elif corroborated:
+    # Preserve the database assertion for the audit trail, but never expose
+    # that assertion as the effective public verification state when its
+    # claimed independence cannot be established from canonical lineage.
+    canonical_status = str(projection.get("verification_status") or "")
+    projection["canonical_verification_status"] = canonical_status
+    if corroborated:
         projection["evidence_stage"] = "corroborated"
+    else:
+        projection["evidence_stage"] = "derived"
+        if canonical_status == "multi_source_corroborated":
+            projection["verification_status"] = "provenance_review_required"
+        # These are source *claims*, not verified independent lineages.
+        # Preserve them under a clearly labelled audit field.
+        projection["reported_independence_groups"] = list(
+            projection.get("independence_groups") or []
+        )
+        projection["independence_groups"] = []
     projection["provenance_audit_status"] = (
         "verified" if corroborated else "requires_review"
+    )
+    projection["provenance_audit_reason"] = (
+        "" if corroborated else str(getattr(audit, "reason", "") or "audit_unavailable")
     )
     return projection
 
