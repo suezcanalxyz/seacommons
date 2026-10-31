@@ -145,13 +145,16 @@ def reconcile_reported_sinking(
     # Uncertainty intervals must establish the ordering, not merely permit
     # it. An outcome can be attached as a candidate when intervals overlap,
     # but cannot be called corroborated if sinking may predate the attack.
-    attack_earliest = attack_at - timedelta(minutes=attack.time_uncertainty_minutes)
-    attack_latest = attack_at + timedelta(minutes=attack.time_uncertainty_minutes)
-    sinking_earliest = sinking_at - timedelta(minutes=sinking.time_uncertainty_minutes)
-    sinking_latest = sinking_at + timedelta(minutes=sinking.time_uncertainty_minutes)
-    sequence_certain = sinking_earliest > attack_latest
-    followup_certain = (sinking_latest - attack_earliest) <= timedelta(
-        days=max_followup_days
+    # Compare numeric offsets rather than constructing timedelta objects
+    # from untrusted uncertainty values: even an extremely large but finite
+    # uncertainty must fail closed, never overflow and crash the audit.
+    uncertainty_seconds = 60 * (
+        attack.time_uncertainty_minutes + sinking.time_uncertainty_minutes
+    )
+    sequence_certain = elapsed > uncertainty_seconds
+    followup_certain = (
+        elapsed + uncertainty_seconds
+        <= timedelta(days=max_followup_days).total_seconds()
     )
     corroborated = (attack_correlation.status == "corroborated"
                     and sinking_correlation.status == "corroborated"
