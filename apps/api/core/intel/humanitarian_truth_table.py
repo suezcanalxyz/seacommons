@@ -506,7 +506,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
         # Counts are aggregate-only; a gap does not prove a lost incident.
         **live_coverage,
         "audit_scan_truncated": audit_scan_truncated,
-        "audited_source_rows_count": min(len(db_rows), scan_limit),
+        "audited_source_rows_count": len(audit_source_rows),
         "live_visible_db_rows_recovered_beyond_scan_count": (
             visible_db_rows_recovered_count
         ),
