@@ -60,6 +60,46 @@ reported facts and a source's independent corroboration are different questions.
   Publication and SeaCommons receipt timestamps are not available for UKMTO;
   SeaCommons receipt timestamp is not available for MSCIO.
 
+## Arabian Gulf: UKMTO 188-26 (new external candidate, 30 October)
+
+- UKMTO warning reference **188-26**, reported event 2026-10-30T18:00:00Z,
+  approximately 40 NM south of Lavan Island, Iran. Report describes an
+  unidentified vessel struck on the port side by an **unknown projectile**,
+  followed by a fire; crew reported safe. Vessel name, IMO, MMSI, exact
+  coordinates and perpetrator are **not established**.
+- Reuters reporting dated 2026-10-30 describes the Lavan Island report
+  separately from the 29 October Khasab event:
+  https://www.reuters.com/world/middle-east/irans-irgc-navy-says-two-tankers-stopped-south-hormuz-after-incidents-2026-10-30/
+- Official UKMTO portal: https://www.ukmto.org/ . The numbered original PDF
+  was **not independently retrieved in this research pass**. Do not elevate
+  second-hand transcriptions to primary-source verification.
+- Keep 188-26 separate from **187-26** (29 October 22:12 UTC, northeast of
+  Khasab) and from **186-26** (29 October 16:00 UTC). Similar words
+  (`port side`, `fire`) do not prove a common hull.
+- Reuters repeating UKMTO does not establish a second independent origin.
+  A third-party aggregator categorizing the aggressor as `Military` is not
+  an attribution supported by the UKMTO warning. Status: **candidate**;
+  no PLAY→incident promotion.
+- Publication and SeaCommons receipt timestamps: **not verified**. No
+  collector-latency estimate is possible from these sources.
+
+## October Black Sea retro: identity and casualty controls
+
+- **CHELSEA 3**, 13 October 2026, Malta flag: Bulgarian regional authority
+  reports a drone strike about 15 NM off Byala, all 15 crew evacuated.
+  Source: Bulgarian News Agency quoting Varna regional administration:
+  https://www.bta.bg/en/news/bulgaria/1223275-cargo-ship-struck-by-aerial-drone-off-bulgarian-coast
+  The official statement and newswire transcription may be one provenance
+  chain, not independent corroboration. Vessel IMO/MMSI not verified here.
+- **HS DIGNITY**, 13 October 2026: Reuters reports a sinking off Bulgaria
+  after a drone strike and five crew rescued, with eleven missing at the
+  reporting time. Identity and final casualty figures need fresh primary
+  confirmation; do not treat a newswire report as a completed SAR outcome.
+  https://www.reuters.com/world/europe/drone-sinks-ship-off-bulgaria-coast-prime-minister-says-2026-10-13/
+- Neither retro case has been checked against SeaCommons PostgreSQL.
+  Keep both distinct from CONTSHIP JET and KHORYV by vessel identity and
+  event date, and do not assign a perpetrator without verified evidence.
+
 ## Reuse and ingestion policy
 
 - UKMTO: Open Government Licence, with attribution/terms:
