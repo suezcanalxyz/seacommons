@@ -3,17 +3,22 @@
 from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
+import sys
 import unittest
+from unittest.mock import patch
 
 from core.intel.maritime_attack_correlation import Correlation, IncidentClaim, VesselRef
 from core.intel.maritime_attack_outcomes import ReviewedOutcomeLink
-from core.intel.maritime_attack_episode_readonly import reconcile_against_existing_episode
+from core.intel.maritime_attack_episode_readonly import (
+    reconcile_against_existing_episode, reconcile_against_db_episode,
+)
+from core.intel.maritime_attack_independence_readonly import IndependenceAudit
 
 JET = VesselRef("9348625", "636019532", "CONTSHIP JET")
 
 
-def at(day, hour):
-    return datetime(2026, 10, day, hour, tzinfo=timezone.utc)
+def at(day, hour, minute=0):
+    return datetime(2026, 10, day, hour, minute, tzinfo=timezone.utc)
 
 
 ATTACK = IncidentClaim(
@@ -22,9 +27,9 @@ ATTACK = IncidentClaim(
     43.25, 28.8, 25.0, at(28, 11), at(28, 12), "mod_report",
 )
 SINKING = IncidentClaim(
-    "bg_sinking_20261029", "sinking", at(29, 10),
+    "bg_navwarn_768_20261028", "sinking", at(28, 20, 30),
     "maritime_administration", "https://example.org/sinking", JET,
-    43.25, 28.8, 25.0, at(29, 11), at(29, 12), "sinking_report",
+    43.13, 28.756, 0.5, at(28, 21), at(28, 22), "navwarn_768_26",
 )
 LINK = ReviewedOutcomeLink(
     "episode:jet:20261028", ATTACK.claim_id, SINKING.claim_id,
@@ -57,10 +62,11 @@ def episode(**overrides):
     return SimpleNamespace(**values)
 
 
-def evaluate(row=None, *, link=LINK, use_default=True):
+def evaluate(row=None, *, link=LINK, use_default=True, independence_verified=True):
     return reconcile_against_existing_episode(
         JET, ATTACK, SINKING, corr(ATTACK), corr(SINKING),
         link, episode() if use_default else row,
+        independence_verified=independence_verified,
     )
 
 
@@ -71,6 +77,55 @@ class CanonicalEpisodeGuardTests(unittest.TestCase):
         self.assertEqual(result.attack_episode_id, LINK.attack_episode_id)
         self.assertEqual(result.outcome_key, LINK.attack_episode_id + ":outcome:sinking")
         self.assertFalse(result.publication_allowed)
+
+    def test_missing_provenance_audit_blocks_outcome_even_with_two_labels(self):
+        result = evaluate(independence_verified=False)
+        self.assertEqual(result.reason_codes, ("canonical_attack_provenance_unverified",))
+        self.assertFalse(result.publication_allowed)
+
+    def test_only_literal_true_is_accepted_as_independence_verification(self):
+        for value in ("true", 1, None):
+            with self.subTest(value=value):
+                result = evaluate(independence_verified=value)
+                self.assertEqual(result.reason_codes, ("canonical_attack_provenance_unverified",))
+
+    def test_real_navwarn_sinking_time_and_position(self):
+        # NAVWARN 768/26: 28 Oct 2026, 20:30 UTC, 43-07.80N 028-45.36E.
+        self.assertEqual(SINKING.occurred_at, at(28, 20, 30))
+        self.assertEqual((SINKING.lat, SINKING.lon), (43.13, 28.756))
+        self.assertEqual((SINKING.occurred_at - ATTACK.occurred_at).total_seconds(), 37800)
+        self.assertEqual(evaluate().status, "corroborated_update")
+
+    def test_db_wrapper_requires_real_audit_before_attaching_outcome(self):
+        class Model:
+            episode_id = "episode_id"
+
+        class Query:
+            def filter(self, predicate):
+                return self
+            def limit(self, count):
+                return self
+            def one_or_none(self):
+                return episode()
+
+        db = SimpleNamespace(query=lambda model: Query())
+        fake_models = SimpleNamespace(MaritimeEpisodeDB=Model)
+        audit_path = ("core.intel.maritime_attack_independence_readonly."
+                      "audit_attack_episode_independence_db")
+        args = (JET, ATTACK, SINKING, corr(ATTACK), corr(SINKING), LINK, db)
+        with patch.dict(sys.modules, {"core.db.models": fake_models}):
+            with patch(audit_path, return_value=IndependenceAudit(False, reason="shared_original_source")) as check:
+                blocked = reconcile_against_db_episode(*args)
+                self.assertEqual(blocked.reason_codes, (
+                    "canonical_attack_provenance_unverified:shared_original_source",
+                ))
+                self.assertFalse(blocked.publication_allowed)
+                check.assert_called_once()
+            with patch(audit_path, return_value=IndependenceAudit(True, ("navy", "mrcc"))) as check:
+                accepted = reconcile_against_db_episode(*args)
+                self.assertEqual(accepted.status, "corroborated_update")
+                self.assertFalse(accepted.publication_allowed)
+                check.assert_called_once()
 
     def test_no_canonical_episode_rejects_even_with_verified_link(self):
         result = evaluate(None, use_default=False)
