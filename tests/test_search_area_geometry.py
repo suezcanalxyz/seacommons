@@ -27,6 +27,7 @@ VALID = {"type": "Polygon", "coordinates": [
     {"type": "Polygon", "coordinates": [[[12, 91], [13, 34], [12, 35], [12, 91]]]},
     {"type": "Polygon", "coordinates": [[[math.nan, 34], [13, 34], [12, 35], [math.nan, 34]]]},
     {"type": "Polygon", "coordinates": [[[math.inf, 34], [13, 34], [12, 35], [math.inf, 34]]]},
+    {"type": "Polygon", "coordinates": [[[10 ** 400, 34], [13, 34], [12, 35], [10 ** 400, 34]]]},
     {"type": "Polygon", "coordinates": [[[True, 34], [13, 34], [12, 35], [True, 34]]]},
     {"type": "Polygon", "coordinates": [[["12", 34], [13, 34], [12, 35], ["12", 34]]]},
     {"type": "Polygon", "coordinates": [[[12, 34, "bad"], [13, 34], [12, 35], [12, 34]]]},
