@@ -50,7 +50,7 @@ test('Alarm Phone source remains humanitarian red even with conflicting attack m
   assert.equal(result.color, '#ff3b3b');
 });
 
-test('explicit canonical family alias can be displayed without keyword inference', () => {
-  const result = classifyEventVisual({ episode_family: 'attack_episode' });
-  assert.equal(result.key, 'maritime_attack');
+test('untrusted episode_family in raw event cannot turn into an attack', () => {
+  const result = classifyEventVisual({ episode_family: 'attack_episode', type: 'news' });
+  assert.notEqual(result.key, 'maritime_attack');
 });

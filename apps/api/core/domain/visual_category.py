@@ -113,6 +113,7 @@ def classify_visual_category(
     maritime_domain: str | None = None,
     humanitarian_case_type: str | None = None,
     metadata: Mapping[str, Any] | None = None,
+    canonical_episode_family: str | None = None,
 ) -> str:
     """Return the canonical visual category for a signal.
 
@@ -130,7 +131,7 @@ def classify_visual_category(
     # an attack from a headline, an AIS gap, or a vessel stopping.
     if (domain not in {"sar", "humanitarian"}
             and not humanitarian_case_type
-            and str(meta.get("episode_family") or "") in {
+            and str(canonical_episode_family or "") in {
                 "attack_episode", "maritime_attack_episode", "maritime_attack",
             }):
         return "maritime_attack"
@@ -209,6 +210,7 @@ def visual_category_fields(
     maritime_domain: str | None = None,
     humanitarian_case_type: str | None = None,
     metadata: Mapping[str, Any] | None = None,
+    canonical_episode_family: str | None = None,
 ) -> dict[str, str]:
     """``{visual_category, visual_color, category_label}`` for a signal or its drift."""
     category = classify_visual_category(
@@ -217,6 +219,7 @@ def visual_category_fields(
         maritime_domain=maritime_domain,
         humanitarian_case_type=humanitarian_case_type,
         metadata=metadata,
+        canonical_episode_family=canonical_episode_family,
     )
     return {
         "visual_category": category,

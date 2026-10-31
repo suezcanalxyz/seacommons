@@ -21,11 +21,13 @@ class MaritimeAttackVisualTaxonomyTests(unittest.TestCase):
         for family in FAMILIES:
             with self.subTest(family=family):
                 meta = {"episode_family": family}
-                result = taxonomy_fields(event_type="news", maritime_domain="security", metadata=meta)
+                result = taxonomy_fields(event_type="news", maritime_domain="security", metadata=meta,
+                                         canonical_episode_family=family)
                 self.assertEqual(result["main_category"], "maritime")
                 self.assertEqual(result["incident_type"], "maritime_attack")
                 self.assertIn(result["incident_type"], STABLE_MARITIME_INCIDENT_TYPES)
-                visual = visual_category_fields(event_type="news", maritime_domain="security", metadata=meta)
+                visual = visual_category_fields(event_type="news", maritime_domain="security", metadata=meta,
+                                                canonical_episode_family=family)
                 self.assertEqual(visual["visual_category"], "maritime_attack")
                 self.assertEqual(visual["visual_color"], "#ff6b35")
                 self.assertNotEqual(visual["visual_color"], CATEGORY_COLORS["distress"])
@@ -44,21 +46,31 @@ class MaritimeAttackVisualTaxonomyTests(unittest.TestCase):
                     event_type=event_type, maritime_domain="security", metadata=meta,
                 ), "maritime_attack")
 
+    def test_untrusted_episode_family_in_raw_metadata_cannot_claim_attack(self):
+        raw = {"episode_family": "maritime_attack_episode"}
+        self.assertNotEqual(taxonomy_fields(event_type="news", metadata=raw)["incident_type"],
+                            "maritime_attack")
+        self.assertNotEqual(classify_visual_category(event_type="news", metadata=raw),
+                            "maritime_attack")
+
     def test_humanitarian_remains_humanitarian_even_with_bad_family_metadata(self):
         meta = {"episode_family": "maritime_attack_episode"}
         tax = taxonomy_fields(event_type="distress", maritime_domain="sar",
-                              humanitarian_case_type="distress", metadata=meta)
+                              humanitarian_case_type="distress", metadata=meta,
+                              canonical_episode_family="maritime_attack_episode")
         self.assertEqual(tax["main_category"], "humanitarian")
         self.assertEqual(tax["incident_type"], "distress")
         self.assertNotEqual(classify_visual_category(
             event_type="distress", maritime_domain="sar",
             humanitarian_case_type="distress", metadata=meta,
+            canonical_episode_family="maritime_attack_episode",
         ), "maritime_attack")
 
     def test_alarm_phone_priority_remains_red(self):
         self.assertEqual(classify_visual_category(
             source="Alarm Phone", event_type="news", maritime_domain="security",
             metadata={"episode_family": "attack_episode"},
+            canonical_episode_family="attack_episode",
         ), "humanitarian_alarm_phone")
 
     def test_play_projection_uses_canonical_family_not_headline(self):
@@ -66,7 +78,7 @@ class MaritimeAttackVisualTaxonomyTests(unittest.TestCase):
         code = path.read_text(encoding="utf-8")
         ast.parse(code)
         self.assertIn('is_attack_episode = str(episode.episode_family or "") in _ATTACK_FAMILIES', code)
-        self.assertIn('event_meta["episode_family"] = str(episode.episode_family)', code)
+        self.assertIn("canonical_episode_family=str(episode.episode_family) if is_attack_episode else None", code)
         self.assertIn('taxonomy.update(visual_category_fields(', code)
 
     def test_frontend_selector_and_palette_match_backend(self):

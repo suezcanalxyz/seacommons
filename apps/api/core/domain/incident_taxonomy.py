@@ -187,6 +187,7 @@ def incident_type(
     humanitarian_case_type: str | None = None,
     metadata: Mapping[str, Any] | None = None,
     hypothesis_type: str | None = None,
+    canonical_episode_family: str | None = None,
 ) -> str:
     meta = metadata or {}
     category = main_category(
@@ -224,9 +225,9 @@ def incident_type(
             return "distress"
         return "humanitarian_context"
 
-    # Only a canonical attack episode may receive this topic bucket. A news
-    # headline, AIS gap or sudden stop must never be upgraded to an attack.
-    if str(meta.get("episode_family") or "") in {
+    # Only a canonical episode supplied by the trusted caller may receive
+    # this bucket. Raw source metadata is not an authority assertion.
+    if str(canonical_episode_family or "") in {
         "attack_episode", "maritime_attack_episode", "maritime_attack",
     }:
         return "maritime_attack"
@@ -291,6 +292,7 @@ def taxonomy_fields(
     metadata: Mapping[str, Any] | None = None,
     hypothesis_type: str | None = None,
     has_satellite: bool | None = None,
+    canonical_episode_family: str | None = None,
 ) -> dict[str, Any]:
     meta = metadata or {}
     category = main_category(
@@ -305,6 +307,7 @@ def taxonomy_fields(
         humanitarian_case_type=humanitarian_case_type,
         metadata=meta,
         hypothesis_type=hypothesis_type,
+        canonical_episode_family=canonical_episode_family,
     )
     verification = str(meta.get("verification_status") or "")
     evidence_state = str(

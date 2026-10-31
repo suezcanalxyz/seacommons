@@ -102,8 +102,7 @@ export function classifyEventVisual(properties = {}) {
 
   // Explicit canonical incident classification only: headlines and AIS gaps
   // must never be painted as attacks by keyword inference.
-  if (properties.incident_type === "maritime_attack"
-      || ["attack_episode", "maritime_attack_episode", "maritime_attack"].includes(properties.episode_family)) {
+  if (properties.incident_type === "maritime_attack") {
     return _VISUAL_BY_KEY.maritime_attack;
   }
 
