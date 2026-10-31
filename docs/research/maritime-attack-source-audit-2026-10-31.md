@@ -161,3 +161,33 @@ These three are **external candidates**, not database matches. The MSCIO
 site is publicly readable, but its terms restrict redistribution; use only
 minimal factual indexing and source links pending legal review. No automated
 collector ingestion or PostgreSQL verification was performed.
+
+## 31 October follow-up: canonical outcome-link guard and source chronology
+
+- Staging code review found a discrepancy: PLAY required a verified
+  SourceObservation/lineage audit before showing an attack as corroborated,
+  while the pure sinking-outcome reconciliation path previously trusted only
+  the canonical `multi_source_corroborated` label and two distinct group
+  strings. The outcome-link path now **fails closed** unless the caller supplies
+  `independence_verified is True`. Its database adapter runs the existing
+  bounded read-only provenance audit before accepting a corroborated outcome.
+  It does not mutate or publish the episode.
+- Regression fixture corrected to the *actual* CONTSHIP JET NAVWARN 768/26
+  sinking time **2026-10-28T20:30:00Z** and wreck coordinates **43.130000 N,
+  28.756000 E**, 10 hours 30 minutes after the 10:00 UTC attack. The older
+  synthetic fixture used 29 October 10:00 and did not test the documented
+  chronology. Source: https://www.vtmis.bg/wx/wx_eng.htm .
+- The Bulgarian Ministry of Transport's 28 October statement specifies a
+  distress report received at **12:01 Bulgarian local time** (10:01 UTC),
+  abandonment at **12:13 local** (10:13 UTC), and eight seafarers picked up at
+  **12:53 local** (10:53 UTC); the remaining ten were in the ship's lifeboat.
+  This is the **authorities' response timeline**, not SeaCommons ingestion
+  latency. Source:
+  https://www.mtc.government.bg/bg/category/1/18-chlenniyat-ekipazh-na-konteynerovoza-contship-jet-e-spasen
+- The Bulgarian VTMIS live in-force page still displays NAVWARN 768/26 and
+  KHORYV NAVWARN 766/26. The latter describes a capsized navigational hazard
+  but gives no proof of hostile action. No additional independent attack
+  corroboration is inferred from these navigational notices.
+- No Oracle PostgreSQL read or LIVE/PLAY end-to-end check was possible in
+  this run; no observed SeaCommons receipt timestamp is available. New
+  candidate promotion remains blocked pending real lineage and AIS review.
