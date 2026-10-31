@@ -9,6 +9,7 @@ No collectors, writes, migrations, publication or scheduler.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Iterable
 from core.intel.maritime_attack_correlation import (
     _canonical_source_url, _lineage_components,
@@ -35,6 +36,54 @@ def _source_url_key(value: object) -> str:
     would incorrectly merge unrelated official reports served at one path.
     """
     return _canonical_source_url(str(value or ""))
+
+
+
+def _utc_observation_time(value: object) -> datetime:
+    """Parse canonical source times, treating legacy naive DB timestamps as UTC."""
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str) and value.strip():
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    else:
+        raise ValueError("Missing or invalid observation timestamp")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _observation_chronology_issue(row: object) -> str:
+    """Reject impossible event/publication/receipt ordering without DB writes.
+
+    Legacy test fixtures may omit timestamps; canonical persisted observations
+    carry observed_at and received_at. A five-minute clock-skew allowance
+    avoids treating minor upstream clock drift as fabricated evidence.
+    """
+    observed_raw = getattr(row, "observed_at", None)
+    received_raw = getattr(row, "received_at", None)
+    if observed_raw is None and received_raw is None:
+        return ""
+    try:
+        observed = _utc_observation_time(observed_raw)
+        received = _utc_observation_time(received_raw)
+    except (ValueError, TypeError, OverflowError):
+        return "invalid_observation_chronology"
+    tolerance = timedelta(minutes=5)
+    if observed > received + tolerance:
+        return "observation_after_receipt"
+    provenance = getattr(row, "provenance", None)
+    if isinstance(provenance, dict):
+        published_raw = provenance.get("published_at_utc")
+        if published_raw is None:
+            published_raw = provenance.get("published_at")
+        if published_raw is not None:
+            try:
+                published = _utc_observation_time(published_raw)
+            except (ValueError, TypeError, OverflowError):
+                return "invalid_publication_timestamp"
+            if published > received + tolerance:
+                return "publication_after_receipt"
+    return ""
 
 
 def audit_attack_episode_independence(
@@ -93,6 +142,9 @@ def audit_attack_episode_independence(
     seen: dict[tuple[str, str], str] = {}
     for identifier in ids:
         row = by_id[identifier]
+        chronology_issue = _observation_chronology_issue(row)
+        if chronology_issue:
+            return IndependenceAudit(False, reason=chronology_issue, observations_checked=len(rows))
         if str(getattr(row, "service", "") or "").casefold() == "humanitarian":
             return IndependenceAudit(False, reason="humanitarian_domain_excluded", observations_checked=len(rows))
         provenance = getattr(row, "provenance", None)
