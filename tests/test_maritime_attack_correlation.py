@@ -941,5 +941,32 @@ class SourceObservationAdapterTests(unittest.TestCase):
         self.assertFalse(result.publication_allowed)
 
 
+    def test_khoryv_navwarn_766_capsized_is_not_an_attack_claim(self):
+        # Bulgarian NAVWARN 766/26 is a sighting of a drifting, capsized
+        # hazard at 28 Oct 18:00 UTC, NOT evidence of a hostile strike.
+        # KHORYV (IMO 8138712) is distinct from CONTSHIP JET (9348625).
+        from types import SimpleNamespace
+        observation = SimpleNamespace(
+            observation_id="NAVWARN-766-26",
+            source_url="https://www.vtmis.bg/wx/wx_eng.htm",
+            received_at=None,
+            provenance={
+                "origin_authority_verified": True,
+                "originating_authority_id": "bulgarian_vtmis",
+                "original_report_id": "NAVWARN-766/26",
+            },
+        )
+        extracted = {
+            "kind": "capsized",
+            "occurred_at": dt(28, 18),
+            "vessel_name": "KHORYV",
+            "imo": "8138712",
+            "lat": 43 + 30.60 / 60,
+            "lon": 28 + 43.69 / 60,
+        }
+        self.assertIsNone(claim_from_source_observation(observation, extracted))
+        self.assertNotEqual(extracted["imo"], JET.imo)
+
+
 if __name__ == "__main__":
     unittest.main()
