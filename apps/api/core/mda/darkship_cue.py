@@ -208,23 +208,36 @@ def _gfw_sar_in_area(
                     if not isinstance(detection, dict):
                         continue
                     lat, lon = detection.get("lat"), detection.get("lon")
-                    if lat is None or lon is None:
+                    # One malformed provider row must not discard the entire
+                    # bounded response. Reject booleans, non-finite values and
+                    # positions outside WGS84 before polygon projection.
+                    if isinstance(lat, bool) or isinstance(lon, bool):
+                        continue
+                    try:
+                        lat, lon = float(lat), float(lon)
+                    except (TypeError, ValueError, OverflowError):
+                        continue
+                    if not (math.isfinite(lat) and math.isfinite(lon)):
+                        continue
+                    if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
                         continue
                     timestamp = (
                         detection.get("entryTimestamp")
                         or detection.get("date")
                         or detection.get("exitTimestamp")
                     )
-                    if not timestamp:
+                    # A date-only or timezone-naive record cannot support
+                    # time-specific AIS/SAR corroboration. Never invent UTC.
+                    if not isinstance(timestamp, str) or "T" not in timestamp:
                         continue
                     try:
                         observed_at = datetime.fromisoformat(
-                            str(timestamp).replace("Z", "+00:00")
+                            timestamp.strip().replace("Z", "+00:00")
                         )
                         if observed_at.tzinfo is None:
-                            observed_at = observed_at.replace(tzinfo=timezone.utc)
+                            continue
                         observed_at = observed_at.astimezone(timezone.utc)
-                    except (TypeError, ValueError):
+                    except ValueError:
                         continue
                     if not (since <= observed_at <= end):
                         continue
@@ -232,10 +245,10 @@ def _gfw_sar_in_area(
                     mmsi = str(detection.get("mmsi") or "").strip()
                     matched = bool(vessel_id or mmsi)
                     rows.append({
-                        "lat": float(lat),
-                        "lon": float(lon),
+                        "lat": lat,
+                        "lon": lon,
                         "matched": matched,
-                        "timestamp": timestamp,
+                        "timestamp": observed_at.isoformat().replace("+00:00", "Z"),
                         "mmsi": mmsi or None,
                         "vessel_id": vessel_id or None,
                         "dataset": str(dataset_key),
