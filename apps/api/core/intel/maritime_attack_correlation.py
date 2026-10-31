@@ -377,6 +377,17 @@ def correlate(
     """
     if not claims:
         return Correlation("no_match", "", "", (), (), (), ("no_incident_claim",))
+    # An immutable observation ID must not describe two different reports.
+    # Reject the whole input before anchor selection: otherwise whichever
+    # conflicting version arrives first can silently change corroboration.
+    claims_by_id: dict[str, IncidentClaim] = {}
+    for claim in claims:
+        previous = claims_by_id.setdefault(claim.claim_id, claim)
+        if previous != claim:
+            return Correlation(
+                "no_match", "", "", (), (), (),
+                ("conflicting_duplicate_claim_id:" + claim.claim_id,),
+            )
     anchor = claims[0]
     if anchor.kind not in _KINDS:
         raise ValueError("Unsupported maritime incident kind")
