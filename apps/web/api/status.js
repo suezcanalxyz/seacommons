@@ -101,6 +101,26 @@ function check(id, status, latencyMs, detail) {
   return { id, status, latency_ms: latencyMs, detail };
 }
 
+function nonnegativeCount(value) {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && !/^[0-9]+$/.test(value.trim())) return null;
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count >= 0 ? count : null;
+}
+
+// The canonical Live API reports "maritime", not the old "security" key.
+// Missing/malformed counts are a health failure; a genuine zero is not.
+export function parseLiveModeCounts(rawCounts) {
+  const humanitarian = nonnegativeCount(rawCounts?.humanitarian);
+  const maritime = nonnegativeCount(rawCounts?.maritime);
+  return {
+    valid: humanitarian !== null && maritime !== null,
+    humanitarian: humanitarian ?? 0,
+    maritime: maritime ?? 0,
+  };
+}
+
+
 export async function buildStatusSnapshot() {
   const [publicApi, health, ready, modes, sources, edge] = await Promise.all([
     publicApiRequest(),
@@ -113,7 +133,7 @@ export async function buildStatusSnapshot() {
     edgeRequest(),
   ]);
 
-  const counts = modes.data?.meta?.mode_counts || {};
+  const counts = parseLiveModeCounts(modes.data?.meta?.mode_counts);
   const sourceRows = Array.isArray(sources.data?.sources) ? sources.data.sources : [];
   const sourceSummary = sources.data?.summary || {};
   const edgeLive = edge.ok && edge.data?.status === 'live';
@@ -151,11 +171,10 @@ export async function buildStatusSnapshot() {
     ),
     check(
       'modes',
-      modes.ok && Number.isFinite(Number(counts.humanitarian))
-        && Number.isFinite(Number(counts.security)) ? 'live' : 'down',
+      modes.ok && counts.valid ? 'live' : 'down',
       modes.latencyMs,
       modes.ok
-        ? `${Number(counts.humanitarian || 0)} humanitarian · ${Number(counts.security || 0)} security`
+        ? `${counts.humanitarian} humanitarian · ${counts.maritime} maritime`
         : 'Mode-aware Live feed unavailable',
     ),
     check(
@@ -178,8 +197,8 @@ export async function buildStatusSnapshot() {
     generated_at: new Date().toISOString(),
     checks,
     mode_counts: {
-      humanitarian: Number(counts.humanitarian || 0),
-      security: Number(counts.security || 0),
+      humanitarian: counts.humanitarian,
+      maritime: counts.maritime,
     },
     sources: sourceRows.map((source) => ({
       name: source.name,
