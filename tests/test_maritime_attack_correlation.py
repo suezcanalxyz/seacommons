@@ -514,6 +514,35 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
 
 
 
+    def test_authority_case_and_whitespace_cannot_fabricate_two_sources(self):
+        # These are the same verified reporting authority, not two witnesses.
+        from dataclasses import replace
+        a = replace(report("navy_a", "Bulgarian_Navy"), origin_report_id="report-a")
+        b = replace(report("navy_b", " bulgarian_navy "), origin_report_id="report-b")
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(result.independent_groups, ("bulgarian_navy",))
+        self.assertFalse(result.publication_allowed)
+
+    def test_original_report_case_alias_cannot_launder_reprint(self):
+        from dataclasses import replace
+        a = replace(report("reprint", "newsroom"), origin_report_id="NAVWARN-768/26")
+        b = replace(report("primary", "navy"), origin_report_id=" navwarn-768/26 ")
+        c = replace(report("another_navy", "navy"), origin_report_id="different")
+        result = correlate(JET, [a, b, c])
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(result.independent_groups, ("navy",))
+        self.assertFalse(result.publication_allowed)
+
+    def test_normalization_does_not_merge_genuinely_distinct_authorities(self):
+        from dataclasses import replace
+        a = replace(report("navy", " BULGARIAN_NAVY "), origin_report_id="navwarn-768")
+        b = replace(report("mrcc", "independent_mrcc"), origin_report_id="rescue-28")
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(result.independent_groups, ("bulgarian_navy", "independent_mrcc"))
+        self.assertFalse(result.publication_allowed)
+
     def test_syndicated_authority_alias_does_not_count_twice(self):
         from dataclasses import replace
         a = replace(report("copy", "newsroom"), origin_report_id="same")
