@@ -276,6 +276,22 @@ def source_followup_fetch_limit(case_count: int, *, max_per_case: int = 50) -> i
     return min(5000, max(0, case_count) * (max_per_case + 1))
 
 
+def visible_humanitarian_case_ids(features: list[dict[str, Any]]) -> set[str]:
+    """Select actual distress markers, not Humanitarian context observations.
+
+    The Humanitarian Live feed also includes context (for example NGO
+    activity). Those observations are not candidate distress cases and must
+    not inflate the audit coverage gap. Keep original IDs for marker matching;
+    summarize_visible_case_coverage normalizes the existing intel: alias.
+    """
+    return {
+        str(props["id"]).strip()
+        for feature in features
+        if (props := feature.get("properties") or {}).get("kind") == "distress"
+        and props.get("id") and str(props["id"]).strip()
+    }
+
+
 def summarize_visible_case_coverage(
     visible_feature_ids: set[str], audited_case_ids: list[str],
 ) -> dict[str, int]:
@@ -326,9 +342,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
     rows: list[TruthTableRow] = []
 
     signals = public_signal_collection(limit=500, days=30)
-    visible_signal_ids = {
-        str((f.get("properties") or {}).get("id") or "") for f in signals.get("features", [])
-    }
+    visible_signal_ids = visible_humanitarian_case_ids(signals.get("features", []))
     drift_collection = public_drift_collection(limit=200)
     visible_drift_event_ids = {
         str((f.get("properties") or {}).get("id") or "") for f in drift_collection.get("features", [])
