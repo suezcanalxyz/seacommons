@@ -42,6 +42,17 @@ def corr(claim):
         "corroborated", claim.kind, "maritime_incident_candidate_orange",
         (claim.claim_id,), ("independent_1", "independent_2"),
         ("documentary_evidence",), (),
+        source_evidence=({
+            "claim_id": claim.claim_id,
+            "source_url": claim.source_url,
+            "source_group": claim.source_group,
+            "origin_report_id": claim.origin_report_id,
+            "occurred_at": claim.occurred_at.isoformat(),
+            "published_at": claim.published_at.isoformat()
+                if claim.published_at is not None else None,
+            "received_at": claim.received_at.isoformat()
+                if claim.received_at is not None else None,
+        },),
     )
 
 
