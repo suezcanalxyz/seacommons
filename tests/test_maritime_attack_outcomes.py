@@ -203,6 +203,16 @@ class MaritimeAttackOutcomeTests(unittest.TestCase):
         self.assertIn("outcome_followup_window_ambiguous", result.reason_codes)
         self.assertFalse(result.publication_allowed)
 
+    def test_extreme_finite_uncertainty_fails_closed_without_overflow(self):
+        # Finite but absurd extraction uncertainty is not a valid basis for
+        # automatic corroboration and must never crash the read-only audit.
+        sinking = replace(SINKING, time_uncertainty_minutes=1e308)
+        result = evaluate(sinking=sinking, sinking_corr=corr(sinking))
+        self.assertEqual(result.status, "candidate_update")
+        self.assertIn("outcome_precision_insufficient", result.reason_codes)
+        self.assertIn("outcome_temporal_order_ambiguous", result.reason_codes)
+        self.assertFalse(result.publication_allowed)
+
     def test_no_review_is_rejected(self):
         self.assertEqual(evaluate(link=replace(REVIEW, verified=False)).status, "rejected")
         self.assertEqual(evaluate(link=replace(REVIEW, reviewed_by="")).status, "rejected")
