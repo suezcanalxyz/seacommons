@@ -96,7 +96,9 @@ def _is_fresh_sar_activity(event: IntelEvent, *, now: datetime) -> bool:
         return False
     if observed.tzinfo is None:
         observed = observed.replace(tzinfo=UTC)
-    return now - observed.astimezone(UTC) <= _SAR_ACTIVITY_LIVE_TTL
+    # Reject future-dated source observations beyond a five-minute skew.
+    age = now.astimezone(UTC) - observed.astimezone(UTC)
+    return -timedelta(minutes=5) <= age <= _SAR_ACTIVITY_LIVE_TTL
 
 
 def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
@@ -1250,13 +1252,17 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         # an active-looking pulsing drift cone still on the map reads as
         # "still adrift, still searching", which is exactly wrong for a
         # case that's already been rescued or gone stale.
-        explicit_state = str(event.metadata.get("incident_lifecycle") or "").lower()
-        state = explicit_state or lifecycle.distress_lifecycle(
-            event,
-            now=now,
-            same_source=by_source.get(event.source, []),
+        # Drift and the public marker must share canonical incident authority.
+        # Stale ingestion metadata must not keep an obsolete search cone live.
+        from core.intel.humanitarian_incident import resolve_public_incident_state
+
+        incident_state = resolve_public_incident_state(
+            event, now=now, same_source=by_source.get(event.source, [])
         )
-        if state in _DRIFT_HIDDEN_LIFECYCLES:
+        if (
+            incident_state["lifecycle"] in _DRIFT_HIDDEN_LIFECYCLES
+            or incident_state["incident_status"] not in ("active", "needs_review")
+        ):
             continue
         # Only a real extracted maritime point is a drift origin. A region-only
         # Alarm Phone incident keeps its red search area (signal feed) but must
@@ -1316,6 +1322,16 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         drift = get_drift(job_id)
         if not drift or not _is_publishable_live_drift(drift):
             continue
+        # Completed forecast horizons are forensic history, not current
+        # trajectories. Keep stored runs for Play without publishing stale
+        # geometry as an ongoing Live position.
+        forecast_times = (
+            (drift.get("trajectory") or {}).get("properties") or {}
+        ).get("timestamps_utc") or []
+        if forecast_times:
+            forecast_end = lifecycle.parse_utc(str(forecast_times[-1]))
+            if forecast_end is None or now >= forecast_end:
+                continue
         metadata = drift.get("metadata") or {}
         # The drift inherits its origin signal's semantic category (Alarm Phone
         # drift is red because the origin is Alarm Phone), never a severity.
