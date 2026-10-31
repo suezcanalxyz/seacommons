@@ -28,6 +28,8 @@ on:
       - tests/test_maritime_attack_play_guard.py
       - tests/test_maritime_attack_independence_readonly.py
       - tests/test_maritime_attack_batch_readonly.py
+      - tests/test_maritime_attack_postgres_audit_sql.py
+      - docs/research/maritime-attack-postgres-readonly-audit-2026-10-31.sql
       - .github/workflows/maritime-attack-correlation-staging.yml
   workflow_dispatch:
 
