@@ -224,7 +224,17 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
     verified = provenance.get("origin_authority_verified") is True
     group = str(provenance.get("originating_authority_id") or "").strip() if verified else ""
     original_id = str(provenance.get("original_report_id") or "").strip() if verified else ""
-    published_raw = provenance.get("published_at")
+    # Some source adapters write published_at_utc, others published_at.
+    # Never silently ignore a contradictory secondary publication timestamp.
+    publications = []
+    for field in ("published_at_utc", "published_at"):
+        raw = provenance.get(field)
+        if raw is not None:
+            publications.append(parsed_utc(raw))
+    if len(publications) == 2 and abs(
+        (publications[0] - publications[1]).total_seconds()
+    ) > 300:
+        raise ValueError("Conflicting source publication timestamps")
     received_raw = getattr(observation, "received_at", None)
     vessel = VesselRef(
         imo=_normalized_identifier(extracted.get("imo"), "IMO"),
@@ -249,7 +259,7 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
         lat=extracted.get("lat"),
         lon=extracted.get("lon"),
         uncertainty_km=float(extracted.get("uncertainty_km") or 0),
-        published_at=parsed_utc(published_raw) if published_raw else None,
+        published_at=publications[0] if publications else None,
         received_at=parsed_utc(received_raw, stored_naive_utc=True) if received_raw else None,
         origin_report_id=original_id or None,
         time_uncertainty_minutes=float(extracted.get("time_uncertainty_minutes") or 0),
