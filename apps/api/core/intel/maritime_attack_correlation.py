@@ -420,6 +420,10 @@ def correlate(
                 continue
             if _identity_match(subject, peer.vessel) in {"conflict", "unknown"}:
                 continue
+            # Two reports may each match the subject yet contradict each
+            # other on an identifier absent from the subject record.
+            if _identity_match(possible.vessel, peer.vessel) == "conflict":
+                continue
             _validate_claim_location(peer)
             if _chronology_issues(peer):
                 continue
@@ -491,6 +495,13 @@ def correlate(
         identity = _identity_match(subject, claim.vessel)
         if identity in {"conflict", "unknown"}:
             contradictions.append("identity_" + identity + ":" + claim.claim_id)
+            continue
+        # A subject identified by IMO alone cannot merge a second report
+        # with a conflicting MMSI (or vice versa) merely by matching name.
+        # Cross-claim identifiers are a veto, never an attack signal.
+        if any(_identity_match(prior.vessel, claim.vessel) == "conflict"
+               for prior in valid):
+            contradictions.append("cross_claim_vessel_identifier_conflict:" + claim.claim_id)
             continue
         # Compare against EVERY accepted observation. An unlocated anchor
         # must not permit two incompatible locations to corroborate each other.
