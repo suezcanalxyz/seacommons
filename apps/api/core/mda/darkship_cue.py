@@ -174,8 +174,28 @@ def _gfw_sar_in_area(
         return []
 
     end = until or datetime.now(timezone.utc)
-    if end < since:
+    # Never fabricate an acquisition window from naive timestamps. Validate
+    # the query envelope before contacting GFW, including WGS84 and ordering.
+    if (
+        not isinstance(since, datetime) or not isinstance(end, datetime)
+        or since.tzinfo is None or end.tzinfo is None
+        or since.utcoffset() is None or end.utcoffset() is None
+        or end < since
+    ):
         return []
+    try:
+        if len(bbox) != 4 or any(isinstance(v, bool) for v in bbox):
+            return []
+        min_lon, min_lat, max_lon, max_lat = (float(v) for v in bbox)
+    except (TypeError, ValueError, OverflowError):
+        return []
+    if not (
+        all(math.isfinite(v) for v in (min_lon, min_lat, max_lon, max_lat))
+        and -180 <= min_lon < max_lon <= 180
+        and -90 <= min_lat < max_lat <= 90
+    ):
+        return []
+    valid_bbox = (min_lon, min_lat, max_lon, max_lat)
     try:
         import httpx
 
@@ -189,7 +209,7 @@ def _gfw_sar_in_area(
                 "format": "JSON",
                 "spatial-aggregation": "false",
             },
-            json={"geojson": _bbox_feature_collection(bbox)},
+            json={"geojson": _bbox_feature_collection(valid_bbox)},
             headers={"Authorization": f"Bearer {token}"},
             timeout=90,
         )
@@ -221,6 +241,10 @@ def _gfw_sar_in_area(
                         continue
                     if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
                         continue
+                    # A provider row outside the requested search envelope
+                    # cannot corroborate this case, even with an exact MMSI.
+                    if not (min_lon <= lon <= max_lon and min_lat <= lat <= max_lat):
+                        continue
                     timestamp = (
                         detection.get("entryTimestamp")
                         or detection.get("date")
@@ -241,8 +265,24 @@ def _gfw_sar_in_area(
                         continue
                     if not (since <= observed_at <= end):
                         continue
-                    vessel_id = str(detection.get("vesselId") or "").strip()
-                    mmsi = str(detection.get("mmsi") or "").strip()
+                    # A truthy arbitrary JSON value is not a vessel identity.
+                    # Keep only bounded provider IDs and nine-digit ASCII MMSI
+                    # values; malformed identifiers must not imply a match.
+                    raw_vessel_id = detection.get("vesselId")
+                    vessel_id = (
+                        raw_vessel_id.strip()
+                        if isinstance(raw_vessel_id, str) else ""
+                    )
+                    if len(vessel_id) > 128:
+                        vessel_id = ""
+                    raw_mmsi = detection.get("mmsi")
+                    mmsi = (
+                        str(raw_mmsi).strip()
+                        if isinstance(raw_mmsi, (str, int))
+                        and not isinstance(raw_mmsi, bool) else ""
+                    )
+                    if not (len(mmsi) == 9 and mmsi.isascii() and mmsi.isdecimal()):
+                        mmsi = ""
                     matched = bool(vessel_id or mmsi)
                     rows.append({
                         "lat": lat,
