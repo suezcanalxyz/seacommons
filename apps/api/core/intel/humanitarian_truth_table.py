@@ -306,15 +306,21 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
         str((f.get("properties") or {}).get("id") or "") for f in drift_collection.get("features", [])
     }
 
+    # The first N database rows are not necessarily Humanitarian: AIS/news
+    # traffic can displace every distress from a flat limit(N) audit scan.
+    # Overscan at most 5,000 rows and disclose incomplete coverage rather
+    # than silently reporting zero cases. This is a read-only diagnostic.
+    scan_limit = min(5000, max(1, limit) * 10)
     with session_scope() as db:
         db_rows = (
             db.query(IntelEventDB)
             .order_by(IntelEventDB.created_at.desc())
-            .limit(limit)
+            .limit(scan_limit + 1)
             .all()
         )
+        audit_scan_truncated = len(db_rows) > scan_limit
         candidates = []
-        for row in db_rows:
+        for row in db_rows[:scan_limit]:
             event = IntelEvent(
                 id=row.id, type=row.type, severity=row.severity, lat=row.lat, lon=row.lon,
                 title=row.title, text=row.text or "", source=row.source,
@@ -331,6 +337,10 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             if not is_within_live_retention_window(event, now=now):
                 continue
             candidates.append((row, event, classification))
+
+        if len(candidates) > max(1, limit):
+            audit_scan_truncated = True
+            candidates = candidates[:max(1, limit)]
 
         # One bounded query replaces a separate DriftResultDB query per
         # humanitarian case, reducing DB round trips under Oracle CPU pressure.
@@ -404,6 +414,8 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
         "generated_at": now.isoformat(),
         "case_count": len(rows),
         "flagged_case_count": len(flagged),
+        "audit_scan_truncated": audit_scan_truncated,
+        "audited_source_rows_count": min(len(db_rows), scan_limit),
         # Nonzero means the bounded source scan cannot certify that every
         # same-source follow-up was considered; do not imply complete audit.
         "followup_coverage_incomplete_source_count": followup_incomplete_sources,
