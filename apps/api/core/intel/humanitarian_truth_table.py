@@ -267,6 +267,15 @@ def index_recent_same_source_followups(
     return indexed
 
 
+def source_followup_fetch_limit(case_count: int, *, max_per_case: int = 50) -> int:
+    """Bound the per-source fetch while allowing for multiple audited cases.
+
+    A flat 51-row limit per source can starve older cases when the same NGO
+    publishes many updates. The extra row detects when coverage is truncated.
+    """
+    return min(5000, max(0, case_count) * (max_per_case + 1))
+
+
 def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
     """The real, live-wired entry point: queries IntelEventDB for
     Humanitarian-service events (core.intel.service_taxonomy.
@@ -336,26 +345,32 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
         ) if aliases else []
         drifts_by_case = index_drift_summaries(case_ids, drift_rows)
 
-        # Group by source, not case: each source query fetches at most 51
-        # newest rows, enough to exclude the current case and retain 50
-        # follow-up candidates. This replaces N per-case PostgreSQL queries
-        # without broad, unbounded scans of high-volume news sources.
+        # Group by source, not case, preserving a bounded number of rows
+        # for *each* audited case. The former fixed 51-row source cap could
+        # silently omit follow-ups for older cases when several cases shared
+        # a high-volume NGO source. A sentinel row reports incomplete scans.
+        # This remains one query per source, not one per case.
         source_groups: dict[str, list[Any]] = {}
         for row, _, _ in candidates:
             source_groups.setdefault(row.source, []).append(row)
         recent_source_rows: list[Any] = []
+        followup_incomplete_sources = 0
         for source, group in source_groups.items():
             oldest_cutoff = min(row.created_at for row in group) - timedelta(days=14)
-            recent_source_rows.extend(
+            fetch_limit = source_followup_fetch_limit(len(group))
+            source_batch = (
                 db.query(IntelEventDB)
                 .filter(
                     IntelEventDB.source == source,
                     IntelEventDB.created_at >= oldest_cutoff,
                 )
                 .order_by(IntelEventDB.created_at.desc(), IntelEventDB.id.desc())
-                .limit(51)
+                .limit(fetch_limit + 1)
                 .all()
             )
+            if len(source_batch) > fetch_limit:
+                followup_incomplete_sources += 1
+            recent_source_rows.extend(source_batch[:fetch_limit])
         followups_by_case = index_recent_same_source_followups(
             [row for row, _, _ in candidates], recent_source_rows,
         )
@@ -389,6 +404,9 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
         "generated_at": now.isoformat(),
         "case_count": len(rows),
         "flagged_case_count": len(flagged),
+        # Nonzero means the bounded source scan cannot certify that every
+        # same-source follow-up was considered; do not imply complete audit.
+        "followup_coverage_incomplete_source_count": followup_incomplete_sources,
         "rows": rows,
         "not_yet_computable_flags": dict(NOT_YET_COMPUTABLE),
     }
