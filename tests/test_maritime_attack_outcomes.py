@@ -111,6 +111,29 @@ class MaritimeAttackOutcomeTests(unittest.TestCase):
         self.assertEqual(result.source_evidence[1]["published_at"], at(29, 11).isoformat())
         self.assertEqual(result.source_evidence[1]["received_at"], at(29, 12).isoformat())
 
+    def test_corrob_status_with_one_independent_group_cannot_confirm(self):
+        # A cached or malformed upstream Correlation status is not enough.
+        for which in ("attack", "sinking"):
+            with self.subTest(which=which):
+                one_group = replace(
+                    corr(ATTACK if which == "attack" else SINKING),
+                    independent_groups=("same_original_authority",),
+                )
+                result = evaluate(**{which + "_corr": one_group})
+                self.assertEqual(result.status, "candidate_update")
+                self.assertIn("outcome_independent_groups_insufficient", result.reason_codes)
+                self.assertFalse(result.publication_allowed)
+
+    def test_duplicate_source_group_labels_are_not_independent(self):
+        # Duplicate labels cannot count twice merely because the tuple
+        # contains two elements.
+        duplicate = replace(
+            corr(SINKING), independent_groups=("bulgarian_navy", "bulgarian_navy")
+        )
+        result = evaluate(sinking_corr=duplicate)
+        self.assertEqual(result.status, "candidate_update")
+        self.assertIn("outcome_independent_groups_insufficient", result.reason_codes)
+
     def test_one_source_sinking_is_candidate_update_not_confirmed(self):
         result = evaluate(sinking_corr=corr(SINKING, "candidate"))
         self.assertEqual(result.status, "candidate_update")
