@@ -471,6 +471,12 @@ collector ingestion or PostgreSQL verification was performed.
   regional/context advisories, **not incident-specific attack evidence**.
   The website shows publication/effective dates, not SeaCommons
   collection/receipt latency.
+- **New Black Sea negative controls, 31 October:** Bulgaria VTMIS
+  https://www.vtmis.bg/wx/wx_eng.htm lists NAVWARN **776/26**
+  (scheduled naval diving exercise south of Cape Galata, 3–5 November)
+  and **777/26** (hydrographic survey in Burgas Bay, 3–6 November).
+  Both are navigation/safety notices, **not reported attacks**. Do not
+  convert their military or operational terminology into an incident.
 - **Independent background:** IMO's 13 July statement on attacks on
   Black Sea/Azov merchant ships is available at
   https://www.imo.org/en/mediacentre/pressbriefings/pages/statement-on-attacks-in-black-sea-and-sea-of-azov.aspx .
