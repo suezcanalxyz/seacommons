@@ -324,6 +324,14 @@ class MaritimeAttackOutcomeTests(unittest.TestCase):
         result = evaluate(sinking=unlocated, sinking_corr=stale)
         self.assertEqual(result.status, "candidate_update")
         self.assertIn("outcome_correlation_provenance_mismatch", result.reason_codes)
+        for missing in ("lat", "lon"):
+            with self.subTest(missing=missing):
+                evidence = dict(original.source_evidence[0])
+                evidence.pop(missing)
+                stale = replace(original, source_evidence=(evidence,))
+                result = evaluate(sinking=unlocated, sinking_corr=stale)
+                self.assertEqual(result.status, "candidate_update")
+                self.assertIn("outcome_correlation_provenance_mismatch", result.reason_codes)
 
     def test_cached_corroboration_missing_claim_evidence_fails_closed(self):
         stale = replace(corr(SINKING), source_evidence=())
