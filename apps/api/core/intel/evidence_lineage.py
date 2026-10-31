@@ -59,6 +59,13 @@ def lineage_for_event(event) -> EvidenceLineage:
     # not an independent eyewitness just because its transport is social.
     # Check declared provenance before classifying the publication platform.
     origin = str(metadata.get("source_lineage") or "").strip().lower()
+    # Feed adapters may serialize boolean provenance as text. Never promote
+    # a declared repost to an independent source because "true" is a string.
+    derived_flag = metadata.get("derived")
+    is_derived = derived_flag is True or (
+        isinstance(derived_flag, str)
+        and derived_flag.strip().lower() in {"true", "yes", "1"}
+    )
     if origin in {"ais", "ais_derived", "ais_derived_event", "ais_sensor_lineage"}:
         return EvidenceLineage(source_name, "ais_derived_event", "ais_sensor_lineage", "ais")
 
@@ -69,7 +76,7 @@ def lineage_for_event(event) -> EvidenceLineage:
 
     # A repost with declared derivation but no known origin cannot count as
     # independent corroboration merely because it appears on social media.
-    if platform in {"x", "twitter", "mastodon", "bluesky"} and metadata.get("derived") is True:
+    if platform in {"x", "twitter", "mastodon", "bluesky"} and is_derived:
         return EvidenceLineage(source_name, "social_public_reports", "unknown", "public_report")
 
     if platform in {"x", "twitter"}:
@@ -83,7 +90,7 @@ def lineage_for_event(event) -> EvidenceLineage:
     # independent witness merely because it arrived through a news channel.
     # Honour provenance before applying the secondary-reporting fallback.
     if event_type == "news" or transport == "rss":
-        if metadata.get("derived") is True:
+        if is_derived:
             return EvidenceLineage(source_name, "secondary_reporting", "unknown", "public_report")
 
     profile = get_source_profile(source_name)
