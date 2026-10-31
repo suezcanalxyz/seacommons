@@ -736,3 +736,57 @@ collector ingestion or PostgreSQL verification was performed.
   remote MCP reported **0% of calls left this month**. No database queries
   were executed. No new VM cron, timer, scheduled job, data mutation or
   production deployment was made.
+
+
+## 31 October evening: independent outcome-group fail-closed guard
+
+- Compared with the previous recorded branch head `441df8ad`: at the
+  start of this pass the branch was identical (ahead 0, behind 0). The
+  preceding staging CI at commit `933ceda1` completed successfully:
+  https://github.com/suezcanalxyz/seacommons/actions/runs/41229237205
+- A later sinking outcome could inherit a `Correlation(status="corroborated")`
+  label whose `independent_groups` tuple contained only one original
+  authority. The outcome reconciler now requires **two distinct normalized
+  group labels for both attack and sinking**, in addition to the upstream
+  corroborated statuses, provenance clocks, precision and certain sequence.
+  It reuses `has_distinct_independence_groups` from the PLAY guard to
+  collapse casing, spaces, underscores and hyphens. This is a defensive
+  consistency check: it does **not** independently establish the actual
+  origin of documents or authorize public promotion.
+- New outcome regressions cover an attack or sinking with only one group,
+  duplicate group labels, cosmetic aliases (e.g. `Bulgarian Navy` versus
+  `BULGARIAN-NAVY`) and an empty group. Such outcomes remain
+  `candidate_update`, with reason
+  `outcome_independent_groups_insufficient`, and
+  `publication_allowed=False`. No historical record is changed.
+- Directly checked Bulgarian Ministry of Defence statement dated
+  2026-10-28: https://www.mod.bg/news9664 . It states a strike at
+  **12:00 local time**; the corresponding 10:00 UTC event clock used
+  by the CONTSHIP JET regression is also explicitly reported by EFE:
+  https://efe.com/euro-efe/2026-10-28/atacado-drones-buque-mar-negro-frente-costa-bulgara/ .
+  This is an event time, **not** a fabricated source publication time.
+  The official statement reports three strikes and rescue of 18 crew.
+  French patrol-aircraft observation is mentioned by the Bulgarian
+  ministry but cannot be counted as an independently retrieved French
+  report without the original evidence. No aggressor is assigned.
+- Rechecked public MSCIO alert **158/26**
+  (https://mscio.eu/alerts/194), **159/26**
+  (https://mscio.eu/alerts/195), **160/26**
+  (https://mscio.eu/alerts/196), **161/26**
+  (https://mscio.eu/alerts/197) and **163/26**
+  (https://mscio.eu/alerts/199). The last is a time-late report for
+  28 October, not a fresh 30 October attack. 160/26 is an armed approach
+  without shots or boarding; 161/26 is reported piracy. Do not merge
+  unnamed tanker alerts without identity and original-report lineage.
+- MARAD's active 2026-013 advisory
+  (https://www.maritime.dot.gov/msci/2026-013-red-sea-bab-el-mandeb-strait-gulf-aden-arabian-sea-and-somali-basin-houthi-attacks)
+  explicitly permits safety-motivated AIS shutdowns: an AIS gap or sudden
+  stop is context only, not independent attack evidence. Public source
+  availability is not a collector latency measurement. MSCIO redistribution
+  rights remain restricted and are not assumed.
+- Oracle read-only SQL remains prepared but **not executed**, because the
+  authorized Desktop Commander quota had previously returned 0% and
+  instructed no repeat attempts. Thus neither actual database incidents,
+  collector latency, nor LIVE/PLAY end-to-end behaviour is certified.
+  No VM schedule, production deployment, data deletion or historical
+  mutation was performed.
