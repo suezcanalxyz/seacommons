@@ -56,6 +56,32 @@ class IndependenceAuditTests(unittest.TestCase):
         self.assertTrue(result.verified)
         self.assertEqual(len(result.groups), 2)
 
+    def test_authority_separator_aliases_are_not_independent(self):
+        result = audit([
+            observation("mod", "Bulgarian_Navy", "report-a"),
+            observation("mrcc", " bulgarian navy ", "report-b"),
+        ])
+        self.assertFalse(result.verified)
+        self.assertEqual(result.reason, "shared_original_source")
+
+    def test_hyphenated_authority_aliases_are_not_independent(self):
+        result = audit([
+            observation("mod", "BULGARIAN-NAVY", "report-a"),
+            observation("mrcc", "bulgarian_navy", "report-b"),
+        ])
+        self.assertFalse(result.verified)
+        self.assertEqual(result.reason, "shared_original_source")
+
+    def test_canonical_group_separator_aliases_block_before_database_reads(self):
+        calls = []
+        result = audit_attack_episode_independence(
+            episode(independence_groups=["Bulgarian_Navy", "bulgarian navy"]),
+            lambda ids: calls.append(ids) or [],
+            lambda ids: [],
+        )
+        self.assertEqual(result.reason, "canonical_verification_incomplete")
+        self.assertEqual(calls, [])
+
     def test_two_labels_do_not_prove_independence(self):
         result = audit([
             observation("mod", "bulgarian_navy", "mod-2026-28"),
