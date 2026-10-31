@@ -57,6 +57,22 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertEqual(result.related_gap_ids, ())
         self.assertEqual(len(result.independent_groups), 2)
 
+    def test_azini_161_single_piracy_alert_is_not_military_attack(self):
+        # MSCIO 161/26 reports a hijacking, but its dated position is a
+        # subsequent fix, not a verified location of the hijacking itself.
+        azini = VesselRef(name="AZINI")
+        claim = IncidentClaim(
+            "MSCIO-161-26", "piracy", dt(29, 9), "mscio",
+            "https://mscio.eu/alerts/197", azini,
+            lat=None, lon=None, origin_report_id="MSCIO-161/26",
+        )
+        result = correlate(azini, [claim])
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(result.incident_type, "piracy")
+        self.assertNotEqual(result.color_token, "maritime_attack_coral")
+        self.assertFalse(result.publication_allowed)
+        self.assertIsNone(result.nearest_ais_km)
+
     def test_mscio_160_armed_approach_without_shots_is_not_attack(self):
         """MSCIO 160/26 is suspicious activity, not a proven attack."""
         from types import SimpleNamespace
