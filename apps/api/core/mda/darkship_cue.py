@@ -265,8 +265,24 @@ def _gfw_sar_in_area(
                         continue
                     if not (since <= observed_at <= end):
                         continue
-                    vessel_id = str(detection.get("vesselId") or "").strip()
-                    mmsi = str(detection.get("mmsi") or "").strip()
+                    # A truthy arbitrary JSON value is not a vessel identity.
+                    # Keep only bounded provider IDs and nine-digit ASCII MMSI
+                    # values; malformed identifiers must not imply a match.
+                    raw_vessel_id = detection.get("vesselId")
+                    vessel_id = (
+                        raw_vessel_id.strip()
+                        if isinstance(raw_vessel_id, str) else ""
+                    )
+                    if len(vessel_id) > 128:
+                        vessel_id = ""
+                    raw_mmsi = detection.get("mmsi")
+                    mmsi = (
+                        str(raw_mmsi).strip()
+                        if isinstance(raw_mmsi, (str, int))
+                        and not isinstance(raw_mmsi, bool) else ""
+                    )
+                    if not (len(mmsi) == 9 and mmsi.isascii() and mmsi.isdecimal()):
+                        mmsi = ""
                     matched = bool(vessel_id or mmsi)
                     rows.append({
                         "lat": lat,
