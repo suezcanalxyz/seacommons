@@ -18,6 +18,17 @@
   remain unverified. Ministry of Defence and Transport statements may share
   investigative inputs; do not count them as independent attack witnesses
   without examining their originating evidence.
+- **ALFA WATAN**: Bulgarian News Agency BTA initial government-briefing
+  report 2026-10-06 11:43 (updated 14:53 local site clock):
+  https://www.bta.bg/en/news/1218507-two-merchant-ships-attacked-by-sea-and-aerial-drones-in-bulgaria-s-exclusive-eco
+  and contemporaneous AP reporting on 6 October describe a separate vessel
+  struck and sunk in the same broader early-October incident as ABLE.
+  Do **not** merge ALFA WATAN's sinking into ABLE's later inspection or
+  14 October movement; separate vessel, separate canonical incident.
+  Exact IMO/MMSI, incident UTC clock, sinking coordinates, and independently
+  verified crew outcome remain unresolved. BTA's quotations of the Bulgarian
+  government and a separate newspaper repeating them are not automatically
+  independent observations. No perpetrator attribution.
 - **EMIL**: Bulgarian Ministry of Defence report dated 2026-10-04:
   https://www.mod.bg/news9616 . The vessel was reportedly hit by a drone
   near Odesa on **2026-08-05**, suffered fire/system failure and was
