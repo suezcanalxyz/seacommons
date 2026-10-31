@@ -157,3 +157,27 @@ def test_social_original_report_retains_platform_lineage():
         metadata={"platform": "x"},
     )
     assert lineage_for_event(original).independence_group == "x_twitter_platform"
+
+def test_social_derived_without_origin_fails_closed():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    for platform in ("x", "twitter", "mastodon", "bluesky"):
+        repost = _event(
+            "unattributed social repost", event_type="news",
+            metadata={"platform": platform, "derived": True},
+        )
+        lineage = lineage_for_event(repost)
+        assert lineage.independence_group == "unknown"
+        assert lineage.sensor_family == "public_report"
+
+
+def test_ais_detector_on_social_transport_remains_ais_lineage():
+    from core.intel.evidence_lineage import lineage_for_event
+
+    event = _event(
+        "AIS anomaly mirrored on social", event_type="ais_anomaly",
+        metadata={"platform": "x", "derived": True},
+    )
+    lineage = lineage_for_event(event)
+    assert lineage.independence_group == "ais_sensor_lineage"
+    assert lineage.sensor_family == "ais"
