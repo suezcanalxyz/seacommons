@@ -523,13 +523,34 @@ def correlate(
         and bool(_canonical_source_url(claim.source_url))
         for claim in valid
     )
-    corroborated = len(groups) >= 2 and attributable_strong_identity
+    # Very coarse incident times or locations must not turn unrelated
+    # attacks into two-source corroboration. Keep such claims in the audit
+    # evidence, but only precision-qualified originals can promote an event.
+    # A missing coordinate is not a fabricated zero-uncertainty fix: it
+    # remains unlocated and is assessed by the independent source review.
+    max_time_uncertainty = 360 if anchor.kind == "sinking" else 180
+    precise_claims = [
+        claim for claim in valid
+        if claim.time_uncertainty_minutes <= max_time_uncertainty
+        and (claim.lat is None or claim.uncertainty_km <= 250)
+    ]
+    precise_groups = _independent_document_groups(precise_claims, lineage_roots)
+    precise_strong_identity = any(
+        _identity_match(subject, claim.vessel) == "strong"
+        and bool((claim.origin_report_id or "").strip())
+        and bool(claim.source_group.strip())
+        and bool(_canonical_source_url(claim.source_url))
+        for claim in precise_claims
+    )
+    if len(groups) >= 2 and len(precise_groups) < 2:
+        contradictions.append("corroboration_precision_insufficient")
+    corroborated = len(precise_groups) >= 2 and precise_strong_identity
     status = "corroborated" if corroborated else "candidate"
     color = (_COLORS.get(anchor.kind, _COLORS["other"]) if corroborated else _COLORS["candidate"])
     support = ["incident_claim", "vessel_identity_matched"]
     if strong_identity:
         support.append("strong_vessel_identifier")
-    if len(groups) >= 2:
+    if len(precise_groups) >= 2:
         support.append("independent_source_groups")
 
     # Invalid AIS telemetry must not become supporting evidence or bypass
