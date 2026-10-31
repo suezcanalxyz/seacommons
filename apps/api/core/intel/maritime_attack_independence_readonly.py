@@ -159,7 +159,7 @@ def audit_attack_episode_independence(
         chronology_issue = _observation_chronology_issue(row, require_complete=require_chronology)
         if chronology_issue:
             return IndependenceAudit(False, reason=chronology_issue, observations_checked=len(rows))
-        if str(getattr(row, "service", "") or "").casefold() == "humanitarian":
+        if str(getattr(row, "service", "") or "").strip().casefold() == "humanitarian":
             return IndependenceAudit(False, reason="humanitarian_domain_excluded", observations_checked=len(rows))
         provenance = getattr(row, "provenance", None)
         if not isinstance(provenance, dict) or provenance.get("origin_authority_verified") is not True:
