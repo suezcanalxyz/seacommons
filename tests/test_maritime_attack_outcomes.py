@@ -37,6 +37,17 @@ def corr(claim, status="corroborated"):
         status, claim.kind, "maritime_incident_candidate_orange",
         (claim.claim_id,), ("source_a", "source_b") if status == "corroborated" else ("source_a",),
         ("incident_claim",), (),
+        source_evidence=({
+            "claim_id": claim.claim_id,
+            "source_url": claim.source_url,
+            "source_group": claim.source_group,
+            "origin_report_id": claim.origin_report_id,
+            "occurred_at": claim.occurred_at.isoformat(),
+            "published_at": claim.published_at.isoformat()
+                if claim.published_at is not None else None,
+            "received_at": claim.received_at.isoformat()
+                if claim.received_at is not None else None,
+        },),
     )
 
 
@@ -239,6 +250,46 @@ class MaritimeAttackOutcomeTests(unittest.TestCase):
         self.assertIn("outcome_precision_insufficient", result.reason_codes)
         self.assertIn("outcome_temporal_order_ambiguous", result.reason_codes)
         self.assertFalse(result.publication_allowed)
+
+    def test_cached_corroboration_must_match_immutable_claim_provenance(self):
+        # A stale/forged cached status cannot launder a different source,
+        # originating authority, report ID or event/publication/receipt clock.
+        for field, wrong in (
+            ("source_url", "https://different.example.org/report"),
+            ("source_group", "different_original_authority"),
+            ("origin_report_id", "unrelated_document"),
+            ("occurred_at", "2026-10-29T09:00:00+00:00"),
+            ("published_at", "2026-10-29T09:30:00+00:00"),
+            ("received_at", "2026-10-29T10:00:00+00:00"),
+        ):
+            with self.subTest(field=field):
+                original = corr(SINKING)
+                changed = dict(original.source_evidence[0])
+                changed[field] = wrong
+                stale = replace(original, source_evidence=(changed,))
+                result = evaluate(sinking_corr=stale)
+                self.assertEqual(result.status, "candidate_update")
+                self.assertIn(
+                    "outcome_correlation_provenance_mismatch",
+                    result.reason_codes,
+                )
+                self.assertFalse(result.publication_allowed)
+
+    def test_cached_corroboration_missing_claim_evidence_fails_closed(self):
+        stale = replace(corr(SINKING), source_evidence=())
+        result = evaluate(sinking_corr=stale)
+        self.assertEqual(result.status, "candidate_update")
+        self.assertIn("outcome_correlation_provenance_mismatch", result.reason_codes)
+
+    def test_duplicate_immutable_claim_evidence_cannot_confirm_outcome(self):
+        original = corr(SINKING)
+        stale = replace(
+            original,
+            source_evidence=original.source_evidence + original.source_evidence,
+        )
+        result = evaluate(sinking_corr=stale)
+        self.assertEqual(result.status, "candidate_update")
+        self.assertIn("outcome_correlation_provenance_mismatch", result.reason_codes)
 
     def test_no_review_is_rejected(self):
         self.assertEqual(evaluate(link=replace(REVIEW, verified=False)).status, "rejected")
