@@ -206,3 +206,60 @@ def test_conflicting_provider_mmsi_stays_context():
     assert obs.association_status == "conflict"
     assert obs.evidence_status == "contextual"
     assert obs.episode_id is None
+
+
+def test_contextual_replay_cannot_erase_verified_satellite_episode_link():
+    from core.intel.satellite_observation import (
+        list_incident_observations, materialize_sar_detections, persist_observations,
+    )
+
+    incident_id = "sat-assoc-test-replay"
+    position = {"lat": 35.53, "lon": 14.15, "timestamp": "2026-09-17T10:15:00+00:00"}
+    verified = materialize_sar_detections(
+        incident_id=incident_id,
+        cue={"gfw_sar_detections": [{**position, "matched": True, "mmsi": "211879870"}]},
+        expected_mmsi="211879870",
+        episode_id="episode:test:verified",
+    )
+    weak_replay = materialize_sar_detections(
+        incident_id=incident_id,
+        cue={"gfw_sar_detections": [{**position, "matched": False}]},
+        expected_mmsi="211879870",
+        episode_id="episode:test:verified",
+    )
+    assert verified[0].observation_id == weak_replay[0].observation_id
+    assert persist_observations(verified) == 1
+    assert persist_observations(weak_replay) == 0
+
+    stored = list_incident_observations(incident_id)
+    assert len(stored) == 1
+    assert stored[0].episode_id == "episode:test:verified"
+    assert stored[0].association_status == "strong"
+    assert stored[0].evidence_status == "associated"
+
+
+def test_provider_identity_conflict_invalidates_satellite_link_and_survives_weak_replay():
+    from core.intel.satellite_observation import (
+        list_incident_observations, materialize_sar_detections, persist_observations,
+    )
+
+    incident_id = "sat-assoc-test-conflict-replay"
+    position = {"lat": 35.53, "lon": 14.15, "timestamp": "2026-09-17T10:15:00+00:00"}
+
+    def resolve(*, matched, mmsi=None):
+        return materialize_sar_detections(
+            incident_id=incident_id,
+            cue={"gfw_sar_detections": [{**position, "matched": matched, "mmsi": mmsi}]},
+            expected_mmsi="211879870",
+            episode_id="episode:test:verified",
+        )
+
+    assert persist_observations(resolve(matched=True, mmsi="211879870")) == 1
+    assert persist_observations(resolve(matched=True, mmsi="999999999")) == 0
+    assert persist_observations(resolve(matched=False)) == 0
+
+    stored = list_incident_observations(incident_id)
+    assert len(stored) == 1
+    assert stored[0].episode_id is None
+    assert stored[0].association_status == "conflict"
+    assert stored[0].evidence_status == "contextual"
