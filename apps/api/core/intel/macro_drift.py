@@ -12,12 +12,26 @@ import re
 from typing import Any
 
 from core.intel.geoextract import find_all_place_matches
+from core.intel.search_area_geometry import valid_search_area_geometry
 
 
 def source_is_alarm_phone(event: Any) -> bool:
     meta = getattr(event, "metadata", {}) or {}
     identity = str(getattr(event, "source", "") or meta.get("tracked_account") or "")
     return identity.lower().lstrip("@").replace(" ", "").replace("_", "") == "alarmphone"
+
+
+def explicit_distress_flag(value: Any) -> bool:
+    """Accept only explicit positive distress metadata, never bool("false").
+
+    RSS and social adapters may serialize booleans as strings. Ambiguous
+    values must not create an operational Alarm Phone drift candidate.
+    """
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "1"}
+    return isinstance(value, int) and value == 1
 
 
 def location_clues(text: str) -> list[dict[str, str]]:
@@ -51,9 +65,9 @@ def spatial_prior_for_event(event: Any) -> dict[str, Any]:
     source_text = " ".join(filter(None, [str(getattr(event, "title", "") or ""), str(getattr(event, "text", "") or "")]))
     matches = find_all_place_matches(source_text)
     polygon = meta.get("area_geojson")
-    valid = isinstance(polygon, dict) and polygon.get("type") in {"Polygon", "MultiPolygon"} and bool(polygon.get("coordinates"))
+    valid = valid_search_area_geometry(polygon)
     return {
-        "candidate": source_is_alarm_phone(event) and bool(meta.get("is_distress")),
+        "candidate": source_is_alarm_phone(event) and explicit_distress_flag(meta.get("is_distress")),
         "geometry": polygon if valid else None,
         "location_evidence": "named_area_from_source_text" if valid else "no_geographic_area_resolved",
         "mentioned_places": [name for name, _, _ in matches][:20],

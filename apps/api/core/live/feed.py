@@ -96,7 +96,9 @@ def _is_fresh_sar_activity(event: IntelEvent, *, now: datetime) -> bool:
         return False
     if observed.tzinfo is None:
         observed = observed.replace(tzinfo=UTC)
-    return now - observed.astimezone(UTC) <= _SAR_ACTIVITY_LIVE_TTL
+    # Reject future-dated source observations beyond a five-minute skew.
+    age = now.astimezone(UTC) - observed.astimezone(UTC)
+    return -timedelta(minutes=5) <= age <= _SAR_ACTIVITY_LIVE_TTL
 
 
 def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
@@ -126,12 +128,20 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
         )
         from core.domain.incident_taxonomy import taxonomy_fields
 
+        # The public hypothesis has already resolved independent lineages
+        # from its evidence links. Never upgrade an assessed/corroborated
+        # evidence *stage* into a multi-source verification claim.
+        verification = str(props.get("verification_status") or "single_source_observed")
+        groups = list(props.get("independence_groups") or ())
         taxonomy = taxonomy_fields(
             event_type="ais_anomaly",
             maritime_domain="grey_zone",
             metadata={
                 "anomaly_type": anomaly_type,
                 "evidence_stage": props.get("evidence_stage"),
+                "verification_status": verification,
+                "independence_groups": groups,
+                "independent_source_count": len(groups),
             },
             hypothesis_type=hypothesis_type,
         )
@@ -155,11 +165,7 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
                 "kind": LiveSignalKind.CONTEXT.value,
                 "severity": "medium",
                 "tier": IntelTier.SIGNAL.value,
-                "verification_status": (
-                    VerificationStatus.MULTI_SOURCE_CORROBORATED.value
-                    if props.get("evidence_stage") == "corroborated"
-                    else str(props.get("evidence_stage") or "assessed")
-                ),
+                "verification_status": verification,
                 "publication_status": PublicationStatus.PUBLISHED.value,
                 "source_policy": SourcePolicy.OPERATOR_PUBLISHED.value,
                 "title": str(props.get("title") or "Reviewed maritime intelligence")[:255],
@@ -171,6 +177,8 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
                 "maritime_domain": "grey_zone",
                 "hypothesis_type": hypothesis_type,
                 "hypothesis_state": "published",
+                "independence_groups": groups,
+                "independent_source_count": len(groups),
                 "reason_codes": list(props.get("reason_codes") or ()),
                 "evidence_stage": props.get("evidence_stage"),
                 "caveats": list(props.get("caveats") or ()),
@@ -1244,13 +1252,17 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         # an active-looking pulsing drift cone still on the map reads as
         # "still adrift, still searching", which is exactly wrong for a
         # case that's already been rescued or gone stale.
-        explicit_state = str(event.metadata.get("incident_lifecycle") or "").lower()
-        state = explicit_state or lifecycle.distress_lifecycle(
-            event,
-            now=now,
-            same_source=by_source.get(event.source, []),
+        # Drift and the public marker must share canonical incident authority.
+        # Stale ingestion metadata must not keep an obsolete search cone live.
+        from core.intel.humanitarian_incident import resolve_public_incident_state
+
+        incident_state = resolve_public_incident_state(
+            event, now=now, same_source=by_source.get(event.source, [])
         )
-        if state in _DRIFT_HIDDEN_LIFECYCLES:
+        if (
+            incident_state["lifecycle"] in _DRIFT_HIDDEN_LIFECYCLES
+            or incident_state["incident_status"] not in ("active", "needs_review")
+        ):
             continue
         # Only a real extracted maritime point is a drift origin. A region-only
         # Alarm Phone incident keeps its red search area (signal feed) but must
@@ -1310,6 +1322,16 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         drift = get_drift(job_id)
         if not drift or not _is_publishable_live_drift(drift):
             continue
+        # Completed forecast horizons are forensic history, not current
+        # trajectories. Keep stored runs for Play without publishing stale
+        # geometry as an ongoing Live position.
+        forecast_times = (
+            (drift.get("trajectory") or {}).get("properties") or {}
+        ).get("timestamps_utc") or []
+        if forecast_times:
+            forecast_end = lifecycle.parse_utc(str(forecast_times[-1]))
+            if forecast_end is None or now >= forecast_end:
+                continue
         metadata = drift.get("metadata") or {}
         # The drift inherits its origin signal's semantic category (Alarm Phone
         # drift is red because the origin is Alarm Phone), never a severity.
