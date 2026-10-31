@@ -489,3 +489,35 @@ collector ingestion or PostgreSQL verification was performed.
   remains prepared but **unexecuted**. Collector latency and actual
   LIVE/PLAY incident representation remain unknown. No new cron,
   VM loop, production deployment, or historical record mutation.
+
+
+## 31 October follow-up: AIS identity, provenance, and read-only SQL
+
+- In the staging-only pure correlator, a valid IMO is **not** enough to
+  authorize AIS matching when the subject MMSI is a placeholder or malformed.
+  AIS proximity, AIS spatial-conflict checks and gap-context matching now
+  require a valid subject MMSI. An invalid MMSI cannot create a spurious AIS
+  support signal, even when the incident has two independently attributable
+  primary reports. AIS never independently corroborates an attack.
+- Structured source evidence now includes optional latitude/longitude and
+  **spatial uncertainty in kilometres**, in addition to event time,
+  publication/receipt times and time uncertainty. Unlocated incidents retain
+  null coordinates; no position is inferred from a later AIS fix.
+- The prepared read-only PostgreSQL audit now casefolds/trims maritime_domain
+  and service before excluding humanitarian rows. The SQL has **not** been
+  executed on Oracle; Desktop Commander reports no available remote calls.
+- Official MARAD 2026-013 (active, issued 2026-09-23) explicitly advises
+  that operators may turn off AIS when its continued operation compromises
+  vessel safety. Therefore an AIS gap is an ambiguous signal, **not** evidence
+  of hostile action: https://www.maritime.dot.gov/msci/2026-013-red-sea-bab-el-mandeb-strait-gulf-aden-arabian-sea-and-somali-basin-houthi-attacks
+- MARAD 2026-012 remains active for the Black Sea through 2027-03-22 and
+  describes general maritime hazards, not independent confirmation of any
+  specific CONTSHIP JET attack:
+  https://www.maritime.dot.gov/msci/2026-012-black-sea-and-sea-azov-military-combat-operations
+- GDELT 2.0's documented 15-minute source update cycle is **not** measured
+  SeaCommons ingestion latency. Original documentation:
+  https://blog.gdeltproject.org/gdelt-2-0-our-global-world-in-realtime/
+- Two new Python regressions cover invalid subject MMSI with valid IMO and
+  preservation of location uncertainty. Code, tests and SQL remain staging-only.
+  No collector, scheduler, VM cron, historical record update or production
+  deployment was introduced. Verify the latest GitHub Actions run separately.
