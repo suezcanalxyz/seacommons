@@ -28,7 +28,7 @@ class PostgresAuditSqlTests(unittest.TestCase):
         self.assertEqual(statements[0].upper(), "BEGIN READ ONLY")
         self.assertEqual(statements[-1].upper(), "ROLLBACK")
         for statement in statements[1:-1]:
-            self.assertRegex(statement, r"^(?:SELECT|SET LOCAL)\\b")
+            self.assertRegex(statement, r"^(?:SELECT|SET LOCAL)\b")
         self.assertIn("SET LOCAL statement_timeout = '5000ms'", executable)
         self.assertIn("SET LOCAL lock_timeout = '1000ms'", executable)
 
@@ -44,20 +44,20 @@ class PostgresAuditSqlTests(unittest.TestCase):
                      "anomaly_events", "humanitarian_incidents", "forensic_events",
                      "maritime_episodes", "source_observations", "lineage_edges"):
             with self.subTest(table=name):
-                self.assertRegex(self.sql, rf"\\b(?:FROM|JOIN) {name}\\b")
+                self.assertRegex(self.sql, rf"\b(?:FROM|JOIN) {name}\b")
                 self.assertIn(f'__tablename__ = "{name}"', self.models)
         for field in ("live_case_key", "live_entered_at",
                       "last_qualified_observation_at", "live_expires_at",
                       "operational_tier", "verification_status"):
             self.assertIn(field, self.sql)
-            self.assertRegex(self.models, rf"\\b{field}\\s*= Column\\(")
+            self.assertRegex(self.models, rf"\b{field}\s*= Column\(")
         self.assertIn("maritime_domain IS DISTINCT FROM 'humanitarian'", self.sql)
         self.assertIn("636019532", self.sql)
 
     def test_avoid_unbounded_forensic_or_humanitarian_payloads(self):
-        self.assertNotRegex(self.sql, r"(?i)SELECT\\s+\\*")
-        self.assertNotRegex(self.sql, r"(?i)\\bsensor_data\\b")
-        self.assertNotRegex(self.sql, r"(?i)\\bwaveform_miniseed_b64\\b")
+        self.assertNotRegex(self.sql, r"(?i)SELECT\s+\*")
+        self.assertNotRegex(self.sql, r"(?i)\bsensor_data\b")
+        self.assertNotRegex(self.sql, r"(?i)\bwaveform_miniseed_b64\b")
         self.assertIn("ARRAY[]::text[]", self.sql)
         self.assertIn("LIMIT 100", self.sql)
 
