@@ -347,6 +347,50 @@ def test_audit_followup_preserves_source_for_resolution_and_rejects_other_source
     assert distress_lifecycle(original, now=now, same_source=[other_source]) == "active"
 
 
+def test_source_followup_fetch_limit_scales_with_case_count_and_stays_bounded():
+    from core.intel.humanitarian_truth_table import source_followup_fetch_limit
+
+    assert source_followup_fetch_limit(0) == 0
+    assert source_followup_fetch_limit(1) == 51
+    assert source_followup_fetch_limit(2) == 102
+    assert source_followup_fetch_limit(200) == 5000
+
+
+def test_humanitarian_audit_overscans_unrelated_recent_news():
+    """A busy news feed must not hide a recent distress beyond limit(N)."""
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+
+    now = datetime.now(timezone.utc)
+    token = uuid.uuid4().hex[:12]
+    case_id = f"pytest-audit-overscan-{token}"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=case_id, timestamp_utc=now.isoformat(), type="distress", severity="high",
+            lat=35.5, lon=14.1, title="Distress reported", text="Boat in distress",
+            source=f"pytest-overscan-{token}", meta={"is_distress": True},
+            created_at=(now - timedelta(seconds=1)).replace(tzinfo=None),
+            maritime_domain="sar",
+        ))
+        for i in range(55):
+            db.add(IntelEventDB(
+                id=f"pytest-news-{token}-{i}", timestamp_utc=now.isoformat(),
+                type="news", severity="low", title="Unrelated market report",
+                text="Unrelated market report", source=f"pytest-news-{token}",
+                meta={"service": "maritime", "lane": "intelligence"},
+                created_at=now.replace(tzinfo=None), maritime_domain="grey_zone",
+            ))
+
+    result = run_humanitarian_truth_table_audit(limit=50)
+    assert result["audited_source_rows_count"] >= 56
+    assert any(row.candidate_incident_id == case_id for row in result["rows"])
+    assert isinstance(result["audit_scan_truncated"], bool)
+    assert isinstance(result["followup_coverage_incomplete_source_count"], int)
+
+
 def test_same_source_followup_batch_filters_source_self_and_lookback():
     from types import SimpleNamespace
     from core.intel.humanitarian_truth_table import index_recent_same_source_followups
