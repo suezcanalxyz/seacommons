@@ -85,6 +85,35 @@ class BatchAuditTests(unittest.TestCase):
         self.assertFalse(result["jet"].verified)
         self.assertGreaterEqual(len(calls["lineage"]), 2)
 
+    def test_uncorroborated_attack_skips_all_batch_reads(self):
+        case = episode("jet", "mod", "rescue")
+        case.verification_status = "single_source"
+        result, calls = batch([case], [])
+        self.assertEqual(result["jet"].reason, "canonical_verification_incomplete")
+        self.assertEqual(calls["observations"], [])
+        self.assertEqual(calls["lineage"], [])
+
+    def test_duplicate_canonical_groups_skip_all_batch_reads(self):
+        case = episode("jet", "mod", "rescue")
+        case.independence_groups = ["Bulgarian Navy", " bulgarian navy "]
+        result, calls = batch([case], [])
+        self.assertEqual(result["jet"].reason, "canonical_verification_incomplete")
+        self.assertFalse(calls["observations"])
+        self.assertFalse(calls["lineage"])
+
+    def test_mixed_batch_only_fetches_eligible_attack(self):
+        blocked = episode("blocked", "a", "b")
+        blocked.verification_status = "candidate"
+        eligible = episode("eligible", "mod", "rescue")
+        result, calls = batch(
+            [blocked, eligible],
+            [obs("mod", "navy", "navy-1"), obs("rescue", "mrcc", "mrcc-2")],
+        )
+        self.assertEqual(result["blocked"].reason, "canonical_verification_incomplete")
+        self.assertTrue(result["eligible"].verified)
+        self.assertEqual(calls["observations"], [("mod", "rescue")])
+        self.assertTrue(all("a" not in ids and "b" not in ids for ids in calls["lineage"]))
+
     def test_missing_observation_fails_closed(self):
         result, _ = batch([episode("jet", "a", "b")], [obs("a", "a", "1")])
         self.assertEqual(result["jet"].reason, "missing_or_duplicate_observations")
