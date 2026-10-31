@@ -29,7 +29,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from core.intel.store import IntelEvent
 
 # Anomaly flags docs/updates.md P0.1 names that this module cannot yet
 # compute with today's schema, and the packet (already scheduled in this
