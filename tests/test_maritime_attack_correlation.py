@@ -839,5 +839,37 @@ class SourceObservationAdapterTests(unittest.TestCase):
                     claim_from_source_observation(self.observation("navy"), extraction)
 
 
+
+    def test_day_level_time_uncertainty_cannot_corroborate_attacks(self):
+        from dataclasses import replace
+        first = replace(report("coarse_a", "navy"), time_uncertainty_minutes=1440)
+        second = replace(report("coarse_b", "mrcc"), time_uncertainty_minutes=1440)
+        result = correlate(JET, [first, second])
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(len(result.independent_groups), 2)
+        self.assertIn("corroboration_precision_insufficient", result.contradicting)
+        self.assertFalse(result.publication_allowed)
+
+    def test_continent_scale_geolocation_uncertainty_cannot_corroborate(self):
+        from dataclasses import replace
+        first = report("precise", "navy")
+        second = replace(report("coarse", "mrcc"), uncertainty_km=10000)
+        result = correlate(JET, [first, second])
+        self.assertEqual(result.status, "candidate")
+        self.assertIn("corroboration_precision_insufficient", result.contradicting)
+        self.assertEqual(len(result.source_evidence), 2)
+
+    def test_unrelated_coarse_report_does_not_veto_two_precise_origins(self):
+        from dataclasses import replace
+        first = report("precise_a", "navy")
+        second = report("precise_b", "mrcc")
+        coarse = replace(report("coarse", "third"), time_uncertainty_minutes=1440,
+                         uncertainty_km=10000)
+        result = correlate(JET, [first, coarse, second])
+        self.assertEqual(result.status, "corroborated")
+        self.assertEqual(len(result.source_evidence), 3)
+        self.assertIn("independent_source_groups", result.supporting)
+
+
 if __name__ == "__main__":
     unittest.main()
