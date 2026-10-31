@@ -544,3 +544,50 @@ collector ingestion or PostgreSQL verification was performed.
   independent corroboration and Oracle record matching**. No perpetrator
   attribution, no automatic merge with the unnamed Lavan Island projectile
   report (MSCIO 162/26), and no LIVE/PLAY promotion.
+
+
+## 31 October afternoon: precision guard and official-source follow-up
+
+- Staging-only maritime_attack_correlation.py now distinguishes independent
+  reporting origins from **precision-qualified** independent origins.
+  For attack/explosion/collision/piracy claims, an original report with event
+  time uncertainty over 180 minutes cannot contribute to automatic
+  corroboration. For sinking claims, the limit is 360 minutes. A claim with
+  coordinates but location uncertainty over 250 km also cannot contribute
+  to automatic corroboration. These are **promotion safeguards**, not
+  assertions that a broad report is false; such claims remain visible in
+  source evidence and may be reviewed manually. Missing incident coordinates
+  remain missing, not inferred from AIS.
+- Three new regression tests cover two day-level reports, one continent-scale
+  coordinate uncertainty, and two precise reports accompanied by an
+  imprecise third. CI status and Oracle runtime verification must be checked
+  separately; neither a production deploy nor database migration is implied.
+- **MSCIO 158/26** (https://mscio.eu/alerts/194) is accessible publicly:
+  published on the site 2026-10-29 18:57, timezone of the displayed clock
+  not independently verified; reported event 2026-10-29T16:00:00Z, an
+  unidentified tanker hit by an unknown projectile during an outbound Strait
+  of Hormuz transit. No injuries or environmental impact reported at the
+  time of the alert. This likely corresponds to **UKMTO 186-26**, but the
+  primary UKMTO PDF and shared reporting lineage were not independently
+  checked in this pass. Treat as a **single-chain candidate**, not two
+  independent confirmations. Vessel IMO, MMSI, coordinates, actor and
+  SeaCommons receipt timestamp remain unknown.
+- **MSCIO 160/26** (https://mscio.eu/alerts/196) remains a negative
+  classification control: the 30 October Gulf of Aden armed-skiff approach
+  involved neither shots fired nor attempted boarding; retain suspicious
+  activity, not attack.
+- **MARAD 2026-015**
+  (https://www.maritime.dot.gov/msci/2026-015-global-us-maritime-advisory-updates-resources-and-contacts)
+  explicitly warns that AIS can be manipulated, spoofed or disrupted and
+  recommends independent position verification. This supports treating
+  AIS gap/sudden stop and AIS position conflict as **context only**, not
+  evidence of hostile causation or actor attribution.
+- MSCIO site availability was verified via direct public alert pages.
+  Terms at https://mscio.eu/terms-of-service/ restrict third-party
+  republication; no text mirroring or bulk redistribution is authorized by
+  this research. The alert page clock is **not** the SeaCommons collector
+  receipt time, and therefore does not measure ingestion latency.
+- Oracle PostgreSQL audit remains blocked by Desktop Commander quota:
+  remote MCP reported **0% of calls left this month**. No database queries
+  were executed. No new VM cron, timer, scheduled job, data mutation or
+  production deployment was made.
