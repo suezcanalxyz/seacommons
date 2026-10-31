@@ -20,7 +20,7 @@ def _canonical_authority_key(value: str) -> str:
     Conservative alias merging can withhold corroboration, but cannot create
     additional supposedly independent origins from formatting differences.
     """
-    return re.sub(r"[\\s_-]+", " ", value.strip().casefold())
+    return re.sub(r"[\s_-]+", " ", value.strip().casefold())
 
 
 def has_distinct_independence_groups(groups: object) -> bool:
