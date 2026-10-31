@@ -1,3 +1,5 @@
+import pytest
+
 from core.intel.macro_drift import spatial_prior_for_event
 from core.intel.store import IntelEvent
 
@@ -30,3 +32,52 @@ def test_text_clue_roles_distinguish_departure_from_notified_authority():
     clues = location_clues("Boat departed from Sfax. We informed the Malta coast guard.")
     assert any(c["place"] == "sfax" and c["role"] == "possible_departure" for c in clues)
     assert any(c["place"] == "malta" and c["role"] == "authority_notified" for c in clues)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (False, False),
+        ("false", False),
+        ("False", False),
+        ("0", False),
+        ("no", False),
+        ("", False),
+        (None, False),
+        ({"value": True}, False),
+        (True, True),
+        ("true", True),
+        ("YES", True),
+        ("1", True),
+        (1, True),
+    ],
+)
+def test_alarm_phone_distress_metadata_requires_explicit_positive(value, expected):
+    """A string 'false' must not publish a humanitarian macro search area."""
+    polygon = {"type": "Polygon", "coordinates": [
+        [[12, 34], [13, 34], [12, 35], [12, 34]],
+    ]}
+    event = IntelEvent(
+        source="alarm_phone", type="twitter", title="Near Lampedusa",
+        metadata={"is_distress": value, "area_geojson": polygon},
+    )
+    prior = spatial_prior_for_event(event)
+    assert prior["candidate"] is expected
+    assert prior["physical_drift_computed"] is False
+
+
+@pytest.mark.parametrize("value", ["false", "0", "no", {"value": True}])
+def test_drift_watchdog_excludes_false_or_ambiguous_distress(monkeypatch, value):
+    """Read-only reconciliation must not count a serialized false distress."""
+    from core.intel.drift_watchdog import reconcile
+    from core.intel.store import intel_store
+
+    event = IntelEvent(
+        id="sat-assoc-test-watchdog-negative", source="alarm_phone",
+        type="twitter", title="Routine update", metadata={"is_distress": value},
+    )
+    monkeypatch.setattr(intel_store, "persisted_events", lambda **kwargs: [event])
+    report = reconcile(launch=False, limit=1)
+    assert report["candidates"] == 0
+    assert report["area_prior"] == 0
+    assert report["launched"] == 0

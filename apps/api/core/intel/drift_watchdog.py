@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from core.intel.macro_drift import source_is_alarm_phone, spatial_prior_for_event
+from core.intel.macro_drift import explicit_distress_flag, source_is_alarm_phone, spatial_prior_for_event
 
 SOURCE_VARIANTS = ["alarm_phone", "Alarm Phone", "alarmphone", "@alarm_phone"]
 RETRY_AFTER = timedelta(minutes=30)
@@ -49,7 +49,7 @@ def reconcile(*, launch: bool = False, limit: int = 300) -> dict[str, int]:
     )}
     rows = intel_store.persisted_events(source_in=SOURCE_VARIANTS, max_age_days=2, limit=limit)
     for event in rows:
-        if not source_is_alarm_phone(event) or not event.metadata.get("is_distress"):
+        if not source_is_alarm_phone(event) or not explicit_distress_flag((event.metadata or {}).get("is_distress")):
             continue
         report["candidates"] += 1
         state = str(event.metadata.get("incident_lifecycle") or "").lower()

@@ -20,6 +20,19 @@ def source_is_alarm_phone(event: Any) -> bool:
     return identity.lower().lstrip("@").replace(" ", "").replace("_", "") == "alarmphone"
 
 
+def explicit_distress_flag(value: Any) -> bool:
+    """Accept only explicit positive distress metadata, never bool("false").
+
+    RSS and social adapters may serialize booleans as strings. Ambiguous
+    values must not create an operational Alarm Phone drift candidate.
+    """
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "1"}
+    return isinstance(value, int) and value == 1
+
+
 def location_clues(text: str) -> list[dict[str, str]]:
     """Extract source-language place roles with local context, never as certainty.
 
@@ -53,7 +66,7 @@ def spatial_prior_for_event(event: Any) -> dict[str, Any]:
     polygon = meta.get("area_geojson")
     valid = isinstance(polygon, dict) and polygon.get("type") in {"Polygon", "MultiPolygon"} and bool(polygon.get("coordinates"))
     return {
-        "candidate": source_is_alarm_phone(event) and bool(meta.get("is_distress")),
+        "candidate": source_is_alarm_phone(event) and explicit_distress_flag(meta.get("is_distress")),
         "geometry": polygon if valid else None,
         "location_evidence": "named_area_from_source_text" if valid else "no_geographic_area_resolved",
         "mentioned_places": [name for name, _, _ in matches][:20],
