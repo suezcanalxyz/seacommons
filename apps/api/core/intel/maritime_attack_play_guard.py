@@ -7,9 +7,20 @@ verification status. AIS gaps and counts of URLs are never independent proof.
 """
 from __future__ import annotations
 
+import re
+
 _ATTACK_FAMILIES = frozenset({
     "attack_episode", "maritime_attack_episode", "maritime_attack",
 })
+
+
+def _canonical_authority_key(value: str) -> str:
+    """Collapse cosmetic separators in source-authority labels, not report IDs.
+
+    Conservative alias merging can withhold corroboration, but cannot create
+    additional supposedly independent origins from formatting differences.
+    """
+    return re.sub(r"[\\s_-]+", " ", value.strip().casefold())
 
 
 def has_distinct_independence_groups(groups: object) -> bool:
@@ -22,7 +33,7 @@ def has_distinct_independence_groups(groups: object) -> bool:
         return False
     if any(not isinstance(group, str) or not group.strip() for group in groups):
         return False
-    return len({group.strip().casefold() for group in groups}) >= 2
+    return len({_canonical_authority_key(group) for group in groups}) >= 2
 
 
 def episode_corroborated_for_play(episode: object | None, *, independence_verified: bool = False) -> bool:
