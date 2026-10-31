@@ -550,7 +550,8 @@ def correlate(
         valid_ais_fixes.append(fix)
 
     nearest: tuple[float, float] | None = None
-    if subject.mmsi:
+    # A valid IMO match does not validate an unrelated/placeholder MMSI.
+    if _valid_mmsi(subject.mmsi):
         for claim in valid:
             if claim.lat is None or claim.lon is None:
                 continue
@@ -568,7 +569,8 @@ def correlate(
     # Contradictory AIS is not proof an attack did not occur: it may be
     # spoofed or replayed. Flag it and require human review instead.
     ais_spatial_conflict = False
-    if subject.mmsi:
+    # A valid IMO match does not validate an unrelated/placeholder MMSI.
+    if _valid_mmsi(subject.mmsi):
         for claim in valid:
             if claim.lat is None or claim.lon is None:
                 continue
@@ -589,7 +591,7 @@ def correlate(
     # Gap signals only add context if temporally proximate; never upgrade status.
     valid_gap_ids: set[str] = set()
     for gap in ais_gaps:
-        if gap.mmsi != subject.mmsi:
+        if not _valid_mmsi(subject.mmsi) or gap.mmsi != subject.mmsi:
             continue
         try:
             gap_time = _utc(gap.observed_at)
@@ -615,6 +617,9 @@ def correlate(
             "origin_report_id": claim.origin_report_id,
             "lineage_root": lineage_roots.get(claim.claim_id, claim.claim_id),
             "time_uncertainty_minutes": str(claim.time_uncertainty_minutes),
+            "lat": str(claim.lat) if claim.lat is not None else None,
+            "lon": str(claim.lon) if claim.lon is not None else None,
+            "uncertainty_km": str(claim.uncertainty_km),
             "occurred_at": _utc(claim.occurred_at).isoformat(),
             "published_at": (_utc(claim.published_at).isoformat()
                              if claim.published_at is not None else None),
