@@ -137,4 +137,11 @@ def test_generic_cargo_cluster_cannot_corroborate_distress() -> None:
 def test_embedded_triangulation_smoke_uses_responder_qualified_ais() -> None:
     # Keep the module's CLI smoke test exercised by pytest after SAR
     # specificity changes; a generic AIS cluster must no longer pass.
-    triangulation.test_triangulation()
+    original_store = triangulation.intel_store
+    try:
+        triangulation.test_triangulation()
+    finally:
+        # A failed assertion in the embedded test must not leak a scratch
+        # store into unrelated pytest cases.
+        triangulation.intel_store = original_store
+    assert triangulation.intel_store is original_store
