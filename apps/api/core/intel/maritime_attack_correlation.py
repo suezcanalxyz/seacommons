@@ -15,6 +15,8 @@ from typing import Sequence
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import ipaddress
 
+from core.intel.maritime_attack_play_guard import _canonical_authority_key
+
 
 @dataclass(frozen=True)
 class VesselRef:
@@ -334,7 +336,9 @@ def _independent_document_groups(
         # strings: casing/outer whitespace must not manufacture new origins.
         # Keep the original strings on IncidentClaim for the audit trail.
         origin = (claim.origin_report_id or "").strip().casefold()
-        group = claim.source_group.strip().casefold()
+        # Match the PLAY/DB audit equivalence class for cosmetic separators.
+        # Preserve the existing underscore-form group keys for callers.
+        group = _canonical_authority_key(claim.source_group).replace(" ", "_")
         url = _canonical_source_url(claim.source_url)
         if not origin or not group or not url:
             continue
