@@ -389,6 +389,12 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
         audit_source_rows = visible_db_rows + [
             row for row in scanned_rows if row.id not in prioritized_ids
         ]
+        # Explain why a persisted distress visible in Live can still be
+        # absent from the audit. These are aggregate counts only; no
+        # source text, IDs or coordinates are exposed by the endpoint.
+        visible_db_row_ids = {row.id for row in visible_db_rows}
+        visible_service_mismatch_ids: set[str] = set()
+        visible_outside_retention_ids: set[str] = set()
         candidates = []
         for row in audit_source_rows:
             event = IntelEvent(
@@ -399,18 +405,31 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             )
             classification = classify_service(event)
             if classification.service != "humanitarian":
+                if row.id in visible_db_row_ids:
+                    visible_service_mismatch_ids.add(row.id)
                 continue
             # Audit all recent cases, including resolved ones: a resolved
             # incident with a lingering drift is precisely an anomaly that
             # the truth table must be able to detect. The stricter active-only
             # window would silently discard it before DRIFT_AFTER_RESOLUTION.
             if not is_within_live_retention_window(event, now=now):
+                if row.id in visible_db_row_ids:
+                    visible_outside_retention_ids.add(row.id)
                 continue
             candidates.append((row, event, classification))
 
         if len(candidates) > max(1, limit):
             audit_scan_truncated = True
             candidates = candidates[:max(1, limit)]
+        visible_audited_db_ids = {
+            row.id for row, _, _ in candidates if row.id in visible_db_row_ids
+        }
+        visible_omitted_by_case_limit_count = len(
+            visible_db_row_ids
+            - visible_audited_db_ids
+            - visible_service_mismatch_ids
+            - visible_outside_retention_ids
+        )
 
         # One bounded query replaces a separate DriftResultDB query per
         # humanitarian case, reducing DB round trips under Oracle CPU pressure.
@@ -514,6 +533,15 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
         # evidence that a published incident or source observation was lost.
         "live_visible_ids_without_persisted_row_count": (
             visible_ids_without_persisted_row_count
+        ),
+        "live_visible_db_rows_excluded_by_service_count": len(
+            visible_service_mismatch_ids
+        ),
+        "live_visible_db_rows_outside_retention_count": len(
+            visible_outside_retention_ids
+        ),
+        "live_visible_db_rows_omitted_by_case_limit_count": (
+            visible_omitted_by_case_limit_count
         ),
         # Nonzero means the bounded source scan cannot certify that every
         # same-source follow-up was considered; do not imply complete audit.
