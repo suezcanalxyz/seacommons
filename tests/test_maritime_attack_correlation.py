@@ -629,6 +629,35 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertEqual(result.independent_groups, ("mrcc", "navy"))
 
 
+    def test_placeholder_mmsi_cannot_launder_ais_context_through_valid_imo(self):
+        # A documented attack with a valid IMO cannot use a placeholder
+        # MMSI to associate unrelated AIS fixes or gap signals.
+        subject = VesselRef(imo=JET.imo, mmsi="000000000", name=JET.name)
+        claims = [report("mod", "navy", subject), report("mrcc", "mrcc", subject)]
+        result = correlate(
+            subject, claims,
+            ais_fixes=[AISFix("000000000", dt(28, 10), 43.25, 28.8)],
+            ais_gaps=[AISGap("000000000", dt(28, 10), "placeholder-gap")],
+        )
+        self.assertEqual(result.status, "corroborated")
+        self.assertIsNone(result.nearest_ais_km)
+        self.assertEqual(result.related_gap_ids, ())
+        self.assertNotIn("ais_spatiotemporal_context_not_attack_proof", result.supporting)
+        self.assertNotIn("proximate_ais_gap_context_not_attack_proof", result.supporting)
+        self.assertFalse(result.publication_allowed)
+
+    def test_source_evidence_preserves_spatial_uncertainty_without_ais_inference(self):
+        claim = report("mod", "navy")
+        result = correlate(JET, [claim])
+        evidence = result.source_evidence[0]
+        self.assertEqual(evidence["lat"], "43.25")
+        self.assertEqual(evidence["lon"], "28.8")
+        self.assertEqual(evidence["uncertainty_km"], "5.0")
+        self.assertEqual(evidence["time_uncertainty_minutes"], "0.0")
+        self.assertEqual(result.status, "candidate")
+        self.assertFalse(result.publication_allowed)
+
+
 class MaritimeAttackLineageTests(unittest.TestCase):
     """Lineage input is a read-only projection of canonical lineage_edges."""
 
