@@ -158,6 +158,51 @@ class MaritimeAttackOutcomeTests(unittest.TestCase):
                 self.assertIn("outcome_precision_insufficient", result.reason_codes)
                 self.assertFalse(result.publication_allowed)
 
+    def test_overlapping_attack_and_sinking_intervals_stay_candidates(self):
+        # Both event clocks may be accurate within their stated uncertainty,
+        # yet sinking could precede the attack. A reviewed link is not proof
+        # of temporal ordering.
+        attack = replace(ATTACK, time_uncertainty_minutes=60)
+        sinking = replace(
+            SINKING, occurred_at=at(28, 10),
+            published_at=at(28, 11), received_at=at(28, 12),
+            time_uncertainty_minutes=60,
+        )
+        result = evaluate(
+            attack=attack, sinking=sinking,
+            attack_corr=corr(attack), sinking_corr=corr(sinking),
+        )
+        self.assertEqual(result.status, "candidate_update")
+        self.assertIn("outcome_temporal_order_ambiguous", result.reason_codes)
+        self.assertFalse(result.publication_allowed)
+
+    def test_uncertain_but_strictly_ordered_outcome_can_be_correlated(self):
+        attack = replace(ATTACK, time_uncertainty_minutes=15)
+        sinking = replace(
+            SINKING, occurred_at=at(28, 12),
+            published_at=at(28, 13), received_at=at(28, 14),
+            time_uncertainty_minutes=15,
+        )
+        result = evaluate(
+            attack=attack, sinking=sinking,
+            attack_corr=corr(attack), sinking_corr=corr(sinking),
+        )
+        self.assertEqual(result.status, "corroborated_update")
+        self.assertNotIn("outcome_temporal_order_ambiguous", result.reason_codes)
+        self.assertFalse(result.publication_allowed)
+
+    def test_followup_boundary_uncertainty_cannot_auto_confirm(self):
+        # Nominal sinking is within 14 days, but the upper time bound is not.
+        sinking = replace(
+            SINKING, occurred_at=at(11, 9, 11),
+            published_at=at(11, 12, 11), received_at=at(11, 13, 11),
+            time_uncertainty_minutes=90,
+        )
+        result = evaluate(sinking=sinking, sinking_corr=corr(sinking))
+        self.assertEqual(result.status, "candidate_update")
+        self.assertIn("outcome_followup_window_ambiguous", result.reason_codes)
+        self.assertFalse(result.publication_allowed)
+
     def test_no_review_is_rejected(self):
         self.assertEqual(evaluate(link=replace(REVIEW, verified=False)).status, "rejected")
         self.assertEqual(evaluate(link=replace(REVIEW, reviewed_by="")).status, "rejected")
