@@ -107,7 +107,10 @@ def compute_anomaly_flags(
     if len(completed) > 1:
         flags.append("MULTIPLE_CURRENT_DRIFTS")
 
-    if lifecycle in ("resolved", "archived") and drift_visible:
+    # An archived distress is unresolved: silence is not a rescue outcome.
+    # Keep its ARCHIVED_BY_SILENCE_ONLY flag, but do not claim a drift
+    # continued *after resolution* without an actual resolved lifecycle.
+    if lifecycle == "resolved" and drift_visible:
         flags.append("DRIFT_AFTER_RESOLUTION")
 
     # PostgreSQL TIMESTAMP WITHOUT TIME ZONE commonly returns naive UTC
