@@ -131,10 +131,36 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
         self.assertEqual(result.status, "candidate")
         self.assertIn("different_incident_kind:sinking", result.contradicting)
 
-    def test_duplicate_claim_ids_do_not_count_twice(self):
-        result = correlate(JET, [report("one", "mod"), report("one", "another")])
+    def test_identical_duplicate_claim_ids_do_not_count_twice(self):
+        original = report("one", "mod")
+        result = correlate(JET, [original, original])
         self.assertEqual(result.status, "candidate")
         self.assertEqual(result.claim_ids, ("one",))
+
+    def test_conflicting_duplicate_claim_provenance_fails_closed_regardless_of_order(self):
+        from dataclasses import replace
+        original = report("same", "navy")
+        forged = replace(original, source_group="different_authority",
+                         source_url="https://example.org/forged",
+                         origin_report_id="different_report")
+        independent = report("independent", "mrcc")
+        for claims in ((original, independent, forged),
+                       (forged, independent, original)):
+            with self.subTest(first=claims[0].source_group):
+                result = correlate(JET, claims)
+                self.assertEqual(result.status, "no_match")
+                self.assertEqual(result.claim_ids, ())
+                self.assertIn("conflicting_duplicate_claim_id:same", result.contradicting)
+                self.assertFalse(result.publication_allowed)
+
+    def test_conflicting_duplicate_claim_time_fails_closed(self):
+        from dataclasses import replace
+        original = report("same", "navy")
+        altered = replace(original, occurred_at=dt(28, 12))
+        independent = report("independent", "mrcc")
+        result = correlate(JET, [original, independent, altered])
+        self.assertEqual(result.status, "no_match")
+        self.assertIn("conflicting_duplicate_claim_id:same", result.contradicting)
 
     def test_name_only_reports_do_not_prove_identity(self):
         name_only = VesselRef(name="CONTSHIP JET")
