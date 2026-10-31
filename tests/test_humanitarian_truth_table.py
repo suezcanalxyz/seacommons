@@ -205,6 +205,32 @@ def test_run_humanitarian_truth_table_audit_finds_a_real_open_case_dropped_from_
     assert "OPEN_CASE_DROPPED_FROM_LIVE" in match.anomaly_flags
 
 
+def test_truth_table_keeps_recent_resolved_cases_in_audit():
+    """A resolved report remains auditable for a lingering published drift."""
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+
+    event_id = f"pytest-resolved-audit-{uuid.uuid4()}"
+    now = datetime.now(timezone.utc)
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=event_id, timestamp_utc=now.isoformat(), type="distress", severity="low",
+            lat=35.5, lon=14.1, title="Rescue completed",
+            text="All 47 people aboard the Zenobia near Lampedusa were rescued and are now safe.",
+            source=f"pytest-resolved-source-{uuid.uuid4()}",
+            meta={"is_distress": True},
+            created_at=now.replace(tzinfo=None), maritime_domain="sar",
+        ))
+
+    result = run_humanitarian_truth_table_audit(limit=500)
+    match = next((row for row in result["rows"] if row.candidate_incident_id == event_id), None)
+    assert match is not None, "Recent resolved cases must not disappear before anomaly checks"
+    assert match.lifecycle == "resolved"
+
+
 def test_humanitarian_truth_table_route_exposes_the_real_audit() -> None:
     """docs/updates.md P0.1: the real GET /api/v1/audit/humanitarian-
     truth-table route, exercised end to end via FastAPI, not just the
@@ -285,6 +311,40 @@ def test_batch_drift_index_handles_overlapping_prefixed_case_ids():
 def test_batch_drift_index_empty_case_set():
     from core.intel.humanitarian_truth_table import index_drift_summaries
     assert index_drift_summaries([], []) == {}
+
+
+def test_audit_followup_preserves_source_for_resolution_and_rejects_other_sources():
+    """A DB follow-up must retain its source or the lifecycle resolver ignores it."""
+    from types import SimpleNamespace
+
+    from core.intel.humanitarian_truth_table import _audit_followup_event
+    from core.intel.lifecycle import distress_lifecycle, has_resolution_signal
+    from core.intel.store import IntelEvent
+
+    original = IntelEvent(
+        id="boat01", type="twitter", source="Alarm Phone",
+        text="🆘 47 people in distress aboard the vessel Zenobia near Lampedusa.",
+        timestamp_utc="2026-07-29T05:00:00+00:00",
+    )
+    row = SimpleNamespace(
+        id="boat01-followup", source="Alarm Phone",
+        timestamp_utc="2026-07-29T09:00:00+00:00",
+        title="Alarm Phone update",
+        text="Update: all 47 people aboard the Zenobia near Lampedusa were rescued and are now safe.",
+        meta={},
+    )
+    followup = _audit_followup_event(row)
+    now = datetime(2026, 7, 29, 10, 0, tzinfo=timezone.utc)
+    assert followup.source == original.source
+    assert has_resolution_signal(original, [followup], now=now)
+    assert distress_lifecycle(original, now=now, same_source=[followup]) == "resolved"
+
+    # A similarly worded report from a different NGO is not case closure.
+    other_source = _audit_followup_event(SimpleNamespace(**{
+        **vars(row), "source": "Sea-Watch",
+    }))
+    assert not has_resolution_signal(original, [other_source], now=now)
+    assert distress_lifecycle(original, now=now, same_source=[other_source]) == "active"
 
 
 def test_same_source_followup_batch_filters_source_self_and_lookback():

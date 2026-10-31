@@ -29,7 +29,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from core.intel.store import IntelEvent
 
 # Anomaly flags docs/updates.md P0.1 names that this module cannot yet
 # compute with today's schema, and the packet (already scheduled in this
@@ -213,6 +216,25 @@ def index_drift_summaries(
     return indexed
 
 
+def _audit_followup_event(row: Any) -> "IntelEvent":
+    """Keep the persisted source identity when passing follow-ups to lifecycle.
+
+    has_resolution_signal deliberately rejects a follow-up whose source does
+    not match the original case. Dropping IntelEventDB.source during the audit
+    projection silently disables all cross-post resolution checks.
+    """
+    from core.intel.store import IntelEvent
+
+    return IntelEvent(
+        id=row.id,
+        source=row.source,
+        timestamp_utc=row.timestamp_utc,
+        text=row.text or "",
+        title=row.title or "",
+        metadata=dict(row.meta or {}),
+    )
+
+
 def index_recent_same_source_followups(
     case_rows: list[Any], source_rows: list[Any], *,
     lookback_days: int = 14, max_per_case: int = 50,
@@ -257,7 +279,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
 
     from core.db.models import DriftResultDB, IntelEventDB
     from core.db.session import session_scope
-    from core.intel.lifecycle import distress_lifecycle, is_within_live_window
+    from core.intel.lifecycle import distress_lifecycle, is_within_live_retention_window
     from core.intel.service_taxonomy import classify_service
     from core.intel.source_registry import source_registry
     from core.intel.store import IntelEvent
@@ -293,7 +315,11 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             classification = classify_service(event)
             if classification.service != "humanitarian":
                 continue
-            if not is_within_live_window(event, now=now):
+            # Audit all recent cases, including resolved ones: a resolved
+            # incident with a lingering drift is precisely an anomaly that
+            # the truth table must be able to detect. The stricter active-only
+            # window would silently discard it before DRIFT_AFTER_RESOLUTION.
+            if not is_within_live_retention_window(event, now=now):
                 continue
             candidates.append((row, event, classification))
 
@@ -336,11 +362,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
 
         for row, event, classification in candidates:
             same_source = [
-                IntelEvent(
-                    id=other.id, timestamp_utc=other.timestamp_utc,
-                    text=other.text or "", title=other.title,
-                    metadata=dict(other.meta or {}),
-                )
+                _audit_followup_event(other)
                 for other in followups_by_case[row.id]
             ]
             lifecycle = distress_lifecycle(event, now=now, same_source=same_source)
