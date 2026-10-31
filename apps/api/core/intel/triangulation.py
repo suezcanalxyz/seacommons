@@ -231,7 +231,7 @@ def test_triangulation() -> None:
     # Test 2: an AIS rescue cluster near the same place/time corroborates it.
     ais = make(
         "ais_spike", 35.505, 12.605, plus_20min_ts,
-        spike_type="rescue_cluster", org="Test SAR",
+        spike_type="rescue_cluster", vessel_role="SAR", org="Test SAR",
     )
     ais.linked_mmsi = "123456789"
     result = evaluate(solo)
