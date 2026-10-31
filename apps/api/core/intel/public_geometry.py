@@ -15,6 +15,7 @@ from core.domain.live_contracts import LocationPrecision
 from core.intel import landmask
 from core.intel.location_evidence import COARSE_COORDINATE_SOURCES
 from core.intel.store import IntelEvent
+from core.intel.search_area_geometry import valid_search_area_geometry
 
 
 def public_geometry_and_precision(event: IntelEvent) -> tuple[dict | None, str]:
@@ -35,7 +36,7 @@ def public_geometry_and_precision(event: IntelEvent) -> tuple[dict | None, str]:
     area = event.metadata.get("area_geojson")
     coordinate_source = str(event.metadata.get("coordinate_source") or "").lower()
     coordinate_is_coarse = coordinate_source in COARSE_COORDINATE_SOURCES
-    if area and (coordinate_is_coarse or event.lat is None or event.lon is None):
+    if valid_search_area_geometry(area) and (coordinate_is_coarse or event.lat is None or event.lon is None):
         confidence = str(event.metadata.get("area_confidence") or LocationPrecision.AREA)
         try:
             precision = LocationPrecision(confidence).value
