@@ -128,8 +128,23 @@ def reconcile_reported_sinking(
         if _km(attack.lat, attack.lon, sinking.lat, sinking.lon) > max_travel_km:
             return _rejected(link, "implausible_vessel_displacement")
 
+    # A reviewed causal link is not a substitute for independently complete
+    # event/source chronology. Even if upstream status labels say corroborated,
+    # incomplete publication/receipt clocks or coarse event precision must
+    # keep the outcome in operator-review candidate state. This matches the
+    # pure correlator's fail-closed provenance and precision gates.
+    chronology_complete = all(
+        claim.published_at is not None and claim.received_at is not None
+        for claim in (attack, sinking)
+    )
+    precision_qualified = all(
+        claim.time_uncertainty_minutes <= (180 if claim.kind == "attack" else 360)
+        and (claim.lat is None or claim.uncertainty_km <= 250)
+        for claim in (attack, sinking)
+    )
     corroborated = (attack_correlation.status == "corroborated"
-                    and sinking_correlation.status == "corroborated")
+                    and sinking_correlation.status == "corroborated"
+                    and chronology_complete and precision_qualified)
     evidence: list[dict[str, str | None]] = []
     for claim in (attack, sinking):
         evidence.append({
@@ -150,6 +165,10 @@ def reconcile_reported_sinking(
         "no_second_attack_created",
         "ais_not_causal_evidence",
     ]
+    if not chronology_complete:
+        reasons.append("outcome_chronology_incomplete")
+    if not precision_qualified:
+        reasons.append("outcome_precision_insufficient")
     if not corroborated:
         reasons.append("independent_corroboration_incomplete")
     reasons.append("publication_requires_separate_review")
