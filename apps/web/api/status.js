@@ -103,7 +103,7 @@ function check(id, status, latencyMs, detail) {
 
 function nonnegativeCount(value) {
   if (typeof value !== 'number' && typeof value !== 'string') return null;
-  if (typeof value === 'string' && !/^\\d+$/.test(value.trim())) return null;
+  if (typeof value === 'string' && !/^[0-9]+$/.test(value.trim())) return null;
   const count = Number(value);
   return Number.isSafeInteger(count) && count >= 0 ? count : null;
 }
