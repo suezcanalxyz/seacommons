@@ -575,3 +575,49 @@ def test_visible_humanitarian_case_ids_handles_context_only_feed():
     assert visible_humanitarian_case_ids([
         {"properties": {"id": "intel:context-only", "kind": "context"}},
     ]) == set()
+
+
+def test_visible_distress_survives_unrelated_news_saturation(monkeypatch):
+    """A visible distress must be audited even beyond the mixed scan cap."""
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+    import core.live.feed as live_feed
+
+    now = datetime.now(timezone.utc)
+    token = uuid.uuid4().hex[:12]
+    case_id = f"pytest-visible-priority-{token}"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=case_id, timestamp_utc=now.isoformat(), type="distress",
+            severity="high", lat=35.5, lon=14.1,
+            title="Distress reported", text="Boat in distress",
+            source=f"pytest-priority-{token}", meta={"is_distress": True},
+            created_at=(now - timedelta(minutes=1)).replace(tzinfo=None),
+            maritime_domain="sar",
+        ))
+        for i in range(12):
+            db.add(IntelEventDB(
+                id=f"pytest-priority-news-{token}-{i}",
+                timestamp_utc=now.isoformat(), type="news", severity="low",
+                title="Unrelated market report", text="Unrelated report",
+                source=f"pytest-priority-news-{token}",
+                meta={"service": "maritime", "lane": "intelligence"},
+                created_at=now.replace(tzinfo=None), maritime_domain="grey_zone",
+            ))
+
+    monkeypatch.setattr(live_feed, "public_signal_collection", lambda **_kw: {
+        "features": [
+            {"properties": {"id": f"intel:{case_id}", "kind": "distress"}},
+            {"properties": {"id": "intel:context", "kind": "context"}},
+        ],
+    })
+    result = run_humanitarian_truth_table_audit(limit=1)
+    assert [row.candidate_incident_id for row in result["rows"]] == [case_id]
+    assert result["live_visible_feature_count"] == 1
+    assert result["live_visible_features_with_audit_row_count"] == 1
+    assert result["live_visible_features_without_audit_row_count"] == 0
+    assert result["live_visible_db_rows_recovered_beyond_scan_count"] >= 1
+    assert result["live_visible_ids_without_persisted_row_count"] == 0
