@@ -10,7 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 
-from core.intel.maritime_attack_play_guard import has_distinct_independence_groups
+from core.intel.maritime_attack_play_guard import (
+    _canonical_authority_key, has_distinct_independence_groups,
+)
 
 from core.intel.maritime_attack_correlation import (
     Correlation, IncidentClaim, VesselRef, _canonical_source_url,
@@ -51,6 +53,42 @@ def _rejected(link: ReviewedOutcomeLink, reason: str) -> OutcomeAssociation:
     return OutcomeAssociation(
         "rejected", link.attack_episode_id, "", "", "",
         (reason,),
+    )
+
+
+def _claim_provenance_matches_correlation(
+    claim: IncidentClaim, correlation: Correlation,
+) -> bool:
+    """Fail closed when a cached corroboration describes a different document.
+
+    A status label and two group names are insufficient if the original claim
+    is absent, duplicated or differs from its immutable correlation evidence.
+    This check never treats an AIS observation as documentary corroboration.
+    """
+    matches = [
+        evidence for evidence in correlation.source_evidence
+        if isinstance(evidence, dict)
+        and evidence.get("claim_id") == claim.claim_id
+    ]
+    if len(matches) != 1:
+        return False
+    evidence = matches[0]
+    return (
+        _canonical_source_url(str(evidence.get("source_url") or ""))
+            == _canonical_source_url(claim.source_url)
+        and _canonical_authority_key(str(evidence.get("source_group") or ""))
+            == _canonical_authority_key(claim.source_group)
+        and str(evidence.get("origin_report_id") or "").strip().casefold()
+            == str(claim.origin_report_id or "").strip().casefold()
+        and evidence.get("occurred_at") == _utc(claim.occurred_at).isoformat()
+        and evidence.get("published_at") == (
+            _utc(claim.published_at).isoformat()
+            if claim.published_at is not None else None
+        )
+        and evidence.get("received_at") == (
+            _utc(claim.received_at).isoformat()
+            if claim.received_at is not None else None
+        )
     )
 
 
@@ -165,9 +203,16 @@ def reconcile_reported_sinking(
         has_distinct_independence_groups(correlation.independent_groups)
         for correlation in (attack_correlation, sinking_correlation)
     )
+    provenance_consistent = all(
+        _claim_provenance_matches_correlation(claim, correlation)
+        for claim, correlation in (
+            (attack, attack_correlation), (sinking, sinking_correlation)
+        )
+    )
     corroborated = (attack_correlation.status == "corroborated"
                     and sinking_correlation.status == "corroborated"
                     and independent_groups_complete
+                    and provenance_consistent
                     and chronology_complete and precision_qualified
                     and sequence_certain and followup_certain)
     evidence: list[dict[str, str | None]] = []
@@ -200,6 +245,8 @@ def reconcile_reported_sinking(
         reasons.append("outcome_followup_window_ambiguous")
     if not independent_groups_complete:
         reasons.append("outcome_independent_groups_insufficient")
+    if not provenance_consistent:
+        reasons.append("outcome_correlation_provenance_mismatch")
     if not corroborated:
         reasons.append("independent_corroboration_incomplete")
     reasons.append("publication_requires_separate_review")
