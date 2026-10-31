@@ -434,7 +434,20 @@ def correlate(
                 continue
             compatible_peers.append(peer)
         independent_groups = _independent_document_groups(compatible_peers, lineage_roots)
+        # A larger cluster of vague or unclocked reports must not displace
+        # two independent, precise primary observations of another episode.
+        # Use the same publication/receipt and uncertainty gates as the
+        # final corroboration decision when selecting a candidate anchor.
+        max_precision_minutes = 360 if possible.kind == "sinking" else 180
+        qualified_peers = [
+            peer for peer in compatible_peers
+            if peer.published_at is not None and peer.received_at is not None
+            and peer.time_uncertainty_minutes <= max_precision_minutes
+            and (peer.lat is None or peer.uncertainty_km <= 250)
+        ]
+        qualified_groups = _independent_document_groups(qualified_peers, lineage_roots)
         score = (
+            len(qualified_groups),
             len(independent_groups),
             len(compatible_peers),
             -possible.time_uncertainty_minutes,
