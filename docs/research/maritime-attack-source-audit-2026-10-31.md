@@ -265,3 +265,47 @@ collector ingestion or PostgreSQL verification was performed.
   monthly calls. This is a documented access limitation, not evidence of a
   database outage. No historical record, scheduler or production service
   was modified. Full CI for these new commits is not yet certified.
+
+## 31 October, chronology gate and primary-source refresh (staging only)
+
+- **Code safety:** the SQLAlchemy-backed single-episode and batch provenance
+  audits now require both `observed_at` and `received_at` for every
+  canonical `source_observations` row. A missing pair fails closed with
+  `missing_observation_chronology`; a missing half remains
+  `invalid_observation_chronology`. Legacy pure fixture callers can opt out
+  explicitly; the database adapters always enable the strict gate. No schema
+  changes, database writes, or production deployment. Four regressions added.
+- **MSCIO 151/26**: reported attack at **2026-10-21T01:45:00Z**, approximately
+  **11 NM west of Bukha, Oman**, Strait of Hormuz. A tanker was reportedly
+  struck by an unidentified projectile; a fire was extinguished and the vessel
+  was at anchor with crew safe. Source:
+  https://mscio.eu/alerts/187 . Vessel IMO/MMSI and independent original
+  reporting are not established. This is an October retrospective lead, not
+  a corroborated database record. Publication is displayed as 21 October
+  11:26 a.m. without a reliably established timezone: no UTC source latency
+  is inferred.
+- **MSCIO 160/26**: reported 30 October **02:25 UTC**, Gulf of Aden,
+  **11°57.4'N 045°04.5'E**. The source explicitly reports **no shots fired**
+  and **no attempted boarding**. Keep `suspicious_activity`, not
+  `maritime_attack`: https://mscio.eu/alerts/196 .
+- **MSCIO 162/26**: 30 October **18:00 UTC**, 40 NM south of Lavan Island,
+  unnamed vessel struck by unknown projectile, fire onboard, crew safe.
+  https://mscio.eu/alerts/198 . Do not treat a UKMTO copy of the same
+  original vessel report as an independent corroboration.
+- **CONTSHIP JET**: original VTMIS NAVWARN 768/26 remains accessible at
+  https://www.vtmis.bg/wx/wx_eng.htm . IMO `9348625`, sinking
+  **2026-10-28T20:30:00Z**, wreck at **43.130000 N, 28.756000 E**.
+  Preserve this as an outcome of the 10:00 UTC attack, not a second attack.
+  AIS positions and the operational database were **not** checked.
+- **Source reuse:** the Bulgarian Ministry of Defence site states that
+  publicly available information may be copied and redistributed with
+  explicit source attribution (footer of https://www.mod.bg/news9641).
+  UKMTO terms explicitly refer to the Open Government Licence:
+  https://www.ukmto.org/terms-and-conditions .
+  MSCIO content redistribution remains subject to its own terms; public
+  availability alone is not a reuse licence. VTMIS automated reuse remains
+  unverified.
+- **Access/latency:** the Oracle PostgreSQL connector was previously blocked
+  by exhausted quota. No Oracle SQL was executed during this run. Provider
+  publication times are not SeaCommons collector-receipt times; collector
+  latency and LIVE/PLAY end-to-end behavior remain unmeasured.
