@@ -276,6 +276,28 @@ def source_followup_fetch_limit(case_count: int, *, max_per_case: int = 50) -> i
     return min(5000, max(0, case_count) * (max_per_case + 1))
 
 
+def visible_humanitarian_drift_event_ids(features: list[dict[str, Any]]) -> set[str]:
+    """Match drift geometries by *origin incident*, never by geometry ID.
+
+    Public physical forecasts carry `intel_event_id`; inferred macro search
+    areas carry `event_id`. Neither contract requires `properties.id`.
+    Conflicting origin keys are ambiguous and must not mark a case as having
+    a published drift. This is a diagnostic only, not a publication decision.
+    """
+    event_ids: set[str] = set()
+    for feature in features:
+        props = feature.get("properties") or {}
+        origins = {
+            str(props[key]).strip()
+            for key in ("event_id", "intel_event_id")
+            if props.get(key) and str(props[key]).strip()
+        }
+        canonical = {origin.removeprefix("intel:") for origin in origins}
+        if len(canonical) == 1:
+            event_ids.add(next(iter(canonical)))
+    return event_ids
+
+
 def visible_humanitarian_case_ids(features: list[dict[str, Any]]) -> set[str]:
     """Select actual distress markers, not Humanitarian context observations.
 
@@ -344,9 +366,9 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
     signals = public_signal_collection(limit=500, days=30)
     visible_signal_ids = visible_humanitarian_case_ids(signals.get("features", []))
     drift_collection = public_drift_collection(limit=200)
-    visible_drift_event_ids = {
-        str((f.get("properties") or {}).get("id") or "") for f in drift_collection.get("features", [])
-    }
+    visible_drift_event_ids = visible_humanitarian_drift_event_ids(
+        drift_collection.get("features", [])
+    )
 
     # The first N database rows are not necessarily Humanitarian: AIS/news
     # traffic can displace every distress from a flat limit(N) audit scan.
