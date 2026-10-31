@@ -51,7 +51,7 @@ def test_gfw_sar_skips_invalid_rows_without_losing_valid_detections(monkeypatch)
     assert len(found) == 2
     assert [(d["lat"], d["lon"]) for d in found] == [(35.2, 14.1), (35.3, 14.2)]
     assert [d["timestamp"] for d in found] == [
-        "2026-10-30T12:00:00+00:00", "2026-10-30T12:00:00+00:00",
+        "2026-10-30T12:00:00Z", "2026-10-30T12:00:00Z",
     ]
     assert found[0]["matched"] is True
     assert found[1]["matched"] is True
