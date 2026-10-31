@@ -213,6 +213,25 @@ def index_drift_summaries(
     return indexed
 
 
+def _audit_followup_event(row: Any) -> "IntelEvent":
+    """Keep the persisted source identity when passing follow-ups to lifecycle.
+
+    has_resolution_signal deliberately rejects a follow-up whose source does
+    not match the original case. Dropping IntelEventDB.source during the audit
+    projection silently disables all cross-post resolution checks.
+    """
+    from core.intel.store import IntelEvent
+
+    return IntelEvent(
+        id=row.id,
+        source=row.source,
+        timestamp_utc=row.timestamp_utc,
+        text=row.text or "",
+        title=row.title or "",
+        metadata=dict(row.meta or {}),
+    )
+
+
 def index_recent_same_source_followups(
     case_rows: list[Any], source_rows: list[Any], *,
     lookback_days: int = 14, max_per_case: int = 50,
@@ -336,11 +355,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
 
         for row, event, classification in candidates:
             same_source = [
-                IntelEvent(
-                    id=other.id, timestamp_utc=other.timestamp_utc,
-                    text=other.text or "", title=other.title,
-                    metadata=dict(other.meta or {}),
-                )
+                _audit_followup_event(other)
                 for other in followups_by_case[row.id]
             ]
             lifecycle = distress_lifecycle(event, now=now, same_source=same_source)
