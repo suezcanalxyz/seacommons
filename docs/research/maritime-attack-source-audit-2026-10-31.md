@@ -430,3 +430,52 @@ collector ingestion or PostgreSQL verification was performed.
   LIVE/PLAY endpoint certification, source ingestion or production deploy.
   GitHub CI for these newest staging commits was not confirmed at
   documentation time.
+
+## 31 October, 13:20 UTC follow-up: immutable-ID collision guard and live source availability
+
+- **Staging safety change:** `correlate()` now rejects a batch if two
+  `IncidentClaim` objects reuse one `claim_id` but disagree on any
+  field (e.g. authority, original report, event time, vessel identity).
+  Replaying the *identical* claim remains idempotent. This prevents
+  input order from deciding which purported immutable observation is
+  admitted to a multi-source attack cluster. Failure reason:
+  `conflicting_duplicate_claim_id:<id>`. This is a pure, fail-closed
+  staging guard: no database writes or LIVE/PLAY promotion.
+- **Regression coverage:** exact duplicate replay, conflicting original
+  authority/report metadata in both input orders, and conflicting event
+  timestamps with a second otherwise-independent report. The last two
+  are new negative tests. CI must be read from the workflow run for the
+  exact test commit, not inferred from earlier green commits.
+- **MSCIO source availability, 31 October:** the public index
+  https://mscio.eu/alerts/ currently rendered `Recent Incidents (0)`
+  in a text-only fetch while individual numbered alert URLs remained
+  accessible in previous source audits. **Do not interpret the index's
+  empty client-side listing as zero actual incidents.** The collector
+  needs an explicit HTML/API availability check and a fallback to
+  individual source URLs; no authenticated/private endpoint assumed.
+- **UKMTO source availability, 31 October:** the public index
+  https://www.ukmto.org/recent-incidents likewise rendered `0 reports`
+  in a text-only fetch. This is an extraction/access limitation, not
+  proof that warnings 188-26/189-26 or earlier reports were withdrawn.
+  Verify individual original warning PDFs before attributing lineage
+  or counting independent reports.
+- **MARAD current advisories, 31 October:**
+  https://www.maritime.dot.gov/msci-advisories publicly lists active
+  2026-010 (Indian Ocean piracy), 2026-011 (Persian Gulf/Hormuz),
+  2026-012 (Black Sea/Azov), 2026-013 (Red Sea), 2026-014
+  (worldwide influence), and 2026-015 (global resources). These are
+  regional/context advisories, **not incident-specific attack evidence**.
+  The website shows publication/effective dates, not SeaCommons
+  collection/receipt latency.
+- **Independent background:** IMO's 13 July statement on attacks on
+  Black Sea/Azov merchant ships is available at
+  https://www.imo.org/en/mediacentre/pressbriefings/pages/statement-on-attacks-in-black-sea-and-sea-of-azov.aspx .
+  It is strategic context, not a second CONTSHIP JET witness.
+- **Operational access:** Remote Desktop Commander account reported
+  `remote_calls_left_pct: 0` again. No Oracle queries were attempted.
+  The SQL audit of `intel_events`, `vessel_tracks`, `alert_events`,
+  `anomaly_events`, `humanitarian_incidents`, `forensic_events`,
+  `source_observations`, `lineage_edges`, and `maritime_episodes`
+  remains prepared but **unexecuted**. Collector latency and actual
+  LIVE/PLAY incident representation remain unknown. No new cron,
+  VM loop, production deployment, or historical record mutation.
