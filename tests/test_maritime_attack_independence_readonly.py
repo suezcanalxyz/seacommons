@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Fail-closed tests for canonical attack provenance, no database access."""
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from core.intel.maritime_attack_independence_readonly import (
@@ -120,6 +121,50 @@ class IndependenceAuditTests(unittest.TestCase):
         rows = [observation("mod", "mod", "1", "http://a.test/report?id=41"),
                 observation("mrcc", "mrcc", "2", "https://b.test/report?id=42")]
         self.assertEqual(audit(rows).reason, "missing_original_provenance")
+
+    def test_observation_future_of_receipt_is_not_corroboration(self):
+        a = observation("mod", "navy", "one")
+        b = observation("mrcc", "rescue", "two")
+        a.observed_at = "2026-10-28T11:00:00Z"
+        a.received_at = datetime(2026, 10, 28, 10, 0, tzinfo=timezone.utc)
+        self.assertEqual(audit([a, b]).reason, "observation_after_receipt")
+
+    def test_publication_future_of_receipt_is_not_corroboration(self):
+        a = observation("mod", "navy", "one")
+        b = observation("mrcc", "rescue", "two")
+        a.observed_at = "2026-10-28T10:00:00Z"
+        a.received_at = datetime(2026, 10, 28, 11, 0, tzinfo=timezone.utc)
+        a.provenance["published_at_utc"] = "2026-10-28T12:00:00Z"
+        self.assertEqual(audit([a, b]).reason, "publication_after_receipt")
+
+    def test_minor_clock_skew_does_not_invalidate_independent_reports(self):
+        a = observation("mod", "navy", "one")
+        b = observation("mrcc", "rescue", "two")
+        a.observed_at = "2026-10-28T11:04:00Z"
+        a.received_at = datetime(2026, 10, 28, 11, 0, tzinfo=timezone.utc)
+        a.provenance["published_at"] = "2026-10-28T11:03:00Z"
+        self.assertTrue(audit([a, b]).verified)
+
+    def test_malformed_publication_time_blocks(self):
+        a = observation("mod", "navy", "one")
+        b = observation("mrcc", "rescue", "two")
+        a.observed_at = "2026-10-28T10:00:00Z"
+        a.received_at = datetime(2026, 10, 28, 11, 0, tzinfo=timezone.utc)
+        a.provenance["published_at"] = "not-a-timestamp"
+        self.assertEqual(audit([a, b]).reason, "invalid_publication_timestamp")
+
+    def test_missing_half_of_observation_timeline_blocks(self):
+        a = observation("mod", "navy", "one")
+        b = observation("mrcc", "rescue", "two")
+        a.observed_at = "2026-10-28T10:00:00Z"
+        self.assertEqual(audit([a, b]).reason, "invalid_observation_chronology")
+
+    def test_naive_postgres_receipt_assumed_utc(self):
+        a = observation("mod", "navy", "one")
+        b = observation("mrcc", "rescue", "two")
+        a.observed_at = "2026-10-28T10:00:00+00:00"
+        a.received_at = datetime(2026, 10, 28, 11, 0)
+        self.assertTrue(audit([a, b]).verified)
 
     def test_malformed_episode_labels_block_without_fetch(self):
         calls = []
