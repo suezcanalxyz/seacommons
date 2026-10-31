@@ -12,8 +12,10 @@
   inside 14 days whose uncertainty interval extends beyond that bound also
   remains candidate with `outcome_followup_window_ambiguous`. Existing
   definitively reversed or out-of-window reports remain rejected.
-- **Three regression cases** added for overlapping intervals, strictly
-  ordered uncertain intervals, and the 14-day follow-up boundary. Source
+- **Four regression cases** added for overlapping intervals, strictly
+  ordered uncertain intervals, the 14-day follow-up boundary, and an
+  extremely large but finite uncertainty that must fail closed without
+  overflowing a Python timedelta. Source
   evidence, the existing attack episode ID and publication=false are retained.
   The new commits require their own CI certification; previous green CI is
   not proof of these tests.
