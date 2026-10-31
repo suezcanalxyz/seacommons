@@ -507,3 +507,33 @@ def test_humanitarian_audit_reports_per_case_followup_candidate_truncation():
     assert any(row.candidate_incident_id == case_id for row in result["rows"])
     assert result["followup_candidate_window_truncated_case_count"] >= 1
     assert result["followup_coverage_incomplete_source_count"] >= 1
+
+
+def test_visible_live_humanitarian_coverage_counts_unmatched_features():
+    """A Live/audit discrepancy must be measurable without exposing IDs."""
+    from core.intel.humanitarian_truth_table import summarize_visible_case_coverage
+
+    counts = summarize_visible_case_coverage(
+        {"intel:case-a", "case-b", "intel:case-c", "intel:case-c"},
+        ["case-a", "case-c", "case-not-live"],
+    )
+    assert counts == {
+        "live_visible_feature_count": 3,
+        "live_visible_features_with_audit_row_count": 2,
+        "live_visible_features_without_audit_row_count": 1,
+    }
+
+
+def test_visible_live_humanitarian_coverage_handles_empty_and_prefix_ids():
+    from core.intel.humanitarian_truth_table import summarize_visible_case_coverage
+
+    assert summarize_visible_case_coverage({"intel:", "", "intel:x"}, ["x"]) == {
+        "live_visible_feature_count": 1,
+        "live_visible_features_with_audit_row_count": 1,
+        "live_visible_features_without_audit_row_count": 0,
+    }
+    assert summarize_visible_case_coverage(set(), []) == {
+        "live_visible_feature_count": 0,
+        "live_visible_features_with_audit_row_count": 0,
+        "live_visible_features_without_audit_row_count": 0,
+    }
