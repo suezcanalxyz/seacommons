@@ -56,4 +56,15 @@ def valid_search_area_geometry(value: Any) -> bool:
                 points.append((float(lon), float(lat)))
             if points[0] != points[-1] or len(set(points[:-1])) < 3:
                 return False
+            # Distinct vertices alone do not guarantee an actual search area:
+            # collinear and some self-crossing closed rings enclose zero signed
+            # area. Subtract the first point for numerical stability.
+            x0, y0 = points[0]
+            twice_area = math.fsum(
+                (points[i][0] - x0) * (points[i + 1][1] - y0)
+                - (points[i + 1][0] - x0) * (points[i][1] - y0)
+                for i in range(len(points) - 1)
+            )
+            if twice_area == 0.0:
+                return False
     return True
