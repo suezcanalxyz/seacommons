@@ -191,3 +191,36 @@ collector ingestion or PostgreSQL verification was performed.
 - No Oracle PostgreSQL read or LIVE/PLAY end-to-end check was possible in
   this run; no observed SeaCommons receipt timestamp is available. New
   candidate promotion remains blocked pending real lineage and AIS review.
+
+## 31 October follow-up: batch preflight and retroactive negative controls
+
+- Batch provenance audit now applies the same canonical eligibility preflight
+  as the single-episode audit: attack-family episode, exact
+  `multi_source_corroborated` state, and at least two distinct normalized
+  independence-group labels. Ineligible episodes are returned with
+  `canonical_verification_incomplete` **before** any observation or lineage
+  database read. This reduces needless read-only PostgreSQL work and does
+  not promote an incident. Three staging regressions cover rejected,
+  duplicate-label, and mixed eligible/ineligible batches.
+- **MSCIO 149/26**, Gulf of Aden, **2026-10-17**, approximately
+  **12°54'N 047°56'E**: the source labels the case `Suspicious Activity`
+  but describes a small craft opening fire and armed security returning
+  warning shots. This is a **manual-review candidate for hostile-fire
+  classification**, not a proven boarding, sinking or identified-vessel
+  attack. Do not rely exclusively on the source category or a headline
+  keyword; preserve both the reported shots and the source's own label.
+  No IMO/MMSI or independent eyewitness lineage verified.
+  https://mscio.eu/alerts/185
+- **MARAD 2026-012** remains an active Black Sea / Sea of Azov risk
+  advisory through **2027-03-22**. It points to NATO Shipping Centre and
+  NAVAREA III warnings, but is **not evidence of a particular vessel attack**:
+  https://www.maritime.dot.gov/msci/2026-012-black-sea-and-sea-azov-military-combat-operations
+- MARAD explains that its alerts/advisories use a **whole-of-government**
+  publication process. Do not count a MARAD advisory and an agency
+  reprint of that same advisory as independent confirmations merely because
+  multiple departments participated in its preparation:
+  https://www.maritime.dot.gov/msci/maritime-security-communications-industry-msci-web-portal
+- Public source pages were accessible during this review; neither MSCIO
+  ingestion rights nor SeaCommons receipt latency were established. The
+  remote Oracle connector reported **0% available calls**, so no database
+  queries, AIS verification, or LIVE/PLAY end-to-end certification occurred.
