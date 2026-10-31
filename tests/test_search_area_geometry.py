@@ -23,6 +23,16 @@ VALID = {"type": "Polygon", "coordinates": [
     {"type": "Polygon", "coordinates": [[[12, 34], [13, 34], [12, 35]]]},
     {"type": "Polygon", "coordinates": [[[12, 34], [13, 34], [12, 35], [13, 35]]]},
     {"type": "Polygon", "coordinates": [[[12, 34], [12, 34], [12, 34], [12, 34]]]},
+    # A 3D ring must close in all coordinates, not just lon/lat.
+    {"type": "Polygon", "coordinates": [[
+        [12, 34, 0], [13, 34, 0], [12, 35, 0], [12, 34, 200],
+    ]]},
+    # Repeated interior vertices can produce nonzero signed area but are
+    # invalid self-touching/zero-length search boundaries.
+    {"type": "Polygon", "coordinates": [[
+        [12, 34], [14, 34], [14, 36], [13, 35],
+        [12, 36], [13, 35], [12, 34],
+    ]]},
     # Closed rings with three distinct vertices can still have zero area.
     {"type": "Polygon", "coordinates": [[[12, 34], [13, 34], [14, 34], [12, 34]]]},
     {"type": "Polygon", "coordinates": [[[12, 34], [13, 35], [12, 35], [13, 34], [12, 34]]]},
