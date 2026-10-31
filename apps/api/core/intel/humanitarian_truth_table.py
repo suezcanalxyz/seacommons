@@ -276,6 +276,34 @@ def source_followup_fetch_limit(case_count: int, *, max_per_case: int = 50) -> i
     return min(5000, max(0, case_count) * (max_per_case + 1))
 
 
+def summarize_visible_case_coverage(
+    visible_feature_ids: set[str], audited_case_ids: list[str],
+) -> dict[str, int]:
+    """Count visible Humanitarian features not represented by audit rows.
+
+    This is a coverage diagnostic, not an incident-resolution or data-loss
+    verdict: Live can include in-memory features absent from IntelEventDB,
+    and the audit deliberately bounds its scan. Never expose case IDs here.
+    """
+    def canonical_id(raw: str) -> str:
+        value = str(raw or "").strip()
+        return value.removeprefix("intel:")
+
+    visible = {
+        case_id for raw in visible_feature_ids
+        if (case_id := canonical_id(raw))
+    }
+    audited = {
+        case_id for raw in audited_case_ids
+        if (case_id := canonical_id(raw))
+    }
+    return {
+        "live_visible_feature_count": len(visible),
+        "live_visible_features_with_audit_row_count": len(visible & audited),
+        "live_visible_features_without_audit_row_count": len(visible - audited),
+    }
+
+
 def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
     """The real, live-wired entry point: queries IntelEventDB for
     Humanitarian-service events (core.intel.service_taxonomy.
@@ -426,10 +454,15 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             ))
 
     flagged = [r for r in rows if r.anomaly_flags]
+    live_coverage = summarize_visible_case_coverage(
+        visible_signal_ids, [row.candidate_incident_id for row in rows],
+    )
     return {
         "generated_at": now.isoformat(),
         "case_count": len(rows),
         "flagged_case_count": len(flagged),
+        # Counts are aggregate-only; a gap does not prove a lost incident.
+        **live_coverage,
         "audit_scan_truncated": audit_scan_truncated,
         "audited_source_rows_count": min(len(db_rows), scan_limit),
         # Nonzero means the bounded source scan cannot certify that every
