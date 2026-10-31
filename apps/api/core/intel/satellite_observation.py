@@ -390,6 +390,24 @@ def materialize_sar_detections(
                 "darkship_cue": True,
                 "provider_matched": provider_matched,
                 "association_method": association_method,
+                # GFW's bounded report identifies its dataset and (when
+                # present) the provider's vessel record. Retain that lineage
+                # without treating the identifier as an independent AIS fix.
+                "source_dataset": (
+                    detection.get("dataset")
+                    if isinstance(detection.get("dataset"), str)
+                    and detection["dataset"].startswith("public-global-sar-presence:")
+                    else None
+                ),
+                "source_vessel_id": (
+                    detection.get("vessel_id")
+                    if isinstance(detection.get("vessel_id"), str)
+                    and 0 < len(detection["vessel_id"]) <= 128
+                    else None
+                ),
+                "match_inference": (
+                    "identity_field_present" if provider_matched else "no_identity_field"
+                ),
             },
             evidence_status=evidence_status,
             association_status=association_status,
