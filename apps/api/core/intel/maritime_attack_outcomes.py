@@ -93,6 +93,7 @@ def _claim_provenance_matches_correlation(
         # A cached corroborated label must not be reused after a coordinate
         # or uncertainty change; nor may legacy evidence missing these fields
         # silently inherit corroboration. AIS remains context, never proof.
+        and "lat" in evidence and "lon" in evidence
         and evidence.get("lat") == (str(claim.lat) if claim.lat is not None else None)
         and evidence.get("lon") == (str(claim.lon) if claim.lon is not None else None)
         and evidence.get("uncertainty_km") == str(claim.uncertainty_km)
