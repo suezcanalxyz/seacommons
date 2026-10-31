@@ -127,12 +127,16 @@ class MaritimeAttackOutcomeTests(unittest.TestCase):
     def test_duplicate_source_group_labels_are_not_independent(self):
         # Duplicate labels cannot count twice merely because the tuple
         # contains two elements.
-        duplicate = replace(
-            corr(SINKING), independent_groups=("bulgarian_navy", "bulgarian_navy")
-        )
-        result = evaluate(sinking_corr=duplicate)
-        self.assertEqual(result.status, "candidate_update")
-        self.assertIn("outcome_independent_groups_insufficient", result.reason_codes)
+        for labels in (
+            ("bulgarian_navy", "bulgarian_navy"),
+            ("Bulgarian Navy", " BULGARIAN-NAVY "),
+            ("", "unrelated_authority"),
+        ):
+            with self.subTest(labels=labels):
+                duplicate = replace(corr(SINKING), independent_groups=labels)
+                result = evaluate(sinking_corr=duplicate)
+                self.assertEqual(result.status, "candidate_update")
+                self.assertIn("outcome_independent_groups_insufficient", result.reason_codes)
 
     def test_one_source_sinking_is_candidate_update_not_confirmed(self):
         result = evaluate(sinking_corr=corr(SINKING, "candidate"))
