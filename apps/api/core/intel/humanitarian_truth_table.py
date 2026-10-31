@@ -365,9 +365,12 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             source_groups.setdefault(row.source, []).append(row)
         recent_source_rows: list[Any] = []
         followup_incomplete_sources = 0
+        max_followups_per_case = 50
         for source, group in source_groups.items():
             oldest_cutoff = min(row.created_at for row in group) - timedelta(days=14)
-            fetch_limit = source_followup_fetch_limit(len(group))
+            fetch_limit = source_followup_fetch_limit(
+                len(group), max_per_case=max_followups_per_case,
+            )
             source_batch = (
                 db.query(IntelEventDB)
                 .filter(
@@ -381,9 +384,22 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             if len(source_batch) > fetch_limit:
                 followup_incomplete_sources += 1
             recent_source_rows.extend(source_batch[:fetch_limit])
-        followups_by_case = index_recent_same_source_followups(
+        # The lifecycle resolver considers at most 50 same-source posts per
+        # case. Probe one additional candidate before slicing: otherwise a
+        # busy NGO can hide an older decisive rescue update without any
+        # case-level warning. This reports uncertainty, not corroboration.
+        probed_followups_by_case = index_recent_same_source_followups(
             [row for row, _, _ in candidates], recent_source_rows,
+            max_per_case=max_followups_per_case + 1,
         )
+        followup_candidate_window_truncated_case_count = sum(
+            len(posts) > max_followups_per_case
+            for posts in probed_followups_by_case.values()
+        )
+        followups_by_case = {
+            case_id: posts[:max_followups_per_case]
+            for case_id, posts in probed_followups_by_case.items()
+        }
 
         for row, event, classification in candidates:
             same_source = [
@@ -419,6 +435,11 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
         # Nonzero means the bounded source scan cannot certify that every
         # same-source follow-up was considered; do not imply complete audit.
         "followup_coverage_incomplete_source_count": followup_incomplete_sources,
+        # Even a fully fetched source may have >50 eligible posts for one
+        # case; the resolver cannot certify outcomes beyond that window.
+        "followup_candidate_window_truncated_case_count": (
+            followup_candidate_window_truncated_case_count
+        ),
         "rows": rows,
         "not_yet_computable_flags": dict(NOT_YET_COMPUTABLE),
     }
