@@ -621,3 +621,54 @@ def test_visible_distress_survives_unrelated_news_saturation(monkeypatch):
     assert result["live_visible_features_without_audit_row_count"] == 0
     assert result["live_visible_db_rows_recovered_beyond_scan_count"] >= 1
     assert result["live_visible_ids_without_persisted_row_count"] == 0
+
+
+def test_visible_distress_coverage_reports_persisted_exclusion_reasons(monkeypatch):
+    """A visible marker with a DB row must not be conflated with in-memory loss.
+
+    A non-humanitarian row and an expired distress row have distinct causes
+    for absence from the truth table. Report only aggregate counts.
+    """
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+    import core.live.feed as live_feed
+
+    now = datetime.now(timezone.utc)
+    token = uuid.uuid4().hex[:12]
+    wrong_service_id = f"pytest-visible-service-{token}"
+    expired_id = f"pytest-visible-expired-{token}"
+    missing_id = f"pytest-visible-unpersisted-{token}"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=wrong_service_id, timestamp_utc=now.isoformat(), type="news",
+            severity="low", title="Non-humanitarian observation",
+            text="Unrelated market report", source=f"pytest-service-{token}",
+            meta={"service": "maritime", "lane": "intelligence"},
+            created_at=now.replace(tzinfo=None), maritime_domain="grey_zone",
+        ))
+        db.add(IntelEventDB(
+            id=expired_id,
+            timestamp_utc=(now - timedelta(days=3)).isoformat(),
+            type="distress", severity="high", lat=35.5, lon=14.1,
+            title="Historical distress", text="Boat in distress",
+            source=f"pytest-expired-{token}", meta={"is_distress": True},
+            created_at=now.replace(tzinfo=None), maritime_domain="sar",
+        ))
+
+    monkeypatch.setattr(live_feed, "public_signal_collection", lambda **_kw: {
+        "features": [
+            {"properties": {"id": f"intel:{wrong_service_id}", "kind": "distress"}},
+            {"properties": {"id": f"intel:{expired_id}", "kind": "distress"}},
+            {"properties": {"id": f"intel:{missing_id}", "kind": "distress"}},
+        ],
+    })
+    result = run_humanitarian_truth_table_audit(limit=10)
+    assert result["live_visible_feature_count"] == 3
+    assert result["live_visible_db_rows_excluded_by_service_count"] == 1
+    assert result["live_visible_db_rows_outside_retention_count"] == 1
+    assert result["live_visible_db_rows_omitted_by_case_limit_count"] == 0
+    assert result["live_visible_ids_without_persisted_row_count"] == 1
+    assert result["live_visible_features_without_audit_row_count"] == 3
