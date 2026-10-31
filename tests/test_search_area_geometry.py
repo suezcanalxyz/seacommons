@@ -23,6 +23,9 @@ VALID = {"type": "Polygon", "coordinates": [
     {"type": "Polygon", "coordinates": [[[12, 34], [13, 34], [12, 35]]]},
     {"type": "Polygon", "coordinates": [[[12, 34], [13, 34], [12, 35], [13, 35]]]},
     {"type": "Polygon", "coordinates": [[[12, 34], [12, 34], [12, 34], [12, 34]]]},
+    # Closed rings with three distinct vertices can still have zero area.
+    {"type": "Polygon", "coordinates": [[[12, 34], [13, 34], [14, 34], [12, 34]]]},
+    {"type": "Polygon", "coordinates": [[[12, 34], [13, 35], [12, 35], [13, 34], [12, 34]]]},
     {"type": "Polygon", "coordinates": [[[181, 34], [13, 34], [12, 35], [181, 34]]]},
     {"type": "Polygon", "coordinates": [[[12, 91], [13, 34], [12, 35], [12, 91]]]},
     {"type": "Polygon", "coordinates": [[[math.nan, 34], [13, 34], [12, 35], [math.nan, 34]]]},
@@ -80,6 +83,26 @@ def test_public_projection_does_not_publish_invalid_geojson():
     geometry, precision = public_geometry_and_precision(event)
     assert geometry is None
     assert precision == "unpositioned"
+
+
+@pytest.mark.parametrize("malformed", [
+    {"type": "Polygon", "coordinates": [[[12, 34], [13, 34], [14, 34], [12, 34]]]},
+    {"type": "Polygon", "coordinates": [[[12, 34], [13, 35], [12, 35], [13, 34], [12, 34]]]},
+])
+def test_zero_area_polygon_is_not_projected_or_used_as_drift_prior(malformed):
+    event = IntelEvent(
+        source="alarm_phone", type="twitter", title="Distress near Lampedusa",
+        lat=None, lon=None,
+        metadata={"is_distress": True, "coordinate_source": "region_area",
+                  "area_geojson": malformed},
+    )
+    geometry, precision = public_geometry_and_precision(event)
+    assert geometry is None
+    assert precision == "unpositioned"
+    prior = spatial_prior_for_event(event)
+    assert prior["candidate"] is True
+    assert prior["geometry"] is None
+    assert prior["physical_drift_computed"] is False
 
 
 def test_public_projection_preserves_valid_area():
