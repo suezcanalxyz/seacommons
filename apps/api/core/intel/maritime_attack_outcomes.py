@@ -89,6 +89,14 @@ def _claim_provenance_matches_correlation(
             _utc(claim.received_at).isoformat()
             if claim.received_at is not None else None
         )
+        # The correlator records incident geometry and extraction precision.
+        # A cached corroborated label must not be reused after a coordinate
+        # or uncertainty change; nor may legacy evidence missing these fields
+        # silently inherit corroboration. AIS remains context, never proof.
+        and evidence.get("lat") == (str(claim.lat) if claim.lat is not None else None)
+        and evidence.get("lon") == (str(claim.lon) if claim.lon is not None else None)
+        and evidence.get("uncertainty_km") == str(claim.uncertainty_km)
+        and evidence.get("time_uncertainty_minutes") == str(claim.time_uncertainty_minutes)
     )
 
 
