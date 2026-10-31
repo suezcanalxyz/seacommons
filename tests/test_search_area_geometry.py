@@ -36,7 +36,6 @@ VALID = {"type": "Polygon", "coordinates": [
     {"type": "MultiPolygon", "coordinates": [[[[12, 34], [13, 34], [12, 35]]]]},
     {"type": "Polygon", "coordinates": [[[12, 34], [13, 34], [12, 35], [12, 34]], []]},
     {"type": "Polygon", "coordinates": [[[]] * 4]},
-    {"type": "Polygon", "coordinates": [[(12, 34), (13, 34), (12, 35), (12, 34)]]},
     {"type": "Polygon", "coordinates": [[
         [12.0 + (i % 3) * 0.01, 34.0] for i in range(10_002)
     ]]},
@@ -48,6 +47,7 @@ def test_reject_invalid_stored_area_geometry(geometry):
 @pytest.mark.parametrize("geometry", [
     VALID,
     {"type": "MultiPolygon", "coordinates": [VALID["coordinates"], VALID["coordinates"]]},
+    {"type": "Polygon", "coordinates": (((12, 34), (13, 34), (12, 35), (12, 34)),)},
     {"type": "Polygon", "coordinates": [[
         [12.0, 34.0, 0.0], [13.0, 34.0, 0.0],
         [12.0, 35.0, 0.0], [12.0, 34.0, 0.0],
