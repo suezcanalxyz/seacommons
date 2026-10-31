@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Callable, Iterable
-from urllib.parse import urlsplit
-
-from core.intel.maritime_attack_correlation import _lineage_components
+from core.intel.maritime_attack_correlation import (
+    _canonical_source_url, _lineage_components,
+)
 from core.intel.maritime_attack_lineage_readonly import load_verified_lineage
 from core.intel.maritime_attack_play_guard import (
     _ATTACK_FAMILIES, has_distinct_independence_groups,
@@ -28,13 +28,13 @@ class IndependenceAudit:
 
 
 def _source_url_key(value: object) -> str:
-    try:
-        url = urlsplit(str(value or "").strip())
-        if url.scheme.lower() != "https" or not url.hostname or url.username or url.password:
-            return ""
-        return url.hostname.casefold() + url.path.rstrip("/")
-    except ValueError:
-        return ""
+    """Use the same canonical URL rules as incident-claim deduplication.
+
+    Retain report-identifying query parameters (e.g. ?id=123), but remove
+    known tracking parameters and fragments. Dropping the entire query
+    would incorrectly merge unrelated official reports served at one path.
+    """
+    return _canonical_source_url(str(value or ""))
 
 
 def audit_attack_episode_independence(
