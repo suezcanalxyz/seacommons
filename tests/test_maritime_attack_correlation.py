@@ -696,6 +696,28 @@ class SourceObservationAdapterTests(unittest.TestCase):
         self.assertEqual(claim.published_at, dt(28, 11))
         self.assertEqual(claim.claim_id, "obs:navy")
 
+    def test_published_at_utc_only_is_preserved_in_reviewed_claim(self):
+        from core.intel.maritime_attack_correlation import claim_from_source_observation
+        obs = self.observation("navy")
+        del obs.provenance["published_at"]
+        obs.provenance["published_at_utc"] = "2026-10-28T14:00:00+03:00"
+        claim = claim_from_source_observation(obs, self.extraction())
+        self.assertEqual(claim.published_at, dt(28, 11))
+
+    def test_conflicting_publication_aliases_block_reviewed_claim(self):
+        from core.intel.maritime_attack_correlation import claim_from_source_observation
+        obs = self.observation("navy")
+        obs.provenance["published_at_utc"] = "2026-10-28T12:00:00Z"
+        with self.assertRaisesRegex(ValueError, "Conflicting source publication"):
+            claim_from_source_observation(obs, self.extraction())
+
+    def test_equivalent_publication_aliases_with_timezone_pass(self):
+        from core.intel.maritime_attack_correlation import claim_from_source_observation
+        obs = self.observation("navy")
+        obs.provenance["published_at_utc"] = "2026-10-28T14:00:00+03:00"
+        claim = claim_from_source_observation(obs, self.extraction())
+        self.assertEqual(claim.published_at, dt(28, 11))
+
     def test_naive_event_time_fails_closed(self):
         from core.intel.maritime_attack_correlation import claim_from_source_observation
         extracted = {**self.extraction(), "occurred_at": "2026-10-28T10:00:00"}
