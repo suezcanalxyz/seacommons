@@ -1,5 +1,55 @@
 # Maritime attack correlation: source audit (2026-10-31 UTC)
 
+## 31 October late: temporal-order uncertainty and primary-source availability (staging only)
+
+- **New fail-closed outcome gate:** `maritime_attack_outcomes.py` now
+  requires the sinking's *earliest plausible event time* to be later than the
+  attack's *latest plausible event time* before emitting
+  `corroborated_update`. Overlapping or reversed-but-uncertain event-time
+  intervals remain `candidate_update` with
+  `outcome_temporal_order_ambiguous`; they are not silently promoted by
+  an operator link or upstream corroboration labels. A nominal follow-up
+  inside 14 days whose uncertainty interval extends beyond that bound also
+  remains candidate with `outcome_followup_window_ambiguous`. Existing
+  definitively reversed or out-of-window reports remain rejected.
+- **Three regression cases** added for overlapping intervals, strictly
+  ordered uncertain intervals, and the 14-day follow-up boundary. Source
+  evidence, the existing attack episode ID and publication=false are retained.
+  The new commits require their own CI certification; previous green CI is
+  not proof of these tests.
+- **CONTSHIP JET**: Bulgarian Ministry of Defence 28 October primary report
+  https://www.mod.bg/news9664 documents three impacts and a French patrol
+  aircraft's observation. It is still one published reporting chain unless
+  the French original observation and provenance are independently verified.
+  Bulgarian VTMIS https://www.vtmis.bg/wx/wx_eng.htm continues to carry
+  NAVWARN 768/26, which states the 28 October 20:30 UTC sinking at
+  43-07.80N, 028-45.36E (43.130000, 28.756000), IMO 9348625. This is
+  the same vessel's sinking outcome, not a second attack. The MMSI 636019532
+  is a regression input, not independently attested by these notices.
+- **MSCIO 156/26** https://mscio.eu/alerts/192 (28 October): suspected pirate
+  action group at 12°42'N, 047°35'E, craft carrying ladders and a hook.
+  *Suspicious activity*, not a documented boarding or attack. Do not merge
+  with MSCIO 161/26 (AZINI) without original, independently corroborated
+  linkage. Source publication time is not collector receipt time.
+- **MSCIO 160/26** https://mscio.eu/alerts/196 (30 October 02:25 UTC)
+  remains a negative attack control: armed approach but no shots and no
+  boarding. **MARAD 2026-015**
+  https://www.maritime.dot.gov/msci/2026-015-global-us-maritime-advisory-updates-resources-and-contacts
+  explicitly warns that AIS can be spoofed, manipulated or disrupted. Gaps
+  and sudden stops are context only. MARAD explains that US maritime
+  alerts/advisories are multi-agency products; mirrored MARAD/NGA messages
+  are not automatically independent original witnesses.
+- **Source access and rights:** VTMIS and MSCIO alert pages were publicly
+  retrievable on 31 October; this is not an uptime or latency SLA. MSCIO's
+  https://mscio.eu/terms-of-service/ restricts republication; retain
+  limited structured facts and source links for internal review. VTMIS
+  redistribution rights were not established. Publication timestamps and
+  SeaCommons collector `received_at` were not jointly verified, so
+  end-to-end ingestion latency cannot be computed.
+- **Oracle read-only audit blocked:** Desktop Commander reports 0% monthly
+  remote-call quota remaining. No database queries, LIVE/PLAY end-to-end
+  assertions, historical edits, VM scheduling or production deploy occurred.
+
 ## 31 October evening: Black Sea retrospective, ABLE and EMIL (staging only)
 
 - **ABLE**: Bulgarian Ministry of Defence inspection report dated 2026-10-09:
