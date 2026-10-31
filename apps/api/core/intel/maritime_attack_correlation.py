@@ -330,8 +330,11 @@ def _independent_document_groups(
             parent[max(a, b)] = min(a, b)
 
     for claim in claims:
-        origin = (claim.origin_report_id or "").strip()
-        group = claim.source_group.strip()
+        # Authority and report identifiers are canonical labels, not display
+        # strings: casing/outer whitespace must not manufacture new origins.
+        # Keep the original strings on IncidentClaim for the audit trail.
+        origin = (claim.origin_report_id or "").strip().casefold()
+        group = claim.source_group.strip().casefold()
         url = _canonical_source_url(claim.source_url)
         if not origin or not group or not url:
             continue
