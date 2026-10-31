@@ -103,6 +103,22 @@ def test_archived_lifecycle_is_always_flagged_as_silence_only():
     assert "ARCHIVED_BY_SILENCE_ONLY" in flags
 
 
+def test_archived_distress_with_visible_drift_is_not_misreported_as_rescued():
+    """Silence-based archival cannot satisfy a confirmed-resolution flag.
+
+    A visible drift on an unresolved archived case remains inspectable,
+    but must not be labelled DRIFT_AFTER_RESOLUTION without a rescue.
+    """
+    flags = compute_anomaly_flags(
+        lifecycle="archived",
+        drifts=[DriftSummary("d-archived", "completed", _NOW - timedelta(hours=26))],
+        marker_visible=True, drift_visible=True,
+        source_status="active", now=_NOW,
+    )
+    assert "ARCHIVED_BY_SILENCE_ONLY" in flags
+    assert "DRIFT_AFTER_RESOLUTION" not in flags
+
+
 def test_source_stale_or_down_is_flagged():
     for status in ("degraded", "down", "unknown"):
         flags = compute_anomaly_flags(
