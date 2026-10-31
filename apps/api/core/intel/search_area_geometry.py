@@ -14,6 +14,15 @@ _MAX_RINGS = 256
 _MAX_VERTICES = 10_000
 
 
+def _finite_number(value: Any) -> bool:
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except (OverflowError, ValueError):
+        return False
+
+
 def valid_search_area_geometry(value: Any) -> bool:
     """Accept bounded, closed Polygon/MultiPolygon with finite lon/lat pairs."""
     if not isinstance(value, dict) or value.get("type") not in {"Polygon", "MultiPolygon"}:
@@ -39,12 +48,7 @@ def valid_search_area_geometry(value: Any) -> bool:
             for position in ring:
                 if not isinstance(position, list) or len(position) not in (2, 3) or len(position) != ring_dimension:
                     return False
-                if any(
-                    isinstance(number, bool)
-                    or not isinstance(number, (int, float))
-                    or not math.isfinite(number)
-                    for number in position
-                ):
+                if any(not _finite_number(number) for number in position):
                     return False
                 lon, lat = position[:2]
                 if not (-180 <= lon <= 180 and -90 <= lat <= 90):
