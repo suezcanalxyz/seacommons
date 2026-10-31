@@ -309,3 +309,60 @@ collector ingestion or PostgreSQL verification was performed.
   by exhausted quota. No Oracle SQL was executed during this run. Provider
   publication times are not SeaCommons collector-receipt times; collector
   latency and LIVE/PLAY end-to-end behavior remain unmeasured.
+
+
+## 31 October follow-up: primary transport report, KHORYV reclassification lead, and timestamp aliases
+
+- **Bulgarian Ministry of Transport, 13 October (primary, English):**
+  https://www.mtc.government.bg/en/category/1/technical-information-vessels-affected-and-those-provided-assistance-maritime-areas-republic-bulgaria-over-past-24-hours
+  Officially identifies **CHELSEA-3** (Maltese flag, 15 crew, 17 NM east of
+  Byala, incident reported at **01:15** on 13 October) and **HS Dignity**
+  (Guinea-Bissau flag, 16 crew, drone strike at **01:20**, sank 17 NM east
+  of Shabla). The publication does not explicitly label these clock times
+  as UTC: preserve local-time uncertainty and do not fabricate conversion.
+  Five HS Dignity survivors were first assisted by Azov Concord and SCANDI
+  ASSERTER. This is a **single ministerial reporting origin**; BTA's
+  transcription is not a second independent confirmation.
+- **AIS gap causal negative:** the ministry explicitly states that the
+  initial HS Dignity sinking report came from a rescued seafarer and
+  **coincided with loss of AIS**. The seafarer's report and ministry's
+  statement are the evidence of sinking; AIS silence is supporting context,
+  never independent evidence of attack or proof of sinking.
+- **KHORYV status correction:** NAVWARN 766/26 *alone* still establishes
+  only a navigation hazard. However, the Romanian Naval Authority's
+  23 October SAR statement (as published by the Romanian national
+  news agency) identifies KHORYV, 13 crew, a distress call around 10:00
+  **Romanian local time**, 13 NM off Constanta, nine people rescued alive,
+  one body recovered and three missing **at the time of publication**:
+  https://agerpres.ro/english/2026/10/23/major-rescue-operation-offshore-of-constanta-for-crew-of-vessel-at-risk-of-sinking-one-dead--1606115
+  Reuters separately reports a suspected drone strike and a public
+  attribution by Romania's president:
+  https://www.reuters.com/world/romania-blames-russia-drone-that-sinks-cargo-ship-1-killed-3-missing-2026-10-23/
+  These developments mean KHORYV is **not a globally attack-negative
+  vessel fixture**. Keep the narrow regression that the VTMIS warning
+  *by itself* cannot establish hostile causation, but open a separate
+  23 October attack-review candidate; do not merge the 23 October event
+  and 28 October hazard without IMO/MMSI and outcome chronology review.
+  The president's attribution is a documented statement, **not a
+  verified perpetrator finding**. No final casualty update established.
+- **UKMTO 189-26 / MSCIO 163/26**, time-late report on **28 October**,
+  outbound tanker in Strait of Hormuz hit by unknown projectile. MSCIO
+  source https://mscio.eu/alerts/199 is directly accessible. The
+  UKMTO 189-26 PDF was **not directly retrieved**; public secondary
+  summaries describe the same event. Treat the two notices as a
+  probable **shared-report pair**, not independent corroboration.
+  Event hour, vessel identity, precise coordinates, originator and
+  SeaCommons receipt time remain unknown; do not merge with 29/30
+  October Lavan/Khasab incidents.
+- **Staging code hardening:** publication timestamps may appear under
+  both `published_at_utc` and `published_at`. The canonical
+  provenance audit now parses both, rejects malformed/date-only values,
+  and fails closed on contradictions greater than five minutes.
+  A date without a clock time no longer supplies minute-level proof.
+  Four regressions added, including equivalent UTC/offset timestamps.
+  This affects only staged verification, not immutable source rows.
+- **Operational limitation:** Oracle Desktop Commander quota checked at
+  **0% available** on 31 October. No Oracle SELECTs, AIS validation,
+  LIVE/PLAY endpoint certification, source ingestion or production deploy.
+  GitHub CI for these newest staging commits was not confirmed at
+  documentation time.
