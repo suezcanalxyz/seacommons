@@ -12,6 +12,7 @@ import re
 from typing import Any
 
 from core.intel.geoextract import find_all_place_matches
+from core.intel.search_area_geometry import valid_search_area_geometry
 
 
 def source_is_alarm_phone(event: Any) -> bool:
@@ -64,7 +65,7 @@ def spatial_prior_for_event(event: Any) -> dict[str, Any]:
     source_text = " ".join(filter(None, [str(getattr(event, "title", "") or ""), str(getattr(event, "text", "") or "")]))
     matches = find_all_place_matches(source_text)
     polygon = meta.get("area_geojson")
-    valid = isinstance(polygon, dict) and polygon.get("type") in {"Polygon", "MultiPolygon"} and bool(polygon.get("coordinates"))
+    valid = valid_search_area_geometry(polygon)
     return {
         "candidate": source_is_alarm_phone(event) and explicit_distress_flag(meta.get("is_distress")),
         "geometry": polygon if valid else None,
