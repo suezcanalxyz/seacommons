@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from core.domain.incident_taxonomy import taxonomy_fields
+from core.domain.visual_category import visual_category_fields
 from core.intel.humanitarian_incident import public_incident_status
 from core.intel.lifecycle import parse_utc
 from core.intel.maritime_attack_play_guard import (
@@ -227,6 +228,9 @@ def _audit_attack_projection_db(
 def _episode_projection(episode, evidence_event=None) -> dict[str, Any]:
     analysis = _episode_analysis(episode)
     event_meta = dict(evidence_event.meta or {}) if evidence_event is not None else {}
+    is_attack_episode = str(episode.episode_family or "") in _ATTACK_FAMILIES
+    if is_attack_episode:
+        event_meta["episode_family"] = str(episode.episode_family)
     event_type = evidence_event.type if evidence_event is not None else "ais_anomaly"
     maritime_domain = (
         evidence_event.maritime_domain if evidence_event is not None else "grey_zone"
@@ -236,6 +240,13 @@ def _episode_projection(episode, evidence_event=None) -> dict[str, Any]:
         maritime_domain=maritime_domain,
         metadata=event_meta,
     )
+    if is_attack_episode:
+        taxonomy.update(visual_category_fields(
+            source="SeaCommons evidence engine",
+            event_type=event_type,
+            maritime_domain=maritime_domain,
+            metadata=event_meta,
+        ))
     family_case_type = {
         "gap_episode": "dark_transit",
         "rendezvous_episode": "covert_rendezvous",

@@ -14,6 +14,11 @@ on:
       - apps/api/core/intel/maritime_attack_independence_readonly.py
       - apps/api/core/intel/maritime_attack_batch_readonly.py
       - apps/api/core/api/routes/play.py
+      - apps/api/core/domain/incident_taxonomy.py
+      - apps/api/core/domain/visual_category.py
+      - apps/web/src/features/intel/categories.js
+      - apps/web/src/main.jsx
+      - tests/test_maritime_attack_visual_taxonomy.py
       - tests/test_maritime_attack_correlation.py
       - tests/test_maritime_attack_lineage_readonly.py
       - tests/test_maritime_attack_observation_readonly.py

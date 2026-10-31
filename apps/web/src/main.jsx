@@ -179,6 +179,7 @@ const SIGNALS_MACRO_GROUPS = [
       { key: 'identity_integrity', label: 'Identity integrity', groupKey: 'signal_type_identity_integrity' },
       { key: 'port_call', label: 'Port call', groupKey: 'signal_type_port_call' },
       { key: 'piracy_security', label: 'Piracy / security', groupKey: 'signal_type_piracy_security' },
+      { key: 'maritime_attack', label: 'Reported attacks', groupKey: 'signal_type_maritime_attack' },
       { key: 'environmental_hazard', label: 'Environmental hazard', groupKey: 'signal_type_environmental_hazard' },
       { key: 'context_report', label: 'Context report', groupKey: 'signal_type_context_report' },
       { key: 'public_observation', label: 'Public observation', groupKey: 'signal_type_public_observation' },

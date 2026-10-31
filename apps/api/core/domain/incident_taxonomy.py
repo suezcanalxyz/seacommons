@@ -36,7 +36,7 @@ STABLE_MARITIME_INCIDENT_TYPES = frozenset({
     "ais_gap", "position_integrity", "dark_activity", "spoofing",
     "transfer", "infrastructure_proximity",
     "loitering", "navigation_safety", "identity_integrity", "port_call",
-    "piracy_security", "environmental_hazard", "context_report",
+    "piracy_security", "maritime_attack", "environmental_hazard", "context_report",
     "public_observation", "maritime_context",
 })
 
@@ -223,6 +223,13 @@ def incident_type(
         if event_type == "distress" or "distress" in tokens:
             return "distress"
         return "humanitarian_context"
+
+    # Only a canonical attack episode may receive this topic bucket. A news
+    # headline, AIS gap or sudden stop must never be upgraded to an attack.
+    if str(meta.get("episode_family") or "") in {
+        "attack_episode", "maritime_attack_episode", "maritime_attack",
+    }:
+        return "maritime_attack"
 
     # Maritime: raw observations keep neutral semantics. Stronger language is
     # reserved for an explicit InvestigationHypothesis.

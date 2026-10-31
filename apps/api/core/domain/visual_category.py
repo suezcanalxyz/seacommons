@@ -44,6 +44,7 @@ CATEGORY_COLORS: dict[str, str] = {
     "infrastructure": "#22d3ee",
     "identity": "#60a5fa",
     "piracy": "#a78bfa",
+    "maritime_attack": "#ff6b35",
     "environmental": "#34d399",
     "news": "#94a3b8",
     "social": "#818cf8",
@@ -67,6 +68,7 @@ CATEGORY_LABELS: dict[str, str] = {
     "infrastructure": "Infrastructure proximity",
     "identity": "Identity / flag anomaly",
     "piracy": "Piracy / security incident",
+    "maritime_attack": "Reported maritime attack",
     "environmental": "Environmental hazard",
     "news": "News / RSS",
     "social": "Social post",
@@ -123,6 +125,15 @@ def classify_visual_category(
     # 1. Alarm Phone is red because of its source/category role, full stop.
     if is_alarm_phone(source, meta):
         return "humanitarian_alarm_phone"
+
+    # Only the canonical episode family can assign this category. Never infer
+    # an attack from a headline, an AIS gap, or a vessel stopping.
+    if (domain not in {"sar", "humanitarian"}
+            and not humanitarian_case_type
+            and str(meta.get("episode_family") or "") in {
+                "attack_episode", "maritime_attack_episode", "maritime_attack",
+            }):
+        return "maritime_attack"
 
     tokens = _tokens(event_type, meta)
 

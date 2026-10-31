@@ -51,6 +51,7 @@ export const EVENT_VISUAL_CATEGORIES = [
   { key: 'infrastructure', label: 'Infrastructure proximity', color: '#22d3ee' },
   { key: 'identity', label: 'Identity / flag anomaly', color: '#60a5fa' },
   { key: 'piracy', label: 'Piracy / security incident', color: '#a78bfa' },
+  { key: 'maritime_attack', label: 'Reported maritime attack', color: '#ff6b35' },
   { key: 'environmental', label: 'Environmental hazard', color: '#34d399' },
   { key: 'needs_review', label: 'Needs operator review', color: '#f59e0b' },
   { key: 'resolved', label: 'Resolved', color: '#22c55e' },
@@ -97,6 +98,13 @@ export function classifyEventVisual(properties = {}) {
   // Trust an explicit canonical category assigned by the backend contract.
   if (properties.visual_category && _VISUAL_BY_KEY[properties.visual_category]) {
     return _VISUAL_BY_KEY[properties.visual_category];
+  }
+
+  // Explicit canonical incident classification only: headlines and AIS gaps
+  // must never be painted as attacks by keyword inference.
+  if (properties.incident_type === "maritime_attack"
+      || ["attack_episode", "maritime_attack_episode", "maritime_attack"].includes(properties.episode_family)) {
+    return _VISUAL_BY_KEY.maritime_attack;
   }
 
   const tokens = eventTokens(properties);
@@ -219,6 +227,7 @@ export function signalCategoryOf(properties = {}) {
     infrastructure: 'infrastructure_proximity',
     identity: 'identity_integrity',
     piracy: 'piracy_security',
+    maritime_attack: 'maritime_attack',
     context: 'maritime_context',
   };
   if (visual !== 'context' && byVisual[visual]) return byVisual[visual];
