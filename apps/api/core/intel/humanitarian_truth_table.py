@@ -353,7 +353,21 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
     # Overscan at most 5,000 rows and disclose incomplete coverage rather
     # than silently reporting zero cases. This is a read-only diagnostic.
     scan_limit = min(5000, max(1, limit) * 10)
+    # The public distress feed is already a bounded, privacy-filtered
+    # projection. Look up its case IDs by indexed primary key before the
+    # mixed recency scan: thousands of newer AIS/news rows must not evict a
+    # *visible* case from the audit. No raw text/IDs leave this endpoint.
+    visible_db_ids = {
+        case_id for raw in visible_signal_ids
+        if (case_id := str(raw).removeprefix("intel:").strip())
+    }
     with session_scope() as db:
+        visible_db_rows = (
+            db.query(IntelEventDB)
+            .filter(IntelEventDB.id.in_(sorted(visible_db_ids)))
+            .order_by(IntelEventDB.created_at.desc(), IntelEventDB.id.desc())
+            .all()
+        ) if visible_db_ids else []
         db_rows = (
             db.query(IntelEventDB)
             .order_by(IntelEventDB.created_at.desc())
@@ -361,8 +375,22 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             .all()
         )
         audit_scan_truncated = len(db_rows) > scan_limit
+        scanned_rows = db_rows[:scan_limit]
+        scanned_ids = {row.id for row in scanned_rows}
+        visible_db_rows_recovered_count = sum(
+            row.id not in scanned_ids for row in visible_db_rows
+        )
+        visible_ids_without_persisted_row_count = (
+            len(visible_db_ids) - len(visible_db_rows)
+        )
+        # Prioritize visible cases, then retain the bounded mixed scan for
+        # cases dropped from Live. De-duplicate to avoid duplicate audit rows.
+        prioritized_ids = {row.id for row in visible_db_rows}
+        audit_source_rows = visible_db_rows + [
+            row for row in scanned_rows if row.id not in prioritized_ids
+        ]
         candidates = []
-        for row in db_rows[:scan_limit]:
+        for row in audit_source_rows:
             event = IntelEvent(
                 id=row.id, type=row.type, severity=row.severity, lat=row.lat, lon=row.lon,
                 title=row.title, text=row.text or "", source=row.source,
@@ -479,6 +507,14 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
         **live_coverage,
         "audit_scan_truncated": audit_scan_truncated,
         "audited_source_rows_count": min(len(db_rows), scan_limit),
+        "live_visible_db_rows_recovered_beyond_scan_count": (
+            visible_db_rows_recovered_count
+        ),
+        # A missing DB row may be an in-memory-only Live item; it is not
+        # evidence that a published incident or source observation was lost.
+        "live_visible_ids_without_persisted_row_count": (
+            visible_ids_without_persisted_row_count
+        ),
         # Nonzero means the bounded source scan cannot certify that every
         # same-source follow-up was considered; do not imply complete audit.
         "followup_coverage_incomplete_source_count": followup_incomplete_sources,
