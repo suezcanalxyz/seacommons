@@ -4,8 +4,11 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 import json
+import logging
 import math
 from typing import Any, Literal
+
+logger = logging.getLogger(__name__)
 
 TemporalRelation = Literal["reverse", "nearest", "forward"]
 
@@ -168,6 +171,26 @@ def _reconcile_observation_replay(existing: Any, incoming: SatelliteObservation)
     existing.provenance = merged
 
 
+_REPLAY_IDENTITY_FIELDS = (
+    "incident_id", "provider", "mission", "product_id",
+    "acquisition_time", "sensor_type",
+)
+
+
+def _same_observation_identity(existing: Any, incoming: SatelliteObservation) -> bool:
+    """An observation ID cannot silently change its case or source identity.
+
+    Scene metadata and GFW detections may be replayed. Only evidence from
+    the same immutable observation is eligible for provenance/association
+    reconciliation. Reject ID collisions instead of merging evidence across
+    cases or satellite products.
+    """
+    return all(
+        getattr(existing, field, None) == getattr(incoming, field, None)
+        for field in _REPLAY_IDENTITY_FIELDS
+    )
+
+
 def persist_observations(observations: list[SatelliteObservation]) -> int:
     """Persist scene metadata idempotently while merging case-target lineage."""
     from core.db.models import SatelliteObservationDB
@@ -179,6 +202,15 @@ def persist_observations(observations: list[SatelliteObservation]) -> int:
         for observation in observations:
             existing = db.get(SatelliteObservationDB, observation.observation_id)
             if existing is not None:
+                if not _same_observation_identity(existing, observation):
+                    # Preserve the original row and evidence exactly. A shared
+                    # scene must use a case-scoped observation ID, not silently
+                    # transfer its episode association to another incident.
+                    logger.warning(
+                        "Rejecting satellite observation ID collision: %s",
+                        observation.observation_id,
+                    )
+                    continue
                 _reconcile_observation_replay(existing, observation)
                 continue
             discovered = parse_utc(observation.discovered_at)
