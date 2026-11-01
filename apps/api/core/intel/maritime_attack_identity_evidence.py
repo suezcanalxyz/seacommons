@@ -71,13 +71,14 @@ def link_external_vessel_identity(
 
     original_url = _canonical_source_url(bulletin.source_url)
     records: dict[str, ExternalVesselIdentity] = {}
+    seen_urls: set[str] = set()
     for record in evidence:
         if not isinstance(record, ExternalVesselIdentity):
             return blocked("invalid_identity_evidence")
         key = record.source_record_id.strip()
         url = _canonical_source_url(record.source_url)
         if (not key or len(key) > 128 or key in records
-                or not url or url == original_url):
+                or not url or url == original_url or url in seen_urls):
             return blocked("invalid_or_duplicate_identity_provenance")
         if not record.reviewed_by.strip():
             return blocked("identity_evidence_not_reviewed")
@@ -102,6 +103,7 @@ def link_external_vessel_identity(
         if bulletin.mmsi and record.mmsi and bulletin.mmsi != record.mmsi:
             return blocked("original_mmsi_conflict")
         records[key] = record
+        seen_urls.add(url)
 
     imos = {r.imo for r in records.values() if r.imo}
     mmsis = {r.mmsi for r in records.values() if r.mmsi}
