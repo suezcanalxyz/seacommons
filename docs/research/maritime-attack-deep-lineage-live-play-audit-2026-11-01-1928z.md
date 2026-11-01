@@ -29,7 +29,7 @@ At 19:26 UTC, rolling 72h begins 2026-10-29 19:26 UTC.
 - GDELT Project DOC 2.0 direct request for CONTSHIP JET/AL MAYEDA in 72h returned HTTP **429**; no results ingested, no rate-limit bypass or retry loop. GDELT Project public DOC API must not be confused with the separately priced GDELT Cloud product. Source publication-to-collector latency remains unmeasured.
 
 ## Oracle PostgreSQL read-only status
-Authorized remote device online; prior database access fails `FATAL: role "ubuntu" does not exist`. No new privileged or credential-discovery attempts. **New Oracle SQL queries executed: zero.** These are PREPARED ONLY:
+Authorized remote device online. A fresh noninteractive `psql -w -X` attempt with an explicit `BEGIN READ ONLY; SELECT current_user; ROLLBACK;` was rejected before executing SQL: `FATAL: role "ubuntu" does not exist`. No privileged or credential-discovery attempts. **New Oracle SQL queries executed: zero.** These are PREPARED ONLY:
 
 ```sql
 BEGIN READ ONLY;
