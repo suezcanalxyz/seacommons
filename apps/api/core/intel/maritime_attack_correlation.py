@@ -54,7 +54,7 @@ class AISFix:
     # Optional raw AIS speed over ground. Never an independent attack witness.
     sog_knots: float | None = None
     # Optional original collector receipt clock. An AIS event timestamp that
-    # predates its own receipt by >5 minutes is suspect, not vessel evidence.
+    # postdates its own receipt by >5 minutes is suspect, not vessel evidence.
     received_at: datetime | None = None
 
 
