@@ -819,3 +819,48 @@ def test_indexed_source_label_variants_cover_common_forms_without_sql_lower():
     assert "ALARM PHONE" in variants
     assert " alarm phone " in variants
     assert len(variants) <= 8
+
+
+def test_audit_last_update_tracks_credible_thread_reply_not_future_clock(monkeypatch):
+    """Audit last_update_at must match credible Live thread activity.
+
+    A valid later self-reply advances the clock, while a malformed
+    future-dated repost cannot keep a distress artificially fresh.
+    """
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+    import core.live.feed as live_feed
+
+    now = datetime.now(timezone.utc)
+    founding = now - timedelta(minutes=10)
+    credible = now - timedelta(minutes=2)
+    future = now + timedelta(days=2)
+    token = uuid.uuid4().hex[:12]
+    case_id = f"pytest-thread-clock-{token}"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=case_id, timestamp_utc=founding.isoformat(),
+            type="distress", severity="high", lat=35.5, lon=14.1,
+            title="Distress reported", text="47 people aboard a boat need help.",
+            source=f"pytest-thread-clock-{token}",
+            meta={
+                "is_distress": True,
+                "thread_reposts": [
+                    {"posted_at": credible.isoformat(), "note": "We are still searching."},
+                    {"posted_at": future.isoformat(), "note": "Bad future provider clock."},
+                ],
+                "last_repost_at": future.isoformat(),
+            },
+            created_at=founding.replace(tzinfo=None), maritime_domain="sar",
+        ))
+
+    monkeypatch.setattr(live_feed, "public_signal_collection", lambda **_kw: {
+        "features": [{"properties": {"id": f"intel:{case_id}", "kind": "distress"}}],
+    })
+    result = run_humanitarian_truth_table_audit(limit=1)
+    row = next(row for row in result["rows"] if row.candidate_incident_id == case_id)
+    assert datetime.fromisoformat(row.last_update_at) == credible
+    assert datetime.fromisoformat(row.reported_at) == founding
