@@ -123,3 +123,98 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
             self.assertEqual(obs.uncertainty_m, 10000.0)
             self.assertEqual(obs.provenance["attack_corroboration_allowed"], False)
             db.rollback()
+
+    def test_reviewed_postgres_bulletins_cannot_invent_independent_sources(self):
+        """Real PostgreSQL rows -> reviewed read path; publisher != origin.
+
+        Two different official publishers and two complete timestamp sets
+        still cannot count as independent witnesses without verified origin
+        attribution. This test never commits and never publishes.
+        """
+        from core.intel.maritime_attack_correlation import VesselRef
+        from core.intel.maritime_attack_observation_readonly import (
+            correlate_reviewed_db_observations,
+        )
+
+        event_time = datetime(2026, 10, 28, 10, tzinfo=timezone.utc)
+        primary = replace(
+            jet(), publication_date=None,
+            published_at=datetime(2026, 10, 28, 11, tzinfo=timezone.utc),
+        )
+        synthetic_relay = OfficialMaritimeBulletin(
+            issuer="MSCIO", bulletin_id="synthetic-jet-regression",
+            source_url="https://mscio.eu/alerts/synthetic-jet-regression",
+            kind="attack", vessel_name="CONTSHIP JET",
+            imo="9348625", mmsi="636019532",
+            occurred_at=event_time,
+            published_at=datetime(2026, 10, 28, 11, 30, tzinfo=timezone.utc),
+        )
+        with Session(self.engine) as db:
+            first = ingest_official_bulletin(db, primary)
+            second = ingest_official_bulletin(db, synthetic_relay)
+            ids = (first.observation_id, second.observation_id)
+            reviewed = {
+                identifier: {
+                    "reviewed": True, "reviewed_by": "staging-test",
+                    "kind": "attack", "occurred_at": event_time,
+                    "imo": "9348625", "mmsi": "636019532",
+                    "vessel_name": "CONTSHIP JET",
+                    "time_uncertainty_minutes": 0,
+                }
+                for identifier in ids
+            }
+            result = correlate_reviewed_db_observations(
+                VesselRef("9348625", "636019532", "CONTSHIP JET"),
+                ids, reviewed, db,
+            )
+            self.assertEqual(result.blocked_reasons, ())
+            self.assertEqual(result.loaded_count, 2)
+            self.assertIsNotNone(result.correlation)
+            self.assertEqual(result.correlation.status, "candidate")
+            self.assertEqual(result.correlation.independent_groups, ())
+            self.assertFalse(result.correlation.publication_allowed)
+            self.assertTrue(result.correlation.requires_operator_review)
+            db.rollback()
+        with Session(self.engine) as db:
+            self.assertEqual(
+                db.scalar(select(func.count()).select_from(SourceObservationDB)),
+                0,
+            )
+
+    def test_postgres_publication_only_cannot_become_incident_time(self):
+        """A real persisted NAVAREA anchorage cannot become an attack."""
+        from core.intel.maritime_attack_correlation import VesselRef
+        from core.intel.maritime_attack_observation_readonly import (
+            correlate_reviewed_db_observations,
+        )
+
+        warning = OfficialMaritimeBulletin(
+            issuer="NAVAREA_IX", bulletin_id="synthetic-anchorage-regression",
+            source_url="https://hydrography.paknavy.gov.pk/navarea-ix-warnings/",
+            kind="navigational_hazard", vessel_name="RITI",
+            imo="9249075", mmsi="352002473",
+            publication_date=date(2026, 10, 30),
+            lat=26.401167, lon=56.412, location_role="anchorage",
+            location_uncertainty_km=10,
+        )
+        with Session(self.engine) as db:
+            obs = ingest_official_bulletin(db, warning)
+            result = correlate_reviewed_db_observations(
+                VesselRef("9249075", "352002473", "RITI"),
+                (obs.observation_id,),
+                {obs.observation_id: {
+                    "reviewed": True, "reviewed_by": "staging-test",
+                    "kind": "attack",
+                    "occurred_at": datetime(2026, 10, 30, 3, tzinfo=timezone.utc),
+                    "imo": "9249075", "mmsi": "352002473",
+                    "vessel_name": "RITI",
+                    "lat": 26.401167, "lon": 56.412,
+                    "uncertainty_km": 0, "time_uncertainty_minutes": 0,
+                }}, db,
+            )
+            self.assertIsNone(result.correlation)
+            self.assertEqual(
+                result.blocked_reasons,
+                ("not_an_incident_claim:" + obs.observation_id,),
+            )
+            db.rollback()
