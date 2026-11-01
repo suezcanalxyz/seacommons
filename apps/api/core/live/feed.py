@@ -159,6 +159,15 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
                 "type": "ais_anomaly",
                 **category,
                 **taxonomy,
+                # The aggregate count is safe; the underlying source/group
+                # identifiers are private and must never reach public Live.
+                **(
+                    {"independent_source_count": props["independent_source_count"]}
+                    if taxonomy["corroborated"]
+                    and isinstance(props.get("independent_source_count"), int)
+                    and props["independent_source_count"] >= 2
+                    else {}
+                ),
                 "kind": LiveSignalKind.CONTEXT.value,
                 "severity": "medium",
                 "tier": IntelTier.SIGNAL.value,
