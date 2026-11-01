@@ -1251,23 +1251,20 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         # an active-looking pulsing drift cone still on the map reads as
         # "still adrift, still searching", which is exactly wrong for a
         # case that's already been rescued or gone stale.
-        # The canonical incident is the lifecycle authority for Live markers
-        # and must also be authoritative for the derived Drift layer. Stale
-        # ingestion metadata must never resurrect a resolved search cone.
-        from core.intel.humanitarian_incident import get_incident
+        # Use the same canonical lifecycle *and* public operational status as
+        # the Live distress marker. A stale ingestion flag must not resurrect
+        # a resolved search cone, nor can an outcome-unknown case publish one.
+        # Pre-canonical events fall back through the shared resolver.
+        from core.intel.humanitarian_incident import resolve_public_incident_state
 
-        incident = get_incident(event.id)
-        if incident is not None:
-            state = str(incident["lifecycle"])
-        else:
-            # Preserve legacy/pre-canonical behaviour for historical signals.
-            explicit_state = str(event.metadata.get("incident_lifecycle") or "").lower()
-            state = explicit_state or lifecycle.distress_lifecycle(
-                event,
-                now=now,
-                same_source=by_source.get(event.source.strip().casefold(), []),
-            )
-        if state in _DRIFT_HIDDEN_LIFECYCLES:
+        incident_state = resolve_public_incident_state(
+            event, now=now,
+            same_source=by_source.get(event.source.strip().casefold(), []),
+        )
+        if (
+            incident_state["lifecycle"] in _DRIFT_HIDDEN_LIFECYCLES
+            or incident_state["incident_status"] not in ("active", "needs_review")
+        ):
             continue
         # Only a real extracted maritime point is a drift origin. A region-only
         # Alarm Phone incident keeps its red search area (signal feed) but must
