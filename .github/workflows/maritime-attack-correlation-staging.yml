@@ -25,6 +25,7 @@ on:
       - tests/test_maritime_attack_visual_taxonomy.py
       - apps/web/src/features/intel/categories.attack.test.js
       - tests/test_maritime_attack_correlation.py
+      - tests/test_maritime_attack_ais_receipt_guard.py
       - tests/test_maritime_attack_lineage_readonly.py
       - tests/test_maritime_attack_observation_readonly.py
       - tests/test_maritime_attack_outcomes.py
