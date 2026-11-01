@@ -12,6 +12,7 @@ shaped for public output on any other basis.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from math import isfinite
 from typing import Any
 
 from core.intel.hypothesis import InvestigationHypothesis
@@ -28,6 +29,15 @@ _HYPOTHESIS_SUMMARY = {
     ),
 }
 
+
+
+def _has_valid_public_point(lat: Any, lon: Any) -> bool:
+    """Fail closed on malformed WGS84 coordinates before publishing GeoJSON."""
+    if isinstance(lat, bool) or isinstance(lon, bool):
+        return False
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return False
+    return -90 <= lat <= 90 and -180 <= lon <= 180 and isfinite(lat) and isfinite(lon)
 
 
 def _independent_episode_source_counts(episode_ids: set[str]) -> dict[str, int]:
@@ -141,7 +151,7 @@ def public_hypothesis_collection(limit: int = 100) -> dict[str, Any]:
         if record is None:
             continue
         projected = project_public_maritime_assessed(record, hypothesis=hypothesis)
-        if projected is None or projected.get("lat") is None or projected.get("lon") is None:
+        if projected is None or not _has_valid_public_point(projected.get("lat"), projected.get("lon")):
             continue
         # The hypothesis remains the assessment record, but the persisted
         # MaritimeEpisode is the canonical public case parent.
