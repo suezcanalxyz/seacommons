@@ -39,8 +39,13 @@ def _source_url_key(value: object) -> str:
 
 
 
-def _utc_observation_time(value: object) -> datetime:
-    """Parse canonical source times, treating legacy naive DB timestamps as UTC."""
+def _utc_observation_time(value: object, *, allow_naive_db_utc: bool = True) -> datetime:
+    """Parse source clocks; only canonical DB clocks may assume naive UTC.
+
+    Publication timestamps originate in external documents and require an
+    explicit timezone. A local press-release clock without an offset is
+    ambiguous and must not certify independent corroboration.
+    """
     if isinstance(value, datetime):
         parsed = value
     elif isinstance(value, str) and value.strip():
@@ -52,7 +57,9 @@ def _utc_observation_time(value: object) -> datetime:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     else:
         raise ValueError("Missing or invalid observation timestamp")
-    if parsed.tzinfo is None:
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        if not allow_naive_db_utc:
+            raise ValueError("Publication timestamp has no timezone")
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
 
@@ -90,7 +97,7 @@ def _observation_chronology_issue(row: object, *, require_complete: bool = False
             raw = provenance.get(key)
             if raw is not None:
                 try:
-                    publications.append(_utc_observation_time(raw))
+                    publications.append(_utc_observation_time(raw, allow_naive_db_utc=False))
                 except (ValueError, TypeError, OverflowError):
                     return "invalid_publication_timestamp"
     if require_complete and not publications:
