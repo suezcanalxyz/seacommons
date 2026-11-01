@@ -252,12 +252,12 @@ def index_recent_same_source_followups(
     """
     from datetime import timedelta
 
-    # The lifecycle resolver compares source identities case-insensitively.
-    # Use the same policy in the audit's candidate index: otherwise an NGO
+    # The lifecycle resolver compares source identities with casefold().
+    # Match that Unicode-aware policy in the candidate index: otherwise an NGO
     # changing capitalization or surrounding whitespace hides its follow-up.
     by_source: dict[str, list[Any]] = {}
     for other in source_rows:
-        key = str(other.source or "").strip().lower()
+        key = str(other.source or "").strip().casefold()
         by_source.setdefault(key, []).append(other)
     for source_rows_for_one in by_source.values():
         source_rows_for_one.sort(
@@ -268,7 +268,7 @@ def index_recent_same_source_followups(
     for row in case_rows:
         cutoff = row.created_at - timedelta(days=lookback_days)
         indexed[row.id] = [
-            other for other in by_source.get(str(row.source or "").strip().lower(), [])
+            other for other in by_source.get(str(row.source or "").strip().casefold(), [])
             if other.id != row.id and other.created_at >= cutoff
         ][:max_per_case]
     return indexed
@@ -288,7 +288,7 @@ def indexed_source_label_variants(case_rows: list[Any]) -> list[str]:
 
     Never wrap IntelEventDB.source in lower()/trim() without a matching
     functional index: that can full-scan a large forensic event table.
-    This bounded set covers exact, lower, upper, title and single-padding
+    This bounded set covers exact, lower, casefold, upper, title and padding
     variants. Unusual arbitrary mixed-case labels remain a known limitation
     until a canonical indexed source identity exists.
     """
@@ -297,7 +297,7 @@ def indexed_source_label_variants(case_rows: list[Any]) -> list[str]:
         raw = str(row.source or "").strip()
         if not raw:
             continue
-        for label in (raw, raw.lower(), raw.upper(), raw.title()):
+        for label in (raw, raw.lower(), raw.casefold(), raw.upper(), raw.title()):
             variants.add(label)
             variants.add(f" {label} ")
     return sorted(variants)
@@ -500,7 +500,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
         # This remains one query per source, not one per case.
         source_groups: dict[str, list[Any]] = {}
         for row, _, _ in candidates:
-            source_groups.setdefault(str(row.source or "").strip().lower(), []).append(row)
+            source_groups.setdefault(str(row.source or "").strip().casefold(), []).append(row)
         recent_source_rows: list[Any] = []
         followup_incomplete_sources = 0
         max_followups_per_case = 50
