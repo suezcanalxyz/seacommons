@@ -107,7 +107,10 @@ def compute_anomaly_flags(
     if len(completed) > 1:
         flags.append("MULTIPLE_CURRENT_DRIFTS")
 
-    if lifecycle in ("resolved", "archived") and drift_visible:
+    # An archived distress is unresolved: silence is not a rescue outcome.
+    # Keep its ARCHIVED_BY_SILENCE_ONLY flag, but do not claim a drift
+    # continued *after resolution* without an actual resolved lifecycle.
+    if lifecycle == "resolved" and drift_visible:
         flags.append("DRIFT_AFTER_RESOLUTION")
 
     # PostgreSQL TIMESTAMP WITHOUT TIME ZONE commonly returns naive UTC
@@ -135,7 +138,7 @@ def compute_anomaly_flags(
     if lifecycle == "active" and not marker_visible:
         flags.append("OPEN_CASE_DROPPED_FROM_LIVE")
 
-    if lifecycle in ("resolved", "archived") and marker_visible:
+    if lifecycle == "resolved" and marker_visible:
         flags.append("RESOLVED_CASE_STILL_ACTIVE_LOOKING")
 
     # core.intel.lifecycle.distress_lifecycle() only ever returns
@@ -249,9 +252,13 @@ def index_recent_same_source_followups(
     """
     from datetime import timedelta
 
+    # The lifecycle resolver compares source identities with casefold().
+    # Match that Unicode-aware policy in the candidate index: otherwise an NGO
+    # changing capitalization or surrounding whitespace hides its follow-up.
     by_source: dict[str, list[Any]] = {}
     for other in source_rows:
-        by_source.setdefault(other.source, []).append(other)
+        key = str(other.source or "").strip().casefold()
+        by_source.setdefault(key, []).append(other)
     for source_rows_for_one in by_source.values():
         source_rows_for_one.sort(
             key=lambda other: (other.created_at, str(other.id)), reverse=True,
@@ -261,7 +268,7 @@ def index_recent_same_source_followups(
     for row in case_rows:
         cutoff = row.created_at - timedelta(days=lookback_days)
         indexed[row.id] = [
-            other for other in by_source.get(row.source, [])
+            other for other in by_source.get(str(row.source or "").strip().casefold(), [])
             if other.id != row.id and other.created_at >= cutoff
         ][:max_per_case]
     return indexed
@@ -276,6 +283,92 @@ def source_followup_fetch_limit(case_count: int, *, max_per_case: int = 50) -> i
     return min(5000, max(0, case_count) * (max_per_case + 1))
 
 
+def indexed_source_label_variants(case_rows: list[Any]) -> list[str]:
+    """Use the existing source B-tree index for common provider label variants.
+
+    Never wrap IntelEventDB.source in lower()/trim() without a matching
+    functional index: that can full-scan a large forensic event table.
+    This bounded set covers exact, lower, casefold, upper, title and padding
+    variants. Unusual arbitrary mixed-case labels remain a known limitation
+    until a canonical indexed source identity exists.
+    """
+    variants: set[str] = set()
+    for row in case_rows:
+        raw = str(row.source or "").strip()
+        if not raw:
+            continue
+        for label in (raw, raw.lower(), raw.casefold(), raw.upper(), raw.title()):
+            variants.add(label)
+            variants.add(f" {label} ")
+    return sorted(variants)
+
+
+def visible_humanitarian_drift_event_ids(features: list[dict[str, Any]]) -> set[str]:
+    """Match drift geometries by *origin incident*, never by geometry ID.
+
+    Public physical forecasts carry `intel_event_id`; inferred macro search
+    areas carry `event_id`. Neither contract requires `properties.id`.
+    Conflicting origin keys are ambiguous and must not mark a case as having
+    a published drift. This is a diagnostic only, not a publication decision.
+    """
+    event_ids: set[str] = set()
+    for feature in features:
+        props = feature.get("properties") or {}
+        origins = {
+            str(props[key]).strip()
+            for key in ("event_id", "intel_event_id")
+            if props.get(key) and str(props[key]).strip()
+        }
+        canonical = {origin.removeprefix("intel:") for origin in origins}
+        if len(canonical) == 1:
+            event_ids.add(next(iter(canonical)))
+    return event_ids
+
+
+def visible_humanitarian_case_ids(features: list[dict[str, Any]]) -> set[str]:
+    """Select actual distress markers, not Humanitarian context observations.
+
+    The Humanitarian Live feed also includes context (for example NGO
+    activity). Those observations are not candidate distress cases and must
+    not inflate the audit coverage gap. Keep original IDs for marker matching;
+    summarize_visible_case_coverage normalizes the existing intel: alias.
+    """
+    return {
+        str(props["id"]).strip()
+        for feature in features
+        if (props := feature.get("properties") or {}).get("kind") == "distress"
+        and props.get("id") and str(props["id"]).strip()
+    }
+
+
+def summarize_visible_case_coverage(
+    visible_feature_ids: set[str], audited_case_ids: list[str],
+) -> dict[str, int]:
+    """Count visible Humanitarian features not represented by audit rows.
+
+    This is a coverage diagnostic, not an incident-resolution or data-loss
+    verdict: Live can include in-memory features absent from IntelEventDB,
+    and the audit deliberately bounds its scan. Never expose case IDs here.
+    """
+    def canonical_id(raw: str) -> str:
+        value = str(raw or "").strip()
+        return value.removeprefix("intel:")
+
+    visible = {
+        case_id for raw in visible_feature_ids
+        if (case_id := canonical_id(raw))
+    }
+    audited = {
+        case_id for raw in audited_case_ids
+        if (case_id := canonical_id(raw))
+    }
+    return {
+        "live_visible_feature_count": len(visible),
+        "live_visible_features_with_audit_row_count": len(visible & audited),
+        "live_visible_features_without_audit_row_count": len(visible - audited),
+    }
+
+
 def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
     """The real, live-wired entry point: queries IntelEventDB for
     Humanitarian-service events (core.intel.service_taxonomy.
@@ -288,7 +381,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
 
     from core.db.models import DriftResultDB, IntelEventDB
     from core.db.session import session_scope
-    from core.intel.lifecycle import distress_lifecycle, is_within_live_retention_window
+    from core.intel.lifecycle import _latest_activity_time, distress_lifecycle, is_within_live_retention_window
     from core.intel.service_taxonomy import classify_service
     from core.intel.source_registry import source_registry
     from core.intel.store import IntelEvent
@@ -298,20 +391,32 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
     rows: list[TruthTableRow] = []
 
     signals = public_signal_collection(limit=500, days=30)
-    visible_signal_ids = {
-        str((f.get("properties") or {}).get("id") or "") for f in signals.get("features", [])
-    }
+    visible_signal_ids = visible_humanitarian_case_ids(signals.get("features", []))
     drift_collection = public_drift_collection(limit=200)
-    visible_drift_event_ids = {
-        str((f.get("properties") or {}).get("id") or "") for f in drift_collection.get("features", [])
-    }
+    visible_drift_event_ids = visible_humanitarian_drift_event_ids(
+        drift_collection.get("features", [])
+    )
 
     # The first N database rows are not necessarily Humanitarian: AIS/news
     # traffic can displace every distress from a flat limit(N) audit scan.
     # Overscan at most 5,000 rows and disclose incomplete coverage rather
     # than silently reporting zero cases. This is a read-only diagnostic.
     scan_limit = min(5000, max(1, limit) * 10)
+    # The public distress feed is already a bounded, privacy-filtered
+    # projection. Look up its case IDs by indexed primary key before the
+    # mixed recency scan: thousands of newer AIS/news rows must not evict a
+    # *visible* case from the audit. No raw text/IDs leave this endpoint.
+    visible_db_ids = {
+        case_id for raw in visible_signal_ids
+        if (case_id := str(raw).removeprefix("intel:").strip())
+    }
     with session_scope() as db:
+        visible_db_rows = (
+            db.query(IntelEventDB)
+            .filter(IntelEventDB.id.in_(sorted(visible_db_ids)))
+            .order_by(IntelEventDB.created_at.desc(), IntelEventDB.id.desc())
+            .all()
+        ) if visible_db_ids else []
         db_rows = (
             db.query(IntelEventDB)
             .order_by(IntelEventDB.created_at.desc())
@@ -319,8 +424,28 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             .all()
         )
         audit_scan_truncated = len(db_rows) > scan_limit
+        scanned_rows = db_rows[:scan_limit]
+        scanned_ids = {row.id for row in scanned_rows}
+        visible_db_rows_recovered_count = sum(
+            row.id not in scanned_ids for row in visible_db_rows
+        )
+        visible_ids_without_persisted_row_count = (
+            len(visible_db_ids) - len(visible_db_rows)
+        )
+        # Prioritize visible cases, then retain the bounded mixed scan for
+        # cases dropped from Live. De-duplicate to avoid duplicate audit rows.
+        prioritized_ids = {row.id for row in visible_db_rows}
+        audit_source_rows = visible_db_rows + [
+            row for row in scanned_rows if row.id not in prioritized_ids
+        ]
+        # Explain why a persisted distress visible in Live can still be
+        # absent from the audit. These are aggregate counts only; no
+        # source text, IDs or coordinates are exposed by the endpoint.
+        visible_db_row_ids = {row.id for row in visible_db_rows}
+        visible_service_mismatch_ids: set[str] = set()
+        visible_outside_retention_ids: set[str] = set()
         candidates = []
-        for row in db_rows[:scan_limit]:
+        for row in audit_source_rows:
             event = IntelEvent(
                 id=row.id, type=row.type, severity=row.severity, lat=row.lat, lon=row.lon,
                 title=row.title, text=row.text or "", source=row.source,
@@ -329,18 +454,31 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             )
             classification = classify_service(event)
             if classification.service != "humanitarian":
+                if row.id in visible_db_row_ids:
+                    visible_service_mismatch_ids.add(row.id)
                 continue
             # Audit all recent cases, including resolved ones: a resolved
             # incident with a lingering drift is precisely an anomaly that
             # the truth table must be able to detect. The stricter active-only
             # window would silently discard it before DRIFT_AFTER_RESOLUTION.
             if not is_within_live_retention_window(event, now=now):
+                if row.id in visible_db_row_ids:
+                    visible_outside_retention_ids.add(row.id)
                 continue
             candidates.append((row, event, classification))
 
         if len(candidates) > max(1, limit):
             audit_scan_truncated = True
             candidates = candidates[:max(1, limit)]
+        visible_audited_db_ids = {
+            row.id for row, _, _ in candidates if row.id in visible_db_row_ids
+        }
+        visible_omitted_by_case_limit_count = len(
+            visible_db_row_ids
+            - visible_audited_db_ids
+            - visible_service_mismatch_ids
+            - visible_outside_retention_ids
+        )
 
         # One bounded query replaces a separate DriftResultDB query per
         # humanitarian case, reducing DB round trips under Oracle CPU pressure.
@@ -362,7 +500,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
         # This remains one query per source, not one per case.
         source_groups: dict[str, list[Any]] = {}
         for row, _, _ in candidates:
-            source_groups.setdefault(row.source, []).append(row)
+            source_groups.setdefault(str(row.source or "").strip().casefold(), []).append(row)
         recent_source_rows: list[Any] = []
         followup_incomplete_sources = 0
         max_followups_per_case = 50
@@ -374,7 +512,9 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             source_batch = (
                 db.query(IntelEventDB)
                 .filter(
-                    IntelEventDB.source == source,
+                    # Keep the existing indexed source equality path; SQL
+                    # lower()/trim() would otherwise full-scan forensic rows.
+                    IntelEventDB.source.in_(indexed_source_label_variants(group)),
                     IntelEventDB.created_at >= oldest_cutoff,
                 )
                 .order_by(IntelEventDB.created_at.desc(), IntelEventDB.id.desc())
@@ -412,12 +552,19 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
 
             source_status_entry = source_registry.get(row.source)
             source_status = source_status_entry.status if source_status_entry else "unknown"
+            observed_at = _latest_activity_time(event, now=now)
 
             rows.append(build_case_row(
                 event_id=row.id, source=row.source,
                 source_publication_time=row.source_timestamp_utc or row.timestamp_utc,
                 retrieved_at=row.received_at.isoformat() if row.received_at else None,
-                last_update_at=row.timestamp_utc,
+                # Reflect credible, time-bounded thread updates rather than
+                # repeating the founding report timestamp. This uses the
+                # same clock gate as Live retention; unrelated same-source
+                # candidate posts must not become a case's last update.
+                last_update_at=(
+                    observed_at.isoformat() if observed_at else row.timestamp_utc
+                ),
                 lifecycle=lifecycle, drifts=drifts,
                 marker_visible=f"intel:{row.id}" in visible_signal_ids or row.id in visible_signal_ids,
                 drift_visible=f"intel:{row.id}" in visible_drift_event_ids or row.id in visible_drift_event_ids,
@@ -426,12 +573,34 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             ))
 
     flagged = [r for r in rows if r.anomaly_flags]
+    live_coverage = summarize_visible_case_coverage(
+        visible_signal_ids, [row.candidate_incident_id for row in rows],
+    )
     return {
         "generated_at": now.isoformat(),
         "case_count": len(rows),
         "flagged_case_count": len(flagged),
+        # Counts are aggregate-only; a gap does not prove a lost incident.
+        **live_coverage,
         "audit_scan_truncated": audit_scan_truncated,
-        "audited_source_rows_count": min(len(db_rows), scan_limit),
+        "audited_source_rows_count": len(audit_source_rows),
+        "live_visible_db_rows_recovered_beyond_scan_count": (
+            visible_db_rows_recovered_count
+        ),
+        # A missing DB row may be an in-memory-only Live item; it is not
+        # evidence that a published incident or source observation was lost.
+        "live_visible_ids_without_persisted_row_count": (
+            visible_ids_without_persisted_row_count
+        ),
+        "live_visible_db_rows_excluded_by_service_count": len(
+            visible_service_mismatch_ids
+        ),
+        "live_visible_db_rows_outside_retention_count": len(
+            visible_outside_retention_ids
+        ),
+        "live_visible_db_rows_omitted_by_case_limit_count": (
+            visible_omitted_by_case_limit_count
+        ),
         # Nonzero means the bounded source scan cannot certify that every
         # same-source follow-up was considered; do not imply complete audit.
         "followup_coverage_incomplete_source_count": followup_incomplete_sources,

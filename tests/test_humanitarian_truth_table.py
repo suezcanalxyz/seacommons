@@ -101,6 +101,23 @@ def test_archived_lifecycle_is_always_flagged_as_silence_only():
         source_status="active", now=_NOW,
     )
     assert "ARCHIVED_BY_SILENCE_ONLY" in flags
+    assert "RESOLVED_CASE_STILL_ACTIVE_LOOKING" not in flags
+
+
+def test_archived_distress_with_visible_drift_is_not_misreported_as_rescued():
+    """Silence-based archival cannot satisfy a confirmed-resolution flag.
+
+    A visible drift on an unresolved archived case remains inspectable,
+    but must not be labelled DRIFT_AFTER_RESOLUTION without a rescue.
+    """
+    flags = compute_anomaly_flags(
+        lifecycle="archived",
+        drifts=[DriftSummary("d-archived", "completed", _NOW - timedelta(hours=26))],
+        marker_visible=True, drift_visible=True,
+        source_status="active", now=_NOW,
+    )
+    assert "ARCHIVED_BY_SILENCE_ONLY" in flags
+    assert "DRIFT_AFTER_RESOLUTION" not in flags
 
 
 def test_source_stale_or_down_is_flagged():
@@ -245,6 +262,12 @@ def test_humanitarian_truth_table_route_exposes_the_real_audit() -> None:
     assert "rows" in payload
     assert "not_yet_computable_flags" in payload
     assert set(payload["not_yet_computable_flags"]) == set(NOT_YET_COMPUTABLE)
+    assert payload["live_visible_feature_count"] >= 0
+    assert (
+        payload["live_visible_features_with_audit_row_count"]
+        + payload["live_visible_features_without_audit_row_count"]
+        == payload["live_visible_feature_count"]
+    )
 
 
 def test_recent_completed_drift_does_not_inherit_staleness_from_older_one():
@@ -507,3 +530,360 @@ def test_humanitarian_audit_reports_per_case_followup_candidate_truncation():
     assert any(row.candidate_incident_id == case_id for row in result["rows"])
     assert result["followup_candidate_window_truncated_case_count"] >= 1
     assert result["followup_coverage_incomplete_source_count"] >= 1
+
+
+def test_visible_live_humanitarian_coverage_counts_unmatched_features():
+    """A Live/audit discrepancy must be measurable without exposing IDs."""
+    from core.intel.humanitarian_truth_table import summarize_visible_case_coverage
+
+    counts = summarize_visible_case_coverage(
+        {"intel:case-a", "case-b", "intel:case-c", "intel:case-c"},
+        ["case-a", "case-c", "case-not-live"],
+    )
+    assert counts == {
+        "live_visible_feature_count": 3,
+        "live_visible_features_with_audit_row_count": 2,
+        "live_visible_features_without_audit_row_count": 1,
+    }
+
+
+def test_visible_live_humanitarian_coverage_handles_empty_and_prefix_ids():
+    from core.intel.humanitarian_truth_table import summarize_visible_case_coverage
+
+    assert summarize_visible_case_coverage({"intel:", "", "intel:x"}, ["x"]) == {
+        "live_visible_feature_count": 1,
+        "live_visible_features_with_audit_row_count": 1,
+        "live_visible_features_without_audit_row_count": 0,
+    }
+    assert summarize_visible_case_coverage(set(), []) == {
+        "live_visible_feature_count": 0,
+        "live_visible_features_with_audit_row_count": 0,
+        "live_visible_features_without_audit_row_count": 0,
+    }
+
+
+def test_visible_humanitarian_case_ids_excludes_non_distress_context():
+    """Context observations in Humanitarian Live are not distress audit rows."""
+    from core.intel.humanitarian_truth_table import (
+        summarize_visible_case_coverage,
+        visible_humanitarian_case_ids,
+    )
+
+    features = [
+        {"properties": {"id": "intel:distress-1", "kind": "distress"}},
+        {"properties": {"id": "intel:distress-2", "kind": "distress"}},
+        {"properties": {"id": "intel:ngo-activity", "kind": "context"}},
+        {"properties": {"id": "intel:weather", "kind": "context"}},
+        {"properties": {"id": "", "kind": "distress"}},
+        {"properties": {}},
+    ]
+    case_ids = visible_humanitarian_case_ids(features)
+    assert case_ids == {"intel:distress-1", "intel:distress-2"}
+    assert summarize_visible_case_coverage(case_ids, ["distress-1"]) == {
+        "live_visible_feature_count": 2,
+        "live_visible_features_with_audit_row_count": 1,
+        "live_visible_features_without_audit_row_count": 1,
+    }
+
+
+def test_visible_humanitarian_case_ids_handles_context_only_feed():
+    from core.intel.humanitarian_truth_table import visible_humanitarian_case_ids
+
+    assert visible_humanitarian_case_ids([
+        {"properties": {"id": "intel:context-only", "kind": "context"}},
+    ]) == set()
+
+
+def test_visible_distress_survives_unrelated_news_saturation(monkeypatch):
+    """A visible distress must be audited even beyond the mixed scan cap."""
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+    import core.live.feed as live_feed
+
+    now = datetime.now(timezone.utc)
+    token = uuid.uuid4().hex[:12]
+    case_id = f"pytest-visible-priority-{token}"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=case_id, timestamp_utc=now.isoformat(), type="distress",
+            severity="high", lat=35.5, lon=14.1,
+            title="Distress reported", text="Boat in distress",
+            source=f"pytest-priority-{token}", meta={"is_distress": True},
+            created_at=(now - timedelta(minutes=1)).replace(tzinfo=None),
+            maritime_domain="sar",
+        ))
+        for i in range(12):
+            db.add(IntelEventDB(
+                id=f"pytest-priority-news-{token}-{i}",
+                timestamp_utc=now.isoformat(), type="news", severity="low",
+                title="Unrelated market report", text="Unrelated report",
+                source=f"pytest-priority-news-{token}",
+                meta={"service": "maritime", "lane": "intelligence"},
+                created_at=now.replace(tzinfo=None), maritime_domain="grey_zone",
+            ))
+
+    monkeypatch.setattr(live_feed, "public_signal_collection", lambda **_kw: {
+        "features": [
+            {"properties": {"id": f"intel:{case_id}", "kind": "distress"}},
+            {"properties": {"id": "intel:context", "kind": "context"}},
+        ],
+    })
+    result = run_humanitarian_truth_table_audit(limit=1)
+    assert [row.candidate_incident_id for row in result["rows"]] == [case_id]
+    assert result["live_visible_feature_count"] == 1
+    assert result["live_visible_features_with_audit_row_count"] == 1
+    assert result["live_visible_features_without_audit_row_count"] == 0
+    assert result["live_visible_db_rows_recovered_beyond_scan_count"] >= 1
+    assert result["live_visible_ids_without_persisted_row_count"] == 0
+
+
+def test_visible_distress_coverage_reports_persisted_exclusion_reasons(monkeypatch):
+    """A visible marker with a DB row must not be conflated with in-memory loss.
+
+    A non-humanitarian row and an expired distress row have distinct causes
+    for absence from the truth table. Report only aggregate counts.
+    """
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+    import core.live.feed as live_feed
+
+    now = datetime.now(timezone.utc)
+    token = uuid.uuid4().hex[:12]
+    wrong_service_id = f"pytest-visible-service-{token}"
+    expired_id = f"pytest-visible-expired-{token}"
+    missing_id = f"pytest-visible-unpersisted-{token}"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=wrong_service_id, timestamp_utc=now.isoformat(), type="news",
+            severity="low", title="Non-humanitarian observation",
+            text="Unrelated market report", source=f"pytest-service-{token}",
+            meta={"service": "maritime", "lane": "intelligence"},
+            created_at=now.replace(tzinfo=None), maritime_domain="grey_zone",
+        ))
+        db.add(IntelEventDB(
+            id=expired_id,
+            timestamp_utc=(now - timedelta(days=3)).isoformat(),
+            type="distress", severity="high", lat=35.5, lon=14.1,
+            title="Historical distress", text="Boat in distress",
+            source=f"pytest-expired-{token}", meta={"is_distress": True},
+            created_at=now.replace(tzinfo=None), maritime_domain="sar",
+        ))
+
+    monkeypatch.setattr(live_feed, "public_signal_collection", lambda **_kw: {
+        "features": [
+            {"properties": {"id": f"intel:{wrong_service_id}", "kind": "distress"}},
+            {"properties": {"id": f"intel:{expired_id}", "kind": "distress"}},
+            {"properties": {"id": f"intel:{missing_id}", "kind": "distress"}},
+        ],
+    })
+    result = run_humanitarian_truth_table_audit(limit=10)
+    assert result["live_visible_feature_count"] == 3
+    assert result["live_visible_db_rows_excluded_by_service_count"] == 1
+    assert result["live_visible_db_rows_outside_retention_count"] == 1
+    assert result["live_visible_db_rows_omitted_by_case_limit_count"] == 0
+    assert result["live_visible_ids_without_persisted_row_count"] == 1
+    assert result["live_visible_features_without_audit_row_count"] == 3
+
+
+
+def test_visible_drift_event_ids_supports_both_public_geometry_contracts():
+    """A drift's origin is not the optional GeoJSON feature ID."""
+    from core.intel.humanitarian_truth_table import visible_humanitarian_drift_event_ids
+
+    features = [
+        {"properties": {"event_id": "case-macro", "kind": "macro_search_area"}},
+        {"properties": {"intel_event_id": "case-physical", "type": "trajectory"}},
+        {"properties": {"event_id": "intel:case-prefixed"}},
+        {"properties": {"event_id": "case-agree", "intel_event_id": "intel:case-agree"}},
+        {"properties": {"id": "drift-geometry-only"}},
+        {"properties": {"event_id": "case-a", "intel_event_id": "case-b"}},
+        {"properties": {"event_id": ""}},
+    ]
+    assert visible_humanitarian_drift_event_ids(features) == {
+        "case-macro", "case-physical", "case-prefixed", "case-agree",
+    }
+
+
+def test_audit_detects_resolved_case_with_published_macro_drift(monkeypatch):
+    """A published macro area must not disappear from the drift anomaly audit."""
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+    import core.live.feed as live_feed
+
+    now = datetime.now(timezone.utc)
+    token = uuid.uuid4().hex[:12]
+    case_id = f"pytest-resolved-macro-drift-{token}"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=case_id, timestamp_utc=now.isoformat(), type="distress",
+            severity="high", lat=35.5, lon=14.1,
+            title="Rescue completed",
+            text="All 47 people aboard the Zenobia near Lampedusa were rescued and are now safe.",
+            source=f"pytest-resolved-macro-{token}", meta={"is_distress": True},
+            created_at=now.replace(tzinfo=None), maritime_domain="sar",
+        ))
+
+    monkeypatch.setattr(live_feed, "public_signal_collection", lambda **_kw: {
+        "features": [{"properties": {"id": f"intel:{case_id}", "kind": "distress"}}],
+    })
+    monkeypatch.setattr(live_feed, "public_drift_collection", lambda **_kw: {
+        "features": [{
+            "type": "Feature",
+            "properties": {"event_id": case_id, "kind": "macro_search_area"},
+        }],
+    })
+    result = run_humanitarian_truth_table_audit(limit=1)
+    row = next(row for row in result["rows"] if row.candidate_incident_id == case_id)
+    assert row.lifecycle == "resolved"
+    assert row.drift_visible is True
+    assert "DRIFT_AFTER_RESOLUTION" in row.anomaly_flags
+
+
+
+def test_same_source_followup_index_normalizes_provider_label():
+    """Capitalization and outer whitespace cannot hide a candidate update."""
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import index_recent_same_source_followups
+
+    now = _NOW.replace(tzinfo=None)
+    case = SimpleNamespace(id="case-mixed", source=" Alarm Phone ", created_at=now)
+    followup = SimpleNamespace(
+        id="case-mixed-update", source="alarm phone",
+        created_at=now + timedelta(minutes=10),
+    )
+    assert [row.id for row in index_recent_same_source_followups(
+        [case], [followup],
+    )["case-mixed"]] == ["case-mixed-update"]
+
+
+def test_audit_resolves_same_provider_followup_with_changed_source_casing():
+    """The bounded SQL lookup and lifecycle must agree on source identity."""
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+
+    now = datetime.now(timezone.utc)
+    token = uuid.uuid4().hex[:12]
+    source = f"pytest-MiXeD-Source-{token}"
+    case_id = f"pytest-mixed-case-{token}"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=case_id, timestamp_utc=(now - timedelta(minutes=2)).isoformat(),
+            type="distress", severity="high", lat=35.5, lon=14.1,
+            title="Distress reported",
+            text="47 people in distress aboard the vessel Zenobia near Lampedusa.",
+            source=source, meta={"is_distress": True},
+            created_at=(now - timedelta(minutes=2)).replace(tzinfo=None),
+            maritime_domain="sar",
+        ))
+        db.add(IntelEventDB(
+            id=f"{case_id}-followup",
+            timestamp_utc=(now - timedelta(minutes=1)).isoformat(),
+            type="news", severity="low", title="Rescue update",
+            text="Update: all 47 people aboard the Zenobia near Lampedusa were rescued and are now safe.",
+            source=f" {source.lower()} ",
+            meta={"service": "maritime", "lane": "intelligence"},
+            created_at=(now - timedelta(minutes=1)).replace(tzinfo=None),
+            maritime_domain="grey_zone",
+        ))
+
+    result = run_humanitarian_truth_table_audit(limit=500)
+    case = next((row for row in result["rows"] if row.candidate_incident_id == case_id), None)
+    assert case is not None
+    assert case.lifecycle == "resolved"
+
+
+
+def test_indexed_source_label_variants_cover_common_forms_without_sql_lower():
+    """Bounded exact source values preserve the existing source B-tree index."""
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import indexed_source_label_variants
+
+    variants = indexed_source_label_variants([
+        SimpleNamespace(source=" Alarm Phone "),
+        SimpleNamespace(source="alarm phone"),
+    ])
+    assert "Alarm Phone" in variants
+    assert "alarm phone" in variants
+    assert "ALARM PHONE" in variants
+    assert " alarm phone " in variants
+    assert len(variants) <= 8
+
+
+def test_audit_last_update_tracks_credible_thread_reply_not_future_clock(monkeypatch):
+    """Audit last_update_at must match credible Live thread activity.
+
+    A valid later self-reply advances the clock, while a malformed
+    future-dated repost cannot keep a distress artificially fresh.
+    """
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+    import core.live.feed as live_feed
+
+    now = datetime.now(timezone.utc)
+    founding = now - timedelta(minutes=10)
+    credible = now - timedelta(minutes=2)
+    future = now + timedelta(days=2)
+    token = uuid.uuid4().hex[:12]
+    case_id = f"pytest-thread-clock-{token}"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=case_id, timestamp_utc=founding.isoformat(),
+            type="distress", severity="high", lat=35.5, lon=14.1,
+            title="Distress reported", text="47 people aboard a boat need help.",
+            source=f"pytest-thread-clock-{token}",
+            meta={
+                "is_distress": True,
+                "thread_reposts": [
+                    {"posted_at": credible.isoformat(), "note": "We are still searching."},
+                    {"posted_at": future.isoformat(), "note": "Bad future provider clock."},
+                ],
+                "last_repost_at": future.isoformat(),
+            },
+            created_at=founding.replace(tzinfo=None), maritime_domain="sar",
+        ))
+
+    monkeypatch.setattr(live_feed, "public_signal_collection", lambda **_kw: {
+        "features": [{"properties": {"id": f"intel:{case_id}", "kind": "distress"}}],
+    })
+    result = run_humanitarian_truth_table_audit(limit=1)
+    row = next(row for row in result["rows"] if row.candidate_incident_id == case_id)
+    assert datetime.fromisoformat(row.last_update_at) == credible
+    assert datetime.fromisoformat(row.reported_at) == founding
+
+
+def test_unicode_casefold_provider_identity_matches_lifecycle():
+    """The audit candidate index must use lifecycle's Unicode casefold rule."""
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import (
+        index_recent_same_source_followups,
+        indexed_source_label_variants,
+    )
+
+    now = _NOW.replace(tzinfo=None)
+    case = SimpleNamespace(id="unicode-case", source="Maße Rescue", created_at=now)
+    update = SimpleNamespace(
+        id="unicode-followup", source="MASSE RESCUE",
+        created_at=now + timedelta(minutes=5),
+    )
+    indexed = index_recent_same_source_followups([case], [update])
+    assert [row.id for row in indexed["unicode-case"]] == ["unicode-followup"]
+    # The SQL candidate lookup must also be able to find the folded label
+    # using exact indexed equality, without lower(source) full-table scans.
+    variants = indexed_source_label_variants([case])
+    assert "MASSE RESCUE" in variants
+    assert "masse rescue" in variants
