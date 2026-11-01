@@ -283,6 +283,26 @@ def source_followup_fetch_limit(case_count: int, *, max_per_case: int = 50) -> i
     return min(5000, max(0, case_count) * (max_per_case + 1))
 
 
+def indexed_source_label_variants(case_rows: list[Any]) -> list[str]:
+    """Use the existing source B-tree index for common provider label variants.
+
+    Never wrap IntelEventDB.source in lower()/trim() without a matching
+    functional index: that can full-scan a large forensic event table.
+    This bounded set covers exact, lower, upper, title and single-padding
+    variants. Unusual arbitrary mixed-case labels remain a known limitation
+    until a canonical indexed source identity exists.
+    """
+    variants: set[str] = set()
+    for row in case_rows:
+        raw = str(row.source or "").strip()
+        if not raw:
+            continue
+        for label in (raw, raw.lower(), raw.upper(), raw.title()):
+            variants.add(label)
+            variants.add(f" {label} ")
+    return sorted(variants)
+
+
 def visible_humanitarian_drift_event_ids(features: list[dict[str, Any]]) -> set[str]:
     """Match drift geometries by *origin incident*, never by geometry ID.
 
@@ -358,8 +378,6 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
     core.intel.source_registry -- then builds one TruthTableRow per case.
     """
     from datetime import timedelta
-
-    from sqlalchemy import func
 
     from core.db.models import DriftResultDB, IntelEventDB
     from core.db.session import session_scope
@@ -494,10 +512,9 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             source_batch = (
                 db.query(IntelEventDB)
                 .filter(
-                    # Match provider capitalization/outer whitespace just
-                    # as has_resolution_signal does. The time predicate and
-                    # strict per-source cap keep this diagnostic bounded.
-                    func.lower(func.trim(IntelEventDB.source)) == source,
+                    # Keep the existing indexed source equality path; SQL
+                    # lower()/trim() would otherwise full-scan forensic rows.
+                    IntelEventDB.source.in_(indexed_source_label_variants(group)),
                     IntelEventDB.created_at >= oldest_cutoff,
                 )
                 .order_by(IntelEventDB.created_at.desc(), IntelEventDB.id.desc())
