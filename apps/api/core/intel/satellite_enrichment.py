@@ -83,11 +83,18 @@ def _trajectory_targets(
     return targets
 
 
+def _credible_source_time(event) -> datetime | None:
+    """Return only a source-supplied time, never the IntelEvent ingest fallback."""
+    if (event.metadata or {}).get("_source_timestamp_inferred") is True:
+        return None
+    return parse_utc(event.timestamp_utc)
+
+
 def _case_satellite_targets(event) -> list[dict[str, Any]]:
     if not valid_wgs84_point(event.lat, event.lon):
         return []
     # Never fabricate an acquisition-search time for an undated source report.
-    event_time = parse_utc(event.timestamp_utc)
+    event_time = _credible_source_time(event)
     if event_time is None:
         return []
     targets: list[dict[str, Any]] = [{
@@ -143,7 +150,7 @@ def is_satellite_enrichment_candidate(
     if not valid_wgs84_point(event.lat, event.lon):
         return False
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    observed = parse_utc(event.timestamp_utc)
+    observed = _credible_source_time(event)
     # An undated or future-dated report cannot anchor a forensic satellite search.
     if observed is None or observed > now + timedelta(minutes=5):
         return False
@@ -181,7 +188,7 @@ def enrich_event(
     contextual until an actual vessel/detection association is made elsewhere.
     """
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    observed = parse_utc(event.timestamp_utc)
+    observed = _credible_source_time(event)
     if (
         not valid_wgs84_point(event.lat, event.lon)
         or observed is None
