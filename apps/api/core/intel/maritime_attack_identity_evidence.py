@@ -113,6 +113,16 @@ def link_external_vessel_identity(
     resolved_mmsi = bulletin.mmsi or next(iter(mmsis), "")
     if not resolved_imo and not resolved_mmsi:
         return blocked("no_resolved_identifier")
+    # Two matching ship *names* cannot establish that an IMO from one page
+    # belongs to an MMSI from another page. Require at least one original
+    # document or reviewed identity record that explicitly prints BOTH IDs.
+    # This is an identity crosswalk, never a second incident witness.
+    if resolved_imo and resolved_mmsi and not (
+        (bulletin.imo == resolved_imo and bulletin.mmsi == resolved_mmsi)
+        or any(r.imo == resolved_imo and r.mmsi == resolved_mmsi
+               for r in records.values())
+    ):
+        return blocked("identity_imo_mmsi_crosswalk_unverified")
     ordered = sorted(records.items())
     return VesselIdentityLink(
         status="linked_for_review",
