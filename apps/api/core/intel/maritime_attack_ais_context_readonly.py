@@ -13,7 +13,7 @@ from itertools import islice
 from typing import Callable, Iterable
 
 from core.intel.maritime_attack_correlation import (
-    AISFix, _utc, _valid_mmsi, ais_fix_from_vessel_track,
+    AISFix, _km, _utc, _valid_mmsi, ais_fix_from_vessel_track,
 )
 
 
@@ -24,6 +24,7 @@ class AISContextResult:
     complete: bool = False
     reason: str = ""
     inspected_rows: int = 0
+    suspect_track_ids: tuple[int, ...] = ()
 
 
 def load_ais_context(
@@ -75,6 +76,32 @@ def load_ais_context(
                                     inspected_rows=len(rows))
         checked.append((fix.observed_at, identifier, fix))
     checked.sort(key=lambda item: (item[0], item[1]))
+    # A collector cannot receive a position before it exists, apart from
+    # a small clock-skew allowance. Never expose a suspect fix to callers.
+    for observed, identifier, fix in checked:
+        if fix.received_at is None or observed - fix.received_at > timedelta(minutes=5):
+            return AISContextResult(
+                complete=False, reason="ais_receipt_clock_conflict",
+                inspected_rows=len(rows), suspect_track_ids=(identifier,),
+            )
+    # Two reports with identical timestamps but incompatible positions, or
+    # a teleport between fixes, make the whole context unsafe. 80 knots plus
+    # 2 km tolerance is deliberately permissive; this is a data-quality
+    # quarantine, not evidence of spoofing or hostile action.
+    for previous, current in zip(checked, checked[1:]):
+        earlier_at, earlier_id, earlier_fix = previous
+        later_at, later_id, later_fix = current
+        elapsed_hours = (later_at - earlier_at).total_seconds() / 3600.0
+        distance_km = _km(earlier_fix.lat, earlier_fix.lon,
+                          later_fix.lat, later_fix.lon)
+        if distance_km > 2.0 + 80.0 * 1.852 * elapsed_hours:
+            return AISContextResult(
+                complete=False, reason=("ais_conflicting_simultaneous_fixes"
+                                        if elapsed_hours == 0 else
+                                        "ais_impossible_position_jump"),
+                inspected_rows=len(rows),
+                suspect_track_ids=(earlier_id, later_id),
+            )
     return AISContextResult(
         fixes=tuple(item[2] for item in checked),
         track_ids=tuple(item[1] for item in checked),
