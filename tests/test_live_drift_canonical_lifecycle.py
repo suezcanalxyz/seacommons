@@ -41,21 +41,24 @@ def _feed_events(monkeypatch, events: list[IntelEvent]) -> None:
 
 
 @pytest.mark.parametrize(
-    ("stale_metadata_state", "canonical_state", "should_consult_drift"),
+    ("stale_metadata_state", "canonical_state", "incident_status", "should_consult_drift"),
     [
-        ("active", "resolved", False),
-        ("resolved", "needs_review", True),
-        ("active", "archived", False),
+        ("active", "resolved", "resolved", False),
+        ("resolved", "needs_review", "needs_review", True),
+        ("active", "archived", "outcome_unknown", False),
+        ("active", "active", "outcome_unknown", False),
     ],
 )
 def test_canonical_lifecycle_overrides_stale_drift_metadata(
-    monkeypatch, stale_metadata_state, canonical_state, should_consult_drift,
+    monkeypatch, stale_metadata_state, canonical_state, incident_status, should_consult_drift,
 ):
     event = _distress("canonical-drift-regression", "Alarm Phone", lifecycle=stale_metadata_state)
     _feed_events(monkeypatch, [event])
     monkeypatch.setattr(
-        "core.intel.humanitarian_incident.get_incident",
-        lambda _event_id: {"lifecycle": canonical_state},
+        "core.intel.humanitarian_incident.resolve_public_incident_state",
+        lambda _event, *, now, same_source: {
+            "lifecycle": canonical_state, "incident_status": incident_status,
+        },
     )
     monkeypatch.setattr(
         "core.intel.drift_service.is_auto_drift_eligible",
@@ -78,14 +81,20 @@ def test_legacy_drift_followup_groups_casefolded_provider_names(monkeypatch):
     origin = _distress("provider-origin", "Alarm Phone", lifecycle="")
     followup = _distress("provider-followup", " ALARM PHONE ", minutes=1, lifecycle="")
     _feed_events(monkeypatch, [origin, followup])
-    monkeypatch.setattr("core.intel.humanitarian_incident.get_incident", lambda _id: None)
+    monkeypatch.setattr(
+        "core.intel.humanitarian_incident.resolve_public_incident_state",
+        lambda event, *, now, same_source: {
+            "lifecycle": lifecycle_for(event, now=now, same_source=same_source),
+            "incident_status": "resolved",
+        },
+    )
     seen = []
 
     def lifecycle_for(event, *, now, same_source):
         seen.append((event.id, [candidate.id for candidate in same_source]))
         return "resolved"
 
-    monkeypatch.setattr("core.intel.lifecycle.distress_lifecycle", lifecycle_for)
+    # The shared resolver is exercised above with the candidate provider set.
     monkeypatch.setattr(
         "core.intel.drift_ownership.get_current_drift_id",
         lambda _event_id: pytest.fail("resolved drift must not consult a current job"),
