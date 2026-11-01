@@ -107,7 +107,12 @@ def test_manual_ingestion_keeps_validation_outside_and_bounds_content(
     assert len(event.title) == 255
     assert len(event.text) == 1000
     assert len(event.url) == 511
-    assert event.metadata == {"injected_manually": True}
+    # Manual ingestion uses the submission clock for ordering, not a
+    # source-observed timestamp suitable for forensic satellite lookup.
+    assert event.metadata == {
+        "injected_manually": True,
+        "_source_timestamp_inferred": True,
+    }
     assert registry.registered == [("Manual", "manual")]
 
 

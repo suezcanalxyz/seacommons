@@ -79,6 +79,11 @@ class IntelEvent:
 
     def __post_init__(self):
         if not self.timestamp_utc:
+            # Preserve the distinction between an observed source time and
+            # the ingestion clock used for legacy ordering. Satellite lookups
+            # must never treat this fallback as acquisition-time evidence.
+            self.metadata = dict(self.metadata or {})
+            self.metadata["_source_timestamp_inferred"] = True
             self.timestamp_utc = datetime.now(timezone.utc).isoformat()
     # Event classification
     type: str = ""        # twitter | news | iom_incident | ais_spike | ngo_activity

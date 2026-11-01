@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from core.intel.store import IntelEvent
 
 _NOW = datetime(2026, 9, 5, 0, 0, tzinfo=timezone.utc)
@@ -170,3 +172,64 @@ def test_scheduler_satellite_job_calls_bounded_enrichment(monkeypatch):
     )
     scheduler._job_satellite_enrichment()
     assert calls == [{"limit": 6}]
+
+
+def test_satellite_rejects_missing_or_unparseable_report_time(monkeypatch):
+    from core.intel import satellite_enrichment
+
+    monkeypatch.setattr(
+        satellite_enrichment, "resolve_for_incident",
+        lambda **_: pytest.fail("undated report queried a satellite provider"),
+    )
+    for timestamp in (None, "", "not-a-timestamp"):
+        event = _event(timestamp_utc=timestamp)
+        if not timestamp:
+            # IntelEvent retains an ingest timestamp for legacy ordering,
+            # but records that it is not an observed source timestamp.
+            assert event.timestamp_utc
+            assert event.metadata["_source_timestamp_inferred"] is True
+        assert not satellite_enrichment.is_satellite_enrichment_candidate(event, now=_NOW)
+        assert satellite_enrichment._case_satellite_targets(event) == []
+        assert satellite_enrichment.enrich_event(event, now=_NOW) == {
+            "persisted": 0, "errors": 0,
+        }
+
+
+def test_satellite_rejects_future_report_without_provider_call(monkeypatch):
+    from core.intel import satellite_enrichment
+
+    monkeypatch.setattr(
+        satellite_enrichment, "resolve_for_incident",
+        lambda **_: pytest.fail("future-dated report queried a satellite provider"),
+    )
+    event = _event(timestamp_utc=(_NOW + timedelta(minutes=6)).isoformat())
+    assert not satellite_enrichment.is_satellite_enrichment_candidate(event, now=_NOW)
+    assert satellite_enrichment.enrich_event(event, now=_NOW) == {
+        "persisted": 0, "errors": 0,
+    }
+    # Allow small clock skew without inventing an observation time.
+    skewed = _event(timestamp_utc=(_NOW + timedelta(minutes=4)).isoformat())
+    assert satellite_enrichment.is_satellite_enrichment_candidate(skewed, now=_NOW)
+
+
+def test_false_string_flags_do_not_trigger_satellite_enrichment():
+    from core.intel.satellite_enrichment import is_satellite_enrichment_candidate
+
+    false_flags = _event(metadata={
+        "is_distress": "false", "drift_eligible": "false",
+    })
+    assert not is_satellite_enrichment_candidate(false_flags, now=_NOW)
+    positive = _event(metadata={"is_distress": "true"})
+    assert is_satellite_enrichment_candidate(positive, now=_NOW)
+    published = _event(metadata={"publication_status": "published"})
+    assert is_satellite_enrichment_candidate(published, now=_NOW)
+
+
+
+def test_satellite_accepts_explicit_source_time_without_inference_marker():
+    from core.intel import satellite_enrichment
+
+    event = _event(timestamp_utc=_NOW.isoformat())
+    assert "_source_timestamp_inferred" not in event.metadata
+    assert satellite_enrichment._credible_source_time(event) == _NOW
+    assert satellite_enrichment.is_satellite_enrichment_candidate(event, now=_NOW)
