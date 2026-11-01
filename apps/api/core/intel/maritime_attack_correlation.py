@@ -435,10 +435,20 @@ def _lineage_components(edges: Sequence[tuple[str, str]]) -> dict[str, str]:
     parent: dict[str, str] = {}
 
     def find(identifier: str) -> str:
+        # Verified syndication chains can be thousands of documents long.
+        # Recursive path compression raises RecursionError for a legitimate
+        # deep chain, silently preventing a conservative source collapse.
+        # Use an iterative walk and compression; never turn an AIS signal
+        # or a copied report into a second original witness.
         parent.setdefault(identifier, identifier)
-        if parent[identifier] != identifier:
-            parent[identifier] = find(parent[identifier])
-        return parent[identifier]
+        node = identifier
+        path: list[str] = []
+        while parent[node] != node:
+            path.append(node)
+            node = parent[node]
+        for member in path:
+            parent[member] = node
+        return node
 
     for derived, original in edges:
         if not derived or not original:
