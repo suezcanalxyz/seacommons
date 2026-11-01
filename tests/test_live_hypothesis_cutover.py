@@ -67,6 +67,56 @@ def test_live_security_uses_published_hypothesis_not_raw_detector_events():
     assert feature["properties"]["hypothesis_type"] == "position_spoofing"
     assert feature["properties"]["hypothesis_state"] == "published"
     assert feature["properties"]["visual_category"] == "spoofing"
-    assert feature["properties"]["verification_status"] == "multi_source_corroborated"
+    # Two AIS detector events can share one lineage. Assessment maturity
+    # must not be presented as independent-source corroboration.
+    assert feature["properties"]["verification_status"] == "derived"
+    assert feature["properties"]["corroborated"] is False
     assert "mmsi" not in feature["properties"]
     assert "linked_mmsi" not in feature["properties"]
+
+
+@pytest.mark.parametrize(
+    ("lineages", "corroborated"),
+    [
+        ([], False),
+        (["ais:provider-a", "ais:provider-a"], False),
+        (["ais:provider-a", "news:provider-b"], True),
+    ],
+)
+def test_published_hypothesis_corroboration_requires_independent_lineage(
+    monkeypatch, lineages, corroborated,
+):
+    """A corroborated assessment stage alone cannot assert two sources."""
+    from core.intel import hypothesis_publication
+    from core.live.feed import _published_security_hypothesis_features
+
+    now = datetime.now(timezone.utc).isoformat()
+    feature = {
+        "type": "Feature",
+        "id": "hyp:test:lineage",
+        "geometry": {"type": "Point", "coordinates": [14.1, 35.5]},
+        "properties": {
+            "id": "hyp:test:lineage",
+            "hypothesis_type": "dark_transit",
+            "timestamp_utc": now,
+            "evidence_stage": "corroborated",
+            "independence_groups": lineages,
+            "reason_codes": ["ais_gap"],
+        },
+    }
+    monkeypatch.setattr(
+        hypothesis_publication,
+        "public_hypothesis_collection",
+        lambda limit: {"type": "FeatureCollection", "features": [feature]},
+    )
+    projected = _published_security_hypothesis_features(limit=10)
+    assert len(projected) == 1
+    props = projected[0]["properties"]
+    assert props["evidence_stage"] == "corroborated"
+    assert props["corroborated"] is corroborated
+    assert props["verification_status"] == (
+        "multi_source_corroborated" if corroborated else "derived"
+    )
+    assert ("corroborated" in props["facets"]) is corroborated
+    # Internal lineage labels must not be leaked through the public feature.
+    assert "independence_groups" not in props
