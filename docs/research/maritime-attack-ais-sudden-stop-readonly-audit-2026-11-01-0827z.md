@@ -75,6 +75,6 @@ Original reporting authority vs relaying publisher, license, and precise publica
 
 ## CI and next gate
 
-First implementation commit `506d9368` and regression commit `fd44498b`: GitHub Actions run **41288839559 SUCCESS** (275 maritime Python tests, 18 bulletin unit tests, 3 SQLite, 5 ephemeral PostgreSQL = **301 Python**, plus frontend job). Follow-up stricter time guards `6323ff83` and tests `d263ff38` require their own CI result; do not call them certified until it completes.
+First implementation commit `506d9368` and regression commit `fd44498b`: GitHub Actions run **41288839559 SUCCESS** (275 maritime Python tests, 18 bulletin unit tests, 3 SQLite, 5 ephemeral PostgreSQL = **301 Python**, plus frontend job). Follow-up stricter time guards `6323ff83` and tests `d263ff38`: GitHub Actions run **41288926738 SUCCESS** for the final executable commit: 277 maritime Python tests + 18 bulletin unit tests + 3 SQLite + 5 PostgreSQL = **303 Python tests**, with the frontend taxonomy/build job also successful. The subsequent documentation-only commits do not change executable code.
 
 Next: certify the final CI head, then test reviewed original-bulletin acquisition and AIS context together on isolated staging PostgreSQL. Preserve source links, event/publication/reception timestamps, uncertainty, and origin lineage. Do not touch Oracle historical rows or deploy without approval.
