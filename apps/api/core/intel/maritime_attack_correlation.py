@@ -765,20 +765,20 @@ def correlate(
                 continue
             speed_fixes.append(fix)
         for claim in valid:
-            if claim.time_uncertainty_minutes > 180:
+            if claim.time_uncertainty_minutes > 30:
                 continue
             event_time = _utc(claim.occurred_at)
             before = [fix for fix in speed_fixes
                       if fix.sog_knots >= 5
-                      and 0 <= (event_time - _utc(fix.observed_at)).total_seconds() <= 30 * 60]
+                      and 0 < (event_time - _utc(fix.observed_at)).total_seconds() <= 30 * 60]
             after = [fix for fix in speed_fixes
                      if fix.sog_knots <= 1.5
-                     and 0 <= (_utc(fix.observed_at) - event_time).total_seconds() <= 90 * 60]
+                     and 0 < (_utc(fix.observed_at) - event_time).total_seconds() <= 90 * 60]
             if not before or not after:
                 continue
             previous = max(before, key=lambda fix: _utc(fix.observed_at))
             following = min(after, key=lambda fix: _utc(fix.observed_at))
-            if (_utc(following.observed_at) - _utc(previous.observed_at)).total_seconds() > 90 * 60:
+            if not 120 <= (_utc(following.observed_at) - _utc(previous.observed_at)).total_seconds() <= 90 * 60:
                 continue
             if previous.sog_knots - following.sog_knots < 5:
                 continue
