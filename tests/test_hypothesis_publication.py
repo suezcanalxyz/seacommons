@@ -8,6 +8,9 @@ the hypothesis publication gate."
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
+
+import pytest
 
 from core.intel.hypothesis import new_hypothesis, transition
 from core.intel.hypothesis_publication import public_hypothesis_collection
@@ -115,3 +118,63 @@ def test_published_hypothesis_with_excluded_evidence_is_withheld(monkeypatch):
     assert _record_for_hypothesis(h) is None
     e.metadata = {"ship_type": 80}
     assert _record_for_hypothesis(h) is not None
+
+
+@pytest.mark.parametrize(
+    ("lat", "lon", "expected"),
+    [
+        (35.5, 14.1, True),
+        (0, 0, True),
+        (90, 180, True),
+        (91, 14.1, False),
+        (-91, 14.1, False),
+        (35.5, 181, False),
+        (float("nan"), 14.1, False),
+        (35.5, float("inf"), False),
+        ("35.5", 14.1, False),
+        (True, 14.1, False),
+    ],
+)
+def test_public_hypothesis_wgs84_coordinates_are_finite_and_bounded(lat, lon, expected):
+    from core.intel.hypothesis_publication import _has_valid_public_point
+
+    assert _has_valid_public_point(lat, lon) is expected
+
+
+@pytest.mark.parametrize(
+    ("lat", "lon", "expected_count"),
+    [(35.5, 14.1, 1), (91.0, 14.1, 0), (35.5, float("nan"), 0)],
+)
+def test_public_hypothesis_endpoint_drops_invalid_geojson_points(
+    monkeypatch, lat, lon, expected_count,
+):
+    """The direct /live/hypotheses projection must not emit invalid GeoJSON."""
+    from core.intel import hypothesis_publication as publication
+
+    hypothesis = SimpleNamespace(
+        hypothesis_id="hyp:test:wgs84",
+        episode_id=None,
+        live_expires_at=None,
+    )
+    monkeypatch.setattr(
+        publication, "list_hypotheses",
+        lambda state, limit: [hypothesis],
+    )
+    monkeypatch.setattr(
+        publication, "_independent_episode_source_counts",
+        lambda episode_ids: {},
+    )
+    monkeypatch.setattr(
+        publication, "_record_for_hypothesis",
+        lambda hypothesis: {"id": hypothesis.hypothesis_id, "lat": lat, "lon": lon},
+    )
+    monkeypatch.setattr(
+        publication, "project_public_maritime_assessed",
+        lambda record, hypothesis: dict(record),
+    )
+
+    result = publication.public_hypothesis_collection(limit=10)
+    assert len(result["features"]) == expected_count
+    assert result["meta"]["count"] == expected_count
+    if expected_count:
+        assert result["features"][0]["geometry"]["coordinates"] == [lon, lat]
