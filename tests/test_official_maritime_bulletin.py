@@ -74,6 +74,18 @@ class OfficialBulletinTests(TestCase):
         assert result["provenance"]["attack_corroboration_allowed"] is False
 
 
+    def test_ukmto_suspicious_dhow_is_not_attack_evidence(self):
+        bulletin = OfficialMaritimeBulletin(
+            issuer="UKMTO", bulletin_id="185/26",
+            source_url="https://www.ukmto.org/recent-incidents",
+            kind="suspicious_activity",
+            event_date=date(2026, 10, 29),
+        )
+        result = prepare_official_bulletin(bulletin)
+        assert result["source_name"] == "UKMTO"
+        assert result["provenance"]["origin_authority_verified"] is False
+        assert result["provenance"]["attack_corroboration_allowed"] is False
+
     def test_riti_navarea_anchorage_is_not_assumed_impact_location(self):
         warning = OfficialMaritimeBulletin(
             issuer="NAVAREA_IX", bulletin_id="420/26",
