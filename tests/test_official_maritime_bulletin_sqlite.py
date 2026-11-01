@@ -35,9 +35,8 @@ def jet():
         bulletin_id="news9664",
         source_url="https://www.mod.bg/news9664",
         kind="attack",
+        # Real BG MOD source names the ship but does not publish IMO/MMSI.
         vessel_name="CONTSHIP JET",
-        imo="9348625",
-        mmsi="636019532",
         occurred_at=datetime(2026, 10, 28, 10, tzinfo=UTC),
         publication_date=date(2026, 10, 28),
     )
@@ -77,7 +76,9 @@ class IsolatedCanonicalBulletinWriterTests(TestCase):
             self.assertTrue(replay.replayed)
             self.assertEqual(first.observation_id, replay.observation_id)
             self.assertNotEqual(first.observation_id, revised.observation_id)
-            self.assertEqual(revised.provenance["vessel_imo"], "9348625")
+            self.assertEqual(revised.provenance["vessel_imo"], "")
+            self.assertEqual(revised.provenance["vessel_mmsi"], "")
+            self.assertEqual(first.subject_refs, [])
             self.assertEqual(first.provenance["origin_authority_verified"], False)
             self.assertEqual(first.provenance["attack_corroboration_allowed"], False)
             self.assertEqual(first.provenance["published_at_utc"], None)
