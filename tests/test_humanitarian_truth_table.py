@@ -101,6 +101,7 @@ def test_archived_lifecycle_is_always_flagged_as_silence_only():
         source_status="active", now=_NOW,
     )
     assert "ARCHIVED_BY_SILENCE_ONLY" in flags
+    assert "RESOLVED_CASE_STILL_ACTIVE_LOOKING" not in flags
 
 
 def test_archived_distress_with_visible_drift_is_not_misreported_as_rescued():
