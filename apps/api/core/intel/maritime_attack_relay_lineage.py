@@ -109,12 +109,57 @@ def reviewed_relay_edges(
                     reviewed = _utc(relay.reviewed_at)
                     if reviewed < captured:
                         reason = "review_predates_capture"
+                    else:
+                        relay_published = _utc(
+                            by_id[relay.relay_claim_id].published_at
+                        )
+                        # The hashed relay page cannot have been captured
+                        # before it was published. Allow five minutes for
+                        # clock skew, but never fabricate a publication time.
+                        if (relay_published - captured).total_seconds() > 300:
+                            reason = "capture_predates_relay_publication"
                 except (TypeError, ValueError, AttributeError):
                     reason = "invalid_review_timestamp"
         if reason:
             rejected.append(f"{index}:{reason}")
         else:
             accepted.add((relay.relay_claim_id, relay.origin_claim_id))
+
+    # A single relay claiming two different original documents, or two
+    # documents claiming to be derived from each other, cannot be certified
+    # as a clean documentary chain. Preserve the edges to CONSERVATIVELY
+    # collapse source groups if the caller performs correlation; never let
+    # contradictory lineage manufacture an extra independent witness.
+    origins_by_relay: dict[str, set[str]] = {}
+    for derived, origin in accepted:
+        origins_by_relay.setdefault(derived, set()).add(origin)
+    for derived, origins in sorted(origins_by_relay.items()):
+        if len(origins) > 1:
+            rejected.append("conflicting_relay_origins:" + derived)
+
+    adjacency = {derived: origins for derived, origins in origins_by_relay.items()}
+    visited: set[str] = set()
+    visiting: set[str] = set()
+    cyclic = False
+
+    def visit(node: str) -> None:
+        nonlocal cyclic
+        if node in visiting:
+            cyclic = True
+            return
+        if node in visited:
+            return
+        visiting.add(node)
+        for origin in sorted(adjacency.get(node, ())):
+            visit(origin)
+        visiting.remove(node)
+        visited.add(node)
+
+    for node in sorted(adjacency):
+        visit(node)
+    if cyclic:
+        rejected.append("dependency_cycle")
+
     return RelayLineageReview(
         edges=tuple(sorted(accepted)),
         rejected=tuple(rejected),
