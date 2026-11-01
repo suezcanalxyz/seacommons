@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "source_checked_on_utc": "2026-11-01",
+  "records": [
+    {
+      "issuer": "BG_MOD",
+      "bulletin_id": "news9664",
+      "source_url": "https://www.mod.bg/news9664",
+      "kind": "attack",
+      "vessel_name": "CONTSHIP JET",
+      "occurred_at_utc": "2026-10-28T10:00:00Z",
+      "publication_date": "2026-10-28",
+      "source_rights": "public_with_attribution"
+    },
+    {
+      "issuer": "MSCIO",
+      "bulletin_id": "158/26",
+      "source_url": "https://mscio.eu/alerts/194",
+      "kind": "attack",
+      "vessel_name": "",
+      "occurred_at_utc": "2026-10-29T16:00:00Z",
+      "event_time_approximate": true,
+      "publication_date": "2026-10-29",
+      "source_rights": "restricted_republication"
+    },
+    {
+      "issuer": "MSCIO",
+      "bulletin_id": "159/26",
+      "source_url": "https://mscio.eu/alerts/195",
+      "kind": "attack",
+      "vessel_name": "",
+      "occurred_at_utc": "2026-10-29T22:12:00Z",
+      "event_time_approximate": true,
+      "publication_date": "2026-10-30",
+      "source_rights": "restricted_republication"
+    },
+    {
+      "issuer": "MSCIO",
+      "bulletin_id": "160/26",
+      "source_url": "https://mscio.eu/alerts/196",
+      "kind": "suspicious_activity",
+      "vessel_name": "",
+      "occurred_at_utc": "2026-10-30T02:25:00Z",
+      "event_time_approximate": true,
+      "publication_date": "2026-10-30",
+      "source_rights": "restricted_republication"
+    },
+    {
+      "issuer": "MSCIO",
+      "bulletin_id": "161/26",
+      "source_url": "https://mscio.eu/alerts/197",
+      "kind": "piracy",
+      "vessel_name": "AZINI",
+      "occurred_at_utc": "2026-10-29T09:00:00Z",
+      "event_time_approximate": true,
+      "publication_date": "2026-10-31",
+      "source_rights": "restricted_republication"
+    },
+    {
+      "issuer": "MSCIO",
+      "bulletin_id": "162/26",
+      "source_url": "https://mscio.eu/alerts/198",
+      "kind": "attack",
+      "vessel_name": "",
+      "occurred_at_utc": "2026-10-30T18:00:00Z",
+      "event_time_approximate": true,
+      "publication_date": "2026-10-30",
+      "source_rights": "restricted_republication"
+    }
+  ]
+}
