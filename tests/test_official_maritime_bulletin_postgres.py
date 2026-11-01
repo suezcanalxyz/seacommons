@@ -11,12 +11,12 @@ from dataclasses import replace
 from datetime import date, datetime, timezone
 from unittest import TestCase, skipUnless
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from core.db.models import (
-    Base, EntityDB, EntityRelationshipDB, LineageEdgeDB, SourceObservationDB,
+    Base, EntityDB, EntityRelationshipDB, LineageEdgeDB, SourceObservationDB, VesselTrackDB,
 )
 from core.intel.official_maritime_bulletin import (
     OfficialMaritimeBulletin, ingest_official_bulletin,
@@ -29,6 +29,7 @@ TABLES = (
     LineageEdgeDB.__table__,
     EntityDB.__table__,
     EntityRelationshipDB.__table__,
+    VesselTrackDB.__table__,
 )
 
 
@@ -217,4 +218,25 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
                 result.blocked_reasons,
                 ("not_an_incident_claim:" + obs.observation_id,),
             )
+            db.rollback()
+
+    def test_bounded_ais_read_requires_postgres_read_only_transaction(self):
+        """Real PostgreSQL SELECT gate; no synthetic fixtures or writes."""
+        from core.intel.maritime_attack_ais_context_readonly import (
+            load_ais_context_db,
+        )
+        event = datetime(2026, 10, 28, 10, tzinfo=timezone.utc)
+        with Session(self.engine) as db:
+            # A normal read-write session must not access AIS context through
+            # this adapter, even when the query itself would be a SELECT.
+            with self.assertRaisesRegex(ValueError, "READ ONLY"):
+                load_ais_context_db(db, "636019532", event)
+            db.rollback()
+        with Session(self.engine) as db:
+            db.execute(text("SET TRANSACTION READ ONLY"))
+            result = load_ais_context_db(db, "636019532", event)
+            self.assertTrue(result.complete)
+            self.assertEqual(result.fixes, ())
+            self.assertEqual(result.track_ids, ())
+            self.assertEqual(result.inspected_rows, 0)
             db.rollback()
