@@ -746,3 +746,59 @@ def test_audit_detects_resolved_case_with_published_macro_drift(monkeypatch):
     assert row.lifecycle == "resolved"
     assert row.drift_visible is True
     assert "DRIFT_AFTER_RESOLUTION" in row.anomaly_flags
+
+
+
+def test_same_source_followup_index_normalizes_provider_label():
+    """Capitalization and outer whitespace cannot hide a candidate update."""
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import index_recent_same_source_followups
+
+    now = _NOW.replace(tzinfo=None)
+    case = SimpleNamespace(id="case-mixed", source=" Alarm Phone ", created_at=now)
+    followup = SimpleNamespace(
+        id="case-mixed-update", source="alarm phone",
+        created_at=now + timedelta(minutes=10),
+    )
+    assert [row.id for row in index_recent_same_source_followups(
+        [case], [followup],
+    )["case-mixed"]] == ["case-mixed-update"]
+
+
+def test_audit_resolves_same_provider_followup_with_changed_source_casing():
+    """The bounded SQL lookup and lifecycle must agree on source identity."""
+    import uuid
+
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.humanitarian_truth_table import run_humanitarian_truth_table_audit
+
+    now = datetime.now(timezone.utc)
+    token = uuid.uuid4().hex[:12]
+    source = f"pytest-MiXeD-Source-{token}"
+    case_id = f"pytest-mixed-case-{token}"
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=case_id, timestamp_utc=(now - timedelta(minutes=2)).isoformat(),
+            type="distress", severity="high", lat=35.5, lon=14.1,
+            title="Distress reported",
+            text="47 people in distress aboard the vessel Zenobia near Lampedusa.",
+            source=source, meta={"is_distress": True},
+            created_at=(now - timedelta(minutes=2)).replace(tzinfo=None),
+            maritime_domain="sar",
+        ))
+        db.add(IntelEventDB(
+            id=f"{case_id}-followup",
+            timestamp_utc=(now - timedelta(minutes=1)).isoformat(),
+            type="news", severity="low", title="Rescue update",
+            text="Update: all 47 people aboard the Zenobia near Lampedusa were rescued and are now safe.",
+            source=f" {source.lower()} ",
+            meta={"service": "maritime", "lane": "intelligence"},
+            created_at=(now - timedelta(minutes=1)).replace(tzinfo=None),
+            maritime_domain="grey_zone",
+        ))
+
+    result = run_humanitarian_truth_table_audit(limit=500)
+    case = next((row for row in result["rows"] if row.candidate_incident_id == case_id), None)
+    assert case is not None
+    assert case.lifecycle == "resolved"
