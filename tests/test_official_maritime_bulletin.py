@@ -48,6 +48,32 @@ class OfficialBulletinTests(TestCase):
         assert first["provenance"]["original_report_id"] == changed["provenance"]["original_report_id"]
 
 
+    def test_bulgarian_prosecutor_filing_is_procedural_not_attack_witness(self):
+        # The 29 Oct official prosecutor release confirms an investigation
+        # referred by military police, not an independent observation of impact.
+        filing = OfficialMaritimeBulletin(
+            issuer="BG_PROSECUTOR", bulletin_id="80101",
+            source_url=("https://prb.bg/bg/news/aktualno/"
+                        "80101-voenno-okrazhna-prokuratura-sofiya-"
+                        "obrazuva-dosadebno-proizvodstvo-za-napadeniet"),
+            kind="investigation", vessel_name="CONTSHIP JET",
+            publication_date=date(2026, 10, 29),
+        )
+        prepared = prepare_official_bulletin(filing)
+        assert prepared["source_name"] == "Bulgarian Prosecutor Office"
+        assert prepared["subject_refs"] == []
+        assert prepared["observed_at"] == "2026-10-29"
+        assert prepared["provenance"]["event_time_precision"] == "unknown"
+        assert prepared["provenance"]["observed_at_semantics"] == "publication"
+        assert prepared["provenance"]["origin_authority_verified"] is False
+        assert prepared["provenance"]["attack_corroboration_allowed"] is False
+        assert claim_from_source_observation(self.observation(filing), {
+            "kind": "attack",
+            "occurred_at": datetime(2026, 10, 28, 10, tzinfo=UTC),
+            "vessel_name": "CONTSHIP JET",
+        }) is None
+
+
     def test_mscio_relay_cannot_manufacture_an_independent_authority(self):
         warning = OfficialMaritimeBulletin(
             issuer="MSCIO", bulletin_id="159/26",
