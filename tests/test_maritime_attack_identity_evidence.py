@@ -159,6 +159,44 @@ class ExternalIdentityLinkTests(TestCase):
         self.assertFalse(result.attack_corroboration_allowed)
         self.assertFalse(result.publication_allowed)
 
+    def test_name_only_cannot_join_imo_and_mmsi_from_unbridged_sources(self):
+        primary = primary_bulgarian_report()
+        imo_only = synthetic_external_registry(mmsi="")
+        mmsi_only = synthetic_external_registry(
+            source_record_id="synthetic-registry:mmsi-only",
+            source_url="https://example.net/registry/mmsi-636019532",
+            imo="",
+        )
+        result = link_external_vessel_identity(primary, [imo_only, mmsi_only])
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "identity_imo_mmsi_crosswalk_unverified")
+        self.assertEqual(result.evidence_record_ids, ())
+        self.assertFalse(result.attack_corroboration_allowed)
+        self.assertFalse(result.publication_allowed)
+
+    def test_one_explicit_registry_crosswalk_allows_review_only(self):
+        primary = primary_bulgarian_report()
+        imo_only = synthetic_external_registry(mmsi="")
+        both_ids = synthetic_external_registry(
+            source_record_id="synthetic-registry:crosswalk",
+            source_url="https://example.net/ships/9348625",
+        )
+        result = link_external_vessel_identity(primary, [imo_only, both_ids])
+        self.assertEqual(result.status, "linked_for_review")
+        self.assertEqual(result.vessel.imo, "9348625")
+        self.assertEqual(result.vessel.mmsi, "636019532")
+        self.assertEqual(len(result.evidence_record_ids), 2)
+        self.assertFalse(result.attack_corroboration_allowed)
+        self.assertFalse(result.publication_allowed)
+
+    def test_bulletin_imo_and_external_mmsi_do_not_form_crosswalk(self):
+        # Synthetic original with IMO but no MMSI; unlike the real BG report.
+        synthetic_original = replace(primary_bulgarian_report(), imo="9348625")
+        mmsi_only = synthetic_external_registry(imo="")
+        result = link_external_vessel_identity(synthetic_original, [mmsi_only])
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "identity_imo_mmsi_crosswalk_unverified")
+
     def test_impossible_publication_clock_and_missing_ship_name_fail(self):
         primary = primary_bulgarian_report()
         late = synthetic_external_registry(
