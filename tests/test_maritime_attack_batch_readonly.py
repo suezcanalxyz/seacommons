@@ -133,6 +133,22 @@ class BatchAuditTests(unittest.TestCase):
         self.assertFalse(result["jet"].verified)
         self.assertEqual(result["jet"].reason, "missing_observation_chronology")
 
+    def test_strict_batch_withholds_corrob_without_publication_time(self):
+        # Two original authorities and two receipt clocks are insufficient:
+        # the PLAY batch projection also needs publication chronology.
+        rows = [obs("mod", "navy", "one"), obs("mrcc", "rescue", "two")]
+        for row in rows:
+            row.observed_at = "2026-10-28T10:00:00Z"
+            row.received_at = "2026-10-28T11:00:00Z"
+            row.provenance["published_at_utc"] = "2026-10-28T10:30:00Z"
+        result = audit_attack_episodes_independence(
+            [episode("jet", "mod", "mrcc")],
+            lambda ids: rows, lambda ids: [],
+            require_chronology=True,
+        )
+        self.assertFalse(result["jet"].verified)
+        self.assertEqual(result["jet"].reason, "missing_publication_timestamp")
+
     def test_strict_batch_preserves_two_valid_originals(self):
         rows = [obs("mod", "navy", "one"), obs("mrcc", "rescue", "two")]
         for row in rows:
