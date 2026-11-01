@@ -15,6 +15,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Mapping
+from urllib.parse import urlsplit
+
+from core.intel.maritime_attack_correlation import _canonical_source_url
 
 from core.intel.official_maritime_bulletin import (
     OfficialMaritimeBulletin, prepare_official_bulletin,
@@ -97,11 +100,20 @@ def prepare_staging_bulletin_manifest(manifest: Mapping[str, object]) -> tuple[S
         if not isinstance(entry, Mapping) or set(entry) - _ALLOWED_FIELDS:
             raise ValueError("Unexpected source manifest field")
         rights = entry.get("source_rights")
-        if rights not in _ALLOWED_RIGHTS:
+        if not isinstance(rights, str) or rights not in _ALLOWED_RIGHTS:
             raise ValueError("Source rights must be explicitly classified")
         for key in ("issuer", "bulletin_id", "source_url", "kind", "vessel_name"):
             if not isinstance(entry.get(key), str):
                 raise ValueError("Missing or invalid " + key)
+        for optional in ("imo", "mmsi", "source_document_sha256"):
+            if optional in entry and not isinstance(entry[optional], str):
+                raise ValueError("Invalid " + optional)
+        for optional in ("lat", "lon", "location_uncertainty_km"):
+            if optional in entry and (
+                isinstance(entry[optional], bool)
+                or not isinstance(entry[optional], (int, float))
+            ):
+                raise ValueError("Invalid " + optional)
         event_at = _clock(entry.get("occurred_at_utc"), "occurred_at_utc")
         event_day = _day(entry.get("event_date"), "event_date")
         publication_at = _clock(entry.get("published_at_utc"), "published_at_utc")
@@ -121,9 +133,10 @@ def prepare_staging_bulletin_manifest(manifest: Mapping[str, object]) -> tuple[S
         # The actual 28 Oct Bulgarian Ministry report names CONTSHIP JET but
         # does not print either identifier. This known regression must never
         # silently borrow IMO/MMSI from a separate registry.
-        if issuer == "BG_MOD" and report_id == "news9664" and (
-            entry.get("imo") or entry.get("mmsi")
-        ):
+        if issuer == "BG_MOD" and (
+            report_id.strip().casefold() == "news9664"
+            or urlsplit(entry["source_url"]).path.rstrip("/").casefold() == "/news9664"
+        ) and (entry.get("imo") or entry.get("mmsi")):
             raise ValueError("CONTSHIP JET identifiers absent from primary source")
         bulletin = OfficialMaritimeBulletin(
             issuer=issuer, bulletin_id=report_id,
@@ -141,7 +154,9 @@ def prepare_staging_bulletin_manifest(manifest: Mapping[str, object]) -> tuple[S
         )
         envelope = prepare_official_bulletin(bulletin)
         report_key = envelope["provenance"]["original_report_id"].casefold()
-        url_key = envelope["source_url"].strip().rstrip("/").casefold()
+        url_key = _canonical_source_url(envelope["source_url"])
+        if not url_key:
+            raise ValueError("Invalid canonical source URL")
         if report_key in seen_report_ids or url_key in seen_urls:
             raise ValueError("Duplicate original bulletin or source URL")
         seen_report_ids.add(report_key)
