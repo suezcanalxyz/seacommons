@@ -53,6 +53,9 @@ class AISFix:
     lon: float
     # Optional raw AIS speed over ground. Never an independent attack witness.
     sog_knots: float | None = None
+    # Optional original collector receipt clock. An AIS event timestamp that
+    # predates its own receipt by >5 minutes is suspect, not vessel evidence.
+    received_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -685,7 +688,15 @@ def correlate(
             contradictions.append("invalid_ais_fix_coordinates")
             continue
         try:
-            _utc(fix.observed_at)
+            observed_at = _utc(fix.observed_at)
+            if fix.received_at is not None:
+                received_at = _utc(fix.received_at)
+                # Small receiver clock skew is tolerated; a position that
+                # claims to occur >5 min after receipt cannot corroborate
+                # spatial context or a sudden stop. Do not infer spoofing.
+                if (observed_at - received_at).total_seconds() > 300:
+                    contradictions.append("ais_fix_future_relative_to_receipt")
+                    continue
         except (ValueError, TypeError, AttributeError):
             contradictions.append("invalid_ais_fix_timestamp")
             continue
