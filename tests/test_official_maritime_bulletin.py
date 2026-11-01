@@ -207,7 +207,7 @@ class OfficialBulletinTests(TestCase):
 
     def test_incident_site_cannot_be_moved_or_made_more_precise(self):
         bulletin = replace(
-            jet(), lat=43.25, lon=28.81,
+            synthetic_identified_jet(), lat=43.25, lon=28.81,
             location_uncertainty_km=12, location_role="incident_site",
         )
         obs = self.observation(bulletin)
