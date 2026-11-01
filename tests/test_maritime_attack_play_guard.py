@@ -159,6 +159,43 @@ class AttackPlayGuardTests(unittest.TestCase):
         self.assertEqual(result["provenance_audit_reason"], "shared_original_source")
         self.assertFalse(result["independence_groups"])
 
+    def test_failed_attack_audit_clears_stale_corroboration_facet_and_state(self):
+        projection = {
+            "verification_status": "multi_source_corroborated",
+            "independence_groups": ["bulgarian_mod", "independent_rescue"],
+            "corroborated": True,
+            "evidence_stage": "corroborated",
+            "evidence_state": "corroborated",
+            "facets": ["corroborated", "sanctions", "corroborated"],
+        }
+        result = self._actual_play_audit_function()(
+            projection, episode(),
+            SimpleNamespace(verified=False, reason="shared_original_source"),
+        )
+        self.assertFalse(result["corroborated"])
+        self.assertEqual(result["evidence_stage"], "derived")
+        self.assertEqual(result["evidence_state"], "derived")
+        self.assertEqual(result["facets"], ["sanctions"])
+        self.assertEqual(result["verification_status"], "provenance_review_required")
+
+    def test_verified_attack_audit_adds_single_corroboration_facet(self):
+        projection = {
+            "verification_status": "multi_source_corroborated",
+            "independence_groups": ["bulgarian_mod", "independent_rescue"],
+            "corroborated": False,
+            "evidence_stage": "derived",
+            "evidence_state": "derived",
+            "facets": ["sanctions"],
+        }
+        result = self._actual_play_audit_function()(
+            projection, episode(),
+            SimpleNamespace(verified=True, reason=""),
+        )
+        self.assertTrue(result["corroborated"])
+        self.assertEqual(result["evidence_stage"], "corroborated")
+        self.assertEqual(result["evidence_state"], "corroborated")
+        self.assertEqual(result["facets"], ["corroborated", "sanctions"])
+
     def test_play_humanitarian_projection_unchanged(self):
         projection = {
             "verification_status": "multi_source_corroborated",
