@@ -225,3 +225,78 @@ def test_invalid_location_uncertainty_cannot_seed_drift(monkeypatch):
         )
         ok, reason = is_auto_drift_eligible(event)
         assert not ok and "uncertainty" in reason
+
+
+def test_missing_durable_event_never_bypasses_origin_gate(monkeypatch):
+    class _MissingStore:
+        def get_durable(self, _event_id):
+            return None
+
+        def update_metadata(self, *_args, **_kwargs):
+            raise AssertionError("unknown events must not be mutated")
+
+    monkeypatch.setattr(ds, "intel_store", _MissingStore())
+    monkeypatch.setattr(
+        ds, "acquire_drift_slot",
+        lambda: (_ for _ in ()).throw(AssertionError("missing event acquired a slot")),
+    )
+    for force in (False, True):
+        assert schedule_intel_drift(
+            "missing-event", 34.27, 11.94, None, "rubber_boat",
+            "2026-11-01T12:00:00Z", force=force,
+        ) is False
+
+
+def test_scheduled_origin_must_match_verified_durable_coordinate(monkeypatch):
+    event = _distress(
+        coordinate_source="post_text", coordinate_review_status="not_required",
+    )
+
+    class _Store:
+        def get_durable(self, _event_id):
+            return event
+
+        def update_metadata(self, _event_id, *, metadata):
+            event.metadata.update(metadata)
+
+    monkeypatch.setattr(ds, "intel_store", _Store())
+    monkeypatch.setattr(ds, "is_auto_drift_eligible", lambda _event: (True, "eligible"))
+    monkeypatch.setattr(
+        ds, "acquire_drift_slot",
+        lambda: (_ for _ in ()).throw(AssertionError("unverified origin acquired a slot")),
+    )
+    for lat, lon in (
+        (35.27, 11.94),
+        (34.27, 12.94),
+        (float("nan"), 11.94),
+        (34.27, "invalid"),
+    ):
+        assert schedule_intel_drift(
+            event.id, lat, lon, None, "rubber_boat",
+            "2026-11-01T12:00:00Z", force=True,
+        ) is False
+
+
+def test_scheduler_seeds_from_verified_durable_coordinate(monkeypatch):
+    event = _distress(
+        coordinate_source="post_text", coordinate_review_status="not_required",
+    )
+    calls = []
+
+    class _Store:
+        def get_durable(self, _event_id):
+            return event
+
+        def update_metadata(self, _event_id, *, metadata):
+            event.metadata.update(metadata)
+
+    monkeypatch.setattr(ds, "intel_store", _Store())
+    monkeypatch.setattr(ds, "is_auto_drift_eligible", lambda _event: (True, "eligible"))
+    monkeypatch.setattr(ds, "acquire_drift_slot", lambda: True)
+    monkeypatch.setattr(ds, "_run_intel_drift", lambda *args: calls.append(args))
+    assert schedule_intel_drift(
+        event.id, event.lat + 0.0000001, event.lon, None, "rubber_boat",
+        "2026-11-01T12:00:00Z", force=True, background=False,
+    ) is True
+    assert len(calls) == 1
+    assert calls[0][1:3] == (event.lat, event.lon)
