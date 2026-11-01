@@ -77,10 +77,15 @@ def _observation_chronology_issue(row: object, *, require_complete: bool = False
     if observed > received + tolerance:
         return "observation_after_receipt"
     provenance = getattr(row, "provenance", None)
+    # An operator-reviewed source may have an event and receipt clock but
+    # only a day-level publication date (or none at all). That is useful
+    # candidate evidence, NOT minute-precise, independently corroborated
+    # provenance in the canonical PLAY audit. Never synthesize publication
+    # time from receipt time or the midnight of a publication date.
+    publications = []
     if isinstance(provenance, dict):
         # Both aliases can be present in older source adapters. Never accept
         # the convenient one while ignoring a contradictory second timestamp.
-        publications = []
         for key in ("published_at_utc", "published_at"):
             raw = provenance.get(key)
             if raw is not None:
@@ -88,12 +93,14 @@ def _observation_chronology_issue(row: object, *, require_complete: bool = False
                     publications.append(_utc_observation_time(raw))
                 except (ValueError, TypeError, OverflowError):
                     return "invalid_publication_timestamp"
-        if len(publications) == 2 and abs(
-            (publications[0] - publications[1]).total_seconds()
-        ) > tolerance.total_seconds():
-            return "conflicting_publication_timestamps"
-        if any(published > received + tolerance for published in publications):
-            return "publication_after_receipt"
+    if require_complete and not publications:
+        return "missing_publication_timestamp"
+    if len(publications) == 2 and abs(
+        (publications[0] - publications[1]).total_seconds()
+    ) > tolerance.total_seconds():
+        return "conflicting_publication_timestamps"
+    if any(published > received + tolerance for published in publications):
+        return "publication_after_receipt"
     return ""
 
 
