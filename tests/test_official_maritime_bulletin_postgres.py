@@ -6,7 +6,9 @@ scheduler. The test refuses any host other than loopback and any database
 other than its dedicated disposable CI database. All inserted rows are rolled
 back; GitHub Actions destroys the PostgreSQL service after the job.
 """
+import json
 import os
+from pathlib import Path
 from dataclasses import replace
 from datetime import date, datetime, timezone
 from unittest import TestCase, skipUnless
@@ -106,6 +108,51 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
         with Session(self.engine) as db:
             self.assertEqual(db.scalar(select(func.count()).select_from(SourceObservationDB)), 0)
             self.assertEqual(db.scalar(select(func.count()).select_from(EntityRelationshipDB)), 0)
+
+    def test_six_source_checked_bulletins_enter_only_canonical_staging_observations(self):
+        """Real October source metadata -> six isolated PostgreSQL rows.
+
+        No public IntelEvent, maritime episode, production write, scheduler
+        or publication. This is the opt-in canonical ingestion contract.
+        """
+        from core.intel.maritime_attack_staging_manifest import (
+            prepare_staging_bulletin_manifest,
+        )
+        path = (
+            Path(__file__).resolve().parents[1]
+            / "docs/research/maritime-attack-source-check-2026-11-01.json"
+        )
+        batch = prepare_staging_bulletin_manifest(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
+        with Session(self.engine) as db:
+            written = [ingest_official_bulletin(db, item.bulletin) for item in batch]
+            self.assertEqual(len(written), 6)
+            self.assertEqual(
+                db.scalar(select(func.count()).select_from(SourceObservationDB)), 6
+            )
+            self.assertEqual(written[0].subject_refs, [])
+            self.assertEqual(written[0].provenance["vessel_imo"], "")
+            self.assertEqual(written[0].provenance["vessel_mmsi"], "")
+            self.assertEqual(written[2].provenance["event_time_precision"], "approximate")
+            self.assertEqual(
+                written[3].provenance["bulletin_kind"], "suspicious_activity"
+            )
+            self.assertTrue(
+                all(row.provenance["attack_corroboration_allowed"] is False
+                    for row in written)
+            )
+            replay = ingest_official_bulletin(db, batch[0].bulletin)
+            self.assertTrue(replay.replayed)
+            self.assertEqual(replay.observation_id, written[0].observation_id)
+            self.assertNotIn(
+                "maritime_episodes", self.engine.dialect.get_table_names(db.connection())
+            )
+            db.rollback()
+        with Session(self.engine) as db:
+            self.assertEqual(
+                db.scalar(select(func.count()).select_from(SourceObservationDB)), 0
+            )
 
     def test_anchorage_does_not_become_incident_site(self):
         riti = OfficialMaritimeBulletin(
