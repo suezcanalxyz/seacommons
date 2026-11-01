@@ -65,6 +65,6 @@ Official public pages are currently accessible; this does not establish automate
 
 ## Tests and next gate
 
-The preceding certified staging CI was **278 Python tests** (268 correlation + 10 adapter). This change adds **5 adapter regressions**, for **283 expected**. GitHub Actions run for the application/test commit `c9c2ef2e` passed 268 correlation + 15 adapter tests and the frontend job. The final date-fixture commit `9c50ce65` has the same executable code and awaits its own CI confirmation.
+The preceding certified staging CI was **278 Python tests** (268 correlation + 10 adapter). This change adds **5 adapter regressions**, for **283 expected**. GitHub Actions run for the application/test commit `c9c2ef2e` passed 268 correlation + 15 adapter tests and the frontend job. The final application/test commit `9c50ce65` passed its own staging CI (GitHub Actions run **41268879170**, SUCCESS): **268 correlation + 15 adapter = 283 Python tests**, frontend JavaScript tests and build succeeded. Earlier intermediate commits failed before all fixtures were updated; final branch tests are green.
 
 **Next:** verify final CI, then perform a separate opt-in canonical-writer integration test in an isolated staging database (never Oracle production), and only after provenance/rights review connect a legally permitted metadata collector. Keep PLAY incident promotion operator-gated and maritime-attack UI tokens separate from humanitarian drifts.
