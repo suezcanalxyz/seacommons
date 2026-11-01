@@ -3,7 +3,7 @@ import io
 import importlib.util
 from pathlib import Path
 
-p = Path(__file__).resolve().parents[1] / 'scripts/backup_pg_to_r2_guarded.py'
+p = Path(__file__).resolve().parents[1] / 'scripts/backup_pg_to_r2_quarantined.py'
 spec = importlib.util.spec_from_file_location('guarded_backup', p)
 backup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(backup)

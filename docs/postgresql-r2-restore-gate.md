@@ -2,7 +2,7 @@
 
 This procedure does **not** authorize a production deployment. Do not delete PostgreSQL data, WAL, evidence, or pre-existing R2 objects.
 
-The opt-in script `scripts/backup_pg_to_r2_guarded.py` performs a read-only, low-priority `pg_dump` streamed to R2. Without `--execute`, it performs a preflight only. It refuses to run under high CPU load/PSI or low RAM/disk headroom, and aborts an in-progress dump on sustained pressure. Never bypass those guards to force a release.
+The opt-in script `scripts/backup_pg_to_r2_quarantined.py` performs a read-only, low-priority `pg_dump` streamed to R2. Without `--execute`, it performs a preflight only. It refuses to run under high CPU load/PSI or low RAM/disk headroom, and aborts an in-progress dump on sustained pressure. Never bypass those guards to force a release.
 
 A streamed dump first lands under `seacommons/backups/pending/`. This location is **untrusted**, including when a multipart upload has completed. Only after `pg_dump` exits successfully, enough bytes are produced, and a separate remote read matches the producer's SHA-256 and length does the script write a JSON attestation under `seacommons/backups/byte-verified/`.
 
