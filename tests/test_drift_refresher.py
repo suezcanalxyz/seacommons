@@ -124,3 +124,88 @@ def test_refresher_never_reschedules_completed_drift_after_live_24h_window(monke
     assert calls == []
     store._events.clear()
     store._seen.clear()
+
+
+
+def test_refresher_finds_durable_alarm_phone_case_evicted_by_ais(monkeypatch) -> None:
+    """The bounded in-memory deque cannot be the only refresh source."""
+    from core.intel import drift_refresher
+
+    now = datetime.now(timezone.utc)
+    evicted = _distress_event(
+        "evt-evicted-by-ais",
+        ts=(now - timedelta(hours=19)).isoformat(),
+        drift_completed_at=(now - timedelta(hours=9)).isoformat(),
+    )
+    calls = []
+    monkeypatch.setattr(drift_refresher.intel_store, "events", lambda **_: [])
+    monkeypatch.setattr(
+        drift_refresher.intel_store,
+        "persisted_events",
+        lambda **kwargs: [evicted] if kwargs.get("source_in") else [],
+    )
+    monkeypatch.setattr(
+        "core.intel.drift_service.schedule_intel_drift",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or True,
+    )
+    drift_refresher.DriftRefresher()._scan()
+    assert len(calls) == 1
+    assert calls[0][0][0] == evicted.id
+    assert calls[0][1]["force"] is True
+
+
+def test_refresher_deduplicates_memory_and_durable_candidates(monkeypatch) -> None:
+    from core.intel import drift_refresher
+
+    now = datetime.now(timezone.utc)
+    shared = _distress_event(
+        "evt-shared",
+        ts=(now - timedelta(hours=10)).isoformat(),
+        drift_completed_at=(now - timedelta(hours=8)).isoformat(),
+    )
+    other = _distress_event(
+        "evt-other-source",
+        ts=(now - timedelta(hours=9)).isoformat(),
+        drift_completed_at=(now - timedelta(hours=8)).isoformat(),
+    )
+    other.source = "Coast Guard"
+    calls = []
+    monkeypatch.setattr(drift_refresher.intel_store, "events", lambda **_: [shared])
+    monkeypatch.setattr(
+        drift_refresher.intel_store,
+        "persisted_events",
+        lambda **kwargs: [shared] if kwargs.get("source_in") else [shared, other],
+    )
+    monkeypatch.setattr(
+        "core.intel.drift_service.schedule_intel_drift",
+        lambda *args, **kwargs: calls.append(args[0]) or True,
+    )
+    drift_refresher.DriftRefresher()._scan()
+    assert sorted(calls) == ["evt-other-source", "evt-shared"]
+
+
+def test_refresher_rejects_resolved_durable_case(monkeypatch) -> None:
+    from core.intel import drift_refresher
+
+    now = datetime.now(timezone.utc)
+    resolved = _distress_event(
+        "evt-resolved",
+        ts=(now - timedelta(hours=12)).isoformat(),
+        drift_completed_at=(now - timedelta(hours=9)).isoformat(),
+        incident_lifecycle="resolved",
+    )
+    # Explicitly concluded events cannot be re-modelled even when durable.
+    resolved.text = "All passengers rescued and disembarked safely."
+    monkeypatch.setattr(drift_refresher.intel_store, "events", lambda **_: [])
+    monkeypatch.setattr(
+        drift_refresher.intel_store,
+        "persisted_events",
+        lambda **kwargs: [resolved] if kwargs.get("source_in") else [],
+    )
+    calls = []
+    monkeypatch.setattr(
+        "core.intel.drift_service.schedule_intel_drift",
+        lambda *args, **kwargs: calls.append(args[0]) or True,
+    )
+    drift_refresher.DriftRefresher()._scan()
+    assert calls == []
