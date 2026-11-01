@@ -30,6 +30,7 @@ _KINDS = frozenset({
     "attack", "sinking", "explosion", "collision", "piracy",
     "suspicious_activity", "navigational_hazard",
 })
+_LOCATION_ROLES = frozenset({"unknown", "incident_site", "anchorage", "last_reported_position", "hazard_position"})
 _REPORT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 /._-]{0,79}$")
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 
@@ -50,6 +51,7 @@ class OfficialMaritimeBulletin:
     lat: float | None = None
     lon: float | None = None
     location_uncertainty_km: float | None = None
+    location_role: str = "unknown"
     source_document_sha256: str = ""
 
 
@@ -106,6 +108,12 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
         raise ValueError("Invalid location uncertainty")
     if uncertainty is not None and bulletin.lat is None:
         raise ValueError("Uncertainty without a position")
+    if bulletin.location_role not in _LOCATION_ROLES:
+        raise ValueError("Invalid reported location role")
+    if bulletin.lat is not None and bulletin.location_role == "unknown":
+        raise ValueError("Coordinates require a documented location role")
+    if bulletin.lat is None and bulletin.location_role != "unknown":
+        raise ValueError("Location role without coordinates")
     if bulletin.source_document_sha256 and not _SHA256.fullmatch(bulletin.source_document_sha256):
         raise ValueError("Invalid original-document SHA256")
     facts = {
@@ -123,6 +131,7 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
         "lat": bulletin.lat,
         "lon": bulletin.lon,
         "location_uncertainty_km": uncertainty,
+        "location_role": bulletin.location_role,
         "source_document_sha256": bulletin.source_document_sha256.lower() or None,
     }
     payload = json.dumps(facts, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -148,6 +157,9 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
                         ([f"mmsi:{bulletin.mmsi}"] if bulletin.mmsi else []),
         "provenance": {
             "original_report_id": facts["original_report_id"],
+            "bulletin_kind": bulletin.kind,
+            "occurred_at_utc": event_at,
+            "location_role": bulletin.location_role,
             "originating_authority_id": bulletin.issuer,
             "origin_authority_verified": False,
             "publication_date": facts["publication_date"],
