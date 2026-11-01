@@ -3,7 +3,8 @@
 from dataclasses import replace
 from datetime import date, datetime, timezone
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+from types import ModuleType
 
 from core.intel.official_maritime_bulletin import (
     OfficialMaritimeBulletin, ingest_official_bulletin, prepare_official_bulletin,
@@ -123,19 +124,22 @@ class OfficialBulletinTests(TestCase):
 
     def test_missing_all_dates_rejected_before_database_call(self):
         warning = replace(jet(), occurred_at=None, publication_date=None)
-        with patch("core.intel.source_observation.record_observation") as record:
-            with self.assertRaisesRegex(ValueError, "No reliable"):
-                ingest_official_bulletin(object(), warning)
-            record.assert_not_called()
+        # The guard must fire before any persistence import or DB access.
+        with self.assertRaisesRegex(ValueError, "No reliable"):
+            ingest_official_bulletin(object(), warning)
 
 
     def test_explicit_ingest_calls_existing_canonical_write_path_once(self):
         fake_db = object()
-        with patch("core.intel.source_observation.record_observation", return_value="observation") as record:
+        # CI's pure-Python job intentionally has no SQLAlchemy installed.
+        # Stub the canonical writer module without importing DB dependencies.
+        writer = ModuleType("core.intel.source_observation")
+        writer.record_observation = MagicMock(return_value="observation")
+        with patch.dict("sys.modules", {"core.intel.source_observation": writer}):
             assert ingest_official_bulletin(fake_db, jet()) == "observation"
-            record.assert_called_once()
-            args, kwargs = record.call_args
-            assert args == (fake_db,)
-            assert kwargs["source_policy"] == "official_bulletin_metadata_only_reuse_unverified"
-            assert "raw_payload_ref" not in kwargs
-            assert kwargs["provenance"]["origin_authority_verified"] is False
+        writer.record_observation.assert_called_once()
+        args, kwargs = writer.record_observation.call_args
+        assert args == (fake_db,)
+        assert kwargs["source_policy"] == "official_bulletin_metadata_only_reuse_unverified"
+        assert "raw_payload_ref" not in kwargs
+        assert kwargs["provenance"]["origin_authority_verified"] is False
