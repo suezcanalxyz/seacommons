@@ -200,6 +200,28 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
 
 
 
+def _verified_open_episode_source_count(verification: str, groups: Any) -> int:
+    """Count only distinct canonical lineages with matching persisted verification.
+
+    AIS aliases cannot manufacture a second source. A stale status or lineage
+    list fails closed rather than publishing a corroboration claim.
+    """
+    if (
+        verification != VerificationStatus.MULTI_SOURCE_CORROBORATED.value
+        or not isinstance(groups, (list, tuple, set, frozenset))
+    ):
+        return 0
+    from core.intel.hypothesis_engine import _normalize_independence_group
+
+    canonical = {
+        normalized
+        for group in groups
+        if (normalized := _normalize_independence_group(group))
+        and normalized != "unknown"
+    }
+    return len(canonical) if len(canonical) >= 2 else 0
+
+
 def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
     """Project recent public MaritimeEpisode dossiers into Live.
 
@@ -351,8 +373,14 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
                 break
         meta = dict(source_event.get("meta") or {}) if source_event is not None else {}
         verification = str(row["verification_status"] or "single_source_observed")
-        corroborated = (
-            verification == VerificationStatus.MULTI_SOURCE_CORROBORATED.value
+        independent_source_count = _verified_open_episode_source_count(
+            verification, row["independence_groups"]
+        )
+        corroborated = independent_source_count >= 2
+        public_verification = (
+            verification
+            if verification != VerificationStatus.MULTI_SOURCE_CORROBORATED.value or corroborated
+            else VerificationStatus.DERIVED.value
         )
         if family == "gap_episode" and not corroborated:
             reception = meta.get("reception_expectation") or {}
@@ -395,7 +423,17 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
         taxonomy = taxonomy_fields(
             event_type=event_type,
             maritime_domain=domain,
-            metadata={**meta, "anomaly_type": anomaly, "episode_family": family},
+            metadata={
+                **meta,
+                "anomaly_type": anomaly,
+                "episode_family": family,
+                "verification_status": public_verification,
+                # Never let stale metadata or AIS aliases override the
+                # canonical persisted episode verification decision.
+                "independence_groups": [],
+                "contributing_independence_groups": [],
+                "independent_source_count": independent_source_count,
+            },
         )
         observed_at = row["end_at"].isoformat()
         title = (
@@ -439,8 +477,10 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
             "mmsi": linked_mmsi,
             "maritime_domain": domain,
             "anomaly_type": meta.get("anomaly_type") or anomaly,
-            "independence_groups": list(row["independence_groups"]),
-            "independent_source_count": len(row["independence_groups"]),
+            "independence_groups": (
+                list(row["independence_groups"]) if corroborated else []
+            ),
+            "independent_source_count": independent_source_count,
             "evidence_stage": "corroborated" if corroborated else "derived",
             "reason_codes": reason_codes,
         }
@@ -477,7 +517,7 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
                 "kind": LiveSignalKind.CONTEXT.value,
                 "severity": "medium",
                 "tier": IntelTier.SIGNAL.value,
-                "verification_status": verification,
+                "verification_status": public_verification,
                 "publication_status": PublicationStatus.PUBLISHED.value,
                 "source_policy": SourcePolicy.OPERATOR_PUBLISHED.value,
                 "title": title,
@@ -520,7 +560,7 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
                 } if family == "gap_episode" else {}),
                 "evidence_stage": "corroborated" if corroborated else "derived",
                 "corroborated": corroborated,
-                "independent_source_count": len(row["independence_groups"]),
+                "independent_source_count": independent_source_count,
                 "public_summary": family_to_summary[family],
             },
         }
