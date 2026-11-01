@@ -249,6 +249,17 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
         raise ValueError("Invalid MMSI format")
     if not (vessel.imo or vessel.mmsi or vessel.name):
         return None
+    # Missing extraction precision is UNKNOWN, not zero. A timestamp
+    # synthesized from a day-only report must not silently become minute-
+    # precise evidence, and an approximate map pin must not become exact.
+    # Explicit zero remains valid when the originating document establishes
+    # that precision and an operator verifies the extraction.
+    def extracted_precision(field: str, *, unknown: float) -> float:
+        value = extracted.get(field)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return unknown
+        return float(value)
+
     claim = IncidentClaim(
         claim_id=str(getattr(observation, "observation_id")),
         kind=kind,
@@ -258,11 +269,17 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
         vessel=vessel,
         lat=extracted.get("lat"),
         lon=extracted.get("lon"),
-        uncertainty_km=float(extracted.get("uncertainty_km") or 0),
+        uncertainty_km=extracted_precision(
+            "uncertainty_km",
+            unknown=10000.0 if extracted.get("lat") is not None
+            or extracted.get("lon") is not None else 0.0,
+        ),
         published_at=publications[0] if publications else None,
         received_at=parsed_utc(received_raw, stored_naive_utc=True) if received_raw else None,
         origin_report_id=original_id or None,
-        time_uncertainty_minutes=float(extracted.get("time_uncertainty_minutes") or 0),
+        time_uncertainty_minutes=extracted_precision(
+            "time_uncertainty_minutes", unknown=1440.0,
+        ),
     )
     _validate_claim_location(claim)
     return claim
