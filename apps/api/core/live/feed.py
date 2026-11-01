@@ -363,6 +363,23 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
         anomaly = family_to_anomaly.get(family)
         if anomaly is None or not row["geometry"]:
             continue
+        # The public hypothesis path already rejects malformed WGS84 points;
+        # persisted open-episode dossiers must meet the same map boundary.
+        # Leave the original episode geometry untouched in PostgreSQL/Play.
+        geometry = row["geometry"]
+        if not isinstance(geometry, dict):
+            continue
+        if geometry.get("type") == "Point":
+            from core.intel.hypothesis_publication import _has_valid_public_point
+
+            coordinates = geometry.get("coordinates")
+            if (
+                not isinstance(coordinates, (list, tuple))
+                or len(coordinates) != 2
+                or not _has_valid_public_point(coordinates[1], coordinates[0])
+            ):
+                logger.warning("Dropping open episode with invalid WGS84 point id=%s", row["episode_id"])
+                continue
         source_event = None
         for value in list(row["observation_ids"])[:3]:
             raw = str(value or "").strip()
