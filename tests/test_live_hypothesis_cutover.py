@@ -13,15 +13,17 @@ from core.live.feed import public_signal_collection
 
 @pytest.fixture(autouse=True)
 def _fresh_hypotheses():
-    from core.db.models import InvestigationHypothesisDB
+    from core.db.models import InvestigationHypothesisDB, MaritimeEpisodeDB
     from core.db.session import session_scope
     with session_scope() as db:
         db.query(InvestigationHypothesisDB).delete()
+        db.query(MaritimeEpisodeDB).filter(MaritimeEpisodeDB.episode_id == "episode:test:spoof").delete()
     with intel_store._lock:
         intel_store._events.clear(); intel_store._seen.clear()
     yield
     with session_scope() as db:
         db.query(InvestigationHypothesisDB).delete()
+        db.query(MaritimeEpisodeDB).filter(MaritimeEpisodeDB.episode_id == "episode:test:spoof").delete()
 
 
 def _publish_spoofing_hypothesis():
@@ -120,3 +122,61 @@ def test_published_hypothesis_corroboration_requires_independent_lineage(
     assert ("corroborated" in props["facets"]) is corroborated
     # Internal lineage labels must not be leaked through the public feature.
     assert "independence_groups" not in props
+
+
+@pytest.mark.parametrize(
+    ("groups", "verification", "expected_count"),
+    [
+        (["ais_sensor_lineage", "ais"], "multi_source_corroborated", 0),
+        (["ais_sensor_lineage", "news:independent"], "single_source_multi_indicator", 0),
+        (["ais_sensor_lineage", "ais", "news:independent"], "multi_source_corroborated", 2),
+    ],
+)
+def test_persisted_episode_independence_reaches_live_without_leaking_groups(
+    groups, verification, expected_count,
+):
+    """The real publication boundary must carry the verified aggregate.
+
+    A synthetic Feature with independence_groups alone cannot establish that
+    the actual hypothesis projection passes lineage metadata downstream.
+    """
+    from core.intel.episode_store import save_episode
+    from core.intel.hypothesis_publication import public_hypothesis_collection
+    from core.live.feed import _published_security_hypothesis_features
+
+    hypothesis_id = _publish_spoofing_hypothesis()
+    now = datetime.now(timezone.utc).isoformat()
+    save_episode({
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [14.1, 35.1]},
+        "properties": {
+            "episode_id": "episode:test:spoof",
+            "episode_family": "position_integrity",
+            "subject_ids": ["subj:mmsi:211879870"],
+            "observation_ids": ["spoof-a", "spoof-b"],
+            "first_observed_at": now,
+            "last_observed_at": now,
+            "independence_groups": groups,
+            "verification_status": verification,
+            "analysis_state": "evidence",
+            "publication_state": "published",
+        },
+    })
+    collection = public_hypothesis_collection(limit=20)
+    projected = next(
+        f for f in collection["features"]
+        if f["properties"].get("hypothesis_id") == hypothesis_id
+    )
+    props = projected["properties"]
+    assert props.get("independent_source_count", 0) == expected_count
+    assert "independence_groups" not in props
+
+    live = _published_security_hypothesis_features(limit=20)
+    published = next(
+        f for f in live if f["properties"].get("hypothesis_id") == hypothesis_id
+    )["properties"]
+    assert published["corroborated"] is (expected_count >= 2)
+    assert published["verification_status"] == (
+        "multi_source_corroborated" if expected_count >= 2 else "derived"
+    )
+    assert "independence_groups" not in published
