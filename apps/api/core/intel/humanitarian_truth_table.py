@@ -381,7 +381,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
 
     from core.db.models import DriftResultDB, IntelEventDB
     from core.db.session import session_scope
-    from core.intel.lifecycle import distress_lifecycle, is_within_live_retention_window
+    from core.intel.lifecycle import _latest_activity_time, distress_lifecycle, is_within_live_retention_window
     from core.intel.service_taxonomy import classify_service
     from core.intel.source_registry import source_registry
     from core.intel.store import IntelEvent
@@ -552,12 +552,19 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
 
             source_status_entry = source_registry.get(row.source)
             source_status = source_status_entry.status if source_status_entry else "unknown"
+            observed_at = _latest_activity_time(event, now=now)
 
             rows.append(build_case_row(
                 event_id=row.id, source=row.source,
                 source_publication_time=row.source_timestamp_utc or row.timestamp_utc,
                 retrieved_at=row.received_at.isoformat() if row.received_at else None,
-                last_update_at=row.timestamp_utc,
+                # Reflect credible, time-bounded thread updates rather than
+                # repeating the founding report timestamp. This uses the
+                # same clock gate as Live retention; unrelated same-source
+                # candidate posts must not become a case's last update.
+                last_update_at=(
+                    observed_at.isoformat() if observed_at else row.timestamp_utc
+                ),
                 lifecycle=lifecycle, drifts=drifts,
                 marker_visible=f"intel:{row.id}" in visible_signal_ids or row.id in visible_signal_ids,
                 drift_visible=f"intel:{row.id}" in visible_drift_event_ids or row.id in visible_drift_event_ids,
