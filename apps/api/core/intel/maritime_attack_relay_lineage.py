@@ -137,27 +137,24 @@ def reviewed_relay_edges(
         if len(origins) > 1:
             rejected.append("conflicting_relay_origins:" + derived)
 
-    adjacency = {derived: origins for derived, origins in origins_by_relay.items()}
-    visited: set[str] = set()
-    visiting: set[str] = set()
-    cyclic = False
-
-    def visit(node: str) -> None:
-        nonlocal cyclic
-        if node in visiting:
-            cyclic = True
-            return
-        if node in visited:
-            return
-        visiting.add(node)
-        for origin in sorted(adjacency.get(node, ())):
-            visit(origin)
-        visiting.remove(node)
-        visited.add(node)
-
-    for node in sorted(adjacency):
-        visit(node)
-    if cyclic:
+    # Kahn's algorithm avoids recursive traversal of arbitrarily long
+    # chains of reprints. Direction is derived -> origin; any residual
+    # nodes after removing indegree-zero nodes are part of, or fed by,
+    # a documentary dependency cycle.
+    indegree: dict[str, int] = {}
+    for derived, origin in accepted:
+        indegree.setdefault(derived, 0)
+        indegree[origin] = indegree.get(origin, 0) + 1
+    ready = [node for node, degree in indegree.items() if degree == 0]
+    visited_count = 0
+    while ready:
+        node = ready.pop()
+        visited_count += 1
+        for origin in origins_by_relay.get(node, ()):
+            indegree[origin] -= 1
+            if indegree[origin] == 0:
+                ready.append(origin)
+    if visited_count != len(indegree):
         rejected.append("dependency_cycle")
 
     return RelayLineageReview(
