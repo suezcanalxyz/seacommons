@@ -56,6 +56,35 @@ def _is_drift_stale(event: IntelEvent, *, now: datetime) -> bool:
     return (now - completed_at).total_seconds() / 3600 >= DRIFT_REFRESH_AFTER_HOURS
 
 
+def _refresh_candidates() -> list[IntelEvent]:
+    """Include durable SAR cases evicted from the AIS-heavy in-memory deque.
+
+    The 200-event in-memory scan alone misses older (but still Live) Alarm
+    Phone distress reports when high-volume AIS observations displace them.
+    Two bounded, targeted DB reads cover the known NGO source variants and
+    explicitly typed distress reports from other sources. This is read-only;
+    the existing lifecycle and schedule_intel_drift evidence gates remain
+    authoritative before any model is started.
+    """
+    from core.intel import lifecycle
+
+    age_days = lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS
+    recent = intel_store.events(limit=200, max_age_days=age_days)
+    ngo = intel_store.persisted_events(
+        source_in=["Alarm Phone", "alarm_phone"],
+        max_age_days=age_days,
+        limit=120,
+    )
+    distress = intel_store.persisted_events(
+        types=["distress"],
+        max_age_days=age_days,
+        limit=80,
+    )
+    # Prefer the in-memory copy when present (it may have newer metadata).
+    by_id = {event.id: event for event in [*distress, *ngo, *recent]}
+    return list(by_id.values())
+
+
 class DriftRefresher:
     """Background thread that re-runs stale drifts for in-window distress events."""
 
@@ -91,7 +120,7 @@ class DriftRefresher:
         from core.intel.drift_service import schedule_intel_drift
 
         now = datetime.now(timezone.utc)
-        candidates = intel_store.events(limit=200, max_age_days=lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS)
+        candidates = _refresh_candidates()
         refreshed = 0
         for event in candidates:
             if event.lat is None or event.lon is None:
