@@ -12,6 +12,7 @@ shaped for public output on any other basis.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from math import isfinite
 from typing import Any
 
 from core.intel.hypothesis import InvestigationHypothesis
@@ -27,6 +28,55 @@ _HYPOTHESIS_SUMMARY = {
         "Repeated dwell/route pattern near sensitive infrastructure, independently corroborated."
     ),
 }
+
+
+
+def _has_valid_public_point(lat: Any, lon: Any) -> bool:
+    """Fail closed on malformed WGS84 coordinates before publishing GeoJSON."""
+    if isinstance(lat, bool) or isinstance(lon, bool):
+        return False
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return False
+    return -90 <= lat <= 90 and -180 <= lon <= 180 and isfinite(lat) and isfinite(lon)
+
+
+def _independent_episode_source_counts(episode_ids: set[str]) -> dict[str, int]:
+    """Read canonical persisted episode lineage once, without exposing group IDs.
+
+    A hypothesis's evidence_stage and number of linked observations cannot
+    prove independent corroboration. Only a persisted episode whose
+    verification status agrees with >=2 *canonicalized* lineage groups
+    supplies the public aggregate count. Missing or stale episodes fail closed.
+    """
+    if not episode_ids:
+        return {}
+    from core.db.models import MaritimeEpisodeDB
+    from core.db.session import session_scope
+    from core.intel.hypothesis_engine import _normalize_independence_group
+
+    with session_scope() as db:
+        rows = (
+            db.query(
+                MaritimeEpisodeDB.episode_id,
+                MaritimeEpisodeDB.independence_groups,
+                MaritimeEpisodeDB.verification_status,
+            )
+            .filter(MaritimeEpisodeDB.episode_id.in_(sorted(episode_ids)))
+            .all()
+        )
+    counts: dict[str, int] = {}
+    for episode_id, raw_groups, verification in rows:
+        if verification != "multi_source_corroborated":
+            continue
+        groups = {
+            normalized
+            for value in (raw_groups or ())
+            if (normalized := _normalize_independence_group(value))
+            and normalized != "unknown"
+        }
+        if len(groups) >= 2:
+            counts[str(episode_id)] = len(groups)
+    return counts
 
 
 def _record_for_hypothesis(hypothesis: InvestigationHypothesis) -> dict[str, Any] | None:
@@ -84,7 +134,12 @@ def public_hypothesis_collection(limit: int = 100) -> dict[str, Any]:
 
     now = datetime.now(timezone.utc)
     features = []
-    for hypothesis in list_hypotheses(state="published", limit=limit):
+    hypotheses = list_hypotheses(state="published", limit=limit)
+    independent_counts = _independent_episode_source_counts({
+        str(hypothesis.episode_id)
+        for hypothesis in hypotheses if hypothesis.episode_id
+    })
+    for hypothesis in hypotheses:
         # core.live.retention ceiling: published is otherwise a terminal
         # state with no expiry transition, so without this a published case
         # could stay on Live forever. None (a row saved before this contract
@@ -96,25 +151,18 @@ def public_hypothesis_collection(limit: int = 100) -> dict[str, Any]:
         if record is None:
             continue
         projected = project_public_maritime_assessed(record, hypothesis=hypothesis)
-        if projected is None or projected.get("lat") is None or projected.get("lon") is None:
+        if projected is None or not _has_valid_public_point(projected.get("lat"), projected.get("lon")):
             continue
-        # Evidence maturity is not independent-source corroboration. Resolve
-        # lineage from the private evidence links, and expose only aggregate
-        # public labels, never the raw identifiers or vessel identity.
-        from core.intel.fusion import verification_for_event_ids
-
-        verification, groups, evidence_count = verification_for_event_ids(
-            list(hypothesis.evidence_links)
-        )
-        projected["verification_status"] = verification
-        projected["independence_groups"] = groups
-        projected["independent_source_count"] = len(groups)
-        projected["evidence_count"] = evidence_count
         # The hypothesis remains the assessment record, but the persisted
         # MaritimeEpisode is the canonical public case parent.
         projected["hypothesis_id"] = hypothesis.hypothesis_id
         if hypothesis.episode_id:
             projected["episode_id"] = hypothesis.episode_id
+            # Aggregate count is safe for public taxonomy; raw lineage IDs
+            # stay in the persisted private episode record.
+            count = independent_counts.get(hypothesis.episode_id, 0)
+            if count >= 2:
+                projected["independent_source_count"] = count
         features.append({
             "type": "Feature",
             "id": projected.get("episode_id") or projected["id"],
