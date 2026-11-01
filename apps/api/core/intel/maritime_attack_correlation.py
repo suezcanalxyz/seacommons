@@ -221,6 +221,28 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
     provenance = getattr(observation, "provenance", {}) or {}
     if not isinstance(provenance, dict):
         provenance = {}
+    official_bulletin = (
+        getattr(observation, "observation_type", "") == "official_maritime_bulletin"
+    )
+    if official_bulletin:
+        # An extraction cannot turn a suspicious approach, anchorage warning
+        # or other original bulletin into a verified attack.
+        if kind != provenance.get("bulletin_kind"):
+            return None
+        precision = provenance.get("event_time_precision")
+        if precision == "unknown":
+            # Publication is not the occurrence of an incident.
+            return None
+        if precision == "exact":
+            original_time = provenance.get("occurred_at_utc")
+            if not original_time or parsed_utc(occurred) != parsed_utc(original_time):
+                raise ValueError("Bulletin event timestamp differs from original")
+        elif precision == "day":
+            original_date = provenance.get("event_date")
+            if not original_date or parsed_utc(occurred).date().isoformat() != original_date:
+                raise ValueError("Bulletin event date differs from original")
+        else:
+            return None
     verified = provenance.get("origin_authority_verified") is True
     group = str(provenance.get("originating_authority_id") or "").strip() if verified else ""
     original_id = str(provenance.get("original_report_id") or "").strip() if verified else ""
@@ -260,6 +282,42 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
             return unknown
         return float(value)
 
+    lat, lon = extracted.get("lat"), extracted.get("lon")
+    location_uncertainty = extracted_precision(
+        "uncertainty_km",
+        unknown=10000.0 if lat is not None or lon is not None else 0.0,
+    )
+    time_uncertainty = extracted_precision(
+        "time_uncertainty_minutes", unknown=1440.0,
+    )
+    if official_bulletin:
+        # A ship's reported anchorage/last position is not the attack site.
+        # Only an explicitly classified incident site may enter the spatial
+        # correlator, and its source coordinates/precision take precedence.
+        if provenance.get("location_role") != "incident_site":
+            lat = lon = None
+            location_uncertainty = 0.0
+        else:
+            source_lat = getattr(observation, "lat", None)
+            source_lon = getattr(observation, "lon", None)
+            if source_lat is None or source_lon is None:
+                raise ValueError("Bulletin incident-site coordinates missing")
+            for proposed, original in ((lat, source_lat), (lon, source_lon)):
+                if proposed is not None and (
+                    not isfinite(float(proposed))
+                    or abs(float(proposed) - original) > 0.000001
+                ):
+                    raise ValueError("Extracted incident site differs from bulletin")
+            lat, lon = source_lat, source_lon
+            source_uncertainty_m = getattr(observation, "uncertainty_m", None)
+            location_uncertainty = (
+                max(location_uncertainty, float(source_uncertainty_m) / 1000.0)
+                if source_uncertainty_m is not None else 10000.0
+            )
+        if provenance.get("event_time_precision") == "day":
+            # A synthetic clock derived from a day-only bulletin must never
+            # masquerade as minute-level evidence, even if extraction says 0.
+            time_uncertainty = max(time_uncertainty, 1440.0)
     claim = IncidentClaim(
         claim_id=str(getattr(observation, "observation_id")),
         kind=kind,
@@ -267,19 +325,13 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
         source_group=group,
         source_url=str(getattr(observation, "source_url", "") or ""),
         vessel=vessel,
-        lat=extracted.get("lat"),
-        lon=extracted.get("lon"),
-        uncertainty_km=extracted_precision(
-            "uncertainty_km",
-            unknown=10000.0 if extracted.get("lat") is not None
-            or extracted.get("lon") is not None else 0.0,
-        ),
+        lat=lat,
+        lon=lon,
+        uncertainty_km=location_uncertainty,
         published_at=publications[0] if publications else None,
         received_at=parsed_utc(received_raw, stored_naive_utc=True) if received_raw else None,
         origin_report_id=original_id or None,
-        time_uncertainty_minutes=extracted_precision(
-            "time_uncertainty_minutes", unknown=1440.0,
-        ),
+        time_uncertainty_minutes=time_uncertainty,
     )
     _validate_claim_location(claim)
     return claim
