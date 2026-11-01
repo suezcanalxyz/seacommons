@@ -307,6 +307,54 @@ class BatchAuditTests(unittest.TestCase):
         )
         self.assertEqual(result["jet"].reason, "unverified_lineage_edge")
 
+    def test_truncated_lineage_cannot_invent_two_original_sources(self):
+        # Both outlets ultimately derive from one original report, but the
+        # shared ancestor is just beyond the eight-query batch boundary.
+        # An incomplete fetch must not certify them as independent.
+        links = []
+        for start, prefix in (("a", "left"), ("b", "right")):
+            previous = start
+            for depth in range(1, 9):
+                current = f"{prefix}_{depth}"
+                links.append(edge(previous, current))
+                previous = current
+            links.append(edge(previous, "shared_original"))
+        result, calls = batch(
+            [episode("jet", "a", "b")],
+            [obs("a", "publisher_a", "one"),
+             obs("b", "publisher_b", "two")],
+            links,
+        )
+        self.assertFalse(result["jet"].verified)
+        self.assertEqual(result["jet"].reason, "batch_lineage_depth_limit")
+        self.assertEqual(len(calls["lineage"]), 8)
+
+    def test_terminal_ancestor_at_exact_depth_limit_is_not_assumed(self):
+        # Even if a synthetic fixture has no ninth edge, the bounded
+        # adapter has not queried the last ancestor. Fail conservatively.
+        links = []
+        previous = "a"
+        for depth in range(1, 9):
+            current = f"parent_{depth}"
+            links.append(edge(previous, current))
+            previous = current
+        result, _ = batch(
+            [episode("jet", "a", "b")],
+            [obs("a", "navy", "one"), obs("b", "rescue", "two")],
+            links,
+        )
+        self.assertEqual(result["jet"].reason, "batch_lineage_depth_limit")
+
+    def test_complete_short_lineage_retains_valid_independence(self):
+        links = [edge("a", "a_parent"), edge("a_parent", "a_root"),
+                 edge("b", "b_parent"), edge("b_parent", "b_root")]
+        result, _ = batch(
+            [episode("jet", "a", "b")],
+            [obs("a", "navy", "one"), obs("b", "rescue", "two")],
+            links,
+        )
+        self.assertTrue(result["jet"].verified)
+
     def test_no_episodes_does_not_fetch(self):
         result, calls = batch([], [])
         self.assertEqual(result, {})
