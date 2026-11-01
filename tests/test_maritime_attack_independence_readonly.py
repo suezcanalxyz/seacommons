@@ -247,6 +247,50 @@ class IndependenceAuditTests(unittest.TestCase):
         )
         self.assertTrue(result.verified)
 
+    def test_strict_rejects_naive_publication_iso_clock(self):
+        # An external 11:00 clock might mean local time, not UTC.
+        rows = [observation("mod", "navy", "one"),
+                observation("mrcc", "rescue", "two")]
+        for row in rows:
+            row.observed_at = "2026-10-28T10:00:00Z"
+            row.received_at = "2026-10-28T13:00:00Z"
+            row.provenance["published_at_utc"] = "2026-10-28T11:00:00Z"
+        rows[0].provenance["published_at_utc"] = "2026-10-28T11:00:00"
+        result = audit_attack_episode_independence(
+            episode(), lambda ids: rows, lambda ids: [],
+            require_chronology=True,
+        )
+        self.assertFalse(result.verified)
+        self.assertEqual(result.reason, "invalid_publication_timestamp")
+
+    def test_strict_rejects_naive_publication_datetime(self):
+        rows = [observation("mod", "navy", "one"),
+                observation("mrcc", "rescue", "two")]
+        for row in rows:
+            row.observed_at = "2026-10-28T10:00:00Z"
+            row.received_at = datetime(2026, 10, 28, 13, tzinfo=timezone.utc)
+            row.provenance["published_at_utc"] = "2026-10-28T11:00:00Z"
+        rows[1].provenance["published_at"] = datetime(2026, 10, 28, 11)
+        result = audit_attack_episode_independence(
+            episode(), lambda ids: rows, lambda ids: [],
+            require_chronology=True,
+        )
+        self.assertFalse(result.verified)
+        self.assertEqual(result.reason, "invalid_publication_timestamp")
+
+    def test_naive_db_receipt_and_offset_publication_are_compatible(self):
+        rows = [observation("mod", "navy", "one"),
+                observation("mrcc", "rescue", "two")]
+        for row in rows:
+            row.observed_at = datetime(2026, 10, 28, 10)
+            row.received_at = datetime(2026, 10, 28, 13)
+            row.provenance["published_at_utc"] = "2026-10-28T14:00:00+03:00"
+        result = audit_attack_episode_independence(
+            episode(), lambda ids: rows, lambda ids: [],
+            require_chronology=True,
+        )
+        self.assertTrue(result.verified)
+
     def test_missing_half_of_observation_timeline_blocks(self):
         a = observation("mod", "navy", "one")
         b = observation("mrcc", "rescue", "two")
