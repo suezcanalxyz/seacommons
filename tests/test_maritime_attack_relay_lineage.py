@@ -149,6 +149,33 @@ class ReviewedRelayLineageTests(TestCase):
         self.assertEqual(result.status, "candidate")
         self.assertEqual(len(result.independent_groups), 1)
 
+    def test_long_documentary_chain_does_not_recurse_or_invent_origins(self):
+        # A lengthy syndication chain must not exhaust Python's recursion
+        # limit or be misidentified as a cycle.
+        count = 1100
+        claims = [
+            claim(str(i), "synthetic_" + str(i),
+                  "https://example.org/relay/" + str(i))
+            for i in range(count)
+        ]
+        relays = [
+            ReviewedRelay(
+                relay_claim_id=str(i), origin_claim_id=str(i - 1),
+                relay_source_url=claims[i].source_url,
+                origin_source_url=claims[i - 1].source_url,
+                evidence_url=claims[i].source_url,
+                document_sha256="a" * 64,
+                relation="reprinted_from", reviewed_by="synthetic-reviewer",
+                captured_at=datetime(2026, 11, 1, 16, tzinfo=UTC),
+                reviewed_at=datetime(2026, 11, 1, 17, tzinfo=UTC),
+            )
+            for i in range(1, count)
+        ]
+        review = reviewed_relay_edges(claims, relays)
+        self.assertEqual(len(review.edges), count - 1)
+        self.assertEqual(review.rejected, ())
+        self.assertFalse(review.publication_allowed)
+
     def test_duplicate_edges_are_deduplicated_without_new_origins(self):
         review = reviewed_relay_edges(self.claims, [
             fixture(), fixture(evidence_url=RELAY_URL + "#press-release")
