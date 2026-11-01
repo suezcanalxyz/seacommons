@@ -109,6 +109,46 @@ class ReviewedRelayLineageTests(TestCase):
             self.assertEqual(result.edges, ())
             self.assertIn(reason, result.rejected[0])
 
+    def test_capture_before_relay_publication_is_quarantined(self):
+        early = datetime(2026, 10, 28, 10, tzinfo=UTC)
+        result = reviewed_relay_edges(
+            self.claims, [fixture(captured_at=early)]
+        )
+        self.assertEqual(result.edges, ())
+        self.assertIn("capture_predates_relay_publication", result.rejected[0])
+
+    def test_two_competing_originals_are_flagged_and_collapsed(self):
+        third = claim(
+            "other", "synthetic_third", "https://example.org/other"
+        )
+        claims = self.claims + [third]
+        competing = fixture(
+            origin_claim_id="other", origin_source_url=third.source_url
+        )
+        review = reviewed_relay_edges(claims, [fixture(), competing])
+        self.assertEqual(len(review.edges), 2)
+        self.assertIn(
+            "conflicting_relay_origins:charterer", review.rejected
+        )
+        self.assertFalse(review.publication_allowed)
+        result = correlate(JET, claims, lineage_edges=review.edges)
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(len(result.independent_groups), 1)
+
+    def test_dependency_cycle_flagged_without_creating_independence(self):
+        reverse = fixture(
+            relay_claim_id="owner", origin_claim_id="charterer",
+            relay_source_url=ORIGIN_URL, origin_source_url=RELAY_URL,
+            evidence_url=ORIGIN_URL,
+        )
+        review = reviewed_relay_edges(self.claims, [fixture(), reverse])
+        self.assertEqual(len(review.edges), 2)
+        self.assertIn("dependency_cycle", review.rejected)
+        self.assertFalse(review.publication_allowed)
+        result = correlate(JET, self.claims, lineage_edges=review.edges)
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(len(result.independent_groups), 1)
+
     def test_duplicate_edges_are_deduplicated_without_new_origins(self):
         review = reviewed_relay_edges(self.claims, [
             fixture(), fixture(evidence_url=RELAY_URL + "#press-release")
