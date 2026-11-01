@@ -4,8 +4,9 @@ from dataclasses import replace
 from datetime import date, datetime, timezone
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
+from core.intel.maritime_attack_correlation import claim_from_source_observation
 from core.intel.official_maritime_bulletin import (
     OfficialMaritimeBulletin, ingest_official_bulletin, prepare_official_bulletin,
 )
@@ -94,12 +95,14 @@ class OfficialBulletinTests(TestCase):
             imo="9249075", mmsi="352002473",
             publication_date=date(2026, 10, 30),
             lat=26.401167, lon=56.412, location_uncertainty_km=10.0,
+            location_role="anchorage",
         )
         result = prepare_official_bulletin(warning)
         assert result["observed_at"] == "2026-10-30"
         assert result["provenance"]["observed_at_semantics"] == "publication"
         assert result["uncertainty_m"] == 10000
         assert result["provenance"]["event_time_precision"] == "unknown"
+        assert result["provenance"]["location_role"] == "anchorage"
 
 
     def test_untrusted_or_invalid_url_rejected(self):
@@ -133,6 +136,92 @@ class OfficialBulletinTests(TestCase):
             with self.subTest(change=change):
                 with self.assertRaises(ValueError):
                     prepare_official_bulletin(replace(jet(), **change))
+
+    @staticmethod
+    def observation(bulletin):
+        prepared = prepare_official_bulletin(bulletin)
+        return SimpleNamespace(
+            observation_id="obs:reviewed-bulletin-test",
+            observation_type=prepared["observation_type"],
+            source_url=prepared["source_url"],
+            provenance=prepared["provenance"],
+            received_at=datetime(2026, 10, 30, 12, tzinfo=UTC),
+            lat=prepared["lat"], lon=prepared["lon"],
+            uncertainty_m=prepared["uncertainty_m"],
+        )
+
+    def test_anchorage_coordinates_cannot_become_attack_location(self):
+        bulletin = replace(
+            jet(), lat=43.25, lon=28.81,
+            location_uncertainty_km=12, location_role="anchorage",
+        )
+        obs = self.observation(bulletin)
+        claim = claim_from_source_observation(obs, {
+            "kind": "attack", "occurred_at": datetime(2026, 10, 28, 10, tzinfo=UTC),
+            "imo": "9348625", "mmsi": "636019532",
+            "lat": 43.25, "lon": 28.81,
+            "uncertainty_km": 0, "time_uncertainty_minutes": 0,
+        })
+        assert claim is not None
+        assert claim.lat is None and claim.lon is None
+        assert claim.source_group == ""
+
+    def test_incident_site_cannot_be_moved_or_made_more_precise(self):
+        bulletin = replace(
+            jet(), lat=43.25, lon=28.81,
+            location_uncertainty_km=12, location_role="incident_site",
+        )
+        obs = self.observation(bulletin)
+        extracted = {
+            "kind": "attack", "occurred_at": datetime(2026, 10, 28, 10, tzinfo=UTC),
+            "imo": "9348625", "mmsi": "636019532",
+            "lat": 43.25, "lon": 28.81,
+            "uncertainty_km": 0, "time_uncertainty_minutes": 0,
+        }
+        claim = claim_from_source_observation(obs, extracted)
+        assert (claim.lat, claim.lon, claim.uncertainty_km) == (43.25, 28.81, 12.0)
+        with self.assertRaisesRegex(ValueError, "site differs"):
+            claim_from_source_observation(obs, {**extracted, "lat": 43.0})
+
+    def test_date_only_cannot_become_minute_precision(self):
+        bulletin = replace(
+            jet(), occurred_at=None, event_date=date(2026, 10, 28),
+        )
+        claim = claim_from_source_observation(self.observation(bulletin), {
+            "kind": "attack", "occurred_at": datetime(2026, 10, 28, tzinfo=UTC),
+            "imo": "9348625", "time_uncertainty_minutes": 0,
+        })
+        assert claim is not None
+        assert claim.time_uncertainty_minutes >= 1440
+        with self.assertRaisesRegex(ValueError, "event date differs"):
+            claim_from_source_observation(self.observation(bulletin), {
+                "kind": "attack", "occurred_at": datetime(2026, 10, 29, tzinfo=UTC),
+                "imo": "9348625", "time_uncertainty_minutes": 0,
+            })
+
+    def test_publication_only_and_reclassified_bulletin_cannot_be_attack(self):
+        publication_only = replace(jet(), occurred_at=None)
+        assert claim_from_source_observation(self.observation(publication_only), {
+            "kind": "attack", "occurred_at": datetime(2026, 10, 28, 10, tzinfo=UTC),
+            "imo": "9348625", "time_uncertainty_minutes": 0,
+        }) is None
+        suspicious = replace(jet(), kind="suspicious_activity")
+        assert claim_from_source_observation(self.observation(suspicious), {
+            "kind": "attack", "occurred_at": datetime(2026, 10, 28, 10, tzinfo=UTC),
+            "imo": "9348625", "time_uncertainty_minutes": 0,
+        }) is None
+
+    def test_exact_bulletin_time_and_unclassified_position_fail_closed(self):
+        obs = self.observation(jet())
+        with self.assertRaisesRegex(ValueError, "event timestamp differs"):
+            claim_from_source_observation(obs, {
+                "kind": "attack", "occurred_at": datetime(2026, 10, 28, 11, tzinfo=UTC),
+                "imo": "9348625", "time_uncertainty_minutes": 0,
+            })
+        with self.assertRaisesRegex(ValueError, "documented location role"):
+            prepare_official_bulletin(replace(jet(), lat=43.25, lon=28.81))
+        with self.assertRaisesRegex(ValueError, "Location role without coordinates"):
+            prepare_official_bulletin(replace(jet(), location_role="anchorage"))
 
     def test_missing_all_dates_rejected_before_database_call(self):
         warning = replace(jet(), occurred_at=None, publication_date=None)
