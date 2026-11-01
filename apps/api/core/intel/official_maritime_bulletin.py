@@ -145,7 +145,7 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
         "lane": "safety",
         "observation_type": "official_maritime_bulletin",
         "source_name": label,
-        "source_policy": "official_bulletin_metadata_only_reuse_unverified",
+        "source_policy": "official_metadata_unverified",
         "source_id": facts["original_report_id"] + ":" + revision,
         "source_url": bulletin.source_url,
         "observed_at": observed,
