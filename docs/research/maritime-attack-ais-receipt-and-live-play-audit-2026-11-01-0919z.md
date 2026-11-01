@@ -182,3 +182,19 @@ was established in this follow-up. CI was triggered by staging-branch code
 changes, but a fresh completed job result was not accessible through the
 available GitHub run lookup; do not report these new tests as CI-green
 until the actual job result is retrieved. No production deploy or VM task.
+
+Additional primary-source licensing check: the Bulgarian Ministry of
+Defence footer at https://www.mod.bg/news9664 explicitly says its public
+information may be copied and distributed freely with source attribution
+(Bulgarian original). This is materially more permissive than MSCIO's
+terms, but does not waive verification of third-party images or attachments.
+The same release dates the CONTSHIP JET event to 28 October and states
+12:00 local time (10:00 UTC), with three observed impacts. The press
+release does not supply an exact publication clock or ingestion receipt.
+The verified public MSCIO notices 158/26 (29 Oct 16:00 UTC), 159/26
+(29 Oct 22:12 UTC), and 162/26 (30 Oct 18:00 UTC) remain three distinct
+candidate events without verified IMO/MMSI; no second independent
+origin has been established:
+https://mscio.eu/alerts/194
+https://mscio.eu/alerts/195
+https://mscio.eu/alerts/198
