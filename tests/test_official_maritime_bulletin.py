@@ -284,6 +284,7 @@ class OfficialBulletinTests(TestCase):
         writer.record_observation.assert_called_once()
         args, kwargs = writer.record_observation.call_args
         assert args == (fake_db,)
-        assert kwargs["source_policy"] == "official_bulletin_metadata_only_reuse_unverified"
+        assert kwargs["source_policy"] == "official_metadata_unverified"
+        assert len(kwargs["source_policy"]) <= 32
         assert "raw_payload_ref" not in kwargs
         assert kwargs["provenance"]["origin_authority_verified"] is False
