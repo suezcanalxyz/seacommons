@@ -22,13 +22,14 @@ from core.intel.maritime_attack_correlation import _valid_imo, _valid_mmsi
 # Exact host allowlist: never accept a user-supplied lookalike or URL redirect.
 _ISSUERS = {
     "BG_MOD": ("Bulgarian Ministry of Defence", frozenset({"mod.bg", "www.mod.bg"})),
+    "BG_PROSECUTOR": ("Bulgarian Prosecutor Office", frozenset({"prb.bg", "www.prb.bg"})),
     "MSCIO": ("MSCIO", frozenset({"mscio.eu", "www.mscio.eu"})),
     "UKMTO": ("UKMTO", frozenset({"ukmto.org", "www.ukmto.org"})),
     "NAVAREA_IX": ("Pakistan NAVAREA IX", frozenset({"hydrography.paknavy.gov.pk"})),
 }
 _KINDS = frozenset({
     "attack", "sinking", "explosion", "collision", "piracy",
-    "suspicious_activity", "navigational_hazard",
+    "suspicious_activity", "navigational_hazard", "investigation",
 })
 _LOCATION_ROLES = frozenset({"unknown", "incident_site", "anchorage", "last_reported_position", "hazard_position"})
 _REPORT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 /._-]{0,79}$")
