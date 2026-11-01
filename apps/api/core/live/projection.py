@@ -1018,49 +1018,107 @@ def _public_drift_feature(
     }
 
 
+def _finite_real_number(value: Any) -> bool:
+    """Reject booleans, strings, NaN, infinity and unrepresentable huge ints."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except (OverflowError, ValueError):
+        return False
+
+
+def _validated_trajectory_samples(
+    trajectory: dict[str, Any],
+) -> list[tuple[datetime, list[float]]] | None:
+    """Validate all sampled drift points before any public map projection.
+
+    A malformed intermediate point is unsafe even when the current estimate
+    happens to fall on a valid endpoint: the full LineString is also published.
+    """
+    if not isinstance(trajectory, dict):
+        return None
+    geometry = trajectory.get("geometry")
+    properties = trajectory.get("properties")
+    if not isinstance(geometry, dict) or geometry.get("type") != "LineString":
+        return None
+    if not isinstance(properties, dict):
+        return None
+    coordinates = geometry.get("coordinates")
+    timestamps = properties.get("timestamps_utc")
+    if (
+        not isinstance(coordinates, list)
+        or not isinstance(timestamps, list)
+        or len(coordinates) < 2
+        or len(coordinates) != len(timestamps)
+    ):
+        return None
+    samples: list[tuple[datetime, list[float]]] = []
+    for point, timestamp in zip(coordinates, timestamps):
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            return None
+        lon, lat = point[:2]
+        if (
+            not _finite_real_number(lon)
+            or not _finite_real_number(lat)
+            or not (-180 <= lon <= 180 and -90 <= lat <= 90)
+            or not isinstance(timestamp, str)
+        ):
+            return None
+        try:
+            when = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=UTC)
+            when = when.astimezone(UTC)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if samples and when <= samples[-1][0]:
+            return None
+        samples.append((when, [float(lon), float(lat)]))
+    return samples
+
+
 def _current_trajectory_estimate(
     trajectory: dict[str, Any],
     *,
     event_timestamp: str,
     now: datetime | None = None,
 ) -> dict[str, Any] | None:
-    """Interpolate the modelled position at wall-clock time."""
-    geometry = trajectory.get("geometry") or {}
-    properties = trajectory.get("properties") or {}
-    coordinates = geometry.get("coordinates") or []
-    timestamps = properties.get("timestamps_utc") or []
-    if len(coordinates) < 2 or len(timestamps) != len(coordinates):
+    """Interpolate only finite, ordered WGS84 samples at wall-clock time."""
+    samples = _validated_trajectory_samples(trajectory)
+    if samples is None:
         return None
     try:
-        parsed_times = [datetime.fromisoformat(str(value)).astimezone(UTC) for value in timestamps]
-        event_time = datetime.fromisoformat(event_timestamp)
+        event_time = datetime.fromisoformat(event_timestamp.replace("Z", "+00:00"))
         if event_time.tzinfo is None:
             event_time = event_time.replace(tzinfo=UTC)
         event_time = event_time.astimezone(UTC)
-    except (AttributeError, TypeError, ValueError):
+        current = now or datetime.now(UTC)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=UTC)
+        current = current.astimezone(UTC)
+    except (AttributeError, TypeError, ValueError, OverflowError):
         return None
-    current = (now or datetime.now(UTC)).astimezone(UTC)
-    if current <= parsed_times[0]:
-        coordinate = coordinates[0]
+    if current <= samples[0][0]:
+        coordinate = samples[0][1]
         state = "before_model_start"
-    elif current >= parsed_times[-1]:
-        coordinate = coordinates[-1]
+    elif current >= samples[-1][0]:
+        coordinate = samples[-1][1]
         state = "model_horizon_reached"
     else:
-        upper = next(index for index, value in enumerate(parsed_times) if value >= current)
+        upper = next(index for index, (when, _) in enumerate(samples) if when >= current)
         lower = upper - 1
-        span = max(1.0, (parsed_times[upper] - parsed_times[lower]).total_seconds())
-        ratio = (current - parsed_times[lower]).total_seconds() / span
+        span = (samples[upper][0] - samples[lower][0]).total_seconds()
+        ratio = (current - samples[lower][0]).total_seconds() / span
         coordinate = [
-            float(coordinates[lower][0])
-            + (float(coordinates[upper][0]) - float(coordinates[lower][0])) * ratio,
-            float(coordinates[lower][1])
-            + (float(coordinates[upper][1]) - float(coordinates[lower][1])) * ratio,
+            samples[lower][1][axis]
+            + (samples[upper][1][axis] - samples[lower][1][axis]) * ratio
+            for axis in (0, 1)
         ]
         state = "interpolated"
     return {
         "type": "Feature",
-        "geometry": {"type": "Point", "coordinates": coordinate[:2]},
+        "geometry": {"type": "Point", "coordinates": coordinate},
         "properties": {
             "type": "current_estimate",
             "elapsed_hours": round(max(0.0, (current - event_time).total_seconds() / 3600), 2),
@@ -1074,8 +1132,20 @@ def _is_publishable_live_drift(drift: dict[str, Any]) -> bool:
     """Only expose model runs backed by varying forcing, never demo fallbacks."""
     metadata = drift.get("metadata") or {}
     trajectory = drift.get("trajectory") or {}
-    properties = trajectory.get("properties") or {}
-    coordinates = (trajectory.get("geometry") or {}).get("coordinates") or []
+    samples = _validated_trajectory_samples(trajectory)
+    if samples is None:
+        return False
+    speeds = (trajectory.get("properties") or {}).get("speed_ms")
+    if (
+        not isinstance(speeds, list)
+        or len(speeds) != len(samples)
+        or any(
+            not _finite_real_number(speed)
+            or speed < 0
+            for speed in speeds
+        )
+    ):
+        return False
     return bool(
         drift.get("status") == "completed"
         and str(metadata.get("model") or "").startswith("OpenDrift ")
@@ -1084,7 +1154,4 @@ def _is_publishable_live_drift(drift: dict[str, Any]) -> bool:
             "observed-spatiotemporal",
         }
         and metadata.get("operational_use") is True
-        and len(coordinates) >= 2
-        and len(properties.get("timestamps_utc") or []) == len(coordinates)
-        and len(properties.get("speed_ms") or []) == len(coordinates)
     )
