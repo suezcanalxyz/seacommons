@@ -157,6 +157,11 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
                         ([f"mmsi:{bulletin.mmsi}"] if bulletin.mmsi else []),
         "provenance": {
             "original_report_id": facts["original_report_id"],
+            # Immutable identity extracted from the reviewed original bulletin.
+            # Later model extraction must not invent or replace IMO/MMSI/name.
+            "vessel_imo": bulletin.imo,
+            "vessel_mmsi": bulletin.mmsi,
+            "vessel_name": bulletin.vessel_name.strip(),
             "bulletin_kind": bulletin.kind,
             "occurred_at_utc": event_at,
             "location_role": bulletin.location_role,
