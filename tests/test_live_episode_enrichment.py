@@ -159,6 +159,26 @@ def test_public_open_episode_corroboration_requires_canonical_independent_lineag
             )
             assert props["independent_source_count"] == (2 if expected else 0)
             assert "independence_groups" not in props
+
+        # The episode is retained in storage, but a malformed WGS84 point
+        # must never reach Live or the mobile map.
+        for invalid_geometry in (
+            {"type": "Point", "coordinates": [181, 35.5]},
+            {"type": "Point", "coordinates": [14.1, -91]},
+            {"type": "Point", "coordinates": ["14.1", 35.5]},
+            {"type": "Point", "coordinates": [True, 35.5]},
+            {"type": "Point", "coordinates": [14.1]},
+        ):
+            with session_scope() as db:
+                episode = db.query(MaritimeEpisodeDB).filter_by(episode_id=episode_id).one()
+                episode.geometry = invalid_geometry
+            assert all(
+                feature["id"] != episode_id
+                for feature in _published_open_episode_features(500)
+            )
+            with session_scope() as db:
+                persisted = db.query(MaritimeEpisodeDB).filter_by(episode_id=episode_id).one()
+                assert persisted.geometry == invalid_geometry
     finally:
         with session_scope() as db:
             db.query(MaritimeEpisodeDB).filter_by(episode_id=episode_id).delete()
