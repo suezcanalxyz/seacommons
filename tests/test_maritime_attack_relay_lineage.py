@@ -126,6 +126,25 @@ class ReviewedRelayLineageTests(TestCase):
         self.assertEqual(len(linked.independent_groups), 2)
         self.assertFalse(linked.publication_allowed)
 
+    def test_later_owner_press_release_cannot_be_charterer_original(self):
+        # The real ZIM update is dated 28 Oct and the Contships company
+        # page 29 Oct. This is NOT proof that ZIM copied that later page.
+        later = replace(self.claims[0], published_at=when(13))
+        result = reviewed_relay_edges([later, self.claims[1]], [fixture()])
+        self.assertEqual(result.edges, ())
+        self.assertIn("origin_document_postdates_relay", result.rejected[0])
+
+    def test_unknown_or_naive_publication_clock_cannot_verify_lineage(self):
+        for published, reason in (
+            (None, "dependency_publication_clock_missing"),
+            (datetime(2026, 10, 28, 11), "invalid_dependency_publication_clock"),
+        ):
+            with self.subTest(published=published):
+                changed = replace(self.claims[0], published_at=published)
+                result = reviewed_relay_edges([changed, self.claims[1]], [fixture()])
+                self.assertEqual(result.edges, ())
+                self.assertIn(reason, result.rejected[0])
+
     def test_unsupported_relation_and_conflicting_claim_ids_fail_closed(self):
         result = reviewed_relay_edges(self.claims, [fixture(relation="guessed_similar_text")])
         self.assertEqual(result.edges, ())
