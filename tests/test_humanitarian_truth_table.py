@@ -802,3 +802,20 @@ def test_audit_resolves_same_provider_followup_with_changed_source_casing():
     case = next((row for row in result["rows"] if row.candidate_incident_id == case_id), None)
     assert case is not None
     assert case.lifecycle == "resolved"
+
+
+
+def test_indexed_source_label_variants_cover_common_forms_without_sql_lower():
+    """Bounded exact source values preserve the existing source B-tree index."""
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import indexed_source_label_variants
+
+    variants = indexed_source_label_variants([
+        SimpleNamespace(source=" Alarm Phone "),
+        SimpleNamespace(source="alarm phone"),
+    ])
+    assert "Alarm Phone" in variants
+    assert "alarm phone" in variants
+    assert "ALARM PHONE" in variants
+    assert " alarm phone " in variants
+    assert len(variants) <= 8
