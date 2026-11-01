@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from core.intel.lifecycle import parse_utc
+from core.intel.macro_drift import explicit_distress_flag
 from core.intel.satellite_observation import persist_observations
 from core.intel.satellite_resolver import resolve_for_incident, valid_wgs84_point
 
@@ -85,7 +86,10 @@ def _trajectory_targets(
 def _case_satellite_targets(event) -> list[dict[str, Any]]:
     if not valid_wgs84_point(event.lat, event.lon):
         return []
-    event_time = parse_utc(event.timestamp_utc) or datetime.now(timezone.utc)
+    # Never fabricate an acquisition-search time for an undated source report.
+    event_time = parse_utc(event.timestamp_utc)
+    if event_time is None:
+        return []
     targets: list[dict[str, Any]] = [{
         "role": "reported_origin",
         "lat": float(event.lat),
@@ -140,14 +144,17 @@ def is_satellite_enrichment_candidate(
         return False
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     observed = parse_utc(event.timestamp_utc)
-    if observed is not None and now - observed > timedelta(days=max(1, history_days)):
+    # An undated or future-dated report cannot anchor a forensic satellite search.
+    if observed is None or observed > now + timedelta(minutes=5):
+        return False
+    if now - observed > timedelta(days=max(1, history_days)):
         return False
 
     meta = event.metadata or {}
     meaningful = bool(
-        meta.get("is_distress")
+        explicit_distress_flag(meta.get("is_distress"))
         or meta.get("publication_status") == "published"
-        or meta.get("drift_eligible")
+        or explicit_distress_flag(meta.get("drift_eligible"))
     )
     if not meaningful:
         return False
@@ -174,7 +181,12 @@ def enrich_event(
     contextual until an actual vessel/detection association is made elsewhere.
     """
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    if not valid_wgs84_point(event.lat, event.lon):
+    observed = parse_utc(event.timestamp_utc)
+    if (
+        not valid_wgs84_point(event.lat, event.lon)
+        or observed is None
+        or observed > now + timedelta(minutes=5)
+    ):
         return {"persisted": 0, "errors": 0}
     targets = _case_satellite_targets(event)
     report = {"persisted": 0, "errors": 0}
