@@ -143,3 +143,42 @@ authorized AIS read adapter before the new guard can protect real fixes;
 verified source-origin chains must be recorded in staging; official
 bulletin ingestion and PLAY-to-incident promotion require isolated
 end-to-end tests and operator approval. No production deploy.
+
+
+## Follow-up 2026-11-01 ~10:22 UTC — persisted AIS clock contract
+Compared with baseline `71c4b798`: the staging branch gained the pure
+`ais_fix_from_vessel_track()` adapter and four regression tests. The adapter
+accepts only validated VesselTrackDB-like records and maps:
+`ts -> AISFix.observed_at`, `received_at -> AISFix.received_at`,
+`sog -> AISFix.sog_knots`, plus MMSI/latitude/longitude. Both database
+timestamp columns use naive-UTC convention; aware timestamps normalize to
+UTC. Missing receipt, invalid MMSI, geometry or speed fail closed. The
+existing >5-minute future-relative-to-receipt guard now has an explicit
+bridge from the canonical track schema. This is a pure opt-in helper; it
+is NOT wired to an operational query, automatic collector or PLAY promotion.
+No new Oracle SQL was completed in this follow-up; earlier counts above
+are a historical snapshot, not refreshed 72-hour figures. Public LIVE/PLAY
+GET could not be retrieved from this execution environment; previous
+HTTP-200 responses are not treated as current measurements.
+
+Source-independence warning verified from the official UKMTO voluntary
+reporting scheme: submitted reporting forms are shared with MSCIO.
+Thus UKMTO and MSCIO reports may be different publication channels of
+one original report and must not automatically count as two independent
+witnesses. Reference:
+https://www.ukmto.org/reporting-formats
+
+Official MSCIO alert checks:
+- https://mscio.eu/alerts/197 — Alert 161/26, AZINI piracy report
+  dated 29 Oct ~09:00 UTC; coordinates dated 30 Oct are a subsequent
+  last-reported position, NOT the verified hijacking site.
+- https://mscio.eu/alerts/199 — Alert 163/26, published 30 Oct,
+  event 28 Oct in the Strait of Hormuz; vessel IMO/MMSI unspecified.
+- https://mscio.eu/terms-of-service/ — redistribution/publication
+  restrictions. Public access alone does not authorize mirroring.
+
+No additional independently corroborated incident or attacker attribution
+was established in this follow-up. CI was triggered by staging-branch code
+changes, but a fresh completed job result was not accessible through the
+available GitHub run lookup; do not report these new tests as CI-green
+until the actual job result is retrieved. No production deploy or VM task.
