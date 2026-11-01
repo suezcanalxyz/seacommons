@@ -11,7 +11,7 @@ Previously, synthetic staging fixtures included those identifiers *inside* a sim
 
 `link_external_vessel_identity` checks source-record IDs, distinct HTTPS source URLs, matching ship names, IMO checksum, MMSI validity, explicit reviewer, receipt/publication clocks, conflicting external IDs and any IDs actually printed in the original. It returns `linked_for_review` or `blocked`; it **never** rewrites `OfficialMaritimeBulletin`, modifies `SourceObservation`, counts as a second attack witness, or allows publication. Contradictory and unreviewed enrichments fail closed. The existing `claim_from_source_observation` continues to reject injecting external IDs into an original bulletin extraction.
 
-Six new tests cover original-source fidelity, successful isolated identity linkage, unreviewed/same-source/invalid URLs, name and ID mismatch, conflicting/duplicate evidence, and impossible publication clocks. The existing CI workflow was extended to trigger on the two new files; no new workflow or scheduler was created.
+Six new identity tests cover original-source fidelity, successful isolated identity linkage, unreviewed/same-source/invalid URLs, name and ID mismatch, conflicting/duplicate evidence, and impossible publication clocks. The existing CI workflow was extended to trigger on the two new files; no new workflow or scheduler was created.
 
 Commits:
 - `fd612d426b04bc964a40679971f03eb7c04ee56c` — identity linkage module.
@@ -55,7 +55,7 @@ ROLLBACK;
 
 ## Documentary candidates and lineage warnings
 
-- **CONTSHIP JET** — 28 October 10:00 UTC, Black Sea; Bulgarian MOD source https://www.mod.bg/news9664 . IMO `9348625`, MMSI `636019532` remain **external identity references requiring source-specific provenance**; AIS speed change is context only. A Bulgarian military prosecutor opened an investigation on 29 October, reported by Bulgarian national TV https://bntnews.bg/news/obrazuvaha-dosadebno-proizvodstvo-zaradi-napadenieto-nad-konteinerovoza-contship-jet-1419523news.html . This is a separate procedural development, **not automatically an independent eyewitness**; possible dependence on the military-police report must be traced.
+- **CONTSHIP JET** — 28 October 10:00 UTC, Black Sea; Bulgarian MOD source https://www.mod.bg/news9664 . IMO `9348625`, MMSI `636019532` remain **external identity references requiring source-specific provenance**; AIS speed change is context only. The Bulgarian Prosecutor Office itself published a 29 October procedural investigation notice: https://prb.bg/bg/news/aktualno/80101-voenno-okrazhna-prokuratura-sofiya-obrazuva-dosadebno-proizvodstvo-za-napadeniet . This is a separate procedural development, **not automatically an independent eyewitness**; possible dependence on the military-police report must be traced.
 - **MSCIO 158/26** — 29 October 16:00 UTC, Hormuz, unknown tanker/IMO: https://mscio.eu/alerts/194 .
 - **MSCIO 159/26** — 29 October 22:12 UTC, Hormuz, unknown tanker/IMO: https://mscio.eu/alerts/195 . Reuters reported the candidate name LOUISE 1 based on security sources (29/30 October reporting): https://www.reuters.com/world/tanker-strait-hormuz-hit-by-limpet-mines-security-sources-say-2026-10-30/ . Do **not** merge or promote without checking exact vessel identifiers, origin independence and incident geometry.
 - **MSCIO 161/26** — AZINI fishing vessel hijacking reported 29 October ~09:00 UTC off Somalia; last reported position on 30 October is not necessarily the hijack site: https://mscio.eu/alerts/197 .
@@ -71,3 +71,7 @@ Public access does not imply unrestricted automated republication. Check publish
 3. Test original bulletin + external vessel identity + AIS context on isolated staging, including duplicate and conflict negatives.
 4. Certify reviewed PLAY -> incident, attack category/color distinct from humanitarian drift, snapshot freshness and source-independence gate.
 5. Production deploy only after explicit approval.
+
+## Additional primary-source adapter gate
+
+The official Bulgarian Prosecutor Office notice (29 October 2026) confirms a pre-trial investigation referred by the Varna Military Police. The source is available at https://prb.bg/bg/news/aktualno/80101-voenno-okrazhna-prokuratura-sofiya-obrazuva-dosadebno-proizvodstvo-za-napadeniet . The staging bulletin adapter now permits issuer `BG_PROSECUTOR` only on `prb.bg`/`www.prb.bg`, with a distinct `investigation` kind. Its canonical observation retains publication-date semantics, no invented exact incident clock or IMO/MMSI, and `attack_corroboration_allowed=False`. The new regression asserts that even an extracted `attack` cannot reclassify this procedural document. This is a separate publication but **not automatically a second independent attack witness**.
