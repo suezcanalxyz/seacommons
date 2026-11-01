@@ -1078,3 +1078,74 @@ class SourceObservationAdapterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AISSuddenStopContextTests(unittest.TestCase):
+    """AIS speed changes are contextual observations, never independent sources."""
+
+    @staticmethod
+    def jet_fixes():
+        # Actual observed AIS speed/position samples from 28 October 2026,
+        # used as regression fixtures; not independent attack evidence.
+        return (
+            AISFix(JET.mmsi, dt(28, 9, 59, 22), 43.2659266667, 28.8149, 10.2),
+            AISFix(JET.mmsi, dt(28, 10, 34, 46), 43.2591966667, 28.81574, 0.6),
+        )
+
+    def test_contship_jet_real_speed_drop_is_context_only(self):
+        before, after = self.jet_fixes()
+        for fixes in ((before, after), (after, before)):
+            result = correlate(JET, [report("mod", "bg_mod")], fixes)
+            self.assertEqual(result.status, "candidate")
+            self.assertFalse(result.publication_allowed)
+            self.assertEqual(result.independent_groups, ("bg_mod",))
+            self.assertIn("ais_sudden_stop_context_not_attack_proof", result.supporting)
+            self.assertEqual(result.related_sudden_stop_fixes, (
+                (before.observed_at.isoformat(), after.observed_at.isoformat()),
+            ))
+
+    def test_sudden_stop_without_documentary_incident_is_no_match(self):
+        result = correlate(JET, [], self.jet_fixes())
+        self.assertEqual(result.status, "no_match")
+        self.assertEqual(result.related_sudden_stop_fixes, ())
+
+    def test_sudden_stop_never_creates_second_independent_source(self):
+        without = correlate(JET, [report("mod", "bg_mod")])
+        with_ais = correlate(JET, [report("mod", "bg_mod")], self.jet_fixes())
+        self.assertEqual(without.status, with_ais.status)
+        self.assertEqual(without.independent_groups, with_ais.independent_groups)
+        self.assertFalse(with_ais.publication_allowed)
+
+    def test_corroboration_still_requires_documents_without_ais(self):
+        claims = [report("a", "navy"), report("b", "coast_guard")]
+        plain = correlate(JET, claims)
+        with_ais = correlate(JET, claims, self.jet_fixes())
+        self.assertEqual(plain.status, "corroborated")
+        self.assertEqual(with_ais.status, "corroborated")
+        self.assertEqual(plain.independent_groups, with_ais.independent_groups)
+        self.assertFalse(with_ais.publication_allowed)
+
+    def test_wrong_mmsi_far_position_or_long_delay_cannot_signal_stop(self):
+        before, after = self.jet_fixes()
+        invalid_after = (
+            AISFix("123456789", after.observed_at, after.lat, after.lon, 0.6),
+            AISFix(JET.mmsi, after.observed_at, 35.0, 28.8, 0.6),
+            AISFix(JET.mmsi, dt(28, 14), after.lat, after.lon, 0.6),
+        )
+        for bad in invalid_after:
+            with self.subTest(bad=bad):
+                result = correlate(JET, [report("mod", "bg_mod")], (before, bad))
+                self.assertEqual(result.related_sudden_stop_fixes, ())
+                self.assertNotIn("ais_sudden_stop_context_not_attack_proof", result.supporting)
+
+    def test_day_only_claim_or_invalid_speed_cannot_create_signal(self):
+        from dataclasses import replace
+        before, after = self.jet_fixes()
+        coarse = replace(report("mod", "bg_mod"), time_uncertainty_minutes=1440)
+        result = correlate(JET, [coarse], (before, after))
+        self.assertEqual(result.related_sudden_stop_fixes, ())
+        bad = AISFix(JET.mmsi, before.observed_at, before.lat, before.lon, float("nan"))
+        result = correlate(JET, [report("mod", "bg_mod")], (bad, after))
+        self.assertIn("invalid_ais_speed", result.contradicting)
+        self.assertEqual(result.related_sudden_stop_fixes, ())
+        self.assertEqual(result.status, "candidate")
