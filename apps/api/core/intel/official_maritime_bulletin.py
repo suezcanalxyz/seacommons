@@ -54,6 +54,11 @@ class OfficialMaritimeBulletin:
     location_uncertainty_km: float | None = None
     location_role: str = "unknown"
     source_document_sha256: str = ""
+    # The source may say "approximately 22:12 UTC": retain the reported
+    # clock without treating it as a minute-exact observation.
+    event_time_approximate: bool = False
+    # Only if the original document specifies a defensible numeric bound.
+    reported_time_uncertainty_minutes: float | None = None
 
 
 def _utc(value: datetime) -> str:
@@ -88,7 +93,18 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
     if bulletin.mmsi and not _valid_mmsi(bulletin.mmsi):
         raise ValueError("Invalid MMSI")
     if bulletin.occurred_at is not None and bulletin.event_date is not None:
-        raise ValueError("Choose exact event time OR day-only event date")
+        raise ValueError("Choose reported event time OR day-only event date")
+    if type(bulletin.event_time_approximate) is not bool:
+        raise ValueError("Invalid approximate event-time flag")
+    if bulletin.event_time_approximate and bulletin.occurred_at is None:
+        raise ValueError("Approximate clock requires reported event time")
+    bound = bulletin.reported_time_uncertainty_minutes
+    if bound is not None and (
+        not bulletin.event_time_approximate
+        or isinstance(bound, bool) or not isinstance(bound, (int, float))
+        or not isfinite(bound) or not 0 < bound <= 1440
+    ):
+        raise ValueError("Invalid reported time uncertainty")
     if bulletin.published_at is not None and bulletin.publication_date is not None:
         raise ValueError("Choose exact publication time OR day-only publication date")
     if bulletin.event_date is not None and type(bulletin.event_date) is not date:
@@ -135,6 +151,11 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
         "location_role": bulletin.location_role,
         "source_document_sha256": bulletin.source_document_sha256.lower() or None,
     }
+    # Do not change immutable source IDs for existing exact/day-only records.
+    # Add extra payload keys only for newly represented approximate clocks.
+    if bulletin.event_time_approximate:
+        facts["event_time_approximate"] = True
+        facts["reported_time_uncertainty_minutes"] = bound
     payload = json.dumps(facts, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     revision = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
     # The canonical DB requires observed_at. A missing event clock stays
@@ -171,8 +192,14 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
             "publication_date": facts["publication_date"],
             "published_at_utc": published_at,
             "event_date": facts["event_date"],
-            "event_time_precision": ("exact" if event_at else
-                                     "day" if bulletin.event_date else "unknown"),
+            "event_time_precision": (
+                "approximate" if bulletin.event_time_approximate else
+                "exact" if event_at else
+                "day" if bulletin.event_date else "unknown"
+            ),
+            "reported_time_uncertainty_minutes": (
+                bound if bulletin.event_time_approximate else None
+            ),
             "observed_at_semantics": ("event" if event_at or bulletin.event_date else
                                       "publication" if observed else "unknown"),
             "original_document_sha256": facts["source_document_sha256"],
