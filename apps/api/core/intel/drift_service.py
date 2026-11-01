@@ -396,24 +396,51 @@ def schedule_intel_drift(
     # plain get() then returned None -- which silently skipped the F-01
     # eligibility gate below and let any lat/lon through.
     event = intel_store.get_durable(normalized_id)
-    if event and event.metadata.get("drift_status") in {"computing", "completed"} and not force:
+    # A missing durable record is not permission to simulate from caller-
+    # supplied coordinates. Fail closed even for force/backfill/watchdog calls.
+    if event is None:
+        logger.warning("auto-drift blocked: no durable intel event %s", normalized_id)
+        return False
+    if event.metadata.get("drift_status") in {"computing", "completed"} and not force:
         return True
     # F-01 evidence gate -- authoritative chokepoint. Runs after the idempotency
     # check (which schedules nothing) but before `force` can take effect, so an
     # OCR-upgrade recompute or a refresher re-run cannot bypass it either.
-    if event is not None:
-        eligible, reason = is_auto_drift_eligible(event)
-        if not eligible:
-            logger.info("auto-drift blocked for intel event %s: %s", normalized_id, reason)
-            intel_store.update_metadata(
-                normalized_id,
-                metadata={
-                    "drift_status": "ineligible",
-                    "drift_ineligible_reason": reason,
-                    "drift_policy_version": AUTO_DRIFT_POLICY_VERSION,
-                },
-            )
-            return False
+    eligible, reason = is_auto_drift_eligible(event)
+    if not eligible:
+        logger.info("auto-drift blocked for intel event %s: %s", normalized_id, reason)
+        intel_store.update_metadata(
+            normalized_id,
+            metadata={
+                "drift_status": "ineligible",
+                "drift_ineligible_reason": reason,
+                "drift_policy_version": AUTO_DRIFT_POLICY_VERSION,
+            },
+        )
+        return False
+
+    # The origin used by OpenDrift must be the *same* coordinate that passed
+    # the durable event's evidence/landmask gate. In particular, a backfill or
+    # API caller cannot substitute a different (possibly terrestrial) point.
+    try:
+        import math
+
+        stored_lat, stored_lon = float(event.lat), float(event.lon)
+        supplied_lat, supplied_lon = float(lat), float(lon)
+        valid = all(math.isfinite(v) for v in (
+            stored_lat, stored_lon, supplied_lat, supplied_lon
+        ))
+        matches = (
+            abs(stored_lat - supplied_lat) <= 1e-6
+            and abs(stored_lon - supplied_lon) <= 1e-6
+        )
+    except (TypeError, ValueError, OverflowError):
+        valid, matches = False, False
+    if not valid or not matches:
+        logger.warning("auto-drift blocked: supplied origin differs from verified event %s", normalized_id)
+        return False
+    # Always seed from the validated durable evidence, not caller input.
+    lat, lon = stored_lat, stored_lon
     if not acquire_drift_slot():
         return False
     intel_store.update_metadata(
