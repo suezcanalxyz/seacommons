@@ -273,10 +273,13 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
     provenance = getattr(observation, "provenance", {}) or {}
     if not isinstance(provenance, dict):
         provenance = {}
-    official_bulletin = (
-        getattr(observation, "observation_type", "") == "official_maritime_bulletin"
-    )
-    if official_bulletin:
+    observation_type = getattr(observation, "observation_type", "")
+    official_bulletin = observation_type == "official_maritime_bulletin"
+    operator_relay = observation_type == "operator_incident_statement"
+    # The ship manager's report cites the Master's statement but is not
+    # itself an independently authenticated original witness artifact.
+    source_bound = official_bulletin or operator_relay
+    if source_bound:
         # An extraction cannot turn a suspicious approach, anchorage warning
         # or other original bulletin into a verified attack.
         if kind != provenance.get("bulletin_kind"):
@@ -295,7 +298,10 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
                 raise ValueError("Bulletin event date differs from original")
         else:
             return None
-    verified = provenance.get("origin_authority_verified") is True
+    verified = (
+        provenance.get("origin_authority_verified") is True
+        and not operator_relay  # relay never supplies a verified witness group
+    )
     group = str(provenance.get("originating_authority_id") or "").strip() if verified else ""
     original_id = str(provenance.get("original_report_id") or "").strip() if verified else ""
     # Some source adapters write published_at_utc, others published_at.
@@ -321,7 +327,7 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
         raise ValueError("Invalid IMO check digit or format")
     if vessel.mmsi and not _valid_mmsi(vessel.mmsi):
         raise ValueError("Invalid MMSI format")
-    if official_bulletin:
+    if source_bound:
         # Do not let news-to-incident extraction silently substitute a vessel
         # or enrich a bulletin with identifiers absent from the original.
         # A separately corroborated entity-resolution claim must be handled
@@ -354,7 +360,7 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
     time_uncertainty = extracted_precision(
         "time_uncertainty_minutes", unknown=1440.0,
     )
-    if official_bulletin:
+    if source_bound:
         # A ship's reported anchorage/last position is not the attack site.
         # Only an explicitly classified incident site may enter the spatial
         # correlator, and its source coordinates/precision take precedence.
