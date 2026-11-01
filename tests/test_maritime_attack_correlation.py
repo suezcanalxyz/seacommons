@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import unittest
 
 from core.intel.maritime_attack_correlation import (
-    AISFix, AISGap, IncidentClaim, VesselRef, correlate, claim_from_source_observation,
+    AISFix, AISGap, IncidentClaim, VesselRef, correlate, claim_from_source_observation, _valid_imo,
 )
 
 UTC = timezone.utc
@@ -24,6 +24,28 @@ def report(identifier, group, vessel=JET, *, kind="attack", lat=43.25, lon=28.8,
 
 
 class MaritimeAttackCorrelationTests(unittest.TestCase):
+    def test_imo_register_typo_eight_digits_must_not_become_vessel_identity(self):
+        # IMO public list as at 30 Oct 2026 prints CAMEROON PROSPERITY
+        # with an eight-digit "IMO 93151598". Preserve the raw source
+        # value for review, but do not silently truncate or merge vessels.
+        self.assertFalse(_valid_imo("93151598"))
+        self.assertTrue(_valid_imo("9732541"))  # GHANA PROSPERITY
+        from types import SimpleNamespace
+        observation = SimpleNamespace(
+            observation_type="news_report",
+            observation_id="synthetic:imo-register-typo",
+            source_url="https://www.imo.org/en/mediacentre/hottopics/pages/middle-east-highlighted-incidents.aspx",
+            provenance={},
+            received_at=datetime(2026, 11, 1, 17, tzinfo=UTC),
+        )
+        with self.assertRaisesRegex(ValueError, "Invalid IMO"):
+            claim_from_source_observation(observation, {
+                "kind": "attack",
+                "occurred_at": dt(4, 12),
+                "vessel_name": "CAMEROON PROSPERITY",
+                "imo": "93151598",
+            })
+
     def test_contship_jet_28_october_regression(self):
         """Two original authorities + proximate AIS => corroborated attack."""
         # Primary government documents, not fictional prosecutor evidence.
