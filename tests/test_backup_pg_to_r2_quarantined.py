@@ -136,3 +136,21 @@ def test_stream_throttle_does_not_sleep_when_source_is_slower():
                                   clock=lambda: now[0], sleeper=sleeps.append)
     assert len(reader.read(1024)) == 1024
     assert not sleeps
+
+def test_resource_preflight_rejects_nonfinite_cpu_metrics():
+    import math
+    kw = dict(load1=1.0, cpu_psi_avg10=2.0, mem_available=5 * 1024**3,
+              disk_available=14 * 1024**3, cpus=2)
+    for field, value in (("load1", math.nan), ("cpu_psi_avg10", math.nan),
+                         ("cpu_psi_avg60", math.nan), ("cpu_psi_avg300", math.inf)):
+        case = dict(kw)
+        case[field] = value
+        assert backup.resource_check(**case)[0] is False
+
+
+def test_runtime_monitor_fails_closed_on_missing_or_nonfinite_psi(monkeypatch):
+    monkeypatch.setattr(backup, "cpu_pressure_avg10", lambda: (_ for _ in ()).throw(OSError("unavailable")))
+    assert backup.runtime_guard_sample() == (None, "runtime_monitor_unavailable")
+    monkeypatch.setattr(backup, "cpu_pressure_avg10", lambda: float("nan"))
+    # A nonfinite metric is rejected even if a downstream caller replaces the reader.
+    assert backup.runtime_guard_sample()[1] == "runtime_monitor_unavailable"

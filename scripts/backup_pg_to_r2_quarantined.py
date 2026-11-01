@@ -11,6 +11,7 @@ import argparse
 import fcntl
 import hashlib
 import io
+import math
 import json
 import os
 import subprocess
@@ -54,10 +55,14 @@ class HashingReader:
 
 def resource_check(*, load1, cpu_psi_avg10, mem_available, disk_available, cpus, cpu_psi_avg60=None, cpu_psi_avg300=None):
     """Fail closed under CPU contention or low headroom."""
-    if cpus < 1 or load1 > max(2.0, cpus * 1.25):
+    if cpus < 1 or not math.isfinite(load1) or load1 > max(2.0, cpus * 1.25):
         return False, "cpu_load_high"
-    if cpu_psi_avg10 > 45.0:
+    if not math.isfinite(cpu_psi_avg10) or cpu_psi_avg10 > 45.0:
         return False, "cpu_pressure_high"
+    if cpu_psi_avg60 is not None and not math.isfinite(cpu_psi_avg60):
+        return False, "cpu_pressure_60s_invalid"
+    if cpu_psi_avg300 is not None and not math.isfinite(cpu_psi_avg300):
+        return False, "cpu_pressure_300s_invalid"
     # A brief quiet period is not sufficient after prolonged host saturation.
     if cpu_psi_avg60 is not None and cpu_psi_avg60 > 35.0:
         return False, "cpu_pressure_60s_high"
@@ -83,7 +88,30 @@ def runtime_headroom_safe(*, mem_available, disk_available):
 def cpu_pressure_avg10():
     """Current host CPU PSI, not process CPU percent."""
     pressure = Path("/proc/pressure/cpu").read_text().splitlines()[0]
-    return float(next(x.split("=")[1] for x in pressure.split() if x.startswith("avg10=")))
+    value = float(next(x.split("=")[1] for x in pressure.split() if x.startswith("avg10=")))
+    if not math.isfinite(value):
+        raise ValueError("invalid CPU pressure metric")
+    return value
+
+
+def runtime_guard_sample():
+    """Fail closed when host monitoring is unavailable or reports bad values."""
+    try:
+        import shutil
+        psi = cpu_pressure_avg10()
+        if not math.isfinite(psi):
+            raise ValueError("invalid CPU pressure metric")
+        available_kib = int(next(
+            line.split()[1] for line in Path("/proc/meminfo").read_text().splitlines()
+            if line.startswith("MemAvailable:")
+        ))
+        safe, reason = runtime_headroom_safe(
+            mem_available=available_kib * 1024,
+            disk_available=shutil.disk_usage("/").free,
+        )
+        return psi, None if safe else reason
+    except (OSError, ValueError, StopIteration, IndexError, OverflowError):
+        return None, "runtime_monitor_unavailable"
 
 
 def sustained_cpu_pressure(samples, *, threshold=55.0, consecutive=2):
@@ -202,27 +230,21 @@ def main():
         while not monitor_stop.wait(10):
             if proc.poll() is not None:
                 return
-            try:
-                samples.append(cpu_pressure_avg10())
+            psi, reason = runtime_guard_sample()
+            if reason is None:
+                samples.append(psi)
                 samples = samples[-2:]
                 if sustained_cpu_pressure(samples):
-                    abort_reason.append("runtime_cpu_pressure_high")
-                    resource_abort.set()
+                    reason = "runtime_cpu_pressure_high"
+            if reason is not None:
+                abort_reason.append(reason)
+                resource_abort.set()
+                # The producer may have exited between poll() and terminate().
+                try:
                     proc.terminate()
-                    return
-                import shutil
-                available_kib = int(next(line.split()[1] for line in Path("/proc/meminfo").read_text().splitlines() if line.startswith("MemAvailable:")))
-                safe, reason = runtime_headroom_safe(
-                    mem_available=available_kib * 1024,
-                    disk_available=shutil.disk_usage("/").free,
-                )
-                if not safe:
-                    abort_reason.append(reason)
-                    resource_abort.set()
-                    proc.terminate()
-                    return
-            except (OSError, ValueError, StopIteration):
-                continue
+                except ProcessLookupError:
+                    pass
+                return
 
     monitor = threading.Thread(target=monitor_cpu_pressure, name="pgdump-cpu-guard", daemon=True)
     monitor.start()
