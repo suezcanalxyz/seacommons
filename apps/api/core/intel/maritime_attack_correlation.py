@@ -288,7 +288,7 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
         if precision == "unknown":
             # Publication is not the occurrence of an incident.
             return None
-        if precision == "exact":
+        if precision in {"exact", "approximate"}:
             original_time = provenance.get("occurred_at_utc")
             if not original_time or parsed_utc(occurred) != parsed_utc(original_time):
                 raise ValueError("Bulletin event timestamp differs from original")
@@ -384,10 +384,25 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
                 max(location_uncertainty, float(source_uncertainty_m) / 1000.0)
                 if source_uncertainty_m is not None else 10000.0
             )
-        if provenance.get("event_time_precision") == "day":
+        precision = provenance.get("event_time_precision")
+        if precision == "day":
             # A synthetic clock derived from a day-only bulletin must never
             # masquerade as minute-level evidence, even if extraction says 0.
             time_uncertainty = max(time_uncertainty, 1440.0)
+        elif precision == "approximate":
+            # "Approximately 22:12 UTC" is a useful reported clock, not
+            # evidence of a minute-exact attack. Unless the source supplies
+            # a documented numeric bound, quarantine it from automatic
+            # precision-qualified corroboration (the limit is 180 minutes).
+            raw_bound = provenance.get("reported_time_uncertainty_minutes")
+            if raw_bound is None:
+                time_uncertainty = max(time_uncertainty, 1440.0)
+            else:
+                if (isinstance(raw_bound, bool)
+                        or not isinstance(raw_bound, (int, float))
+                        or not isfinite(raw_bound) or not 0 < raw_bound <= 1440):
+                    raise ValueError("Invalid original approximate time bound")
+                time_uncertainty = max(time_uncertainty, float(raw_bound))
     claim = IncidentClaim(
         claim_id=str(getattr(observation, "observation_id")),
         kind=kind,
