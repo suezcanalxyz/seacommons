@@ -261,7 +261,11 @@ def _run_intel_drift_inner(
         time_utc = now
     elapsed_h = max(0.0, (now - time_utc).total_seconds() / 3600)
     duration_h = min(72, max(24, math.ceil(elapsed_h) + 12))
-    event = intel_store.get(event_id)
+    # The scheduler can legitimately accept a durable SAR event that AIS
+    # churn has evicted from the bounded in-memory deque. Rehydrate the same
+    # evidence here: otherwise the job silently loses its coordinate
+    # provenance, position uncertainty and case type before OpenDrift runs.
+    event = intel_store.get_durable(event_id)
     # docs/fixes.md M3 rule: "Drift result always records origin evidence ID
     # and model version." Deterministic from the triggering event's own
     # coordinate_source + the M3 method vocabulary -- the same

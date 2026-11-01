@@ -198,3 +198,60 @@ def test_intel_drift_result_records_origin_evidence_id_and_model_version(monkeyp
     row = get_drift(job_id)
     assert row["origin_evidence_id"] == location_evidence_id("origin-evt-1", "ocr")
     assert row["model_version"] and row["model_version"].startswith("opendrift/")
+
+
+
+def test_evicted_durable_event_keeps_origin_provenance_and_uncertainty(monkeypatch) -> None:
+    """AIS deque eviction must not degrade the model's persisted evidence."""
+    from core.intel import drift_service, location_evidence
+    from core.intel.store import IntelEvent
+    import core.db.store as db_store
+    import core.drift.engine as engine_module
+
+    durable = IntelEvent(
+        id="evicted-durable-origin", type="twitter", severity="high",
+        title="Distress off Lampedusa", source="alarm_phone",
+        lat=35.5, lon=14.1, timestamp_utc="2026-10-31T12:00:00+00:00",
+        metadata={
+            "coordinate_source": "media_ocr_consensus",
+            "location_uncertainty_m": 3200,
+            "case_type": "missing_persons",
+        },
+    )
+    captured = {}
+
+    class _EvictedStore:
+        def get(self, _event_id):
+            return None  # high-volume AIS evicted this event from RAM
+
+        def get_durable(self, event_id):
+            assert event_id == durable.id
+            return durable
+
+        def update_metadata(self, _event_id, *, metadata):
+            captured["status"] = metadata["drift_status"]
+
+    class _CaptureEngine:
+        def compute(self, **kwargs):
+            captured["compute"] = kwargs
+            raise RuntimeError("test stop before simulation")
+
+    def _capture_job(*_args, **kwargs):
+        captured["job"] = kwargs
+
+    monkeypatch.setattr(drift_service, "intel_store", _EvictedStore())
+    monkeypatch.setattr(engine_module, "DriftEngine", _CaptureEngine)
+    monkeypatch.setattr(db_store, "create_drift_job", _capture_job)
+    monkeypatch.setattr(db_store, "fail_drift_job", lambda *_args, **_kwargs: None)
+
+    drift_service._run_intel_drift_inner(
+        durable.id, durable.lat, durable.lon, None, "rubber_boat",
+        durable.timestamp_utc,
+    )
+
+    assert captured["job"]["origin_evidence_id"] == (
+        location_evidence.location_evidence_id(durable.id, "ocr")
+    )
+    assert captured["compute"]["config"]["seed_radius_m"] == 3200.0
+    assert captured["compute"]["config"]["case_type"] == "missing_persons"
+    assert captured["status"] == "failed"  # intentional test-only abort
