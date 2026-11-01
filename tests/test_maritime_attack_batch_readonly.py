@@ -140,7 +140,6 @@ class BatchAuditTests(unittest.TestCase):
         for row in rows:
             row.observed_at = "2026-10-28T10:00:00Z"
             row.received_at = "2026-10-28T11:00:00Z"
-            row.provenance["published_at_utc"] = "2026-10-28T10:30:00Z"
         result = audit_attack_episodes_independence(
             [episode("jet", "mod", "mrcc")],
             lambda ids: rows, lambda ids: [],
@@ -154,6 +153,7 @@ class BatchAuditTests(unittest.TestCase):
         for row in rows:
             row.observed_at = "2026-10-28T10:00:00Z"
             row.received_at = "2026-10-28T11:00:00Z"
+            row.provenance["published_at_utc"] = "2026-10-28T10:30:00Z"
         result = audit_attack_episodes_independence(
             [episode("jet", "mod", "mrcc")],
             lambda ids: rows,
