@@ -864,3 +864,26 @@ def test_audit_last_update_tracks_credible_thread_reply_not_future_clock(monkeyp
     row = next(row for row in result["rows"] if row.candidate_incident_id == case_id)
     assert datetime.fromisoformat(row.last_update_at) == credible
     assert datetime.fromisoformat(row.reported_at) == founding
+
+
+def test_unicode_casefold_provider_identity_matches_lifecycle():
+    """The audit candidate index must use lifecycle's Unicode casefold rule."""
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import (
+        index_recent_same_source_followups,
+        indexed_source_label_variants,
+    )
+
+    now = _NOW.replace(tzinfo=None)
+    case = SimpleNamespace(id="unicode-case", source="Maße Rescue", created_at=now)
+    update = SimpleNamespace(
+        id="unicode-followup", source="MASSE RESCUE",
+        created_at=now + timedelta(minutes=5),
+    )
+    indexed = index_recent_same_source_followups([case], [update])
+    assert [row.id for row in indexed["unicode-case"]] == ["unicode-followup"]
+    # The SQL candidate lookup must also be able to find the folded label
+    # using exact indexed equality, without lower(source) full-table scans.
+    variants = indexed_source_label_variants([case])
+    assert "MASSE RESCUE" in variants
+    assert "masse rescue" in variants
