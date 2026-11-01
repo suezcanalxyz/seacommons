@@ -94,6 +94,46 @@ class AISContextReadOnlyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             load_ais_context(JET.mmsi, at(10), fetch, max_rows=100000)
 
+    def test_receipt_clock_conflict_quarantines_entire_batch(self):
+        good = row(101, at(9, 59, 22), 10.2)
+        future = row(102, at(10, 34, 46), 0.6,
+                     received_at=at(10, 28, 45).replace(tzinfo=None))
+        result = load_ais_context(JET.mmsi, at(10), lambda *_: [good, future])
+        self.assertFalse(result.complete)
+        self.assertEqual(result.fixes, ())
+        self.assertEqual(result.reason, "ais_receipt_clock_conflict")
+        self.assertEqual(result.suspect_track_ids, (102,))
+
+    def test_receipt_clock_five_minute_skew_and_delayed_receipt_allowed(self):
+        skew = row(101, at(9, 59), 10.2,
+                   received_at=at(9, 54).replace(tzinfo=None))
+        delayed = row(102, at(10, 34), 0.6,
+                      received_at=at(11).replace(tzinfo=None))
+        result = load_ais_context(JET.mmsi, at(10), lambda *_: [skew, delayed])
+        self.assertTrue(result.complete)
+        self.assertEqual(result.track_ids, (101, 102))
+
+    def test_impossible_geographic_jump_quarantines_entire_batch(self):
+        first = row(101, at(9, 59), 10.2, 43.26, 28.815)
+        jumped = row(102, at(10), 0.6, 44.26, 28.815)
+        result = load_ais_context(JET.mmsi, at(10), lambda *_: [first, jumped])
+        self.assertFalse(result.complete)
+        self.assertEqual(result.reason, "ais_impossible_position_jump")
+        self.assertEqual(result.suspect_track_ids, (101, 102))
+        self.assertEqual(result.fixes, ())
+
+    def test_simultaneous_conflicting_positions_block_but_same_position_passes(self):
+        first = row(101, at(9, 59), 10.2, 43.26, 28.815)
+        conflicting = row(102, at(9, 59), 10.2, 44.26, 28.815)
+        result = load_ais_context(JET.mmsi, at(10),
+                                  lambda *_: [first, conflicting])
+        self.assertEqual(result.reason, "ais_conflicting_simultaneous_fixes")
+        self.assertEqual(result.suspect_track_ids, (101, 102))
+        duplicate_position = row(102, at(9, 59), 10.2, 43.26, 28.815)
+        accepted = load_ais_context(JET.mmsi, at(10),
+                                    lambda *_: [first, duplicate_position])
+        self.assertTrue(accepted.complete)
+
     def test_non_postgres_db_rejected_before_query(self):
         fake = SimpleNamespace(get_bind=lambda: SimpleNamespace(
             dialect=SimpleNamespace(name="sqlite")))
