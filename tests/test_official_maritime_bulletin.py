@@ -224,6 +224,48 @@ class OfficialBulletinTests(TestCase):
         with self.assertRaisesRegex(ValueError, "Location role without coordinates"):
             prepare_official_bulletin(replace(jet(), location_role="anchorage"))
 
+    def test_extraction_cannot_swap_official_imo_or_mmsi(self):
+        obs = self.observation(jet())
+        original = {
+            "kind": "attack", "occurred_at": datetime(2026, 10, 28, 10, tzinfo=UTC),
+            "imo": "9348625", "mmsi": "636019532",
+            "vessel_name": "CONTSHIP JET",
+        }
+        assert claim_from_source_observation(obs, original).vessel.imo == "9348625"
+        for changed in (
+            {"imo": "9249075"},  # RITI's different, valid IMO
+            {"mmsi": "352002473"},
+            {"vessel_name": "RITI"},
+        ):
+            with self.subTest(changed=changed):
+                with self.assertRaisesRegex(ValueError, "vessel identity differs"):
+                    claim_from_source_observation(obs, {**original, **changed})
+
+    def test_extraction_cannot_invent_ids_missing_from_official_bulletin(self):
+        anonymous = replace(jet(), imo="", mmsi="", vessel_name="UNKNOWN TANKER")
+        obs = self.observation(anonymous)
+        original = {
+            "kind": "attack", "occurred_at": datetime(2026, 10, 28, 10, tzinfo=UTC),
+            "vessel_name": "UNKNOWN TANKER",
+        }
+        assert claim_from_source_observation(obs, original) is not None
+        for injected in ({"imo": "9348625"}, {"mmsi": "636019532"}):
+            with self.subTest(injected=injected):
+                with self.assertRaisesRegex(ValueError, "vessel identity differs"):
+                    claim_from_source_observation(obs, {**original, **injected})
+
+    def test_older_official_bulletin_without_identity_provenance_fails_closed(self):
+        obs = self.observation(jet())
+        obs.provenance.pop("vessel_imo")
+        obs.provenance.pop("vessel_mmsi")
+        obs.provenance.pop("vessel_name")
+        with self.assertRaisesRegex(ValueError, "vessel identity differs"):
+            claim_from_source_observation(obs, {
+                "kind": "attack",
+                "occurred_at": datetime(2026, 10, 28, 10, tzinfo=UTC),
+                "imo": "9348625",
+            })
+
     def test_missing_all_dates_rejected_before_database_call(self):
         warning = replace(jet(), occurred_at=None, publication_date=None)
         # The guard must fire before any persistence import or DB access.
