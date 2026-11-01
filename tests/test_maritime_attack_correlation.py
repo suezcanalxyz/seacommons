@@ -1166,3 +1166,65 @@ class AISSuddenStopContextTests(unittest.TestCase):
         self.assertIn("invalid_ais_speed", result.contradicting)
         self.assertEqual(result.related_sudden_stop_fixes, ())
         self.assertEqual(result.status, "candidate")
+
+
+
+class PersistedAISReceiptAdapterTests(unittest.TestCase):
+    """No DB writes: retain both timestamps from VesselTrackDB rows."""
+
+    def test_contship_jet_naive_utc_track_clocks_are_preserved(self):
+        from types import SimpleNamespace
+        from core.intel.maritime_attack_correlation import ais_fix_from_vessel_track
+        before = ais_fix_from_vessel_track(SimpleNamespace(
+            mmsi=JET.mmsi, ts=dt(28, 9, 59, 22).replace(tzinfo=None),
+            received_at=dt(28, 10).replace(tzinfo=None),
+            lat=43.265927, lon=28.8149, sog=10.2))
+        after = ais_fix_from_vessel_track(SimpleNamespace(
+            mmsi=JET.mmsi, ts=dt(28, 10, 34, 46).replace(tzinfo=None),
+            received_at=dt(28, 10, 35).replace(tzinfo=None),
+            lat=43.259197, lon=28.81574, sog=0.6))
+        self.assertEqual(before.observed_at, dt(28, 9, 59, 22))
+        self.assertEqual(before.received_at, dt(28, 10))
+        result = correlate(JET, [report("mod", "bg_mod")], (before, after))
+        self.assertEqual(result.status, "candidate")
+        self.assertIn("ais_sudden_stop_context_not_attack_proof", result.supporting)
+        self.assertFalse(result.publication_allowed)
+
+    def test_future_track_clock_cannot_manufacture_sudden_stop(self):
+        from types import SimpleNamespace
+        from core.intel.maritime_attack_correlation import ais_fix_from_vessel_track
+        before = ais_fix_from_vessel_track(SimpleNamespace(
+            mmsi=JET.mmsi, ts=dt(28, 9, 59, 22),
+            received_at=dt(28, 10), lat=43.265927, lon=28.8149, sog=10.2))
+        after = ais_fix_from_vessel_track(SimpleNamespace(
+            mmsi=JET.mmsi, ts=dt(28, 10, 34, 46),
+            received_at=dt(28, 10, 20), lat=43.259197, lon=28.81574, sog=0.6))
+        result = correlate(JET, [report("mod", "bg_mod")], (before, after))
+        self.assertIn("ais_fix_future_relative_to_receipt", result.contradicting)
+        self.assertEqual(result.related_sudden_stop_fixes, ())
+        self.assertEqual(result.status, "candidate")
+
+    def test_missing_receipt_and_invalid_track_data_fail_closed(self):
+        from types import SimpleNamespace
+        from core.intel.maritime_attack_correlation import ais_fix_from_vessel_track
+        base = dict(mmsi=JET.mmsi, ts=dt(28, 9, 59),
+                    received_at=dt(28, 10), lat=43.26, lon=28.81, sog=10.2)
+        for changes in ({"received_at": None}, {"ts": "2026-10-28"},
+                        {"mmsi": "000000000"}, {"lat": float("nan")},
+                        {"lon": 190}, {"sog": -1}):
+            with self.subTest(changes=changes):
+                with self.assertRaises(ValueError):
+                    ais_fix_from_vessel_track(SimpleNamespace(**{**base, **changes}))
+
+    def test_track_timezone_offset_is_converted_to_utc(self):
+        from datetime import timedelta
+        from types import SimpleNamespace
+        from core.intel.maritime_attack_correlation import ais_fix_from_vessel_track
+        east = timezone(timedelta(hours=2))
+        fix = ais_fix_from_vessel_track(SimpleNamespace(
+            mmsi=JET.mmsi,
+            ts=dt(28, 9, 59).astimezone(east),
+            received_at=dt(28, 10).astimezone(east),
+            lat=43.26, lon=28.81, sog=None))
+        self.assertEqual(fix.observed_at, dt(28, 9, 59))
+        self.assertEqual(fix.received_at, dt(28, 10))
