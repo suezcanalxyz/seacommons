@@ -183,6 +183,11 @@ def test_satellite_rejects_missing_or_unparseable_report_time(monkeypatch):
     )
     for timestamp in (None, "", "not-a-timestamp"):
         event = _event(timestamp_utc=timestamp)
+        if not timestamp:
+            # IntelEvent retains an ingest timestamp for legacy ordering,
+            # but records that it is not an observed source timestamp.
+            assert event.timestamp_utc
+            assert event.metadata["_source_timestamp_inferred"] is True
         assert not satellite_enrichment.is_satellite_enrichment_candidate(event, now=_NOW)
         assert satellite_enrichment._case_satellite_targets(event) == []
         assert satellite_enrichment.enrich_event(event, now=_NOW) == {
@@ -218,3 +223,13 @@ def test_false_string_flags_do_not_trigger_satellite_enrichment():
     assert is_satellite_enrichment_candidate(positive, now=_NOW)
     published = _event(metadata={"publication_status": "published"})
     assert is_satellite_enrichment_candidate(published, now=_NOW)
+
+
+
+def test_satellite_accepts_explicit_source_time_without_inference_marker():
+    from core.intel import satellite_enrichment
+
+    event = _event(timestamp_utc=_NOW.isoformat())
+    assert "_source_timestamp_inferred" not in event.metadata
+    assert satellite_enrichment._credible_source_time(event) == _NOW
+    assert satellite_enrichment.is_satellite_enrichment_candidate(event, now=_NOW)
