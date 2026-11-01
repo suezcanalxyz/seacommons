@@ -176,3 +176,52 @@ def test_force_cannot_bypass_the_evidence_gate(monkeypatch):
     assert schedule_intel_drift(event.id, 34.27, 11.94, None, "rubber_boat",
                                 "2026-08-21T03:31:00Z", force=True) is False
     assert event.metadata["drift_status"] == "ineligible"
+
+
+def test_original_land_coordinate_is_rejected_even_if_snapping_finds_sea(monkeypatch):
+    """Never seed a maritime model by moving a reported land origin offshore."""
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda *_: True)
+    monkeypatch.setattr(
+        "core.intel.landmask.nearest_sea_point",
+        lambda *_: (_ for _ in ()).throw(AssertionError("must not snap origin")),
+    )
+    event = _distress(coordinate_source="post_text", coordinate_review_status="not_required")
+    ok, reason = is_auto_drift_eligible(event)
+    assert not ok and "land" in reason
+
+
+def test_unavailable_landmask_fails_closed(monkeypatch):
+    """An unknown land/sea classification is not proof of a sea origin."""
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda *_: None)
+    event = _distress(coordinate_source="post_text", coordinate_review_status="not_required")
+    ok, reason = is_auto_drift_eligible(event)
+    assert not ok and "unverified" in reason
+
+
+def test_landmask_exception_fails_closed(monkeypatch):
+    def _broken(*_args):
+        raise RuntimeError("coastline dataset unavailable")
+
+    monkeypatch.setattr("core.intel.landmask.is_on_land", _broken)
+    event = _distress(coordinate_source="post_text", coordinate_review_status="not_required")
+    ok, reason = is_auto_drift_eligible(event)
+    assert not ok and "unverified" in reason
+
+
+def test_nonfinite_and_out_of_region_origins_cannot_seed_drift():
+    for lat, lon in ((float("nan"), 11.94), (34.27, float("inf")), (91.0, 11.94)):
+        event = _distress(coordinate_source="post_text", coordinate_review_status="not_required")
+        event.lat, event.lon = lat, lon
+        assert is_auto_drift_eligible(event)[0] is False
+
+
+def test_invalid_location_uncertainty_cannot_seed_drift(monkeypatch):
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda *_: False)
+    for uncertainty in (float("nan"), float("inf"), -1, "not-a-number"):
+        event = _distress(
+            coordinate_source="post_text",
+            coordinate_review_status="not_required",
+            location_uncertainty_m=uncertainty,
+        )
+        ok, reason = is_auto_drift_eligible(event)
+        assert not ok and "uncertainty" in reason

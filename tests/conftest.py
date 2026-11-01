@@ -49,19 +49,18 @@ def _disable_background_api_sync(monkeypatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _landmask_off(monkeypatch) -> None:
-    """Default the sea-snap landmask to "unavailable" for every test.
+    """Use a deterministic sea classifier without loading coastline data in CI.
 
-    ``roaring_landmask`` is a heavy optional dependency (it ships with the
-    drift stack, not with a minimal CI image). With it absent, ``is_on_land``
-    returns ``None`` and ``nearest_sea_point`` is a pure pass-through — which
-    is what most tests want: they assert an exact parsed/stored coordinate and
-    are not about sea-snapping. Tests that DO exercise the snap re-patch
-    ``core.intel.landmask.is_on_land`` themselves. Patching it here is enough:
-    ``nearest_sea_point`` consults ``is_on_land`` internally and short-circuits
-    to a pass-through when it returns ``None``, regardless of how callers
-    imported it.
+    The production drift gate fails closed when the landmask returns ``None``.
+    Defaulting every test to ``None`` therefore makes otherwise valid
+    at-sea fixtures ineligible, obscuring the behavior under test. Model
+    ordinary test points as sea (``False``) instead; this also keeps
+    ``nearest_sea_point`` a pass-through without loading roaring_landmask.
+    Land, unavailable, and exception paths MUST explicitly override
+    ``is_on_land`` in their own tests (see test_auto_drift_eligibility).
+    This is test-only and never changes production classification.
     """
-    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: None)
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: False)
 
 
 @pytest.fixture(autouse=True)

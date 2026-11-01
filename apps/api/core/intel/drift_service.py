@@ -179,26 +179,43 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
         lon = meta.get("lon")
     if lat is None or lon is None:
         return False, "no coordinate to originate a drift"
+    # Check the *reported origin*, never a coastline-snapped substitute.
+    # Moving a land coordinate to the nearest sea point would silently turn
+    # an inland humanitarian report into a maritime drift origin.
     try:
+        import math
+
+        origin_lat, origin_lon = float(lat), float(lon)
+        if not (math.isfinite(origin_lat) and math.isfinite(origin_lon)):
+            return False, "non-finite drift origin coordinate"
         from core.intel import landmask
 
-        if not landmask.in_operational_region(float(lat), float(lon)):
+        if not landmask.in_operational_region(origin_lat, origin_lon):
             return False, "coordinate is outside the operational region"
-        sea_lat, sea_lon = landmask.nearest_sea_point(float(lat), float(lon))
-        if landmask.is_on_land(sea_lat, sea_lon) is True:
+        on_land = landmask.is_on_land(origin_lat, origin_lon)
+        if on_land is True:
             return False, "coordinate is on land, not a maritime position"
-    except Exception:  # pragma: no cover - landmask must never crash the gate
-        pass
+        if on_land is None:
+            return False, "landmask unavailable; sea origin unverified"
+    except (TypeError, ValueError, OverflowError):
+        return False, "invalid drift origin coordinate"
+    except Exception:
+        logger.warning("auto-drift landmask check failed", exc_info=True)
+        return False, "landmask check failed; sea origin unverified"
 
     uncertainty = meta.get("location_uncertainty_m")
-    try:
-        if uncertainty is not None and float(uncertainty) > MAX_AUTO_DRIFT_UNCERTAINTY_M:
+    if uncertainty is not None:
+        try:
+            uncertainty_m = float(uncertainty)
+        except (TypeError, ValueError, OverflowError):
+            return False, "invalid location_uncertainty_m"
+        if not math.isfinite(uncertainty_m) or uncertainty_m < 0:
+            return False, "invalid location_uncertainty_m"
+        if uncertainty_m > MAX_AUTO_DRIFT_UNCERTAINTY_M:
             return False, (
                 f"location_uncertainty_m={uncertainty} exceeds "
                 f"{MAX_AUTO_DRIFT_UNCERTAINTY_M:.0f}"
             )
-    except (TypeError, ValueError):
-        pass
 
     return True, "eligible"
 

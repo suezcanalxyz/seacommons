@@ -147,9 +147,9 @@ def test_land_sea_class_is_unknown_without_a_coordinate():
     assert land_sea_class_for(None, None) == "unknown"
 
 
-def test_land_sea_class_is_unknown_when_the_landmask_is_unavailable():
-    """Matches the autouse test-suite default (landmask off, see
-    conftest._landmask_off) -- 'unknown' is not a guess."""
+def test_land_sea_class_is_unknown_when_the_landmask_is_unavailable(monkeypatch):
+    """An unavailable coastline dataset must remain unknown, never guessed."""
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda *_: None)
     assert land_sea_class_for(35.5, 14.1) == "unknown"
 
 
