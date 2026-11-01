@@ -1018,6 +1018,16 @@ def _public_drift_feature(
     }
 
 
+def _finite_real_number(value: Any) -> bool:
+    """Reject booleans, strings, NaN, infinity and unrepresentable huge ints."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except (OverflowError, ValueError):
+        return False
+
+
 def _validated_trajectory_samples(
     trajectory: dict[str, Any],
 ) -> list[tuple[datetime, list[float]]] | None:
@@ -1049,10 +1059,8 @@ def _validated_trajectory_samples(
             return None
         lon, lat = point[:2]
         if (
-            isinstance(lon, bool) or isinstance(lat, bool)
-            or not isinstance(lon, (int, float))
-            or not isinstance(lat, (int, float))
-            or not math.isfinite(lon) or not math.isfinite(lat)
+            not _finite_real_number(lon)
+            or not _finite_real_number(lat)
             or not (-180 <= lon <= 180 and -90 <= lat <= 90)
             or not isinstance(timestamp, str)
         ):
@@ -1132,9 +1140,7 @@ def _is_publishable_live_drift(drift: dict[str, Any]) -> bool:
         not isinstance(speeds, list)
         or len(speeds) != len(samples)
         or any(
-            isinstance(speed, bool)
-            or not isinstance(speed, (int, float))
-            or not math.isfinite(speed)
+            not _finite_real_number(speed)
             or speed < 0
             for speed in speeds
         )
