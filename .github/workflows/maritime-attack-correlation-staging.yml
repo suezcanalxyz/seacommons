@@ -6,6 +6,8 @@ on:
       - feature/maritime-attack-correlation-20261030
     paths:
       - apps/api/core/intel/maritime_attack_correlation.py
+      - apps/api/core/intel/official_maritime_bulletin.py
+      - tests/test_official_maritime_bulletin.py
       - apps/api/core/intel/maritime_attack_lineage_readonly.py
       - apps/api/core/intel/maritime_attack_observation_readonly.py
       - apps/api/core/intel/maritime_attack_outcomes.py
@@ -48,7 +50,9 @@ jobs:
       - name: Unit tests (pure, no production credentials)
         env:
           PYTHONPATH: apps/api
-        run: python -m unittest discover -s tests -p 'test_maritime_attack*.py' -v
+        run: |
+          python -m unittest discover -s tests -p 'test_maritime_attack*.py' -v
+          python -m unittest discover -s tests -p 'test_official_maritime_bulletin.py' -v
 
   frontend-attack-taxonomy:
     runs-on: ubuntu-latest
