@@ -138,7 +138,7 @@ def compute_anomaly_flags(
     if lifecycle == "active" and not marker_visible:
         flags.append("OPEN_CASE_DROPPED_FROM_LIVE")
 
-    if lifecycle in ("resolved", "archived") and marker_visible:
+    if lifecycle == "resolved" and marker_visible:
         flags.append("RESOLVED_CASE_STILL_ACTIVE_LOOKING")
 
     # core.intel.lifecycle.distress_lifecycle() only ever returns
