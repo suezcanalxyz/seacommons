@@ -163,8 +163,14 @@ def test_live_only_publishes_spatiotemporal_opendrift_with_speed_samples() -> No
 
 def test_live_publishes_new_observed_quality_but_rejects_mixed_forcing() -> None:
     trajectory = {
-        "geometry": {"coordinates": [[14.0, 35.0], [14.01, 35.01]]},
-        "properties": {"timestamps_utc": ["a", "b"], "speed_ms": [0.1, 0.1]},
+        "geometry": {
+            "type": "LineString",
+            "coordinates": [[14.0, 35.0], [14.01, 35.01]],
+        },
+        "properties": {
+            "timestamps_utc": ["2026-08-01T10:00:00Z", "2026-08-01T11:00:00Z"],
+            "speed_ms": [0.1, 0.1],
+        },
     }
     drift = {
         "status": "completed",
