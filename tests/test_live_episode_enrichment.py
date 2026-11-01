@@ -87,3 +87,79 @@ def test_public_live_episode_inherits_detector_identity_assessment_and_trigger()
         with session_scope() as db:
             db.query(MaritimeEpisodeDB).filter_by(episode_id=episode_id).delete()
             db.query(IntelEventDB).filter_by(id=event_id).delete()
+
+
+def test_public_open_episode_corroboration_requires_canonical_independent_lineages() -> None:
+    """DB-backed Live projection must not contradict itself or count AIS aliases twice."""
+    from core.db.models import IntelEventDB, MaritimeEpisodeDB
+    from core.db.session import engine, session_scope
+    from core.live.feed import _published_open_episode_features
+
+    MaritimeEpisodeDB.__table__.create(bind=engine(), checkfirst=True)
+    IntelEventDB.__table__.create(bind=engine(), checkfirst=True)
+    episode_id = "episode:test:open-lineage-contract"
+    event_id = "spoof:372497000:test-open-lineage-contract"
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    cases = [
+        (["ais_sensor_lineage", "ais"], "multi_source_corroborated", False),
+        (["ais_sensor_lineage", "news:independent"], "single_source_multi_indicator", False),
+        (["ais_sensor_lineage", "news:independent"], "multi_source_corroborated", True),
+    ]
+    try:
+        for groups, verification, expected in cases:
+            with session_scope() as db:
+                db.query(MaritimeEpisodeDB).filter_by(episode_id=episode_id).delete()
+                db.query(IntelEventDB).filter_by(id=event_id).delete()
+                db.add(IntelEventDB(
+                    id=event_id,
+                    timestamp_utc=now.replace(tzinfo=timezone.utc).isoformat(),
+                    type="ais_anomaly",
+                    severity="medium",
+                    lat=35.5,
+                    lon=14.1,
+                    title="Position integrity candidate",
+                    source="mda",
+                    linked_mmsi="372497000",
+                    maritime_domain="grey_zone",
+                    meta={"anomaly_type": "position_jump"},
+                ))
+                db.add(MaritimeEpisodeDB(
+                    episode_id=episode_id,
+                    episode_family="spoofing_episode",
+                    subject_ids=["subj:mmsi:372497000"],
+                    start_at=now - timedelta(minutes=10),
+                    end_at=now,
+                    geometry={"type": "Point", "coordinates": [14.1, 35.5]},
+                    observation_ids=[event_id],
+                    feature_ids=[],
+                    independence_groups=groups,
+                    verification_status=verification,
+                    behaviour_context={
+                        "analysis": {
+                            "analysis_state": "evidence_candidate",
+                            "publication_state": "published",
+                            "resolution_state": "open",
+                        },
+                        "case_opening": {"reason_codes": ["SUSTAINED_POSITION_RELOCATION"]},
+                    },
+                    alternative_explanations=[],
+                    evidence_fingerprint="test-open-lineage-contract",
+                    method_version="test",
+                    status="active",
+                ))
+            features = _published_open_episode_features(500)
+            props = next(item for item in features if item["id"] == episode_id)["properties"]
+            assert props["corroborated"] is expected
+            assert ("corroborated" in props["facets"]) is expected
+            assert props["verification_status"] == (
+                "multi_source_corroborated" if expected else (
+                    "derived" if verification == "multi_source_corroborated"
+                    else verification
+                )
+            )
+            assert props["independent_source_count"] == (2 if expected else 0)
+            assert "independence_groups" not in props
+    finally:
+        with session_scope() as db:
+            db.query(MaritimeEpisodeDB).filter_by(episode_id=episode_id).delete()
+            db.query(IntelEventDB).filter_by(id=event_id).delete()
