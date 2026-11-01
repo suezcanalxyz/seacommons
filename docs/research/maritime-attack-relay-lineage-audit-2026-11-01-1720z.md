@@ -47,6 +47,9 @@ Note: the combined 257-row LIMIT is only an exploratory cap and must **not** be 
 ## Licensing and latency
 Bulgarian MoD permits attributed copying of public information on its site. Nakilat, Contships, ZIM, insurer/registry sources and MSCIO have not been cleared for bulk redistribution. IMO terms restrict some reuse; only links and minimal factual metadata recorded. MARAD 2026-012 https://www.maritime.dot.gov/msci/2026-012-black-sea-and-sea-azov-military-combat-operations remains active as contextual risk guidance, not a specific attack witness. GDELT's published refresh frequency does not establish SeaCommons ingestion latency. No actual collector-to-publication latency measured. No attacker attribution.
 
+## CI verified
+GitHub Actions https://github.com/suezcanalxyz/seacommons/actions/runs/41331010738 completed **SUCCESS** at 2026-11-01 17:21 UTC on functional commit `b31eee86`. Unit correlation **326 PASS**, official bulletin **19 PASS**, isolated SQLite **3 PASS**, isolated PostgreSQL **6 PASS**: **354 Python PASS**; JavaScript taxonomy **5 PASS** and frontend build **SUCCESS**. Isolated PostgreSQL CI does not validate Oracle production connectivity.
+
 ## Next gates
 1. Obtain a genuinely authorized read-only Oracle role and audit the six tables, October 2026 retrospective, rolling 72-hour windows, and real `received_at` for CONTSHIP JET and AL MAYEDA.
 2. Authenticate original owner/crew or independent observation evidence, source hashes and origin dependency before any two-source corroboration.
