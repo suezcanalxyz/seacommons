@@ -56,8 +56,10 @@ CONTSHIP JET IMO 9348625, MMSI 636019532: 19 AIS fixes from 27–28 Oct.
 At 28 Oct 09:59:22 UTC, 10.2 knots, 43.265927 N 28.814900 E;
 10:34:46 UTC, 0.6 knots, 43.259197 N 28.815740 E.
 This is temporal context for the 10:00 UTC reported attack, NOT a second
-independent witness. The query also inspected `vessel_tracks` columns
-including `received_at`; no production rows were modified.
+independent witness. The schema audit confirmed `vessel_tracks.received_at` exists, but
+individual receipt timestamps were NOT retrieved in this run; the
+new receipt guard therefore remains a staging contract, not a
+production-data validation. No production rows were modified.
 
 Representative SQL (read-only):
 ```sql
@@ -75,7 +77,7 @@ SELECT count(*) FROM source_observations
  WHERE received_at >= '2026-10-01+00'
  AND (source_name ~* '(MSCIO|UKMTO|NAVAREA|NAVWARN|Bulgarian Ministry|MARAD|GDELT)'
       OR observation_type='official_maritime_bulletin');
-SELECT ts,sog,lat,lon,received_at FROM vessel_tracks
+SELECT ts,sog,lat,lon FROM vessel_tracks
  WHERE mmsi='636019532'
  AND ts BETWEEN '2026-10-28 09:45+00' AND '2026-10-28 11:00+00'
  ORDER BY ts;
