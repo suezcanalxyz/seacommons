@@ -1138,6 +1138,23 @@ class AISSuddenStopContextTests(unittest.TestCase):
                 self.assertEqual(result.related_sudden_stop_fixes, ())
                 self.assertNotIn("ais_sudden_stop_context_not_attack_proof", result.supporting)
 
+    def test_same_timestamp_or_one_second_speed_flip_is_not_stop(self):
+        before, after = self.jet_fixes()
+        for when in (dt(28, 10), dt(28, 10, 0, 1)):
+            forged_before = AISFix(JET.mmsi, dt(28, 10), before.lat, before.lon, 10.2)
+            forged_after = AISFix(JET.mmsi, when, after.lat, after.lon, 0.6)
+            result = correlate(JET, [report("mod", "bg_mod")],
+                               (forged_before, forged_after))
+            self.assertEqual(result.related_sudden_stop_fixes, ())
+            self.assertEqual(result.status, "candidate")
+
+    def test_uncertain_hour_cannot_match_speed_drop(self):
+        from dataclasses import replace
+        claim = replace(report("mod", "bg_mod"), time_uncertainty_minutes=60)
+        result = correlate(JET, [claim], self.jet_fixes())
+        self.assertEqual(result.related_sudden_stop_fixes, ())
+        self.assertEqual(result.status, "candidate")
+
     def test_day_only_claim_or_invalid_speed_cannot_create_signal(self):
         from dataclasses import replace
         before, after = self.jet_fixes()
