@@ -73,6 +73,14 @@ def reviewed_relay_edges(
             reason = "unknown_or_self_referential_claim"
         elif relay.relation not in _RELATIONS:
             reason = "unsupported_dependency_relation"
+        elif (by_id[relay.relay_claim_id].published_at is None
+              or by_id[relay.origin_claim_id].published_at is None):
+            # A charterer can hear from an owner before the owner's later
+            # press release. Never invent an edge to that *later document*.
+            reason = "dependency_publication_clock_missing"
+        elif (_utc(by_id[relay.origin_claim_id].published_at)
+              > _utc(by_id[relay.relay_claim_id].published_at)):
+            reason = "origin_document_postdates_relay"
         elif not relay.reviewed_by.strip() or not _SHA256.fullmatch(relay.document_sha256):
             reason = "unreviewed_or_unhashed_document"
         else:
