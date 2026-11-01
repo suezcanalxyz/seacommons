@@ -58,6 +58,51 @@ class AISFix:
     received_at: datetime | None = None
 
 
+
+def ais_fix_from_vessel_track(track: object) -> AISFix:
+    """Adapt an existing VesselTrackDB row without querying or writing a DB.
+
+    VesselTrackDB.ts and .received_at are PostgreSQL timestamp-without-timezone
+    columns whose documented convention is UTC. Convert *only these model
+    fields* to aware UTC before passing them into the correlator. Never use
+    ingestion time as the vessel's observed time, or infer an attack from AIS.
+    Missing receipt clocks must fail closed rather than silently disabling
+    the future-relative-to-receipt check.
+    """
+    def clock(field: str) -> datetime:
+        value = getattr(track, field, None)
+        if not isinstance(value, datetime):
+            raise ValueError("Vessel track " + field + " must be datetime")
+        if value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=timezone.utc)
+        return _utc(value)
+
+    mmsi = str(getattr(track, "mmsi", "") or "").strip()
+    if not _valid_mmsi(mmsi):
+        raise ValueError("Invalid vessel track MMSI")
+    lat, lon = getattr(track, "lat", None), getattr(track, "lon", None)
+    if (isinstance(lat, bool) or isinstance(lon, bool)
+            or not isinstance(lat, (int, float))
+            or not isinstance(lon, (int, float))
+            or not isfinite(lat) or not isfinite(lon)
+            or not -90 <= lat <= 90 or not -180 <= lon <= 180):
+        raise ValueError("Invalid vessel track coordinates")
+    sog = getattr(track, "sog", None)
+    if sog is not None and (
+        isinstance(sog, bool) or not isinstance(sog, (int, float))
+        or not isfinite(sog) or not 0 <= sog <= 70
+    ):
+        raise ValueError("Invalid vessel track speed")
+    return AISFix(
+        mmsi=mmsi,
+        observed_at=clock("ts"),
+        lat=float(lat),
+        lon=float(lon),
+        sog_knots=float(sog) if sog is not None else None,
+        received_at=clock("received_at"),
+    )
+
+
 @dataclass(frozen=True)
 class AISGap:
     mmsi: str
