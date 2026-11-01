@@ -18,9 +18,19 @@ def jet():
     return OfficialMaritimeBulletin(
         issuer="BG_MOD", bulletin_id="news9664",
         source_url="https://www.mod.bg/news9664", kind="attack",
-        vessel_name="CONTSHIP JET", imo="9348625", mmsi="636019532",
+        # The original Ministry text names the ship but omits IMO/MMSI.
+        vessel_name="CONTSHIP JET",
         occurred_at=datetime(2026, 10, 28, 10, tzinfo=UTC),
         publication_date=date(2026, 10, 28),
+    )
+
+
+def synthetic_identified_jet():
+    """Invented document for identifier guards; NOT a real BG MOD release."""
+    return replace(
+        jet(), bulletin_id="synthetic-identified-jet",
+        source_url="https://www.mod.bg/synthetic/identified-jet",
+        imo="9348625", mmsi="636019532",
     )
 
 
@@ -28,7 +38,9 @@ class OfficialBulletinTests(TestCase):
     def test_contship_jet_primary_document_is_canonical_but_not_auto_verified(self):
         result = prepare_official_bulletin(jet())
         assert result["source_name"] == "Bulgarian Ministry of Defence"
-        assert result["subject_refs"] == ["imo:9348625", "mmsi:636019532"]
+        assert result["subject_refs"] == []
+        assert result["provenance"]["vessel_imo"] == ""
+        assert result["provenance"]["vessel_mmsi"] == ""
         assert result["observed_at"] == "2026-10-28T10:00:00+00:00"
         assert result["provenance"]["publication_date"] == "2026-10-28"
         assert result["provenance"]["published_at_utc"] is None
@@ -179,7 +191,7 @@ class OfficialBulletinTests(TestCase):
 
     def test_anchorage_coordinates_cannot_become_attack_location(self):
         bulletin = replace(
-            jet(), lat=43.25, lon=28.81,
+            synthetic_identified_jet(), lat=43.25, lon=28.81,
             location_uncertainty_km=12, location_role="anchorage",
         )
         obs = self.observation(bulletin)
@@ -212,7 +224,7 @@ class OfficialBulletinTests(TestCase):
 
     def test_date_only_cannot_become_minute_precision(self):
         bulletin = replace(
-            jet(), occurred_at=None, event_date=date(2026, 10, 28),
+            synthetic_identified_jet(), occurred_at=None, event_date=date(2026, 10, 28),
         )
         claim = claim_from_source_observation(self.observation(bulletin), {
             "kind": "attack", "occurred_at": datetime(2026, 10, 28, tzinfo=UTC),
@@ -227,19 +239,19 @@ class OfficialBulletinTests(TestCase):
             })
 
     def test_publication_only_and_reclassified_bulletin_cannot_be_attack(self):
-        publication_only = replace(jet(), occurred_at=None)
+        publication_only = replace(synthetic_identified_jet(), occurred_at=None)
         assert claim_from_source_observation(self.observation(publication_only), {
             "kind": "attack", "occurred_at": datetime(2026, 10, 28, 10, tzinfo=UTC),
             "imo": "9348625", "time_uncertainty_minutes": 0,
         }) is None
-        suspicious = replace(jet(), kind="suspicious_activity")
+        suspicious = replace(synthetic_identified_jet(), kind="suspicious_activity")
         assert claim_from_source_observation(self.observation(suspicious), {
             "kind": "attack", "occurred_at": datetime(2026, 10, 28, 10, tzinfo=UTC),
             "imo": "9348625", "time_uncertainty_minutes": 0,
         }) is None
 
     def test_exact_bulletin_time_and_unclassified_position_fail_closed(self):
-        obs = self.observation(jet())
+        obs = self.observation(synthetic_identified_jet())
         with self.assertRaisesRegex(ValueError, "event timestamp differs"):
             claim_from_source_observation(obs, {
                 "kind": "attack", "occurred_at": datetime(2026, 10, 28, 11, tzinfo=UTC),
@@ -251,7 +263,7 @@ class OfficialBulletinTests(TestCase):
             prepare_official_bulletin(replace(jet(), location_role="anchorage"))
 
     def test_extraction_cannot_swap_official_imo_or_mmsi(self):
-        obs = self.observation(jet())
+        obs = self.observation(synthetic_identified_jet())
         original = {
             "kind": "attack", "occurred_at": datetime(2026, 10, 28, 10, tzinfo=UTC),
             "imo": "9348625", "mmsi": "636019532",
@@ -267,6 +279,25 @@ class OfficialBulletinTests(TestCase):
                 with self.assertRaisesRegex(ValueError, "vessel identity differs"):
                     claim_from_source_observation(obs, {**original, **changed})
 
+    def test_real_bulgarian_report_cannot_be_silently_enriched_with_imo_mmsi(self):
+        obs = self.observation(jet())
+        claim = claim_from_source_observation(obs, {
+            "kind": "attack",
+            "occurred_at": datetime(2026, 10, 28, 10, tzinfo=UTC),
+            "vessel_name": "CONTSHIP JET",
+        })
+        assert claim is not None
+        assert claim.vessel.imo == "" and claim.vessel.mmsi == ""
+        for injected in ({"imo": "9348625"}, {"mmsi": "636019532"}):
+            with self.subTest(injected=injected):
+                with self.assertRaisesRegex(ValueError, "vessel identity differs"):
+                    claim_from_source_observation(obs, {
+                        "kind": "attack",
+                        "occurred_at": datetime(2026, 10, 28, 10, tzinfo=UTC),
+                        "vessel_name": "CONTSHIP JET",
+                        **injected,
+                    })
+
     def test_extraction_cannot_invent_ids_missing_from_official_bulletin(self):
         anonymous = replace(jet(), imo="", mmsi="", vessel_name="UNKNOWN TANKER")
         obs = self.observation(anonymous)
@@ -281,7 +312,7 @@ class OfficialBulletinTests(TestCase):
                     claim_from_source_observation(obs, {**original, **injected})
 
     def test_older_official_bulletin_without_identity_provenance_fails_closed(self):
-        obs = self.observation(jet())
+        obs = self.observation(synthetic_identified_jet())
         obs.provenance.pop("vessel_imo")
         obs.provenance.pop("vessel_mmsi")
         obs.provenance.pop("vessel_name")
