@@ -886,9 +886,11 @@ def public_signal_collection(
         humanitarian_candidate_drops["duplicate_public_case"] += deduplicated_count
     humanitarian_candidate_drops["eligible"] = len(deduped_candidate_features)
 
+    # Match same-provider follow-ups across capitalization differences. The
+    # lifecycle resolver uses casefold() for provider identity as well.
     by_source: dict[str, list[IntelEvent]] = {}
     for event in events:
-        by_source.setdefault(event.source, []).append(event)
+        by_source.setdefault(event.source.strip().casefold(), []).append(event)
     mode_features: dict[str, list[dict[str, Any]]] = {
         "humanitarian": [],
         "security": [],
@@ -943,7 +945,7 @@ def public_signal_collection(
             from core.intel.humanitarian_incident import resolve_public_incident_state
 
             incident_state = resolve_public_incident_state(
-                event, now=now, same_source=by_source.get(event.source, [])
+                event, now=now, same_source=by_source.get(event.source.strip().casefold(), [])
             )
             # Live is a rolling 24-hour timeline. Terminal real-world
             # statuses remain visible until retention expiry, but are clearly
@@ -1226,7 +1228,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
     now = datetime.now(UTC)
     by_source: dict[str, list[IntelEvent]] = {}
     for event in drift_events.values():
-        by_source.setdefault(event.source, []).append(event)
+        by_source.setdefault(event.source.strip().casefold(), []).append(event)
     for event in drift_events.values():
         # SeaCommons Drift is a humanitarian SAR model only (docs/deep-research-
         # report.md #17, hard requirement). A positive allow-list, not
@@ -1249,12 +1251,22 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         # an active-looking pulsing drift cone still on the map reads as
         # "still adrift, still searching", which is exactly wrong for a
         # case that's already been rescued or gone stale.
-        explicit_state = str(event.metadata.get("incident_lifecycle") or "").lower()
-        state = explicit_state or lifecycle.distress_lifecycle(
-            event,
-            now=now,
-            same_source=by_source.get(event.source, []),
-        )
+        # The canonical incident is the lifecycle authority for Live markers
+        # and must also be authoritative for the derived Drift layer. Stale
+        # ingestion metadata must never resurrect a resolved search cone.
+        from core.intel.humanitarian_incident import get_incident
+
+        incident = get_incident(event.id)
+        if incident is not None:
+            state = str(incident["lifecycle"])
+        else:
+            # Preserve legacy/pre-canonical behaviour for historical signals.
+            explicit_state = str(event.metadata.get("incident_lifecycle") or "").lower()
+            state = explicit_state or lifecycle.distress_lifecycle(
+                event,
+                now=now,
+                same_source=by_source.get(event.source.strip().casefold(), []),
+            )
         if state in _DRIFT_HIDDEN_LIFECYCLES:
             continue
         # Only a real extracted maritime point is a drift origin. A region-only
