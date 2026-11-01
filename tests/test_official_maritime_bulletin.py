@@ -53,11 +53,12 @@ class OfficialBulletinTests(TestCase):
             issuer="MSCIO", bulletin_id="159/26",
             source_url="https://mscio.eu/alerts/195", kind="attack",
             event_date=date(2026, 10, 29),
-            publication_date=date(2026, 10, 29),
+            publication_date=date(2026, 10, 30),
         )
         result = prepare_official_bulletin(warning)
         assert result["observed_at"] == "2026-10-29"
         assert result["provenance"]["event_time_precision"] == "day"
+        assert result["provenance"]["publication_date"] == "2026-10-30"
         assert result["provenance"]["published_at_utc"] is None
         assert result["provenance"]["origin_authority_verified"] is False
         assert result["subject_refs"] == []
