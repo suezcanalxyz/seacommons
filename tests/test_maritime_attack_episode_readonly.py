@@ -52,6 +52,10 @@ def corr(claim):
                 if claim.published_at is not None else None,
             "received_at": claim.received_at.isoformat()
                 if claim.received_at is not None else None,
+            "lat": str(claim.lat) if claim.lat is not None else None,
+            "lon": str(claim.lon) if claim.lon is not None else None,
+            "uncertainty_km": str(claim.uncertainty_km),
+            "time_uncertainty_minutes": str(claim.time_uncertainty_minutes),
         },),
     )
 
@@ -87,6 +91,21 @@ class CanonicalEpisodeGuardTests(unittest.TestCase):
         self.assertEqual(result.status, "corroborated_update")
         self.assertEqual(result.attack_episode_id, LINK.attack_episode_id)
         self.assertEqual(result.outcome_key, LINK.attack_episode_id + ":outcome:sinking")
+        self.assertFalse(result.publication_allowed)
+
+    def test_cached_corroboration_missing_geometry_fails_closed(self):
+        # Legacy cached evidence without geometry must never inherit a
+        # corroborated outcome, even if its status and groups claim success.
+        old = corr(ATTACK)
+        evidence = dict(old.source_evidence[0])
+        evidence.pop("lat")
+        stale = replace(old, source_evidence=(evidence,))
+        result = reconcile_against_existing_episode(
+            JET, ATTACK, SINKING, stale, corr(SINKING), LINK, episode(),
+            independence_verified=True,
+        )
+        self.assertEqual(result.status, "candidate_update")
+        self.assertIn("outcome_correlation_provenance_mismatch", result.reason_codes)
         self.assertFalse(result.publication_allowed)
 
     def test_missing_provenance_audit_blocks_outcome_even_with_two_labels(self):
