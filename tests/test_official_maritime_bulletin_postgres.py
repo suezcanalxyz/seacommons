@@ -48,7 +48,8 @@ def jet():
     return OfficialMaritimeBulletin(
         issuer="BG_MOD", bulletin_id="news9664",
         source_url="https://www.mod.bg/news9664", kind="attack",
-        vessel_name="CONTSHIP JET", imo="9348625", mmsi="636019532",
+        # Real Ministry report does not publish ship IMO/MMSI.
+        vessel_name="CONTSHIP JET",
         occurred_at=datetime(2026, 10, 28, 10, tzinfo=timezone.utc),
         publication_date=date(2026, 10, 28),
     )
@@ -90,8 +91,9 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
             self.assertTrue(replay.replayed)
             self.assertEqual(first.observation_id, replay.observation_id)
             self.assertNotEqual(first.observation_id, revised.observation_id)
-            self.assertEqual(first.provenance["vessel_imo"], "9348625")
-            self.assertEqual(first.provenance["vessel_mmsi"], "636019532")
+            self.assertEqual(first.provenance["vessel_imo"], "")
+            self.assertEqual(first.provenance["vessel_mmsi"], "")
+            self.assertEqual(first.subject_refs, [])
             self.assertEqual(first.provenance["origin_authority_verified"], False)
             self.assertEqual(first.provenance["attack_corroboration_allowed"], False)
             self.assertEqual(first.observed_at, "2026-10-28T10:00:00+00:00")
@@ -155,14 +157,21 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
             second = ingest_official_bulletin(db, synthetic_relay)
             ids = (first.observation_id, second.observation_id)
             reviewed = {
-                identifier: {
+                first.observation_id: {
                     "reviewed": True, "reviewed_by": "staging-test",
                     "kind": "attack", "occurred_at": event_time,
+                    # BG MOD original has the ship name, but NO ship IDs.
+                    "vessel_name": "CONTSHIP JET",
+                    "time_uncertainty_minutes": 0,
+                },
+                second.observation_id: {
+                    "reviewed": True, "reviewed_by": "staging-test",
+                    "kind": "attack", "occurred_at": event_time,
+                    # Synthetic MSCIO report is deliberately identified.
                     "imo": "9348625", "mmsi": "636019532",
                     "vessel_name": "CONTSHIP JET",
                     "time_uncertainty_minutes": 0,
-                }
-                for identifier in ids
+                },
             }
             result = correlate_reviewed_db_observations(
                 VesselRef("9348625", "636019532", "CONTSHIP JET"),
@@ -180,6 +189,66 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
             self.assertEqual(
                 db.scalar(select(func.count()).select_from(SourceObservationDB)),
                 0,
+            )
+
+    def test_source_faithful_jet_identity_link_and_candidate_in_isolated_postgres(self):
+        """Real MOD metadata -> canonical row -> separate ID link -> candidate.
+
+        This is an isolated transaction, not a production import. A reviewed
+        external crosswalk is identity context, NEVER an independent attack
+        witness; the original report remains name-only and unmodified.
+        """
+        from core.intel.maritime_attack_correlation import VesselRef
+        from core.intel.maritime_attack_identity_evidence import (
+            ExternalVesselIdentity, link_external_vessel_identity,
+        )
+        from core.intel.maritime_attack_observation_readonly import (
+            correlate_reviewed_db_observations,
+        )
+
+        with Session(self.engine) as db:
+            primary = ingest_official_bulletin(db, jet())
+            self.assertEqual(primary.subject_refs, [])
+            self.assertEqual(primary.provenance["vessel_imo"], "")
+            self.assertEqual(primary.provenance["vessel_mmsi"], "")
+            identity = ExternalVesselIdentity(
+                source_record_id="synthetic-jet-registry-crosswalk",
+                source_url="https://example.org/ships/9348625",
+                vessel_name="CONTSHIP JET",
+                imo="9348625", mmsi="636019532",
+                published_at=datetime(2026, 10, 28, 10, 30, tzinfo=timezone.utc),
+                received_at=datetime(2026, 10, 28, 11, tzinfo=timezone.utc),
+                reviewed_by="ci-reviewer",
+            )
+            link = link_external_vessel_identity(jet(), [identity])
+            self.assertEqual(link.status, "linked_for_review")
+            self.assertEqual(link.vessel.imo, "9348625")
+            self.assertEqual(link.vessel.mmsi, "636019532")
+            self.assertFalse(link.attack_corroboration_allowed)
+            result = correlate_reviewed_db_observations(
+                VesselRef(link.vessel.imo, link.vessel.mmsi, "CONTSHIP JET"),
+                (primary.observation_id,),
+                {primary.observation_id: {
+                    "reviewed": True, "reviewed_by": "ci-reviewer",
+                    "kind": "attack",
+                    "occurred_at": datetime(2026, 10, 28, 10, tzinfo=timezone.utc),
+                    "vessel_name": "CONTSHIP JET",
+                    "time_uncertainty_minutes": 0,
+                }},
+                db,
+            )
+            self.assertEqual(result.blocked_reasons, ())
+            self.assertEqual(result.correlation.status, "candidate")
+            self.assertEqual(result.correlation.independent_groups, ())
+            self.assertFalse(result.correlation.publication_allowed)
+            self.assertTrue(result.correlation.requires_operator_review)
+            self.assertEqual(
+                db.get(SourceObservationDB, primary.observation_id).subject_refs, []
+            )
+            db.rollback()
+        with Session(self.engine) as db:
+            self.assertEqual(
+                db.scalar(select(func.count()).select_from(SourceObservationDB)), 0
             )
 
     def test_postgres_publication_only_cannot_become_incident_time(self):
