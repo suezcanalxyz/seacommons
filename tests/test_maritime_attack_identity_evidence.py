@@ -132,6 +132,33 @@ class ExternalIdentityLinkTests(TestCase):
             "invalid_or_duplicate_identity_provenance",
         )
 
+    def test_distinct_record_ids_cannot_reuse_the_same_canonical_registry_url(self):
+        primary = primary_bulgarian_report()
+        first = synthetic_external_registry()
+        alias = synthetic_external_registry(
+            source_record_id="synthetic-registry:alias-jet",
+            source_url="https://example.org/registry/9348625/?utm_source=mirror#copy",
+        )
+        result = link_external_vessel_identity(primary, [first, alias])
+        self.assertEqual(result.status, "blocked")
+        self.assertEqual(result.reason, "invalid_or_duplicate_identity_provenance")
+        self.assertEqual(result.evidence_record_ids, ())
+        self.assertFalse(result.attack_corroboration_allowed)
+        self.assertFalse(result.publication_allowed)
+
+    def test_distinct_registry_urls_remain_linkable_but_not_attack_proof(self):
+        primary = primary_bulgarian_report()
+        first = synthetic_external_registry()
+        second = synthetic_external_registry(
+            source_record_id="synthetic-registry:second-review",
+            source_url="https://example.net/ships/9348625",
+        )
+        result = link_external_vessel_identity(primary, [first, second])
+        self.assertEqual(result.status, "linked_for_review")
+        self.assertEqual(len(result.evidence_urls), 2)
+        self.assertFalse(result.attack_corroboration_allowed)
+        self.assertFalse(result.publication_allowed)
+
     def test_impossible_publication_clock_and_missing_ship_name_fail(self):
         primary = primary_bulgarian_report()
         late = synthetic_external_registry(
