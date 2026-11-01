@@ -238,6 +238,42 @@ class OfficialBulletinTests(TestCase):
                 "imo": "9348625", "time_uncertainty_minutes": 0,
             })
 
+    def test_approximate_official_clock_is_not_minute_exact(self):
+        # MSCIO-style "approximately 22:12 UTC" keeps the reported clock,
+        # but cannot be counted as a precision-qualified second witness.
+        approx = replace(synthetic_identified_jet(), event_time_approximate=True)
+        prepared = prepare_official_bulletin(approx)
+        assert prepared["provenance"]["event_time_precision"] == "approximate"
+        assert prepared["provenance"]["occurred_at_utc"] == "2026-10-28T10:00:00+00:00"
+        assert prepared["provenance"]["reported_time_uncertainty_minutes"] is None
+        extracted = {
+            "kind": "attack", "occurred_at": approx.occurred_at,
+            "imo": "9348625", "vessel_name": "CONTSHIP JET",
+            "time_uncertainty_minutes": 0,
+        }
+        claim = claim_from_source_observation(self.observation(approx), extracted)
+        assert claim is not None
+        assert claim.time_uncertainty_minutes == 1440.0
+        bounded = replace(approx, reported_time_uncertainty_minutes=45)
+        bounded_claim = claim_from_source_observation(
+            self.observation(bounded), extracted
+        )
+        assert bounded_claim.time_uncertainty_minutes == 45.0
+        for invalid in (0, -1, float("nan"), 1441, True):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    prepare_official_bulletin(replace(
+                        approx, reported_time_uncertainty_minutes=invalid
+                    ))
+        with self.assertRaises(ValueError):
+            prepare_official_bulletin(replace(
+                jet(), reported_time_uncertainty_minutes=30
+            ))
+        with self.assertRaises(ValueError):
+            prepare_official_bulletin(replace(
+                jet(), occurred_at=None, event_time_approximate=True
+            ))
+
     def test_publication_only_and_reclassified_bulletin_cannot_be_attack(self):
         publication_only = replace(synthetic_identified_jet(), occurred_at=None)
         assert claim_from_source_observation(self.observation(publication_only), {
