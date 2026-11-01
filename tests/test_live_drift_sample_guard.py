@@ -62,7 +62,7 @@ def test_valid_drift_interpolates_and_remains_publishable():
 @pytest.mark.parametrize("bad_point", [
     [181.0, 35.0], [14.0, -91.0], [float("nan"), 35.0],
     [14.0, float("inf")], [True, 35.0], ["14.0", 35.0],
-    [14.0], None, {"lon": 14.0, "lat": 35.0},
+    [14.0], None, {"lon": 14.0, "lat": 35.0}, [10**1000, 35.0],
 ])
 def test_bad_coordinate_anywhere_suppresses_entire_drift(bad_point):
     drift = _drift()
@@ -84,7 +84,7 @@ def test_unordered_invalid_or_missing_timestamps_suppress_drift(bad_times):
     assert _estimate(drift["trajectory"]) is None
 
 
-@pytest.mark.parametrize("bad_speed", [float("nan"), float("inf"), -0.1, True, "0.2", None])
+@pytest.mark.parametrize("bad_speed", [float("nan"), float("inf"), -0.1, True, "0.2", None, 10**1000])
 def test_invalid_sample_speed_suppresses_public_drift(bad_speed):
     drift = _drift()
     drift["trajectory"]["properties"]["speed_ms"][0] = bad_speed
