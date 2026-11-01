@@ -269,6 +269,18 @@ def claim_from_source_observation(observation: object, extracted: dict) -> Incid
         raise ValueError("Invalid IMO check digit or format")
     if vessel.mmsi and not _valid_mmsi(vessel.mmsi):
         raise ValueError("Invalid MMSI format")
+    if official_bulletin:
+        # Do not let news-to-incident extraction silently substitute a vessel
+        # or enrich a bulletin with identifiers absent from the original.
+        # A separately corroborated entity-resolution claim must be handled
+        # as separate evidence, not written back into this immutable claim.
+        source_imo = _normalized_identifier(provenance.get("vessel_imo"), "IMO")
+        source_mmsi = _normalized_identifier(provenance.get("vessel_mmsi"), "MMSI")
+        source_name = str(provenance.get("vessel_name") or "").strip()
+        if ((vessel.imo and vessel.imo != source_imo)
+                or (vessel.mmsi and vessel.mmsi != source_mmsi)
+                or (vessel.name and _name(vessel.name) != _name(source_name))):
+            raise ValueError("Official bulletin vessel identity differs from original")
     if not (vessel.imo or vessel.mmsi or vessel.name):
         return None
     # Missing extraction precision is UNKNOWN, not zero. A timestamp
