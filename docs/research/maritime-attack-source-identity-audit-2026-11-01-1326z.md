@@ -18,7 +18,7 @@ Commits:
 - `390bffc7b101034d0c76820121ba0c7d55720daf` — six source-faithful regressions.
 - `c7c859fec493e247b3877339d6523c9bc3456e5f` — existing CI workflow path coverage.
 
-GitHub Actions: https://github.com/suezcanalxyz/seacommons/actions/runs/41311137063 . **Success** on head `c7c859fe`, completed 2026-11-01 13:25:22 UTC. Logs: 303 maritime Python tests + 18 bulletin tests + 3 SQLite + 6 isolated PostgreSQL = **330 Python tests PASS**. Frontend 5/5 PASS; Vite build PASS. These certify staging behavior, not Oracle data correctness or LIVE/PLAY promotion.
+GitHub Actions: https://github.com/suezcanalxyz/seacommons/actions/runs/41311296996 . **Success** on functional head `58393189`, completed 2026-11-01 13:27:31 UTC. Logs: 303 maritime Python tests + 19 bulletin tests + 3 SQLite + 6 isolated PostgreSQL = **331 Python tests PASS**. Frontend 5/5 PASS; Vite build PASS. These certify staging behavior, not Oracle data correctness or LIVE/PLAY promotion.
 
 ## Read-only production observations
 
