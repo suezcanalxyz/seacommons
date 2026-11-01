@@ -1,0 +1,156 @@
+"""Pre-deploy R2 backup resource and byte-integrity guards."""
+import io
+import importlib.util
+from pathlib import Path
+
+p = Path(__file__).resolve().parents[1] / 'scripts/backup_pg_to_r2_quarantined.py'
+spec = importlib.util.spec_from_file_location('guarded_backup', p)
+backup = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(backup)
+
+
+def test_resource_guard_rejects_cpu_pressure():
+    ok, reason = backup.resource_check(load1=1.0, cpu_psi_avg10=91.0, mem_available=5 * 1024**3, disk_available=14 * 1024**3, cpus=2)
+    assert not ok and reason == 'cpu_pressure_high'
+
+
+def test_resource_guard_rejects_low_disk():
+    ok, reason = backup.resource_check(load1=1.0, cpu_psi_avg10=2.0, mem_available=5 * 1024**3, disk_available=2 * 1024**3, cpus=2)
+    assert not ok and reason == 'disk_headroom_low'
+
+
+def test_resource_guard_accepts_idle_host():
+    assert backup.resource_check(load1=1.0, cpu_psi_avg10=3.0, mem_available=5 * 1024**3, disk_available=14 * 1024**3, cpus=2) == (True, 'ok')
+
+
+def test_stream_hash_and_size_match_bytes():
+    payload = b'PGDMP' + b'archive' * 1024
+    stream = backup.HashingReader(io.BytesIO(payload))
+    assert b''.join(iter(lambda: stream.read(91), b'')) == payload
+    assert stream.count == len(payload)
+    import hashlib
+    assert stream.digest.hexdigest() == hashlib.sha256(payload).hexdigest()
+
+
+def test_runtime_cpu_circuit_breaker_requires_sustained_pressure():
+    assert not backup.sustained_cpu_pressure([78.0])
+    assert not backup.sustained_cpu_pressure([78.0, 30.0])
+    assert backup.sustained_cpu_pressure([32.0, 65.0, 66.0])
+    assert not backup.sustained_cpu_pressure([65.0, 55.0])
+
+
+def test_long_cpu_pressure_blocks_backup_after_short_quiet_period():
+    kw = dict(load1=1.0, cpu_psi_avg10=2.0, mem_available=5 * 1024**3,
+              disk_available=14 * 1024**3, cpus=2)
+    assert backup.resource_check(**kw, cpu_psi_avg60=38.0, cpu_psi_avg300=20.0) == (False, "cpu_pressure_60s_high")
+    assert backup.resource_check(**kw, cpu_psi_avg60=20.0, cpu_psi_avg300=67.0) == (False, "cpu_pressure_300s_high")
+    assert backup.resource_check(**kw, cpu_psi_avg60=20.0, cpu_psi_avg300=25.0) == (True, "ok")
+
+
+def test_full_backup_lock_prevents_overlapping_jobs(tmp_path):
+    path = tmp_path / "backup.lock"
+    first = backup.acquire_backup_lock(path)
+    assert first is not None
+    try:
+        assert backup.acquire_backup_lock(path) is None
+    finally:
+        first.close()
+    second = backup.acquire_backup_lock(path)
+    assert second is not None
+    second.close()
+
+
+def test_runtime_headroom_guard_rejects_critical_ram_and_disk():
+    gib = 1024**3
+    assert backup.runtime_headroom_safe(mem_available=1 * gib, disk_available=14 * gib) == (False, "runtime_memory_headroom_low")
+    assert backup.runtime_headroom_safe(mem_available=5 * gib, disk_available=3 * gib) == (False, "runtime_disk_headroom_low")
+    assert backup.runtime_headroom_safe(mem_available=5 * gib, disk_available=14 * gib) == (True, "ok")
+
+
+def test_partial_streams_never_land_in_trusted_full_prefix():
+    pending, attestation = backup.backup_object_keys("20261101T120000Z")
+    assert pending == "seacommons/backups/pending/pgdump-20261101T120000Z.dump"
+    assert attestation == "seacommons/backups/byte-verified/pgdump-20261101T120000Z.json"
+    assert "/full/" not in pending
+    assert "/full/" not in attestation
+
+
+def test_attestation_never_claims_restore_or_deploy_readiness():
+    digest = "a" * 64
+    key, _ = backup.backup_object_keys("20261101T120000Z")
+    manifest = backup.backup_attestation(key=key, size=12345, sha256=digest, stamp="20261101T120000Z")
+    assert manifest["status"] == "checksum_verified_restore_pending"
+    assert manifest["object_key"] == key
+    assert manifest["bytes"] == 12345
+    assert manifest["sha256"] == digest
+    assert manifest["restore_drill_done"] is False
+    assert "database_url" not in manifest
+    assert "password" not in manifest
+
+
+def test_attestation_rejects_trusted_prefix_and_truncated_stream():
+    import pytest
+    with pytest.raises(ValueError):
+        backup.backup_attestation(key="seacommons/backups/full/dump.dump", size=12345, sha256="a"*64, stamp="x")
+    with pytest.raises(ValueError):
+        backup.backup_attestation(key="seacommons/backups/pending/dump.dump", size=999, sha256="a"*64, stamp="x")
+    with pytest.raises(ValueError):
+        backup.backup_attestation(key="seacommons/backups/pending/dump.dump", size=12345, sha256="bad", stamp="x")
+
+
+def test_stream_throttle_applies_backpressure_without_changing_sha256():
+    import hashlib
+    now = [0.0]
+    sleeps = []
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        now[0] += seconds
+    payload = b"x" * 4096
+    reader = backup.HashingReader(io.BytesIO(payload), max_bytes_per_second=1024,
+                                  clock=lambda: now[0], sleeper=fake_sleep)
+    assert reader.read(2048) == payload[:2048]
+    assert reader.read(2048) == payload[2048:]
+    assert reader.read(2048) == b""
+    assert now[0] == 4.0
+    assert sleeps == [2.0, 2.0]
+    assert reader.digest.hexdigest() == hashlib.sha256(payload).hexdigest()
+    assert reader.count == len(payload)
+
+
+def test_stream_throttle_rejects_zero_or_negative_rate():
+    import pytest
+    with pytest.raises(ValueError):
+        backup.HashingReader(io.BytesIO(b"abc"), max_bytes_per_second=0)
+    with pytest.raises(ValueError):
+        backup.HashingReader(io.BytesIO(b"abc"), max_bytes_per_second=-2)
+
+
+def test_stream_throttle_does_not_sleep_when_source_is_slower():
+    now = [0.0]
+    sleeps = []
+    class SlowSource(io.BytesIO):
+        def read(self, size=-1):
+            now[0] += 3.0
+            return super().read(size)
+    reader = backup.HashingReader(SlowSource(b"x"*1024), max_bytes_per_second=1024,
+                                  clock=lambda: now[0], sleeper=sleeps.append)
+    assert len(reader.read(1024)) == 1024
+    assert not sleeps
+
+def test_resource_preflight_rejects_nonfinite_cpu_metrics():
+    import math
+    kw = dict(load1=1.0, cpu_psi_avg10=2.0, mem_available=5 * 1024**3,
+              disk_available=14 * 1024**3, cpus=2)
+    for field, value in (("load1", math.nan), ("cpu_psi_avg10", math.nan),
+                         ("cpu_psi_avg60", math.nan), ("cpu_psi_avg300", math.inf)):
+        case = dict(kw)
+        case[field] = value
+        assert backup.resource_check(**case)[0] is False
+
+
+def test_runtime_monitor_fails_closed_on_missing_or_nonfinite_psi(monkeypatch):
+    monkeypatch.setattr(backup, "cpu_pressure_avg10", lambda: (_ for _ in ()).throw(OSError("unavailable")))
+    assert backup.runtime_guard_sample() == (None, "runtime_monitor_unavailable")
+    monkeypatch.setattr(backup, "cpu_pressure_avg10", lambda: float("nan"))
+    # A nonfinite metric is rejected even if a downstream caller replaces the reader.
+    assert backup.runtime_guard_sample()[1] == "runtime_monitor_unavailable"
