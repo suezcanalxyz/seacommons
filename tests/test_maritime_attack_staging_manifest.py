@@ -115,6 +115,31 @@ class StagingBulletinManifestTests(TestCase):
         with self.assertRaisesRegex(ValueError, "rights"):
             prepare_staging_bulletin_manifest(payload)
 
+    def test_canonical_url_alias_and_unhashable_fields_fail_closed(self):
+        payload = sample()
+        alias = deepcopy(payload["records"][1])
+        alias["bulletin_id"] = "synthetic-alias-158"
+        alias["source_url"] += "?utm_source=copy#repost"
+        payload["records"].append(alias)
+        with self.assertRaisesRegex(ValueError, "Duplicate"):
+            prepare_staging_bulletin_manifest(payload)
+        for key, bad in (
+            ("source_rights", ["restricted_republication"]),
+            ("imo", 9348625),
+            ("source_document_sha256", None),
+            ("lat", True),
+        ):
+            payload = sample()
+            payload["records"][0][key] = bad
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                prepare_staging_bulletin_manifest(payload)
+        payload = sample()
+        payload["records"][0]["bulletin_id"] = "alias-of-news9664"
+        payload["records"][0]["source_url"] += "?utm_source=mirror"
+        payload["records"][0]["imo"] = "9348625"
+        with self.assertRaisesRegex(ValueError, "identifiers absent"):
+            prepare_staging_bulletin_manifest(payload)
+
     def test_future_source_dates_and_naive_clocks_fail_closed(self):
         payload = sample()
         payload["records"][1]["occurred_at_utc"] = "2026-11-03T10:00:00Z"
