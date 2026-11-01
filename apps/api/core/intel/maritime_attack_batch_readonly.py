@@ -123,6 +123,14 @@ def audit_attack_episodes_independence(
         visited.update(new_nodes)
         frontier = new_nodes
 
+    # A nonempty frontier after the last permitted SELECT means that a
+    # further ancestor may exist outside the fetched graph. Treating the
+    # truncated graph as complete could falsely count two syndications as
+    # independent originals. Do not infer a terminal root from a limit.
+    if frontier:
+        results.update(_blocked(selected, "batch_lineage_depth_limit"))
+        return results
+
     def cached_observations(ids: tuple[str, ...]) -> Iterable[object]:
         return [row for identifier in ids for row in observations.get(identifier, ())]
 
