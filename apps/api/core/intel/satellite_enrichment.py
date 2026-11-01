@@ -8,7 +8,7 @@ from typing import Any
 
 from core.intel.lifecycle import parse_utc
 from core.intel.satellite_observation import persist_observations
-from core.intel.satellite_resolver import resolve_for_incident
+from core.intel.satellite_resolver import resolve_for_incident, valid_wgs84_point
 
 logger = logging.getLogger(__name__)
 
@@ -52,17 +52,25 @@ def _trajectory_targets(
         or len(coordinates) < 2
     ):
         return []
-    candidates = list(range(1, len(coordinates)))
+    # Validate every model point and timestamp before querying any provider.
+    validated = []
+    for point, timestamp in zip(coordinates, timestamps):
+        if (
+            not isinstance(point, (list, tuple))
+            or len(point) < 2
+            or not valid_wgs84_point(point[1], point[0])
+        ):
+            return []
+        parsed = parse_utc(str(timestamp))
+        if parsed is None or (validated and parsed <= validated[-1][0]):
+            return []
+        validated.append((parsed, point))
+    candidates = list(range(1, len(validated)))
     selected_positions = _sample_indices(len(candidates), limit)
     targets: list[dict[str, Any]] = []
     for pos in selected_positions:
         index = candidates[pos]
-        point = coordinates[index]
-        if not isinstance(point, (list, tuple)) or len(point) < 2:
-            continue
-        target_time = parse_utc(str(timestamps[index]))
-        if target_time is None:
-            continue
+        target_time, point = validated[index]
         targets.append({
             "role": "drift_trajectory",
             "lat": float(point[1]),
@@ -75,6 +83,8 @@ def _trajectory_targets(
 
 
 def _case_satellite_targets(event) -> list[dict[str, Any]]:
+    if not valid_wgs84_point(event.lat, event.lon):
+        return []
     event_time = parse_utc(event.timestamp_utc) or datetime.now(timezone.utc)
     targets: list[dict[str, Any]] = [{
         "role": "reported_origin",
@@ -126,7 +136,7 @@ def is_satellite_enrichment_candidate(
     event, *, now: datetime | None = None, history_days: int = SATELLITE_HISTORY_DAYS
 ) -> bool:
     """Select sparse incident-level signals, never raw high-volume AIS pings."""
-    if event.lat is None or event.lon is None:
+    if not valid_wgs84_point(event.lat, event.lon):
         return False
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     observed = parse_utc(event.timestamp_utc)
@@ -164,6 +174,8 @@ def enrich_event(
     contextual until an actual vessel/detection association is made elsewhere.
     """
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if not valid_wgs84_point(event.lat, event.lon):
+        return {"persisted": 0, "errors": 0}
     targets = _case_satellite_targets(event)
     report = {"persisted": 0, "errors": 0}
     for target_index, target in enumerate(targets):

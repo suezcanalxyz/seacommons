@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import replace
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Iterable, Literal
@@ -17,6 +18,47 @@ DEFAULT_COPERNICUS_COLLECTIONS = [
     "sentinel-2-l2a",
     "sentinel-3-olci-2-wfr-nrt",
 ]
+
+
+
+def valid_wgs84_point(lat: object, lon: object) -> bool:
+    """Reject invalid positions before constructing external satellite queries."""
+    if (
+        isinstance(lat, bool) or isinstance(lon, bool)
+        or not isinstance(lat, (int, float))
+        or not isinstance(lon, (int, float))
+    ):
+        return False
+    try:
+        return (
+            math.isfinite(lat) and math.isfinite(lon)
+            and -90 <= lat <= 90 and -180 <= lon <= 180
+        )
+    except (ValueError, OverflowError):
+        return False
+
+
+def _search_bboxes(lat: float, lon: float, radius_deg: float) -> list[list[float]]:
+    """Clip polar bounds and split antimeridian searches into valid STAC boxes."""
+    if not valid_wgs84_point(lat, lon):
+        raise ValueError("invalid WGS84 satellite target")
+    if (
+        isinstance(radius_deg, bool)
+        or not isinstance(radius_deg, (int, float))
+        or not math.isfinite(radius_deg)
+        or not 0 < radius_deg <= 5
+    ):
+        raise ValueError("invalid satellite search radius")
+    south = max(-90.0, lat - radius_deg)
+    north = min(90.0, lat + radius_deg)
+    west, east = lon - radius_deg, lon + radius_deg
+    if west < -180:
+        return [[round(west + 360, 6), round(south, 6), 180.0, round(north, 6)],
+                [-180.0, round(south, 6), round(east, 6), round(north, 6)]]
+    if east > 180:
+        return [[round(west, 6), round(south, 6), 180.0, round(north, 6)],
+                [-180.0, round(south, 6), round(east - 360, 6), round(north, 6)]]
+    return [[round(west, 6), round(south, 6), round(east, 6), round(north, 6)]]
 
 
 def _iso(value: datetime) -> str:
@@ -80,7 +122,8 @@ def viirs_daily_observations(
 ) -> list[SatelliteObservation]:
     acquired = datetime.combine(day, time.min, tzinfo=timezone.utc).isoformat()
     day_text = day.isoformat()
-    bbox = [lon - 0.1, lat - 0.1, lon + 0.1, lat + 0.1]
+    bboxes = _search_bboxes(lat, lon, 0.1)
+    bbox = bboxes[0]
     observations = []
     for mission, layer in _VIIRS_LAYERS:
         tile = (
@@ -102,7 +145,9 @@ def viirs_daily_observations(
             temporal_delta_s=0,
             asset_ref=tile,
             source_url="https://gibs.earthdata.nasa.gov/",
-            provenance={"layer": layer, "temporal_precision": "day"},
+            provenance={"layer": layer, "temporal_precision": "day",
+                        "search_bboxes": bboxes} if len(bboxes) > 1 else
+                       {"layer": layer, "temporal_precision": "day"},
             evidence_status="contextual",
         ))
     return observations
@@ -216,7 +261,7 @@ def resolve_for_incident(
 ) -> list[SatelliteObservation]:
     event_time = event_time.astimezone(timezone.utc)
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    bbox = [round(value, 6) for value in (lon - radius_deg, lat - radius_deg, lon + radius_deg, lat + radius_deg)]
+    bboxes = _search_bboxes(lat, lon, radius_deg)
     provider = provider or CopernicusSTACProvider()
 
     if direction == "reverse":
@@ -228,13 +273,18 @@ def resolve_for_incident(
         start = event_time - timedelta(days=3)
         end = min(event_time + timedelta(days=3), max(event_time, now))
 
-    observations = provider.search(
-        incident_id=incident_id,
-        bbox=bbox,
-        start=start,
-        end=end,
-        collections=list(DEFAULT_COPERNICUS_COLLECTIONS),
-    )
+    # Split dateline-crossing scenes; deduplicate scenes seen in both halves.
+    observations_by_id = {}
+    for bbox in bboxes:
+        for observation in provider.search(
+            incident_id=incident_id,
+            bbox=bbox,
+            start=start,
+            end=end,
+            collections=list(DEFAULT_COPERNICUS_COLLECTIONS),
+        ):
+            observations_by_id.setdefault(observation.observation_id, observation)
+    observations = list(observations_by_id.values())
     if include_viirs:
         cursor = start.date()
         while cursor <= end.date():
