@@ -8,6 +8,8 @@ on:
       - apps/api/core/intel/maritime_attack_correlation.py
       - apps/api/core/intel/maritime_attack_ais_context_readonly.py
       - apps/api/core/intel/maritime_attack_identity_evidence.py
+      - apps/api/core/intel/maritime_attack_operator_statement.py
+      - tests/test_maritime_attack_operator_statement.py
       - tests/test_maritime_attack_identity_evidence.py
       - tests/test_maritime_attack_ais_context_readonly.py
       - apps/api/core/intel/official_maritime_bulletin.py
