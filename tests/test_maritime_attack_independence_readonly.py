@@ -200,6 +200,36 @@ class IndependenceAuditTests(unittest.TestCase):
         self.assertFalse(result.verified)
         self.assertEqual(result.reason, "missing_observation_chronology")
 
+    def test_strict_canonical_audit_requires_publication_clock(self):
+        # The canonical PLAY path must not count two source reports as
+        # independently corroborated when their publication times are absent.
+        rows = [observation("mod", "navy", "one"),
+                observation("mrcc", "rescue", "two")]
+        for row in rows:
+            row.observed_at = "2026-10-28T10:00:00Z"
+            row.received_at = "2026-10-28T12:00:00Z"
+        result = audit_attack_episode_independence(
+            episode(), lambda ids: rows, lambda ids: [],
+            require_chronology=True,
+        )
+        self.assertFalse(result.verified)
+        self.assertEqual(result.reason, "missing_publication_timestamp")
+
+    def test_strict_canonical_audit_rejects_date_only_publication(self):
+        rows = [observation("mod", "navy", "one"),
+                observation("mrcc", "rescue", "two")]
+        for row in rows:
+            row.observed_at = "2026-10-28T10:00:00Z"
+            row.received_at = "2026-10-28T12:00:00Z"
+            row.provenance["published_at_utc"] = "2026-10-28T11:00:00Z"
+        rows[0].provenance["published_at_utc"] = "2026-10-28"
+        result = audit_attack_episode_independence(
+            episode(), lambda ids: rows, lambda ids: [],
+            require_chronology=True,
+        )
+        self.assertFalse(result.verified)
+        self.assertEqual(result.reason, "invalid_publication_timestamp")
+
     def test_strict_canonical_audit_accepts_valid_timestamps(self):
         rows = [
             observation("mod", "navy", "one"),
@@ -208,6 +238,7 @@ class IndependenceAuditTests(unittest.TestCase):
         for row in rows:
             row.observed_at = "2026-10-28T10:00:00Z"
             row.received_at = datetime(2026, 10, 28, 11, 0, tzinfo=timezone.utc)
+            row.provenance["published_at_utc"] = "2026-10-28T10:30:00Z"
         result = audit_attack_episode_independence(
             episode(),
             lambda ids: rows,
