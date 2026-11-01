@@ -198,6 +198,20 @@ def _apply_attack_provenance_audit(
             projection.get("independence_groups") or []
         )
         projection["independence_groups"] = []
+    # Keep the effective public epistemic state internally consistent.
+    # taxonomy_fields() may have inherited a stale corroborated facet/state
+    # from canonical metadata before the lineage audit ran. For attack
+    # episodes the provenance audit is authoritative for public PLAY labels.
+    projection["evidence_state"] = projection["evidence_stage"]
+    raw_facets = projection.get("facets")
+    facets = (
+        [str(value) for value in raw_facets if str(value) != "corroborated"]
+        if isinstance(raw_facets, (list, tuple)) else []
+    )
+    if corroborated:
+        facets.insert(0, "corroborated")
+    projection["facets"] = list(dict.fromkeys(facets))
+
     projection["provenance_audit_status"] = (
         "verified" if corroborated else "requires_review"
     )
