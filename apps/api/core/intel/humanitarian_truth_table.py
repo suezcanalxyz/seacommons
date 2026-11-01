@@ -252,9 +252,13 @@ def index_recent_same_source_followups(
     """
     from datetime import timedelta
 
+    # The lifecycle resolver compares source identities case-insensitively.
+    # Use the same policy in the audit's candidate index: otherwise an NGO
+    # changing capitalization or surrounding whitespace hides its follow-up.
     by_source: dict[str, list[Any]] = {}
     for other in source_rows:
-        by_source.setdefault(other.source, []).append(other)
+        key = str(other.source or "").strip().lower()
+        by_source.setdefault(key, []).append(other)
     for source_rows_for_one in by_source.values():
         source_rows_for_one.sort(
             key=lambda other: (other.created_at, str(other.id)), reverse=True,
@@ -264,7 +268,7 @@ def index_recent_same_source_followups(
     for row in case_rows:
         cutoff = row.created_at - timedelta(days=lookback_days)
         indexed[row.id] = [
-            other for other in by_source.get(row.source, [])
+            other for other in by_source.get(str(row.source or "").strip().lower(), [])
             if other.id != row.id and other.created_at >= cutoff
         ][:max_per_case]
     return indexed
@@ -354,6 +358,8 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
     core.intel.source_registry -- then builds one TruthTableRow per case.
     """
     from datetime import timedelta
+
+    from sqlalchemy import func
 
     from core.db.models import DriftResultDB, IntelEventDB
     from core.db.session import session_scope
@@ -476,7 +482,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
         # This remains one query per source, not one per case.
         source_groups: dict[str, list[Any]] = {}
         for row, _, _ in candidates:
-            source_groups.setdefault(row.source, []).append(row)
+            source_groups.setdefault(str(row.source or "").strip().lower(), []).append(row)
         recent_source_rows: list[Any] = []
         followup_incomplete_sources = 0
         max_followups_per_case = 50
@@ -488,7 +494,10 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             source_batch = (
                 db.query(IntelEventDB)
                 .filter(
-                    IntelEventDB.source == source,
+                    # Match provider capitalization/outer whitespace just
+                    # as has_resolution_signal does. The time predicate and
+                    # strict per-source cap keep this diagnostic bounded.
+                    func.lower(func.trim(IntelEventDB.source)) == source,
                     IntelEventDB.created_at >= oldest_cutoff,
                 )
                 .order_by(IntelEventDB.created_at.desc(), IntelEventDB.id.desc())
