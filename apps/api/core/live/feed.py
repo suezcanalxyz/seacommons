@@ -132,6 +132,10 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
             metadata={
                 "anomaly_type": anomaly_type,
                 "evidence_stage": props.get("evidence_stage"),
+                # A mature assessment is not evidence of independent sources.
+                # Only explicitly supplied lineage groups can upgrade the
+                # public corroboration label (not evidence_stage alone).
+                "independence_groups": props.get("independence_groups"),
             },
             hypothesis_type=hypothesis_type,
         )
@@ -157,8 +161,8 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
                 "tier": IntelTier.SIGNAL.value,
                 "verification_status": (
                     VerificationStatus.MULTI_SOURCE_CORROBORATED.value
-                    if props.get("evidence_stage") == "corroborated"
-                    else str(props.get("evidence_stage") or "assessed")
+                    if taxonomy["corroborated"]
+                    else VerificationStatus.DERIVED.value
                 ),
                 "publication_status": PublicationStatus.PUBLISHED.value,
                 "source_policy": SourcePolicy.OPERATOR_PUBLISHED.value,
