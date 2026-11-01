@@ -13,7 +13,7 @@ Three new offline regression tests:
 3. Synthetic bulletin IMO-only + external MMSI-only -> BLOCKED.
 Files changed: `apps/api/core/intel/maritime_attack_identity_evidence.py` and `tests/test_maritime_attack_identity_evidence.py`.
 Commits: `89b99ff65a4678f0e94eb1b3c37f1aa1fb47ecff`, `5c32575183893e9e24420c14ac46d427f5b54569`.
-CI status: pending at the time of drafting; do not claim PASS before completed workflow run.
+CI verified after drafting: https://github.com/suezcanalxyz/seacommons/actions/runs/41320929962 completed SUCCESS on test commit `5c32575183893e9e24420c14ac46d427f5b54569` at 15:23 UTC. Logs: 308 correlation tests + 19 official adapter + 3 SQLite + 6 isolated PostgreSQL = **336 Python PASS**; frontend **5 JavaScript PASS** and build succeeded. Documentation-only commit is not itself a new functional test run.
 
 ## NEW first-party incident evidence: Contships Management company update
 Source: https://contships-management.com/2026/10/29/contships-management-inc-company-update/
