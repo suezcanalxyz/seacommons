@@ -6,6 +6,8 @@ on:
       - feature/maritime-attack-correlation-20261030
     paths:
       - apps/api/core/intel/maritime_attack_correlation.py
+      - apps/api/core/intel/maritime_attack_ais_context_readonly.py
+      - tests/test_maritime_attack_ais_context_readonly.py
       - apps/api/core/intel/official_maritime_bulletin.py
       - tests/test_official_maritime_bulletin.py
       - tests/test_official_maritime_bulletin_sqlite.py
