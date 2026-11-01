@@ -136,6 +136,7 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
                 # Only explicitly supplied lineage groups can upgrade the
                 # public corroboration label (not evidence_stage alone).
                 "independence_groups": props.get("independence_groups"),
+                "independent_source_count": props.get("independent_source_count"),
             },
             hypothesis_type=hypothesis_type,
         )
