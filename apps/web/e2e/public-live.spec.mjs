@@ -95,8 +95,11 @@ test('mobile Live keeps an interactive incident map when MapLibre cannot initial
   await page.addInitScript(() => { window.__SEACOMMONS_FORCE_MAP_FALLBACK__ = true; });
   await page.goto(PUBLIC_LIVE_URL);
   await expect(page.locator('.leaflet-container')).toBeVisible();
-  const markers = page.locator('.seacommons-fallback-marker');
+  // Incident circles and heading-aware vessel divIcons are both clickable
+  // map features; the latter intentionally has a different CSS class.
+  const markers = page.locator('.seacommons-fallback-marker, .seacommons-fallback-signal-icon');
   await expect(markers).toHaveCount(2);
+  await expect(page.locator('.seacommons-fallback-signal-icon')).toHaveAttribute('role', 'button');
   const targetMarker = page.locator('.seacommons-fallback-marker--humanitarian-1');
   await expect(targetMarker).toHaveAttribute('role', 'button');
   await targetMarker.dispatchEvent('pointerup');
