@@ -556,7 +556,11 @@ def _public_intel_feature(
                 event.metadata.get("is_distress")
                 or event.metadata.get("humanitarian_case_id")
                 or humanitarian_case_type in {
-                    "distress", "missing", "shipwreck", "pushback",
+                    # Missing-person reports alone are historical/contextual
+                    # evidence, not proof of a currently actionable distress.
+                    # A producer must explicitly assert is_distress or link a
+                    # canonical humanitarian_case_id to promote such a report.
+                    "distress", "shipwreck", "pushback",
                     "rescue", "rescue_update", "rescue_completed", "resolution",
                 }
             )
