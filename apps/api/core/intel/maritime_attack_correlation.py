@@ -51,6 +51,8 @@ class AISFix:
     observed_at: datetime
     lat: float
     lon: float
+    # Optional raw AIS speed over ground. Never an independent attack witness.
+    sog_knots: float | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,8 @@ class Correlation:
     source_evidence: tuple[dict[str, str | None], ...] = ()
     publication_allowed: bool = False
     requires_operator_review: bool = True
+    # Paired original AIS fix timestamps, for audit only; never corroboration.
+    related_sudden_stop_fixes: tuple[tuple[str, str], ...] = ()
 
 
 _KINDS = frozenset({"attack", "sinking", "explosion", "collision", "piracy"})
@@ -741,6 +745,55 @@ def correlate(
     gap_ids = tuple(sorted(valid_gap_ids))
     if gap_ids:
         support.append("proximate_ais_gap_context_not_attack_proof")
+
+    # A sharp speed reduction is an AIS *context signal*, not an attack
+    # observation. Require two valid, same-MMSI fixes bracketing a precisely
+    # timed incident; rule out long sampling gaps and implausible position
+    # jumps. Port approaches, weather, spoofing and operational manoeuvres
+    # remain alternative explanations. No status/group/promotion changes.
+    stop_pairs: set[tuple[str, str]] = set()
+    if _valid_mmsi(subject.mmsi):
+        speed_fixes: list[AISFix] = []
+        for fix in valid_ais_fixes:
+            if fix.mmsi != subject.mmsi or fix.sog_knots is None:
+                continue
+            if (not isinstance(fix.sog_knots, (int, float))
+                    or isinstance(fix.sog_knots, bool)
+                    or not isfinite(fix.sog_knots)
+                    or not 0 <= fix.sog_knots <= 70):
+                contradictions.append("invalid_ais_speed")
+                continue
+            speed_fixes.append(fix)
+        for claim in valid:
+            if claim.time_uncertainty_minutes > 180:
+                continue
+            event_time = _utc(claim.occurred_at)
+            before = [fix for fix in speed_fixes
+                      if fix.sog_knots >= 5
+                      and 0 <= (event_time - _utc(fix.observed_at)).total_seconds() <= 30 * 60]
+            after = [fix for fix in speed_fixes
+                     if fix.sog_knots <= 1.5
+                     and 0 <= (_utc(fix.observed_at) - event_time).total_seconds() <= 90 * 60]
+            if not before or not after:
+                continue
+            previous = max(before, key=lambda fix: _utc(fix.observed_at))
+            following = min(after, key=lambda fix: _utc(fix.observed_at))
+            if (_utc(following.observed_at) - _utc(previous.observed_at)).total_seconds() > 90 * 60:
+                continue
+            if previous.sog_knots - following.sog_knots < 5:
+                continue
+            if _km(previous.lat, previous.lon, following.lat, following.lon) > 15:
+                continue
+            if claim.lat is not None and any(
+                _km(fix.lat, fix.lon, claim.lat, claim.lon) > 30 + claim.uncertainty_km
+                for fix in (previous, following)
+            ):
+                continue
+            stop_pairs.add((_utc(previous.observed_at).isoformat(),
+                            _utc(following.observed_at).isoformat()))
+    stop_context = tuple(sorted(stop_pairs))[:8]
+    if stop_context:
+        support.append("ais_sudden_stop_context_not_attack_proof")
     return Correlation(
         status, anchor.kind, color,
         tuple(claim.claim_id for claim in valid), groups,
@@ -764,4 +817,5 @@ def correlate(
             "received_at": (_utc(claim.received_at).isoformat()
                             if claim.received_at is not None else None),
         } for claim in valid),
+        related_sudden_stop_fixes=stop_context,
     )
