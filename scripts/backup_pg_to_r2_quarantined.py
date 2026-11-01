@@ -15,6 +15,7 @@ import json
 import os
 import subprocess
 import threading
+import time
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,16 +25,30 @@ sys.path.insert(0, str(ROOT / "apps/api"))
 
 
 class HashingReader:
-    def __init__(self, source):
+    def __init__(self, source, *, max_bytes_per_second=None, clock=None, sleeper=None):
+        if max_bytes_per_second is not None and max_bytes_per_second <= 0:
+            raise ValueError("max_bytes_per_second must be positive")
         self.source = source
         self.digest = hashlib.sha256()
         self.count = 0
+        self.max_bytes_per_second = max_bytes_per_second
+        self.clock = clock or time.monotonic
+        self.sleeper = sleeper or time.sleep
+        self.started = None
 
     def read(self, size=-1):
+        if self.started is None:
+            self.started = self.clock()
         chunk = self.source.read(size)
         if chunk:
             self.digest.update(chunk)
             self.count += len(chunk)
+            if self.max_bytes_per_second is not None:
+                remaining = self.count / self.max_bytes_per_second - (self.clock() - self.started)
+                if remaining > 0:
+                    # Backpressure the pg_dump pipe instead of letting a 2-vCPU
+                    # database server sustain full-speed reads and compression.
+                    self.sleeper(remaining)
         return chunk
 
 
@@ -141,7 +156,11 @@ def backup_attestation(*, key, size, sha256, stamp):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--execute", action="store_true", help="Actually stream a full database backup if preflight passes")
+    parser.add_argument("--max-stream-mib-per-sec", type=float, default=2.0,
+                        help="Throttle producer pipe (default: 2 MiB/s) to protect a shared 2-vCPU host")
     args = parser.parse_args()
+    if not 0 < args.max_stream_mib_per_sec <= 16:
+        parser.error("--max-stream-mib-per-sec must be >0 and <=16")
     from core.config import config
     from core import object_store
     from sqlalchemy.engine import make_url
@@ -207,9 +226,10 @@ def main():
 
     monitor = threading.Thread(target=monitor_cpu_pressure, name="pgdump-cpu-guard", daemon=True)
     monitor.start()
-    stream = HashingReader(proc.stdout)
+    stream = HashingReader(proc.stdout, max_bytes_per_second=args.max_stream_mib_per_sec * 1024**2)
     try:
-        client.put_object(config.OBJECT_STORAGE_BUCKET, key, stream, length=-1, part_size=64 * 1024**2, content_type="application/octet-stream")
+        # 8 MiB multipart chunks smooth backpressure; S3 requires >=5 MiB.
+        client.put_object(config.OBJECT_STORAGE_BUCKET, key, stream, length=-1, part_size=8 * 1024**2, content_type="application/octet-stream")
     except Exception:
         proc.kill()
         proc.wait()

@@ -96,3 +96,43 @@ def test_attestation_rejects_trusted_prefix_and_truncated_stream():
         backup.backup_attestation(key="seacommons/backups/pending/dump.dump", size=999, sha256="a"*64, stamp="x")
     with pytest.raises(ValueError):
         backup.backup_attestation(key="seacommons/backups/pending/dump.dump", size=12345, sha256="bad", stamp="x")
+
+
+def test_stream_throttle_applies_backpressure_without_changing_sha256():
+    import hashlib
+    now = [0.0]
+    sleeps = []
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        now[0] += seconds
+    payload = b"x" * 4096
+    reader = backup.HashingReader(io.BytesIO(payload), max_bytes_per_second=1024,
+                                  clock=lambda: now[0], sleeper=fake_sleep)
+    assert reader.read(2048) == payload[:2048]
+    assert reader.read(2048) == payload[2048:]
+    assert reader.read(2048) == b""
+    assert now[0] == 4.0
+    assert sleeps == [2.0, 2.0]
+    assert reader.digest.hexdigest() == hashlib.sha256(payload).hexdigest()
+    assert reader.count == len(payload)
+
+
+def test_stream_throttle_rejects_zero_or_negative_rate():
+    import pytest
+    with pytest.raises(ValueError):
+        backup.HashingReader(io.BytesIO(b"abc"), max_bytes_per_second=0)
+    with pytest.raises(ValueError):
+        backup.HashingReader(io.BytesIO(b"abc"), max_bytes_per_second=-2)
+
+
+def test_stream_throttle_does_not_sleep_when_source_is_slower():
+    now = [0.0]
+    sleeps = []
+    class SlowSource(io.BytesIO):
+        def read(self, size=-1):
+            now[0] += 3.0
+            return super().read(size)
+    reader = backup.HashingReader(SlowSource(b"x"*1024), max_bytes_per_second=1024,
+                                  clock=lambda: now[0], sleeper=sleeps.append)
+    assert len(reader.read(1024)) == 1024
+    assert not sleeps
