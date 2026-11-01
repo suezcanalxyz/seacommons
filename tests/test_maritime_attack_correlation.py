@@ -810,7 +810,8 @@ class SourceObservationAdapterTests(unittest.TestCase):
     def extraction():
         return {"kind": "attack", "occurred_at": "2026-10-28T10:00:00Z",
                 "imo": "9348625", "mmsi": "636019532",
-                "vessel_name": "CONTSHIP JET"}
+                "vessel_name": "CONTSHIP JET",
+                "time_uncertainty_minutes": 0.0}
 
     def test_verified_independent_observations_corroborate_without_ais(self):
         from core.intel.maritime_attack_correlation import claim_from_source_observation
@@ -822,6 +823,41 @@ class SourceObservationAdapterTests(unittest.TestCase):
         self.assertEqual(result.status, "corroborated")
         self.assertEqual(result.related_gap_ids, ())
         self.assertFalse(result.publication_allowed)
+
+    def test_missing_extracted_time_precision_cannot_fake_corroboration(self):
+        # A precise-looking ISO timestamp may be an extraction estimate.
+        # Without an explicit precision field, treat it as day-level.
+        a = claim_from_source_observation(
+            self.observation("navy"),
+            {k: v for k, v in self.extraction().items()
+             if k != "time_uncertainty_minutes"})
+        b = claim_from_source_observation(
+            self.observation("mrcc", authority="mrcc", report="mrcc-20261028"),
+            {**self.extraction(), "time_uncertainty_minutes": None})
+        self.assertEqual(a.time_uncertainty_minutes, 1440.0)
+        self.assertEqual(b.time_uncertainty_minutes, 1440.0)
+        result = correlate(JET, [a, b])
+        self.assertEqual(result.status, "candidate")
+        self.assertFalse(result.publication_allowed)
+
+    def test_missing_geolocation_precision_cannot_fake_corroboration(self):
+        extraction = {**self.extraction(), "lat": 43.26, "lon": 28.81}
+        a = claim_from_source_observation(self.observation("navy"), extraction)
+        b = claim_from_source_observation(
+            self.observation("mrcc", authority="mrcc", report="mrcc-20261028"),
+            {**extraction, "uncertainty_km": None})
+        self.assertEqual(a.uncertainty_km, 10000.0)
+        self.assertEqual(b.uncertainty_km, 10000.0)
+        self.assertEqual(correlate(JET, [a, b]).status, "candidate")
+
+    def test_explicit_verified_precision_can_still_corroborate(self):
+        extraction = {**self.extraction(), "lat": 43.26, "lon": 28.81,
+                      "uncertainty_km": 0.0, "time_uncertainty_minutes": 0.0}
+        a = claim_from_source_observation(self.observation("navy"), extraction)
+        b = claim_from_source_observation(
+            self.observation("mrcc", authority="mrcc", report="mrcc-20261028"),
+            extraction)
+        self.assertEqual(correlate(JET, [a, b]).status, "corroborated")
 
     def test_unverified_extracted_publisher_does_not_create_independence(self):
         from core.intel.maritime_attack_correlation import claim_from_source_observation
