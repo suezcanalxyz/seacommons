@@ -30,6 +30,7 @@ def extraction(*, reviewed=True, reviewed_by="analyst", kind="attack", imo="9348
         "reviewed": reviewed, "reviewed_by": reviewed_by,
         "kind": kind, "occurred_at": OCCURRED, "imo": imo,
         "mmsi": "636019532", "vessel_name": "CONTSHIP JET",
+        "time_uncertainty_minutes": 0.0,
     }
 
 
@@ -60,6 +61,15 @@ class ReviewedObservationReadOnlyTests(unittest.TestCase):
         self.assertFalse(result.correlation.publication_allowed)
         self.assertTrue(result.correlation.requires_operator_review)
         self.assertEqual(result.loaded_count, 2)
+
+    def test_missing_precision_on_one_reviewed_extraction_blocks_promotion(self):
+        extracts = dict(self.extractions)
+        imprecise = extraction()
+        del imprecise["time_uncertainty_minutes"]
+        extracts["mrcc"] = imprecise
+        result = evaluate(["mod", "mrcc"], self.rows, extracts)
+        self.assertEqual(result.correlation.status, "candidate")
+        self.assertFalse(result.correlation.publication_allowed)
 
     def test_missing_observation_blocks_without_partial_promotion(self):
         result = evaluate(["mod", "mrcc"], self.rows[:1], self.extractions)
