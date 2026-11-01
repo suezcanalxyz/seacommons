@@ -128,20 +128,17 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
         )
         from core.domain.incident_taxonomy import taxonomy_fields
 
-        # The public hypothesis has already resolved independent lineages
-        # from its evidence links. Never upgrade an assessed/corroborated
-        # evidence *stage* into a multi-source verification claim.
-        verification = str(props.get("verification_status") or "single_source_observed")
-        groups = list(props.get("independence_groups") or ())
         taxonomy = taxonomy_fields(
             event_type="ais_anomaly",
             maritime_domain="grey_zone",
             metadata={
                 "anomaly_type": anomaly_type,
                 "evidence_stage": props.get("evidence_stage"),
-                "verification_status": verification,
-                "independence_groups": groups,
-                "independent_source_count": len(groups),
+                # A mature assessment is not evidence of independent sources.
+                # Only explicitly supplied lineage groups can upgrade the
+                # public corroboration label (not evidence_stage alone).
+                "independence_groups": props.get("independence_groups"),
+                "independent_source_count": props.get("independent_source_count"),
             },
             hypothesis_type=hypothesis_type,
         )
@@ -165,7 +162,11 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
                 "kind": LiveSignalKind.CONTEXT.value,
                 "severity": "medium",
                 "tier": IntelTier.SIGNAL.value,
-                "verification_status": verification,
+                "verification_status": (
+                    VerificationStatus.MULTI_SOURCE_CORROBORATED.value
+                    if taxonomy["corroborated"]
+                    else VerificationStatus.DERIVED.value
+                ),
                 "publication_status": PublicationStatus.PUBLISHED.value,
                 "source_policy": SourcePolicy.OPERATOR_PUBLISHED.value,
                 "title": str(props.get("title") or "Reviewed maritime intelligence")[:255],
@@ -177,8 +178,6 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
                 "maritime_domain": "grey_zone",
                 "hypothesis_type": hypothesis_type,
                 "hypothesis_state": "published",
-                "independence_groups": groups,
-                "independent_source_count": len(groups),
                 "reason_codes": list(props.get("reason_codes") or ()),
                 "evidence_stage": props.get("evidence_stage"),
                 "caveats": list(props.get("caveats") or ()),
@@ -891,7 +890,7 @@ def public_signal_collection(
 
     by_source: dict[str, list[IntelEvent]] = {}
     for event in events:
-        by_source.setdefault(event.source, []).append(event)
+        by_source.setdefault(event.source.strip().casefold(), []).append(event)
     mode_features: dict[str, list[dict[str, Any]]] = {
         "humanitarian": [],
         "security": [],
@@ -946,7 +945,7 @@ def public_signal_collection(
             from core.intel.humanitarian_incident import resolve_public_incident_state
 
             incident_state = resolve_public_incident_state(
-                event, now=now, same_source=by_source.get(event.source, [])
+                event, now=now, same_source=by_source.get(event.source.strip().casefold(), [])
             )
             # Live is a rolling 24-hour timeline. Terminal real-world
             # statuses remain visible until retention expiry, but are clearly
@@ -1229,7 +1228,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
     now = datetime.now(UTC)
     by_source: dict[str, list[IntelEvent]] = {}
     for event in drift_events.values():
-        by_source.setdefault(event.source, []).append(event)
+        by_source.setdefault(event.source.strip().casefold(), []).append(event)
     for event in drift_events.values():
         # SeaCommons Drift is a humanitarian SAR model only (docs/deep-research-
         # report.md #17, hard requirement). A positive allow-list, not
@@ -1257,7 +1256,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         from core.intel.humanitarian_incident import resolve_public_incident_state
 
         incident_state = resolve_public_incident_state(
-            event, now=now, same_source=by_source.get(event.source, [])
+            event, now=now, same_source=by_source.get(event.source.strip().casefold(), [])
         )
         if (
             incident_state["lifecycle"] in _DRIFT_HIDDEN_LIFECYCLES
