@@ -46,6 +46,33 @@ class MaritimeAttackCorrelationTests(unittest.TestCase):
                 "imo": "93151598",
             })
 
+    def test_al_mayeda_unknown_objects_and_relayed_ministry_not_two_attack_origins(self):
+        # Nakilat reported an unidentified-object impact on 30 October.
+        # Qatar's 1 November condemnation may repeat the operator's report.
+        # The 00:00 anchor below is a SYNTHETIC day placeholder, not a
+        # documented incident clock. No weapon, attacker or exact site known.
+        ship = VesselRef("9397298", "538003356", "AL MAYEDA")
+        day_only = dt(30, 0)
+        reports = [
+            IncidentClaim(
+                "synthetic:nakilat", "attack", day_only, "",
+                "https://www.nakilat.com/al-mayeda-vessel-incident-in-the-arabian-gulf/",
+                VesselRef(name="AL MAYEDA"),
+                time_uncertainty_minutes=1440,
+            ),
+            IncidentClaim(
+                "synthetic:qatar-mofa", "attack", day_only, "",
+                "https://mofa.gov.qa/en/latest-articles/statements/qatar-condemns-attack-on-lng-carrier-in-arabian-gulf",
+                VesselRef(name="AL MAYEDA"),
+                time_uncertainty_minutes=1440,
+            ),
+        ]
+        result = correlate(ship, reports)
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(result.independent_groups, ())
+        self.assertFalse(result.publication_allowed)
+        self.assertEqual(result.related_sudden_stop_fixes, ())
+
     def test_contship_jet_28_october_regression(self):
         """Two original authorities + proximate AIS => corroborated attack."""
         # Primary government documents, not fictional prosecutor evidence.
