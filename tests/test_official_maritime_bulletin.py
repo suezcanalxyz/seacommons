@@ -2,9 +2,8 @@
 """Offline staging contracts for original maritime-bulletin ingestion."""
 from dataclasses import replace
 from datetime import date, datetime, timezone
+from unittest import TestCase
 from unittest.mock import patch
-
-import pytest
 
 from core.intel.official_maritime_bulletin import (
     OfficialMaritimeBulletin, ingest_official_bulletin, prepare_official_bulletin,
@@ -89,46 +88,42 @@ def test_riti_navarea_anchorage_is_not_assumed_impact_location():
     assert result["provenance"]["event_time_precision"] == "unknown"
 
 
-@pytest.mark.parametrize("url", [
-    "http://www.mod.bg/news9664",
-    "https://www.mod.bg.evil.example/news9664",
-    "https://user:password@www.mod.bg/news9664",
-    "https://localhost/news9664",
-    "https://www.mod.bg:8443/news9664",
-    "https://www.mod.bg/",
-])
-def test_untrusted_or_invalid_url_rejected(url):
-    # The official root URL is not a bulletin document.
-    if url == "https://www.mod.bg/":
-        assert prepare_official_bulletin(replace(jet(), source_url=url))
-    else:
-        with pytest.raises(ValueError):
-            prepare_official_bulletin(replace(jet(), source_url=url))
+def test_untrusted_or_invalid_url_rejected():
+    for url in (
+        "http://www.mod.bg/news9664",
+        "https://www.mod.bg.evil.example/news9664",
+        "https://user:password@www.mod.bg/news9664",
+        "https://localhost/news9664",
+        "https://www.mod.bg:8443/news9664",
+    ):
+        with TestCase().subTest(url=url):
+            with TestCase().assertRaises(ValueError):
+                prepare_official_bulletin(replace(jet(), source_url=url))
 
-
-@pytest.mark.parametrize("changes", [
-    {"imo": "9348624"},
-    {"mmsi": "123"},
-    {"lat": 43.1},
-    {"lat": float("nan"), "lon": 28.8},
-    {"lat": 93.0, "lon": 28.8},
-    {"location_uncertainty_km": -1.0},
-    {"occurred_at": datetime(2026, 10, 28, 10)},
-    {"event_date": date(2026, 10, 28)},
-    {"published_at": datetime(2026, 10, 28, 11)},
-    {"bulletin_id": "foo\nbar"},
-    {"kind": "confirmed_attacker_russia"},
-    {"source_document_sha256": "not-a-sha"},
-])
-def test_bad_or_contradictory_input_is_rejected(changes):
-    with pytest.raises(ValueError):
-        prepare_official_bulletin(replace(jet(), **changes))
-
+def test_bad_or_contradictory_input_is_rejected():
+    changes = (
+        {"imo": "9348624"},
+        {"mmsi": "123"},
+        {"lat": 43.1},
+        {"lat": float("nan"), "lon": 28.8},
+        {"lat": 93.0, "lon": 28.8},
+        {"location_uncertainty_km": -1.0},
+        {"occurred_at": datetime(2026, 10, 28, 10)},
+        {"event_date": date(2026, 10, 28)},
+        {"published_at": datetime(2026, 10, 28, 11)},
+        {"bulletin_id": "foo\\nbar"},
+        {"kind": "confirmed_attacker_russia"},
+        {"source_document_sha256": "not-a-sha"},
+    )
+    for change in changes:
+        with TestCase().subTest(change=change):
+            with TestCase().assertRaises(ValueError):
+                prepare_official_bulletin(replace(jet(), **change))
 
 def test_missing_all_dates_rejected_before_database_call():
     warning = replace(jet(), occurred_at=None, publication_date=None)
     with patch("core.intel.source_observation.record_observation") as record:
-        with pytest.raises(ValueError, match="No reliable"):
+        with TestCase().assertRaisesRegex(ValueError, "No reliable"):
             ingest_official_bulletin(object(), warning)
         record.assert_not_called()
 
@@ -141,5 +136,5 @@ def test_explicit_ingest_calls_existing_canonical_write_path_once():
         args, kwargs = record.call_args
         assert args == (fake_db,)
         assert kwargs["source_policy"] == "official_bulletin_metadata_only_reuse_unverified"
-        assert kwargs["raw_payload_ref"] if "raw_payload_ref" in kwargs else True
+        assert "raw_payload_ref" not in kwargs
         assert kwargs["provenance"]["origin_authority_verified"] is False
