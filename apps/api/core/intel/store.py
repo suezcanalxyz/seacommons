@@ -1019,12 +1019,52 @@ class IntelStore:
                 updated = event
                 break
         if updated is None:
-            return False
+            # AIS churn can evict a still-operational humanitarian case from
+            # the bounded deque. Its drift worker must still persist status
+            # transitions (computing/completed/failed) to the durable record.
+            # Queue a merge, not a replacement: older queued writes must
+            # finish first, and unrelated evidence metadata must survive.
+            outcome: dict[str, bool] = {"updated": False}
+            self._enqueue_persist(
+                self._merge_durable_metadata_sync,
+                event_id.removeprefix("intel:"),
+                dict(metadata),
+                linked_mmsi,
+                outcome,
+                wait=True,
+            )
+            return outcome["updated"]
         self._enqueue_persist(
             self._persist_metadata_sync, event_id, dict(updated.metadata), updated.linked_mmsi
         )
         self._fire_broadcast(updated)
         return True
+
+    @staticmethod
+    def _merge_durable_metadata_sync(
+        event_id: str,
+        metadata: dict[str, Any],
+        linked_mmsi: Optional[str],
+        outcome: dict[str, bool],
+    ) -> None:
+        """Persist updates for an event evicted from RAM, preserving its evidence.
+
+        Called through the same FIFO persistence queue as in-memory writes so
+        a previously enqueued snapshot cannot erase this drift transition.
+        A missing DB row is not a successful update.
+        """
+        from core.db.models import IntelEventDB
+        from core.db.session import session_scope
+
+        with session_scope() as db:
+            row = db.get(IntelEventDB, event_id)
+            if row is None:
+                return
+            row.meta = {**dict(row.meta or {}), **metadata}
+            if linked_mmsi:
+                row.linked_mmsi = linked_mmsi
+            db.flush()
+        outcome["updated"] = True
 
     def update_vessel_episode(
         self,
