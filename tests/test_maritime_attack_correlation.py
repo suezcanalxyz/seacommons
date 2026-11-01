@@ -787,6 +787,31 @@ class MaritimeAttackLineageTests(unittest.TestCase):
         self.assertIn("spatial_conflict:copy_0", result.contradicting)
 
 
+    def test_ghana_prosperity_two_october_incidents_not_collapsed(self):
+        """IMO lists 3 and 23 Oct for the same IMO: distinct episodes.
+
+        Identical ship identity is never sufficient to merge events twenty
+        days apart. These are synthetic claims exercising documented dates,
+        not assertions of two independent original reporting chains.
+        """
+        ghana = VesselRef(imo="9732541", name="GHANA PROSPERITY")
+        early = report("ghana_oct03", "origin_a", ghana,
+                       lat=None, lon=None, when=dt(3, 10))
+        late = report("ghana_oct23", "origin_b", ghana,
+                      lat=None, lon=None, when=dt(23, 10))
+        for ordered in ((early, late), (late, early)):
+            with self.subTest(first=ordered[0].claim_id):
+                result = correlate(ghana, ordered)
+                self.assertEqual(result.status, "candidate")
+                self.assertEqual(len(result.claim_ids), 1)
+                self.assertEqual(len(result.independent_groups), 1)
+                self.assertTrue(any(
+                    reason.startswith("temporal_conflict:")
+                    for reason in result.contradicting
+                ))
+                self.assertFalse(result.publication_allowed)
+
+
 class SourceObservationAdapterTests(unittest.TestCase):
     """Pure adapter tests; no DB credentials, network, writes or schedulers."""
 
