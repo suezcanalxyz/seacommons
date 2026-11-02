@@ -515,6 +515,7 @@ def _public_intel_feature(
     without touching the default behaviour.
     """
     from core.intel.analysis_state import annotate_event_analysis
+    from core.intel.macro_drift import explicit_distress_flag
 
     annotate_event_analysis(event)
     if (
@@ -553,7 +554,7 @@ def _public_intel_feature(
         operational_humanitarian = (
             resolved_domain in {"sar", "humanitarian"}
             and bool(
-                event.metadata.get("is_distress")
+                explicit_distress_flag(event.metadata.get("is_distress"))
                 or event.metadata.get("humanitarian_case_id")
                 or humanitarian_case_type in {
                     # Missing-person reports alone are historical/contextual
@@ -690,7 +691,7 @@ def _public_intel_feature(
     metadata["maritime_domain"] = resolved_domain
     if (
         resolved_domain == "sar"
-        and event.metadata.get("is_distress")
+        and explicit_distress_flag(event.metadata.get("is_distress"))
         and event.metadata.get("tweet_id")
         and "humanitarian_case_id" not in metadata
     ):
