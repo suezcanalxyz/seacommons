@@ -125,6 +125,61 @@ class MaritimeAttackLineageTests(TestCase):
         with self.assertRaisesRegex(ValueError, "lineage_event_day_conflict"):
             build_staging_attack_lineage_review([a, b], [shared("A", "B")])
 
+    def test_documented_approximate_clock_can_explain_small_time_offset(self):
+        # A report published one minute before the *nominal* approximate
+        # clock can still be chronologically possible within a stated bound.
+        report = notice("A", event_time_precision="approximate",
+                        reported_time_uncertainty_minutes=5,
+                        published_at_utc="2026-11-01T15:08:00+00:00")
+        review = build_staging_attack_lineage_review([report])
+        self.assertFalse(review["publication_allowed"])
+        report["published_at_utc"] = "2026-11-01T15:03:59+00:00"
+        with self.assertRaisesRegex(ValueError, "lineage_event_after_published_at_utc"):
+            build_staging_attack_lineage_review([report])
+
+    def test_only_documented_uncertainty_extends_cross_source_window(self):
+        a = notice("A", event_time_precision="approximate",
+                   reported_time_uncertainty_minutes=15)
+        b = notice("B", "2026-11-01T17:19:00+00:00")
+        result = build_staging_attack_lineage_review([a, b], [shared("A", "B")])
+        self.assertEqual(result["provisional_origin_groups"], 1)
+        self.assertEqual(result["independent_origins_verified"], 0)
+        with self.assertRaisesRegex(ValueError, "lineage_temporal_conflict"):
+            build_staging_attack_lineage_review(
+                [notice("A", event_time_precision="approximate"), b],
+                [shared("A", "B")],
+            )
+
+    def test_uncertainty_is_bounded_and_cannot_manufacture_shared_origin(self):
+        for value in (False, 0, -5, float("nan"), float("inf"), 1441, "60"):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                ValueError, "lineage_invalid_time_uncertainty"
+            ):
+                build_staging_attack_lineage_review([
+                    notice("A", event_time_precision="approximate",
+                           reported_time_uncertainty_minutes=value)
+                ])
+        with self.assertRaisesRegex(ValueError, "lineage_invalid_time_uncertainty"):
+            build_staging_attack_lineage_review([
+                notice("A", event_time_precision="exact",
+                       reported_time_uncertainty_minutes=5)
+            ])
+        with self.assertRaisesRegex(ValueError, "lineage_temporal_uncertainty_too_broad"):
+            build_staging_attack_lineage_review([
+                notice("A", event_time_precision="approximate",
+                       reported_time_uncertainty_minutes=180), notice("B")
+            ], [shared("A", "B")])
+
+    def test_uncertainty_does_not_override_conflicting_vessel_identity(self):
+        with self.assertRaisesRegex(ValueError, "lineage_vessel_identity_conflict"):
+            build_staging_attack_lineage_review([
+                notice("A", event_time_precision="approximate",
+                       reported_time_uncertainty_minutes=15,
+                       vessel_imo_as_reported="9348625"),
+                notice("B", "2026-11-01T17:19:00+00:00",
+                       vessel_imo_as_reported="9001136"),
+            ], [shared("A", "B")])
+
     def test_no_link_does_not_prove_independence(self):
         result = build_staging_attack_lineage_review(
             [notice("MOD:JET", "2026-10-28T10:00:00+00:00",

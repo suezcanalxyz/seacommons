@@ -271,6 +271,23 @@ class StagingBulletinManifestTests(TestCase):
         records = prepare_staging_bulletin_manifest(payload)
         self.assertEqual(records[1].bulletin.bulletin_id, "158/26")
 
+    def test_approximate_publication_chronology_uses_only_documented_bound(self):
+        payload = sample()
+        report = payload["records"][1]
+        report.pop("publication_date", None)
+        report["published_at_utc"] = "2026-10-29T15:57:00Z"
+        report["reported_time_uncertainty_minutes"] = 5
+        prepared = prepare_staging_bulletin_manifest(payload)
+        self.assertEqual(prepared[1].bulletin.reported_time_uncertainty_minutes, 5)
+        self.assertFalse(prepared[1].publication_allowed)
+        report["published_at_utc"] = "2026-10-29T15:54:59Z"
+        with self.assertRaisesRegex(ValueError, "publication precedes"):
+            prepare_staging_bulletin_manifest(payload)
+        report["published_at_utc"] = "2026-10-29T15:57:00Z"
+        report.pop("reported_time_uncertainty_minutes")
+        with self.assertRaisesRegex(ValueError, "publication precedes"):
+            prepare_staging_bulletin_manifest(payload)
+
     def test_azini_post_hijack_positions_are_not_attack_geometry(self):
         record = next(
             r for r in prepare_staging_bulletin_manifest(sample())

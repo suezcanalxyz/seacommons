@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+from math import isfinite
 from typing import Mapping
 from urllib.parse import urlsplit
 
@@ -120,7 +121,18 @@ def prepare_staging_bulletin_manifest(manifest: Mapping[str, object]) -> tuple[S
         # Both clocks are UTC instants: a published report cannot describe an
         # event that has not yet occurred. Day-only publication metadata is
         # deliberately excluded because publisher-local dates may differ.
-        if event_at is not None and publication_at is not None and event_at > publication_at:
+        # A documented approximate clock denotes an interval, not an exact
+        # point. An unknown bound contributes zero allowance; never infer it.
+        bound = entry.get("reported_time_uncertainty_minutes")
+        margin = 0.0
+        if bound is not None:
+            if (entry.get("event_time_approximate") is not True
+                    or type(bound) not in (int, float) or not isfinite(bound)
+                    or not 0 < bound <= 1440):
+                raise ValueError("Invalid reported time uncertainty")
+            margin = float(bound)
+        if (event_at is not None and publication_at is not None
+                and (event_at - publication_at).total_seconds() > margin * 60):
             raise ValueError("Source publication precedes reported incident")
         if (event_at is None and event_day is None
                 and publication_at is None and publication_day is None):

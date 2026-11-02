@@ -52,8 +52,26 @@ def _valid_https_source_url(value: object) -> bool:
         return False
 
 
+def _time_uncertainty_minutes(preview: Mapping[str, object]) -> float:
+    """Validate source-declared uncertainty; never infer it from 'approximate'.
+
+    An unknown bound remains zero for automated comparisons, not a fabricated
+    margin. Very broad bounds are retained but cannot justify lineage links.
+    """
+    precision = preview.get("event_time_precision")
+    bound = preview.get("reported_time_uncertainty_minutes")
+    if bound is None:
+        return 0.0
+    if (precision != "approximate" or preview.get("occurred_at_utc") is None
+            or type(bound) not in (int, float) or not isfinite(bound)
+            or not 0 < bound <= 1440):
+        raise ValueError("lineage_invalid_time_uncertainty")
+    return float(bound)
+
+
 def _source_provenance(preview: Mapping[str, object]) -> None:
     """Validate optional source clocks and hashes before fingerprinting."""
+    uncertainty = _time_uncertainty_minutes(preview)
     clocks: dict[str, datetime] = {}
     for field in ("published_at_utc", "received_at_utc"):
         stamp = preview.get(field)
@@ -69,7 +87,8 @@ def _source_provenance(preview: Mapping[str, object]) -> None:
     if event_stamp is not None:
         event_at = _utc(event_stamp)
         for field in ("published_at_utc", "received_at_utc"):
-            if field in clocks and event_at > clocks[field]:
+            if (field in clocks and
+                    (event_at - clocks[field]).total_seconds() > uncertainty * 60):
                 raise ValueError("lineage_event_after_" + field)
     for field in ("publication_date", "source_checked_on_utc"):
         value = preview.get(field)
@@ -158,7 +177,15 @@ def _compatible(a: Mapping[str, object], b: Mapping[str, object]) -> None:
         # describe one event across adjacent dates, provided their timestamps
         # are within the conservative two-hour review window. A day-only
         # report has no such precision and must retain its calendar boundary.
-        if abs((_utc(left) - _utc(right)).total_seconds()) > 120 * 60:
+        # A source-declared bound is not evidence of a shared origin. Apply
+        # only documented bounds, cap the extra allowance at two hours and
+        # require human review for very broad (>2h) uncertainty intervals.
+        lmargin = _time_uncertainty_minutes(a)
+        rmargin = _time_uncertainty_minutes(b)
+        if lmargin > 120 or rmargin > 120:
+            raise ValueError("lineage_temporal_uncertainty_too_broad")
+        margin_seconds = min(120, lmargin + rmargin) * 60
+        if abs((_utc(left) - _utc(right)).total_seconds()) > 120 * 60 + margin_seconds:
             raise ValueError("lineage_temporal_conflict")
     elif left_day != right_day:
         raise ValueError("lineage_event_day_conflict")
