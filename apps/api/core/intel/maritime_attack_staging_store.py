@@ -164,6 +164,20 @@ def append_staging_review_snapshot(
         /* staging_review_role_privileges */
         SELECT CASE WHEN
             current_setting('is_superuser') = 'on'
+            -- A NOINHERIT member can SET ROLE to an owner even when
+            -- has_table_privilege(current_user, ..., 'UPDATE') is false.
+            OR pg_has_role(current_user, (
+                SELECT pg_get_userbyid(datdba) FROM pg_database
+                WHERE datname = current_database()
+            ), 'MEMBER')
+            OR pg_has_role(current_user, (
+                SELECT pg_get_userbyid(nspowner) FROM pg_namespace
+                WHERE nspname = 'attack_review_staging'
+            ), 'MEMBER')
+            OR pg_has_role(current_user, (
+                SELECT pg_get_userbyid(relowner) FROM pg_class
+                WHERE oid = 'attack_review_staging.review_snapshots'::regclass
+            ), 'MEMBER')
             OR has_database_privilege(current_user, current_database(), 'CREATE')
             OR has_schema_privilege(current_user, 'attack_review_staging', 'CREATE')
             OR NOT has_schema_privilege(current_user, 'attack_review_staging', 'USAGE')
@@ -203,10 +217,19 @@ def append_staging_review_snapshot(
         if inserted != snapshot.snapshot_id:
             raise ValueError("staging_review_insert_identity_mismatch")
         return True
+    # A matching digest column alone does not establish idempotence: a
+    # corrupted row may retain its digest while its JSON or case ID changes.
     existing = connection.execute(text("""
-        SELECT snapshot_sha256 FROM attack_review_staging.review_snapshots
+        SELECT snapshot_id, case_review_id, attack_observation_id,
+               evidence_ledger_sha256, snapshot_sha256, payload_json
+        FROM attack_review_staging.review_snapshots
         WHERE snapshot_id = :snapshot_id
-    """), {"snapshot_id": snapshot.snapshot_id}).scalar_one_or_none()
-    if existing != snapshot.snapshot_sha256:
+    """), {"snapshot_id": snapshot.snapshot_id}).one_or_none()
+    expected = (
+        snapshot.snapshot_id, snapshot.case_review_id,
+        snapshot.attack_observation_id, snapshot.evidence_ledger_sha256,
+        snapshot.snapshot_sha256, snapshot.payload_json,
+    )
+    if existing is None or tuple(existing) != expected:
         raise ValueError("staging_review_conflicting_replay")
     return False
