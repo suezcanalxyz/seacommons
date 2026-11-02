@@ -134,6 +134,13 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
             self.assertEqual(written[0].subject_refs, [])
             self.assertEqual(written[0].provenance["vessel_imo"], "")
             self.assertEqual(written[0].provenance["vessel_mmsi"], "")
+            # These checks must survive the canonical writer, not just the
+            # in-memory manifest; restricted MSCIO text is never embedded.
+            self.assertEqual(written[0].provenance["source_rights"], "public_with_attribution")
+            self.assertEqual(written[1].provenance["source_rights"], "restricted_republication")
+            self.assertEqual(written[1].provenance["source_checked_on_utc"], "2026-11-01")
+            self.assertFalse(written[1].provenance["reuse_rights_verified"])
+            self.assertNotIn("source_text", written[1].raw_payload)
             self.assertEqual(written[2].provenance["event_time_precision"], "approximate")
             self.assertEqual(
                 written[3].provenance["bulletin_kind"], "suspicious_activity"
