@@ -71,3 +71,53 @@ def test_published_hypothesis_live_verification_requires_independent_lineages(
         assert public["independent_source_count"] == 2
     else:
         assert public.get("independent_source_count", 0) < 2
+
+
+@pytest.mark.parametrize(
+    ("lineage_field", "groups", "expected"),
+    [
+        ("independence_groups", [], False),
+        ("independence_groups", "ais,gfw_sar", False),
+        ("contributing_independence_groups", None, False),
+        ("independence_groups", ["ais_sensor_lineage", "ais"], False),
+        ("contributing_independence_groups", ["ais", "gfw_sar"], True),
+    ],
+)
+def test_published_hypothesis_explicit_lineage_precedes_legacy_count(
+    monkeypatch, lineage_field, groups, expected
+):
+    from core.intel import hypothesis_publication
+    from core.live.feed import _published_security_hypothesis_features
+
+    props = {
+        "id": "hyp:explicit-lineage-contract",
+        "episode_id": "episode:explicit-lineage-contract",
+        "hypothesis_type": "dark_transit",
+        "title": "Reviewed AIS anomaly",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "evidence_stage": "assessed",
+        "independent_source_count": 2,
+        lineage_field: groups,
+    }
+    monkeypatch.setattr(
+        hypothesis_publication,
+        "public_hypothesis_collection",
+        lambda limit: {
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [14.0, 35.0]},
+                "properties": props,
+            }],
+        },
+    )
+    features = _published_security_hypothesis_features(limit=10)
+    assert len(features) == 1
+    public = features[0]["properties"]
+    assert public["corroborated"] is expected
+    assert public["verification_status"] == (
+        "multi_source_corroborated" if expected else "derived"
+    )
+    assert ("corroborated" in public["facets"]) is expected
+    assert "independence_groups" not in public
+    assert "contributing_independence_groups" not in public
