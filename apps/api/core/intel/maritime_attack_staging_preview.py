@@ -11,6 +11,7 @@ import hashlib
 from collections.abc import Sequence
 
 from core.intel.maritime_attack_staging_manifest import StagingSourceRecord
+from core.intel.official_maritime_bulletin import prepare_official_bulletin
 from core.domain.visual_category import CATEGORY_COLORS
 
 _PREVIEW_KINDS = {
@@ -43,6 +44,11 @@ def build_staging_attack_previews(
         if not isinstance(record, StagingSourceRecord):
             raise ValueError("invalid_staging_source_record")
         envelope = record.envelope
+        # A caller must not fabricate a trusted envelope by changing both
+        # the row and the expected metadata in lockstep. Re-derive it from
+        # the validated, source-faithful bulletin.
+        if envelope != prepare_official_bulletin(record.bulletin):
+            raise ValueError("staging_bulletin_envelope_mismatch")
         delivery_key = f'{envelope["source_name"]}:{envelope["source_id"]}'
         expected_id = "obs:" + hashlib.blake2s(delivery_key.encode(), digest_size=16).hexdigest()
         row = by_id.pop(expected_id, None)
@@ -64,6 +70,9 @@ def build_staging_attack_previews(
             or getattr(row, "subject_refs", None) != envelope["subject_refs"]
             or not isinstance(provenance, dict)
             or provenance != expected_provenance
+            or expected_provenance["origin_authority_verified"] is not False
+            or expected_provenance["attack_corroboration_allowed"] is not False
+            or expected_provenance["reuse_rights_verified"] is not False
             or record.publication_allowed is not False
             or record.origin_independence_verified is not False
         ):

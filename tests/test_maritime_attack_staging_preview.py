@@ -78,6 +78,18 @@ class StagingAttackPreviewTests(TestCase):
                 with self.assertRaises(ValueError):
                     build_staging_attack_previews(records, mutated)
 
+    def test_forged_envelope_and_matching_forged_row_are_rejected(self):
+        records, rows = fixtures()
+        forged_envelope = {**records[0].envelope,
+                           "provenance": {**records[0].envelope["provenance"],
+                                          "origin_authority_verified": True}}
+        forged_row = replace_like(rows[0], provenance=forged_envelope["provenance"])
+        with self.assertRaisesRegex(ValueError, "envelope_mismatch"):
+            build_staging_attack_previews(
+                [replace(records[0], envelope=forged_envelope), *records[1:]],
+                [forged_row, *rows[1:]],
+            )
+
     def test_unreviewed_promotion_flag_is_rejected(self):
         records, rows = fixtures()
         with self.assertRaisesRegex(ValueError, "provenance"):
