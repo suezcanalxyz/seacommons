@@ -140,9 +140,14 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
                 "anomaly_type": anomaly_type,
                 "evidence_stage": props.get("evidence_stage"),
                 # A mature assessment is not evidence of independent sources.
-                # Only explicitly supplied lineage groups can upgrade the
-                # public corroboration label (not evidence_stage alone).
-                "independence_groups": props.get("independence_groups"),
+                # Only pass lineage fields that the upstream producer supplied.
+                # Injecting a missing field as None would falsely override a
+                # validated legacy aggregate count under fail-closed taxonomy.
+                **{
+                    key: props[key]
+                    for key in ("contributing_independence_groups", "independence_groups")
+                    if key in props
+                },
                 "independent_source_count": props.get("independent_source_count"),
             },
             hypothesis_type=hypothesis_type,
@@ -450,10 +455,13 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
                 "anomaly_type": anomaly,
                 "episode_family": family,
                 "verification_status": public_verification,
-                # Never let stale metadata or AIS aliases override the
-                # canonical persisted episode verification decision.
-                "independence_groups": [],
-                "contributing_independence_groups": [],
+                # The episode verification gate has already checked the
+                # persisted lineage. Pass those groups to taxonomy only when
+                # independently verified; otherwise explicitly fail closed.
+                # These private identifiers are never copied into public props.
+                "independence_groups": (
+                    list(row["independence_groups"]) if corroborated else []
+                ),
                 "independent_source_count": independent_source_count,
             },
         )
