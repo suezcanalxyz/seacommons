@@ -143,6 +143,25 @@ def _annotate_target(observation, target: dict[str, Any], direction: str):
     return replace(observation, provenance=provenance)
 
 
+def _meaningful_satellite_signal(event) -> bool:
+    """Do not mistake a published humanitarian update for an active SAR distress.
+
+    Publication alone is sufficient for maritime/security incident context,
+    but not for Alarm Phone or explicitly SAR-domain humanitarian reports.
+    An explicit negative distress flag also overrides stale drift eligibility.
+    """
+    meta = event.metadata or {}
+    distress = explicit_distress_flag(meta.get("is_distress"))
+    drift_eligible = explicit_distress_flag(meta.get("drift_eligible"))
+    source = str(event.source or "").strip().lower().lstrip("@").replace("_", "").replace(" ", "")
+    domain = str(meta.get("maritime_domain") or "").strip().lower()
+    if source == "alarmphone" or domain in {"sar", "humanitarian"}:
+        if "is_distress" in meta and not distress:
+            return False
+        return distress or drift_eligible
+    return bool(distress or drift_eligible or meta.get("publication_status") == "published")
+
+
 def is_satellite_enrichment_candidate(
     event, *, now: datetime | None = None, history_days: int = SATELLITE_HISTORY_DAYS
 ) -> bool:
@@ -157,15 +176,7 @@ def is_satellite_enrichment_candidate(
     if now - observed > timedelta(days=max(1, history_days)):
         return False
 
-    meta = event.metadata or {}
-    meaningful = bool(
-        explicit_distress_flag(meta.get("is_distress"))
-        or meta.get("publication_status") == "published"
-        or explicit_distress_flag(meta.get("drift_eligible"))
-    )
-    if not meaningful:
-        return False
-    return True
+    return _meaningful_satellite_signal(event)
 
 
 def _is_due(event, *, now: datetime) -> bool:
@@ -193,6 +204,7 @@ def enrich_event(
         not valid_wgs84_point(event.lat, event.lon)
         or observed is None
         or observed > now + timedelta(minutes=5)
+        or not _meaningful_satellite_signal(event)
     ):
         return {"persisted": 0, "errors": 0}
     targets = _case_satellite_targets(event)
