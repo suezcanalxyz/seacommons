@@ -170,11 +170,12 @@ def test_episode_verification_same_ais_lineage_is_multi_indicator() -> None:
     _seed_intel_event("lineage:b", event_type="ais_anomaly", source="mda", anomaly_type="gap")
     result = coalesce_security_vessel_episodes([
         _feature("lineage:a", "2026-09-06T08:00:00+00:00", 14.1, 35.5, linked_mmsi="211879870", anomaly_type="gap"),
-        _feature("lineage:b", "2026-09-06T08:20:00+00:00", 14.1, 35.5, linked_mmsi="211879870", anomaly_type="gap"),
+        _feature("lineage:b", "2026-09-06T08:20:00+00:00", 14.1, 35.5, linked_mmsi="211879870", anomaly_type="gap", corroborated=True),
     ])
     props = result[0]["properties"]
     assert props["independence_groups"] == ["ais_sensor_lineage"]
     assert props["verification_status"] == "single_source_multi_indicator"
+    assert props["corroborated"] is False
 
 
 def test_episode_verification_two_independent_lineages_is_corroborated() -> None:
@@ -192,12 +193,49 @@ def test_episode_verification_two_independent_lineages_is_corroborated() -> None
     )
     result = coalesce_security_vessel_episodes([
         _feature("lineage:c", "2026-09-06T08:00:00+00:00", 14.1, 35.5, linked_mmsi="211879870", anomaly_type="gap"),
-        _feature("lineage:d", "2026-09-06T08:20:00+00:00", 14.1, 35.5, linked_mmsi="211879870", anomaly_type="gap"),
+        _feature("lineage:d", "2026-09-06T08:20:00+00:00", 14.1, 35.5, linked_mmsi="211879870", anomaly_type="gap", corroborated=False),
     ])
     props = result[0]["properties"]
     assert props["independent_source_count"] == 2
     assert set(props["independence_groups"]) == {"ais_sensor_lineage", "secondary_news_reporting"}
     assert props["verification_status"] == "multi_source_corroborated"
+    assert props["corroborated"] is True
+
+
+
+def test_episode_ignores_unvalidated_lineage_labels_and_stale_true_flag() -> None:
+    # Arbitrary lineage_ids are provenance, not independent corroboration.
+    result = coalesce_security_vessel_episodes([
+        _feature(
+            "lineage:unvalidated-only:20261102",
+            "2026-09-06T08:20:00+00:00", 14.1, 35.5,
+            linked_mmsi="211879871", anomaly_type="gap",
+            lineage_ids=["ais_sensor_lineage", "another_label"],
+            corroborated=True,
+        )
+    ])
+    props = result[0]["properties"]
+    assert props["verification_status"] != "multi_source_corroborated"
+    assert props["corroborated"] is False
+
+
+def test_episode_explicit_validated_independent_groups_override_stale_false() -> None:
+    # Only producer-supplied validated groups may promote an episode.
+    result = coalesce_security_vessel_episodes([
+        _feature(
+            "lineage:validated-pair:20261102",
+            "2026-09-06T08:20:00+00:00", 14.1, 35.5,
+            linked_mmsi="211879872", anomaly_type="gap",
+            contributing_independence_groups=[
+                "ais_sensor_lineage", "secondary_news_reporting",
+            ],
+            corroborated=False,
+        )
+    ])
+    props = result[0]["properties"]
+    assert props["verification_status"] == "multi_source_corroborated"
+    assert props["independent_source_count"] == 2
+    assert props["corroborated"] is True
 
 
 def test_episode_preserves_behaviour_context_and_alternative_explanations() -> None:
