@@ -216,6 +216,18 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
             persisted = [db.get(SourceObservationDB, row.observation_id)
                          for row in written]
             self.assertTrue(all(row is not None for row in persisted))
+            for original, reloaded in zip(written, persisted):
+                for field in (
+                    "observation_id", "service", "lane", "observation_type",
+                    "source_policy", "source_name", "source_id", "source_url",
+                    "raw_payload_hash", "observed_at", "lat", "lon",
+                    "uncertainty_m", "location_precision", "subject_refs",
+                    "provenance",
+                ):
+                    self.assertEqual(
+                        getattr(reloaded, field), getattr(original, field),
+                        f"PostgreSQL roundtrip changed {field}",
+                    )
             self.assertEqual(
                 build_staging_attack_previews(batch, persisted), expected
             )
