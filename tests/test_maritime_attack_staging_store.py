@@ -62,6 +62,9 @@ class _Scalar:
     def scalar_one_or_none(self):
         return self.value
 
+    def one_or_none(self):
+        return self.value
+
 
 class _FakeStagingConnection:
     def __init__(self, database="seacommons_attack_staging", readonly="off",
@@ -72,7 +75,7 @@ class _FakeStagingConnection:
         self.inserted = inserted
         self.unsafe_role = unsafe_role
         self.sql = []
-        self.stored_sha = None
+        self.stored_row = None
 
     def execute(self, statement, params=None):
         sql = str(statement)
@@ -87,8 +90,8 @@ class _FakeStagingConnection:
             return _Scalar("attack_review_staging.review_snapshots")
         if "INSERT INTO" in sql:
             return _Scalar(params["snapshot_id"] if self.inserted else None)
-        if "SELECT snapshot_sha256" in sql:
-            return _Scalar(self.stored_sha)
+        if "SELECT snapshot_id, case_review_id, attack_observation_id" in sql:
+            return _Scalar(self.stored_row)
         raise AssertionError("unexpected SQL")
 
 
@@ -183,18 +186,49 @@ class StagingReviewStoreTests(TestCase):
                              if "staging_review_role_privileges" in sql)
         for required in ("is_superuser", "has_database_privilege",
                          "has_schema_privilege", "SELECT", "INSERT",
-                         "UPDATE", "DELETE", "TRUNCATE", "TRIGGER"):
+                         "UPDATE", "DELETE", "TRUNCATE", "TRIGGER",
+                         "pg_has_role", "datdba", "nspowner", "relowner",
+                         "'MEMBER'"):
             with self.subTest(privilege=required):
                 self.assertIn(required, privilege_sql)
 
     def test_idempotent_replay_without_update(self):
         snapshot = prepare_staging_review_snapshot(review())
         conn = _FakeStagingConnection(inserted=False)
-        conn.stored_sha = snapshot.snapshot_sha256
+        conn.stored_row = (
+            snapshot.snapshot_id, snapshot.case_review_id,
+            snapshot.attack_observation_id, snapshot.evidence_ledger_sha256,
+            snapshot.snapshot_sha256, snapshot.payload_json,
+        )
         self.assertFalse(append_staging_review_snapshot(
             conn, snapshot, expected_database="seacommons_attack_staging"
         ))
-        conn.stored_sha = "f" * 64
+        self.assertEqual(sum("INSERT INTO" in sql for sql in conn.sql), 1)
+        self.assertFalse(any("UPDATE " in sql or "DELETE FROM" in sql
+                             for sql in conn.sql))
+        for index, changed in (
+            (1, "staging-case-review:obs:other"),
+            (2, "obs:other"),
+            (3, "f" * 64),
+            (4, "f" * 64),
+            (5, '{"tampered":true}'),
+        ):
+            with self.subTest(column=index):
+                altered = list(conn.stored_row)
+                altered[index] = changed
+                conn.stored_row = tuple(altered)
+                with self.assertRaisesRegex(ValueError, "conflicting_replay"):
+                    append_staging_review_snapshot(
+                        conn, snapshot,
+                        expected_database="seacommons_attack_staging"
+                    )
+                conn.stored_row = (
+                    snapshot.snapshot_id, snapshot.case_review_id,
+                    snapshot.attack_observation_id,
+                    snapshot.evidence_ledger_sha256,
+                    snapshot.snapshot_sha256, snapshot.payload_json,
+                )
+        conn.stored_row = None
         with self.assertRaisesRegex(ValueError, "conflicting_replay"):
             append_staging_review_snapshot(
                 conn, snapshot, expected_database="seacommons_attack_staging"
