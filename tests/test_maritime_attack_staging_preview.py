@@ -174,6 +174,49 @@ class StagingAttackPreviewTests(TestCase):
         self.assertIn("original_document_hash_unavailable", preview["review_blockers"])
         self.assertNotEqual(preview["raw_payload_hash"], preview["source_document_sha256"])
 
+    def test_bulgarian_prosecutor_notice_is_context_not_second_attack_witness(self):
+        """A second government publication is not automatically independent."""
+        source = (
+            Path(__file__).resolve().parents[1] /
+            "docs/research/maritime-attack-prosecutor-source-check-2026-11-02.json"
+        )
+        records = prepare_staging_bulletin_manifest(json.loads(source.read_text()))
+        envelope = records[0].envelope
+        key = f'{envelope["source_name"]}:{envelope["source_id"]}'
+        row = SimpleNamespace(
+            observation_id="obs:" + hashlib.blake2s(
+                key.encode(), digest_size=16).hexdigest(),
+            service=envelope["service"], lane=envelope["lane"],
+            observation_type=envelope["observation_type"],
+            source_policy=envelope["source_policy"],
+            source_name=envelope["source_name"],
+            source_id=envelope["source_id"],
+            source_url=envelope["source_url"],
+            raw_payload_hash=hashlib.sha256(
+                envelope["raw_payload"].encode()).hexdigest(),
+            observed_at=envelope["observed_at"],
+            lat=envelope["lat"], lon=envelope["lon"],
+            uncertainty_m=envelope["uncertainty_m"],
+            location_precision=None,
+            subject_refs=envelope["subject_refs"],
+            provenance=envelope["provenance"],
+            received_at="2026-11-02T04:00:00+00:00",
+        )
+        preview = build_staging_attack_previews(records, [row])[0]
+        self.assertEqual(preview["source_kind"], "investigation")
+        self.assertEqual(preview["review_status"], "context_only")
+        self.assertIsNone(preview["proposed_incident_type"])
+        self.assertEqual(preview["observed_at_semantics"], "publication")
+        self.assertEqual(preview["canonical_observed_at"], "2026-10-29")
+        self.assertIsNone(preview["occurred_at_utc"])
+        self.assertIsNone(preview["event_date"])
+        self.assertIn("not_an_attack", preview["review_blockers"])
+        self.assertIn("original_document_hash_unavailable", preview["review_blockers"])
+        self.assertFalse(preview["publication_allowed"])
+        self.assertEqual(preview["independent_origins_verified"], 0)
+        self.assertEqual(preview["vessel_imo_as_reported"], "")
+        self.assertEqual(preview["vessel_mmsi_as_reported"], "")
+
     def test_replay_order_does_not_change_preview(self):
         records, rows = fixtures()
         forward = build_staging_attack_previews(records, rows)
