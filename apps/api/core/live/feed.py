@@ -462,6 +462,9 @@ def _published_open_episode_features(limit: int) -> list[dict[str, Any]]:
                 "independence_groups": (
                     list(row["independence_groups"]) if corroborated else []
                 ),
+                "contributing_independence_groups": (
+                    list(row["independence_groups"]) if corroborated else []
+                ),
                 "independent_source_count": independent_source_count,
             },
         )
