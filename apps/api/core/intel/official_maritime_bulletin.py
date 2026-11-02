@@ -171,13 +171,11 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
         "location_role": bulletin.location_role,
         "source_document_sha256": bulletin.source_document_sha256.lower() or None,
     }
-    # Preserve immutable source IDs for historical direct callers. The
-    # metadata-only staging manifest explicitly adds rights/check date to
-    # new revisions, so those fields survive canonical DB ingestion.
+    # Rights classification can justify a new immutable reviewed revision.
+    # The check date is NOT source content: repeating the same check tomorrow
+    # must not mint a second observation of the same bulletin.
     if bulletin.source_rights is not None:
         facts["source_rights"] = bulletin.source_rights
-    if checked is not None:
-        facts["source_checked_on_utc"] = checked.isoformat()
     # Do not change immutable source IDs for existing exact/day-only records.
     # Add extra payload keys only for newly represented approximate clocks.
     if bulletin.event_time_approximate:
