@@ -56,6 +56,24 @@ _OBSERVATION_TYPE_BUCKETS: dict[str, str] = {
 }
 
 
+def normalize_independence_group(value: Any) -> str:
+    """Canonicalize known aliases of one sensor/source lineage.
+
+    Do not count two names for the same AIS, SAR or radio stream as
+    independent corroboration. Keep other producer-supplied groups intact.
+    """
+    text = str(value or "").strip()
+    aliases = {
+        "ais_sensor_lineage": "modality:ais",
+        "ais": "modality:ais",
+        "gfw_sar": "source:satellite:gfw",
+        "satellite:gfw": "source:satellite:gfw",
+        "radio:dsc": "source:radio:dsc",
+        "radio_transmission": "source:radio:dsc",
+    }
+    return aliases.get(text, text)
+
+
 def is_independently_corroborated(metadata: Mapping[str, Any] | None) -> bool:
     """Return whether metadata carries independent-source corroboration.
 
@@ -71,7 +89,12 @@ def is_independently_corroborated(metadata: Mapping[str, Any] | None) -> bool:
         "independence_groups"
     ) or ()
     if isinstance(raw_groups, (list, tuple, set, frozenset)):
-        groups = {str(group).strip() for group in raw_groups if str(group).strip()}
+        groups = {
+            normalized
+            for group in raw_groups
+            if (normalized := normalize_independence_group(group))
+            and normalized != "unknown"
+        }
         if len(groups) >= 2:
             return True
     try:
