@@ -77,14 +77,14 @@ class _FakeStagingConnection:
     def execute(self, statement, params=None):
         sql = str(statement)
         self.sql.append(sql)
+        if "staging_review_role_privileges" in sql:
+            return _Scalar(1 if self.unsafe_role else 0)
         if "current_database()" in sql:
             return _Scalar(self.database)
         if "transaction_read_only" in sql:
             return _Scalar(self.readonly)
         if "to_regclass" in sql:
             return _Scalar("attack_review_staging.review_snapshots")
-        if "staging_review_role_privileges" in sql:
-            return _Scalar(1 if self.unsafe_role else 0)
         if "INSERT INTO" in sql:
             return _Scalar(params["snapshot_id"] if self.inserted else None)
         if "SELECT snapshot_sha256" in sql:
