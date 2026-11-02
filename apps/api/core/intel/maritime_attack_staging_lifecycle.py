@@ -55,7 +55,8 @@ def _source_key(url: object, issuer: str) -> tuple[str, str]:
             raise ValueError("lifecycle_invalid_source_url")
     except (ValueError, KeyError) as exc:
         raise ValueError("lifecycle_invalid_source_url") from exc
-    return parsed.hostname.removeprefix("www."), parsed.path.rstrip("/")
+    host = parsed.hostname[4:] if parsed.hostname.startswith("www.") else parsed.hostname
+    return host, parsed.path.rstrip("/")
 
 
 def prepare_staging_lifecycle_update(
