@@ -38,6 +38,13 @@ _KINDS = frozenset({
 _LOCATION_ROLES = frozenset({"unknown", "incident_site", "anchorage", "last_reported_position", "hazard_position"})
 _REPORT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 /._-]{0,79}$")
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
+# Source-locked identities for verified, *unnamed* MSCIO reports. The
+# separate Reuters attribution of LOUISE 1 must not be silently inserted
+# into the original MSCIO 159/26 observation as a primary-source fact.
+_MSCIO_UNNAMED_REPORT_PATHS = {
+    "159/26": "/alerts/195",
+    "162/26": "/alerts/198",
+}
 SOURCE_RIGHTS = frozenset({"public_with_attribution", "restricted_republication", "unknown"})
 
 
@@ -99,6 +106,16 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
             raise ValueError("Bulletin URL is not an approved official HTTPS origin")
     except (ValueError, AttributeError) as exc:
         raise ValueError("Invalid official bulletin URL") from exc
+    if bulletin.issuer == "MSCIO":
+        report_key = bulletin.bulletin_id.strip()
+        source_path = url.path.rstrip("/")
+        if (report_key in _MSCIO_UNNAMED_REPORT_PATHS
+                or source_path in _MSCIO_UNNAMED_REPORT_PATHS.values()):
+            if (_MSCIO_UNNAMED_REPORT_PATHS.get(report_key) != source_path
+                    or url.query or url.fragment):
+                raise ValueError("MSCIO source bulletin ID/URL mismatch")
+            if bulletin.vessel_name.strip() or bulletin.imo or bulletin.mmsi:
+                raise ValueError("MSCIO primary bulletin does not identify vessel")
     if bulletin.imo and not _valid_imo(bulletin.imo):
         raise ValueError("Invalid IMO")
     if bulletin.mmsi and not _valid_mmsi(bulletin.mmsi):
