@@ -68,9 +68,15 @@ def _independent_episode_source_counts(episode_ids: set[str]) -> dict[str, int]:
     for episode_id, raw_groups, verification in rows:
         if verification != "multi_source_corroborated":
             continue
+        # The persisted JSON column is a list of source lineages. A malformed
+        # string would otherwise be iterated character-by-character, and a
+        # mapping would be iterated by key: either could fabricate multiple
+        # independent sources. Fail closed without altering persisted evidence.
+        if not isinstance(raw_groups, (list, tuple)):
+            continue
         groups = {
             normalized
-            for value in (raw_groups or ())
+            for value in raw_groups
             if (normalized := _normalize_independence_group(value))
             and normalized != "unknown"
         }
