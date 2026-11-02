@@ -94,21 +94,26 @@ def is_independently_corroborated(metadata: Mapping[str, Any] | None) -> bool:
     the number of independent lineage groups, not the number of observations.
     """
     meta = metadata or {}
-    raw_groups = meta.get("contributing_independence_groups") or meta.get(
-        "independence_groups"
-    ) or ()
-    if isinstance(raw_groups, (list, tuple, set, frozenset)) and raw_groups:
-        # Explicit lineage evidence outranks a stale verification label or
-        # aggregate count. A pair of aliases cannot corroborate itself.
+    # An explicitly supplied lineage field is authoritative, including when
+    # empty or malformed. Never fall back to a stale verification label or
+    # aggregate count merely because the supplied list is unusable.
+    if "contributing_independence_groups" in meta:
+        raw_groups = meta["contributing_independence_groups"]
+    elif "independence_groups" in meta:
+        raw_groups = meta["independence_groups"]
+    else:
+        raw_groups = None
+    if "contributing_independence_groups" in meta or "independence_groups" in meta:
+        if not isinstance(raw_groups, (list, tuple, set, frozenset)):
+            return False
         groups = {
             normalized
             for group in raw_groups
             if (normalized := normalize_independence_group(group))
-            and normalized != "unknown"
         }
         return len(groups) >= 2
-    # Legacy producers may supply only a canonical status or an aggregate
-    # count; retain that contract when no concrete lineage list is available.
+    # Only legacy producers with NO lineage field may rely on a canonical
+    # verification status or aggregate count.
     if str(meta.get("verification_status") or "") == "multi_source_corroborated":
         return True
     try:
@@ -344,6 +349,12 @@ def taxonomy_fields(
         or ""
     )
     corroborated = is_independently_corroborated(meta)
+    # The public boolean and verification label must not contradict each
+    # other. Keep persisted metadata untouched; project a conservative
+    # single-source label when explicit lineage evidence disproves the
+    # producer's stale multi-source claim.
+    if verification == "multi_source_corroborated" and not corroborated:
+        verification = "single_source_observed"
     sanctions = bool(
         meta.get("sanctions_matched")
         or meta.get("sanctions")

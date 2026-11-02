@@ -1,3 +1,5 @@
+import pytest
+
 from core.domain.incident_taxonomy import (
     STABLE_HUMANITARIAN_INCIDENT_TYPES,
     STABLE_MARITIME_INCIDENT_TYPES,
@@ -304,3 +306,62 @@ def test_casefolded_independent_ais_and_sar_remain_corroborated():
         metadata={"contributing_independence_groups": [" AIS ", " GFW_SAR "]},
     )
     assert out["corroborated"] is True
+
+
+@pytest.mark.parametrize("field", [
+    "contributing_independence_groups", "independence_groups",
+])
+@pytest.mark.parametrize("raw_groups", [
+    [], None, "ais,gfw_sar", {"ais": True, "gfw_sar": True},
+    2, ["ais", None, {"source": "gfw_sar"}],
+])
+def test_explicit_unusable_lineages_fail_closed_even_with_stale_multi_source_claim(
+    field, raw_groups,
+):
+    # A present but empty/malformed field is not a legacy absent field.
+    out = taxonomy_fields(
+        event_type="ais_anomaly",
+        maritime_domain="grey_zone",
+        metadata={
+            field: raw_groups,
+            "verification_status": "multi_source_corroborated",
+            "independent_source_count": 9,
+        },
+    )
+    assert out["corroborated"] is False
+    assert out["verification_status"] == "single_source_observed"
+    assert "corroborated" not in out["facets"]
+
+
+def test_explicit_primary_lineage_field_does_not_fall_back_to_secondary():
+    out = taxonomy_fields(
+        event_type="ais_anomaly",
+        metadata={
+            "contributing_independence_groups": [],
+            "independence_groups": ["ais", "gfw_sar"],
+            "verification_status": "multi_source_corroborated",
+        },
+    )
+    assert out["corroborated"] is False
+    assert out["verification_status"] == "single_source_observed"
+
+
+def test_valid_independent_lineages_remain_corroborated_with_consistent_status():
+    out = taxonomy_fields(
+        event_type="ais_anomaly",
+        metadata={
+            "contributing_independence_groups": ["ais", "gfw_sar"],
+            "verification_status": "multi_source_corroborated",
+        },
+    )
+    assert out["corroborated"] is True
+    assert out["verification_status"] == "multi_source_corroborated"
+
+
+def test_legacy_absent_lineage_field_retains_status_fallback():
+    out = taxonomy_fields(
+        event_type="correlated_alert",
+        metadata={"verification_status": "multi_source_corroborated"},
+    )
+    assert out["corroborated"] is True
+    assert out["verification_status"] == "multi_source_corroborated"
