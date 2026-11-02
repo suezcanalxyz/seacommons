@@ -280,6 +280,64 @@ def test_future_dated_reply_cannot_extend_canonical_activity():
     assert get_incident(event.id)["last_update_at"] == origin.isoformat()
 
 
+def test_recent_reconcile_recovers_a_late_reply_without_a_lifecycle_change(monkeypatch):
+    """An old canonical timestamp must not hide a fresh, same-case reply."""
+    from datetime import timedelta
+    from core.intel.humanitarian_incident import reconcile_recent_incident_lifecycles
+
+    now = datetime.now(timezone.utc)
+    origin = now - timedelta(days=3)
+    reply = now - timedelta(minutes=5)
+    event = _distress_event(
+        "reconcile-late-reply", "MAYDAY people aboard", timestamp=origin.isoformat()
+    )
+    sync_incident_for_event(event, lifecycle="active")
+    original = get_incident(event.id)
+    event.metadata["thread_reposts"] = [{
+        "posted_at": reply.isoformat(), "note": "We are still in danger",
+    }]
+    monkeypatch.setattr(intel_store, "get_durable", lambda _event_id: event)
+    monkeypatch.setattr(intel_store, "persisted_events", lambda **_kwargs: [event])
+
+    # Original activity is outside the 48-hour gate; durable reply is inside.
+    assert reconcile_recent_incident_lifecycles(now=now, max_age_hours=48) == 0
+    updated = get_incident(event.id)
+    assert updated["lifecycle"] == "active"
+    assert datetime.fromisoformat(updated["last_update_at"]) == reply
+    assert updated["reported_at"] == origin.isoformat()
+    assert updated["revision"] == original["revision"] + 1
+    assert len(list_transitions(event.id)) == 1
+
+    # Replaying the same reply must not produce a spurious write/transition.
+    assert reconcile_recent_incident_lifecycles(now=now, max_age_hours=48) == 0
+    assert get_incident(event.id)["revision"] == updated["revision"]
+    assert len(list_transitions(event.id)) == 1
+
+
+def test_recent_reconcile_ignores_future_only_reply_on_old_case(monkeypatch):
+    """Untrusted future timestamps must not bypass the bounded age gate."""
+    from datetime import timedelta
+    from core.intel.humanitarian_incident import reconcile_recent_incident_lifecycles
+
+    now = datetime.now(timezone.utc)
+    origin = now - timedelta(days=3)
+    event = _distress_event(
+        "reconcile-future-reply", "MAYDAY people aboard", timestamp=origin.isoformat()
+    )
+    sync_incident_for_event(event, lifecycle="active")
+    original = get_incident(event.id)
+    event.metadata["thread_reposts"] = [{
+        "posted_at": (now + timedelta(days=2)).isoformat(),
+        "note": "We are still in danger",
+    }]
+    monkeypatch.setattr(intel_store, "get_durable", lambda _event_id: event)
+    monkeypatch.setattr(intel_store, "persisted_events", lambda **_kwargs: [event])
+
+    assert reconcile_recent_incident_lifecycles(now=now, max_age_hours=48) == 0
+    assert get_incident(event.id)["last_update_at"] == original["last_update_at"]
+    assert get_incident(event.id)["revision"] == original["revision"]
+
+
 def test_last_update_at_never_moves_backward_on_an_out_of_order_update():
     """docs/updates.md P0.6 exit gate: a delayed/out-of-order observation
     must never make an incident look older than an already-processed
