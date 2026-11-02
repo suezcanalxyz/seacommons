@@ -244,3 +244,25 @@ def test_ais_gap_does_not_publish_from_alias_only_lineages():
         "contributing_independence_groups": ["ais_sensor_lineage", "ais"],
         "reception_expectation": {"support_level": "weak"},
     }) is False
+
+
+def test_explicit_single_lineage_overrides_stale_corroboration_fields():
+    out = taxonomy_fields(
+        event_type="ais_anomaly",
+        maritime_domain="grey_zone",
+        metadata={
+            "verification_status": "multi_source_corroborated",
+            "independent_source_count": 2,
+            "contributing_independence_groups": ["ais", "ais_sensor_lineage"],
+        },
+    )
+    assert out["corroborated"] is False
+
+
+def test_legacy_verified_status_without_lineages_remains_compatible():
+    out = taxonomy_fields(
+        event_type="correlated_alert",
+        maritime_domain="grey_zone",
+        metadata={"verification_status": "multi_source_corroborated"},
+    )
+    assert out["corroborated"] is True
