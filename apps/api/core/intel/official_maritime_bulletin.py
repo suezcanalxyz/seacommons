@@ -138,7 +138,10 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
         raise ValueError("Location role without coordinates")
     if bulletin.source_document_sha256 and not _SHA256.fullmatch(bulletin.source_document_sha256):
         raise ValueError("Invalid original-document SHA256")
-    if bulletin.source_rights is not None and bulletin.source_rights not in SOURCE_RIGHTS:
+    if bulletin.source_rights is not None and (
+        not isinstance(bulletin.source_rights, str)
+        or bulletin.source_rights not in SOURCE_RIGHTS
+    ):
         raise ValueError("Invalid source rights classification")
     checked = bulletin.source_checked_on_utc
     if checked is not None:
