@@ -140,7 +140,11 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
             self.assertEqual(written[1].provenance["source_rights"], "restricted_republication")
             self.assertEqual(written[1].provenance["source_checked_on_utc"], "2026-11-01")
             self.assertFalse(written[1].provenance["reuse_rights_verified"])
-            self.assertNotIn("source_text", written[1].raw_payload)
+            # Canonical storage retains only the payload hash and an empty
+            # external-archive reference, not the restricted bulletin text.
+            self.assertEqual(
+                db.get(SourceObservationDB, written[1].observation_id).raw_payload_ref, ""
+            )
             self.assertEqual(written[2].provenance["event_time_precision"], "approximate")
             self.assertEqual(
                 written[3].provenance["bulletin_kind"], "suspicious_activity"
