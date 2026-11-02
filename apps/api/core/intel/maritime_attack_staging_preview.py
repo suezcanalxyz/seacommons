@@ -23,6 +23,8 @@ _PREVIEW_KINDS = {
     # A prosecutor opening a case is documentary context, not a new
     # eyewitness or an independently corroborated physical attack.
     "investigation": None,
+    # A transport ministry rescue report is not a second attack witness.
+    "rescue": None,
     # An official wreck/hazard notice is not a second attack witness.
     "navigational_hazard": None,
 }

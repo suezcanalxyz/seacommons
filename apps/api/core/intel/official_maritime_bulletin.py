@@ -24,6 +24,7 @@ from core.intel.maritime_attack_navwarn_dtg import parse_navwarn_compact_dtg
 _ISSUERS = {
     "BG_MOD": ("Bulgarian Ministry of Defence", frozenset({"mod.bg", "www.mod.bg"})),
     "BG_PROSECUTOR": ("Bulgarian Prosecutor Office", frozenset({"prb.bg", "www.prb.bg"})),
+    "BG_TRANSPORT": ("Bulgarian Ministry of Transport", frozenset({"mtc.government.bg", "www.mtc.government.bg"})),
     "BG_VTMIS": ("Bulgarian Varna Radio VTMIS", frozenset({"vtmis.bg", "www.vtmis.bg"})),
     "MSCIO": ("MSCIO", frozenset({"mscio.eu", "www.mscio.eu"})),
     "UKMTO": ("UKMTO", frozenset({"ukmto.org", "www.ukmto.org"})),
@@ -31,7 +32,7 @@ _ISSUERS = {
 }
 _KINDS = frozenset({
     "attack", "sinking", "explosion", "collision", "piracy",
-    "suspicious_activity", "navigational_hazard", "investigation",
+    "suspicious_activity", "navigational_hazard", "investigation", "rescue",
 })
 _LOCATION_ROLES = frozenset({"unknown", "incident_site", "anchorage", "last_reported_position", "hazard_position"})
 _REPORT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 /._-]{0,79}$")

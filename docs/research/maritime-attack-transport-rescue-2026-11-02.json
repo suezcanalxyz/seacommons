@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "source_checked_on_utc": "2026-11-02",
+  "records": [
+    {
+      "issuer": "BG_TRANSPORT",
+      "bulletin_id": "20261028-contship-jet-rescue",
+      "source_url": "https://www.mtc.government.bg/bg/category/1/18-chlenniyat-ekipazh-na-konteynerovoza-contship-jet-e-spasen",
+      "kind": "rescue",
+      "vessel_name": "CONTSHIP JET",
+      "event_date": "2026-10-28",
+      "publication_date": "2026-10-28",
+      "source_rights": "public_with_attribution"
+    }
+  ]
+}
