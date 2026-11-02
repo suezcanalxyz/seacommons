@@ -171,14 +171,15 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
     # humanitarian record, never a maritime drift origin. Independent of the
     # sea_land_class / location_status metadata above so a missing tag can
     # never let a land coordinate through.
+    # Only canonical persisted point columns may seed a physical model.
+    # Legacy metadata lat/lon can be an inferred region, stale extraction or
+    # an unpromoted follow-up. The scheduler checks the same durable columns;
+    # accepting metadata-only coordinates here would make the eligibility
+    # result disagree with the actual origin verification at scheduling time.
     lat = getattr(event, "lat", None)
-    if lat is None:
-        lat = meta.get("lat")
     lon = getattr(event, "lon", None)
-    if lon is None:
-        lon = meta.get("lon")
     if lat is None or lon is None:
-        return False, "no coordinate to originate a drift"
+        return False, "no canonical coordinate to originate a drift"
     # Check the *reported origin*, never a coastline-snapped substitute.
     # Moving a land coordinate to the nearest sea point would silently turn
     # an inland humanitarian report into a maritime drift origin.
