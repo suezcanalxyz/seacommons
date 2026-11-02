@@ -118,7 +118,13 @@ class IntelEvent:
     _SIGNAL_TYPES = frozenset({"ais_spike", "ngo_activity", "ais_anomaly"})
 
     def tier(self) -> str:
-        if self.type == "distress" or self.metadata.get("is_distress"):
+        # RSS/social adapters can serialize false as the non-empty string
+        # "false". Never promote that context report to an active SAR case.
+        from core.intel.macro_drift import explicit_distress_flag
+
+        if self.type == "distress" or explicit_distress_flag(
+            (self.metadata or {}).get("is_distress")
+        ):
             return "operational"
         if self.type == "iom_incident" and self.severity in ("critical", "high"):
             return "operational"
