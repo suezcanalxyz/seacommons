@@ -319,18 +319,47 @@ class StagingCaseReviewTests(TestCase):
                 attack, [navwarn], ais_context={**ais, "nearest_after": invalid_fix}
             )
 
-    def test_future_ais_fix_is_not_back_projected_to_wreck(self):
+    def test_future_ais_fix_is_rejected_before_wreck_comparison(self):
         attack, navwarn = _attack(), _navwarn()
         ais = _ais(attack)
         later_fix = {**ais["nearest_after"],
                      "observed_at_utc": "2026-10-29T20:00:00+00:00"}
-        result = build_staging_attack_case_review(
-            attack, [navwarn], ais_context={**ais, "nearest_after": later_fix}
+        with self.assertRaisesRegex(ValueError, "ais_context_fix_outside_event_window"):
+            build_staging_attack_case_review(
+                attack, [navwarn], ais_context={**ais, "nearest_after": later_fix}
+            )
+
+    def test_case_review_rejects_tampered_ais_context_signals(self):
+        attack, navwarn = _attack(), _navwarn()
+        ais = _ais(attack)
+        alterations = (
+            ({"event_at_utc": "2026-10-28T11:00:00+00:00"},
+             "ais_context_event_or_geometry_conflict"),
+            ({"incident_site_from_ais": True}, "ais_context_event_or_geometry_conflict"),
+            ({"ais_sampling_gap_minutes": 1.0}, "ais_context_sampling_gap_conflict"),
+            ({"ais_coverage_gap_signal": False}, "ais_context_coverage_signal_conflict"),
+            ({"sudden_stop_signal": False}, "ais_context_sudden_stop_conflict"),
+            ({"ais_kinematic_conflict_signal": True}, "ais_context_sudden_stop_conflict"),
+            ({"ais_fixes_in_6h_window": 1}, "ais_context_fix_count_conflict"),
+            ({"receipt_latency_status": "verified_live"}, "invalid_ais_context_receipt_status"),
         )
-        hazard = next(f for f in result["followups"] if f["source_kind"] == "navigational_hazard")
-        self.assertIsNone(hazard["ais_to_hazard_nominal_context"])
-        self.assertIsNone(result["attack_reported_location"])
-        self.assertEqual(result["independent_origins_verified"], 0)
+        for patch, error in alterations:
+            with self.subTest(patch=patch), self.assertRaisesRegex(ValueError, error):
+                build_staging_attack_case_review(attack, [navwarn], ais_context={**ais, **patch})
+
+    def test_case_review_rejects_forged_ais_fix_chronology_and_speed(self):
+        attack, navwarn = _attack(), _navwarn()
+        ais = _ais(attack)
+        altered_fixes = (
+            ("nearest_before", {"observed_at_utc": "2026-10-28T10:10:00+00:00"},
+             "ais_context_fix_chronology_conflict"),
+            ("nearest_after", {"sog_knots": 150.0}, "invalid_ais_context_speed"),
+            ("nearest_after", {"position_role": "incident_site"}, "invalid_ais_context_fix"),
+        )
+        for key, patch, error in altered_fixes:
+            with self.subTest(key=key, patch=patch), self.assertRaisesRegex(ValueError, error):
+                changed = {**ais, key: {**ais[key], **patch}}
+                build_staging_attack_case_review(attack, [navwarn], ais_context=changed)
 
     def test_no_followup_keeps_imo_and_mmsi_unverified(self):
         result = build_staging_attack_case_review(_attack(), [])
