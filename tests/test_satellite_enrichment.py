@@ -142,13 +142,45 @@ def test_enrich_event_adds_nearest_searches_for_drift_targets(monkeypatch):
         lambda rows: persisted.extend(rows) or len(rows),
     )
 
-    report = satellite_enrichment.enrich_event(_event(), now=_NOW, include_viirs=False)
+    report = satellite_enrichment.enrich_event(_event(), now=_NOW + timedelta(hours=3), include_viirs=False)
     assert [row[3] for row in calls] == ["reverse", "nearest", "forward", "nearest"]
     assert calls[-1][:2] == (35.6, 14.2)
     assert calls[-1][2] == _NOW + timedelta(hours=2)
     assert persisted[-1].provenance["case_targets"][0]["role"] == "drift_trajectory"
     assert persisted[-1].provenance["case_targets"][0]["drift_id"] == "drift-1"
     assert report == {"persisted": 4, "errors": 0}
+
+
+def test_satellite_skips_future_drift_prediction_but_keeps_past_targets(monkeypatch):
+    from core.intel import satellite_enrichment
+
+    calls = []
+    now = _NOW + timedelta(minutes=30)
+    monkeypatch.setattr(
+        satellite_enrichment,
+        "_case_satellite_targets",
+        lambda _event: [
+            {"role": "reported_origin", "lat": 35.5, "lon": 14.1, "at": _NOW},
+            {"role": "drift_trajectory", "lat": 35.6, "lon": 14.2,
+             "at": _NOW + timedelta(hours=1), "drift_id": "future-drift"},
+            {"role": "drift_trajectory", "lat": 35.7, "lon": 14.3,
+             "at": _NOW + timedelta(minutes=10), "drift_id": "past-drift"},
+        ],
+    )
+
+    def fake_resolve_for_incident(**kwargs):
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(satellite_enrichment, "resolve_for_incident", fake_resolve_for_incident)
+    monkeypatch.setattr(satellite_enrichment, "persist_observations", lambda rows: 0)
+
+    result = satellite_enrichment.enrich_event(_event(), now=now, include_viirs=False)
+    assert result == {"persisted": 0, "errors": 0}
+    assert [row["direction"] for row in calls] == ["reverse", "nearest", "forward", "nearest"]
+    assert calls[-1]["event_time"] == _NOW + timedelta(minutes=10)
+    assert all(row["event_time"] <= now for row in calls)
+    assert not any(row["lat"] == 35.6 for row in calls)
 
 
 def test_enrich_event_degrades_safely_when_provider_fails(monkeypatch):
