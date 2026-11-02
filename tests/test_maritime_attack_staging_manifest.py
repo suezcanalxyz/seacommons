@@ -260,3 +260,26 @@ class StagingBulletinManifestTests(TestCase):
         payload["records"][1]["reported_time_uncertainty_minutes"] = 20
         with self.assertRaises(ValueError):
             prepare_staging_bulletin_manifest(payload)
+
+    def test_mscio_148_tanker_rpg_is_unidentified_and_not_promotable(self):
+        path = MANIFEST.parent / "maritime-attack-mscio-148-2026-11-02.json"
+        records = prepare_staging_bulletin_manifest(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
+        self.assertEqual(len(records), 1)
+        record = records[0]
+        self.assertEqual(record.bulletin.bulletin_id, "148/26")
+        self.assertEqual(
+            record.bulletin.occurred_at.isoformat(),
+            "2026-10-16T19:22:00+00:00",
+        )
+        self.assertEqual(record.bulletin.publication_date.isoformat(), "2026-10-17")
+        self.assertEqual(record.envelope["provenance"]["event_time_precision"], "approximate")
+        self.assertEqual(record.envelope["provenance"]["vessel_name"], "")
+        self.assertEqual(record.envelope["provenance"]["vessel_imo"], "")
+        self.assertEqual(record.envelope["provenance"]["vessel_mmsi"], "")
+        self.assertEqual(record.envelope["subject_refs"], [])
+        self.assertEqual(record.source_rights, "restricted_republication")
+        self.assertFalse(record.origin_independence_verified)
+        self.assertFalse(record.publication_allowed)
+        self.assertFalse(record.envelope["provenance"]["origin_authority_verified"])
