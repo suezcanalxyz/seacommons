@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from dataclasses import replace
+from datetime import date, datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import TestCase
 
 from core.intel.maritime_attack_correlation import claim_from_source_observation
+from core.intel.official_maritime_bulletin import prepare_official_bulletin
 from core.intel.maritime_attack_staging_manifest import (
     prepare_staging_bulletin_manifest,
 )
@@ -260,6 +263,36 @@ class StagingBulletinManifestTests(TestCase):
         payload["records"][1]["reported_time_uncertainty_minutes"] = 20
         with self.assertRaises(ValueError):
             prepare_staging_bulletin_manifest(payload)
+
+    def test_day_only_source_chronology_and_direct_adapter_are_fail_closed(self):
+        payload = sample()
+        report = payload["records"][1]
+        # The source's reported attack is 29 October. A 27 October
+        # publication cannot be explained by any publisher time zone.
+        report["publication_date"] = "2026-10-27"
+        with self.assertRaisesRegex(ValueError, "publication day precedes"):
+            prepare_staging_bulletin_manifest(payload)
+        # One-day difference is permitted for publisher-local dates.
+        report["publication_date"] = "2026-10-28"
+        accepted = prepare_staging_bulletin_manifest(payload)[1]
+        self.assertFalse(accepted.publication_allowed)
+        # Bypassing the manifest must not bypass the chronology gate.
+        with self.assertRaisesRegex(ValueError, "publication day precedes"):
+            prepare_official_bulletin(replace(
+                accepted.bulletin, publication_date=date(2026, 10, 27)
+            ))
+        with self.assertRaisesRegex(ValueError, "publication precedes"):
+            prepare_official_bulletin(replace(
+                accepted.bulletin, publication_date=None,
+                published_at=datetime(2026, 10, 29, 15, 59, tzinfo=timezone.utc),
+            ))
+        # A documented approximate clock may overlap publication by minutes.
+        valid = prepare_official_bulletin(replace(
+            accepted.bulletin, publication_date=None,
+            published_at=datetime(2026, 10, 29, 15, 57, tzinfo=timezone.utc),
+            reported_time_uncertainty_minutes=5,
+        ))
+        self.assertFalse(valid["provenance"]["attack_corroboration_allowed"])
 
     def test_source_publication_cannot_precede_event_clock(self):
         payload = sample()
