@@ -256,6 +256,11 @@ def enrich_event(
     targets = _case_satellite_targets(event)
     report = {"persisted": 0, "errors": 0}
     for target_index, target in enumerate(targets):
+        # OpenDrift trajectories can extend into the future. A prediction is
+        # not an observed vessel location: never request satellite scenes
+        # for a target timestamp that has not yet occurred.
+        if target["at"] > now:
+            continue
         directions = _DIRECTIONS if target_index == 0 else ("nearest",)
         for direction in directions:
             try:
