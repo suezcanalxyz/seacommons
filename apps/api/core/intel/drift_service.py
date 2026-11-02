@@ -123,10 +123,13 @@ def drift_origin_coordinates(event: Any) -> tuple[Any, Any]:
     meta = getattr(event, "metadata", {}) or {}
     lat = getattr(event, "lat", None)
     lon = getattr(event, "lon", None)
-    return (
-        lat if lat is not None else meta.get("lat"),
-        lon if lon is not None else meta.get("lon"),
-    )
+    # Coordinates are one evidence pair, not two independently sourced values.
+    # If either canonical column is populated, do not splice a stale metadata
+    # coordinate into the other column. The eligibility gate will fail closed
+    # on the incomplete canonical point instead.
+    if lat is not None or lon is not None:
+        return lat, lon
+    return meta.get("lat"), meta.get("lon")
 
 
 def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:

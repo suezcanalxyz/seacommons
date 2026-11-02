@@ -367,3 +367,47 @@ def test_canonical_point_is_not_overridden_by_stale_metadata():
     )
     ok, reason = is_auto_drift_eligible(event)
     assert ok, reason
+
+
+def test_partial_canonical_coordinate_never_mixes_with_legacy_metadata():
+    """A partially updated canonical fix cannot borrow the other axis."""
+    for canonical_lat, canonical_lon in ((34.27, None), (None, 11.94)):
+        event = _distress(
+            coordinate_source="post_text",
+            coordinate_review_status="not_required",
+            lat=38.5, lon=17.5, location_uncertainty_m=250,
+        )
+        event.lat, event.lon = canonical_lat, canonical_lon
+        assert ds.drift_origin_coordinates(event) == (canonical_lat, canonical_lon)
+        ok, reason = is_auto_drift_eligible(event)
+        assert not ok
+        assert reason == "no coordinate to originate a drift"
+
+
+def test_partial_canonical_origin_cannot_acquire_drift_slot(monkeypatch):
+    """Even a forced scheduler call must fail before any model work."""
+    event = _distress(
+        coordinate_source="post_text",
+        coordinate_review_status="not_required",
+        lat=38.5, lon=17.5, location_uncertainty_m=250,
+    )
+    event.lat, event.lon = 34.27, None
+
+    class _Store:
+        def get_durable(self, _event_id):
+            return event
+
+        def update_metadata(self, _event_id, *, metadata):
+            event.metadata.update(metadata)
+
+    monkeypatch.setattr(ds, "intel_store", _Store())
+    monkeypatch.setattr(
+        ds, "acquire_drift_slot",
+        lambda: (_ for _ in ()).throw(AssertionError("partial origin acquired model slot")),
+    )
+    assert schedule_intel_drift(
+        event.id, 34.27, 17.5, None, "rubber_boat",
+        "2026-11-02T21:00:00Z", force=True,
+    ) is False
+    assert event.metadata["drift_status"] == "ineligible"
+    assert "no coordinate" in event.metadata["drift_ineligible_reason"]
