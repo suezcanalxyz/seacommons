@@ -82,6 +82,37 @@ class StagingBulletinManifestTests(TestCase):
                 "time_uncertainty_minutes": 0,
             })
 
+    def test_late_report_mscio_163_preserves_day_only_and_unknown_vessel(self):
+        path = MANIFEST.parent / "maritime-attack-mscio-163-2026-11-02.json"
+        records = prepare_staging_bulletin_manifest(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
+        self.assertEqual(len(records), 1)
+        record = records[0]
+        self.assertEqual(record.bulletin.bulletin_id, "163/26")
+        self.assertIsNone(record.bulletin.occurred_at)
+        self.assertEqual(record.bulletin.event_date.isoformat(), "2026-10-28")
+        self.assertEqual(record.bulletin.publication_date.isoformat(), "2026-10-30")
+        self.assertEqual(record.envelope["provenance"]["event_time_precision"], "day")
+        self.assertEqual(record.envelope["provenance"]["vessel_name"], "")
+        self.assertEqual(record.envelope["provenance"]["vessel_imo"], "")
+        self.assertEqual(record.envelope["provenance"]["vessel_mmsi"], "")
+        self.assertFalse(record.origin_independence_verified)
+        self.assertFalse(record.publication_allowed)
+        # A late, unnamed bulletin cannot acquire LOUISE 1 or any other
+        # identity merely because a downstream article mentions that ship.
+        obs = SimpleNamespace(
+            observation_id="synthetic:163", observation_type="official_maritime_bulletin",
+            source_url=record.envelope["source_url"],
+            provenance=record.envelope["provenance"],
+            received_at=None, lat=None, lon=None, uncertainty_m=None,
+        )
+        with self.assertRaisesRegex(ValueError, "vessel identity differs"):
+            claim_from_source_observation(obs, {
+                "kind": "attack", "occurred_at": "2026-10-28T00:00:00Z",
+                "vessel_name": "LOUISE 1", "imo": "9290323",
+            })
+
     def test_suspicious_activity_is_not_relabelled_as_attack(self):
         records = prepare_staging_bulletin_manifest(sample())
         suspicious = next(r for r in records if r.bulletin.bulletin_id == "160/26")
