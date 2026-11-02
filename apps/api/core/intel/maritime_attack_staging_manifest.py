@@ -159,6 +159,7 @@ def prepare_staging_bulletin_manifest(manifest: Mapping[str, object]) -> tuple[S
             location_role=entry.get("location_role", "unknown"),
             location_uncertainty_km=entry.get("location_uncertainty_km"),
             source_document_sha256=entry.get("source_document_sha256", ""),
+            original_dtg=entry.get("source_dtg", ""),
             source_rights=rights,
             source_checked_on_utc=checked,
         )
