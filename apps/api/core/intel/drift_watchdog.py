@@ -28,6 +28,22 @@ def _age(value: Any, now: datetime) -> timedelta | None:
         return None
 
 
+def _defer_retry(status: str, since: timedelta | None) -> str | None:
+    """Classify a recent request, never treating a missing clock as recent.
+
+    Old persisted records may have drift_status but no drift_requested_at.
+    Such records must be rechecked against the shared model slot instead of
+    remaining permanently "computing" or "pending" after a restart.
+    """
+    if since is None:
+        return None
+    if status == "computing" and since < STUCK_AFTER:
+        return "precise_running"
+    if status in {"failed", "computing"} and since < RETRY_AFTER:
+        return "precise_pending"
+    return None
+
+
 def reconcile(*, launch: bool = False, limit: int = 300) -> dict[str, int]:
     """Classify candidates and, optionally, enqueue one missing precise drift.
 
@@ -76,11 +92,9 @@ def reconcile(*, launch: bool = False, limit: int = 300) -> dict[str, int]:
         meta = event.metadata
         since = _age(meta.get("drift_requested_at"), now)
         status = str(meta.get("drift_status") or "")
-        if status == "computing" and (since is None or since < STUCK_AFTER):
-            report["precise_running"] += 1
-            continue
-        if status in {"failed", "computing"} and (since is None or since < RETRY_AFTER):
-            report["precise_pending"] += 1
+        deferred = _defer_retry(status, since)
+        if deferred:
+            report[deferred] += 1
             continue
         report["precise_pending"] += 1
         if launch and report["launched"] == 0:
