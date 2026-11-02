@@ -33,7 +33,7 @@ def test_published_maritime_event_is_candidate_but_old_event_is_not():
     from core.intel.satellite_enrichment import is_satellite_enrichment_candidate
 
     maritime = _event(
-        type="correlated_alert",
+        type="correlated_alert", source="Maritime Security",
         metadata={"publication_status": "published", "maritime_domain": "grey_zone"},
     )
     assert is_satellite_enrichment_candidate(maritime, now=_NOW) is True
@@ -221,7 +221,9 @@ def test_false_string_flags_do_not_trigger_satellite_enrichment():
     assert not is_satellite_enrichment_candidate(false_flags, now=_NOW)
     positive = _event(metadata={"is_distress": "true"})
     assert is_satellite_enrichment_candidate(positive, now=_NOW)
-    published = _event(metadata={"publication_status": "published"})
+    published = _event(source="Maritime Security", metadata={
+        "publication_status": "published", "maritime_domain": "grey_zone",
+    })
     assert is_satellite_enrichment_candidate(published, now=_NOW)
 
 
@@ -290,3 +292,51 @@ def test_satellite_durable_alias_does_not_promote_false_distress(monkeypatch):
     assert satellite_enrichment.enrich_recent_events(limit=1, now=_NOW) == {
         "scanned": 1, "enriched": 0, "persisted": 0, "errors": 0,
     }
+
+
+@pytest.mark.parametrize("source,metadata", [
+    ("Alarm Phone", {"publication_status": "published", "maritime_domain": "sar", "is_distress": "false"}),
+    ("@alarmphone", {"publication_status": "published", "is_distress": False}),
+    ("AlarmPhone", {"publication_status": "published"}),
+    ("Sea Watch", {"publication_status": "published", "maritime_domain": "sar", "is_distress": False}),
+])
+def test_published_humanitarian_context_does_not_trigger_satellite_queries(monkeypatch, source, metadata):
+    from core.intel import satellite_enrichment
+
+    contextual = _event(source=source, metadata=metadata)
+    monkeypatch.setattr(
+        satellite_enrichment, "resolve_for_incident",
+        lambda **_kwargs: pytest.fail("non-distress humanitarian context queried a satellite provider"),
+    )
+    assert not satellite_enrichment.is_satellite_enrichment_candidate(contextual, now=_NOW)
+    assert satellite_enrichment.enrich_event(contextual, now=_NOW) == {
+        "persisted": 0, "errors": 0,
+    }
+
+
+def test_satellite_explicit_negative_distress_overrides_stale_drift_eligibility():
+    from core.intel.satellite_enrichment import is_satellite_enrichment_candidate
+
+    stale = _event(metadata={
+        "maritime_domain": "sar", "publication_status": "published",
+        "is_distress": "false", "drift_eligible": "true",
+    })
+    assert not is_satellite_enrichment_candidate(stale, now=_NOW)
+
+
+def test_satellite_keeps_published_maritime_and_explicit_sar_distress():
+    from core.intel.satellite_enrichment import is_satellite_enrichment_candidate
+
+    maritime = _event(
+        source="Maritime Security", metadata={
+            "maritime_domain": "grey_zone", "publication_status": "published",
+        },
+    )
+    sar = _event(
+        source="@alarmphone", metadata={
+            "maritime_domain": "sar", "is_distress": "true",
+            "publication_status": "published",
+        },
+    )
+    assert is_satellite_enrichment_candidate(maritime, now=_NOW)
+    assert is_satellite_enrichment_candidate(sar, now=_NOW)
