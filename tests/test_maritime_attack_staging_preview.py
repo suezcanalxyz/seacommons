@@ -59,6 +59,14 @@ class StagingAttackPreviewTests(TestCase):
         self.assertIn("exact_publication_time_unavailable", jet["review_blockers"])
         self.assertIn("reuse_rights_not_verified", jet["review_blockers"])
         self.assertIn("restricted_republication", previews[1]["review_blockers"])
+        self.assertTrue(all(
+            "original_document_hash_unavailable" in p["review_blockers"]
+            for p in previews
+        ))
+        self.assertTrue(all(
+            "incident_location_unverified" in p["review_blockers"]
+            for p in previews if p["proposed_incident_type"] is not None
+        ))
         self.assertEqual(previews[3]["review_status"], "context_only")
         self.assertIn("not_an_attack", previews[3]["review_blockers"])
         self.assertEqual(previews[4]["proposed_incident_type"], "piracy")
@@ -128,6 +136,27 @@ class StagingAttackPreviewTests(TestCase):
             "lat": 43.259, "lon": 28.815,
             "role": "incident_site", "uncertainty_km": 3.0,
         })
+        self.assertNotIn("incident_location_unverified", preview["review_blockers"])
+        last_known_bulletin = replace(bulletin, location_role="last_reported_position")
+        last_known_envelope = prepare_official_bulletin(last_known_bulletin)
+        last_known = replace(revised, bulletin=last_known_bulletin,
+                             envelope=last_known_envelope)
+        last_known_key = f'{last_known_envelope["source_name"]}:{last_known_envelope["source_id"]}'
+        last_known_row = replace_like(
+            row,
+            observation_id="obs:" + hashlib.blake2s(
+                last_known_key.encode(), digest_size=16).hexdigest(),
+            source_id=last_known_envelope["source_id"],
+            raw_payload_hash=hashlib.sha256(
+                last_known_envelope["raw_payload"].encode("utf-8")).hexdigest(),
+            provenance=last_known_envelope["provenance"],
+        )
+        last_known_preview = build_staging_attack_previews(
+            [last_known, *records[1:]], [last_known_row, *rows[1:]]
+        )[0]
+        self.assertIn("incident_location_unverified", last_known_preview["review_blockers"])
+        self.assertEqual(last_known_preview["reported_location"]["role"],
+                         "last_reported_position")
         for changed in (
             {"lat": 43.5}, {"lon": 29.0}, {"uncertainty_m": 0.0},
             {"uncertainty_m": float("nan")},
@@ -136,6 +165,14 @@ class StagingAttackPreviewTests(TestCase):
                 altered = [replace_like(row, **changed), *rows[1:]]
                 with self.assertRaisesRegex(ValueError, "canonical_source_provenance_mismatch"):
                     build_staging_attack_previews([revised, *records[1:]], altered)
+
+    def test_document_digest_is_not_equivalent_to_metadata_payload_hash(self):
+        records, rows = fixtures()
+        self.assertIsNone(records[0].envelope["provenance"]["original_document_sha256"])
+        self.assertEqual(len(rows[0].raw_payload_hash), 64)
+        preview = build_staging_attack_previews(records, rows)[0]
+        self.assertIn("original_document_hash_unavailable", preview["review_blockers"])
+        self.assertNotEqual(preview["raw_payload_hash"], preview["source_document_sha256"])
 
     def test_replay_order_does_not_change_preview(self):
         records, rows = fixtures()
