@@ -12,7 +12,6 @@ from typing import Any
 
 from core.intel.macro_drift import explicit_distress_flag, source_is_alarm_phone, spatial_prior_for_event
 
-SOURCE_VARIANTS = ["alarm_phone", "Alarm Phone", "alarmphone", "@alarm_phone"]
 RETRY_AFTER = timedelta(minutes=30)
 STUCK_AFTER = timedelta(hours=2)
 
@@ -35,7 +34,7 @@ def reconcile(*, launch: bool = False, limit: int = 300) -> dict[str, int]:
     launch=False is read-only. Recovery does not overwrite completed products,
     and it won't spin repeatedly on a busy engine or failed request.
     """
-    from core.intel.store import intel_store
+    from core.intel.store import ALARM_PHONE_SOURCE_ALIASES, intel_store
     from core.intel.drift_service import is_auto_drift_eligible, schedule_intel_drift
     from core.intel.drift_ownership import get_current_drift_id
     from core.db.store import get_drift
@@ -47,7 +46,11 @@ def reconcile(*, launch: bool = False, limit: int = 300) -> dict[str, int]:
         "precise_running", "area_prior", "geography_unknown", "terminal",
         "not_eligible", "launched", "busy_or_failed_to_queue",
     )}
-    rows = intel_store.persisted_events(source_in=SOURCE_VARIANTS, max_age_days=2, limit=limit)
+    # The watchdog must scan the same durable source aliases as LIVE and drift
+    # publication; otherwise a valid @AlarmPhone distress is never scheduled.
+    rows = intel_store.persisted_events(
+        source_in=list(ALARM_PHONE_SOURCE_ALIASES), max_age_days=2, limit=limit
+    )
     for event in rows:
         if not source_is_alarm_phone(event) or not explicit_distress_flag((event.metadata or {}).get("is_distress")):
             continue
