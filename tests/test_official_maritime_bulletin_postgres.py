@@ -235,7 +235,10 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
                 "original_document_hash_unavailable" in p["review_blockers"]
                 for p in expected
             ))
-            original = persisted[0]
+            # Do not mutate a live ORM row in a test: lazy-loads can
+            # autoflush a tampered attribute before expire() discards it.
+            # Clone the actual writer-returned canonical row instead.
+            original = written[0]
             for field, changed in (
                 ("observed_at", "2026-10-28T10:01:00+00:00"),
                 ("lat", 43.259),
@@ -244,12 +247,13 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
                                 "origin_authority_verified": True}),
             ):
                 with self.subTest(field=field):
-                    setattr(original, field, changed)
+                    tampered = replace(original, **{field: changed})
                     with self.assertRaisesRegex(
                         ValueError, "canonical_source_provenance_mismatch"
                     ):
-                        build_staging_attack_previews(batch, persisted)
-                    db.expire(original)
+                        build_staging_attack_previews(
+                            batch, [tampered, *persisted[1:]]
+                        )
             self.assertEqual(
                 build_staging_attack_previews(batch, persisted), expected
             )
