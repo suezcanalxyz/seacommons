@@ -156,6 +156,14 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
             replay = ingest_official_bulletin(db, batch[0].bulletin)
             self.assertTrue(replay.replayed)
             self.assertEqual(replay.observation_id, written[0].observation_id)
+            # A next-day check is not a new original document or witness.
+            rechecked = ingest_official_bulletin(db, replace(
+                batch[0].bulletin, source_checked_on_utc=date(2026, 11, 2),
+            ))
+            self.assertTrue(rechecked.replayed)
+            self.assertEqual(rechecked.observation_id, written[0].observation_id)
+            self.assertEqual(rechecked.provenance["source_checked_on_utc"], "2026-11-01")
+            self.assertEqual(db.scalar(select(func.count()).select_from(SourceObservationDB)), 6)
             self.assertNotIn(
                 "maritime_episodes", self.engine.dialect.get_table_names(db.connection())
             )
