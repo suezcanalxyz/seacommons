@@ -27,10 +27,23 @@ from core.domain.live_contracts import MaritimeDomain, VerificationStatus
 
 logger = logging.getLogger(__name__)
 
+# Durable queries use exact source strings. Keep every known public Alarm Phone
+# collector spelling in one place so deque eviction/restarts do not hide cases.
+ALARM_PHONE_SOURCE_ALIASES = (
+    "Alarm Phone", "alarm_phone", "alarmphone",
+    "@alarm_phone", "@AlarmPhone", "@alarmphone",
+)
+
 
 def _normalised_source(value: str) -> str:
     """Stable identity for harmless source spelling variants."""
     return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+def humanitarian_source_group_key(value: str) -> str:
+    """Join Alarm Phone collector aliases without merging unrelated sources."""
+    source = str(value or "").strip().casefold()
+    return "alarmphone" if _normalised_source(source) == "alarmphone" else source
 
 # Location-upgrade decisions live in core.intel.location_evidence
 # (metadata_quality / location_quality): evidence quality -- review status,
@@ -586,7 +599,7 @@ class IntelStore:
                     db.query(IntelEventDB)
                     .filter(
                         IntelEventDB.timestamp_utc >= cutoff,
-                        IntelEventDB.source.in_(["Alarm Phone", "alarm_phone", "alarmphone"]),
+                        IntelEventDB.source.in_(ALARM_PHONE_SOURCE_ALIASES),
                     )
                     .order_by(IntelEventDB.timestamp_utc.desc())
                     .limit(500)

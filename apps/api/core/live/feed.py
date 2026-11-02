@@ -34,7 +34,12 @@ from core.intel.public_policy import (
 # so its persisted operational drift stays on the public map. Mirrors
 # `core.intel.drift_service._DRIFT_BLOCKING_LIFECYCLES`.
 _DRIFT_HIDDEN_LIFECYCLES = frozenset({"resolved", "archived"})
-from core.intel.store import IntelEvent, intel_store
+from core.intel.store import (
+    ALARM_PHONE_SOURCE_ALIASES,
+    IntelEvent,
+    humanitarian_source_group_key,
+    intel_store,
+)
 from core.live.projection import (
     _approximate_public_point,
     _current_trajectory_estimate,
@@ -863,7 +868,7 @@ def public_signal_collection(
     # ("alarm_phone") otherwise. Both are real, current values for the same
     # logical source; an exact match on one silently drops the other.
     durable_alarm_phone = intel_store.persisted_events(
-        source_in=["Alarm Phone", "alarm_phone"],
+        source_in=list(ALARM_PHONE_SOURCE_ALIASES),
         max_age_days=days,
         limit=_LIVE_DURABLE_SCAN_LIMIT,
     )
@@ -956,7 +961,7 @@ def public_signal_collection(
 
     by_source: dict[str, list[IntelEvent]] = {}
     for event in events:
-        by_source.setdefault(event.source.strip().casefold(), []).append(event)
+        by_source.setdefault(humanitarian_source_group_key(event.source), []).append(event)
     mode_features: dict[str, list[dict[str, Any]]] = {
         "humanitarian": [],
         "security": [],
@@ -1011,7 +1016,7 @@ def public_signal_collection(
             from core.intel.humanitarian_incident import resolve_public_incident_state
 
             incident_state = resolve_public_incident_state(
-                event, now=now, same_source=by_source.get(event.source.strip().casefold(), [])
+                event, now=now, same_source=by_source.get(humanitarian_source_group_key(event.source), [])
             )
             # Live is a rolling 24-hour timeline. Terminal real-world
             # statuses remain visible until retention expiry, but are clearly
@@ -1285,7 +1290,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
     drift_events = {
         event.id: event
         for event in intel_store.persisted_events(
-            source_in=["Alarm Phone", "alarm_phone"], max_age_days=30, limit=min(limit * 5, 1000)
+            source_in=list(ALARM_PHONE_SOURCE_ALIASES), max_age_days=30, limit=min(limit * 5, 1000)
         )
     }
     drift_events.update(
@@ -1294,7 +1299,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
     now = datetime.now(UTC)
     by_source: dict[str, list[IntelEvent]] = {}
     for event in drift_events.values():
-        by_source.setdefault(event.source.strip().casefold(), []).append(event)
+        by_source.setdefault(humanitarian_source_group_key(event.source), []).append(event)
     for event in drift_events.values():
         # SeaCommons Drift is a humanitarian SAR model only (docs/deep-research-
         # report.md #17, hard requirement). A positive allow-list, not
@@ -1322,7 +1327,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         from core.intel.humanitarian_incident import resolve_public_incident_state
 
         incident_state = resolve_public_incident_state(
-            event, now=now, same_source=by_source.get(event.source.strip().casefold(), [])
+            event, now=now, same_source=by_source.get(humanitarian_source_group_key(event.source), [])
         )
         if (
             incident_state["lifecycle"] in _DRIFT_HIDDEN_LIFECYCLES
