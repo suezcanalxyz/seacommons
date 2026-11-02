@@ -157,6 +157,32 @@ def append_staging_review_snapshot(
     ).scalar_one()
     if table is None:
         raise ValueError("staging_review_schema_not_provisioned")
+    # An append-only *table* is not enough: the connection role must be unable
+    # to alter, remove or bypass the audit ledger, even through inherited grants.
+    # This is a read-only privilege preflight; no DDL or privilege changes here.
+    unsafe_role = connection.execute(text("""
+        /* staging_review_role_privileges */
+        SELECT CASE WHEN
+            current_setting('is_superuser') = 'on'
+            OR has_database_privilege(current_user, current_database(), 'CREATE')
+            OR has_schema_privilege(current_user, 'attack_review_staging', 'CREATE')
+            OR NOT has_schema_privilege(current_user, 'attack_review_staging', 'USAGE')
+            OR NOT has_table_privilege(current_user,
+                'attack_review_staging.review_snapshots', 'SELECT')
+            OR NOT has_table_privilege(current_user,
+                'attack_review_staging.review_snapshots', 'INSERT')
+            OR has_table_privilege(current_user,
+                'attack_review_staging.review_snapshots', 'UPDATE')
+            OR has_table_privilege(current_user,
+                'attack_review_staging.review_snapshots', 'DELETE')
+            OR has_table_privilege(current_user,
+                'attack_review_staging.review_snapshots', 'TRUNCATE')
+            OR has_table_privilege(current_user,
+                'attack_review_staging.review_snapshots', 'TRIGGER')
+        THEN 1 ELSE 0 END
+    """)).scalar_one()
+    if unsafe_role != 0:
+        raise ValueError("staging_review_role_not_append_only")
     inserted = connection.execute(text("""
         INSERT INTO attack_review_staging.review_snapshots
         (snapshot_id, case_review_id, attack_observation_id,
