@@ -34,6 +34,7 @@ _KINDS = frozenset({
 _LOCATION_ROLES = frozenset({"unknown", "incident_site", "anchorage", "last_reported_position", "hazard_position"})
 _REPORT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 /._-]{0,79}$")
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
+SOURCE_RIGHTS = frozenset({"public_with_attribution", "restricted_republication", "unknown"})
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,10 @@ class OfficialMaritimeBulletin:
     location_uncertainty_km: float | None = None
     location_role: str = "unknown"
     source_document_sha256: str = ""
+    # Explicit operator source-check metadata; never implies reuse permission.
+    # Optional for backwards-compatible source IDs of older direct callers.
+    source_rights: str | None = None
+    source_checked_on_utc: date | None = None
     # The source may say "approximately 22:12 UTC": retain the reported
     # clock without treating it as a minute-exact observation.
     event_time_approximate: bool = False
@@ -133,6 +138,18 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
         raise ValueError("Location role without coordinates")
     if bulletin.source_document_sha256 and not _SHA256.fullmatch(bulletin.source_document_sha256):
         raise ValueError("Invalid original-document SHA256")
+    if bulletin.source_rights is not None and bulletin.source_rights not in SOURCE_RIGHTS:
+        raise ValueError("Invalid source rights classification")
+    checked = bulletin.source_checked_on_utc
+    if checked is not None:
+        if type(checked) is not date:
+            raise ValueError("Invalid source check date")
+        for source_day in (
+            bulletin.occurred_at.astimezone(timezone.utc).date() if bulletin.occurred_at else bulletin.event_date,
+            bulletin.published_at.astimezone(timezone.utc).date() if bulletin.published_at else bulletin.publication_date,
+        ):
+            if source_day is not None and source_day > checked:
+                raise ValueError("Source date after source check date")
     facts = {
         "issuer": bulletin.issuer,
         "original_report_id": bulletin.issuer + ":" + bulletin.bulletin_id.strip(),
@@ -151,6 +168,13 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
         "location_role": bulletin.location_role,
         "source_document_sha256": bulletin.source_document_sha256.lower() or None,
     }
+    # Preserve immutable source IDs for historical direct callers. The
+    # metadata-only staging manifest explicitly adds rights/check date to
+    # new revisions, so those fields survive canonical DB ingestion.
+    if bulletin.source_rights is not None:
+        facts["source_rights"] = bulletin.source_rights
+    if checked is not None:
+        facts["source_checked_on_utc"] = checked.isoformat()
     # Do not change immutable source IDs for existing exact/day-only records.
     # Add extra payload keys only for newly represented approximate clocks.
     if bulletin.event_time_approximate:
@@ -204,6 +228,8 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
                                       "publication" if observed else "unknown"),
             "original_document_sha256": facts["source_document_sha256"],
             "reuse_rights_verified": False,
+            "source_rights": bulletin.source_rights or "unknown",
+            "source_checked_on_utc": checked.isoformat() if checked else None,
             "extraction_review_required": True,
             "attack_corroboration_allowed": False,
         },
