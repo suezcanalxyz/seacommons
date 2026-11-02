@@ -18,6 +18,7 @@ from math import isfinite
 from urllib.parse import urlsplit
 
 from core.intel.maritime_attack_correlation import _valid_imo, _valid_mmsi
+from core.intel.maritime_attack_navwarn_dtg import parse_navwarn_compact_dtg
 
 # Exact host allowlist: never accept a user-supplied lookalike or URL redirect.
 _ISSUERS = {
@@ -56,6 +57,8 @@ class OfficialMaritimeBulletin:
     location_uncertainty_km: float | None = None
     location_role: str = "unknown"
     source_document_sha256: str = ""
+    # The exact compact DDHHMM UTC MON YY clock printed by Varna Radio.
+    original_dtg: str = ""
     # Explicit operator source-check metadata; never implies reuse permission.
     # Optional for backwards-compatible source IDs of older direct callers.
     source_rights: str | None = None
@@ -118,6 +121,13 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
     if bulletin.publication_date is not None and type(bulletin.publication_date) is not date:
         raise ValueError("Invalid publication date")
     event_at = _utc(bulletin.occurred_at) if bulletin.occurred_at else None
+    if bulletin.issuer == "BG_VTMIS":
+        if (not bulletin.original_dtg or bulletin.occurred_at is None
+                or parse_navwarn_compact_dtg(bulletin.original_dtg)
+                    != bulletin.occurred_at.astimezone(timezone.utc)):
+            raise ValueError("VTMIS_NAVWARN_event_clock_mismatch")
+    elif bulletin.original_dtg:
+        raise ValueError("original_dtg_only_allowed_for_BG_VTMIS")
     published_at = _utc(bulletin.published_at) if bulletin.published_at else None
     if (bulletin.lat is None) != (bulletin.lon is None):
         raise ValueError("Coordinates must be supplied together")
@@ -172,6 +182,10 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
         "location_role": bulletin.location_role,
         "source_document_sha256": bulletin.source_document_sha256.lower() or None,
     }
+    # Preserve the exact source date-time group in the immutable canonical
+    # payload. The hash of this structured payload is NOT a source PDF hash.
+    if bulletin.original_dtg:
+        facts["original_dtg"] = bulletin.original_dtg
     # Rights classification can justify a new immutable reviewed revision.
     # The check date is NOT source content: repeating the same check tomorrow
     # must not mint a second observation of the same bulletin.
@@ -229,6 +243,7 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
             "observed_at_semantics": ("event" if event_at or bulletin.event_date else
                                       "publication" if observed else "unknown"),
             "original_document_sha256": facts["source_document_sha256"],
+            **({"original_dtg": bulletin.original_dtg} if bulletin.original_dtg else {}),
             "reuse_rights_verified": False,
             "source_rights": bulletin.source_rights or "unknown",
             "source_checked_on_utc": checked.isoformat() if checked else None,
