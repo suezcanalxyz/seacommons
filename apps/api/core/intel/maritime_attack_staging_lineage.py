@@ -89,12 +89,17 @@ def _distance_km(a: tuple[float, float, float], b: tuple[float, float, float]) -
 def _compatible(a: Mapping[str, object], b: Mapping[str, object]) -> None:
     if a.get("source_kind") != b.get("source_kind"):
         raise ValueError("lineage_attack_type_conflict")
-    if _day(a) != _day(b):
-        raise ValueError("lineage_event_day_conflict")
+    left_day, right_day = _day(a), _day(b)
     left, right = a.get("occurred_at_utc"), b.get("occurred_at_utc")
     if left is not None and right is not None:
+        # UTC midnight is not an incident boundary. Two clocked reports may
+        # describe one event across adjacent dates, provided their timestamps
+        # are within the conservative two-hour review window. A day-only
+        # report has no such precision and must retain its calendar boundary.
         if abs((_utc(left) - _utc(right)).total_seconds()) > 120 * 60:
             raise ValueError("lineage_temporal_conflict")
+    elif left_day != right_day:
+        raise ValueError("lineage_event_day_conflict")
     for key in ("vessel_imo_as_reported", "vessel_mmsi_as_reported"):
         x, y = a.get(key), b.get(key)
         if x and y and x != y:

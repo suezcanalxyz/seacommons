@@ -75,6 +75,56 @@ class MaritimeAttackLineageTests(TestCase):
                 [shared("UKMTO:191/26", "UKMTO:192/26")],
             )
 
+    def test_cross_midnight_same_event_is_not_false_negative(self):
+        a = notice("MSCIO:late", "2026-10-31T23:58:00+00:00",
+                   event_date="2026-10-31")
+        b = notice("UKMTO:early", "2026-11-01T00:03:00+00:00",
+                   event_date="2026-11-01")
+        result = build_staging_attack_lineage_review(
+            [a, b], [shared("MSCIO:late", "UKMTO:early")]
+        )
+        self.assertEqual(result["provisional_origin_groups"], 1)
+        self.assertEqual(result["suspected_duplicate_publications"], 1)
+        self.assertEqual(result["independent_origins_verified"], 0)
+        self.assertFalse(result["publication_allowed"])
+
+    def test_cross_midnight_distant_events_stay_distinct(self):
+        a = notice("A", "2026-10-31T22:00:00+00:00",
+                   event_date="2026-10-31")
+        b = notice("B", "2026-11-01T01:00:01+00:00",
+                   event_date="2026-11-01")
+        with self.assertRaisesRegex(ValueError, "lineage_temporal_conflict"):
+            build_staging_attack_lineage_review([a, b], [shared("A", "B")])
+
+    def test_cross_midnight_conflicting_imo_still_blocks_merge(self):
+        a = notice("A", "2026-10-31T23:58:00+00:00",
+                   event_date="2026-10-31",
+                   vessel_imo_as_reported="9348625")
+        b = notice("B", "2026-11-01T00:03:00+00:00",
+                   event_date="2026-11-01",
+                   vessel_imo_as_reported="9001136")
+        with self.assertRaisesRegex(ValueError, "lineage_vessel_identity_conflict"):
+            build_staging_attack_lineage_review([a, b], [shared("A", "B")])
+
+    def test_cross_midnight_distant_locations_still_block_merge(self):
+        a = notice("A", "2026-10-31T23:58:00+00:00",
+                   event_date="2026-10-31",
+                   reported_location={"lat": 43.0, "lon": 29.0,
+                                      "role": "incident_site", "uncertainty_km": 5})
+        b = notice("B", "2026-11-01T00:03:00+00:00",
+                   event_date="2026-11-01",
+                   reported_location={"lat": 26.0, "lon": 56.0,
+                                      "role": "incident_site", "uncertainty_km": 5})
+        with self.assertRaisesRegex(ValueError, "lineage_spatial_conflict"):
+            build_staging_attack_lineage_review([a, b], [shared("A", "B")])
+
+    def test_day_only_cross_midnight_is_not_assumed_identical(self):
+        a = notice("A", None, event_date="2026-10-31")
+        b = notice("B", "2026-11-01T00:01:00+00:00",
+                   event_date="2026-11-01")
+        with self.assertRaisesRegex(ValueError, "lineage_event_day_conflict"):
+            build_staging_attack_lineage_review([a, b], [shared("A", "B")])
+
     def test_no_link_does_not_prove_independence(self):
         result = build_staging_attack_lineage_review(
             [notice("MOD:JET", "2026-10-28T10:00:00+00:00",

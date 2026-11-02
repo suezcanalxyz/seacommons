@@ -162,6 +162,26 @@ class StagingBulletinManifestTests(TestCase):
         self.assertFalse(prepared[-1].origin_independence_verified)
         self.assertFalse(prepared[-1].publication_allowed)
 
+    def test_mscio_146_late_report_keeps_unnamed_container_and_uncertainty(self):
+        path = MANIFEST.parent / "maritime-attack-mscio-146-2026-11-02.json"
+        records = prepare_staging_bulletin_manifest(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
+        self.assertEqual(len(records), 1)
+        record = records[0]
+        self.assertEqual(record.bulletin.bulletin_id, "146/26")
+        self.assertEqual(
+            record.bulletin.occurred_at.isoformat(),
+            "2026-10-13T17:00:00+00:00",
+        )
+        self.assertEqual(record.bulletin.publication_date.isoformat(), "2026-10-14")
+        self.assertEqual(record.envelope["provenance"]["event_time_precision"], "approximate")
+        self.assertEqual(record.envelope["provenance"]["vessel_name"], "")
+        self.assertEqual(record.envelope["provenance"]["vessel_imo"], "")
+        self.assertEqual(record.envelope["provenance"]["vessel_mmsi"], "")
+        self.assertFalse(record.origin_independence_verified)
+        self.assertFalse(record.publication_allowed)
+
     def test_suspicious_activity_is_not_relabelled_as_attack(self):
         records = prepare_staging_bulletin_manifest(sample())
         suspicious = next(r for r in records if r.bulletin.bulletin_id == "160/26")
