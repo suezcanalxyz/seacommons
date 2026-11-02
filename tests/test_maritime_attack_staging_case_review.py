@@ -119,6 +119,66 @@ class StagingCaseReviewTests(TestCase):
         self.assertIn("wreck_or_hazard_site_not_attack_site", result["review_blockers"])
         self.assertIn("origin_independence_unverified", result["review_blockers"])
 
+    def test_case_evidence_ledger_preserves_source_clocks_rights_and_lineage(self):
+        attack, navwarn, prosecutor, rescue = (
+            _attack(), _navwarn(), _prosecutor(), _rescue()
+        )
+        result = build_staging_attack_case_review(
+            attack, [navwarn, prosecutor, rescue], ais_context=_ais(attack)
+        )
+        ledger = result["source_evidence_ledger"]
+        self.assertEqual(len(ledger), 4)
+        self.assertEqual(len({x["original_report_id"] for x in ledger}), 4)
+        self.assertEqual(len(result["evidence_ledger_snapshot_sha256"]), 64)
+        self.assertFalse(result["evidence_ledger_digest_is_original_document_proof"])
+        for item in ledger:
+            self.assertTrue(item["source_url"].startswith("https://"))
+            self.assertEqual(len(item["canonical_metadata_sha256"]), 64)
+            self.assertTrue(item["received_at_utc"].endswith("+00:00"))
+            self.assertIsNotNone(item["source_checked_on_utc"])
+            self.assertIsNotNone(item["source_rights"])
+            self.assertFalse(item["independent_attack_witness_verified"])
+            self.assertFalse(item["republication_approved"])
+            self.assertFalse(item["publication_allowed"])
+        original = next(x for x in ledger if x["role"] == "attack_candidate")
+        self.assertEqual(original["occurred_at_utc"], "2026-10-28T10:00:00+00:00")
+        self.assertEqual(original["original_report_id"], attack["original_report_id"])
+        self.assertEqual(original["original_document_sha256"], attack["source_document_sha256"])
+        rescue_entry = next(x for x in ledger if x["source_kind"] == "rescue")
+        self.assertIsNone(rescue_entry["occurred_at_utc"])
+        self.assertEqual(rescue_entry["event_date"], "2026-10-28")
+        self.assertEqual(rescue_entry["source_rights"], "public_with_attribution")
+
+    def test_case_evidence_ledger_is_deterministic_and_sensitive_to_provenance(self):
+        attack, navwarn, prosecutor = _attack(), _navwarn(), _prosecutor()
+        a = build_staging_attack_case_review(attack, [navwarn, prosecutor])
+        b = build_staging_attack_case_review(attack, [prosecutor, navwarn])
+        self.assertEqual(a["source_evidence_ledger"], b["source_evidence_ledger"])
+        self.assertEqual(a["evidence_ledger_snapshot_sha256"], b["evidence_ledger_snapshot_sha256"])
+        changed = build_staging_attack_case_review(
+            {**attack, "source_url": "https://www.mod.bg/alternate-source"},
+            [navwarn, prosecutor]
+        )
+        self.assertNotEqual(
+            a["evidence_ledger_snapshot_sha256"],
+            changed["evidence_ledger_snapshot_sha256"]
+        )
+
+    def test_case_evidence_ledger_rejects_missing_or_tampered_provenance(self):
+        attack = _attack()
+        bad_values = (
+            ("raw_payload_hash", "bad"),
+            ("source_document_sha256", "not-a-sha256"),
+            ("source_rights", ""),
+            ("source_checked_on_utc", "not-a-date"),
+            ("received_at_utc", "2026-10-27T12:00:00+00:00"),
+            ("received_at_utc", "2026-11-02"),
+            ("source_url", "http://insecure.example/notice"),
+        )
+        for field, value in bad_values:
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                build_staging_attack_case_review({**attack, field: value}, [])
+
     def test_followup_order_does_not_change_bundle(self):
         attack, navwarn, prosecutor, rescue = (
             _attack(), _navwarn(), _prosecutor(), _rescue()
