@@ -69,7 +69,7 @@ def _source_provenance(preview: Mapping[str, object]) -> None:
         value = preview.get(field)
         if value is None:
             continue
-        if not isinstance(value, str) or not re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", value):
+        if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
             raise ValueError("lineage_invalid_source_day")
         try:
             day = date.fromisoformat(value)
@@ -101,7 +101,7 @@ def _day(preview: Mapping[str, object]) -> date:
     raw = preview.get("event_date")
     if not isinstance(raw, str):
         raise ValueError("lineage_event_day_required")
-    if not re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", raw):
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
         raise ValueError("lineage_invalid_event_day")
     try:
         return date.fromisoformat(raw)
