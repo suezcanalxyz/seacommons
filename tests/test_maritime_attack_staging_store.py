@@ -27,6 +27,8 @@ def review() -> dict:
         "publication_date": "2026-10-28",
         "received_at_utc": "2026-11-02T14:00:00+00:00",
         "independent_attack_witness_verified": False,
+        "publication_allowed": False,
+        "republication_approved": False,
         "reported_location": None,
     }]
     canonical = json.dumps(
@@ -122,6 +124,24 @@ class StagingReviewStoreTests(TestCase):
         ):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 prepare_staging_review_snapshot(review() | change)
+
+    def test_rejects_fake_witness_independence_and_missing_blocker(self):
+        for field in ("independent_attack_witness_verified",
+                      "publication_allowed", "republication_approved"):
+            item = review()
+            item["source_evidence_ledger"][0][field] = True
+            item["evidence_ledger_snapshot_sha256"] = sha256(
+                json.dumps(item["source_evidence_ledger"], sort_keys=True,
+                           separators=(",", ":"), ensure_ascii=False).encode()
+            ).hexdigest()
+            with self.subTest(field=field), self.assertRaisesRegex(
+                ValueError, "untrusted_source_evidence"
+            ):
+                prepare_staging_review_snapshot(item)
+        item = review()
+        item["review_blockers"] = []
+        with self.assertRaisesRegex(ValueError, "independence_blocker_required"):
+            prepare_staging_review_snapshot(item)
 
     def test_rejects_mismatched_case_and_duplicate_source(self):
         with self.assertRaisesRegex(ValueError, "case_id_conflict"):
