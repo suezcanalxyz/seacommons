@@ -233,3 +233,60 @@ def test_satellite_accepts_explicit_source_time_without_inference_marker():
     assert "_source_timestamp_inferred" not in event.metadata
     assert satellite_enrichment._credible_source_time(event) == _NOW
     assert satellite_enrichment.is_satellite_enrichment_candidate(event, now=_NOW)
+
+
+@pytest.mark.parametrize("source", [
+    "Alarm Phone", "alarm_phone", "alarmphone", "@alarm_phone",
+    "AlarmPhone", "@AlarmPhone", "@alarmphone",
+])
+def test_satellite_recovers_durable_alarm_phone_aliases_for_play(monkeypatch, source):
+    """An AIS-evicted SAR report remains discoverable across source spellings."""
+    from core.intel import satellite_enrichment
+    from core.intel.store import intel_store
+
+    historical = _event(
+        source=source,
+        timestamp_utc=(_NOW - timedelta(days=15)).isoformat(),
+    )
+    reads = []
+    enriched = []
+    monkeypatch.setattr(intel_store, "events", lambda **_kwargs: [])
+
+    def persisted_events(**kwargs):
+        reads.append(kwargs)
+        return [historical] if source in kwargs["source_in"] else []
+
+    monkeypatch.setattr(intel_store, "persisted_events", persisted_events)
+    monkeypatch.setattr(intel_store, "update_metadata", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        satellite_enrichment, "enrich_event",
+        lambda event, **_kwargs: enriched.append(event.id) or {
+            "persisted": 1, "errors": 0,
+        },
+    )
+    report = satellite_enrichment.enrich_recent_events(limit=1, now=_NOW)
+    assert reads[0]["max_age_days"] == satellite_enrichment.PLAY_HUMANITARIAN_HISTORY_DAYS
+    assert enriched == [historical.id]
+    assert report == {"scanned": 1, "enriched": 1, "persisted": 1, "errors": 0}
+
+
+def test_satellite_durable_alias_does_not_promote_false_distress(monkeypatch):
+    from core.intel import satellite_enrichment
+    from core.intel.store import intel_store
+
+    contextual = _event(
+        source="@alarmphone",
+        metadata={"is_distress": "false", "drift_eligible": "false"},
+    )
+    monkeypatch.setattr(intel_store, "events", lambda **_kwargs: [])
+    monkeypatch.setattr(
+        intel_store, "persisted_events",
+        lambda **_kwargs: [contextual],
+    )
+    monkeypatch.setattr(
+        satellite_enrichment, "enrich_event",
+        lambda *_args, **_kwargs: pytest.fail("contextual report queried a provider"),
+    )
+    assert satellite_enrichment.enrich_recent_events(limit=1, now=_NOW) == {
+        "scanned": 1, "enriched": 0, "persisted": 0, "errors": 0,
+    }

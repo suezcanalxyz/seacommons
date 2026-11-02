@@ -235,7 +235,10 @@ def enrich_recent_events(*, limit: int = 6, now: datetime | None = None) -> dict
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     recent = intel_store.events(limit=300, max_age_days=SATELLITE_HISTORY_DAYS)
     humanitarian_history = intel_store.persisted_events(
-        source_in=["Alarm Phone", "alarm_phone"],
+        source_in=[
+            "Alarm Phone", "alarm_phone", "alarmphone", "@alarm_phone",
+            "AlarmPhone", "@AlarmPhone", "@alarmphone",
+        ],
         max_age_days=PLAY_HUMANITARIAN_HISTORY_DAYS,
         limit=120,
     )
