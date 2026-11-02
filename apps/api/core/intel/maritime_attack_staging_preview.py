@@ -111,32 +111,39 @@ def build_staging_attack_previews(
         expected_hash = hashlib.sha256(raw).hexdigest()
         provenance = getattr(row, "provenance", None)
         expected_provenance = envelope["provenance"]
-        if (
-            getattr(row, "service", None) != "maritime"
-            or getattr(row, "lane", None) != "safety"
-            or getattr(row, "observation_type", None) != "official_maritime_bulletin"
-            or getattr(row, "source_policy", None) != "official_metadata_unverified"
-            or getattr(row, "source_name", None) != envelope["source_name"]
-            or getattr(row, "source_id", None) != envelope["source_id"]
-            or getattr(row, "source_url", None) != envelope["source_url"]
-            or getattr(row, "raw_payload_hash", None) != expected_hash
-            or getattr(row, "observed_at", None) != envelope["observed_at"]
-            or not _same_optional_number(getattr(row, "lat", None), envelope["lat"])
-            or not _same_optional_number(getattr(row, "lon", None), envelope["lon"])
-            or not _same_optional_number(
+        # A persisted ORM row and a writer-returned dataclass must satisfy
+        # exactly the same source-faithful contract. Report *field names*
+        # only on failure: useful for staging audits, without leaking data.
+        checks = {
+            "service": getattr(row, "service", None) == "maritime",
+            "lane": getattr(row, "lane", None) == "safety",
+            "observation_type": getattr(row, "observation_type", None)
+                                == "official_maritime_bulletin",
+            "source_policy": getattr(row, "source_policy", None)
+                             == "official_metadata_unverified",
+            "source_name": getattr(row, "source_name", None) == envelope["source_name"],
+            "source_id": getattr(row, "source_id", None) == envelope["source_id"],
+            "source_url": getattr(row, "source_url", None) == envelope["source_url"],
+            "raw_payload_hash": getattr(row, "raw_payload_hash", None) == expected_hash,
+            "observed_at": getattr(row, "observed_at", None) == envelope["observed_at"],
+            "lat": _same_optional_number(getattr(row, "lat", None), envelope["lat"]),
+            "lon": _same_optional_number(getattr(row, "lon", None), envelope["lon"]),
+            "uncertainty_m": _same_optional_number(
                 getattr(row, "uncertainty_m", None), envelope["uncertainty_m"]
-            )
-            or getattr(row, "location_precision", None) is not None
-            or getattr(row, "subject_refs", None) != envelope["subject_refs"]
-            or not isinstance(provenance, dict)
-            or provenance != expected_provenance
-            or expected_provenance["origin_authority_verified"] is not False
-            or expected_provenance["attack_corroboration_allowed"] is not False
-            or expected_provenance["reuse_rights_verified"] is not False
-            or record.publication_allowed is not False
-            or record.origin_independence_verified is not False
-        ):
-            raise ValueError("canonical_source_provenance_mismatch")
+            ),
+            "location_precision": getattr(row, "location_precision", None) is None,
+            "subject_refs": getattr(row, "subject_refs", None) == envelope["subject_refs"],
+            "provenance": isinstance(provenance, dict)
+                          and provenance == expected_provenance,
+            "origin_authority_verified": expected_provenance["origin_authority_verified"] is False,
+            "attack_corroboration_allowed": expected_provenance["attack_corroboration_allowed"] is False,
+            "reuse_rights_verified": expected_provenance["reuse_rights_verified"] is False,
+            "publication_allowed": record.publication_allowed is False,
+            "origin_independence_verified": record.origin_independence_verified is False,
+        }
+        mismatches = [name for name, valid in checks.items() if not valid]
+        if mismatches:
+            raise ValueError("canonical_source_provenance_mismatch:" + ",".join(mismatches))
 
         receipt = _canonical_receipt_utc(getattr(row, "received_at", None))
         _verify_source_chronology(receipt, expected_provenance)
