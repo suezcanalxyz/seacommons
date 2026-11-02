@@ -88,6 +88,29 @@ HTTP 403 is not a declaration of source absence or permission to bypass access c
 - **IRGC-reported two tankers** (1 Nov, Strait of Hormuz): Reuters relay of Iranian state claim, no vessel identifiers or independent corroboration; no promotion. https://www.reuters.com/world/middle-east/irans-irgc-navy-says-two-tankers-exploded-after-hitting-mines-hormuz-2026-11-01/
 - **AZINI / MSCIO:161/26** (29 Oct): piracy candidate, distinct from attack category; later AP report is not automatically independent from maritime authority sources.
 
+## Addendum 05:28 UTC — primary Varna Radio NAVWARN 768/26
+
+Found the **official Bulgarian VTMIS / Varna Radio** in-force NAVWARN board:
+https://www.vtmis.bg/wx/wx_eng.htm
+
+- **NAVWARN 768/26** prints `AT 282030 UTC OCT 26`: this is **28 October 2026 at 20:30 UTC**, not 26 October. It names CONTSHIP JET and **IMO 9348625** and identifies a **sunk vessel / navigational hazard** at **43°07.80′N, 028°45.36′E** (decimal **43.13, 28.756**). This is a **wreck location**, not the earlier attack location or a second attack at 20:30.
+- **NAVWARN 766/26** names **KHORYV, IMO 8138712**, capsized and drifting at 28 Oct 18:00 UTC east of Shabla; it is a separate vessel/hazard, not CONTSHIP JET.
+- **NAVWARN 779/26, 780/26 and 781/26** report drifting containers and a boat in the Burgas area on 1 Nov; these are navigational hazards, not evidence of an attack or automatically linked to CONTSHIP JET.
+- Varna Radio publishes NAVTEX at **518 kHz** in area Juliett, but the online NAVWARN board is a different acquisition channel. The Oracle radio pipeline still shows **NAVTEX accepted 0**.
+
+Added the exact official issuer `BG_VTMIS` to the staging allowlist, a metadata-only one-record source manifest at `docs/research/maritime-attack-varna-navwarn-768-2026-11-02.json`, and a strict `DDHHMM UTC MON YY` parser. The manifest checks the original DTG against the declared event timestamp, and the canonical payload/provenance retains the exact original DTG. The wreck remains `navigational_hazard` / `context_only`, never a second attack witness or a source of attack-site geometry. No automatic scraper, collector or public record was created.
+
+A secondary mirror, https://www.sealagom.com/coastal/127/message/49987/, interpreted the same warning as **26 October** in some generated fields, despite printing the raw `282030 UTC OCT 26` text. This is a concrete date-parsing false-positive/false-negative regression now covered by staging tests. The official VTMIS original is authoritative; do not use the mirror's inferred date.
+
+The Bulgarian Ministry of Transport independently reports rescue timeline and attack report receipt at **12:01 local** on 28 Oct:
+https://www.mtc.government.bg/bg/category/1/18-chlenniyat-ekipazh-na-konteynerovoza-contship-jet-e-spasen
+
+The ship manager identifies IMO 9348625 in its own report:
+https://contships-management.com/2026/10/29/contships-management-inc-company-update/
+The original Bulgarian MOD attack bulletin does **not** print IMO/MMSI; the VTMIS wreck warning now supplies a **primary official IMO link**, but **MMSI 636019532** still requires a separate reviewed registry/crosswalk. Multiple official notices can share upstream reports and cannot automatically count as independent attack witnesses.
+
+New unit regressions: 6 additional NAVWARN tests; total staging CI expectation now **376 maritime tests + 23 bulletin tests + 3 SQLite + 10 PostgreSQL = 412 Python tests**, plus 5 JavaScript and frontend build, subject to final workflow result. No claim of operational NAVTEX reception or incident promotion.
+
 ## Tests and restrictions
 
 GitHub Actions run `41393905551` on functional head `fd5d4127`: **370** maritime attack unit tests + **23** official bulletin tests + **3** SQLite + **10** PostgreSQL isolated = **406 Python tests**; **5 JavaScript tests**, frontend build success; all four jobs passed.
