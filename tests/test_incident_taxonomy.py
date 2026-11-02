@@ -207,3 +207,40 @@ def test_incident_type_is_always_a_member_of_the_closed_stable_set():
             metadata={},
         )
         assert result in STABLE_HUMANITARIAN_INCIDENT_TYPES, (hct, result)
+
+
+def test_lineage_aliases_do_not_fabricate_independent_corroboration():
+    # Two names for one sensor family are not two independent observations.
+    for aliases in (
+        ("ais_sensor_lineage", "ais"),
+        ("gfw_sar", "satellite:gfw"),
+        ("radio:dsc", "radio_transmission"),
+    ):
+        out = taxonomy_fields(
+            event_type="ais_anomaly",
+            maritime_domain="grey_zone",
+            metadata={"contributing_independence_groups": list(aliases)},
+        )
+        assert out["corroborated"] is False, aliases
+
+
+def test_canonical_lineage_still_accepts_independent_modalities():
+    out = taxonomy_fields(
+        event_type="ais_anomaly",
+        maritime_domain="grey_zone",
+        metadata={
+            "contributing_independence_groups": [
+                "ais_sensor_lineage", "ais", "gfw_sar",
+            ],
+        },
+    )
+    assert out["corroborated"] is True
+
+
+def test_ais_gap_does_not_publish_from_alias_only_lineages():
+    from core.live.eligibility import ais_gap_has_public_support
+
+    assert ais_gap_has_public_support({
+        "contributing_independence_groups": ["ais_sensor_lineage", "ais"],
+        "reception_expectation": {"support_level": "weak"},
+    }) is False
