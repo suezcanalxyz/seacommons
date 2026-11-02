@@ -302,15 +302,43 @@ def test_scheduler_seeds_from_verified_durable_coordinate(monkeypatch):
     assert calls[0][1:3] == (event.lat, event.lon)
 
 
-def test_metadata_only_coordinate_cannot_seed_physical_drift(monkeypatch):
-    """Legacy meta coordinates are not a canonical reviewed WGS84 point."""
+def test_metadata_only_verified_text_coordinate_can_seed_after_durable_double_check(monkeypatch):
+    """Legacy verified text points must use the identical origin in both gates."""
     event = _distress(
         coordinate_source="post_text", coordinate_review_status="not_required",
-        lat=34.27, lon=11.94,
+        lat=34.27, lon=11.94, location_uncertainty_m=250,
     )
     event.lat, event.lon = None, None
     ok, reason = is_auto_drift_eligible(event)
-    assert not ok and "canonical coordinate" in reason
+    assert ok, reason
+    calls = []
+
+    class _Store:
+        def get_durable(self, _event_id):
+            return event
+
+        def update_metadata(self, _event_id, *, metadata):
+            event.metadata.update(metadata)
+
+    monkeypatch.setattr(ds, "intel_store", _Store())
+    monkeypatch.setattr(ds, "acquire_drift_slot", lambda: True)
+    monkeypatch.setattr(ds, "_run_intel_drift", lambda *args: calls.append(args))
+    assert schedule_intel_drift(
+        event.id, 34.27, 11.94, None, "rubber_boat",
+        "2026-11-02T20:00:00Z", force=True, background=False,
+    ) is True
+    assert len(calls) == 1
+    assert calls[0][1:3] == (34.27, 11.94)
+
+
+def test_metadata_only_region_centroid_remains_blocked(monkeypatch):
+    event = _distress(
+        coordinate_source="region_area", coordinate_review_status="not_required",
+        lat=35.0, lon=15.0, location_uncertainty_m=60000,
+    )
+    event.lat, event.lon = None, None
+    ok, reason = is_auto_drift_eligible(event)
+    assert not ok
 
     class _Store:
         def get_durable(self, _event_id):
@@ -322,10 +350,10 @@ def test_metadata_only_coordinate_cannot_seed_physical_drift(monkeypatch):
     monkeypatch.setattr(ds, "intel_store", _Store())
     monkeypatch.setattr(
         ds, "acquire_drift_slot",
-        lambda: (_ for _ in ()).throw(AssertionError("metadata-only origin acquired a slot")),
+        lambda: (_ for _ in ()).throw(AssertionError("region-only origin acquired a slot")),
     )
     assert schedule_intel_drift(
-        event.id, 34.27, 11.94, None, "rubber_boat",
+        event.id, 35.0, 15.0, None, "rubber_boat",
         "2026-11-02T20:00:00Z", force=True,
     ) is False
     assert event.metadata["drift_status"] == "ineligible"
