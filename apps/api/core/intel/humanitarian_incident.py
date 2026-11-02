@@ -105,7 +105,20 @@ def sync_incident_for_event(
     from core.db.models import HumanitarianIncidentDB
     from core.db.session import session_scope
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now_aware = datetime.now(timezone.utc)
+    now = now_aware.replace(tzinfo=None)
+    # A source's verified thread replies are activity on the original case.
+    # Use the same bounded clock policy as Live retention, rather than
+    # retiring a still-updated case based only on its founding post time.
+    from core.intel.lifecycle import _latest_activity_time, parse_utc
+
+    activity = _latest_activity_time(event, now=now_aware)
+    origin = parse_utc(event.timestamp_utc)
+    last_activity_at = (
+        activity.isoformat()
+        if activity is not None and (origin is None or activity > origin)
+        else event.timestamp_utc
+    )
     created = False
     with session_scope() as db:
         row = db.get(HumanitarianIncidentDB, event.id)
@@ -120,7 +133,7 @@ def sync_incident_for_event(
                         incident_status=_status_for_lifecycle(lifecycle),
                         case_type=case_type,
                         reported_at=event.timestamp_utc,
-                        last_update_at=event.timestamp_utc,
+                        last_update_at=last_activity_at,
                         state_changed_at=now,
                         resolved_at=now if lifecycle == "resolved" else None,
                         archived_at=now if lifecycle == "archived" else None,
@@ -141,12 +154,10 @@ def sync_incident_for_event(
                     raise
 
         if not created:
-            from core.intel.lifecycle import parse_utc
-
-            new_ts = parse_utc(event.timestamp_utc)
+            new_ts = parse_utc(last_activity_at)
             current_ts = parse_utc(row.last_update_at) if row.last_update_at else None
             if new_ts is None or current_ts is None or new_ts >= current_ts:
-                row.last_update_at = event.timestamp_utc
+                row.last_update_at = last_activity_at
             row.revision = (row.revision or 1) + 1
             row.incident_status = _status_for_lifecycle(lifecycle)
             if case_type and not row.case_type:
