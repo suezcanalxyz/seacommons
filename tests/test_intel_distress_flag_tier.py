@@ -67,8 +67,10 @@ def test_durable_refresher_recovers_alternate_alarm_phone_source(monkeypatch):
 
     candidates = drift_refresher._refresh_candidates()
     assert [candidate.id for candidate in candidates] == ["evicted-alias"]
-    assert "@alarm_phone" in requests[1]["source_in"]
-    assert "alarmphone" in requests[1]["source_in"]
+    source_queries = [request["source_in"] for request in requests if "source_in" in request]
+    assert len(source_queries) == 1
+    assert "@alarm_phone" in source_queries[0]
+    assert "alarmphone" in source_queries[0]
 
 def test_serialized_false_alarm_phone_report_does_not_enter_public_live():
     from core.live.projection import _public_intel_feature
