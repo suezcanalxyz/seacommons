@@ -266,13 +266,39 @@ def build_staging_attack_case_review(
             or attack_preview.get("proposed_incident_type") != expected_type):
         raise ValueError("attack_candidate_required")
     name = attack_preview.get("vessel_name_as_reported")
-    if not isinstance(name, str) or not _name(name):
-        raise ValueError("named_attack_vessel_required")
-    attack_at = _clock(attack_preview.get("occurred_at_utc"))
+    if not isinstance(name, str):
+        raise ValueError("invalid_attack_vessel_name")
+    named_vessel = bool(_name(name))
     if not isinstance(context_previews, Sequence) or isinstance(
         context_previews, (str, bytes)
     ) or len(context_previews) > 16:
         raise ValueError("unbounded_context_preview_batch")
+    # Unidentified vessels can be reviewed without fabricating an IMO/MMSI.
+    # No cross-source follow-up or AIS linkage is permitted until identified.
+    if not named_vessel and (context_previews or ais_context is not None):
+        raise ValueError("unidentified_vessel_cannot_link_context_or_ais")
+    raw_attack_clock = attack_preview.get("occurred_at_utc")
+    if raw_attack_clock is None:
+        attack_event_day = attack_preview.get("event_date")
+        if (attack_preview.get("event_time_precision") != "day"
+                or not isinstance(attack_event_day, str)
+                or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", attack_event_day)):
+            raise ValueError("day_only_attack_requires_original_event_date")
+        try:
+            date.fromisoformat(attack_event_day)
+        except ValueError as exc:
+            raise ValueError("invalid_day_only_attack_date") from exc
+        if context_previews or ais_context is not None:
+            raise ValueError("day_only_attack_cannot_link_context_or_ais")
+        attack_at = None
+    else:
+        if attack_preview.get("event_time_precision") not in {"exact", "approximate"}:
+            raise ValueError("attack_clock_precision_conflict")
+        attack_at = _clock(raw_attack_clock)
+        attack_event_day = attack_at.date().isoformat()
+        reported_day = attack_preview.get("event_date")
+        if reported_day is not None and reported_day != attack_event_day:
+            raise ValueError("attack_clock_day_conflict")
 
     seen = {attack_preview["canonical_observation_id"]}
     seen_reports = {attack_preview["original_report_id"]}
@@ -453,6 +479,10 @@ def build_staging_attack_case_review(
         attack_location = None
     blockers = list(attack_preview.get("review_blockers") or [])
     blockers.extend(["followup_not_independent_attack_witness", "manual_case_review_required"])
+    if not named_vessel:
+        blockers.append("unidentified_vessel_no_ais_or_followup_linkage")
+    if attack_at is None:
+        blockers.append("day_only_event_time_no_temporal_correlator")
     if official_imos:
         blockers.append("official_followup_imo_requires_review")
     if crosswalk is not None:
@@ -480,14 +510,16 @@ def build_staging_attack_case_review(
         "attack_observation_id": attack_preview["canonical_observation_id"],
         "attack_report_id": attack_preview["original_report_id"],
         "attack_source_url": attack_preview.get("source_url"),
-        "attack_at_utc": attack_at.isoformat(),
+        "attack_at_utc": attack_at.isoformat() if attack_at is not None else None,
+        "attack_event_date": attack_event_day,
+        "attack_time_precision": attack_preview.get("event_time_precision"),
         "proposed_incident_type": expected_type,
         "review_color": attack_preview.get("review_color"),
         "attack_reported_location": dict(attack_location) if attack_location else None,
         "vessel_name_as_reported": name,
         "official_imo_from_documents": next(iter(official_imos), None),
         "external_mmsi_proposed": crosswalk["mmsi"] if crosswalk else None,
-        "identity_status": "requires_manual_review",
+        "identity_status": "requires_manual_review" if named_vessel else "unidentified_vessel",
         "followups": sorted(followups, key=lambda item: item["original_report_id"]),
         "ais_context": ais_summary,
         "review_blockers": sorted(set(blockers)),

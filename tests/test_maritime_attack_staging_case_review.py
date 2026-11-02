@@ -418,3 +418,59 @@ class StagingCaseReviewTests(TestCase):
             build_staging_attack_case_review(
                 attack, [{**navwarn, "vessel_name_as_reported": "ALFA WATAN"}]
             )
+
+
+    def test_unnamed_mscio_164_review_preserves_approximate_clock_without_identity(self):
+        attack = _preview("maritime-attack-mscio-164-2026-11-02.json")
+        review = build_staging_attack_case_review(attack, [])
+        self.assertEqual(review["attack_report_id"], "MSCIO:164/26")
+        self.assertEqual(review["attack_at_utc"], "2026-11-01T15:09:00+00:00")
+        self.assertEqual(review["attack_time_precision"], "approximate")
+        self.assertEqual(review["attack_event_date"], "2026-11-01")
+        self.assertEqual(review["identity_status"], "unidentified_vessel")
+        self.assertEqual(review["vessel_name_as_reported"], "")
+        self.assertIsNone(review["official_imo_from_documents"])
+        self.assertIsNone(review["external_mmsi_proposed"])
+        self.assertIsNone(review["ais_context"])
+        self.assertIsNone(review["attack_reported_location"])
+        self.assertEqual(review["independent_origins_verified"], 0)
+        self.assertFalse(review["publication_allowed"])
+        self.assertIn("unidentified_vessel_no_ais_or_followup_linkage", review["review_blockers"])
+        self.assertEqual(len(review["source_evidence_ledger"]), 1)
+
+    def test_day_only_mscio_163_review_does_not_invent_attack_hour(self):
+        attack = _preview("maritime-attack-mscio-163-2026-11-02.json")
+        review = build_staging_attack_case_review(attack, [])
+        self.assertIsNone(review["attack_at_utc"])
+        self.assertEqual(review["attack_event_date"], "2026-10-28")
+        self.assertEqual(review["attack_time_precision"], "day")
+        self.assertEqual(review["identity_status"], "unidentified_vessel")
+        self.assertIn("day_only_event_time_no_temporal_correlator", review["review_blockers"])
+        self.assertFalse(review["publication_allowed"])
+
+    def test_unidentified_attack_cannot_inherit_foreign_followup_or_ais(self):
+        attack = _preview("maritime-attack-mscio-164-2026-11-02.json")
+        for kwargs in ({"context_previews": [_navwarn()]},
+                       {"context_previews": [], "ais_context": _ais(_attack())}):
+            with self.subTest(kwargs=tuple(kwargs)), self.assertRaisesRegex(
+                ValueError, "unidentified_vessel_cannot_link_context_or_ais"
+            ):
+                build_staging_attack_case_review(attack, **kwargs)
+
+    def test_day_only_attack_rejects_fabricated_or_invalid_event_day(self):
+        attack = _preview("maritime-attack-mscio-163-2026-11-02.json")
+        for event_day in (None, "2026-10-99", "2026-10-28T00:00:00Z"):
+            with self.subTest(day=event_day), self.assertRaises(ValueError):
+                build_staging_attack_case_review({**attack, "event_date": event_day}, [])
+        with self.assertRaisesRegex(ValueError, "day_only_attack_cannot_link_context_or_ais"):
+            named = {**attack, "vessel_name_as_reported": "EXAMPLE"}
+            build_staging_attack_case_review(named, [_navwarn()])
+
+    def test_approximate_clock_cannot_be_laundered_as_day_or_other_date(self):
+        attack = _preview("maritime-attack-mscio-164-2026-11-02.json")
+        for patch, error in (
+            ({"event_time_precision": "day"}, "attack_clock_precision_conflict"),
+            ({"event_date": "2026-11-02"}, "attack_clock_day_conflict"),
+        ):
+            with self.subTest(patch=patch), self.assertRaisesRegex(ValueError, error):
+                build_staging_attack_case_review({**attack, **patch}, [])
