@@ -93,7 +93,16 @@ def canonical_classification(event: Any, *, same_source: Any = ()) -> dict[str, 
 
     meta = getattr(event, "metadata", {}) or {}
     text = str(getattr(event, "text", "") or getattr(event, "title", "") or "")
-    is_distress = bool(meta.get("is_distress")) or is_direct_distress_call(text)
+    # An explicit negative flag from an adapter must not be promoted by
+    # Python truthiness (bool("false") is True) or reclassified as a live
+    # distress solely because quoted text mentions an emergency.
+    from core.intel.macro_drift import explicit_distress_flag
+
+    is_distress = (
+        explicit_distress_flag(meta.get("is_distress"))
+        if "is_distress" in meta
+        else is_direct_distress_call(text)
+    )
     resolved = is_resolved_distress(text) or str(meta.get("report_kind") or "") == "resolved"
 
     case_type = _case_type(text, distress=is_distress, resolved=resolved)
@@ -146,7 +155,11 @@ def humanitarian_case_metadata(
         status = "ongoing"
     else:
         status = "reported"
-    direct_source = str(source).lower().lstrip("@") == "alarm_phone"
+    # The same direct-source identity applies to public and adapter aliases.
+    direct_source = (
+        str(source).strip().lower().lstrip("@").replace("_", "").replace(" ", "")
+        == "alarmphone"
+    )
     return {
         "humanitarian_case_id": f"HUM-X-{incident_id}",
         "humanitarian_case_type": _case_type(text, distress=distress, resolved=resolved),
