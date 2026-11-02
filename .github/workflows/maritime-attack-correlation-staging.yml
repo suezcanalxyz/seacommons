@@ -20,6 +20,9 @@ on:
       - tests/test_maritime_attack_staging_preview.py
       - apps/api/core/intel/maritime_attack_staging_ais_context.py
       - tests/test_maritime_attack_staging_ais_context.py
+      - apps/api/core/intel/maritime_attack_navwarn_dtg.py
+      - tests/test_maritime_attack_navwarn_dtg.py
+      - docs/research/maritime-attack-varna-navwarn-768-2026-11-02.json
       - docs/research/maritime-attack-source-check-2026-11-01.json
       - tests/test_maritime_attack_staging_manifest.py
       - apps/api/core/intel/official_maritime_bulletin.py
