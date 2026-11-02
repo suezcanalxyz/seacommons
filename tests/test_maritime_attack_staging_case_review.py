@@ -119,6 +119,34 @@ class StagingCaseReviewTests(TestCase):
         self.assertIn("wreck_or_hazard_site_not_attack_site", result["review_blockers"])
         self.assertIn("origin_independence_unverified", result["review_blockers"])
 
+    def test_context_exact_clock_cannot_precede_attack_or_publication(self):
+        attack, rescue = _attack(), _rescue()
+        for stamp, error in (
+            ("2026-10-28T09:59:00+00:00", "context_exact_clock_precedes_attack"),
+            ("2026-10-29T12:00:00+00:00", "context_exact_clock_after_publication"),
+        ):
+            with self.subTest(stamp=stamp), self.assertRaisesRegex(ValueError, error):
+                build_staging_attack_case_review(
+                    attack, [{**rescue, "occurred_at_utc": stamp}]
+                )
+        with self.assertRaisesRegex(ValueError, "context_exact_clock_conflicts_with_event_day"):
+            build_staging_attack_case_review(
+                attack, [{**rescue, "occurred_at_utc": "2026-10-29T10:00:00+00:00",
+                          "publication_date": "2026-10-29"}]
+            )
+
+    def test_rescue_or_investigation_location_cannot_be_attack_site(self):
+        attack, rescue, prosecutor = _attack(), _rescue(), _prosecutor()
+        for context in (rescue, prosecutor):
+            with self.subTest(kind=context["source_kind"]), self.assertRaisesRegex(
+                ValueError, "followup_location_cannot_be_attack_site"
+            ):
+                build_staging_attack_case_review(
+                    attack, [{**context, "reported_location": {
+                        "lat": 43.13, "lon": 28.756, "role": "incident_site"
+                    }}]
+                )
+
     def test_case_evidence_ledger_preserves_source_clocks_rights_and_lineage(self):
         attack, navwarn, prosecutor, rescue = (
             _attack(), _navwarn(), _prosecutor(), _rescue()
