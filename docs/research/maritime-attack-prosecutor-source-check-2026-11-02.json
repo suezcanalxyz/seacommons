@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "source_checked_on_utc": "2026-11-02",
+  "records": [
+    {
+      "issuer": "BG_PROSECUTOR",
+      "bulletin_id": "80101",
+      "source_url": "https://prb.bg/bg/news/aktualno/80101-voenno-okrazhna-prokuratura-sofiya-obrazuva-dosadebno-proizvodstvo-za-napadeniet",
+      "kind": "investigation",
+      "vessel_name": "CONTSHIP JET",
+      "publication_date": "2026-10-29",
+      "source_rights": "unknown"
+    }
+  ]
+}
