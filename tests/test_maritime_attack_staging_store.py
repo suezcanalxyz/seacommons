@@ -2,14 +2,15 @@
 """Offline regressions: no production database or network required."""
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from hashlib import sha256
-import json
 from types import SimpleNamespace
 from unittest import TestCase
 
 from core.intel.maritime_attack_staging_store import (
-    append_staging_review_snapshot, prepare_staging_review_snapshot,
+    append_staging_review_snapshot,
+    prepare_staging_review_snapshot,
 )
 
 
