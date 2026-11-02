@@ -11,11 +11,12 @@ import hashlib
 from collections.abc import Sequence
 
 from core.intel.maritime_attack_staging_manifest import StagingSourceRecord
+from core.domain.visual_category import CATEGORY_COLORS
 
 _PREVIEW_KINDS = {
-    "attack": ("maritime_attack", "#ff6b35"),
-    "piracy": ("piracy", None),
-    "suspicious_activity": (None, None),
+    "attack": "maritime_attack",
+    "piracy": "piracy",
+    "suspicious_activity": None,
 }
 
 
@@ -71,7 +72,8 @@ def build_staging_attack_previews(
         kind = expected_provenance["bulletin_kind"]
         if kind not in _PREVIEW_KINDS:
             raise ValueError("unsupported_staging_preview_kind")
-        proposed_type, review_color = _PREVIEW_KINDS[kind]
+        proposed_type = _PREVIEW_KINDS[kind]
+        review_color = CATEGORY_COLORS[proposed_type] if proposed_type else None
         blockers = ["origin_independence_unverified", "publication_review_required"]
         if not expected_provenance["vessel_imo"] and not expected_provenance["vessel_mmsi"]:
             blockers.append("strong_vessel_identity_unverified")

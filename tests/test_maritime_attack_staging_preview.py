@@ -54,7 +54,7 @@ class StagingAttackPreviewTests(TestCase):
         self.assertEqual(previews[3]["review_status"], "context_only")
         self.assertIn("not_an_attack", previews[3]["review_blockers"])
         self.assertEqual(previews[4]["proposed_incident_type"], "piracy")
-        self.assertNotEqual(previews[4]["review_color"], "#ff6b35")
+        self.assertEqual(previews[4]["review_color"], "#a78bfa")
         self.assertIn("approximate_event_time_unbounded", previews[2]["review_blockers"])
 
     def test_replay_order_does_not_change_preview(self):
