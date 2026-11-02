@@ -9,6 +9,9 @@ it cannot query/write a database, publish, schedule work or change geometry.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import hashlib
+import json
+import re
 from datetime import datetime, date, timedelta, timezone
 from math import asin, cos, isfinite, radians, sin, sqrt
 
@@ -42,6 +45,78 @@ def _preview_boundary(preview: Mapping[str, object]) -> None:
         or not preview["original_report_id"]
     ):
         raise ValueError("untrusted_or_publishable_staging_preview")
+
+
+def _evidence_ledger_entry(preview: Mapping[str, object], *, role: str) -> dict[str, object]:
+    """Preserve source-level clocks and rights without claiming corroboration.
+
+    The ledger digest below fingerprints this *derived staging snapshot*.
+    It is not a signature, original-document hash or evidence attestation.
+    """
+    _preview_boundary(preview)
+    receipt = _clock(preview.get("received_at_utc"))
+    checked = preview.get("source_checked_on_utc")
+    if not isinstance(checked, str):
+        raise ValueError("missing_source_check_date")
+    try:
+        checked_day = date.fromisoformat(checked)
+    except ValueError as exc:
+        raise ValueError("invalid_source_check_date") from exc
+    if checked_day > receipt.date():
+        raise ValueError("source_check_after_receipt")
+    source_url = preview.get("source_url")
+    if not isinstance(source_url, str) or not source_url.startswith("https://"):
+        raise ValueError("invalid_review_source_url")
+    rights = preview.get("source_rights")
+    if not isinstance(rights, str) or not rights.strip():
+        raise ValueError("missing_review_source_rights")
+    metadata_digest = preview.get("raw_payload_hash")
+    original_digest = preview.get("source_document_sha256")
+    if not isinstance(metadata_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", metadata_digest):
+        raise ValueError("invalid_canonical_metadata_digest")
+    if original_digest is not None and (
+        not isinstance(original_digest, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", original_digest)
+    ):
+        raise ValueError("invalid_original_document_digest")
+    event_clock = preview.get("occurred_at_utc")
+    publication_clock = preview.get("published_at_utc")
+    for field, stamp in (("event", event_clock), ("publication", publication_clock)):
+        if stamp is not None and _clock(stamp) > receipt:
+            raise ValueError(f"{field}_after_canonical_receipt")
+    for field in ("event_date", "publication_date"):
+        stamp = preview.get(field)
+        if stamp is not None:
+            if not isinstance(stamp, str):
+                raise ValueError("invalid_source_day")
+            try:
+                source_day = date.fromisoformat(stamp)
+            except ValueError as exc:
+                raise ValueError("invalid_source_day") from exc
+            if source_day > receipt.date():
+                raise ValueError("source_day_after_receipt")
+    return {
+        "role": role,
+        "canonical_observation_id": preview["canonical_observation_id"],
+        "original_report_id": preview["original_report_id"],
+        "source_url": source_url,
+        "source_kind": preview.get("source_kind"),
+        "source_rights": rights,
+        "source_checked_on_utc": checked,
+        "original_document_sha256": original_digest,
+        "original_document_digest_available": original_digest is not None,
+        "canonical_metadata_sha256": metadata_digest,
+        "occurred_at_utc": event_clock,
+        "event_date": preview.get("event_date"),
+        "event_time_precision": preview.get("event_time_precision"),
+        "reported_time_uncertainty_minutes": preview.get("reported_time_uncertainty_minutes"),
+        "published_at_utc": publication_clock,
+        "publication_date": preview.get("publication_date"),
+        "received_at_utc": receipt.isoformat(),
+        "independent_attack_witness_verified": False,
+        "republication_approved": False,
+        "publication_allowed": False,
+    }
 
 
 def _nominal_distance_km(a: Mapping[str, object], b: Mapping[str, object]) -> float:
@@ -261,7 +336,22 @@ def build_staging_attack_case_review(
     if any(f["source_kind"] == "navigational_hazard" for f in followups):
         blockers.append("wreck_or_hazard_site_not_attack_site")
 
+    # Keep the complete original-source chronology in a bounded, deterministic
+    # staging review ledger. This is an audit snapshot, not an evidence signature.
+    ledger = sorted(
+        [_evidence_ledger_entry(attack_preview, role="attack_candidate")] +
+        [_evidence_ledger_entry(preview, role="followup_context")
+         for preview in context_previews],
+        key=lambda item: (item["original_report_id"], item["canonical_observation_id"]),
+    )
+    ledger_snapshot_sha256 = hashlib.sha256(
+        json.dumps(ledger, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
     return {
+        "source_evidence_ledger": ledger,
+        "evidence_ledger_snapshot_sha256": ledger_snapshot_sha256,
+        "evidence_ledger_digest_is_original_document_proof": False,
         "case_review_id": "staging-case-review:" + attack_preview["canonical_observation_id"],
         "attack_observation_id": attack_preview["canonical_observation_id"],
         "attack_report_id": attack_preview["original_report_id"],
