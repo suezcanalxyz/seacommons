@@ -170,6 +170,80 @@ def _nominal_distance_km(a: Mapping[str, object], b: Mapping[str, object]) -> fl
     return round(2 * 6371.0088 * asin(sqrt(min(1.0, max(0.0, h)))), 2)
 
 
+
+def _validate_ais_context_for_case(
+    context: Mapping[str, object], attack_at: datetime, preview: Mapping[str, object],
+) -> None:
+    """Recheck derived AIS claims before displaying them in a review dossier.
+
+    A caller-provided summary is not authenticated AIS evidence. Reject
+    inconsistent event clocks, fix chronology, sampling gaps and stop flags
+    rather than displaying an invented vessel slowdown as factual context.
+    """
+    if (context.get("event_at_utc") != attack_at.isoformat()
+            or context.get("event_time_precision") != preview.get("event_time_precision")
+            or context.get("incident_site_from_ais") is not False):
+        raise ValueError("ais_context_event_or_geometry_conflict")
+    count = context.get("ais_fixes_in_6h_window")
+    if type(count) is not int or not 0 <= count <= 256:
+        raise ValueError("invalid_ais_context_fix_count")
+    clocks: dict[str, datetime] = {}
+    for key in ("nearest_before", "nearest_after"):
+        fix = context.get(key)
+        if fix is None:
+            continue
+        if not isinstance(fix, Mapping) or fix.get("position_role") != "ais_vessel_track_only":
+            raise ValueError("invalid_ais_context_fix")
+        _nominal_distance_km(fix, fix)  # validates both coordinates without inventing a route
+        speed = fix.get("sog_knots")
+        if speed is not None and (type(speed) not in (int, float)
+                                  or not isfinite(speed) or not 0 <= speed <= 70):
+            raise ValueError("invalid_ais_context_speed")
+        clock = _clock(fix.get("observed_at_utc"))
+        if abs((clock - attack_at).total_seconds()) > 3 * 3600:
+            raise ValueError("ais_context_fix_outside_event_window")
+        clocks[key] = clock
+    before, after = clocks.get("nearest_before"), clocks.get("nearest_after")
+    if (before is not None and before > attack_at
+            or after is not None and after < attack_at
+            or before is not None and after is not None and before > after):
+        raise ValueError("ais_context_fix_chronology_conflict")
+    if count < len(clocks):
+        raise ValueError("ais_context_fix_count_conflict")
+    gap = context.get("ais_sampling_gap_minutes")
+    expected_gap = (round((after - before).total_seconds() / 60, 3)
+                    if before is not None and after is not None else None)
+    if type(gap) not in (int, float, type(None)) or (
+        gap is not None and (not isfinite(gap) or gap < 0)
+    ) or (gap is None) != (expected_gap is None) or (
+        gap is not None and abs(gap - expected_gap) > 0.001
+    ):
+        raise ValueError("ais_context_sampling_gap_conflict")
+    exact = preview.get("event_time_precision") == "exact"
+    if context.get("ais_coverage_gap_signal") is not (exact and gap is not None and gap > 30):
+        raise ValueError("ais_context_coverage_signal_conflict")
+    kinematic = context.get("ais_kinematic_conflict_signal")
+    if type(kinematic) is not bool or type(context.get("sudden_stop_signal")) is not bool:
+        raise ValueError("invalid_ais_context_signal")
+    stop = False
+    if exact and not kinematic and before is not None and after is not None:
+        before_speed = context["nearest_before"].get("sog_knots")
+        after_speed = context["nearest_after"].get("sog_knots")
+        stop = bool(
+            before_speed is not None and after_speed is not None
+            and before_speed >= 6 and after_speed <= 2
+            and before_speed - after_speed >= 5
+            and (attack_at - before).total_seconds() <= 3600
+            and (after - attack_at).total_seconds() <= 5400
+        )
+    if context.get("sudden_stop_signal") is not stop:
+        raise ValueError("ais_context_sudden_stop_conflict")
+    if context.get("receipt_latency_status") not in {
+        "legacy_equal_event_clock", "independent_receipt_not_certified"
+    }:
+        raise ValueError("invalid_ais_context_receipt_status")
+
+
 def build_staging_attack_case_review(
     attack_preview: Mapping[str, object],
     context_previews: Sequence[Mapping[str, object]],
@@ -315,6 +389,7 @@ def build_staging_attack_case_review(
                 != attack_preview["canonical_observation_id"]
         ):
             raise ValueError("foreign_or_publishable_ais_context")
+        _validate_ais_context_for_case(ais_context, attack_at, attack_preview)
         crosswalk = ais_context.get("crosswalk")
         if not isinstance(crosswalk, Mapping):
             raise ValueError("missing_ais_crosswalk")
