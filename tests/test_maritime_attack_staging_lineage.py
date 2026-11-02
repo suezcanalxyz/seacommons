@@ -301,3 +301,72 @@ class MaritimeAttackLineageTests(TestCase):
         three = build_staging_attack_lineage_review(candidates, [changed])
         self.assertNotEqual(one["lineage_snapshot_sha256"], three["lineage_snapshot_sha256"])
         self.assertFalse(one["lineage_digest_is_source_proof"])
+
+    def test_boolean_or_coerced_witness_count_cannot_pass_as_zero(self):
+        for count in (False, 0.0, "0", None):
+            with self.subTest(count=count), self.assertRaisesRegex(
+                ValueError, "lineage_untrusted_or_publishable_candidate"
+            ):
+                build_staging_attack_lineage_review([
+                    notice("A", independent_origins_verified=count)
+                ])
+
+    def test_source_and_lineage_links_require_safe_https_urls(self):
+        for url in (
+            "https://", "https://user:pass@example.org/notice",
+            "https://example.org/notice#untracked",
+            "https://example.org/notice\\n", "https://example.org:99999/notice",
+            "http://example.org/notice",
+        ):
+            with self.subTest(url=url), self.assertRaisesRegex(
+                ValueError, "lineage_invalid_source_url"
+            ):
+                build_staging_attack_lineage_review([notice("A", source_url=url)])
+            with self.subTest(link=url), self.assertRaisesRegex(
+                ValueError, "lineage_link_source_required"
+            ):
+                build_staging_attack_lineage_review(
+                    [notice("A"), notice("B")],
+                    [shared("A", "B", supporting_source_url=url)],
+                )
+
+    def test_rejects_invalid_source_clocks_dates_and_digests(self):
+        for change, error in (
+            ({"received_at_utc": "2026-11-02"}, "lineage_exact_clock_required"),
+            ({"published_at_utc": "not-a-clock"}, "lineage_exact_clock_required"),
+            ({
+                "received_at_utc": "2026-11-02T12:00:00+00:00",
+                "published_at_utc": "2026-11-02T12:01:00+00:00",
+            }, "lineage_publication_after_receipt"),
+            ({
+                "received_at_utc": "2026-11-02T12:00:00+00:00",
+                "source_checked_on_utc": "2026-11-03",
+            }, "lineage_source_day_after_receipt"),
+            ({"publication_date": "20261101"}, "lineage_invalid_source_day"),
+            ({"raw_payload_hash": "not-a-hash"}, "lineage_invalid_source_digest"),
+            ({"source_document_sha256": "f" * 63}, "lineage_invalid_source_digest"),
+        ):
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, error):
+                build_staging_attack_lineage_review([notice("A", **change)])
+
+    def test_rejects_noncanonical_day_only_event(self):
+        with self.assertRaisesRegex(ValueError, "lineage_invalid_event_day"):
+            build_staging_attack_lineage_review([
+                notice("A", None, event_date="20261101")
+            ])
+
+    def test_valid_source_provenance_remains_unverified(self):
+        result = build_staging_attack_lineage_review([
+            notice(
+                "MSCIO:164/26",
+                published_at_utc="2026-11-01T21:36:00+00:00",
+                received_at_utc="2026-11-02T12:00:00+00:00",
+                source_checked_on_utc="2026-11-02",
+                publication_date="2026-11-01",
+                raw_payload_hash="a" * 64,
+                source_document_sha256="b" * 64,
+            )
+        ])
+        self.assertEqual(result["independent_origins_verified"], 0)
+        self.assertFalse(result["publication_allowed"])
+        self.assertEqual(result["provisional_origin_groups"], 1)
