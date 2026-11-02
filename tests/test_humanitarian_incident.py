@@ -230,6 +230,56 @@ def test_last_update_at_advances_on_an_in_order_update():
     assert get_incident("p6-2")["last_update_at"] == "2026-09-04T09:00:00+00:00"
 
 
+
+def test_self_reply_refreshes_canonical_activity_and_prevents_false_retirement():
+    from datetime import timedelta
+    from core.intel.humanitarian_incident import public_incident_status
+
+    now = datetime.now(timezone.utc)
+    origin = now - timedelta(days=2)
+    reply = now - timedelta(minutes=5)
+    event = _distress_event("followup-activity-1", "MAYDAY people aboard", timestamp=origin.isoformat())
+    event.metadata["thread_reposts"] = [{
+        "posted_at": reply.isoformat(), "note": "We are still in danger",
+    }]
+    sync_incident_for_event(event, lifecycle="active")
+
+    incident = get_incident(event.id)
+    assert incident["reported_at"] == origin.isoformat()
+    assert datetime.fromisoformat(incident["last_update_at"]) == reply
+    assert public_incident_status(incident, now=now) == "active"
+
+
+def test_out_of_order_reply_replay_does_not_regress_last_update_at():
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+    origin = now - timedelta(days=2)
+    newer = now - timedelta(minutes=10)
+    older = now - timedelta(hours=4)
+    event = _distress_event("followup-activity-2", "MAYDAY people aboard", timestamp=origin.isoformat())
+    event.metadata["thread_reposts"] = [{"posted_at": newer.isoformat(), "note": "Still waiting"}]
+    sync_incident_for_event(event, lifecycle="active")
+    first = get_incident(event.id)["last_update_at"]
+
+    event.metadata["thread_reposts"] = [{"posted_at": older.isoformat(), "note": "Earlier reply"}]
+    sync_incident_for_event(event, lifecycle="active")
+    assert get_incident(event.id)["last_update_at"] == first
+
+
+def test_future_dated_reply_cannot_extend_canonical_activity():
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+    origin = now - timedelta(hours=2)
+    event = _distress_event("followup-activity-3", "MAYDAY people aboard", timestamp=origin.isoformat())
+    event.metadata["thread_reposts"] = [{
+        "posted_at": (now + timedelta(days=2)).isoformat(), "note": "Unverified future update",
+    }]
+    sync_incident_for_event(event, lifecycle="active")
+    assert get_incident(event.id)["last_update_at"] == origin.isoformat()
+
+
 def test_last_update_at_never_moves_backward_on_an_out_of_order_update():
     """docs/updates.md P0.6 exit gate: a delayed/out-of-order observation
     must never make an incident look older than an already-processed
