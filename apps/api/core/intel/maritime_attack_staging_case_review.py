@@ -232,7 +232,20 @@ def build_staging_attack_case_review(
                     raise ValueError("invalid_context_event_date") from exc
                 if not attack_at.date() <= day <= issue_day:
                     raise ValueError("context_event_not_after_attack")
+            if context_at is not None:
+                exact_context_at = _clock(context_at)
+                if not attack_at <= exact_context_at:
+                    raise ValueError("context_exact_clock_precedes_attack")
+                if exact_context_at.date() > issue_day:
+                    raise ValueError("context_exact_clock_after_publication")
+                if event_day is not None and exact_context_at.date() != day:
+                    raise ValueError("context_exact_clock_conflicts_with_event_day")
             reported_location = preview.get("reported_location")
+            if reported_location is not None and (
+                not isinstance(reported_location, Mapping)
+                or reported_location.get("role") == "incident_site"
+            ):
+                raise ValueError("followup_location_cannot_be_attack_site")
             offset_minutes = None
         followups.append({
             "original_report_id": preview["original_report_id"],
