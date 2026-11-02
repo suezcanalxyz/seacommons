@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
+from datetime import datetime, timezone
 
 from core.intel.maritime_attack_staging_manifest import StagingSourceRecord
 from core.intel.official_maritime_bulletin import prepare_official_bulletin
@@ -19,6 +20,27 @@ _PREVIEW_KINDS = {
     "piracy": "piracy",
     "suspicious_activity": None,
 }
+
+
+def _canonical_receipt_utc(value: object) -> str:
+    """Only canonical SourceObservation receipt clocks may use naive UTC.
+
+    The canonical DB stores naive UTC; its writer may return a naive ISO
+    string, while a direct ORM query returns datetime. Never extend this
+    exception to external event or publication timestamps.
+    """
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("invalid_canonical_receipt_clock") from exc
+    else:
+        raise ValueError("missing_canonical_receipt_clock")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat()
 
 
 def build_staging_attack_previews(
@@ -108,7 +130,7 @@ def build_staging_attack_previews(
             "source_checked_on_utc": expected_provenance["source_checked_on_utc"],
             "source_document_sha256": expected_provenance["original_document_sha256"],
             "raw_payload_hash": expected_hash,
-            "received_at_utc": str(getattr(row, "received_at", "") or ""),
+            "received_at_utc": _canonical_receipt_utc(getattr(row, "received_at", None)),
             "occurred_at_utc": expected_provenance["occurred_at_utc"],
             "event_date": expected_provenance["event_date"],
             "published_at_utc": expected_provenance["published_at_utc"],

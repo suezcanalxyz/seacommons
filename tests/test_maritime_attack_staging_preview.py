@@ -59,6 +59,17 @@ class StagingAttackPreviewTests(TestCase):
         self.assertEqual(previews[4]["review_color"], "#a78bfa")
         self.assertIn("approximate_event_time_unbounded", previews[2]["review_blockers"])
 
+    def test_canonical_naive_utc_receipt_is_normalized_not_invented(self):
+        records, rows = fixtures()
+        for received in ("2026-11-02T01:30:00", datetime(2026, 11, 2, 1, 30)):
+            modified = [replace_like(rows[0], received_at=received), *rows[1:]]
+            preview = build_staging_attack_previews(records, modified)[0]
+            self.assertEqual(preview["received_at_utc"], "2026-11-02T01:30:00+00:00")
+        for received in (None, "not-a-clock"):
+            modified = [replace_like(rows[0], received_at=received), *rows[1:]]
+            with self.assertRaises(ValueError):
+                build_staging_attack_previews(records, modified)
+
     def test_replay_order_does_not_change_preview(self):
         records, rows = fixtures()
         forward = build_staging_attack_previews(records, rows)
