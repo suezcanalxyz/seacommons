@@ -23,6 +23,7 @@ from core.intel.maritime_attack_correlation import _valid_imo, _valid_mmsi
 _ISSUERS = {
     "BG_MOD": ("Bulgarian Ministry of Defence", frozenset({"mod.bg", "www.mod.bg"})),
     "BG_PROSECUTOR": ("Bulgarian Prosecutor Office", frozenset({"prb.bg", "www.prb.bg"})),
+    "BG_VTMIS": ("Bulgarian Varna Radio VTMIS", frozenset({"vtmis.bg", "www.vtmis.bg"})),
     "MSCIO": ("MSCIO", frozenset({"mscio.eu", "www.mscio.eu"})),
     "UKMTO": ("UKMTO", frozenset({"ukmto.org", "www.ukmto.org"})),
     "NAVAREA_IX": ("Pakistan NAVAREA IX", frozenset({"hydrography.paknavy.gov.pk"})),
