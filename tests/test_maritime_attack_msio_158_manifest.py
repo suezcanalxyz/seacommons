@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 from unittest import TestCase
 
-from core.intel.maritime_attack_staging_manifest import prepare_staging_bulletin_manifest
+from core.intel.maritime_attack_staging_manifest import (
+    prepare_staging_bulletin_manifest,
+)
 
 MANIFEST = (Path(__file__).resolve().parents[1] / "docs/research"
             / "maritime-attack-mscio-158-2026-11-02.json")
