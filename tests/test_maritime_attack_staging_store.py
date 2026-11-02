@@ -65,11 +65,12 @@ class _Scalar:
 
 class _FakeStagingConnection:
     def __init__(self, database="seacommons_attack_staging", readonly="off",
-                 dialect="postgresql", inserted=True):
+                 dialect="postgresql", inserted=True, unsafe_role=False):
         self.engine = SimpleNamespace(dialect=SimpleNamespace(name=dialect))
         self.database = database
         self.readonly = readonly
         self.inserted = inserted
+        self.unsafe_role = unsafe_role
         self.sql = []
         self.stored_sha = None
 
@@ -82,6 +83,8 @@ class _FakeStagingConnection:
             return _Scalar(self.readonly)
         if "to_regclass" in sql:
             return _Scalar("attack_review_staging.review_snapshots")
+        if "staging_review_role_privileges" in sql:
+            return _Scalar(1 if self.unsafe_role else 0)
         if "INSERT INTO" in sql:
             return _Scalar(params["snapshot_id"] if self.inserted else None)
         if "SELECT snapshot_sha256" in sql:
@@ -167,6 +170,22 @@ class StagingReviewStoreTests(TestCase):
         self.assertTrue(all("DELETE FROM" not in s and "UPDATE " not in s
                             for s in conn.sql))
         self.assertIn(":payload_json", next(s for s in conn.sql if "INSERT INTO" in s))
+
+    def test_rejects_privileged_role_before_any_insert(self):
+        snapshot = prepare_staging_review_snapshot(review())
+        conn = _FakeStagingConnection(unsafe_role=True)
+        with self.assertRaisesRegex(ValueError, "role_not_append_only"):
+            append_staging_review_snapshot(
+                conn, snapshot, expected_database="seacommons_attack_staging"
+            )
+        self.assertFalse(any("INSERT INTO" in sql for sql in conn.sql))
+        privilege_sql = next(sql for sql in conn.sql
+                             if "staging_review_role_privileges" in sql)
+        for required in ("is_superuser", "has_database_privilege",
+                         "has_schema_privilege", "SELECT", "INSERT",
+                         "UPDATE", "DELETE", "TRUNCATE", "TRIGGER"):
+            with self.subTest(privilege=required):
+                self.assertIn(required, privilege_sql)
 
     def test_idempotent_replay_without_update(self):
         snapshot = prepare_staging_review_snapshot(review())
