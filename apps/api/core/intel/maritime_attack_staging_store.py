@@ -122,6 +122,12 @@ def append_staging_review_snapshot(
     """
     if not isinstance(snapshot, StagingReviewSnapshot):
         raise ValueError("staging_review_snapshot_required")
+    try:
+        revalidated = prepare_staging_review_snapshot(json.loads(snapshot.payload_json))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("staging_review_snapshot_integrity") from exc
+    if revalidated != snapshot:
+        raise ValueError("staging_review_snapshot_integrity")
     if not isinstance(expected_database, str) or not _STAGE_DB.fullmatch(expected_database):
         raise ValueError("dedicated_staging_database_required")
     dialect = getattr(getattr(connection, "engine", None), "dialect", None)
