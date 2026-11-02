@@ -178,3 +178,44 @@ def test_public_hypothesis_endpoint_drops_invalid_geojson_points(
     assert result["meta"]["count"] == expected_count
     if expected_count:
         assert result["features"][0]["geometry"]["coordinates"] == [lon, lat]
+
+
+@pytest.mark.parametrize(
+    ("groups", "verification", "expected"),
+    [
+        (["ais_sensor_lineage", "gfw_sar"], "multi_source_corroborated", 2),
+        (["ais_sensor_lineage", "ais"], "multi_source_corroborated", 0),
+        ("ais,gfw_sar", "multi_source_corroborated", 0),
+        ({"ais": True, "gfw_sar": True}, "multi_source_corroborated", 0),
+        ([None, {"source": "gfw_sar"}], "multi_source_corroborated", 0),
+        (None, "multi_source_corroborated", 0),
+        (["ais", "gfw_sar"], "single_source_observed", 0),
+    ],
+)
+def test_public_hypothesis_lineage_count_rejects_malformed_persisted_json(
+    monkeypatch, groups, verification, expected,
+):
+    """Neither JSON object keys nor string characters are source lineages."""
+    from contextlib import contextmanager
+
+    from core.db import session as db_session
+    from core.intel import hypothesis_publication as publication
+
+    class Query:
+        def filter(self, *_args):
+            return self
+
+        def all(self):
+            return [("episode:test", groups, verification)]
+
+    class Session:
+        def query(self, *_args):
+            return Query()
+
+    @contextmanager
+    def fake_session_scope():
+        yield Session()
+
+    monkeypatch.setattr(db_session, "session_scope", fake_session_scope)
+    result = publication._independent_episode_source_counts({"episode:test"})
+    assert result == ({"episode:test": expected} if expected else {})
