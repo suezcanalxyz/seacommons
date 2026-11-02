@@ -34,7 +34,7 @@ from core.intel.public_policy import (
 # so its persisted operational drift stays on the public map. Mirrors
 # `core.intel.drift_service._DRIFT_BLOCKING_LIFECYCLES`.
 _DRIFT_HIDDEN_LIFECYCLES = frozenset({"resolved", "archived"})
-from core.intel.store import IntelEvent, intel_store
+from core.intel.store import ALARM_PHONE_SOURCE_ALIASES, IntelEvent, intel_store
 from core.live.projection import (
     _approximate_public_point,
     _current_trajectory_estimate,
@@ -863,7 +863,7 @@ def public_signal_collection(
     # ("alarm_phone") otherwise. Both are real, current values for the same
     # logical source; an exact match on one silently drops the other.
     durable_alarm_phone = intel_store.persisted_events(
-        source_in=["Alarm Phone", "alarm_phone"],
+        source_in=list(ALARM_PHONE_SOURCE_ALIASES),
         max_age_days=days,
         limit=_LIVE_DURABLE_SCAN_LIMIT,
     )
@@ -1285,7 +1285,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
     drift_events = {
         event.id: event
         for event in intel_store.persisted_events(
-            source_in=["Alarm Phone", "alarm_phone"], max_age_days=30, limit=min(limit * 5, 1000)
+            source_in=list(ALARM_PHONE_SOURCE_ALIASES), max_age_days=30, limit=min(limit * 5, 1000)
         )
     }
     drift_events.update(
