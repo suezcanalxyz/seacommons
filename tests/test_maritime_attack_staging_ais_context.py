@@ -148,6 +148,33 @@ class StagingAISContextTests(TestCase):
         self.assertFalse(steady["ais_as_attack_proof"])
         self.assertFalse(steady["publication_allowed"])
 
+    def test_teleporting_ais_track_cannot_support_sudden_stop(self):
+        result = self._build(tracks=[
+            _row("2026-10-28T09:59:22Z", 10.2, lat=43.2659, lon=28.8149),
+            _row("2026-10-28T10:34:46Z", 0.6, lat=49.2592, lon=35.8157),
+        ])
+        self.assertTrue(result["ais_kinematic_conflict_signal"])
+        self.assertFalse(result["sudden_stop_signal"])
+        self.assertTrue(result["ais_coverage_gap_signal"])
+        self.assertFalse(result["ais_as_attack_proof"])
+        self.assertFalse(result["incident_site_from_ais"])
+        self.assertFalse(result["publication_allowed"])
+
+    def test_ais_future_relative_to_receipt_is_rejected(self):
+        invalid = _row("2026-10-28T10:34:46Z", 0.6)
+        invalid.received_at = _dt("2026-10-28T10:20:00Z").replace(tzinfo=None)
+        with self.assertRaisesRegex(ValueError, "ais_fix_observed_after_receipt"):
+            self._build(tracks=[invalid])
+
+    def test_small_receipt_clock_skew_does_not_create_attack_proof(self):
+        fix = _row("2026-10-28T10:34:46Z", 0.6)
+        fix.received_at = _dt("2026-10-28T10:31:00Z").replace(tzinfo=None)
+        result = self._build(tracks=[fix])
+        self.assertFalse(result["ais_kinematic_conflict_signal"])
+        self.assertFalse(result["sudden_stop_signal"])
+        self.assertFalse(result["ais_as_attack_proof"])
+        self.assertFalse(result["publication_allowed"])
+
     def test_duplicate_identical_fix_is_deduplicated(self):
         fix = _row("2026-10-28T09:59:22Z", 10.2)
         result = self._build(tracks=[fix, fix])
