@@ -55,3 +55,72 @@ def test_named_evros_border_towns_are_land_humanitarian() -> None:
             distress=True,
         )
         assert case["humanitarian_case_type"] == "land_humanitarian"
+
+
+# Canonical backfills must share the same explicit-boolean contract as
+# IntelEvent.tier(), Live, OpenDrift and satellite selection.
+import pytest
+
+
+@pytest.mark.parametrize(
+    ("flag", "expected_case_type"),
+    [
+        ("false", "unknown_humanitarian"),
+        ("FALSE", "unknown_humanitarian"),
+        ("0", "unknown_humanitarian"),
+        (False, "unknown_humanitarian"),
+        ("unknown", "unknown_humanitarian"),
+        ("true", "distress"),
+        ("yes", "distress"),
+        (True, "distress"),
+    ],
+)
+def test_canonical_classification_does_not_promote_false_string_distress(
+    flag, expected_case_type,
+) -> None:
+    from core.intel.humanitarian import canonical_classification
+    from core.intel.store import IntelEvent
+
+    event = IntelEvent(
+        id="canonical-flag", type="twitter", source="Alarm Phone",
+        title="Update about a group near Crete",
+        text="Update about a group near Crete",
+        timestamp_utc="2026-11-02T07:00:00+00:00",
+        metadata={"is_distress": flag},
+    )
+    classification = canonical_classification(event)
+    assert classification["humanitarian_case_type"] == expected_case_type
+
+
+def test_canonical_classification_preserves_text_detection_without_flag() -> None:
+    from core.intel.humanitarian import canonical_classification
+    from core.intel.store import IntelEvent
+
+    event = IntelEvent(
+        id="canonical-text", type="twitter", source="Alarm Phone",
+        title="SOS: 30 people in distress off Libya need rescue now",
+        text="SOS: 30 people in distress off Libya need rescue now",
+        timestamp_utc="2026-11-02T07:00:00+00:00",
+        metadata={},
+    )
+    assert canonical_classification(event)["humanitarian_case_type"] == "distress"
+
+
+@pytest.mark.parametrize(
+    "source",
+    ["Alarm Phone", "alarm_phone", "@alarm_phone", "alarmphone", "@AlarmPhone"],
+)
+def test_humanitarian_case_direct_source_aliases(source: str) -> None:
+    case = humanitarian_case_metadata(
+        "Update about a group near Crete",
+        incident_id="source-alias", source=source, distress=False,
+    )
+    assert case["verification_level"] == "direct_humanitarian_source"
+
+
+def test_humanitarian_case_unrelated_ngo_not_mistaken_for_alarm_phone() -> None:
+    case = humanitarian_case_metadata(
+        "Update about a group near Crete",
+        incident_id="unrelated-source", source="Independent NGO", distress=False,
+    )
+    assert case["verification_level"] == "single_public_source"
