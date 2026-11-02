@@ -315,7 +315,7 @@ class MaritimeAttackLineageTests(TestCase):
         for url in (
             "https://", "https://user:pass@example.org/notice",
             "https://example.org/notice#untracked",
-            "https://example.org/notice\\n", "https://example.org:99999/notice",
+            "https://example.org/notice\n", "https://example.org:99999/notice",
             "http://example.org/notice",
         ):
             with self.subTest(url=url), self.assertRaisesRegex(
