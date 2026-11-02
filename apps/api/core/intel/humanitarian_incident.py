@@ -269,7 +269,7 @@ def reconcile_stale_incidents(*, now: Optional[datetime] = None, limit: int = 50
     from core.db.models import HumanitarianIncidentDB, IntelEventDB
     from core.db.session import session_scope
     from core.domain.live_contracts import IncidentStatus
-    from core.intel.lifecycle import parse_utc
+    from core.intel.lifecycle import _latest_activity_time, parse_utc
 
     now_utc = now or datetime.now(timezone.utc)
     if now_utc.tzinfo is None:
@@ -277,6 +277,7 @@ def reconcile_stale_incidents(*, now: Optional[datetime] = None, limit: int = 50
     now_naive = now_utc.astimezone(timezone.utc).replace(tzinfo=None)
     changed = 0
     changed_incident_ids: list[str] = []
+    refreshed_incident_ids: list[str] = []
     with session_scope() as db:
         rows = (
             db.query(HumanitarianIncidentDB)
@@ -290,14 +291,13 @@ def reconcile_stale_incidents(*, now: Optional[datetime] = None, limit: int = 50
                 continue
             if (now_utc - last_update).total_seconds() < PUBLIC_STATUS_RETIRE_AFTER_HOURS * 3600:
                 continue
-            previous_lifecycle = row.lifecycle
-            row.incident_status = IncidentStatus.OUTCOME_UNKNOWN.value
-            row.lifecycle = "archived"
-            row.state_changed_at = now_naive
-            row.archived_at = row.archived_at or now_naive
-            row.revision = (row.revision or 1) + 1
+            # Canonical activity can lag a late, structurally linked source
+            # reply. Check the durable event before retiring the case: a
+            # recent update must not be converted into silence. Only inspect
+            # candidates already past the retirement threshold.
             event_row = db.get(IntelEventDB, row.incident_id)
-            if event_row is not None and previous_lifecycle != "archived":
+            event = None
+            if event_row is not None:
                 event = IntelEvent(
                     id=event_row.id, timestamp_utc=event_row.timestamp_utc,
                     type=event_row.type, severity=event_row.severity,
@@ -306,6 +306,23 @@ def reconcile_stale_incidents(*, now: Optional[datetime] = None, limit: int = 50
                     source=event_row.source or "", linked_mmsi=event_row.linked_mmsi or "",
                     metadata=dict(event_row.meta or {}),
                 )
+                latest_observed = _latest_activity_time(event, now=now_utc)
+                if latest_observed is not None and latest_observed > last_update:
+                    row.last_update_at = latest_observed.isoformat()
+                    last_update = latest_observed
+                    if (now_utc - last_update).total_seconds() < PUBLIC_STATUS_RETIRE_AFTER_HOURS * 3600:
+                        # Activity-only refresh: no fabricated outcome or
+                        # lifecycle transition, and unchanged replays are no-ops.
+                        row.revision = (row.revision or 1) + 1
+                        refreshed_incident_ids.append(row.incident_id)
+                        continue
+            previous_lifecycle = row.lifecycle
+            row.incident_status = IncidentStatus.OUTCOME_UNKNOWN.value
+            row.lifecycle = "archived"
+            row.state_changed_at = now_naive
+            row.archived_at = row.archived_at or now_naive
+            row.revision = (row.revision or 1) + 1
+            if event is not None and previous_lifecycle != "archived":
                 _record_transition(
                     db, incident_id=row.incident_id, from_state=previous_lifecycle,
                     to_state="archived", event=event, reason_code="silence_after_threshold", now=now_naive,
@@ -313,11 +330,11 @@ def reconcile_stale_incidents(*, now: Optional[datetime] = None, limit: int = 50
             changed += 1
             changed_incident_ids.append(row.incident_id)
 
-    if changed_incident_ids:
+    if changed_incident_ids or refreshed_incident_ids:
         try:
             from core.intel.incident_watch import sync_watch_for_incident
 
-            for incident_id in changed_incident_ids:
+            for incident_id in changed_incident_ids + refreshed_incident_ids:
                 sync_watch_for_incident(incident_id, now=now_utc)
         except Exception:
             # Watch follow-up must never make retirement fail.
