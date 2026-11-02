@@ -9,6 +9,7 @@ import {
   observationText,
 } from '../features/live/assessmentPresentation.js';
 import { shipTypeLabel } from '../features/live/vesselType.js';
+import { humanitarianOperationalStatus, humanitarianSourceReportedStatus } from '../features/live/humanitarianStatus.js';
 import { detectorEvidence, humanizeDetectorText } from '../features/live/reportNarrative.js';
 import { liveListenHttpUrl, pcm16leToFloat32 } from '../features/live/radioListen.js';
 
@@ -725,7 +726,10 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
                 ? `${props.people_precision === 'approximate' ? '~' : ''}${props.people_reported}`
                 : 'Not stated'}
             />
-            <Row label="Case status" value={props.humanitarian_status || lifecycle} color={color} />
+            <Row label="Case status" value={humanitarianOperationalStatus(props, lifecycle)} color={color} />
+            {humanitarianSourceReportedStatus(props) && (
+              <Row label="Source-reported status" value={humanitarianSourceReportedStatus(props)} />
+            )}
             <Row label="Position precision" value={String(props.location_precision || props.coordinate_review_status || 'unknown').replace(/_/g, ' ')} />
             <Row
               label="Source assessment"
@@ -918,7 +922,10 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
               : `${props.source || 'Humanitarian source'} · provenance recorded`}
           />
           <Row label="Reported event" value={String(props.humanitarian_case_type || eventType).replace(/_/g, ' ')} />
-          <Row label="Operational status" value={String(props.humanitarian_status || lifecycle).replace(/_/g, ' ')} color={color} />
+          <Row label="Operational status" value={humanitarianOperationalStatus(props, lifecycle)} color={color} />
+          {humanitarianSourceReportedStatus(props) && (
+            <Row label="Source-reported status" value={humanitarianSourceReportedStatus(props)} />
+          )}
           <Row
             label="Position evidence"
             value={String(props.ocr_engine || props.coordinate_source || 'source-stated position').replace(/_/g, ' ')}
