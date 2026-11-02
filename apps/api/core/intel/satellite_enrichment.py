@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -162,11 +163,55 @@ def _meaningful_satellite_signal(event) -> bool:
     return bool(distress or drift_eligible or meta.get("publication_status") == "published")
 
 
+# A scene search around an area centroid or disputed point is not a vessel
+# observation. The default STAC target covers roughly 0.2 degrees; an origin
+# with a larger documented uncertainty must not be treated as a precise point.
+MAX_SATELLITE_TARGET_UNCERTAINTY_M = 10_000
+
+
+def _credible_satellite_location(event) -> bool:
+    """Reject known unreliable point evidence without inventing coordinates.
+
+    Legacy events with no provenance metadata remain eligible; explicit bad
+    evidence always wins. This is a scene-discovery gate, not pixel validation.
+    """
+    meta = event.metadata or {}
+    review = str(meta.get("coordinate_review_status") or "").strip().lower()
+    if "disputed" in review or "needs_review" in review:
+        return False
+    source = str(meta.get("coordinate_source") or "").strip().lower()
+    if source in {
+        "none", "region_area", "place_centroid", "relative_place_offset",
+        "post_text_or_maritime_place", "maritime_place",
+    }:
+        return False
+    status = str(meta.get("location_status") or "").strip().lower()
+    if status in {"withheld_from_maritime_map", "processing", "disputed", "needs_review"}:
+        return False
+    if status in {"region_only", "unpositioned"} and source not in {
+        "post_text", "navtext", "ais_position", "media_ocr_consensus",
+        "media_ocr_text", "media_ocr_text_backfill",
+        "media_pin_landmark", "media_pin_landmark_backfill",
+    }:
+        return False
+    uncertainty = meta.get("location_uncertainty_m")
+    if uncertainty is not None:
+        if isinstance(uncertainty, bool):
+            return False
+        try:
+            uncertainty_m = float(uncertainty)
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if not math.isfinite(uncertainty_m) or not 0 <= uncertainty_m <= MAX_SATELLITE_TARGET_UNCERTAINTY_M:
+            return False
+    return True
+
+
 def is_satellite_enrichment_candidate(
     event, *, now: datetime | None = None, history_days: int = SATELLITE_HISTORY_DAYS
 ) -> bool:
     """Select sparse incident-level signals, never raw high-volume AIS pings."""
-    if not valid_wgs84_point(event.lat, event.lon):
+    if not valid_wgs84_point(event.lat, event.lon) or not _credible_satellite_location(event):
         return False
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     observed = _credible_source_time(event)
@@ -202,6 +247,7 @@ def enrich_event(
     observed = _credible_source_time(event)
     if (
         not valid_wgs84_point(event.lat, event.lon)
+        or not _credible_satellite_location(event)
         or observed is None
         or observed > now + timedelta(minutes=5)
         or not _meaningful_satellite_signal(event)

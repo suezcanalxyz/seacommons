@@ -340,3 +340,61 @@ def test_satellite_keeps_published_maritime_and_explicit_sar_distress():
     )
     assert is_satellite_enrichment_candidate(maritime, now=_NOW)
     assert is_satellite_enrichment_candidate(sar, now=_NOW)
+
+
+@pytest.mark.parametrize("metadata", [
+    {"coordinate_source": "place_centroid", "location_uncertainty_m": 500},
+    {"coordinate_source": "region_area"},
+    {"coordinate_review_status": "needs_review", "location_uncertainty_m": 100},
+    {"coordinate_review_status": "disputed"},
+    {"location_status": "withheld_from_maritime_map"},
+    {"location_status": "region_only"},
+    {"location_uncertainty_m": 44290},
+    {"location_uncertainty_m": "NaN"},
+    {"location_uncertainty_m": "Infinity"},
+    {"location_uncertainty_m": -1},
+    {"location_uncertainty_m": "unknown"},
+    {"location_uncertainty_m": True},
+])
+def test_satellite_rejects_unreliable_geographic_targets_without_provider_calls(monkeypatch, metadata):
+    from core.intel import satellite_enrichment
+
+    event = _event(metadata={
+        "maritime_domain": "sar", "is_distress": True, **metadata,
+    })
+    monkeypatch.setattr(
+        satellite_enrichment, "resolve_for_incident",
+        lambda **_kwargs: pytest.fail("unreliable coordinates queried a satellite provider"),
+    )
+    assert not satellite_enrichment.is_satellite_enrichment_candidate(event, now=_NOW)
+    assert satellite_enrichment.enrich_event(event, now=_NOW) == {
+        "persisted": 0, "errors": 0,
+    }
+
+
+def test_satellite_accepts_bounded_uncertainty_and_trusted_point_with_stale_region_label():
+    from core.intel.satellite_enrichment import is_satellite_enrichment_candidate
+
+    reviewed = _event(metadata={
+        "maritime_domain": "sar", "is_distress": True,
+        "coordinate_source": "media_ocr_text",
+        "coordinate_review_status": "machine_ocr_unverified",
+        "location_uncertainty_m": 3200,
+        "location_status": "unpositioned",
+    })
+    assert is_satellite_enrichment_candidate(reviewed, now=_NOW)
+    published_maritime = _event(source="Maritime Security", metadata={
+        "publication_status": "published", "maritime_domain": "grey_zone",
+        "coordinate_source": "ais_position", "location_uncertainty_m": 300,
+    })
+    assert is_satellite_enrichment_candidate(published_maritime, now=_NOW)
+
+
+def test_satellite_rejects_unreliable_published_maritime_coordinate():
+    from core.intel.satellite_enrichment import is_satellite_enrichment_candidate
+
+    maritime = _event(source="Maritime Security", metadata={
+        "publication_status": "published", "maritime_domain": "grey_zone",
+        "coordinate_source": "place_centroid",
+    })
+    assert not is_satellite_enrichment_candidate(maritime, now=_NOW)
