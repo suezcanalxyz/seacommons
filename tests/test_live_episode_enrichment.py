@@ -121,7 +121,12 @@ def test_public_open_episode_corroboration_requires_canonical_independent_lineag
                     source="mda",
                     linked_mmsi="372497000",
                     maritime_domain="grey_zone",
-                    meta={"anomaly_type": "position_jump"},
+                    # Untrusted source metadata must not override the canonical
+                    # persisted episode's independent-source verification.
+                    meta={
+                        "anomaly_type": "position_jump",
+                        "contributing_independence_groups": ["ais", "gfw_sar"],
+                    },
                 ))
                 db.add(MaritimeEpisodeDB(
                     episode_id=episode_id,
