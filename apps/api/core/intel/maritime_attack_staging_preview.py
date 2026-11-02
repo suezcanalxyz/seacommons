@@ -20,6 +20,9 @@ _PREVIEW_KINDS = {
     "attack": "maritime_attack",
     "piracy": "piracy",
     "suspicious_activity": None,
+    # A prosecutor opening a case is documentary context, not a new
+    # eyewitness or an independently corroborated physical attack.
+    "investigation": None,
 }
 
 
