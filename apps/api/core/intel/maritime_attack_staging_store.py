@@ -77,6 +77,19 @@ def prepare_staging_review_snapshot(review: Mapping[str, object]) -> StagingRevi
         raise ValueError("staging_review_ledger_required")
     if not all(isinstance(entry, dict) for entry in ledger):
         raise ValueError("staging_review_ledger_entry_required")
+    if any(
+        entry.get("independent_attack_witness_verified") is not False
+        or entry.get("publication_allowed") is not False
+        or entry.get("republication_approved") is not False
+        for entry in ledger
+    ):
+        raise ValueError("staging_review_untrusted_source_evidence")
+    blockers = review.get("review_blockers")
+    if (
+        not isinstance(blockers, list)
+        or "origin_independence_unverified" not in blockers
+    ):
+        raise ValueError("staging_review_independence_blocker_required")
     attack_entries = [
         entry for entry in ledger if entry.get("role") == "attack_candidate"
     ]
