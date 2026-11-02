@@ -41,6 +41,11 @@ class StagingBulletinManifestTests(TestCase):
             self.assertEqual(record.envelope["lane"], "safety")
             self.assertNotIn("publication_allowed", record.envelope)
             self.assertNotIn("source_text", record.envelope["raw_payload"])
+            self.assertEqual(record.envelope["provenance"]["source_rights"], record.source_rights)
+            self.assertEqual(record.envelope["provenance"]["source_checked_on_utc"], "2026-11-01")
+            raw = json.loads(record.envelope["raw_payload"])
+            self.assertEqual(raw["source_rights"], record.source_rights)
+            self.assertEqual(raw["source_checked_on_utc"], "2026-11-01")
 
     def test_bulgarian_report_name_only_and_identity_must_stay_separate(self):
         record = prepare_staging_bulletin_manifest(sample())[0]
