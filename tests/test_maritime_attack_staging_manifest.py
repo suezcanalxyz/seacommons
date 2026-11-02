@@ -261,6 +261,32 @@ class StagingBulletinManifestTests(TestCase):
         with self.assertRaises(ValueError):
             prepare_staging_bulletin_manifest(payload)
 
+    def test_source_publication_cannot_precede_event_clock(self):
+        payload = sample()
+        payload["records"][1].pop("publication_date")
+        payload["records"][1]["published_at_utc"] = "2026-10-29T15:59:00Z"
+        with self.assertRaisesRegex(ValueError, "publication precedes"):
+            prepare_staging_bulletin_manifest(payload)
+        payload["records"][1]["published_at_utc"] = "2026-10-29T16:00:00Z"
+        records = prepare_staging_bulletin_manifest(payload)
+        self.assertEqual(records[1].bulletin.bulletin_id, "158/26")
+
+    def test_azini_post_hijack_positions_are_not_attack_geometry(self):
+        record = next(
+            r for r in prepare_staging_bulletin_manifest(sample())
+            if r.bulletin.bulletin_id == "161/26"
+        )
+        self.assertEqual(record.bulletin.kind, "piracy")
+        self.assertEqual(record.bulletin.vessel_name, "AZINI")
+        self.assertEqual(record.bulletin.occurred_at.isoformat(),
+                         "2026-10-29T09:00:00+00:00")
+        self.assertIsNone(record.bulletin.lat)
+        self.assertIsNone(record.bulletin.lon)
+        self.assertEqual(record.bulletin.imo, "")
+        self.assertEqual(record.bulletin.mmsi, "")
+        self.assertFalse(record.publication_allowed)
+        self.assertFalse(record.origin_independence_verified)
+
     def test_mscio_148_tanker_rpg_is_unidentified_and_not_promotable(self):
         path = MANIFEST.parent / "maritime-attack-mscio-148-2026-11-02.json"
         records = prepare_staging_bulletin_manifest(

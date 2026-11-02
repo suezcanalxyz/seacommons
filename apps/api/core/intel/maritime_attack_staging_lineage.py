@@ -65,6 +65,12 @@ def _source_provenance(preview: Mapping[str, object]) -> None:
         and clocks["published_at_utc"] > clocks["received_at_utc"]
     ):
         raise ValueError("lineage_publication_after_receipt")
+    event_stamp = preview.get("occurred_at_utc")
+    if event_stamp is not None:
+        event_at = _utc(event_stamp)
+        for field in ("published_at_utc", "received_at_utc"):
+            if field in clocks and event_at > clocks[field]:
+                raise ValueError("lineage_event_after_" + field)
     for field in ("publication_date", "source_checked_on_utc"):
         value = preview.get(field)
         if value is None:

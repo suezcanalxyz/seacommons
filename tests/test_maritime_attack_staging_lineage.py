@@ -355,6 +355,20 @@ class MaritimeAttackLineageTests(TestCase):
                 notice("A", None, event_date="20261101")
             ])
 
+    def test_event_must_not_follow_publication_or_receipt_clock(self):
+        for field in ("published_at_utc", "received_at_utc"):
+            with self.subTest(field=field), self.assertRaisesRegex(
+                ValueError, "lineage_event_after_" + field
+            ):
+                build_staging_attack_lineage_review([
+                    notice("A", **{field: "2026-11-01T15:08:00+00:00"})
+                ])
+        valid = build_staging_attack_lineage_review([
+            notice("A", published_at_utc="2026-11-01T15:09:00+00:00",
+                   received_at_utc="2026-11-01T15:10:00+00:00")
+        ])
+        self.assertFalse(valid["publication_allowed"])
+
     def test_valid_source_provenance_remains_unverified(self):
         result = build_staging_attack_lineage_review([
             notice(

@@ -117,6 +117,11 @@ def prepare_staging_bulletin_manifest(manifest: Mapping[str, object]) -> tuple[S
         event_day = _day(entry.get("event_date"), "event_date")
         publication_at = _clock(entry.get("published_at_utc"), "published_at_utc")
         publication_day = _day(entry.get("publication_date"), "publication_date")
+        # Both clocks are UTC instants: a published report cannot describe an
+        # event that has not yet occurred. Day-only publication metadata is
+        # deliberately excluded because publisher-local dates may differ.
+        if event_at is not None and publication_at is not None and event_at > publication_at:
+            raise ValueError("Source publication precedes reported incident")
         if (event_at is None and event_day is None
                 and publication_at is None and publication_day is None):
             raise ValueError("Missing source event/publication clock")
