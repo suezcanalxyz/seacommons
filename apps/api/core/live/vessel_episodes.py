@@ -362,6 +362,12 @@ def _build_episode_feature(
             "independence_groups": independence_groups,
             "independent_source_count": len(independence_groups),
             "verification_status": verification_status,
+            # Recompute from canonical lineage evidence: the primary signal may
+            # carry a stale corroborated=False (or True) from its own source.
+            "corroborated": (
+                verification_status == "multi_source_corroborated"
+                and len(independence_groups) >= 2
+            ),
             "analysis_state": episode_analysis_state,
             "publication_state": episode_publication_state,
             "resolution_state": episode_resolution_state,
