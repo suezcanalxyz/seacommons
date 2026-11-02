@@ -190,6 +190,63 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
                 db.scalar(select(func.count()).select_from(SourceObservationDB)), 0
             )
 
+    def test_reloaded_postgres_rows_are_previewed_and_tampering_fails_closed(self):
+        """Exercise real PostgreSQL JSON/DateTime roundtrip, not dataclass mocks.
+
+        The six canonical rows are written only in the disposable CI database.
+        All edits are in-memory and rolled back before the session closes.
+        """
+        from core.intel.maritime_attack_staging_manifest import (
+            prepare_staging_bulletin_manifest,
+        )
+        from core.intel.maritime_attack_staging_preview import (
+            build_staging_attack_previews,
+        )
+        path = (
+            Path(__file__).resolve().parents[1]
+            / "docs/research/maritime-attack-source-check-2026-11-01.json"
+        )
+        batch = prepare_staging_bulletin_manifest(json.loads(path.read_text()))
+        with Session(self.engine) as db:
+            written = [ingest_official_bulletin(db, record.bulletin)
+                       for record in batch]
+            expected = build_staging_attack_previews(batch, written)
+            db.flush()
+            db.expire_all()
+            persisted = [db.get(SourceObservationDB, row.observation_id)
+                         for row in written]
+            self.assertTrue(all(row is not None for row in persisted))
+            self.assertEqual(
+                build_staging_attack_previews(batch, persisted), expected
+            )
+            self.assertTrue(all(
+                "original_document_hash_unavailable" in p["review_blockers"]
+                for p in expected
+            ))
+            original = persisted[0]
+            for field, changed in (
+                ("observed_at", "2026-10-28T10:01:00+00:00"),
+                ("lat", 43.259),
+                ("uncertainty_m", 0.0),
+                ("provenance", {**original.provenance,
+                                "origin_authority_verified": True}),
+            ):
+                with self.subTest(field=field):
+                    setattr(original, field, changed)
+                    with self.assertRaisesRegex(
+                        ValueError, "canonical_source_provenance_mismatch"
+                    ):
+                        build_staging_attack_previews(batch, persisted)
+                    db.expire(original)
+            self.assertEqual(
+                build_staging_attack_previews(batch, persisted), expected
+            )
+            db.rollback()
+        with Session(self.engine) as db:
+            self.assertEqual(
+                db.scalar(select(func.count()).select_from(SourceObservationDB)), 0
+            )
+
     def test_anchorage_does_not_become_incident_site(self):
         riti = OfficialMaritimeBulletin(
             issuer="NAVAREA_IX", bulletin_id="420/26",
