@@ -156,6 +156,19 @@ def build_staging_attack_previews(
             blockers.append("approximate_event_time_unbounded")
         if expected_provenance["source_rights"] == "restricted_republication":
             blockers.append("restricted_republication")
+        # The hash of our structured metadata is NOT a hash of the
+        # originating bulletin. A missing original document digest must be
+        # visible to the reviewer; it cannot silently become source evidence.
+        if expected_provenance["original_document_sha256"] is None:
+            blockers.append("original_document_hash_unavailable")
+        # A last-known vessel position, anchorage or hazard point is never
+        # the geolocated site of an attack. A candidate may still exist,
+        # but must not be promoted as a precisely mapped incident.
+        if proposed_type is not None and (
+            expected_provenance["location_role"] != "incident_site"
+            or envelope["lat"] is None or envelope["lon"] is None
+        ):
+            blockers.append("incident_location_unverified")
         if proposed_type is None:
             blockers.append("not_an_attack")
         previews.append({
