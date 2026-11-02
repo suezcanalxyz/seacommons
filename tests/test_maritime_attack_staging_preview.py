@@ -10,6 +10,7 @@ from unittest import TestCase
 
 from core.intel.maritime_attack_staging_manifest import prepare_staging_bulletin_manifest
 from core.intel.maritime_attack_staging_preview import build_staging_attack_previews
+from core.intel.official_maritime_bulletin import prepare_official_bulletin
 
 MANIFEST = Path(__file__).resolve().parents[1] / "docs/research/maritime-attack-source-check-2026-11-01.json"
 
@@ -29,6 +30,8 @@ def fixtures():
             source_url=e["source_url"], raw_payload_hash=hashlib.sha256(
                 e["raw_payload"].encode("utf-8")).hexdigest(),
             subject_refs=e["subject_refs"], provenance=e["provenance"],
+            observed_at=e["observed_at"], lat=e["lat"], lon=e["lon"],
+            uncertainty_m=e["uncertainty_m"], location_precision=None,
             received_at=datetime(2026, 11, 2, 0, tzinfo=timezone.utc),
         ))
     return records, observations
@@ -50,6 +53,9 @@ class StagingAttackPreviewTests(TestCase):
         self.assertEqual(jet["vessel_mmsi_as_reported"], "")
         self.assertEqual(jet["proposed_incident_type"], "maritime_attack")
         self.assertEqual(jet["review_color"], "#ff6b35")
+        self.assertEqual(jet["canonical_observed_at"], "2026-10-28T10:00:00+00:00")
+        self.assertEqual(jet["observed_at_semantics"], "event")
+        self.assertIsNone(jet["reported_location"])
         self.assertIn("exact_publication_time_unavailable", jet["review_blockers"])
         self.assertIn("reuse_rights_not_verified", jet["review_blockers"])
         self.assertIn("restricted_republication", previews[1]["review_blockers"])
@@ -65,10 +71,71 @@ class StagingAttackPreviewTests(TestCase):
             modified = [replace_like(rows[0], received_at=received), *rows[1:]]
             preview = build_staging_attack_previews(records, modified)[0]
             self.assertEqual(preview["received_at_utc"], "2026-11-02T01:30:00+00:00")
-        for received in (None, "not-a-clock"):
+        for received in (None, "not-a-clock", "2026-11-02"):
             modified = [replace_like(rows[0], received_at=received), *rows[1:]]
             with self.assertRaises(ValueError):
                 build_staging_attack_previews(records, modified)
+
+    def test_source_clock_and_position_tampering_fail_closed(self):
+        records, rows = fixtures()
+        for field, bad in (
+            ("observed_at", "2026-10-28T10:01:00+00:00"),
+            ("observed_at", "2026-10-28"),
+            ("lat", 43.25),
+            ("lon", 28.8),
+            ("uncertainty_m", 0.0),
+            ("location_precision", "exact"),
+        ):
+            with self.subTest(field=field, value=bad):
+                altered = [replace_like(rows[0], **{field: bad}), *rows[1:]]
+                with self.assertRaisesRegex(ValueError, "canonical_source_provenance_mismatch"):
+                    build_staging_attack_previews(records, altered)
+
+    def test_source_receipt_must_follow_event_publication_and_review(self):
+        records, rows = fixtures()
+        for receipt in (
+            "2026-10-27T23:59:59Z",  # before the 28 Oct CONTSHIP JET attack
+            "2026-10-28T10:00:01Z",  # before the 1 Nov source review
+            "2026-10-31T23:59:59Z",  # still before the review date
+        ):
+            with self.subTest(receipt=receipt):
+                altered = [replace_like(rows[0], received_at=receipt), *rows[1:]]
+                with self.assertRaisesRegex(ValueError, "canonical_receipt_precedes_source"):
+                    build_staging_attack_previews(records, altered)
+
+    def test_source_reported_position_retained_with_role_and_uncertainty(self):
+        records, rows = fixtures()
+        original = records[0]
+        bulletin = replace(
+            original.bulletin,
+            lat=43.259, lon=28.815,
+            location_role="incident_site", location_uncertainty_km=3.0,
+        )
+        envelope = prepare_official_bulletin(bulletin)
+        revised = replace(original, bulletin=bulletin, envelope=envelope)
+        key = f'{envelope["source_name"]}:{envelope["source_id"]}'
+        row = replace_like(
+            rows[0],
+            observation_id="obs:" + hashlib.blake2s(key.encode(), digest_size=16).hexdigest(),
+            source_id=envelope["source_id"],
+            observed_at=envelope["observed_at"],
+            raw_payload_hash=hashlib.sha256(envelope["raw_payload"].encode("utf-8")).hexdigest(),
+            provenance=envelope["provenance"],
+            lat=43.259, lon=28.815, uncertainty_m=3000.0,
+        )
+        preview = build_staging_attack_previews([revised, *records[1:]], [row, *rows[1:]])[0]
+        self.assertEqual(preview["reported_location"], {
+            "lat": 43.259, "lon": 28.815,
+            "role": "incident_site", "uncertainty_km": 3.0,
+        })
+        for changed in (
+            {"lat": 43.5}, {"lon": 29.0}, {"uncertainty_m": 0.0},
+            {"uncertainty_m": float("nan")},
+        ):
+            with self.subTest(changed=changed):
+                altered = [replace_like(row, **changed), *rows[1:]]
+                with self.assertRaisesRegex(ValueError, "canonical_source_provenance_mismatch"):
+                    build_staging_attack_previews([revised, *records[1:]], altered)
 
     def test_replay_order_does_not_change_preview(self):
         records, rows = fixtures()
