@@ -366,6 +366,26 @@ class MaritimeAttackLineageTests(TestCase):
                     notice("A", independent_origins_verified=count)
                 ])
 
+    def test_day_only_publication_cannot_precede_event_by_two_days(self):
+        # Publication dates can be local, so one calendar day is allowed.
+        for candidate in (
+            notice("A", None, publication_date="2026-10-29"),
+            notice("A", publication_date="2026-10-30"),
+            notice("A", None, published_at_utc="2026-10-29T23:59:00Z"),
+        ):
+            with self.subTest(candidate=candidate), self.assertRaisesRegex(
+                ValueError, "lineage_publication_day_before_event"
+            ):
+                build_staging_attack_lineage_review([candidate])
+        for candidate in (
+            notice("A", None, publication_date="2026-10-31"),
+            notice("A", publication_date="2026-10-31"),
+            notice("A", None, published_at_utc="2026-10-31T23:59:00Z"),
+        ):
+            result = build_staging_attack_lineage_review([candidate])
+            self.assertFalse(result["publication_allowed"])
+            self.assertEqual(result["independent_origins_verified"], 0)
+
     def test_source_and_lineage_links_require_safe_https_urls(self):
         for url in (
             "https://", "https://user:pass@example.org/notice",
