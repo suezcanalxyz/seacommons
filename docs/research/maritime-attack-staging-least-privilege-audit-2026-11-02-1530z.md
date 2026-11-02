@@ -50,8 +50,11 @@ or used as the staging workspace. VM disk: 45G total, 32G used, 14G free
 
 ## Public LIVE/PLAY verification (2026-11-02 15:28–15:30 UTC)
 GET `/api/v1/live/signals?days=3&mode=all&limit=500`: HTTP 200,
-15 features, 14 maritime and 1 humanitarian; no newly certified attack
-reported by the API. GET `/api/v1/play/incidents?limit=500&offset=N`
+15 features, 14 maritime and 1 humanitarian. Visual categories:
+12 `ais_gap`, 2 `navigation_casualty`, 1 `humanitarian_alarm_phone`.
+Verification statuses: 13 single-source observed, 1 multi-source
+corroborated (not an attack), 1 machine-extracted unverified.
+No attack category is present in the returned LIVE features. GET `/api/v1/play/incidents?limit=500&offset=N`
 for N=0,500,...,3500: eight HTTP 200 responses, 3,583 rows,
 3,577 distinct incident IDs, six repeated IDs, no attack/piracy category
 in returned records. Pagination is **not snapshot-consistent**; the
