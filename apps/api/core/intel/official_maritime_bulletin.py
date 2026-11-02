@@ -131,6 +131,26 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
     elif bulletin.original_dtg:
         raise ValueError("original_dtg_only_allowed_for_BG_VTMIS")
     published_at = _utc(bulletin.published_at) if bulletin.published_at else None
+    # The direct adapter must enforce chronology too: callers can invoke it
+    # without passing through the stricter manual staging manifest.
+    if event_at is not None and published_at is not None:
+        tolerance_seconds = float(bound or 0) * 60
+        if (bulletin.occurred_at - bulletin.published_at).total_seconds() > tolerance_seconds:
+            raise ValueError("Bulletin publication precedes reported incident")
+    # Publisher-local day-only dates can differ from UTC by one calendar
+    # day. A publication two or more days before the event is impossible,
+    # even with that generous time-zone allowance.
+    event_day = (
+        bulletin.occurred_at.astimezone(timezone.utc).date()
+        if bulletin.occurred_at else bulletin.event_date
+    )
+    publication_day = (
+        bulletin.published_at.astimezone(timezone.utc).date()
+        if bulletin.published_at else bulletin.publication_date
+    )
+    if (event_day is not None and publication_day is not None
+            and (event_day - publication_day).days > 1):
+        raise ValueError("Bulletin publication day precedes reported incident")
     if (bulletin.lat is None) != (bulletin.lon is None):
         raise ValueError("Coordinates must be supplied together")
     if bulletin.lat is not None and (
