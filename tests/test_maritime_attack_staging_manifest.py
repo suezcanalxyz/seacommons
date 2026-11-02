@@ -113,6 +113,55 @@ class StagingBulletinManifestTests(TestCase):
                 "vessel_name": "LOUISE 1", "imo": "9290323",
             })
 
+    def test_mscio_164_mayday_relay_is_unnamed_and_not_independent(self):
+        path = MANIFEST.parent / "maritime-attack-mscio-164-2026-11-02.json"
+        records = prepare_staging_bulletin_manifest(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
+        self.assertEqual(len(records), 1)
+        record = records[0]
+        self.assertEqual(record.bulletin.bulletin_id, "164/26")
+        self.assertEqual(
+            record.bulletin.occurred_at.isoformat(), "2026-11-01T15:09:00+00:00"
+        )
+        self.assertEqual(record.bulletin.publication_date.isoformat(), "2026-11-01")
+        self.assertEqual(record.envelope["provenance"]["event_time_precision"], "approximate")
+        self.assertEqual(record.envelope["provenance"]["vessel_name"], "")
+        self.assertEqual(record.envelope["provenance"]["vessel_imo"], "")
+        self.assertEqual(record.envelope["provenance"]["vessel_mmsi"], "")
+        self.assertEqual(record.envelope["subject_refs"], [])
+        self.assertFalse(record.origin_independence_verified)
+        self.assertFalse(record.publication_allowed)
+        self.assertFalse(record.envelope["provenance"]["origin_authority_verified"])
+        self.assertEqual(record.source_rights, "restricted_republication")
+        # A relay of another ship's Mayday is not the Master's own attack
+        # testimony, nor does it identify UKMTO 192/26's different tanker.
+        obs = SimpleNamespace(
+            observation_id="synthetic:164", observation_type="official_maritime_bulletin",
+            source_url=record.envelope["source_url"],
+            provenance=record.envelope["provenance"],
+            received_at=None, lat=None, lon=None, uncertainty_m=None,
+        )
+        with self.assertRaisesRegex(ValueError, "vessel identity differs"):
+            claim_from_source_observation(obs, {
+                "kind": "attack", "occurred_at": record.bulletin.occurred_at,
+                "vessel_name": "LOUISE 1", "imo": "9290323",
+            })
+
+    def test_mscio_164_and_october_alerts_have_distinct_source_ids(self):
+        november = json.loads(
+            (MANIFEST.parent / "maritime-attack-mscio-164-2026-11-02.json")
+            .read_text(encoding="utf-8")
+        )
+        payload = sample()
+        payload["source_checked_on_utc"] = "2026-11-02"
+        payload["records"].extend(november["records"])
+        prepared = prepare_staging_bulletin_manifest(payload)
+        self.assertEqual(len(prepared), 7)
+        self.assertEqual(len({r.envelope["source_id"] for r in prepared}), 7)
+        self.assertFalse(prepared[-1].origin_independence_verified)
+        self.assertFalse(prepared[-1].publication_allowed)
+
     def test_suspicious_activity_is_not_relabelled_as_attack(self):
         records = prepare_staging_bulletin_manifest(sample())
         suspicious = next(r for r in records if r.bulletin.bulletin_id == "160/26")
