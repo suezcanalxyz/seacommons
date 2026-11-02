@@ -499,3 +499,45 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
             self.assertEqual(result.track_ids, ())
             self.assertEqual(result.inspected_rows, 0)
             db.rollback()
+
+    def test_able_damage_assessment_roundtrip_is_context_only(self):
+        """Source-checked 9 Oct inspection is not a second attack witness.
+
+        The 6 Oct attack time and IMO are not asserted by this 9 Oct
+        Ministry document. All writes stay in disposable CI PostgreSQL
+        and are rolled back before the session exits.
+        """
+        from core.intel.maritime_attack_staging_manifest import (
+            prepare_staging_bulletin_manifest,
+        )
+        from core.intel.maritime_attack_staging_preview import (
+            build_staging_attack_previews,
+        )
+        path = (
+            Path(__file__).resolve().parents[1] /
+            "docs/research/maritime-attack-able-damage-assessment-2026-11-02.json"
+        )
+        batch = prepare_staging_bulletin_manifest(json.loads(path.read_text()))
+        with Session(self.engine) as db:
+            row = ingest_official_bulletin(db, batch[0].bulletin)
+            db.flush()
+            db.expire_all()
+            persisted = db.get(SourceObservationDB, row.observation_id)
+            preview = build_staging_attack_previews(batch, [persisted])[0]
+            self.assertEqual(preview["source_kind"], "damage_assessment")
+            self.assertEqual(preview["vessel_name_as_reported"], "ABLE")
+            self.assertEqual(preview["event_date"], "2026-10-09")
+            self.assertIsNone(preview["occurred_at_utc"])
+            self.assertEqual(preview["review_status"], "context_only")
+            self.assertIsNone(preview["proposed_incident_type"])
+            self.assertEqual(persisted.subject_refs, [])
+            self.assertEqual(persisted.provenance["vessel_imo"], "")
+            self.assertFalse(preview["publication_allowed"])
+            self.assertEqual(preview["independent_origins_verified"], 0)
+            replay = ingest_official_bulletin(db, batch[0].bulletin)
+            self.assertTrue(replay.replayed)
+            db.rollback()
+        with Session(self.engine) as db:
+            self.assertEqual(
+                db.scalar(select(func.count()).select_from(SourceObservationDB)), 0
+            )

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "source_checked_on_utc": "2026-11-02",
+  "records": [
+    {
+      "issuer": "BG_MOD",
+      "bulletin_id": "news9637",
+      "source_url": "https://www.mod.bg/news9637",
+      "kind": "damage_assessment",
+      "vessel_name": "ABLE",
+      "event_date": "2026-10-09",
+      "publication_date": "2026-10-09",
+      "source_rights": "public_with_attribution"
+    }
+  ]
+}

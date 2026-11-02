@@ -18,7 +18,7 @@ from math import asin, cos, isfinite, radians, sin, sqrt
 from core.intel.maritime_attack_correlation import _name, _valid_imo, _valid_mmsi
 
 
-_CONTEXT_KINDS = frozenset({"investigation", "rescue", "navigational_hazard"})
+_CONTEXT_KINDS = frozenset({"investigation", "rescue", "navigational_hazard", "damage_assessment"})
 
 
 def _clock(value: object) -> datetime:
@@ -45,6 +45,37 @@ def _preview_boundary(preview: Mapping[str, object]) -> None:
         or not preview["original_report_id"]
     ):
         raise ValueError("untrusted_or_publishable_staging_preview")
+
+
+def _source_location(value: object) -> dict[str, object] | None:
+    """Validate and fingerprint source-reported geometry, never infer an attack site.
+
+    This is a derived review snapshot, not authentication of the original
+    bulletin. A changed location must change the evidence-ledger fingerprint.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, Mapping) or set(value) != {
+        "lat", "lon", "role", "uncertainty_km"
+    }:
+        raise ValueError("invalid_source_reported_location")
+    lat, lon, uncertainty = value["lat"], value["lon"], value["uncertainty_km"]
+    if (type(lat) not in (float, int) or type(lon) not in (float, int)
+            or not isfinite(lat) or not isfinite(lon)
+            or not -90 <= lat <= 90 or not -180 <= lon <= 180):
+        raise ValueError("invalid_source_reported_location")
+    if (uncertainty is not None and
+            (type(uncertainty) not in (float, int)
+             or not isfinite(uncertainty) or uncertainty < 0)):
+        raise ValueError("invalid_source_location_uncertainty")
+    if value["role"] not in {
+        "incident_site", "hazard_position", "last_reported_position", "anchorage"
+    }:
+        raise ValueError("invalid_source_location_role")
+    return {
+        "lat": float(lat), "lon": float(lon), "role": value["role"],
+        "uncertainty_km": float(uncertainty) if uncertainty is not None else None,
+    }
 
 
 def _evidence_ledger_entry(preview: Mapping[str, object], *, role: str) -> dict[str, object]:
@@ -102,6 +133,10 @@ def _evidence_ledger_entry(preview: Mapping[str, object], *, role: str) -> dict[
         "source_url": source_url,
         "source_kind": preview.get("source_kind"),
         "source_rights": rights,
+        "vessel_name_as_reported": preview.get("vessel_name_as_reported"),
+        "vessel_imo_as_reported": preview.get("vessel_imo_as_reported"),
+        "vessel_mmsi_as_reported": preview.get("vessel_mmsi_as_reported"),
+        "reported_location": _source_location(preview.get("reported_location")),
         "source_checked_on_utc": checked,
         "original_document_sha256": original_digest,
         "original_document_digest_available": original_digest is not None,
@@ -259,6 +294,7 @@ def build_staging_attack_case_review(
             "role": (
                 "later_hazard_not_attack" if context_kind == "navigational_hazard"
                 else "rescue_not_attack_witness" if context_kind == "rescue"
+                else "damage_assessment_not_attack_witness" if context_kind == "damage_assessment"
                 else "investigation_not_attack_witness"
             ),
             "attack_witness": False,

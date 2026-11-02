@@ -338,3 +338,54 @@ class StagingCaseReviewTests(TestCase):
         self.assertIsNone(result["external_mmsi_proposed"])
         self.assertEqual(result["independent_origins_verified"], 0)
         self.assertFalse(result["publication_allowed"])
+
+    def test_spatial_ledger_tracks_original_hazard_coordinates(self):
+        attack, navwarn = _attack(), _navwarn()
+        original = build_staging_attack_case_review(attack, [navwarn])
+        entry = next(item for item in original["source_evidence_ledger"]
+                     if item["source_kind"] == "navigational_hazard")
+        self.assertEqual(entry["reported_location"]["role"], "hazard_position")
+        self.assertAlmostEqual(entry["reported_location"]["lat"], 43.13)
+        self.assertEqual(entry["vessel_imo_as_reported"], "9348625")
+        revised = {**navwarn, "reported_location": {
+            **navwarn["reported_location"], "lat": 43.131
+        }}
+        changed = build_staging_attack_case_review(attack, [revised])
+        self.assertNotEqual(original["evidence_ledger_snapshot_sha256"],
+                            changed["evidence_ledger_snapshot_sha256"])
+        self.assertFalse(changed["publication_allowed"])
+
+    def test_spatial_ledger_rejects_invalid_source_geometry(self):
+        attack, navwarn = _attack(), _navwarn()
+        for bad in (
+            {"lat": 91.0}, {"lon": float("nan")},
+            {"uncertainty_km": -1.0}, {"lat": True},
+        ):
+            location = {**navwarn["reported_location"], **bad}
+            with self.subTest(bad=bad), self.assertRaisesRegex(
+                ValueError, "invalid_source"
+            ):
+                build_staging_attack_case_review(
+                    attack, [{**navwarn, "reported_location": location}]
+                )
+
+    def test_able_inspection_is_day_only_context_not_attack_candidate(self):
+        able = _preview("maritime-attack-able-damage-assessment-2026-11-02.json")
+        self.assertEqual(able["source_kind"], "damage_assessment")
+        self.assertEqual(able["vessel_name_as_reported"], "ABLE")
+        self.assertIsNone(able["occurred_at_utc"])
+        self.assertEqual(able["event_date"], "2026-10-09")
+        self.assertIsNone(able["vessel_imo_as_reported"] or None)
+        self.assertEqual(able["review_status"], "context_only")
+        self.assertFalse(able["publication_allowed"])
+        with self.assertRaisesRegex(ValueError, "attack_candidate_required"):
+            build_staging_attack_case_review(able, [])
+        with self.assertRaisesRegex(ValueError, "context_vessel_identity_conflict"):
+            build_staging_attack_case_review(_attack(), [able])
+
+    def test_alfa_watan_is_not_same_vessel_as_able_or_contship(self):
+        attack, navwarn = _attack(), _navwarn()
+        with self.assertRaisesRegex(ValueError, "context_vessel_identity_conflict"):
+            build_staging_attack_case_review(
+                attack, [{**navwarn, "vessel_name_as_reported": "ALFA WATAN"}]
+            )

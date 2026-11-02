@@ -25,6 +25,8 @@ _PREVIEW_KINDS = {
     "investigation": None,
     # A transport ministry rescue report is not a second attack witness.
     "rescue": None,
+    # A post-attack damage inspection is context, never a new attack witness.
+    "damage_assessment": None,
     # An official wreck/hazard notice is not a second attack witness.
     "navigational_hazard": None,
 }

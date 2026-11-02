@@ -33,6 +33,7 @@ _ISSUERS = {
 _KINDS = frozenset({
     "attack", "sinking", "explosion", "collision", "piracy",
     "suspicious_activity", "navigational_hazard", "investigation", "rescue",
+    "damage_assessment",
 })
 _LOCATION_ROLES = frozenset({"unknown", "incident_site", "anchorage", "last_reported_position", "hazard_position"})
 _REPORT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 /._-]{0,79}$")
