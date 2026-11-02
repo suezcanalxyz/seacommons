@@ -80,6 +80,14 @@ class OfficialBulletinTests(TestCase):
         self.assertFalse(reviewed["provenance"]["reuse_rights_verified"])
         self.assertFalse(reviewed["provenance"]["attack_corroboration_allowed"])
         self.assertEqual(json.loads(reviewed["raw_payload"])["source_rights"], "restricted_republication")
+        self.assertNotIn("source_checked_on_utc", json.loads(reviewed["raw_payload"]))
+        rechecked = prepare_official_bulletin(replace(
+            jet(), source_rights="restricted_republication",
+            source_checked_on_utc=date(2026, 11, 2),
+        ))
+        self.assertEqual(reviewed["source_id"], rechecked["source_id"])
+        self.assertEqual(reviewed["raw_payload"], rechecked["raw_payload"])
+        self.assertEqual(rechecked["provenance"]["source_checked_on_utc"], "2026-11-02")
 
     def test_source_rights_and_check_date_reject_forged_values(self):
         for value in ("open_license", "PUBLIC_WITH_ATTRIBUTION", True, [], ""):
