@@ -76,6 +76,50 @@ def test_trajectory_targets_sample_case_drift_over_time():
     assert targets[-1]["at"].hour == 4
 
 
+def test_trajectory_sampling_keeps_past_positions_when_forecast_dominates():
+    from core.intel.satellite_enrichment import _trajectory_targets
+
+    trajectory = {
+        "geometry": {
+            "type": "LineString",
+            "coordinates": [[14.0 + index / 100, 35.0 + index / 100]
+                            for index in range(10)],
+        },
+        "properties": {
+            "timestamps_utc": [
+                (_NOW + timedelta(hours=index)).isoformat()
+                for index in range(10)
+            ],
+        },
+    }
+    cutoff = _NOW + timedelta(hours=2, minutes=30)
+    # Previously the sampler chose points 1, 5 and 9; the later
+    # future-point gate discarded 5 and 9, losing the valid point 2.
+    targets = _trajectory_targets(
+        trajectory, drift_id="mixed-forecast", limit=3, not_after=cutoff,
+    )
+    assert [target["trajectory_index"] for target in targets] == [1, 2]
+    assert all(target["at"] <= cutoff for target in targets)
+    assert _trajectory_targets(
+        trajectory, drift_id="mixed-forecast", limit=3, not_after=_NOW,
+    ) == []
+
+
+def test_enrich_event_supplies_clock_to_trajectory_sampling(monkeypatch):
+    from core.intel import satellite_enrichment
+
+    cutoffs = []
+    monkeypatch.setattr(
+        satellite_enrichment,
+        "_case_satellite_targets",
+        lambda _event, *, now: cutoffs.append(now) or [],
+    )
+    assert satellite_enrichment.enrich_event(
+        _event(), now=_NOW, include_viirs=False,
+    ) == {"persisted": 0, "errors": 0}
+    assert cutoffs == [_NOW]
+
+
 def test_enrich_event_queries_reverse_nearest_forward_and_persists(monkeypatch):
     from core.intel import satellite_enrichment
     from core.intel.satellite_observation import SatelliteObservation
@@ -114,7 +158,7 @@ def test_enrich_event_adds_nearest_searches_for_drift_targets(monkeypatch):
     monkeypatch.setattr(
         satellite_enrichment,
         "_case_satellite_targets",
-        lambda _event: [
+        lambda _event, **_kwargs: [
             {"role": "reported_origin", "lat": 35.5, "lon": 14.1, "at": _NOW},
             {
                 "role": "drift_trajectory", "lat": 35.6, "lon": 14.2,
@@ -159,7 +203,7 @@ def test_satellite_skips_future_drift_prediction_but_keeps_past_targets(monkeypa
     monkeypatch.setattr(
         satellite_enrichment,
         "_case_satellite_targets",
-        lambda _event: [
+        lambda _event, **_kwargs: [
             {"role": "reported_origin", "lat": 35.5, "lon": 14.1, "at": _NOW},
             {"role": "drift_trajectory", "lat": 35.6, "lon": 14.2,
              "at": _NOW + timedelta(hours=1), "drift_id": "future-drift"},

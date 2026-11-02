@@ -39,6 +39,7 @@ def _trajectory_targets(
     *,
     drift_id: str,
     limit: int,
+    not_after: datetime | None = None,
 ) -> list[dict[str, Any]]:
     if limit <= 0 or not isinstance(trajectory, dict):
         return []
@@ -67,7 +68,13 @@ def _trajectory_targets(
         if parsed is None or (validated and parsed <= validated[-1][0]):
             return []
         validated.append((parsed, point))
-    candidates = list(range(1, len(validated)))
+    # Select only positions whose modeled time has already elapsed. Sampling
+    # the full forecast first can exhaust the target budget on future points
+    # and silently omit the historical positions that can be corroborated.
+    candidates = [
+        index for index in range(1, len(validated))
+        if not_after is None or validated[index][0] <= not_after
+    ]
     selected_positions = _sample_indices(len(candidates), limit)
     targets: list[dict[str, Any]] = []
     for pos in selected_positions:
@@ -91,7 +98,7 @@ def _credible_source_time(event) -> datetime | None:
     return parse_utc(event.timestamp_utc)
 
 
-def _case_satellite_targets(event) -> list[dict[str, Any]]:
+def _case_satellite_targets(event, *, now: datetime | None = None) -> list[dict[str, Any]]:
     if not valid_wgs84_point(event.lat, event.lon):
         return []
     # Never fabricate an acquisition-search time for an undated source report.
@@ -121,6 +128,7 @@ def _case_satellite_targets(event) -> list[dict[str, Any]]:
             trajectory,
             drift_id=drift_id,
             limit=max(0, MAX_CASE_TARGETS - 1),
+            not_after=now,
         ))
     except Exception:
         logger.debug("Satellite case targets unavailable for %s", event.id, exc_info=True)
@@ -253,7 +261,7 @@ def enrich_event(
         or not _meaningful_satellite_signal(event)
     ):
         return {"persisted": 0, "errors": 0}
-    targets = _case_satellite_targets(event)
+    targets = _case_satellite_targets(event, now=now)
     report = {"persisted": 0, "errors": 0}
     for target_index, target in enumerate(targets):
         # OpenDrift trajectories can extend into the future. A prediction is
