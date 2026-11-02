@@ -266,3 +266,41 @@ def test_legacy_verified_status_without_lineages_remains_compatible():
         metadata={"verification_status": "multi_source_corroborated"},
     )
     assert out["corroborated"] is True
+
+
+def test_malformed_lineage_values_cannot_fake_corroboration():
+    # JSON observations may contain malformed lineage entries.  Neither a
+    # serialized object nor a number is an independent sensor/source.
+    from core.intel.hypothesis_engine import _canonical_verification
+
+    groups = ["ais", None, {}, 123, "UNKNOWN", "N/A", " unavailable "]
+    out = taxonomy_fields(
+        event_type="ais_anomaly",
+        maritime_domain="grey_zone",
+        metadata={
+            "contributing_independence_groups": groups,
+            "verification_status": "multi_source_corroborated",
+            "independent_source_count": 7,
+        },
+    )
+    assert out["corroborated"] is False
+    assert _canonical_verification(groups, 7) == "single_source_multi_indicator"
+
+
+def test_case_and_whitespace_aliases_are_one_lineage():
+    aliases = [" AIS ", "ais_sensor_lineage", "MODALITY:AIS"]
+    out = taxonomy_fields(
+        event_type="ais_anomaly",
+        maritime_domain="grey_zone",
+        metadata={"contributing_independence_groups": aliases},
+    )
+    assert out["corroborated"] is False
+
+
+def test_casefolded_independent_ais_and_sar_remain_corroborated():
+    out = taxonomy_fields(
+        event_type="ais_anomaly",
+        maritime_domain="grey_zone",
+        metadata={"contributing_independence_groups": [" AIS ", " GFW_SAR "]},
+    )
+    assert out["corroborated"] is True

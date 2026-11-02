@@ -62,16 +62,27 @@ def normalize_independence_group(value: Any) -> str:
     Do not count two names for the same AIS, SAR or radio stream as
     independent corroboration. Keep other producer-supplied groups intact.
     """
-    text = str(value or "").strip()
+    # An untrusted JSON list can contain nulls, numbers or objects.  Their
+    # string representations are not source identities and must never count
+    # as independent corroboration.
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    key = text.casefold()
+    if key in {"", "unknown", "none", "null", "n/a", "na", "unavailable"}:
+        return ""
     aliases = {
         "ais_sensor_lineage": "modality:ais",
         "ais": "modality:ais",
+        "modality:ais": "modality:ais",
         "gfw_sar": "source:satellite:gfw",
         "satellite:gfw": "source:satellite:gfw",
+        "source:satellite:gfw": "source:satellite:gfw",
         "radio:dsc": "source:radio:dsc",
         "radio_transmission": "source:radio:dsc",
+        "source:radio:dsc": "source:radio:dsc",
     }
-    return aliases.get(text, text)
+    return aliases.get(key, text)
 
 
 def is_independently_corroborated(metadata: Mapping[str, Any] | None) -> bool:
