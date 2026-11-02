@@ -127,7 +127,7 @@ class StagingReviewStoreTests(TestCase):
                 review() | {"case_review_id": "staging-case-review:obs:other"}
             )
         item = review()
-        item["source_evidence_ledger"].append(deepcopy(item["source_evidence_ledger"][0]))
+        item["source_evidence_ledger"].append({**deepcopy(item["source_evidence_ledger"][0]), "role": "followup_context"})
         item["evidence_ledger_snapshot_sha256"] = sha256(
             json.dumps(item["source_evidence_ledger"], sort_keys=True,
                        separators=(",", ":"), ensure_ascii=False).encode()
