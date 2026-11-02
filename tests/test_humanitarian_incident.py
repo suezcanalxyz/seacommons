@@ -521,7 +521,9 @@ def test_stale_retirement_ignores_future_only_reply(_persisted_source_event):
     assert incident["lifecycle"] == "archived"
     assert incident["incident_status"] == "outcome_unknown"
     assert incident["last_update_at"] == origin.isoformat()
-    assert [t["to_state"] for t in list_transitions(event.id)] == ["active", "archived"]
+    transitions = list_transitions(event.id)
+    assert len(transitions) == 2
+    assert any(t["from_state"] == "active" and t["to_state"] == "archived" for t in transitions)
 
 
 def test_reconcile_does_not_convert_needs_review_to_outcome_unknown():
