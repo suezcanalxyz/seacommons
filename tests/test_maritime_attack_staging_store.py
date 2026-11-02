@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from dataclasses import replace
 from hashlib import sha256
 from types import SimpleNamespace
 from unittest import TestCase
@@ -159,6 +160,22 @@ class StagingReviewStoreTests(TestCase):
             append_staging_review_snapshot(
                 conn, snapshot, expected_database="seacommons_attack_staging"
             )
+
+    def test_rejects_forged_snapshot_before_database_access(self):
+        original = prepare_staging_review_snapshot(review())
+        for forged in (
+            replace(original, payload_json='{"publication_allowed":true}'),
+            replace(original, snapshot_sha256="0" * 64),
+            replace(original, evidence_ledger_sha256="0" * 64),
+        ):
+            conn = _FakeStagingConnection()
+            with self.subTest(forged=forged.snapshot_sha256), self.assertRaisesRegex(
+                ValueError, "snapshot_integrity"
+            ):
+                append_staging_review_snapshot(
+                    conn, forged, expected_database="seacommons_attack_staging"
+                )
+            self.assertEqual(conn.sql, [])
 
     def test_fail_closed_for_production_database_and_readonly(self):
         snapshot = prepare_staging_review_snapshot(review())
