@@ -20,12 +20,10 @@ from urllib.parse import urlsplit
 from core.intel.maritime_attack_correlation import _canonical_source_url
 
 from core.intel.official_maritime_bulletin import (
-    OfficialMaritimeBulletin, prepare_official_bulletin,
+    OfficialMaritimeBulletin, prepare_official_bulletin, SOURCE_RIGHTS,
 )
 
-_ALLOWED_RIGHTS = frozenset({
-    "public_with_attribution", "restricted_republication", "unknown",
-})
+_ALLOWED_RIGHTS = SOURCE_RIGHTS
 _ALLOWED_FIELDS = frozenset({
     "issuer", "bulletin_id", "source_url", "kind", "vessel_name", "imo",
     "mmsi", "occurred_at_utc", "event_date", "published_at_utc",
@@ -151,6 +149,8 @@ def prepare_staging_bulletin_manifest(manifest: Mapping[str, object]) -> tuple[S
             location_role=entry.get("location_role", "unknown"),
             location_uncertainty_km=entry.get("location_uncertainty_km"),
             source_document_sha256=entry.get("source_document_sha256", ""),
+            source_rights=rights,
+            source_checked_on_utc=checked,
         )
         envelope = prepare_official_bulletin(bulletin)
         report_key = envelope["provenance"]["original_report_id"].casefold()
