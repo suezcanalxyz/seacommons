@@ -35,7 +35,9 @@ def reconcile(*, launch: bool = False, limit: int = 300) -> dict[str, int]:
     and it won't spin repeatedly on a busy engine or failed request.
     """
     from core.intel.store import ALARM_PHONE_SOURCE_ALIASES, intel_store
-    from core.intel.drift_service import is_auto_drift_eligible, schedule_intel_drift
+    from core.intel.drift_service import (
+        drift_origin_coordinates, is_auto_drift_eligible, schedule_intel_drift,
+    )
     from core.intel.drift_ownership import get_current_drift_id
     from core.db.store import get_drift
     from core.intel import lifecycle
@@ -82,8 +84,9 @@ def reconcile(*, launch: bool = False, limit: int = 300) -> dict[str, int]:
             continue
         report["precise_pending"] += 1
         if launch and report["launched"] == 0:
+            origin_lat, origin_lon = drift_origin_coordinates(event)
             accepted = schedule_intel_drift(
-                event.id, float(event.lat), float(event.lon),
+                event.id, float(origin_lat), float(origin_lon),
                 (int(meta["persons"]) if str(meta.get("persons", "")).isdigit() else None),
                 str(meta.get("vessel_type") or "rubber_boat"),
                 event.timestamp_utc,
