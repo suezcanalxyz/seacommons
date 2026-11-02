@@ -69,3 +69,26 @@ def test_durable_refresher_recovers_alternate_alarm_phone_source(monkeypatch):
     assert [candidate.id for candidate in candidates] == ["evicted-alias"]
     assert "@alarm_phone" in requests[1]["source_in"]
     assert "alarmphone" in requests[1]["source_in"]
+
+def test_serialized_false_alarm_phone_report_does_not_enter_public_live():
+    from core.live.projection import _public_intel_feature
+
+    event = IntelEvent(
+        id="non-distress-public",
+        type="twitter",
+        severity="high",
+        source="Alarm Phone",
+        title="Historical update, no active distress",
+        text="A contextual public report, not an ongoing rescue request.",
+        lat=35.5,
+        lon=14.1,
+        timestamp_utc="2026-11-02T00:00:00+00:00",
+        metadata={
+            "is_distress": "false",
+            "tweet_id": "public-context-123",
+            "publication_status": "published",
+            "source_policy": "official_api",
+            "maritime_domain": "sar",
+        },
+    )
+    assert _public_intel_feature(event) is None
