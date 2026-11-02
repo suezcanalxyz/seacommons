@@ -51,6 +51,8 @@ class StagingAttackPreviewTests(TestCase):
         self.assertEqual(jet["proposed_incident_type"], "maritime_attack")
         self.assertEqual(jet["review_color"], "#ff6b35")
         self.assertIn("exact_publication_time_unavailable", jet["review_blockers"])
+        self.assertIn("reuse_rights_not_verified", jet["review_blockers"])
+        self.assertIn("restricted_republication", previews[1]["review_blockers"])
         self.assertEqual(previews[3]["review_status"], "context_only")
         self.assertIn("not_an_attack", previews[3]["review_blockers"])
         self.assertEqual(previews[4]["proposed_incident_type"], "piracy")

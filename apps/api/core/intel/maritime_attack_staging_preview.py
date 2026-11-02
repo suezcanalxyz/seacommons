@@ -74,7 +74,8 @@ def build_staging_attack_previews(
             raise ValueError("unsupported_staging_preview_kind")
         proposed_type = _PREVIEW_KINDS[kind]
         review_color = CATEGORY_COLORS[proposed_type] if proposed_type else None
-        blockers = ["origin_independence_unverified", "publication_review_required"]
+        blockers = ["origin_independence_unverified", "publication_review_required",
+                    "reuse_rights_not_verified"]
         if not expected_provenance["vessel_imo"] and not expected_provenance["vessel_mmsi"]:
             blockers.append("strong_vessel_identity_unverified")
         if not expected_provenance["vessel_name"]:
@@ -85,8 +86,8 @@ def build_staging_attack_previews(
             expected_provenance["reported_time_uncertainty_minutes"] is None
         ):
             blockers.append("approximate_event_time_unbounded")
-        if expected_provenance["source_rights"] != "public_with_attribution":
-            blockers.append("republication_rights_not_verified")
+        if expected_provenance["source_rights"] == "restricted_republication":
+            blockers.append("restricted_republication")
         if proposed_type is None:
             blockers.append("not_an_attack")
         previews.append({
