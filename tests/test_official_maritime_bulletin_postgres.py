@@ -247,6 +247,40 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
                 db.scalar(select(func.count()).select_from(SourceObservationDB)), 0
             )
 
+    def test_prosecutor_investigation_is_persisted_as_context_not_attack(self):
+        """No second witness is fabricated by a related prosecutor notice."""
+        from core.intel.maritime_attack_staging_manifest import (
+            prepare_staging_bulletin_manifest,
+        )
+        from core.intel.maritime_attack_staging_preview import (
+            build_staging_attack_previews,
+        )
+        path = (
+            Path(__file__).resolve().parents[1] /
+            "docs/research/maritime-attack-prosecutor-source-check-2026-11-02.json"
+        )
+        batch = prepare_staging_bulletin_manifest(json.loads(path.read_text()))
+        with Session(self.engine) as db:
+            written = [ingest_official_bulletin(db, item.bulletin)
+                       for item in batch]
+            db.flush()
+            db.expire_all()
+            persisted = [db.get(SourceObservationDB, written[0].observation_id)]
+            preview = build_staging_attack_previews(batch, persisted)[0]
+            self.assertEqual(preview["source_kind"], "investigation")
+            self.assertEqual(preview["review_status"], "context_only")
+            self.assertEqual(preview["observed_at_semantics"], "publication")
+            self.assertIsNone(preview["occurred_at_utc"])
+            self.assertIsNone(preview["proposed_incident_type"])
+            self.assertFalse(preview["publication_allowed"])
+            self.assertEqual(preview["independent_origins_verified"], 0)
+            self.assertEqual(db.scalar(select(func.count()).select_from(
+                SourceObservationDB)), 1)
+            db.rollback()
+        with Session(self.engine) as db:
+            self.assertEqual(db.scalar(select(func.count()).select_from(
+                SourceObservationDB)), 0)
+
     def test_anchorage_does_not_become_incident_site(self):
         riti = OfficialMaritimeBulletin(
             issuer="NAVAREA_IX", bulletin_id="420/26",
