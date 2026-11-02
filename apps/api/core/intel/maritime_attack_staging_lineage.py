@@ -102,6 +102,18 @@ def _source_provenance(preview: Mapping[str, object]) -> None:
             raise ValueError("lineage_invalid_source_day") from exc
         if "received_at_utc" in clocks and day > clocks["received_at_utc"].date():
             raise ValueError("lineage_source_day_after_receipt")
+    # A source's day-only publication date may be local rather than UTC.
+    # Allow a one-day boundary, but never accept a report published two
+    # or more calendar days before the event it claims to describe.
+    publication_day = (
+        clocks["published_at_utc"].date()
+        if "published_at_utc" in clocks
+        else date.fromisoformat(preview["publication_date"])
+        if preview.get("publication_date") is not None else None
+    )
+    if (publication_day is not None
+            and (_day(preview) - publication_day).days > 1):
+        raise ValueError("lineage_publication_day_before_event")
     for field in ("raw_payload_hash", "source_document_sha256"):
         digest = preview.get(field)
         if digest is not None and (
