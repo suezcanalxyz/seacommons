@@ -438,6 +438,92 @@ def test_reconcile_stale_active_incident_persists_outcome_unknown():
     assert incident["archived_at"] is not None
 
 
+@pytest.fixture
+def _persisted_source_event():
+    """Keep each durable event isolated from other DB-backed tests."""
+    from core.db.models import IntelEventDB
+    from core.db.session import engine, session_scope
+
+    IntelEventDB.__table__.create(bind=engine(), checkfirst=True)
+    event_ids = []
+
+    def persist(event):
+        with session_scope() as db:
+            db.add(IntelEventDB(
+                id=event.id, timestamp_utc=event.timestamp_utc,
+                type=event.type, severity=event.severity,
+                lat=event.lat, lon=event.lon, title=event.title,
+                text=event.text, source=event.source,
+                meta=dict(event.metadata),
+            ))
+        event_ids.append(event.id)
+
+    yield persist
+
+    with session_scope() as db:
+        db.query(IntelEventDB).filter(IntelEventDB.id.in_(event_ids)).delete(
+            synchronize_session=False
+        )
+
+
+def test_stale_retirement_keeps_case_active_after_recent_durable_reply(_persisted_source_event):
+    """A late reply must not be archived before the canonical sync catches up."""
+    from datetime import timedelta
+    from core.intel.humanitarian_incident import reconcile_stale_incidents
+
+    now = datetime.now(timezone.utc)
+    origin = now - timedelta(days=3)
+    reply = now - timedelta(minutes=5)
+    event = _distress_event(
+        "retire-late-reply", "MAYDAY people aboard", timestamp=origin.isoformat()
+    )
+    sync_incident_for_event(event, lifecycle="active")
+    initial = get_incident(event.id)
+    event.metadata["thread_reposts"] = [{
+        "posted_at": reply.isoformat(), "note": "We are still in danger",
+    }]
+    _persisted_source_event(event)
+
+    assert reconcile_stale_incidents(now=now) == 0
+    refreshed = get_incident(event.id)
+    assert refreshed["lifecycle"] == "active"
+    assert refreshed["incident_status"] == "active"
+    assert refreshed["last_update_at"] == reply.isoformat()
+    assert refreshed["reported_at"] == origin.isoformat()
+    assert refreshed["revision"] == initial["revision"] + 1
+    assert len(list_transitions(event.id)) == 1
+
+    # Replaying the same observation cannot increment revision again.
+    assert reconcile_stale_incidents(now=now) == 0
+    assert get_incident(event.id)["revision"] == refreshed["revision"]
+    assert len(list_transitions(event.id)) == 1
+
+
+def test_stale_retirement_ignores_future_only_reply(_persisted_source_event):
+    """A future provider timestamp cannot indefinitely extend Live activity."""
+    from datetime import timedelta
+    from core.intel.humanitarian_incident import reconcile_stale_incidents
+
+    now = datetime.now(timezone.utc)
+    origin = now - timedelta(days=3)
+    event = _distress_event(
+        "retire-future-reply", "MAYDAY people aboard", timestamp=origin.isoformat()
+    )
+    sync_incident_for_event(event, lifecycle="active")
+    event.metadata["thread_reposts"] = [{
+        "posted_at": (now + timedelta(days=2)).isoformat(),
+        "note": "We are still in danger",
+    }]
+    _persisted_source_event(event)
+
+    assert reconcile_stale_incidents(now=now) == 1
+    incident = get_incident(event.id)
+    assert incident["lifecycle"] == "archived"
+    assert incident["incident_status"] == "outcome_unknown"
+    assert incident["last_update_at"] == origin.isoformat()
+    assert [t["to_state"] for t in list_transitions(event.id)] == ["active", "archived"]
+
+
 def test_reconcile_does_not_convert_needs_review_to_outcome_unknown():
     from core.intel.humanitarian_incident import reconcile_stale_incidents
 
