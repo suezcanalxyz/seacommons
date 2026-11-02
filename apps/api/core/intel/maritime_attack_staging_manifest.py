@@ -18,6 +18,7 @@ from typing import Mapping
 from urllib.parse import urlsplit
 
 from core.intel.maritime_attack_correlation import _canonical_source_url
+from core.intel.maritime_attack_navwarn_dtg import parse_navwarn_compact_dtg
 
 from core.intel.official_maritime_bulletin import (
     OfficialMaritimeBulletin, prepare_official_bulletin, SOURCE_RIGHTS,
@@ -30,7 +31,7 @@ _ALLOWED_FIELDS = frozenset({
     "publication_date", "event_time_approximate",
     "reported_time_uncertainty_minutes", "source_rights",
     "lat", "lon", "location_role", "location_uncertainty_km",
-    "source_document_sha256",
+    "source_document_sha256", "source_dtg",
 })
 
 
@@ -127,6 +128,15 @@ def prepare_staging_bulletin_manifest(manifest: Mapping[str, object]) -> tuple[S
                 raise ValueError("Source date after check date")
 
         issuer = entry["issuer"]
+        # Only Bulgarian VTMIS NAVWARN records may carry this compact
+        # DDHHMM UTC MON YY clock. The final two digits are the YEAR,
+        # not the day: 282030 UTC OCT 26 = 28 Oct 2026 20:30 UTC.
+        if issuer == "BG_VTMIS":
+            dtg = entry.get("source_dtg")
+            if not isinstance(dtg, str) or event_at != parse_navwarn_compact_dtg(dtg):
+                raise ValueError("VTMIS_NAVWARN_event_clock_mismatch")
+        elif "source_dtg" in entry:
+            raise ValueError("source_dtg_only_allowed_for_BG_VTMIS")
         report_id = entry["bulletin_id"]
         # The actual 28 Oct Bulgarian Ministry report names CONTSHIP JET but
         # does not print either identifier. This known regression must never
