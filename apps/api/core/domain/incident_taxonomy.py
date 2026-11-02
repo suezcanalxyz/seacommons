@@ -56,6 +56,24 @@ _OBSERVATION_TYPE_BUCKETS: dict[str, str] = {
 }
 
 
+def normalize_independence_group(value: Any) -> str:
+    """Canonicalize known aliases of one sensor/source lineage.
+
+    Do not count two names for the same AIS, SAR or radio stream as
+    independent corroboration. Keep other producer-supplied groups intact.
+    """
+    text = str(value or "").strip()
+    aliases = {
+        "ais_sensor_lineage": "modality:ais",
+        "ais": "modality:ais",
+        "gfw_sar": "source:satellite:gfw",
+        "satellite:gfw": "source:satellite:gfw",
+        "radio:dsc": "source:radio:dsc",
+        "radio_transmission": "source:radio:dsc",
+    }
+    return aliases.get(text, text)
+
+
 def is_independently_corroborated(metadata: Mapping[str, Any] | None) -> bool:
     """Return whether metadata carries independent-source corroboration.
 
@@ -65,15 +83,23 @@ def is_independently_corroborated(metadata: Mapping[str, Any] | None) -> bool:
     the number of independent lineage groups, not the number of observations.
     """
     meta = metadata or {}
-    if str(meta.get("verification_status") or "") == "multi_source_corroborated":
-        return True
     raw_groups = meta.get("contributing_independence_groups") or meta.get(
         "independence_groups"
     ) or ()
-    if isinstance(raw_groups, (list, tuple, set, frozenset)):
-        groups = {str(group).strip() for group in raw_groups if str(group).strip()}
-        if len(groups) >= 2:
-            return True
+    if isinstance(raw_groups, (list, tuple, set, frozenset)) and raw_groups:
+        # Explicit lineage evidence outranks a stale verification label or
+        # aggregate count. A pair of aliases cannot corroborate itself.
+        groups = {
+            normalized
+            for group in raw_groups
+            if (normalized := normalize_independence_group(group))
+            and normalized != "unknown"
+        }
+        return len(groups) >= 2
+    # Legacy producers may supply only a canonical status or an aggregate
+    # count; retain that contract when no concrete lineage list is available.
+    if str(meta.get("verification_status") or "") == "multi_source_corroborated":
+        return True
     try:
         return int(meta.get("independent_source_count") or 0) >= 2
     except (TypeError, ValueError):
