@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "source_checked_on_utc": "2026-11-02",
+  "records": [
+    {
+      "issuer": "BG_TRANSPORT",
+      "bulletin_id": "20261013-hs-dignity",
+      "source_url": "https://www.mtc.government.bg/en/category/1/technical-information-vessels-affected-and-those-provided-assistance-maritime-areas-republic-bulgaria-over-past-24-hours",
+      "kind": "attack",
+      "vessel_name": "HS Dignity",
+      "event_date": "2026-10-13",
+      "publication_date": "2026-10-13",
+      "source_rights": "public_with_attribution"
+    }
+  ]
+}
