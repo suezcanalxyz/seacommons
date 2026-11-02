@@ -13,6 +13,8 @@ from datetime import date, datetime, timezone
 from hashlib import sha256
 import json
 from math import asin, cos, isfinite, radians, sin, sqrt
+import re
+from urllib.parse import urlsplit
 
 
 _ALLOWED_LINK_BASIS = frozenset({
@@ -32,6 +34,58 @@ def _utc(value: object) -> datetime:
     return result.astimezone(timezone.utc)
 
 
+def _valid_https_source_url(value: object) -> bool:
+    """Reject malformed, credential-bearing or fragment-only evidence URLs."""
+    if not isinstance(value, str) or any(char.isspace() for char in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        return (
+            parsed.scheme == "https"
+            and bool(parsed.hostname)
+            and parsed.username is None
+            and parsed.password is None
+            and not parsed.fragment
+            and parsed.port != 0
+        )
+    except ValueError:
+        return False
+
+
+def _source_provenance(preview: Mapping[str, object]) -> None:
+    """Validate optional source clocks and hashes before fingerprinting."""
+    clocks: dict[str, datetime] = {}
+    for field in ("published_at_utc", "received_at_utc"):
+        stamp = preview.get(field)
+        if stamp is not None:
+            clocks[field] = _utc(stamp)
+    if (
+        "published_at_utc" in clocks
+        and "received_at_utc" in clocks
+        and clocks["published_at_utc"] > clocks["received_at_utc"]
+    ):
+        raise ValueError("lineage_publication_after_receipt")
+    for field in ("publication_date", "source_checked_on_utc"):
+        value = preview.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, str) or not re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", value):
+            raise ValueError("lineage_invalid_source_day")
+        try:
+            day = date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("lineage_invalid_source_day") from exc
+        if "received_at_utc" in clocks and day > clocks["received_at_utc"].date():
+            raise ValueError("lineage_source_day_after_receipt")
+    for field in ("raw_payload_hash", "source_document_sha256"):
+        digest = preview.get(field)
+        if digest is not None and (
+            not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        ):
+            raise ValueError("lineage_invalid_source_digest")
+
+
 def _day(preview: Mapping[str, object]) -> date:
     stamp = preview.get("occurred_at_utc")
     if stamp is not None:
@@ -47,6 +101,8 @@ def _day(preview: Mapping[str, object]) -> date:
     raw = preview.get("event_date")
     if not isinstance(raw, str):
         raise ValueError("lineage_event_day_required")
+    if not re.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", raw):
+        raise ValueError("lineage_invalid_event_day")
     try:
         return date.fromisoformat(raw)
     except ValueError as exc:
@@ -136,7 +192,8 @@ def build_staging_attack_lineage_review(
             raise ValueError("lineage_candidate_mapping_required")
         if (p.get("staging_only") is not True
                 or p.get("publication_allowed") is not False
-                or p.get("independent_origins_verified") != 0
+                or type(p.get("independent_origins_verified")) is not int
+                or p["independent_origins_verified"] != 0
                 or p.get("review_status") != "candidate"
                 or p.get("source_kind") not in {"attack", "piracy"}):
             raise ValueError("lineage_untrusted_or_publishable_candidate")
@@ -145,8 +202,9 @@ def build_staging_attack_lineage_review(
                 or not isinstance(oid, str) or not oid
                 or rid in by_id or oid in seen_observations):
             raise ValueError("lineage_duplicate_or_missing_source_id")
-        if not isinstance(p.get("source_url"), str) or not p["source_url"].startswith("https://"):
+        if not _valid_https_source_url(p.get("source_url")):
             raise ValueError("lineage_invalid_source_url")
+        _source_provenance(p)
         _day(p)
         _position(p)
         by_id[rid] = p
@@ -171,7 +229,7 @@ def build_staging_attack_lineage_review(
             raise ValueError("lineage_invalid_link_endpoints")
         if basis not in _ALLOWED_LINK_BASIS:
             raise ValueError("lineage_invalid_link_basis")
-        if not isinstance(url, str) or not url.startswith("https://"):
+        if not _valid_https_source_url(url):
             raise ValueError("lineage_link_source_required")
         pair = tuple(sorted((left, right)))
         if pair in seen_links:
