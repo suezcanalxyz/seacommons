@@ -32,6 +32,11 @@ _INDEPENDENT_HUMANITARIAN_SOURCES = (
     "sos mediterranee",
 )
 
+# Preserve the existing import path for downstream consumers while sharing
+# one canonical lineage mapping with public taxonomy.
+from core.domain.incident_taxonomy import (
+    normalize_independence_group as _normalize_independence_group,
+)
 from core.intel.episode_store import save_episode
 from core.intel.hypothesis import (
     InvestigationHypothesis,
@@ -42,13 +47,6 @@ from core.intel.hypothesis import (
 from core.intel.hypothesis_eligibility import evaluate_hypothesis_eligibility
 from core.intel.hypothesis_store import get_hypothesis, list_hypotheses, save_hypothesis
 from core.intel.store import IntelEvent, intel_store
-
-
-# Preserve the existing import path for downstream consumers while keeping
-# taxonomy and hypothesis evidence gates on one canonical lineage mapping.
-from core.domain.incident_taxonomy import (
-    normalize_independence_group as _normalize_independence_group,
-)
 
 
 def _canonical_verification(independence_groups: list[str] | tuple[str, ...], evidence_count: int) -> str:
