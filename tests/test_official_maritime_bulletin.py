@@ -60,6 +60,35 @@ class OfficialBulletinTests(TestCase):
         assert first["provenance"]["original_report_id"] == changed["provenance"]["original_report_id"]
 
 
+    def test_source_rights_check_date_are_immutable_provenance_not_permission(self):
+        import json
+
+        legacy = prepare_official_bulletin(jet())
+        # Legacy direct-call source hashes/raw payloads remain unchanged:
+        # new metadata is opt-in and does not silently mutate old revisions.
+        self.assertNotIn("source_rights", json.loads(legacy["raw_payload"]))
+        self.assertNotIn("source_checked_on_utc", json.loads(legacy["raw_payload"]))
+        self.assertEqual(legacy["provenance"]["source_rights"], "unknown")
+
+        reviewed = prepare_official_bulletin(replace(
+            jet(), source_rights="restricted_republication",
+            source_checked_on_utc=date(2026, 11, 1),
+        ))
+        self.assertNotEqual(legacy["source_id"], reviewed["source_id"])
+        self.assertEqual(reviewed["provenance"]["source_rights"], "restricted_republication")
+        self.assertEqual(reviewed["provenance"]["source_checked_on_utc"], "2026-11-01")
+        self.assertFalse(reviewed["provenance"]["reuse_rights_verified"])
+        self.assertFalse(reviewed["provenance"]["attack_corroboration_allowed"])
+        self.assertEqual(json.loads(reviewed["raw_payload"])["source_rights"], "restricted_republication")
+
+    def test_source_rights_and_check_date_reject_forged_values(self):
+        for value in ("open_license", "PUBLIC_WITH_ATTRIBUTION", True, [], ""):
+            with self.subTest(rights=value), self.assertRaises(ValueError):
+                prepare_official_bulletin(replace(jet(), source_rights=value))
+        for value in ("2026-11-01", datetime(2026, 11, 1, tzinfo=UTC), date(2026, 10, 27)):
+            with self.subTest(check_date=value), self.assertRaises(ValueError):
+                prepare_official_bulletin(replace(jet(), source_checked_on_utc=value))
+
     def test_bulgarian_prosecutor_filing_is_procedural_not_attack_witness(self):
         # The 29 Oct official prosecutor release confirms an investigation
         # referred by military police, not an independent observation of impact.
