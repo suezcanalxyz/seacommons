@@ -21,6 +21,11 @@ on:
       - apps/api/core/intel/maritime_attack_staging_ais_context.py
       - tests/test_maritime_attack_staging_ais_context.py
       - apps/api/core/intel/maritime_attack_staging_case_review.py
+      - apps/api/core/intel/maritime_attack_staging_lineage.py
+      - apps/api/core/intel/maritime_attack_staging_store.py
+      - tests/test_maritime_attack_staging_lineage.py
+      - tests/test_maritime_attack_staging_store.py
+      - docs/research/maritime-attack-mscio-146-2026-11-02.json
       - tests/test_maritime_attack_staging_case_review.py
       - docs/research/maritime-attack-transport-rescue-2026-11-02.json
       - docs/research/maritime-attack-able-damage-assessment-2026-11-02.json
@@ -75,6 +80,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install isolated SQLAlchemy test dependency
+        run: python -m pip install 'SQLAlchemy>=2.0,<2.1'
       - name: Unit tests (pure, no production credentials)
         env:
           PYTHONPATH: apps/api
