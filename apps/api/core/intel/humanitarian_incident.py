@@ -197,7 +197,7 @@ def reconcile_recent_incident_lifecycles(
     """
     from core.db.models import HumanitarianIncidentDB
     from core.db.session import session_scope
-    from core.intel.lifecycle import distress_lifecycle, parse_utc
+    from core.intel.lifecycle import _latest_activity_time, distress_lifecycle, parse_utc
     from core.intel.store import intel_store
 
     now_utc = now or datetime.now(timezone.utc)
@@ -220,11 +220,19 @@ def reconcile_recent_incident_lifecycles(
     changed = 0
     same_source_cache: dict[str, list[IntelEvent]] = {}
     for incident_id, current_lifecycle, activity_at in candidates:
-        activity = parse_utc(activity_at or "")
-        if activity is not None and (now_utc - activity).total_seconds() > max_age_hours * 3600:
-            continue
+        # The canonical timestamp can lag a later source-thread reply. Read
+        # the durable event before applying the age gate, or the reconciler
+        # permanently skips precisely the older cases that received a reply.
         event = intel_store.get_durable(incident_id)
         if event is None:
+            continue
+        activity = parse_utc(activity_at or "")
+        latest_observed = _latest_activity_time(event, now=now_utc)
+        freshest = max(
+            (value for value in (activity, latest_observed) if value is not None),
+            default=None,
+        )
+        if freshest is not None and (now_utc - freshest).total_seconds() > max_age_hours * 3600:
             continue
         same_source = same_source_cache.get(event.source)
         if same_source is None:
@@ -233,7 +241,13 @@ def reconcile_recent_incident_lifecycles(
             )
             same_source_cache[event.source] = same_source
         lifecycle = distress_lifecycle(event, now=now_utc, same_source=same_source)
-        if lifecycle == current_lifecycle:
+        # An unchanged lifecycle can still have a newer credible observation.
+        # Persist that activity once, but do not count it as a state transition
+        # or repeatedly increment the revision on an unchanged replay.
+        newer_activity = latest_observed is not None and (
+            activity is None or latest_observed > activity
+        )
+        if lifecycle == current_lifecycle and not newer_activity:
             continue
         sync_incident_for_event(
             event,
@@ -241,7 +255,8 @@ def reconcile_recent_incident_lifecycles(
             case_type=event.metadata.get("humanitarian_case_type")
             or event.metadata.get("case_type"),
         )
-        changed += 1
+        if lifecycle != current_lifecycle:
+            changed += 1
     return changed
 
 
