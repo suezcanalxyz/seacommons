@@ -71,7 +71,11 @@ def _refresh_candidates() -> list[IntelEvent]:
     age_days = lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS
     recent = intel_store.events(limit=200, max_age_days=age_days)
     ngo = intel_store.persisted_events(
-        source_in=["Alarm Phone", "alarm_phone"],
+        # Match the same known source spellings as drift_watchdog. These
+        # are exact SQL source filters; omitted variants vanish after AIS
+        # deque eviction even when the report is still in the Live window.
+        source_in=["Alarm Phone", "alarm_phone", "alarmphone", "@alarm_phone",
+                   "AlarmPhone", "@AlarmPhone", "@alarmphone"],
         max_age_days=age_days,
         limit=120,
     )
