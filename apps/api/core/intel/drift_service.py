@@ -112,6 +112,23 @@ def _lifecycle_state(event: Any) -> str:
         return str(meta.get("incident_lifecycle") or "active")
 
 
+def drift_origin_coordinates(event: Any) -> tuple[Any, Any]:
+    """Resolve the same evidence origin for the eligibility and scheduling gates.
+
+    A canonical point takes precedence. Older text-extraction records may
+    carry a precise position only in metadata; that fallback is *not* itself
+    a trust decision. The shared eligibility gate must still validate source,
+    review state, uncertainty, operational region, and sea/land classification.
+    """
+    meta = getattr(event, "metadata", {}) or {}
+    lat = getattr(event, "lat", None)
+    lon = getattr(event, "lon", None)
+    return (
+        lat if lat is not None else meta.get("lat"),
+        lon if lon is not None else meta.get("lon"),
+    )
+
+
 def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
     """Whether an intel event's location evidence may originate a SAR drift.
 
@@ -171,12 +188,9 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
     # humanitarian record, never a maritime drift origin. Independent of the
     # sea_land_class / location_status metadata above so a missing tag can
     # never let a land coordinate through.
-    lat = getattr(event, "lat", None)
-    if lat is None:
-        lat = meta.get("lat")
-    lon = getattr(event, "lon", None)
-    if lon is None:
-        lon = meta.get("lon")
+    # Resolve a legacy metadata-only *precise* coordinate through the same
+    # accessor as the scheduler. A region centroid remains blocked above.
+    lat, lon = drift_origin_coordinates(event)
     if lat is None or lon is None:
         return False, "no coordinate to originate a drift"
     # Check the *reported origin*, never a coastline-snapped substitute.
@@ -429,7 +443,8 @@ def schedule_intel_drift(
     try:
         import math
 
-        stored_lat, stored_lon = float(event.lat), float(event.lon)
+        origin_lat, origin_lon = drift_origin_coordinates(event)
+        stored_lat, stored_lon = float(origin_lat), float(origin_lon)
         supplied_lat, supplied_lon = float(lat), float(lon)
         valid = all(math.isfinite(v) for v in (
             stored_lat, stored_lon, supplied_lat, supplied_lon

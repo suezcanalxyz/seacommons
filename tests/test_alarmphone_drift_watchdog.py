@@ -34,3 +34,35 @@ def test_watchdog_scans_all_durable_alarm_phone_aliases(monkeypatch):
     assert "@alarmphone" in captured["source_in"]
     assert captured["max_age_days"] == 2
     assert captured["limit"] == 17
+
+
+def test_watchdog_uses_verified_metadata_origin_when_canonical_columns_missing(monkeypatch):
+    """Watchdog and scheduler must agree on the origin of a legacy precise fix."""
+    from core.intel.drift_watchdog import reconcile
+    from core.intel.store import IntelEvent, intel_store
+    import core.intel.drift_service as drift_service
+    import core.intel.drift_ownership as ownership
+    import core.intel.lifecycle as lifecycle
+
+    event = IntelEvent(
+        id="watchdog-meta-origin", source="Alarm Phone", type="distress",
+        title="Active distress", text="Boat in distress",
+        lat=None, lon=None,
+        metadata={
+            "is_distress": True, "incident_lifecycle": "active",
+            "coordinate_source": "post_text", "coordinate_review_status": "not_required",
+            "lat": 34.27, "lon": 11.94,
+        },
+    )
+    calls = []
+    monkeypatch.setattr(intel_store, "persisted_events", lambda **kwargs: [event])
+    monkeypatch.setattr(lifecycle, "is_within_live_window", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(drift_service, "is_auto_drift_eligible", lambda _event: (True, "eligible"))
+    monkeypatch.setattr(ownership, "get_current_drift_id", lambda _id: None)
+    monkeypatch.setattr(
+        drift_service, "schedule_intel_drift",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or True,
+    )
+    result = reconcile(launch=True)
+    assert result["launched"] == 1
+    assert calls[0][0][1:3] == (34.27, 11.94)
