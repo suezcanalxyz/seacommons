@@ -33,7 +33,7 @@ def test_published_maritime_event_is_candidate_but_old_event_is_not():
     from core.intel.satellite_enrichment import is_satellite_enrichment_candidate
 
     maritime = _event(
-        type="correlated_alert",
+        type="correlated_alert", source="Maritime Security",
         metadata={"publication_status": "published", "maritime_domain": "grey_zone"},
     )
     assert is_satellite_enrichment_candidate(maritime, now=_NOW) is True
@@ -221,7 +221,9 @@ def test_false_string_flags_do_not_trigger_satellite_enrichment():
     assert not is_satellite_enrichment_candidate(false_flags, now=_NOW)
     positive = _event(metadata={"is_distress": "true"})
     assert is_satellite_enrichment_candidate(positive, now=_NOW)
-    published = _event(metadata={"publication_status": "published"})
+    published = _event(source="Maritime Security", metadata={
+        "publication_status": "published", "maritime_domain": "grey_zone",
+    })
     assert is_satellite_enrichment_candidate(published, now=_NOW)
 
 
