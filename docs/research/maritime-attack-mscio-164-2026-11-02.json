@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "source_checked_on_utc": "2026-11-02",
+  "records": [
+    {
+      "issuer": "MSCIO",
+      "bulletin_id": "164/26",
+      "source_url": "https://mscio.eu/alerts/200",
+      "kind": "attack",
+      "vessel_name": "",
+      "occurred_at_utc": "2026-11-01T15:09:00Z",
+      "event_time_approximate": true,
+      "publication_date": "2026-11-01",
+      "source_rights": "restricted_republication"
+    }
+  ]
+}
