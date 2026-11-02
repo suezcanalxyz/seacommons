@@ -39,6 +39,12 @@ def _normalised_source(value: str) -> str:
     """Stable identity for harmless source spelling variants."""
     return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
 
+
+def humanitarian_source_group_key(value: str) -> str:
+    """Join Alarm Phone collector aliases without merging unrelated sources."""
+    source = str(value or "").strip().casefold()
+    return "alarmphone" if _normalised_source(source) == "alarmphone" else source
+
 # Location-upgrade decisions live in core.intel.location_evidence
 # (metadata_quality / location_quality): evidence quality -- review status,
 # then source, then tighter uncertainty -- not source rank alone (F-04).
