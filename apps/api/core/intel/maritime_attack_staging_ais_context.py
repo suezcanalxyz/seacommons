@@ -11,6 +11,8 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from math import isclose
 
+from core.intel.maritime_attack_correlation import _km
+
 from core.intel.maritime_attack_correlation import (
     VesselRef, _canonical_source_url, _name, _utc, _valid_imo,
     _valid_mmsi, ais_fix_from_vessel_track,
@@ -86,6 +88,10 @@ def build_staging_ais_context(
         fix = ais_fix_from_vessel_track(row)
         if fix.mmsi != crosswalk.mmsi:
             raise ValueError("foreign_mmsi_in_ais_batch")
+        # A fix that occurs >5 minutes after its recorded receipt has
+        # contradictory clocks. Never use it to construct a stop signal.
+        if (fix.observed_at - fix.received_at).total_seconds() > 300:
+            raise ValueError("ais_fix_observed_after_receipt")
         previous = by_time.setdefault(fix.observed_at, fix)
         if previous != fix:
             raise ValueError("conflicting_ais_fixes_at_same_timestamp")
@@ -100,12 +106,22 @@ def build_staging_ais_context(
     before = next((fix for fix in reversed(window) if fix.observed_at <= event_at), None) if event_at else None
     after = next((fix for fix in window if fix.observed_at >= event_at), None) if event_at else None
     exact = preview.get("event_time_precision") == "exact"
+    # A physically implausible jump can be AIS spoofing, bad reception or
+    # mixed identities. Retain context, but never label a sudden stop when
+    # the surrounding track fails this independent spatial sanity check.
+    kinematic_conflict = any(
+        (right.observed_at - left.observed_at).total_seconds() > 0
+        and (_km(left.lat, left.lon, right.lat, right.lon) / 1.852)
+        / ((right.observed_at - left.observed_at).total_seconds() / 3600) > 70
+        for left, right in zip(window, window[1:])
+    )
     gap_minutes = (
         round((after.observed_at - before.observed_at).total_seconds() / 60, 3)
         if before is not None and after is not None else None
     )
     sudden_stop = bool(
-        exact and before is not None and after is not None
+        exact and not kinematic_conflict
+        and before is not None and after is not None
         and before.sog_knots is not None and after.sog_knots is not None
         and before.sog_knots >= 6 and after.sog_knots <= 2
         and before.sog_knots - after.sog_knots >= 5
@@ -141,6 +157,7 @@ def build_staging_ais_context(
         "ais_sampling_gap_minutes": gap_minutes,
         "ais_coverage_gap_signal": bool(exact and gap_minutes is not None and gap_minutes > 30),
         "sudden_stop_signal": sudden_stop,
+        "ais_kinematic_conflict_signal": kinematic_conflict,
         "receipt_latency_status": receipt_status,
         "incident_site_from_ais": False,
         "ais_as_attack_proof": False,
