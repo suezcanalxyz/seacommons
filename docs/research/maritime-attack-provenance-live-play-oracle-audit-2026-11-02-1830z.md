@@ -8,7 +8,7 @@ No production deployment, no DDL, no data deletion, no canonical writes, no sche
 
 Previous functional branch head: `fd1a9ad5`. This run adds fail-closed lineage provenance validation, regressions, and metadata-only MSCIO 148/26 manifest. Source code rejects boolean `False` masquerading as zero independent witnesses, noncanonical day-only event dates, malformed/credential-bearing/fragmented HTTPS evidence URLs, invalid optional publication/receipt timestamps, publication after receipt, source dates after receipt, and malformed SHA-256 fields. These are validation gates, not document authentication.
 
-The isolated lineage test suite completed **27 tests passed** on the Oracle VM using a temporary copy; one existing Python 3.12-only test expression (`base | changed`) was adapted to Python 3.8 syntax in the temporary test copy only. No production checkout modified. The earlier `cad17ef0` commit's GitHub Actions run `41500725820` completed successfully (all four jobs). New manifest/test CI must be checked separately.
+The isolated lineage test suite completed **27 tests passed** on the Oracle VM using a temporary copy; one existing Python 3.12-only test expression (`base | changed`) was adapted to Python 3.8 syntax in the temporary test copy only. No production checkout modified. The earlier `cad17ef0` commit's GitHub Actions run `41500725820` completed successfully (all four jobs). The subsequent manifest/test workflow run [41501189351](https://github.com/suezcanalxyz/seacommons/actions/runs/41501189351) completed successfully: all four jobs (correlation-unit, bulletin-writer-sqlite, bulletin-writer-postgres, frontend-attack-taxonomy) passed. This is an isolated CI result, not a production deployment.
 
 ## Oracle PostgreSQL read-only audit
 
