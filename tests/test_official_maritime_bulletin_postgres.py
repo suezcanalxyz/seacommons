@@ -128,6 +128,23 @@ class EphemeralPostgresCanonicalWriterTests(TestCase):
         with Session(self.engine) as db:
             written = [ingest_official_bulletin(db, item.bulletin) for item in batch]
             self.assertEqual(len(written), 6)
+            # Exercise the actual canonical writer -> metadata-only staging
+            # review preview, not a hand-built in-memory substitute.
+            from core.intel.maritime_attack_staging_preview import (
+                build_staging_attack_previews,
+            )
+            previews = build_staging_attack_previews(batch, written)
+            self.assertEqual(len(previews), 6)
+            self.assertEqual(sum(p["proposed_incident_type"] == "maritime_attack"
+                                 for p in previews), 4)
+            self.assertTrue(all(p["publication_allowed"] is False for p in previews))
+            self.assertTrue(all(p["independent_origins_verified"] == 0 for p in previews))
+            self.assertEqual(previews[0]["vessel_imo_as_reported"], "")
+            self.assertEqual(previews[3]["review_status"], "context_only")
+            self.assertEqual(previews[4]["proposed_incident_type"], "piracy")
+            self.assertEqual(previews[1]["source_rights"], "restricted_republication")
+            self.assertTrue(all("incident_type" not in p and "visual_category" not in p
+                                for p in previews))
             self.assertEqual(
                 db.scalar(select(func.count()).select_from(SourceObservationDB)), 6
             )
