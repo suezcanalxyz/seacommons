@@ -121,6 +121,15 @@ class MaritimeAttackLineageTests(TestCase):
         with self.assertRaisesRegex(ValueError, "lineage_spatial_conflict"):
             build_staging_attack_lineage_review([a, b], [shared("A", "B")])
 
+    def test_rejects_extra_location_metadata_outside_snapshot(self):
+        with self.assertRaisesRegex(ValueError, "lineage_non_incident_geometry"):
+            build_staging_attack_lineage_review([notice(
+                "A", reported_location={
+                    "lat": 26.0, "lon": 56.0, "role": "incident_site",
+                    "uncertainty_km": None, "unfingerprinted_precision": 1,
+                }
+            )])
+
     def test_uncertain_position_does_not_create_attack_site(self):
         a = notice("A", reported_location={
             "lat": 26.0, "lon": 56.0, "role": "incident_site",
@@ -186,6 +195,49 @@ class MaritimeAttackLineageTests(TestCase):
             build_staging_attack_lineage_review(
                 [a, b, c], [shared("A", "B"), shared("B", "C")]
             )
+
+    def test_digest_changes_when_source_evidence_changes(self):
+        base = notice(
+            "MSCIO:164/26",
+            reported_location={
+                "lat": 26.0, "lon": 56.0, "role": "incident_site",
+                "uncertainty_km": None,
+            },
+            source_document_sha256="a" * 64,
+            received_at_utc="2026-11-02T12:00:00+00:00",
+        )
+        baseline = build_staging_attack_lineage_review([base])
+        for changed in (
+            {"occurred_at_utc": "2026-11-01T15:10:00+00:00"},
+            {"source_url": "https://mscio.eu/alerts/201"},
+            {"vessel_imo_as_reported": "9348625"},
+            {"source_document_sha256": "b" * 64},
+            {"received_at_utc": "2026-11-02T12:01:00+00:00"},
+            {"source_rights": "restricted_republication"},
+            {"reported_location": {
+                "lat": 26.1, "lon": 56.0, "role": "incident_site",
+                "uncertainty_km": None,
+            }},
+            {"reported_location": {
+                "lat": 26.0, "lon": 56.0, "role": "incident_site",
+                "uncertainty_km": 0,
+            }},
+        ):
+            with self.subTest(changed=changed):
+                updated = build_staging_attack_lineage_review(
+                    [notice("MSCIO:164/26", **(base | changed))]
+                )
+                self.assertNotEqual(
+                    baseline["lineage_snapshot_sha256"],
+                    updated["lineage_snapshot_sha256"],
+                )
+                self.assertFalse(updated["publication_allowed"])
+        self.assertEqual(
+            baseline["lineage_snapshot_sha256"],
+            build_staging_attack_lineage_review([deepcopy(base)])[
+                "lineage_snapshot_sha256"
+            ],
+        )
 
     def test_digest_deterministic_and_changes_on_lineage_evidence(self):
         candidates = [notice("A"), notice("B")]

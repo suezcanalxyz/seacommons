@@ -57,7 +57,9 @@ def _position(preview: Mapping[str, object]) -> tuple[float, float, float] | Non
     value = preview.get("reported_location")
     if value is None:
         return None
-    if not isinstance(value, Mapping) or value.get("role") != "incident_site":
+    if (not isinstance(value, Mapping)
+            or set(value) != {"lat", "lon", "role", "uncertainty_km"}
+            or value.get("role") != "incident_site"):
         raise ValueError("lineage_non_incident_geometry")
     lat, lon, uncertainty = (
         value.get("lat"), value.get("lon"), value.get("uncertainty_km")
@@ -205,8 +207,40 @@ def build_staging_attack_lineage_review(
     ]
     groups.sort(key=lambda group: group["report_ids"])
     links.sort(key=lambda link: (link["left_report_id"], link["right_report_id"]))
-    ledger = {"groups": groups, "links": links}
-    digest = sha256(json.dumps(ledger, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    # A graph-only digest is unsafe: changing an event clock, vessel identity,
+    # source URL or reported position could previously leave the same digest.
+    # Fingerprint the complete *selected source evidence* as well as the links.
+    # This is still a staging snapshot hash, NOT a source-document signature.
+    source_fields = (
+        "canonical_observation_id", "original_report_id", "source_url",
+        "source_kind", "source_rights", "source_checked_on_utc",
+        "raw_payload_hash", "source_document_sha256", "received_at_utc",
+        "published_at_utc", "publication_date", "occurred_at_utc",
+        "event_date", "event_time_precision",
+        "reported_time_uncertainty_minutes", "vessel_name_as_reported",
+        "vessel_imo_as_reported", "vessel_mmsi_as_reported",
+    )
+    evidence = []
+    for rid in sorted(by_id):
+        source = by_id[rid]
+        entry = {field: source.get(field) for field in source_fields}
+        location = source.get("reported_location")
+        entry["reported_location"] = (
+            None if location is None else {
+                "lat": location["lat"], "lon": location["lon"],
+                "role": location["role"],
+                "uncertainty_km": location.get("uncertainty_km"),
+            }
+        )
+        evidence.append(entry)
+    ledger = {"groups": groups, "links": links, "source_evidence": evidence}
+    try:
+        canonical = json.dumps(
+            ledger, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("lineage_noncanonical_evidence") from exc
+    digest = sha256(canonical.encode("utf-8")).hexdigest()
     return {
         "source_count": len(previews),
         "provisional_origin_groups": len(groups),
