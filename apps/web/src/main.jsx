@@ -3543,6 +3543,41 @@ function App() {
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <main className={`cop-shell ${play3D && APP_PROFILE === 'demo' ? 'is-play-mode' : ''} ${isPublicLiveHost ? 'is-live-mode' : ''}`}>
+      {(isPublicLiveHost || APP_PROFILE === 'demo') && (
+        <nav className="sc-mobile-dock" aria-label="Mobile map navigation">
+          <button type="button" className={isPublicLiveHost && !sidebarOpen && (conePanelHidden || !mapPanel) || APP_PROFILE === 'demo' && play3D && !playSimulationOpen ? 'is-active' : ''}
+            aria-label="Show map" onClick={() => {
+              setSidebarOpen(false);
+              setConePanelHidden(true);
+              setPlaySimulationOpen(false);
+              if (APP_PROFILE === 'demo') setPlay3D(true);
+            }}><span aria-hidden="true">◎</span><small>Map</small></button>
+          {isPublicLiveHost ? (
+            <>
+              <button type="button" className={sidebarOpen ? 'is-active' : ''} aria-label="Open live feed"
+                aria-expanded={sidebarOpen} onClick={() => { setConePanelHidden(true); setSidebarOpen(true); }}>
+                <span aria-hidden="true">≡</span><small>Feed</small>
+              </button>
+              <button type="button" className={mapPanel && !conePanelHidden ? 'is-active' : ''} aria-label="Open selected report"
+                aria-expanded={Boolean(mapPanel && !conePanelHidden)} disabled={!mapPanel}
+                onClick={() => { setSidebarOpen(false); setConePanelHidden(false); }}>
+                <span aria-hidden="true">▤</span><small>Report</small>
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className={!play3D ? 'is-active' : ''} aria-label="Open archive"
+                onClick={() => { setPlaySimulationOpen(false); setPlay3D(false); }}>
+                <span aria-hidden="true">◷</span><small>Archive</small>
+              </button>
+              <button type="button" className={playSimulationOpen ? 'is-active' : ''} aria-label="Open simulation"
+                aria-expanded={playSimulationOpen} onClick={() => { setPlay3D(true); setPlaySimulationOpen(true); setSelectionMode(true); }}>
+                <span aria-hidden="true">◇</span><small>Simulate</small>
+              </button>
+            </>
+          )}
+        </nav>
+      )}
       <section className="map-stage">
         <div className={`map-frame ${play3D ? 'is-concealed' : ''}`} ref={mapNodeRef} />
         {APP_PROFILE === 'demo' ? (
