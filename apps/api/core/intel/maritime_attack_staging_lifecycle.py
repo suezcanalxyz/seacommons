@@ -140,8 +140,13 @@ def prepare_staging_lifecycle_update(
             raise ValueError("lifecycle_original_event_date_invalid")
     else:
         event_day_parsed = event_at.date()
-    if checked.date() < event_day_parsed:
+    if checked.date() < event_day_parsed or (event_at is not None and checked < event_at):
         raise ValueError("lifecycle_update_before_original")
+    if published is not None and (
+        published.date() < event_day_parsed
+        or (event_at is not None and published < event_at)
+    ):
+        raise ValueError("lifecycle_publication_before_original")
     if effective is not None and (
         (event_at is not None and effective < event_at)
         or effective.date() < event_day_parsed
