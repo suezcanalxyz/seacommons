@@ -132,3 +132,25 @@ def test_infinite_uncertainty_cannot_bypass_spatial_gate():
     ])
     assert result["status"] == "insufficient_evidence"
     assert "invalid_position" in result["reasons"]
+
+def test_invalid_imo_checksum_fails_closed():
+    result = evaluate_attack_candidate([item("a", "official"), item("b", "press", imo="9348626")])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_vessel_identifier" in result["reasons"]
+
+
+def test_invalid_mmsi_length_fails_closed():
+    result = evaluate_attack_candidate([item("a", "official"), item("b", "press", mmsi="63601953")])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_vessel_identifier" in result["reasons"]
+
+
+def test_nan_matching_threshold_cannot_bypass_spatial_check():
+    result = evaluate_attack_candidate([item("a", "official"), item("b", "press")], max_km=float("nan"))
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_matching_threshold" in result["reasons"]
+
+
+def test_valid_contship_jet_identifiers_still_match():
+    result = evaluate_attack_candidate([item("a", "official"), item("b", "press")])
+    assert result["status"] == "candidate_for_analyst_review"
