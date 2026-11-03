@@ -631,6 +631,7 @@ function App() {
   const [play3D, setPlay3D] = useState(APP_PROFILE === 'demo');
   const [playRenderer, setPlayRenderer] = useState('cesium');
   const [playSimulationOpen, setPlaySimulationOpen] = useState(false);
+  const [mobileGuideOpen, setMobileGuideOpen] = useState(false);
   const [timezero, setTimezero] = useState(null);
   const [selectedVessel, setSelectedVessel] = useState(null);
   const [receiverMesh, setReceiverMesh] = useState({ catalogued: 0, reachable: 0, eligible: 0, active: 0, receivers: [] });
@@ -3541,7 +3542,7 @@ function App() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <main className={`cop-shell ${play3D && APP_PROFILE === 'demo' ? 'is-play-mode' : ''} ${isPublicLiveHost ? 'is-live-mode' : ''}`}>
+    <main className={`cop-shell ${play3D && APP_PROFILE === 'demo' ? 'is-play-mode' : ''} ${isPublicLiveHost ? 'is-live-mode' : ''} ${APP_PROFILE === 'demo' ? 'is-play-profile' : ''}`}>
       {(isPublicLiveHost || APP_PROFILE === 'demo') && (
         <nav className="sc-mobile-dock" aria-label="Mobile map navigation">
           <button type="button" className={isPublicLiveHost && !sidebarOpen && (conePanelHidden || !mapPanel) || APP_PROFILE === 'demo' && play3D && !playSimulationOpen ? 'is-active' : ''}
@@ -3586,7 +3587,33 @@ function App() {
               </button>
             </>
           )}
+          <button type="button" className={mobileGuideOpen ? 'is-active' : ''} aria-label="Open map guide" aria-expanded={mobileGuideOpen} onClick={() => { setMobileGuideOpen((v) => !v); setSidebarOpen(false); setConePanelHidden(true); setPlaySimulationOpen(false); }}><span aria-hidden="true">?</span><small>Guide</small></button>
         </nav>
+      )}
+      {(isPublicLiveHost || APP_PROFILE === 'demo') && mobileGuideOpen && (
+        <aside className="sc-mobile-guide" role="dialog" aria-label="SeaCommons map guide">
+          <header className="sc-mobile-guide__header"><div><small>SEACOMMONS / FIELD GUIDE</small><h2>Reading the map</h2></div><button type="button" aria-label="Close guide" onClick={() => setMobileGuideOpen(false)}>×</button></header>
+          <div className="sc-mobile-guide__body">
+            <section><h3>Legend</h3>
+              <p><strong>▲ Vessel</strong> — A tracked maritime object. Orientation indicates heading only when heading data is available.</p>
+              <p><strong>● Point</strong> — A reported or recorded geographic position. Select it to inspect associated information.</p>
+              <p><strong>— Track</strong> — A sequence of recorded positions. Gaps do not establish continuous movement.</p>
+              <p><strong>◌ Drift</strong> — A modelled possible location or uncertainty area, not a confirmed position.</p>
+            </section>
+            <section><h3>What am I seeing?</h3>
+              <p><strong>Map</strong> shows maritime observations and investigations in geographic context.</p>
+              <p><strong>{isPublicLiveHost ? 'Feed' : 'Archive'}</strong> {isPublicLiveHost ? 'lists recent signals and cases; selecting one opens its report and map location.' : 'provides historical records; coverage varies by source and period.'}</p>
+              <p><strong>Report</strong> brings together the case, sources, coordinates and available trajectories or estimates.</p>
+            </section>
+            <section><h3>How to read the evidence</h3>
+              <p><strong>Observed</strong> — Present in a source record; it does not establish the complete circumstances.</p>
+              <p><strong>Reported</strong> — Described by a source and potentially awaiting independent corroboration.</p>
+              <p><strong>Estimated</strong> — Modelled or inferred, with uncertainty.</p>
+              <p><strong>Correlated</strong> — Multiple records associated, not necessarily a confirmed event or cause.</p>
+              <p>Layer colours and categories help distinguish information. Check each report's source and timestamp before drawing conclusions.</p>
+            </section>
+          </div>
+        </aside>
       )}
       <section className="map-stage">
         <div className={`map-frame ${play3D ? 'is-concealed' : ''}`} ref={mapNodeRef} />
