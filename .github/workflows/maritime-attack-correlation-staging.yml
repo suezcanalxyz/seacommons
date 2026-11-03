@@ -15,6 +15,8 @@ on:
       - tests/test_maritime_attack_lineage_scaling.py
       - tests/test_maritime_attack_identity_evidence.py
       - tests/test_maritime_attack_ais_context_readonly.py
+      - apps/api/core/intel/maritime_attack_origin_review.py
+      - tests/test_maritime_attack_origin_review.py
       - apps/api/core/intel/maritime_attack_staging_lifecycle.py
       - tests/test_maritime_attack_staging_lifecycle.py
       - apps/api/core/intel/maritime_attack_staging_manifest.py
