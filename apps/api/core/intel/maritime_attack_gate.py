@@ -76,8 +76,10 @@ def evaluate_attack_candidate(
     def matches(a, at_a, b, at_b):
         if abs((at_a-at_b).total_seconds()) > max_hours * 3600:
             return False, "time_mismatch"
-        if not ((a.imo and b.imo and a.imo == b.imo) or (a.mmsi and b.mmsi and a.mmsi == b.mmsi)):\n            return False, "unresolved_vessel_identity"\n        if a.imo and b.imo and a.imo != b.imo:
+        if a.imo and b.imo and a.imo != b.imo:
             return False, "imo_conflict"
+        if not ((a.imo and b.imo and a.imo == b.imo) or (a.mmsi and b.mmsi and a.mmsi == b.mmsi)):
+            return False, "unresolved_vessel_identity"
         if a.mmsi and b.mmsi and a.mmsi != b.mmsi:
             return False, "mmsi_conflict"
         if a.position and b.position and _distance_km(a.position, b.position) > max_km + max(0, a.uncertainty_km) + max(0, b.uncertainty_km):
