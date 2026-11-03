@@ -193,3 +193,22 @@ class StagingLifecycleTests(TestCase):
             prepare_staging_lifecycle_update(
                 original(), dict(closure(), issuer="SOCIAL_MEDIA")
             )
+
+    def test_rejects_same_day_check_before_original_event_clock(self):
+        with self.assertRaisesRegex(ValueError, "update_before_original"):
+            prepare_staging_lifecycle_update(original(), dict(
+                closure(), source_checked_at_utc="2026-10-29T08:59:59Z"
+            ))
+
+    def test_rejects_publication_before_original_event(self):
+        with self.assertRaisesRegex(ValueError, "publication_before_original"):
+            prepare_staging_lifecycle_update(original(), dict(
+                closure(), source_published_at_utc="2026-10-29T08:59:59Z"
+            ))
+
+    def test_allows_publication_at_original_event_clock(self):
+        result = prepare_staging_lifecycle_update(original(), dict(
+            closure(), source_published_at_utc="2026-10-29T09:00:00Z"
+        ))
+        self.assertFalse(result["publication_allowed"])
+        self.assertFalse(result["new_incident"])
