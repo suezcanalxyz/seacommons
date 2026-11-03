@@ -13,6 +13,16 @@ def _time(value: str) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+def _valid_imo(value: str) -> bool:
+    """Seven-digit IMO number with the standard weighted check digit."""
+    return (len(value) == 7 and value.isascii() and value.isdigit()
+            and sum(int(digit) * weight for digit, weight in zip(value[:6], range(7, 1, -1))) % 10 == int(value[-1]))
+
+
+def _valid_mmsi(value: str) -> bool:
+    return len(value) == 9 and value.isascii() and value.isdigit()
+
+
 def _distance_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     lat1, lon1 = a
     lat2, lon2 = b
@@ -45,6 +55,8 @@ def evaluate_attack_candidate(
     reasons: list[str] = []
     if not evidence:
         return {"status": "insufficient_evidence", "reasons": ["no_evidence"], "sources": []}
+    if not all(isfinite(value) and value >= 0 for value in (max_hours, max_km)):
+        return {"status": "insufficient_evidence", "reasons": ["invalid_matching_threshold"], "sources": [], "automatic_publication": False, "attribution": None}
     valid = []
     for item in evidence:
         try:
@@ -62,6 +74,10 @@ def evaluate_attack_candidate(
                 (item.position is not None and (not all(isfinite(v) for v in item.position) or
                  not -90 <= item.position[0] <= 90 or not -180 <= item.position[1] <= 180))):
             reasons.append("invalid_position")
+            continue
+        if ((item.imo is not None and not _valid_imo(item.imo)) or
+                (item.mmsi is not None and not _valid_mmsi(item.mmsi))):
+            reasons.append("invalid_vessel_identifier")
             continue
         valid.append((item, event))
     claims = [(item, at) for item, at in valid if item.explicit_attack_claim and not item.signal_only]
