@@ -106,3 +106,29 @@ def test_duplicate_article_url_with_different_source_id_is_one_source():
     result = evaluate_attack_candidate(evidence)
     assert result["status"] == "insufficient_evidence"
     assert "duplicate_source" in result["reasons"]
+
+def test_same_source_id_with_different_urls_is_not_independent():
+    result = evaluate_attack_candidate([
+        item("authority-1", "authority"),
+        item("authority-1", "press", source_url="https://different.example.org/story"),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "duplicate_source" in result["reasons"]
+
+
+def test_nan_coordinate_cannot_bypass_spatial_gate():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", position=(float("nan"), 30.0)),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_position" in result["reasons"]
+
+
+def test_infinite_uncertainty_cannot_bypass_spatial_gate():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", uncertainty_km=float("inf")),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_position" in result["reasons"]
