@@ -67,7 +67,7 @@ def evaluate_attack_candidate(
     unique_claims = []
     seen_sources = set()
     for item, at in claims:
-        key = (item.source_id, item.source_url)
+        key = item.source_url.split("#", 1)[0].split("?", 1)[0].rstrip("/").lower()
         if key in seen_sources:
             reasons.append("duplicate_source")
             continue
@@ -86,23 +86,18 @@ def evaluate_attack_candidate(
             return False, "spatial_mismatch"
         return True, None
 
-    # Require pairwise compatibility; do not let an arbitrary first report
-    # decide the candidate cluster or allow mutually conflicting reports.
-    compatible = []
-    for item, at in unique_claims:
-        if not compatible:
-            compatible.append((item, at))
-            continue
-        checks = [matches(item, at, other, other_at) for other, other_at in compatible]
-        if all(ok for ok, _ in checks):
-            compatible.append((item, at))
-        else:
-            reasons.extend(reason for ok, reason in checks if not ok and reason)
-    groups = sorted({item.independent_group for item, _ in compatible})
+    # Fail closed on contradictory claims: an input-order-dependent subset
+    # must never become a corroborated incident.
+    for index, (item, at) in enumerate(unique_claims):
+        for other, other_at in unique_claims[index + 1:]:
+            ok, reason = matches(item, at, other, other_at)
+            if not ok and reason:
+                reasons.append(reason)
+    groups = sorted({item.independent_group for item, _ in unique_claims})
     if len(groups) < 2:
         reasons.append("fewer_than_two_independent_attack_claims")
     return {
-        "status": "candidate_for_analyst_review" if len(groups) >= 2 else "insufficient_evidence",
+        "status": "candidate_for_analyst_review" if len(groups) >= 2 and not any(r in reasons for r in ("time_mismatch", "imo_conflict", "mmsi_conflict", "spatial_mismatch", "unresolved_vessel_identity")) else "insufficient_evidence",
         "reasons": sorted(set(reasons)),
         "independent_groups": groups,
         "sources": [{"id": i.source_id, "url": i.source_url, "event_at": i.event_at,
