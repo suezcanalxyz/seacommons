@@ -857,7 +857,9 @@ function App() {
     return {
       top: 24,
       right: 24,
-      bottom: Math.round(window.innerHeight * 0.66),
+      // The visible map is above the 34dvh report sheet; leave its point
+      // in that visible area instead of hiding it behind the mobile dock.
+      bottom: Math.round(window.innerHeight * 0.36) + 64,
       left: 24,
     };
   }
@@ -3551,6 +3553,17 @@ function App() {
               setConePanelHidden(true);
               setPlaySimulationOpen(false);
               if (APP_PROFILE === 'demo') setPlay3D(true);
+              // Preserve the selected report when returning to the map.
+              // Users can reopen it from the Report tab without reselecting.
+              if (isPublicLiveHost && resolvedMapPanel && mapRef.current) {
+                const point = panelFocusCoordinates(resolvedMapPanel);
+                if (point) mapRef.current.flyTo({
+                  center: point,
+                  zoom: Math.max(mapRef.current.getZoom(), 7.5),
+                  duration: 450,
+                  essential: true,
+                });
+              }
             }}><span aria-hidden="true">◎</span><small>Map</small></button>
           {isPublicLiveHost ? (
             <>
