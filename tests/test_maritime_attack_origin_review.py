@@ -71,3 +71,16 @@ class OriginReviewTests(TestCase):
     def test_reject_unreviewed_fields(self):
         with self.assertRaisesRegex(ValueError, "invalid_report_schema"):
             self.review([dict(report(), attacker="unknown")])
+
+    def test_different_ids_same_publisher_url_are_not_independent(self):
+        with self.assertRaisesRegex(ValueError, "duplicate_publisher_source_url"):
+            self.review([report("UKMTO", "191-2026"), report("UKMTO", "192-2026")])
+
+    def test_reject_url_credentials_and_fragments(self):
+        for url in ("https://user:pass@www.ukmto.org/recent-incidents",
+                    "https://www.ukmto.org/recent-incidents#claim",
+                    "https://www.ukmto.org:8443/recent-incidents"):
+            item = report()
+            item["source_url"] = url
+            with self.subTest(url=url), self.assertRaisesRegex(ValueError, "invalid_source_url"):
+                self.review([item])
