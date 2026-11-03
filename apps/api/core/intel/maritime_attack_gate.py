@@ -58,20 +58,24 @@ def evaluate_attack_candidate(
         if published < event or received < published:
             reasons.append("chronology_requires_review")
             continue
-        if (not isfinite(item.uncertainty_km) or item.uncertainty_km < 0 or\n                (item.position is not None and (not all(isfinite(v) for v in item.position) or\n                 not -90 <= item.position[0] <= 90 or not -180 <= item.position[1] <= 180))):
+        if (not isfinite(item.uncertainty_km) or item.uncertainty_km < 0 or
+                (item.position is not None and (not all(isfinite(v) for v in item.position) or
+                 not -90 <= item.position[0] <= 90 or not -180 <= item.position[1] <= 180))):
             reasons.append("invalid_position")
             continue
         valid.append((item, event))
     claims = [(item, at) for item, at in valid if item.explicit_attack_claim and not item.signal_only]
     # Do not count duplicate source records as independent confirmations.
     unique_claims = []
-    seen_sources = set()\n    seen_ids = set()
+    seen_sources = set()
+    seen_ids = set()
     for item, at in claims:
         key = item.source_url.split("#", 1)[0].split("?", 1)[0].rstrip("/").lower()
-        if key in seen_sources:
+        if key in seen_sources or item.source_id in seen_ids:
             reasons.append("duplicate_source")
             continue
-        seen_sources.add(key)\n        seen_ids.add(item.source_id)
+        seen_sources.add(key)
+        seen_ids.add(item.source_id)
         unique_claims.append((item, at))
     def matches(a, at_a, b, at_b):
         if abs((at_a-at_b).total_seconds()) > max_hours * 3600:
