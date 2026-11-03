@@ -92,3 +92,17 @@ def test_negative_uncertainty_rejected():
         item("b", "press", uncertainty_km=-100),
     ])
     assert result["status"] == "insufficient_evidence"
+
+def test_conflicting_third_claim_cannot_be_ignored():
+    evidence = [item("a", "authority"), item("b", "press"),
+                item("c", "other", imo="9999999")]
+    assert evaluate_attack_candidate(evidence)["status"] == "insufficient_evidence"
+    assert evaluate_attack_candidate(list(reversed(evidence)))["status"] == "insufficient_evidence"
+
+
+def test_duplicate_article_url_with_different_source_id_is_one_source():
+    evidence = [item("a", "authority"),
+                item("b", "press", source_url="https://example.org/a?utm_source=copy")]
+    result = evaluate_attack_candidate(evidence)
+    assert result["status"] == "insufficient_evidence"
+    assert "duplicate_source" in result["reasons"]
