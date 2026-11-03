@@ -3,7 +3,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from math import asin, cos, radians, sin, sqrt
+from math import asin, cos, isfinite, radians, sin, sqrt
 
 
 def _time(value: str) -> datetime:
@@ -58,20 +58,20 @@ def evaluate_attack_candidate(
         if published < event or received < published:
             reasons.append("chronology_requires_review")
             continue
-        if item.uncertainty_km < 0 or (item.position is not None and (not -90 <= item.position[0] <= 90 or not -180 <= item.position[1] <= 180)):
+        if (not isfinite(item.uncertainty_km) or item.uncertainty_km < 0 or\n                (item.position is not None and (not all(isfinite(v) for v in item.position) or\n                 not -90 <= item.position[0] <= 90 or not -180 <= item.position[1] <= 180))):
             reasons.append("invalid_position")
             continue
         valid.append((item, event))
     claims = [(item, at) for item, at in valid if item.explicit_attack_claim and not item.signal_only]
     # Do not count duplicate source records as independent confirmations.
     unique_claims = []
-    seen_sources = set()
+    seen_sources = set()\n    seen_ids = set()
     for item, at in claims:
         key = item.source_url.split("#", 1)[0].split("?", 1)[0].rstrip("/").lower()
         if key in seen_sources:
             reasons.append("duplicate_source")
             continue
-        seen_sources.add(key)
+        seen_sources.add(key)\n        seen_ids.add(item.source_id)
         unique_claims.append((item, at))
     def matches(a, at_a, b, at_b):
         if abs((at_a-at_b).total_seconds()) > max_hours * 3600:
