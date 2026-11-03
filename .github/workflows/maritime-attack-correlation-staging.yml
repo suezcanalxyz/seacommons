@@ -20,6 +20,8 @@ on:
       - apps/api/core/intel/maritime_attack_staging_lifecycle.py
       - tests/test_maritime_attack_staging_lifecycle.py
       - apps/api/core/intel/maritime_attack_staging_manifest.py
+      - apps/api/core/intel/maritime_attack_staging_assembly.py
+      - tests/test_maritime_attack_staging_assembly.py
       - apps/api/core/intel/maritime_attack_staging_routing.py
       - tests/test_maritime_attack_staging_routing.py
       - apps/api/core/intel/maritime_attack_staging_preview.py
