@@ -8,6 +8,7 @@ At most one heavy model starts per run, subject to shared model semaphore.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import math
 from typing import Any
 
 from core.intel.macro_drift import explicit_distress_flag, source_is_alarm_phone, spatial_prior_for_event
@@ -42,6 +43,29 @@ def _defer_retry(status: str, since: timedelta | None) -> str | None:
     if status in {"failed", "computing"} and since < RETRY_AFTER:
         return "precise_pending"
     return None
+
+
+def _completed_drift_matches_origin(result: dict[str, Any] | None, lat: Any, lon: Any) -> bool:
+    """A completed trajectory is current only for its verified origin point.
+
+    A follow-up may correct the distress coordinates after an earlier drift
+    finished. Never treat the old trajectory as covering the corrected point.
+    Missing or non-finite origin fields fail closed.
+    """
+    if not result or result.get("status") != "completed":
+        return False
+    if not result.get("trajectory") or not result.get("cone_24h"):
+        return False
+    try:
+        values = (float(lat), float(lon), float(result["lat"]), float(result["lon"]))
+        if not all(math.isfinite(value) for value in values):
+            return False
+        return (
+            abs(values[0] - values[2]) <= 1e-6
+            and abs(values[1] - values[3]) <= 1e-6
+        )
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return False
 
 
 def reconcile(*, launch: bool = False, limit: int = 300) -> dict[str, int]:
@@ -83,10 +107,11 @@ def reconcile(*, launch: bool = False, limit: int = 300) -> dict[str, int]:
             report["area_prior" if prior["geometry"] else "geography_unknown"] += 1
             continue
         report["precise_eligible"] += 1
+        origin_lat, origin_lon = drift_origin_coordinates(event)
         job_id = get_current_drift_id(event.id)
         if job_id:
             result = get_drift(job_id)
-            if result and result.get("status") == "completed" and result.get("trajectory") and result.get("cone_24h"):
+            if _completed_drift_matches_origin(result, origin_lat, origin_lon):
                 report["precise_completed"] += 1
                 continue
         meta = event.metadata
@@ -98,7 +123,6 @@ def reconcile(*, launch: bool = False, limit: int = 300) -> dict[str, int]:
             continue
         report["precise_pending"] += 1
         if launch and report["launched"] == 0:
-            origin_lat, origin_lon = drift_origin_coordinates(event)
             accepted = schedule_intel_drift(
                 event.id, float(origin_lat), float(origin_lon),
                 (int(meta["persons"]) if str(meta.get("persons", "")).isdigit() else None),
