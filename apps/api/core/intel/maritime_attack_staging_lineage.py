@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 
 _ALLOWED_LINK_BASIS = frozenset({
     "shared_vhf_mayday", "same_original_document", "explicit_republication",
+    "matching_event_details_unverified_origin",
 })
 
 
@@ -277,6 +278,21 @@ def build_staging_attack_lineage_review(
         if not _valid_https_source_url(url):
             raise ValueError("lineage_link_source_required")
         pair = tuple(sorted((left, right)))
+        # A manually documented match between *different* publishers is a
+        # hypothesis of shared upstream reporting, not an extra witness.
+        # Require tightly matching UTC event clocks and a supporting original
+        # URL, rather than merging merely because two alerts say "attack".
+        if basis == "matching_event_details_unverified_origin":
+            a, b = by_id[left], by_id[right]
+            first, second = a.get("occurred_at_utc"), b.get("occurred_at_utc")
+            if (first is None or second is None
+                    or abs((_utc(first) - _utc(second)).total_seconds()) > 300):
+                raise ValueError("lineage_matching_details_clock_mismatch")
+            hosts = (urlsplit(a["source_url"]).hostname,
+                     urlsplit(b["source_url"]).hostname)
+            if (hosts[0] == hosts[1]
+                    or url not in (a["source_url"], b["source_url"])):
+                raise ValueError("lineage_matching_details_sources_required")
         if pair in seen_links:
             raise ValueError("lineage_duplicate_link")
         seen_links.add(pair)
