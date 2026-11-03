@@ -212,3 +212,22 @@ class StagingLifecycleTests(TestCase):
         ))
         self.assertFalse(result["publication_allowed"])
         self.assertFalse(result["new_incident"])
+
+    def test_rejects_original_date_conflicting_with_utc_timestamp(self):
+        for event_date in ("2026-10-28", "2026-10-30", "not-a-date", 20261029):
+            with self.subTest(event_date=event_date), self.assertRaisesRegex(
+                ValueError, "original_event_date_conflict"
+            ):
+                prepare_staging_lifecycle_update(
+                    dict(original(), event_date=event_date), closure()
+                )
+
+    def test_accepts_consistent_utc_event_date(self):
+        result = prepare_staging_lifecycle_update(original(), closure())
+        self.assertEqual(result["original_event_date"], "2026-10-29")
+
+    def test_accepts_missing_event_date_when_exact_clock_is_present(self):
+        event = original()
+        del event["event_date"]
+        result = prepare_staging_lifecycle_update(event, closure())
+        self.assertEqual(result["original_event_date"], "2026-10-29")
