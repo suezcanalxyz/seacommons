@@ -4135,3 +4135,30 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   .cop-shell.is-play-mode .play-simulation-launch { display: none; }
   .cop-shell.is-live-mode .live-feed-toggle { display: none; }
 }
+
+/* Mobile guidebook: four-tab dock and non-blocking, scrollable reference sheet. */
+@media (max-width: 680px) {
+  .cop-shell.is-play-profile { --sc-app-dock-height: calc(64px + env(safe-area-inset-bottom)); }
+  .cop-shell.is-play-profile .sc-mobile-dock { display: grid; }
+  .cop-shell.is-live-mode .sc-mobile-dock,
+  .cop-shell.is-play-profile .sc-mobile-dock { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .cop-shell.is-play-profile .archive-timeline { bottom: calc(var(--sc-app-dock-height) + 8px); }
+  .sc-mobile-guide {
+    position: fixed; z-index: 1240; left: 0; right: 0;
+    bottom: var(--sc-app-dock-height, calc(64px + env(safe-area-inset-bottom)));
+    max-height: min(72dvh, calc(100dvh - var(--sc-app-dock-height, 64px) - 48px));
+    overflow: hidden; display: flex; flex-direction: column;
+    background: #071820; color: #e6f2ef;
+    border: 1px solid rgba(165, 218, 208, .25);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -14px 36px rgba(0,0,0,.35);
+  }
+  .sc-mobile-guide__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px 12px; border-bottom: 1px solid rgba(165,218,208,.2); }
+  .sc-mobile-guide__header small { color: #8faeaf; font-size: 10px; letter-spacing: .1em; }
+  .sc-mobile-guide__header h2 { margin: 4px 0 0; font-size: 19px; }
+  .sc-mobile-guide__header button { min-width: 42px; min-height: 42px; background: transparent; color: inherit; border: 1px solid #486268; border-radius: 8px; font-size: 24px; }
+  .sc-mobile-guide__body { overflow-y: auto; overscroll-behavior: contain; padding: 6px 18px 24px; }
+  .sc-mobile-guide__body section { padding: 10px 0; border-bottom: 1px solid rgba(165,218,208,.15); }
+  .sc-mobile-guide__body h3 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: #a9ffda; }
+  .sc-mobile-guide__body p { font-size: 13px; line-height: 1.55; margin: 10px 0; }
+}
