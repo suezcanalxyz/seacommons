@@ -3545,11 +3545,12 @@ function App() {
     <main className={`cop-shell ${play3D && APP_PROFILE === 'demo' ? 'is-play-mode' : ''} ${isPublicLiveHost ? 'is-live-mode' : ''} ${APP_PROFILE === 'demo' ? 'is-play-profile' : ''}`}>
       {(isPublicLiveHost || APP_PROFILE === 'demo') && (
         <nav className="sc-mobile-dock" aria-label="Mobile map navigation">
-          <button type="button" className={isPublicLiveHost && !sidebarOpen && (conePanelHidden || !mapPanel) || APP_PROFILE === 'demo' && play3D && !playSimulationOpen ? 'is-active' : ''}
+          <button type="button" className={!mobileGuideOpen && (isPublicLiveHost && !sidebarOpen && (conePanelHidden || !mapPanel) || APP_PROFILE === 'demo' && play3D && !playSimulationOpen) ? 'is-active' : ''}
             aria-label="Show map" onClick={() => {
               setSidebarOpen(false);
               setConePanelHidden(true);
               setPlaySimulationOpen(false);
+              setMobileGuideOpen(false);
               if (APP_PROFILE === 'demo') setPlay3D(true);
               // Preserve the selected report when returning to the map.
               // Users can reopen it from the Report tab without reselecting.
@@ -3565,24 +3566,24 @@ function App() {
             }}><span aria-hidden="true">◎</span><small>Map</small></button>
           {isPublicLiveHost ? (
             <>
-              <button type="button" className={sidebarOpen ? 'is-active' : ''} aria-label="Open live feed"
-                aria-expanded={sidebarOpen} onClick={() => { setConePanelHidden(true); setSidebarOpen(true); }}>
+              <button type="button" className={sidebarOpen && !mobileGuideOpen ? 'is-active' : ''} aria-label="Open live feed"
+                aria-expanded={sidebarOpen} onClick={() => { setMobileGuideOpen(false); setConePanelHidden(true); setSidebarOpen(true); }}>
                 <span aria-hidden="true">≡</span><small>Feed</small>
               </button>
-              <button type="button" className={mapPanel && !conePanelHidden ? 'is-active' : ''} aria-label="Open selected report"
+              <button type="button" className={mapPanel && !conePanelHidden && !mobileGuideOpen ? 'is-active' : ''} aria-label="Open selected report"
                 aria-expanded={Boolean(mapPanel && !conePanelHidden)} disabled={!mapPanel}
-                onClick={() => { setSidebarOpen(false); setConePanelHidden(false); }}>
+                onClick={() => { setMobileGuideOpen(false); setSidebarOpen(false); setConePanelHidden(false); }}>
                 <span aria-hidden="true">▤</span><small>Report</small>
               </button>
             </>
           ) : (
             <>
               <button type="button" className={!play3D ? 'is-active' : ''} aria-label="Open archive"
-                onClick={() => { setPlaySimulationOpen(false); setPlay3D(false); }}>
+                onClick={() => { setMobileGuideOpen(false); setPlaySimulationOpen(false); setPlay3D(false); }}>
                 <span aria-hidden="true">◷</span><small>Archive</small>
               </button>
               <button type="button" className={playSimulationOpen ? 'is-active' : ''} aria-label="Open simulation"
-                aria-expanded={playSimulationOpen} onClick={() => { setPlay3D(true); setPlaySimulationOpen(true); setSelectionMode(true); }}>
+                aria-expanded={playSimulationOpen} onClick={() => { setMobileGuideOpen(false); setPlay3D(true); setPlaySimulationOpen(true); setSelectionMode(true); }}>
                 <span aria-hidden="true">◇</span><small>Simulate</small>
               </button>
             </>
