@@ -36,3 +36,27 @@ def test_missing_provenance_fails_closed():
 
 def test_timezone_required():
     assert evaluate_attack_candidate([item("a","authority"),item("b","press",event_at="2026-10-28T10:00:00")])["status"] == "insufficient_evidence"
+
+def test_invalid_chronology_cannot_count_as_independent_claim():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", published_at="2026-10-28T09:00:00Z"),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "chronology_requires_review" in result["reasons"]
+
+
+def test_duplicate_source_does_not_count_twice():
+    first = item("a", "authority")
+    duplicate = item("a", "press")
+    result = evaluate_attack_candidate([first, duplicate])
+    assert result["status"] == "insufficient_evidence"
+    assert "duplicate_source" in result["reasons"]
+
+
+def test_ais_gap_and_unrelated_press_do_not_corroborate():
+    result = evaluate_attack_candidate([
+        item("gap", "ais", explicit_attack_claim=False, signal_only=True),
+        item("press", "media", position=(10, 10)),
+    ])
+    assert result["status"] == "insufficient_evidence"
