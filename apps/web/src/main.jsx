@@ -3595,23 +3595,29 @@ function App() {
         <aside className="sc-mobile-guide" role="dialog" aria-label="SeaCommons map guide">
           <header className="sc-mobile-guide__header"><div><small>SEACOMMONS / FIELD GUIDE</small><h2>Reading the map</h2></div><button type="button" aria-label="Close guide" onClick={() => setMobileGuideOpen(false)}>×</button></header>
           <div className="sc-mobile-guide__body">
-            <section><h3>Legend</h3>
-              <p><strong>▲ Vessel</strong> — A tracked maritime object. Orientation indicates heading only when heading data is available.</p>
-              <p><strong>● Point</strong> — A reported or recorded geographic position. Select it to inspect associated information.</p>
-              <p><strong>— Track</strong> — A sequence of recorded positions. Gaps do not establish continuous movement.</p>
-              <p><strong>◌ Drift</strong> — A modelled possible location or uncertainty area, not a confirmed position.</p>
+            <section><h3>Map symbols</h3>
+              <p><strong>▲ Ship</strong> — A ship shown on the map. When its direction is known, the symbol points that way.</p>
+              <p><strong>● Point</strong> — A place connected to a ship or report. Tap it to learn more.</p>
+              <p><strong>— Route</strong> — Places where a ship has been recorded. Missing parts do not mean we know where it went.</p>
+              <p><strong>◌ Possible search area</strong> — Where a drifting boat or object might be. A prediction, not a sighting.</p>
+              <p>Colours separate different kinds of information. Open a report to understand a particular item.</p>
             </section>
             <section><h3>What am I seeing?</h3>
               <p><strong>Map</strong> shows maritime observations and investigations in geographic context.</p>
               <p><strong>{isPublicLiveHost ? 'Feed' : 'Archive'}</strong> {isPublicLiveHost ? 'lists recent signals and cases; selecting one opens its report and map location.' : 'provides historical records; coverage varies by source and period.'}</p>
               <p><strong>Report</strong> brings together the case, sources, coordinates and available trajectories or estimates.</p>
             </section>
-            <section><h3>How to read the evidence</h3>
-              <p><strong>Observed</strong> — Present in a source record; it does not establish the complete circumstances.</p>
-              <p><strong>Reported</strong> — Described by a source and potentially awaiting independent corroboration.</p>
-              <p><strong>Estimated</strong> — Modelled or inferred, with uncertainty.</p>
-              <p><strong>Correlated</strong> — Multiple records associated, not necessarily a confirmed event or cause.</p>
-              <p>Layer colours and categories help distinguish information. Check each report's source and timestamp before drawing conclusions.</p>
+            <section><h3>How certain is it?</h3>
+              <p><strong>Seen in data</strong> — A source recorded a position or signal. This does not tell the whole story.</p>
+              <p><strong>Reported</strong> — Someone shared information about an event. It may need checking.</p>
+              <p><strong>Estimated</strong> — A possible location calculated from available information, not a confirmed position.</p>
+              <p><strong>Connected clues</strong> — Different pieces of information may refer to the same event, but that alone does not prove what happened.</p>
+              <p>Check the date and source in each report. An old position is not necessarily where a ship is now.</p>
+            </section>
+            <section><h3>Coming soon</h3>
+              <p><strong>Incidents</strong> — A way to explore possible attacks, collisions and other events at sea, with supporting sources and checks together.</p>
+              <p><strong>More cross-checking</strong> — Comparing independent signals and reports to make clear what is known and what remains uncertain.</p>
+              <p>These features are in development. A future incident label will not automatically mean the event has been verified.</p>
             </section>
           </div>
         </aside>
