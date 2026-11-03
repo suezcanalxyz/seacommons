@@ -7,8 +7,12 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import TestCase
 
-from core.intel.maritime_attack_staging_manifest import prepare_staging_bulletin_manifest
-from core.intel.maritime_attack_staging_lineage import build_staging_attack_lineage_review
+from core.intel.maritime_attack_staging_lineage import (
+    build_staging_attack_lineage_review,
+)
+from core.intel.maritime_attack_staging_manifest import (
+    prepare_staging_bulletin_manifest,
+)
 from core.intel.official_maritime_bulletin import prepare_official_bulletin
 
 ROOT = Path(__file__).resolve().parents[1] / "docs/research"
