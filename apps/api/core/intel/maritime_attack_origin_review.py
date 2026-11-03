@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+from urllib.parse import urlsplit
 
 
 def _utc(value: object) -> datetime:
@@ -39,6 +40,7 @@ def prepare_origin_review(
     if not isinstance(reports, (tuple, list)) or not 1 <= len(reports) <= 64:
         raise ValueError("invalid_review_batch")
     seen: set[tuple[str, str]] = set()
+    seen_urls: set[tuple[str, str]] = set()
     groups: dict[str, list[str]] = {}
     unresolved: list[str] = []
     normalized: list[dict[str, object]] = []
@@ -56,8 +58,20 @@ def prepare_origin_review(
             raise ValueError("duplicate_publisher_report")
         seen.add(identity)
         url = item["source_url"]
-        if not isinstance(url, str) or not url.startswith("https://") or any(c.isspace() for c in url):
+        if not isinstance(url, str) or any(c.isspace() for c in url):
             raise ValueError("invalid_source_url")
+        try:
+            parsed = urlsplit(url)
+            if (parsed.scheme != "https" or not parsed.hostname
+                    or parsed.username is not None or parsed.password is not None
+                    or parsed.port not in (None, 443) or parsed.fragment):
+                raise ValueError("invalid_source_url")
+        except ValueError as exc:
+            raise ValueError("invalid_source_url") from exc
+        url_identity = (publisher.casefold().strip(), url.rstrip("/").casefold())
+        if url_identity in seen_urls:
+            raise ValueError("duplicate_publisher_source_url")
+        seen_urls.add(url_identity)
         retrieved = _utc(item["retrieved_at_utc"])
         if retrieved > checked:
             raise ValueError("future_retrieval")
