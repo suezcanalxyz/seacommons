@@ -4078,3 +4078,60 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   .cop-shell.is-live-mode .live-feed-toggle { padding: 9px 12px; min-height: 38px; font-size: 10px; letter-spacing: .13em; }
   .cop-shell.is-live-mode .live-feed-toggle::after { margin-left: 8px; font-size: 15px; }
 }
+
+/* LIVE / PLAY mobile app dock. Scope overrides to the public surfaces only. */
+.sc-mobile-dock { display: none; }
+@media (max-width: 680px) {
+  .cop-shell.is-live-mode,
+  .cop-shell.is-play-mode { --sc-app-dock-height: calc(64px + env(safe-area-inset-bottom)); }
+  .cop-shell.is-live-mode .sc-mobile-dock,
+  .cop-shell.is-play-mode .sc-mobile-dock {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    position: fixed;
+    z-index: 1250;
+    left: 0; right: 0; bottom: 0;
+    min-height: var(--sc-app-dock-height);
+    padding: 4px max(12px, env(safe-area-inset-left)) max(6px, env(safe-area-inset-bottom));
+    box-sizing: border-box;
+    background: rgba(5, 17, 24, .97);
+    border-top: 1px solid rgba(165, 218, 208, .22);
+    box-shadow: 0 -8px 28px rgba(0, 0, 0, .32);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+  .sc-mobile-dock button {
+    min-width: 0; min-height: 50px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3px;
+    color: #a3b8ba; border: 0; border-radius: 9px;
+    background: transparent; font: 500 11px var(--font-mono);
+    cursor: pointer; touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sc-mobile-dock button > span { font-size: 23px; line-height: 1; }
+  .sc-mobile-dock button > small { font-size: 10px; letter-spacing: .035em; }
+  .sc-mobile-dock button.is-active { color: #a9ffda; background: rgba(169, 255, 218, .09); }
+  .sc-mobile-dock button:disabled { opacity: .32; cursor: default; }
+  .sc-mobile-dock button:focus-visible { outline: 2px solid #a9ffda; outline-offset: -2px; }
+  .cop-shell.is-live-mode .live-feed-panel {
+    bottom: var(--sc-app-dock-height);
+    height: min(72dvh, calc(100dvh - var(--sc-app-dock-height) - 54px));
+    border-radius: 16px 16px 0 0;
+  }
+  .cop-shell.is-live-mode .cone-panel {
+    bottom: var(--sc-app-dock-height);
+    max-height: calc(100dvh - var(--sc-app-dock-height) - 24px);
+    padding-bottom: 10px;
+  }
+  .cop-shell.is-live-mode .cone-reopen-btn { bottom: calc(var(--sc-app-dock-height) + 12px); }
+  .cop-shell.is-play-mode .play-simulation-panel {
+    bottom: calc(var(--sc-app-dock-height) + 8px);
+    max-height: calc(100dvh - var(--sc-app-dock-height) - 28px);
+    border-radius: 16px;
+  }
+  .cop-shell.is-play-mode .play-cesium__touch-hint { bottom: calc(var(--sc-app-dock-height) + 8px); }
+  .cop-shell.is-play-mode .play-cesium__instrument { bottom: calc(var(--sc-app-dock-height) + 10px); }
+  .cop-shell.is-play-mode .archive-timeline { bottom: calc(var(--sc-app-dock-height) + 8px); }
+  .cop-shell.is-play-mode .play-simulation-launch { display: none; }
+  .cop-shell.is-live-mode .live-feed-toggle { display: none; }
+}
