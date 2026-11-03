@@ -108,6 +108,7 @@ export default function PlayTimeline({ apiBase }) {
   const [globalPosition, setGlobalPosition] = useState(TIMELINE_MAX);
   const [casesOpen, setCasesOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState('map');
+  const [selectedDay, setSelectedDay] = useState('');
   const [guideOpen, setGuideOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -126,10 +127,10 @@ export default function PlayTimeline({ apiBase }) {
     [incidents, globalPosition],
   );
   const visibleIncidents = useMemo(() => {
-    if (globalState.mode === 'all') return incidents;
-    const day = globalState.cutoff?.slice(0, 10);
+    if (globalState.mode === 'all' && !selectedDay) return incidents;
+    const day = selectedDay || globalState.cutoff?.slice(0, 10);
     return incidents.filter((incident) => String(incident.reported_at || '').slice(0, 10) === day);
-  }, [incidents, globalState.mode, globalState.cutoff]);
+  }, [incidents, globalState.mode, globalState.cutoff, selectedDay]);
   const categoryIncidents = useMemo(() => visibleIncidents.filter((incident) => {
     const mainCategory = incident.main_category || incident.domain;
     if (archiveFilter === 'humanitarian') return mainCategory === 'humanitarian';
@@ -169,9 +170,9 @@ export default function PlayTimeline({ apiBase }) {
       !globalState.cutoff || Date.parse(p.at) <= Date.parse(globalState.cutoff)),
   })), [caseData?.voyage_evidence, globalState.cutoff]);
   const contextDay = useMemo(() => {
-    const value = globalState.cutoff || selectedIncident?.reported_at || coverage.end;
+    const value = selectedDay || globalState.cutoff || selectedIncident?.reported_at || coverage.end;
     return value ? String(value).slice(0, 10) : new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
-  }, [globalState.cutoff, selectedIncident?.reported_at, coverage.end]);
+  }, [selectedDay, globalState.cutoff, selectedIncident?.reported_at, coverage.end]);
   const fullTimeline = useMemo(
     () => normalizeTimeline(caseData?.timeline || []),
     [caseData],
@@ -515,14 +516,14 @@ export default function PlayTimeline({ apiBase }) {
         </div>
         <div className="play-header__actions">
           <div className="play-header__meta">
-            <span>{globalState.mode === 'all' ? 'Complete archive' : 'Selected day'}</span>
-            <strong>{globalState.mode === 'all' && archiveTotal != null ? archiveTotal : visibleIncidents.length}</strong>
+            <span>{globalState.mode === 'all' && !selectedDay ? 'Complete archive' : 'Selected day'}</span>
+            <strong>{globalState.mode === 'all' && !selectedDay && archiveTotal != null ? archiveTotal : visibleIncidents.length}</strong>
           </div>
         </div>
       </header>
 
       <button className="live-feed-toggle play-mobile-cases-toggle" type="button" onClick={() => setCasesOpen((value) => !value)}>
-        Archive · {archiveTotal != null ? archiveTotal : `${visibleIncidents.length} loaded`}
+        Archive · {globalState.mode === 'all' && !selectedDay && archiveTotal != null ? archiveTotal : visibleIncidents.length}
       </button>
 
       <aside className={`live-feed-panel is-open play-archive-panel play-cases ${casesOpen ? 'is-mobile-open' : ''}`}>
@@ -819,19 +820,19 @@ export default function PlayTimeline({ apiBase }) {
       </aside>}
       <footer className={`play-timeline-bar ${mobileTab === 'timeline' ? 'is-mobile-active' : ''}`}>
         <span className="play-timeline-end">{coverage.start ? coverage.start.slice(0, 10) : 'PAST'}</span>
-        <button type="button" disabled={globalPosition <= 0} onClick={() => setGlobalPosition((value) => Math.max(0, value - Math.max(1, Math.round(TIMELINE_MAX * 86400000 / Math.max(86400000, Date.parse(coverage.end) - Date.parse(coverage.start))))))}>←</button>
+        <button type="button" onClick={() => { const base = selectedDay || globalState.cutoff?.slice(0,10) || coverage.end?.slice(0,10); if (base) { setSelectedDay(new Date(Date.parse(`${base}T00:00:00Z`) - 86400000).toISOString().slice(0,10)); setGlobalPosition(TIMELINE_MAX - 1); } }}>←</button>
         <input
           aria-label="Global archive timeline"
           type="range"
           min="0"
           max={TIMELINE_MAX}
           value={globalPosition}
-          onChange={(event) => setGlobalPosition(Number(event.target.value))}
+          onChange={(event) => { setSelectedDay(''); setGlobalPosition(Number(event.target.value)); }}
         />
-        <button type="button" disabled={globalPosition >= TIMELINE_MAX} onClick={() => setGlobalPosition((value) => Math.min(TIMELINE_MAX, value + Math.max(1, Math.round(TIMELINE_MAX * 86400000 / Math.max(86400000, Date.parse(coverage.end) - Date.parse(coverage.start))))))}>→</button>
+        <button type="button" onClick={() => { const base = selectedDay || globalState.cutoff?.slice(0,10) || coverage.end?.slice(0,10); if (base) { const next = new Date(Date.parse(`${base}T00:00:00Z`) + 86400000).toISOString().slice(0,10); if (next > (coverage.end?.slice(0,10) || next)) { setSelectedDay(''); setGlobalPosition(TIMELINE_MAX); } else { setSelectedDay(next); setGlobalPosition(TIMELINE_MAX - 1); } } }}>→</button>
         <div className="play-timeline-bar__label"><strong>{modeLabel}</strong><span>{globalState.mode === 'all' ? `through ${coverage.end?.slice(0, 10) || 'latest'}` : `imagery ${contextDay}`}</span></div>
-        <input className="play-day-picker" type="date" aria-label="Show events on date" min={coverage.start?.slice(0,10)} max={coverage.end?.slice(0,10)} value={globalState.mode === 'all' ? '' : globalState.cutoff?.slice(0,10) || ''} onChange={(event) => { const day = event.target.value; if (!day) { setGlobalPosition(TIMELINE_MAX); return; } const first = Date.parse(coverage.start); const last = Date.parse(coverage.end); const target = Date.parse(`${day}T12:00:00Z`); if (Number.isFinite(first) && Number.isFinite(last) && last > first && Number.isFinite(target)) setGlobalPosition(Math.max(0, Math.min(TIMELINE_MAX - 1, Math.round((target-first)/(last-first)*TIMELINE_MAX)))); }} />
-        <button className="play-all-reset" type="button" disabled={globalState.mode === 'all'} onClick={() => setGlobalPosition(TIMELINE_MAX)}>ALL</button>
+        <input className="play-day-picker" type="date" aria-label="Show events on date" min={coverage.start?.slice(0,10)} max={coverage.end?.slice(0,10)} value={selectedDay || (globalState.mode === 'all' ? '' : globalState.cutoff?.slice(0,10) || '')} onChange={(event) => { const day = event.target.value; if (!day) { setSelectedDay(''); setGlobalPosition(TIMELINE_MAX); return; } setSelectedDay(day); const first = Date.parse(coverage.start); const last = Date.parse(coverage.end); const target = Date.parse(`${day}T12:00:00Z`); if (Number.isFinite(first) && Number.isFinite(last) && last > first && Number.isFinite(target)) setGlobalPosition(Math.max(0, Math.min(TIMELINE_MAX - 1, Math.round((target-first)/(last-first)*TIMELINE_MAX)))); }} />
+        <button className="play-all-reset" type="button" disabled={globalState.mode === 'all' && !selectedDay} onClick={() => { setSelectedDay(''); setGlobalPosition(TIMELINE_MAX); }}>ALL</button>
       </footer>
     </main>
   );
