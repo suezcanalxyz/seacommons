@@ -57,28 +57,45 @@ def evaluate_attack_candidate(
             continue
         if published < event or received < published:
             reasons.append("chronology_requires_review")
+            continue
         if item.position is not None and (not -90 <= item.position[0] <= 90 or not -180 <= item.position[1] <= 180):
             reasons.append("invalid_position")
             continue
         valid.append((item, event))
     claims = [(item, at) for item, at in valid if item.explicit_attack_claim and not item.signal_only]
-    compatible = []
+    # Do not count duplicate source records as independent confirmations.
+    unique_claims = []
+    seen_sources = set()
     for item, at in claims:
-        if compatible:
-            anchor, anchor_at = compatible[0]
-            if abs((at-anchor_at).total_seconds()) > max_hours*3600:
-                reasons.append("time_mismatch")
-                continue
-            if anchor.imo and item.imo and anchor.imo != item.imo:
-                reasons.append("imo_conflict")
-                continue
-            if anchor.mmsi and item.mmsi and anchor.mmsi != item.mmsi:
-                reasons.append("mmsi_conflict")
-                continue
-            if anchor.position and item.position and _distance_km(anchor.position, item.position) > max_km + max(0, anchor.uncertainty_km) + max(0, item.uncertainty_km):
-                reasons.append("spatial_mismatch")
-                continue
-        compatible.append((item, at))
+        key = (item.source_id, item.source_url)
+        if key in seen_sources:
+            reasons.append("duplicate_source")
+            continue
+        seen_sources.add(key)
+        unique_claims.append((item, at))
+    def matches(a, at_a, b, at_b):
+        if abs((at_a-at_b).total_seconds()) > max_hours * 3600:
+            return False, "time_mismatch"
+        if a.imo and b.imo and a.imo != b.imo:
+            return False, "imo_conflict"
+        if a.mmsi and b.mmsi and a.mmsi != b.mmsi:
+            return False, "mmsi_conflict"
+        if a.position and b.position and _distance_km(a.position, b.position) > max_km + max(0, a.uncertainty_km) + max(0, b.uncertainty_km):
+            return False, "spatial_mismatch"
+        return True, None
+
+    # Require pairwise compatibility; do not let an arbitrary first report
+    # decide the candidate cluster or allow mutually conflicting reports.
+    compatible = []
+    for item, at in unique_claims:
+        if not compatible:
+            compatible.append((item, at))
+            continue
+        checks = [matches(item, at, other, other_at) for other, other_at in compatible]
+        if all(ok for ok, _ in checks):
+            compatible.append((item, at))
+        else:
+            reasons.extend(reason for ok, reason in checks if not ok and reason)
     groups = sorted({item.independent_group for item, _ in compatible})
     if len(groups) < 2:
         reasons.append("fewer_than_two_independent_attack_claims")
