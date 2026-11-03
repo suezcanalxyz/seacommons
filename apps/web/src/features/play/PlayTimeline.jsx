@@ -107,6 +107,8 @@ export default function PlayTimeline({ apiBase }) {
   const [reportOpen, setReportOpen] = useState(false);
   const [globalPosition, setGlobalPosition] = useState(TIMELINE_MAX);
   const [casesOpen, setCasesOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState('map');
+  const [guideOpen, setGuideOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [satelliteMission, setSatelliteMission] = useState('auto');
@@ -123,10 +125,11 @@ export default function PlayTimeline({ apiBase }) {
     () => resolveGlobalTimelinePosition(incidents, globalPosition, TIMELINE_MAX),
     [incidents, globalPosition],
   );
-  const visibleIncidents = useMemo(
-    () => incidentsAtCutoff(incidents, globalState.cutoff),
-    [incidents, globalState.cutoff],
-  );
+  const visibleIncidents = useMemo(() => {
+    if (globalState.mode === 'all') return incidents;
+    const day = globalState.cutoff?.slice(0, 10);
+    return incidents.filter((incident) => String(incident.reported_at || '').slice(0, 10) === day);
+  }, [incidents, globalState.mode, globalState.cutoff]);
   const categoryIncidents = useMemo(() => visibleIncidents.filter((incident) => {
     const mainCategory = incident.main_category || incident.domain;
     if (archiveFilter === 'humanitarian') return mainCategory === 'humanitarian';
@@ -512,7 +515,7 @@ export default function PlayTimeline({ apiBase }) {
         </div>
         <div className="play-header__actions">
           <div className="play-header__meta">
-            <span>{globalState.mode === 'all' ? 'Complete archive' : 'Historical cutoff'}</span>
+            <span>{globalState.mode === 'all' ? 'Complete archive' : 'Selected day'}</span>
             <strong>{globalState.mode === 'all' && archiveTotal != null ? archiveTotal : visibleIncidents.length}</strong>
           </div>
         </div>
@@ -801,9 +804,22 @@ export default function PlayTimeline({ apiBase }) {
           </article>
         </section>
       </div>}
-      <footer className="play-timeline-bar">
+      <nav className="play-mobile-dock" aria-label="Play navigation">
+        <button className={mobileTab === 'map' && !guideOpen ? 'is-active' : ''} onClick={() => { setMobileTab('map'); setCasesOpen(false); setGuideOpen(false); }} type="button"><span>◎</span>Map</button>
+        <button className={casesOpen && !guideOpen ? 'is-active' : ''} onClick={() => { setCasesOpen(true); setMobileTab('archive'); setGuideOpen(false); }} type="button"><span>≡</span>Archive</button>
+        <button className={mobileTab === 'timeline' && !guideOpen ? 'is-active' : ''} onClick={() => { setCasesOpen(false); setMobileTab('timeline'); setGuideOpen(false); }} type="button"><span>◷</span>Timeline</button>
+        <button className={guideOpen ? 'is-active' : ''} onClick={() => { setCasesOpen(false); setGuideOpen((v) => !v); setMobileTab('guide'); }} type="button"><span>?</span>Guide</button>
+      </nav>
+      {guideOpen && <aside className="play-mobile-guide" role="dialog" aria-label="Guide to Play">
+        <header><strong>Reading PLAY</strong><button type="button" aria-label="Close guide" onClick={() => { setGuideOpen(false); setMobileTab('map'); }}>×</button></header>
+        <section><h3>Map symbols</h3><p><b>▲ Ship</b> — A vessel position, when available.</p><p><b>● Point</b> — A location connected to a report.</p><p><b>— Route</b> — Recorded movement; missing parts are not known positions.</p><p><b>◌ Search area</b> — A possible location calculated from available information, not a sighting.</p></section>
+        <section><h3>Timeline</h3><p><b>ALL</b> shows every available case. Choose a date to see only events reported on that day (UTC). Moving to another day replaces the previous day's cases.</p></section>
+        <section><h3>Understanding reports</h3><p><b>Recorded</b> means a source contains a signal or position. <b>Reported</b> means an event was described. <b>Estimated</b> means a possible location was calculated. Always check the date and source.</p></section>
+        <section><h3>Coming soon</h3><p><b>Incidents</b> — Better ways to explore possible attacks, collisions and other events, with supporting sources and independent checks. In development, not automatically verified.</p></section>
+      </aside>}
+      <footer className={`play-timeline-bar ${mobileTab === 'timeline' ? 'is-mobile-active' : ''}`}>
         <span className="play-timeline-end">{coverage.start ? coverage.start.slice(0, 10) : 'PAST'}</span>
-        <button type="button" disabled={globalPosition <= 0} onClick={() => setGlobalPosition((value) => Math.max(0, value - 50))}>←</button>
+        <button type="button" disabled={globalPosition <= 0} onClick={() => setGlobalPosition((value) => Math.max(0, value - Math.max(1, Math.round(TIMELINE_MAX * 86400000 / Math.max(86400000, Date.parse(coverage.end) - Date.parse(coverage.start))))))}>←</button>
         <input
           aria-label="Global archive timeline"
           type="range"
@@ -812,8 +828,9 @@ export default function PlayTimeline({ apiBase }) {
           value={globalPosition}
           onChange={(event) => setGlobalPosition(Number(event.target.value))}
         />
-        <button type="button" disabled={globalPosition >= TIMELINE_MAX} onClick={() => setGlobalPosition((value) => Math.min(TIMELINE_MAX, value + 50))}>→</button>
+        <button type="button" disabled={globalPosition >= TIMELINE_MAX} onClick={() => setGlobalPosition((value) => Math.min(TIMELINE_MAX, value + Math.max(1, Math.round(TIMELINE_MAX * 86400000 / Math.max(86400000, Date.parse(coverage.end) - Date.parse(coverage.start))))))}>→</button>
         <div className="play-timeline-bar__label"><strong>{modeLabel}</strong><span>{globalState.mode === 'all' ? `through ${coverage.end?.slice(0, 10) || 'latest'}` : `imagery ${contextDay}`}</span></div>
+        <input className="play-day-picker" type="date" aria-label="Show events on date" min={coverage.start?.slice(0,10)} max={coverage.end?.slice(0,10)} value={globalState.mode === 'all' ? '' : globalState.cutoff?.slice(0,10) || ''} onChange={(event) => { const day = event.target.value; if (!day) { setGlobalPosition(TIMELINE_MAX); return; } const first = Date.parse(coverage.start); const last = Date.parse(coverage.end); const target = Date.parse(`${day}T12:00:00Z`); if (Number.isFinite(first) && Number.isFinite(last) && last > first && Number.isFinite(target)) setGlobalPosition(Math.max(0, Math.min(TIMELINE_MAX - 1, Math.round((target-first)/(last-first)*TIMELINE_MAX)))); }} />
         <button className="play-all-reset" type="button" disabled={globalState.mode === 'all'} onClick={() => setGlobalPosition(TIMELINE_MAX)}>ALL</button>
       </footer>
     </main>
