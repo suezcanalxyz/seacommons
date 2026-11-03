@@ -140,6 +140,9 @@ def prepare_staging_lifecycle_update(
             raise ValueError("lifecycle_original_event_date_invalid")
     else:
         event_day_parsed = event_at.date()
+        if event_day is not None:
+            if not isinstance(event_day, str) or event_day != event_day_parsed.isoformat():
+                raise ValueError("lifecycle_original_event_date_conflict")
     if checked.date() < event_day_parsed or (event_at is not None and checked < event_at):
         raise ValueError("lifecycle_update_before_original")
     if published is not None and (
