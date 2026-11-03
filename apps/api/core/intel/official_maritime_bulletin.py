@@ -44,6 +44,12 @@ _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 _MSCIO_UNNAMED_REPORT_PATHS = {
     "159/26": "/alerts/195",
     "162/26": "/alerts/198",
+    "165/26": "/alerts/201",
+}
+# UKMTO 192-26 names only an unidentified tanker. A separate registry
+# match must not be presented as an identifier supplied by UKMTO.
+_UKMTO_UNNAMED_REPORT_PATHS = {
+    "192-26": "/-/media/ukmto/products/20261102-ukmto_warning-192-26.pdf",
 }
 SOURCE_RIGHTS = frozenset({"public_with_attribution", "restricted_republication", "unknown"})
 
@@ -116,6 +122,16 @@ def prepare_official_bulletin(bulletin: OfficialMaritimeBulletin) -> dict:
                 raise ValueError("MSCIO source bulletin ID/URL mismatch")
             if bulletin.vessel_name.strip() or bulletin.imo or bulletin.mmsi:
                 raise ValueError("MSCIO primary bulletin does not identify vessel")
+    if bulletin.issuer == "UKMTO":
+        report_key = bulletin.bulletin_id.strip()
+        source_path = url.path.rstrip("/")
+        if (report_key in _UKMTO_UNNAMED_REPORT_PATHS
+                or source_path in _UKMTO_UNNAMED_REPORT_PATHS.values()):
+            if (_UKMTO_UNNAMED_REPORT_PATHS.get(report_key) != source_path
+                    or url.query or url.fragment):
+                raise ValueError("UKMTO source bulletin ID/URL mismatch")
+            if bulletin.vessel_name.strip() or bulletin.imo or bulletin.mmsi:
+                raise ValueError("UKMTO primary bulletin does not identify vessel")
     if bulletin.imo and not _valid_imo(bulletin.imo):
         raise ValueError("Invalid IMO")
     if bulletin.mmsi and not _valid_mmsi(bulletin.mmsi):
