@@ -269,3 +269,25 @@
 .play-report-chronology a {color:var(--live-accent)}
 .play-voyage-card {padding:10px;border:1px solid rgba(138,194,180,.23);border-radius:7px;display:flex;flex-direction:column;gap:9px}
 .play-voyage-card > strong {font-size:11px;color:#b4ebdc}
+
+/* Public PLAY mobile app: timeline is a tab, not the entire interface. */
+.play-mobile-dock { display: none; }
+.play-mobile-guide { display: none; }
+@media (max-width: 680px) {
+  .play-public-shell { --play-dock-height: calc(64px + env(safe-area-inset-bottom)); }
+  .play-mobile-dock { position: fixed; z-index: 1800; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); left: 0; right: 0; bottom: 0; min-height: var(--play-dock-height); padding: 4px 8px max(6px,env(safe-area-inset-bottom)); background: #071820; border-top: 1px solid #335057; }
+  .play-mobile-dock button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 48px; border: 0; border-radius: 8px; background: transparent; color: #b5c9c9; font-size: 11px; }
+  .play-mobile-dock button span { font-size: 23px; }
+  .play-mobile-dock button.is-active { background: rgba(169,255,218,.10); color: #a9ffda; }
+  .play-public-shell .play-timeline-bar { bottom: var(--play-dock-height); display: none; z-index: 1600; }
+  .play-public-shell .play-timeline-bar.is-mobile-active { display: flex; }
+  .play-public-shell .play-cases { bottom: var(--play-dock-height); }
+  .play-public-shell .play-mobile-cases-toggle { display: none; }
+  .play-mobile-guide { position: fixed; z-index: 1700; display: block; left: 0; right: 0; bottom: var(--play-dock-height); max-height: min(72dvh,calc(100dvh - var(--play-dock-height) - 40px)); overflow: auto; padding: 18px; background: #071820; color: #e6f2ef; border-radius: 16px 16px 0 0; box-shadow: 0 -10px 30px #0008; }
+  .play-mobile-guide header { display: flex; justify-content: space-between; align-items: center; }
+  .play-mobile-guide header button { min-width: 40px; min-height: 40px; background: transparent; color: inherit; border: 1px solid #486268; }
+  .play-mobile-guide section { padding: 10px 0; border-bottom: 1px solid #335057; }
+  .play-mobile-guide h3 { color: #a9ffda; font-size: 13px; text-transform: uppercase; }
+  .play-mobile-guide p { line-height: 1.55; font-size: 13px; }
+  .play-day-picker { max-width: 125px; min-width: 105px; color: #e6f2ef; background: #102630; border: 1px solid #486268; border-radius: 6px; }
+}
