@@ -52,13 +52,13 @@ def evaluate_attack_candidate(
         except (ValueError, TypeError):
             reasons.append("invalid_timestamp")
             continue
-        if not item.source_url.startswith(("https://", "http://")) or not item.independent_group:
+        if not item.source_id or not item.source_url.startswith("https://") or not item.independent_group:
             reasons.append("missing_provenance")
             continue
         if published < event or received < published:
             reasons.append("chronology_requires_review")
             continue
-        if item.position is not None and (not -90 <= item.position[0] <= 90 or not -180 <= item.position[1] <= 180):
+        if item.uncertainty_km < 0 or (item.position is not None and (not -90 <= item.position[0] <= 90 or not -180 <= item.position[1] <= 180)):
             reasons.append("invalid_position")
             continue
         valid.append((item, event))
@@ -76,7 +76,7 @@ def evaluate_attack_candidate(
     def matches(a, at_a, b, at_b):
         if abs((at_a-at_b).total_seconds()) > max_hours * 3600:
             return False, "time_mismatch"
-        if a.imo and b.imo and a.imo != b.imo:
+        if not ((a.imo and b.imo and a.imo == b.imo) or (a.mmsi and b.mmsi and a.mmsi == b.mmsi)):\n            return False, "unresolved_vessel_identity"\n        if a.imo and b.imo and a.imo != b.imo:
             return False, "imo_conflict"
         if a.mmsi and b.mmsi and a.mmsi != b.mmsi:
             return False, "mmsi_conflict"
