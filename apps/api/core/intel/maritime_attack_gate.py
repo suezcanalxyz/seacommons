@@ -100,8 +100,10 @@ def evaluate_attack_candidate(
     groups = sorted({item.independent_group for item, _ in unique_claims})
     if len(groups) < 2:
         reasons.append("fewer_than_two_independent_attack_claims")
+    # Invalid or contradictory submitted evidence requires manual remediation.
+    # Never promote a clean-looking subset while discarding problematic claims.
     return {
-        "status": "candidate_for_analyst_review" if len(groups) >= 2 and not any(r in reasons for r in ("time_mismatch", "imo_conflict", "mmsi_conflict", "spatial_mismatch", "unresolved_vessel_identity")) else "insufficient_evidence",
+        "status": "candidate_for_analyst_review" if len(groups) >= 2 and not reasons else "insufficient_evidence",
         "reasons": sorted(set(reasons)),
         "independent_groups": groups,
         "sources": [{"id": i.source_id, "url": i.source_url, "event_at": i.event_at,
