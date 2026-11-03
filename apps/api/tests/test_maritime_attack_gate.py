@@ -60,3 +60,35 @@ def test_ais_gap_and_unrelated_press_do_not_corroborate():
         item("press", "media", position=(10, 10)),
     ])
     assert result["status"] == "insufficient_evidence"
+
+def test_same_location_different_vessels_cannot_corroborate():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", imo="9999999", mmsi="999999999"),
+    ])
+    assert result["status"] == "insufficient_evidence"
+
+
+def test_missing_common_identity_fails_closed():
+    result = evaluate_attack_candidate([
+        item("a", "authority", imo=None, mmsi=None),
+        item("b", "press", imo=None, mmsi=None),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "unresolved_vessel_identity" in result["reasons"]
+
+
+def test_shared_mmsi_without_imo_allows_review():
+    result = evaluate_attack_candidate([
+        item("a", "authority", imo=None),
+        item("b", "press", imo=None),
+    ])
+    assert result["status"] == "candidate_for_analyst_review"
+
+
+def test_negative_uncertainty_rejected():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", uncertainty_km=-100),
+    ])
+    assert result["status"] == "insufficient_evidence"
