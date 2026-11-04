@@ -320,7 +320,7 @@ export default function PlayTimeline({ apiBase }) {
           filter: ['!=', ['get', 'marker_kind'], 'vessel'],
           paint: {
             'circle-radius': ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5],
-            'circle-color': ['case', ['==', ['get', 'incident_type'], 'maritime_attack'], ATTACK_COLOR, ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f']],
+            'circle-color': ['case', ['all', ['==', ['get', 'incident_type'], 'maritime_attack'], ['==', ['get', 'analyst_approved'], true], ['==', ['get', 'verification_status'], 'multi_source_corroborated']], ATTACK_COLOR, ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f']],
             'circle-opacity': 0.9,
             'circle-stroke-color': '#071014', 'circle-stroke-width': 1.5,
           },
