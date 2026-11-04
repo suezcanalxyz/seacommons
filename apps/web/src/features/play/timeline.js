@@ -127,6 +127,7 @@ export function incidentCollection(incidents = [], cutoff = null) {
         geometry: incident.geometry,
         properties: {
           incident_id: incident.incident_id,
+          incident_type: incident.incident_type || '',
           incident_status: incidentStatusAtCutoff(incident, cutoff),
           case_type: incident.case_type || 'incident',
           source: incident.source || '',
