@@ -71,10 +71,12 @@ export default function Legend() {
               </span>
             </div>
           ))}
+          <div className="legend-panel-title">Maritime attacks</div>
+          <div className="legend-row legend-row--defined"><Swatch shape="ring" color="#d946ef" /><span><strong>Maritime attack</strong><small>Magenta: documented attack category. Check the case report for independent sources and review status; AIS gaps or sudden stops alone never confirm an attack. Separate from red humanitarian distress.</small></span></div>
           <div className="legend-panel-title">Vessel event categories</div>
           {EVENT_VISUAL_CATEGORIES.filter((category) => ![
             'resolved', 'archived', 'context', 'needs_review',
-            'humanitarian_alarm_phone', 'distress',
+            'humanitarian_alarm_phone', 'distress', 'maritime_attack',
           ].includes(category.key)).map((category) => (
             <div key={category.key} className="legend-row legend-row--defined">
               <Swatch shape="ring" color={category.color} />
