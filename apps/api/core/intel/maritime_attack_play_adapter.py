@@ -6,7 +6,7 @@ PostgreSQL, writes records, or treats an AIS anomaly as proof of an attack.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from math import isfinite
 from typing import Any, Mapping
 
@@ -19,6 +19,8 @@ SIGNAL_KINDS = frozenset({"ais_gap", "sudden_stop", "ais_anomaly"})
 def project_play_attack_review(
     *, case_id: str, source_records: list[Mapping[str, Any]],
     ais_records: list[Mapping[str, Any]] | None = None,
+    target_mmsi: str | None = None, event_at: str | None = None,
+    max_ais_offset_hours: float = 24.0,
 ) -> dict[str, Any]:
     """Prepare an immutable review projection from explicitly mapped source rows.
 
@@ -46,9 +48,16 @@ def project_play_attack_review(
             explicit_attack_claim=True, signal_only=False,
             primary_origin_id=row["primary_origin_id"],
         ))
+    if ais_records:
+        if target_mmsi is None or event_at is None:
+            raise ValueError("ais_context_requires_target_identity_and_event_time")
+        if not isinstance(target_mmsi, str) or len(target_mmsi) != 9 or not target_mmsi.isascii() or not target_mmsi.isdigit():
+            raise ValueError("invalid_target_mmsi")
+        if isinstance(max_ais_offset_hours, bool) or not isinstance(max_ais_offset_hours, (int, float)) or not isfinite(max_ais_offset_hours) or max_ais_offset_hours < 0:
+            raise ValueError("invalid_ais_time_window")
     signals: list[dict[str, Any]] = []
     # Fail closed on malformed AIS context; these are never attack proofs.
-    def _utc_timestamp(value: Any) -> None:
+    def _utc_timestamp(value: Any) -> datetime:
         if not isinstance(value, str):
             raise ValueError("invalid_ais_timestamp")
         try:
@@ -57,6 +66,7 @@ def project_play_attack_review(
             raise ValueError("invalid_ais_timestamp") from exc
         if parsed.tzinfo is None or parsed.utcoffset() is None:
             raise ValueError("invalid_ais_timestamp")
+        return parsed.astimezone(timezone.utc)
 
     def _position(value: Any) -> None:
         if value is None:
@@ -69,15 +79,19 @@ def project_play_attack_review(
         if not (-90 <= lat <= 90 and -180 <= lon <= 180):
             raise ValueError("invalid_ais_position")
 
+    anchor = _utc_timestamp(event_at) if ais_records else None
     for row in ais_records or []:
         if row.get("kind") not in SIGNAL_KINDS:
             raise ValueError("unsupported_ais_signal")
-        if row.get("observed_at") is not None:
-            _utc_timestamp(row["observed_at"])
+        observed = _utc_timestamp(row.get("observed_at"))
+        if abs((observed - anchor).total_seconds()) > max_ais_offset_hours * 3600:
+            raise ValueError("ais_outside_event_window")
         _position(row.get("position"))
         mmsi = row.get("mmsi")
         if mmsi is not None and (not isinstance(mmsi, str) or len(mmsi) != 9 or not mmsi.isascii() or not mmsi.isdigit()):
             raise ValueError("invalid_ais_mmsi")
+        if mmsi != target_mmsi:
+            raise ValueError("ais_vessel_identity_mismatch")
         signals.append({key: row.get(key) for key in
                         ("kind", "mmsi", "observed_at", "source", "position")})
     dossier = build_attack_review_dossier(evidence, ais_observations=signals, case_id=case_id)
