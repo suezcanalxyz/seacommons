@@ -90,11 +90,11 @@ def evaluate_attack_candidate(
     for item, at in claims:
         key = item.source_url.split("#", 1)[0].split("?", 1)[0].rstrip("/").lower()
         origin = (item.primary_origin_id or '').strip().casefold()
-        if key in seen_sources or item.source_id in seen_ids or (origin and origin in seen_origins):
+        if key in seen_sources or item.source_id.strip().casefold() in seen_ids or (origin and origin in seen_origins):
             reasons.append("duplicate_source")
             continue
         seen_sources.add(key)
-        seen_ids.add(item.source_id)
+        seen_ids.add(item.source_id.strip().casefold())
         if origin:
             seen_origins.add(origin)
         unique_claims.append((item, at))
@@ -118,7 +118,7 @@ def evaluate_attack_candidate(
             ok, reason = matches(item, at, other, other_at)
             if not ok and reason:
                 reasons.append(reason)
-    groups = sorted({item.independent_group for item, _ in unique_claims})
+    groups = sorted({item.independent_group.strip().casefold() for item, _ in unique_claims})
     if len(groups) < 2:
         reasons.append("fewer_than_two_independent_attack_claims")
     # Invalid or contradictory submitted evidence requires manual remediation.
