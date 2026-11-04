@@ -154,3 +154,23 @@ def test_nan_matching_threshold_cannot_bypass_spatial_check():
 def test_valid_contship_jet_identifiers_still_match():
     result = evaluate_attack_candidate([item("a", "official"), item("b", "press")])
     assert result["status"] == "candidate_for_analyst_review"
+
+
+def test_two_publishers_same_primary_origin_are_not_independent():
+    result = evaluate_attack_candidate([
+        item("ministry", "government", primary_origin_id="BG-MOD-2026-10-28"),
+        item("newspaper", "press", primary_origin_id="bg-mod-2026-10-28"),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "duplicate_source" in result["reasons"]
+
+
+def test_distinct_primary_origins_allow_analyst_review():
+    result = evaluate_attack_candidate([
+        item("ministry", "government", primary_origin_id="BG-MOD-2026-10-28"),
+        item("prosecutor", "judiciary", primary_origin_id="BG-PROSECUTOR-2026-10-29"),
+    ])
+    assert result["status"] == "candidate_for_analyst_review"
+    assert {row["primary_origin_id"] for row in result["sources"]} == {
+        "BG-MOD-2026-10-28", "BG-PROSECUTOR-2026-10-29"
+    }
