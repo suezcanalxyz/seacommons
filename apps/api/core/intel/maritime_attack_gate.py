@@ -44,6 +44,7 @@ class AttackEvidence:
     uncertainty_km: float = 0
     explicit_attack_claim: bool = False
     signal_only: bool = False
+    primary_origin_id: str | None = None  # shared upstream release/report, not publisher
 
 
 def evaluate_attack_candidate(
@@ -85,13 +86,17 @@ def evaluate_attack_candidate(
     unique_claims = []
     seen_sources = set()
     seen_ids = set()
+    seen_origins = set()
     for item, at in claims:
         key = item.source_url.split("#", 1)[0].split("?", 1)[0].rstrip("/").lower()
-        if key in seen_sources or item.source_id in seen_ids:
+        origin = (item.primary_origin_id or '').strip().casefold()
+        if key in seen_sources or item.source_id in seen_ids or (origin and origin in seen_origins):
             reasons.append("duplicate_source")
             continue
         seen_sources.add(key)
         seen_ids.add(item.source_id)
+        if origin:
+            seen_origins.add(origin)
         unique_claims.append((item, at))
     def matches(a, at_a, b, at_b):
         if abs((at_a-at_b).total_seconds()) > max_hours * 3600:
@@ -129,7 +134,8 @@ def evaluate_attack_candidate(
                      "uncertainty_km": i.uncertainty_km,
                      "independent_group": i.independent_group,
                      "explicit_attack_claim": i.explicit_attack_claim,
-                     "signal_only": i.signal_only}
+                     "signal_only": i.signal_only,
+                     "primary_origin_id": i.primary_origin_id}
                     for i, _ in valid],
         "automatic_publication": False,
         "attribution": None,
