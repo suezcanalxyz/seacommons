@@ -201,3 +201,13 @@ def test_malformed_https_authorities_fail_closed():
         result = evaluate_attack_candidate([item("a", "authority"), item("b", "press", source_url=bad_url)])
         assert result["status"] == "insufficient_evidence"
         assert "missing_provenance" in result["reasons"]
+
+
+def test_malformed_https_ports_and_whitespace_fail_closed():
+    for bad_url in ("https://example.org:abc/report", "https://example.org:99999/report",
+                    "https://example.org /report", "https://example.org/report\tbad"):
+        result = evaluate_attack_candidate([
+            item("a", "authority"), item("b", "press", source_url=bad_url),
+        ])
+        assert result["status"] == "insufficient_evidence"
+        assert "missing_provenance" in result["reasons"]
