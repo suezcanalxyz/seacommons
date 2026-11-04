@@ -22,7 +22,7 @@ def test_play_projection_keeps_ais_context_only_and_blocks_publication():
         case_id="contship-jet-20261028",
         source_records=[source("a", "authority", "official-report"),
                         source("b", "independent", "independent-investigation")],
-        ais_records=[{"kind": "ais_gap", "mmsi": "636019532",
+        target_mmsi="636019532", event_at="2026-10-28T10:00:00Z", ais_records=[{"kind": "ais_gap", "mmsi": "636019532",
                       "observed_at": "2026-10-28T10:00:00Z"}],
     )
     assert dossier["review_status"] == "candidate_for_analyst_review"
@@ -60,28 +60,45 @@ def test_unvetted_or_incomplete_source_fails_closed(change):
 
 def test_ais_alone_cannot_create_corrobated_incident():
     dossier = project_play_attack_review(case_id="x", source_records=[],
-        ais_records=[{"kind": "sudden_stop", "mmsi": "636019532"}])
+        target_mmsi="636019532", event_at="2026-10-28T10:00:00Z", ais_records=[{"kind": "sudden_stop", "mmsi": "636019532", "observed_at": "2026-10-28T10:00:00Z"}])
     assert dossier["review_status"] == "insufficient_evidence"
 
 
 @pytest.mark.parametrize("signal", [
     {"kind": "ais_gap", "mmsi": "636019532", "observed_at": "not-a-date"},
     {"kind": "ais_gap", "mmsi": "636019532", "observed_at": "2026-10-28T10:00:00"},
-    {"kind": "ais_gap", "mmsi": "636019532", "position": (float("nan"), 28.8)},
+    {"kind": "ais_gap", "mmsi": "636019532", "observed_at": "2026-10-28T10:00:00Z", "position": (float("nan"), 28.8)},
     {"kind": "ais_gap", "mmsi": "636019532", "position": (91.0, 28.8)},
     {"kind": "ais_gap", "mmsi": "636019532", "position": (43.2,)},
-    {"kind": "ais_gap", "mmsi": "invalid"},
+    {"kind": "ais_gap", "mmsi": "invalid", "observed_at": "2026-10-28T10:00:00Z"},
 ])
 def test_malformed_ais_context_fails_closed(signal):
     with pytest.raises(ValueError):
-        project_play_attack_review(case_id="contship-jet-20261028", source_records=[], ais_records=[signal])
+        project_play_attack_review(case_id="contship-jet-20261028", source_records=[], target_mmsi="636019532", event_at="2026-10-28T10:00:00Z", ais_records=[signal])
 
 
 def test_valid_ais_position_remains_context_not_proof():
     dossier = project_play_attack_review(
         case_id="contship-jet-20261028", source_records=[],
-        ais_records=[{"kind": "ais_gap", "mmsi": "636019532",
+        target_mmsi="636019532", event_at="2026-10-28T10:00:00Z", ais_records=[{"kind": "ais_gap", "mmsi": "636019532",
                       "observed_at": "2026-10-28T10:00:00Z",
                       "position": [43.2, 28.8]}])
     assert dossier["review_status"] == "insufficient_evidence"
     assert dossier["ais_context_signals"][0]["evidence_role"] == "context_only_not_attack_proof"
+
+
+@pytest.mark.parametrize("signal", [
+    {"kind": "ais_gap", "mmsi": "123456789", "observed_at": "2026-10-28T10:00:00Z"},
+    {"kind": "ais_gap", "mmsi": "636019532", "observed_at": "2026-11-02T10:00:00Z"},
+    {"kind": "ais_gap", "mmsi": "636019532"},
+])
+def test_unrelated_or_untimed_ais_rejected(signal):
+    with pytest.raises(ValueError):
+        project_play_attack_review(case_id="contship-jet-20261028", source_records=[],
+            target_mmsi="636019532", event_at="2026-10-28T10:00:00Z", ais_records=[signal])
+
+
+def test_ais_context_requires_explicit_anchor():
+    with pytest.raises(ValueError, match="ais_context_requires_target_identity_and_event_time"):
+        project_play_attack_review(case_id="x", source_records=[],
+            ais_records=[{"kind": "ais_gap", "mmsi": "636019532", "observed_at": "2026-10-28T10:00:00Z"}])
