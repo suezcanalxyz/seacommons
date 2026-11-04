@@ -406,3 +406,12 @@ test('PLAY provides a dedicated attack filter with explicit reviewed and pending
   assert.match(source, /ATTACKS \(\{attackCounts\.total\}\)/);
   assert.match(source, /awaiting review/);
 });
+
+
+test('PLAY confirmed filter requires analyst approval for attacks even with corroborated flag', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /const confirmed = incident\.incident_type === 'maritime_attack'/);
+  assert.match(source, /incident\.analyst_approved === true && incident\.verification_status === 'multi_source_corroborated'/);
+  assert.match(source, /evidenceFilter === 'confirmed' && !confirmed/);
+  assert.match(source, /evidenceFilter === 'unconfirmed' && confirmed/);
+});
