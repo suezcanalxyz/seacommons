@@ -148,8 +148,13 @@ export default function PlayTimeline({ apiBase }) {
   );
   const filteredIncidents = useMemo(() => categoryIncidents.filter((incident) => {
     if (incidentTypeFilter !== 'all' && incident.incident_type !== incidentTypeFilter) return false;
-    if (evidenceFilter === 'confirmed' && !incident.corroborated && incident.verification_status !== 'multi_source_corroborated') return false;
-    if (evidenceFilter === 'unconfirmed' && (incident.corroborated || incident.verification_status === 'multi_source_corroborated')) return false;
+    // Attack claims require both independent corroboration and analyst approval.
+    // A generic corroborated flag must never bypass this evidence gate.
+    const confirmed = incident.incident_type === 'maritime_attack'
+      ? incident.analyst_approved === true && incident.verification_status === 'multi_source_corroborated'
+      : incident.corroborated === true || incident.verification_status === 'multi_source_corroborated';
+    if (evidenceFilter === 'confirmed' && !confirmed) return false;
+    if (evidenceFilter === 'unconfirmed' && confirmed) return false;
     if (evidenceFilter === 'conflicting' && incident.verification_status !== 'contested' && incident.evidence_state !== 'contested') return false;
     if (satelliteOnly && !incident.has_satellite) return false;
     if (sanctionsOnly && !incident.sanctions_matched) return false;
