@@ -44,6 +44,7 @@ CATEGORY_COLORS: dict[str, str] = {
     "infrastructure": "#22d3ee",
     "identity": "#60a5fa",
     "piracy": "#a78bfa",
+    "maritime_attack": "#d946ef",
     "environmental": "#34d399",
     "news": "#94a3b8",
     "social": "#818cf8",
@@ -67,6 +68,7 @@ CATEGORY_LABELS: dict[str, str] = {
     "infrastructure": "Infrastructure proximity",
     "identity": "Identity / flag anomaly",
     "piracy": "Piracy / security incident",
+    "maritime_attack": "Maritime attack (analyst reviewed)",
     "environmental": "Environmental hazard",
     "news": "News / RSS",
     "social": "Social post",
@@ -123,6 +125,10 @@ def classify_visual_category(
     # 1. Alarm Phone is red because of its source/category role, full stop.
     if is_alarm_phone(source, meta):
         return "humanitarian_alarm_phone"
+
+    # Attack is a reviewed incident classification, never inferred from AIS or news text.
+    if (meta.get("incident_type") == "maritime_attack" and meta.get("analyst_approved") is True and meta.get("verification_status") == "multi_source_corroborated":
+        return "maritime_attack"
 
     tokens = _tokens(event_type, meta)
 
