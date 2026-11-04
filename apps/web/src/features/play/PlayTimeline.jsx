@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { EVENT_VISUAL_CATEGORIES } from '../intel/categories.js';
 
 import { fetchJson } from '../../services/api/client.js';
 import { timelineReport, humanizeDetectorText } from '../live/reportNarrative.js';
@@ -25,6 +26,8 @@ import {
 } from './timeline.js';
 
 const TIMELINE_MAX = 1000;
+const ATTACK_COLOR = EVENT_VISUAL_CATEGORIES.find((category) => category.key === 'maritime_attack').color;
+
 function evidenceLabel(item) {
   if (item?.corroborated === true || item?.verification_status === 'multi_source_corroborated') return 'Confirmed by independent sources';
   if (item?.verification_status === 'contested' || item?.evidence_state === 'contested') return 'Conflicting evidence';
@@ -317,7 +320,7 @@ export default function PlayTimeline({ apiBase }) {
           filter: ['!=', ['get', 'marker_kind'], 'vessel'],
           paint: {
             'circle-radius': ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5],
-            'circle-color': ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f'],
+            'circle-color': ['case', ['==', ['get', 'incident_type'], 'maritime_attack'], ATTACK_COLOR, ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f']],
             'circle-opacity': 0.9,
             'circle-stroke-color': '#071014', 'circle-stroke-width': 1.5,
           },
@@ -332,7 +335,7 @@ export default function PlayTimeline({ apiBase }) {
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
           },
-          paint: { 'icon-color': VESSEL_COLOR, 'icon-opacity': 0.94 },
+          paint: { 'icon-color': ['case', ['==', ['get', 'incident_type'], 'maritime_attack'], ATTACK_COLOR, VESSEL_COLOR], 'icon-opacity': 0.94 },
         });
         map.addSource('play-evidence', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addLayer({
