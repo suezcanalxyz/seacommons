@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from math import asin, cos, isfinite, radians, sin, sqrt
+from urllib.parse import urlsplit
 
 
 def _time(value: str) -> datetime:
@@ -65,7 +66,11 @@ def evaluate_attack_candidate(
         except (ValueError, TypeError):
             reasons.append("invalid_timestamp")
             continue
-        if not item.source_id or not item.source_url.startswith("https://") or not item.independent_group:
+        url = urlsplit(item.source_url.strip()) if isinstance(item.source_url, str) else None
+        if (not isinstance(item.source_id, str) or not item.source_id.strip() or
+                not isinstance(item.independent_group, str) or not item.independent_group.strip() or
+                url is None or url.scheme != "https" or not url.hostname or
+                url.username is not None or url.password is not None):
             reasons.append("missing_provenance")
             continue
         if published < event or received < published:
