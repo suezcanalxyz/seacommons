@@ -395,3 +395,14 @@ test('PLAY preserves explicit maritime attack identity separately from AIS gaps 
   const beforeAttack = incidentCollection(incidents, '2026-10-28T09:55:00Z').features;
   assert.equal(beforeAttack.some((feature) => feature.properties.incident_type === 'maritime_attack'), false);
 });
+
+
+test('PLAY provides a dedicated attack filter with explicit reviewed and pending counts', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /archiveFilter === 'attacks'/);
+  assert.match(source, /incident\.incident_type === 'maritime_attack'/);
+  assert.match(source, /incident\.analyst_approved === true/);
+  assert.match(source, /incident\.verification_status === 'multi_source_corroborated'/);
+  assert.match(source, /ATTACKS \(\{attackCounts\.total\}\)/);
+  assert.match(source, /awaiting review/);
+});
