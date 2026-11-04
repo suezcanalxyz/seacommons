@@ -30,6 +30,22 @@ def project_play_attack_review(
     """
     if not isinstance(case_id, str) or not case_id.strip():
         raise ValueError("case_id_required")
+    # If a target is declared, source claims must describe that vessel and
+    # event, not merely coexist with its AIS observations in the same dossier.
+    if target_mmsi is not None and (not isinstance(target_mmsi, str) or len(target_mmsi) != 9 or not target_mmsi.isascii() or not target_mmsi.isdigit()):
+        raise ValueError("invalid_target_mmsi")
+    if event_at is not None:
+        if not isinstance(event_at, str):
+            raise ValueError("invalid_event_anchor")
+        try:
+            event_anchor = datetime.fromisoformat(event_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("invalid_event_anchor") from exc
+        if event_anchor.tzinfo is None or event_anchor.utcoffset() is None:
+            raise ValueError("invalid_event_anchor")
+        event_anchor = event_anchor.astimezone(timezone.utc)
+    else:
+        event_anchor = None
     evidence: list[AttackEvidence] = []
     required = ("source_id", "independent_group", "source_url",
                 "event_at", "published_at", "received_at")
@@ -40,6 +56,17 @@ def project_play_attack_review(
             raise ValueError("source_not_explicitly_vetted")
         if not isinstance(row.get("primary_origin_id"), str) or not row["primary_origin_id"].strip():
             raise ValueError("missing_primary_origin")
+        if target_mmsi is not None and row.get("mmsi") is not None and row["mmsi"] != target_mmsi:
+            raise ValueError("source_vessel_identity_mismatch")
+        if event_anchor is not None:
+            try:
+                source_time = datetime.fromisoformat(row["event_at"].replace("Z", "+00:00"))
+            except (ValueError, AttributeError, TypeError) as exc:
+                raise ValueError("invalid_source_event_time") from exc
+            if source_time.tzinfo is None or source_time.utcoffset() is None:
+                raise ValueError("invalid_source_event_time")
+            if abs((source_time.astimezone(timezone.utc) - event_anchor).total_seconds()) > 12 * 3600:
+                raise ValueError("source_event_outside_anchor_window")
         evidence.append(AttackEvidence(
             **{key: row[key] for key in required},
             imo=row.get("imo"), mmsi=row.get("mmsi"),
