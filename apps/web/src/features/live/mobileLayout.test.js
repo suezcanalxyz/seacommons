@@ -13,7 +13,8 @@ test('public Live mobile reserves upper map and uses full-width readable report 
 test('opening a mobile map panel recenters feature above the report sheet', async () => {
   const source = await readFile(new URL('../../main.jsx', import.meta.url), 'utf8');
   assert.match(source, /mobilePanelMapPadding/);
-  assert.match(source, /bottom:\s*Math\.round\(window\.innerHeight\s*\*\s*0\.66\)/);
+  assert.match(source, /bottom:\s*Math\.round\(window\.innerHeight\s*\*\s*0\.36\)\s*\+\s*64/);
+  assert.match(source, /padding:\s*mobilePanelMapPadding\(\)/);
 });
 
 
