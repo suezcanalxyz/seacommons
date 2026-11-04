@@ -6,6 +6,8 @@ PostgreSQL, writes records, or treats an AIS anomaly as proof of an attack.
 """
 from __future__ import annotations
 
+from datetime import datetime
+from math import isfinite
 from typing import Any, Mapping
 
 from core.intel.maritime_attack_gate import AttackEvidence
@@ -45,9 +47,37 @@ def project_play_attack_review(
             primary_origin_id=row["primary_origin_id"],
         ))
     signals: list[dict[str, Any]] = []
+    # Fail closed on malformed AIS context; these are never attack proofs.
+    def _utc_timestamp(value: Any) -> None:
+        if not isinstance(value, str):
+            raise ValueError("invalid_ais_timestamp")
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("invalid_ais_timestamp") from exc
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ValueError("invalid_ais_timestamp")
+
+    def _position(value: Any) -> None:
+        if value is None:
+            return
+        if not isinstance(value, (tuple, list)) or len(value) != 2:
+            raise ValueError("invalid_ais_position")
+        lat, lon = value
+        if any(isinstance(x, bool) or not isinstance(x, (int, float)) or not isfinite(x) for x in (lat, lon)):
+            raise ValueError("invalid_ais_position")
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise ValueError("invalid_ais_position")
+
     for row in ais_records or []:
         if row.get("kind") not in SIGNAL_KINDS:
             raise ValueError("unsupported_ais_signal")
+        if row.get("observed_at") is not None:
+            _utc_timestamp(row["observed_at"])
+        _position(row.get("position"))
+        mmsi = row.get("mmsi")
+        if mmsi is not None and (not isinstance(mmsi, str) or len(mmsi) != 9 or not mmsi.isascii() or not mmsi.isdigit()):
+            raise ValueError("invalid_ais_mmsi")
         signals.append({key: row.get(key) for key in
                         ("kind", "mmsi", "observed_at", "source", "position")})
     dossier = build_attack_review_dossier(evidence, ais_observations=signals, case_id=case_id)
