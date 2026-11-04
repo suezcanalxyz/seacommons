@@ -127,7 +127,7 @@ def classify_visual_category(
         return "humanitarian_alarm_phone"
 
     # Attack is a reviewed incident classification, never inferred from AIS or news text.
-    if (meta.get("incident_type") == "maritime_attack" and meta.get("analyst_approved") is True and meta.get("verification_status") == "multi_source_corroborated":
+    if (meta.get("incident_type") == "maritime_attack" and meta.get("analyst_approved") is True and meta.get("verification_status") == "multi_source_corroborated"):
         return "maritime_attack"
 
     tokens = _tokens(event_type, meta)
