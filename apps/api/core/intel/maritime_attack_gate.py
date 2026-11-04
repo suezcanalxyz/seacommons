@@ -69,12 +69,15 @@ def evaluate_attack_candidate(
         try:
             url = urlsplit(item.source_url.strip()) if isinstance(item.source_url, str) else None
             host = url.hostname if url is not None else None
+            port = url.port if url is not None else None  # triggers validation of malformed ports
         except ValueError:
             url, host = None, None
         if (not isinstance(item.source_id, str) or not item.source_id.strip() or
                 not isinstance(item.independent_group, str) or not item.independent_group.strip() or
                 url is None or url.scheme != "https" or not host or
-                url.username is not None or url.password is not None):
+                url.username is not None or url.password is not None or
+                any(ch.isspace() for ch in item.source_url) or
+                (host is not None and (host.startswith(".") or host.endswith(".")))):
             reasons.append("missing_provenance")
             continue
         if published < event or received < published:
