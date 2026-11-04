@@ -366,3 +366,15 @@ test('Play case dossier renders the selected satellite quicklook asset', async (
   assert.match(source, /satelliteProps\.asset_ref/);
   assert.match(source, /Satellite quicklook/);
 });
+
+
+test('PLAY map preserves explicit maritime attack category without reclassifying ordinary AIS gaps', () => {
+  const geometry = { type: 'Point', coordinates: [30.1, 43.2] };
+  const records = [
+    { incident_id: 'attack', incident_type: 'maritime_attack', domain: 'maritime', reported_at: '2026-10-28T10:00:00Z', geometry },
+    { incident_id: 'gap', incident_type: 'ais_gap', domain: 'maritime', reported_at: '2026-10-28T10:00:00Z', geometry },
+  ];
+  const features = incidentCollection(records).features;
+  assert.equal(features.find((feature) => feature.properties.incident_id === 'attack').properties.incident_type, 'maritime_attack');
+  assert.equal(features.find((feature) => feature.properties.incident_id === 'gap').properties.incident_type, 'ais_gap');
+});
