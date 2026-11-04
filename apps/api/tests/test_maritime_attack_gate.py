@@ -174,3 +174,15 @@ def test_distinct_primary_origins_allow_analyst_review():
     assert {row["primary_origin_id"] for row in result["sources"]} == {
         "BG-MOD-2026-10-28", "BG-PROSECUTOR-2026-10-29"
     }
+
+
+def test_case_variant_source_id_is_not_independent():
+    result = evaluate_attack_candidate([item("SOURCE", "government"), item("source", "press")])
+    assert result["status"] == "insufficient_evidence"
+    assert "duplicate_source" in result["reasons"]
+
+
+def test_case_variant_independence_group_is_one_group():
+    result = evaluate_attack_candidate([item("a", "Government"), item("b", " government ")])
+    assert result["status"] == "insufficient_evidence"
+    assert "fewer_than_two_independent_attack_claims" in result["reasons"]
