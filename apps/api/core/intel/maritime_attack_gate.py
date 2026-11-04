@@ -123,7 +123,13 @@ def evaluate_attack_candidate(
         "reasons": sorted(set(reasons)),
         "independent_groups": groups,
         "sources": [{"id": i.source_id, "url": i.source_url, "event_at": i.event_at,
-                     "published_at": i.published_at, "received_at": i.received_at}
+                     "published_at": i.published_at, "received_at": i.received_at,
+                     "imo": i.imo, "mmsi": i.mmsi,
+                     "position": list(i.position) if i.position is not None else None,
+                     "uncertainty_km": i.uncertainty_km,
+                     "independent_group": i.independent_group,
+                     "explicit_attack_claim": i.explicit_attack_claim,
+                     "signal_only": i.signal_only}
                     for i, _ in valid],
         "automatic_publication": False,
         "attribution": None,
