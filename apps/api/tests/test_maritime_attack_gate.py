@@ -186,3 +186,18 @@ def test_case_variant_independence_group_is_one_group():
     result = evaluate_attack_candidate([item("a", "Government"), item("b", " government ")])
     assert result["status"] == "insufficient_evidence"
     assert "fewer_than_two_independent_attack_claims" in result["reasons"]
+
+
+def test_blank_provenance_identifiers_fail_closed():
+    for overrides in ({"source_id": "  "}, {"independent_group": "  "}):
+        result = evaluate_attack_candidate([item("a", "authority"), item("b", "press", **overrides)])
+        assert result["status"] == "insufficient_evidence"
+        assert "missing_provenance" in result["reasons"]
+
+
+def test_malformed_https_authorities_fail_closed():
+    for bad_url in ("https://", "https:///no-host", "https://user:pass@example.org/report",
+                    "https://[broken/report"):
+        result = evaluate_attack_candidate([item("a", "authority"), item("b", "press", source_url=bad_url)])
+        assert result["status"] == "insufficient_evidence"
+        assert "missing_provenance" in result["reasons"]
