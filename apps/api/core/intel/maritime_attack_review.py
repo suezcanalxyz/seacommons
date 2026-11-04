@@ -10,7 +10,7 @@ from typing import Any
 from core.intel.maritime_attack_gate import AttackEvidence, evaluate_attack_candidate
 
 ATTACK_CATEGORY = "maritime_attack"
-ATTACK_COLOR = "#E05252"  # reserved for analyst-reviewed maritime attack candidates
+ATTACK_COLOR = "#d946ef"  # reserved for analyst-reviewed maritime attack candidates
 HUMANITARIAN_CATEGORY = "humanitarian_distress"
 
 
