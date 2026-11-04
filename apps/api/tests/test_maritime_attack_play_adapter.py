@@ -102,3 +102,25 @@ def test_ais_context_requires_explicit_anchor():
     with pytest.raises(ValueError, match="ais_context_requires_target_identity_and_event_time"):
         project_play_attack_review(case_id="x", source_records=[],
             ais_records=[{"kind": "ais_gap", "mmsi": "636019532", "observed_at": "2026-10-28T10:00:00Z"}])
+
+
+@pytest.mark.parametrize("change,expected", [
+    ({"mmsi": "123456789"}, "source_vessel_identity_mismatch"),
+    ({"event_at": "2026-10-30T10:00:00Z"}, "source_event_outside_anchor_window"),
+    ({"event_at": "2026-10-28T10:00:00"}, "invalid_source_event_time"),
+])
+def test_source_claim_cannot_be_attached_to_unrelated_target(change, expected):
+    record = source("a", "authority", "official")
+    record.update(change)
+    with pytest.raises(ValueError, match=expected):
+        project_play_attack_review(case_id="contship-jet-20261028",
+            source_records=[record], target_mmsi="636019532",
+            event_at="2026-10-28T10:00:00Z")
+
+
+def test_source_claim_matching_target_and_anchor_remains_review_only():
+    dossier = project_play_attack_review(case_id="contship-jet-20261028",
+        source_records=[source("a", "authority", "official")],
+        target_mmsi="636019532", event_at="2026-10-28T10:00:00Z")
+    assert dossier["automatic_publication"] is False
+    assert dossier["review_status"] == "insufficient_evidence"
