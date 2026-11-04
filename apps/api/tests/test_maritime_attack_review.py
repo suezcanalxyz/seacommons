@@ -46,3 +46,25 @@ def test_attack_visual_category_distinct_from_humanitarian():
     assert dossier["category"] == ATTACK_CATEGORY
     assert dossier["category"] != HUMANITARIAN_CATEGORY
     assert dossier["display_color"].startswith("#")
+
+
+def test_dossier_preserves_vessel_identity_and_geospatial_uncertainty():
+    dossier = build_attack_review_dossier([evidence("official", "government"), evidence("press", "press")])
+    source = next(row for row in dossier["source_provenance"] if row["id"] == "official")
+    assert source["imo"] == "9348625"
+    assert source["mmsi"] == "636019532"
+    assert source["position"] == [43.26, 28.81]
+    assert source["uncertainty_km"] == 0
+    assert source["independent_group"] == "government"
+    assert source["explicit_attack_claim"] is True
+    assert source["event_at"] == "2026-10-28T10:00:00Z"
+    assert source["published_at"] == "2026-10-28T11:00:00Z"
+    assert source["received_at"] == "2026-10-28T11:10:00Z"
+
+
+def test_uncertainty_change_changes_dossier_audit_hash():
+    from dataclasses import replace
+    a, b = evidence("official", "government"), evidence("press", "press")
+    original = build_attack_review_dossier([a, b])
+    changed = build_attack_review_dossier([replace(a, uncertainty_km=15), b])
+    assert original["audit"]["input_sha256"] != changed["audit"]["input_sha256"]
