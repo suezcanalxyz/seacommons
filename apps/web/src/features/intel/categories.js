@@ -97,10 +97,17 @@ export function classifyEventVisual(properties = {}) {
   }
   // Only explicit incident classification may identify an attack. Never infer
   // an attack from news keywords, AIS gaps, sudden stops or severity.
-  if (properties.incident_type === 'maritime_attack' || properties.attack_review_category === 'maritime_attack') {
-    return _VISUAL_BY_KEY.maritime_attack;
-  }
-  // Trust an explicit canonical category assigned by the backend contract.
+  const attackClaimed = properties.incident_type === 'maritime_attack'
+    || properties.attack_review_category === 'maritime_attack'
+    || properties.visual_category === 'maritime_attack';
+  const attackApproved = properties.incident_type === 'maritime_attack'
+    && properties.analyst_approved === true
+    && properties.verification_status === 'multi_source_corroborated';
+  if (attackApproved && !isAlarmPhoneSource(properties.source)) return _VISUAL_BY_KEY.maritime_attack;
+  // An unapproved attack claim must not bypass the evidence gate via visual_category.
+  // Retain a neutral visual identity while preserving the underlying dossier.
+  if (attackClaimed) return _VISUAL_BY_KEY.context;
+  // Trust other canonical backend categories, but never an unreviewed attack.
   if (properties.visual_category && _VISUAL_BY_KEY[properties.visual_category]) {
     return _VISUAL_BY_KEY[properties.visual_category];
   }
