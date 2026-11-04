@@ -138,6 +138,7 @@ export default function PlayTimeline({ apiBase }) {
     const mainCategory = incident.main_category || incident.domain;
     if (archiveFilter === 'humanitarian') return mainCategory === 'humanitarian';
     if (archiveFilter === 'maritime') return mainCategory === 'maritime';
+    if (archiveFilter === 'attacks') return incident.incident_type === 'maritime_attack';
     return true;
   }), [visibleIncidents, archiveFilter]);
   const incidentTypes = useMemo(
@@ -161,6 +162,12 @@ export default function PlayTimeline({ apiBase }) {
     sanctionsOnly,
     investigationsOnly,
   ]);
+  const attackCounts = useMemo(() => {
+    const attacks = visibleIncidents.filter((incident) => incident.incident_type === 'maritime_attack');
+    const approved = attacks.filter((incident) => incident.analyst_approved === true
+      && incident.verification_status === 'multi_source_corroborated');
+    return { total: attacks.length, approved: approved.length, review: attacks.length - approved.length };
+  }, [visibleIncidents]);
   const coverage = useMemo(() => archiveCoverage(incidents), [incidents]);
   const archiveGroups = useMemo(() => groupArchiveByMonth(filteredIncidents), [filteredIncidents]);
   const selectedIncident = useMemo(
@@ -545,6 +552,10 @@ export default function PlayTimeline({ apiBase }) {
               <button type="button" className={`signals-selector__link ${archiveFilter === 'all' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('all')}><span className="signals-selector__box" aria-hidden="true" />ALL</button>
               <button type="button" className={`signals-selector__link ${archiveFilter === 'humanitarian' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('humanitarian')}><span className="signals-selector__box" aria-hidden="true" />HUMANITARIAN</button>
               <button type="button" className={`signals-selector__link ${archiveFilter === 'maritime' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('maritime')}><span className="signals-selector__box" aria-hidden="true" />MARITIME</button>
+              <button type="button" className={`signals-selector__link ${archiveFilter === 'attacks' ? 'is-active' : ''}`} onClick={() => { setArchiveFilter('attacks'); setIncidentTypeFilter('all'); }} aria-label={`Show maritime attack cases, ${attackCounts.total} in selected period`}><span className="signals-selector__box" aria-hidden="true" style={{ borderColor: ATTACK_COLOR, backgroundColor: ATTACK_COLOR }} />ATTACKS ({attackCounts.total})</button>
+            </div>
+            <div role="status" aria-live="polite" style={{ fontSize: '0.8rem', lineHeight: 1.4, padding: '8px 0' }}>
+              <strong style={{ color: ATTACK_COLOR }}>Maritime attacks</strong> · {attackCounts.approved} corroborated and analyst-approved · {attackCounts.review} awaiting review. AIS anomalies alone never confirm an attack.
             </div>
             <label className="play-satellite-selector">
               <span>Incident type</span>
