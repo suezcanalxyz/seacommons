@@ -66,10 +66,14 @@ def evaluate_attack_candidate(
         except (ValueError, TypeError):
             reasons.append("invalid_timestamp")
             continue
-        url = urlsplit(item.source_url.strip()) if isinstance(item.source_url, str) else None
+        try:
+            url = urlsplit(item.source_url.strip()) if isinstance(item.source_url, str) else None
+            host = url.hostname if url is not None else None
+        except ValueError:
+            url, host = None, None
         if (not isinstance(item.source_id, str) or not item.source_id.strip() or
                 not isinstance(item.independent_group, str) or not item.independent_group.strip() or
-                url is None or url.scheme != "https" or not url.hostname or
+                url is None or url.scheme != "https" or not host or
                 url.username is not None or url.password is not None):
             reasons.append("missing_provenance")
             continue
