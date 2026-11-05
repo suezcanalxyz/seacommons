@@ -6,7 +6,7 @@ BASE = dict(event_at="2026-10-28T10:00:00Z", published_at="2026-10-28T11:00:00Z"
 
 def item(name, group, **overrides):
     return AttackEvidence(**(BASE | dict(source_id=name, independent_group=group,
-                                         source_url=f"https://example.org/{name}") | overrides))
+                                         source_url=f"https://example.org/{name}", primary_origin_id=f"fixture-origin-{group.strip().casefold()}") | overrides))
 
 def test_independent_sources_only_promote_to_review():
     result = evaluate_attack_candidate([item("a","authority"), item("b","press")])
@@ -272,3 +272,22 @@ def test_non_string_timestamps_fail_closed_without_exception():
             assert result["status"] == "insufficient_evidence"
             assert "invalid_timestamp" in result["reasons"]
             assert result["automatic_publication"] is False
+
+
+def test_missing_primary_origin_cannot_corroborate_even_with_distinct_publishers():
+    result = evaluate_attack_candidate([
+        item("a", "authority", primary_origin_id=None),
+        item("b", "press", primary_origin_id="press-original-report"),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "unverified_primary_origin" in result["reasons"]
+    assert result["automatic_publication"] is False
+
+
+def test_blank_primary_origin_fails_closed():
+    result = evaluate_attack_candidate([
+        item("a", "authority", primary_origin_id="   "),
+        item("b", "press", primary_origin_id="press-original-report"),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "unverified_primary_origin" in result["reasons"]
