@@ -1,7 +1,7 @@
 """Regression tests for bounded uncertainty in maritime incident timestamps."""
 from dataclasses import replace
 
-from apps.api.core.intel.maritime_attack_gate import AttackEvidence, evaluate_attack_candidate
+from core.intel.maritime_attack_gate import AttackEvidence, evaluate_attack_candidate
 
 
 def _pair():
