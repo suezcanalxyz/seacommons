@@ -57,7 +57,7 @@ def evaluate_attack_candidate(
     reasons: list[str] = []
     if not evidence:
         return {"status": "insufficient_evidence", "reasons": ["no_evidence"], "sources": []}
-    if not all(isfinite(value) and value >= 0 for value in (max_hours, max_km)):
+    if not all(type(value) in (int, float) and isfinite(value) and value >= 0 for value in (max_hours, max_km)):
         return {"status": "insufficient_evidence", "reasons": ["invalid_matching_threshold"], "sources": [], "automatic_publication": False, "attribution": None}
     valid = []
     for item in evidence:
