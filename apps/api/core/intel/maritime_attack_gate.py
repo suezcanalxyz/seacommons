@@ -64,11 +64,13 @@ def evaluate_attack_candidate(
     if not all(type(value) in (int, float) and isfinite(value) and value >= 0 for value in (max_hours, max_km)):
         return {"status": "insufficient_evidence", "reasons": ["invalid_matching_threshold"], "sources": [], "automatic_publication": False, "attribution": None}
     valid = []
+    rejected_evidence: list[dict[str, str]] = []
     for item in evidence:
         try:
             event, published, received = (_time(t) for t in (item.event_at, item.published_at, item.received_at))
         except (ValueError, TypeError):
             reasons.append("invalid_timestamp")
+            rejected_evidence.append({"source_id": item.source_id if isinstance(item.source_id, str) else "", "reason": "invalid_timestamp"})
             continue
         try:
             url = urlsplit(item.source_url.strip()) if isinstance(item.source_url, str) else None
@@ -83,14 +85,17 @@ def evaluate_attack_candidate(
                 any(ch.isspace() for ch in item.source_url) or
                 (host is not None and (host.startswith(".") or host.endswith(".")))):
             reasons.append("missing_provenance")
+            rejected_evidence.append({"source_id": item.source_id if isinstance(item.source_id, str) else "", "reason": "missing_provenance"})
             continue
         if published < event or received < published:
             reasons.append("chronology_requires_review")
+            rejected_evidence.append({"source_id": item.source_id if isinstance(item.source_id, str) else "", "reason": "chronology_requires_review"})
             continue
         if (type(item.event_uncertainty_minutes) not in (int, float) or
                 not isfinite(item.event_uncertainty_minutes) or
                 not 0 <= item.event_uncertainty_minutes <= 180):
             reasons.append("invalid_time_uncertainty")
+            rejected_evidence.append({"source_id": item.source_id if isinstance(item.source_id, str) else "", "reason": "invalid_time_uncertainty"})
             continue
         # Boolean coordinates and unbounded error circles are not measurements.
         # Reject excessive uncertainty rather than letting it bridge unrelated seas.
@@ -105,6 +110,7 @@ def evaluate_attack_candidate(
                     not -90 <= item.position[0] <= 90 or
                     not -180 <= item.position[1] <= 180))):
             reasons.append("invalid_position")
+            rejected_evidence.append({"source_id": item.source_id if isinstance(item.source_id, str) else "", "reason": "invalid_position"})
             continue
         # Preserve how a location was obtained; estimated locations are not AIS fixes.
         if (item.position_provenance not in (
@@ -112,10 +118,12 @@ def evaluate_attack_candidate(
                 "coastal_reference", "model_estimate") or
                 (item.position is None and item.position_provenance != "unspecified")):
             reasons.append("invalid_position_provenance")
+            rejected_evidence.append({"source_id": item.source_id if isinstance(item.source_id, str) else "", "reason": "invalid_position_provenance"})
             continue
         if ((item.imo is not None and not _valid_imo(item.imo)) or
                 (item.mmsi is not None and not _valid_mmsi(item.mmsi))):
             reasons.append("invalid_vessel_identifier")
+            rejected_evidence.append({"source_id": item.source_id if isinstance(item.source_id, str) else "", "reason": "invalid_vessel_identifier"})
             continue
         # A publisher is not necessarily an independent primary source.
         # Unknown origin cannot contribute to two-source corroboration.
@@ -123,6 +131,7 @@ def evaluate_attack_candidate(
                 not isinstance(item.primary_origin_id, str) or
                 not item.primary_origin_id.strip()):
             reasons.append("unverified_primary_origin")
+            rejected_evidence.append({"source_id": item.source_id if isinstance(item.source_id, str) else "", "reason": "unverified_primary_origin"})
             continue
         valid.append((item, event))
     claims = [(item, at) for item, at in valid if item.explicit_attack_claim and not item.signal_only]
@@ -171,6 +180,7 @@ def evaluate_attack_candidate(
         "status": "candidate_for_analyst_review" if len(groups) >= 2 and not reasons else "insufficient_evidence",
         "reasons": sorted(set(reasons)),
         "independent_groups": groups,
+        "rejected_evidence": rejected_evidence,
         "sources": [{"id": i.source_id, "url": i.source_url, "event_at": i.event_at,
                      "published_at": i.published_at, "received_at": i.received_at,
                      "imo": i.imo, "mmsi": i.mmsi,
