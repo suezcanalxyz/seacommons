@@ -49,6 +49,7 @@ class AttackEvidence:
     signal_only: bool = False
     primary_origin_id: str | None = None  # shared upstream release/report, not publisher
     event_uncertainty_minutes: float = 0  # bounded observation-time uncertainty, not publication latency
+    position_provenance: str = "unspecified"  # ais_observed | documentary_estimate | coastal_reference | model_estimate
 
 
 def evaluate_attack_candidate(
@@ -104,6 +105,13 @@ def evaluate_attack_candidate(
                     not -90 <= item.position[0] <= 90 or
                     not -180 <= item.position[1] <= 180))):
             reasons.append("invalid_position")
+            continue
+        # Preserve how a location was obtained; estimated locations are not AIS fixes.
+        if (item.position_provenance not in (
+                "unspecified", "ais_observed", "documentary_estimate",
+                "coastal_reference", "model_estimate") or
+                (item.position is None and item.position_provenance != "unspecified")):
+            reasons.append("invalid_position_provenance")
             continue
         if ((item.imo is not None and not _valid_imo(item.imo)) or
                 (item.mmsi is not None and not _valid_mmsi(item.mmsi))):
@@ -168,6 +176,7 @@ def evaluate_attack_candidate(
                      "imo": i.imo, "mmsi": i.mmsi,
                      "position": list(i.position) if i.position is not None else None,
                      "uncertainty_km": i.uncertainty_km,
+                     "position_provenance": i.position_provenance,
                      "event_uncertainty_minutes": i.event_uncertainty_minutes,
                      "independent_group": i.independent_group,
                      "explicit_attack_claim": i.explicit_attack_claim,
