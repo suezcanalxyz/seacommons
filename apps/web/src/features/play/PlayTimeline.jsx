@@ -29,9 +29,10 @@ const TIMELINE_MAX = 1000;
 const ATTACK_COLOR = EVENT_VISUAL_CATEGORIES.find((category) => category.key === 'maritime_attack').color;
 
 function evidenceLabel(item) {
+  // Disputed evidence must remain visible even if an older corroboration flag is set.
+  if (item?.verification_status === 'contested' || item?.evidence_state === 'contested') return 'Conflicting evidence';
   if (item?.incident_type === 'maritime_attack' && !(item?.analyst_approved === true && item?.verification_status === 'multi_source_corroborated')) return 'Attack allegation — awaiting independent corroboration and analyst review';
   if (item?.corroborated === true || item?.verification_status === 'multi_source_corroborated') return 'Confirmed by independent sources';
-  if (item?.verification_status === 'contested' || item?.evidence_state === 'contested') return 'Conflicting evidence';
   if (item?.verification_status === 'verified') return 'Verified';
   if (item?.evidence_stage === 'multi_indicator') return 'Multiple supporting clues';
   return 'Not independently confirmed';
