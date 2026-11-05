@@ -261,3 +261,14 @@ def test_non_string_vessel_identifiers_fail_closed_without_exception():
             assert result["status"] == "insufficient_evidence"
             assert "invalid_vessel_identifier" in result["reasons"]
             assert result["automatic_publication"] is False
+
+
+def test_non_string_timestamps_fail_closed_without_exception():
+    for field in ("event_at", "published_at", "received_at"):
+        for invalid in (None, True, 0, [], {}):
+            result = evaluate_attack_candidate([
+                item("a", "official"), item("b", "press", **{field: invalid}),
+            ])
+            assert result["status"] == "insufficient_evidence"
+            assert "invalid_timestamp" in result["reasons"]
+            assert result["automatic_publication"] is False
