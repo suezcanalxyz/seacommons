@@ -27,7 +27,7 @@ def test_conflicting_vessel_claims_fail_closed_in_every_order():
     claims = [
         _claim("unidentified", "wire", "wire-original"),
         _claim("vessel-a", "wire", "wire-followup", imo="9348625"),
-        _claim("vessel-b", "authority", "authority-original", imo="9348626"),
+        _claim("vessel-b", "authority", "authority-original", imo="9348637"),
     ]
     for ordered in permutations(claims):
         result = evaluate_attack_candidate(list(ordered))
