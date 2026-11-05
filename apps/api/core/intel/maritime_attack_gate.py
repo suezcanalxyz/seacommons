@@ -60,9 +60,9 @@ def evaluate_attack_candidate(
     """Only independent explicit claims can corroborate; AIS gaps never count."""
     reasons: list[str] = []
     if not evidence:
-        return {"status": "insufficient_evidence", "reasons": ["no_evidence"], "sources": [], "automatic_publication": False, "attribution": None}
+        return {"status": "insufficient_evidence", "reasons": ["no_evidence"], "sources": [], "rejected_evidence": [], "independent_groups": [], "automatic_publication": False, "attribution": None}
     if not all(type(value) in (int, float) and isfinite(value) and value >= 0 for value in (max_hours, max_km)):
-        return {"status": "insufficient_evidence", "reasons": ["invalid_matching_threshold"], "sources": [], "automatic_publication": False, "attribution": None}
+        return {"status": "insufficient_evidence", "reasons": ["invalid_matching_threshold"], "sources": [], "rejected_evidence": [], "independent_groups": [], "automatic_publication": False, "attribution": None}
     valid = []
     rejected_evidence: list[dict[str, str]] = []
     for item in evidence:
