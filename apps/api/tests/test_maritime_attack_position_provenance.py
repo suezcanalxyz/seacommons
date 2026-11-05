@@ -46,3 +46,12 @@ def test_cross_sea_positions_remain_distinct_even_with_uncertainty():
     result = evaluate_attack_candidate([first, other])
     assert result["status"] == "insufficient_evidence"
     assert "spatial_mismatch" in result["reasons"]
+
+
+def test_empty_evidence_explicitly_disables_publication_and_attribution():
+    result = evaluate_attack_candidate([])
+    assert result["status"] == "insufficient_evidence"
+    assert result["reasons"] == ["no_evidence"]
+    assert result["sources"] == []
+    assert result["automatic_publication"] is False
+    assert result["attribution"] is None
