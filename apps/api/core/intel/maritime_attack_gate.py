@@ -48,6 +48,7 @@ class AttackEvidence:
     explicit_attack_claim: bool = False
     signal_only: bool = False
     primary_origin_id: str | None = None  # shared upstream release/report, not publisher
+    event_uncertainty_minutes: float = 0  # bounded observation-time uncertainty, not publication latency
 
 
 def evaluate_attack_candidate(
@@ -84,6 +85,11 @@ def evaluate_attack_candidate(
             continue
         if published < event or received < published:
             reasons.append("chronology_requires_review")
+            continue
+        if (type(item.event_uncertainty_minutes) not in (int, float) or
+                not isfinite(item.event_uncertainty_minutes) or
+                not 0 <= item.event_uncertainty_minutes <= 180):
+            reasons.append("invalid_time_uncertainty")
             continue
         # Boolean coordinates and unbounded error circles are not measurements.
         # Reject excessive uncertainty rather than letting it bridge unrelated seas.
@@ -129,7 +135,7 @@ def evaluate_attack_candidate(
             seen_origins.add(origin)
         unique_claims.append((item, at))
     def matches(a, at_a, b, at_b):
-        if abs((at_a-at_b).total_seconds()) > max_hours * 3600:
+        if abs((at_a-at_b).total_seconds()) > (max_hours * 60 + a.event_uncertainty_minutes + b.event_uncertainty_minutes) * 60:
             return False, "time_mismatch"
         if a.imo and b.imo and a.imo != b.imo:
             return False, "imo_conflict"
@@ -162,6 +168,7 @@ def evaluate_attack_candidate(
                      "imo": i.imo, "mmsi": i.mmsi,
                      "position": list(i.position) if i.position is not None else None,
                      "uncertainty_km": i.uncertainty_km,
+                     "event_uncertainty_minutes": i.event_uncertainty_minutes,
                      "independent_group": i.independent_group,
                      "explicit_attack_claim": i.explicit_attack_claim,
                      "signal_only": i.signal_only,
