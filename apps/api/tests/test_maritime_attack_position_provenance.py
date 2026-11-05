@@ -55,3 +55,13 @@ def test_empty_evidence_explicitly_disables_publication_and_attribution():
     assert result["sources"] == []
     assert result["automatic_publication"] is False
     assert result["attribution"] is None
+
+def test_rejected_evidence_retains_source_level_audit_without_promotion():
+    invalid = AttackEvidence(**{**BASE, "source_id": "bad-coordinate",
+        "position": (95.0, 29.0), "position_provenance": "ais_observed"})
+    result = evaluate_attack_candidate([invalid, second()])
+    assert result["status"] == "insufficient_evidence"
+    assert {"source_id": "bad-coordinate", "reason": "invalid_position"} in result["rejected_evidence"]
+    assert all(source["id"] != "bad-coordinate" for source in result["sources"])
+    assert result["automatic_publication"] is False
+    assert result["attribution"] is None
