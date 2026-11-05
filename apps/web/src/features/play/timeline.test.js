@@ -415,3 +415,12 @@ test('PLAY confirmed filter requires analyst approval for attacks even with corr
   assert.match(source, /evidenceFilter === 'confirmed' && !confirmed/);
   assert.match(source, /evidenceFilter === 'unconfirmed' && confirmed/);
 });
+
+test('PLAY prioritizes conflicting evidence over stale attack confirmation flags', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  const evidenceBlock = source.slice(source.indexOf('function evidenceLabel('), source.indexOf('function evidenceCollection('));
+  assert.ok(evidenceBlock.indexOf("item?.verification_status === 'contested'") <
+    evidenceBlock.indexOf("item?.incident_type === 'maritime_attack'"));
+  assert.ok(evidenceBlock.indexOf("item?.verification_status === 'contested'") <
+    evidenceBlock.indexOf("item?.corroborated === true"));
+});
