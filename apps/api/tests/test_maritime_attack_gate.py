@@ -239,3 +239,14 @@ def test_boolean_uncertainty_is_not_a_valid_measurement():
     ])
     assert result["status"] == "insufficient_evidence"
     assert "invalid_position" in result["reasons"]
+
+
+def test_invalid_matching_threshold_types_fail_closed():
+    for invalid in (True, False, "75", None, [], {}):
+        for parameter in ("max_km", "max_hours"):
+            result = evaluate_attack_candidate(
+                [item("a", "official"), item("b", "press")], **{parameter: invalid}
+            )
+            assert result["status"] == "insufficient_evidence"
+            assert "invalid_matching_threshold" in result["reasons"]
+            assert result["automatic_publication"] is False
