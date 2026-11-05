@@ -16,12 +16,12 @@ def _time(value: str) -> datetime:
 
 def _valid_imo(value: str) -> bool:
     """Seven-digit IMO number with the standard weighted check digit."""
-    return (len(value) == 7 and value.isascii() and value.isdigit()
+    return (isinstance(value, str) and len(value) == 7 and value.isascii() and value.isdigit()
             and sum(int(digit) * weight for digit, weight in zip(value[:6], range(7, 1, -1))) % 10 == int(value[-1]))
 
 
 def _valid_mmsi(value: str) -> bool:
-    return len(value) == 9 and value.isascii() and value.isdigit()
+    return isinstance(value, str) and len(value) == 9 and value.isascii() and value.isdigit()
 
 
 def _distance_km(a: tuple[float, float], b: tuple[float, float]) -> float:
