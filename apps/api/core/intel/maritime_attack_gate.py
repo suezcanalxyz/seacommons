@@ -8,6 +8,8 @@ from urllib.parse import urlsplit
 
 
 def _time(value: str) -> datetime:
+    if not isinstance(value, str):
+        raise ValueError("Evidence timestamp must be an ISO-8601 string")
     dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if dt.tzinfo is None:
         raise ValueError("Evidence timestamps must have timezone")
