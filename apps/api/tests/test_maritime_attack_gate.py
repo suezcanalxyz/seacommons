@@ -211,3 +211,31 @@ def test_malformed_https_ports_and_whitespace_fail_closed():
         ])
         assert result["status"] == "insufficient_evidence"
         assert "missing_provenance" in result["reasons"]
+
+
+
+def test_boolean_coordinates_cannot_pass_as_latitude():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", position=(True, 30.0)),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_position" in result["reasons"]
+
+
+def test_unbounded_uncertainty_cannot_join_distant_incidents():
+    result = evaluate_attack_candidate([
+        item("a", "authority", position=(41.0, 30.0)),
+        item("b", "press", position=(10.0, 10.0), uncertainty_km=5000),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_position" in result["reasons"]
+
+
+def test_boolean_uncertainty_is_not_a_valid_measurement():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", uncertainty_km=True),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_position" in result["reasons"]
