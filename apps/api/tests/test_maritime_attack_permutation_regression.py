@@ -59,3 +59,19 @@ def test_two_independent_compatible_claims_still_require_analyst_review():
     assert result["status"] == "candidate_for_analyst_review"
     assert result["automatic_publication"] is False
     assert result["attribution"] is None
+
+
+def test_duplicate_origin_conflict_cannot_be_hidden_by_deduplication():
+    """Contradictory revisions of one origin cannot be discarded by input order."""
+    claims = [
+        _claim("ministry-a", "authority", "ministry-release", imo="9348625"),
+        _claim("ministry-correction", "authority", "ministry-release", imo="9348637"),
+        _claim("operator", "operator", "operator-release", imo="9348625"),
+    ]
+    for ordered in permutations(claims):
+        result = evaluate_attack_candidate(list(ordered))
+        assert result["status"] == "insufficient_evidence"
+        assert "imo_conflict" in result["reasons"]
+        assert "duplicate_source" in result["reasons"]
+        assert result["automatic_publication"] is False
+        assert result["attribution"] is None
