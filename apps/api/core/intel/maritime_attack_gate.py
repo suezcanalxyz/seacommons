@@ -103,6 +103,13 @@ def evaluate_attack_candidate(
                 (item.mmsi is not None and not _valid_mmsi(item.mmsi))):
             reasons.append("invalid_vessel_identifier")
             continue
+        # A publisher is not necessarily an independent primary source.
+        # Unknown origin cannot contribute to two-source corroboration.
+        if item.explicit_attack_claim and not item.signal_only and (
+                not isinstance(item.primary_origin_id, str) or
+                not item.primary_origin_id.strip()):
+            reasons.append("unverified_primary_origin")
+            continue
         valid.append((item, event))
     claims = [(item, at) for item, at in valid if item.explicit_attack_claim and not item.signal_only]
     # Do not count duplicate source records as independent confirmations.
