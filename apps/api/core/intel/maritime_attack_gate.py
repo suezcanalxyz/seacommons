@@ -83,9 +83,18 @@ def evaluate_attack_candidate(
         if published < event or received < published:
             reasons.append("chronology_requires_review")
             continue
-        if (not isfinite(item.uncertainty_km) or item.uncertainty_km < 0 or
-                (item.position is not None and (not all(isfinite(v) for v in item.position) or
-                 not -90 <= item.position[0] <= 90 or not -180 <= item.position[1] <= 180))):
+        # Boolean coordinates and unbounded error circles are not measurements.
+        # Reject excessive uncertainty rather than letting it bridge unrelated seas.
+        if (isinstance(item.uncertainty_km, bool) or
+                not isinstance(item.uncertainty_km, (int, float)) or
+                not isfinite(item.uncertainty_km) or
+                item.uncertainty_km < 0 or item.uncertainty_km > max_km or
+                (item.position is not None and (
+                    not isinstance(item.position, (tuple, list)) or len(item.position) != 2 or
+                    any(isinstance(v, bool) or not isinstance(v, (int, float)) or not isfinite(v)
+                        for v in item.position) or
+                    not -90 <= item.position[0] <= 90 or
+                    not -180 <= item.position[1] <= 180))):
             reasons.append("invalid_position")
             continue
         if ((item.imo is not None and not _valid_imo(item.imo)) or
