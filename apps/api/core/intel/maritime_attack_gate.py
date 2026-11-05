@@ -164,10 +164,11 @@ def evaluate_attack_candidate(
             return False, "spatial_mismatch"
         return True, None
 
-    # Fail closed on contradictory claims: an input-order-dependent subset
-    # must never become a corroborated incident.
-    for index, (item, at) in enumerate(unique_claims):
-        for other, other_at in unique_claims[index + 1:]:
+    # Fail closed on contradictory claims, including duplicate-origin records.
+    # Deduplication controls corroboration counts, not contradictory evidence.
+    # An input-order-dependent subset must never become corroborated.
+    for index, (item, at) in enumerate(claims):
+        for other, other_at in claims[index + 1:]:
             ok, reason = matches(item, at, other, other_at)
             if not ok and reason:
                 reasons.append(reason)
