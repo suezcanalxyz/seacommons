@@ -250,3 +250,14 @@ def test_invalid_matching_threshold_types_fail_closed():
             assert result["status"] == "insufficient_evidence"
             assert "invalid_matching_threshold" in result["reasons"]
             assert result["automatic_publication"] is False
+
+
+def test_non_string_vessel_identifiers_fail_closed_without_exception():
+    for invalid in (True, False, 9348625, 636019532, [], {}):
+        for identifier in ("imo", "mmsi"):
+            result = evaluate_attack_candidate([
+                item("a", "official"), item("b", "press", **{identifier: invalid})
+            ])
+            assert result["status"] == "insufficient_evidence"
+            assert "invalid_vessel_identifier" in result["reasons"]
+            assert result["automatic_publication"] is False
