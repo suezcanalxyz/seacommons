@@ -15,3 +15,5 @@
 2026-11-06 | AIS archival evidence preservation: EXPERIMENTAL. E-AIS-FAULT-05 now observes fail-closed R2 GET outage in executable isolated transaction harness, 9/9 local tests; still UNSUPPORTED: proven two-session PostgreSQL race and full R2 restore drill. Do not activate retention.
 
 2026-11-06 | Evidence integrity / chain of custody | EXPERIMENTAL | P0 #335 PR #452 commit 80d8c629: regression verifies readback checksum mismatch is a raising branch inside the SQL transaction. Local 10/10 tests passed. NOT OBSERVED: real concurrent PostgreSQL transaction and R2 restore durability. No claim of operational archive safety.
+
+2026-11-06 21:04 Africa/Tunis | Evidence preservation / all-source chain of custody | EXPERIMENTAL: executable corrupted-readback fault injection against canonical prune, expects SQL rollback and zero DELETE; not OBSERVED in production. Unsupported: concurrent-writer proof, durable R2 restore and end-to-end recovery. No new source collection or private data.
