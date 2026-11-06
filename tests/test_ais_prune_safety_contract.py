@@ -98,8 +98,7 @@ def test_prune_fails_closed_on_corrupt_archive_and_partial_delete():
 
 def test_prune_rejects_invalid_retention_windows_before_storage_access(monkeypatch):
     """Even if a release later enables retention, zero/negative windows fail closed."""
-    import sys
-    import types
+    from typing import Optional
     import pytest
 
     # Avoid importing the runtime service graph: compile the actual prune method
@@ -116,6 +115,7 @@ def test_prune_rejects_invalid_retention_windows_before_storage_access(monkeypat
         OBJECT_STORAGE_SECRET_KEY = "test"
     namespace = {
         "__name__": "ais_prune_contract",
+        "Optional": Optional,
         "os": os,
         "datetime": datetime,
         "timedelta": timedelta,
