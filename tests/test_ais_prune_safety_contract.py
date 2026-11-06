@@ -131,3 +131,36 @@ def test_prune_rejects_invalid_retention_windows_before_storage_access(monkeypat
     for days in (0, -1, -365, True, 0.5):
         with pytest.raises(ValueError, match="positive integer"):
             namespace["prune"](object(), older_than_days=days)
+
+
+def test_prune_invalid_configured_default_is_fail_closed(monkeypatch):
+    """Negative control: a misconfigured default must never widen a prune."""
+    import logging
+    import os
+    from datetime import datetime, timedelta, timezone
+    from typing import Optional
+    import pytest
+
+    class Config:
+        VESSEL_TRACK_RETENTION_DAYS = -30
+        OBJECT_STORAGE_ENDPOINT = "example"
+        OBJECT_STORAGE_ACCESS_KEY = "test"
+        OBJECT_STORAGE_SECRET_KEY = "test"
+
+    source = SOURCE.read_text(encoding="utf-8")
+    namespace = {
+        "__name__": "ais_prune_default_contract",
+        "Optional": Optional,
+        "os": os,
+        "datetime": datetime,
+        "timedelta": timedelta,
+        "timezone": timezone,
+        "config": Config(),
+        "logger": logging.getLogger("ais_prune_default_contract"),
+        "_RETENTION_RELEASE_AUTHORIZED": True,
+    }
+    exec(compile(ast.Module(body=[_prune()], type_ignores=[]), str(SOURCE), "exec"), namespace)
+    monkeypatch.setenv("AIS_PRUNE_APPROVED", "true")
+    monkeypatch.setenv("AIS_RETENTION_POLICY_ID", "test-only")
+    with pytest.raises(ValueError, match="positive integer"):
+        namespace["prune"](object())
