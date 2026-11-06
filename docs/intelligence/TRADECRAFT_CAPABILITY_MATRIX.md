@@ -17,3 +17,5 @@
 2026-11-06 | Evidence integrity / chain of custody | EXPERIMENTAL | P0 #335 PR #452 commit 80d8c629: regression verifies readback checksum mismatch is a raising branch inside the SQL transaction. Local 10/10 tests passed. NOT OBSERVED: real concurrent PostgreSQL transaction and R2 restore durability. No claim of operational archive safety.
 
 2026-11-06 21:04 Africa/Tunis | Evidence preservation / all-source chain of custody | EXPERIMENTAL: executable corrupted-readback fault injection against canonical prune, expects SQL rollback and zero DELETE; not OBSERVED in production. Unsupported: concurrent-writer proof, durable R2 restore and end-to-end recovery. No new source collection or private data.
+
+2026-11-06 #335 | Evidence preservation / chain-of-custody engineering: EXPERIMENTAL. Added opt-in disposable PostgreSQL lock-contention negative control in PR #453; not executed against a real PostgreSQL test DB yet. Operational archive recoverability UNSUPPORTED until verified restore and canonical prune integration. No new SIGINT/GEOINT/incident claims.
