@@ -1,0 +1,4 @@
+# Research register
+
+2026-11-06 #447. Question: Can compatible lockfile-only updates remove critical/high web advisories without LIVE/PLAY regressions?
+Primary sources (accessed 2026-11-06): DOMPurify https://github.com/advisories/GHSA-cg2g-xh64-v4q7 (public advisory, patch 3.4.17; ADOPT); Vite https://github.com/advisories/GHSA-9jrq-w75r-8gcw (published 2026-10-06, patch 6.4.4+, ADOPT); minimatch https://github.com/advisories/GHSA-g3hv-75wg-m249 (published 2026-10-27, patched 11.0.1, PILOT future compatible toolchain migration); applicability discussion https://github.com/github/advisory-database/issues/10811 (secondary, do not suppress warning). No external dataset; advisory pages are public documentation. Dependency licenses unchanged. Baseline audit: 1 critical, 3 high, 4 moderate; after: 0 critical, 0 high, 4 moderate. This is a security gate, not a new intelligence collection capability.
