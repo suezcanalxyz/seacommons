@@ -17,7 +17,6 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
 
 
-@pytest.mark.integration
 def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
     url = os.getenv("AIS_ARCHIVE_TEST_DATABASE_URL", "")
     if not url or os.getenv("AIS_ARCHIVE_DISPOSABLE_DB_ACK") != "YES":
@@ -27,7 +26,7 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
     # The test creates and drops only its own randomized table; never reuse a
     # production connection string. An explicit acknowledgment is mandatory.
     table = "ais_archive_probe_" + uuid.uuid4().hex[:16]
-    engine = create_engine(url, pool_size=2, max_overflow=0)
+    engine = create_engine(url, pool_size=2, max_overflow=1)
     try:
         with engine.begin() as setup:
             setup.execute(text(f"CREATE TABLE {table} (id integer PRIMARY KEY, ts integer, lat integer)"))
