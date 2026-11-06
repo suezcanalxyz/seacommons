@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""#335: real PostgreSQL two-connection archive-lock adversarial probe.
+
+Run only against an explicitly provisioned DISPOSABLE PostgreSQL test database:
+  AIS_ARCHIVE_TEST_DATABASE_URL=postgresql+psycopg://... \
+  AIS_ARCHIVE_DISPOSABLE_DB_ACK=YES pytest -q tests/test_ais_archive_pg_concurrency.py
+
+No production data, object store, retention switch or existing tables are touched.
+"""
+import os
+import uuid
+
+import pytest
+
+sqlalchemy = pytest.importorskip("sqlalchemy")
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import DBAPIError
+
+
+@pytest.mark.integration
+def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
+    url = os.getenv("AIS_ARCHIVE_TEST_DATABASE_URL", "")
+    if not url or os.getenv("AIS_ARCHIVE_DISPOSABLE_DB_ACK") != "YES":
+        pytest.skip("Requires explicitly acknowledged disposable PostgreSQL database")
+    if not url.startswith(("postgresql+psycopg://", "postgresql+psycopg2://")):
+        pytest.fail("Only explicit PostgreSQL test URLs are supported")
+    # The test creates and drops only its own randomized table; never reuse a
+    # production connection string. An explicit acknowledgment is mandatory.
+    table = "ais_archive_probe_" + uuid.uuid4().hex[:16]
+    engine = create_engine(url, pool_size=2, max_overflow=0)
+    try:
+        with engine.begin() as setup:
+            setup.execute(text(f"CREATE TABLE {table} (id integer PRIMARY KEY, ts integer, lat integer)"))
+            setup.execute(text(f"INSERT INTO {table} VALUES (1, 1, 10)"))
+        with engine.connect() as archivist, engine.connect() as writer:
+            tx_archive = archivist.begin()
+            try:
+                selected = archivist.execute(text(
+                    f"SELECT id, ts, lat FROM {table} WHERE ts < 10 "
+                    "ORDER BY id FOR UPDATE SKIP LOCKED"
+                )).mappings().all()
+                assert [dict(r) for r in selected] == [{"id": 1, "ts": 1, "lat": 10}]
+                tx_writer = writer.begin()
+                try:
+                    writer.execute(text("SET LOCAL lock_timeout = '200ms'"))
+                    with pytest.raises(DBAPIError):
+                        writer.execute(text(f"UPDATE {table} SET lat = 99 WHERE id = 1"))
+                finally:
+                    tx_writer.rollback()
+                # A second reader using SKIP LOCKED must not archive the same row.
+                with engine.connect() as reader:
+                    with reader.begin():
+                        other = reader.execute(text(
+                            f"SELECT id FROM {table} WHERE ts < 10 FOR UPDATE SKIP LOCKED"
+                        )).all()
+                        assert other == []
+                # Simulate archive verification failure: do not delete; rollback.
+                tx_archive.rollback()
+            finally:
+                if tx_archive.is_active:
+                    tx_archive.rollback()
+        with engine.connect() as verify:
+            assert verify.execute(text(f"SELECT lat FROM {table} WHERE id = 1")).scalar_one() == 10
+    finally:
+        try:
+            with engine.begin() as cleanup:
+                cleanup.execute(text(f"DROP TABLE IF EXISTS {table}"))
+        finally:
+            engine.dispose()
