@@ -11,3 +11,5 @@ Primary sources (accessed 2026-11-06): DOMPurify https://github.com/advisories/G
 
 ### 2026-11-06 16:00 CET — retention configuration negative control
 - Question: Can a malformed configured retention default bypass the validated explicit-argument path? Source: PostgreSQL `DELETE` documentation, https://www.postgresql.org/docs/current/sql-delete.html (official, accessed 2026-11-06; PostgreSQL documentation license; database deletion semantics, not an archive durability guarantee). Decision: ADOPT fail-closed configuration test; no data collection or privacy exposure.
+
+2026-11-06 E-AIS-RESTORE-04 | Question: can a cold AIS v1 gzip object roundtrip exactly and reject a corrupted byte? Primary sources: Python gzip https://docs.python.org/3/library/gzip.html (PSF License; accessed 2026-11-06; deterministic mtime=0, not object durability); Python hashlib https://docs.python.org/3/library/hashlib.html (PSF License; accessed 2026-11-06; SHA-256 detects accidental changes, not authenticity). ADOPT for fixture, not for production release; limitation: no R2, PostgreSQL concurrency, restore replay or immutable manifest.
