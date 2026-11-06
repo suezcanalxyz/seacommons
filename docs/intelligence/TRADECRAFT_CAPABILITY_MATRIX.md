@@ -7,3 +7,5 @@
 2026-11-06 E-AIS-FAILCLOSED-03: evidence preservation failure handling EXPERIMENTAL, structural guard added for corruption/partial delete exception propagation; runtime atomicity and restore UNSUPPORTED until real DB/R2 failure injection. No new OSINT/GEOINT capability claimed.
 
 2026-11-06 | AIS retention-input validation | EXPERIMENTAL (not operational): explicit positive integer guard in TrackStore.prune, hard negatives 0/-1/-365/True/0.5. Primary doctrine: fail-closed input validation; no evidence deletion enabled. Observed: source commit 8aea189; tests added 9c242dd; CI/restore not yet confirmed. No public capability claimed.
+
+- 2026-11-06: AIS evidence-preservation engineering — **experimental**. Seven isolated regression tests passed against exact PR-head source on VM; no concurrent PostgreSQL or restore drill, hence not observed operational capability.
