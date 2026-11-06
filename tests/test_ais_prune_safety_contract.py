@@ -164,3 +164,49 @@ def test_prune_invalid_configured_default_is_fail_closed(monkeypatch):
     monkeypatch.setenv("AIS_RETENTION_POLICY_ID", "test-only")
     with pytest.raises(ValueError, match="positive integer"):
         namespace["prune"](object())
+
+
+def test_ais_archive_fixture_roundtrip_and_tamper_negative_control():
+    """Disposable v1 archive fixture: exact rows survive gzip roundtrip.
+
+    This is a serialization smoke test, NOT proof of R2 durability or SQL
+    transaction safety. It intentionally makes no production DB/R2 calls.
+    """
+    import gzip
+    import hashlib
+    import json
+
+    rows = [
+        {
+            "id": 101, "mmsi": "247000001",
+            "ts": "2026-10-01T12:00:00+00:00",
+            "received_at": "2026-10-01T12:00:03+00:00",
+            "lat": 35.1, "lon": 12.2, "sog": 5.5, "cog": 90.0,
+            "heading": 89, "nav_status": 0, "source": "fixture",
+        },
+        {
+            "id": 102, "mmsi": "247000001",
+            "ts": "2026-10-01T12:01:00+00:00",
+            "received_at": "2026-10-01T12:01:02+00:00",
+            "lat": 35.11, "lon": 12.21, "sog": None, "cog": None,
+            "heading": None, "nav_status": None, "source": "fixture",
+        },
+    ]
+    plain = json.dumps(
+        {"schema": "vessel_tracks_v1", "rows": rows},
+        sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    compressed = gzip.compress(plain, mtime=0)
+    digest = hashlib.sha256(compressed).hexdigest()
+    assert gzip.compress(plain, mtime=0) == compressed
+    assert hashlib.sha256(compressed).hexdigest() == digest
+    restored = json.loads(gzip.decompress(compressed))
+    assert restored["schema"] == "vessel_tracks_v1"
+    assert restored["rows"] == rows
+    assert len({r["id"] for r in restored["rows"]}) == len(rows)
+
+    # Adversarial bit flip: checksum verification must reject the object
+    # before decompression or a hypothetical DELETE.
+    tampered = bytearray(compressed)
+    tampered[len(tampered) // 2] ^= 0x01
+    assert hashlib.sha256(tampered).hexdigest() != digest
