@@ -67,3 +67,30 @@ def test_prune_archive_and_delete_share_one_transaction_scope():
     ):
         assert required in body, f"Archive/delete escaped transaction: {required}"
     assert body.index(".with_for_update(skip_locked=True)") < body.index(".delete(synchronize_session=False)")
+
+
+def test_prune_fails_closed_on_corrupt_archive_and_partial_delete():
+    """Negative controls: corruption and partial deletion must abort transaction."""
+    prune = _prune()
+    source = SOURCE.read_text(encoding="utf-8")
+    body = ast.get_source_segment(source, prune)
+    assert body is not None
+    # The checksum mismatch raises before the DELETE, rather than logging
+    # and continuing with an unverified archive.
+    assert 'raise ValueError("AIS cold archive integrity check failed")' in body
+    assert body.index('raise ValueError("AIS cold archive integrity check failed")') < body.index(
+        ".delete(synchronize_session=False)"
+    )
+    # A partial DELETE must raise inside the transaction, allowing rollback.
+    assert "if n != len(rows):" in body
+    assert "raise RuntimeError(" in body
+    # Exceptions must not be swallowed inside the transaction scope.
+    scopes = [
+        n for n in ast.walk(prune)
+        if isinstance(n, ast.With)
+        and any(isinstance(i.context_expr, ast.Call)
+                and isinstance(i.context_expr.func, ast.Name)
+                and i.context_expr.func.id == "session_scope" for i in n.items)
+    ]
+    assert len(scopes) == 1
+    assert not any(isinstance(n, ast.ExceptHandler) for n in ast.walk(scopes[0]))
