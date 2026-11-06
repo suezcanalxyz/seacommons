@@ -94,3 +94,40 @@ def test_prune_fails_closed_on_corrupt_archive_and_partial_delete():
     ]
     assert len(scopes) == 1
     assert not any(isinstance(n, ast.ExceptHandler) for n in ast.walk(scopes[0]))
+
+
+def test_prune_rejects_invalid_retention_windows_before_storage_access(monkeypatch):
+    """Even if a release later enables retention, zero/negative windows fail closed."""
+    import sys
+    import types
+    import pytest
+
+    # Avoid importing the runtime service graph: compile the actual prune method
+    # with its own globals and stub only the external dependencies.
+    source = SOURCE.read_text(encoding="utf-8")
+    fn = _prune()
+    import os
+    from datetime import datetime, timedelta, timezone
+    import logging
+    class Config:
+        VESSEL_TRACK_RETENTION_DAYS = 60
+        OBJECT_STORAGE_ENDPOINT = "example"
+        OBJECT_STORAGE_ACCESS_KEY = "test"
+        OBJECT_STORAGE_SECRET_KEY = "test"
+    namespace = {
+        "__name__": "ais_prune_contract",
+        "os": os,
+        "datetime": datetime,
+        "timedelta": timedelta,
+        "timezone": timezone,
+        "config": Config(),
+        "logger": logging.getLogger("ais_prune_contract"),
+        "_RETENTION_RELEASE_AUTHORIZED": True,
+    }
+    method = compile(ast.Module(body=[fn], type_ignores=[]), str(SOURCE), "exec")
+    exec(method, namespace)
+    monkeypatch.setenv("AIS_PRUNE_APPROVED", "true")
+    monkeypatch.setenv("AIS_RETENTION_POLICY_ID", "test-only")
+    for days in (0, -1, -365, True, 0.5):
+        with pytest.raises(ValueError, match="positive integer"):
+            namespace["prune"](object(), older_than_days=days)
