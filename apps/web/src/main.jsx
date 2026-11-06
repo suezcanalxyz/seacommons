@@ -857,7 +857,7 @@ function App() {
     return {
       top: 24,
       right: 24,
-      bottom: Math.round(window.innerHeight * 0.36) + 64,
+      bottom: Math.round(window.innerHeight * 0.66) + 64,
       left: 24,
     };
   }
