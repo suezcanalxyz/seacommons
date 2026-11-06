@@ -96,7 +96,9 @@ test('mobile Live keeps an interactive incident map when MapLibre cannot initial
   await page.goto(PUBLIC_LIVE_URL);
   await expect(page.locator('.leaflet-container')).toBeVisible();
   const markers = page.locator('.seacommons-fallback-marker');
-  await expect(markers).toHaveCount(2);
+  // The default public LIVE view exposes the humanitarian case; maritime is a separate domain filter.
+  await expect(markers).toHaveCount(1);
+  await expect(page.locator('.seacommons-fallback-marker--maritime-1')).toHaveCount(0);
   const targetMarker = page.locator('.seacommons-fallback-marker--humanitarian-1');
   await expect(targetMarker).toHaveAttribute('role', 'button');
   await targetMarker.dispatchEvent('pointerup');
