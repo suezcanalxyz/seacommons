@@ -326,3 +326,31 @@ def test_prune_archive_failure_never_reaches_delete(monkeypatch):
     monkeypatch.setenv("AIS_RETENTION_POLICY_ID", "fixture-only")
     assert namespace["prune"](object()) == 0
     assert events == ["BEGIN", "locked", "PUT", "GET_FAILED", "ROLLBACK"]
+
+def test_archive_integrity_failure_raises_before_delete():
+    """The canonical prune source must reject a wrong readback digest.
+
+    Static negative control complements the executable R2 outage injection;
+    this does not claim a live object-store restore drill.
+    """
+    source = SOURCE.read_text(encoding="utf-8")
+    scope = next(
+        n for n in ast.walk(_prune())
+        if isinstance(n, ast.With)
+        and any(
+            isinstance(item.context_expr, ast.Call)
+            and isinstance(item.context_expr.func, ast.Name)
+            and item.context_expr.func.id == "session_scope"
+            for item in n.items
+        )
+    )
+    checks = [
+        n for n in ast.walk(scope)
+        if isinstance(n, ast.If)
+        and "hashlib.sha256(verified).hexdigest() != digest"
+        in (ast.get_source_segment(source, n.test) or "")
+    ]
+    assert len(checks) == 1, "Checksum mismatch must be checked within SQL transaction"
+    assert any(isinstance(n, ast.Raise) for n in ast.walk(checks[0])), (
+        "Checksum mismatch must abort transaction before SQL DELETE"
+    )
