@@ -13,3 +13,5 @@
 2026-11-06 | Evidence preservation / integrity (AIS): EXPERIMENTAL. New deterministic gzip v1 roundtrip and bit-flip negative-control fixture PR #452 commit d24b781; CI pending. NOT OBSERVED: real PostgreSQL two-writer isolation, object-store restore, manifest chain-of-custody and production archival release.
 
 2026-11-06 | AIS archival evidence preservation: EXPERIMENTAL. E-AIS-FAULT-05 now observes fail-closed R2 GET outage in executable isolated transaction harness, 9/9 local tests; still UNSUPPORTED: proven two-session PostgreSQL race and full R2 restore drill. Do not activate retention.
+
+2026-11-06 | Evidence integrity / chain of custody | EXPERIMENTAL | P0 #335 PR #452 commit 80d8c629: regression verifies readback checksum mismatch is a raising branch inside the SQL transaction. Local 10/10 tests passed. NOT OBSERVED: real concurrent PostgreSQL transaction and R2 restore durability. No claim of operational archive safety.
