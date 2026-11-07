@@ -87,3 +87,21 @@ jobs:
             echo "::error::PostgreSQL positive probe skipped/deselected tests"
             exit 1
           fi
+
+      - name: Verify probe cleanup independently
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          engine = create_engine(os.environ["AIS_ARCHIVE_TEST_DATABASE_URL"])
+          try:
+              with engine.connect() as connection:
+                  count = connection.execute(text(
+                      "SELECT count(*) FROM pg_tables WHERE schemaname='public' "
+                      "AND tablename LIKE 'ais_archive_probe_%'"
+                  )).scalar_one()
+                  assert count == 0, f"Archive probe leaked {count} table(s)"
+          finally:
+              engine.dispose()
+          PY
