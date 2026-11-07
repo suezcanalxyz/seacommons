@@ -442,6 +442,122 @@ def test_prune_archive_checksum_mismatch_never_reaches_delete(monkeypatch):
     assert namespace["prune"](object()) == 0
     assert events == ["BEGIN", "locked", "PUT", "GET_CORRUPT", "ROLLBACK"]
 
+def test_prune_archive_put_failure_never_reaches_get_or_delete(monkeypatch):
+    """Executable fault injection against the actual prune method.
+
+    A failed object-store PUT must abort the SQL transaction before
+    DELETE. This uses fake rows and sessions; no production resources.
+    """
+    import contextlib
+    import logging
+    import os
+    import sys
+    import types
+    from datetime import datetime, timedelta, timezone
+    from typing import Optional
+
+    class Config:
+        VESSEL_TRACK_RETENTION_DAYS = 60
+        OBJECT_STORAGE_ENDPOINT = "fixture"
+        OBJECT_STORAGE_ACCESS_KEY = "fixture"
+        OBJECT_STORAGE_SECRET_KEY = "fixture"
+
+    class Field:
+        def __lt__(self, other):
+            return self
+        def asc(self):
+            return self
+        def in_(self, other):
+            return self
+
+    class Model:
+        ts = Field()
+        id = Field()
+
+    class Row:
+        id = 1
+        mmsi = "247000001"
+        ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        received_at = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        lat = 35.0
+        lon = 12.0
+        sog = cog = heading = nav_status = None
+        source = "fixture"
+
+    events = []
+    class Query:
+        def filter(self, *args):
+            return self
+        def order_by(self, *args):
+            return self
+        def limit(self, *args):
+            return self
+        def with_for_update(self, **kwargs):
+            events.append("locked")
+            return self
+        def all(self):
+            return [Row()]
+        def delete(self, **kwargs):
+            events.append("DELETE")
+            return 1
+
+    class Session:
+        def query(self, *args):
+            return Query()
+
+    @contextlib.contextmanager
+    def session_scope():
+        events.append("BEGIN")
+        try:
+            yield Session()
+        except Exception:
+            events.append("ROLLBACK")
+            raise
+        else:
+            events.append("COMMIT")
+
+    def put(*args):
+        events.append("PUT_FAILED")
+        raise OSError("synthetic object-store write failure")
+    def get(*args):
+        events.append("UNEXPECTED_GET")
+        raise AssertionError("GET must not occur after PUT failure")
+
+    db_module = types.ModuleType("core.db")
+    db_module.__path__ = []
+    models_module = types.ModuleType("core.db.models")
+    models_module.VesselTrackDB = Model
+    session_module = types.ModuleType("core.db.session")
+    session_module.session_scope = session_scope
+    core_module = types.ModuleType("core")
+    core_module.__path__ = []
+    object_module = types.ModuleType("core.object_store")
+    object_module.put = put
+    object_module.get = get
+    core_module.object_store = object_module
+    db_module.models = models_module
+    db_module.session = session_module
+    for name, module in {
+        "core": core_module, "core.db": db_module,
+        "core.db.models": models_module, "core.db.session": session_module,
+        "core.object_store": object_module,
+    }.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
+    namespace = {
+        "__name__": "ais_prune_fault_injection",
+        "Optional": Optional, "os": os, "datetime": datetime,
+        "timedelta": timedelta, "timezone": timezone,
+        "config": Config(),
+        "logger": logging.getLogger("ais_prune_fault_injection"),
+        "_RETENTION_RELEASE_AUTHORIZED": True,
+    }
+    exec(compile(ast.Module(body=[_prune()], type_ignores=[]), str(SOURCE), "exec"), namespace)
+    monkeypatch.setenv("AIS_PRUNE_APPROVED", "true")
+    monkeypatch.setenv("AIS_RETENTION_POLICY_ID", "fixture-only")
+    assert namespace["prune"](object()) == 0
+    assert events == ["BEGIN", "locked", "PUT_FAILED", "ROLLBACK"]
+
 def test_archive_integrity_failure_raises_before_delete():
     """The canonical prune source must reject a wrong readback digest.
 
