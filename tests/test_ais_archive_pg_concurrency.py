@@ -96,6 +96,20 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
                             f"SELECT id FROM {table} WHERE ts < 10 ORDER BY id FOR UPDATE SKIP LOCKED"
                         )).scalars().all()
                         assert other == [3]
+                # Positive concurrency control: the archive row lock must not
+                # block a writer updating a different, eligible unlocked row.
+                # This distinguishes row-level protection from accidental
+                # table-wide serialization that could stall live AIS ingest.
+                with engine.begin() as independent_writer:
+                    independent_writer.execute(text("SET LOCAL lock_timeout = '200ms'"))
+                    changed = independent_writer.execute(text(
+                        f"UPDATE {table} SET lat = 31 WHERE id = 3"
+                    ))
+                    assert changed.rowcount == 1
+                with engine.connect() as independent_verify:
+                    assert independent_verify.execute(text(
+                        f"SELECT lat FROM {table} WHERE id = 3"
+                    )).scalar_one() == 31
                 # Simulate archive verification failure: do not delete; rollback.
                 tx_archive.rollback()
             finally:
