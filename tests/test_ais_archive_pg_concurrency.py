@@ -30,6 +30,8 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
         pytest.fail("Set AIS_ARCHIVE_EXPECTED_DATABASE to a dedicated disposable database name")
     table = "ais_archive_probe_" + uuid.uuid4().hex[:16]
     engine = create_engine(url, pool_size=2, max_overflow=1)
+    identity_verified = False
+    table_created = False
     try:
         # Fail before any DDL if the DSN resolves to another database.
         with engine.connect() as identity:
@@ -37,8 +39,10 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
             assert actual_db == expected_db, (
                 f"Refusing probe DDL: connected database {actual_db!r} != expected {expected_db!r}"
             )
+        identity_verified = True
         with engine.begin() as setup:
             setup.execute(text(f"CREATE TABLE {table} (id integer PRIMARY KEY, ts integer, lat integer)"))
+            table_created = True
             setup.execute(text(f"INSERT INTO {table} VALUES (1, 1, 10), (2, 20, 20)"))
         with engine.connect() as archivist, engine.connect() as writer:
             tx_archive = archivist.begin()
@@ -103,7 +107,11 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
             assert verify.execute(text(f"SELECT lat FROM {table} WHERE id = 1")).scalar_one() == 11
     finally:
         try:
-            with engine.begin() as cleanup:
-                cleanup.execute(text(f"DROP TABLE IF EXISTS {table}"))
+            # Never issue DDL after a failed identity guard, including cleanup.
+            # A failed CREATE must likewise not trigger a DROP against an
+            # unrelated object in a wrongly configured environment.
+            if identity_verified and table_created:
+                with engine.begin() as cleanup:
+                    cleanup.execute(text(f"DROP TABLE IF EXISTS {table}"))
         finally:
             engine.dispose()
