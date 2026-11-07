@@ -75,4 +75,15 @@ jobs:
       - name: Prove lock contention, SQLSTATE, rollback and recovery
         # The repository-wide conftest bootstraps the full API/SQLite and is not needed here.
         # Keep this isolated database probe independent of application dependencies.
-        run: python -m pytest --noconftest -q -ra tests/test_ais_archive_pg_concurrency.py
+        run: |
+          set -o pipefail
+          python -m pytest --noconftest -q -ra tests/test_ais_archive_pg_concurrency.py 2>&1 | tee /tmp/ais-positive.log
+          # pytest returns 0 even when every test is skipped: require actual execution.
+          grep -Eq '(^|[[:space:]])1 passed([[:space:]]|,|$)' /tmp/ais-positive.log || {
+            echo "::error::PostgreSQL positive probe did not execute exactly one passing test"
+            exit 1
+          }
+          if grep -Eq '([0-9]+ skipped|[0-9]+ deselected)' /tmp/ais-positive.log; then
+            echo "::error::PostgreSQL positive probe skipped/deselected tests"
+            exit 1
+          fi
