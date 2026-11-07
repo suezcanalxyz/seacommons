@@ -320,7 +320,7 @@ class TrackStore:
         # Fail closed on invalid retention windows. In particular, zero must not
         # silently fall back to the default and negative values must never turn
         # a historical prune into a near-whole-table deletion.
-        days = (int(getattr(config, "VESSEL_TRACK_RETENTION_DAYS", 60))
+        days = (getattr(config, "VESSEL_TRACK_RETENTION_DAYS", 60)
                 if older_than_days is None else older_than_days)
         if isinstance(days, bool) or not isinstance(days, int) or days <= 0:
             raise ValueError("AIS retention window must be a positive integer number of days")
