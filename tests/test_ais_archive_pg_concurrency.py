@@ -73,7 +73,17 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
                             f"SELECT id FROM {table} WHERE ts < 10 FOR UPDATE SKIP LOCKED"
                         )).all()
                         assert other == []  # Row 1 is locked; row 2 is outside the archival cutoff.
-                # Negative control: a nonlocked eligible row must still be selected.\n                # Otherwise a broken query that returns nothing could falsely pass.\n                with engine.begin() as insert_other:\n                    insert_other.execute(text(f"INSERT INTO {table} VALUES (3, 2, 30)"))\n                with engine.connect() as reader:\n                    with reader.begin():\n                        other = reader.execute(text(\n                            f"SELECT id FROM {table} WHERE ts < 10 ORDER BY id FOR UPDATE SKIP LOCKED"\n                        )).scalars().all()\n                        assert other == [3]\n                # Simulate archive verification failure: do not delete; rollback.
+                # Negative control: a nonlocked eligible row must still be selected.
+                # Otherwise a broken query that returns nothing could falsely pass.
+                with engine.begin() as insert_other:
+                    insert_other.execute(text(f"INSERT INTO {table} VALUES (3, 2, 30)"))
+                with engine.connect() as reader:
+                    with reader.begin():
+                        other = reader.execute(text(
+                            f"SELECT id FROM {table} WHERE ts < 10 ORDER BY id FOR UPDATE SKIP LOCKED"
+                        )).scalars().all()
+                        assert other == [3]
+                # Simulate archive verification failure: do not delete; rollback.
                 tx_archive.rollback()
             finally:
                 if tx_archive.is_active:
