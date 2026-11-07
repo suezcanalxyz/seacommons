@@ -844,3 +844,36 @@ def test_prune_delete_count_mismatch_rolls_back(monkeypatch):
     monkeypatch.setenv("AIS_RETENTION_POLICY_ID", "fixture-only")
     assert namespace["prune"](object()) == 0
     assert events == ["BEGIN", "locked", "PUT", "GET", "DELETE_MISMATCH", "ROLLBACK"]
+
+
+def test_prune_invalid_retention_windows_fail_before_db_or_object_store(monkeypatch):
+    """Negative control: invalid windows must not reach any I/O or delete path."""
+    import logging
+    import os
+    from datetime import datetime, timedelta, timezone
+    from typing import Optional
+    import pytest
+
+    class Config:
+        VESSEL_TRACK_RETENTION_DAYS = 60
+        OBJECT_STORAGE_ENDPOINT = "fixture"
+        OBJECT_STORAGE_ACCESS_KEY = "fixture"
+        OBJECT_STORAGE_SECRET_KEY = "fixture"
+
+    namespace = {
+        "__name__": "ais_retention_window_probe",
+        "Optional": Optional, "os": os, "datetime": datetime,
+        "timedelta": timedelta, "timezone": timezone,
+        "config": Config(),
+        "logger": logging.getLogger("ais_retention_window_probe"),
+        "_RETENTION_RELEASE_AUTHORIZED": True,
+    }
+    exec(compile(ast.Module(body=[_prune()], type_ignores=[]), str(SOURCE), "exec"), namespace)
+    monkeypatch.setenv("AIS_PRUNE_APPROVED", "true")
+    monkeypatch.setenv("AIS_RETENTION_POLICY_ID", "synthetic-only")
+    for invalid in (0, -1, True, False, 1.5, "30", None):
+        # None uses the valid configured default, so it is not a negative.
+        if invalid is None:
+            continue
+        with pytest.raises(ValueError, match="positive integer"):
+            namespace["prune"](object(), older_than_days=invalid)
