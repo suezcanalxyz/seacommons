@@ -877,3 +877,9 @@ def test_prune_invalid_retention_windows_fail_before_db_or_object_store(monkeypa
             continue
         with pytest.raises(ValueError, match="positive integer"):
             namespace["prune"](object(), older_than_days=invalid)
+    # A configured default must be validated without coercion too: int(True),
+    # int(1.5), and int("30") previously silently accepted invalid policy types.
+    for invalid_default in (0, -1, True, False, 1.5, "30"):
+        Config.VESSEL_TRACK_RETENTION_DAYS = invalid_default
+        with pytest.raises(ValueError, match="positive integer"):
+            namespace["prune"](object(), older_than_days=None)
