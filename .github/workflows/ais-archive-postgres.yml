@@ -34,6 +34,7 @@ jobs:
     env:
       AIS_ARCHIVE_TEST_DATABASE_URL: postgresql+psycopg://ais_probe:ais_probe_ci_only@localhost:5432/ais_probe
       AIS_ARCHIVE_DISPOSABLE_DB_ACK: 'YES'
+      AIS_ARCHIVE_EXPECTED_DATABASE: ais_probe
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
