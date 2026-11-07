@@ -13,7 +13,7 @@ import uuid
 import pytest
 
 sqlalchemy = pytest.importorskip("sqlalchemy")
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.exc import DBAPIError
 
 
@@ -30,6 +30,15 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
         pytest.fail("Set AIS_ARCHIVE_EXPECTED_DATABASE to a dedicated disposable database name")
     table = "ais_archive_probe_" + uuid.uuid4().hex[:16]
     engine = create_engine(url, pool_size=2, max_overflow=1)
+    # Capture every SQL statement on this connection pool. The wrong-DB
+    # negative control must prove absence of DDL, not just absence of tables.
+    issued_ddl = []
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def record_ddl(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith(("CREATE ", "ALTER ", "DROP ", "TRUNCATE ")):
+            issued_ddl.append(statement)
+
     identity_verified = False
     table_created = False
     try:
@@ -115,3 +124,7 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
                     cleanup.execute(text(f"DROP TABLE IF EXISTS {table}"))
         finally:
             engine.dispose()
+            if not identity_verified:
+                assert not issued_ddl, (
+                    f"Identity rejection issued forbidden DDL: {issued_ddl!r}"
+                )
