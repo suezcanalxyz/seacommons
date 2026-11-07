@@ -58,8 +58,19 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
             finally:
                 if tx_archive.is_active:
                     tx_archive.rollback()
+        # Negative control: the aborted archive must preserve the original row.
         with engine.connect() as verify:
             assert verify.execute(text(f"SELECT lat FROM {table} WHERE id = 1")).scalar_one() == 10
+        # Positive control: after rollback releases the row lock, a real writer
+        # must be able to commit an update (not merely time out forever).
+        with engine.begin() as resumed_writer:
+            resumed_writer.execute(text("SET LOCAL lock_timeout = '200ms'"))
+            updated = resumed_writer.execute(
+                text(f"UPDATE {table} SET lat = 11 WHERE id = 1")
+            )
+            assert updated.rowcount == 1
+        with engine.connect() as verify:
+            assert verify.execute(text(f"SELECT lat FROM {table} WHERE id = 1")).scalar_one() == 11
     finally:
         try:
             with engine.begin() as cleanup:
