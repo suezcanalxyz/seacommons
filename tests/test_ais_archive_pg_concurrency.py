@@ -117,7 +117,14 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
                     tx_archive.rollback()
         # Negative control: the aborted archive must preserve the original row.
         with engine.connect() as verify:
-            assert verify.execute(text(f"SELECT lat FROM {table} WHERE id = 1")).scalar_one() == 10
+            rows_after_abort = verify.execute(text(
+                f"SELECT id, ts, lat FROM {table} ORDER BY id"
+            )).all()
+            assert rows_after_abort == [
+                (1, 1, 10),  # failed archival transaction preserved the locked row
+                (2, 20, 20), # ineligible observation remains untouched
+                (3, 2, 31),  # independent committed writer survives archive rollback
+            ]
         # Positive control: after rollback releases the row lock, a real writer
         # must be able to commit an update (not merely time out forever).
         with engine.begin() as resumed_writer:
