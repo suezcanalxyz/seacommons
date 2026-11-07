@@ -469,3 +469,146 @@ def test_archive_integrity_failure_raises_before_delete():
     assert any(isinstance(n, ast.Raise) for n in ast.walk(checks[0])), (
         "Checksum mismatch must abort transaction before SQL DELETE"
     )
+
+
+def test_prune_success_archive_roundtrip_before_delete(monkeypatch):
+    """Exercise canonical prune with a synthetic object store and restore equality.
+
+    This is an in-memory contract test, NOT an R2 durability or PostgreSQL
+    transaction integration test. It proves the happy path calls PUT/GET and
+    serializes all selected fields before deleting the selected synthetic row.
+    """
+    import contextlib
+    import gzip
+    import json
+    import logging
+    import os
+    import sys
+    import types
+    from datetime import datetime, timedelta, timezone
+    from typing import Optional
+
+    class Config:
+        VESSEL_TRACK_RETENTION_DAYS = 60
+        OBJECT_STORAGE_ENDPOINT = "fixture"
+        OBJECT_STORAGE_ACCESS_KEY = "fixture"
+        OBJECT_STORAGE_SECRET_KEY = "fixture"
+
+    class Field:
+        def __lt__(self, other):
+            return self
+        def asc(self):
+            return self
+        def in_(self, other):
+            return self
+
+    class Model:
+        id = Field()
+        ts = Field()
+
+    class Row:
+        id = 101
+        mmsi = "247000001"
+        ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        received_at = datetime(2020, 1, 1, 0, 0, 3, tzinfo=timezone.utc)
+        lat = 35.1
+        lon = 12.2
+        sog = 5.5
+        cog = 90.0
+        heading = 89
+        nav_status = 0
+        source = "synthetic"
+
+    original = {
+        "id": Row.id, "mmsi": Row.mmsi, "ts": Row.ts.isoformat(),
+        "received_at": Row.received_at.isoformat(), "lat": Row.lat,
+        "lon": Row.lon, "sog": Row.sog, "cog": Row.cog,
+        "heading": Row.heading, "nav_status": Row.nav_status,
+        "source": Row.source,
+    }
+    events = []
+    objects = {}
+    records = [Row()]
+
+    class Query:
+        def filter(self, *args):
+            return self
+        def order_by(self, *args):
+            return self
+        def limit(self, *args):
+            return self
+        def with_for_update(self, **kwargs):
+            assert kwargs == {"skip_locked": True}
+            events.append("LOCK")
+            return self
+        def all(self):
+            return list(records)
+        def delete(self, **kwargs):
+            assert kwargs == {"synchronize_session": False}
+            assert "GET" in events
+            events.append("DELETE")
+            n = len(records)
+            records.clear()
+            return n
+
+    class Session:
+        def query(self, *args):
+            return Query()
+
+    @contextlib.contextmanager
+    def session_scope():
+        events.append("BEGIN")
+        try:
+            yield Session()
+        except Exception:
+            events.append("ROLLBACK")
+            raise
+        else:
+            events.append("COMMIT")
+
+    def put(key, payload, content_type):
+        assert content_type == "application/gzip"
+        assert key not in objects
+        objects[key] = payload
+        events.append("PUT")
+
+    def get(key):
+        events.append("GET")
+        return objects[key]
+
+    core = types.ModuleType("core")
+    core.__path__ = []
+    db = types.ModuleType("core.db")
+    db.__path__ = []
+    models = types.ModuleType("core.db.models")
+    models.VesselTrackDB = Model
+    session = types.ModuleType("core.db.session")
+    session.session_scope = session_scope
+    store = types.ModuleType("core.object_store")
+    store.put = put
+    store.get = get
+    core.object_store = store
+    db.models = models
+    db.session = session
+    for name, module in {
+        "core": core, "core.db": db, "core.db.models": models,
+        "core.db.session": session, "core.object_store": store,
+    }.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
+    namespace = {
+        "__name__": "ais_prune_roundtrip_fixture",
+        "Optional": Optional, "os": os, "datetime": datetime,
+        "timedelta": timedelta, "timezone": timezone,
+        "config": Config(), "logger": logging.getLogger("ais_prune_roundtrip_fixture"),
+        "_RETENTION_RELEASE_AUTHORIZED": True,
+    }
+    exec(compile(ast.Module(body=[_prune()], type_ignores=[]), str(SOURCE), "exec"), namespace)
+    monkeypatch.setenv("AIS_PRUNE_APPROVED", "true")
+    monkeypatch.setenv("AIS_RETENTION_POLICY_ID", "synthetic-fixture-only")
+    assert namespace["prune"](object()) == 1
+    assert events == ["BEGIN", "LOCK", "PUT", "GET", "DELETE", "COMMIT"]
+    assert records == []
+    assert len(objects) == 1
+    restored = json.loads(gzip.decompress(next(iter(objects.values()))))
+    assert restored == {"schema": "vessel_tracks_v1", "rows": [original]}
