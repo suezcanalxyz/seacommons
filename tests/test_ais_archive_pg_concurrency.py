@@ -42,8 +42,9 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
                 tx_writer = writer.begin()
                 try:
                     writer.execute(text("SET LOCAL lock_timeout = '200ms'"))
-                    with pytest.raises(DBAPIError):
+                    with pytest.raises(DBAPIError) as blocked_update:
                         writer.execute(text(f"UPDATE {table} SET lat = 99 WHERE id = 1"))
+                    assert getattr(blocked_update.value.orig, "sqlstate", None) == "55P03" or getattr(blocked_update.value.orig, "pgcode", None) == "55P03"
                 finally:
                     tx_writer.rollback()
                 # Negative control: a concurrent DELETE must also be blocked,
@@ -51,8 +52,9 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
                 tx_delete = writer.begin()
                 try:
                     writer.execute(text("SET LOCAL lock_timeout = '200ms'"))
-                    with pytest.raises(DBAPIError):
+                    with pytest.raises(DBAPIError) as blocked_delete:
                         writer.execute(text(f"DELETE FROM {table} WHERE id = 1"))
+                    assert getattr(blocked_delete.value.orig, "sqlstate", None) == "55P03" or getattr(blocked_delete.value.orig, "pgcode", None) == "55P03"
                 finally:
                     tx_delete.rollback()
                 # A second reader using SKIP LOCKED must not archive the same row.
