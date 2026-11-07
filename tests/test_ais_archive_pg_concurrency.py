@@ -25,9 +25,18 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
         pytest.fail("Only explicit PostgreSQL test URLs are supported")
     # The test creates and drops only its own randomized table; never reuse a
     # production connection string. An explicit acknowledgment is mandatory.
+    expected_db = os.getenv("AIS_ARCHIVE_EXPECTED_DATABASE", "")
+    if not expected_db or expected_db.lower() in {"postgres", "template0", "template1"}:
+        pytest.fail("Set AIS_ARCHIVE_EXPECTED_DATABASE to a dedicated disposable database name")
     table = "ais_archive_probe_" + uuid.uuid4().hex[:16]
     engine = create_engine(url, pool_size=2, max_overflow=1)
     try:
+        # Fail before any DDL if the DSN resolves to another database.
+        with engine.connect() as identity:
+            actual_db = identity.execute(text("SELECT current_database()")).scalar_one()
+            assert actual_db == expected_db, (
+                f"Refusing probe DDL: connected database {actual_db!r} != expected {expected_db!r}"
+            )
         with engine.begin() as setup:
             setup.execute(text(f"CREATE TABLE {table} (id integer PRIMARY KEY, ts integer, lat integer)"))
             setup.execute(text(f"INSERT INTO {table} VALUES (1, 1, 10)"))
