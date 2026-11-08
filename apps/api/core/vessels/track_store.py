@@ -317,7 +317,13 @@ class TrackStore:
         if not approved or not policy_id:
             logger.warning("AIS prune blocked: explicit approval and retention policy ID required")
             return 0
-        days = older_than_days or int(getattr(config, "VESSEL_TRACK_RETENTION_DAYS", 60))
+        # Fail closed on invalid retention windows. In particular, zero must not
+        # silently fall back to the default and negative values must never turn
+        # a historical prune into a near-whole-table deletion.
+        days = (getattr(config, "VESSEL_TRACK_RETENTION_DAYS", 60)
+                if older_than_days is None else older_than_days)
+        if isinstance(days, bool) or not isinstance(days, int) or days <= 0:
+            raise ValueError("AIS retention window must be a positive integer number of days")
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         if not (config.OBJECT_STORAGE_ENDPOINT and config.OBJECT_STORAGE_ACCESS_KEY
                 and config.OBJECT_STORAGE_SECRET_KEY):
