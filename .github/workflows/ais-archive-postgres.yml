@@ -1,0 +1,140 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Isolated PostgreSQL integration probe for #335; never points to operational DB.
+name: AIS archival PostgreSQL concurrency probe
+
+on:
+  pull_request:
+    paths:
+      - 'tests/test_ais_archive_pg_concurrency.py'
+      - 'tests/test_ais_prune_safety_contract.py'
+      - 'apps/api/core/vessels/track_store.py'
+      - '.github/workflows/ais-archive-postgres.yml'
+      - 'apps/api/pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-concurrency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ais_probe
+          POSTGRES_PASSWORD: ais_probe_ci_only
+          POSTGRES_DB: ais_probe
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ais_probe -d ais_probe"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      AIS_ARCHIVE_TEST_DATABASE_URL: postgresql+psycopg://ais_probe:ais_probe_ci_only@localhost:5432/ais_probe
+      AIS_ARCHIVE_DISPOSABLE_DB_ACK: 'YES'
+      AIS_ARCHIVE_EXPECTED_DATABASE: ais_probe
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test driver and dependencies
+        run: python -m pip install 'pytest>=8,<10' 'SQLAlchemy>=2,<3' 'psycopg[binary]>=3,<4'
+      - name: Negative control — wrong database identity must fail before DDL
+        env:
+          AIS_ARCHIVE_EXPECTED_DATABASE: ais_probe_wrong
+        run: |
+          set +e
+          python -m pytest --noconftest -q tests/test_ais_archive_pg_concurrency.py > /tmp/ais-identity-negative.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/ais-identity-negative.log
+          if [ "$status" -eq 0 ]; then
+            echo "::error::Wrong database identity unexpectedly passed"
+            exit 1
+          fi
+          grep -q 'Refusing probe connection' /tmp/ais-identity-negative.log || {
+            echo "::error::Failure was not caused by the expected identity guard"
+            exit 1
+          }
+          # Prove no probe table was created by the rejected execution.
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          engine = create_engine(os.environ["AIS_ARCHIVE_TEST_DATABASE_URL"])
+          with engine.connect() as connection:
+              count = connection.execute(text(
+                  "SELECT count(*) FROM pg_tables WHERE schemaname='public' "
+                  "AND tablename LIKE 'ais_archive_probe_%'"
+              )).scalar_one()
+              assert count == 0, f"Rejected probe created {count} table(s)"
+          engine.dispose()
+          PY
+      - name: Negative control — remote database host must fail before connection
+        env:
+          AIS_ARCHIVE_TEST_DATABASE_URL: postgresql+psycopg://ais_probe:ais_probe_ci_only@db.example.invalid:5432/ais_probe
+        run: |
+          set +e
+          python -m pytest --noconftest -q tests/test_ais_archive_pg_concurrency.py > /tmp/ais-host-negative.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/ais-host-negative.log
+          if [ "$status" -eq 0 ]; then
+            echo "::error::Remote database host unexpectedly passed"
+            exit 1
+          fi
+          grep -q 'Refusing probe DDL: PostgreSQL host must be loopback' /tmp/ais-host-negative.log || {
+            echo "::error::Remote host rejection did not fail at the intended guard"
+            exit 1
+          }
+
+      - name: Prove lock contention, SQLSTATE, rollback and recovery
+        # The repository-wide conftest bootstraps the full API/SQLite and is not needed here.
+        # Keep this isolated database probe independent of application dependencies.
+        run: |
+          set -o pipefail
+          python -m pytest --noconftest -q -ra tests/test_ais_archive_pg_concurrency.py 2>&1 | tee /tmp/ais-positive.log
+          # pytest returns 0 even when every test is skipped: require actual execution.
+          grep -Eq '(^|[[:space:]])1 passed([[:space:]]|,|$)' /tmp/ais-positive.log || {
+            echo "::error::PostgreSQL positive probe did not execute exactly one passing test"
+            exit 1
+          }
+          if grep -Eq '([0-9]+ skipped|[0-9]+ deselected)' /tmp/ais-positive.log; then
+            echo "::error::PostgreSQL positive probe skipped/deselected tests"
+            exit 1
+          fi
+
+      - name: Execute canonical prune safety contracts (fail closed on skips)
+        run: |
+          set -o pipefail
+          python -m pytest --noconftest -q -ra tests/test_ais_prune_safety_contract.py 2>&1 | tee /tmp/ais-prune-contract.log
+          if grep -Eq '([0-9]+ skipped|[0-9]+ deselected|no tests ran)' /tmp/ais-prune-contract.log; then
+            echo "::error::Canonical prune safety contracts skipped or deselected tests"
+            exit 1
+          fi
+          grep -Eq '[0-9]+ passed' /tmp/ais-prune-contract.log || {
+            echo "::error::No canonical prune safety contracts passed"
+            exit 1
+          }
+
+      - name: Verify probe cleanup independently
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          engine = create_engine(os.environ["AIS_ARCHIVE_TEST_DATABASE_URL"])
+          try:
+              with engine.connect() as connection:
+                  count = connection.execute(text(
+                      "SELECT count(*) FROM pg_tables WHERE schemaname='public' "
+                      "AND tablename LIKE 'ais_archive_probe_%'"
+                  )).scalar_one()
+                  assert count == 0, f"Archive probe leaked {count} table(s)"
+          finally:
+              engine.dispose()
+          PY
