@@ -74,6 +74,24 @@ jobs:
               assert count == 0, f"Rejected probe created {count} table(s)"
           engine.dispose()
           PY
+      - name: Negative control — remote database host must fail before connection
+        env:
+          AIS_ARCHIVE_TEST_DATABASE_URL: postgresql+psycopg://ais_probe:ais_probe_ci_only@db.example.invalid:5432/ais_probe
+        run: |
+          set +e
+          python -m pytest --noconftest -q tests/test_ais_archive_pg_concurrency.py > /tmp/ais-host-negative.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/ais-host-negative.log
+          if [ "$status" -eq 0 ]; then
+            echo "::error::Remote database host unexpectedly passed"
+            exit 1
+          fi
+          grep -q 'Refusing probe DDL: PostgreSQL host must be loopback' /tmp/ais-host-negative.log || {
+            echo "::error::Remote host rejection did not fail at the intended guard"
+            exit 1
+          }
+
       - name: Prove lock contention, SQLSTATE, rollback and recovery
         # The repository-wide conftest bootstraps the full API/SQLite and is not needed here.
         # Keep this isolated database probe independent of application dependencies.
