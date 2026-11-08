@@ -192,8 +192,18 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
             if hashlib.sha256(blob).hexdigest() != expected_digest:
                 raise ValueError("AIS archive checksum mismatch")
             payload = json.loads(gzip.decompress(blob))
-            if payload.get("schema") != "ais_pg_probe_v1":
+            if not isinstance(payload, dict) or payload.get("schema") != "ais_pg_probe_v1":
                 raise ValueError("AIS archive schema mismatch")
+            rows = payload.get("rows")
+            if not isinstance(rows, list) or not rows or any(
+                not isinstance(row, dict)
+                or set(row) != {"id", "ts", "lat"}
+                or any(type(row[key]) is not int for key in ("id", "ts", "lat"))
+                for row in rows
+            ):
+                raise ValueError("AIS archive row contract mismatch")
+            if len({row["id"] for row in rows}) != len(rows):
+                raise ValueError("AIS archive duplicate observation ID")
             return payload
 
         corrupted = bytearray(archive_bytes)
@@ -209,6 +219,19 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
             verified_archive_payload(
                 wrong_schema, hashlib.sha256(wrong_schema).hexdigest()
             )
+        # Valid checksums and schema labels do not imply valid observations.
+        # Reject malformed and duplicate rows before any SQL is issued.
+        for bad_rows, expected_error in [
+            ({"id": 1, "ts": 1, "lat": 11}, "row contract mismatch"),
+            ([{"id": 1, "ts": 1, "lat": "11"}], "row contract mismatch"),
+            ([{"id": 1, "ts": 1, "lat": 11, "extra": 9}], "row contract mismatch"),
+            ([archived[0], archived[0]], "duplicate observation ID"),
+        ]:
+            bad_blob = gzip.compress(json.dumps({
+                "schema": "ais_pg_probe_v1", "rows": bad_rows
+            }).encode("utf-8"), mtime=0)
+            with pytest.raises(ValueError, match=expected_error):
+                verified_archive_payload(bad_blob, hashlib.sha256(bad_blob).hexdigest())
         # Both negative controls run while the archived row is absent:
         # neither failure may reinsert or modify a database observation.
         with engine.connect() as before_restore:
