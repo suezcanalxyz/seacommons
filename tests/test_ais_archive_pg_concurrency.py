@@ -138,6 +138,31 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
             assert updated.rowcount == 1
         with engine.connect() as verify:
             assert verify.execute(text(f"SELECT lat FROM {table} WHERE id = 1")).scalar_one() == 11
+        # Negative control: DELETE followed by failed archive commit must roll back.
+        with engine.connect() as aborted_delete:
+            transaction = aborted_delete.begin()
+            try:
+                locked = aborted_delete.execute(text(
+                    f"SELECT id, ts, lat FROM {table} WHERE id = 1 FOR UPDATE"
+                )).mappings().all()
+                assert [dict(row) for row in locked] == [{"id": 1, "ts": 1, "lat": 11}]
+                assert aborted_delete.execute(text(
+                    f"DELETE FROM {table} WHERE id = 1"
+                )).rowcount == 1
+                assert aborted_delete.execute(text(
+                    f"SELECT count(*) FROM {table} WHERE id = 1"
+                )).scalar_one() == 0
+                transaction.rollback()  # injected failure before COMMIT
+            finally:
+                if transaction.is_active:
+                    transaction.rollback()
+        with engine.connect() as verify_abort:
+            assert [dict(row) for row in verify_abort.execute(text(
+                f"SELECT id, ts, lat FROM {table} WHERE id = 1"
+            )).mappings().all()] == [{"id": 1, "ts": 1, "lat": 11}]
+            assert verify_abort.execute(text(
+                f"SELECT lat FROM {table} WHERE id = 3"
+            )).scalar_one() == 31
         # Positive transaction control: the same locked row can be archived,
         # deleted and restored without altering independently committed rows.
         # This is an in-memory serialization probe, NOT S3/R2 durability proof.
