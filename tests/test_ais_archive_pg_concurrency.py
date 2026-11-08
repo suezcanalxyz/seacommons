@@ -191,7 +191,14 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
         def verified_archive_payload(blob, expected_digest):
             if hashlib.sha256(blob).hexdigest() != expected_digest:
                 raise ValueError("AIS archive checksum mismatch")
-            payload = json.loads(gzip.decompress(blob))
+            # Bound decompression before JSON parsing.
+            import io
+            max_expanded_bytes = 1024 * 1024  # disposable probe only
+            with gzip.GzipFile(fileobj=io.BytesIO(blob), mode="rb") as stream:
+                expanded = stream.read(max_expanded_bytes + 1)
+                if len(expanded) > max_expanded_bytes:
+                    raise ValueError("AIS archive expanded size limit exceeded")
+            payload = json.loads(expanded)
             if not isinstance(payload, dict) or payload.get("schema") != "ais_pg_probe_v1":
                 raise ValueError("AIS archive schema mismatch")
             rows = payload.get("rows")
@@ -218,6 +225,16 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
         with pytest.raises(ValueError, match="schema mismatch"):
             verified_archive_payload(
                 wrong_schema, hashlib.sha256(wrong_schema).hexdigest()
+            )
+        # A checksum-valid compressed payload can expand beyond a safe limit.
+        oversized = gzip.compress(
+            json.dumps({"schema": "ais_pg_probe_v1", "rows": archived,
+                        "padding": "x" * (1024 * 1024 + 1)}).encode("utf-8"),
+            mtime=0,
+        )
+        with pytest.raises(ValueError, match="expanded size limit exceeded"):
+            verified_archive_payload(
+                oversized, hashlib.sha256(oversized).hexdigest()
             )
         # Valid checksums and schema labels do not imply valid observations.
         # Reject malformed and duplicate rows before any SQL is issued.
