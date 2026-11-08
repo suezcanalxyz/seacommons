@@ -135,6 +135,32 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
             assert updated.rowcount == 1
         with engine.connect() as verify:
             assert verify.execute(text(f"SELECT lat FROM {table} WHERE id = 1")).scalar_one() == 11
+        # Positive transaction control: the same locked row can be archived,
+        # deleted and restored without altering independently committed rows.
+        # This is an in-memory serialization probe, NOT S3/R2 durability proof.
+        with engine.begin() as archive_commit:
+            archived = [dict(row) for row in archive_commit.execute(text(
+                f"SELECT id, ts, lat FROM {table} WHERE id = 1 FOR UPDATE"
+            )).mappings().all()]
+            assert archived == [{"id": 1, "ts": 1, "lat": 11}]
+            deleted = archive_commit.execute(text(f"DELETE FROM {table} WHERE id = 1"))
+            assert deleted.rowcount == len(archived) == 1
+        with engine.connect() as verify_deleted:
+            assert verify_deleted.execute(text(
+                f"SELECT count(*) FROM {table} WHERE id = 1"
+            )).scalar_one() == 0
+        with engine.begin() as restore:
+            restore.execute(text(
+                f"INSERT INTO {table} (id, ts, lat) VALUES (:id, :ts, :lat)"
+            ), archived)
+        with engine.connect() as verify_restored:
+            assert [dict(row) for row in verify_restored.execute(text(
+                f"SELECT id, ts, lat FROM {table} ORDER BY id"
+            )).mappings().all()] == [
+                {"id": 1, "ts": 1, "lat": 11},
+                {"id": 2, "ts": 20, "lat": 20},
+                {"id": 3, "ts": 2, "lat": 31},
+            ]
     finally:
         try:
             # Never issue DDL after a failed identity guard, including cleanup.
