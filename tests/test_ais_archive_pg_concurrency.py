@@ -38,6 +38,11 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
     expected_db = os.getenv("AIS_ARCHIVE_EXPECTED_DATABASE", "")
     if not expected_db or expected_db.lower() in {"postgres", "template0", "template1"}:
         pytest.fail("Set AIS_ARCHIVE_EXPECTED_DATABASE to a dedicated disposable database name")
+    # Reject a mismatched database name before opening even one connection.
+    # The server-side current_database() assertion below remains mandatory:
+    # DSN parsing alone cannot prove which database the server selected.
+    if parsed_url.database != expected_db:
+        pytest.fail("Refusing probe connection: DSN database differs from expected disposable database")
     table = "ais_archive_probe_" + uuid.uuid4().hex[:16]
     engine = create_engine(url, pool_size=2, max_overflow=1)
     # Capture every SQL statement on this connection pool. The wrong-DB
