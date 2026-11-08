@@ -26,6 +26,13 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
         pytest.skip("Requires explicitly acknowledged disposable PostgreSQL database")
     if not url.startswith(("postgresql+psycopg://", "postgresql+psycopg2://")):
         pytest.fail("Only explicit PostgreSQL test URLs are supported")
+    # Safety boundary: CI probe must never connect to an arbitrary remote DB,
+    # even if a caller accidentally copies the opt-in environment variables.
+    # A disposable local PostgreSQL service is required for DDL.
+    from sqlalchemy.engine import make_url
+    parsed_url = make_url(url)
+    if parsed_url.host not in {"localhost", "127.0.0.1", "::1"}:
+        pytest.fail("Refusing probe DDL: PostgreSQL host must be loopback")
     # The test creates and drops only its own randomized table; never reuse a
     # production connection string. An explicit acknowledgment is mandatory.
     expected_db = os.getenv("AIS_ARCHIVE_EXPECTED_DATABASE", "")
