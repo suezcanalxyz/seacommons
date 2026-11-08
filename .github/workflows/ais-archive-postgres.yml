@@ -90,6 +90,19 @@ jobs:
             exit 1
           fi
 
+      - name: Execute canonical prune safety contracts (fail closed on skips)
+        run: |
+          set -o pipefail
+          python -m pytest --noconftest -q -ra tests/test_ais_prune_safety_contract.py 2>&1 | tee /tmp/ais-prune-contract.log
+          if grep -Eq '([0-9]+ skipped|[0-9]+ deselected|no tests ran)' /tmp/ais-prune-contract.log; then
+            echo "::error::Canonical prune safety contracts skipped or deselected tests"
+            exit 1
+          fi
+          grep -Eq '[0-9]+ passed' /tmp/ais-prune-contract.log || {
+            echo "::error::No canonical prune safety contracts passed"
+            exit 1
+          }
+
       - name: Verify probe cleanup independently
         if: always()
         run: |
