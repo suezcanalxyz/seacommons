@@ -160,12 +160,38 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
             mtime=0,
         )
         archive_sha256 = hashlib.sha256(archive_bytes).hexdigest()
-        restored_payload = json.loads(gzip.decompress(archive_bytes))
-        assert restored_payload["schema"] == "ais_pg_probe_v1"
-        assert restored_payload["rows"] == archived
+        # Restore must validate the stored digest *before* decompression or SQL.
+        # Merely asserting that corruption changes a digest does not enforce
+        # the fail-closed restore boundary.
+        def verified_archive_payload(blob, expected_digest):
+            if hashlib.sha256(blob).hexdigest() != expected_digest:
+                raise ValueError("AIS archive checksum mismatch")
+            payload = json.loads(gzip.decompress(blob))
+            if payload.get("schema") != "ais_pg_probe_v1":
+                raise ValueError("AIS archive schema mismatch")
+            return payload
+
         corrupted = bytearray(archive_bytes)
         corrupted[len(corrupted) // 2] ^= 1
-        assert hashlib.sha256(corrupted).hexdigest() != archive_sha256
+        with pytest.raises(ValueError, match="checksum mismatch"):
+            verified_archive_payload(bytes(corrupted), archive_sha256)
+        # A digest-valid but incompatible schema must also be rejected.
+        wrong_schema = gzip.compress(
+            json.dumps({"schema": "unknown", "rows": archived}).encode("utf-8"),
+            mtime=0,
+        )
+        with pytest.raises(ValueError, match="schema mismatch"):
+            verified_archive_payload(
+                wrong_schema, hashlib.sha256(wrong_schema).hexdigest()
+            )
+        # Both negative controls run while the archived row is absent:
+        # neither failure may reinsert or modify a database observation.
+        with engine.connect() as before_restore:
+            assert before_restore.execute(text(
+                f"SELECT count(*) FROM {table} WHERE id = 1"
+            )).scalar_one() == 0
+        restored_payload = verified_archive_payload(archive_bytes, archive_sha256)
+        assert restored_payload["rows"] == archived
         with engine.begin() as restore:
             restore.execute(text(
                 f"INSERT INTO {table} (id, ts, lat) VALUES (:id, :ts, :lat)"
