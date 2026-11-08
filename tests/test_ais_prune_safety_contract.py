@@ -883,3 +883,35 @@ def test_prune_invalid_retention_windows_fail_before_db_or_object_store(monkeypa
         Config.VESSEL_TRACK_RETENTION_DAYS = invalid_default
         with pytest.raises(ValueError, match="positive integer"):
             namespace["prune"](object(), older_than_days=None)
+
+
+def test_prune_disabled_release_gate_never_opens_database_even_with_env_approval(monkeypatch):
+    """Executable negative control: environment flags cannot override code release gate.
+
+    Compile the canonical method, not a hand-written imitation. Any attempt to
+    open a DB or import the object store fails because this isolated namespace
+    intentionally contains neither dependency.
+    """
+    import logging
+    import os
+    from datetime import datetime, timedelta, timezone
+    from typing import Optional
+
+    class Config:
+        VESSEL_TRACK_RETENTION_DAYS = 60
+        OBJECT_STORAGE_ENDPOINT = "synthetic"
+        OBJECT_STORAGE_ACCESS_KEY = "synthetic"
+        OBJECT_STORAGE_SECRET_KEY = "synthetic"
+
+    namespace = {
+        "__name__": "ais_prune_release_gate_probe",
+        "Optional": Optional, "os": os, "datetime": datetime,
+        "timedelta": timedelta, "timezone": timezone,
+        "config": Config(),
+        "logger": logging.getLogger("ais_prune_release_gate_probe"),
+        "_RETENTION_RELEASE_AUTHORIZED": False,
+    }
+    exec(compile(ast.Module(body=[_prune()], type_ignores=[]), str(SOURCE), "exec"), namespace)
+    monkeypatch.setenv("AIS_PRUNE_APPROVED", "true")
+    monkeypatch.setenv("AIS_RETENTION_POLICY_ID", "synthetic-approval-not-sufficient")
+    assert namespace["prune"](object()) == 0
