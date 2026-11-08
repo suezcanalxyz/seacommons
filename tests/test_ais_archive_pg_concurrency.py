@@ -9,6 +9,9 @@ No production data, object store, retention switch or existing tables are touche
 """
 import os
 import uuid
+import gzip
+import hashlib
+import json
 
 import pytest
 
@@ -149,10 +152,24 @@ def test_locked_archive_row_cannot_be_updated_or_deleted_concurrently():
             assert verify_deleted.execute(text(
                 f"SELECT count(*) FROM {table} WHERE id = 1"
             )).scalar_one() == 0
+        # Roundtrip the committed PostgreSQL snapshot through compressed evidence.
+        # This still does not prove S3/R2 durability.
+        archive_bytes = gzip.compress(
+            json.dumps({"schema": "ais_pg_probe_v1", "rows": archived},
+                       sort_keys=True, separators=(",", ":")).encode("utf-8"),
+            mtime=0,
+        )
+        archive_sha256 = hashlib.sha256(archive_bytes).hexdigest()
+        restored_payload = json.loads(gzip.decompress(archive_bytes))
+        assert restored_payload["schema"] == "ais_pg_probe_v1"
+        assert restored_payload["rows"] == archived
+        corrupted = bytearray(archive_bytes)
+        corrupted[len(corrupted) // 2] ^= 1
+        assert hashlib.sha256(corrupted).hexdigest() != archive_sha256
         with engine.begin() as restore:
             restore.execute(text(
                 f"INSERT INTO {table} (id, ts, lat) VALUES (:id, :ts, :lat)"
-            ), archived)
+            ), restored_payload["rows"])
         with engine.connect() as verify_restored:
             assert [dict(row) for row in verify_restored.execute(text(
                 f"SELECT id, ts, lat FROM {table} ORDER BY id"
