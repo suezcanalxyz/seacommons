@@ -6,6 +6,8 @@ on:
   pull_request:
     paths:
       - 'tests/test_ais_archive_pg_concurrency.py'
+      - 'tests/test_ais_prune_safety_contract.py'
+      - 'apps/api/core/vessels/track_store.py'
       - '.github/workflows/ais-archive-postgres.yml'
       - 'apps/api/pyproject.toml'
   workflow_dispatch:
