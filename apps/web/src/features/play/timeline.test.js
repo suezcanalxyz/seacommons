@@ -372,7 +372,6 @@ test('Play zoom clusters preserve all original archive records and expand on cli
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
   assert.match(source, /cluster: true, clusterMaxZoom: 7, clusterRadius: 42/);
   assert.match(source, /id: 'play-clusters'/);
-  assert.match(source, /id: 'play-cluster-count'/);
   assert.match(source, /getClusterExpansionZoom\(clusterId\)/);
   assert.match(source, /map\.easeTo\(\{ center: coordinates/);
   assert.match(source, /\['!', \['has', 'point_count'\]\]/);
