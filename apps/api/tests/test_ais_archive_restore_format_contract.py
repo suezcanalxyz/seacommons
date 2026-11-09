@@ -7,6 +7,7 @@ import ast
 import gzip
 import hashlib
 import json
+import textwrap
 from pathlib import Path
 
 TRACK_STORE = Path(__file__).resolve().parents[1] / "core/vessels/track_store.py"
@@ -28,7 +29,7 @@ def test_archive_contract_includes_all_fields_and_deterministic_gzip():
     source = _prune_source()
     # Verify that the synthetic format below remains coupled to the canonical
     # producer rather than silently testing a separate shadow schema.
-    tree = ast.parse(source)
+    tree = ast.parse(textwrap.dedent(source))
     keys = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Dict):
