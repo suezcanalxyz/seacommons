@@ -311,10 +311,30 @@ export default function PlayTimeline({ apiBase }) {
       map.on('load', () => {
         if (disposed) return;
         map.addImage('vessel-arrow', createVesselArrowImage(48), { sdf: true });
-        map.addSource('play-incidents', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('play-incidents', {
+          type: 'geojson', data: { type: 'FeatureCollection', features: [] },
+          cluster: true, clusterMaxZoom: 7, clusterRadius: 42,
+        });
+        // A cluster represents a viewport grouping, never a deduplicated archive record.
+        map.addLayer({
+          id: 'play-clusters', type: 'circle', source: 'play-incidents',
+          filter: ['has', 'point_count'],
+          paint: {
+            'circle-radius': ['step', ['get', 'point_count'], 14, 20, 18, 100, 23],
+            'circle-color': '#27566b', 'circle-opacity': 0.94,
+            'circle-stroke-color': '#b3e8fa', 'circle-stroke-width': 1.5,
+          },
+        });
+        map.addLayer({
+          id: 'play-cluster-count', type: 'symbol', source: 'play-incidents',
+          filter: ['has', 'point_count'],
+          layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12,
+            'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'] },
+          paint: { 'text-color': '#ffffff' },
+        });
         map.addLayer({
           id: 'play-incidents', type: 'circle', source: 'play-incidents',
-          filter: ['!=', ['get', 'marker_kind'], 'vessel'],
+          filter: ['all', ['!', ['has', 'point_count']], ['!=', ['get', 'marker_kind'], 'vessel']],
           paint: {
             'circle-radius': ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5],
             'circle-color': ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f'],
@@ -324,10 +344,10 @@ export default function PlayTimeline({ apiBase }) {
         });
         map.addLayer({
           id: 'play-vessels', type: 'symbol', source: 'play-incidents',
-          filter: ['==', ['get', 'marker_kind'], 'vessel'],
+          filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'marker_kind'], 'vessel']],
           layout: {
             'icon-image': 'vessel-arrow',
-            'icon-size': ['case', ['==', ['get', 'incident_id'], selectedId], 0.46, 0.34],
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.20, 7, 0.34, 10, 0.46],
             'icon-rotate': ['coalesce', ['get', 'course'], 0],
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
@@ -361,7 +381,16 @@ export default function PlayTimeline({ apiBase }) {
             setCasesOpen(false);
           }
         };
-        for (const layerId of ['play-incidents', 'play-vessels']) {
+        map.on('click', 'play-clusters', async (event) => {
+          const clusterId = event.features?.[0]?.properties?.cluster_id;
+          const coordinates = event.features?.[0]?.geometry?.coordinates;
+          if (clusterId == null || !Array.isArray(coordinates)) return;
+          try {
+            const zoom = await map.getSource('play-incidents').getClusterExpansionZoom(clusterId);
+            map.easeTo({ center: coordinates, zoom: Math.min(zoom, 18) });
+          } catch { /* source replaced during navigation */ }
+        });
+        for (const layerId of ['play-clusters', 'play-incidents', 'play-vessels']) {
           map.on('click', layerId, selectArchiveFeature);
           map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
           map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
