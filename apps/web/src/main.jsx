@@ -1731,7 +1731,7 @@ function App() {
           filter: ['all', ['match', ['get', 'nav_status'], [1, 5], false, true], ['>', ['coalesce', ['get', 'speed'], 0], 0.5]],
           layout: {
             'icon-image': 'vessel-arrow',
-            'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.30, 10, 0.50, 14, 0.65],
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.22, 10, 0.50, 14, 0.65],
             'icon-rotate': ['coalesce', ['get', 'heading_deg'], ['get', 'heading'], ['get', 'course'], 0],
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
@@ -1741,7 +1741,8 @@ function App() {
             'icon-color': '#38bdf8',
             'icon-opacity': 0.96,
             'icon-halo-color': '#021318',
-            'icon-halo-width': 1.2,
+            // Keep vessel outlines subtle at continental zoom; preserve every AIS feature.
+            'icon-halo-width': ['interpolate', ['linear'], ['zoom'], 5, 0.35, 10, 1.0, 14, 1.2],
           },
         });
         map.addLayer({
