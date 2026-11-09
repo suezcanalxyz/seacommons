@@ -100,7 +100,8 @@ def test_prune_locks_concurrent_writer_and_restores_exact_rows(monkeypatch):
                              sog=4.5, cog=90.0, heading=None,
                              nav_status=0, source="synthetic"))
         with Session() as db:
-            original = {r.id: (r.mmsi, r.lat, r.lon, r.source)
+            original = {r.id: {field: (getattr(r, field).isoformat() if field in ("ts", "received_at") else getattr(r, field))
+                           for field in ("id", "mmsi", "ts", "received_at", "lat", "lon", "sog", "cog", "heading", "nav_status", "source")}
                         for r in db.query(Track).all()}
 
         monkeypatch.setattr(models, "VesselTrackDB", Track)
@@ -132,11 +133,21 @@ def test_prune_locks_concurrent_writer_and_restores_exact_rows(monkeypatch):
         archive = json.loads(gzip.decompress(next(iter(stored.values()))))
         assert archive["schema"] == "vessel_tracks_v1"
         assert len(archive["rows"]) == 100
-        assert {r["id"]: (r["mmsi"], r["lat"], r["lon"], r["source"])
-                for r in archive["rows"]} == original
+        assert {r["id"]: r for r in archive["rows"]} == original
+        # Independent restore into the disposable PostgreSQL table, not the live store.
+        # All eleven fields must survive the archive -> decode -> SQL insert path.
+        with Session.begin() as restore_db:
+            for record in archive["rows"]:
+                values = dict(record)
+                for field in ("ts", "received_at"):
+                    values[field] = datetime.fromisoformat(values[field])
+                restore_db.add(Track(**values))
+        with Session() as restored_db:
+            recovered = {r.id: {field: (getattr(r, field).isoformat() if field in ("ts", "received_at") else getattr(r, field))
+                                for field in ("id", "mmsi", "ts", "received_at", "lat", "lon", "sog", "cog", "heading", "nav_status", "source")}
+                         for r in restored_db.query(Track).all()}
+        assert recovered == original
         # Concurrent UPDATE must not resurrect or silently overwrite a deleted row.
-        with Session() as db:
-            assert db.query(Track).count() == 0
     finally:
         release_put.set()
         Base.metadata.drop_all(engine)
