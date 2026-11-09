@@ -18,7 +18,8 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 
 @pytest.mark.skipif(not os.getenv("TEST_AIS_POSTGRES_URL"), reason="disposable PostgreSQL URL required")
-def test_prune_locks_concurrent_writer_and_restores_exact_rows(monkeypatch):
+@pytest.mark.parametrize("fault", ["none", "ambiguous_put", "corrupt_get"])
+def test_prune_locks_concurrent_writer_and_restores_exact_rows(monkeypatch, fault):
     from core.vessels import track_store
     from core.db import models, session as db_session
     from core import object_store
@@ -71,8 +72,13 @@ def test_prune_locks_concurrent_writer_and_restores_exact_rows(monkeypatch):
         entered_put.set()
         if not release_put.wait(timeout=15):
             raise TimeoutError("test did not release archive PUT")
+        if fault == "ambiguous_put":
+            # Object exists, but client never receives a successful PUT response.
+            raise TimeoutError("synthetic lost PUT acknowledgement")
 
     def get(key):
+        if fault == "corrupt_get":
+            return stored[key] + b"corrupt"
         return stored[key]
 
     def writer():
@@ -126,6 +132,13 @@ def test_prune_locks_concurrent_writer_and_restores_exact_rows(monkeypatch):
         prune_thread.join(timeout=20)
         writer_thread.join(timeout=20)
         assert not prune_thread.is_alive() and not writer_thread.is_alive()
+        if fault != "none":
+            # Failed object verification must roll back the SQL transaction;
+            # concurrent writer may subsequently commit its independent update.
+            assert errors and not result, (fault, errors, result)
+            with Session() as db:
+                assert db.query(Track).count() == 100
+            return
         assert not errors, errors
         assert result == [100]
         assert writer_done.is_set()
