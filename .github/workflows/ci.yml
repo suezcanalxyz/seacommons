@@ -102,7 +102,7 @@ jobs:
 
           gate = FailOnSkip()
           code = pytest.main(["-q", "tests/test_ais_postgres_lock_gate.py"], plugins=[gate])
-          if code != 0 or gate.skipped or gate.passed != 1:
+          if code != 0 or gate.skipped or gate.passed != 3:
               raise SystemExit(f"AIS PostgreSQL gate FAILED: exit={code}, passed={gate.passed}, skipped={gate.skipped}")
           PY
 
