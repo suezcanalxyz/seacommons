@@ -135,7 +135,7 @@ def test_prune_locks_concurrent_writer_and_restores_exact_rows(monkeypatch, faul
         if fault != "none":
             # Failed object verification must roll back the SQL transaction;
             # concurrent writer may subsequently commit its independent update.
-            assert errors and not result, (fault, errors, result)
+            assert not errors and result == [0], (fault, errors, result)
             with Session() as db:
                 assert db.query(Track).count() == 100
             return
