@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import Column, DateTime, Float, Integer, String, create_engine, text
+from sqlalchemy import Column, DateTime, Float, Integer, String, create_engine, text, update
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 
@@ -80,8 +80,7 @@ def test_prune_locks_concurrent_writer_and_restores_exact_rows(monkeypatch):
             if not entered_put.wait(timeout=15):
                 raise TimeoutError("prune did not reach PUT")
             with Session.begin() as db:
-                row = db.get(Track, 1)
-                row.lat = 55.0
+                db.execute(update(Track).where(Track.id == 1).values(lat=55.0))
             writer_done.set()
         except Exception as exc:
             errors.append(exc)
