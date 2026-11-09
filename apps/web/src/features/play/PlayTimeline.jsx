@@ -326,13 +326,6 @@ export default function PlayTimeline({ apiBase }) {
           },
         });
         map.addLayer({
-          id: 'play-cluster-count', type: 'symbol', source: 'play-incidents',
-          filter: ['has', 'point_count'],
-          layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12,
-            'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'] },
-          paint: { 'text-color': '#ffffff' },
-        });
-        map.addLayer({
           id: 'play-incidents', type: 'circle', source: 'play-incidents',
           filter: ['all', ['!', ['has', 'point_count']], ['!=', ['get', 'marker_kind'], 'vessel']],
           paint: {
