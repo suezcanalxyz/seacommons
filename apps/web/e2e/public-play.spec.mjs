@@ -53,3 +53,23 @@ test('mobile Play keeps an interactive archive map when MapLibre cannot initiali
   await expect(dossier).toBeVisible();
   await expect(dossier.locator('h2')).toContainText('Historical distress');
 });
+
+
+test('desktop and mobile Play render MapLibre archive without losing dossier navigation', async ({ page }, testInfo) => {
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(PUBLIC_PLAY_URL);
+    const canvas = page.locator('.maplibregl-canvas');
+    await expect(canvas).toBeVisible();
+    await expect(page.locator('.play-map-error')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath(`play-${viewport.width}-continent.png`), fullPage: true });
+    const cases = page.locator('.play-cases__list');
+    if (viewport.width < 600) {
+      const toggle = page.locator('.play-mobile-cases-toggle');
+      if (await toggle.isVisible()) await toggle.click();
+    }
+    await cases.getByText('Historical distress', { exact: true }).click();
+    await expect(page.locator('.play-evidence.is-open')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`play-${viewport.width}-dossier.png`), fullPage: true });
+  }
+});
