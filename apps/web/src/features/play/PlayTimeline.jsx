@@ -332,7 +332,7 @@ export default function PlayTimeline({ apiBase }) {
             'circle-radius': ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5],
             'circle-color': ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f'],
             'circle-opacity': 0.9,
-            'circle-stroke-color': '#071014', 'circle-stroke-width': 1.5,
+            'circle-stroke-color': '#b3e8fa', 'circle-stroke-width': 1,
           },
         });
         map.addLayer({
