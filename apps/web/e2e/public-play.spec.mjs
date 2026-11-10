@@ -94,7 +94,19 @@ test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence w
       // Opt-in release gate: a green fallback-only CI run is not proof of MapLibre.
       // Run with SEACOMMONS_REQUIRE_WEBGL=1 on a WebGL-capable browser runner.
       if (process.env.SEACOMMONS_REQUIRE_WEBGL === '1') {
-        throw new Error(`MapLibre WebGL renderer missing at ${viewport.width}x${viewport.height}; release visual gate failed`);
+        const diagnostics = await page.evaluate(() => {
+          const probe = document.createElement('canvas');
+          const webgl2 = probe.getContext('webgl2');
+          const webgl = webgl2 || probe.getContext('webgl');
+          return {
+            webglAvailable: Boolean(webgl),
+            webglVersion: webgl?.getParameter(webgl.VERSION) || null,
+            fallbackMarkerCount: document.querySelectorAll('.seacommons-fallback-marker').length,
+            mapError: document.querySelector('.play-map-error')?.textContent?.trim() || null,
+          };
+        });
+        testInfo.annotations.push({ type: 'webgl-diagnostics', description: JSON.stringify(diagnostics) });
+        throw new Error(`MapLibre WebGL renderer missing at ${viewport.width}x${viewport.height}; diagnostics=${JSON.stringify(diagnostics)}; release visual gate failed`);
       }
       continue;
     }
