@@ -383,7 +383,8 @@ export default function PlayTimeline({ apiBase }) {
             map.easeTo({ center: coordinates, zoom: Math.min(zoom, 18) });
           } catch { /* source replaced during navigation */ }
         });
-        for (const layerId of ['play-clusters', 'play-incidents', 'play-vessels']) {
+        // Cluster clicks only expand the group; they must never open a synthetic dossier.
+        for (const layerId of ['play-incidents', 'play-vessels']) {
           map.on('click', layerId, selectArchiveFeature);
           map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
           map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
