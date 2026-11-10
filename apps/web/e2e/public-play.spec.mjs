@@ -97,8 +97,13 @@ test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence w
     await expect(canvas).toBeVisible();
     const zoomIn = page.locator('.maplibregl-ctrl-zoom-in');
     await expect(zoomIn).toBeVisible();
-    for (const [label, clicks] of [['continent', 0], ['mediterranean', 2], ['detail', 4]]) {
-      for (let i = 0; i < clicks; i++) await zoomIn.click();
+    let currentZoomSteps = 0;
+    for (const [label, targetZoomSteps] of [['continent', 0], ['mediterranean', 2], ['detail', 4]]) {
+      // Targets are absolute offsets from the initial 3.55 zoom, not cumulative clicks.
+      const delta = targetZoomSteps - currentZoomSteps;
+      expect(delta).toBeGreaterThanOrEqual(0);
+      for (let i = 0; i < delta; i++) await zoomIn.click();
+      currentZoomSteps = targetZoomSteps;
       await page.waitForTimeout(350);
       await page.screenshot({ path: testInfo.outputPath(`play-maplibre-${viewport.width}-${label}.png`), fullPage: true });
       await expect(page.locator('.play-map-error')).toHaveCount(0);
