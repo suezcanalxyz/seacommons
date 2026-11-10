@@ -20,7 +20,14 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'off',
-    launchOptions: { args: [`--host-resolver-rules=${PUBLIC_HOST_RULES}`] },
+    // Opt-in software WebGL for MapLibre release checks on headless Chromium.
+    // Test runner only: no change to the public application or production browser.
+    launchOptions: { args: [
+      `--host-resolver-rules=${PUBLIC_HOST_RULES}`,
+      ...(process.env.SEACOMMONS_REQUIRE_WEBGL === '1'
+        ? ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']
+        : []),
+    ] },
   },
   webServer: {
     command: 'VITE_APP_PROFILE=live DISABLE_HMR=true npm run dev -- --host 0.0.0.0 --port 4173 --strictPort',
