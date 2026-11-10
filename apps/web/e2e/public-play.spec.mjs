@@ -83,12 +83,18 @@ test('desktop and mobile Play preserve archive navigation with MapLibre or the s
 
 
 test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence when WebGL is available', async ({ page }, testInfo) => {
+  const rendererErrors = [];
+  page.on('pageerror', error => rendererErrors.push(`pageerror: ${error.message}`));
+  page.on('console', message => { if (message.type() === 'error') rendererErrors.push(`console: ${message.text()}`); });
   for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     await page.goto(PUBLIC_PLAY_URL);
     await expect.poll(async () =>
       (await page.locator('.maplibregl-canvas').count()) + (await page.locator('.leaflet-container').count())
     ).toBeGreaterThan(0);
+    if (!(await page.locator('.maplibregl-canvas').count())) {
+      await page.locator('.maplibregl-canvas').waitFor({ state: 'attached', timeout: 2500 }).catch(() => {});
+    }
     if (!(await page.locator('.maplibregl-canvas').count())) {
       testInfo.annotations.push({ type: 'webgl-unavailable', description: `${viewport.width}: Leaflet fallback; MapLibre visual gate NOT satisfied` });
       // Opt-in release gate: a green fallback-only CI run is not proof of MapLibre.
@@ -103,8 +109,10 @@ test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence w
             webglVersion: webgl?.getParameter(webgl.VERSION) || null,
             fallbackMarkerCount: document.querySelectorAll('.seacommons-fallback-marker').length,
             mapError: document.querySelector('.play-map-error')?.textContent?.trim() || null,
+            forcedFallback: window.__SEACOMMONS_FORCE_MAP_FALLBACK__ === true,
           };
         });
+        diagnostics.rendererErrors = rendererErrors.slice(-12).map(message => message.slice(0, 400));
         testInfo.annotations.push({ type: 'webgl-diagnostics', description: JSON.stringify(diagnostics) });
         throw new Error(`MapLibre WebGL renderer missing at ${viewport.width}x${viewport.height}; diagnostics=${JSON.stringify(diagnostics)}; release visual gate failed`);
       }
