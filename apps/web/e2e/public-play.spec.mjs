@@ -55,13 +55,19 @@ test('mobile Play keeps an interactive archive map when MapLibre cannot initiali
 });
 
 
-test('desktop and mobile Play render MapLibre archive without losing dossier navigation', async ({ page }, testInfo) => {
+test('desktop and mobile Play preserve archive navigation with MapLibre or the supported fallback', async ({ page }, testInfo) => {
   for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     await page.goto(PUBLIC_PLAY_URL);
+    // CI Chromium can lack WebGL: PLAY intentionally switches to Leaflet then.
+    // Assert the actual supported renderer rather than falsely requiring WebGL.
     const canvas = page.locator('.maplibregl-canvas');
-    await expect(canvas).toBeVisible();
+    const fallback = page.locator('.leaflet-container');
+    await expect.poll(async () => (await canvas.count()) + (await fallback.count())).toBeGreaterThan(0);
+    const renderer = await canvas.count() ? 'maplibre' : 'leaflet';
+    await expect(renderer === 'maplibre' ? canvas : fallback).toBeVisible();
     await expect(page.locator('.play-map-error')).toHaveCount(0);
+    testInfo.annotations.push({ type: 'renderer', description: `${viewport.width}x${viewport.height}: ${renderer}` });
     await page.screenshot({ path: testInfo.outputPath(`play-${viewport.width}-continent.png`), fullPage: true });
     const cases = page.locator('.play-cases__list');
     if (viewport.width < 600) {
