@@ -420,9 +420,14 @@ export default function PlayTimeline({ apiBase }) {
       setMapError('');
       setFallbackReady(true);
     }
-    initMap().catch(() => activateFallbackMap().catch(() => {
-      if (!disposed) setMapError('Map unavailable. Archive cases remain available.');
-    }));
+    initMap().catch((error) => {
+      // Keep the fallback usable, but preserve the renderer failure for browser CI.
+      // Never log incident payloads, coordinates, or source evidence.
+      console.warn('[PLAY_MAP_RENDERER_FALLBACK]', error?.name || 'Error', String(error?.message || 'unknown').slice(0, 240));
+      return activateFallbackMap().catch(() => {
+        if (!disposed) setMapError('Map unavailable. Archive cases remain available.');
+      });
+    });
     return () => {
       disposed = true;
       try { mapRef.current?.remove(); } catch { /* already removed */ }
