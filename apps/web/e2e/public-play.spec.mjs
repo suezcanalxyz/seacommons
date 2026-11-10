@@ -80,3 +80,30 @@ test('desktop and mobile Play preserve archive navigation with MapLibre or the s
     await page.screenshot({ path: testInfo.outputPath(`play-${viewport.width}-dossier.png`), fullPage: true });
   }
 });
+
+
+test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence when WebGL is available', async ({ page }, testInfo) => {
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(PUBLIC_PLAY_URL);
+    await expect.poll(async () =>
+      (await page.locator('.maplibregl-canvas').count()) + (await page.locator('.leaflet-container').count())
+    ).toBeGreaterThan(0);
+    if (!(await page.locator('.maplibregl-canvas').count())) {
+      testInfo.annotations.push({ type: 'webgl-unavailable', description: `${viewport.width}: Leaflet fallback; MapLibre visual gate NOT satisfied` });
+      continue;
+    }
+    const canvas = page.locator('.maplibregl-canvas');
+    await expect(canvas).toBeVisible();
+    const zoomIn = page.locator('.maplibregl-ctrl-zoom-in');
+    await expect(zoomIn).toBeVisible();
+    for (const [label, clicks] of [['continent', 0], ['mediterranean', 2], ['detail', 4]]) {
+      for (let i = 0; i < clicks; i++) await zoomIn.click();
+      await page.waitForTimeout(350);
+      await page.screenshot({ path: testInfo.outputPath(`play-maplibre-${viewport.width}-${label}.png`), fullPage: true });
+      await expect(page.locator('.play-map-error')).toHaveCount(0);
+    }
+  }
+  // This visual artifact test does not prove cluster expansion or dossier completeness.
+  // A dedicated WebGL-enabled cluster interaction gate is still required before release.
+});
