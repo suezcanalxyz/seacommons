@@ -384,6 +384,9 @@ export default function PlayTimeline({ apiBase }) {
           } catch { /* source replaced during navigation */ }
         });
         // Cluster clicks only expand the group; they must never open a synthetic dossier.
+        // Match individual markers: make expandable groups discoverable without changing evidence.
+        map.on('mouseenter', 'play-clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'play-clusters', () => { map.getCanvas().style.cursor = ''; });
         for (const layerId of ['play-incidents', 'play-vessels']) {
           map.on('click', layerId, selectArchiveFeature);
           map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
