@@ -71,8 +71,9 @@ test('desktop and mobile Play preserve archive navigation with MapLibre or the s
     await page.screenshot({ path: testInfo.outputPath(`play-${viewport.width}-continent.png`), fullPage: true });
     const cases = page.locator('.play-cases__list');
     if (viewport.width < 600) {
-      const toggle = page.locator('.play-mobile-cases-toggle');
-      if (await toggle.isVisible()) await toggle.click();
+      // Phone layout hides the legacy toggle; navigate through the visible dock.
+      await page.getByRole('navigation', { name: 'Play navigation' }).getByRole('button', { name: 'Archive' }).click();
+      await expect(page.locator('.play-archive-panel')).toHaveClass(/is-mobile-open/);
     }
     await cases.getByText('Historical distress', { exact: true }).click();
     await expect(page.locator('.play-evidence.is-open')).toBeVisible();
