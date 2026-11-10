@@ -458,7 +458,7 @@ export default function PlayTimeline({ apiBase }) {
       map.setPaintProperty('play-incidents', 'circle-radius', ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5]);
     }
     if (map.getLayer('play-vessels')) {
-      map.setLayoutProperty('play-vessels', 'icon-size', ['case', ['==', ['get', 'incident_id'], selectedId], 0.46, 0.34]);
+      map.setLayoutProperty('play-vessels', 'icon-size', ['case', ['==', ['get', 'incident_id'], selectedId], 0.46, ['interpolate', ['linear'], ['zoom'], 3, 0.20, 7, 0.34, 10, 0.46]]);
     }
     addSatelliteLayer(map, satellite);
 
