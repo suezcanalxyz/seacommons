@@ -393,3 +393,12 @@ test('Play cluster clicks only expand and never select a synthetic incident', as
   assert.match(source, /for \(const layerId of \['play-incidents', 'play-vessels'\]\) \{/);
   assert.doesNotMatch(source, /for \(const layerId of \['play-clusters', 'play-incidents', 'play-vessels'\]\)/);
 });
+
+
+test('Play cluster hover advertises expansion without changing dossier selection', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /map\.on\('mouseenter', 'play-clusters', \(\) => \{ map\.getCanvas\(\)\.style\.cursor = 'pointer'; \}\)/);
+  assert.match(source, /map\.on\('mouseleave', 'play-clusters', \(\) => \{ map\.getCanvas\(\)\.style\.cursor = ''; \}\)/);
+  assert.match(source, /map\.on\('click', 'play-clusters', async \(event\) => \{/);
+  assert.doesNotMatch(source, /map\.on\('click', 'play-clusters', selectArchiveFeature\)/);
+});
