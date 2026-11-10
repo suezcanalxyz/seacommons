@@ -25,7 +25,7 @@ export default defineConfig({
     launchOptions: { args: [
       `--host-resolver-rules=${PUBLIC_HOST_RULES}`,
       ...(process.env.SEACOMMONS_REQUIRE_WEBGL === '1'
-        ? ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']
+        ? ['--enable-webgl', '--use-gl=angle', '--use-angle=swiftshader-webgl', '--enable-unsafe-swiftshader']
         : []),
     ] },
   },
