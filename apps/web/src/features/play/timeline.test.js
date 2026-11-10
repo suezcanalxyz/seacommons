@@ -378,3 +378,10 @@ test('Play zoom clusters preserve all original archive records and expand on cli
   assert.match(source, /map\.getSource\('play-incidents'\)\?\.setData\(incidentCollection\(filteredIncidents\)\)/);
   assert.doesNotMatch(source, /getClusterLeaves\([^)]*\)\.slice\(/);
 });
+
+
+test('Play vessel zoom interpolation survives selected-case update effect', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /map\.setLayoutProperty\('play-vessels', 'icon-size', \['case',[^\n]*\['interpolate', \['linear'\], \['zoom'\], 3, 0\.20, 7, 0\.34, 10, 0\.46\]\]\)/);
+  assert.doesNotMatch(source, /map\.setLayoutProperty\('play-vessels', 'icon-size', \['case', [^\n]*0\.46, 0\.34\]\)/);
+});
