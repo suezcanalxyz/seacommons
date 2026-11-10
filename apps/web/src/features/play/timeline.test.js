@@ -385,3 +385,11 @@ test('Play vessel zoom interpolation survives selected-case update effect', asyn
   assert.match(source, /map\.setLayoutProperty\('play-vessels', 'icon-size', \['case',[^\n]*\['interpolate', \['linear'\], \['zoom'\], 3, 0\.20, 7, 0\.34, 10, 0\.46\]\]\)/);
   assert.doesNotMatch(source, /map\.setLayoutProperty\('play-vessels', 'icon-size', \['case', [^\n]*0\.46, 0\.34\]\)/);
 });
+
+
+test('Play cluster clicks only expand and never select a synthetic incident', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /map\.on\('click', 'play-clusters', async \(event\) => \{/);
+  assert.match(source, /for \(const layerId of \['play-incidents', 'play-vessels'\]\) \{/);
+  assert.doesNotMatch(source, /for \(const layerId of \['play-clusters', 'play-incidents', 'play-vessels'\]\)/);
+});
