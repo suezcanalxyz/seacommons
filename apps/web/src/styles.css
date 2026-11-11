@@ -4165,8 +4165,8 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 
 /* Public Live basemap: visible on mobile top-right and desktop beside map controls. */
 .live-basemap-switch {
-  position: absolute;
-  z-index: 35;
+  position: fixed;
+  z-index: 2000;
   top: 70px;
   right: 12px;
   min-height: 36px;
