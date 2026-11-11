@@ -171,20 +171,25 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
     const map = window.__SEACOMMONS_PLAY_MAP__;
     return Boolean(map?.getLayer('play-clusters') && map?.getSource('play-incidents'));
   }), { timeout: 15000, intervals: [250, 500, 1000] }).toBe(true);
-  const cluster = await page.evaluate(() => {
+  // A layer can exist before the GeoJSON worker has finished setData. At zoom 1,
+  // all three historical fixtures are close enough to test low-zoom grouping.
+  await page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__.jumpTo({ center: [15.1, 35.6], zoom: 1 }));
+  const readCluster = () => page.evaluate(() => {
     const map = window.__SEACOMMONS_PLAY_MAP__;
-    const features = map.queryRenderedFeatures({ layers: ['play-clusters'] });
-    const feature = features.find(item => item.properties?.point_count >= 3);
+    const feature = map.queryRenderedFeatures({ layers: ['play-clusters'] })
+      .find(item => item.properties?.point_count >= 3);
     if (!feature) return null;
     const point = map.project(feature.geometry.coordinates);
     return { x: point.x, y: point.y, count: feature.properties.point_count };
   });
+  await expect.poll(readCluster, { timeout: 15000, intervals: [250, 500, 1000] }).not.toBeNull();
+  const cluster = await readCluster();
   expect(cluster, 'three nearby historical observations must form a low-zoom cluster').not.toBeNull();
   expect(cluster.count).toBe(3);
   const canvas = page.locator('.maplibregl-canvas');
   const box = await canvas.boundingBox();
   await page.mouse.click(box.x + cluster.x, box.y + cluster.y);
-  await expect.poll(() => page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__.getZoom())).toBeGreaterThan(3.55);
+  await expect.poll(() => page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__.getZoom())).toBeGreaterThan(1);
   // At detail zoom the original observations must remain individually selectable.
   await page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__.jumpTo({ center: [15.1, 35.6], zoom: 10 }));
   const observations = [
