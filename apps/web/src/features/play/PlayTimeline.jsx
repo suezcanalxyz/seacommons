@@ -310,7 +310,9 @@ export default function PlayTimeline({ apiBase }) {
       if (disposed || !mapNodeRef.current || mapRef.current) return;
       const map = new maplibregl.Map({
         container: mapNodeRef.current,
-        style: playMapStyle(), center: [14.8, 35.7], zoom: 3.55,
+        style: window.__SEACOMMONS_E2E_MAP__ === true
+          ? { version: 8, sources: {}, layers: [{ id: 'e2e-background', type: 'background', paint: { 'background-color': '#0b1820' } }] }
+          : playMapStyle(), center: [14.8, 35.7], zoom: 3.55,
         attributionControl: false,
       });
       map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'bottom-right');
