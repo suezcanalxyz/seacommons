@@ -168,9 +168,15 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
   for (const [id, coordinates, title] of observations) {
     const point = await page.evaluate(coords => {
       const map = window.__SEACOMMONS_PLAY_MAP__;
+      map.jumpTo({ center: coords, zoom: 10 });
       const p = map.project(coords);
       return { x: p.x, y: p.y };
     }, coordinates);
+    await expect.poll(() => page.evaluate(coords => {
+      const map = window.__SEACOMMONS_PLAY_MAP__;
+      return map.queryRenderedFeatures(map.project(coords), { layers: ['play-incidents', 'play-vessels'] })
+        .some(feature => feature.properties?.incident_id);
+    }, coordinates)).toBe(true);
     const bounds = await canvas.boundingBox();
     await page.mouse.click(bounds.x + point.x, bounds.y + point.y);
     await expect(page.locator('.play-evidence.is-open h2')).toContainText(title);
