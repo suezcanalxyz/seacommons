@@ -300,7 +300,13 @@ export default function PlayTimeline({ apiBase }) {
     async function initMap() {
       if (window.__SEACOMMONS_FORCE_MAP_FALLBACK__ === true) throw new Error('forced map fallback');
       await import('maplibre-gl/dist/maplibre-gl.css');
-      const { default: maplibregl } = await import('maplibre-gl');
+      const maplibreModule = await import('maplibre-gl');
+      // ESM builds expose Map/NavigationControl as named exports; a default export
+      // is not guaranteed (and may be undefined in Vite/browser builds).
+      const maplibregl = maplibreModule.Map ? maplibreModule : maplibreModule.default;
+      if (typeof maplibregl?.Map !== 'function') {
+        throw new TypeError('MapLibre module did not export a Map constructor');
+      }
       if (disposed || !mapNodeRef.current || mapRef.current) return;
       const map = new maplibregl.Map({
         container: mapNodeRef.current,
