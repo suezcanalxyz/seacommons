@@ -143,8 +143,29 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
   test.skip(process.env.SEACOMMONS_REQUIRE_WEBGL !== '1', 'Cluster interaction requires the dedicated WebGL-enabled release gate');
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.addInitScript(() => { window.__SEACOMMONS_E2E_MAP__ = true; });
+  const rendererErrors = [];
+  page.on('pageerror', error => rendererErrors.push(`pageerror: ${error.message}`));
+  page.on('console', message => {
+    if (message.type() === 'error' || message.text().includes('PLAY_MAP_RENDERER_FALLBACK')) {
+      rendererErrors.push(`console: ${message.text()}`);
+    }
+  });
   await page.goto(PUBLIC_PLAY_URL);
-  await expect.poll(() => page.evaluate(() => Boolean(window.__SEACOMMONS_PLAY_MAP__))).toBe(true);
+  try {
+    await expect.poll(() => page.evaluate(() => Boolean(window.__SEACOMMONS_PLAY_MAP__)), {
+      timeout: 15000,
+      intervals: [250, 500, 1000],
+    }).toBe(true);
+  } catch (error) {
+    const diagnostic = await page.evaluate(() => ({
+      e2eFlag: window.__SEACOMMONS_E2E_MAP__ === true,
+      mapExposed: Boolean(window.__SEACOMMONS_PLAY_MAP__),
+      maplibreCanvases: document.querySelectorAll('.maplibregl-canvas').length,
+      fallbackMaps: document.querySelectorAll('.leaflet-container').length,
+      visibleError: document.querySelector('.play-map-error')?.textContent?.trim() || null,
+    }));
+    throw new Error(`MapLibre cluster gate failed: ${JSON.stringify({ ...diagnostic, errors: rendererErrors.slice(-10).map(item => item.slice(0, 350)) })}; cause=${error.message}`);
+  }
   const cluster = await page.evaluate(() => {
     const map = window.__SEACOMMONS_PLAY_MAP__;
     const features = map.queryRenderedFeatures({ layers: ['play-clusters'] });
