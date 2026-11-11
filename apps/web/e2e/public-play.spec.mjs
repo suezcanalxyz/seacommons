@@ -140,6 +140,7 @@ test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence w
 
 
 test('MapLibre cluster expansion preserves every synthetic archive dossier', async ({ page }) => {
+  test.skip(process.env.SEACOMMONS_REQUIRE_WEBGL !== '1', 'Cluster interaction requires the dedicated WebGL-enabled release gate');
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.addInitScript(() => { window.__SEACOMMONS_E2E_MAP__ = true; });
   await page.goto(PUBLIC_PLAY_URL);
