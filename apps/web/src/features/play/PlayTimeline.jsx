@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { EVENT_VISUAL_CATEGORIES } from '../intel/categories.js';
 
 import { fetchJson } from '../../services/api/client.js';
 import { timelineReport, humanizeDetectorText } from '../live/reportNarrative.js';
@@ -25,9 +26,13 @@ import {
 } from './timeline.js';
 
 const TIMELINE_MAX = 1000;
+const ATTACK_COLOR = EVENT_VISUAL_CATEGORIES.find((category) => category.key === 'maritime_attack').color;
+
 function evidenceLabel(item) {
-  if (item?.corroborated === true || item?.verification_status === 'multi_source_corroborated') return 'Confirmed by independent sources';
+  // Disputed evidence must remain visible even if an older corroboration flag is set.
   if (item?.verification_status === 'contested' || item?.evidence_state === 'contested') return 'Conflicting evidence';
+  if (item?.incident_type === 'maritime_attack' && !(item?.analyst_approved === true && item?.verification_status === 'multi_source_corroborated')) return 'Attack allegation — awaiting independent corroboration and analyst review';
+  if (item?.corroborated === true || item?.verification_status === 'multi_source_corroborated') return 'Confirmed by independent sources';
   if (item?.verification_status === 'verified') return 'Verified';
   if (item?.evidence_stage === 'multi_indicator') return 'Multiple supporting clues';
   return 'Not independently confirmed';
@@ -135,6 +140,7 @@ export default function PlayTimeline({ apiBase }) {
     const mainCategory = incident.main_category || incident.domain;
     if (archiveFilter === 'humanitarian') return mainCategory === 'humanitarian';
     if (archiveFilter === 'maritime') return mainCategory === 'maritime';
+    if (archiveFilter === 'attacks') return incident.incident_type === 'maritime_attack';
     return true;
   }), [visibleIncidents, archiveFilter]);
   const incidentTypes = useMemo(
@@ -143,8 +149,13 @@ export default function PlayTimeline({ apiBase }) {
   );
   const filteredIncidents = useMemo(() => categoryIncidents.filter((incident) => {
     if (incidentTypeFilter !== 'all' && incident.incident_type !== incidentTypeFilter) return false;
-    if (evidenceFilter === 'confirmed' && !incident.corroborated && incident.verification_status !== 'multi_source_corroborated') return false;
-    if (evidenceFilter === 'unconfirmed' && (incident.corroborated || incident.verification_status === 'multi_source_corroborated')) return false;
+    // Attack claims require both independent corroboration and analyst approval.
+    // A generic corroborated flag must never bypass this evidence gate.
+    const confirmed = incident.incident_type === 'maritime_attack'
+      ? incident.analyst_approved === true && incident.verification_status === 'multi_source_corroborated'
+      : incident.corroborated === true || incident.verification_status === 'multi_source_corroborated';
+    if (evidenceFilter === 'confirmed' && !confirmed) return false;
+    if (evidenceFilter === 'unconfirmed' && confirmed) return false;
     if (evidenceFilter === 'conflicting' && incident.verification_status !== 'contested' && incident.evidence_state !== 'contested') return false;
     if (satelliteOnly && !incident.has_satellite) return false;
     if (sanctionsOnly && !incident.sanctions_matched) return false;
@@ -158,6 +169,12 @@ export default function PlayTimeline({ apiBase }) {
     sanctionsOnly,
     investigationsOnly,
   ]);
+  const attackCounts = useMemo(() => {
+    const attacks = visibleIncidents.filter((incident) => incident.incident_type === 'maritime_attack');
+    const approved = attacks.filter((incident) => incident.analyst_approved === true
+      && incident.verification_status === 'multi_source_corroborated');
+    return { total: attacks.length, approved: approved.length, review: attacks.length - approved.length };
+  }, [visibleIncidents]);
   const coverage = useMemo(() => archiveCoverage(incidents), [incidents]);
   const archiveGroups = useMemo(() => groupArchiveByMonth(filteredIncidents), [filteredIncidents]);
   const selectedIncident = useMemo(
@@ -317,7 +334,7 @@ export default function PlayTimeline({ apiBase }) {
           filter: ['!=', ['get', 'marker_kind'], 'vessel'],
           paint: {
             'circle-radius': ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5],
-            'circle-color': ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f'],
+            'circle-color': ['case', ['all', ['==', ['get', 'incident_type'], 'maritime_attack'], ['==', ['get', 'analyst_approved'], true], ['==', ['get', 'verification_status'], 'multi_source_corroborated']], ATTACK_COLOR, ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f']],
             'circle-opacity': 0.9,
             'circle-stroke-color': '#071014', 'circle-stroke-width': 1.5,
           },
@@ -332,7 +349,7 @@ export default function PlayTimeline({ apiBase }) {
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
           },
-          paint: { 'icon-color': VESSEL_COLOR, 'icon-opacity': 0.94 },
+          paint: { 'icon-color': ['case', ['==', ['get', 'incident_type'], 'maritime_attack'], ATTACK_COLOR, VESSEL_COLOR], 'icon-opacity': 0.94 },
         });
         map.addSource('play-evidence', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addLayer({
@@ -542,6 +559,10 @@ export default function PlayTimeline({ apiBase }) {
               <button type="button" className={`signals-selector__link ${archiveFilter === 'all' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('all')}><span className="signals-selector__box" aria-hidden="true" />ALL</button>
               <button type="button" className={`signals-selector__link ${archiveFilter === 'humanitarian' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('humanitarian')}><span className="signals-selector__box" aria-hidden="true" />HUMANITARIAN</button>
               <button type="button" className={`signals-selector__link ${archiveFilter === 'maritime' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('maritime')}><span className="signals-selector__box" aria-hidden="true" />MARITIME</button>
+              <button type="button" className={`signals-selector__link ${archiveFilter === 'attacks' ? 'is-active' : ''}`} onClick={() => { setArchiveFilter('attacks'); setIncidentTypeFilter('all'); }} aria-label={`Show maritime attack cases, ${attackCounts.total} in selected period`}><span className="signals-selector__box" aria-hidden="true" style={{ borderColor: ATTACK_COLOR, backgroundColor: ATTACK_COLOR }} />ATTACKS ({attackCounts.total})</button>
+            </div>
+            <div role="status" aria-live="polite" style={{ fontSize: '0.8rem', lineHeight: 1.4, padding: '8px 0' }}>
+              <strong style={{ color: ATTACK_COLOR }}>Maritime attacks</strong> · {attackCounts.approved} corroborated and analyst-approved · {attackCounts.review} awaiting review. AIS anomalies alone never confirm an attack.
             </div>
             <label className="play-satellite-selector">
               <span>Incident type</span>
@@ -814,6 +835,7 @@ export default function PlayTimeline({ apiBase }) {
       {guideOpen && <aside className="play-mobile-guide" role="dialog" aria-label="Guide to Play">
         <header><strong>Reading PLAY</strong><button type="button" aria-label="Close guide" onClick={() => { setGuideOpen(false); setMobileTab('map'); }}>×</button></header>
         <section><h3>Map symbols</h3><p><b>▲ Ship</b> — A vessel position, when available.</p><p><b>● Point</b> — A location connected to a report.</p><p><b>— Route</b> — Recorded movement; missing parts are not known positions.</p><p><b>◌ Search area</b> — A possible location calculated from available information, not a sighting.</p></section>
+        <section><h3>Incident colours</h3><p><span style={{ color: ATTACK_COLOR }}>●</span> <b>Magenta — maritime attack</b>: an attack-classified case, not automatic proof or attribution. Open the report to check source independence, dates and review status.</p><p><span style={{ color: "#ff746f" }}>●</span> <b>Coral — humanitarian</b>: humanitarian archive case; a drift projection is an estimate, not a confirmed position.</p><p><span style={{ color: "#8ed8ff" }}>●</span> <b>Light blue — maritime</b>: other maritime incidents and signals.</p><p><b>AIS gaps and sudden stops</b> are contextual clues, never evidence of an attack by themselves.</p></section>
         <section><h3>Timeline</h3><p><b>ALL</b> shows every available case. Choose a date to see only events reported on that day (UTC). Moving to another day replaces the previous day's cases.</p></section>
         <section><h3>Understanding reports</h3><p><b>Recorded</b> means a source contains a signal or position. <b>Reported</b> means an event was described. <b>Estimated</b> means a possible location was calculated. Always check the date and source.</p></section>
         <section><h3>Coming soon</h3><p><b>Incidents</b> — Better ways to explore possible attacks, collisions and other events, with supporting sources and independent checks. In development, not automatically verified.</p></section>

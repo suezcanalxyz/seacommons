@@ -108,3 +108,25 @@ test('signal parsing follows semantic category instead of raw transport type', (
     'public_observation',
   );
 });
+
+
+test('explicit maritime attacks use magenta, separate from humanitarian red and AIS gap orange', () => {
+  const attack = classifyEventVisual({ incident_type: 'maritime_attack', analyst_approved: true, verification_status: 'multi_source_corroborated', severity: 'low' });
+  assert.equal(attack.key, 'maritime_attack');
+  assert.equal(attack.color, '#d946ef');
+  assert.equal(signalCategoryOf({ incident_type: 'maritime_attack' }), 'maritime_attack');
+  assert.notEqual(attack.color, classifyEventVisual({ source: 'Alarm Phone', incident_type: 'distress' }).color);
+  assert.notEqual(attack.color, classifyEventVisual({ anomaly_type: 'ais_gap' }).color);
+  assert.notEqual(classifyEventVisual({ title: 'Reported drone attack', type: 'news' }).key, 'maritime_attack');
+});
+
+
+test('attack classification fails closed without approval and corroboration', () => {
+  const base = { incident_type: 'maritime_attack', visual_category: 'maritime_attack' };
+  assert.equal(classifyEventVisual(base).key, 'context');
+  assert.equal(classifyEventVisual({ ...base, analyst_approved: true }).key, 'context');
+  assert.equal(classifyEventVisual({ ...base, verification_status: 'multi_source_corroborated' }).key, 'context');
+  assert.equal(classifyEventVisual({ ...base, analyst_approved: 'true', verification_status: 'multi_source_corroborated' }).key, 'context');
+  assert.equal(classifyEventVisual({ ...base, analyst_approved: true, verification_status: 'multi_source_corroborated', source: 'Alarm Phone' }).key, 'humanitarian_alarm_phone');
+  assert.equal(classifyEventVisual({ attack_review_category: 'maritime_attack' }).key, 'context');
+});

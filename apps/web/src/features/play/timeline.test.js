@@ -366,3 +366,61 @@ test('Play case dossier renders the selected satellite quicklook asset', async (
   assert.match(source, /satelliteProps\.asset_ref/);
   assert.match(source, /Satellite quicklook/);
 });
+
+
+test('PLAY map preserves explicit maritime attack category without reclassifying ordinary AIS gaps', () => {
+  const geometry = { type: 'Point', coordinates: [30.1, 43.2] };
+  const records = [
+    { incident_id: 'attack', incident_type: 'maritime_attack', domain: 'maritime', reported_at: '2026-10-28T10:00:00Z', geometry },
+    { incident_id: 'gap', incident_type: 'ais_gap', domain: 'maritime', reported_at: '2026-10-28T10:00:00Z', geometry },
+  ];
+  const features = incidentCollection(records).features;
+  assert.equal(features.find((feature) => feature.properties.incident_id === 'attack').properties.incident_type, 'maritime_attack');
+  assert.equal(features.find((feature) => feature.properties.incident_id === 'gap').properties.incident_type, 'ais_gap');
+});
+
+
+test('PLAY preserves explicit maritime attack identity separately from AIS gaps and humanitarian drift', () => {
+  const geometry = { type: 'Point', coordinates: [30.1, 44.8] };
+  const incidents = [
+    { incident_id: 'attack-9348625', incident_type: 'maritime_attack', domain: 'maritime', reported_at: '2026-10-28T10:00:00Z', geometry },
+    { incident_id: 'gap-636019532', incident_type: 'ais_gap', domain: 'maritime', reported_at: '2026-10-28T09:50:00Z', geometry },
+    { incident_id: 'humanitarian-1', incident_type: 'distress', domain: 'humanitarian', reported_at: '2026-10-28T09:40:00Z', geometry },
+  ];
+  const features = incidentCollection(incidents).features;
+  assert.deepEqual(features.map((feature) => feature.properties.incident_type), ['maritime_attack', 'ais_gap', 'distress']);
+  assert.equal(features[0].properties.domain, 'maritime');
+  assert.equal(features[1].properties.incident_type, 'ais_gap');
+  assert.equal(features[2].properties.domain, 'humanitarian');
+  const beforeAttack = incidentCollection(incidents, '2026-10-28T09:55:00Z').features;
+  assert.equal(beforeAttack.some((feature) => feature.properties.incident_type === 'maritime_attack'), false);
+});
+
+
+test('PLAY provides a dedicated attack filter with explicit reviewed and pending counts', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /archiveFilter === 'attacks'/);
+  assert.match(source, /incident\.incident_type === 'maritime_attack'/);
+  assert.match(source, /incident\.analyst_approved === true/);
+  assert.match(source, /incident\.verification_status === 'multi_source_corroborated'/);
+  assert.match(source, /ATTACKS \(\{attackCounts\.total\}\)/);
+  assert.match(source, /awaiting review/);
+});
+
+
+test('PLAY confirmed filter requires analyst approval for attacks even with corroborated flag', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /const confirmed = incident\.incident_type === 'maritime_attack'/);
+  assert.match(source, /incident\.analyst_approved === true && incident\.verification_status === 'multi_source_corroborated'/);
+  assert.match(source, /evidenceFilter === 'confirmed' && !confirmed/);
+  assert.match(source, /evidenceFilter === 'unconfirmed' && confirmed/);
+});
+
+test('PLAY prioritizes conflicting evidence over stale attack confirmation flags', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  const evidenceBlock = source.slice(source.indexOf('function evidenceLabel('), source.indexOf('function evidenceCollection('));
+  assert.ok(evidenceBlock.indexOf("item?.verification_status === 'contested'") <
+    evidenceBlock.indexOf("item?.incident_type === 'maritime_attack'"));
+  assert.ok(evidenceBlock.indexOf("item?.verification_status === 'contested'") <
+    evidenceBlock.indexOf("item?.corroborated === true"));
+});

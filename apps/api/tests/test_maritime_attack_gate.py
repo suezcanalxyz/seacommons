@@ -1,0 +1,293 @@
+from core.intel.maritime_attack_gate import AttackEvidence, evaluate_attack_candidate
+
+BASE = dict(event_at="2026-10-28T10:00:00Z", published_at="2026-10-28T11:00:00Z",
+            received_at="2026-10-28T11:05:00Z", imo="9348625", mmsi="636019532",
+            position=(41.0, 30.0), explicit_attack_claim=True)
+
+def item(name, group, **overrides):
+    return AttackEvidence(**(BASE | dict(source_id=name, independent_group=group,
+                                         source_url=f"https://example.org/{name}", primary_origin_id=f"fixture-origin-{group.strip().casefold()}") | overrides))
+
+def test_independent_sources_only_promote_to_review():
+    result = evaluate_attack_candidate([item("a","authority"), item("b","press")])
+    assert result["status"] == "candidate_for_analyst_review"
+    assert result["automatic_publication"] is False
+    assert result["attribution"] is None
+
+def test_same_syndicated_group_is_not_double_corroboration():
+    assert evaluate_attack_candidate([item("a","wire"),item("b","wire")])["status"] == "insufficient_evidence"
+
+def test_ais_gap_not_attack_proof():
+    assert evaluate_attack_candidate([item("gap","ais",explicit_attack_claim=False,signal_only=True),item("a","press")])["status"] == "insufficient_evidence"
+
+def test_conflicting_imo_fails_closed():
+    result = evaluate_attack_candidate([item("a","authority"),item("b","press",imo="9999999")])
+    assert result["status"] == "insufficient_evidence"
+    assert "imo_conflict" in result["reasons"]
+
+def test_spatial_mismatch_fails_closed():
+    assert evaluate_attack_candidate([item("a","authority"),item("b","press",position=(10,10))])["status"] == "insufficient_evidence"
+
+def test_time_mismatch_fails_closed():
+    assert evaluate_attack_candidate([item("a","authority"),item("b","press",event_at="2026-10-30T10:00:00Z",published_at="2026-10-30T11:00:00Z",received_at="2026-10-30T11:05:00Z")])["status"] == "insufficient_evidence"
+
+def test_missing_provenance_fails_closed():
+    assert evaluate_attack_candidate([item("a","authority"),item("b","press",source_url="")])["status"] == "insufficient_evidence"
+
+def test_timezone_required():
+    assert evaluate_attack_candidate([item("a","authority"),item("b","press",event_at="2026-10-28T10:00:00")])["status"] == "insufficient_evidence"
+
+def test_invalid_chronology_cannot_count_as_independent_claim():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", published_at="2026-10-28T09:00:00Z"),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "chronology_requires_review" in result["reasons"]
+
+
+def test_duplicate_source_does_not_count_twice():
+    first = item("a", "authority")
+    duplicate = item("a", "press")
+    result = evaluate_attack_candidate([first, duplicate])
+    assert result["status"] == "insufficient_evidence"
+    assert "duplicate_source" in result["reasons"]
+
+
+def test_ais_gap_and_unrelated_press_do_not_corroborate():
+    result = evaluate_attack_candidate([
+        item("gap", "ais", explicit_attack_claim=False, signal_only=True),
+        item("press", "media", position=(10, 10)),
+    ])
+    assert result["status"] == "insufficient_evidence"
+
+def test_same_location_different_vessels_cannot_corroborate():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", imo="9999999", mmsi="999999999"),
+    ])
+    assert result["status"] == "insufficient_evidence"
+
+
+def test_missing_common_identity_fails_closed():
+    result = evaluate_attack_candidate([
+        item("a", "authority", imo=None, mmsi=None),
+        item("b", "press", imo=None, mmsi=None),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "unresolved_vessel_identity" in result["reasons"]
+
+
+def test_shared_mmsi_without_imo_allows_review():
+    result = evaluate_attack_candidate([
+        item("a", "authority", imo=None),
+        item("b", "press", imo=None),
+    ])
+    assert result["status"] == "candidate_for_analyst_review"
+
+
+def test_negative_uncertainty_rejected():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", uncertainty_km=-100),
+    ])
+    assert result["status"] == "insufficient_evidence"
+
+def test_conflicting_third_claim_cannot_be_ignored():
+    evidence = [item("a", "authority"), item("b", "press"),
+                item("c", "other", imo="9999999")]
+    assert evaluate_attack_candidate(evidence)["status"] == "insufficient_evidence"
+    assert evaluate_attack_candidate(list(reversed(evidence)))["status"] == "insufficient_evidence"
+
+
+def test_duplicate_article_url_with_different_source_id_is_one_source():
+    evidence = [item("a", "authority"),
+                item("b", "press", source_url="https://example.org/a?utm_source=copy")]
+    result = evaluate_attack_candidate(evidence)
+    assert result["status"] == "insufficient_evidence"
+    assert "duplicate_source" in result["reasons"]
+
+def test_same_source_id_with_different_urls_is_not_independent():
+    result = evaluate_attack_candidate([
+        item("authority-1", "authority"),
+        item("authority-1", "press", source_url="https://different.example.org/story"),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "duplicate_source" in result["reasons"]
+
+
+def test_nan_coordinate_cannot_bypass_spatial_gate():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", position=(float("nan"), 30.0)),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_position" in result["reasons"]
+
+
+def test_infinite_uncertainty_cannot_bypass_spatial_gate():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", uncertainty_km=float("inf")),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_position" in result["reasons"]
+
+def test_invalid_imo_checksum_fails_closed():
+    result = evaluate_attack_candidate([item("a", "official"), item("b", "press", imo="9348626")])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_vessel_identifier" in result["reasons"]
+
+
+def test_invalid_mmsi_length_fails_closed():
+    result = evaluate_attack_candidate([item("a", "official"), item("b", "press", mmsi="63601953")])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_vessel_identifier" in result["reasons"]
+
+
+def test_nan_matching_threshold_cannot_bypass_spatial_check():
+    result = evaluate_attack_candidate([item("a", "official"), item("b", "press")], max_km=float("nan"))
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_matching_threshold" in result["reasons"]
+
+
+def test_valid_contship_jet_identifiers_still_match():
+    result = evaluate_attack_candidate([item("a", "official"), item("b", "press")])
+    assert result["status"] == "candidate_for_analyst_review"
+
+
+def test_two_publishers_same_primary_origin_are_not_independent():
+    result = evaluate_attack_candidate([
+        item("ministry", "government", primary_origin_id="BG-MOD-2026-10-28"),
+        item("newspaper", "press", primary_origin_id="bg-mod-2026-10-28"),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "duplicate_source" in result["reasons"]
+
+
+def test_distinct_primary_origins_allow_analyst_review():
+    result = evaluate_attack_candidate([
+        item("ministry", "government", primary_origin_id="BG-MOD-2026-10-28"),
+        item("prosecutor", "judiciary", primary_origin_id="BG-PROSECUTOR-2026-10-29"),
+    ])
+    assert result["status"] == "candidate_for_analyst_review"
+    assert {row["primary_origin_id"] for row in result["sources"]} == {
+        "BG-MOD-2026-10-28", "BG-PROSECUTOR-2026-10-29"
+    }
+
+
+def test_case_variant_source_id_is_not_independent():
+    result = evaluate_attack_candidate([item("SOURCE", "government"), item("source", "press")])
+    assert result["status"] == "insufficient_evidence"
+    assert "duplicate_source" in result["reasons"]
+
+
+def test_case_variant_independence_group_is_one_group():
+    result = evaluate_attack_candidate([item("a", "Government"), item("b", " government ")])
+    assert result["status"] == "insufficient_evidence"
+    assert "fewer_than_two_independent_attack_claims" in result["reasons"]
+
+
+def test_blank_provenance_identifiers_fail_closed():
+    for overrides in ({"source_id": "  "}, {"independent_group": "  "}):
+        result = evaluate_attack_candidate([item("a", "authority"), item("b", "press", **overrides)])
+        assert result["status"] == "insufficient_evidence"
+        assert "missing_provenance" in result["reasons"]
+
+
+def test_malformed_https_authorities_fail_closed():
+    for bad_url in ("https://", "https:///no-host", "https://user:pass@example.org/report",
+                    "https://[broken/report"):
+        result = evaluate_attack_candidate([item("a", "authority"), item("b", "press", source_url=bad_url)])
+        assert result["status"] == "insufficient_evidence"
+        assert "missing_provenance" in result["reasons"]
+
+
+def test_malformed_https_ports_and_whitespace_fail_closed():
+    for bad_url in ("https://example.org:abc/report", "https://example.org:99999/report",
+                    "https://example.org /report", "https://example.org/report\tbad"):
+        result = evaluate_attack_candidate([
+            item("a", "authority"), item("b", "press", source_url=bad_url),
+        ])
+        assert result["status"] == "insufficient_evidence"
+        assert "missing_provenance" in result["reasons"]
+
+
+
+def test_boolean_coordinates_cannot_pass_as_latitude():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", position=(True, 30.0)),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_position" in result["reasons"]
+
+
+def test_unbounded_uncertainty_cannot_join_distant_incidents():
+    result = evaluate_attack_candidate([
+        item("a", "authority", position=(41.0, 30.0)),
+        item("b", "press", position=(10.0, 10.0), uncertainty_km=5000),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_position" in result["reasons"]
+
+
+def test_boolean_uncertainty_is_not_a_valid_measurement():
+    result = evaluate_attack_candidate([
+        item("a", "authority"),
+        item("b", "press", uncertainty_km=True),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "invalid_position" in result["reasons"]
+
+
+def test_invalid_matching_threshold_types_fail_closed():
+    for invalid in (True, False, "75", None, [], {}):
+        for parameter in ("max_km", "max_hours"):
+            result = evaluate_attack_candidate(
+                [item("a", "official"), item("b", "press")], **{parameter: invalid}
+            )
+            assert result["status"] == "insufficient_evidence"
+            assert "invalid_matching_threshold" in result["reasons"]
+            assert result["automatic_publication"] is False
+
+
+def test_non_string_vessel_identifiers_fail_closed_without_exception():
+    for invalid in (True, False, 9348625, 636019532, [], {}):
+        for identifier in ("imo", "mmsi"):
+            result = evaluate_attack_candidate([
+                item("a", "official"), item("b", "press", **{identifier: invalid})
+            ])
+            assert result["status"] == "insufficient_evidence"
+            assert "invalid_vessel_identifier" in result["reasons"]
+            assert result["automatic_publication"] is False
+
+
+def test_non_string_timestamps_fail_closed_without_exception():
+    for field in ("event_at", "published_at", "received_at"):
+        for invalid in (None, True, 0, [], {}):
+            result = evaluate_attack_candidate([
+                item("a", "official"), item("b", "press", **{field: invalid}),
+            ])
+            assert result["status"] == "insufficient_evidence"
+            assert "invalid_timestamp" in result["reasons"]
+            assert result["automatic_publication"] is False
+
+
+def test_missing_primary_origin_cannot_corroborate_even_with_distinct_publishers():
+    result = evaluate_attack_candidate([
+        item("a", "authority", primary_origin_id=None),
+        item("b", "press", primary_origin_id="press-original-report"),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "unverified_primary_origin" in result["reasons"]
+    assert result["automatic_publication"] is False
+
+
+def test_blank_primary_origin_fails_closed():
+    result = evaluate_attack_candidate([
+        item("a", "authority", primary_origin_id="   "),
+        item("b", "press", primary_origin_id="press-original-report"),
+    ])
+    assert result["status"] == "insufficient_evidence"
+    assert "unverified_primary_origin" in result["reasons"]
