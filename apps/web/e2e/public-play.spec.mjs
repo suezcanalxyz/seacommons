@@ -137,3 +137,43 @@ test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence w
   // This visual artifact test does not prove cluster expansion or dossier completeness.
   // A dedicated WebGL-enabled cluster interaction gate is still required before release.
 });
+
+
+test('MapLibre cluster expansion preserves every synthetic archive dossier', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.addInitScript(() => { window.__SEACOMMONS_E2E_MAP__ = true; });
+  await page.goto(PUBLIC_PLAY_URL);
+  await expect.poll(() => page.evaluate(() => Boolean(window.__SEACOMMONS_PLAY_MAP__))).toBe(true);
+  const cluster = await page.evaluate(() => {
+    const map = window.__SEACOMMONS_PLAY_MAP__;
+    const features = map.queryRenderedFeatures({ layers: ['play-clusters'] });
+    const feature = features.find(item => item.properties?.point_count >= 3);
+    if (!feature) return null;
+    const point = map.project(feature.geometry.coordinates);
+    return { x: point.x, y: point.y, count: feature.properties.point_count };
+  });
+  expect(cluster, 'three nearby historical observations must form a low-zoom cluster').not.toBeNull();
+  expect(cluster.count).toBe(3);
+  const canvas = page.locator('.maplibregl-canvas');
+  const box = await canvas.boundingBox();
+  await page.mouse.click(box.x + cluster.x, box.y + cluster.y);
+  await expect.poll(() => page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__.getZoom())).toBeGreaterThan(3.55);
+  // At detail zoom the original observations must remain individually selectable.
+  await page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__.jumpTo({ center: [15.1, 35.6], zoom: 10 }));
+  const observations = [
+    ['play-humanitarian-1', [14.1, 35.2], 'Historical distress'],
+    ['play-maritime-1', [15.1, 36.0], 'Historical safety report'],
+    ['play-correlated-1', [16.0, 35.8], 'Reviewed correlated case'],
+  ];
+  for (const [id, coordinates, title] of observations) {
+    const point = await page.evaluate(coords => {
+      const map = window.__SEACOMMONS_PLAY_MAP__;
+      const p = map.project(coords);
+      return { x: p.x, y: p.y };
+    }, coordinates);
+    const bounds = await canvas.boundingBox();
+    await page.mouse.click(bounds.x + point.x, bounds.y + point.y);
+    await expect(page.locator('.play-evidence.is-open h2')).toContainText(title);
+    await expect(page.locator('.play-evidence.is-open')).toBeVisible();
+  }
+});
