@@ -161,7 +161,19 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium and system dependencies (bounded retry for transient apt/DNS failures)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo "Playwright dependency installation failed after 3 attempts" >&2
+              exit 1
+            fi
+            sleep $((attempt * 20))
+          done
       - run: npm run test:e2e
 
   # Release-specific MapLibre gate: Leaflet fallback must not count as a passing test.
@@ -181,7 +193,19 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium and system dependencies (bounded retry for transient apt/DNS failures)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo "Playwright dependency installation failed after 3 attempts" >&2
+              exit 1
+            fi
+            sleep $((attempt * 20))
+          done
       - name: Require MapLibre WebGL on both desktop and mobile
         run: npx playwright test e2e/public-play.spec.mjs --grep 'MapLibre PLAY captures continent|MapLibre cluster expansion preserves'
       - name: Upload visual evidence even if WebGL gate fails
@@ -207,7 +231,19 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium and system dependencies (bounded retry for transient apt/DNS failures)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo "Playwright dependency installation failed after 3 attempts" >&2
+              exit 1
+            fi
+            sleep $((attempt * 20))
+          done
       - run: npm run test:e2e:production
 
   edge:
