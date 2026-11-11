@@ -365,10 +365,9 @@ class TrackStore:
                     # the archived payload can actually be restored as rows.
                     # Fail closed before DELETE on invalid gzip, schema drift,
                     # truncated JSON, or an altered row set.
-                    try:
-                        restored = json.loads(gzip.decompress(verified))
-                    except (OSError, EOFError, ValueError, UnicodeDecodeError) as exc:
-                        raise ValueError("AIS cold archive is not restorable") from exc
+                    # Parsing errors propagate out of session_scope, rolling back
+                    # the transaction. No exception is swallowed under the lock.
+                    restored = json.loads(gzip.decompress(verified))
                     if (not isinstance(restored, dict)
                             or restored.get("schema") != "vessel_tracks_v1"
                             or restored.get("rows") != payload):
