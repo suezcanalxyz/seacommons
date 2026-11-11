@@ -398,6 +398,8 @@ export default function PlayTimeline({ apiBase }) {
           map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
           map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
         }
+        // Explicitly opt-in for deterministic browser E2E; never enabled for normal visitors.
+        if (window.__SEACOMMONS_E2E_MAP__ === true) window.__SEACOMMONS_PLAY_MAP__ = map;
         mapRef.current = map;
         map.resize();
         setMapError('');
