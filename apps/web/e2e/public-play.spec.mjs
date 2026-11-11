@@ -166,6 +166,11 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
     }));
     throw new Error(`MapLibre cluster gate failed: ${JSON.stringify({ ...diagnostic, errors: rendererErrors.slice(-10).map(item => item.slice(0, 350)) })}; cause=${error.message}`);
   }
+  // Map construction alone is not a functional cluster gate: require installed layers.
+  await expect.poll(() => page.evaluate(() => {
+    const map = window.__SEACOMMONS_PLAY_MAP__;
+    return Boolean(map?.getLayer('play-clusters') && map?.getSource('play-incidents'));
+  }), { timeout: 15000, intervals: [250, 500, 1000] }).toBe(true);
   const cluster = await page.evaluate(() => {
     const map = window.__SEACOMMONS_PLAY_MAP__;
     const features = map.queryRenderedFeatures({ layers: ['play-clusters'] });
