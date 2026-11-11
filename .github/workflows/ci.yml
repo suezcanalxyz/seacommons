@@ -183,7 +183,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Require MapLibre WebGL on both desktop and mobile
-        run: npx playwright test e2e/public-play.spec.mjs --grep 'MapLibre PLAY captures continent'
+        run: npx playwright test e2e/public-play.spec.mjs --grep 'MapLibre PLAY captures continent|MapLibre cluster expansion preserves'
       - name: Upload visual evidence even if WebGL gate fails
         if: always()
         uses: actions/upload-artifact@v4
