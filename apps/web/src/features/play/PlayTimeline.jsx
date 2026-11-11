@@ -314,6 +314,8 @@ export default function PlayTimeline({ apiBase }) {
         attributionControl: false,
       });
       map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'bottom-right');
+      // Opt-in E2E diagnostics must distinguish Map construction from style loading.
+      if (window.__SEACOMMONS_E2E_MAP__ === true) window.__SEACOMMONS_PLAY_MAP__ = map;
       map.on('load', () => {
         if (disposed) return;
         map.addImage('vessel-arrow', createVesselArrowImage(48), { sdf: true });
@@ -399,7 +401,6 @@ export default function PlayTimeline({ apiBase }) {
           map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
         }
         // Explicitly opt-in for deterministic browser E2E; never enabled for normal visitors.
-        if (window.__SEACOMMONS_E2E_MAP__ === true) window.__SEACOMMONS_PLAY_MAP__ = map;
         mapRef.current = map;
         map.resize();
         setMapError('');
@@ -440,6 +441,7 @@ export default function PlayTimeline({ apiBase }) {
       disposed = true;
       try { mapRef.current?.remove(); } catch { /* already removed */ }
       mapRef.current = null;
+      if (window.__SEACOMMONS_E2E_MAP__ === true) delete window.__SEACOMMONS_PLAY_MAP__;
       fallbackMapRef.current?.destroy();
       fallbackMapRef.current = null;
     };
