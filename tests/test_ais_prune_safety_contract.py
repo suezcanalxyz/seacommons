@@ -485,5 +485,5 @@ def test_prune_requires_restorable_gzip_schema_and_exact_rows_before_delete():
     )
     offsets = [body.index(fragment) for fragment in checks]
     assert offsets == sorted(offsets), "Restore and row equality must precede DELETE"
-    assert 'raise ValueError("AIS cold archive is not restorable")' in body
+    assert not any(isinstance(node, ast.ExceptHandler) for node in ast.walk(_prune()))
     assert 'raise ValueError("AIS cold archive row equivalence failed")' in body
