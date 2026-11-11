@@ -366,3 +366,12 @@ test('Play case dossier renders the selected satellite quicklook asset', async (
   assert.match(source, /satelliteProps\.asset_ref/);
   assert.match(source, /Satellite quicklook/);
 });
+
+test('archive markers preserve unknown heading instead of inventing northward travel', () => {
+  const collection = incidentCollection([{ incident_id: 'aisanom:missing-course', case_type: 'ais_anomaly', domain: 'maritime', reported_at: '2026-11-01T12:00:00Z', geometry: { type: 'Point', coordinates: [14, 35] } }]);
+  assert.equal(collection.features[0].properties.has_course, false);
+  assert.equal(collection.features[0].properties.marker_kind, 'vessel');
+  const observed = incidentCollection([{ incident_id: 'aisanom:observed', case_type: 'ais_anomaly', domain: 'maritime', course: 217, reported_at: '2026-11-01T12:00:00Z', geometry: { type: 'Point', coordinates: [14, 35] } }]);
+  assert.equal(observed.features[0].properties.has_course, true);
+  assert.equal(observed.features[0].properties.course, 217);
+});
