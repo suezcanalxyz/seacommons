@@ -171,6 +171,16 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
     const map = window.__SEACOMMONS_PLAY_MAP__;
     return Boolean(map?.getLayer('play-clusters') && map?.getSource('play-incidents'));
   }), { timeout: 15000, intervals: [250, 500, 1000] }).toBe(true);
+  // Verify the upstream archive contract before diagnosing MapLibre rendering.
+  const archiveList = page.locator('.play-cases__list');
+  for (const title of ['Historical distress', 'Historical safety report', 'Reviewed correlated case']) {
+    await expect(archiveList.getByText(title, { exact: true })).toBeVisible();
+  }
+  // An installed source is not necessarily loaded; keep this a hard WebGL gate.
+  await expect.poll(() => page.evaluate(() => {
+    const map = window.__SEACOMMONS_PLAY_MAP__;
+    return Boolean(map?.getSource('play-incidents') && map?.isSourceLoaded('play-incidents'));
+  }), { timeout: 15000, intervals: [250, 500, 1000] }).toBe(true);
   // A layer can exist before the GeoJSON worker has finished setData. At zoom 1,
   // all three historical fixtures are close enough to test low-zoom grouping.
   await page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__.jumpTo({ center: [15.1, 35.6], zoom: 1 }));
