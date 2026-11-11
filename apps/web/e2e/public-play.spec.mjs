@@ -182,7 +182,30 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
     const point = map.project(feature.geometry.coordinates);
     return { x: point.x, y: point.y, count: feature.properties.point_count };
   });
-  await expect.poll(readCluster, { timeout: 15000, intervals: [250, 500, 1000] }).not.toBeNull();
+  try {
+    await expect.poll(readCluster, { timeout: 15000, intervals: [250, 500, 1000] }).not.toBeNull();
+  } catch (error) {
+    // Source readiness and rendered visibility are different evidence layers.
+    // Preserve a bounded diagnostic without exposing any real-world coordinates.
+    const diagnostics = await page.evaluate(() => {
+      const map = window.__SEACOMMONS_PLAY_MAP__;
+      const source = map?.getSource('play-incidents');
+      const rendered = map?.queryRenderedFeatures({ layers: ['play-clusters'] }) || [];
+      const sourceFeatures = map?.querySourceFeatures('play-incidents') || [];
+      return {
+        zoom: map?.getZoom(),
+        styleLoaded: map?.isStyleLoaded(),
+        sourceLoaded: map?.isSourceLoaded('play-incidents'),
+        sourcePresent: Boolean(source),
+        clusterLayerVisible: map?.getLayoutProperty('play-clusters', 'visibility') !== 'none',
+        sourceFeatureCount: sourceFeatures.length,
+        sourceClusterCounts: sourceFeatures.filter(f => f.properties?.cluster).map(f => f.properties?.point_count).slice(0, 20),
+        renderedClusterCounts: rendered.map(f => f.properties?.point_count).slice(0, 20),
+        fixtureIds: sourceFeatures.filter(f => !f.properties?.cluster).map(f => f.properties?.incident_id).filter(Boolean).slice(0, 10),
+      };
+    });
+    throw new Error(`MapLibre cluster evidence mismatch: ${JSON.stringify(diagnostics)}; cause=${error.message}`);
+  }
   const cluster = await readCluster();
   expect(cluster, 'three nearby historical observations must form a low-zoom cluster').not.toBeNull();
   expect(cluster.count).toBe(3);
