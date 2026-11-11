@@ -3624,17 +3624,7 @@ function App() {
       )}
       <section className="map-stage">
         <div className={`map-frame ${play3D ? 'is-concealed' : ''}`} ref={mapNodeRef} />
-        {isPublicLiveHost && !play3D ? (
-          <button
-            type="button"
-            className="live-basemap-switch"
-            aria-label={baseMap === 'satellite' ? 'Switch to standard map' : 'Switch to satellite map'}
-            aria-pressed={baseMap === 'satellite'}
-            onClick={() => setBaseMap((current) => current === 'satellite' ? 'standard' : 'satellite')}
-          >
-            {baseMap === 'satellite' ? 'Map' : 'Satellite'}
-          </button>
-        ) : null}
+
         {APP_PROFILE === 'demo' ? (
           <PlayCesium
             active={play3D && playRenderer === 'cesium'}
@@ -4371,6 +4361,17 @@ function App() {
 
         </div>
       </section>
+        {isPublicLiveHost && !play3D ? (
+          <button
+            type="button"
+            className="live-basemap-switch"
+            aria-label={baseMap === 'satellite' ? 'Switch to standard map' : 'Switch to satellite map'}
+            aria-pressed={baseMap === 'satellite'}
+            onClick={() => setBaseMap((current) => current === 'satellite' ? 'standard' : 'satellite')}
+          >
+            {baseMap === 'satellite' ? 'Map' : 'Satellite'}
+          </button>
+        ) : null}
         </>
       ) : null}
     </main>
