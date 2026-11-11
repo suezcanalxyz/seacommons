@@ -361,6 +361,18 @@ class TrackStore:
                     verified = object_store.get(key)
                     if hashlib.sha256(verified).hexdigest() != digest:
                         raise ValueError("AIS cold archive integrity check failed")
+                    # A matching object checksum proves byte equality, not that
+                    # the archived payload can actually be restored as rows.
+                    # Fail closed before DELETE on invalid gzip, schema drift,
+                    # truncated JSON, or an altered row set.
+                    try:
+                        restored = json.loads(gzip.decompress(verified))
+                    except (OSError, EOFError, ValueError, UnicodeDecodeError) as exc:
+                        raise ValueError("AIS cold archive is not restorable") from exc
+                    if (not isinstance(restored, dict)
+                            or restored.get("schema") != "vessel_tracks_v1"
+                            or restored.get("rows") != payload):
+                        raise ValueError("AIS cold archive row equivalence failed")
                     ids = [r.id for r in rows]
                     n = (db.query(VesselTrackDB).filter(VesselTrackDB.id.in_(ids),
                               VesselTrackDB.ts < cutoff).delete(synchronize_session=False))
