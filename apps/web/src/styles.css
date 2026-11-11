@@ -4162,3 +4162,26 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   .sc-mobile-guide__body h3 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: #a9ffda; }
   .sc-mobile-guide__body p { font-size: 13px; line-height: 1.55; margin: 10px 0; }
 }
+
+/* Public Live basemap: visible on mobile top-right and desktop beside map controls. */
+.live-basemap-switch {
+  position: absolute;
+  z-index: 35;
+  top: 70px;
+  right: 12px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(169,255,218,.42);
+  border-radius: 8px;
+  background: rgba(4,16,22,.92);
+  color: #e5fff4;
+  font: 11px var(--font-mono);
+  letter-spacing: .035em;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+}
+.live-basemap-switch:focus-visible { outline: 2px solid #a9ffda; outline-offset: 3px; }
+.live-basemap-switch[aria-pressed="true"] { border-color: #a9ffda; }
+@media (max-width: 820px) {
+  .live-basemap-switch { top: 12px; right: 12px; min-height: 40px; }
+}
