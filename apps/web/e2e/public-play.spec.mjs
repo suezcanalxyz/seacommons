@@ -144,6 +144,17 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.addInitScript(() => { window.__SEACOMMONS_E2E_MAP__ = true; });
   const rendererErrors = [];
+  const failedWorkerRequests = [];
+  page.on('response', response => {
+    if (/maplibre-gl-worker/i.test(response.url()) && response.status() >= 400) {
+      failedWorkerRequests.push(`${response.status()} ${response.url()}`);
+    }
+  });
+  page.on('requestfailed', request => {
+    if (/maplibre-gl-worker/i.test(request.url())) {
+      failedWorkerRequests.push(`${request.failure()?.errorText || 'request failed'} ${request.url()}`);
+    }
+  });
   page.on('pageerror', error => rendererErrors.push(`pageerror: ${error.message}`));
   page.on('console', message => {
     if (message.type() === 'error' || message.text().includes('PLAY_MAP_RENDERER_FALLBACK')) {
@@ -164,7 +175,7 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
       fallbackMaps: document.querySelectorAll('.leaflet-container').length,
       visibleError: document.querySelector('.play-map-error')?.textContent?.trim() || null,
     }));
-    throw new Error(`MapLibre cluster gate failed: ${JSON.stringify({ ...diagnostic, errors: rendererErrors.slice(-10).map(item => item.slice(0, 350)) })}; cause=${error.message}`);
+    throw new Error(`MapLibre cluster gate failed: ${JSON.stringify({ ...diagnostic, errors: rendererErrors.slice(-10).map(item => item.slice(0, 350)), failedWorkerRequests })}; cause=${error.message}`);
   }
   // Map construction alone is not a functional cluster gate: require installed layers.
   await expect.poll(() => page.evaluate(() => {
@@ -181,6 +192,7 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
     const map = window.__SEACOMMONS_PLAY_MAP__;
     return Boolean(map?.getSource('play-incidents') && map?.isSourceLoaded('play-incidents'));
   }), { timeout: 15000, intervals: [250, 500, 1000] }).toBe(true);
+  expect(failedWorkerRequests, 'MapLibre worker must not return 404 or fail to load').toEqual([]);
   // A layer can exist before the GeoJSON worker has finished setData. At zoom 1,
   // all three historical fixtures are close enough to test low-zoom grouping.
   await page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__.jumpTo({ center: [15.1, 35.6], zoom: 1 }));
