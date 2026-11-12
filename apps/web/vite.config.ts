@@ -10,6 +10,11 @@ export default defineConfig(({mode}) => {
   return {
     base: publicBase,
     plugins: [react()],
+    // MapLibre ships its own Web Worker bundle. Vite's dev dependency
+    // optimizer can rewrite the worker URL to a missing .vite/deps asset,
+    // leaving the PLAY GeoJSON source permanently unloaded in WebGL E2E.
+    // Keep the package on Vite's native module/worker path instead.
+    optimizeDeps: { exclude: ['maplibre-gl'] },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
