@@ -28,7 +28,9 @@ def evaluate(reports: list[Report]) -> dict:
     allowed = [r for r in reports if r.domain == "maritime_security"
                and not r.has_sensitive_geometry]
     event_ids = {r.event_id for r in allowed if r.kind == "reported_event"}
-    same_event = len(event_ids) == 1 and None not in event_ids
+    same_event = (len(event_ids) == 1 and all(
+        r.event_id is not None for r in allowed if r.kind == "reported_event"
+    ))
     origins = {r.origin for r in allowed
                if r.origin and r.kind == "reported_event"}
     vessels = {r.vessel for r in allowed if r.vessel}
@@ -99,6 +101,12 @@ class IncidentLineageControls(unittest.TestCase):
 
     def test_missing_event_identity_abstains(self):
         result = evaluate([Report("A", "A"), Report("B", "B")])
+        self.assertFalse(result["same_event"])
+        self.assertFalse(result["eligible_for_human_review"])
+
+    def test_partial_missing_event_identity_abstains(self):
+        result = evaluate([Report("A", "A", event_id="case-1"),
+                           Report("B", "B", event_id=None)])
         self.assertFalse(result["same_event"])
         self.assertFalse(result["eligible_for_human_review"])
 
