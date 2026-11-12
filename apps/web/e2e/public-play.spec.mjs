@@ -129,7 +129,12 @@ test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence w
       expect(delta).toBeGreaterThanOrEqual(0);
       for (let i = 0; i < delta; i++) await zoomIn.click();
       currentZoomSteps = targetZoomSteps;
-      await page.waitForTimeout(350);
+      // Wait for actual MapLibre rendering, not an arbitrary animation delay.
+      // A screenshot of a pending tile/source is not valid visual evidence.
+      await expect.poll(() => page.evaluate(() => {
+        const map = window.__SEACOMMONS_PLAY_MAP__;
+        return Boolean(map && map.loaded() && map.isSourceLoaded('play-incidents'));
+      }), { timeout: 15000, intervals: [250, 500, 1000] }).toBe(true);
       await page.screenshot({ path: testInfo.outputPath(`play-maplibre-${viewport.width}-${label}.png`), fullPage: true });
       await expect(page.locator('.play-map-error')).toHaveCount(0);
     }
