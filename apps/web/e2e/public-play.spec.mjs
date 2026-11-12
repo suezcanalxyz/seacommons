@@ -147,7 +147,6 @@ test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence w
 
 test('MapLibre cluster expansion preserves every synthetic archive dossier', async ({ page }) => {
   test.skip(process.env.SEACOMMONS_REQUIRE_WEBGL !== '1', 'Cluster interaction requires the dedicated WebGL-enabled release gate');
-  await page.setViewportSize({ width: 1280, height: 800 });
   await page.addInitScript(() => { window.__SEACOMMONS_E2E_MAP__ = true; });
   const rendererErrors = [];
   const failedWorkerRequests = [];
@@ -167,6 +166,8 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
       rendererErrors.push(`console: ${message.text()}`);
     }
   });
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+  await page.setViewportSize(viewport);
   await page.goto(PUBLIC_PLAY_URL);
   try {
     await expect.poll(() => page.evaluate(() => Boolean(window.__SEACOMMONS_PLAY_MAP__)), {
@@ -181,7 +182,7 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
       fallbackMaps: document.querySelectorAll('.leaflet-container').length,
       visibleError: document.querySelector('.play-map-error')?.textContent?.trim() || null,
     }));
-    throw new Error(`MapLibre cluster gate failed: ${JSON.stringify({ ...diagnostic, errors: rendererErrors.slice(-10).map(item => item.slice(0, 350)), failedWorkerRequests })}; cause=${error.message}`);
+    throw new Error(`MapLibre cluster gate failed at ${viewport.width}x${viewport.height}: ${JSON.stringify({ ...diagnostic, errors: rendererErrors.slice(-10).map(item => item.slice(0, 350)), failedWorkerRequests })}; cause=${error.message}`);
   }
   // Map construction alone is not a functional cluster gate: require installed layers.
   await expect.poll(() => page.evaluate(() => {
@@ -232,7 +233,7 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
         fixtureIds: sourceFeatures.filter(f => !f.properties?.cluster).map(f => f.properties?.incident_id).filter(Boolean).slice(0, 10),
       };
     });
-    throw new Error(`MapLibre cluster evidence mismatch: ${JSON.stringify(diagnostics)}; cause=${error.message}`);
+    throw new Error(`MapLibre cluster evidence mismatch at ${viewport.width}x${viewport.height}: ${JSON.stringify(diagnostics)}; cause=${error.message}`);
   }
   const cluster = await readCluster();
   expect(cluster, 'three nearby historical observations must form a low-zoom cluster').not.toBeNull();
@@ -264,5 +265,6 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
     await page.mouse.click(bounds.x + point.x, bounds.y + point.y);
     await expect(page.locator('.play-evidence.is-open h2')).toContainText(title);
     await expect(page.locator('.play-evidence.is-open')).toBeVisible();
+  }
   }
 });
