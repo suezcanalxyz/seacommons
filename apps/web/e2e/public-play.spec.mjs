@@ -83,6 +83,7 @@ test('desktop and mobile Play preserve archive navigation with MapLibre or the s
 
 
 test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence when WebGL is available', async ({ page }, testInfo) => {
+  await page.addInitScript(() => { window.__SEACOMMONS_E2E_MAP__ = true; });
   const rendererErrors = [];
   page.on('pageerror', error => rendererErrors.push(`pageerror: ${error.message}`));
   page.on('console', message => { if (message.type() === 'error' || message.text().includes('[PLAY_MAP_RENDERER_FALLBACK]')) rendererErrors.push(`console: ${message.text()}`); });
