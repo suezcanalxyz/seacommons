@@ -3,7 +3,7 @@ name: Full CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, fix/play-zoom-clusters-20261109]
   workflow_dispatch:
 
 permissions:
