@@ -257,6 +257,7 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
   ]);
   const canvas = page.locator('.maplibregl-canvas');
   const box = await canvas.boundingBox();
+  expect(box, 'MapLibre canvas must have a measurable click target').not.toBeNull();
   await page.mouse.click(box.x + cluster.x, box.y + cluster.y);
   await expect.poll(() => page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__.getZoom())).toBeGreaterThan(1);
   // At detail zoom the original observations must remain individually selectable.
