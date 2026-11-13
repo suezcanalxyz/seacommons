@@ -367,6 +367,42 @@ test('Play case dossier renders the selected satellite quicklook asset', async (
   assert.match(source, /Satellite quicklook/);
 });
 
+
+test('Play zoom clusters preserve all original archive records and expand on click', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /cluster: true, clusterMaxZoom: 7, clusterRadius: 42/);
+  assert.match(source, /id: 'play-clusters'/);
+  assert.match(source, /getClusterExpansionZoom\(clusterId\)/);
+  assert.match(source, /map\.easeTo\(\{ center: coordinates/);
+  assert.match(source, /\['!', \['has', 'point_count'\]\]/);
+  assert.match(source, /map\.getSource\('play-incidents'\)\?\.setData\(incidentCollection\(filteredIncidents\)\)/);
+  assert.doesNotMatch(source, /getClusterLeaves\([^)]*\)\.slice\(/);
+});
+
+
+test('Play vessel zoom interpolation survives selected-case update effect', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /map\.setLayoutProperty\('play-vessels', 'icon-size', \['case',[^\n]*\['interpolate', \['linear'\], \['zoom'\], 3, 0\.20, 7, 0\.34, 10, 0\.46\]\]\)/);
+  assert.doesNotMatch(source, /map\.setLayoutProperty\('play-vessels', 'icon-size', \['case', [^\n]*0\.46, 0\.34\]\)/);
+});
+
+
+test('Play cluster clicks only expand and never select a synthetic incident', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /map\.on\('click', 'play-clusters', async \(event\) => \{/);
+  assert.match(source, /for \(const layerId of \['play-incidents', 'play-vessels'\]\) \{/);
+  assert.doesNotMatch(source, /for \(const layerId of \['play-clusters', 'play-incidents', 'play-vessels'\]\)/);
+});
+
+
+test('Play cluster hover advertises expansion without changing dossier selection', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /map\.on\('mouseenter', 'play-clusters', \(\) => \{ map\.getCanvas\(\)\.style\.cursor = 'pointer'; \}\)/);
+  assert.match(source, /map\.on\('mouseleave', 'play-clusters', \(\) => \{ map\.getCanvas\(\)\.style\.cursor = ''; \}\)/);
+  assert.match(source, /map\.on\('click', 'play-clusters', async \(event\) => \{/);
+  assert.doesNotMatch(source, /map\.on\('click', 'play-clusters', selectArchiveFeature\)/);
+});
+
 test('archive markers preserve unknown heading instead of inventing northward travel', () => {
   const collection = incidentCollection([{ incident_id: 'aisanom:missing-course', case_type: 'ais_anomaly', domain: 'maritime', reported_at: '2026-11-01T12:00:00Z', geometry: { type: 'Point', coordinates: [14, 35] } }]);
   assert.equal(collection.features[0].properties.has_course, false);
@@ -374,4 +410,20 @@ test('archive markers preserve unknown heading instead of inventing northward tr
   const observed = incidentCollection([{ incident_id: 'aisanom:observed', case_type: 'ais_anomaly', domain: 'maritime', course: 217, reported_at: '2026-11-01T12:00:00Z', geometry: { type: 'Point', coordinates: [14, 35] } }]);
   assert.equal(observed.features[0].properties.has_course, true);
   assert.equal(observed.features[0].properties.course, 217);
+});
+
+test('PLAY merge keeps cluster suppression and unknown-course circle fallback together', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /filter: \['all', \['!', \['has', 'point_count'\]\], \['any', \['!=', \['get', 'marker_kind'\], 'vessel'\], \['!=', \['get', 'has_course'\], true\]\]\]/);
+  assert.match(source, /filter: \['all', \['!', \['has', 'point_count'\]\], \['==', \['get', 'marker_kind'\], 'vessel'\], \['==', \['get', 'has_course'\], true\]\]/);
+});
+
+
+test('PLAY responsive dossier and camera reserve a map corridor', async () => {
+  const css = await readFile(new URL('./play.css', import.meta.url), 'utf8');
+  const jsx = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(css, /width: min\(320px, calc\(\(100vw - var\(--live-panel-width\)\) \* \.44\)\)/);
+  assert.match(css, /top: 48dvh/);
+  assert.match(jsx, /right: 340/);
+  assert.match(jsx, /window\.innerHeight \* 0\.52/);
 });

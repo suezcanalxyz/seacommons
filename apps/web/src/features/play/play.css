@@ -197,7 +197,7 @@
   }
   .play-timeline-bar__label span { display: none; }
   .play-evidence {
-    top: 34dvh;
+    top: 48dvh;
     right: 0;
     bottom: 62px;
     left: 0;
@@ -297,6 +297,8 @@
   position: fixed;
   overflow-y: auto;
   z-index: 1180;
+  /* Reserve a central map corridor between archive and dossier on desktop. */
+  width: min(320px, calc((100vw - var(--live-panel-width)) * .44));
 }
 @media (max-width: 680px) {
   .cop-shell.is-live-mode.play-public-shell .cone-panel.play-evidence {

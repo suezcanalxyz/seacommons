@@ -53,3 +53,331 @@ test('mobile Play keeps an interactive archive map when MapLibre cannot initiali
   await expect(dossier).toBeVisible();
   await expect(dossier.locator('h2')).toContainText('Historical distress');
 });
+
+
+test('desktop and mobile Play preserve archive navigation with MapLibre or the supported fallback', async ({ page }, testInfo) => {
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(PUBLIC_PLAY_URL);
+    // CI Chromium can lack WebGL: PLAY intentionally switches to Leaflet then.
+    // Assert the actual supported renderer rather than falsely requiring WebGL.
+    const canvas = page.locator('.maplibregl-canvas');
+    const fallback = page.locator('.leaflet-container');
+    await expect.poll(async () => (await canvas.count()) + (await fallback.count())).toBeGreaterThan(0);
+    const renderer = await canvas.count() ? 'maplibre' : 'leaflet';
+    await expect(renderer === 'maplibre' ? canvas : fallback).toBeVisible();
+    await expect(page.locator('.play-map-error')).toHaveCount(0);
+    testInfo.annotations.push({ type: 'renderer', description: `${viewport.width}x${viewport.height}: ${renderer}` });
+    await page.screenshot({ path: testInfo.outputPath(`play-${viewport.width}-continent.png`), fullPage: true });
+    const cases = page.locator('.play-cases__list');
+    if (viewport.width < 600) {
+      // Phone layout hides the legacy toggle; navigate through the visible dock.
+      await page.getByRole('navigation', { name: 'Play navigation' }).getByRole('button', { name: 'Archive' }).click();
+      await expect(page.locator('.play-archive-panel')).toHaveClass(/is-mobile-open/);
+    }
+    await cases.getByText('Historical distress', { exact: true }).click();
+    await expect(page.locator('.play-evidence.is-open')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`play-${viewport.width}-dossier.png`), fullPage: true });
+  }
+});
+
+
+test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence when WebGL is available', async ({ page }, testInfo) => {
+  await page.addInitScript(() => { window.__SEACOMMONS_E2E_MAP__ = true; });
+  const rendererErrors = [];
+  page.on('pageerror', error => rendererErrors.push(`pageerror: ${error.message}`));
+  page.on('console', message => { if (message.type() === 'error' || message.text().includes('[PLAY_MAP_RENDERER_FALLBACK]')) rendererErrors.push(`console: ${message.text()}`); });
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(PUBLIC_PLAY_URL);
+    await expect.poll(async () =>
+      (await page.locator('.maplibregl-canvas').count()) + (await page.locator('.leaflet-container').count())
+    ).toBeGreaterThan(0);
+    if (!(await page.locator('.maplibregl-canvas').count())) {
+      await page.locator('.maplibregl-canvas').waitFor({ state: 'attached', timeout: 2500 }).catch(() => {});
+    }
+    if (!(await page.locator('.maplibregl-canvas').count())) {
+      testInfo.annotations.push({ type: 'webgl-unavailable', description: `${viewport.width}: Leaflet fallback; MapLibre visual gate NOT satisfied` });
+      // Opt-in release gate: a green fallback-only CI run is not proof of MapLibre.
+      // Run with SEACOMMONS_REQUIRE_WEBGL=1 on a WebGL-capable browser runner.
+      if (process.env.SEACOMMONS_REQUIRE_WEBGL === '1') {
+        const diagnostics = await page.evaluate(() => {
+          const probe = document.createElement('canvas');
+          const webgl2 = probe.getContext('webgl2');
+          const webgl = webgl2 || probe.getContext('webgl');
+          return {
+            webglAvailable: Boolean(webgl),
+            webglVersion: webgl?.getParameter(webgl.VERSION) || null,
+            fallbackMarkerCount: document.querySelectorAll('.seacommons-fallback-marker').length,
+            mapError: document.querySelector('.play-map-error')?.textContent?.trim() || null,
+            forcedFallback: window.__SEACOMMONS_FORCE_MAP_FALLBACK__ === true,
+          };
+        });
+        diagnostics.rendererErrors = rendererErrors.slice(-12).map(message => message.slice(0, 400));
+        testInfo.annotations.push({ type: 'webgl-diagnostics', description: JSON.stringify(diagnostics) });
+        throw new Error(`MapLibre WebGL renderer missing at ${viewport.width}x${viewport.height}; diagnostics=${JSON.stringify(diagnostics)}; release visual gate failed`);
+      }
+      continue;
+    }
+    const canvas = page.locator('.maplibregl-canvas');
+    await expect(canvas).toBeVisible();
+    const zoomIn = page.locator('.maplibregl-ctrl-zoom-in');
+    await expect(zoomIn).toBeVisible();
+    let currentZoomSteps = 0;
+    for (const [label, targetZoomSteps] of [['continent', 0], ['mediterranean', 2], ['detail', 4]]) {
+      // Targets are absolute offsets from the initial 3.55 zoom, not cumulative clicks.
+      const delta = targetZoomSteps - currentZoomSteps;
+      expect(delta).toBeGreaterThanOrEqual(0);
+      for (let i = 0; i < delta; i++) await zoomIn.click();
+      currentZoomSteps = targetZoomSteps;
+      // Wait for actual MapLibre rendering, not an arbitrary animation delay.
+      // A screenshot of a pending tile/source is not valid visual evidence.
+      await expect.poll(() => page.evaluate(() => {
+        const map = window.__SEACOMMONS_PLAY_MAP__;
+        return Boolean(map && map.loaded() && map.isSourceLoaded('play-incidents'));
+      }), { timeout: 15000, intervals: [250, 500, 1000] }).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`play-maplibre-${viewport.width}-${label}.png`), fullPage: true });
+      await expect(page.locator('.play-map-error')).toHaveCount(0);
+    }
+  }
+  // This visual artifact test does not prove cluster expansion or dossier completeness.
+  // A dedicated WebGL-enabled cluster interaction gate is still required before release.
+});
+
+
+test('MapLibre cluster expansion preserves every synthetic archive dossier', async ({ page }) => {
+  test.skip(process.env.SEACOMMONS_REQUIRE_WEBGL !== '1', 'Cluster interaction requires the dedicated WebGL-enabled release gate');
+  await page.addInitScript(() => { window.__SEACOMMONS_E2E_MAP__ = true; });
+  const rendererErrors = [];
+  const failedWorkerRequests = [];
+  page.on('response', response => {
+    if (/maplibre-gl-worker/i.test(response.url()) && response.status() >= 400) {
+      failedWorkerRequests.push(`${response.status()} ${response.url()}`);
+    }
+  });
+  page.on('requestfailed', request => {
+    if (/maplibre-gl-worker/i.test(request.url())) {
+      failedWorkerRequests.push(`${request.failure()?.errorText || 'request failed'} ${request.url()}`);
+    }
+  });
+  page.on('pageerror', error => rendererErrors.push(`pageerror: ${error.message}`));
+  page.on('console', message => {
+    if (message.type() === 'error' || message.text().includes('PLAY_MAP_RENDERER_FALLBACK')) {
+      rendererErrors.push(`console: ${message.text()}`);
+    }
+  });
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+  await page.setViewportSize(viewport);
+  await page.goto(PUBLIC_PLAY_URL);
+  try {
+    await expect.poll(() => page.evaluate(() => Boolean(window.__SEACOMMONS_PLAY_MAP__)), {
+      timeout: 15000,
+      intervals: [250, 500, 1000],
+    }).toBe(true);
+  } catch (error) {
+    const diagnostic = await page.evaluate(() => ({
+      e2eFlag: window.__SEACOMMONS_E2E_MAP__ === true,
+      mapExposed: Boolean(window.__SEACOMMONS_PLAY_MAP__),
+      maplibreCanvases: document.querySelectorAll('.maplibregl-canvas').length,
+      fallbackMaps: document.querySelectorAll('.leaflet-container').length,
+      visibleError: document.querySelector('.play-map-error')?.textContent?.trim() || null,
+    }));
+    throw new Error(`MapLibre cluster gate failed at ${viewport.width}x${viewport.height}: ${JSON.stringify({ ...diagnostic, errors: rendererErrors.slice(-10).map(item => item.slice(0, 350)), failedWorkerRequests })}; cause=${error.message}`);
+  }
+  // Map construction alone is not a functional cluster gate: require installed layers.
+  await expect.poll(() => page.evaluate(() => {
+    const map = window.__SEACOMMONS_PLAY_MAP__;
+    return Boolean(map?.getLayer('play-clusters') && map?.getSource('play-incidents'));
+  }), { timeout: 15000, intervals: [250, 500, 1000] }).toBe(true);
+  // Verify the upstream archive contract before diagnosing MapLibre rendering.
+  const archiveList = page.locator('.play-cases__list');
+  for (const title of ['Historical distress', 'Historical safety report', 'Reviewed correlated case']) {
+    // The mobile archive panel is intentionally collapsed until opened; verify fixture presence, not visibility.
+    await expect(archiveList.getByText(title, { exact: true })).toHaveCount(1);
+  }
+  // An installed source is not necessarily loaded; keep this a hard WebGL gate.
+  await expect.poll(() => page.evaluate(() => {
+    const map = window.__SEACOMMONS_PLAY_MAP__;
+    return Boolean(map?.getSource('play-incidents') && map?.isSourceLoaded('play-incidents'));
+  }), { timeout: 15000, intervals: [250, 500, 1000] }).toBe(true);
+  expect(failedWorkerRequests, 'MapLibre worker must not return 404 or fail to load').toEqual([]);
+  // A layer can exist before the GeoJSON worker has finished setData. At zoom 1,
+  // all three historical fixtures are close enough to test low-zoom grouping.
+  await page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__.jumpTo({ center: [15.1, 35.6], zoom: 1 }));
+  const readCluster = () => page.evaluate(() => {
+    const map = window.__SEACOMMONS_PLAY_MAP__;
+    const feature = map.queryRenderedFeatures({ layers: ['play-clusters'] })
+      .find(item => item.properties?.point_count >= 3);
+    if (!feature) return null;
+    const point = map.project(feature.geometry.coordinates);
+    return { x: point.x, y: point.y, count: feature.properties.point_count };
+  });
+  try {
+    await expect.poll(readCluster, { timeout: 15000, intervals: [250, 500, 1000] }).not.toBeNull();
+  } catch (error) {
+    // Source readiness and rendered visibility are different evidence layers.
+    // Preserve a bounded diagnostic without exposing any real-world coordinates.
+    const diagnostics = await page.evaluate(() => {
+      const map = window.__SEACOMMONS_PLAY_MAP__;
+      const source = map?.getSource('play-incidents');
+      const rendered = map?.queryRenderedFeatures({ layers: ['play-clusters'] }) || [];
+      const sourceFeatures = map?.querySourceFeatures('play-incidents') || [];
+      return {
+        zoom: map?.getZoom(),
+        styleLoaded: map?.isStyleLoaded(),
+        sourceLoaded: map?.isSourceLoaded('play-incidents'),
+        sourcePresent: Boolean(source),
+        clusterLayerVisible: map?.getLayoutProperty('play-clusters', 'visibility') !== 'none',
+        sourceFeatureCount: sourceFeatures.length,
+        sourceClusterCounts: sourceFeatures.filter(f => f.properties?.cluster).map(f => f.properties?.point_count).slice(0, 20),
+        renderedClusterCounts: rendered.map(f => f.properties?.point_count).slice(0, 20),
+        fixtureIds: sourceFeatures.filter(f => !f.properties?.cluster).map(f => f.properties?.incident_id).filter(Boolean).slice(0, 10),
+      };
+    });
+    throw new Error(`MapLibre cluster evidence mismatch at ${viewport.width}x${viewport.height}: ${JSON.stringify(diagnostics)}; cause=${error.message}`);
+  }
+  const cluster = await readCluster();
+  expect(cluster, 'three nearby historical observations must form a low-zoom cluster').not.toBeNull();
+  expect(cluster.count).toBe(3);
+  // A rendered cluster count is not evidence that all canonical observations
+  // remain recoverable. Inspect its source leaves, not tiled feature counts.
+  const leafIds = await page.evaluate(async () => {
+    const map = window.__SEACOMMONS_PLAY_MAP__;
+    const rendered = map.queryRenderedFeatures({ layers: ['play-clusters'] })
+      .find(item => item.properties?.point_count === 3);
+    if (!rendered) throw new Error('Expected three-observation cluster is absent');
+    const source = map.getSource('play-incidents');
+    const leaves = await source.getClusterLeaves(rendered.properties.cluster_id, 10, 0);
+    return leaves.map(item => item.properties?.incident_id).sort();
+  });
+  expect(leafIds).toEqual([
+    'play-correlated-1',
+    'play-humanitarian-1',
+    'play-maritime-1',
+  ]);
+  // Diagnose real pointer interception without force-clicking or bypassing overlays.
+  // Only DOM tag/class metadata is reported; never expose case coordinates.
+  const assertMapHitTarget = async (x, y, label) => {
+    const hit = await page.evaluate(({ x, y }) => {
+      const element = document.elementFromPoint(x, y);
+      const canvas = document.querySelector('.maplibregl-canvas');
+      return {
+        canvasReceivesPointer: Boolean(canvas && (element === canvas || canvas.contains(element))),
+        targetTag: element?.tagName || null,
+        targetClass: typeof element?.className === 'string' ? element.className.slice(0, 160) : null,
+        canvasPointerEvents: canvas ? getComputedStyle(canvas).pointerEvents : null,
+      };
+    }, { x, y });
+    expect(hit.canvasReceivesPointer, `MapLibre ${label} click intercepted: ${JSON.stringify(hit)}`).toBe(true);
+  };
+  const canvas = page.locator('.maplibregl-canvas');
+  const box = await canvas.boundingBox();
+  expect(box, 'MapLibre canvas must have a measurable click target').not.toBeNull();
+  await assertMapHitTarget(box.x + cluster.x, box.y + cluster.y, 'cluster');
+  await page.mouse.click(box.x + cluster.x, box.y + cluster.y);
+  await expect.poll(() => page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__.getZoom())).toBeGreaterThan(1);
+  // At detail zoom the original observations must remain individually selectable.
+  await page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__.jumpTo({ center: [15.1, 35.6], zoom: 10 }));
+  const observations = [
+    ['play-humanitarian-1', [14.1, 35.2], 'Historical distress'],
+    ['play-maritime-1', [15.1, 36.0], 'Historical safety report'],
+    ['play-correlated-1', [16.0, 35.8], 'Reviewed correlated case'],
+  ];
+  for (const [id, coordinates, title] of observations) {
+    const point = await page.evaluate(coords => {
+      const map = window.__SEACOMMONS_PLAY_MAP__;
+      map.jumpTo({ center: coords, zoom: 10 });
+      const p = map.project(coords);
+      return { x: p.x, y: p.y };
+    }, coordinates);
+    // A map jump can leave the previous frame's rendered features visible.
+    // Require the *expected* canonical ID at the click coordinate; another
+    // incident being present is not evidence that this dossier is selectable.
+    try {
+      await expect.poll(() => page.evaluate(({ coords, expectedId }) => {
+        const map = window.__SEACOMMONS_PLAY_MAP__;
+        if (map.isMoving() || !map.areTilesLoaded()) return false;
+        return map.queryRenderedFeatures(map.project(coords), { layers: ['play-incidents', 'play-vessels'] })
+          .some(feature => feature.properties?.incident_id === expectedId);
+      }, { coords: coordinates, expectedId: id }), {
+        timeout: 15000,
+        intervals: [100, 250, 500],
+        message: `Expected canonical PLAY observation ${id} to be rendered at detail zoom`,
+      }).toBe(true);
+    } catch (error) {
+      // Preserve the failing assertion: inspect source-vs-rendered evidence,
+      // tile readiness and layer filters instead of forcing a click or hiding loss.
+      const diagnostic = await page.evaluate(({ coords, expectedId }) => {
+        const map = window.__SEACOMMONS_PLAY_MAP__;
+        const source = map.getSource('play-incidents');
+        const sourceFeatures = map.querySourceFeatures('play-incidents');
+        const rendered = map.queryRenderedFeatures(map.project(coords), { layers: ['play-incidents', 'play-vessels'] });
+        return {
+          expectedId, zoom: map.getZoom(), center: map.getCenter().toArray(),
+          moving: map.isMoving(), tilesLoaded: map.areTilesLoaded(), loaded: map.loaded(),
+          sourcePresent: Boolean(source), sourceCount: sourceFeatures.length,
+          sourceIds: sourceFeatures.map(f => f.properties?.incident_id).filter(Boolean).slice(0, 20),
+          renderedIds: rendered.map(f => f.properties?.incident_id).filter(Boolean),
+          layers: ['play-incidents', 'play-vessels'].map(layer => ({
+            id: layer, visibility: map.getLayoutProperty(layer, 'visibility') ?? 'visible',
+            filter: map.getFilter(layer),
+          })),
+        };
+      }, { coords: coordinates, expectedId: id });
+      throw new Error(`PLAY canonical detail-render gate: ${JSON.stringify(diagnostic)}; cause=${error.message}`);
+    }
+    // Reproject after the renderer settles; the earlier point may be stale.
+    const clickPoint = await page.evaluate(coords => {
+      const map = window.__SEACOMMONS_PLAY_MAP__;
+      const p = map.project(coords);
+      return { x: p.x, y: p.y };
+    }, coordinates);
+    // A docked case dossier may legitimately cover part of the map. Recenter
+    // the observation into the actual unobstructed map viewport before a real
+    // pointer click; never force-click through an overlay or skip the dossier.
+    const safePoint = await page.evaluate(coords => {
+      const map = window.__SEACOMMONS_PLAY_MAP__;
+      const canvas = map.getCanvas();
+      const rect = canvas.getBoundingClientRect();
+      const overlays = [...document.querySelectorAll('.play-evidence, .play-cartographic-legend, .play-all-badge')]
+        .map(el => el.getBoundingClientRect())
+        .filter(r => r.width > 0 && r.height > 0);
+      // Sample the *actual* interactive viewport rather than six hard-coded
+      // points: responsive docks may leave a narrow but valid map strip.
+      const candidates = [];
+      for (let fy = 0.10; fy <= 0.90; fy += 0.10) {
+        for (let fx = 0.10; fx <= 0.90; fx += 0.10) {
+          candidates.push({ x: rect.width * fx, y: rect.height * fy });
+        }
+      }
+      const diagnostics = candidates.map(p => {
+        const x = rect.left + p.x, y = rect.top + p.y;
+        const hit = document.elementFromPoint(x, y);
+        const blockedByOverlay = overlays.some(r => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
+        return { ...p, hit: hit?.className?.baseVal ?? hit?.className ?? hit?.tagName ?? null,
+          canvasHit: hit === canvas || canvas.contains(hit), blockedByOverlay };
+      });
+      const safe = diagnostics.find(p => p.canvasHit && !p.blockedByOverlay);
+      if (!safe) {
+        throw new Error('No unobstructed PLAY map viewport for real pointer selection: ' +
+          JSON.stringify({ viewport: { width: rect.width, height: rect.height },
+            overlays: overlays.map(r => ({ x: r.x, y: r.y, width: r.width, height: r.height })),
+            samples: diagnostics.filter((_, i) => i % 10 === 0) }));
+      }
+      const current = map.project(coords);
+      map.panBy([current.x - safe.x, current.y - safe.y], { duration: 0 });
+      return safe;
+    }, coordinates);
+    await expect.poll(() => page.evaluate(() => {
+      const map = window.__SEACOMMONS_PLAY_MAP__;
+      return !map.isMoving() && map.areTilesLoaded();
+    })).toBe(true);
+    const bounds = await canvas.boundingBox();
+    const adjusted = await page.evaluate(coords => window.__SEACOMMONS_PLAY_MAP__.project(coords), coordinates);
+    await assertMapHitTarget(bounds.x + adjusted.x, bounds.y + adjusted.y, id);
+    await page.mouse.click(bounds.x + adjusted.x, bounds.y + adjusted.y);
+    await expect(page.locator('.play-evidence.is-open h2')).toContainText(title);
+    await expect(page.locator('.play-evidence.is-open')).toBeVisible();
+  }
+  }
+});

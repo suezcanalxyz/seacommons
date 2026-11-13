@@ -3,7 +3,7 @@ name: Full CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, fix/play-zoom-clusters-20261109]
   workflow_dispatch:
 
 permissions:
@@ -161,8 +161,60 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium and system dependencies (bounded retry for transient apt/DNS failures)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo "Playwright dependency installation failed after 3 attempts" >&2
+              exit 1
+            fi
+            sleep $((attempt * 20))
+          done
       - run: npm run test:e2e
+
+  # Release-specific MapLibre gate: Leaflet fallback must not count as a passing test.
+  browser-maplibre-webgl:
+    runs-on: ubuntu-latest
+    needs: web
+    defaults:
+      run:
+        working-directory: apps/web
+    env:
+      SEACOMMONS_REQUIRE_WEBGL: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Install Chromium and system dependencies (bounded retry for transient apt/DNS failures)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo "Playwright dependency installation failed after 3 attempts" >&2
+              exit 1
+            fi
+            sleep $((attempt * 20))
+          done
+      - name: Require MapLibre WebGL on both desktop and mobile
+        run: npx playwright test e2e/public-play.spec.mjs --grep 'MapLibre PLAY captures continent|MapLibre cluster expansion preserves'
+      - name: Upload visual evidence even if WebGL gate fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maplibre-play-visual-evidence
+          path: apps/web/test-results/
+          if-no-files-found: ignore
 
   browser-production-smoke:
     if: github.event_name == 'workflow_dispatch'
@@ -179,7 +231,19 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium and system dependencies (bounded retry for transient apt/DNS failures)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo "Playwright dependency installation failed after 3 attempts" >&2
+              exit 1
+            fi
+            sleep $((attempt * 20))
+          done
       - run: npm run test:e2e:production
 
   edge:

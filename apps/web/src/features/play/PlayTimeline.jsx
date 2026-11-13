@@ -300,34 +300,57 @@ export default function PlayTimeline({ apiBase }) {
     async function initMap() {
       if (window.__SEACOMMONS_FORCE_MAP_FALLBACK__ === true) throw new Error('forced map fallback');
       await import('maplibre-gl/dist/maplibre-gl.css');
-      const { default: maplibregl } = await import('maplibre-gl');
+      const maplibreModule = await import('maplibre-gl');
+      // ESM builds expose Map/NavigationControl as named exports; a default export
+      // is not guaranteed (and may be undefined in Vite/browser builds).
+      const maplibregl = maplibreModule.Map ? maplibreModule : maplibreModule.default;
+      if (typeof maplibregl?.Map !== 'function') {
+        throw new TypeError('MapLibre module did not export a Map constructor');
+      }
       if (disposed || !mapNodeRef.current || mapRef.current) return;
       const map = new maplibregl.Map({
         container: mapNodeRef.current,
-        style: playMapStyle(), center: [14.8, 35.7], zoom: 3.55,
+        style: window.__SEACOMMONS_E2E_MAP__ === true
+          ? { version: 8, sources: {}, layers: [{ id: 'e2e-background', type: 'background', paint: { 'background-color': '#0b1820' } }] }
+          : playMapStyle(), center: [14.8, 35.7], zoom: 3.55,
         attributionControl: false,
       });
       map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'bottom-right');
+      // Opt-in E2E diagnostics must distinguish Map construction from style loading.
+      if (window.__SEACOMMONS_E2E_MAP__ === true) window.__SEACOMMONS_PLAY_MAP__ = map;
       map.on('load', () => {
         if (disposed) return;
         map.addImage('vessel-arrow', createVesselArrowImage(48), { sdf: true });
-        map.addSource('play-incidents', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('play-incidents', {
+          type: 'geojson', data: { type: 'FeatureCollection', features: [] },
+          cluster: true, clusterMaxZoom: 7, clusterRadius: 42,
+        });
+        // A cluster represents a viewport grouping, never a deduplicated archive record.
+        map.addLayer({
+          id: 'play-clusters', type: 'circle', source: 'play-incidents',
+          filter: ['has', 'point_count'],
+          paint: {
+            'circle-radius': ['step', ['get', 'point_count'], 14, 20, 18, 100, 23],
+            'circle-color': '#27566b', 'circle-opacity': 0.94,
+            'circle-stroke-color': '#b3e8fa', 'circle-stroke-width': 1.5,
+          },
+        });
         map.addLayer({
           id: 'play-incidents', type: 'circle', source: 'play-incidents',
-          filter: ['any', ['!=', ['get', 'marker_kind'], 'vessel'], ['!=', ['get', 'has_course'], true]],
+          filter: ['all', ['!', ['has', 'point_count']], ['any', ['!=', ['get', 'marker_kind'], 'vessel'], ['!=', ['get', 'has_course'], true]]],
           paint: {
             'circle-radius': ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5],
             'circle-color': ['case', ['in', 'attack', ['downcase', ['to-string', ['get', 'incident_type']]]], '#ff6868', ['match', ['get', 'domain'], 'maritime', '#76b7fa', 'humanitarian', '#ffad66', '#c6a6ff']],
             'circle-opacity': 0.9,
-            'circle-stroke-color': '#071014', 'circle-stroke-width': 1.5,
+            'circle-stroke-color': '#b3e8fa', 'circle-stroke-width': 1,
           },
         });
         map.addLayer({
           id: 'play-vessels', type: 'symbol', source: 'play-incidents',
-          filter: ['all', ['==', ['get', 'marker_kind'], 'vessel'], ['==', ['get', 'has_course'], true]],
+          filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'marker_kind'], 'vessel'], ['==', ['get', 'has_course'], true]],
           layout: {
             'icon-image': 'vessel-arrow',
-            'icon-size': ['case', ['==', ['get', 'incident_id'], selectedId], 0.46, 0.34],
+            'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.20, 7, 0.34, 10, 0.46],
             'icon-rotate': ['coalesce', ['get', 'course'], 0],
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
@@ -361,11 +384,25 @@ export default function PlayTimeline({ apiBase }) {
             setCasesOpen(false);
           }
         };
+        map.on('click', 'play-clusters', async (event) => {
+          const clusterId = event.features?.[0]?.properties?.cluster_id;
+          const coordinates = event.features?.[0]?.geometry?.coordinates;
+          if (clusterId == null || !Array.isArray(coordinates)) return;
+          try {
+            const zoom = await map.getSource('play-incidents').getClusterExpansionZoom(clusterId);
+            map.easeTo({ center: coordinates, zoom: Math.min(zoom, 18) });
+          } catch { /* source replaced during navigation */ }
+        });
+        // Cluster clicks only expand the group; they must never open a synthetic dossier.
+        // Match individual markers: make expandable groups discoverable without changing evidence.
+        map.on('mouseenter', 'play-clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'play-clusters', () => { map.getCanvas().style.cursor = ''; });
         for (const layerId of ['play-incidents', 'play-vessels']) {
           map.on('click', layerId, selectArchiveFeature);
           map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
           map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
         }
+        // Explicitly opt-in for deterministic browser E2E; never enabled for normal visitors.
         mapRef.current = map;
         map.resize();
         setMapError('');
@@ -394,13 +431,19 @@ export default function PlayTimeline({ apiBase }) {
       setMapError('');
       setFallbackReady(true);
     }
-    initMap().catch(() => activateFallbackMap().catch(() => {
-      if (!disposed) setMapError('Map unavailable. Archive cases remain available.');
-    }));
+    initMap().catch((error) => {
+      // Keep the fallback usable, but preserve the renderer failure for browser CI.
+      // Never log incident payloads, coordinates, or source evidence.
+      console.warn('[PLAY_MAP_RENDERER_FALLBACK]', error?.name || 'Error', String(error?.message || 'unknown').slice(0, 240));
+      return activateFallbackMap().catch(() => {
+        if (!disposed) setMapError('Map unavailable. Archive cases remain available.');
+      });
+    });
     return () => {
       disposed = true;
       try { mapRef.current?.remove(); } catch { /* already removed */ }
       mapRef.current = null;
+      if (window.__SEACOMMONS_E2E_MAP__ === true) delete window.__SEACOMMONS_PLAY_MAP__;
       fallbackMapRef.current?.destroy();
       fallbackMapRef.current = null;
     };
@@ -436,21 +479,30 @@ export default function PlayTimeline({ apiBase }) {
       map.setPaintProperty('play-incidents', 'circle-radius', ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5]);
     }
     if (map.getLayer('play-vessels')) {
-      map.setLayoutProperty('play-vessels', 'icon-size', ['case', ['==', ['get', 'incident_id'], selectedId], 0.46, 0.34]);
+      map.setLayoutProperty('play-vessels', 'icon-size', ['case', ['==', ['get', 'incident_id'], selectedId], 0.46, ['interpolate', ['linear'], ['zoom'], 3, 0.20, 7, 0.34, 10, 0.46]]);
     }
     addSatelliteLayer(map, satellite);
-
-    const geometry = selectedIncident?.geometry;
-    if (selectedId && geometry?.type === 'Point' && Array.isArray(geometry.coordinates)) {
-      const mobile = window.matchMedia?.('(max-width: 680px)')?.matches;
-      map.easeTo({
-        center: geometry.coordinates,
-        zoom: Math.max(map.getZoom(), 6.5),
-        padding: mobile ? { top: 24, bottom: Math.round(window.innerHeight * 0.66), left: 24, right: 24 } : { top: 20, bottom: 80, left: 412, right: 20 },
-        duration: 450,
-      });
-    }
   }, [mapReady, filteredIncidents, visibleTimeline, selectedId, selectedIncident, satellite, voyageVessels]);
+
+  const selectedLongitude = selectedIncident?.geometry?.type === 'Point' ? selectedIncident.geometry.coordinates?.[0] : null;
+  const selectedLatitude = selectedIncident?.geometry?.type === 'Point' ? selectedIncident.geometry.coordinates?.[1] : null;
+
+  // Camera movement is a selection action, not an evidence-refresh side effect.
+  // Timeline fetches and satellite updates must not override an analyst's pan/zoom
+  // or a WebGL test's explicit camera movement while the same dossier is selected.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || !selectedId) return;
+    if (!Number.isFinite(selectedLongitude) || !Number.isFinite(selectedLatitude)) return;
+    const mobile = window.matchMedia?.('(max-width: 680px)')?.matches;
+    map.easeTo({
+      center: [selectedLongitude, selectedLatitude],
+      zoom: Math.max(map.getZoom(), 6.5),
+      padding: mobile ? { top: 16, bottom: Math.round(window.innerHeight * 0.52), left: 24, right: 24 } : { top: 20, bottom: 80, left: 412, right: 340 },
+      duration: 450,
+    });
+    // Primitive coordinate dependencies prevent unrelated evidence refreshes from recentering.
+  }, [mapReady, selectedId, selectedLongitude, selectedLatitude]);
 
   useEffect(() => {
     const map = mapRef.current;
