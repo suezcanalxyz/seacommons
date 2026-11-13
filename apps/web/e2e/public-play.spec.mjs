@@ -255,9 +255,25 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
     'play-humanitarian-1',
     'play-maritime-1',
   ]);
+  // Diagnose real pointer interception without force-clicking or bypassing overlays.
+  // Only DOM tag/class metadata is reported; never expose case coordinates.
+  const assertMapHitTarget = async (x, y, label) => {
+    const hit = await page.evaluate(({ x, y }) => {
+      const element = document.elementFromPoint(x, y);
+      const canvas = document.querySelector('.maplibregl-canvas');
+      return {
+        canvasReceivesPointer: Boolean(canvas && (element === canvas || canvas.contains(element))),
+        targetTag: element?.tagName || null,
+        targetClass: typeof element?.className === 'string' ? element.className.slice(0, 160) : null,
+        canvasPointerEvents: canvas ? getComputedStyle(canvas).pointerEvents : null,
+      };
+    }, { x, y });
+    expect(hit.canvasReceivesPointer, `MapLibre ${label} click intercepted: ${JSON.stringify(hit)}`).toBe(true);
+  };
   const canvas = page.locator('.maplibregl-canvas');
   const box = await canvas.boundingBox();
   expect(box, 'MapLibre canvas must have a measurable click target').not.toBeNull();
+  await assertMapHitTarget(box.x + cluster.x, box.y + cluster.y, 'cluster');
   await page.mouse.click(box.x + cluster.x, box.y + cluster.y);
   await expect.poll(() => page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__.getZoom())).toBeGreaterThan(1);
   // At detail zoom the original observations must remain individually selectable.
@@ -294,6 +310,7 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
       return { x: p.x, y: p.y };
     }, coordinates);
     const bounds = await canvas.boundingBox();
+    await assertMapHitTarget(bounds.x + clickPoint.x, bounds.y + clickPoint.y, id);
     await page.mouse.click(bounds.x + clickPoint.x, bounds.y + clickPoint.y);
     await expect(page.locator('.play-evidence.is-open h2')).toContainText(title);
     await expect(page.locator('.play-evidence.is-open')).toBeVisible();
