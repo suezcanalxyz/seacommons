@@ -239,6 +239,22 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
   const cluster = await readCluster();
   expect(cluster, 'three nearby historical observations must form a low-zoom cluster').not.toBeNull();
   expect(cluster.count).toBe(3);
+  // A rendered cluster count is not evidence that all canonical observations
+  // remain recoverable. Inspect its source leaves, not tiled feature counts.
+  const leafIds = await page.evaluate(async () => {
+    const map = window.__SEACOMMONS_PLAY_MAP__;
+    const rendered = map.queryRenderedFeatures({ layers: ['play-clusters'] })
+      .find(item => item.properties?.point_count === 3);
+    if (!rendered) throw new Error('Expected three-observation cluster is absent');
+    const source = map.getSource('play-incidents');
+    const leaves = await source.getClusterLeaves(rendered.properties.cluster_id, 10, 0);
+    return leaves.map(item => item.properties?.incident_id).sort();
+  });
+  expect(leafIds).toEqual([
+    'play-correlated-1',
+    'play-humanitarian-1',
+    'play-maritime-1',
+  ]);
   const canvas = page.locator('.maplibregl-canvas');
   const box = await canvas.boundingBox();
   await page.mouse.click(box.x + cluster.x, box.y + cluster.y);
