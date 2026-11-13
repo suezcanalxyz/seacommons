@@ -489,7 +489,7 @@ export default function PlayTimeline({ apiBase }) {
       map.easeTo({
         center: geometry.coordinates,
         zoom: Math.max(map.getZoom(), 6.5),
-        padding: mobile ? { top: 24, bottom: Math.round(window.innerHeight * 0.66), left: 24, right: 24 } : { top: 20, bottom: 80, left: 412, right: 20 },
+        padding: mobile ? { top: 16, bottom: Math.round(window.innerHeight * 0.52), left: 24, right: 24 } : { top: 20, bottom: 80, left: 412, right: 340 },
         duration: 450,
       });
     }
