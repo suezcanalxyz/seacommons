@@ -332,9 +332,40 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
       const p = map.project(coords);
       return { x: p.x, y: p.y };
     }, coordinates);
+    // A docked case dossier may legitimately cover part of the map. Recenter
+    // the observation into the actual unobstructed map viewport before a real
+    // pointer click; never force-click through an overlay or skip the dossier.
+    const safePoint = await page.evaluate(coords => {
+      const map = window.__SEACOMMONS_PLAY_MAP__;
+      const canvas = map.getCanvas();
+      const rect = canvas.getBoundingClientRect();
+      const overlays = [...document.querySelectorAll('.play-evidence, .play-cartographic-legend, .play-all-badge')]
+        .map(el => el.getBoundingClientRect())
+        .filter(r => r.width > 0 && r.height > 0);
+      const candidates = [
+        [0.30, 0.48], [0.50, 0.40], [0.70, 0.48],
+        [0.30, 0.68], [0.50, 0.68], [0.70, 0.68],
+      ];
+      const safe = candidates.map(([fx, fy]) => ({ x: rect.width * fx, y: rect.height * fy }))
+        .find(p => {
+          const x = rect.left + p.x, y = rect.top + p.y;
+          const hit = document.elementFromPoint(x, y);
+          return (hit === canvas || canvas.contains(hit)) &&
+            !overlays.some(r => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
+        });
+      if (!safe) throw new Error('No unobstructed PLAY map viewport for real pointer selection');
+      const current = map.project(coords);
+      map.panBy([current.x - safe.x, current.y - safe.y], { duration: 0 });
+      return safe;
+    }, coordinates);
+    await expect.poll(() => page.evaluate(() => {
+      const map = window.__SEACOMMONS_PLAY_MAP__;
+      return !map.isMoving() && map.areTilesLoaded();
+    })).toBe(true);
     const bounds = await canvas.boundingBox();
-    await assertMapHitTarget(bounds.x + clickPoint.x, bounds.y + clickPoint.y, id);
-    await page.mouse.click(bounds.x + clickPoint.x, bounds.y + clickPoint.y);
+    const adjusted = await page.evaluate(coords => window.__SEACOMMONS_PLAY_MAP__.project(coords), coordinates);
+    await assertMapHitTarget(bounds.x + adjusted.x, bounds.y + adjusted.y, id);
+    await page.mouse.click(bounds.x + adjusted.x, bounds.y + adjusted.y);
     await expect(page.locator('.play-evidence.is-open h2')).toContainText(title);
     await expect(page.locator('.play-evidence.is-open')).toBeVisible();
   }
