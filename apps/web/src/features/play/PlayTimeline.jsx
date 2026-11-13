@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchJson } from '../../services/api/client.js';
 import { timelineReport, humanizeDetectorText } from '../live/reportNarrative.js';
 import SanctionsCatalog from '../../components/SanctionsCatalog.jsx';
-import { createVesselArrowImage, VESSEL_COLOR } from '../map/vesselMarker.js';
+import { createVesselArrowImage } from '../map/vesselMarker.js';
 import { createFallbackMap } from '../map/fallbackRenderer.js';
 import {
   incidentCollection,
@@ -337,17 +337,17 @@ export default function PlayTimeline({ apiBase }) {
         });
         map.addLayer({
           id: 'play-incidents', type: 'circle', source: 'play-incidents',
-          filter: ['all', ['!', ['has', 'point_count']], ['!=', ['get', 'marker_kind'], 'vessel']],
+          filter: ['all', ['!', ['has', 'point_count']], ['any', ['!=', ['get', 'marker_kind'], 'vessel'], ['!=', ['get', 'has_course'], true]]],
           paint: {
             'circle-radius': ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5],
-            'circle-color': ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f'],
+            'circle-color': ['case', ['in', 'attack', ['downcase', ['to-string', ['get', 'incident_type']]]], '#ff6868', ['match', ['get', 'domain'], 'maritime', '#76b7fa', 'humanitarian', '#ffad66', '#c6a6ff']],
             'circle-opacity': 0.9,
             'circle-stroke-color': '#b3e8fa', 'circle-stroke-width': 1,
           },
         });
         map.addLayer({
           id: 'play-vessels', type: 'symbol', source: 'play-incidents',
-          filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'marker_kind'], 'vessel']],
+          filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'marker_kind'], 'vessel'], ['==', ['get', 'has_course'], true]],
           layout: {
             'icon-image': 'vessel-arrow',
             'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.20, 7, 0.34, 10, 0.46],
@@ -355,7 +355,7 @@ export default function PlayTimeline({ apiBase }) {
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
           },
-          paint: { 'icon-color': VESSEL_COLOR, 'icon-opacity': 0.94 },
+          paint: { 'icon-color': ['case', ['in', 'attack', ['downcase', ['to-string', ['get', 'incident_type']]]], '#ff6868', ['match', ['get', 'domain'], 'humanitarian', '#ffad66', 'maritime', '#76b7fa', '#c6a6ff']], 'icon-opacity': 0.94 },
         });
         map.addSource('play-evidence', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addLayer({
@@ -366,7 +366,7 @@ export default function PlayTimeline({ apiBase }) {
         map.addLayer({
           id: 'play-evidence-line', type: 'line', source: 'play-evidence',
           filter: ['==', ['geometry-type'], 'LineString'],
-          paint: { 'line-color': '#8ed8ff', 'line-width': 3, 'line-opacity': 0.9 },
+          paint: { 'line-color': ['match', ['get', 'kind'], 'observed_ais_track', '#76b7fa', 'drift', '#ffad66', 'drift_model', '#ffad66', '#b9a1f6'], 'line-width': 3, 'line-opacity': 0.9 },
         });
         map.addSource('play-satellite-footprints', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addLayer({
@@ -655,6 +655,17 @@ export default function PlayTimeline({ apiBase }) {
 
       <section className="map-stage play-map-stage">
         <div className="map-frame play-map" ref={mapNodeRef} />
+        <div className="play-cartographic-legend" aria-label="Map symbols and evidence legend">
+          <strong>MAP KEY</strong>
+          <span><i className="play-key-vessel" /> Vessel · heading observed</span>
+          <span><i className="play-key-point" /> Incident / unknown heading</span>
+          <span><i className="play-key-humanitarian" /> Humanitarian</span>
+          <span><i className="play-key-maritime" /> Maritime</span>
+          <span><i className="play-key-attack" /> Attack incident</span>
+          <span><i className="play-key-track" /> AIS track</span>
+          <span><i className="play-key-drift" /> Drift / estimated area</span>
+          <small>Triangles show reported course only. Circles do not imply direction. Color indicates category, not verification.</small>
+        </div>
         <div className="play-all-badge"><strong>{modeLabel}</strong><span>{archiveTotal != null ? `${archiveTotal} archive` : `${visibleIncidents.length} loaded`}</span></div>
         {loading ? <div className="play-map-message" role="status" aria-live="polite">Loading archive and case evidence…</div> : null}
         {error ? <div className="play-map-message is-error">{error}</div> : null}

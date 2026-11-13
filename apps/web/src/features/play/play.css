@@ -291,3 +291,58 @@
   .play-mobile-guide p { line-height: 1.55; font-size: 13px; }
   .play-day-picker { max-width: 125px; min-width: 105px; color: #e6f2ef; background: #102630; border: 1px solid #486268; border-radius: 6px; }
 }
+
+/* Play-specific mobile geometry wins over generic LIVE panels. */
+.play-public-shell .play-evidence {
+  position: fixed;
+  overflow-y: auto;
+  z-index: 1180;
+}
+@media (max-width: 680px) {
+  .cop-shell.is-live-mode.play-public-shell .cone-panel.play-evidence {
+    top: 34dvh;
+    right: 0;
+    bottom: 62px;
+    left: 0;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    overflow-y: auto;
+    padding-top: 0;
+    border-radius: 18px 18px 0 0;
+  }
+  .play-public-shell .play-timeline-bar { padding-bottom: env(safe-area-inset-bottom); height: calc(62px + env(safe-area-inset-bottom)); }
+}
+.play-cartographic-legend {
+  position: fixed;
+  z-index: 1100;
+  right: 14px;
+  bottom: 78px;
+  display: grid;
+  gap: 7px;
+  width: min(205px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid rgba(169,255,218,.25);
+  border-radius: 10px;
+  background: rgba(3,12,17,.91);
+  backdrop-filter: blur(14px);
+  color: #e9f7f1;
+  font: 10px/1.4 var(--font-mono);
+  pointer-events: none;
+}
+.play-cartographic-legend strong { color: #a9ffda; letter-spacing: .12em; font-size: 10px; }
+.play-cartographic-legend span { display: flex; gap: 9px; align-items: center; }
+.play-cartographic-legend i { display: inline-block; flex: 0 0 11px; width: 11px; height: 11px; }
+.play-key-vessel { background: #76b7fa; clip-path: polygon(50% 0,100% 100%,0 100%); }
+.play-key-point { background: #c6a6ff; border-radius: 50%; }
+.play-key-humanitarian { background: #ffad66; border-radius: 50%; }
+.play-key-maritime { background: #76b7fa; border-radius: 50%; }
+.play-key-attack { background: #ff6868; border-radius: 50%; }
+.play-key-track { height: 3px !important; background: #76b7fa; }
+.play-key-drift { height: 3px !important; background: #ffad66; }
+.play-cartographic-legend small { color: rgba(225,242,237,.6); font-size: 8px; line-height: 1.5; }
+@media (max-width: 820px) {
+  .play-cartographic-legend { right: 10px; bottom: calc(74px + env(safe-area-inset-bottom)); width: 174px; padding: 9px; font-size: 9px; gap: 5px; }
+  .play-cartographic-legend small { font-size: 7px; }
+  .play-public-shell.has-selection .play-cartographic-legend { display: none; }
+}

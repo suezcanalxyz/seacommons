@@ -402,3 +402,18 @@ test('Play cluster hover advertises expansion without changing dossier selection
   assert.match(source, /map\.on\('click', 'play-clusters', async \(event\) => \{/);
   assert.doesNotMatch(source, /map\.on\('click', 'play-clusters', selectArchiveFeature\)/);
 });
+
+test('archive markers preserve unknown heading instead of inventing northward travel', () => {
+  const collection = incidentCollection([{ incident_id: 'aisanom:missing-course', case_type: 'ais_anomaly', domain: 'maritime', reported_at: '2026-11-01T12:00:00Z', geometry: { type: 'Point', coordinates: [14, 35] } }]);
+  assert.equal(collection.features[0].properties.has_course, false);
+  assert.equal(collection.features[0].properties.marker_kind, 'vessel');
+  const observed = incidentCollection([{ incident_id: 'aisanom:observed', case_type: 'ais_anomaly', domain: 'maritime', course: 217, reported_at: '2026-11-01T12:00:00Z', geometry: { type: 'Point', coordinates: [14, 35] } }]);
+  assert.equal(observed.features[0].properties.has_course, true);
+  assert.equal(observed.features[0].properties.course, 217);
+});
+
+test('PLAY merge keeps cluster suppression and unknown-course circle fallback together', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /filter: \['all', \['!', \['has', 'point_count'\]\], \['any', \['!=', \['get', 'marker_kind'\], 'vessel'\], \['!=', \['get', 'has_course'\], true\]\]\]/);
+  assert.match(source, /filter: \['all', \['!', \['has', 'point_count'\]\], \['==', \['get', 'marker_kind'\], 'vessel'\], \['==', \['get', 'has_course'\], true\]\]/);
+});
