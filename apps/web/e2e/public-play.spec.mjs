@@ -274,13 +274,27 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
       const p = map.project(coords);
       return { x: p.x, y: p.y };
     }, coordinates);
-    await expect.poll(() => page.evaluate(coords => {
+    // A map jump can leave the previous frame's rendered features visible.
+    // Require the *expected* canonical ID at the click coordinate; another
+    // incident being present is not evidence that this dossier is selectable.
+    await expect.poll(() => page.evaluate(({ coords, expectedId }) => {
       const map = window.__SEACOMMONS_PLAY_MAP__;
+      if (map.isMoving()) return false;
       return map.queryRenderedFeatures(map.project(coords), { layers: ['play-incidents', 'play-vessels'] })
-        .some(feature => feature.properties?.incident_id);
-    }, coordinates)).toBe(true);
+        .some(feature => feature.properties?.incident_id === expectedId);
+    }, { coords: coordinates, expectedId: id }), {
+      timeout: 15000,
+      intervals: [100, 250, 500],
+      message: `Expected canonical PLAY observation ${id} to be rendered at detail zoom`,
+    }).toBe(true);
+    // Reproject after the renderer settles; the earlier point may be stale.
+    const clickPoint = await page.evaluate(coords => {
+      const map = window.__SEACOMMONS_PLAY_MAP__;
+      const p = map.project(coords);
+      return { x: p.x, y: p.y };
+    }, coordinates);
     const bounds = await canvas.boundingBox();
-    await page.mouse.click(bounds.x + point.x, bounds.y + point.y);
+    await page.mouse.click(bounds.x + clickPoint.x, bounds.y + clickPoint.y);
     await expect(page.locator('.play-evidence.is-open h2')).toContainText(title);
     await expect(page.locator('.play-evidence.is-open')).toBeVisible();
   }
