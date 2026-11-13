@@ -484,24 +484,25 @@ export default function PlayTimeline({ apiBase }) {
     addSatelliteLayer(map, satellite);
   }, [mapReady, filteredIncidents, visibleTimeline, selectedId, selectedIncident, satellite, voyageVessels]);
 
+  const selectedLongitude = selectedIncident?.geometry?.type === 'Point' ? selectedIncident.geometry.coordinates?.[0] : null;
+  const selectedLatitude = selectedIncident?.geometry?.type === 'Point' ? selectedIncident.geometry.coordinates?.[1] : null;
+
   // Camera movement is a selection action, not an evidence-refresh side effect.
   // Timeline fetches and satellite updates must not override an analyst's pan/zoom
   // or a WebGL test's explicit camera movement while the same dossier is selected.
   useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map || !selectedId) return;
-    const geometry = selectedIncident?.geometry;
-    if (geometry?.type !== 'Point' || !Array.isArray(geometry.coordinates)) return;
+    if (!Number.isFinite(selectedLongitude) || !Number.isFinite(selectedLatitude)) return;
     const mobile = window.matchMedia?.('(max-width: 680px)')?.matches;
     map.easeTo({
-      center: geometry.coordinates,
+      center: [selectedLongitude, selectedLatitude],
       zoom: Math.max(map.getZoom(), 6.5),
       padding: mobile ? { top: 16, bottom: Math.round(window.innerHeight * 0.52), left: 24, right: 24 } : { top: 20, bottom: 80, left: 412, right: 340 },
       duration: 450,
     });
-    // Deliberately key this camera action to selection, not caseData/timeline.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReady, selectedId]);
+    // Primitive coordinate dependencies prevent unrelated evidence refreshes from recentering.
+  }, [mapReady, selectedId, selectedLongitude, selectedLatitude]);
 
   useEffect(() => {
     const map = mapRef.current;
