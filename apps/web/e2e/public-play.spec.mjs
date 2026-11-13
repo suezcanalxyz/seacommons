@@ -293,16 +293,39 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
     // A map jump can leave the previous frame's rendered features visible.
     // Require the *expected* canonical ID at the click coordinate; another
     // incident being present is not evidence that this dossier is selectable.
-    await expect.poll(() => page.evaluate(({ coords, expectedId }) => {
-      const map = window.__SEACOMMONS_PLAY_MAP__;
-      if (map.isMoving()) return false;
-      return map.queryRenderedFeatures(map.project(coords), { layers: ['play-incidents', 'play-vessels'] })
-        .some(feature => feature.properties?.incident_id === expectedId);
-    }, { coords: coordinates, expectedId: id }), {
-      timeout: 15000,
-      intervals: [100, 250, 500],
-      message: `Expected canonical PLAY observation ${id} to be rendered at detail zoom`,
-    }).toBe(true);
+    try {
+      await expect.poll(() => page.evaluate(({ coords, expectedId }) => {
+        const map = window.__SEACOMMONS_PLAY_MAP__;
+        if (map.isMoving() || !map.areTilesLoaded()) return false;
+        return map.queryRenderedFeatures(map.project(coords), { layers: ['play-incidents', 'play-vessels'] })
+          .some(feature => feature.properties?.incident_id === expectedId);
+      }, { coords: coordinates, expectedId: id }), {
+        timeout: 15000,
+        intervals: [100, 250, 500],
+        message: `Expected canonical PLAY observation ${id} to be rendered at detail zoom`,
+      }).toBe(true);
+    } catch (error) {
+      // Preserve the failing assertion: inspect source-vs-rendered evidence,
+      // tile readiness and layer filters instead of forcing a click or hiding loss.
+      const diagnostic = await page.evaluate(({ coords, expectedId }) => {
+        const map = window.__SEACOMMONS_PLAY_MAP__;
+        const source = map.getSource('play-incidents');
+        const sourceFeatures = map.querySourceFeatures('play-incidents');
+        const rendered = map.queryRenderedFeatures(map.project(coords), { layers: ['play-incidents', 'play-vessels'] });
+        return {
+          expectedId, zoom: map.getZoom(), center: map.getCenter().toArray(),
+          moving: map.isMoving(), tilesLoaded: map.areTilesLoaded(), loaded: map.loaded(),
+          sourcePresent: Boolean(source), sourceCount: sourceFeatures.length,
+          sourceIds: sourceFeatures.map(f => f.properties?.incident_id).filter(Boolean).slice(0, 20),
+          renderedIds: rendered.map(f => f.properties?.incident_id).filter(Boolean),
+          layers: ['play-incidents', 'play-vessels'].map(layer => ({
+            id: layer, visibility: map.getLayoutProperty(layer, 'visibility') ?? 'visible',
+            filter: map.getFilter(layer),
+          })),
+        };
+      }, { coords: coordinates, expectedId: id });
+      throw new Error(`PLAY canonical detail-render gate: ${JSON.stringify(diagnostic)}; cause=${error.message}`);
+    }
     // Reproject after the renderer settles; the earlier point may be stale.
     const clickPoint = await page.evaluate(coords => {
       const map = window.__SEACOMMONS_PLAY_MAP__;
