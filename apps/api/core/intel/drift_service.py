@@ -48,7 +48,7 @@ def _drift_model_version() -> str | None:
 # disagree (disputed / needs_review), a coordinate on land, a region-only
 # centroid, a resolved/archived incident, a non-SAR domain, or an uncertainty
 # above the configured ceiling.
-AUTO_DRIFT_POLICY_VERSION = "auto-drift-eligibility/2"
+AUTO_DRIFT_POLICY_VERSION = "auto-drift-eligibility/4"
 
 # Coordinate review states trusted enough to seed an operational leeway model.
 _TRUSTED_REVIEW_STATES = frozenset(
@@ -142,10 +142,23 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
         return False, f"sea_land_class={sea_land} (not SEA)"
 
     review = str(meta.get("coordinate_review_status") or "").lower()
-    if "disputed" in review or "needs_review" in review:
-        return False, f"coordinate_review_status={review}"
-
     coord_source = str(meta.get("coordinate_source") or "").lower()
+    source_name = str(getattr(event, "source", "") or "").strip().lower().replace(" ", "_")
+    is_alarm_phone = source_name in {"alarm_phone", "@alarm_phone", "alarmphone"}
+    source_published_alarm_phone_point = (
+        is_alarm_phone
+        and coord_source in {
+            "media_ocr_text",
+            "media_ocr_text_backfill",
+            "media_ocr_consensus",
+            "media_pin_landmark",
+            "media_pin_landmark_backfill",
+            "post_text",
+            "navtext",
+        }
+    )
+    if ("disputed" in review or "needs_review" in review) and not source_published_alarm_phone_point:
+        return False, f"coordinate_review_status={review}"
 
     location_status = str(meta.get("location_status") or "").lower()
     if location_status in _NON_MARITIME_LOCATION_STATES:
@@ -159,7 +172,11 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
         )
         if not stale_region_label:
             return False, f"location_status={location_status}"
-    trusted = review in _TRUSTED_REVIEW_STATES or coord_source in _TRUSTED_COORD_SOURCES
+    trusted = (
+        review in _TRUSTED_REVIEW_STATES
+        or coord_source in _TRUSTED_COORD_SOURCES
+        or source_published_alarm_phone_point
+    )
     if not trusted or coord_source in _BLOCKED_COORD_SOURCES:
         return False, (
             "location evidence is only a named region, not an extracted point "
@@ -199,6 +216,17 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
             )
     except (TypeError, ValueError):
         pass
+
+    # Alarm Phone is itself the primary source for coordinates it publishes.
+    # OCR records the transport/extraction method; it does not downgrade the
+    # source coordinate or require corroboration from a second publisher.
+    if source_published_alarm_phone_point:
+        return True, "eligible:alarm_phone_source_published_coordinate"
+
+    # Image-derived coordinates from other sources keep the conservative gate.
+    if coord_source.startswith("media_ocr") or coord_source.startswith("media_pin"):
+        if review not in {"machine_ocr_consensus_verified", "human_verified", "reported_exact"}:
+            return False, "image-derived coordinate requires independent verification"
 
     return True, "eligible"
 
