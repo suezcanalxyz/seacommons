@@ -47,14 +47,14 @@ def test_ocr_consensus_is_eligible():
     assert ok, reason
 
 
-def test_disputed_ocr_is_rejected():
+def test_alarm_phone_disputed_ocr_coordinate_is_still_eligible():
     ok, reason = is_auto_drift_eligible(
         _distress(
             coordinate_source="media_ocr_text",
             coordinate_review_status="machine_ocr_disputed_needs_review",
         )
     )
-    assert not ok and "disputed" in reason
+    assert ok, reason
 
 
 def test_single_engine_ocr_coordinate_at_sea_is_eligible():
@@ -137,7 +137,7 @@ def test_maritime_security_domain_is_rejected():
     assert not ok and "maritime_domain" in reason
 
 
-def test_excessive_uncertainty_is_rejected():
+def test_alarm_phone_explicit_coordinate_is_not_blocked_by_uncertainty_metadata():
     ok, reason = is_auto_drift_eligible(
         _distress(
             coordinate_source="post_text",
@@ -145,17 +145,18 @@ def test_excessive_uncertainty_is_rejected():
             location_uncertainty_m=42000,
         )
     )
-    assert not ok and "uncertainty" in reason
+    assert ok, reason
 
 
-def test_force_cannot_bypass_the_evidence_gate(monkeypatch):
-    """`force=True` may re-run a completed drift, but a disputed coordinate
-    must still yield zero scheduling."""
+def test_force_cannot_bypass_the_evidence_gate_for_non_alarm_source(monkeypatch):
+    """`force=True` may re-run a completed drift, but a non-Alarm disputed
+    coordinate must still yield zero scheduling."""
     event = _distress(
         coordinate_source="media_ocr_text",
         coordinate_review_status="machine_ocr_disputed_needs_review",
         drift_status="completed",
     )
+    event.source = "other_source"
 
     class _Store:
         def get(self, _id):
