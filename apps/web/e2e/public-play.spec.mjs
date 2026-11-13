@@ -342,18 +342,28 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
       const overlays = [...document.querySelectorAll('.play-evidence, .play-cartographic-legend, .play-all-badge')]
         .map(el => el.getBoundingClientRect())
         .filter(r => r.width > 0 && r.height > 0);
-      const candidates = [
-        [0.30, 0.48], [0.50, 0.40], [0.70, 0.48],
-        [0.30, 0.68], [0.50, 0.68], [0.70, 0.68],
-      ];
-      const safe = candidates.map(([fx, fy]) => ({ x: rect.width * fx, y: rect.height * fy }))
-        .find(p => {
-          const x = rect.left + p.x, y = rect.top + p.y;
-          const hit = document.elementFromPoint(x, y);
-          return (hit === canvas || canvas.contains(hit)) &&
-            !overlays.some(r => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
-        });
-      if (!safe) throw new Error('No unobstructed PLAY map viewport for real pointer selection');
+      // Sample the *actual* interactive viewport rather than six hard-coded
+      // points: responsive docks may leave a narrow but valid map strip.
+      const candidates = [];
+      for (let fy = 0.10; fy <= 0.90; fy += 0.10) {
+        for (let fx = 0.10; fx <= 0.90; fx += 0.10) {
+          candidates.push({ x: rect.width * fx, y: rect.height * fy });
+        }
+      }
+      const diagnostics = candidates.map(p => {
+        const x = rect.left + p.x, y = rect.top + p.y;
+        const hit = document.elementFromPoint(x, y);
+        const blockedByOverlay = overlays.some(r => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
+        return { ...p, hit: hit?.className?.baseVal ?? hit?.className ?? hit?.tagName ?? null,
+          canvasHit: hit === canvas || canvas.contains(hit), blockedByOverlay };
+      });
+      const safe = diagnostics.find(p => p.canvasHit && !p.blockedByOverlay);
+      if (!safe) {
+        throw new Error('No unobstructed PLAY map viewport for real pointer selection: ' +
+          JSON.stringify({ viewport: { width: rect.width, height: rect.height },
+            overlays: overlays.map(r => ({ x: r.x, y: r.y, width: r.width, height: r.height })),
+            samples: diagnostics.filter((_, i) => i % 10 === 0) }));
+      }
       const current = map.project(coords);
       map.panBy([current.x - safe.x, current.y - safe.y], { duration: 0 });
       return safe;
