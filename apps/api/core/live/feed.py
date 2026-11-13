@@ -132,6 +132,11 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
             metadata={
                 "anomaly_type": anomaly_type,
                 "evidence_stage": props.get("evidence_stage"),
+                # A mature assessment is not evidence of independent sources.
+                # Only explicitly supplied lineage groups can upgrade the
+                # public corroboration label (not evidence_stage alone).
+                "independence_groups": props.get("independence_groups"),
+                "independent_source_count": props.get("independent_source_count"),
             },
             hypothesis_type=hypothesis_type,
         )
@@ -157,8 +162,8 @@ def _published_security_hypothesis_features(limit: int) -> list[dict[str, Any]]:
                 "tier": IntelTier.SIGNAL.value,
                 "verification_status": (
                     VerificationStatus.MULTI_SOURCE_CORROBORATED.value
-                    if props.get("evidence_stage") == "corroborated"
-                    else str(props.get("evidence_stage") or "assessed")
+                    if taxonomy["corroborated"]
+                    else VerificationStatus.DERIVED.value
                 ),
                 "publication_status": PublicationStatus.PUBLISHED.value,
                 "source_policy": SourcePolicy.OPERATOR_PUBLISHED.value,
@@ -881,9 +886,11 @@ def public_signal_collection(
         humanitarian_candidate_drops["duplicate_public_case"] += deduplicated_count
     humanitarian_candidate_drops["eligible"] = len(deduped_candidate_features)
 
+    # Match same-provider follow-ups across capitalization differences. The
+    # lifecycle resolver uses casefold() for provider identity as well.
     by_source: dict[str, list[IntelEvent]] = {}
     for event in events:
-        by_source.setdefault(event.source, []).append(event)
+        by_source.setdefault(event.source.strip().casefold(), []).append(event)
     mode_features: dict[str, list[dict[str, Any]]] = {
         "humanitarian": [],
         "security": [],
@@ -938,7 +945,7 @@ def public_signal_collection(
             from core.intel.humanitarian_incident import resolve_public_incident_state
 
             incident_state = resolve_public_incident_state(
-                event, now=now, same_source=by_source.get(event.source, [])
+                event, now=now, same_source=by_source.get(event.source.strip().casefold(), [])
             )
             # Live is a rolling 24-hour timeline. Terminal real-world
             # statuses remain visible until retention expiry, but are clearly
@@ -1221,7 +1228,7 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
     now = datetime.now(UTC)
     by_source: dict[str, list[IntelEvent]] = {}
     for event in drift_events.values():
-        by_source.setdefault(event.source, []).append(event)
+        by_source.setdefault(event.source.strip().casefold(), []).append(event)
     for event in drift_events.values():
         # SeaCommons Drift is a humanitarian SAR model only (docs/deep-research-
         # report.md #17, hard requirement). A positive allow-list, not
@@ -1244,13 +1251,20 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         # an active-looking pulsing drift cone still on the map reads as
         # "still adrift, still searching", which is exactly wrong for a
         # case that's already been rescued or gone stale.
-        explicit_state = str(event.metadata.get("incident_lifecycle") or "").lower()
-        state = explicit_state or lifecycle.distress_lifecycle(
-            event,
-            now=now,
-            same_source=by_source.get(event.source, []),
+        # Use the same canonical lifecycle *and* public operational status as
+        # the Live distress marker. A stale ingestion flag must not resurrect
+        # a resolved search cone, nor can an outcome-unknown case publish one.
+        # Pre-canonical events fall back through the shared resolver.
+        from core.intel.humanitarian_incident import resolve_public_incident_state
+
+        incident_state = resolve_public_incident_state(
+            event, now=now,
+            same_source=by_source.get(event.source.strip().casefold(), []),
         )
-        if state in _DRIFT_HIDDEN_LIFECYCLES:
+        if (
+            incident_state["lifecycle"] in _DRIFT_HIDDEN_LIFECYCLES
+            or incident_state["incident_status"] not in ("active", "needs_review")
+        ):
             continue
         # Only a real extracted maritime point is a drift origin. A region-only
         # Alarm Phone incident keeps its red search area (signal feed) but must
