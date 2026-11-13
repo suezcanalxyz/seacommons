@@ -417,3 +417,13 @@ test('PLAY merge keeps cluster suppression and unknown-course circle fallback to
   assert.match(source, /filter: \['all', \['!', \['has', 'point_count'\]\], \['any', \['!=', \['get', 'marker_kind'\], 'vessel'\], \['!=', \['get', 'has_course'\], true\]\]\]/);
   assert.match(source, /filter: \['all', \['!', \['has', 'point_count'\]\], \['==', \['get', 'marker_kind'\], 'vessel'\], \['==', \['get', 'has_course'\], true\]\]/);
 });
+
+
+test('PLAY responsive dossier and camera reserve a map corridor', async () => {
+  const css = await readFile(new URL('./play.css', import.meta.url), 'utf8');
+  const jsx = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(css, /width: min\(320px, calc\(\(100vw - var\(--live-panel-width\)\) \* \.44\)\)/);
+  assert.match(css, /top: 48dvh/);
+  assert.match(jsx, /right: 340/);
+  assert.match(jsx, /window\.innerHeight \* 0\.52/);
+});
