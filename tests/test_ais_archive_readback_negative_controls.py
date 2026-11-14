@@ -4,12 +4,18 @@ These tests do NOT certify PostgreSQL/R2 end-to-end restoration.
 They exercise gzip, JSON and row-equivalence semantics with no external data.
 """
 import gzip
+import io
 import json
 import unittest
 
 
 def validate_archive(raw: bytes, expected_rows: list[dict]) -> None:
-    restored = json.loads(gzip.decompress(raw))
+    expected_plain = json.dumps({"schema": "vessel_tracks_v1", "rows": expected_rows}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    with gzip.GzipFile(fileobj=io.BytesIO(raw)) as stream:
+        decoded = stream.read(len(expected_plain) + 1)
+    if len(decoded) != len(expected_plain):
+        raise ValueError("AIS cold archive decompressed size mismatch")
+    restored = json.loads(decoded)
     if (
         not isinstance(restored, dict)
         or restored.get("schema") != "vessel_tracks_v1"
@@ -54,6 +60,15 @@ class ArchiveReadbackNegativeControls(unittest.TestCase):
         rows = self.rows + [{"id": 2, "mmsi": "222222222"}]
         with self.assertRaises(ValueError):
             validate_archive(self.archive({"schema": "vessel_tracks_v1", "rows": list(reversed(rows))}), rows)
+
+    def test_oversized_valid_gzip_rejected_before_json_parse(self):
+        payload = {"schema": "vessel_tracks_v1", "rows": self.rows, "padding": "x" * 100_000}
+        with self.assertRaisesRegex(ValueError, "decompressed size mismatch"):
+            validate_archive(self.archive(payload), self.rows)
+
+    def test_missing_row_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_archive(self.archive({"schema": "vessel_tracks_v1", "rows": []}), self.rows)
 
     def test_non_object_payload(self):
         with self.assertRaises(ValueError):
