@@ -478,7 +478,8 @@ def test_prune_requires_restorable_gzip_schema_and_exact_rows_before_delete():
     assert body is not None
     checks = (
         "hashlib.sha256(verified).hexdigest() != digest",
-        "gzip.decompress(verified)",
+        "gzip.GzipFile(fileobj=io.BytesIO(verified))",
+        "stream.read(len(plain) + 1)",
         'restored.get("schema") != "vessel_tracks_v1"',
         'restored.get("rows") != payload',
         ".delete(synchronize_session=False)",
