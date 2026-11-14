@@ -44,6 +44,10 @@ def evaluate(reports: list[Report]) -> dict:
         all(valid_time(t) for t in (r.event_time, r.published_at, r.ingested_at))
         and (r.event_time is None or r.published_at is None
              or r.event_time <= r.published_at)
+        and (r.published_at is None or r.ingested_at is None
+             or r.published_at <= r.ingested_at)
+        and (r.event_time is None or r.ingested_at is None
+             or r.event_time <= r.ingested_at)
         for r in allowed
     )
     return {
@@ -107,6 +111,40 @@ class IncidentLineageControls(unittest.TestCase):
                            Report("B", "B", event_id="case-1")])
         self.assertFalse(result["chronology_valid"])
         self.assertFalse(result["eligible_for_human_review"])
+
+    def test_ingest_before_publication_abstains(self):
+        t = lambda day: datetime(2026, 11, day, tzinfo=timezone.utc)
+        result = evaluate([
+            Report("A", "A", event_id="case-1", event_time=t(10),
+                   published_at=t(12), ingested_at=t(11)),
+            Report("B", "B", event_id="case-1", event_time=t(10),
+                   published_at=t(12), ingested_at=t(13)),
+        ])
+        self.assertFalse(result["chronology_valid"])
+        self.assertFalse(result["eligible_for_human_review"])
+
+    def test_ingest_before_event_without_publication_abstains(self):
+        t = lambda day: datetime(2026, 11, day, tzinfo=timezone.utc)
+        result = evaluate([
+            Report("A", "A", event_id="case-1", event_time=t(12),
+                   ingested_at=t(11)),
+            Report("B", "B", event_id="case-1", event_time=t(12),
+                   ingested_at=t(13)),
+        ])
+        self.assertFalse(result["chronology_valid"])
+        self.assertFalse(result["eligible_for_human_review"])
+
+    def test_equal_event_publication_ingest_timestamps_allowed(self):
+        t = datetime(2026, 11, 14, tzinfo=timezone.utc)
+        result = evaluate([
+            Report("A", "A", event_id="case-1", event_time=t,
+                   published_at=t, ingested_at=t),
+            Report("B", "B", event_id="case-1", event_time=t,
+                   published_at=t, ingested_at=t),
+        ])
+        self.assertTrue(result["chronology_valid"])
+        self.assertTrue(result["eligible_for_human_review"])
+        self.assertFalse(result["automatic_attack_attribution"])
 
     def test_humanitarian_sensitive_record_excluded(self):
         result = evaluate([Report("A", "A"), Report("rescue", "B",
