@@ -367,7 +367,17 @@ class TrackStore:
                     # truncated JSON, or an altered row set.
                     # Parsing errors propagate out of session_scope, rolling back
                     # the transaction. No exception is swallowed under the lock.
-                    restored = json.loads(gzip.decompress(verified))
+                    # Bound decompression to the exact serialized batch size. A
+                    # checksum-valid object can still contain an oversized gzip
+                    # payload if the storage readback contract is compromised.
+                    # Read one extra byte to force EOF/trailer validation on
+                    # normal archives and fail closed on excess output.
+                    import io
+                    with gzip.GzipFile(fileobj=io.BytesIO(verified)) as stream:
+                        restored_bytes = stream.read(len(plain) + 1)
+                    if len(restored_bytes) != len(plain):
+                        raise ValueError("AIS cold archive decompressed size mismatch")
+                    restored = json.loads(restored_bytes)
                     if (not isinstance(restored, dict)
                             or restored.get("schema") != "vessel_tracks_v1"
                             or restored.get("rows") != payload):
