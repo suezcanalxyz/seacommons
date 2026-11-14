@@ -76,6 +76,22 @@ class ArchiveReadbackNegativeControls(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_archive(self.archive(self.rows), self.rows)
 
+    def test_multirow_exact_restore_with_nulls_and_unicode(self):
+        # Source-row equivalence must survive deterministic gzip/JSON roundtrip.
+        # Synthetic data only; this is NOT a PostgreSQL/R2 recovery certification.
+        rows = [
+            {"id": i, "mmsi": f"{100000000 + i}", "ts": "2026-11-01T00:00:00Z",
+             "lat": None if i % 7 == 0 else i / 1000, "label": "Méditerranée" if i % 2 else ""}
+            for i in range(100)
+        ]
+        raw = self.archive({"schema": "vessel_tracks_v1", "rows": rows})
+        validate_archive(raw, rows)
+        # Hard negative: one altered coordinate among 100 must fail.
+        changed = [dict(row) for row in rows]
+        changed[73]["lat"] = 0.0
+        with self.assertRaisesRegex(ValueError, "row equivalence failed"):
+            validate_archive(self.archive({"schema": "vessel_tracks_v1", "rows": changed}), rows)
+
 
 if __name__ == "__main__":
     unittest.main()
