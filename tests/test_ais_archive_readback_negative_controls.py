@@ -45,7 +45,9 @@ class ArchiveReadbackNegativeControls(unittest.TestCase):
 
     def test_invalid_json(self):
         with self.assertRaises(json.JSONDecodeError):
-            validate_archive(gzip.compress(b"{invalid", mtime=0), self.rows)
+            expected = json.dumps({"schema": "vessel_tracks_v1", "rows": self.rows}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            malformed = b"{" + b" " * (len(expected) - 1)
+            validate_archive(gzip.compress(malformed, mtime=0), self.rows)
 
     def test_wrong_schema(self):
         with self.assertRaises(ValueError):
