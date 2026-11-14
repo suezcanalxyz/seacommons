@@ -29,7 +29,7 @@ class ArchiveReadbackNegativeControls(unittest.TestCase):
         self.rows = [{"id": 1, "mmsi": "123456789", "ts": "2026-11-01T00:00:00Z"}]
 
     def archive(self, payload):
-        return gzip.compress(json.dumps(payload).encode("utf-8"), mtime=0)
+        return gzip.compress(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8"), mtime=0)
 
     def test_valid_archive(self):
         validate_archive(self.archive({"schema": "vessel_tracks_v1", "rows": self.rows}), self.rows)
