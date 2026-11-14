@@ -88,7 +88,7 @@ class ArchiveReadbackNegativeControls(unittest.TestCase):
         validate_archive(raw, rows)
         # Hard negative: one altered coordinate among 100 must fail.
         changed = [dict(row) for row in rows]
-        changed[73]["lat"] = 0.0
+        changed[73]["lat"] = 0.074  # Same serialized width as 0.073; exercise row equivalence, not size guard
         with self.assertRaisesRegex(ValueError, "row equivalence failed"):
             validate_archive(self.archive({"schema": "vessel_tracks_v1", "rows": changed}), rows)
 
