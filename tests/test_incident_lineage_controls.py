@@ -35,9 +35,15 @@ def evaluate(reports: list[Report]) -> dict:
                if r.origin and r.kind == "reported_event"}
     vessels = {r.vessel for r in allowed if r.vessel}
     conflicting = len(vessels) > 1
+    def valid_time(value):
+        return value is None or (isinstance(value, datetime)
+                                 and value.tzinfo is not None
+                                 and value.utcoffset() is not None)
+
     timestamps_valid = all(
-        r.event_time is None or r.published_at is None
-        or r.event_time <= r.published_at
+        all(valid_time(t) for t in (r.event_time, r.published_at, r.ingested_at))
+        and (r.event_time is None or r.published_at is None
+             or r.event_time <= r.published_at)
         for r in allowed
     )
     return {
@@ -84,6 +90,23 @@ class IncidentLineageControls(unittest.TestCase):
         self.assertTrue(evaluate([report])["chronology_valid"])
         self.assertEqual(report.ingested_at, t(5))
         self.assertNotEqual(report.event_time, report.published_at)
+
+    def test_naive_and_aware_chronology_abstains_without_exception(self):
+        aware = datetime(2026, 11, 14, tzinfo=timezone.utc)
+        naive = datetime(2026, 11, 13)
+        result = evaluate([Report("A", "A", event_id="case-1", event_time=naive,
+                                  published_at=aware),
+                           Report("B", "B", event_id="case-1", event_time=aware,
+                                  published_at=aware)])
+        self.assertFalse(result["chronology_valid"])
+        self.assertFalse(result["eligible_for_human_review"])
+
+    def test_naive_ingest_timestamp_abstains(self):
+        result = evaluate([Report("A", "A", event_id="case-1",
+                                  ingested_at=datetime(2026, 11, 14)),
+                           Report("B", "B", event_id="case-1")])
+        self.assertFalse(result["chronology_valid"])
+        self.assertFalse(result["eligible_for_human_review"])
 
     def test_humanitarian_sensitive_record_excluded(self):
         result = evaluate([Report("A", "A"), Report("rescue", "B",
