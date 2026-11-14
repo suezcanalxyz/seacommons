@@ -10,6 +10,16 @@ import urllib.request
 from urllib.parse import urlparse
 
 
+class HTTPSOnlyRedirect(urllib.request.HTTPRedirectHandler):
+    """Never silently downgrade a public HTTPS verification to HTTP."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urlparse(newurl)
+        if target.scheme != "https" or not target.hostname or target.username or target.password:
+            raise urllib.error.URLError("Insecure or credential-bearing redirect refused")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def probe(url: str, timeout: float = 12.0) -> dict:
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
@@ -24,8 +34,12 @@ def probe(url: str, timeout: float = 12.0) -> dict:
         return result
     try:
         request = urllib.request.Request(url, headers={"User-Agent": "SeaCommons-public-smoke/1.0"})
-        with urllib.request.urlopen(request, timeout=timeout, context=ssl.create_default_context()) as response:
-            result["tls_http"] = "ok" if 200 <= response.status < 400 else "failed"
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+            HTTPSOnlyRedirect(),
+        )
+        with opener.open(request, timeout=timeout) as response:
+            result["tls_http"] = "ok" if urlparse(response.url).scheme == "https" and 200 <= response.status < 400 else "failed"
             result["http_status"] = response.status
             result["final_host"] = urlparse(response.url).hostname
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
