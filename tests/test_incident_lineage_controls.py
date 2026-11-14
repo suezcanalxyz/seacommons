@@ -146,6 +146,35 @@ class IncidentLineageControls(unittest.TestCase):
         self.assertTrue(result["eligible_for_human_review"])
         self.assertFalse(result["automatic_attack_attribution"])
 
+    def test_non_datetime_ingestion_metadata_abstains(self):
+        """Malformed persisted metadata must not become a trusted timestamp."""
+        t = datetime(2026, 11, 14, tzinfo=timezone.utc)
+        result = evaluate([
+            Report("A", "A", event_id="case-1", event_time=t,
+                   published_at=t, ingested_at="2026-11-14T00:00:00Z"),
+            Report("B", "B", event_id="case-1", event_time=t,
+                   published_at=t, ingested_at=t),
+        ])
+        self.assertFalse(result["chronology_valid"])
+        self.assertFalse(result["eligible_for_human_review"])
+        self.assertFalse(result["automatic_attack_attribution"])
+
+    def test_timezone_offsets_compare_as_instants(self):
+        """Different UTC offsets must not produce a false chronology failure."""
+        from datetime import timedelta
+        utc = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+        plus_two = timezone(timedelta(hours=2))
+        result = evaluate([
+            Report("A", "A", event_id="case-1", event_time=utc,
+                   published_at=utc.astimezone(plus_two),
+                   ingested_at=utc),
+            Report("B", "B", event_id="case-1", event_time=utc,
+                   published_at=utc, ingested_at=utc),
+        ])
+        self.assertTrue(result["chronology_valid"])
+        self.assertTrue(result["eligible_for_human_review"])
+        self.assertFalse(result["automatic_attack_attribution"])
+
     def test_humanitarian_sensitive_record_excluded(self):
         result = evaluate([Report("A", "A"), Report("rescue", "B",
                                   domain="humanitarian",
