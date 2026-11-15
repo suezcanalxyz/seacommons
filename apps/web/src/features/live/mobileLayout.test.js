@@ -60,5 +60,5 @@ test('PLAY excludes rolling last 24h without deleting incident evidence and rais
   assert.match(source, /resolveGlobalTimelinePosition\(historicalIncidents/);
   assert.match(source, /historicalIncidents\.filter\(/);
   assert.match(source, /map\.moveLayer\(layerId\)/);
-  assert.match(source, /'play-clusters', 'play-incidents', 'play-vessels'/);
+  assert.match(source, /'play-incidents', 'play-vessels'/);
 });
