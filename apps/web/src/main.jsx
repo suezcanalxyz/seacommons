@@ -2609,7 +2609,7 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const effectiveBaseMap = isPublicLiveHost ? 'standard' : baseMap;
+    const effectiveBaseMap = baseMap;
     if (map.getLayer('osm')) map.setLayoutProperty('osm', 'visibility', effectiveBaseMap === 'standard' ? 'visible' : 'none');
     if (map.getLayer('satellite')) map.setLayoutProperty('satellite', 'visibility', effectiveBaseMap === 'satellite' ? 'visible' : 'none');
     try {
@@ -3681,7 +3681,7 @@ function App() {
             onToggle={toggleLayerGroup}
             baseMap={baseMap}
             onBaseMapChange={setBaseMap}
-            allowSatellite={!isPublicLiveHost}
+            allowSatellite={true}
             allowed={isPublicLiveHost ? PUBLIC_LIVE_LAYER_GROUPS : null}
           />
         ) : null}
