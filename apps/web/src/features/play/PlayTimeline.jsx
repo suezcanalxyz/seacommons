@@ -119,7 +119,7 @@ export default function PlayTimeline({ apiBase }) {
   const [satelliteOnly, setSatelliteOnly] = useState(false);
   const [sanctionsOnly, setSanctionsOnly] = useState(false);
   const [investigationsOnly, setInvestigationsOnly] = useState(false);
-  const [satelliteVisible, setSatelliteVisible] = useState(true);
+  const [satelliteVisible, setSatelliteVisible] = useState(false);
   const [satelliteContextMission, setSatelliteContextMission] = useState('VIIRS NOAA-21');
 
   const globalState = useMemo(
@@ -800,6 +800,13 @@ export default function PlayTimeline({ apiBase }) {
           </section>
           <section className="play-card">
             <p>Satellite context</p>
+            <label className="play-satellite-selector">
+              <span>Map imagery</span>
+              <select aria-label="Map imagery" value={satelliteVisible ? 'dated' : 'high-resolution'} onChange={(event) => setSatelliteVisible(event.target.value === 'dated')}>
+                <option value="high-resolution">High-resolution imagery · Esri composite</option>
+                <option value="dated">Dated imagery · NASA VIIRS (clouds visible)</option>
+              </select>
+            </label>
             {satelliteProps.asset_ref ? (
               <figure className="play-satellite-preview">
                 <img
