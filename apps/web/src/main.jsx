@@ -492,20 +492,15 @@ const OWM_KEY = import.meta.env.VITE_OWM_KEY;
 const UNREAL_PIXEL_STREAM_URL = String(import.meta.env.VITE_UNREAL_PIXEL_STREAM_URL || '').trim();
 
 function mapStyle() {
-  const satellite = MAPTILER_KEY
-    ? {
-      type: 'raster',
-      url: `https://api.maptiler.com/tiles/satellite-v2/tiles.json?key=${MAPTILER_KEY}`,
-      tileSize: 256,
-      attribution: '&copy; MapTiler satellite imagery providers',
-    }
-    : {
-      type: 'raster',
-      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-      tileSize: 256,
-      maxzoom: 19,
-      attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-    };
+  // Keep LIVE and PLAY on the same high-resolution composite basemap.
+  // Dated optical imagery is a separate evidence layer, not a live ship observation.
+  const satellite = {
+    type: 'raster',
+    tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+    tileSize: 256,
+    maxzoom: 19,
+    attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+  };
   return {
     version: 8,
     sources: {
@@ -2609,7 +2604,7 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const effectiveBaseMap = isPublicLiveHost ? 'standard' : baseMap;
+    const effectiveBaseMap = baseMap;
     if (map.getLayer('osm')) map.setLayoutProperty('osm', 'visibility', effectiveBaseMap === 'standard' ? 'visible' : 'none');
     if (map.getLayer('satellite')) map.setLayoutProperty('satellite', 'visibility', effectiveBaseMap === 'satellite' ? 'visible' : 'none');
     try {
@@ -3681,7 +3676,7 @@ function App() {
             onToggle={toggleLayerGroup}
             baseMap={baseMap}
             onBaseMapChange={setBaseMap}
-            allowSatellite={!isPublicLiveHost}
+            allowSatellite={true}
             allowed={isPublicLiveHost ? PUBLIC_LIVE_LAYER_GROUPS : null}
           />
         ) : null}
