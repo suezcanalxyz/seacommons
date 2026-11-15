@@ -28,3 +28,13 @@ test('public Live hides the persistent MapLibre attribution control', async () =
   const source = await readFile(new URL('../../main.jsx', import.meta.url), 'utf8');
   assert.match(source, /attributionControl:\s*!isPublicLiveHost/);
 });
+
+
+test('PLAY excludes rolling last 24h without deleting incident evidence and raises markers above raster', async () => {
+  const source = await readFile(new URL('../play/PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /reported < archiveNow - 24 \* 60 \* 60 \* 1000/);
+  assert.match(source, /resolveGlobalTimelinePosition\(historicalIncidents/);
+  assert.match(source, /historicalIncidents\.filter\(/);
+  assert.match(source, /map\.moveLayer\(layerId\)/);
+  assert.match(source, /'play-clusters', 'play-incidents', 'play-vessels'/);
+});
