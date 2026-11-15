@@ -50,13 +50,13 @@ test('production PLAY renders real geographic tiles without provider interceptio
   const tileFailures = [];
   page.on('response', response => {
     const url = response.url();
-    if (/\\.(?:png|jpe?g|webp)(?:\\?|$)|\\/(?:tiles?|styles?)\\//i.test(url) &&
+    if (/\.(?:png|jpe?g|webp)(?:\?|$)|\/(?:tiles?|styles?)\//i.test(url) &&
         !url.startsWith('data:')) {
       tileResponses.push({ status: response.status(), url: new URL(url).hostname });
     }
   });
   page.on('requestfailed', request => {
-    if (/\\.(?:png|jpe?g|webp)(?:\\?|$)|\\/(?:tiles?|styles?)\\//i.test(request.url())) {
+    if (/\.(?:png|jpe?g|webp)(?:\?|$)|\/(?:tiles?|styles?)\//i.test(request.url())) {
       tileFailures.push(request.failure()?.errorText || 'tile request failed');
     }
   });
