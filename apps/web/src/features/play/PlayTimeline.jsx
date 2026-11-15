@@ -101,8 +101,19 @@ export default function PlayTimeline({ apiBase }) {
   const [fallbackReady, setFallbackReady] = useState(false);
   const [mapError, setMapError] = useState('');
   const [incidents, setIncidents] = useState([]);
+  const [archiveNow, setArchiveNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setArchiveNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  // LIVE owns the rolling last 24h; PLAY retains older evidence without deleting records.
+  const historicalIncidents = useMemo(() => incidents.filter((incident) => {
+    const reported = Date.parse(String(incident.reported_at || ''));
+    return Number.isFinite(reported) && reported < archiveNow - 24 * 60 * 60 * 1000;
+  }), [incidents, archiveNow]);
   const [archiveTotal, setArchiveTotal] = useState(null);
   const [selectedId, setSelectedId] = useState('');
+  const [overlapIds, setOverlapIds] = useState([]);
   const [caseData, setCaseData] = useState(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [globalPosition, setGlobalPosition] = useState(TIMELINE_MAX);
@@ -123,14 +134,14 @@ export default function PlayTimeline({ apiBase }) {
   const [satelliteContextMission, setSatelliteContextMission] = useState('VIIRS NOAA-21');
 
   const globalState = useMemo(
-    () => resolveGlobalTimelinePosition(incidents, globalPosition, TIMELINE_MAX),
-    [incidents, globalPosition],
+    () => resolveGlobalTimelinePosition(historicalIncidents, globalPosition, TIMELINE_MAX),
+    [historicalIncidents, globalPosition],
   );
   const visibleIncidents = useMemo(() => {
-    if (globalState.mode === 'all' && !selectedDay) return incidents;
+    if (globalState.mode === 'all' && !selectedDay) return historicalIncidents;
     const day = selectedDay || globalState.cutoff?.slice(0, 10);
-    return incidents.filter((incident) => String(incident.reported_at || '').slice(0, 10) === day);
-  }, [incidents, globalState.mode, globalState.cutoff, selectedDay]);
+    return historicalIncidents.filter((incident) => String(incident.reported_at || '').slice(0, 10) === day);
+  }, [historicalIncidents, globalState.mode, globalState.cutoff, selectedDay]);
   const categoryIncidents = useMemo(() => visibleIncidents.filter((incident) => {
     const mainCategory = incident.main_category || incident.domain;
     if (archiveFilter === 'humanitarian') return mainCategory === 'humanitarian';
@@ -158,12 +169,16 @@ export default function PlayTimeline({ apiBase }) {
     sanctionsOnly,
     investigationsOnly,
   ]);
-  const coverage = useMemo(() => archiveCoverage(incidents), [incidents]);
+  const coverage = useMemo(() => archiveCoverage(historicalIncidents), [historicalIncidents]);
   const mappedIncidentCount = useMemo(() => incidentCollection(filteredIncidents).features.length, [filteredIncidents]);
   const archiveGroups = useMemo(() => groupArchiveByMonth(filteredIncidents), [filteredIncidents]);
   const selectedIncident = useMemo(
     () => visibleIncidents.find((item) => item.incident_id === selectedId) || null,
     [visibleIncidents, selectedId],
+  );
+  const overlapIncidents = useMemo(
+    () => overlapIds.map((id) => filteredIncidents.find((item) => item.incident_id === id)).filter(Boolean),
+    [overlapIds, filteredIncidents],
   );
   // Derived voyage evidence must exist before the map effect depends on it.
   const voyageVessels = useMemo(() => (caseData?.voyage_evidence?.vessels || []).map((v) => ({
@@ -298,6 +313,29 @@ export default function PlayTimeline({ apiBase }) {
 
   useEffect(() => {
     let disposed = false;
+    let fallbackStarted = false;
+    let mapStartupTimer = null;
+    let mapCanvas = null;
+    let contextLossHandler = null;
+
+    function rendererFailureIsFatal(error) {
+      const message = String(error?.message || error || '');
+      return /\bwebgl\b|webglcontextlost|worker\s+(?:terminated|failed|crashed|unavailable)|failed to (?:initialize|create) (?:the )?(?:map|renderer|worker)|style (?:parse|validation) error/i.test(message);
+    }
+
+    async function failToFallback(error) {
+      if (disposed || fallbackStarted) return;
+      fallbackStarted = true;
+      if (mapStartupTimer) clearTimeout(mapStartupTimer);
+      // Keep the fallback usable, but preserve the renderer failure for browser CI.
+      // Never log incident payloads, coordinates, or source evidence.
+      console.warn('[PLAY_MAP_RENDERER_FALLBACK]', error?.name || 'Error', String(error?.message || 'unknown').slice(0, 240));
+      if (window.__SEACOMMONS_EXPOSE_PLAY_MAP__ === true) delete window.__SEACOMMONS_PLAY_MAP__;
+      return activateFallbackMap().catch(() => {
+        if (!disposed) setMapError('Map unavailable. Archive cases remain available.');
+      });
+    }
+
     async function initMap() {
       if (window.__SEACOMMONS_FORCE_MAP_FALLBACK__ === true) throw new Error('forced map fallback');
       await import('maplibre-gl/dist/maplibre-gl.css');
@@ -311,18 +349,30 @@ export default function PlayTimeline({ apiBase }) {
       if (disposed || !mapNodeRef.current || mapRef.current) return;
       const map = new maplibregl.Map({
         container: mapNodeRef.current,
-        style: window.__SEACOMMONS_E2E_MAP__ === true
-          ? { version: 8, sources: {}, layers: [{ id: 'e2e-background', type: 'background', paint: { 'background-color': '#0b1820' } }] }
-          : playMapStyle(), center: [14.8, 35.7], zoom: 3.55,
+        style: playMapStyle(), center: [14.8, 35.7], zoom: 3.55,
         attributionControl: false,
       });
+      mapRef.current = map;
       map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'bottom-right');
-      // Opt-in E2E diagnostics must distinguish Map construction from style loading.
-      if (window.__SEACOMMONS_E2E_MAP__ === true) window.__SEACOMMONS_PLAY_MAP__ = map;
+      // Opt-in E2E diagnostics expose the real production-style map without replacing its style.
+      if (window.__SEACOMMONS_EXPOSE_PLAY_MAP__ === true) window.__SEACOMMONS_PLAY_MAP__ = map;
+      mapStartupTimer = setTimeout(() => {
+        void failToFallback(new Error('MapLibre startup timed out before the style loaded'));
+      }, 15_000);
+      map.on('error', (event) => {
+        if (rendererFailureIsFatal(event?.error)) void failToFallback(event.error);
+      });
+      mapCanvas = map.getCanvas();
+      contextLossHandler = (event) => {
+        event.preventDefault();
+        void failToFallback(new Error('webglcontextlost'));
+      };
+      mapCanvas.addEventListener('webglcontextlost', contextLossHandler, false);
       // Initialize case layers when the style is ready, without waiting for remote
       // satellite/OSM raster tiles to load. A slow basemap must not hide evidence.
       map.on('style.load', () => {
-        if (disposed) return;
+        if (disposed || fallbackStarted) return;
+        if (mapStartupTimer) clearTimeout(mapStartupTimer);
         map.addImage('vessel-arrow', createVesselArrowImage(48), { sdf: true });
         map.addSource('play-incidents', {
           type: 'geojson', data: { type: 'FeatureCollection', features: [] },
@@ -381,8 +431,18 @@ export default function PlayTimeline({ apiBase }) {
           paint: { 'line-color': '#75a7ff', 'line-width': 1.5, 'line-opacity': 0.85, 'line-dasharray': [2, 2] },
         });
         const selectArchiveFeature = (event) => {
-          const id = event.features?.[0]?.properties?.incident_id;
+          const rendered = map.queryRenderedFeatures(event.point, { layers: ['play-incidents', 'play-vessels'] });
+          const ids = [...new Set(rendered
+            .map((feature) => feature.properties?.incident_id)
+            .filter(Boolean)
+            .map(String))];
+          if (ids.length > 1) {
+            setOverlapIds(ids);
+            return;
+          }
+          const id = ids[0] || event.features?.[0]?.properties?.incident_id;
           if (id) {
+            setOverlapIds([]);
             setSelectedId(String(id));
             setCasesOpen(false);
           }
@@ -391,6 +451,7 @@ export default function PlayTimeline({ apiBase }) {
           const clusterId = event.features?.[0]?.properties?.cluster_id;
           const coordinates = event.features?.[0]?.geometry?.coordinates;
           if (clusterId == null || !Array.isArray(coordinates)) return;
+          setOverlapIds([]);
           try {
             const zoom = await map.getSource('play-incidents').getClusterExpansionZoom(clusterId);
             map.easeTo({ center: coordinates, zoom: Math.min(zoom, 18) });
@@ -406,7 +467,6 @@ export default function PlayTimeline({ apiBase }) {
           map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
         }
         // Explicitly opt-in for deterministic browser E2E; never enabled for normal visitors.
-        mapRef.current = map;
         map.resize();
         setMapError('');
         setMapReady(true);
@@ -414,6 +474,8 @@ export default function PlayTimeline({ apiBase }) {
     }
     async function activateFallbackMap() {
       if (disposed || !mapNodeRef.current) return;
+      setMapReady(false);
+      if (mapCanvas && contextLossHandler) mapCanvas.removeEventListener('webglcontextlost', contextLossHandler, false);
       try { mapRef.current?.remove(); } catch { /* partial MapLibre init */ }
       mapRef.current = null;
       mapNodeRef.current.replaceChildren();
@@ -434,19 +496,14 @@ export default function PlayTimeline({ apiBase }) {
       setMapError('');
       setFallbackReady(true);
     }
-    initMap().catch((error) => {
-      // Keep the fallback usable, but preserve the renderer failure for browser CI.
-      // Never log incident payloads, coordinates, or source evidence.
-      console.warn('[PLAY_MAP_RENDERER_FALLBACK]', error?.name || 'Error', String(error?.message || 'unknown').slice(0, 240));
-      return activateFallbackMap().catch(() => {
-        if (!disposed) setMapError('Map unavailable. Archive cases remain available.');
-      });
-    });
+    initMap().catch(failToFallback);
     return () => {
       disposed = true;
+      if (mapStartupTimer) clearTimeout(mapStartupTimer);
+      if (mapCanvas && contextLossHandler) mapCanvas.removeEventListener('webglcontextlost', contextLossHandler, false);
       try { mapRef.current?.remove(); } catch { /* already removed */ }
       mapRef.current = null;
-      if (window.__SEACOMMONS_E2E_MAP__ === true) delete window.__SEACOMMONS_PLAY_MAP__;
+      if (window.__SEACOMMONS_EXPOSE_PLAY_MAP__ === true) delete window.__SEACOMMONS_PLAY_MAP__;
       fallbackMapRef.current?.destroy();
       fallbackMapRef.current = null;
     };
@@ -482,9 +539,13 @@ export default function PlayTimeline({ apiBase }) {
       map.setPaintProperty('play-incidents', 'circle-radius', ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5]);
     }
     if (map.getLayer('play-vessels')) {
-      map.setLayoutProperty('play-vessels', 'icon-size', ['case', ['==', ['get', 'incident_id'], selectedId], 0.46, ['interpolate', ['linear'], ['zoom'], 3, 0.20, 7, 0.34, 10, 0.46]]);
+      map.setLayoutProperty('play-vessels', 'icon-size', ['interpolate', ['linear'], ['zoom'], 3, ['case', ['==', ['get', 'incident_id'], selectedId], 0.30, 0.20], 7, ['case', ['==', ['get', 'incident_id'], selectedId], 0.46, 0.34], 10, ['case', ['==', ['get', 'incident_id'], selectedId], 0.58, 0.46]]);
     }
     addSatelliteLayer(map, satellite);
+    // Always render evidence markers above footprints, routes and satellite rasters.
+    for (const layerId of ['play-incidents', 'play-vessels']) {
+      if (map.getLayer(layerId)) map.moveLayer(layerId);
+    }
   }, [mapReady, filteredIncidents, visibleTimeline, selectedId, selectedIncident, satellite, voyageVessels]);
 
   const selectedLongitude = selectedIncident?.geometry?.type === 'Point' ? selectedIncident.geometry.coordinates?.[0] : null;
@@ -690,6 +751,25 @@ export default function PlayTimeline({ apiBase }) {
           </div>
         ) : null}
       </section>
+
+      {overlapIncidents.length > 1 ? (
+        <div className="play-overlap-picker" role="dialog" aria-label="Overlapping archive records">
+          <div className="play-overlap-picker__header"><strong>Multiple records at this position</strong><button type="button" onClick={() => setOverlapIds([])} aria-label="Close overlapping records">&times;</button></div>
+          <p>Choose the archive dossier to open. Co-location does not imply duplicate evidence.</p>
+          <div className="play-overlap-picker__records">
+            {overlapIncidents.map((incident) => (
+              <button
+                key={incident.incident_id}
+                type="button"
+                onClick={() => { setSelectedId(incident.incident_id); setOverlapIds([]); setCasesOpen(false); }}
+              >
+                <strong>{incident.title || 'SeaCommons incident'}</strong>
+                <span>{itemTime(incident.reported_at)} &middot; {incident.source || 'source unavailable'}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <aside className={`cone-panel cone-panel--intel play-evidence ${selectedId ? 'is-open' : ''}`}>
         <div className="play-sheet-handle" />

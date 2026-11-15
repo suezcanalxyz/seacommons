@@ -383,10 +383,14 @@ test('Play zoom clusters preserve all original archive records and expand on cli
 });
 
 
-test('Play vessel zoom interpolation survives selected-case update effect', async () => {
+test('Play vessel selection keeps zoom as the top-level interpolation input', async () => {
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
-  assert.match(source, /map\.setLayoutProperty\('play-vessels', 'icon-size', \['case',[^\n]*\['interpolate', \['linear'\], \['zoom'\], 3, 0\.20, 7, 0\.34, 10, 0\.46\]\]\)/);
-  assert.doesNotMatch(source, /map\.setLayoutProperty\('play-vessels', 'icon-size', \['case', [^\n]*0\.46, 0\.34\]\)/);
+  const update = source.split('\n').find((line) => line.includes("setLayoutProperty('play-vessels', 'icon-size'"));
+  assert.match(update, /\['interpolate', \['linear'\], \['zoom'\]/);
+  assert.match(update, /3, \['case',[^\n]*0\.30, 0\.20\]/);
+  assert.match(update, /7, \['case',[^\n]*0\.46, 0\.34\]/);
+  assert.match(update, /10, \['case',[^\n]*0\.58, 0\.46\]/);
+  assert.doesNotMatch(update, /^\s*map\.setLayoutProperty\([^\n]*\['case',[^\n]*\['zoom'\]/);
 });
 
 
@@ -405,6 +409,31 @@ test('Play cluster hover advertises expansion without changing dossier selection
   assert.match(source, /map\.on\('click', 'play-clusters', async \(event\) => \{/);
   assert.doesNotMatch(source, /map\.on\('click', 'play-clusters', selectArchiveFeature\)/);
 });
+
+test('MapLibre release diagnostics preserve the production cartographic style', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /style: playMapStyle\(\)/);
+  assert.match(source, /__SEACOMMONS_EXPOSE_PLAY_MAP__/);
+  assert.doesNotMatch(source, /e2e-background/);
+  assert.doesNotMatch(source, /__SEACOMMONS_E2E_MAP__/);
+});
+
+test('PLAY fails over after fatal asynchronous MapLibre renderer failures', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /map\.on\('error'/);
+  assert.match(source, /webglcontextlost/);
+  assert.match(source, /mapStartupTimer/);
+  assert.match(source, /activateFallbackMap\(\)/);
+});
+
+test('co-located PLAY records require an explicit identity choice', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /queryRenderedFeatures\(event\.point/);
+  assert.match(source, /setOverlapIds\(ids\)/);
+  assert.match(source, /aria-label="Overlapping archive records"/);
+  assert.match(source, /overlapIncidents\.map/);
+});
+
 
 test('archive markers preserve unknown heading instead of inventing northward travel', () => {
   const collection = incidentCollection([{ incident_id: 'aisanom:missing-course', case_type: 'ais_anomaly', domain: 'maritime', reported_at: '2026-11-01T12:00:00Z', geometry: { type: 'Point', coordinates: [14, 35] } }]);

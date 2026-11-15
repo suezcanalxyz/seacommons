@@ -92,6 +92,47 @@
 .play-map-status strong { margin: 3px 0; color: var(--live-accent); }
 .play-map-message { top: 16px; left: calc(var(--live-panel-width) + 16px); padding: 8px 11px; font-size: 8px; }
 .play-map-message.is-error { border-color: rgba(255,116,111,.42); color: #ff9a96; }
+.play-overlap-picker {
+  position: fixed;
+  z-index: 1200;
+  top: 50%;
+  left: calc(50% + var(--live-panel-width) / 2);
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100vw - var(--live-panel-width) - 40px));
+  max-height: min(720px, calc(100dvh - 40px));
+  overflow: hidden;
+  padding: 12px;
+  border: 1px solid rgba(169,255,218,.32);
+  color: #e9f7f1;
+  background: rgba(3,10,14,.96);
+  box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  transform: translate(-50%, -50%);
+  font-family: var(--font-mono);
+}
+.play-overlap-picker__header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; }
+.play-overlap-picker__header > button { border: 0; color: #e9f7f1; background: transparent; cursor: pointer; }
+.play-overlap-picker > p { margin: 7px 0 10px; color: rgba(225,242,237,.56); font-size: 8px; line-height: 1.45; }
+.play-overlap-picker__records {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.play-overlap-picker__records > button {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid rgba(169,255,218,.14);
+  color: #e9f7f1;
+  background: rgba(169,255,218,.035);
+  text-align: left;
+  cursor: pointer;
+}
+.play-overlap-picker__records > button + button { margin-top: 6px; }
+.play-overlap-picker__records > button strong,
+.play-overlap-picker__records > button span { display: block; }
+.play-overlap-picker__records > button span { margin-top: 4px; color: rgba(225,242,237,.5); font-size: 7px; }
 .play-evidence {
   display: none;
   bottom: 64px;
@@ -188,6 +229,14 @@
   }
   .play-all-badge { top: 12px; right: 12px; }
   .play-map-message { top: 58px; left: 12px; }
+  .play-overlap-picker {
+    top: calc((100dvh - var(--play-dock-height, 64px)) / 2);
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: calc(100dvh - var(--play-dock-height, 64px) - 24px);
+    transform: translateY(-50%);
+  }
   .play-timeline-bar {
     left: 0;
     height: 62px;

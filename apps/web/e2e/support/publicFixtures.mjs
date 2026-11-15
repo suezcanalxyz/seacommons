@@ -2,7 +2,7 @@ export const PUBLIC_LIVE_URL = 'http://live.seacommons.org:4173/';
 export const PUBLIC_PLAY_URL = 'http://play.seacommons.org:4173/play.html';
 
 const ONE_PIXEL_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=',
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNYdv7OfwAHwQNRndUJgQAAAABJRU5ErkJggg==',
   'base64',
 );
 
@@ -78,7 +78,7 @@ export const receiverMeshFixture = {
   ],
 };
 
-const playIncidents = [
+export const playIncidents = [
   {
     incident_id: 'play-humanitarian-1', title: 'Historical distress', domain: 'humanitarian',
     source: 'Alarm Phone', case_type: 'distress', incident_status: 'resolved',
@@ -87,7 +87,7 @@ const playIncidents = [
   {
     incident_id: 'play-maritime-1', title: 'Historical safety report', domain: 'maritime',
     source: 'AIS', case_type: 'vessel_incident', incident_status: 'outcome_unknown',
-    reported_at: '2026-09-06T11:00:00Z', geometry: { type: 'Point', coordinates: [15.1, 36.0] },
+    reported_at: '2026-09-06T11:00:00Z', course: 72, geometry: { type: 'Point', coordinates: [15.1, 36.0] },
   },
   {
     incident_id: 'play-correlated-1', title: 'Reviewed correlated case', domain: 'maritime',
@@ -109,8 +109,8 @@ function signalPayload(mode) {
   };
 }
 
-function timelinePayload(incidentId) {
-  const incident = playIncidents.find((item) => item.incident_id === incidentId) || playIncidents[0];
+function timelinePayload(incidentId, incidents = playIncidents) {
+  const incident = incidents.find((item) => item.incident_id === incidentId) || incidents[0];
   return {
     incident,
     timeline: [{
@@ -128,7 +128,7 @@ async function fulfillJson(route, payload, status = 200) {
   });
 }
 
-function apiPayload(url) {
+function apiPayload(url, incidents = playIncidents) {
   const { pathname, searchParams } = url;
   if (pathname === '/api/v1/live/signals') return signalPayload(searchParams.get('mode') || 'all');
   if (pathname === '/api/v1/live/pipeline') return livePipelineFixture;
@@ -138,18 +138,18 @@ function apiPayload(url) {
   if (pathname === '/api/v1/live/drifts') return { type: 'FeatureCollection', features: [] };
   if (pathname === '/api/v1/live/platforms') return { type: 'FeatureCollection', features: [] };
   if (pathname === '/api/v1/live/ngo-vessels') return { type: 'FeatureCollection', features: [] };
-  if (pathname === '/api/v1/play/counts') return { total_count: playIncidents.length };
-  if (pathname === '/api/v1/play/incidents') return { incidents: playIncidents, next_offset: null };
+  if (pathname === '/api/v1/play/counts') return { total_count: incidents.length };
+  if (pathname === '/api/v1/play/incidents') return { incidents, next_offset: null };
   if (pathname.startsWith('/api/v1/play/incidents/') && pathname.endsWith('/timeline')) {
     const incidentId = decodeURIComponent(pathname.slice('/api/v1/play/incidents/'.length, -'/timeline'.length));
-    return timelinePayload(incidentId);
+    return timelinePayload(incidentId, incidents);
   }
   return {};
 }
 
-export async function installDeterministicRoutes(page) {
+export async function installDeterministicRoutes(page, { playIncidents: incidentFixture = playIncidents } = {}) {
   await page.route('**/api/v1/**', async (route) => {
-    await fulfillJson(route, apiPayload(new URL(route.request().url())));
+    await fulfillJson(route, apiPayload(new URL(route.request().url()), incidentFixture));
   });
 
   for (const pattern of [
