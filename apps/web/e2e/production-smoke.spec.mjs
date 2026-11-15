@@ -50,6 +50,7 @@ test('production PLAY renders real geographic tiles without provider interceptio
   const tileFailures = [];
   const rasterResponses = [];
   const rasterDecodeErrors = [];
+  const pendingRasterDecodes = new Set();
   page.on('response', response => {
     const url = response.url();
     if (/\.(?:png|jpe?g|webp)(?:\?|$)|\/(?:tiles?|styles?)\//i.test(url) &&
@@ -59,7 +60,7 @@ test('production PLAY renders real geographic tiles without provider interceptio
       if (/\.(?:png|jpe?g|webp)(?:\?|$)|\/tiles?\//i.test(url) && response.status() >= 200 && response.status() < 300) {
         if (/^image\//i.test(response.headers()['content-type'] || '')) {
           // Verify a browser decoder can read the actual network payload, not just its MIME header.
-          void response.body().then(async bytes => {
+          const decode = response.body().then(async bytes => {
             const encoded = bytes.toString('base64');
             const decoded = await page.evaluate(async ({ encoded, mime }) => {
               const image = new Image();
@@ -70,6 +71,8 @@ test('production PLAY renders real geographic tiles without provider interceptio
             if (decoded) rasterResponses.push({ url: new URL(url).hostname, contentType: response.headers()['content-type'] });
             else rasterDecodeErrors.push('Zero-size decoded raster tile');
           }).catch(error => rasterDecodeErrors.push(String(error)));
+          pendingRasterDecodes.add(decode);
+          void decode.finally(() => pendingRasterDecodes.delete(decode));
         }
       }
     }
@@ -96,6 +99,8 @@ test('production PLAY renders real geographic tiles without provider interceptio
     message: 'At least one real raster tile must be decoded by the browser; MIME headers alone do not count',
     timeout: 25_000,
   }).toBeGreaterThan(0);
+  // A successful first tile must not mask failures from other decodes already in flight.
+  await Promise.all([...pendingRasterDecodes]);
   expect(rasterDecodeErrors, 'Raster payloads must decode successfully').toEqual([]);
   expect(tileFailures, 'No geographic tile requests may fail').toEqual([]);
   expect(tileResponses.filter(item => item.status >= 400), 'No tile HTTP failures').toEqual([]);
