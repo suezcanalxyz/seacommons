@@ -67,7 +67,7 @@ function addSatelliteLayer(map, observation) {
     type: 'raster',
     source: 'play-satellite',
     paint: { 'raster-opacity': 0.72, 'raster-fade-duration': 120 },
-  }, 'play-incidents');
+  }, 'play-clusters');
 }
 
 function itemTime(value) {
