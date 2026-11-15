@@ -94,6 +94,16 @@ test('production PLAY renders real geographic tiles without provider interceptio
   await expect.poll(async () => page.locator('.maplibregl-canvas, .leaflet-container').count(), {
     timeout: 20_000,
   }).toBeGreaterThan(0);
+  // A detached or zero-sized canvas/container is not evidence of visible geography.
+  await expect.poll(async () => page.locator('.maplibregl-canvas, .leaflet-container').evaluateAll(nodes =>
+    nodes.some(node => {
+      const rect = node.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+    })), {
+    message: 'PLAY map must have a visible, nonzero viewport',
+    timeout: 20_000,
+  }).toBeTruthy();
 
   // The map's own load event is insufficient: the geographic provider must
   // deliver at least one successful non-synthetic tile or style resource.
