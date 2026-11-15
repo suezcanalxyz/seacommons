@@ -207,7 +207,7 @@ jobs:
             sleep $((attempt * 20))
           done
       - name: Require MapLibre WebGL on both desktop and mobile
-        run: npx playwright test e2e/public-play.spec.mjs --grep 'MapLibre PLAY captures continent|MapLibre cluster expansion preserves'
+        run: npx playwright test e2e/public-play.spec.mjs --grep '^MapLibre '
       - name: Upload visual evidence even if WebGL gate fails
         if: always()
         uses: actions/upload-artifact@v4

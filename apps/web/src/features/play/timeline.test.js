@@ -406,6 +406,31 @@ test('Play cluster hover advertises expansion without changing dossier selection
   assert.doesNotMatch(source, /map\.on\('click', 'play-clusters', selectArchiveFeature\)/);
 });
 
+test('MapLibre release diagnostics preserve the production cartographic style', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /style: playMapStyle\(\)/);
+  assert.match(source, /__SEACOMMONS_EXPOSE_PLAY_MAP__/);
+  assert.doesNotMatch(source, /e2e-background/);
+  assert.doesNotMatch(source, /__SEACOMMONS_E2E_MAP__/);
+});
+
+test('PLAY fails over after fatal asynchronous MapLibre renderer failures', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /map\.on\('error'/);
+  assert.match(source, /webglcontextlost/);
+  assert.match(source, /mapStartupTimer/);
+  assert.match(source, /activateFallbackMap\(\)/);
+});
+
+test('co-located PLAY records require an explicit identity choice', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /queryRenderedFeatures\(event\.point/);
+  assert.match(source, /setOverlapIds\(ids\)/);
+  assert.match(source, /aria-label="Overlapping archive records"/);
+  assert.match(source, /overlapIncidents\.map/);
+});
+
+
 test('archive markers preserve unknown heading instead of inventing northward travel', () => {
   const collection = incidentCollection([{ incident_id: 'aisanom:missing-course', case_type: 'ais_anomaly', domain: 'maritime', reported_at: '2026-11-01T12:00:00Z', geometry: { type: 'Point', coordinates: [14, 35] } }]);
   assert.equal(collection.features[0].properties.has_course, false);

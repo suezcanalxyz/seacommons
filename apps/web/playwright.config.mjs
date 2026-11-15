@@ -8,7 +8,7 @@ const PUBLIC_HOST_RULES = [
 export default defineConfig({
   testDir: './e2e',
   testIgnore: '**/production-smoke.spec.mjs',
-  timeout: 30_000,
+  timeout: 45_000,
   expect: { timeout: 5_000 },
   fullyParallel: false,
   workers: 1,

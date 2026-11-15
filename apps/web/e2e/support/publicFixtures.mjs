@@ -78,7 +78,7 @@ export const receiverMeshFixture = {
   ],
 };
 
-const playIncidents = [
+export const playIncidents = [
   {
     incident_id: 'play-humanitarian-1', title: 'Historical distress', domain: 'humanitarian',
     source: 'Alarm Phone', case_type: 'distress', incident_status: 'resolved',
@@ -109,8 +109,8 @@ function signalPayload(mode) {
   };
 }
 
-function timelinePayload(incidentId) {
-  const incident = playIncidents.find((item) => item.incident_id === incidentId) || playIncidents[0];
+function timelinePayload(incidentId, incidents = playIncidents) {
+  const incident = incidents.find((item) => item.incident_id === incidentId) || incidents[0];
   return {
     incident,
     timeline: [{
@@ -128,7 +128,7 @@ async function fulfillJson(route, payload, status = 200) {
   });
 }
 
-function apiPayload(url) {
+function apiPayload(url, incidents = playIncidents) {
   const { pathname, searchParams } = url;
   if (pathname === '/api/v1/live/signals') return signalPayload(searchParams.get('mode') || 'all');
   if (pathname === '/api/v1/live/pipeline') return livePipelineFixture;
@@ -138,18 +138,18 @@ function apiPayload(url) {
   if (pathname === '/api/v1/live/drifts') return { type: 'FeatureCollection', features: [] };
   if (pathname === '/api/v1/live/platforms') return { type: 'FeatureCollection', features: [] };
   if (pathname === '/api/v1/live/ngo-vessels') return { type: 'FeatureCollection', features: [] };
-  if (pathname === '/api/v1/play/counts') return { total_count: playIncidents.length };
-  if (pathname === '/api/v1/play/incidents') return { incidents: playIncidents, next_offset: null };
+  if (pathname === '/api/v1/play/counts') return { total_count: incidents.length };
+  if (pathname === '/api/v1/play/incidents') return { incidents, next_offset: null };
   if (pathname.startsWith('/api/v1/play/incidents/') && pathname.endsWith('/timeline')) {
     const incidentId = decodeURIComponent(pathname.slice('/api/v1/play/incidents/'.length, -'/timeline'.length));
-    return timelinePayload(incidentId);
+    return timelinePayload(incidentId, incidents);
   }
   return {};
 }
 
-export async function installDeterministicRoutes(page) {
+export async function installDeterministicRoutes(page, { playIncidents: incidentFixture = playIncidents } = {}) {
   await page.route('**/api/v1/**', async (route) => {
-    await fulfillJson(route, apiPayload(new URL(route.request().url())));
+    await fulfillJson(route, apiPayload(new URL(route.request().url()), incidentFixture));
   });
 
   for (const pattern of [
