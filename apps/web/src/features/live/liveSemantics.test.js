@@ -158,3 +158,11 @@ test('public LIVE basemap control is portalled above the MapLibre canvas and rem
   assert.match(main, /<\/button>, document\.body/);
   assert.match(css, /\.live-basemap-switch \{[\s\S]*?z-index: 10000;[\s\S]*?pointer-events: auto;/);
 });
+
+
+test('public LIVE initializes satellite raster before data loads and keeps basemap switch visible', () => {
+  assert.match(main, /if \(isPublicLiveHost\) return 'satellite';/);
+  assert.match(main, /id: 'satellite', type: 'raster', source: 'satellite', layout: \{ visibility: isPublicLiveHost \? 'visible' : 'none' \}/);
+  assert.match(main, /id: 'osm', type: 'raster', source: 'osm', layout: \{ visibility: isPublicLiveHost \? 'none' : 'visible' \}/);
+  assert.match(main, /isPublicLiveHost \? createPortal\(/);
+});
