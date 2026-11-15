@@ -18,8 +18,8 @@
   "scripts": {
     "dev": "vite",
     "dev:full": "bash ../../scripts/run_dev.sh all",
-    "build": "vite build",
-    "build:unified": "vite build && node scripts/package-unified.mjs",
+    "build": "vite build && node scripts/verify-maplibre-worker-asset.mjs",
+    "build:unified": "npm run build && node scripts/package-unified.mjs",
     "clean": "rm -rf dist",
     "lint": "npm run lint:js && npm run typecheck",
     "lint:js": "eslint src --quiet",
