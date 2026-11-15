@@ -148,3 +148,13 @@ test('Sanctions and Civil SAR are always-visible context layers, not hidden inve
   assert.doesNotMatch(expandedBlock, /\['sanctions', 'Sanctions'\]/);
   assert.doesNotMatch(expandedBlock, /\['sar_fleet', 'Civil SAR fleet'\]/);
 });
+
+
+test('public LIVE basemap control is portalled above the MapLibre canvas and remains clickable', () => {
+  const main = fs.readFileSync(new URL('../../main.jsx', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
+  assert.match(main, /import \{ createPortal \} from 'react-dom';/);
+  assert.match(main, /isPublicLiveHost && !play3D \? createPortal\(/);
+  assert.match(main, /<\/button>, document\.body/);
+  assert.match(css, /\.live-basemap-switch \{[\s\S]*?z-index: 10000;[\s\S]*?pointer-events: auto;/);
+});

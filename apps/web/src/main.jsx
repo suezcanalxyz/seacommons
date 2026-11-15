@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import './styles.css';
 import './ui/ui.css';
 import './suez-theme.css';
@@ -4356,7 +4357,7 @@ function App() {
 
         </div>
       </section>
-        {isPublicLiveHost && !play3D ? (
+        {isPublicLiveHost && !play3D ? createPortal(
           <button
             type="button"
             className="live-basemap-switch"
@@ -4365,7 +4366,7 @@ function App() {
             onClick={() => setBaseMap((current) => current === 'satellite' ? 'standard' : 'satellite')}
           >
             {baseMap === 'satellite' ? 'Map' : 'Satellite'}
-          </button>
+          </button>, document.body
         ) : null}
         </>
       ) : null}
