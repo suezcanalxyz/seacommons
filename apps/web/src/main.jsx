@@ -1292,7 +1292,11 @@ function App() {
     async function initMap() {
       if (window.__SEACOMMONS_FORCE_MAP_FALLBACK__ === true) throw new Error('forced map fallback');
       await import('maplibre-gl/dist/maplibre-gl.css');
-      const { default: maplibregl } = await import('maplibre-gl');
+      const [{ default: maplibregl }, workerModule] = await Promise.all([
+        import('maplibre-gl'),
+        import('maplibre-gl/dist/maplibre-gl-worker.mjs?url'),
+      ]);
+      maplibregl.setWorkerUrl(workerModule.default);
       if (disposed || mapRef.current) return;
 
       const map = new maplibregl.Map({
