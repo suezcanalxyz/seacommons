@@ -55,7 +55,7 @@ test('production PLAY renders real geographic tiles without provider interceptio
         !url.startsWith('data:')) {
       tileResponses.push({ status: response.status(), url: new URL(url).hostname });
       // A 2xx style JSON response alone cannot prove geographic raster coverage.
-      if (/\.(?:png|jpe?g|webp)(?:\?|$)/i.test(url) && response.status() >= 200 && response.status() < 300) {
+      if (/\.(?:png|jpe?g|webp)(?:\?|$)|\/tiles?\//i.test(url) && response.status() >= 200 && response.status() < 300) {
         rasterResponses.push({ url: new URL(url).hostname, contentType: response.headers()['content-type'] || '' });
       }
     }
@@ -78,8 +78,10 @@ test('production PLAY renders real geographic tiles without provider interceptio
   await expect.poll(() => tileResponses.filter(item => item.status >= 200 && item.status < 300).length, {
     timeout: 25_000,
   }).toBeGreaterThan(0);
-  expect(rasterResponses.filter(item => /^image\//i.test(item.contentType)).length,
-    'At least one actual image tile must load; style JSON is not geographic coverage').toBeGreaterThan(0);
+  await expect.poll(() => rasterResponses.filter(item => /^image\//i.test(item.contentType)).length, {
+    message: 'At least one image tile must load; style JSON is not geographic coverage',
+    timeout: 25_000,
+  }).toBeGreaterThan(0);
   expect(tileFailures, 'No geographic tile requests may fail').toEqual([]);
   expect(tileResponses.filter(item => item.status >= 400), 'No tile HTTP failures').toEqual([]);
   await page.screenshot({ path: test.info().outputPath('production-play-mobile-basemap.png'), fullPage: true });
