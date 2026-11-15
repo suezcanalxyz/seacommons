@@ -67,7 +67,7 @@ test('production PLAY renders real geographic tiles without provider interceptio
               await image.decode();
               return image.naturalWidth > 0 && image.naturalHeight > 0;
             }, { encoded, mime: response.headers()['content-type'].split(';')[0] });
-            if (decoded) rasterResponses.push({ url: new URL(url).hostname });
+            if (decoded) rasterResponses.push({ url: new URL(url).hostname, contentType: response.headers()['content-type'] });
             else rasterDecodeErrors.push('Zero-size decoded raster tile');
           }).catch(error => rasterDecodeErrors.push(String(error)));
         }
