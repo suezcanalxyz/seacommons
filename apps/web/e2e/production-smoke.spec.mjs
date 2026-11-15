@@ -57,7 +57,7 @@ test('production PLAY renders real geographic tiles without provider interceptio
       tileResponses.push({ status: response.status(), url: new URL(url).hostname });
       // A 2xx style JSON response alone cannot prove geographic raster coverage.
       if (/\.(?:png|jpe?g|webp)(?:\?|$)|\/tiles?\//i.test(url) && response.status() >= 200 && response.status() < 300) {
-        if (/^image\\//i.test(response.headers()['content-type'] || '')) {
+        if (/^image\//i.test(response.headers()['content-type'] || '')) {
           // Verify a browser decoder can read the actual network payload, not just its MIME header.
           void response.body().then(async bytes => {
             const encoded = bytes.toString('base64');
