@@ -67,7 +67,7 @@ function addSatelliteLayer(map, observation) {
     type: 'raster',
     source: 'play-satellite',
     paint: { 'raster-opacity': 0.72, 'raster-fade-duration': 120 },
-  }, 'play-incidents');
+  }, 'play-clusters');
 }
 
 function itemTime(value) {
@@ -119,7 +119,7 @@ export default function PlayTimeline({ apiBase }) {
   const [satelliteOnly, setSatelliteOnly] = useState(false);
   const [sanctionsOnly, setSanctionsOnly] = useState(false);
   const [investigationsOnly, setInvestigationsOnly] = useState(false);
-  const [satelliteVisible, setSatelliteVisible] = useState(true);
+  const [satelliteVisible, setSatelliteVisible] = useState(false);
   const [satelliteContextMission, setSatelliteContextMission] = useState('VIIRS NOAA-21');
 
   const globalState = useMemo(
@@ -159,6 +159,7 @@ export default function PlayTimeline({ apiBase }) {
     investigationsOnly,
   ]);
   const coverage = useMemo(() => archiveCoverage(incidents), [incidents]);
+  const mappedIncidentCount = useMemo(() => incidentCollection(filteredIncidents).features.length, [filteredIncidents]);
   const archiveGroups = useMemo(() => groupArchiveByMonth(filteredIncidents), [filteredIncidents]);
   const selectedIncident = useMemo(
     () => visibleIncidents.find((item) => item.incident_id === selectedId) || null,
@@ -675,7 +676,7 @@ export default function PlayTimeline({ apiBase }) {
           <span><i className="play-key-drift" /> Drift / estimated area</span>
           <small>Triangles show reported course only. Circles do not imply direction. Color indicates category, not verification.</small>
         </div>
-        <div className="play-all-badge"><strong>{modeLabel}</strong><span>{archiveTotal != null ? `${archiveTotal} archive` : `${visibleIncidents.length} loaded`}</span></div>
+        <div className="play-all-badge"><strong>{modeLabel}</strong><span>{mappedIncidentCount} mapped / {filteredIncidents.length} filtered · {incidents.length} loaded{archiveTotal != null ? ` / ${archiveTotal} archive` : ''}</span></div>
         {loading ? <div className="play-map-message" role="status" aria-live="polite">Loading archive and case evidence…</div> : null}
         {error ? <div className="play-map-message is-error">{error}</div> : null}
         {mapError ? <div className="play-map-message is-error">{mapError}</div> : null}
@@ -799,6 +800,13 @@ export default function PlayTimeline({ apiBase }) {
           </section>
           <section className="play-card">
             <p>Satellite context</p>
+            <label className="play-satellite-selector">
+              <span>Map imagery</span>
+              <select aria-label="Map imagery" value={satelliteVisible ? 'dated' : 'high-resolution'} onChange={(event) => setSatelliteVisible(event.target.value === 'dated')}>
+                <option value="high-resolution">High-resolution imagery · Esri composite</option>
+                <option value="dated">Dated imagery · NASA VIIRS (clouds visible)</option>
+              </select>
+            </label>
             {satelliteProps.asset_ref ? (
               <figure className="play-satellite-preview">
                 <img
