@@ -108,11 +108,11 @@ test('image-derived humanitarian map pins keep a centre marker plus uncertainty 
 });
 
 
-test('public Live always boots on OpenStreetMap with nautical seamarks', () => {
+test('public Live retains nautical seamarks and permits satellite selection', () => {
   assert.match(main, /if \(isPublicLiveHost\) return 'standard'/);
-  assert.match(main, /const effectiveBaseMap = isPublicLiveHost \? 'standard' : baseMap/);
+  assert.match(main, /const effectiveBaseMap = baseMap/);
   assert.match(main, /tiles: \['https:\/\/tiles\.openseamap\.org\/seamark\/\{z\}\/\{x\}\/\{y\}\.png'\]/);
-  assert.match(main, /allowSatellite=\{!isPublicLiveHost\}/);
+  assert.match(main, /allowSatellite=\{true\}/);
 });
 
 
