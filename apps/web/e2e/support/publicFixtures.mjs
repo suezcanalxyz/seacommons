@@ -2,7 +2,7 @@ export const PUBLIC_LIVE_URL = 'http://live.seacommons.org:4173/';
 export const PUBLIC_PLAY_URL = 'http://play.seacommons.org:4173/play.html';
 
 const ONE_PIXEL_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=',
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNYdv7OfwAHwQNRndUJgQAAAABJRU5ErkJggg==',
   'base64',
 );
 

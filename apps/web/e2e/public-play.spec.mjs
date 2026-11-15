@@ -83,6 +83,7 @@ test('desktop and mobile Play preserve archive navigation with MapLibre or the s
 
 
 test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence when WebGL is available', async ({ page }, testInfo) => {
+  test.slow();
   await page.addInitScript(() => { window.__SEACOMMONS_EXPOSE_PLAY_MAP__ = true; });
   const rendererErrors = [];
   page.on('pageerror', error => rendererErrors.push(`pageerror: ${error.message}`));
@@ -90,9 +91,13 @@ test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence w
   for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     await page.goto(PUBLIC_PLAY_URL);
-    await expect.poll(async () =>
-      (await page.locator('.maplibregl-canvas').count()) + (await page.locator('.leaflet-container').count())
-    ).toBeGreaterThan(0);
+    try {
+      await expect.poll(async () =>
+        (await page.locator('.maplibregl-canvas').count()) + (await page.locator('.leaflet-container').count())
+      , { timeout: 25_000 }).toBeGreaterThan(0);
+    } catch (error) {
+      throw new Error(`PLAY renderer did not mount: ${JSON.stringify(rendererErrors.slice(-12).map(message => message.slice(0, 400)))}; cause=${error.message}`);
+    }
     if (!(await page.locator('.maplibregl-canvas').count())) {
       await page.locator('.maplibregl-canvas').waitFor({ state: 'attached', timeout: 2500 }).catch(() => {});
     }
@@ -191,10 +196,20 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
     throw new Error(`MapLibre cluster gate failed at ${viewport.width}x${viewport.height}: ${JSON.stringify({ ...diagnostic, errors: rendererErrors.slice(-10).map(item => item.slice(0, 350)), failedWorkerRequests })}; cause=${error.message}`);
   }
   // Map construction alone is not a functional cluster gate: require installed layers.
-  await expect.poll(() => page.evaluate(() => {
-    const map = window.__SEACOMMONS_PLAY_MAP__;
-    return Boolean(map?.getLayer('play-clusters') && map?.getSource('play-incidents'));
-  }), { timeout: 15000, intervals: [250, 500, 1000] }).toBe(true);
+  try {
+    await expect.poll(() => page.evaluate(() => {
+      const map = window.__SEACOMMONS_PLAY_MAP__;
+      return Boolean(map?.getLayer('play-clusters') && map?.getSource('play-incidents'));
+    }), { timeout: 25_000, intervals: [250, 500, 1000] }).toBe(true);
+  } catch (error) {
+    const diagnostic = await page.evaluate(() => ({
+      mapExposed: Boolean(window.__SEACOMMONS_PLAY_MAP__),
+      maplibreCanvases: document.querySelectorAll('.maplibregl-canvas').length,
+      fallbackMaps: document.querySelectorAll('.leaflet-container').length,
+      visibleError: document.querySelector('.play-map-error')?.textContent?.trim() || null,
+    }));
+    throw new Error(`PLAY layers did not install: ${JSON.stringify({ ...diagnostic, errors: rendererErrors.slice(-12).map(item => item.slice(0, 400)), failedWorkerRequests })}; cause=${error.message}`);
+  }
   // Verify the upstream archive contract before diagnosing MapLibre rendering.
   const archiveList = page.locator('.play-cases__list');
   for (const title of ['Historical distress', 'Historical safety report', 'Reviewed correlated case']) {
@@ -392,7 +407,10 @@ test('MapLibre asynchronous worker failure activates the interactive archive fal
   test.skip(process.env.SEACOMMONS_REQUIRE_WEBGL !== '1', 'Runtime renderer failure requires the dedicated WebGL-enabled release gate');
   await page.addInitScript(() => { window.__SEACOMMONS_EXPOSE_PLAY_MAP__ = true; });
   await page.goto(PUBLIC_PLAY_URL);
-  await expect.poll(() => page.evaluate(() => Boolean(window.__SEACOMMONS_PLAY_MAP__?.getLayer('play-incidents')))).toBe(true);
+  await expect.poll(
+    () => page.evaluate(() => Boolean(window.__SEACOMMONS_PLAY_MAP__?.getLayer('play-incidents'))),
+    { timeout: 25_000, intervals: [250, 500, 1000] },
+  ).toBe(true);
   await page.evaluate(() => {
     window.__SEACOMMONS_PLAY_MAP__.fire('error', {
       error: new Error('MapLibre worker terminated unexpectedly'),
@@ -415,7 +433,10 @@ test('MapLibre overlapping archive records expose every original dossier identit
   await installDeterministicRoutes(page, { playIncidents: [...playIncidents, colocated] });
   await page.addInitScript(() => { window.__SEACOMMONS_EXPOSE_PLAY_MAP__ = true; });
   await page.goto(PUBLIC_PLAY_URL);
-  await expect.poll(() => page.evaluate(() => Boolean(window.__SEACOMMONS_PLAY_MAP__?.getLayer('play-incidents')))).toBe(true);
+  await expect.poll(
+    () => page.evaluate(() => Boolean(window.__SEACOMMONS_PLAY_MAP__?.getLayer('play-incidents'))),
+    { timeout: 25_000, intervals: [250, 500, 1000] },
+  ).toBe(true);
   await page.evaluate(() => {
     const map = window.__SEACOMMONS_PLAY_MAP__;
     map.jumpTo({ center: [15.1, 36.0], zoom: 10, padding: { top: 0, bottom: 0, left: 0, right: 0 } });

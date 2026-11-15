@@ -383,10 +383,14 @@ test('Play zoom clusters preserve all original archive records and expand on cli
 });
 
 
-test('Play vessel zoom interpolation survives selected-case update effect', async () => {
+test('Play vessel selection keeps zoom as the top-level interpolation input', async () => {
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
-  assert.match(source, /map\.setLayoutProperty\('play-vessels', 'icon-size', \['case',[^\n]*\['interpolate', \['linear'\], \['zoom'\], 3, 0\.20, 7, 0\.34, 10, 0\.46\]\]\)/);
-  assert.doesNotMatch(source, /map\.setLayoutProperty\('play-vessels', 'icon-size', \['case', [^\n]*0\.46, 0\.34\]\)/);
+  const update = source.split('\n').find((line) => line.includes("setLayoutProperty('play-vessels', 'icon-size'"));
+  assert.match(update, /\['interpolate', \['linear'\], \['zoom'\]/);
+  assert.match(update, /3, \['case',[^\n]*0\.30, 0\.20\]/);
+  assert.match(update, /7, \['case',[^\n]*0\.46, 0\.34\]/);
+  assert.match(update, /10, \['case',[^\n]*0\.58, 0\.46\]/);
+  assert.doesNotMatch(update, /^\s*map\.setLayoutProperty\([^\n]*\['case',[^\n]*\['zoom'\]/);
 });
 
 
