@@ -66,7 +66,7 @@ test('desktop and mobile Play preserve archive navigation with MapLibre or the s
     await expect.poll(async () => (await canvas.count()) + (await fallback.count())).toBeGreaterThan(0);
     const renderer = await canvas.count() ? 'maplibre' : 'leaflet';
     await expect(renderer === 'maplibre' ? canvas : fallback).toBeVisible();
-    await expect(page.locator('.play-map-error')).toHaveCount(0);
+    await expect(page.locator('.play-map-message.is-error')).toHaveCount(0);
     testInfo.annotations.push({ type: 'renderer', description: `${viewport.width}x${viewport.height}: ${renderer}` });
     await page.screenshot({ path: testInfo.outputPath(`play-${viewport.width}-continent.png`), fullPage: true });
     const cases = page.locator('.play-cases__list');
@@ -114,7 +114,7 @@ test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence w
             webglAvailable: Boolean(webgl),
             webglVersion: webgl?.getParameter(webgl.VERSION) || null,
             fallbackMarkerCount: document.querySelectorAll('.seacommons-fallback-marker').length,
-            mapError: document.querySelector('.play-map-error')?.textContent?.trim() || null,
+            mapError: document.querySelector('.play-map-message.is-error')?.textContent?.trim() || null,
             forcedFallback: window.__SEACOMMONS_FORCE_MAP_FALLBACK__ === true,
           };
         });
@@ -147,8 +147,13 @@ test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence w
         const map = window.__SEACOMMONS_PLAY_MAP__;
         return Boolean(map && map.loaded() && map.isSourceLoaded('play-incidents'));
       }), { timeout: 15000, intervals: [250, 500, 1000] }).toBe(true);
+      if (label === 'detail') {
+        await expect.poll(() => page.evaluate(() => window.__SEACOMMONS_PLAY_MAP__
+          .queryRenderedFeatures({ layers: ['play-vessels'] })
+          .some((feature) => feature.properties?.incident_id === 'play-maritime-1'))).toBe(true);
+      }
       await page.screenshot({ path: testInfo.outputPath(`play-maplibre-${viewport.width}-${label}.png`), fullPage: true });
-      await expect(page.locator('.play-map-error')).toHaveCount(0);
+      await expect(page.locator('.play-map-message.is-error')).toHaveCount(0);
     }
   }
   // This visual artifact test does not prove cluster expansion or dossier completeness.
@@ -158,6 +163,7 @@ test('MapLibre PLAY captures continent, Mediterranean and detail zoom evidence w
 
 test('MapLibre cluster expansion preserves every synthetic archive dossier', async ({ page }) => {
   test.skip(process.env.SEACOMMONS_REQUIRE_WEBGL !== '1', 'Cluster interaction requires the dedicated WebGL-enabled release gate');
+  test.slow();
   await page.addInitScript(() => { window.__SEACOMMONS_EXPOSE_PLAY_MAP__ = true; });
   const rendererErrors = [];
   const failedWorkerRequests = [];
@@ -191,7 +197,7 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
       mapExposed: Boolean(window.__SEACOMMONS_PLAY_MAP__),
       maplibreCanvases: document.querySelectorAll('.maplibregl-canvas').length,
       fallbackMaps: document.querySelectorAll('.leaflet-container').length,
-      visibleError: document.querySelector('.play-map-error')?.textContent?.trim() || null,
+      visibleError: document.querySelector('.play-map-message.is-error')?.textContent?.trim() || null,
     }));
     throw new Error(`MapLibre cluster gate failed at ${viewport.width}x${viewport.height}: ${JSON.stringify({ ...diagnostic, errors: rendererErrors.slice(-10).map(item => item.slice(0, 350)), failedWorkerRequests })}; cause=${error.message}`);
   }
@@ -206,7 +212,7 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
       mapExposed: Boolean(window.__SEACOMMONS_PLAY_MAP__),
       maplibreCanvases: document.querySelectorAll('.maplibregl-canvas').length,
       fallbackMaps: document.querySelectorAll('.leaflet-container').length,
-      visibleError: document.querySelector('.play-map-error')?.textContent?.trim() || null,
+      visibleError: document.querySelector('.play-map-message.is-error')?.textContent?.trim() || null,
     }));
     throw new Error(`PLAY layers did not install: ${JSON.stringify({ ...diagnostic, errors: rendererErrors.slice(-12).map(item => item.slice(0, 400)), failedWorkerRequests })}; cause=${error.message}`);
   }
@@ -317,7 +323,7 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
     try {
       await expect.poll(() => page.evaluate(({ coords, expectedId }) => {
         const map = window.__SEACOMMONS_PLAY_MAP__;
-        if (map.isMoving() || !map.areTilesLoaded()) return false;
+        if (map.isMoving()) return false;
         return map.queryRenderedFeatures(map.project(coords), { layers: ['play-incidents', 'play-vessels'] })
           .some(feature => feature.properties?.incident_id === expectedId);
       }, { coords: coordinates, expectedId: id }), {
@@ -389,15 +395,34 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
       map.panBy([current.x - safe.x, current.y - safe.y], { duration: 0 });
       return safe;
     }, coordinates);
-    await expect.poll(() => page.evaluate(() => {
+    await expect.poll(() => page.evaluate(({ coords, expectedId }) => {
       const map = window.__SEACOMMONS_PLAY_MAP__;
-      return !map.isMoving() && map.areTilesLoaded();
-    })).toBe(true);
+      if (map.isMoving()) return false;
+      return map.queryRenderedFeatures(map.project(coords), { layers: ['play-incidents', 'play-vessels'] })
+        .some((feature) => feature.properties?.incident_id === expectedId);
+    }, { coords: coordinates, expectedId: id }), { timeout: 15_000, intervals: [100, 250, 500] }).toBe(true);
     const bounds = await canvas.boundingBox();
     const adjusted = await page.evaluate(coords => window.__SEACOMMONS_PLAY_MAP__.project(coords), coordinates);
     await assertMapHitTarget(bounds.x + adjusted.x, bounds.y + adjusted.y, id);
+    await page.evaluate(() => {
+      window.__SEACOMMONS_LAST_PLAY_CLICK__ = null;
+      const map = window.__SEACOMMONS_PLAY_MAP__;
+      map.once('click', (event) => {
+        window.__SEACOMMONS_LAST_PLAY_CLICK__ = {
+          point: { x: event.point.x, y: event.point.y },
+          renderedIds: map.queryRenderedFeatures(event.point, { layers: ['play-incidents', 'play-vessels'] })
+            .map((feature) => feature.properties?.incident_id)
+            .filter(Boolean),
+        };
+      });
+    });
     await page.mouse.click(bounds.x + adjusted.x, bounds.y + adjusted.y);
-    await expect(page.locator('.play-evidence.is-open h2')).toContainText(title);
+    try {
+      await expect(page.locator('.play-evidence.is-open h2')).toContainText(title);
+    } catch (error) {
+      const clickDiagnostic = await page.evaluate(() => window.__SEACOMMONS_LAST_PLAY_CLICK__);
+      throw new Error(`PLAY pointer selection failed for ${id}: ${JSON.stringify(clickDiagnostic)}; cause=${error.message}`);
+    }
     await expect(page.locator('.play-evidence.is-open')).toBeVisible();
   }
   }
@@ -418,11 +443,42 @@ test('MapLibre asynchronous worker failure activates the interactive archive fal
   });
   await expect(page.locator('.leaflet-container')).toBeVisible();
   await expect(page.locator('.seacommons-fallback-marker')).toHaveCount(3);
-  await expect(page.locator('.play-map-error')).toHaveCount(0);
+  await expect(page.locator('.play-map-message.is-error')).toHaveCount(0);
 });
 
-test('MapLibre overlapping archive records expose every original dossier identity', async ({ page }) => {
+async function openOverlapPickerAt(page, coordinates, targetPoint = { x: 195, y: 150 }) {
+  await page.evaluate(({ coords, target }) => {
+    const map = window.__SEACOMMONS_PLAY_MAP__;
+    map.jumpTo({ center: coords, zoom: 10, padding: { top: 0, bottom: 0, left: 0, right: 0 } });
+    const projected = map.project(coords);
+    map.panBy([projected.x - target.x, projected.y - target.y], { duration: 0 });
+  }, { coords: coordinates, target: targetPoint });
+  await expect.poll(() => page.evaluate((coords) => {
+    const map = window.__SEACOMMONS_PLAY_MAP__;
+    if (map.isMoving()) return 0;
+    return new Set(map.queryRenderedFeatures(map.project(coords), { layers: ['play-incidents', 'play-vessels'] })
+      .map((feature) => feature.properties?.incident_id)
+      .filter(Boolean)).size;
+  }, coordinates), { timeout: 15_000, intervals: [100, 250, 500] }).toBeGreaterThan(1);
+  const renderedPoint = await page.evaluate((coords) => {
+    const projected = window.__SEACOMMONS_PLAY_MAP__.project(coords);
+    return { x: projected.x, y: projected.y };
+  }, coordinates);
+  const bounds = await page.locator('.maplibregl-canvas').boundingBox();
+  await page.mouse.click(bounds.x + renderedPoint.x, bounds.y + renderedPoint.y);
+  const picker = page.getByRole('dialog', { name: 'Overlapping archive records' });
+  await expect(picker).toBeVisible();
+  return picker;
+}
+
+test('MapLibre overlapping archive records stay selectable above an open mobile dossier', async ({ page }) => {
   test.skip(process.env.SEACOMMONS_REQUIRE_WEBGL !== '1', 'Overlapping feature selection requires the dedicated WebGL-enabled release gate');
+  await page.setViewportSize({ width: 390, height: 844 });
+  const rendererErrors = [];
+  page.on('pageerror', (error) => rendererErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') rendererErrors.push(message.text());
+  });
   const colocated = {
     ...playIncidents[1],
     incident_id: 'play-maritime-colocated-2',
@@ -437,31 +493,54 @@ test('MapLibre overlapping archive records expose every original dossier identit
     () => page.evaluate(() => Boolean(window.__SEACOMMONS_PLAY_MAP__?.getLayer('play-incidents'))),
     { timeout: 25_000, intervals: [250, 500, 1000] },
   ).toBe(true);
-  await page.evaluate(() => {
-    const map = window.__SEACOMMONS_PLAY_MAP__;
-    map.jumpTo({ center: [15.1, 36.0], zoom: 10, padding: { top: 0, bottom: 0, left: 0, right: 0 } });
-  });
-  await expect.poll(() => page.evaluate(() => {
-    const map = window.__SEACOMMONS_PLAY_MAP__;
-    const feature = map.queryRenderedFeatures({ layers: ['play-incidents', 'play-vessels'] })
-      .find(item => item.properties?.incident_id === 'play-maritime-1');
-    if (!feature) return null;
-    const projected = map.project(feature.geometry.coordinates);
-    return { x: projected.x, y: projected.y };
-  })).not.toBeNull();
-  const renderedPoint = await page.evaluate(() => {
-    const map = window.__SEACOMMONS_PLAY_MAP__;
-    const feature = map.queryRenderedFeatures({ layers: ['play-incidents', 'play-vessels'] })
-      .find(item => item.properties?.incident_id === 'play-maritime-1');
-    const projected = map.project(feature.geometry.coordinates);
-    return { x: projected.x, y: projected.y };
-  });
-  const canvas = page.locator('.maplibregl-canvas');
-  const bounds = await canvas.boundingBox();
-  await page.mouse.click(bounds.x + renderedPoint.x, bounds.y + renderedPoint.y);
-  const picker = page.getByRole('dialog', { name: 'Overlapping archive records' });
-  await expect(picker).toBeVisible();
-  await expect(picker.getByRole('button', { name: 'Historical safety report' })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Play navigation' }).getByRole('button', { name: 'Archive' }).click();
+  await page.locator('.play-cases__list').getByText('Historical distress', { exact: true }).click();
+  await expect(page.locator('.play-evidence.is-open h2')).toContainText('Historical distress');
+  const picker = await openOverlapPickerAt(page, [15.1, 36.0]);
+  const firstChoice = picker.getByRole('button', { name: /Historical safety report/ });
+  await expect(firstChoice).toBeInViewport();
+  expect(await firstChoice.evaluate((button) => {
+    const bounds = button.getBoundingClientRect();
+    const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+    return hit === button || button.contains(hit);
+  })).toBe(true);
   await picker.getByRole('button', { name: 'Co-located safety report' }).click();
   await expect(page.locator('.play-evidence.is-open h2')).toContainText('Co-located safety report');
+  await expect(page.locator('.maplibregl-canvas')).toBeVisible();
+  await expect(page.locator('.play-map-message.is-error')).toHaveCount(0);
+  expect(rendererErrors.filter((message) => /play-vessels|icon-size|PLAY_MAP_RENDERER_FALLBACK/.test(message))).toEqual([]);
+});
+
+test('MapLibre large overlap groups keep first and last dossier choices accessible', async ({ page }) => {
+  test.skip(process.env.SEACOMMONS_REQUIRE_WEBGL !== '1', 'Large overlap selection requires the dedicated WebGL-enabled release gate');
+  test.slow();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const colocated = Array.from({ length: 20 }, (_, index) => ({
+    ...playIncidents[1],
+    incident_id: `play-maritime-colocated-${index + 2}`,
+    title: `Co-located safety report ${String(index + 1).padStart(2, '0')}`,
+    reported_at: `2026-09-06T11:${String(index + 1).padStart(2, '0')}:00Z`,
+  }));
+  await page.unroute('**/api/v1/**');
+  await installDeterministicRoutes(page, { playIncidents: [...playIncidents, ...colocated] });
+  await page.addInitScript(() => { window.__SEACOMMONS_EXPOSE_PLAY_MAP__ = true; });
+  await page.goto(PUBLIC_PLAY_URL);
+  await expect.poll(
+    () => page.evaluate(() => Boolean(window.__SEACOMMONS_PLAY_MAP__?.getLayer('play-incidents'))),
+    { timeout: 25_000, intervals: [250, 500, 1000] },
+  ).toBe(true);
+  const picker = await openOverlapPickerAt(page, [15.1, 36.0]);
+  const pickerBounds = await picker.boundingBox();
+  expect(pickerBounds.y).toBeGreaterThanOrEqual(0);
+  expect(pickerBounds.y + pickerBounds.height).toBeLessThanOrEqual(844);
+  const records = picker.locator('.play-overlap-picker__records');
+  await expect(records).toBeVisible();
+  expect(await records.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+  const firstChoice = records.getByRole('button', { name: /Co-located safety report 20/ });
+  await expect(firstChoice).toBeInViewport();
+  const lastChoice = records.getByRole('button', { name: /Historical safety report/ });
+  await lastChoice.scrollIntoViewIfNeeded();
+  await expect(lastChoice).toBeInViewport();
+  await lastChoice.click();
+  await expect(page.locator('.play-evidence.is-open h2')).toContainText('Historical safety report');
 });

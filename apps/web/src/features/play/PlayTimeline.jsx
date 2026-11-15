@@ -714,22 +714,6 @@ export default function PlayTimeline({ apiBase }) {
 
       <section className="map-stage play-map-stage">
         <div className="map-frame play-map" ref={mapNodeRef} />
-        {overlapIncidents.length > 1 ? (
-          <div className="play-overlap-picker" role="dialog" aria-label="Overlapping archive records">
-            <div><strong>Multiple records at this position</strong><button type="button" onClick={() => setOverlapIds([])} aria-label="Close overlapping records">Ã—</button></div>
-            <p>Choose the archive dossier to open. Co-location does not imply duplicate evidence.</p>
-            {overlapIncidents.map((incident) => (
-              <button
-                key={incident.incident_id}
-                type="button"
-                onClick={() => { setSelectedId(incident.incident_id); setOverlapIds([]); setCasesOpen(false); }}
-              >
-                <strong>{incident.title || 'SeaCommons incident'}</strong>
-                <span>{itemTime(incident.reported_at)} Â· {incident.source || 'source unavailable'}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
         <div className="play-cartographic-legend" aria-label="Map symbols and evidence legend">
           <strong>MAP KEY</strong>
           <span><i className="play-key-vessel" /> Vessel · heading observed</span>
@@ -753,6 +737,25 @@ export default function PlayTimeline({ apiBase }) {
           </div>
         ) : null}
       </section>
+
+      {overlapIncidents.length > 1 ? (
+        <div className="play-overlap-picker" role="dialog" aria-label="Overlapping archive records">
+          <div className="play-overlap-picker__header"><strong>Multiple records at this position</strong><button type="button" onClick={() => setOverlapIds([])} aria-label="Close overlapping records">&times;</button></div>
+          <p>Choose the archive dossier to open. Co-location does not imply duplicate evidence.</p>
+          <div className="play-overlap-picker__records">
+            {overlapIncidents.map((incident) => (
+              <button
+                key={incident.incident_id}
+                type="button"
+                onClick={() => { setSelectedId(incident.incident_id); setOverlapIds([]); setCasesOpen(false); }}
+              >
+                <strong>{incident.title || 'SeaCommons incident'}</strong>
+                <span>{itemTime(incident.reported_at)} &middot; {incident.source || 'source unavailable'}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <aside className={`cone-panel cone-panel--intel play-evidence ${selectedId ? 'is-open' : ''}`}>
         <div className="play-sheet-handle" />

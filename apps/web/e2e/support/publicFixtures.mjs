@@ -87,7 +87,7 @@ export const playIncidents = [
   {
     incident_id: 'play-maritime-1', title: 'Historical safety report', domain: 'maritime',
     source: 'AIS', case_type: 'vessel_incident', incident_status: 'outcome_unknown',
-    reported_at: '2026-09-06T11:00:00Z', geometry: { type: 'Point', coordinates: [15.1, 36.0] },
+    reported_at: '2026-09-06T11:00:00Z', course: 72, geometry: { type: 'Point', coordinates: [15.1, 36.0] },
   },
   {
     incident_id: 'play-correlated-1', title: 'Reviewed correlated case', domain: 'maritime',
