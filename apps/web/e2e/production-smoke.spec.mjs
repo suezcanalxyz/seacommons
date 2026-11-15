@@ -51,6 +51,7 @@ test('production PLAY renders real geographic tiles without provider interceptio
   const rasterResponses = [];
   const rasterDecodeErrors = [];
   const pendingRasterDecodes = new Set();
+  let lastRasterActivity = Date.now();
   page.on('response', response => {
     const url = response.url();
     if (/\.(?:png|jpe?g|webp)(?:\?|$)|\/(?:tiles?|styles?)\//i.test(url) &&
@@ -60,6 +61,7 @@ test('production PLAY renders real geographic tiles without provider interceptio
       if (/\.(?:png|jpe?g|webp)(?:\?|$)|\/tiles?\//i.test(url) && response.status() >= 200 && response.status() < 300) {
         if (/^image\//i.test(response.headers()['content-type'] || '')) {
           // Verify a browser decoder can read the actual network payload, not just its MIME header.
+          lastRasterActivity = Date.now();
           const decode = response.body().then(async bytes => {
             const encoded = bytes.toString('base64');
             const decoded = await page.evaluate(async ({ encoded, mime }) => {
@@ -72,7 +74,10 @@ test('production PLAY renders real geographic tiles without provider interceptio
             else rasterDecodeErrors.push('Zero-size decoded raster tile');
           }).catch(error => rasterDecodeErrors.push(String(error)));
           pendingRasterDecodes.add(decode);
-          void decode.finally(() => pendingRasterDecodes.delete(decode));
+          void decode.finally(() => {
+            pendingRasterDecodes.delete(decode);
+            lastRasterActivity = Date.now();
+          });
         }
       }
     }
@@ -100,7 +105,13 @@ test('production PLAY renders real geographic tiles without provider interceptio
     timeout: 25_000,
   }).toBeGreaterThan(0);
   // A successful first tile must not mask failures from other decodes already in flight.
-  await Promise.all([...pendingRasterDecodes]);
+  // Wait for the decode set to drain AND remain quiet. A one-time Promise.all
+  // snapshot can miss late network responses after the first successful tile.
+  await expect.poll(() => pendingRasterDecodes.size === 0 && Date.now() - lastRasterActivity >= 750, {
+    message: 'All raster decodes must settle and remain quiet for 750 ms',
+    timeout: 15_000,
+    intervals: [100, 200, 300],
+  }).toBeTruthy();
   expect(rasterDecodeErrors, 'Raster payloads must decode successfully').toEqual([]);
   expect(tileFailures, 'No geographic tile requests may fail').toEqual([]);
   expect(tileResponses.filter(item => item.status >= 400), 'No tile HTTP failures').toEqual([]);
