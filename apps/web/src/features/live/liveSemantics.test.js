@@ -151,8 +151,8 @@ test('Sanctions and Civil SAR are always-visible context layers, not hidden inve
 
 
 test('public LIVE basemap control is portalled above the MapLibre canvas and remains clickable', () => {
-  const main = readFileSync(new URL('../../main.jsx', import.meta.url), 'utf8');
-  const css = readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
+  const main = fs.readFileSync(new URL('../../main.jsx', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
   assert.match(main, /import \{ createPortal \} from 'react-dom';/);
   assert.match(main, /isPublicLiveHost && !play3D \? createPortal\(/);
   assert.match(main, /<\/button>, document\.body/);
