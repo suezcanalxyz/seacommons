@@ -860,7 +860,14 @@ export default function PlayTimeline({ apiBase }) {
             <h1>{report.title}</h1>
             <p className="play-report-disclaimer">Historical evidence report generated {report.generated_at.slice(0, 16).replace('T', ' ')} UTC. This is not an official incident determination.</p>
             <dl><div><dt>Reported</dt><dd>{report.reported_at || 'Unknown'}</dd></div><div><dt>Source</dt><dd>{report.source || 'Not recorded'}</dd></div><div><dt>Status at selected time</dt><dd>{statusLabel(report.status_at_cutoff)}</dd></div><div><dt>Historical cutoff</dt><dd>{report.cutoff || 'Complete archive'}</dd></div><div><dt>Archive decision</dt><dd>{statusLabel(report.archive_decision || 'unknown')}</dd></div><div><dt>Verification</dt><dd>{statusLabel(report.verification_status || 'not recorded')}</dd></div><div><dt>Independent corroboration</dt><dd>{report.corroborated === null ? 'Not assessed' : report.corroborated ? 'Yes' : 'No'}</dd></div><div><dt>Evidence records</dt><dd>{report.evidence_count_at_cutoff}</dd></div></dl>
-            <h2>Assessment and limitations</h2>
+            <section aria-label="Report at a glance">
+              <h2>What we know</h2>
+              <p><strong>Reported event:</strong> {report.assessment?.observation || 'An incident was reported, but the available records do not describe a verified observation.'}</p>
+              <p><strong>What the evidence suggests:</strong> {report.assessment?.interpretation || 'There is not enough independently verified evidence to establish what happened.'}</p>
+              <p><strong>Verification:</strong> {report.corroborated === true ? 'Independent corroboration is recorded.' : report.corroborated === false ? 'Independent corroboration has not been established.' : 'Independent corroboration has not been assessed.'} {report.evidence_count_at_cutoff} evidence record(s) available at this point in the archive.</p>
+              <p><strong>What remains uncertain:</strong> {report.limitations || 'Location, outcome and attribution may remain unverified.'}</p>
+            </section>
+            <h2>Evidence assessment · detailed record</h2>
             <p>{report.assessment?.observation || 'Reported incident. Original evidence and interpretation are distinct.'}</p>
             <p>{report.assessment?.interpretation || 'Independent confirmation and outcomes may remain unknown.'}</p>
             {(report.assessment?.supporting_evidence || []).map((item, index) => <p key={`support-${index}`}><strong>Supporting:</strong> {String(item)}</p>)}
@@ -870,7 +877,7 @@ export default function PlayTimeline({ apiBase }) {
             {report.reason_codes.length > 0 && <p><strong>Reason codes:</strong> {report.reason_codes.join(' · ')}</p>}
             {report.counter_indicators.length > 0 && <p><strong>Counter-indicators:</strong> {report.counter_indicators.join(' · ')}</p>}
             {report.independent_lineages.length > 0 && <p><strong>Evidence lineages:</strong> {report.independent_lineages.join(' · ')}</p>}
-            <h2>Chronology and sources</h2>
+            <h2>Timeline · what was documented and when</h2>
             {report.evidence.length === 0 ? <p>No dated evidence is available at this cutoff.</p> : <ol>{report.evidence.map((entry, index) => <li key={`${entry.id || index}-${index}`}><time>{entry.at || 'Undated'}</time><h3>{entry.title || entry.type || 'Observation'}</h3><p>{entry.type || 'evidence'} · {entry.source || 'Source not recorded'}</p>{entry.url && /^https?:\/\//i.test(entry.url) && <a href={entry.url} target="_blank" rel="noreferrer">Original source ↗</a>}</li>)}</ol>}
             <footer>SeaCommons / PLAY · Report ID {report.case_id} · Generated {report.generated_at}</footer>
           </article>
