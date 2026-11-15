@@ -159,6 +159,7 @@ export default function PlayTimeline({ apiBase }) {
     investigationsOnly,
   ]);
   const coverage = useMemo(() => archiveCoverage(incidents), [incidents]);
+  const mappedIncidentCount = useMemo(() => incidentCollection(filteredIncidents).features.length, [filteredIncidents]);
   const archiveGroups = useMemo(() => groupArchiveByMonth(filteredIncidents), [filteredIncidents]);
   const selectedIncident = useMemo(
     () => visibleIncidents.find((item) => item.incident_id === selectedId) || null,
@@ -675,7 +676,7 @@ export default function PlayTimeline({ apiBase }) {
           <span><i className="play-key-drift" /> Drift / estimated area</span>
           <small>Triangles show reported course only. Circles do not imply direction. Color indicates category, not verification.</small>
         </div>
-        <div className="play-all-badge"><strong>{modeLabel}</strong><span>{archiveTotal != null ? `${archiveTotal} archive` : `${visibleIncidents.length} loaded`}</span></div>
+        <div className="play-all-badge"><strong>{modeLabel}</strong><span>{mappedIncidentCount} mapped / {filteredIncidents.length} filtered · {incidents.length} loaded{archiveTotal != null ? ` / ${archiveTotal} archive` : ''}</span></div>
         {loading ? <div className="play-map-message" role="status" aria-live="polite">Loading archive and case evidence…</div> : null}
         {error ? <div className="play-map-message is-error">{error}</div> : null}
         {mapError ? <div className="play-map-message is-error">{mapError}</div> : null}
