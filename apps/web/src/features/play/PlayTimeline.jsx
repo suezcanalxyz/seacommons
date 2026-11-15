@@ -543,7 +543,7 @@ export default function PlayTimeline({ apiBase }) {
     }
     addSatelliteLayer(map, satellite);
     // Always render evidence markers above footprints, routes and satellite rasters.
-    for (const layerId of ['play-clusters', 'play-incidents', 'play-vessels']) {
+    for (const layerId of ['play-incidents', 'play-vessels']) {
       if (map.getLayer(layerId)) map.moveLayer(layerId);
     }
   }, [mapReady, filteredIncidents, visibleTimeline, selectedId, selectedIncident, satellite, voyageVessels]);
@@ -739,7 +739,7 @@ export default function PlayTimeline({ apiBase }) {
           <span><i className="play-key-drift" /> Drift / estimated area</span>
           <small>Triangles show reported course only. Circles do not imply direction. Color indicates category, not verification.</small>
         </div>
-        <div className="play-all-badge"><strong>{modeLabel}</strong><span>{mappedIncidentCount} mapped / {filteredIncidents.length} filtered · {incidents.length} loaded{archiveTotal != null ? ` / ${archiveTotal} total (incl. LIVE 24h)` : ''}</span></div>
+        <div className="play-all-badge"><strong>{modeLabel}</strong><span>{mappedIncidentCount} mapped / {filteredIncidents.length} filtered · {incidents.length} loaded{archiveTotal != null ? ` / ${archiveTotal} archive` : ''}</span></div>
         {loading ? <div className="play-map-message" role="status" aria-live="polite">Loading archive and case evidence…</div> : null}
         {error ? <div className="play-map-message is-error">{error}</div> : null}
         {mapError ? <div className="play-map-message is-error">{mapError}</div> : null}
