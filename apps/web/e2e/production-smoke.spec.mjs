@@ -49,6 +49,7 @@ test('production PLAY renders real geographic tiles without provider interceptio
   const tileResponses = [];
   const tileFailures = [];
   const rasterResponses = [];
+  const rasterDecodeErrors = [];
   page.on('response', response => {
     const url = response.url();
     if (/\.(?:png|jpe?g|webp)(?:\?|$)|\/(?:tiles?|styles?)\//i.test(url) &&
@@ -56,7 +57,20 @@ test('production PLAY renders real geographic tiles without provider interceptio
       tileResponses.push({ status: response.status(), url: new URL(url).hostname });
       // A 2xx style JSON response alone cannot prove geographic raster coverage.
       if (/\.(?:png|jpe?g|webp)(?:\?|$)|\/tiles?\//i.test(url) && response.status() >= 200 && response.status() < 300) {
-        rasterResponses.push({ url: new URL(url).hostname, contentType: response.headers()['content-type'] || '' });
+        if (/^image\\//i.test(response.headers()['content-type'] || '')) {
+          // Verify a browser decoder can read the actual network payload, not just its MIME header.
+          void response.body().then(async bytes => {
+            const encoded = bytes.toString('base64');
+            const decoded = await page.evaluate(async ({ encoded, mime }) => {
+              const image = new Image();
+              image.src = `data:${mime};base64,${encoded}`;
+              await image.decode();
+              return image.naturalWidth > 0 && image.naturalHeight > 0;
+            }, { encoded, mime: response.headers()['content-type'].split(';')[0] });
+            if (decoded) rasterResponses.push({ url: new URL(url).hostname });
+            else rasterDecodeErrors.push('Zero-size decoded raster tile');
+          }).catch(error => rasterDecodeErrors.push(String(error)));
+        }
       }
     }
   });
@@ -79,9 +93,10 @@ test('production PLAY renders real geographic tiles without provider interceptio
     timeout: 25_000,
   }).toBeGreaterThan(0);
   await expect.poll(() => rasterResponses.filter(item => /^image\//i.test(item.contentType)).length, {
-    message: 'At least one image tile must load; style JSON is not geographic coverage',
+    message: 'At least one real raster tile must be decoded by the browser; MIME headers alone do not count',
     timeout: 25_000,
   }).toBeGreaterThan(0);
+  expect(rasterDecodeErrors, 'Raster payloads must decode successfully').toEqual([]);
   expect(tileFailures, 'No geographic tile requests may fail').toEqual([]);
   expect(tileResponses.filter(item => item.status >= 400), 'No tile HTTP failures').toEqual([]);
   await page.screenshot({ path: test.info().outputPath('production-play-mobile-basemap.png'), fullPage: true });
