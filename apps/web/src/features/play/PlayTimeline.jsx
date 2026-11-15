@@ -101,6 +101,16 @@ export default function PlayTimeline({ apiBase }) {
   const [fallbackReady, setFallbackReady] = useState(false);
   const [mapError, setMapError] = useState('');
   const [incidents, setIncidents] = useState([]);
+  const [archiveNow, setArchiveNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setArchiveNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  // LIVE owns the rolling last 24h; PLAY retains older evidence without deleting records.
+  const historicalIncidents = useMemo(() => incidents.filter((incident) => {
+    const reported = Date.parse(String(incident.reported_at || ''));
+    return Number.isFinite(reported) && reported < archiveNow - 24 * 60 * 60 * 1000;
+  }), [incidents, archiveNow]);
   const [archiveTotal, setArchiveTotal] = useState(null);
   const [selectedId, setSelectedId] = useState('');
   const [caseData, setCaseData] = useState(null);
@@ -123,14 +133,14 @@ export default function PlayTimeline({ apiBase }) {
   const [satelliteContextMission, setSatelliteContextMission] = useState('VIIRS NOAA-21');
 
   const globalState = useMemo(
-    () => resolveGlobalTimelinePosition(incidents, globalPosition, TIMELINE_MAX),
-    [incidents, globalPosition],
+    () => resolveGlobalTimelinePosition(historicalIncidents, globalPosition, TIMELINE_MAX),
+    [historicalIncidents, globalPosition],
   );
   const visibleIncidents = useMemo(() => {
-    if (globalState.mode === 'all' && !selectedDay) return incidents;
+    if (globalState.mode === 'all' && !selectedDay) return historicalIncidents;
     const day = selectedDay || globalState.cutoff?.slice(0, 10);
-    return incidents.filter((incident) => String(incident.reported_at || '').slice(0, 10) === day);
-  }, [incidents, globalState.mode, globalState.cutoff, selectedDay]);
+    return historicalIncidents.filter((incident) => String(incident.reported_at || '').slice(0, 10) === day);
+  }, [historicalIncidents, globalState.mode, globalState.cutoff, selectedDay]);
   const categoryIncidents = useMemo(() => visibleIncidents.filter((incident) => {
     const mainCategory = incident.main_category || incident.domain;
     if (archiveFilter === 'humanitarian') return mainCategory === 'humanitarian';
@@ -158,7 +168,7 @@ export default function PlayTimeline({ apiBase }) {
     sanctionsOnly,
     investigationsOnly,
   ]);
-  const coverage = useMemo(() => archiveCoverage(incidents), [incidents]);
+  const coverage = useMemo(() => archiveCoverage(historicalIncidents), [historicalIncidents]);
   const mappedIncidentCount = useMemo(() => incidentCollection(filteredIncidents).features.length, [filteredIncidents]);
   const archiveGroups = useMemo(() => groupArchiveByMonth(filteredIncidents), [filteredIncidents]);
   const selectedIncident = useMemo(
@@ -483,6 +493,10 @@ export default function PlayTimeline({ apiBase }) {
       map.setLayoutProperty('play-vessels', 'icon-size', ['case', ['==', ['get', 'incident_id'], selectedId], 0.46, ['interpolate', ['linear'], ['zoom'], 3, 0.20, 7, 0.34, 10, 0.46]]);
     }
     addSatelliteLayer(map, satellite);
+    // Always render evidence markers above footprints, routes and satellite rasters.
+    for (const layerId of ['play-clusters', 'play-incidents', 'play-vessels']) {
+      if (map.getLayer(layerId)) map.moveLayer(layerId);
+    }
   }, [mapReady, filteredIncidents, visibleTimeline, selectedId, selectedIncident, satellite, voyageVessels]);
 
   const selectedLongitude = selectedIncident?.geometry?.type === 'Point' ? selectedIncident.geometry.coordinates?.[0] : null;
@@ -676,7 +690,7 @@ export default function PlayTimeline({ apiBase }) {
           <span><i className="play-key-drift" /> Drift / estimated area</span>
           <small>Triangles show reported course only. Circles do not imply direction. Color indicates category, not verification.</small>
         </div>
-        <div className="play-all-badge"><strong>{modeLabel}</strong><span>{mappedIncidentCount} mapped / {filteredIncidents.length} filtered · {incidents.length} loaded{archiveTotal != null ? ` / ${archiveTotal} archive` : ''}</span></div>
+        <div className="play-all-badge"><strong>{modeLabel}</strong><span>{mappedIncidentCount} mapped / {filteredIncidents.length} filtered · {incidents.length} loaded{archiveTotal != null ? ` / ${archiveTotal} total (incl. LIVE 24h)` : ''}</span></div>
         {loading ? <div className="play-map-message" role="status" aria-live="polite">Loading archive and case evidence…</div> : null}
         {error ? <div className="play-map-message is-error">{error}</div> : null}
         {mapError ? <div className="play-map-message is-error">{mapError}</div> : null}
