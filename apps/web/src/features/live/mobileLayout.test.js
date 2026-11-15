@@ -28,3 +28,20 @@ test('public Live hides the persistent MapLibre attribution control', async () =
   const source = await readFile(new URL('../../main.jsx', import.meta.url), 'utf8');
   assert.match(source, /attributionControl:\s*!isPublicLiveHost/);
 });
+
+
+test('public LIVE uses the selected satellite basemap rather than silently forcing standard', async () => {
+  const source = await readFile(new URL('../../main.jsx', import.meta.url), 'utf8');
+  assert.match(source, /const effectiveBaseMap = baseMap;/);
+  assert.doesNotMatch(source, /isPublicLiveHost \? 'standard' : baseMap/);
+  assert.match(source, /allowSatellite=\{true\}/);
+  assert.match(source, /id: 'satellite', type: 'raster'/);
+});
+
+test('PLAY report leads with an accessible evidence summary before technical detail', async () => {
+  const source = await readFile(new URL('../play/PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /aria-label="Report at a glance"/);
+  assert.match(source, /What we know/);
+  assert.match(source, /What remains uncertain:/);
+  assert.match(source, /Evidence assessment · detailed record/);
+});
