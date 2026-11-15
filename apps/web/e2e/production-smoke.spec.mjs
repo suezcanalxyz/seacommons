@@ -126,4 +126,18 @@ test('production PLAY renders real geographic tiles without provider interceptio
   expect(tileFailures, 'No geographic tile requests may fail').toEqual([]);
   expect(tileResponses.filter(item => item.status >= 400), 'No tile HTTP failures').toEqual([]);
   await page.screenshot({ path: test.info().outputPath('production-play-mobile-basemap.png'), fullPage: true });
+
+  // A mobile-only smoke can miss a collapsed desktop map layout. Capture both
+  // responsive states without changing the underlying data or intercepting tiles.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(async () => page.locator('.maplibregl-canvas, .leaflet-container').evaluateAll(nodes =>
+    nodes.some(node => {
+      const rect = node.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+    })), {
+    message: 'PLAY desktop map must retain a visible, nonzero viewport',
+    timeout: 20_000,
+  }).toBeTruthy();
+  await page.screenshot({ path: test.info().outputPath('production-play-desktop-basemap.png'), fullPage: true });
 });
