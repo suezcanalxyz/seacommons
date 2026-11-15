@@ -319,7 +319,9 @@ export default function PlayTimeline({ apiBase }) {
       map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'bottom-right');
       // Opt-in E2E diagnostics must distinguish Map construction from style loading.
       if (window.__SEACOMMONS_E2E_MAP__ === true) window.__SEACOMMONS_PLAY_MAP__ = map;
-      map.on('load', () => {
+      // Initialize case layers when the style is ready, without waiting for remote
+      // satellite/OSM raster tiles to load. A slow basemap must not hide evidence.
+      map.on('style.load', () => {
         if (disposed) return;
         map.addImage('vessel-arrow', createVesselArrowImage(48), { sdf: true });
         map.addSource('play-incidents', {
