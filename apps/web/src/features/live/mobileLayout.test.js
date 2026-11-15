@@ -45,3 +45,11 @@ test('PLAY report leads with an accessible evidence summary before technical det
   assert.match(source, /What remains uncertain:/);
   assert.match(source, /Evidence assessment · detailed record/);
 });
+
+
+test('PLAY creates incident layers on style readiness without waiting for satellite tile downloads', async () => {
+  const source = await readFile(new URL('../play/PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /map\.on\('style\.load', \(\) => \{/);
+  assert.doesNotMatch(source, /map\.on\('load', \(\) => \{/);
+  assert.match(source, /map\.addSource\('play-incidents'/);
+});
