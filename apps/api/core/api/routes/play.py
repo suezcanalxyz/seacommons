@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from core.domain.incident_taxonomy import taxonomy_fields
 from core.intel.humanitarian_incident import public_incident_status
+from core.intel.episode_lifecycle import PLAY_DELAY, play_eligible, elapsed_seconds
 from core.intel.lifecycle import parse_utc
 from core.intel.public_policy import domains_for_mode
 from core.intel.store import IntelEvent
@@ -1037,6 +1038,20 @@ def play_incidents(
                 })
     for item in page:
         item["status_history"] = history.get(item["incident_id"], [])
+        # One canonical UTC clock for dossiers; this does not change public
+        # eligibility until the LIVE/PLAY read contracts are migrated together.
+        detected_at = parse_utc(str(item.get("reported_at") or ""))
+        if detected_at is not None:
+            item["play_eligible_at"] = _iso(detected_at + PLAY_DELAY)
+            item["play_eligible"] = play_eligible(detected_at=detected_at, now=now)
+            status = str(item.get("incident_status") or "").lower()
+            item["ongoing"] = status in {"active", "detected", "open", "needs_review", "outcome_unknown"}
+            resolved_at = parse_utc(str(item.get("resolved_at") or "")) if not item["ongoing"] else None
+            item["elapsed_seconds"] = elapsed_seconds(
+                started_at=detected_at,
+                ended_at=resolved_at if resolved_at and resolved_at >= detected_at else None,
+                now=now,
+            )
 
     next_offset = offset + len(page) if len(combined) > offset + len(page) else None
     return {
