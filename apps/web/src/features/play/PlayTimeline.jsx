@@ -153,6 +153,7 @@ export default function PlayTimeline({ apiBase }) {
   const [error, setError] = useState('');
   const [satelliteMission, setSatelliteMission] = useState('auto');
   const [archiveFilter, setArchiveFilter] = useState('all');
+  const [visibleCaseLimit, setVisibleCaseLimit] = useState(80);
   const [incidentTypeFilter, setIncidentTypeFilter] = useState('all');
   const [evidenceFilter, setEvidenceFilter] = useState('all');
   const [satelliteOnly, setSatelliteOnly] = useState(false);
@@ -199,7 +200,11 @@ export default function PlayTimeline({ apiBase }) {
   ]);
   const coverage = useMemo(() => archiveCoverage(historicalIncidents), [historicalIncidents]);
   const mappedIncidentCount = useMemo(() => incidentCollection(filteredIncidents).features.length, [filteredIncidents]);
-  const archiveGroups = useMemo(() => groupArchiveByMonth(filteredIncidents), [filteredIncidents]);
+  // Keep the full archive available for map, timeline and search, but never
+  // mount thousands of heavyweight dossier buttons at once (mobile/WebGL OOM).
+  const displayedCases = useMemo(() => filteredIncidents.slice(0, visibleCaseLimit), [filteredIncidents, visibleCaseLimit]);
+  const archiveGroups = useMemo(() => groupArchiveByMonth(displayedCases), [displayedCases]);
+  useEffect(() => { setVisibleCaseLimit(80); }, [archiveFilter, incidentTypeFilter, evidenceFilter, satelliteOnly, sanctionsOnly, investigationsOnly, globalState.mode, globalState.cutoff, selectedDay]);
   const selectedIncident = useMemo(
     () => visibleIncidents.find((item) => item.incident_id === selectedId) || null,
     [visibleIncidents, selectedId],
@@ -843,6 +848,7 @@ export default function PlayTimeline({ apiBase }) {
               })}
             </section>
           ))}
+          {filteredIncidents.length > displayedCases.length ? <button type="button" className="play-case-load-more" onClick={() => setVisibleCaseLimit((limit) => limit + 80)}>Show 80 more cases · {displayedCases.length} of {filteredIncidents.length} loaded</button> : null}
           {!filteredIncidents.length && !loading ? <div className="play-empty">No incidents at this time.</div> : null}
         </div>
       </aside>

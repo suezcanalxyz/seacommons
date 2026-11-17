@@ -4196,3 +4196,6 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .play-ais-gap-dot.is-lost { background: #ff8859; }
 .play-ais-gap-dot.is-returned { background: #55e0c0; }
 @media (max-width: 680px) { .play-ais-gap-card { padding: .7rem; } .play-ais-gap-card > span { font-size: .8rem; } }
+
+.play-case-load-more { display: block; width: 100%; padding: .9rem; margin: .5rem 0; border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; text-align: center; }
+.play-case-load-more:hover { background: #ffffff14; }
