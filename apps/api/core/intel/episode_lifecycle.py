@@ -89,6 +89,16 @@ def public_episode_clock(item: dict[str, Any], *, now: datetime) -> dict[str, An
     detected = parse_utc(str(item.get("reported_at") or ""))
     if detected is None:
         return result
+    # Some incoming feeds carry a future timestamp because of publication
+    # clock skew or a bad source date. Do not crash the whole public archive
+    # or show a negative/fictional case duration.
+    if utc(detected) > utc(now):
+        result["play_eligible_at"] = (utc(detected) + PLAY_DELAY).isoformat()
+        result["play_eligible"] = False
+        result["ongoing"] = False
+        result["elapsed_seconds"] = None
+        result["clock_status"] = "future_timestamp"
+        return result
     status = str(item.get("incident_status") or "outcome_unknown").lower()
     ongoing = status in ACTIVE_STATES
     ended = parse_utc(str(item.get("resolved_at") or "")) if not ongoing else None

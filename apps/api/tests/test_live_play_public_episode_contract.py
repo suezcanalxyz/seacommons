@@ -41,3 +41,13 @@ def test_unknown_outcome_is_not_misrepresented_as_ongoing_distress():
     assert result["ongoing"] is False
     assert result["elapsed_seconds"] is None
     assert not visible_in_live(detected_at=detected, status="outcome_unknown", now=now)
+
+
+def test_future_timestamp_is_not_an_active_clock_or_500_error():
+    now = datetime(2026, 11, 17, 12, tzinfo=timezone.utc)
+    detected = now + timedelta(minutes=10)
+    result = public_episode_clock({"reported_at": detected.isoformat(), "incident_status": "active"}, now=now)
+    assert result["clock_status"] == "future_timestamp"
+    assert result["play_eligible"] is False
+    assert result["ongoing"] is False
+    assert result["elapsed_seconds"] is None

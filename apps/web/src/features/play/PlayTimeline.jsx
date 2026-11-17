@@ -22,6 +22,7 @@ import {
   selectFrame,
   selectPreferredSatelliteObservation,
   statusLabel,
+  ongoingCaseClock,
   timelineAtCutoff,
   archiveCoverage,
   groupArchiveByMonth,
@@ -886,6 +887,7 @@ export default function PlayTimeline({ apiBase }) {
                     <strong>{incident.title || 'SeaCommons incident'}</strong>
                     <span>{evidenceLabel(incident)}</span>
                     <span>{(incident.incident_type || 'context').replace(/_/g, ' ')} · {incident.main_category || incident.domain || 'humanitarian'} · {statusLabel(incidentStatusAtCutoff(incident, globalState.cutoff))}</span>
+                    {ongoingCaseClock(incident, archiveNow) ? <span className="play-case__clock" title="Elapsed wall-clock time since first report, not a new vessel position or corroboration">{ongoingCaseClock(incident, archiveNow)}</span> : null}
                     {(Number(counts.drift) > 0 || Number(counts.satellite) > 0) ? (
                       <span className="play-case__evidence">
                         {Number(counts.drift) > 0 ? <b>DRIFT {counts.drift}</b> : null}
@@ -1016,6 +1018,7 @@ export default function PlayTimeline({ apiBase }) {
           </section>
           <section className="play-card play-card--rows">
             <div><span>Status</span><strong>{statusLabel(status)}</strong></div>
+            {ongoingCaseClock(selectedIncident, archiveNow) ? <div><span>Latest case clock</span><strong title="Time since first report is not evidence of continued activity or an updated AIS position">{ongoingCaseClock(selectedIncident, archiveNow)}</strong></div> : null}
             <div><span>Evidence confidence</span><strong>{evidenceLabel(caseData || selectedIncident)}</strong></div>
             <div><span>View</span><strong>{modeLabel}</strong></div>
             <div><span>Archive decision</span><strong>{statusLabel(caseData?.archive_decision || selectedIncident?.archive_decision || '—')}</strong></div>

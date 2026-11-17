@@ -4214,3 +4214,6 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 /* PLAY: cluster-count scale, separate from semantic incident palette. */
 .play-cluster-scale { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .play-cluster-scale i { display: inline-block; width: 10px; height: 10px; flex: 0 0 10px; border-radius: 50%; border: 1px solid #0b1724; margin-left: 4px; }
+
+/* Investigation clocks never imply an observed new AIS fix. */
+.play-case__clock { color: #d4ff3f; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .02em; line-height: 1.45; }
