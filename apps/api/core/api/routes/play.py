@@ -202,7 +202,12 @@ def _episode_projection(episode, evidence_event=None) -> dict[str, Any]:
         "incident_id": str(episode.episode_id),
         "episode_id": str(episode.episode_id),
         "hypothesis_id": None,
-        "incident_status": str(analysis.get("resolution_state") or episode.status or "open"),
+        # Persistence is authoritative for verified closure. A stale
+        # analysis.resolution_state="open" must never resurrect the case.
+        "incident_status": (
+            str(episode.status) if str(episode.status or "") in {"resolved", "archived"}
+            else str(analysis.get("resolution_state") or episode.status or "open")
+        ),
         "surface": "play",
         "case_type": family_case_type,
         **taxonomy,
