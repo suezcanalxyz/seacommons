@@ -43,6 +43,7 @@ import { vesselReportFeature } from './features/live/vesselVisual.js';
 import { isExcludedVesselType } from './features/live/vesselType.js';
 import { configureMaplibreWorker } from './features/map/maplibreWorker.js';
 import { createVesselArrowImage } from './features/map/vesselMarker.js';
+import { createAttackMarkerImage, isAttackIncident } from './features/map/attackMarker.js';
 import { publicBasemapSource } from './features/map/publicBasemap.js';
 import { createFallbackMap } from './features/map/fallbackRenderer.js';
 import { mergeLiveDrifts } from './simulation/liveTracking.js';
@@ -1357,6 +1358,7 @@ function App() {
       map.on('load', () => {
         // Register vessel arrow SDF icon
         map.addImage('vessel-arrow', createVesselArrowImage(48), { sdf: true });
+        map.addImage('attack-crosshair', createAttackMarkerImage());
 
         // Nautical seamarks (OpenSeaMap): buoys, lights, beacons, fairways,
         // depth contours — an open, free overlay drawn directly on top of
@@ -1390,6 +1392,7 @@ function App() {
         map.addSource('mda-reference',     { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('mda-jamming',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('mda-anomaly',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('intel-attacks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-events',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-selected',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-distress',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -2111,6 +2114,9 @@ function App() {
             'icon-halo-width': 1.5,
           },
         });
+        map.addLayer({ id: 'intel-attack-markers', type: 'symbol', source: 'intel-attacks',
+          layout: { 'icon-image': 'attack-crosshair', 'icon-size': 0.42,
+            'icon-allow-overlap': true, 'icon-ignore-placement': true } });
         const distressHoverPopup = new maplibregl.Popup({
           closeButton: false, closeOnClick: false, offset: 10,
           className: 'intel-hover-popup',
@@ -2821,6 +2827,9 @@ function App() {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
     const positioned = visibleLivePointFeatures;
+    map.getSource('intel-attacks')?.setData({ type: 'FeatureCollection',
+      features: positioned.filter((f) => f.geometry?.type === 'Point' && isAttackIncident(f.properties)) });
+    if (map.getLayer('intel-attack-markers')) map.moveLayer('intel-attack-markers');
     const typeOf = (f) => f.properties?.type;
     const isVesselEpisode = (f) => String(f.properties?.episode_id || f.properties?.id || '').startsWith('vessel-episode:');
     const vesselEpisodes = positioned.filter(isVesselEpisode).map((feature) => {

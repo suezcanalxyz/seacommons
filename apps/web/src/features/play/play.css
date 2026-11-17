@@ -386,9 +386,10 @@
 .play-cartographic-legend i { display: inline-block; flex: 0 0 11px; width: 11px; height: 11px; }
 .play-key-vessel { background: #76b7fa; clip-path: polygon(50% 0,100% 100%,0 100%); }
 .play-key-point { background: #c6a6ff; border-radius: 50%; }
-.play-key-humanitarian { background: #ffad66; border-radius: 50%; }
+.play-key-humanitarian { background: #ff3b3b; border-radius: 50%; }
 .play-key-maritime { background: #76b7fa; border-radius: 50%; }
-.play-key-attack { background: #ff6868; border-radius: 50%; }
+.play-key-attack { background: transparent; border: 2px solid #fff; border-radius: 50%; position: relative; }
+.play-key-attack::after { content: "+"; position: absolute; inset: -6px 0 0 -1px; color: #fff; font: 700 14px/14px monospace; }
 .play-key-track { height: 3px !important; background: #76b7fa; }
 .play-key-drift { height: 3px !important; background: #ffad66; }
 .play-cartographic-legend small { color: rgba(225,242,237,.6); font-size: 8px; line-height: 1.5; }
