@@ -163,7 +163,6 @@ def build_episodes(
     for (subject_ids, family), group_signals in groups.items():
         ordered = sorted(group_signals, key=lambda s: s.observed_at)
         current: Optional[Episode] = None
-        episode_seq = 0
         last_positioned: Optional[EpisodeSignal] = None
         for signal in ordered:
             start_new = current is None
@@ -185,10 +184,12 @@ def build_episodes(
                 last_positioned = signal
 
             if start_new:
-                episode_seq += 1
-                episode_id = (
-                    f"episode:{'+'.join(subject_ids)}:{family}:{episode_seq}"
-                )
+                # Sequence numbers are not persistent: adding an earlier
+                # unrelated event shifts every subsequent episode ID. Anchor
+                # identity to the first observed signal instead, so unrelated
+                # historical backfills do not renumber existing dossiers.
+                anchor = hashlib.sha256(signal.signal_id.encode("utf-8")).hexdigest()[:20]
+                episode_id = f"episode:{'+'.join(subject_ids)}:{family}:{anchor}"
                 current = Episode(
                     episode_id=episode_id,
                     subject_ids=subject_ids,
