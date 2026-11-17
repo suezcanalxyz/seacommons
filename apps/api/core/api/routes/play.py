@@ -45,8 +45,9 @@ def _status_for_row(row, *, now: datetime) -> str:
 
 def _incident_projection(row, event, *, now: datetime) -> dict[str, Any]:
     status = _status_for_row(row, now=now)
-    geometry = None
-    if event is not None and event.lat is not None and event.lon is not None:
+    search_area = _public_humanitarian_search_prior(event) if event is not None else None
+    geometry = search_area["geometry"] if search_area is not None else None
+    if geometry is None and event is not None and event.lat is not None and event.lon is not None:
         geometry = {"type": "Point", "coordinates": [event.lon, event.lat]}
     taxonomy = taxonomy_fields(
         event_type=event.type if event is not None else "distress",
@@ -67,6 +68,7 @@ def _incident_projection(row, event, *, now: datetime) -> dict[str, Any]:
         "title": event.title if event is not None else "Humanitarian incident",
         "source": event.source if event is not None else None,
         "geometry": geometry,
+        "search_area": search_area,
         "domain": "humanitarian",
     }
 
@@ -91,6 +93,43 @@ def _intel_event_from_row(event) -> IntelEvent:
         title=event.title or "", text=event.text or "", url=event.url or "",
         source=event.source or "", linked_mmsi=event.linked_mmsi or "", metadata=meta,
     )
+
+
+def _public_humanitarian_search_prior(event) -> dict[str, Any] | None:
+    """Privacy-safe spatial prior for Play; never exposes raw post text."""
+    try:
+        from core.intel.macro_drift import spatial_prior_for_event
+
+        prior = spatial_prior_for_event(_intel_event_from_row(event))
+    except Exception:
+        return None
+    geometry = prior.get("geometry")
+    if not isinstance(geometry, dict) or geometry.get("type") not in {"Polygon", "MultiPolygon"}:
+        return None
+    route = dict(prior.get("temporal_route_evidence") or {})
+    departure_places = list(dict.fromkeys(
+        str(clue.get("place")) for clue in list(route.get("departure_claims") or [])
+        if clue.get("place")
+    ))
+    destination_places = list(dict.fromkeys(
+        str(clue.get("place")) for clue in list(route.get("destination_claims") or [])
+        if clue.get("place")
+    ))
+    return {
+        "kind": "search_area",
+        "geometry": geometry,
+        "location_evidence": prior.get("location_evidence"),
+        "spatial_model": prior.get("spatial_model"),
+        "uncertainty": prior.get("uncertainty"),
+        "mentioned_places": list(prior.get("mentioned_places") or []),
+        "departure_places": departure_places,
+        "destination_places": destination_places,
+        "departure_time_window": route.get("departure_time_window"),
+        "elapsed_departure_to_report_hours_min": route.get("elapsed_departure_to_report_hours_min"),
+        "elapsed_departure_to_report_hours_max": route.get("elapsed_departure_to_report_hours_max"),
+        "physical_drift_computed": False,
+        "probability_calibrated": False,
+    }
 
 
 def _is_public_catalog_maritime(event) -> bool:
@@ -469,7 +508,7 @@ def _public_episode_dossier(db, episode, *, now: datetime) -> dict[str, Any]:
         .order_by(SatelliteObservationDB.acquisition_time.asc())
         .all()
     )
-    timeline.extend(_satellite_item(row) for row in satellites)
+    timeline.extend(_satellite_item(row, reference_at=projection["reported_at"]) for row in satellites)
 
     evidence_mmsis = {
         str(event.linked_mmsi or "").strip()
@@ -908,36 +947,59 @@ def _play_cache_scope() -> str:
     return current_test.split(" (", 1)[0] if current_test else "runtime"
 
 
-def _get_play_catalog() -> list[dict[str, Any]]:
-    """Return one shared archive snapshot for counts and paginated Play reads."""
-    scope = _play_cache_scope()
-    now_mono = monotonic()
-    cached = _play_catalog_cache.get("payload")
-    cached_at = float(_play_catalog_cache.get("at") or 0.0)
-    cached_scope = str(_play_catalog_cache.get("scope") or "")
-    if (
-        cached is not None
-        and cached_scope == scope
-        and now_mono - cached_at < _PLAY_CATALOG_TTL_S
-    ):
-        return cached
+def _refresh_play_catalog(scope: str) -> None:
+    """Single-flight catalog rebuild, outside the HTTP request thread."""
+    try:
+        payload = _compute_play_catalog()
+        if _play_cache_scope() == scope:
+            _play_catalog_cache.update(payload=payload, at=monotonic(), scope=scope,
+                                       generated_at=datetime.now(timezone.utc).isoformat(), error=None)
+    except Exception as exc:
+        import logging
+        _play_catalog_cache["error"] = str(exc)[:240]
+        logging.getLogger(__name__).exception("PLAY catalog refresh failed")
+    finally:
+        _play_catalog_lock.release()
 
+
+def _get_play_catalog() -> list[dict[str, Any]]:
+    """Serve stale catalog immediately; only a cold start requires an exact scan."""
+    scope = _play_cache_scope()
+    cached = _play_catalog_cache.get("payload")
+    cached_scope = str(_play_catalog_cache.get("scope") or "")
+    age = monotonic() - float(_play_catalog_cache.get("at") or 0.0)
+    if cached is not None and cached_scope == scope:
+        if age >= _PLAY_CATALOG_TTL_S and _play_catalog_lock.acquire(blocking=False):
+            try:
+                Thread(target=_refresh_play_catalog, args=(scope,),
+                       name="play-catalog-refresh", daemon=True).start()
+            except Exception:
+                _play_catalog_lock.release()
+                raise
+        return cached
     with _play_catalog_lock:
-        now_mono = monotonic()
         cached = _play_catalog_cache.get("payload")
-        cached_at = float(_play_catalog_cache.get("at") or 0.0)
-        cached_scope = str(_play_catalog_cache.get("scope") or "")
-        if (
-            cached is not None
-            and cached_scope == scope
-            and now_mono - cached_at < _PLAY_CATALOG_TTL_S
-        ):
+        if cached is not None and _play_catalog_cache.get("scope") == scope:
             return cached
         payload = _compute_play_catalog()
-        _play_catalog_cache["payload"] = payload
-        _play_catalog_cache["at"] = monotonic()
-        _play_catalog_cache["scope"] = scope
+        _play_catalog_cache.update(payload=payload, at=monotonic(), scope=scope,
+                                   generated_at=datetime.now(timezone.utc).isoformat(), error=None)
         return payload
+
+
+@router.get("/cache-status")
+def play_cache_status():
+    """Expose refresh freshness without leaking incident content."""
+    now = monotonic()
+    def state(cache: dict[str, Any], lock: Lock) -> dict[str, Any]:
+        at = float(cache.get("at") or 0.0)
+        return {"ready": cache.get("payload") is not None,
+                "age_seconds": round(max(0, now - at), 1) if at else None,
+                "refreshing": lock.locked(),
+                "generated_at": cache.get("generated_at") or (cache.get("payload") or {}).get("generated_at") if isinstance(cache.get("payload"), dict) else cache.get("generated_at"),
+                "last_error": cache.get("error")}
+    return {"catalog": state(_play_catalog_cache, _play_catalog_lock),
+            "counts": state(_play_counts_cache, _play_counts_lock)}
 
 
 def _compute_play_counts() -> dict[str, Any]:
@@ -1355,7 +1417,7 @@ def play_incident_timeline(incident_id: str):
                 .order_by(SatelliteObservationDB.acquisition_time.asc())
                 .all()
             ) if satellite_ids else []
-            timeline.extend(_satellite_item(row) for row in satellites)
+            timeline.extend(_satellite_item(row, reference_at=projection["reported_at"]) for row in satellites)
 
             evidence_times = [
                 parsed for parsed in (parse_utc(str(event.timestamp_utc)) for event in evidence_events)
@@ -1505,10 +1567,14 @@ def play_incident_timeline(incident_id: str):
             raise HTTPException(status_code=404, detail="Incident not found")
         incident_status = _status_for_row(incident, now=now) if incident is not None else _generic_maritime_status(event)
         domain = "humanitarian" if incident is not None else "maritime"
+        search_area = (
+            _public_humanitarian_search_prior(event)
+            if incident is not None and event is not None else None
+        )
         timeline: list[dict[str, Any]] = []
         if event is not None:
-            geometry = None
-            if event.lat is not None and event.lon is not None:
+            geometry = search_area["geometry"] if search_area is not None else None
+            if geometry is None and event.lat is not None and event.lon is not None:
                 geometry = {"type": "Point", "coordinates": [event.lon, event.lat]}
             timeline.append({
                 "id": f"report:{incident_id}",
@@ -1517,7 +1583,11 @@ def play_incident_timeline(incident_id: str):
                 "source": event.source,
                 "title": event.title,
                 "geometry": geometry,
-                "properties": {"url": event.url or None},
+                "properties": {
+                    "url": event.url or None,
+                    "geometry_semantics": "search_prior" if search_area is not None else "reported_position",
+                    "physical_drift_computed": False if search_area is not None else None,
+                },
             })
             for repost in (event.meta or {}).get("thread_reposts") or []:
                 item = _thread_item(incident_id, repost, reported_at=incident.reported_at if incident is not None else event.timestamp_utc)
@@ -1563,7 +1633,7 @@ def play_incident_timeline(incident_id: str):
             .order_by(SatelliteObservationDB.acquisition_time.asc())
             .all()
         )
-        timeline.extend(_satellite_item(row) for row in satellites)
+        timeline.extend(_satellite_item(row, reference_at=(incident.reported_at if incident is not None else event.timestamp_utc if event is not None else None)) for row in satellites)
 
     timeline = [item for item in timeline if item.get("at")]
     timeline.sort(key=lambda item: item["at"])
@@ -1575,12 +1645,24 @@ def play_incident_timeline(incident_id: str):
         "sar_mission_count": len(sar_missions) if incident is not None else 0,
         "drift_count": len(drifts),
         "satellite_count": len(satellites),
+        "search_area": search_area,
         "timeline": timeline,
         "generated_at": now.isoformat(),
     }
 
 
-def _satellite_item(row) -> dict[str, Any]:
+def _satellite_item(row, *, reference_at: Any = None) -> dict[str, Any]:
+    acquired = parse_utc(str(row.acquisition_time or ""))
+    reference = parse_utc(str(reference_at or ""))
+    incident_delta_s = None
+    incident_relation = None
+    if acquired is not None and reference is not None:
+        incident_delta_s = (acquired - reference).total_seconds()
+        incident_relation = (
+            "reverse" if incident_delta_s < 0
+            else "forward" if incident_delta_s > 0
+            else "nearest"
+        )
     return {
         "id": row.observation_id,
         "at": _iso(row.acquisition_time),
@@ -1592,8 +1674,10 @@ def _satellite_item(row) -> dict[str, Any]:
             "mission": row.mission,
             "product_id": row.product_id,
             "sensor_type": row.sensor_type,
-            "temporal_relation": row.temporal_relation,
-            "temporal_delta_s": row.temporal_delta_s,
+            "temporal_relation": incident_relation or row.temporal_relation,
+            "temporal_delta_s": incident_delta_s if incident_delta_s is not None else row.temporal_delta_s,
+            "target_temporal_relation": row.temporal_relation,
+            "target_temporal_delta_s": row.temporal_delta_s,
             "asset_ref": row.asset_ref,
             "source_url": row.source_url,
             "bbox": row.bbox,

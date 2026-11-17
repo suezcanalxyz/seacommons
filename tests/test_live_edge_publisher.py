@@ -457,3 +457,21 @@ def test_outbox_depth_gauge_tracks_pending_and_retrying(tmp_path: Path) -> None:
     assert REGISTRY.get_sample_value(
         "seacommons_live_outbox_depth", {"state": "retrying"}
     ) == 1
+
+
+def test_fresh_retrospective_distress_remains_withheld_on_edge() -> None:
+    """A cleanup exception for old rows must not publish a fresh missing-person retrospective."""
+    row = distress_row(
+        timestamp_utc=_NOW.isoformat(),
+        text="We lost contact with the people three days ago.",
+    )
+    assert public_event_from_row(row, "node", now=_NOW, same_source=[]) is None
+
+
+def test_expired_private_distress_never_becomes_public_tombstone() -> None:
+    """Expired rows still respect the canonical explicit-privacy gate."""
+    row = distress_row(
+        timestamp_utc=(_NOW - timedelta(hours=30)).isoformat(),
+        publication_status="private",
+    )
+    assert public_event_from_row(row, "node", now=_NOW, same_source=[]) is None

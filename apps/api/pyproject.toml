@@ -39,6 +39,7 @@ dependencies = [
 [project.optional-dependencies]
 sdr = ["pyrtlsdr>=0.3"]
 ocr = ["easyocr==1.7.2"]
+sar_chip = ["numpy>=1.26", "scipy>=1.11", "tifffile>=2024.2"]
 tid = [
     "missile-tid @ git+https://github.com/tylerni7/missile-tid.git",
     "cartopy>=0.22",
@@ -49,12 +50,13 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5.0",
+    "tifffile>=2024.2",  # synthetic SAR chip tests
     "ruff>=0.4",
     "mypy>=1.10",
     "jsonschema>=4.23",
     "pip-audit>=2.7",
 ]
-full = ["suezcanal[sdr,ocr,tid,dev]"]
+full = ["suezcanal[sdr,ocr,sar_chip,tid,dev]"]
 
 [build-system]
 requires = ["setuptools>=70"]

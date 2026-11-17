@@ -383,3 +383,39 @@ def test_watch_profile_uses_persisted_people_and_asset_claim_context(watch_table
     assert profile["people_max"] == 40
     assert profile["vessel_description_terms"] == ["Ocean Viking"]
     assert profile["actor_names"] == ["sos_mediterranee"]
+
+
+def test_profile_extracts_explicit_alarm_phone_route_terms(watch_tables):
+    from core.db.models import HumanitarianIncidentDB, IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.incident_watch import build_watch_profile
+
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id="iw-route", timestamp_utc="2026-11-03T10:00:00+00:00",
+            type="twitter", severity="high", lat=34.8, lon=11.2,
+            title="Boat departed from Sfax heading to Lampedusa",
+            text="Last contact was south of Kerkennah.", url="", source="Alarm Phone",
+            linked_mmsi="", meta={"tweet_id": "route-1", "is_distress": True},
+            location_uncertainty_m=5000,
+        ))
+        incident = HumanitarianIncidentDB(
+            incident_id="iw-route", lifecycle="active", incident_status="active",
+            case_type="distress", reported_at="2026-11-03T10:00:00+00:00",
+            last_update_at="2026-11-03T10:00:00+00:00",
+            source_observation_ids=["obs-route"], review_status="none", revision=1,
+        )
+        db.add(incident)
+        db.flush()
+        profile = build_watch_profile(db, incident)
+
+    departure = {value.casefold() for value in profile["departure_terms"]}
+    destination = {value.casefold() for value in profile["destination_terms"]}
+    route = {value.casefold() for value in profile["route_terms"]}
+    named = {value.casefold() for value in profile["named_places"]}
+    assert "sfax" in departure
+    assert "lampedusa" in destination
+    assert "lampedusa" not in departure
+    assert "kerkennah" in route
+    assert named >= {"sfax", "lampedusa", "kerkennah"}
+    assert profile["profile_method_version"] == "v1_explicit_route_evidence"

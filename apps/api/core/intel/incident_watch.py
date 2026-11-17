@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-PROFILE_VERSION = 1
-PROFILE_METHOD_VERSION = "v0_explicit_persisted_fields"
+PROFILE_VERSION = 2
+PROFILE_METHOD_VERSION = "v1_explicit_route_evidence"
 
 
 @dataclass(frozen=True)
@@ -96,6 +96,40 @@ def build_watch_profile(db, incident, *, event_hint=None) -> dict[str, Any]:
     if raw_meta is None and event is not None:
         raw_meta = getattr(event, "metadata", None)
     meta = dict(raw_meta or {})
+    source_parts = [
+        str(getattr(event, "title", "") or "") if event is not None else "",
+        str(getattr(event, "text", "") or "") if event is not None else "",
+    ]
+    for followup in list(meta.get("thread_reposts") or [])[-20:]:
+        if isinstance(followup, dict) and followup.get("note"):
+            source_parts.append(str(followup["note"]))
+    source_text = " ".join(part for part in source_parts if part)
+    try:
+        from core.intel.macro_drift import location_clues
+
+        place_clues = location_clues(source_text)
+    except Exception:
+        place_clues = []
+    named_places = list(dict.fromkeys(
+        str(clue.get("place") or "").strip()
+        for clue in place_clues if str(clue.get("place") or "").strip()
+    ))
+    departure_terms = list(dict.fromkeys(
+        str(clue.get("place") or "").strip()
+        for clue in place_clues
+        if clue.get("role") == "possible_departure" and str(clue.get("place") or "").strip()
+    ))
+    destination_terms = list(dict.fromkeys(
+        str(clue.get("place") or "").strip()
+        for clue in place_clues
+        if clue.get("role") == "possible_destination" and str(clue.get("place") or "").strip()
+    ))
+    route_terms = list(dict.fromkeys(
+        str(clue.get("place") or "").strip()
+        for clue in place_clues
+        if clue.get("role") in {"possible_departure", "possible_destination", "reported_area"}
+        and str(clue.get("place") or "").strip()
+    ))
     source_item_ids: list[str] = []
     for key in ("tweet_id", "source_id", "provider_message_id"):
         value = meta.get(key)
@@ -140,10 +174,10 @@ def build_watch_profile(db, incident, *, event_hint=None) -> dict[str, Any]:
             if event is not None and (getattr(event, "location_uncertainty_m", None) is not None or meta.get("location_uncertainty_m") is not None)
             else None
         ),
-        "named_places": [],
-        "route_terms": [],
-        "departure_terms": [],
-        "destination_terms": [],
+        "named_places": named_places,
+        "route_terms": route_terms,
+        "departure_terms": departure_terms,
+        "destination_terms": destination_terms,
         "people_min": min(people_counts) if people_counts else None,
         "people_max": max(people_counts) if people_counts else None,
         "vessel_description_terms": asset_names,

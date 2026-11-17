@@ -45,9 +45,10 @@ async def live_sanctioned_vessels(request: Request):
     """Fresh AIS positions for vessels matched to public sanctions lists.
 
     This is a narrow public overlay, not the raw AIS fleet. Only strong
-    identifier matches (MMSI or IMO) and positions no older than 10 minutes
-    are returned. A list match is identity context, not evidence that current
-    vessel behaviour is unlawful.
+    identifier matches (MMSI or IMO) and positions observed within 24 hours
+    are returned. Observations older than 10 minutes are explicitly labeled
+    last_observed, never live. A list match is identity context, not evidence
+    that current vessel behaviour is unlawful.
     """
     from sqlalchemy import or_
 

@@ -1414,7 +1414,19 @@ class IntelStore:
 
             cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
             with session_scope() as db:
-                query = db.query(IntelEventDB).filter(IntelEventDB.timestamp_utc >= cutoff)
+                # Project only fields consumed by IntelEvent. PostgreSQL's
+                # default ORM entity query also fetched the canonical status,
+                # timestamps and retention columns on every Live poll, adding
+                # unnecessary transfer and row decoding on a hot query path.
+                projection = (
+                    IntelEventDB.id, IntelEventDB.timestamp_utc,
+                    IntelEventDB.type, IntelEventDB.severity,
+                    IntelEventDB.lat, IntelEventDB.lon,
+                    IntelEventDB.title, IntelEventDB.text,
+                    IntelEventDB.url, IntelEventDB.source,
+                    IntelEventDB.linked_mmsi, IntelEventDB.meta,
+                )
+                query = db.query(*projection).filter(IntelEventDB.timestamp_utc >= cutoff)
                 if source:
                     query = query.filter(IntelEventDB.source == source)
                 if source_in:

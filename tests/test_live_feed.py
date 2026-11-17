@@ -1505,6 +1505,7 @@ def test_drift_not_shown_for_resolved_or_archived_incidents(monkeypatch) -> None
 
     from core.live.feed import public_drift_collection
 
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: False)
     now_iso = datetime.now(timezone.utc).isoformat()
     active_event = IntelEvent(
         id="drift-active",
@@ -1519,8 +1520,8 @@ def test_drift_not_shown_for_resolved_or_archived_incidents(monkeypatch) -> None
             "is_distress": True,
             "source_policy": "official_api",
             "drift_job_id": "job-active",
-            "coordinate_source": "media_ocr_text",
-            "coordinate_review_status": "machine_ocr_unverified",
+            "coordinate_source": "media_ocr_consensus",
+            "coordinate_review_status": "machine_ocr_consensus_verified",
             "location_status": "positioned",
             "maritime_domain": "sar",
         },
@@ -1599,6 +1600,7 @@ def test_needs_review_alarm_phone_point_keeps_operational_drift(monkeypatch) -> 
 
     from core.live.feed import public_drift_collection
 
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: False)
     now_iso = datetime.now(timezone.utc).isoformat()
     event = IntelEvent(
         id="ap-needs-review",
@@ -1614,8 +1616,8 @@ def test_needs_review_alarm_phone_point_keeps_operational_drift(monkeypatch) -> 
             "source_policy": "official_api",
             "drift_job_id": "job-nr",
             "incident_lifecycle": "needs_review",
-            "coordinate_source": "media_ocr_text",
-            "coordinate_review_status": "machine_ocr_unverified",
+            "coordinate_source": "media_ocr_consensus",
+            "coordinate_review_status": "machine_ocr_consensus_verified",
             "location_status": "positioned",
             "maritime_domain": "sar",
             "humanitarian_case_type": "distress",
@@ -1678,6 +1680,13 @@ def test_needs_review_alarm_phone_point_keeps_operational_drift(monkeypatch) -> 
     assert props["visual_category"] == "humanitarian_alarm_phone"
     assert props["visual_color"] == "#ff3b3b"
     assert "intel_severity" not in props
+
+    # Verify the actual map-facing HTTP contract, not only the Python helper.
+    response = client.get("/api/v1/live/drifts?limit=50")
+    assert response.status_code == 200
+    api_features = response.json()["features"]
+    assert any(f["properties"].get("intel_event_id") == event.id for f in api_features)
+    assert not any(f["properties"].get("intel_event_id") == region_only.id for f in api_features)
 
 
 def test_drift_never_shown_for_maritime_security_domain(monkeypatch) -> None:
@@ -1984,6 +1993,7 @@ def test_needs_review_drift_leaves_live_after_24h(monkeypatch) -> None:
 
     from core.live.feed import public_drift_collection
 
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: False)
     old_iso = (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat()
     event = IntelEvent(
         id="ap-needs-review-old", type="distress", severity="high",
@@ -1991,8 +2001,8 @@ def test_needs_review_drift_leaves_live_after_24h(monkeypatch) -> None:
         source="alarm_phone", timestamp_utc=old_iso,
         metadata={"is_distress": True, "source_policy": "official_api",
                   "incident_lifecycle": "needs_review", "maritime_domain": "sar",
-                  "coordinate_source": "media_ocr_text",
-                  "coordinate_review_status": "machine_ocr_unverified",
+                  "coordinate_source": "media_ocr_consensus",
+                  "coordinate_review_status": "machine_ocr_consensus_verified",
                   "location_status": "positioned",
                   "thread_reposts": [{
                       "tweet_id": "later-ambiguous-update",
@@ -2386,7 +2396,11 @@ def test_live_sanctioned_vessels_is_fresh_strong_identifier_subset(monkeypatch):
     payload = response.json()
     assert payload["meta"]["position_policy"] == "observed_within_24h"
     assert payload["meta"]["total"] == 2
-    feature = next(f for f in payload["features"] if f["properties"]["mmsi"] == "211000991")
+    by_mmsi = {f["properties"]["mmsi"]: f for f in payload["features"]}
+    assert by_mmsi["211000991"]["properties"]["ais_status"] == "live"
+    assert by_mmsi["211000992"]["properties"]["ais_status"] == "last_observed"
+    assert by_mmsi["211000992"]["properties"]["position_age_s"] >= 600
+    feature = by_mmsi["211000991"]
     assert feature["properties"]["mmsi"] == "211000991"
     assert feature["properties"]["sanctions_matched"] is True
     assert feature["properties"]["match_basis"] == ["mmsi", "imo"]

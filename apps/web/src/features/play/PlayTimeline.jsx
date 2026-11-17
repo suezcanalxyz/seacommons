@@ -3,7 +3,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchJson } from '../../services/api/client.js';
 import { timelineReport, humanizeDetectorText } from '../live/reportNarrative.js';
 import SanctionsCatalog from '../../components/SanctionsCatalog.jsx';
-import { createVesselArrowImage } from '../map/vesselMarker.js';
+import { historicalDriftFeatures } from './driftGeometry.js';
+import { configureMaplibreWorker } from '../map/maplibreWorker.js';
+import { createVesselArrowImage, VESSEL_COLOR } from '../map/vesselMarker.js';
 import { createFallbackMap } from '../map/fallbackRenderer.js';
 import {
   incidentCollection,
@@ -48,6 +50,31 @@ function evidenceCollection(timeline = []) {
           title: item.title || '',
         },
       })),
+  };
+}
+
+function geometryBounds(geometry) {
+  if (!geometry) return null;
+  const coordinates = [];
+  const collect = (value) => {
+    if (Array.isArray(value) && value.length >= 2
+        && Number.isFinite(Number(value[0])) && Number.isFinite(Number(value[1]))) {
+      coordinates.push([Number(value[0]), Number(value[1])]);
+      return;
+    }
+    if (Array.isArray(value)) value.forEach(collect);
+  };
+  collect(geometry.coordinates);
+  if (!coordinates.length) return null;
+  const lons = coordinates.map((point) => point[0]);
+  const lats = coordinates.map((point) => point[1]);
+  return {
+    west: Math.min(...lons), south: Math.min(...lats),
+    east: Math.max(...lons), north: Math.max(...lats),
+    center: [
+      (Math.min(...lons) + Math.max(...lons)) / 2,
+      (Math.min(...lats) + Math.max(...lats)) / 2,
+    ],
   };
 }
 
@@ -343,6 +370,7 @@ export default function PlayTimeline({ apiBase }) {
       // ESM builds expose Map/NavigationControl as named exports; a default export
       // is not guaranteed (and may be undefined in Vite/browser builds).
       const maplibregl = maplibreModule.Map ? maplibreModule : maplibreModule.default;
+      configureMaplibreWorker(maplibregl);
       if (typeof maplibregl?.Map !== 'function') {
         throw new TypeError('MapLibre module did not export a Map constructor');
       }
@@ -389,6 +417,24 @@ export default function PlayTimeline({ apiBase }) {
           },
         });
         map.addLayer({
+          id: 'play-search-areas-fill', type: 'fill', source: 'play-incidents',
+          filter: ['==', ['get', 'marker_kind'], 'search_area'],
+          paint: {
+            'fill-color': ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f'],
+            'fill-opacity': ['case', ['==', ['get', 'incident_id'], selectedId], 0.18, 0.08],
+          },
+        });
+        map.addLayer({
+          id: 'play-search-areas-line', type: 'line', source: 'play-incidents',
+          filter: ['==', ['get', 'marker_kind'], 'search_area'],
+          paint: {
+            'line-color': ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f'],
+            'line-width': ['case', ['==', ['get', 'incident_id'], selectedId], 2.4, 1.4],
+            'line-opacity': 0.9,
+            'line-dasharray': [3, 2],
+          },
+        });
+        map.addLayer({
           id: 'play-incidents', type: 'circle', source: 'play-incidents',
           filter: ['all', ['!', ['has', 'point_count']], ['any', ['!=', ['get', 'marker_kind'], 'vessel'], ['!=', ['get', 'has_course'], true]]],
           paint: {
@@ -409,6 +455,28 @@ export default function PlayTimeline({ apiBase }) {
             'icon-allow-overlap': true,
           },
           paint: { 'icon-color': ['case', ['in', 'attack', ['downcase', ['to-string', ['get', 'incident_type']]]], '#ff6868', ['match', ['get', 'domain'], 'humanitarian', '#ffad66', 'maritime', '#76b7fa', '#c6a6ff']], 'icon-opacity': 0.94 },
+        });
+        map.addLayer({
+          id: 'play-vessels-unknown-course', type: 'circle', source: 'play-incidents',
+          filter: ['all', ['==', ['get', 'marker_kind'], 'vessel'], ['==', ['get', 'course'], null]],
+          paint: { 'circle-radius': 5, 'circle-color': VESSEL_COLOR,
+            'circle-stroke-color': '#071014', 'circle-stroke-width': 1.5 },
+        });
+        map.addSource('play-historical-drifts', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({
+          id: 'play-historical-drift-uncertainty', type: 'fill', source: 'play-historical-drifts',
+          filter: ['==', ['get', 'geometry_semantics'], 'model_uncertainty_area'],
+          paint: { 'fill-color': '#bb8cff', 'fill-opacity': 0.13 },
+        });
+        map.addLayer({
+          id: 'play-historical-drift-uncertainty-outline', type: 'line', source: 'play-historical-drifts',
+          filter: ['==', ['get', 'geometry_semantics'], 'model_uncertainty_area'],
+          paint: { 'line-color': '#bb8cff', 'line-width': 1.4, 'line-dasharray': [3, 2] },
+        });
+        map.addLayer({
+          id: 'play-historical-drift-trajectory', type: 'line', source: 'play-historical-drifts',
+          filter: ['==', ['get', 'geometry_semantics'], 'simulated_trajectory'],
+          paint: { 'line-color': '#d2aaff', 'line-width': 2.5, 'line-dasharray': [2, 1] },
         });
         map.addSource('play-evidence', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addLayer({
@@ -461,7 +529,7 @@ export default function PlayTimeline({ apiBase }) {
         // Match individual markers: make expandable groups discoverable without changing evidence.
         map.on('mouseenter', 'play-clusters', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'play-clusters', () => { map.getCanvas().style.cursor = ''; });
-        for (const layerId of ['play-incidents', 'play-vessels']) {
+        for (const layerId of ['play-search-areas-fill', 'play-search-areas-line', 'play-incidents', 'play-vessels', 'play-vessels-unknown-course']) {
           map.on('click', layerId, selectArchiveFeature);
           map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
           map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
@@ -470,6 +538,14 @@ export default function PlayTimeline({ apiBase }) {
         map.resize();
         setMapError('');
         setMapReady(true);
+        // A style can load while its GeoJSON worker remains stalled. Do not
+        // leave visitors with an empty but apparently healthy WebGL canvas.
+        mapStartupTimer = window.setTimeout(() => {
+          if (disposed || fallbackStarted) return;
+          if (!map.getSource('play-incidents') || !map.isSourceLoaded('play-incidents')) {
+            void failToFallback(new Error('PLAY incident source did not finish loading'));
+          }
+        }, 15_000);
       });
     }
     async function activateFallbackMap() {
@@ -515,8 +591,9 @@ export default function PlayTimeline({ apiBase }) {
     fallback.setFeatures(incidentCollection(filteredIncidents).features);
     if (filteredIncidents.length) fallback.fitFeatures(incidentCollection(filteredIncidents).features);
     const geometry = selectedIncident?.geometry;
-    if (selectedId && geometry?.type === 'Point' && Array.isArray(geometry.coordinates)) {
-      fallback.flyTo({ center: geometry.coordinates, zoom: 6.5 });
+    const bounds = geometryBounds(geometry);
+    if (selectedId && bounds) {
+      fallback.flyTo({ center: bounds.center, zoom: geometry?.type === 'Point' ? 6.5 : 5.2 });
     }
   }, [fallbackReady, filteredIncidents, selectedId, selectedIncident]);
 
@@ -534,9 +611,16 @@ export default function PlayTimeline({ apiBase }) {
       });
     });
     map.getSource('play-evidence')?.setData(datedEvidence);
+    map.getSource('play-historical-drifts')?.setData(historicalDriftFeatures(visibleTimeline));
     map.getSource('play-satellite-footprints')?.setData(satelliteFootprintCollection(visibleTimeline));
     if (map.getLayer('play-incidents')) {
       map.setPaintProperty('play-incidents', 'circle-radius', ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5]);
+    }
+    if (map.getLayer('play-search-areas-fill')) {
+      map.setPaintProperty('play-search-areas-fill', 'fill-opacity', ['case', ['==', ['get', 'incident_id'], selectedId], 0.18, 0.08]);
+    }
+    if (map.getLayer('play-search-areas-line')) {
+      map.setPaintProperty('play-search-areas-line', 'line-width', ['case', ['==', ['get', 'incident_id'], selectedId], 2.4, 1.4]);
     }
     if (map.getLayer('play-vessels')) {
       map.setLayoutProperty('play-vessels', 'icon-size', ['interpolate', ['linear'], ['zoom'], 3, ['case', ['==', ['get', 'incident_id'], selectedId], 0.30, 0.20], 7, ['case', ['==', ['get', 'incident_id'], selectedId], 0.46, 0.34], 10, ['case', ['==', ['get', 'incident_id'], selectedId], 0.58, 0.46]]);
@@ -567,6 +651,23 @@ export default function PlayTimeline({ apiBase }) {
     });
     // Primitive coordinate dependencies prevent unrelated evidence refreshes from recentering.
   }, [mapReady, selectedId, selectedLongitude, selectedLatitude]);
+
+  // Search-area selection is a geographic extent, never a fabricated point fix.
+  // Only a selection change moves the camera; background evidence refresh does not.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || !selectedId) return;
+    const geometry = selectedIncident?.geometry;
+    if (!['Polygon', 'MultiPolygon'].includes(geometry?.type)) return;
+    const bounds = geometryBounds(geometry);
+    if (!bounds) return;
+    const mobile = window.matchMedia?.('(max-width: 680px)')?.matches;
+    map.fitBounds(
+      [[bounds.west, bounds.south], [bounds.east, bounds.north]],
+      { padding: mobile ? { top: 24, bottom: Math.round(window.innerHeight * 0.66), left: 24, right: 24 } : { top: 20, bottom: 80, left: 412, right: 340 },
+        maxZoom: 6.2, duration: 450 },
+    );
+  }, [mapReady, selectedId, selectedIncident?.geometry]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -848,6 +949,24 @@ export default function PlayTimeline({ apiBase }) {
             {frameProps.model ? <div><span>Model</span><strong>{frameProps.model}</strong></div> : null}
             {frameProps.reason_code ? <div><span>Reason</span><strong>{frameProps.reason_code}</strong></div> : null}
           </section>
+          {caseData?.search_area ? (
+            <section className="play-card play-card--search-area">
+              <p>Search area · source-derived</p>
+              <h3>Possible area, not an observed position</h3>
+              <span>{statusLabel(caseData.search_area.location_evidence || 'spatial prior')}</span>
+              {caseData.search_area.departure_places?.length ? <span>Departure · {caseData.search_area.departure_places.join(' · ')}</span> : null}
+              {caseData.search_area.destination_places?.length ? <span>Destination · {caseData.search_area.destination_places.join(' · ')}</span> : null}
+              {caseData.search_area.mentioned_places?.length ? <span>Places · {caseData.search_area.mentioned_places.join(' · ')}</span> : null}
+              {caseData.search_area.departure_time_window?.start_utc ? (
+                <span>
+                  Departure window · {String(caseData.search_area.departure_time_window.start_utc).slice(0, 10)}
+                  {caseData.search_area.departure_time_window.precision === 'date_only' ? ' · date only' : ''}
+                </span>
+              ) : null}
+              <span>Physical drift · {caseData.search_area.physical_drift_computed ? 'computed' : 'not computed'}</span>
+              <span>Probability · {caseData.search_area.probability_calibrated ? 'calibrated' : 'not calibrated'}</span>
+            </section>
+          ) : null}
           <section className="play-card">
             <p>Evidence and source review</p>
             <h3>What supports this case</h3>

@@ -67,6 +67,33 @@ _CMEMS_CACHE_DIR = Path(tempfile.gettempdir()) / "seacommons_cmems_cache"
 _CMEMS_CACHE_TTL_S = 3 * 3600  # 3 hours
 
 
+def _copernicus_overwrite_kwargs(subset_callable) -> dict[str, bool]:
+    """Return the overwrite keyword supported by the installed client version."""
+    import inspect
+
+    try:
+        params = inspect.signature(subset_callable).parameters
+    except (TypeError, ValueError):
+        params = {}
+    if "overwrite" in params:
+        return {"overwrite": True}
+    if "overwrite_output_data" in params:
+        return {"overwrite_output_data": True}
+    return {}
+
+
+def _reader_covers_time(reader, at: datetime) -> bool:
+    """Fail closed when a provider reader cannot serve the simulation start."""
+    covers = getattr(reader, "covers_time", None)
+    if not callable(covers):
+        return False
+    query = at.astimezone(timezone.utc).replace(tzinfo=None) if at.tzinfo else at
+    try:
+        return bool(covers(query))
+    except Exception:
+        return False
+
+
 def _vector_components(
     speed_ms: float,
     direction_deg: float,
@@ -532,7 +559,7 @@ def _build_cmems_reader(
                     start_datetime=t_start,
                     end_datetime=t_end,
                     output_filename=str(nc_path),
-                    overwrite_output_data=True,
+                    **_copernicus_overwrite_kwargs(copernicusmarine.subset),
                 )
 
             try:
@@ -561,6 +588,14 @@ def _build_cmems_reader(
             "CMEMS reader ready: covers %s → %s, variables=%s",
             reader.start_time, reader.end_time, reader.variables,
         )
+        end_time = start_time + timedelta(hours=duration_h)
+        if not (_reader_covers_time(reader, start_time) and _reader_covers_time(reader, end_time)):
+            logger.info(
+                "CMEMS reader does not cover full simulation interval %s to %s; "
+                "keeping Open-Meteo currents authoritative",
+                start_time.isoformat(), end_time.isoformat(),
+            )
+            return None
         return reader
     except Exception as exc:
         logger.warning("CMEMS reader_netCDF_CF_generic failed: %s", exc)

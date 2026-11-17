@@ -6,7 +6,7 @@ import json
 import logging
 import math
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -85,8 +85,9 @@ class DriftEngine:
     def backtrack(self, lat: float, lon: float, time_utc: datetime, duration_h: int = 24,
                   domain: str = "ocean_sar", config: Optional[dict] = None) -> DriftResult:
         """Backward drift using the same real-data engine with reversed vectors."""
-        wind = self._cache.get_wind_live(lat, lon)
-        _ = (wind.get("wind_dir_deg", 270.0) + 180) % 360
+        # Do not fetch live wind: this backtrack uses explicit constant
+        # fallback vectors, and a current forecast is unrelated to its
+        # historical timestamp. Reader-derived forcing is resolved below.
         env = {
             "x_wind": -float(os.getenv("OPENDRIFT_WIND_X", "4.0")),
             "y_wind": -float(os.getenv("OPENDRIFT_WIND_Y", "1.0")),
@@ -96,9 +97,18 @@ class DriftEngine:
         return self._opendrift(lat, lon, time_utc, duration_h, domain, env)
 
     def _opendrift(self, lat, lon, time_utc, duration_h, domain, config) -> DriftResult:
-        wind = self._cache.get_wind_live(lat, lon)
-        current = self._cache.get_ocean_currents(lat, lon)
-        wind_series = self._cache.get_wind_forecast_series(lat, lon, hours=duration_h)
+        # Historical forcing comes from the timestamped OpenDrift readers.
+        # Never inject today's wind/forecast as a constant fallback for an
+        # older incident; missing historical coverage must remain degraded.
+        start_utc = time_utc.replace(tzinfo=timezone.utc) if time_utc.tzinfo is None else time_utc.astimezone(timezone.utc)
+        historical = start_utc < datetime.now(timezone.utc) - timedelta(hours=24)
+        if historical:
+            wind = {"wind_speed_ms": 0.0, "wind_dir_deg": 0.0, "source": "historical-unavailable"}
+            wind_series = []
+        else:
+            wind = self._cache.get_wind_live(lat, lon)
+            wind_series = self._cache.get_wind_forecast_series(lat, lon, hours=duration_h)
+        current = self._cache.get_ocean_currents(lat, lon, time_utc=time_utc.isoformat())
         wind_speed = float(wind.get("wind_speed_ms", 0.0))
         wind_dir_deg = float(wind.get("wind_dir_deg", 0.0))
         wind_dir_rad = math.radians(wind_dir_deg)

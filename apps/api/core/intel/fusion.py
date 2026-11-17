@@ -705,15 +705,11 @@ def _emit_locked(alert: FusedAlert) -> None:
 
 
 def _find_relinkable_case(db, alert: FusedAlert, case_type: str) -> Optional[str]:
-    """An already-OPEN case that this alert's incident is a later update to.
+    """Find an open case for a subsequent cluster with identity safeguards.
 
-    ``_open_case_for_alert``'s primary lookup only matches events belonging
-    to *this* cluster (``alert.contributing_event_ids``), so a follow-up
-    signal about the same vessel or incident days later -- a fresh
-    cluster_id, no overlapping event ids -- always missed it and forked a
-    duplicate case. Match by MMSI when the alert has one (dark-fleet /
-    sanctions / mobility domains); otherwise by proximity, since most
-    humanitarian SAR reports (a dinghy, no AIS) carry no MMSI.
+    Match vessel-linked alerts by MMSI. Only humanitarian SAR-type reports
+    without vessel identifiers may use a bounded proximity fallback; nearby
+    unrelated maritime casualties must not be silently merged.
     """
     from core.cases.service import OPEN_STATUSES
     from core.db.models import CaseDB, CaseIntelEventDB, IntelEventDB
@@ -738,8 +734,21 @@ def _find_relinkable_case(db, alert: FusedAlert, case_type: str) -> Optional[str
         )
         return match.case_id if match else None
 
+    # A nearby position does not establish vessel identity. Without an MMSI,
+    # maritime/security incidents must remain distinct until an identifier
+    # or stronger cross-source evidence links them. Proximity-only relinking
+    # is reserved for humanitarian SAR reports without vessel identifiers.
+    if case_type not in {"distress_sar", "pushback", "shipwreck", "missing_persons", "interception"}:
+        return None
     if alert.lat is None or alert.lon is None:
         return None
+    # Proximity is especially ambiguous for unregistered SAR craft. Do not
+    # merge a new incident into a multi-day-old case merely because both
+    # reports are near a busy rescue corridor. Identified vessels retain the
+    # configured, longer MMSI relink window above.
+    proximity_window_start = datetime.fromtimestamp(alert.ts, tz=timezone.utc) - timedelta(hours=24)
+    query = query.filter(CaseDB.created_at >= proximity_window_start.replace(tzinfo=None))
+    query = query.filter(CaseDB.created_at <= datetime.fromtimestamp(alert.ts, tz=timezone.utc).replace(tzinfo=None))
     radius_km = config.FUSION_CASE_RELINK_RADIUS_KM
     best: Optional[CaseDB] = None
     best_km = radius_km

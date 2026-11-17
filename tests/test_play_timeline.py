@@ -578,3 +578,93 @@ def test_play_catalog_collapses_near_simultaneous_alarm_phone_translation():
     ids = [row["incident_id"] for row in response.json()["incidents"]]
     assert older in ids
     assert newer not in ids
+
+
+def test_play_region_area_uses_search_polygon_not_technical_centroid(monkeypatch):
+    from core.api.routes import play as play_routes
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel import landmask
+
+    monkeypatch.setattr(landmask, "is_on_land", lambda lat, lon: False)
+    event_id = f"play-region-{uuid.uuid4()}"
+    reported = datetime(2026, 11, 2, 19, 31, 30, tzinfo=timezone.utc)
+    event = IntelEvent(
+        id=event_id, type="twitter", severity="high", lat=37.5, lon=1.5,
+        title="14 people in distress in the WesternMed",
+        text="Relatives alerted us to the group that left Mostaganem, Algeria on 27 October. Neither we nor their relatives are able to reach them.",
+        source="Alarm Phone", timestamp_utc=reported.isoformat(),
+        metadata={
+            "is_distress": True, "maritime_domain": "sar",
+            "publication_status": "published", "source_policy": "operator_published",
+            "coordinate_source": "region_area", "coordinate_review_status": "not_applicable",
+            "location_uncertainty_m": 180000,
+        },
+    )
+    with session_scope() as db:
+        db.add(IntelEventDB(
+            id=event.id, timestamp_utc=event.timestamp_utc, type=event.type,
+            severity=event.severity, lat=event.lat, lon=event.lon,
+            title=event.title, text=event.text, url="", source=event.source,
+            linked_mmsi="", maritime_domain="sar", meta=event.metadata,
+        ))
+    sync_incident_for_event(event, lifecycle="needs_review")
+    play_routes._play_catalog_cache.clear()
+
+    client = TestClient(app)
+    catalog = client.get("/api/v1/play/incidents?limit=500")
+    assert catalog.status_code == 200
+    item = next(row for row in catalog.json()["incidents"] if row["incident_id"] == event_id)
+    assert item["geometry"]["type"] == "Polygon"
+    assert item["geometry"] != {"type": "Point", "coordinates": [1.5, 37.5]}
+    assert item["search_area"]["location_evidence"] == "reported_region_radius_spatial_prior"
+    assert item["search_area"]["physical_drift_computed"] is False
+    assert item["search_area"]["probability_calibrated"] is False
+    assert "mostaganem" in {p.casefold() for p in item["search_area"]["mentioned_places"]}
+    assert item["search_area"]["departure_time_window"]["precision"] == "date_only"
+
+    timeline = client.get(f"/api/v1/play/incidents/{event_id}/timeline")
+    assert timeline.status_code == 200
+    payload = timeline.json()
+    assert payload["search_area"]["geometry"]["type"] == "Polygon"
+    report = next(row for row in payload["timeline"] if row["type"] == "report")
+    assert report["geometry"]["type"] == "Polygon"
+    assert report["properties"]["geometry_semantics"] == "search_prior"
+    assert "Neither we nor their relatives" not in timeline.text
+
+
+def test_play_satellite_delta_is_incident_relative_not_first_target_relative():
+    from core.db.models import IntelEventDB
+    from core.db.session import session_scope
+    from core.intel.lifecycle import parse_utc
+    from core.intel.satellite_observation import SatelliteObservation, persist_observations
+
+    event_id = _seed_case(lifecycle="resolved", age_hours=30, with_update=False)
+    with session_scope() as db:
+        event = db.get(IntelEventDB, event_id)
+        reported = parse_utc(event.timestamp_utc)
+    acquired = reported + timedelta(hours=13, minutes=28, seconds=12)
+    observation = SatelliteObservation(
+        observation_id=f"sat-{uuid.uuid4()}", incident_id=event_id,
+        provider="nasa_gibs", mission="VIIRS NOAA-20", product_id="VIIRS_MULTI_TARGET",
+        acquisition_time=acquired.isoformat(), discovered_at=datetime.now(timezone.utc).isoformat(),
+        footprint=None, bbox=[14.0, 35.0, 14.2, 35.2], sensor_type="optical_context",
+        # Simulate a scene first stored relative to a later drift target.
+        temporal_relation="nearest", temporal_delta_s=-37908.0,
+        asset_ref="https://example.test/{z}/{y}/{x}.jpg", source_url="https://example.test/viirs",
+        provenance={"case_targets": [
+            {"role": "drift_trajectory", "at": (reported + timedelta(hours=24)).isoformat(), "search_direction": "nearest"},
+            {"role": "reported_origin", "at": reported.isoformat(), "search_direction": "forward"},
+        ]},
+    )
+    assert persist_observations([observation]) == 1
+
+    response = TestClient(app).get(f"/api/v1/play/incidents/{event_id}/timeline")
+    assert response.status_code == 200
+    satellite = next(item for item in response.json()["timeline"] if item["id"] == observation.observation_id)
+    props = satellite["properties"]
+    assert props["temporal_relation"] == "forward"
+    assert props["temporal_delta_s"] == pytest.approx(48492.0)
+    assert props["target_temporal_relation"] == "nearest"
+    assert props["target_temporal_delta_s"] == -37908.0
+    assert len(props["case_targets"]) == 2

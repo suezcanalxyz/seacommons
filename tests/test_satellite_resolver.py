@@ -211,3 +211,12 @@ def test_copernicus_stac_accepts_start_datetime_when_datetime_is_missing():
     )[0]
     assert observation.acquisition_time == "2026-09-04T09:30:00Z"
     assert observation.mission == "Sentinel-3"
+
+
+def test_viirs_context_bbox_respects_case_search_radius():
+    observations = viirs_daily_observations(
+        incident_id="region-case", lat=37.5, lon=1.5,
+        day=date(2026, 11, 2), radius_deg=1.6,
+    )
+    assert observations
+    assert all([round(value, 3) for value in item.bbox] == [-0.1, 35.9, 3.1, 39.1] for item in observations)

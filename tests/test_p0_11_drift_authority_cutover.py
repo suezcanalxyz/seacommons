@@ -142,8 +142,10 @@ def test_public_drift_collection_reads_only_the_current_drift_id(monkeypatch):
         timestamp_utc=_RECENT_TS,
         metadata={
             "is_distress": True, "source_policy": "official_api",
-            "coordinate_source": "media_ocr_text",
-            "coordinate_review_status": "machine_ocr_unverified",
+            # This regression isolates drift ownership, not OCR trust.
+            # Single-engine OCR is intentionally rejected by the evidence gate.
+            "coordinate_source": "post_text",
+            "coordinate_review_status": "not_required",
             "location_status": "positioned", "maritime_domain": "sar",
             # A stale/legacy metadata value that must NOT be consulted --
             # this drift job was never synced as current and does not exist.
@@ -152,6 +154,10 @@ def test_public_drift_collection_reads_only_the_current_drift_id(monkeypatch):
     )
     sync_incident_for_event(event, lifecycle="active")
 
+    # Shared CI disables the heavy coastline dataset. This regression is about
+    # drift ownership, so explicitly provide a verified maritime origin.
+    monkeypatch.setattr("core.intel.landmask.in_operational_region", lambda lat, lon: True)
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: False)
     monkeypatch.setattr("core.live.feed.intel_store.persisted_events", lambda **_kwargs: [])
     monkeypatch.setattr("core.live.feed.intel_store.events", lambda **_kwargs: [event])
 
@@ -162,7 +168,8 @@ def test_public_drift_collection_reads_only_the_current_drift_id(monkeypatch):
     # Now sync a REAL current_drift_id and confirm it -- and only it -- publishes.
     from core.intel.drift_ownership import sync_current_drift_for_incident
 
-    sync_current_drift_for_incident(event_id, "real-current-job")
+    assert sync_current_drift_for_incident(event_id, "real-current-job") == "real-current-job"
+    assert get_current_drift_id(event_id) == "real-current-job"
     fake_drift = {
         "trajectory": {
             "type": "Feature",

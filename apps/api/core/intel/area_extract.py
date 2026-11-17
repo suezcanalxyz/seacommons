@@ -57,11 +57,74 @@ class AreaResult:
     weather_narrowed: bool
 
 
-def extract_area(text: str, *, report_time: Optional[datetime] = None) -> Optional[AreaResult]:
-    """None if no place is named at all, or if land/geometry construction
-    fails outright -- callers fall back to their existing single-point
-    behavior in that case, never to a fabricated area."""
+def area_from_center(lat: float, lon: float, radius_m: float) -> Optional[AreaResult]:
+    """Convert a broad reported region centre + uncertainty radius into a sea-only area.
+
+    The centre remains a rendering aid, not a claimed vessel position. This is
+    used for region-level reports such as #WesternMed that previously carried
+    a centroid/radius but no polygon and therefore disappeared from Live.
+    """
+    try:
+        lat = float(lat); lon = float(lon); radius_km = float(radius_m) / 1000.0
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not (math.isfinite(lat) and math.isfinite(lon) and math.isfinite(radius_km)):
+        return None
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180 and 5 <= radius_km <= 500):
+        return None
+    grid = _build_base_grid([(lat, lon)], radius_km)
+    sea_grid = [point for point in grid if landmask.is_on_land(*point) is not True]
+    if not sea_grid:
+        return None
+    polygon = _cells_to_polygon(sea_grid, _GRID_SPACING_KM)
+    if polygon is None:
+        return None
+    area_km2 = _polygon_area_km2(polygon)
+    confidence = "area" if area_km2 <= _LOW_CONFIDENCE_AREA_KM2 else "area_low_confidence"
+    return AreaResult(
+        polygon=polygon,
+        centroid=_polygon_centroid(polygon),
+        confidence=confidence,
+        weather_narrowed=False,
+    )
+
+
+def _role_filtered_matches(text: str) -> list[tuple[str, tuple[float, float], str]]:
+    """Keep route/location evidence and exclude places mentioned only as authorities.
+
+    A sentence such as "we informed authorities in Malta" is evidence about
+    response coordination, not about the boat location. If role parsing is
+    unavailable, fail open to the original gazetteer matches rather than lose
+    a potentially useful source-derived area.
+    """
     matches = find_all_place_matches(text)
+    if not matches:
+        return []
+    try:
+        from core.intel.macro_drift import location_clues
+
+        roles: dict[str, set[str]] = {}
+        for clue in location_clues(text):
+            place = str(clue.get("place") or "").casefold()
+            if place:
+                roles.setdefault(place, set()).add(str(clue.get("role") or ""))
+        allowed = {
+            "possible_departure", "possible_destination",
+            "reported_area", "mentioned_unclassified",
+        }
+        return [
+            match for match in matches
+            if not roles.get(match[0].casefold())
+            or bool(roles[match[0].casefold()] & allowed)
+        ]
+    except Exception:
+        return matches
+
+
+def extract_area(text: str, *, report_time: Optional[datetime] = None) -> Optional[AreaResult]:
+    """None if no defensible route/location place remains after role filtering,
+    or if land/geometry construction fails outright -- never fabricate an area."""
+    matches = _role_filtered_matches(text)
     if not matches:
         return None
 

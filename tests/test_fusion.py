@@ -401,11 +401,8 @@ def test_no_relink_once_case_is_older_than_the_relink_window() -> None:
         assert db.query(CaseDB).count() == 2, "a 30-day-old case is outside the relink window"
 
 
-def test_relink_existing_case_by_proximity_when_alert_has_no_mmsi() -> None:
-    """Most humanitarian SAR reports (a migrant dinghy) carry no MMSI at
-    all -- the exact scenario reported live: a second post about a boat
-    already tracked under an open case, days later, must update that case
-    instead of opening a duplicate one for the same incident."""
+def test_vessel_incidents_without_mmsi_do_not_merge_on_proximity_alone() -> None:
+    """Two nearby vessel casualties without identity evidence stay distinct."""
     ev1 = _add(
         type="vessel_incident", severity="high", lat=35.40, lon=13.00,
         title="Cargo aground off Lampedusa", source="AIS incidents",
@@ -435,8 +432,42 @@ def test_relink_existing_case_by_proximity_when_alert_has_no_mmsi() -> None:
 
     with session_scope() as db:
         cases = db.query(CaseDB).all()
-        assert len(cases) == 1, "nearby follow-up report with no MMSI must relink by proximity"
-        assert cases[0].case_id == original_case_id
+        assert len(cases) == 2, "proximity alone must not merge unidentified vessels"
+        assert any(case.case_id == original_case_id for case in cases)
+
+
+def test_humanitarian_proximity_relink_is_bounded_to_24_hours() -> None:
+    """Nearby unrelated rescue reports days apart must not share a case."""
+    from core.cases.service import open_case
+    from core.db.models import CaseDB
+    from core.db.session import session_scope
+
+    now = datetime.now(timezone.utc)
+    with session_scope() as db:
+        old = open_case(
+            db, title="Unidentified boat distress", created_by="test",
+            case_type="distress_sar", lat=35.4, lon=13.0, notify=False,
+        )
+        row = db.query(CaseDB).filter(CaseDB.case_id == old["case_id"]).one()
+        row.created_at = (now - timedelta(days=3)).replace(tzinfo=None)
+
+    alert = fusion.FusedAlert(
+        alert_type="sar_corroborated", domain="sar", severity="high",
+        confidence=0.8, lat=35.405, lon=13.005, ts=now.timestamp(),
+        contributing_event_ids=["new-independent-rescue"],
+        contributing_sources=["Alarm Phone"], summary="Another nearby distress",
+        case_type="distress_sar",
+    )
+    with session_scope() as db:
+        assert fusion._find_relinkable_case(db, alert, "distress_sar") is None
+        recent = open_case(
+            db, title="Recent distress follow-up", created_by="test",
+            case_type="distress_sar", lat=35.404, lon=13.004, notify=False,
+        )
+        row = db.query(CaseDB).filter(CaseDB.case_id == recent["case_id"]).one()
+        row.created_at = (now - timedelta(hours=2)).replace(tzinfo=None)
+    with session_scope() as db:
+        assert fusion._find_relinkable_case(db, alert, "distress_sar") == recent["case_id"]
 
 
 def test_no_relink_by_proximity_beyond_relink_radius() -> None:

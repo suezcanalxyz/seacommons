@@ -6,6 +6,7 @@ import json
 import math
 import time
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -179,8 +180,21 @@ class CacheManager:
         return series
 
     def get_ocean_currents(self, lat: float, lon: float, time_utc: Optional[str] = None) -> dict[str, Any]:
-        # Cache keyed on 0.1° grid cell — CMEMS open_dataset is expensive (~25s)
-        cache_key = f"currents_{round(lat, 1):.1f}_{round(lon, 1):.1f}".replace("-", "m")
+        # Cache keyed on 0.1° grid cell and, when supplied, forcing time. A
+        # historical incident must never reuse a live-current cache entry.
+        at: datetime | None = None
+        time_bucket = "live"
+        if time_utc:
+            try:
+                at = datetime.fromisoformat(str(time_utc).replace("Z", "+00:00"))
+                if at.tzinfo is None:
+                    at = at.replace(tzinfo=timezone.utc)
+                else:
+                    at = at.astimezone(timezone.utc)
+                time_bucket = at.strftime("%Y%m%dT%H")
+            except (TypeError, ValueError, OverflowError):
+                return {"u_ms": 0.0, "v_ms": 0.0, "source": "invalid-time-fallback"}
+        cache_key = f"currents_{round(lat, 1):.1f}_{round(lon, 1):.1f}_{time_bucket}".replace("-", "m")
         cache_path = self._path(f"{cache_key}.json")
         ttl = 2 * 3600  # 2 hours
         stale_cache: dict[str, Any] | None = None
@@ -197,7 +211,7 @@ class CacheManager:
 
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(fetch_current_point, lat, lon)
+                future = executor.submit(fetch_current_point, lat, lon, at=at)
                 ocean = future.result(timeout=config.EXTERNAL_DATA_TIMEOUT_S)
         except concurrent.futures.TimeoutError:
             if stale_cache:

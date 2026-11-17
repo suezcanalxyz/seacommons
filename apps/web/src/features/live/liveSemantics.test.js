@@ -108,8 +108,13 @@ test('image-derived humanitarian map pins keep a centre marker plus uncertainty 
 });
 
 
+test('LIVE configures bundled MapLibre worker before creating map', () => {
+  assert.ok(main.indexOf('configureMaplibreWorker(maplibregl)') < main.indexOf('new maplibregl.Map('));
+});
+
 test('public Live retains nautical seamarks and permits satellite selection', () => {
-  assert.match(main, /if \(isPublicLiveHost\) return 'standard'/);
+  assert.match(main, /return isPublicLiveHost \? 'satellite' : 'standard'/);
+  assert.match(main, /stored === 'standard' \|\| stored === 'satellite'/);
   assert.match(main, /const effectiveBaseMap = baseMap/);
   assert.match(main, /tiles: \['https:\/\/tiles\.openseamap\.org\/seamark\/\{z\}\/\{x\}\/\{y\}\.png'\]/);
   assert.match(main, /allowSatellite=\{true\}/);
@@ -154,7 +159,18 @@ test('public LIVE basemap control is portalled above the MapLibre canvas and rem
   const main = fs.readFileSync(new URL('../../main.jsx', import.meta.url), 'utf8');
   const css = fs.readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
   assert.match(main, /import \{ createPortal \} from 'react-dom';/);
-  assert.match(main, /isPublicLiveHost && !play3D \? createPortal\(/);
+  assert.match(main, /isPublicLiveHost \? createPortal\(/);
   assert.match(main, /<\/button>, document\.body/);
+  assert.match(main, /<\/section>\s*<\/>\s*\) : null}\s*\{isPublicLiveHost \? createPortal\(/);
   assert.match(css, /\.live-basemap-switch \{[\s\S]*?z-index: 10000;[\s\S]*?pointer-events: auto;/);
+});
+
+test('source-derived humanitarian search areas are visually and semantically distinct from OpenDrift cones', () => {
+  assert.match(main, /id: 'intel-search-prior-fill'/);
+  assert.match(main, /id: 'intel-search-prior-line'/);
+  assert.match(main, /\['==', \['get', 'kind'\], 'macro_search_area'\]/);
+  assert.match(main, /type: 'search_area'/);
+  assert.match(cone, /Source-derived spatial prior/);
+  assert.match(cone, /not an OpenDrift trajectory/i);
+  assert.match(cone, /not a probability contour/i);
 });

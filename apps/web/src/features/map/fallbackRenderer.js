@@ -256,6 +256,12 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
         const [lon, lat] = feature.geometry.coordinates;
         return [Number(lat), Number(lon)];
       });
+      for (const feature of polygonFeatures(incidents)) {
+        const polygons = leafletPolygonCoordinates(feature.geometry);
+        for (const polygon of polygons) {
+          for (const ring of polygon) points.push(...ring);
+        }
+      }
       if (points.length) map.fitBounds(L.latLngBounds(points), { padding: [28, 28], maxZoom: 9 });
     },
     flyTo({ center: nextCenter, zoom: nextZoom }) {

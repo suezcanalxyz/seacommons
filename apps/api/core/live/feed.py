@@ -21,6 +21,7 @@ from core.domain.live_contracts import (
 )
 from core.domain.visual_category import visual_category_fields
 from core.intel import lifecycle
+from core.intel.operational_feed_policy import withhold_humanitarian_live
 from core.intel.public_policy import (
     HUMANITARIAN_DRIFT_DOMAINS,
     compartment_for_domain,
@@ -861,6 +862,9 @@ def public_signal_collection(
         if candidate_mode != "humanitarian":
             humanitarian_candidate_drops["not_humanitarian_compartment"] += 1
             continue
+        if withhold_humanitarian_live(candidate, now=now):
+            humanitarian_candidate_drops["not_current_operational_distress"] += 1
+            continue
         candidate_feature = _public_intel_feature(
             candidate, allowed_domains=domains_for_mode("humanitarian")
         )
@@ -916,6 +920,8 @@ def public_signal_collection(
         else:
             event_mode = compartment_for_domain(resolved_domain)
         if event_mode is None:
+            continue
+        if withhold_humanitarian_live(event, now=now):
             continue
         feature = _public_intel_feature(
             event,
@@ -1215,6 +1221,15 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
             source_in=["Alarm Phone", "alarm_phone"], max_age_days=30, limit=min(limit * 5, 1000)
         )
     }
+    # Recover qualified public humanitarian observations after process restarts.
+    # The in-memory deque is not durable; downstream SAR, time, position and
+    # lifecycle gates still decide whether a recovered event may show a drift.
+    for event_type in ("distress", "ngo_activity", "iom_incident"):
+        for event in intel_store.persisted_events(
+            types=[event_type], max_age_days=1,
+            limit=_LIVE_DURABLE_TYPE_SCAN_LIMIT,
+        ):
+            drift_events.setdefault(event.id, event)
     drift_events.update(
         {event.id: event for event in intel_store.events(limit=min(limit * 3, 500))}
     )
@@ -1229,6 +1244,8 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
         # includes "piracy" by default, so "not security" alone would still
         # let a piracy-domain event carry a drift cone (docs/deep-research-
         # report (2).md's follow-up finding on this exact gate).
+        if withhold_humanitarian_live(event, now=now):
+            continue
         public_event = _public_intel_feature(
             event, allowed_domains=HUMANITARIAN_DRIFT_DOMAINS
         )
@@ -1287,6 +1304,15 @@ def public_drift_collection(limit: int = 100) -> dict[str, Any]:
                         "physical_drift_computed": False,
                         "mentioned_places": prior["mentioned_places"],
                         "location_clues": prior["location_clues"],
+                        "route_evidence_status": prior["temporal_route_evidence"]["location_status"],
+                        "route_chronology_status": prior["temporal_route_evidence"]["chronology_status"],
+                        "elapsed_departure_to_contact_hours": prior["temporal_route_evidence"]["elapsed_departure_to_contact_hours"],
+                        "departure_time_window": prior["temporal_route_evidence"]["departure_time_window"],
+                        "elapsed_departure_to_report_hours_min": prior["temporal_route_evidence"]["elapsed_departure_to_report_hours_min"],
+                        "elapsed_departure_to_report_hours_max": prior["temporal_route_evidence"]["elapsed_departure_to_report_hours_max"],
+                        "departure_claims": prior["temporal_route_evidence"]["departure_claims"],
+                        "destination_claims": prior["temporal_route_evidence"]["destination_claims"],
+                        "estimated_current_position": None,
                         "location_evidence": prior["location_evidence"],
                         "uncertainty": prior["uncertainty"],
                         **category,

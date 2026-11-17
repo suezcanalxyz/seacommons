@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -52,21 +53,31 @@ def _trajectory_targets(
         or len(coordinates) < 2
     ):
         return []
-    candidates = list(range(1, len(coordinates)))
-    selected_positions = _sample_indices(len(candidates), limit)
-    targets: list[dict[str, Any]] = []
-    for pos in selected_positions:
-        index = candidates[pos]
+    # Validate all candidates before sampling: otherwise an invalid sampled
+    # point can consume the limited provider-query budget while valid points
+    # elsewhere on the trajectory are never considered.
+    candidates: list[tuple[int, float, float, datetime]] = []
+    for index in range(1, len(coordinates)):
         point = coordinates[index]
         if not isinstance(point, (list, tuple)) or len(point) < 2:
+            continue
+        try:
+            lon, lat = float(point[0]), float(point[1])
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not (math.isfinite(lon) and math.isfinite(lat) and -180 <= lon <= 180 and -90 <= lat <= 90):
             continue
         target_time = parse_utc(str(timestamps[index]))
         if target_time is None:
             continue
+        candidates.append((index, lon, lat, target_time))
+    targets: list[dict[str, Any]] = []
+    for pos in _sample_indices(len(candidates), limit):
+        index, lon, lat, target_time = candidates[pos]
         targets.append({
             "role": "drift_trajectory",
-            "lat": float(point[1]),
-            "lon": float(point[0]),
+            "lat": lat,
+            "lon": lon,
             "at": target_time,
             "drift_id": drift_id,
             "trajectory_index": index,
@@ -74,13 +85,47 @@ def _trajectory_targets(
     return targets
 
 
+def _area_target_radius_deg(event) -> float:
+    """Translate stored area uncertainty to a bounded satellite metadata-search radius."""
+    meta = event.metadata or {}
+    try:
+        uncertainty_m = float(meta.get("location_uncertainty_m"))
+        if uncertainty_m > 0:
+            return max(0.2, min(2.0, uncertainty_m / 111_320.0))
+    except (TypeError, ValueError, OverflowError):
+        pass
+    area = meta.get("area_geojson")
+    if isinstance(area, dict) and area.get("type") in {"Polygon", "MultiPolygon"}:
+        points: list[tuple[float, float]] = []
+        def collect(value):
+            if isinstance(value, (list, tuple)) and len(value) >= 2 and all(
+                isinstance(item, (int, float)) for item in value[:2]
+            ):
+                points.append((float(value[0]), float(value[1])))
+                return
+            if isinstance(value, (list, tuple)):
+                for child in value:
+                    collect(child)
+        collect(area.get("coordinates") or [])
+        if points:
+            radius = max(
+                max(abs(lon - float(event.lon)), abs(lat - float(event.lat)))
+                for lon, lat in points
+            )
+            return max(0.2, min(2.0, radius))
+    return 0.2
+
+
 def _case_satellite_targets(event) -> list[dict[str, Any]]:
     event_time = parse_utc(event.timestamp_utc) or datetime.now(timezone.utc)
+    meta = event.metadata or {}
+    area_like = str(meta.get("coordinate_source") or "").lower() == "region_area" or bool(meta.get("area_geojson"))
     targets: list[dict[str, Any]] = [{
-        "role": "reported_origin",
+        "role": "reported_search_area" if area_like else "reported_origin",
         "lat": float(event.lat),
         "lon": float(event.lon),
         "at": event_time,
+        "radius_deg": _area_target_radius_deg(event) if area_like else 0.2,
     }]
     try:
         from core.db.models import DriftResultDB, HumanitarianIncidentDB
@@ -114,6 +159,8 @@ def _annotate_target(observation, target: dict[str, Any], direction: str):
         "at": target["at"].astimezone(timezone.utc).isoformat(),
         "search_direction": direction,
     }
+    if target.get("radius_deg") is not None:
+        target_record["search_radius_deg"] = round(float(target["radius_deg"]), 6)
     if target.get("drift_id"):
         target_record["drift_id"] = str(target["drift_id"])
     if target.get("trajectory_index") is not None:
@@ -178,6 +225,7 @@ def enrich_event(
                     direction=direction,
                     provider=provider,
                     include_viirs=include_viirs,
+                    radius_deg=float(target.get("radius_deg") or 0.2),
                     now=now,
                 )
                 annotated = [

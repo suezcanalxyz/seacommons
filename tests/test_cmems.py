@@ -71,6 +71,27 @@ def test_ocean_batch_requests_the_dataset_surface_level_not_zero(monkeypatch):
     assert all(dataset.closed for dataset in fake.datasets)
 
 
+def test_current_point_uses_historical_timestamp(monkeypatch):
+    fake = _FakeCopernicus()
+    monkeypatch.setattr(cmems, "cmems_enabled", lambda: True)
+    monkeypatch.setattr(cmems, "_load_copernicusmarine", lambda: fake)
+    at = datetime(2026, 10, 20, 10, tzinfo=timezone.utc)
+    selected = []
+    original = cmems._sample_value
+
+    def recording_sample(ds, variable, lat, lon, *, at=None):
+        selected.append(at)
+        return original(ds, variable, lat, lon, at=at)
+
+    monkeypatch.setattr(cmems, "_sample_value", recording_sample)
+    result = cmems.fetch_current_point(35.0, 14.0, at=at)
+    assert result is not None
+    assert fake.calls[0]["start_datetime"].startswith("2026-10-19")
+    assert fake.calls[0]["end_datetime"].startswith("2026-10-21")
+    assert selected == [at, at]
+    assert fake.datasets[0].closed
+
+
 def test_current_point_requests_the_same_surface_level(monkeypatch):
     fake = _FakeCopernicus()
     monkeypatch.setattr(cmems, "cmems_enabled", lambda: True)
@@ -81,3 +102,28 @@ def test_current_point_requests_the_same_surface_level(monkeypatch):
     assert result is not None
     assert fake.calls[0]["minimum_depth"] == 0.49402499198913574
     assert fake.datasets[0].closed is True
+
+
+def test_sample_value_normalizes_timezone_aware_time_for_xarray_selection():
+    selected = []
+
+    class TimeVariable(_Variable):
+        def sel(self, selection, method=None):
+            if "time" in selection:
+                selected.append(selection["time"])
+                return self
+            return _Selection(self._value)
+
+    dataset = _Dataset({"uo": TimeVariable(0.12)})
+    value = cmems._sample_value(
+        dataset,
+        "uo",
+        35.0,
+        14.0,
+        at=datetime(2026, 10, 24, 10, 31, tzinfo=timezone.utc),
+    )
+
+    assert value == 0.12
+    assert len(selected) == 1
+    assert selected[0].tzinfo is None
+    assert selected[0].isoformat() == "2026-10-24T10:31:00"
