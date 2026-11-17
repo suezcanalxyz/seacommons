@@ -4210,3 +4210,10 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .play-startup-overlay__inner small { color: #9bb2ad; font-size: 11px; line-height: 1.6; }
 @keyframes play-startup-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .play-startup-overlay__spinner { animation: none; } }
+
+/* OSINT source clock: distinguish display interpolation from actual backend freshness. */
+.live-feed-clock { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 7px; font: 10px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .025em; color: #9bb2bb; }
+.live-feed-clock > span:first-child { color: #8bf0c5; font-variant-numeric: tabular-nums; }
+.live-feed-clock .is-current { color: #8bf0c5; }
+.live-feed-clock .is-stale { color: #f6c56e; }
+.live-feed-clock small { flex-basis: 100%; color: #78939d; font-size: 9px; }
