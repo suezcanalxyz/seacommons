@@ -67,3 +67,20 @@ def test_repeat_is_idempotent_for_evidence_and_fingerprint():
     second = merge_episode_values(previous, incoming(hours=53))
     assert first["observation_ids"] == second["observation_ids"]
     assert first["evidence_fingerprint"] == second["evidence_fingerprint"]
+
+
+def test_partial_fresh_analysis_update_retains_prior_source_lineage():
+    previous = current()
+    previous.behaviour_context["analysis"]["lineage_ids"] = ["source:ais:first"]
+    result = merge_episode_values(previous, incoming(hours=53))
+    assert result["behaviour_context"]["analysis"]["lineage_ids"] == ["source:ais:first"]
+    assert result["behaviour_context"]["analysis"]["publication_state"] == "internal"
+
+
+def test_verified_closed_state_updates_stale_nested_resolution():
+    previous = current()
+    previous.status = "resolved"
+    previous.behaviour_context["analysis"]["resolution_state"] = "open"
+    result = merge_episode_values(previous, incoming(hours=53, status="active"))
+    assert result["status"] == "resolved"
+    assert result["behaviour_context"]["analysis"]["resolution_state"] == "resolved"

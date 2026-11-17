@@ -51,3 +51,24 @@ def test_future_timestamp_is_not_an_active_clock_or_500_error():
     assert result["play_eligible"] is False
     assert result["ongoing"] is False
     assert result["elapsed_seconds"] is None
+
+
+def test_closed_episode_projection_overrides_stale_open_analysis():
+    from types import SimpleNamespace
+    from core.api.routes.play import _episode_projection
+
+    detected = datetime(2026, 11, 17, 10, tzinfo=timezone.utc)
+    row = SimpleNamespace(
+        episode_id="episode:stable", episode_family="gap_episode", status="resolved",
+        behaviour_context={"analysis": {"resolution_state": "open", "publication_state": "published"}},
+        independence_groups=["modality:ais"], verification_status="single_source_observed",
+        start_at=detected, end_at=detected + timedelta(hours=53), updated_at=detected + timedelta(hours=54),
+        geometry={"type": "Point", "coordinates": [12.0, 35.0]},
+        subject_ids=["subj:mmsi:123456789"], observation_ids=["ais:origin", "ais:reappearance"],
+        alternative_explanations=[],
+    )
+    projected = _episode_projection(row)
+    assert projected["incident_status"] == "resolved"
+    clock = public_episode_clock(projected, now=detected + timedelta(hours=60))
+    assert clock["ongoing"] is False
+    assert clock["elapsed_seconds"] == 53 * 3600

@@ -68,7 +68,13 @@ def merge_episode_values(existing: Any, incoming: dict[str, Any]) -> dict[str, A
 
     context = dict(existing.behaviour_context or {})
     if not stale:
-        context.update(values.get("behaviour_context") or {})
+        # A fresh update can change publication policy, but absent nested
+        # analysis fields must not erase previously recorded source lineage.
+        for key, value in (values.get("behaviour_context") or {}).items():
+            if key == "analysis" and isinstance(value, dict) and isinstance(context.get(key), dict):
+                context[key] = {**context[key], **value}
+            else:
+                context[key] = value
     values["behaviour_context"] = context
     if stale:
         for field in ("geometry", "status", "verification_status", "method_version"):
@@ -77,6 +83,11 @@ def merge_episode_values(existing: Any, incoming: dict[str, Any]) -> dict[str, A
     # episode after verified reappearance must have its own episode identity.
     if str(existing.status) in {"resolved", "archived"} and values["status"] in {"detected", "active", "open"}:
         values["status"] = existing.status
+    if values["status"] in {"resolved", "archived"}:
+        analysis = dict(context.get("analysis") or {})
+        analysis["resolution_state"] = values["status"]
+        context["analysis"] = analysis
+        values["behaviour_context"] = context
     values["evidence_fingerprint"] = episode_fingerprint(
         subject_ids=tuple(str(v) for v in existing.subject_ids or ()),
         family=existing.episode_family,
