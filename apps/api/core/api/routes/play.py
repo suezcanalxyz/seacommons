@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from core.domain.incident_taxonomy import taxonomy_fields
 from core.intel.humanitarian_incident import public_incident_status
+from core.intel.episode_lifecycle import public_episode_clock
 from core.intel.lifecycle import parse_utc
 from core.intel.public_policy import domains_for_mode
 from core.intel.store import IntelEvent
@@ -1037,6 +1038,7 @@ def play_incidents(
                 })
     for item in page:
         item["status_history"] = history.get(item["incident_id"], [])
+        item.update(public_episode_clock(item, now=now))
 
     next_offset = offset + len(page) if len(combined) > offset + len(page) else None
     return {

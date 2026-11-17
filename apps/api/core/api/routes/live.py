@@ -40,6 +40,41 @@ async def live_signals(
     return public_signal_collection(limit=limit, days=days, since=since, mode=mode)
 
 
+@router.get("/episodes")
+def live_public_episodes(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """LIVE view of the same published episode IDs used in PLAY.
+
+    Ongoing public cases remain visible past 24 hours; recent public cases
+    remain visible until they reach PLAY eligibility. No unpublished case is
+    exposed, and the clock does not manufacture new AIS observations.
+    """
+    from core.api.routes.play import _get_play_catalog
+    from core.intel.episode_lifecycle import public_episode_clock, visible_in_live
+    from core.intel.lifecycle import parse_utc
+
+    now = datetime.now(timezone.utc)
+    selected = []
+    for item in _get_play_catalog():
+        detected = parse_utc(str(item.get("reported_at") or ""))
+        if detected is None or detected > now:
+            continue
+        status = str(item.get("incident_status") or "outcome_unknown").lower()
+        if visible_in_live(detected_at=detected, status=status, now=now):
+            selected.append(item)
+    page = [public_episode_clock(item, now=now) for item in selected[offset:offset + limit]]
+    return {
+        "episodes": page,
+        "total_count": len(selected),
+        "offset": offset,
+        "next_offset": offset + len(page) if offset + len(page) < len(selected) else None,
+        "generated_at": now.isoformat(),
+        "publication_policy": "already_public_play_catalog",
+    }
+
+
 @router.get("/sanctioned-vessels")
 async def live_sanctioned_vessels(request: Request):
     """Fresh AIS positions for vessels matched to public sanctions lists.

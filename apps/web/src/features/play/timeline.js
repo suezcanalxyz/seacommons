@@ -68,6 +68,26 @@ export function selectPreferredSatelliteObservation(timeline = [], at = null, pr
   return newest(candidates);
 }
 
+/** A running case clock measures time since first report, never new AIS fixes. */
+export function ongoingCaseClock(incident, nowMs = Date.now()) {
+  if (incident?.ongoing !== true) return null;
+  const first = Date.parse(String(incident.reported_at || ''));
+  if (!Number.isFinite(first) || first > nowMs) return null;
+  const elapsedMinutes = Math.floor((nowMs - first) / 60_000);
+  const days = Math.floor(elapsedMinutes / (24 * 60));
+  const hours = Math.floor((elapsedMinutes % (24 * 60)) / 60);
+  const minutes = elapsedMinutes % 60;
+  const duration = `${days > 0 ? `${days}d ` : ''}${hours}h ${minutes}m`;
+  const latest = Date.parse(String(incident.last_update_at || ''));
+  const updateAge = Number.isFinite(latest) && latest <= nowMs
+    ? Math.max(0, Math.floor((nowMs - latest) / 60_000))
+    : null;
+  const freshness = updateAge == null ? 'last update not recorded'
+    : updateAge < 60 ? `record updated ${updateAge}m ago`
+      : `record updated ${Math.floor(updateAge / 60)}h ago`;
+  return `CASE OPEN · ${duration} since first report · ${freshness}`;
+}
+
 export function statusLabel(status) {
   const value = String(status || '').toLowerCase();
   if (value === 'needs_review') return 'NEEDS REVIEW';

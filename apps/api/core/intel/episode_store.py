@@ -37,6 +37,57 @@ def _parse_datetime(value: Any) -> datetime:
     return parsed
 
 
+def _utc(value: datetime) -> datetime:
+    """Normalize SQLAlchemy's naive UTC and incoming aware timestamps."""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def _ordered_union(previous: Any, incoming: Any) -> list[str]:
+    return list(dict.fromkeys(
+        str(value) for value in (*list(previous or ()), *list(incoming or ())) if str(value)
+    ))
+
+
+def merge_episode_values(existing: Any, incoming: dict[str, Any]) -> dict[str, Any]:
+    """Merge evidence for an unchanged canonical ID without rewinding history.
+
+    This does NOT decide identity, verify new AIS positions, or publish cases.
+    A replayed older snapshot may add evidence but must not regress the
+    position, status or publication decision of a newer persisted snapshot.
+    """
+    values = dict(incoming)
+    was_last = _utc(existing.end_at)
+    new_last = _utc(values["end_at"])
+    stale = new_last < was_last
+    first = min(_utc(existing.start_at), _utc(values["start_at"]))
+    last = max(was_last, new_last)
+    values["start_at"] = first
+    values["end_at"] = last
+    for field in ("observation_ids", "feature_ids", "independence_groups", "alternative_explanations"):
+        values[field] = _ordered_union(getattr(existing, field), values.get(field))
+
+    context = dict(existing.behaviour_context or {})
+    if not stale:
+        context.update(values.get("behaviour_context") or {})
+    values["behaviour_context"] = context
+    if stale:
+        for field in ("geometry", "status", "verification_status", "method_version"):
+            values[field] = getattr(existing, field)
+    # An already closed episode cannot silently become active again. A new
+    # episode after verified reappearance must have its own episode identity.
+    if str(existing.status) in {"resolved", "archived"} and values["status"] in {"detected", "active", "open"}:
+        values["status"] = existing.status
+    values["evidence_fingerprint"] = episode_fingerprint(
+        subject_ids=tuple(str(v) for v in existing.subject_ids or ()),
+        family=existing.episode_family,
+        signal_ids=tuple(values["observation_ids"]),
+        first_observed_at=first.isoformat(),
+        last_observed_at=last.isoformat(),
+        method_version=values["method_version"],
+    )
+    return values
+
+
 def save_episode(feature: dict[str, Any]):
     from core.db.models import MaritimeEpisodeDB
     from core.db.session import session_scope
@@ -91,7 +142,8 @@ def save_episode(feature: dict[str, Any]):
         else:
             if row.episode_family != family or tuple(row.subject_ids or ()) != subject_ids:
                 raise ValueError("episode identity collision")
-            for key, value in values.items():
+            merged = merge_episode_values(row, values)
+            for key, value in merged.items():
                 setattr(row, key, value)
         db.flush()
         db.refresh(row)

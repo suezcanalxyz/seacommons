@@ -7,6 +7,7 @@ import {
   selectFrame,
   selectSatelliteObservation,
   statusLabel,
+  ongoingCaseClock,
   resolveGlobalTimelinePosition,
   incidentsAtCutoff,
   incidentCollection,
@@ -536,4 +537,16 @@ test('PLAY attack overlays preserve red humanitarian category and use an indepen
   assert.match(source, /'visual_color'/);
   assert.match(source, /id: 'play-attack-markers'/);
   assert.match(source, /isAttackIncident\(f\.properties\)/);
+});
+
+
+test('ongoing case clock distinguishes elapsed time from last record update', () => {
+  const first = '2026-11-15T08:00:00Z';
+  const updated = '2026-11-17T10:00:00Z';
+  const now = Date.parse('2026-11-17T13:07:00Z');
+  assert.equal(ongoingCaseClock({ ongoing: true, reported_at: first, last_update_at: updated }, now),
+    'CASE OPEN · 2d 5h 7m since first report · record updated 3h ago');
+  assert.equal(ongoingCaseClock({ ongoing: false, reported_at: first }, now), null);
+  assert.equal(ongoingCaseClock({ incident_status: 'outcome_unknown', reported_at: first }, now), null);
+  assert.equal(ongoingCaseClock({ ongoing: true, reported_at: 'invalid' }, now), null);
 });

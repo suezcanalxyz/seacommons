@@ -11,7 +11,10 @@ from typing import Any
 
 PLAY_DELAY = timedelta(hours=24)
 TERMINAL_STATES = frozenset({"resolved", "archived"})
-ACTIVE_STATES = frozenset({"detected", "active"})
+# "outcome_unknown" is an epistemic label, not proof that a case remains active.
+# Keeping old unknown-outcome archive entries on LIVE would silently imply
+# ongoing distress/security activity and flood the current map.
+ACTIVE_STATES = frozenset({"detected", "active", "open", "needs_review"})
 
 
 def utc(value: datetime) -> datetime:
@@ -75,4 +78,39 @@ def reconcile_gap(
         "kind": "observed",
     }
     result["observation_ids"] = [*current.get("observation_ids", ()), observation_id]
+    return result
+
+
+def public_episode_clock(item: dict[str, Any], *, now: datetime) -> dict[str, Any]:
+    """Annotate an already-public case without changing its publication policy."""
+    from core.intel.lifecycle import parse_utc
+
+    result = dict(item)
+    detected = parse_utc(str(item.get("reported_at") or ""))
+    if detected is None:
+        return result
+    # Some incoming feeds carry a future timestamp because of publication
+    # clock skew or a bad source date. Do not crash the whole public archive
+    # or show a negative/fictional case duration.
+    if utc(detected) > utc(now):
+        result["play_eligible_at"] = (utc(detected) + PLAY_DELAY).isoformat()
+        result["play_eligible"] = False
+        result["ongoing"] = False
+        result["elapsed_seconds"] = None
+        result["clock_status"] = "future_timestamp"
+        return result
+    status = str(item.get("incident_status") or "outcome_unknown").lower()
+    ongoing = status in ACTIVE_STATES
+    ended = parse_utc(str(item.get("resolved_at") or "")) if not ongoing else None
+    if ended is not None and ended < detected:
+        ended = None
+    result["play_eligible_at"] = (utc(detected) + PLAY_DELAY).isoformat()
+    result["play_eligible"] = play_eligible(detected_at=detected, now=now)
+    result["ongoing"] = ongoing
+    # Unknown outcome without an observed closure is neither a verified active
+    # timer nor a measured incident duration. Do not manufacture one.
+    result["elapsed_seconds"] = (
+        elapsed_seconds(started_at=detected, ended_at=ended, now=now)
+        if ongoing or ended is not None else None
+    )
     return result
