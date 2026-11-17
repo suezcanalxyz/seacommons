@@ -108,3 +108,8 @@ test('signal parsing follows semantic category instead of raw transport type', (
     'public_observation',
   );
 });
+
+test('position integrity incident type is purple even without explicit visual_category', () => {
+  assert.equal(classifyEventVisual({ incident_type: 'position_integrity', title: 'SOLARIS' }).color, '#c084fc');
+  assert.equal(classifyEventVisual({ incident_type: 'position_integrity', severity: 'critical' }).key, 'spoofing');
+});

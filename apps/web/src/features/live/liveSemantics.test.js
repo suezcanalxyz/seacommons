@@ -174,3 +174,11 @@ test('source-derived humanitarian search areas are visually and semantically dis
   assert.match(cone, /not an OpenDrift trajectory/i);
   assert.match(cone, /not a probability contour/i);
 });
+
+test('LIVE vessel triangles and generic event pins inherit canonical visual_color', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('../../main.jsx', import.meta.url), 'utf8');
+  assert.ok(source.includes("'icon-color': ['coalesce', ['get', 'visual_color'], '#7dd3fc']"));
+  assert.ok(source.includes("'icon-color': ['coalesce', ['get', 'visual_color'], cat.color]"));
+  assert.ok(source.includes('visibleLivePointFeatures.map((feature) =>'));
+});
