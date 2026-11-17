@@ -685,6 +685,7 @@ function App() {
     },
   });
   const [liveEstimateClock, setLiveEstimateClock] = useState(Date.now());
+  const [lastDriftSyncAt, setLastDriftSyncAt] = useState(null);
   const [selectedSarResponse, setSelectedSarResponse] = useState(null);
   const [signalsExpanded, setSignalsExpanded] = useState(false);
   const [expandedMacros, setExpandedMacros] = useState(() => new Set());
@@ -1038,33 +1039,60 @@ function App() {
   // /api/v1/live/drifts (see the polling effect below). Browser drift remains
   // ONLY as the explicitly user-triggered simulation tool (runSarCaseAt).
 
+  // Display clock advances between backend model frames, never inventing new observations.
   useEffect(() => {
     if (!isPublicLiveHost) return undefined;
-    const timer = window.setInterval(() => setLiveEstimateClock(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
+    let timer;
+    const tick = () => { if (document.visibilityState !== 'hidden') setLiveEstimateClock(Date.now()); };
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => { tick(); schedule(); }, 10_000 - (Date.now() % 10_000));
+    };
+    const onVisibility = () => { if (document.visibilityState === 'visible') tick(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', tick);
+    schedule();
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', tick);
+    };
   }, []);
 
   // ── Intel drift traces polling ───────────────────────────────────────────────
   useEffect(() => {
     let alive = true;
     let driftTimer = null;
+    let inFlight = false;
     // Public Live consumes the backend/edge persisted operational Drift; the
     // authenticated console consumes the operator drift projection. Neither
     // clears the source — a transient fetch failure keeps the last good frame.
     async function loadDrifts() {
+      if (!alive || inFlight) return;
+      inFlight = true;
+      window.clearTimeout(driftTimer);
       try {
         const path = isPublicLiveHost ? '/api/v1/live/drifts' : '/api/v1/intel/drifts';
         const data = await fetchJson(apiBase, path);
-        if (alive && data.features) setIntelDrifts(data);
-      } catch { /* ignore — keep the last good drift frame */ }
-      if (alive) {
-        driftTimer = window.setTimeout(loadDrifts, isPublicLiveHost ? 30_000 : 120_000);
+        if (alive && Array.isArray(data.features)) {
+          setIntelDrifts(data);
+          setLastDriftSyncAt(Date.now());
+        }
+      } catch { /* retain last good frame; freshness indicator shows staleness */ }
+      finally {
+        inFlight = false;
+        if (alive) driftTimer = window.setTimeout(loadDrifts, isPublicLiveHost ? 30_000 : 120_000);
       }
     }
+    const onVisibility = () => { if (document.visibilityState === 'visible') loadDrifts(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('online', loadDrifts);
     loadDrifts();
     return () => {
       alive = false;
       window.clearTimeout(driftTimer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('online', loadDrifts);
     };
   }, [apiBase]);
 
@@ -4013,6 +4041,15 @@ function App() {
                 <div>
                   <p>PUBLIC SIGNAL FIELD</p>
                   <h1>Live feed</h1>
+                  <div className="live-feed-clock" role="status" aria-label="Operational data freshness">
+                    <span>UTC {new Date(liveEstimateClock).toISOString().slice(11, 19)}</span>
+                    <span className={lastDriftSyncAt && liveEstimateClock - lastDriftSyncAt < 90_000 ? 'is-current' : 'is-stale'}>
+                      {lastDriftSyncAt
+                        ? `Drift data received ${Math.max(0, Math.floor((liveEstimateClock - lastDriftSyncAt) / 1000))}s ago`
+                        : 'Drift data awaiting first sync'}
+                    </span>
+                    <small>Display estimate · 10s · source refresh 30s</small>
+                  </div>
                 </div>
                 <button type="button" onClick={() => setSidebarOpen(false)} aria-label="Collapse live feed">−</button>
               </div>
