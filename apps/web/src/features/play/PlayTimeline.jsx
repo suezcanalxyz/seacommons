@@ -429,9 +429,9 @@ export default function PlayTimeline({ apiBase }) {
           id: 'play-clusters', type: 'circle', source: 'play-incidents',
           filter: ['has', 'point_count'],
           paint: {
-            'circle-radius': ['step', ['get', 'point_count'], 14, 20, 18, 100, 23],
-            'circle-color': '#27566b', 'circle-opacity': 0.94,
-            'circle-stroke-color': '#b3e8fa', 'circle-stroke-width': 1.5,
+            'circle-radius': ['step', ['get', 'point_count'], 14, 10, 17, 25, 20, 75, 24, 200, 29],
+            'circle-color': ['step', ['get', 'point_count'], '#38bdf8', 10, '#2dd4bf', 25, '#d4ff3f', 75, '#facc15', 200, '#f472b6'], 'circle-opacity': 0.94,
+            'circle-stroke-color': '#0b1724', 'circle-stroke-width': 2,
           },
         });
         map.addLayer({
@@ -913,10 +913,11 @@ export default function PlayTimeline({ apiBase }) {
           <span><i className="play-key-integrity" /> Position integrity</span>
           <span><i className="play-key-ais-gap" /> AIS reporting gap</span>
           <span><i className="play-key-attack" /> Attack · crosshair overlay</span>
+          <span className="play-cluster-scale" aria-label="Cluster sizes by grouped point count"><i style={{ backgroundColor: '#38bdf8' }} />2–9 <i style={{ backgroundColor: '#2dd4bf' }} />10–24 <i style={{ backgroundColor: '#d4ff3f' }} />25–74 <i style={{ backgroundColor: '#facc15' }} />75–199 <i style={{ backgroundColor: '#f472b6' }} />200+ grouped points</span>
           <span><i className="play-key-track" /> Observed AIS track</span>
           <span><i className="play-key-drift" /> AIS gap: dashed, unobserved; orange last fix, green reappearance</span>
           <span><i className="play-key-model" /> Drift / estimated area (modelled)</span>
-          <small>Triangles show reported course only. Circles do not imply direction. Color indicates category, not verification.</small>
+          <small>Triangles show reported course only. Circles do not imply direction. Single-point colors indicate category; cluster colors and sizes indicate grouped point count, not severity or verification. Clusters split on zoom. Dashed AIS gap connections are unobserved, not confirmed tracks.</small>
         </div>
         <div className="play-all-badge"><strong>{modeLabel}</strong><span>{mappedIncidentCount} mapped / {filteredIncidents.length} filtered · {incidents.length} loaded{archiveTotal != null ? ` / ${archiveTotal} archive` : ''}</span></div>
         {loading ? <div className="play-map-message" role="status" aria-live="polite">Loading archive and case evidence…</div> : null}

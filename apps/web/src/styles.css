@@ -4210,3 +4210,7 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .play-startup-overlay__inner small { color: #9bb2ad; font-size: 11px; line-height: 1.6; }
 @keyframes play-startup-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .play-startup-overlay__spinner { animation: none; } }
+
+/* PLAY: cluster-count scale, separate from semantic incident palette. */
+.play-cluster-scale { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.play-cluster-scale i { display: inline-block; width: 10px; height: 10px; flex: 0 0 10px; border-radius: 50%; border: 1px solid #0b1724; margin-left: 4px; }
