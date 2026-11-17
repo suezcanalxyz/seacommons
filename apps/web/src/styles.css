@@ -4187,3 +4187,12 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 @media (max-width: 820px) {
   .live-basemap-switch { top: 12px; right: 12px; min-height: 40px; }
 }
+
+/* Responsive AIS absence dossier: endpoints are observed, connecting line is not. */
+.play-ais-gap-card { display: grid; gap: .45rem; padding: .85rem; margin: .65rem 0; border: 1px solid #b47e4b80; border-radius: 9px; background: #b47e4b0d; overflow-wrap: anywhere; }
+.play-ais-gap-card > span { display: flex; gap: .45rem; align-items: baseline; font-size: .88rem; }
+.play-ais-gap-card > small { opacity: .8; line-height: 1.5; }
+.play-ais-gap-dot { flex: 0 0 .65rem; height: .65rem; width: .65rem; border-radius: 50%; display: inline-block; }
+.play-ais-gap-dot.is-lost { background: #ff8859; }
+.play-ais-gap-dot.is-returned { background: #55e0c0; }
+@media (max-width: 680px) { .play-ais-gap-card { padding: .7rem; } .play-ais-gap-card > span { font-size: .8rem; } }

@@ -38,6 +38,7 @@ import { mergeIntelDriftUpdate } from './features/live/normalize.js';
 import { receiverChannelLabel } from './features/live/pipelineStatus.js';
 import { initialLayerVisibility, layerVisibilityStorageKey } from './features/live/layerDefaults.js';
 import { splitObservedTrackSegments } from './features/live/observedTrack.js';
+import { liveAisGapFeatures } from './features/live/aisGapLive.js';
 import { vesselReportFeature } from './features/live/vesselVisual.js';
 import { isExcludedVesselType } from './features/live/vesselType.js';
 import { configureMaplibreWorker } from './features/map/maplibreWorker.js';
@@ -1396,6 +1397,7 @@ function App() {
         map.addSource('intel-spike',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-vessels',     { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-observed-tracks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('live-ais-gaps', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-drifts',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-vessel-links', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('live-nearby-vessels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -1633,6 +1635,27 @@ function App() {
           },
         });
 
+        map.addLayer({ id: 'live-ais-gap-connection', type: 'line', source: 'live-ais-gaps',
+          filter: ['==', ['get', 'kind'], 'ais_gap_unobserved_connection'],
+          paint: { 'line-color': '#ffba65', 'line-width': 2.6, 'line-dasharray': [2, 2] } });
+        map.addLayer({ id: 'live-ais-gap-endpoints', type: 'circle', source: 'live-ais-gaps',
+          filter: ['==', ['geometry-type'], 'Point'],
+          paint: { 'circle-radius': 7, 'circle-color': ['match', ['get', 'kind'],
+            'ais_last_observed', '#ff8859', 'ais_first_reappearance', '#55e0c0', '#ffffff'],
+            'circle-stroke-color': '#071014', 'circle-stroke-width': 2 } });
+
+        map.on('click', 'live-ais-gap-endpoints', (event) => {
+          const feature = event.features?.[0];
+          if (!feature || feature.geometry?.type !== 'Point') return;
+          const props = feature.properties || {};
+          const label = props.kind === 'ais_first_reappearance' ? 'First AIS reappearance' : 'Last observed AIS fix';
+          new maplibregl.Popup({ closeButton: true, maxWidth: '300px' })
+            .setLngLat(feature.geometry.coordinates)
+            .setText(`${label} · ${props.at || 'time unavailable'} UTC · MMSI ${props.mmsi || 'unknown'} · ${Math.round(Number(props.duration_min || 0))} min gap. No observed route between endpoints; drift estimates are modelled separately.`)
+            .addTo(map);
+        });
+        map.on('mouseenter', 'live-ais-gap-endpoints', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'live-ais-gap-endpoints', () => { map.getCanvas().style.cursor = ''; });
         // Historical SAR drift cones & trajectories
         map.addLayer({
           id: 'alerts-cone', type: 'fill', source: 'alerts',
@@ -2853,6 +2876,7 @@ function App() {
       }));
     });
     map.getSource('intel-observed-tracks')?.setData({ type: 'FeatureCollection', features: observedTracks });
+    map.getSource('live-ais-gaps')?.setData(liveAisGapFeatures(intelEvents));
   }, [intelEvents, mapReady, visibleLivePointFeatures]);
 
   // MDA layer data
