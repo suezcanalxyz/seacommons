@@ -459,3 +459,60 @@ test('PLAY responsive dossier and camera reserve a map corridor', async () => {
   assert.match(jsx, /right: 340/);
   assert.match(jsx, /window\.innerHeight \* 0\.52/);
 });
+
+test('Play preserves humanitarian search-area polygons as areas, never point markers', () => {
+  const collection = incidentCollection([{
+    incident_id: 'human-region',
+    case_type: 'distress',
+    domain: 'humanitarian',
+    reported_at: '2026-11-02T19:31:30Z',
+    geometry: { type: 'Polygon', coordinates: [[[0, 36], [2, 36], [2, 38], [0, 36]]] },
+    search_area: {
+      location_evidence: 'reported_region_radius_spatial_prior',
+      physical_drift_computed: false,
+      probability_calibrated: false,
+    },
+  }]);
+  assert.equal(collection.features.length, 1);
+  const feature = collection.features[0];
+  assert.equal(feature.geometry.type, 'Polygon');
+  assert.equal(feature.properties.marker_kind, 'search_area');
+  assert.equal(feature.properties.geometry_semantics, 'search_prior');
+  assert.equal(feature.properties.physical_drift_computed, false);
+  assert.equal(feature.properties.probability_calibrated, false);
+  assert.equal(feature.properties.course, null);
+});
+
+test('Play map has distinct dashed layers for search priors', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /id: 'play-search-areas-fill'/);
+  assert.match(source, /id: 'play-search-areas-line'/);
+  assert.match(source, /'line-dasharray': \[3, 2\]/);
+  assert.match(source, /Possible area, not an observed position/);
+  assert.match(source, /Physical drift/);
+  assert.match(source, /Probability/);
+});
+
+test('Play selection fits Polygon search areas instead of treating them as point fixes', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /function geometryBounds/);
+  assert.match(source, /map\.fitBounds/);
+  assert.match(source, /geometry\?\.type === 'Point'/);
+  assert.match(source, /play-search-areas-fill/);
+});
+
+
+test('PLAY recovers from a stalled GeoJSON source instead of leaving an empty WebGL canvas', async () => {
+  const jsx = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(jsx, /!map\.isSourceLoaded\('play-incidents'\)/);
+  assert.match(jsx, /failToFallback\(new Error\('PLAY incident source did not finish loading'\)\)/);
+});
+
+
+test('PLAY configures the bundled MapLibre worker before map creation', async () => {
+  const play = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  const worker = await readFile(new URL('../map/maplibreWorker.js', import.meta.url), 'utf8');
+  assert.match(worker, /maplibre-gl\/dist\/maplibre-gl-worker\.mjs\?worker&url/);
+  assert.match(worker, /maplibregl\.setWorkerUrl\(workerUrl\)/);
+  assert.ok(play.indexOf('configureMaplibreWorker(maplibregl)') < play.indexOf('new maplibregl.Map('));
+});
