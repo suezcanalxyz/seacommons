@@ -5,7 +5,7 @@ import { incidentCollection } from './timeline.js';
 test('PLAY palette matches LIVE canonical event semantics', () => {
   assert.equal(playIncidentColor({ domain: 'humanitarian', source: 'alarm_phone' }), '#ff3b3b');
   assert.equal(playIncidentColor({ domain: 'maritime', incident_type: 'impossible_speed' }), '#c084fc');
-  assert.equal(playIncidentColor({ domain: 'maritime', incident_type: 'ais_gap' }), '#fb923c');
+  assert.equal(playIncidentColor({ domain: 'maritime', incident_type: 'ais_gap' }), '#d4ff3f');
   assert.equal(playIncidentColor({ domain: 'maritime', incident_type: 'unable_to_manoeuvre' }), '#38bdf8');
   assert.equal(playIncidentColor({ domain: 'maritime', visual_category: 'sanctions' }), '#f472b6');
   assert.equal(playIncidentColor({ domain: 'maritime' }), '#76b7fa');
