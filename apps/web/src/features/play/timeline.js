@@ -117,28 +117,51 @@ export function resolveGlobalTimelinePosition(incidents = [], position = 1000, m
   return { mode: 'temporal', cutoff: new Date(min + ((latest - min) * ratio)).toISOString() };
 }
 
+export function historicalVesselCourse(incident = {}) {
+  const fields = [
+    incident.heading_deg, incident.latest_heading, incident.heading,
+    incident.course_over_ground, incident.cog, incident.latest_course, incident.course,
+    incident.properties?.heading_deg, incident.properties?.cog, incident.properties?.course,
+  ];
+  for (const raw of fields) {
+    if (raw === null || raw === undefined || raw === '') continue;
+    const value = Number(raw);
+    if (Number.isFinite(value) && value >= 0 && value < 360) return value;
+  }
+  return null;
+}
+
 export function incidentCollection(incidents = [], cutoff = null) {
   return {
     type: 'FeatureCollection',
     features: incidentsAtCutoff(incidents, cutoff)
-      .filter((incident) => incident?.geometry?.type === 'Point')
-      .map((incident) => ({
-        type: 'Feature',
-        geometry: incident.geometry,
-        properties: {
-          incident_id: incident.incident_id,
-          incident_status: incidentStatusAtCutoff(incident, cutoff),
-          case_type: incident.case_type || 'incident',
-          source: incident.source || '',
-          domain: incident.main_category || incident.domain || 'humanitarian',
-          incident_type: incident.incident_type || '',
-          has_course: incident.course !== null && incident.course !== undefined && incident.course !== '' && Number.isFinite(Number(incident.course)),
-          reported_at: incident.reported_at || '',
-          title: incident.title || '',
-          marker_kind: isVesselArchiveIncident(incident) ? 'vessel' : 'incident',
-          course: incident.course !== null && incident.course !== undefined && incident.course !== '' && Number.isFinite(Number(incident.course)) ? Number(incident.course) : 0,
-        },
-      })),
+      .filter((incident) => ['Point', 'Polygon', 'MultiPolygon'].includes(incident?.geometry?.type))
+      .map((incident) => {
+        const geometryType = incident.geometry.type;
+        const isArea = geometryType === 'Polygon' || geometryType === 'MultiPolygon';
+        return {
+          type: 'Feature',
+          geometry: incident.geometry,
+          properties: {
+            incident_id: incident.incident_id,
+            incident_status: incidentStatusAtCutoff(incident, cutoff),
+            case_type: incident.case_type || 'incident',
+            source: incident.source || '',
+            domain: incident.main_category || incident.domain || 'humanitarian',
+            incident_type: incident.incident_type || '',
+            has_course: !isArea && historicalVesselCourse(incident) !== null,
+            reported_at: incident.reported_at || '',
+            title: incident.title || '',
+            marker_kind: isArea ? 'search_area' : (isVesselArchiveIncident(incident) ? 'vessel' : 'incident'),
+            geometry_semantics: isArea ? 'search_prior' : 'reported_position',
+            location_evidence: incident.search_area?.location_evidence || '',
+            probability_calibrated: incident.search_area?.probability_calibrated === true,
+            physical_drift_computed: incident.search_area?.physical_drift_computed === true,
+            // Historical bearings must come from an actual observation, never a default northward arrow.
+            course: isArea ? null : historicalVesselCourse(incident),
+          },
+        };
+      }),
   };
 }
 
