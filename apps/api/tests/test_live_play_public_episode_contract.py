@@ -31,3 +31,13 @@ def test_recent_closed_case_stays_live_until_24h():
     detected = now - timedelta(hours=8)
     assert visible_in_live(detected_at=detected, status="resolved", now=now)
     assert not public_episode_clock({"reported_at": detected.isoformat(), "incident_status": "resolved"}, now=now)["play_eligible"]
+
+
+def test_unknown_outcome_is_not_misrepresented_as_ongoing_distress():
+    now = datetime(2026, 11, 17, 12, tzinfo=timezone.utc)
+    detected = now - timedelta(days=90)
+    result = public_episode_clock({"reported_at": detected.isoformat(), "incident_status": "outcome_unknown"}, now=now)
+    assert result["play_eligible"] is True
+    assert result["ongoing"] is False
+    assert result["elapsed_seconds"] is None
+    assert not visible_in_live(detected_at=detected, status="outcome_unknown", now=now)

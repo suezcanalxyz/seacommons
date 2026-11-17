@@ -11,7 +11,10 @@ from typing import Any
 
 PLAY_DELAY = timedelta(hours=24)
 TERMINAL_STATES = frozenset({"resolved", "archived"})
-ACTIVE_STATES = frozenset({"detected", "active", "open", "needs_review", "outcome_unknown"})
+# "outcome_unknown" is an epistemic label, not proof that a case remains active.
+# Keeping old unknown-outcome archive entries on LIVE would silently imply
+# ongoing distress/security activity and flood the current map.
+ACTIVE_STATES = frozenset({"detected", "active", "open", "needs_review"})
 
 
 def utc(value: datetime) -> datetime:
@@ -94,5 +97,10 @@ def public_episode_clock(item: dict[str, Any], *, now: datetime) -> dict[str, An
     result["play_eligible_at"] = (utc(detected) + PLAY_DELAY).isoformat()
     result["play_eligible"] = play_eligible(detected_at=detected, now=now)
     result["ongoing"] = ongoing
-    result["elapsed_seconds"] = elapsed_seconds(started_at=detected, ended_at=ended, now=now)
+    # Unknown outcome without an observed closure is neither a verified active
+    # timer nor a measured incident duration. Do not manufacture one.
+    result["elapsed_seconds"] = (
+        elapsed_seconds(started_at=detected, ended_at=ended, now=now)
+        if ongoing or ended is not None else None
+    )
     return result
