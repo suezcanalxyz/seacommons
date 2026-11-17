@@ -437,7 +437,7 @@ export default function PlayTimeline({ apiBase }) {
           id: 'play-search-areas-fill', type: 'fill', source: 'play-incidents',
           filter: ['all', ['==', ['get', 'marker_kind'], 'search_area'], ['==', ['get', 'incident_id'], selectedId]],
           paint: {
-            'fill-color': ['match', ['get', 'domain'], 'maritime', '#76b7fa', '#ff3b3b'],
+            'fill-color': ['coalesce', ['get', 'visual_color'], '#ff3b3b'],
             'fill-opacity': ['case', ['==', ['get', 'incident_id'], selectedId], 0.18, 0.08],
           },
         });
@@ -445,7 +445,7 @@ export default function PlayTimeline({ apiBase }) {
           id: 'play-search-areas-line', type: 'line', source: 'play-incidents',
           filter: ['all', ['==', ['get', 'marker_kind'], 'search_area'], ['==', ['get', 'incident_id'], selectedId]],
           paint: {
-            'line-color': ['match', ['get', 'domain'], 'maritime', '#76b7fa', '#ff3b3b'],
+            'line-color': ['coalesce', ['get', 'visual_color'], '#ff3b3b'],
             'line-width': ['case', ['==', ['get', 'incident_id'], selectedId], 2.4, 1.4],
             'line-opacity': 0.9,
             'line-dasharray': [3, 2],
@@ -456,7 +456,7 @@ export default function PlayTimeline({ apiBase }) {
           filter: ['all', ['!', ['has', 'point_count']], ['any', ['!=', ['get', 'marker_kind'], 'vessel'], ['!=', ['get', 'has_course'], true]]],
           paint: {
             'circle-radius': ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5],
-            'circle-color': ['match', ['get', 'domain'], 'maritime', '#76b7fa', 'humanitarian', '#ff3b3b', '#c6a6ff'],
+            'circle-color': ['coalesce', ['get', 'visual_color'], '#c6a6ff'],
             'circle-opacity': 0.9,
             'circle-stroke-color': '#071014', 'circle-stroke-width': 1,
           },
@@ -471,12 +471,12 @@ export default function PlayTimeline({ apiBase }) {
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
           },
-          paint: { 'icon-color': ['match', ['get', 'domain'], 'humanitarian', '#ff3b3b', 'maritime', '#76b7fa', '#c6a6ff'], 'icon-opacity': 0.94 },
+          paint: { 'icon-color': ['coalesce', ['get', 'visual_color'], '#c6a6ff'], 'icon-opacity': 0.94 },
         });
         map.addLayer({
           id: 'play-vessels-unknown-course', type: 'circle', source: 'play-incidents',
           filter: ['all', ['==', ['get', 'marker_kind'], 'vessel'], ['==', ['get', 'course'], null]],
-          paint: { 'circle-radius': 5, 'circle-color': VESSEL_COLOR,
+          paint: { 'circle-radius': 5, 'circle-color': ['coalesce', ['get', 'visual_color'], VESSEL_COLOR],
             'circle-stroke-color': '#071014', 'circle-stroke-width': 1.5 },
         });
         map.addSource('play-attacks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -907,7 +907,9 @@ export default function PlayTimeline({ apiBase }) {
           <span><i className="play-key-vessel" /> Vessel · heading observed</span>
           <span><i className="play-key-point" /> Incident / unknown heading</span>
           <span><i className="play-key-humanitarian" /> Humanitarian</span>
-          <span><i className="play-key-maritime" /> Maritime</span>
+          <span><i className="play-key-maritime" /> Maritime context</span>
+          <span><i className="play-key-integrity" /> Position integrity</span>
+          <span><i className="play-key-ais-gap" /> AIS reporting gap</span>
           <span><i className="play-key-attack" /> Attack · crosshair overlay</span>
           <span><i className="play-key-track" /> Observed AIS track</span>
           <span><i className="play-key-drift" /> AIS gap: dashed, unobserved; orange last fix, green reappearance</span>

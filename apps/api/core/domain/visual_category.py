@@ -37,7 +37,7 @@ CATEGORY_COLORS: dict[str, str] = {
     "state_sar": "#38bdf8",
     "navigation_casualty": "#38bdf8",
     "spoofing": "#c084fc",
-    "ais_gap": "#fb923c",
+    "ais_gap": "#d4ff3f",
     "loitering": "#facc15",
     "rendezvous": "#f97316",
     "sanctions": "#f472b6",

@@ -44,7 +44,7 @@ export const EVENT_VISUAL_CATEGORIES = [
   { key: 'distress', label: 'Maritime distress', color: '#ff3b3b' },
   { key: 'navigation_casualty', label: 'Unable to manoeuvre / aground', color: '#38bdf8' },
   { key: 'spoofing', label: 'Position integrity', color: '#c084fc' },
-  { key: 'ais_gap', label: 'AIS reporting gap / dark candidate', color: '#fb923c' },
+  { key: 'ais_gap', label: 'AIS reporting gap / dark candidate', color: '#d4ff3f' },
   { key: 'loitering', label: 'Loitering / abnormal dwell', color: '#facc15' },
   { key: 'rendezvous', label: 'Rendezvous / ship-to-ship', color: '#f97316' },
   { key: 'sanctions', label: 'Sanctions match', color: '#f472b6' },
@@ -68,6 +68,7 @@ function eventTokens(properties = {}) {
   return [
     ...anomalyTypes,
     properties.anomaly_type,
+    properties.incident_type,
     properties.ais_nav_status_kind,
     properties.alert_type,
     properties.type,
@@ -101,7 +102,7 @@ export function classifyEventVisual(properties = {}) {
 
   const tokens = eventTokens(properties);
   const navStatus = Number(properties.latest_nav_status);
-  if (/circle_spoof|circular_spoof|spoofing|teleport|position_jump|impossible_speed|impossible_movement|gnss_manipulation/.test(tokens)) {
+  if (/position_integrity|circle_spoof|circular_spoof|spoofing|teleport|position_jump|impossible_speed|impossible_movement|gnss_manipulation/.test(tokens)) {
     return _VISUAL_BY_KEY.spoofing;
   }
   if (/ais_gap|dark_vessel|dark_activity|signal_gap|transponder_off|(^|_)gap($|_)/.test(tokens)) return _VISUAL_BY_KEY.ais_gap;

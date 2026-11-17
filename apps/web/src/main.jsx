@@ -1569,7 +1569,7 @@ function App() {
             'icon-ignore-placement': true,
           },
           paint: {
-            'icon-color': '#7dd3fc',
+            'icon-color': ['coalesce', ['get', 'visual_color'], '#7dd3fc'],
             'icon-opacity': 1,
           },
         });
@@ -1942,7 +1942,7 @@ function App() {
           const f = ['in', ['get', 'type'], ['literal', cat.types]];
           map.addLayer({
             id: `intel-cat-${cat.key}-halo`, type: 'circle', source: 'intel-events', filter: f,
-            paint: { 'circle-radius': 13, 'circle-color': cat.color, 'circle-opacity': 0.12, 'circle-blur': 0.8 },
+            paint: { 'circle-radius': 13, 'circle-color': ['coalesce', ['get', 'visual_color'], cat.color], 'circle-opacity': 0.12, 'circle-blur': 0.8 },
           });
           map.addLayer({
             id: `intel-cat-${cat.key}`, type: 'symbol', source: 'intel-events', filter: f,
@@ -1954,7 +1954,7 @@ function App() {
               'icon-ignore-placement': true,
             },
             paint: {
-              'icon-color': cat.color,
+              'icon-color': ['coalesce', ['get', 'visual_color'], cat.color],
               'icon-opacity': 0.96,
               'icon-halo-color': _markerStrokeC,
               'icon-halo-width': _markerStrokeW,
@@ -1965,7 +1965,7 @@ function App() {
         const _otherFilter = ['all', _noAisFilter, ['!', ['in', ['get', 'type'], ['literal', _namedTypes]]]];
         map.addLayer({
           id: 'intel-events-halo', type: 'circle', source: 'intel-events', filter: _otherFilter,
-          paint: { 'circle-radius': 13, 'circle-color': 'rgba(139,240,197,0.1)', 'circle-blur': 0.8 },
+          paint: { 'circle-radius': 13, 'circle-color': ['coalesce', ['get', 'visual_color'], '#8bf0c5'], 'circle-opacity': 0.12, 'circle-blur': 0.8 },
         });
         map.addLayer({
           id: 'intel-events-layer', type: 'symbol', source: 'intel-events', filter: _otherFilter,
@@ -1977,7 +1977,7 @@ function App() {
             'icon-ignore-placement': true,
           },
           paint: {
-            'icon-color': categoryColorExpression(),
+            'icon-color': ['coalesce', ['get', 'visual_color'], categoryColorExpression()],
             'icon-opacity': 0.96,
             'icon-halo-color': _markerStrokeC,
             'icon-halo-width': _markerStrokeW,
@@ -2826,7 +2826,12 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
-    const positioned = visibleLivePointFeatures;
+    // Enrich the map source with the same canonical semantic colour used by
+    // the feed, legend and dossier, even for legacy records without visual_color.
+    const positioned = visibleLivePointFeatures.map((feature) => {
+      const visual = classifyEventVisual(feature.properties || {});
+      return { ...feature, properties: { ...feature.properties, visual_category: visual.key, visual_color: visual.color } };
+    });
     map.getSource('intel-attacks')?.setData({ type: 'FeatureCollection',
       features: positioned.filter((f) => f.geometry?.type === 'Point' && isAttackIncident(f.properties)) });
     if (map.getLayer('intel-attack-markers')) map.moveLayer('intel-attack-markers');

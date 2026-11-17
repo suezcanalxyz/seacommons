@@ -1,3 +1,4 @@
+import { playIncidentColor } from './incidentPalette.js';
 import { publicBasemapSource } from '../map/publicBasemap.js';
 
 import { isVesselArchiveIncident } from '../map/vesselMarker.js';
@@ -144,6 +145,7 @@ export function incidentCollection(incidents = [], cutoff = null) {
           geometry: incident.geometry,
           properties: {
             incident_id: incident.incident_id,
+            visual_color: playIncidentColor(incident),
             incident_status: incidentStatusAtCutoff(incident, cutoff),
             case_type: incident.case_type || 'incident',
             source: incident.source || '',
