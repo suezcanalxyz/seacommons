@@ -371,9 +371,9 @@ export default function PlayTimeline({ apiBase }) {
       // Initialize case layers when the style is ready, without waiting for remote
       // satellite/OSM raster tiles to load. A slow basemap must not hide evidence.
       map.on('style.load', () => {
-        if (disposed || fallbackStarted) return;
-        if (mapStartupTimer) clearTimeout(mapStartupTimer);
-        map.addImage('vessel-arrow', createVesselArrowImage(48), { sdf: true });
+        if (disposed || fallbackStarted || map.getSource('play-incidents')) return;
+        try {
+          map.addImage('vessel-arrow', createVesselArrowImage(48), { sdf: true });
         map.addSource('play-incidents', {
           type: 'geojson', data: { type: 'FeatureCollection', features: [] },
           cluster: true, clusterMaxZoom: 7, clusterRadius: 42,
@@ -468,8 +468,19 @@ export default function PlayTimeline({ apiBase }) {
         }
         // Explicitly opt-in for deterministic browser E2E; never enabled for normal visitors.
         map.resize();
+        // Keep archive evidence above every raster basemap, including delayed tiles.
+        for (const layerId of ['play-clusters', 'play-incidents', 'play-vessels',
+          'play-evidence-fill', 'play-evidence-line',
+          'play-satellite-footprint-fill', 'play-satellite-footprint-line']) {
+          if (map.getLayer(layerId)) map.moveLayer(layerId);
+        }
+        if (mapStartupTimer) clearTimeout(mapStartupTimer);
         setMapError('');
         setMapReady(true);
+        } catch (error) {
+          console.error('[PLAY_MAP_LAYER_INIT_FAILED]', error?.message || error);
+          void failToFallback(error);
+        }
       });
     }
     async function activateFallbackMap() {
