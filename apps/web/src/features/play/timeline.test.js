@@ -290,7 +290,7 @@ test('Play gives the exact archive counter a longer timeout without delaying map
 
 test('Play labels partial progressive archive counts as loaded until exact total arrives', async () => {
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
-  assert.match(source, /mappedIncidentCount = useMemo\(\(\) => incidentCollection\(filteredIncidents\)\.features\.length/);
+  assert.match(source, /mappedIncidents = useMemo\(\(\) => incidentCollection\(filteredIncidents\)/);
   assert.match(source, /\{mappedIncidentCount\} mapped \/ \{filteredIncidents\.length\} filtered/);
   assert.match(source, /\{incidents\.length\} loaded/);
   assert.match(source, /archiveTotal != null \? ` \/ \$\{archiveTotal\} archive` : ''/);
@@ -316,7 +316,7 @@ test('Play map initialization fails over to the shared interactive renderer', as
   assert.match(source, /createFallbackMap/);
   assert.match(source, /fallbackMapRef/);
   assert.match(source, /__SEACOMMONS_FORCE_MAP_FALLBACK__/);
-  assert.match(source, /fallback\.setFeatures\(incidentCollection\(filteredIncidents\)\.features\)/);
+  assert.match(source, /fallback\.setFeatures\(mappedIncidents\.features\)/);
   assert.match(source, /setSelectedId\(String\(feature\.properties\.incident_id\)\)/);
 });
 
@@ -378,7 +378,7 @@ test('Play zoom clusters preserve all original archive records and expand on cli
   assert.match(source, /getClusterExpansionZoom\(clusterId\)/);
   assert.match(source, /map\.easeTo\(\{ center: coordinates/);
   assert.match(source, /\['!', \['has', 'point_count'\]\]/);
-  assert.match(source, /map\.getSource\('play-incidents'\)\?\.setData\(incidentCollection\(filteredIncidents\)\)/);
+  assert.match(source, /map\.getSource\('play-incidents'\)\?\.setData\(mappedIncidents\)/);
   assert.doesNotMatch(source, /getClusterLeaves\([^)]*\)\.slice\(/);
 });
 
@@ -515,4 +515,18 @@ test('PLAY configures the bundled MapLibre worker before map creation', async ()
   assert.match(worker, /maplibre-gl\/dist\/maplibre-gl-worker\.mjs\?worker&url/);
   assert.match(worker, /maplibregl\.setWorkerUrl\(workerUrl\)/);
   assert.ok(play.indexOf('configureMaplibreWorker(maplibregl)') < play.indexOf('new maplibregl.Map('));
+});
+
+test('PLAY search areas do not obscure the map until their dossier is selected', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /map\.setFilter\('play-search-areas-fill',[^\n]*selectedId/);
+  assert.match(source, /map\.setFilter\('play-search-areas-line',[^\n]*selectedId/);
+  assert.match(source, /'maritime', '#76b7fa', '#ffad66'/);
+});
+
+test('PLAY selection styling does not re-submit all incident geometry to worker', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /map\.getSource\('play-incidents'\)\?\.setData\(mappedIncidents\)/);
+  assert.match(source, /\}, \[mapReady, mappedIncidents, visibleTimeline, aisReconstruction, gapFeatures\]\);/);
+  assert.match(source, /\}, \[mapReady, selectedId, satellite\]\);/);
 });

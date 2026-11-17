@@ -205,7 +205,8 @@ export default function PlayTimeline({ apiBase }) {
     investigationsOnly,
   ]);
   const coverage = useMemo(() => archiveCoverage(historicalIncidents), [historicalIncidents]);
-  const mappedIncidentCount = useMemo(() => incidentCollection(filteredIncidents).features.length, [filteredIncidents]);
+  const mappedIncidents = useMemo(() => incidentCollection(filteredIncidents), [filteredIncidents]);
+  const mappedIncidentCount = mappedIncidents.features.length;
   // Keep the full archive available for map, timeline and search, but never
   // mount thousands of heavyweight dossier buttons at once (mobile/WebGL OOM).
   const displayedCases = useMemo(() => filteredIncidents.slice(0, visibleCaseLimit), [filteredIncidents, visibleCaseLimit]);
@@ -432,17 +433,17 @@ export default function PlayTimeline({ apiBase }) {
         });
         map.addLayer({
           id: 'play-search-areas-fill', type: 'fill', source: 'play-incidents',
-          filter: ['==', ['get', 'marker_kind'], 'search_area'],
+          filter: ['all', ['==', ['get', 'marker_kind'], 'search_area'], ['==', ['get', 'incident_id'], selectedId]],
           paint: {
-            'fill-color': ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f'],
+            'fill-color': ['match', ['get', 'domain'], 'maritime', '#76b7fa', '#ffad66'],
             'fill-opacity': ['case', ['==', ['get', 'incident_id'], selectedId], 0.18, 0.08],
           },
         });
         map.addLayer({
           id: 'play-search-areas-line', type: 'line', source: 'play-incidents',
-          filter: ['==', ['get', 'marker_kind'], 'search_area'],
+          filter: ['all', ['==', ['get', 'marker_kind'], 'search_area'], ['==', ['get', 'incident_id'], selectedId]],
           paint: {
-            'line-color': ['match', ['get', 'domain'], 'maritime', '#8ed8ff', '#ff746f'],
+            'line-color': ['match', ['get', 'domain'], 'maritime', '#76b7fa', '#ffad66'],
             'line-width': ['case', ['==', ['get', 'incident_id'], selectedId], 2.4, 1.4],
             'line-opacity': 0.9,
             'line-dasharray': [3, 2],
@@ -455,7 +456,7 @@ export default function PlayTimeline({ apiBase }) {
             'circle-radius': ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5],
             'circle-color': ['case', ['in', 'attack', ['downcase', ['to-string', ['get', 'incident_type']]]], '#ff6868', ['match', ['get', 'domain'], 'maritime', '#76b7fa', 'humanitarian', '#ffad66', '#c6a6ff']],
             'circle-opacity': 0.9,
-            'circle-stroke-color': '#b3e8fa', 'circle-stroke-width': 1,
+            'circle-stroke-color': '#071014', 'circle-stroke-width': 1,
           },
         });
         map.addLayer({
@@ -637,32 +638,39 @@ export default function PlayTimeline({ apiBase }) {
   useEffect(() => {
     const fallback = fallbackMapRef.current;
     if (!fallbackReady || !fallback) return;
-    fallback.setFeatures(incidentCollection(filteredIncidents).features);
-    if (filteredIncidents.length) fallback.fitFeatures(incidentCollection(filteredIncidents).features);
+    fallback.setFeatures(mappedIncidents.features);
+    if (mappedIncidents.features.length) fallback.fitFeatures(mappedIncidents.features);
     const geometry = selectedIncident?.geometry;
     const bounds = geometryBounds(geometry);
     if (selectedId && bounds) {
       fallback.flyTo({ center: bounds.center, zoom: geometry?.type === 'Point' ? 6.5 : 5.2 });
     }
-  }, [fallbackReady, filteredIncidents, selectedId, selectedIncident]);
+  }, [fallbackReady, mappedIncidents, selectedId, selectedIncident]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map) return;
-    map.getSource('play-incidents')?.setData(incidentCollection(filteredIncidents));
+    map.getSource('play-incidents')?.setData(mappedIncidents);
     const datedEvidence = evidenceCollection(visibleTimeline);
     datedEvidence.features.push(...aisReconstruction.observed.features);
     map.getSource('play-evidence')?.setData(datedEvidence);
     map.getSource('play-ais-gaps')?.setData(gapFeatures);
     map.getSource('play-historical-drifts')?.setData(historicalDriftFeatures(visibleTimeline));
     map.getSource('play-satellite-footprints')?.setData(satelliteFootprintCollection(visibleTimeline));
+  }, [mapReady, mappedIncidents, visibleTimeline, aisReconstruction, gapFeatures]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
     if (map.getLayer('play-incidents')) {
       map.setPaintProperty('play-incidents', 'circle-radius', ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5]);
     }
     if (map.getLayer('play-search-areas-fill')) {
+      map.setFilter('play-search-areas-fill', ['all', ['==', ['get', 'marker_kind'], 'search_area'], ['==', ['get', 'incident_id'], selectedId]]);
       map.setPaintProperty('play-search-areas-fill', 'fill-opacity', ['case', ['==', ['get', 'incident_id'], selectedId], 0.18, 0.08]);
     }
     if (map.getLayer('play-search-areas-line')) {
+      map.setFilter('play-search-areas-line', ['all', ['==', ['get', 'marker_kind'], 'search_area'], ['==', ['get', 'incident_id'], selectedId]]);
       map.setPaintProperty('play-search-areas-line', 'line-width', ['case', ['==', ['get', 'incident_id'], selectedId], 2.4, 1.4]);
     }
     if (map.getLayer('play-vessels')) {
@@ -673,7 +681,7 @@ export default function PlayTimeline({ apiBase }) {
     for (const layerId of ['play-incidents', 'play-vessels']) {
       if (map.getLayer(layerId)) map.moveLayer(layerId);
     }
-  }, [mapReady, filteredIncidents, visibleTimeline, selectedId, selectedIncident, satellite, aisReconstruction, gapFeatures]);
+  }, [mapReady, selectedId, satellite]);
 
   const selectedLongitude = selectedIncident?.geometry?.type === 'Point' ? selectedIncident.geometry.coordinates?.[0] : null;
   const selectedLatitude = selectedIncident?.geometry?.type === 'Point' ? selectedIncident.geometry.coordinates?.[1] : null;
@@ -895,7 +903,7 @@ export default function PlayTimeline({ apiBase }) {
           <span><i className="play-key-attack" /> Attack incident</span>
           <span><i className="play-key-track" /> Observed AIS track</span>
           <span><i className="play-key-drift" /> AIS gap: dashed, unobserved; orange last fix, green reappearance</span>
-          <span><i className="play-key-drift" /> Drift / estimated area</span>
+          <span><i className="play-key-model" /> Drift / estimated area (modelled)</span>
           <small>Triangles show reported course only. Circles do not imply direction. Color indicates category, not verification.</small>
         </div>
         <div className="play-all-badge"><strong>{modeLabel}</strong><span>{mappedIncidentCount} mapped / {filteredIncidents.length} filtered · {incidents.length} loaded{archiveTotal != null ? ` / ${archiveTotal} archive` : ''}</span></div>
