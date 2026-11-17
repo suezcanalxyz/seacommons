@@ -225,6 +225,12 @@ class NewsMonitor:
 
     def _poll_rss_all(self) -> None:
         from core.intel.source_registry import source_registry
+        from core.intel.maritime_attack_feed import configured_feeds, ingest_security_rss
+        if configured_feeds():
+            try:
+                ingest_security_rss()
+            except Exception:
+                logger.exception("Maritime security RSS intake failed")
 
         new_count = 0
         errors: list[str] = []

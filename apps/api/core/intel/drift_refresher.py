@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 SCAN_INTERVAL_S = 20 * 60            # how often we look for stale drifts
 DRIFT_REFRESH_AFTER_HOURS = float(os.getenv("DRIFT_REFRESH_AFTER_HOURS", "6"))
+# Hard per-scan budget: protect the small Oracle VM from a backlog burst.
+DRIFT_REFRESH_MAX_PER_SCAN = max(0, min(10, int(os.getenv("DRIFT_REFRESH_MAX_PER_SCAN", "2"))))
 
 
 def _parse_utc(value: Any) -> Optional[datetime]:
@@ -94,6 +96,8 @@ class DriftRefresher:
         candidates = intel_store.events(limit=200, max_age_days=lifecycle.DISTRESS_LIVE_MAX_AGE_DAYS)
         refreshed = 0
         for event in candidates:
+            if refreshed >= DRIFT_REFRESH_MAX_PER_SCAN:
+                break
             if event.lat is None or event.lon is None:
                 continue
             if event.tier() != "operational":

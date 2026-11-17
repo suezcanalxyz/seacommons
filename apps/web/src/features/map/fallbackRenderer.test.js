@@ -169,3 +169,17 @@ test('fallback map keeps stationary vessels triangular instead of circle markers
   assert.match(log.vesselMarkers[0].options.icon.options.className, /is-stationary/);
   assert.match(log.vesselMarkers[0].options.icon.options.html, /0deg/);
 });
+
+test('fallback fit includes search-area polygon vertices', async () => {
+  const log = { markers: [], polygons: [] };
+  const renderer = await createFallbackMap({
+    container: {}, center: [15, 36], zoom: 5, onFeatureSelect() {}, leaflet: fakeLeaflet(log),
+  });
+  const area = {
+    type: 'Feature',
+    geometry: { type: 'Polygon', coordinates: [[[1, 36], [3, 36], [3, 38], [1, 36]]] },
+    properties: { incident_id: 'AREA-FIT', domain: 'humanitarian', marker_kind: 'search_area' },
+  };
+  renderer.fitFeatures([area]);
+  assert.deepEqual(log.fitBounds.points, [[36, 1], [36, 3], [38, 3], [36, 1]]);
+});

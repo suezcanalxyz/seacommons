@@ -76,11 +76,12 @@ _VIIRS_LAYERS = (
 
 
 def viirs_daily_observations(
-    *, incident_id: str, lat: float, lon: float, day: date,
+    *, incident_id: str, lat: float, lon: float, day: date, radius_deg: float = 0.1,
 ) -> list[SatelliteObservation]:
     acquired = datetime.combine(day, time.min, tzinfo=timezone.utc).isoformat()
     day_text = day.isoformat()
-    bbox = [lon - 0.1, lat - 0.1, lon + 0.1, lat + 0.1]
+    radius_deg = max(0.05, min(2.0, float(radius_deg)))
+    bbox = [lon - radius_deg, lat - radius_deg, lon + radius_deg, lat + radius_deg]
     observations = []
     for mission, layer in _VIIRS_LAYERS:
         tile = (
@@ -240,6 +241,7 @@ def resolve_for_incident(
         while cursor <= end.date():
             observations.extend(viirs_daily_observations(
                 incident_id=incident_id, lat=lat, lon=lon, day=cursor,
+                radius_deg=radius_deg,
             ))
             cursor += timedelta(days=1)
 

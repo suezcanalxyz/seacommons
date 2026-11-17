@@ -79,7 +79,7 @@ def test_engine_opendrift_payload_selects_the_model(monkeypatch) -> None:
 
     monkeypatch.setattr(engine_module, "run_leeway", fake_run_leeway)
     monkeypatch.setattr(engine_module.CacheManager, "get_wind_live", lambda self, a, b: {"wind_speed_ms": 5.0, "wind_dir_deg": 270.0})
-    monkeypatch.setattr(engine_module.CacheManager, "get_ocean_currents", lambda self, a, b: {"u_ms": 0.1, "v_ms": 0.0})
+    monkeypatch.setattr(engine_module.CacheManager, "get_ocean_currents", lambda self, a, b, time_utc=None: {"u_ms": 0.1, "v_ms": 0.0})
     monkeypatch.setattr(engine_module.CacheManager, "get_wind_forecast_series", lambda self, a, b, hours=48: [])
     monkeypatch.setattr(engine_module.runtime_config, "DEMO_PUBLIC_MODE", False)
 

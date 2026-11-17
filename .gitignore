@@ -48,3 +48,6 @@ backups/
 apps/web/test-results/
 third_party/radio/**/bin/
 third_party/radio/**/obj/
+
+# Refreshed maritime geodata are generated runtime reference snapshots, not Git source
+apps/api/core/data/reference/refreshed/*.geojson

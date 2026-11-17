@@ -278,3 +278,10 @@ def test_retention_release_gate_blocks_legacy_env_override(monkeypatch):
         lambda *_args: pytest.fail("retention policy gate bypassed"),
     )
     assert TrackStore().prune(older_than_days=60) == 0
+
+def test_prune_remains_fail_closed_until_archival_restore_is_approved(store, monkeypatch):
+    old = datetime.now(timezone.utc) - timedelta(days=90)
+    _pos(store, "111000888", 35.0, 18.0, recv=old)
+    monkeypatch.setenv("AIS_PRUNE_APPROVED", "1")
+    assert store.prune(older_than_days=60) == 0
+    assert len(store.track("111000888")) == 1

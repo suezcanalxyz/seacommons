@@ -40,6 +40,7 @@ import { initialLayerVisibility, layerVisibilityStorageKey } from './features/li
 import { splitObservedTrackSegments } from './features/live/observedTrack.js';
 import { vesselReportFeature } from './features/live/vesselVisual.js';
 import { isExcludedVesselType } from './features/live/vesselType.js';
+import { configureMaplibreWorker } from './features/map/maplibreWorker.js';
 import { createVesselArrowImage } from './features/map/vesselMarker.js';
 import { publicBasemapSource } from './features/map/publicBasemap.js';
 import { createFallbackMap } from './features/map/fallbackRenderer.js';
@@ -694,12 +695,11 @@ function App() {
   const [showAisAlerts, setShowAisAlerts] = useState(false);
   const [showVesselLinks, setShowVesselLinks] = useState(false);
   const [baseMap, setBaseMap] = useState(() => {
-    if (isPublicLiveHost) return 'standard';
     try {
-      return window.localStorage.getItem('seacommons_base_map') === 'satellite' ? 'satellite' : 'standard';
-    } catch {
-      return 'standard';
-    }
+      const stored = window.localStorage.getItem('seacommons_base_map');
+      if (stored === 'standard' || stored === 'satellite') return stored;
+    } catch { /* storage unavailable */ }
+    return isPublicLiveHost ? 'satellite' : 'standard';
   });
   const layerVisStorageKey = layerVisibilityStorageKey(isPublicLiveHost);
   const [layerVis, setLayerVis] = useState(() => initialLayerVisibility({
@@ -1293,6 +1293,7 @@ function App() {
       if (window.__SEACOMMONS_FORCE_MAP_FALLBACK__ === true) throw new Error('forced map fallback');
       await import('maplibre-gl/dist/maplibre-gl.css');
       const { default: maplibregl } = await import('maplibre-gl');
+      configureMaplibreWorker(maplibregl);
       if (disposed || mapRef.current) return;
 
       const map = new maplibregl.Map({
@@ -1595,8 +1596,26 @@ function App() {
         // through fill opacity / line width, not hue.
         const _DRIFT_COLOR = ['coalesce', ['get', 'visual_color'], '#ff3b3b'];
         map.addLayer({
+          id: 'intel-search-prior-fill', type: 'fill', source: 'intel-drifts',
+          filter: ['all', ['==', '$type', 'Polygon'], ['==', ['get', 'kind'], 'macro_search_area']],
+          paint: {
+            'fill-color': _DRIFT_COLOR,
+            'fill-opacity': isPublicLiveHost ? 0.08 : 0.045,
+          },
+        });
+        map.addLayer({
+          id: 'intel-search-prior-line', type: 'line', source: 'intel-drifts',
+          filter: ['all', ['==', '$type', 'Polygon'], ['==', ['get', 'kind'], 'macro_search_area']],
+          paint: {
+            'line-color': _DRIFT_COLOR,
+            'line-opacity': isPublicLiveHost ? 0.9 : 0.65,
+            'line-width': isPublicLiveHost ? 1.8 : 1.2,
+            'line-dasharray': [3, 2],
+          },
+        });
+        map.addLayer({
           id: 'intel-drift-cone', type: 'fill', source: 'intel-drifts',
-          filter: ['==', '$type', 'Polygon'],
+          filter: ['all', ['==', '$type', 'Polygon'], ['!=', ['get', 'kind'], 'macro_search_area']],
           paint: {
             'fill-color': _DRIFT_COLOR,
             'fill-opacity': isPublicLiveHost ? 0.14 : 0.07,
@@ -2356,6 +2375,17 @@ function App() {
             event.originalEvent?.stopPropagation?.();
           });
         }
+        map.on('mouseenter', 'intel-search-prior-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'intel-search-prior-fill', () => {
+          map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+        });
+        map.on('click', 'intel-search-prior-fill', (event) => {
+          const feature = event.features?.[0];
+          if (!feature) return;
+          setMapPanel({ type: 'search_area', feature });
+          setConePanelHidden(false);
+          event.originalEvent?.stopPropagation?.();
+        });
         map.on('mouseenter', 'intel-drift-line', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'intel-drift-line', () => {
           map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
@@ -2608,10 +2638,13 @@ function App() {
     const effectiveBaseMap = baseMap;
     if (map.getLayer('osm')) map.setLayoutProperty('osm', 'visibility', effectiveBaseMap === 'standard' ? 'visible' : 'none');
     if (map.getLayer('satellite')) map.setLayoutProperty('satellite', 'visibility', effectiveBaseMap === 'satellite' ? 'visible' : 'none');
-    try {
-      window.localStorage.setItem('seacommons_base_map', effectiveBaseMap);
-    } catch { /* quota */ }
   }, [baseMap, mapReady]);
+
+  // Persist the user's selection even while MapLibre is still starting up.
+  useEffect(() => {
+    try { window.localStorage.setItem('seacommons_base_map', baseMap); }
+    catch { /* storage unavailable */ }
+  }, [baseMap]);
 
   // Layer group visibility — applied to every MapLibre layer in the group
   useEffect(() => {
@@ -3743,7 +3776,7 @@ function App() {
 
         {/* Cone detail panel — right side, appears when clicking a drift cone or a signal marker */}
         {mapPanel?.type === 'intel' && !conePanelHidden && <div className="intel-report-map-overlay" aria-hidden="true" />}
-        {['cone', 'trajectory', 'intel', 'radio_receiver', 'radio_message'].includes(mapPanel?.type) && !conePanelHidden && (
+        {['cone', 'trajectory', 'search_area', 'intel', 'radio_receiver', 'radio_message'].includes(mapPanel?.type) && !conePanelHidden && (
           <MapFloatingPanel
             panel={resolvedMapPanel}
             onClose={() => {
@@ -3759,7 +3792,7 @@ function App() {
             sarResponse={selectedSarResponse}
           />
         )}
-        {['cone', 'trajectory', 'intel', 'radio_receiver', 'radio_message'].includes(mapPanel?.type) && conePanelHidden && (
+        {['cone', 'trajectory', 'search_area', 'intel', 'radio_receiver', 'radio_message'].includes(mapPanel?.type) && conePanelHidden && (
           <button
             className="cone-reopen-btn"
             onClick={() => setConePanelHidden(false)}
@@ -4357,19 +4390,20 @@ function App() {
 
         </div>
       </section>
-        {isPublicLiveHost && !play3D ? createPortal(
+
+        </>
+      ) : null}
+        {isPublicLiveHost ? createPortal(
           <button
             type="button"
             className="live-basemap-switch"
             aria-label={baseMap === 'satellite' ? 'Switch to standard map' : 'Switch to satellite map'}
             aria-pressed={baseMap === 'satellite'}
-            onClick={() => setBaseMap((current) => current === 'satellite' ? 'standard' : 'satellite')}
+            onClick={() => { setPlay3D(false); setBaseMap((current) => current === 'satellite' ? 'standard' : 'satellite'); }}
           >
             {baseMap === 'satellite' ? 'Map' : 'Satellite'}
           </button>, document.body
         ) : null}
-        </>
-      ) : null}
     </main>
   );
 }

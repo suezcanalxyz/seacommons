@@ -124,3 +124,56 @@ def test_refresher_never_reschedules_completed_drift_after_live_24h_window(monke
     assert calls == []
     store._events.clear()
     store._seen.clear()
+
+def test_refresher_respects_per_scan_budget(monkeypatch) -> None:
+    from core.intel import drift_refresher
+
+    now = datetime.now(timezone.utc)
+    calls = []
+    monkeypatch.setattr(drift_refresher, "DRIFT_REFRESH_MAX_PER_SCAN", 2)
+    monkeypatch.setattr(
+        "core.intel.drift_service.schedule_intel_drift",
+        lambda *args, **kwargs: calls.append(args[0]) or True,
+    )
+    store = drift_refresher.intel_store
+    store._events.clear()
+    store._seen.clear()
+    try:
+        for index in range(5):
+            store._events.appendleft(_distress_event(
+                f"budget-{index}",
+                ts=(now - timedelta(hours=10)).isoformat(),
+                drift_completed_at=(now - timedelta(hours=8)).isoformat(),
+            ))
+        drift_refresher.DriftRefresher()._scan()
+        assert len(calls) == 2
+    finally:
+        store._events.clear()
+        store._seen.clear()
+
+
+def test_refresher_limits_scheduled_drifts_per_scan(monkeypatch) -> None:
+    """A stale backlog must not launch an unbounded batch on Oracle."""
+    from core.intel import drift_refresher
+
+    now = datetime.now(timezone.utc)
+    stale_at = (now - timedelta(hours=20)).isoformat()
+    completed_at = (now - timedelta(hours=8)).isoformat()
+    candidates = [
+        _distress_event(f"budget-{index}", stale_at, drift_completed_at=completed_at)
+        for index in range(5)
+    ]
+    monkeypatch.setattr(drift_refresher, "DRIFT_REFRESH_MAX_PER_SCAN", 2)
+    monkeypatch.setattr(drift_refresher.intel_store, "events", lambda **kwargs: candidates)
+    scheduled = []
+    monkeypatch.setattr(
+        "core.intel.drift_service.schedule_intel_drift",
+        lambda *args, **kwargs: scheduled.append(args[0]) or True,
+    )
+
+    drift_refresher.DriftRefresher()._scan()
+    assert scheduled == ["budget-0", "budget-1"]
+
+    monkeypatch.setattr(drift_refresher, "DRIFT_REFRESH_MAX_PER_SCAN", 0)
+    drift_refresher.DriftRefresher()._scan()
+    assert scheduled == ["budget-0", "budget-1"]

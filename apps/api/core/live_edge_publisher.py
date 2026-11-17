@@ -72,6 +72,9 @@ class PublisherSettings:
     # Prometheus scrape endpoint for this standalone process. 0 disables it
     # (default), so nothing changes for an existing deployment.
     metrics_port: int = 0
+    # Added at end to preserve existing positional PublisherSettings callers.
+    # Separate DB scans from fast outbox delivery.
+    scan_interval_seconds: float = 5.0
 
     @classmethod
     def from_env(cls) -> "PublisherSettings":
@@ -81,6 +84,7 @@ class PublisherSettings:
             node_id=os.getenv("SEACOMMONS_NODE_ID", os.uname().nodename),
             outbox_path=Path(os.getenv("LIVE_EDGE_OUTBOX_PATH", "./shared/live-edge-outbox.db")),
             poll_seconds=max(0.5, float(os.getenv("LIVE_EDGE_POLL_SECONDS", "1"))),
+            scan_interval_seconds=max(1.0, float(os.getenv("LIVE_EDGE_SCAN_INTERVAL_SECONDS", "5"))),
             batch_size=max(1, int(os.getenv("LIVE_EDGE_BATCH_SIZE", "25"))),
             scan_limit=max(10, int(os.getenv("LIVE_EDGE_SCAN_LIMIT", "200"))),
             live_window_minutes=max(5, int(os.getenv("LIVE_EDGE_WINDOW_MINUTES", str(8 * 24 * 60)))),
@@ -148,9 +152,16 @@ class Outbox:
         place and don't need one; only a row that flips from published to
         excluded (e.g. a duplicate later marked private) does.
         """
+        # Incident IDs can contain SQL LIKE wildcards. Treat them literally
+        # so a different incident never inherits a delivery receipt.
+        escaped_id = (
+            incident_id.replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        )
         return self.connection.execute(
-            "SELECT 1 FROM delivered WHERE event_id LIKE ? LIMIT 1",
-            (f"{incident_id}:%",),
+            "SELECT 1 FROM delivered WHERE event_id LIKE ? ESCAPE '\\' LIMIT 1",
+            (f"{escaped_id}:%",),
         ).fetchone() is not None
 
     def ready(self, limit: int) -> list[sqlite3.Row]:
@@ -264,6 +275,15 @@ def public_event_from_row(
         # mode, DEFAULT_PUBLIC_MARITIME_DOMAINS now includes it, so it must
         # be excluded explicitly here too or it would leak into the edge's
         # humanitarian-only feed and break VM/edge parity).
+        return None
+    from core.intel.operational_feed_policy import withhold_humanitarian_live
+    # An old distress must still produce an incident_removed tombstone:
+    # the 24h operational gate must not suppress the cleanup of an earlier
+    # edge publication. Fresh retrospective/unverified reports stay blocked.
+    expired_distress = bool(
+        event.type == "distress" or metadata.get("is_distress")
+    ) and not lifecycle.is_within_live_retention_window(event, now=now)
+    if withhold_humanitarian_live(event, now=now) and not expired_distress:
         return None
     vm_feature = _public_intel_feature(
         event, allowed_domains=domains_for_mode("humanitarian")
@@ -510,44 +530,58 @@ class LiveEdgePublisher:
         )).isoformat()
         now = datetime.now(timezone.utc)
         added = 0
+        # Fetch only fields consumed by _event_from_row/public_event_from_row.
+        # Loading complete ORM entities also decodes unrelated lifecycle and
+        # retention columns on every scan of this high-traffic table.
+        projection = (
+            IntelEventDB.id, IntelEventDB.timestamp_utc,
+            IntelEventDB.type, IntelEventDB.severity,
+            IntelEventDB.lat, IntelEventDB.lon,
+            IntelEventDB.title, IntelEventDB.text,
+            IntelEventDB.url, IntelEventDB.source,
+            IntelEventDB.linked_mmsi, IntelEventDB.meta,
+        )
         with session_scope() as db:
             general = (
-                db.query(IntelEventDB)
+                db.query(*projection)
                 .filter(IntelEventDB.timestamp_utc >= cutoff)
                 .order_by(IntelEventDB.timestamp_utc.desc())
                 .limit(self.settings.scan_limit)
                 .all()
             )
             distress_bearing = (
-                db.query(IntelEventDB)
+                db.query(*projection)
                 .filter(IntelEventDB.timestamp_utc >= cutoff)
                 .filter(IntelEventDB.type != "ais_spike")
                 .order_by(IntelEventDB.timestamp_utc.desc())
                 .limit(self.settings.scan_limit)
                 .all()
             )
-            by_id = {row.id: row for row in general}
-            by_id.update({row.id: row for row in distress_bearing})
-            rows = list(by_id.values())
-            events = [_event_from_row(row) for row in rows]
-            by_source: dict[str, list[Any]] = {}
-            for event in events:
-                by_source.setdefault(event.source, []).append(event)
-            for row in reversed(rows):
-                same_source = by_source.get(str(getattr(row, "source", "") or ""), [])
-                payload = public_event_from_row(row, self.settings.node_id, now=now, same_source=same_source)
-                if payload is not None:
-                    if self.outbox.enqueue(payload["id"], payload):
-                        added += 1
-                    continue
-                # Row is still within the scan window but no longer public
-                # (e.g. a duplicate later marked private) -- if the edge was
-                # ever actually sent a version of it, it needs an explicit
-                # removal, or it keeps showing the last version forever.
-                if self.outbox.was_ever_delivered(row.id):
-                    removal = removed_payload(row.id, self.settings.node_id, source=str(row.source or "unknown"))
-                    if self.outbox.enqueue(removal["id"], removal):
-                        added += 1
+        # Release the PostgreSQL transaction before the CPU-heavy policy
+        # projection and SQLite outbox writes. The selected column tuples
+        # remain usable after the session closes (no lazy ORM relationships).
+        by_id = {row.id: row for row in general}
+        by_id.update({row.id: row for row in distress_bearing})
+        rows = list(by_id.values())
+        events = [_event_from_row(row) for row in rows]
+        by_source: dict[str, list[Any]] = {}
+        for event in events:
+            by_source.setdefault(event.source, []).append(event)
+        for row in reversed(rows):
+            same_source = by_source.get(str(getattr(row, "source", "") or ""), [])
+            payload = public_event_from_row(row, self.settings.node_id, now=now, same_source=same_source)
+            if payload is not None:
+                if self.outbox.enqueue(payload["id"], payload):
+                    added += 1
+                continue
+            # Row is still within the scan window but no longer public
+            # (e.g. a duplicate later marked private) -- if the edge was
+            # ever actually sent a version of it, it needs an explicit
+            # removal, or it keeps showing the last version forever.
+            if self.outbox.was_ever_delivered(row.id):
+                removal = removed_payload(row.id, self.settings.node_id, source=str(row.source or "unknown"))
+                if self.outbox.enqueue(removal["id"], removal):
+                    added += 1
         return added
 
     def deliver(self) -> int:
@@ -628,22 +662,36 @@ class LiveEdgePublisher:
 
     def run(self) -> None:
         logger.info(
-            "Live-first edge publisher started node=%s poll=%.2fs window=%dm",
+            "Live-first edge publisher started node=%s poll=%.2fs scan=%.2fs window=%dm",
             self.settings.node_id,
             self.settings.poll_seconds,
+            self.settings.scan_interval_seconds,
             self.settings.live_window_minutes,
         )
+        last_scan_at: float | None = None
         while self.running:
             started = time.monotonic()
             cycle_status = "active"
             added = 0
             delivered = 0
             try:
-                added = self.collect()
+                # Keep outbox retries and heartbeats responsive even when the
+                # database scan is throttled. Failed scans retry next poll.
+                if last_scan_at is None or started - last_scan_at >= self.settings.scan_interval_seconds:
+                    added = self.collect()
+                    # Measure cadence from scan completion, not start: a slow
+                    # PostgreSQL query must not trigger another scan immediately.
+                    last_scan_at = time.monotonic()
                 delivered = self.deliver()
                 self.cycles += 1
                 if self.cycles % 3600 == 0:
-                    self.outbox.prune()
+                    # Receipts must outlive the rescan window. The previous
+                    # 48-hour default re-enqueued old versions for up to 8
+                    # days and could miss later privacy-removal tombstones.
+                    retention_hours = max(
+                        48, (self.settings.live_window_minutes + 59) // 60 + 48
+                    )
+                    self.outbox.prune(retention_hours=retention_hours)
                 if added or delivered:
                     logger.info(
                         "Live edge cycle: collected=%d delivered=%d outbox=%s",

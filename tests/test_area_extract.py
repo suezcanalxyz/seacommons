@@ -39,17 +39,20 @@ def test_single_imprecise_place_with_no_weather_signal_is_low_confidence(monkeyp
     assert result.confidence == "area_low_confidence"
 
 
-def test_multiple_places_span_a_corridor_not_just_the_first_match(monkeypatch):
+def test_authority_places_do_not_become_boat_search_area(monkeypatch):
     monkeypatch.setattr(landmask, "is_on_land", lambda lat, lon: False)
-    single = area_extract.extract_area("boat in distress off #Libya")
-    corridor = area_extract.extract_area(
-        "informed authorities in #Italy and #Malta about a boat in distress"
+    result = area_extract.extract_area(
+        "we informed authorities in Malta about a boat in distress"
     )
+    assert result is None
 
-    assert single is not None and corridor is not None
-    # A corridor between two named places must span noticeably more area
-    # than a lone circle around just one of them would -- confirms both
-    # matched places actually shaped the geometry, not just the first hit.
+
+def test_explicit_departure_destination_span_route_corridor(monkeypatch):
+    monkeypatch.setattr(landmask, "is_on_land", lambda lat, lon: False)
+    corridor = area_extract.extract_area(
+        "boat departed from Sfax heading to Lampedusa and is in distress"
+    )
+    assert corridor is not None
     from core.intel.area_extract import _polygon_area_km2
     assert _polygon_area_km2(corridor.polygon) > 0
 
@@ -68,6 +71,8 @@ def test_weather_narrows_when_report_claims_it_and_data_confirms(monkeypatch):
     monkeypatch.setattr("core.ocean.cmems.cmems_enabled", lambda: True)
     monkeypatch.setattr("core.ocean.cmems.fetch_ocean_batch", fake_batch)
 
+    # Use a bounded precise-area case here. Broad-country areas deliberately
+    # skip CMEMS refinement to protect the API memory cgroup.
     unnarrowed = area_extract.extract_area("boat in distress off #Lampedusa")
     narrowed = area_extract.extract_area(
         "boat in severe weather and distress off #Lampedusa"
@@ -120,3 +125,16 @@ def test_wide_area_skips_optional_cmems_wave_fetch(monkeypatch):
     assert area_extract._filter_by_wave_height([(35.0, 14.0), (36.5, 14.0)], None) == []
     assert area_extract._filter_by_wave_height([(35.0 + i * .01, 14.0) for i in range(65)], None) == []
     assert called == []
+def test_region_center_radius_becomes_sea_only_low_confidence_area(monkeypatch):
+    monkeypatch.setattr(landmask, "is_on_land", lambda lat, lon: False)
+    result = area_extract.area_from_center(37.5, 1.5, 180_000)
+    assert result is not None
+    assert result.polygon["type"] == "Polygon"
+    assert result.confidence == "area_low_confidence"
+    assert result.weather_narrowed is False
+
+
+def test_region_center_rejects_invalid_or_unbounded_radius(monkeypatch):
+    monkeypatch.setattr(landmask, "is_on_land", lambda lat, lon: False)
+    assert area_extract.area_from_center(37.5, 1.5, 0) is None
+    assert area_extract.area_from_center(37.5, 1.5, 900_000) is None

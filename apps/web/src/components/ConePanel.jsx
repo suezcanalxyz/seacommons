@@ -1058,6 +1058,52 @@ function TrajectoryView({ panel }) {
   );
 }
 
+function _structuredProperty(value, fallback) {
+  if (value == null) return fallback;
+  if (typeof value === 'object') return value;
+  if (typeof value !== 'string') return fallback;
+  try { return JSON.parse(value); } catch { return fallback; }
+}
+
+function SearchAreaView({ panel }) {
+  const props = panel.feature?.properties || {};
+  const mentioned = _structuredProperty(props.mentioned_places, []);
+  const departures = _structuredProperty(props.departure_claims, []);
+  const destinations = _structuredProperty(props.destination_claims, []);
+  const departureWindow = _structuredProperty(props.departure_time_window, null);
+  const departurePlaces = departures.map((item) => item?.place).filter(Boolean);
+  const destinationPlaces = destinations.map((item) => item?.place).filter(Boolean);
+  return (
+    <>
+      <div className="cone-section">
+        <SectionLabel>Source-derived search area</SectionLabel>
+        <Row label="Source" value={props.source || 'Alarm Phone'} />
+        <Row label="Evidence" value={String(props.location_evidence || 'reported area').replace(/_/g, ' ')} />
+        <Row label="Uncertainty" value={String(props.uncertainty || 'unknown').replace(/_/g, ' ')} />
+        {mentioned.length > 0 && <Row label="Places mentioned" value={[...new Set(mentioned)].join(' · ')} />}
+        {departurePlaces.length > 0 && <Row label="Departure" value={[...new Set(departurePlaces)].join(' · ')} />}
+        {destinationPlaces.length > 0 && <Row label="Destination" value={[...new Set(destinationPlaces)].join(' · ')} />}
+        {departureWindow?.start_utc && (
+          <Row
+            label="Departure window"
+            value={`${String(departureWindow.start_utc).slice(0, 10)}${departureWindow.precision === 'date_only' ? ' · date only' : ''}`}
+          />
+        )}
+      </div>
+      <div className="cone-section" style={{ borderBottom: 'none' }}>
+        <SectionLabel>Interpretation</SectionLabel>
+        <Row label="Current position" value="Not observed" />
+        <Row label="Physical drift" value={props.physical_drift_computed ? 'Computed' : 'Not computed'} />
+        <Row label="Probability" value={props.probability_calibrated ? 'Calibrated' : 'Not calibrated'} />
+        <p className="intel-report-note">
+          This polygon constrains where the case may be relevant from source-reported geography and uncertainty.
+          It is not a GPS fix, not an OpenDrift trajectory, and not a probability contour.
+        </p>
+      </div>
+    </>
+  );
+}
+
 function RadioLiveListen({ props, apiBase }) {
   const [status, setStatus] = useState('idle');
   const [format, setFormat] = useState(null);
@@ -1312,8 +1358,10 @@ export default function MapFloatingPanel({
     ? 'Live drift trajectory'
     : panel.type === 'cone'
       ? 'Drift projection'
-      : panel.type === 'intel'
-        ? 'Signal'
+      : panel.type === 'search_area'
+        ? 'Search area'
+        : panel.type === 'intel'
+          ? 'Signal'
         : panel.type === 'radio_receiver'
           ? (panel.feature?.properties?.station_label || 'Radio receiver')
           : panel.type === 'radio_message'
@@ -1323,8 +1371,10 @@ export default function MapFloatingPanel({
     ? 'OpenDrift forecast'
     : panel.type === 'cone'
       ? 'SAR drift cone'
-      : panel.type === 'intel'
-        ? 'Live report'
+      : panel.type === 'search_area'
+        ? 'Source-derived spatial prior'
+        : panel.type === 'intel'
+          ? 'Live report'
         : panel.type === 'radio_receiver'
           ? 'Receiver mesh'
           : panel.type === 'radio_message'
@@ -1332,7 +1382,7 @@ export default function MapFloatingPanel({
             : 'Map click';
 
   return (
-    <div className={`cone-panel${['intel', 'radio_receiver', 'radio_message'].includes(panel.type) ? ' cone-panel--intel' : ''}`}>
+    <div className={`cone-panel${['intel', 'search_area', 'radio_receiver', 'radio_message'].includes(panel.type) ? ' cone-panel--intel' : ''}`}>
       <div className="cone-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <span className="section-kicker">{kicker}</span>
@@ -1349,6 +1399,9 @@ export default function MapFloatingPanel({
       )}
       {panel.type === 'trajectory' && (
         <TrajectoryView panel={panel} />
+      )}
+      {panel.type === 'search_area' && (
+        <SearchAreaView panel={panel} />
       )}
       {panel.type === 'radio_receiver' && (
         <RadioReceiverView panel={panel} apiBase={apiBase} />

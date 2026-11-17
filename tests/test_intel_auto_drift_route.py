@@ -160,6 +160,7 @@ def test_auto_drift_rejects_a_completely_unknown_event_id():
 
 
 def test_auto_drift_accepts_humanitarian_event(monkeypatch):
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: False)
     event = IntelEvent(
         id="auto-drift-humanitarian-01",
         type="distress",

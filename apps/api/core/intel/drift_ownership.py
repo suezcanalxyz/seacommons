@@ -66,4 +66,13 @@ def get_current_drift_id(incident_id: str) -> Optional[str]:
 
     with session_scope() as db:
         row = db.get(HumanitarianIncidentDB, incident_id)
-        return row.current_drift_id if row is not None else None
+        if row is None:
+            return None
+        # Legacy rows can retain a pointer after lifecycle transitions.
+        # Never expose terminal incidents as current, even before repair.
+        if (
+            row.lifecycle in _TERMINAL_LIFECYCLES
+            or (row.incident_status or "") in _TERMINAL_INCIDENT_STATUSES
+        ):
+            return None
+        return row.current_drift_id

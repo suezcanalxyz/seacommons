@@ -37,3 +37,33 @@ def test_partial_required_coverage_is_mixed_and_not_operational():
         cmems_current=False,
         grid_reader=True,
     ) == ("mixed", False)
+
+
+def test_copernicus_overwrite_keyword_uses_current_client_signature():
+    from core.drift.opendrift_pool import _copernicus_overwrite_kwargs
+
+    def subset(*, overwrite=False):
+        return overwrite
+
+    assert _copernicus_overwrite_kwargs(subset) == {"overwrite": True}
+
+
+def test_copernicus_overwrite_keyword_keeps_legacy_client_compatibility():
+    from core.drift.opendrift_pool import _copernicus_overwrite_kwargs
+
+    def subset(*, overwrite_output_data=False):
+        return overwrite_output_data
+
+    assert _copernicus_overwrite_kwargs(subset) == {"overwrite_output_data": True}
+
+
+def test_reader_time_gate_rejects_provider_outside_simulation_start():
+    from datetime import datetime, timezone
+    from core.drift.opendrift_pool import _reader_covers_time
+
+    class Reader:
+        def covers_time(self, value):
+            return value.hour == 0
+
+    assert _reader_covers_time(Reader(), datetime(2026, 10, 24, 0, tzinfo=timezone.utc)) is True
+    assert _reader_covers_time(Reader(), datetime(2026, 10, 24, 10, tzinfo=timezone.utc)) is False

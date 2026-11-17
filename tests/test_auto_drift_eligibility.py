@@ -8,9 +8,17 @@ policy.
 """
 from __future__ import annotations
 
+import pytest
 import core.intel.drift_service as ds
 from core.intel.drift_service import is_auto_drift_eligible, schedule_intel_drift
 from core.intel.store import IntelEvent
+
+
+@pytest.fixture(autouse=True)
+def _verified_sea_for_eligibility_tests(monkeypatch):
+    # The shared CI fixture disables the heavy coastline dataset. These tests
+    # explicitly simulate a verified sea origin unless they override the mask.
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: False)
 
 
 def _distress(**meta) -> IntelEvent:
@@ -57,10 +65,8 @@ def test_disputed_ocr_is_rejected():
     assert not ok and "disputed" in reason
 
 
-def test_single_engine_ocr_coordinate_at_sea_is_eligible():
-    # Policy /2 (operator decision): an Alarm Phone distress map coordinate
-    # that OCR read and that lands in the sea is a drift origin even from one
-    # engine -- weaker evidence, wide radius, still a real position.
+def test_single_engine_ocr_coordinate_at_sea_requires_independent_review():
+    # A single OCR reading is evidence to review, not a verified drift origin.
     ok, reason = is_auto_drift_eligible(
         _distress(
             coordinate_source="media_ocr_text",
@@ -68,10 +74,10 @@ def test_single_engine_ocr_coordinate_at_sea_is_eligible():
             location_uncertainty_m=1500,
         )
     )
-    assert ok, reason
+    assert not ok and "independent verification" in reason
 
 
-def test_pin_landmark_estimate_at_sea_is_eligible():
+def test_pin_landmark_estimate_at_sea_requires_independent_review():
     ok, reason = is_auto_drift_eligible(
         _distress(
             coordinate_source="media_pin_landmark",
@@ -79,7 +85,7 @@ def test_pin_landmark_estimate_at_sea_is_eligible():
             location_uncertainty_m=4000,
         )
     )
-    assert ok, reason
+    assert not ok and "independent verification" in reason
 
 
 def test_ocr_coordinate_on_land_is_rejected(monkeypatch):
@@ -176,3 +182,44 @@ def test_force_cannot_bypass_the_evidence_gate(monkeypatch):
     assert schedule_intel_drift(event.id, 34.27, 11.94, None, "rubber_boat",
                                 "2026-08-21T03:31:00Z", force=True) is False
     assert event.metadata["drift_status"] == "ineligible"
+
+
+def test_land_origin_never_becomes_valid_by_offshore_nudge(monkeypatch):
+    monkeypatch.setattr("core.intel.landmask.nearest_sea_point", lambda lat, lon: (35.0, 14.0))
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: True)
+    event = _distress(coordinate_source="post_text", coordinate_review_status="not_required")
+    ok, reason = is_auto_drift_eligible(event)
+    assert not ok and "on land" in reason
+
+
+def test_missing_coastline_mask_never_certifies_drift(monkeypatch):
+    monkeypatch.setattr("core.intel.landmask.is_on_land", lambda lat, lon: None)
+    event = _distress(coordinate_source="post_text", coordinate_review_status="not_required")
+    ok, reason = is_auto_drift_eligible(event)
+    assert not ok and "coastline verification unavailable" in reason
+
+
+def test_unknown_ocr_provenance_is_not_independently_verified():
+    event = _distress(coordinate_review_status="machine_ocr_unverified")
+    ok, reason = is_auto_drift_eligible(event)
+    assert not ok
+
+
+@pytest.mark.parametrize("lat,lon", [
+    (float("nan"), 11.94), (34.27, float("inf")),
+    (float("-inf"), 11.94), (95.0, 11.94), (34.27, 181.0),
+    ("not-a-latitude", 11.94),
+])
+def test_invalid_origin_coordinates_fail_closed(lat, lon):
+    event = _distress(coordinate_source="post_text", coordinate_review_status="not_required")
+    event.lat, event.lon = lat, lon
+    ok, reason = is_auto_drift_eligible(event)
+    assert not ok and "invalid drift origin coordinate" in reason
+
+
+@pytest.mark.parametrize("uncertainty", [float("nan"), float("inf"), -1, "unknown", ""])
+def test_invalid_uncertainty_fails_closed(uncertainty):
+    event = _distress(coordinate_source="post_text", coordinate_review_status="not_required")
+    event.metadata["location_uncertainty_m"] = uncertainty
+    ok, reason = is_auto_drift_eligible(event)
+    assert not ok and "invalid location_uncertainty_m" in reason

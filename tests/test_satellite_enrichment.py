@@ -170,3 +170,83 @@ def test_scheduler_satellite_job_calls_bounded_enrichment(monkeypatch):
     )
     scheduler._job_satellite_enrichment()
     assert calls == [{"limit": 6}]
+
+
+def test_region_area_satellite_target_uses_uncertainty_not_precise_origin():
+    from core.intel.satellite_enrichment import _case_satellite_targets
+
+    event = _event(metadata={
+        "is_distress": True,
+        "maritime_domain": "sar",
+        "coordinate_source": "region_area",
+        "location_uncertainty_m": 180000,
+    }, lat=37.5, lon=1.5)
+    targets = _case_satellite_targets(event)
+    assert targets[0]["role"] == "reported_search_area"
+    assert 1.5 < targets[0]["radius_deg"] < 1.7
+
+
+def test_enrich_region_area_passes_broad_radius_and_records_it(monkeypatch):
+    from core.intel import satellite_enrichment
+    from core.intel.satellite_observation import SatelliteObservation
+
+    calls = []
+    persisted = []
+    event = _event(metadata={
+        "is_distress": True,
+        "coordinate_source": "region_area",
+        "location_uncertainty_m": 180000,
+    }, lat=37.5, lon=1.5)
+
+    def fake_resolve_for_incident(**kwargs):
+        calls.append(kwargs)
+        return [SatelliteObservation(
+            observation_id=f"sat-region-{len(calls)}", incident_id=kwargs["incident_id"],
+            provider="test", mission="Sentinel-1", product_id=str(len(calls)),
+            acquisition_time=kwargs["event_time"].isoformat(), discovered_at=_NOW.isoformat(),
+            footprint=None, bbox=None, sensor_type="sar",
+            temporal_relation=kwargs["direction"], temporal_delta_s=0,
+            asset_ref="", source_url="", provenance={},
+        )]
+
+    monkeypatch.setattr(satellite_enrichment, "resolve_for_incident", fake_resolve_for_incident)
+    monkeypatch.setattr(satellite_enrichment, "persist_observations", lambda rows: persisted.extend(rows) or len(rows))
+    report = satellite_enrichment.enrich_event(event, now=_NOW, include_viirs=False)
+    assert report["errors"] == 0
+    assert all(call["radius_deg"] > 1.5 for call in calls[:3])
+    target = persisted[0].provenance["case_targets"][0]
+    assert target["role"] == "reported_search_area"
+    assert target["search_radius_deg"] > 1.5
+
+
+def test_trajectory_targets_reject_invalid_geographic_coordinates():
+    from core.intel.satellite_enrichment import _trajectory_targets
+
+    trajectory = {
+        'geometry': {'type': 'LineString', 'coordinates': [
+            [14, 35], [float('nan'), 35], [200, 35], ['not-a-longitude', 35], [14.4, 35.4],
+        ]},
+        'properties': {'timestamps_utc': [
+            '2026-09-05T00:00:00Z', '2026-09-05T01:00:00Z',
+            '2026-09-05T02:00:00Z', '2026-09-05T03:00:00Z',
+            '2026-09-05T04:00:00Z',
+        ]},
+    }
+    targets = _trajectory_targets(trajectory, drift_id='invalid-coords', limit=4)
+    assert len(targets) == 1
+    assert targets[0]['lon'] == 14.4
+    assert targets[0]['lat'] == 35.4
+
+
+def test_trajectory_sampling_skips_invalid_before_spending_budget():
+    from core.intel.satellite_enrichment import _trajectory_targets
+    coords = [[14.0, 35.0], [14.1, 35.1], [200.0, 35.2],
+              [14.3, 35.3], [float('nan'), 35.4], [14.5, 35.5]]
+    trajectory = {
+        'geometry': {'type': 'LineString', 'coordinates': coords},
+        'properties': {'timestamps_utc': [f'2026-09-05T0{i}:00:00Z' for i in range(6)]},
+    }
+    targets = _trajectory_targets(trajectory, drift_id='mixed', limit=3)
+    assert len(targets) == 3
+    assert [target['trajectory_index'] for target in targets] == [1, 3, 5]
+    assert all(-180 <= target['lon'] <= 180 for target in targets)

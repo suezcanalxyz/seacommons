@@ -29,7 +29,9 @@ def fetch_ocean_point(lat: float, lon: float) -> dict[str, Any] | None:
     return results[0] if results else None
 
 
-def fetch_current_point(lat: float, lon: float) -> dict[str, Any] | None:
+def fetch_current_point(
+    lat: float, lon: float, *, at: datetime | None = None,
+) -> dict[str, Any] | None:
     if not cmems_enabled():
         return None
 
@@ -41,8 +43,16 @@ def fetch_current_point(lat: float, lon: float) -> dict[str, Any] | None:
 
     norm_lon = _normalize_lon(lon)
     pad = 0.12
-    start = (datetime.now(timezone.utc) - timedelta(hours=18)).isoformat()
-    end = (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat()
+    if at is not None:
+        if at.tzinfo is None:
+            at = at.replace(tzinfo=timezone.utc)
+        else:
+            at = at.astimezone(timezone.utc)
+        start = (at - timedelta(hours=18)).isoformat()
+        end = (at + timedelta(hours=18)).isoformat()
+    else:
+        start = (datetime.now(timezone.utc) - timedelta(hours=18)).isoformat()
+        end = (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat()
 
     current_ds = None
     try:
@@ -61,8 +71,8 @@ def fetch_current_point(lat: float, lon: float) -> dict[str, Any] | None:
             end_datetime=end,
             coordinates_selection_method="nearest",
         )
-        u = _sample_value(current_ds, "uo", lat, norm_lon)
-        v = _sample_value(current_ds, "vo", lat, norm_lon)
+        u = _sample_value(current_ds, "uo", lat, norm_lon, at=at)
+        v = _sample_value(current_ds, "vo", lat, norm_lon, at=at)
     except Exception as exc:
         logger.warning("CMEMS current fetch failed for %.3f,%.3f: %s", lat, lon, exc)
         return None
@@ -216,7 +226,10 @@ def _sample_value(
     for time_name in ("time", "valid_time"):
         if time_name in da.dims:
             if at is not None:
-                da = da.sel({time_name: at}, method="nearest")
+                selection_time = at
+                if selection_time.tzinfo is not None:
+                    selection_time = selection_time.astimezone(timezone.utc).replace(tzinfo=None)
+                da = da.sel({time_name: selection_time}, method="nearest")
             else:
                 da = da.isel({time_name: -1})
             break

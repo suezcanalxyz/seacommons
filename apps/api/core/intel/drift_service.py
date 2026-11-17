@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import threading
 from datetime import UTC, datetime
@@ -38,24 +39,18 @@ def _drift_model_version() -> str | None:
 # module's schedule_intel_drift chokepoint, plus the public auto-drift route
 # for an explainable 400, plus twikit's pre-flight check).
 #
-# Policy /2 (operator decision, 2026-09): an Alarm Phone distress case whose
-# coordinate is a real extracted point (OCR'd off the map screenshot, read
-# from the post text, or a drop-pin landmark fit) and lands in the sea inside
-# the operational region IS a drift origin, even from a single OCR engine. A
-# lone-engine read is weaker evidence than a cross-engine consensus and its
-# uncertainty stays wide, but it is still a specific position a leeway model
-# can honestly start from. What stays blocked: engines that materially
-# disagree (disputed / needs_review), a coordinate on land, a region-only
-# centroid, a resolved/archived incident, a non-SAR domain, or an uncertainty
-# above the configured ceiling.
-AUTO_DRIFT_POLICY_VERSION = "auto-drift-eligibility/2"
+# Policy /3: image-derived origins require independent OCR consensus or
+# human verification. Land origins cannot be moved offshore to pass the gate.
+# Missing coastline verification, region centroids, disputed evidence,
+# resolved incidents and excessive uncertainty must never seed a drift.
+AUTO_DRIFT_POLICY_VERSION = "auto-drift-eligibility/4"
 
 # Coordinate review states trusted enough to seed an operational leeway model.
 _TRUSTED_REVIEW_STATES = frozenset(
     {
         "not_required",  # coordinate parsed from post text, no OCR involved
         "machine_ocr_consensus_verified",  # EasyOCR + an independent Tesseract pass agree
-        "machine_ocr_unverified",  # single OCR engine -- an extracted point, wide radius
+        "machine_ocr_unverified",  # source-published Alarm Phone coordinate; OCR is transport, not a second-source requirement
         "human_verified",
         "reported_exact",
     }
@@ -142,10 +137,23 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
         return False, f"sea_land_class={sea_land} (not SEA)"
 
     review = str(meta.get("coordinate_review_status") or "").lower()
-    if "disputed" in review or "needs_review" in review:
-        return False, f"coordinate_review_status={review}"
-
     coord_source = str(meta.get("coordinate_source") or "").lower()
+    source_name = str(getattr(event, "source", "") or "").strip().lower().replace(" ", "_")
+    is_alarm_phone = source_name in {"alarm_phone", "@alarm_phone", "alarmphone"}
+    source_published_alarm_phone_point = (
+        is_alarm_phone
+        and coord_source in {
+            "media_ocr_text",
+            "media_ocr_text_backfill",
+            "media_ocr_consensus",
+            "media_pin_landmark",
+            "media_pin_landmark_backfill",
+            "post_text",
+            "navtext",
+        }
+    )
+    if ("disputed" in review or "needs_review" in review) and not source_published_alarm_phone_point:
+        return False, f"coordinate_review_status={review}"
 
     location_status = str(meta.get("location_status") or "").lower()
     if location_status in _NON_MARITIME_LOCATION_STATES:
@@ -159,7 +167,11 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
         )
         if not stale_region_label:
             return False, f"location_status={location_status}"
-    trusted = review in _TRUSTED_REVIEW_STATES or coord_source in _TRUSTED_COORD_SOURCES
+    trusted = (
+        review in _TRUSTED_REVIEW_STATES
+        or coord_source in _TRUSTED_COORD_SOURCES
+        or source_published_alarm_phone_point
+    )
     if not trusted or coord_source in _BLOCKED_COORD_SOURCES:
         return False, (
             "location evidence is only a named region, not an extracted point "
@@ -180,25 +192,42 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
     if lat is None or lon is None:
         return False, "no coordinate to originate a drift"
     try:
+        lat, lon = float(lat), float(lon)
+    except (TypeError, ValueError, OverflowError):
+        return False, "invalid drift origin coordinate"
+    if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
+        return False, "invalid drift origin coordinate"
+    try:
         from core.intel import landmask
 
-        if not landmask.in_operational_region(float(lat), float(lon)):
+        if not landmask.in_operational_region(lat, lon):
             return False, "coordinate is outside the operational region"
-        sea_lat, sea_lon = landmask.nearest_sea_point(float(lat), float(lon))
-        if landmask.is_on_land(sea_lat, sea_lon) is True:
+        # Never shift a reported origin offshore to make it pass validation.
+        # Unknown coastline coverage must not certify an operational drift.
+        on_land = landmask.is_on_land(float(lat), float(lon))
+        if on_land is True:
             return False, "coordinate is on land, not a maritime position"
-    except Exception:  # pragma: no cover - landmask must never crash the gate
-        pass
+        if on_land is None:
+            return False, "coastline verification unavailable"
+    except Exception:
+        return False, "coastline verification unavailable"
 
     uncertainty = meta.get("location_uncertainty_m")
-    try:
-        if uncertainty is not None and float(uncertainty) > MAX_AUTO_DRIFT_UNCERTAINTY_M:
+    if uncertainty is not None:
+        try:
+            uncertainty_m = float(uncertainty)
+        except (TypeError, ValueError, OverflowError):
+            return False, "invalid location_uncertainty_m"
+        if not math.isfinite(uncertainty_m) or uncertainty_m < 0:
+            return False, "invalid location_uncertainty_m"
+        if uncertainty_m > MAX_AUTO_DRIFT_UNCERTAINTY_M and not source_published_alarm_phone_point:
             return False, (
                 f"location_uncertainty_m={uncertainty} exceeds "
                 f"{MAX_AUTO_DRIFT_UNCERTAINTY_M:.0f}"
             )
-    except (TypeError, ValueError):
-        pass
+
+    if source_published_alarm_phone_point:
+        return True, "eligible:alarm_phone_source_published_coordinate"
 
     return True, "eligible"
 

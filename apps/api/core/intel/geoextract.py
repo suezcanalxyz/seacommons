@@ -159,6 +159,10 @@ _PLACES: dict[str, tuple[float, float]] = {
     "med sea":             (35.00, 18.00),
     # Western Mediterranean (Algeria/Morocco → Spain route)
     "oran":                (35.70, -0.63),
+    "mostaganem":          (35.9312, 0.0892),
+    "boumerdes":           (36.7664, 3.4772),
+    "boumerdès":           (36.7664, 3.4772),
+    "boumerdas":           (36.7664, 3.4772),
     "bordj el bahri":      (36.7906, 3.2497),
     "bordjelbahri":        (36.7906, 3.2497),
     "ain taya":            (36.7913, 3.2926),
@@ -170,6 +174,12 @@ _PLACES: dict[str, tuple[float, float]] = {
     "cherchel":            (36.6050, 2.1908),
     "ibiza":               (38.91, 1.43),
     "balearic islands":    (39.50, 2.80),
+    # Broad destination-country label used only as imprecise route evidence;
+    # this coastal reference is never a precise vessel position.
+    "spain":               (37.20, -1.50),
+    "españa":              (37.20, -1.50),
+    "espana":              (37.20, -1.50),
+    "espagne":             (37.20, -1.50),
     "almeria":             (36.83, -2.46),
     "cartagena":           (37.61, -0.99),
     "melilla":             (35.29, -2.94),
@@ -201,7 +211,7 @@ _IMPRECISE_PLACE_NAMES = frozenset({
     "central med", "sicily", "sardinia", "aegean sea", "aegean",
     "ionian sea", "ionian", "tyrrhenian", "adriatic", "libyan waters",
     "libyan coast", "tunisian waters", "tunisian coast", "libya", "tunisia",
-    "mediterranean", "med sea", "balearic islands", "red sea",
+    "mediterranean", "med sea", "balearic islands", "spain", "españa", "espana", "espagne", "red sea",
     "gulf of aden", "horn of africa", "somalia", "dodecanese", "calabria",
 })
 
