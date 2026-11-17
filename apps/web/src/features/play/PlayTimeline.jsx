@@ -182,6 +182,7 @@ export default function PlayTimeline({ apiBase }) {
     const mainCategory = incident.main_category || incident.domain;
     if (archiveFilter === 'humanitarian') return mainCategory === 'humanitarian';
     if (archiveFilter === 'maritime') return mainCategory === 'maritime';
+    if (archiveFilter === 'attacks') return isAttackIncident(incident);
     return true;
   }), [visibleIncidents, archiveFilter]);
   const incidentTypes = useMemo(
@@ -428,9 +429,9 @@ export default function PlayTimeline({ apiBase }) {
           id: 'play-clusters', type: 'circle', source: 'play-incidents',
           filter: ['has', 'point_count'],
           paint: {
-            'circle-radius': ['step', ['get', 'point_count'], 14, 20, 18, 100, 23],
-            'circle-color': '#27566b', 'circle-opacity': 0.94,
-            'circle-stroke-color': '#b3e8fa', 'circle-stroke-width': 1.5,
+            'circle-radius': ['step', ['get', 'point_count'], 14, 10, 17, 25, 20, 75, 24, 200, 29],
+            'circle-color': ['step', ['get', 'point_count'], '#38bdf8', 10, '#2dd4bf', 25, '#d4ff3f', 75, '#facc15', 200, '#f472b6'], 'circle-opacity': 0.94,
+            'circle-stroke-color': '#0b1724', 'circle-stroke-width': 2,
           },
         });
         map.addLayer({
@@ -831,6 +832,7 @@ export default function PlayTimeline({ apiBase }) {
               <button type="button" className={`signals-selector__link ${archiveFilter === 'all' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('all')}><span className="signals-selector__box" aria-hidden="true" />ALL</button>
               <button type="button" className={`signals-selector__link ${archiveFilter === 'humanitarian' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('humanitarian')}><span className="signals-selector__box" aria-hidden="true" />HUMANITARIAN</button>
               <button type="button" className={`signals-selector__link ${archiveFilter === 'maritime' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('maritime')}><span className="signals-selector__box" aria-hidden="true" />MARITIME</button>
+              <button type="button" className={`signals-selector__link ${archiveFilter === 'attacks' ? 'is-active' : ''}`} onClick={() => { setArchiveFilter('attacks'); setIncidentTypeFilter('all'); }}><span className="signals-selector__box" aria-hidden="true" />ATTACKS</button>
             </div>
             <label className="play-satellite-selector">
               <span>Incident type</span>
@@ -896,7 +898,7 @@ export default function PlayTimeline({ apiBase }) {
             </section>
           ))}
           {filteredIncidents.length > displayedCases.length ? <button type="button" className="play-case-load-more" onClick={() => setVisibleCaseLimit((limit) => limit + 80)}>Show 80 more cases · {displayedCases.length} of {filteredIncidents.length} loaded</button> : null}
-          {!filteredIncidents.length && !loading ? <div className="play-empty">No incidents at this time.</div> : null}
+          {!filteredIncidents.length && !loading ? <div className="play-empty">{archiveFilter === 'attacks' ? 'No explicitly classified attacks in the public archive for this selection. An AIS gap or an unverified report is not evidence of an attack.' : 'No incidents at this time.'}</div> : null}
         </div>
       </aside>
 
@@ -911,10 +913,11 @@ export default function PlayTimeline({ apiBase }) {
           <span><i className="play-key-integrity" /> Position integrity</span>
           <span><i className="play-key-ais-gap" /> AIS reporting gap</span>
           <span><i className="play-key-attack" /> Attack · crosshair overlay</span>
+          <span className="play-cluster-scale" aria-label="Cluster sizes by grouped point count"><i style={{ backgroundColor: '#38bdf8' }} />2–9 <i style={{ backgroundColor: '#2dd4bf' }} />10–24 <i style={{ backgroundColor: '#d4ff3f' }} />25–74 <i style={{ backgroundColor: '#facc15' }} />75–199 <i style={{ backgroundColor: '#f472b6' }} />200+ grouped points</span>
           <span><i className="play-key-track" /> Observed AIS track</span>
           <span><i className="play-key-drift" /> AIS gap: dashed, unobserved; orange last fix, green reappearance</span>
           <span><i className="play-key-model" /> Drift / estimated area (modelled)</span>
-          <small>Triangles show reported course only. Circles do not imply direction. Color indicates category, not verification.</small>
+          <small>Triangles show reported course only. Circles do not imply direction. Single-point colors indicate category; cluster colors and sizes indicate grouped point count, not severity or verification. Clusters split on zoom. Dashed AIS gap connections are unobserved, not confirmed tracks.</small>
         </div>
         <div className="play-all-badge"><strong>{modeLabel}</strong><span>{mappedIncidentCount} mapped / {filteredIncidents.length} filtered · {incidents.length} loaded{archiveTotal != null ? ` / ${archiveTotal} archive` : ''}</span></div>
         {loading ? <div className="play-map-message" role="status" aria-live="polite">Loading archive and case evidence…</div> : null}

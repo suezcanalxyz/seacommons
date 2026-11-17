@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="SeaCommons">
+  <rect width="64" height="64" rx="13" fill="#060a14"/>
+  <g fill="none" stroke="#d4ff3f" stroke-width="3.5" stroke-linecap="square">
+    <path d="M13 19H51M13 45H51"/>
+    <path d="M21 36L43 28"/>
+  </g>
+</svg>
