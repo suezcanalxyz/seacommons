@@ -127,6 +127,7 @@ export default function PlayTimeline({ apiBase }) {
   const fallbackMapRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
   const [fallbackReady, setFallbackReady] = useState(false);
+  const [mapContentReady, setMapContentReady] = useState(false);
   const [mapError, setMapError] = useState('');
   const [incidents, setIncidents] = useState([]);
   const [archiveNow, setArchiveNow] = useState(() => Date.now());
@@ -150,6 +151,11 @@ export default function PlayTimeline({ apiBase }) {
   const [selectedDay, setSelectedDay] = useState('');
   const [guideOpen, setGuideOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [startupGraceExpired, setStartupGraceExpired] = useState(false);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setStartupGraceExpired(true), 25_000);
+    return () => window.clearTimeout(timeout);
+  }, []);
   const [error, setError] = useState('');
   const [satelliteMission, setSatelliteMission] = useState('auto');
   const [archiveFilter, setArchiveFilter] = useState('all');
@@ -569,6 +575,16 @@ export default function PlayTimeline({ apiBase }) {
         map.resize();
         setMapError('');
         setMapReady(true);
+        // MapLibre style.load precedes worker GeoJSON processing. Keep the
+        // loading shield until incident markers have actually been decoded.
+        const revealWhenIncidentsReady = () => {
+          if (!disposed && map.getSource('play-incidents') && map.isSourceLoaded('play-incidents')) {
+            setMapContentReady(true);
+            map.off('sourcedata', revealWhenIncidentsReady);
+          }
+        };
+        map.on('sourcedata', revealWhenIncidentsReady);
+        revealWhenIncidentsReady();
         // A style can load while its GeoJSON worker remains stalled. Do not
         // leave visitors with an empty but apparently healthy WebGL canvas.
         mapStartupTimer = window.setTimeout(() => {
@@ -582,6 +598,7 @@ export default function PlayTimeline({ apiBase }) {
     async function activateFallbackMap() {
       if (disposed || !mapNodeRef.current) return;
       setMapReady(false);
+      setMapContentReady(false);
       if (mapCanvas && contextLossHandler) mapCanvas.removeEventListener('webglcontextlost', contextLossHandler, false);
       try { mapRef.current?.remove(); } catch { /* partial MapLibre init */ }
       mapRef.current = null;
@@ -602,6 +619,7 @@ export default function PlayTimeline({ apiBase }) {
       fallbackMapRef.current = fallback;
       setMapError('');
       setFallbackReady(true);
+      setMapContentReady(true);
     }
     initMap().catch(failToFallback);
     return () => {
@@ -749,8 +767,21 @@ export default function PlayTimeline({ apiBase }) {
     URL.revokeObjectURL(url);
   };
 
+  const startupPending = !startupGraceExpired && (loading || (!mapContentReady && !mapError));
+
   return (
     <main className={`cop-shell is-live-mode play-public-shell play-shell ${selectedId ? 'has-selection' : ''}`}>
+      {startupPending ? (
+        <div className="play-startup-overlay" role="status" aria-live="polite" aria-label="Loading SeaCommons PLAY">
+          <div className="play-startup-overlay__inner">
+            <span className="play-startup-overlay__eyebrow">SEACOMMONS / TEMPORAL INTELLIGENCE</span>
+            <strong>Preparing PLAY</strong>
+            <span className="play-startup-overlay__spinner" aria-hidden="true" />
+            <p>{loading ? 'Loading historical evidence…' : 'Initializing the interactive map…'}</p>
+            <small>Historical records remain distinct from simulated drift and unobserved AIS gaps.</small>
+          </div>
+        </div>
+      ) : null}
       <header className="play-header" aria-hidden="true">
         <div>
           <p className="play-eyebrow">SeaCommons / temporal OSINT reconstruction</p>

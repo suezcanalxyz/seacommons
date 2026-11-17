@@ -4199,3 +4199,14 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 
 .play-case-load-more { display: block; width: 100%; padding: .9rem; margin: .5rem 0; border: 1px solid currentColor; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; text-align: center; }
 .play-case-load-more:hover { background: #ffffff14; }
+
+/* PLAY startup: shield incomplete WebGL/archive paint, without blocking indefinitely. */
+.play-startup-overlay { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; background: #101a1e; color: #e9f5f1; padding: 24px; }
+.play-startup-overlay__inner { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; max-width: 440px; }
+.play-startup-overlay__eyebrow { font: 600 10px/1.5 monospace; letter-spacing: .17em; color: #a1b9b3; }
+.play-startup-overlay__inner strong { font-size: clamp(28px, 5vw, 48px); letter-spacing: -.035em; }
+.play-startup-overlay__spinner { width: 36px; height: 36px; border: 2px solid #6ba69b55; border-top-color: #a2f5d9; border-radius: 50%; animation: play-startup-spin 1s linear infinite; }
+.play-startup-overlay__inner p { margin: 0; font-size: 14px; }
+.play-startup-overlay__inner small { color: #9bb2ad; font-size: 11px; line-height: 1.6; }
+@keyframes play-startup-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .play-startup-overlay__spinner { animation: none; } }
