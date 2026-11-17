@@ -11,7 +11,7 @@ from typing import Any
 
 PLAY_DELAY = timedelta(hours=24)
 TERMINAL_STATES = frozenset({"resolved", "archived"})
-ACTIVE_STATES = frozenset({"detected", "active"})
+ACTIVE_STATES = frozenset({"detected", "active", "open", "needs_review", "outcome_unknown"})
 
 
 def utc(value: datetime) -> datetime:
@@ -75,4 +75,24 @@ def reconcile_gap(
         "kind": "observed",
     }
     result["observation_ids"] = [*current.get("observation_ids", ()), observation_id]
+    return result
+
+
+def public_episode_clock(item: dict[str, Any], *, now: datetime) -> dict[str, Any]:
+    """Annotate an already-public case without changing its publication policy."""
+    from core.intel.lifecycle import parse_utc
+
+    result = dict(item)
+    detected = parse_utc(str(item.get("reported_at") or ""))
+    if detected is None:
+        return result
+    status = str(item.get("incident_status") or "outcome_unknown").lower()
+    ongoing = status in ACTIVE_STATES
+    ended = parse_utc(str(item.get("resolved_at") or "")) if not ongoing else None
+    if ended is not None and ended < detected:
+        ended = None
+    result["play_eligible_at"] = (utc(detected) + PLAY_DELAY).isoformat()
+    result["play_eligible"] = play_eligible(detected_at=detected, now=now)
+    result["ongoing"] = ongoing
+    result["elapsed_seconds"] = elapsed_seconds(started_at=detected, ended_at=ended, now=now)
     return result
