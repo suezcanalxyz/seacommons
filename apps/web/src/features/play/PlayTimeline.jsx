@@ -182,6 +182,7 @@ export default function PlayTimeline({ apiBase }) {
     const mainCategory = incident.main_category || incident.domain;
     if (archiveFilter === 'humanitarian') return mainCategory === 'humanitarian';
     if (archiveFilter === 'maritime') return mainCategory === 'maritime';
+    if (archiveFilter === 'attacks') return isAttackIncident(incident);
     return true;
   }), [visibleIncidents, archiveFilter]);
   const incidentTypes = useMemo(
@@ -831,6 +832,7 @@ export default function PlayTimeline({ apiBase }) {
               <button type="button" className={`signals-selector__link ${archiveFilter === 'all' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('all')}><span className="signals-selector__box" aria-hidden="true" />ALL</button>
               <button type="button" className={`signals-selector__link ${archiveFilter === 'humanitarian' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('humanitarian')}><span className="signals-selector__box" aria-hidden="true" />HUMANITARIAN</button>
               <button type="button" className={`signals-selector__link ${archiveFilter === 'maritime' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('maritime')}><span className="signals-selector__box" aria-hidden="true" />MARITIME</button>
+              <button type="button" className={`signals-selector__link ${archiveFilter === 'attacks' ? 'is-active' : ''}`} onClick={() => { setArchiveFilter('attacks'); setIncidentTypeFilter('all'); }}><span className="signals-selector__box" aria-hidden="true" />ATTACKS</button>
             </div>
             <label className="play-satellite-selector">
               <span>Incident type</span>
