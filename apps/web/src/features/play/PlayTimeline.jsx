@@ -4,6 +4,7 @@ import { fetchJson } from '../../services/api/client.js';
 import { timelineReport, humanizeDetectorText } from '../live/reportNarrative.js';
 import SanctionsCatalog from '../../components/SanctionsCatalog.jsx';
 import { historicalDriftFeatures } from './driftGeometry.js';
+import { reconstructAisGaps, aisGapMapFeatures } from './aisGapGeometry.js';
 import { configureMaplibreWorker } from '../map/maplibreWorker.js';
 import { createVesselArrowImage, VESSEL_COLOR } from '../map/vesselMarker.js';
 import { createFallbackMap } from '../map/fallbackRenderer.js';
@@ -212,6 +213,8 @@ export default function PlayTimeline({ apiBase }) {
     ...v, track_points: (v.track_points || []).filter((p) =>
       !globalState.cutoff || Date.parse(p.at) <= Date.parse(globalState.cutoff)),
   })), [caseData?.voyage_evidence, globalState.cutoff]);
+  const aisReconstruction = useMemo(() => reconstructAisGaps(voyageVessels), [voyageVessels]);
+  const gapFeatures = useMemo(() => aisGapMapFeatures(aisReconstruction.gaps), [aisReconstruction]);
   const contextDay = useMemo(() => {
     const value = selectedDay || globalState.cutoff || selectedIncident?.reported_at || coverage.end;
     return value ? String(value).slice(0, 10) : new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
@@ -489,6 +492,29 @@ export default function PlayTimeline({ apiBase }) {
           filter: ['==', ['geometry-type'], 'LineString'],
           paint: { 'line-color': ['match', ['get', 'kind'], 'observed_ais_track', '#76b7fa', 'drift', '#ffad66', 'drift_model', '#ffad66', '#b9a1f6'], 'line-width': 3, 'line-opacity': 0.9 },
         });
+        map.addSource('play-ais-gaps', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({ id: 'play-ais-gap-connection', type: 'line', source: 'play-ais-gaps',
+          filter: ['==', ['get', 'kind'], 'ais_gap_unobserved_connection'],
+          paint: { 'line-color': '#ffba65', 'line-width': 2.6, 'line-dasharray': [2, 2], 'line-opacity': 0.95 } });
+        map.addLayer({ id: 'play-ais-gap-endpoints', type: 'circle', source: 'play-ais-gaps',
+          filter: ['==', ['geometry-type'], 'Point'],
+          paint: { 'circle-radius': 7, 'circle-color': ['match', ['get', 'kind'],
+            'ais_last_observed', '#ff8859', 'ais_first_reappearance', '#55e0c0', '#ffffff'],
+            'circle-stroke-color': '#071014', 'circle-stroke-width': 2 } });
+        // Tap/click either observed endpoint to inspect the same bounded gap.
+        map.on('click', 'play-ais-gap-endpoints', (event) => {
+          const feature = event.features?.[0];
+          if (!feature || feature.geometry?.type !== 'Point') return;
+          const props = feature.properties || {};
+          const endpoint = props.kind === 'ais_last_observed' ? 'Last AIS observation' : 'First AIS reappearance';
+          const coordinates = feature.geometry.coordinates;
+          new maplibregl.Popup({ closeButton: true, maxWidth: '300px' })
+            .setLngLat(coordinates)
+            .setText(`${endpoint} · ${props.at || 'time unknown'} UTC · MMSI ${props.mmsi || 'unknown'} · ${props.duration_min} min without stored AIS fixes · ${props.distance_km} km between endpoints. Actual route unknown.`)
+            .addTo(map);
+        });
+        map.on('mouseenter', 'play-ais-gap-endpoints', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'play-ais-gap-endpoints', () => { map.getCanvas().style.cursor = ''; });
         map.addSource('play-satellite-footprints', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addLayer({
           id: 'play-satellite-footprint-fill', type: 'fill', source: 'play-satellite-footprints',
@@ -602,15 +628,9 @@ export default function PlayTimeline({ apiBase }) {
     if (!mapReady || !map) return;
     map.getSource('play-incidents')?.setData(incidentCollection(filteredIncidents));
     const datedEvidence = evidenceCollection(visibleTimeline);
-    voyageVessels.forEach((v) => {
-      const coordinates = v.track_points.map((p) => [Number(p.lon), Number(p.lat)])
-        .filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
-      if (coordinates.length >= 2) datedEvidence.features.push({
-        type: 'Feature', geometry: {type: 'LineString', coordinates},
-        properties: {kind: 'observed_ais_track', mmsi: v.mmsi},
-      });
-    });
+    datedEvidence.features.push(...aisReconstruction.observed.features);
     map.getSource('play-evidence')?.setData(datedEvidence);
+    map.getSource('play-ais-gaps')?.setData(gapFeatures);
     map.getSource('play-historical-drifts')?.setData(historicalDriftFeatures(visibleTimeline));
     map.getSource('play-satellite-footprints')?.setData(satelliteFootprintCollection(visibleTimeline));
     if (map.getLayer('play-incidents')) {
@@ -630,7 +650,7 @@ export default function PlayTimeline({ apiBase }) {
     for (const layerId of ['play-incidents', 'play-vessels']) {
       if (map.getLayer(layerId)) map.moveLayer(layerId);
     }
-  }, [mapReady, filteredIncidents, visibleTimeline, selectedId, selectedIncident, satellite, voyageVessels]);
+  }, [mapReady, filteredIncidents, visibleTimeline, selectedId, selectedIncident, satellite, aisReconstruction, gapFeatures]);
 
   const selectedLongitude = selectedIncident?.geometry?.type === 'Point' ? selectedIncident.geometry.coordinates?.[0] : null;
   const selectedLatitude = selectedIncident?.geometry?.type === 'Point' ? selectedIncident.geometry.coordinates?.[1] : null;
@@ -836,7 +856,8 @@ export default function PlayTimeline({ apiBase }) {
           <span><i className="play-key-humanitarian" /> Humanitarian</span>
           <span><i className="play-key-maritime" /> Maritime</span>
           <span><i className="play-key-attack" /> Attack incident</span>
-          <span><i className="play-key-track" /> AIS track</span>
+          <span><i className="play-key-track" /> Observed AIS track</span>
+          <span><i className="play-key-drift" /> AIS gap: dashed, unobserved; orange last fix, green reappearance</span>
           <span><i className="play-key-drift" /> Drift / estimated area</span>
           <small>Triangles show reported course only. Circles do not imply direction. Color indicates category, not verification.</small>
         </div>
@@ -911,7 +932,13 @@ export default function PlayTimeline({ apiBase }) {
               {voyageVessels.map((v) => <div className="play-voyage-card" key={v.mmsi}>
                 <strong>MMSI {v.mmsi} · {v.track_points.length} stored AIS fixes at this cutoff</strong>
                 {v.track_points.length >= 2 && <p className="play-report-prose">First received position: {itemTime(v.track_points[0].at)} UTC, {v.track_points[0].lat.toFixed(4)}, {v.track_points[0].lon.toFixed(4)}. Latest received position: {itemTime(v.track_points.at(-1).at)} UTC, {v.track_points.at(-1).lat.toFixed(4)}, {v.track_points.at(-1).lon.toFixed(4)}.</p>}
-                {v.observed_gaps?.filter((g) => !globalState.cutoff || Date.parse(g.to) <= Date.parse(globalState.cutoff)).map((g, i) => <p key={i} className="play-report-prose">No stored AIS fixes between {itemTime(g.from)} and {itemTime(g.to)} UTC ({g.duration_min} min). Cause unknown.</p>)}
+                {aisReconstruction.gaps.filter((g) => g.mmsi === v.mmsi).map((g, i) => <div key={i} className="play-ais-gap-card">
+                  <strong>AIS observation gap · {Math.round(g.durationMin)} min</strong>
+                  <span><i className="play-ais-gap-dot is-lost" />Last observed: {g.from.at} · {Number(g.from.lat).toFixed(4)}, {Number(g.from.lon).toFixed(4)}</span>
+                  <span><i className="play-ais-gap-dot is-returned" />First reappearance: {g.to.at} · {Number(g.to.lat).toFixed(4)}, {Number(g.to.lon).toFixed(4)}</span>
+                  <span>Endpoint separation: {g.distanceKm.toFixed(1)} km · not distance travelled</span>
+                  <small>Dashed map line is an unobserved interval, not a verified route. Cause unknown; AIS reception/provider coverage may be incomplete.</small>
+                </div>)}
                 {v.ais_derived_port_calls?.filter((call) => !globalState.cutoff || Date.parse(call.arrived_at) <= Date.parse(globalState.cutoff)).map((call, i) => <p key={i} className="play-report-prose">AIS-derived port approach: {call.port}, first observed {itemTime(call.arrived_at)} UTC. Not an official port authority confirmation.</p>)}
                 <p className="play-report-prose">{v.limits}</p>
               </div>)}
