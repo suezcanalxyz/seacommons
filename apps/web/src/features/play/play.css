@@ -401,3 +401,6 @@
 
 /* Evidence legend mirrors actual renderer palette; uncertainty is not an AIS gap. */
 .play-key-model { display: inline-block; width: 12px; height: 12px; background: #bb8cff; opacity: .75; border: 1px solid #bb8cff; border-radius: 3px; }
+
+.play-key-integrity { background: #c084fc; border-radius: 50%; }
+.play-key-ais-gap { background: #fb923c; border-radius: 50%; }
