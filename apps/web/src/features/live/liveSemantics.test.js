@@ -154,7 +154,15 @@ test('public LIVE basemap control is portalled above the MapLibre canvas and rem
   const main = fs.readFileSync(new URL('../../main.jsx', import.meta.url), 'utf8');
   const css = fs.readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
   assert.match(main, /import \{ createPortal \} from 'react-dom';/);
-  assert.match(main, /isPublicLiveHost && !play3D \? createPortal\(/);
+  assert.match(main, /isPublicLiveHost \? createPortal\(/);
   assert.match(main, /<\/button>, document\.body/);
   assert.match(css, /\.live-basemap-switch \{[\s\S]*?z-index: 10000;[\s\S]*?pointer-events: auto;/);
+});
+
+
+test('public LIVE initializes satellite raster before data loads and keeps basemap switch visible', () => {
+  assert.match(main, /if \(isPublicLiveHost\) return 'satellite';/);
+  assert.match(main, /id: 'satellite', type: 'raster', source: 'satellite', layout: \{ visibility: isPublicLiveHost \? 'visible' : 'none' \}/);
+  assert.match(main, /id: 'osm', type: 'raster', source: 'osm', layout: \{ visibility: isPublicLiveHost \? 'none' : 'visible' \}/);
+  assert.match(main, /isPublicLiveHost \? createPortal\(/);
 });

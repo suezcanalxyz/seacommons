@@ -509,8 +509,8 @@ function mapStyle() {
       satellite,
     },
     layers: [
-      { id: 'osm', type: 'raster', source: 'osm' },
-      { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: 'none' } },
+      { id: 'osm', type: 'raster', source: 'osm', layout: { visibility: isPublicLiveHost ? 'none' : 'visible' } },
+      { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: isPublicLiveHost ? 'visible' : 'none' } },
     ],
   };
 }
@@ -694,7 +694,7 @@ function App() {
   const [showAisAlerts, setShowAisAlerts] = useState(false);
   const [showVesselLinks, setShowVesselLinks] = useState(false);
   const [baseMap, setBaseMap] = useState(() => {
-    if (isPublicLiveHost) return 'standard';
+    if (isPublicLiveHost) return 'satellite';
     try {
       return window.localStorage.getItem('seacommons_base_map') === 'satellite' ? 'satellite' : 'standard';
     } catch {
@@ -4357,7 +4357,7 @@ function App() {
 
         </div>
       </section>
-        {isPublicLiveHost && !play3D ? createPortal(
+        {isPublicLiveHost ? createPortal(
           <button
             type="button"
             className="live-basemap-switch"
