@@ -521,7 +521,7 @@ test('PLAY search areas do not obscure the map until their dossier is selected',
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
   assert.match(source, /map\.setFilter\('play-search-areas-fill',[^\n]*selectedId/);
   assert.match(source, /map\.setFilter\('play-search-areas-line',[^\n]*selectedId/);
-  assert.match(source, /'maritime', '#76b7fa', '#ffad66'/);
+  assert.match(source, /'maritime', '#76b7fa', '#ff3b3b'/);
 });
 
 test('PLAY selection styling does not re-submit all incident geometry to worker', async () => {
@@ -529,4 +529,11 @@ test('PLAY selection styling does not re-submit all incident geometry to worker'
   assert.match(source, /map\.getSource\('play-incidents'\)\?\.setData\(mappedIncidents\)/);
   assert.match(source, /\}, \[mapReady, mappedIncidents, visibleTimeline, aisReconstruction, gapFeatures\]\);/);
   assert.match(source, /\}, \[mapReady, selectedId, satellite\]\);/);
+});
+
+test('PLAY attack overlays preserve red humanitarian category and use an independent marker', async () => {
+  const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
+  assert.match(source, /'humanitarian', '#ff3b3b'/);
+  assert.match(source, /id: 'play-attack-markers'/);
+  assert.match(source, /isAttackIncident\(f\.properties\)/);
 });
