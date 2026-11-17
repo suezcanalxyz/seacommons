@@ -39,3 +39,18 @@ test('rejects collinear polygons crossing the antimeridian', () => {
   const item = { type: 'drift', properties: { forecast: true, cone_24h: { type: 'Polygon', coordinates: [[[179, 0], [-179, 1], [-177, 2], [179, 0]]] } } };
   assert.deepEqual(historicalDriftFeatures([item]).features, []);
 });
+
+
+test('renders persisted OpenDrift GeoJSON Feature wrappers for humanitarian incidents', () => {
+  const track = { type: 'LineString', coordinates: [[18.4, 33.1], [18.5, 33.0]] };
+  const cone = { type: 'Polygon', coordinates: [[[18.4,33.0],[18.5,33.0],[18.5,33.1],[18.4,33.0]]] };
+  const item = { id: 'humanitarian-drift', type: 'drift', properties: { forecast: true, domain: 'humanitarian', cone_24h: { type: 'Feature', geometry: cone, properties: { model: 'OpenDrift' } } }, geometry: { type: 'Feature', geometry: track, properties: {} } };
+  const features = historicalDriftFeatures([item]).features;
+  assert.deepEqual(features.map((f) => f.geometry), [track, cone]);
+  assert.deepEqual(features.map((f) => f.properties.geometry_semantics), ['simulated_trajectory', 'model_uncertainty_area']);
+});
+
+test('never renders malformed persisted GeoJSON Feature wrappers', () => {
+  const item = { id: 'invalid', type: 'drift', geometry: { type: 'Feature', geometry: null }, properties: { forecast: true, cone_24h: { type: 'Feature', geometry: { type: 'Point', coordinates: [18,33] } } } };
+  assert.deepEqual(historicalDriftFeatures([item]).features, []);
+});

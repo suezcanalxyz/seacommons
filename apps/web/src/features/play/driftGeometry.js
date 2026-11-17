@@ -25,16 +25,21 @@ const validRing = (ring) => Array.isArray(ring) && ring.length >= 4 && ring.ever
 const validPolygon = (rings) => Array.isArray(rings) && rings.length > 0 && rings.every(validRing);
 const validCone = (cone) => cone?.type === 'Polygon' ? validPolygon(cone.coordinates) : cone?.type === 'MultiPolygon' && Array.isArray(cone.coordinates) && cone.coordinates.length > 0 && cone.coordinates.every(validPolygon);
 
+// The persisted OpenDrift API stores GeoJSON Feature wrappers, while older
+// records may store bare geometries. Both are valid inputs; never synthesize
+// geometry from a missing or malformed model output.
+const unwrapGeometry = (value) => value?.type === 'Feature' ? value.geometry : value;
+
 export function historicalDriftFeatures(items = []) {
   const features = [];
   for (const item of Array.isArray(items) ? items : []) {
     if (item?.type !== 'drift' || item?.properties?.forecast !== true) continue;
     const props = { drift_id: item.id, forecast: true, observed: false, at: item.at };
-    const track = item.geometry;
+    const track = unwrapGeometry(item.geometry);
     if (track?.type === 'LineString' && Array.isArray(track.coordinates) && track.coordinates.length >= 2 && track.coordinates.every(validPosition) && new Set(track.coordinates.map(([lon, lat]) => `${lon},${lat}`)).size >= 2) {
       features.push({ type: 'Feature', geometry: track, properties: { ...props, geometry_semantics: 'simulated_trajectory' } });
     }
-    const cone = item.properties?.cone_24h;
+    const cone = unwrapGeometry(item.properties?.cone_24h);
     if (validCone(cone)) {
       features.push({ type: 'Feature', geometry: cone, properties: { ...props, geometry_semantics: 'model_uncertainty_area', probability_calibrated: false } });
     }
