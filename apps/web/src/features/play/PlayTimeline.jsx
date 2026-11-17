@@ -898,7 +898,7 @@ export default function PlayTimeline({ apiBase }) {
             </section>
           ))}
           {filteredIncidents.length > displayedCases.length ? <button type="button" className="play-case-load-more" onClick={() => setVisibleCaseLimit((limit) => limit + 80)}>Show 80 more cases · {displayedCases.length} of {filteredIncidents.length} loaded</button> : null}
-          {!filteredIncidents.length && !loading ? <div className="play-empty">No incidents at this time.</div> : null}
+          {!filteredIncidents.length && !loading ? <div className="play-empty">{archiveFilter === 'attacks' ? 'No explicitly classified attacks in the public archive for this selection. An AIS gap or an unverified report is not evidence of an attack.' : 'No incidents at this time.'}</div> : null}
         </div>
       </aside>
 
