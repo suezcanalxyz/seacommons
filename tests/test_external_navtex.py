@@ -1,6 +1,6 @@
 import unittest
 
-from apps.api.core.radio.external_navtex import (
+from core.radio.external_navtex import (
     fetch_navtex_messages, normalize_navtex_message,
 )
 
