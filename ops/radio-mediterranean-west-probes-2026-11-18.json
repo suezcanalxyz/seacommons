@@ -1,8 +1,8 @@
 {
   "audit_date": "2026-11-18",
-  "status": "HTTP-reachable candidates; no authorized SDR stream or DSC decode verified",
+  "status": "Read-only frontend and receiver status audit complete; activation blocked pending operator terms and actual stream decode",
   "source": "ReceiverBook public directory and direct probes from SeaCommons Oracle VM",
-  "method": "HTTP 200 probe with five-second timeout; does not occupy receiver slots",
+  "method": "Direct HTTP GET to public /status or /status.json from Oracle VM; no live audio slots occupied",
   "candidates": [
     {
       "label": "SDR-Alaró (Mallorca)",
@@ -11,7 +11,15 @@
       "endpoint": "https://sdr.alaro.ovh/",
       "http_status": 200,
       "activation_status": "review_required",
-      "rf_verified": false
+      "rf_verified": false,
+      "published_gps": {
+        "lat": 39.7059572222933,
+        "lon": 2.789757317791
+      },
+      "published_receiver_profiles": 7,
+      "mf_dsc_2187500_profile_available": false,
+      "review_result": "not_relevant_to_MF_DSC",
+      "notes": "Only VHF, UHF, aviation, ADS-B and 446 MHz profiles; not a receiver for MF DSC 2187.5 kHz."
     },
     {
       "label": "EA3HRU - Barcelona",
@@ -19,9 +27,20 @@
       "provider": "kiwisdr",
       "endpoint": "http://sdrbcn.duckdns.org:8073/",
       "http_status": 200,
-      "physical_lineage_group": "ea3hru_barcelona_unverified",
-      "activation_status": "review_required",
-      "rf_verified": false
+      "physical_lineage_group": "ea3hru_barcelona_verified_same_device",
+      "activation_status": "operator_permission_pending",
+      "rf_verified": false,
+      "published_gps": {
+        "lat": 41.41136,
+        "lon": 1.9995
+      },
+      "published_band": "0-30 MHz",
+      "published_users": 1,
+      "published_users_max": 4,
+      "receiver_identity_verified": true,
+      "mf_dsc_frequency_in_nominal_range": true,
+      "automated_access_authorized": false,
+      "notes": "Palleja Barcelona; standalone KiwiSDR v1.562, receiver reported active. Public /status does not publish ext_api permission. Stream and DSC decode not attempted."
     },
     {
       "label": "EA3HRU - Barcelona alternate",
@@ -29,9 +48,10 @@
       "provider": "kiwisdr",
       "endpoint": "http://z-ha-dum.duckdns.org:8073/",
       "http_status": 200,
-      "physical_lineage_group": "ea3hru_barcelona_unverified",
-      "activation_status": "review_required",
-      "rf_verified": false
+      "physical_lineage_group": "ea3hru_barcelona_verified_same_device",
+      "activation_status": "duplicate_alias_not_independent",
+      "rf_verified": false,
+      "notes": "Exact matching /status text and HTML as EA3HRU Barcelona. NOT a second receiver; use primary address only."
     },
     {
       "label": "EA5RQ - Valencia",
@@ -39,8 +59,13 @@
       "provider": "kiwisdr",
       "endpoint": "http://ea5rq.ddns.net:8075/",
       "http_status": 200,
-      "activation_status": "review_required",
-      "rf_verified": false
+      "activation_status": "blocked_private",
+      "rf_verified": false,
+      "published_status": "private",
+      "published_users": 2,
+      "published_users_max": 8,
+      "mf_dsc_frequency_in_nominal_range": true,
+      "notes": "Explicit KiwiSDR status=private: exclude from automated acquisition despite HTTP 200 and published range."
     },
     {
       "label": "Barcelona OpenWebRX",
@@ -48,8 +73,15 @@
       "provider": "openwebrx",
       "endpoint": "http://5.154.110.148:8073/",
       "http_status": 200,
-      "activation_status": "review_required",
-      "rf_verified": false
+      "activation_status": "not_relevant_to_MF_DSC",
+      "rf_verified": false,
+      "published_gps": {
+        "lat": 41.5448,
+        "lon": 1.653
+      },
+      "published_receiver_profiles": 4,
+      "mf_dsc_2187500_profile_available": false,
+      "notes": "Only VHF, UHF, aviation and satellite profiles; not 2187.5 kHz MF DSC."
     }
   ],
   "safety_gates": [
@@ -59,5 +91,44 @@
     "Perform short bounded PCM quality and actual decoder test",
     "No map location or LIVE active icon before connected healthy stream and verified site coordinates",
     "Operator VM has root-protected configuration; no auto activation from this manifest"
-  ]
+  ],
+  "existing_curated_med_receiver_status": [
+    {
+      "id": "cagliari_hf_monitor",
+      "published_status": "active",
+      "users": 4,
+      "max_users": 8,
+      "ext_api": 4,
+      "band": "0-30 MHz",
+      "priority": "high_next_stream_validation"
+    },
+    {
+      "id": "thessaloniki_hf_monitor",
+      "published_status": "active",
+      "users": 0,
+      "max_users": 4,
+      "ext_api": null,
+      "band": "0-30 MHz",
+      "priority": "high_next_operator_permission_validation"
+    },
+    {
+      "id": "zakynthos_hf_monitor",
+      "published_status": "active",
+      "users": 6,
+      "max_users": 8,
+      "ext_api": 8,
+      "band": "0-30 MHz",
+      "priority": "already_in_runtime_pool"
+    },
+    {
+      "id": "mallorca_hf_monitor",
+      "published_status": "active",
+      "users": 7,
+      "max_users": 8,
+      "ext_api": 4,
+      "band": "0-30 MHz",
+      "priority": "low_spare_capacity"
+    }
+  ],
+  "conclusion": "Of five candidate URLs, two are duplicate aliases. Of four distinct devices, 2 OpenWebRX lack the necessary MF profile; Valencia Kiwi declares private; one Barcelona Kiwi remains a conditional candidate. Existing curated Cagliari/Thessaloniki are stronger immediate validation targets. /status is not proof of actual DSC audio, permitted indefinite consumption or geographic RF coverage."
 }
