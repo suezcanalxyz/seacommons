@@ -4186,6 +4186,17 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 }
 .live-basemap-switch:focus-visible { outline: 2px solid #a9ffda; outline-offset: 3px; }
 .live-basemap-switch[aria-pressed="true"] { border-color: #a9ffda; }
+.live-basemap-switch { display: inline-flex; align-items: center; gap: 9px; border-radius: 12px; font-weight: 600; box-shadow: 0 5px 24px rgba(0,0,0,.36); transition: background .16s ease, border-color .16s ease, transform .16s ease; }
+.live-basemap-switch:hover { background: #173139; border-color: #a9ffda; }
+.live-basemap-switch:active { transform: translateY(1px); }
+.live-basemap-switch__icon { display: inline-grid; place-items: center; height: 22px; width: 22px; border: 1px solid rgba(169,255,218,.42); border-radius: 6px; font: 17px/1 var(--font-mono); }
+.radio-station-hover .maplibregl-popup-content { background: rgba(5,20,28,.97); border: 1px solid rgba(167,139,250,.58); color: #f4f7ff; border-radius: 12px; padding: 11px 13px; box-shadow: 0 10px 34px rgba(0,0,0,.35); }
+.radio-station-hover .maplibregl-popup-tip { border-top-color: rgba(5,20,28,.97); }
+.radio-station-hover__content { display: flex; flex-direction: column; gap: 5px; max-width: 260px; }
+.radio-station-hover__content strong { font: 600 13px/1.35 var(--font-sans, sans-serif); }
+.radio-station-hover__content span { color: #a78bfa; font: 10px/1.5 var(--font-mono, monospace); letter-spacing: .03em; }
+.radio-station-hover__content small { color: #b2c8d0; font: 11px/1.35 var(--font-sans, sans-serif); }
+@media (prefers-reduced-motion: reduce) { .live-basemap-switch { transition: none; } }
 @media (max-width: 820px) {
   .live-basemap-switch { top: 12px; left: auto; right: 12px; min-height: 40px; }
 }
