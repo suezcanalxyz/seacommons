@@ -1,0 +1,64 @@
+"""Read-only NAVTEX secondary source adapter; never classified as RF/DSC evidence.
+
+Source: https://navtex.online/feeds
+API polling is permitted at most once per minute by upstream terms.
+Production scheduling must enforce this globally across workers.
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
+BASE = "https://navtex.online"
+NAVAREAS = frozenset(("I", "II", "III", "IV", "V", "VI", "VII", "VIII",
+    "IX", "X", "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII",
+    "XIX", "XX", "XXI"))
+
+
+def normalize_navtex_message(row: dict) -> dict:
+    """Preserve upstream lineage and labels, without inventing geometry."""
+    external_id = str(row.get("id") or "")
+    if not external_id:
+        raise ValueError("NAVTEX message without ID")
+    station = row.get("station") or {}
+    if not isinstance(station, dict):
+        station = {}
+    plain = row.get("plain") or {}
+    if not isinstance(plain, dict):
+        plain = {}
+    return {
+        "source": "navtex_online",
+        "source_class": "secondary_maritime_safety_information",
+        "independent_rf_reception": False,
+        "is_dsc_decode": False,
+        "external_id": external_id,
+        "original_url": row.get("url") or f"{BASE}/messages/{external_id}",
+        "station_id": station.get("id"),
+        "navarea": station.get("navarea"),
+        "first_seen": row.get("firstSeen"),
+        "last_seen": row.get("lastSeen"),
+        "status": row.get("status") if isinstance(row.get("status"), str) else "unknown",
+        "original_text": row.get("text") or plain.get("text"),
+        "positions_unverified": row.get("positions") or [],
+        "upstream_sources": row.get("sources") or [],
+        "collected_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def fetch_navtex_messages(*, navarea: str = "III", limit: int = 50,
+                          timeout: float = 8.0) -> list[dict]:
+    """Get a bounded page. Callers MUST enforce <=1 request/min globally."""
+    if navarea not in NAVAREAS:
+        raise ValueError("invalid NAVAREA")
+    if not 1 <= limit <= 200:
+        raise ValueError("limit must be 1..200")
+    url = f"{BASE}/api/v1/messages?" + urlencode({"navarea": navarea, "limit": limit})
+    request = Request(url, headers={"User-Agent": "SeaCommons/1.0 NAVTEX read-only"})
+    with urlopen(request, timeout=timeout) as response:
+        payload = json.load(response)
+    if not isinstance(payload, dict) or not isinstance(payload.get("messages"), list):
+        raise ValueError("unexpected NAVTEX response")
+    return [normalize_navtex_message(row) for row in payload["messages"]
+            if isinstance(row, dict)]
