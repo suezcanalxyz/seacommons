@@ -1,3 +1,4 @@
+import { isPublicCaseEligible } from './features/live/publicCaseEligibility.js';
 import { addMovementLabels } from './features/map/movementLabels.js';
 import VesselCaseSearch from './components/VesselCaseSearch.jsx';
 import { liveMovementMapFeatures } from './features/live/movementEndpoints.js';
@@ -669,12 +670,13 @@ function App() {
   // NGO, fused...) had plenty of eligible content sitting on the VM.
   const [liveMode] = useState(() => (isPublicLiveHost ? 'all' : 'humanitarian'));
   const seenAlertIdsRef = useRef(null);
-  const { intelEvents, setIntelEvents, feedStatus, liveModeCounts, liveRoleCounts, pipelineSources } = useLiveFeed({
+  const { intelEvents: receivedIntelEvents, setIntelEvents, feedStatus, liveModeCounts, liveRoleCounts, pipelineSources } = useLiveFeed({
     apiBase,
     edgeBase: LIVE_EDGE_BASE,
     isPublicLiveHost,
     liveMode,
     onCriticalDistress: (props) => {
+      if (isPublicLiveHost && !isPublicCaseEligible(props)) return;
       setActivePanel('osint');
       // Keep the map unobstructed on incoming alerts.
       if (props?.type === 'correlated_alert') {
@@ -687,6 +689,9 @@ function App() {
       setIntelDrifts((previous) => mergeIntelDriftUpdate(previous, message));
     },
   });
+  const intelEvents = useMemo(() => isPublicLiveHost
+    ? receivedIntelEvents.filter((feature) => isPublicCaseEligible(feature.properties))
+    : receivedIntelEvents, [receivedIntelEvents]);
   const [liveEstimateClock, setLiveEstimateClock] = useState(Date.now());
   const [selectedSarResponse, setSelectedSarResponse] = useState(null);
   const [signalsExpanded, setSignalsExpanded] = useState(false);
