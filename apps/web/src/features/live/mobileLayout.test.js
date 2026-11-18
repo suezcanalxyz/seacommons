@@ -62,3 +62,10 @@ test('PLAY excludes rolling last 24h without deleting incident evidence and rais
   assert.match(source, /map\.moveLayer\(layerId\)/);
   assert.match(source, /'play-incidents', 'play-vessels'/);
 });
+
+
+test('LIVE initializes the MapLibre style from the selected basemap, not a hidden satellite', async () => {
+  const source = await readFile(new URL('../../main.jsx', import.meta.url), 'utf8');
+  assert.match(source, /style: mapStyle\(baseMap\)/);
+  assert.match(source, /visibility: initialBaseMap === 'satellite' \? 'visible' : 'none'/);
+});

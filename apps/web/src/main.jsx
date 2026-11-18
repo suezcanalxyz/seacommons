@@ -495,7 +495,7 @@ const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY;
 const OWM_KEY = import.meta.env.VITE_OWM_KEY;
 const UNREAL_PIXEL_STREAM_URL = String(import.meta.env.VITE_UNREAL_PIXEL_STREAM_URL || '').trim();
 
-function mapStyle() {
+function mapStyle(initialBaseMap = 'standard') {
   // Keep LIVE and PLAY on the same high-resolution composite basemap.
   // Dated optical imagery is a separate evidence layer, not a live ship observation.
   const satellite = {
@@ -512,8 +512,8 @@ function mapStyle() {
       satellite,
     },
     layers: [
-      { id: 'osm', type: 'raster', source: 'osm' },
-      { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: 'none' } },
+      { id: 'osm', type: 'raster', source: 'osm', layout: { visibility: initialBaseMap === 'satellite' ? 'none' : 'visible' } },
+      { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: initialBaseMap === 'satellite' ? 'visible' : 'none' } },
     ],
   };
 }
@@ -1300,7 +1300,7 @@ function App() {
 
       const map = new maplibregl.Map({
         container: mapNodeRef.current,
-        style: mapStyle(),
+        style: mapStyle(baseMap),
         center: APP_PROFILE === 'live' ? [15.2, 36.1] : [14.3, 31.0],
         zoom: APP_PROFILE === 'live' ? 4.15 : 1.9,
         padding: isPublicLiveHost && window.innerWidth > 820
