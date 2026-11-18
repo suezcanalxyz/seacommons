@@ -447,3 +447,20 @@
   }
   .play-timeline-end, .play-timeline-bar__label { display: none; }
 }
+
+.play-gap-map-note {
+  position: fixed;
+  z-index: 1050;
+  left: max(16px, calc(var(--live-panel-width) + 16px));
+  bottom: 79px;
+  padding: 9px 12px;
+  max-width: calc(100vw - 32px);
+  border: 1px solid #927348;
+  border-radius: 6px;
+  background: #07141a;
+  color: #ffd596;
+  font: 12px var(--font-display);
+}
+@media (max-width: 680px) {
+  .play-gap-map-note { top: 110px; bottom: auto; left: 16px; }
+}
