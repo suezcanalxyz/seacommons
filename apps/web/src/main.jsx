@@ -1,4 +1,4 @@
-import { radioFeature } from './features/live/radioMap.js';
+import { radioFeature, liveActiveReceiverMarkers } from './features/live/radioMap.js';
 import { installActiveRadioStationIcon } from './features/live/radioStationIcon.js';
 import { reconstructAisGaps } from './features/play/aisGapGeometry.js';
 import { useLiveVesselDossier } from './features/live/useLiveVesselDossier.js';
@@ -654,12 +654,10 @@ function App() {
   const [mobileGuideOpen, setMobileGuideOpen] = useState(false);
   const [timezero, setTimezero] = useState(null);
   const [selectedVessel, setSelectedVessel] = useState(null);
-  const [receiverMesh, setReceiverMesh] = useState({ catalogued: 0, reachable: 0, eligible: 0, active: 0, receivers: [] });
+  const [receiverMesh, setReceiverMesh] = useState({ catalogued: 0, reachable: 0, eligible: 0, active: 0, receivers: [], fresh: false });
   const [radioSummary, setRadioSummary] = useState({ events: [], messages: [], external: [] });
   const [radioFailures, setRadioFailures] = useState({});
-  const receiverMarkers = useMemo(() => (receiverMesh.receivers || [])
-    .filter((row) => row.active === true)
-    .map((row) => radioFeature(row, 'radio_receiver')).filter((feature) => feature.geometry), [receiverMesh]);
+  const receiverMarkers = useMemo(() => liveActiveReceiverMarkers(receiverMesh), [receiverMesh]);
   const radioMessageMarkers = useMemo(() => radioSummary.messages
     .filter((row) => row.kind === 'dsc')
     .map((row) => radioFeature(row, 'radio_message')).filter((feature) => feature.geometry), [radioSummary.messages]);
@@ -3076,7 +3074,7 @@ function App() {
     let alive = true;
     const timers = [];
     const jobs = [
-      ['receivers', '/api/v1/live/receivers/mesh?limit=64', (data) => setReceiverMesh(data)],
+      ['receivers', '/api/v1/live/receivers/mesh?limit=64', (data) => setReceiverMesh({ ...data, fresh: true })],
       ['events', '/api/v1/live/radio/events?limit=50', (data) => setRadioSummary((prev) => ({ ...prev, events: data.events }))],
       ['messages', '/api/v1/live/radio/messages?limit=50', (data) => setRadioSummary((prev) => ({ ...prev, messages: data.messages }))],
       ['external', '/api/v1/live/radio/external-navtex', (data) => setRadioSummary((prev) => ({ ...prev, external: data.messages }))],
@@ -3091,7 +3089,10 @@ function App() {
             setRadioFailures((prev) => ({ ...prev, [key]: false }));
           }
         } catch {
-          if (alive) setRadioFailures((prev) => ({ ...prev, [key]: true }));
+          if (alive) {
+            setRadioFailures((prev) => ({ ...prev, [key]: true }));
+            if (key === 'receivers') setReceiverMesh((prev) => ({ ...prev, fresh: false }));
+          }
         } finally {
           if (alive) timers[index] = window.setTimeout(refresh, 60_000);
         }
@@ -4264,7 +4265,7 @@ function App() {
             </header>
 
             <details className="live-radio-panel">
-              <summary>Radio · {receiverMesh.active || 0} active · {receiverMarkers.length} on map</summary>
+              <summary>Radio · {receiverMesh.fresh ? (receiverMesh.active || 0) : 'status unavailable'} active · {receiverMarkers.length} on map</summary>
               {Object.values(radioFailures).some(Boolean) && (
                 <p role="status">Update unavailable: {Object.keys(radioFailures).filter((key) => radioFailures[key]).join(', ')}. Showing the last available data.</p>
               )}
@@ -4279,7 +4280,7 @@ function App() {
                     ? `${new Date(latest).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'No recent record'}</dd></div>;
                 })}
               </dl>
-              {(receiverMesh.receivers || []).filter((row) => row.active).map((row) => (
+              {(receiverMesh.fresh ? receiverMesh.receivers || [] : []).filter((row) => row.active).map((row) => (
                 <button key={row.receiver_id} type="button" onClick={() => {
                   openRadioReport('radio_receiver', radioFeature(row, 'radio_receiver'));
                 }}>{row.station_label || row.receiver_id} · {row.listen_available ? 'Listen available' : 'Receiver details'}</button>

@@ -95,7 +95,7 @@ function vesselColor(feature) {
 
 function bindSelection(marker, feature, onFeatureSelect) {
   const element = marker.getElement?.();
-  const id = String(feature?.properties?.incident_id || feature?.properties?.id || feature?.properties?.mmsi || 'feature');
+  const id = String(feature?.properties?.receiver_id || feature?.properties?.incident_id || feature?.properties?.id || feature?.properties?.mmsi || 'feature');
   if (!element) {
     marker.on?.('click', () => onFeatureSelect?.(feature));
     return;
@@ -103,7 +103,7 @@ function bindSelection(marker, feature, onFeatureSelect) {
   element.setAttribute('role', 'button');
   element.setAttribute('tabindex', '0');
   const isVessel = feature?.properties?.entity_kind === 'vessel' || feature?.properties?.report_type === 'vessel';
-  element.setAttribute('aria-label', `${isVessel ? 'Open vessel' : 'Open incident'} ${id}`);
+  element.setAttribute('aria-label', `${feature?.properties?.radio_type === 'radio_receiver' ? 'Open active radio station' : isVessel ? 'Open vessel' : 'Open incident'} ${id}`);
   let lastSelectionAt = 0;
   const select = (event) => {
     event?.stopPropagation?.();
@@ -285,6 +285,18 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
             className: `${markerClass(feature)} seacommons-fallback-uncertainty`,
             renderer: incidentRenderer,
           }).on('click', () => onFeatureSelect?.(feature)).addTo(markers);
+        }
+        // On WebGL-unavailable devices the same active physical receivers
+        // retain a recognisable antenna icon and a keyboard-accessible report.
+        if (feature.properties?.radio_type === 'radio_receiver' && L.divIcon && L.marker) {
+          const icon = L.divIcon({
+            className: 'seacommons-fallback-radio-station',
+            html: '<span aria-hidden="true" style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:#07151b;border:2px solid #a78bfa;border-radius:50%;font-size:17px;box-sizing:border-box">📡</span>',
+            iconSize: [32, 32], iconAnchor: [16, 16],
+          });
+          const marker = L.marker([Number(lat), Number(lon)], { icon, keyboard: true }).addTo(markers);
+          bindSelection(marker, feature, onFeatureSelect);
+          continue;
         }
         const heading = vesselHeading(feature);
         const attack = isAttackIncident(feature.properties);
