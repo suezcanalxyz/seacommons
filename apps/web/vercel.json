@@ -26,6 +26,10 @@
       "destination": "/api/live?resource=archive&event_id=:event_id"
     },
     {
+      "source": "/api/v1/live/radio/external-navtex",
+      "destination": "/api/navtex"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/proxy?path=:path*"
     },
