@@ -1,3 +1,4 @@
+import { isPublicCaseEligible } from '../live/publicCaseEligibility.js';
 import { addMovementLabels } from '../map/movementLabels.js';
 import VesselCaseSearch from '../../components/VesselCaseSearch.jsx';
 import { liveMovementMapFeatures } from '../live/movementEndpoints.js';
@@ -125,7 +126,8 @@ export default function PlayTimeline({ apiBase }) {
   const [mapError, setMapError] = useState('');
   const [apiIncidents, setIncidents] = useState([]);
   const [reviewedIncidents, setReviewedIncidents] = useState([]);
-  const incidents = useMemo(() => mergeIncidentPages(apiIncidents, reviewedIncidents), [apiIncidents, reviewedIncidents]);
+  const archiveRecords = useMemo(() => mergeIncidentPages(apiIncidents, reviewedIncidents), [apiIncidents, reviewedIncidents]);
+  const incidents = useMemo(() => archiveRecords.filter(isPublicCaseEligible), [archiveRecords]);
   const [archiveNow, setArchiveNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setArchiveNow(Date.now()), 60_000);
@@ -137,7 +139,7 @@ export default function PlayTimeline({ apiBase }) {
     return Number.isFinite(reported) && reported < archiveNow - 24 * 60 * 60 * 1000;
   }), [incidents, archiveNow]);
   const [apiArchiveTotal, setArchiveTotal] = useState(null);
-  const archiveTotal = apiArchiveTotal == null ? null : apiArchiveTotal + reviewedIncidents.length;
+  const archiveTotal = apiArchiveTotal == null ? null : apiArchiveTotal + reviewedIncidents.length - (archiveRecords.length - incidents.length);
   const [selectedId, setSelectedId] = useState('');
   const [overlapIds, setOverlapIds] = useState([]);
   const [caseResponse, setCaseResponse] = useState(null);
