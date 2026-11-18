@@ -274,7 +274,7 @@ def test_gap_scan_suppresses_common_port_wide_outage():
 
 
 
-def test_reappeared_gap_is_persisted_resolved_and_re_evaluated(monkeypatch):
+def test_unattested_reappeared_gap_remains_open_and_not_re_evaluated(monkeypatch):
     from core.db.models import IntelEventDB, MaritimeEpisodeDB, VesselTrackDB
     from core.db.session import engine
     MaritimeEpisodeDB.__table__.create(bind=engine(), checkfirst=True)
@@ -349,18 +349,20 @@ def test_reappeared_gap_is_persisted_resolved_and_re_evaluated(monkeypatch):
         "scan_hypotheses",
         lambda *, extra_events=None: evaluated.extend(extra_events or []) or 0,
     )
-    assert w._resolve_reappeared_gaps() == 1
-    assert evaluated and evaluated[0].id == event_id
+    # A fresh MMSI position alone is not proof of identity/source validity.
+    # The positive attested path is tested in test_mda_gap_reappearance_provenance.
+    assert w._resolve_reappeared_gaps() == 0
+    assert evaluated == []
 
     with session_scope() as db:
         row = db.get(IntelEventDB, event_id)
-        assert row.meta["gap_still_open"] is False
-        assert row.meta["gap_reappearance_confirmed"] is True
-        assert row.meta["resolution_state"] == "resolved"
+        assert row.meta["gap_still_open"] is True
+        assert not row.meta.get("gap_reappearance_confirmed")
+        assert row.meta["resolution_state"] == "open"
         episode = db.get(MaritimeEpisodeDB, episode_id)
-        assert episode.status == "resolved"
-        assert episode.behaviour_context["analysis"]["resolution_state"] == "resolved"
-        assert episode.behaviour_context["analysis"]["gap_reappearance_confirmed"] is True
+        assert episode.status == "active"
+        assert episode.behaviour_context["analysis"]["resolution_state"] == "open"
+        assert not episode.behaviour_context["analysis"].get("gap_reappearance_confirmed")
         db.delete(episode)
         db.delete(row)
         db.query(VesselTrackDB).filter(VesselTrackDB.mmsi == mmsi).delete()
