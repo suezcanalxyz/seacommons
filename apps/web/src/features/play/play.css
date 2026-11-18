@@ -404,3 +404,22 @@
 
 .play-key-integrity { background: #c084fc; border-radius: 50%; }
 .play-key-ais-gap { background: #d4ff3f; border-radius: 50%; }
+
+.play-archive-search {
+  width: 100%;
+  margin: 6px 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(169,255,218,.22);
+  border-radius: 5px;
+  background: rgba(3,10,14,.76);
+  color: #ecfff7;
+}
+.play-case__category {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 50%;
+}
+.play-case strong { font-size: 12px; }
+.play-case__time { font-size: 10px; }

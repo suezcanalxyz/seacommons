@@ -10,7 +10,7 @@ function parseTime(value) {
 
 export function normalizeTimeline(items = []) {
   return [...items]
-    .filter((item) => item && item.at)
+    .filter((item) => item && Number.isFinite(parseTime(item.at)))
     .sort((a, b) => parseTime(a.at) - parseTime(b.at))
     .map((item, frameIndex) => ({ ...item, frameIndex }));
 }
@@ -117,6 +117,37 @@ export function satelliteRasterDescriptor(observation) {
   };
 }
 
+export function casesForArchiveView(incidents, cutoff, selectedDay) {
+  const day = selectedDay || cutoff?.slice(0, 10);
+  if (!day) return incidents;
+  const end = selectedDay ? `${day}T23:59:59.999Z` : cutoff;
+  return incidentsAtCutoff(incidents, end).filter((item) => {
+    const reported = parseTime(item.reported_at);
+    return Number.isFinite(reported) && new Date(reported).toISOString().startsWith(day);
+  });
+}
+
+export function satelliteReviewScenes(timeline, candidates = [], cutoff) {
+  const byId = new Map();
+  for (const item of timeline) {
+    if (item.type === 'satellite' && item.id
+        && (item.properties?.asset_ref || item.properties?.source_url || ['Polygon', 'MultiPolygon'].includes(item.geometry?.type))) {
+      byId.set(item.id, item);
+    }
+  }
+  for (const candidate of candidates) {
+    const at = candidate?.acquisition_time;
+    if (!candidate?.observation_id || !Number.isFinite(parseTime(at)) || parseTime(at) > parseTime(cutoff)) continue;
+    if (byId.has(candidate.observation_id)) continue;
+    byId.set(candidate.observation_id, {
+      id: candidate.observation_id, at, source: candidate.provider, type: 'satellite',
+      properties: { mission: candidate.mission, source_url: candidate.source_url,
+        asset_ref: candidate.asset_ref, review_delta_hours: candidate.delta_hours, evidence_role: 'context_only_pending_review' },
+    });
+  }
+  return [...byId.values()].sort((a, b) => parseTime(b.at) - parseTime(a.at));
+}
+
 export function incidentsAtCutoff(incidents = [], cutoff = null) {
   if (!cutoff) return [...incidents];
   const cutoffMs = parseTime(cutoff);
@@ -202,10 +233,16 @@ export function incidentStatusAtCutoff(incident, cutoff = null) {
   for (const transition of history) {
     const at = parseTime(transition.at);
     if (at <= cutoffMs) effective = transition.to_state || effective;
-    else if (effective == null) return transition.from_state || current;
+    else if (effective == null && transition.from_state) return transition.from_state;
     else break;
   }
-  return effective || current;
+  if (effective) return effective;
+  if (current === 'resolved') {
+    const resolved = parseTime(incident.resolved_at);
+    return Number.isFinite(resolved) && resolved <= cutoffMs ? 'resolved' : 'outcome_unknown';
+  }
+  return parseTime(incident?.state_changed_at) > cutoffMs && incident?.state_changed_at
+    ? 'outcome_unknown' : current;
 }
 
 
@@ -289,7 +326,7 @@ export function playMapStyle(day = new Date(Date.now() - 24 * 3600 * 1000).toISO
     },
     layers: [
       { id: 'base-map', type: 'raster', source: 'baseMap', paint: { 'raster-opacity': 1 } },
-      { id: 'satellite-context', type: 'raster', source: 'satelliteContext', paint: { 'raster-opacity': 1, 'raster-fade-duration': 120 } },
+      { id: 'satellite-context', type: 'raster', source: 'satelliteContext', layout: { visibility: 'none' }, paint: { 'raster-opacity': 1, 'raster-fade-duration': 120 } },
     ],
   };
 }
@@ -301,8 +338,13 @@ export function mergeIncidentPages(previous = [], incoming = []) {
     if (item?.incident_id) byId.set(item.incident_id, item);
   }
   return [...byId.values()].sort((a, b) => {
-    const aAt = parseTime(a?.last_update_at || a?.reported_at);
-    const bAt = parseTime(b?.last_update_at || b?.reported_at);
+    const sortTime = (record) => {
+      const reported = parseTime(record?.reported_at);
+      const updated = parseTime(record?.last_update_at);
+      return Number.isFinite(updated) && updated >= reported ? updated : reported;
+    };
+    const aAt = sortTime(a);
+    const bAt = sortTime(b);
     return (Number.isFinite(bAt) ? bAt : 0) - (Number.isFinite(aAt) ? aAt : 0);
   });
 }

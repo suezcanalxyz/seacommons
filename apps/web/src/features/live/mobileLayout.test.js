@@ -43,7 +43,7 @@ test('PLAY report leads with an accessible evidence summary before technical det
   assert.match(source, /aria-label="Report at a glance"/);
   assert.match(source, /What we know/);
   assert.match(source, /What remains uncertain:/);
-  assert.match(source, /Evidence assessment · detailed record/);
+  assert.match(source, /Detailed assessment and detector notes/);
 });
 
 
@@ -58,7 +58,7 @@ test('PLAY excludes rolling last 24h without deleting incident evidence and rais
   const source = await readFile(new URL('../play/PlayTimeline.jsx', import.meta.url), 'utf8');
   assert.match(source, /reported < archiveNow - 24 \* 60 \* 60 \* 1000/);
   assert.match(source, /resolveGlobalTimelinePosition\(historicalIncidents/);
-  assert.match(source, /historicalIncidents\.filter\(/);
+  assert.match(source, /casesForArchiveView\(historicalIncidents/);
   assert.match(source, /map\.moveLayer\(layerId\)/);
   assert.match(source, /'play-incidents', 'play-vessels'/);
 });

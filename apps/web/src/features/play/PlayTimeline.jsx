@@ -1,3 +1,4 @@
+import { playIncidentColor } from './incidentPalette.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { fetchJson } from '../../services/api/client.js';
@@ -18,10 +19,10 @@ import {
   incidentsAtCutoff,
   normalizeTimeline,
   resolveGlobalTimelinePosition,
-  satelliteRasterDescriptor,
+  casesForArchiveView,
+  satelliteReviewScenes,
   satelliteFootprintCollection,
   selectFrame,
-  selectPreferredSatelliteObservation,
   statusLabel,
   ongoingCaseClock,
   timelineAtCutoff,
@@ -88,25 +89,6 @@ function geometryBounds(geometry) {
   };
 }
 
-function removeSatelliteLayer(map) {
-  if (!map) return;
-  if (map.getLayer('play-satellite')) map.removeLayer('play-satellite');
-  if (map.getSource('play-satellite')) map.removeSource('play-satellite');
-}
-
-function addSatelliteLayer(map, observation) {
-  removeSatelliteLayer(map);
-  const descriptor = satelliteRasterDescriptor(observation);
-  if (!descriptor) return;
-  map.addSource('play-satellite', descriptor);
-  map.addLayer({
-    id: 'play-satellite',
-    type: 'raster',
-    source: 'play-satellite',
-    paint: { 'raster-opacity': 0.72, 'raster-fade-duration': 120 },
-  }, 'play-clusters');
-}
-
 function itemTime(value) {
   try {
     return new Intl.DateTimeFormat('en-GB', {
@@ -155,7 +137,8 @@ export default function PlayTimeline({ apiBase }) {
   const archiveTotal = apiArchiveTotal == null ? null : apiArchiveTotal + reviewedIncidents.length;
   const [selectedId, setSelectedId] = useState('');
   const [overlapIds, setOverlapIds] = useState([]);
-  const [caseData, setCaseData] = useState(null);
+  const [caseResponse, setCaseResponse] = useState(null);
+
   const [reportOpen, setReportOpen] = useState(false);
   const [globalPosition, setGlobalPosition] = useState(TIMELINE_MAX);
   const [casesOpen, setCasesOpen] = useState(false);
@@ -169,8 +152,9 @@ export default function PlayTimeline({ apiBase }) {
     return () => window.clearTimeout(timeout);
   }, []);
   const [error, setError] = useState('');
-  const [satelliteMission, setSatelliteMission] = useState('auto');
+  const [satelliteMission, setSatelliteMission] = useState('');
   const [archiveFilter, setArchiveFilter] = useState('all');
+  const [archiveSearch, setArchiveSearch] = useState('');
   const [visibleCaseLimit, setVisibleCaseLimit] = useState(80);
   const [incidentTypeFilter, setIncidentTypeFilter] = useState('all');
   const [evidenceFilter, setEvidenceFilter] = useState('all');
@@ -181,14 +165,31 @@ export default function PlayTimeline({ apiBase }) {
   const [satelliteContextMission, setSatelliteContextMission] = useState('VIIRS NOAA-21');
 
   const globalState = useMemo(
-    () => resolveGlobalTimelinePosition(historicalIncidents, globalPosition, TIMELINE_MAX),
-    [historicalIncidents, globalPosition],
+    () => selectedDay
+      ? { mode: 'temporal', cutoff: `${selectedDay}T23:59:59.999Z` }
+      : resolveGlobalTimelinePosition(historicalIncidents, globalPosition, TIMELINE_MAX),
+    [historicalIncidents, globalPosition, selectedDay],
   );
-  const visibleIncidents = useMemo(() => {
-    if (globalState.mode === 'all' && !selectedDay) return historicalIncidents;
-    const day = selectedDay || globalState.cutoff?.slice(0, 10);
-    return historicalIncidents.filter((incident) => String(incident.reported_at || '').slice(0, 10) === day);
-  }, [historicalIncidents, globalState.mode, globalState.cutoff, selectedDay]);
+  const caseData = useMemo(() => {
+    if (caseResponse?.id !== selectedId) return null;
+    const data = caseResponse?.payload;
+    if (!globalState.cutoff || !data) return data;
+    // The API returns the current dossier, including undated assessments and counts.
+    return {
+      timeline: data.timeline,
+      voyage_evidence: data.voyage_evidence,
+      satellite_review_candidates: data.satellite_review_candidates,
+    };
+  }, [caseResponse, selectedId, globalState.cutoff]);
+  const visibleIncidents = useMemo(
+    () => casesForArchiveView(historicalIncidents, globalState.cutoff, selectedDay),
+    [historicalIncidents, globalState.cutoff, selectedDay],
+  );
+  const archiveCounts = useMemo(() => visibleIncidents.reduce((counts, incident) => {
+    const domain = incident.main_category || incident.domain;
+    if (domain === 'humanitarian' || domain === 'maritime') counts[domain] += 1;
+    return counts;
+  }, { humanitarian: 0, maritime: 0 }), [visibleIncidents]);
   const categoryIncidents = useMemo(() => visibleIncidents.filter((incident) => {
     const mainCategory = incident.main_category || incident.domain;
     if (archiveFilter === 'humanitarian') return mainCategory === 'humanitarian';
@@ -201,6 +202,9 @@ export default function PlayTimeline({ apiBase }) {
     [categoryIncidents],
   );
   const filteredIncidents = useMemo(() => categoryIncidents.filter((incident) => {
+    const query = archiveSearch.trim().toLowerCase().replaceAll('_', ' ');
+    if (query && ![incident.title, incident.source, incident.incident_type, incident.incident_id]
+      .some((field) => String(field || '').toLowerCase().replaceAll('_', ' ').includes(query))) return false;
     if (incidentTypeFilter !== 'all' && incident.incident_type !== incidentTypeFilter) return false;
     if (evidenceFilter === 'confirmed' && !incident.corroborated && incident.verification_status !== 'multi_source_corroborated') return false;
     if (evidenceFilter === 'unconfirmed' && (incident.corroborated || incident.verification_status === 'multi_source_corroborated')) return false;
@@ -211,6 +215,7 @@ export default function PlayTimeline({ apiBase }) {
     return true;
   }), [
     categoryIncidents,
+    archiveSearch,
     incidentTypeFilter,
     evidenceFilter,
     satelliteOnly,
@@ -224,10 +229,15 @@ export default function PlayTimeline({ apiBase }) {
   // mount thousands of heavyweight dossier buttons at once (mobile/WebGL OOM).
   const displayedCases = useMemo(() => filteredIncidents.slice(0, visibleCaseLimit), [filteredIncidents, visibleCaseLimit]);
   const archiveGroups = useMemo(() => groupArchiveByMonth(displayedCases), [displayedCases]);
-  useEffect(() => { setVisibleCaseLimit(80); }, [archiveFilter, incidentTypeFilter, evidenceFilter, satelliteOnly, sanctionsOnly, investigationsOnly, globalState.mode, globalState.cutoff, selectedDay]);
+  useEffect(() => { setVisibleCaseLimit(80); }, [archiveFilter, archiveSearch, incidentTypeFilter, evidenceFilter, satelliteOnly, sanctionsOnly, investigationsOnly, globalState.mode, globalState.cutoff, selectedDay]);
   const selectedIncident = useMemo(
-    () => visibleIncidents.find((item) => item.incident_id === selectedId) || null,
-    [visibleIncidents, selectedId],
+    () => {
+      const incident = visibleIncidents.find((item) => item.incident_id === selectedId);
+      if (!incident || !globalState.cutoff) return incident || null;
+      const { assessment, reason_codes, corroborated, verification_status, evidence_state, evidence_stage, archive_decision, ...datedIncident } = incident;
+      return datedIncident;
+    },
+    [visibleIncidents, selectedId, globalState.cutoff],
   );
   const reviewedCase = useMemo(
     () => reviewedIncidents.find(({ incident_id }) => incident_id === selectedId),
@@ -265,16 +275,11 @@ export default function PlayTimeline({ apiBase }) {
     () => selectFrame(visibleTimeline, Math.max(0, visibleTimeline.length - 1)),
     [visibleTimeline],
   );
-  const satellite = useMemo(
-    () => selectPreferredSatelliteObservation(visibleTimeline, frame.item?.at, satelliteMission),
-    [visibleTimeline, frame.item?.at, satelliteMission],
+  const satelliteScenes = useMemo(
+    () => satelliteReviewScenes(visibleTimeline, caseData?.satellite_review_candidates, globalState.cutoff),
+    [visibleTimeline, caseData?.satellite_review_candidates, globalState.cutoff],
   );
-  const satelliteMissions = useMemo(
-    () => [...new Set(visibleTimeline
-      .filter((item) => item?.type === 'satellite' && item?.properties?.mission)
-      .map((item) => item.properties.mission))],
-    [visibleTimeline],
-  );
+  const satellite = satelliteScenes.find((item) => String(item.id) === satelliteMission) || null;
 
   useEffect(() => {
     let cancelled = false;
@@ -339,7 +344,7 @@ export default function PlayTimeline({ apiBase }) {
   }, [apiBase]);
 
   useEffect(() => {
-    setSatelliteMission('auto');
+    setSatelliteMission('');
   }, [selectedId]);
 
   useEffect(() => {
@@ -349,32 +354,32 @@ export default function PlayTimeline({ apiBase }) {
   }, [incidentTypeFilter, incidentTypes]);
 
   useEffect(() => {
-    if (satelliteMission !== 'auto' && !satelliteMissions.includes(satelliteMission)) {
-      setSatelliteMission('auto');
+    if (satelliteMission && !satelliteScenes.some((item) => String(item.id) === satelliteMission)) {
+      setSatelliteMission('');
     }
-  }, [satelliteMission, satelliteMissions]);
+  }, [satelliteMission, satelliteScenes]);
 
   useEffect(() => {
     if (selectedId && !visibleIncidents.some((item) => item.incident_id === selectedId)) {
       setSelectedId('');
-      setCaseData(null);
+      setCaseResponse(null);
     }
   }, [selectedId, visibleIncidents]);
 
   useEffect(() => {
     let cancelled = false;
     if (!selectedId) {
-      setCaseData(null);
+      setCaseResponse(null);
       return () => { cancelled = true; };
     }
     if (reviewedCase) {
-      setCaseData({
+      setCaseResponse({ id: selectedId, payload: {
         timeline: reviewedCase.timeline,
         archive_decision: 'reviewed_public_sources',
         assessment: {
           caveats: ['The sources describe the area of the incident. An exact position and an AIS link are unavailable in this record. Attribution has not been established for this case.'],
         },
-      });
+      } });
       setLoading(false);
       return () => { cancelled = true; };
     }
@@ -382,7 +387,7 @@ export default function PlayTimeline({ apiBase }) {
     fetchJson(apiBase, `/api/v1/play/incidents/${encodeURIComponent(selectedId)}/timeline`)
       .then((payload) => {
         if (!cancelled) {
-          setCaseData(payload);
+          setCaseResponse({ id: selectedId, payload });
           setError('');
         }
       })
@@ -722,12 +727,11 @@ export default function PlayTimeline({ apiBase }) {
     if (map.getLayer('play-vessels')) {
       map.setLayoutProperty('play-vessels', 'icon-size', ['interpolate', ['linear'], ['zoom'], 3, ['case', ['==', ['get', 'incident_id'], selectedId], 0.30, 0.20], 7, ['case', ['==', ['get', 'incident_id'], selectedId], 0.46, 0.34], 10, ['case', ['==', ['get', 'incident_id'], selectedId], 0.58, 0.46]]);
     }
-    addSatelliteLayer(map, satellite);
     // Always render evidence markers above footprints, routes and satellite rasters.
     for (const layerId of ['play-incidents', 'play-vessels']) {
       if (map.getLayer(layerId)) map.moveLayer(layerId);
     }
-  }, [mapReady, selectedId, satellite]);
+  }, [mapReady, selectedId]);
 
   const selectedLongitude = selectedIncident?.geometry?.type === 'Point' ? selectedIncident.geometry.coordinates?.[0] : null;
   const selectedLatitude = selectedIncident?.geometry?.type === 'Point' ? selectedIncident.geometry.coordinates?.[1] : null;
@@ -798,6 +802,8 @@ export default function PlayTimeline({ apiBase }) {
   const reportEvidence = visibleTimeline.filter((item) => item?.type !== 'satellite');
   const frameProps = frame.item?.properties || {};
   const satelliteProps = satellite?.properties || {};
+  const quicklook = /^https:\/\//i.test(satelliteProps.asset_ref || '')
+    && /(?:\.(?:png|jpe?g|webp)|Assets\([^)]*\)\/\$value)(?:\?|$)/i.test(satelliteProps.asset_ref);
   const modeLabel = cutoffLabel(globalState);
   const report = selectedIncident ? {
     schema: 'org.seacommons.play-case-report/v1',
@@ -875,9 +881,15 @@ export default function PlayTimeline({ apiBase }) {
             <b><i /> ARCHIVE</b>
           </div>
           <div className="live-feed-panel__title">
-            <div><p>TEMPORAL OSINT RECONSTRUCTION</p><h1>Play</h1></div>
+            <div><p>HISTORICAL SIGNAL FIELD</p><h1>Play</h1></div>
             <button type="button" onClick={() => setCasesOpen(false)} aria-label="Close archive">−</button>
           </div>
+          <div className="osint-stats-row">
+            <div className="osint-stat"><strong>{visibleIncidents.length}</strong><span>archive loaded</span></div>
+            <div className="osint-stat osint-stat--critical"><strong>{archiveCounts.humanitarian}</strong><span>humanitarian</span></div>
+            <div className="osint-stat"><strong>{archiveCounts.maritime}</strong><span>maritime</span></div>
+          </div>
+          <input type="search" className="play-archive-search" aria-label="Search archive" placeholder="Search cases or sources…" value={archiveSearch} onChange={(event) => setArchiveSearch(event.target.value)} />
           <div className="signals-selector play-filter-selector" role="group" aria-label="Play archive filters">
             <div className="signals-selector__list">
               <button type="button" className={`signals-selector__link ${archiveFilter === 'all' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('all')}><span className="signals-selector__box" aria-hidden="true" />ALL</button>
@@ -925,7 +937,7 @@ export default function PlayTimeline({ apiBase }) {
             <section className="play-archive-month" key={group.key}>
               <header><strong>{group.label}</strong><span>{group.incidents.length} cases</span></header>
               {group.incidents.map((incident) => {
-                const counts = incident.evidence_counts || {};
+                const counts = globalState.cutoff ? {} : incident.evidence_counts || {};
                 return (
                   <button
                     key={incident.incident_id}
@@ -934,8 +946,8 @@ export default function PlayTimeline({ apiBase }) {
                     onClick={() => { setSelectedId(incident.incident_id); setCasesOpen(false); }}
                   >
                     <span className="play-case__time">{itemTime(incident.reported_at)}</span>
-                    <strong>{incident.title || 'SeaCommons incident'}</strong>
-                    <span>{evidenceLabel(incident)}</span>
+                    <strong><i className="play-case__category" aria-hidden="true" style={{ backgroundColor: playIncidentColor(incident) }} />{incident.title || 'SeaCommons incident'}</strong>
+                    <span>{globalState.cutoff ? 'Historical snapshot' : evidenceLabel(incident)}</span>
                     <span>{(incident.incident_type || 'context').replace(/_/g, ' ')} · {incident.main_category || incident.domain || 'humanitarian'} · {statusLabel(incidentStatusAtCutoff(incident, globalState.cutoff))}</span>
                     {ongoingCaseClock(incident, archiveNow) ? <span className="play-case__clock" title="Elapsed wall-clock time since first report, not a new vessel position or corroboration">{ongoingCaseClock(incident, archiveNow)}</span> : null}
                     {(Number(counts.drift) > 0 || Number(counts.satellite) > 0) ? (
@@ -997,7 +1009,7 @@ export default function PlayTimeline({ apiBase }) {
                 type="button"
                 onClick={() => { setSelectedId(incident.incident_id); setOverlapIds([]); setCasesOpen(false); }}
               >
-                <strong>{incident.title || 'SeaCommons incident'}</strong>
+                <strong><i className="play-case__category" aria-hidden="true" style={{ backgroundColor: playIncidentColor(incident) }} />{incident.title || 'SeaCommons incident'}</strong>
                 <span>{itemTime(incident.reported_at)} &middot; {incident.source || 'source unavailable'}</span>
               </button>
             ))}
@@ -1072,19 +1084,20 @@ export default function PlayTimeline({ apiBase }) {
           </section>
           <section className="play-card play-card--rows">
             <div><span>Status</span><strong>{statusLabel(status)}</strong></div>
+            {status === 'resolved' && !selectedIncident?.resolved_at && <span>Resolution date unavailable in the archive.</span>}
             {ongoingCaseClock(selectedIncident, archiveNow) ? <div><span>Latest case clock</span><strong title="Time since first report is not evidence of continued activity or an updated AIS position">{ongoingCaseClock(selectedIncident, archiveNow)}</strong></div> : null}
             <div><span>Evidence confidence</span><strong>{evidenceLabel(caseData || selectedIncident)}</strong></div>
             <div><span>View</span><strong>{modeLabel}</strong></div>
             <div><span>Archive decision</span><strong>{statusLabel(caseData?.archive_decision || selectedIncident?.archive_decision || '—')}</strong></div>
-            <div><span>Evidence known</span><strong>{caseData?.evidence_count ?? visibleTimeline.length}</strong></div>
+            <div><span>Evidence known</span><strong>{visibleTimeline.length}</strong></div>
             {caseData?.verification_status ? <div><span>Verification</span><strong>{statusLabel(caseData.verification_status)}</strong></div> : null}
             {typeof caseData?.corroborated === 'boolean' ? <div><span>Independent sources</span><strong>{caseData.corroborated ? 'Confirmed' : 'Not yet confirmed'}</strong></div> : null}
             {caseData?.independence_groups?.length ? <div><span>Evidence lineages</span><strong>{caseData.independence_groups.join(' · ')}</strong></div> : null}
             {selectedIncident?.evidence_stage || caseData?.evidence_stage ? <div><span>Evidence stage</span><strong>{statusLabel(selectedIncident?.evidence_stage || caseData?.evidence_stage)}</strong></div> : null}
-            <div><span>Satellite</span><strong>{caseData?.satellite_count ?? 0}</strong></div>
-            <div><span>Radio</span><strong>{caseData?.radio_count ?? 0}</strong></div>
-            <div><span>Drift</span><strong>{caseData?.drift_count ?? 0}</strong></div>
-            <div><span>SAR assessments</span><strong>{caseData?.sar_mission_count ?? 0}</strong></div>
+            <div><span>Satellite</span><strong>{caseData?.satellite_count ?? visibleTimeline.filter((item) => item.type === 'satellite').length}</strong></div>
+            <div><span>Radio</span><strong>{caseData?.radio_count ?? visibleTimeline.filter((item) => item.type === 'radio_observation' || item.type === 'radio').length}</strong></div>
+            <div><span>Drift</span><strong>{caseData?.drift_count ?? visibleTimeline.filter((item) => item.type === 'drift').length}</strong></div>
+            <div><span>SAR assessments</span><strong>{caseData?.sar_mission_count ?? visibleTimeline.filter((item) => item.type === 'sar_mission_assessment').length}</strong></div>
             {dossierReasonCodes.length > 0 ? <div><span>Why flagged</span><strong>{dossierReasonCodes.join(' · ')}</strong></div> : null}
             {caseData?.counter_indicators?.length ? <div><span>Counter-indicators</span><strong>{caseData.counter_indicators.join(' · ')}</strong></div> : null}
             {frame.item ? <div><span>Latest at cutoff</span><strong>{frame.item.type}</strong></div> : null}
@@ -1142,45 +1155,38 @@ export default function PlayTimeline({ apiBase }) {
             {frameProps.url ? <a href={frameProps.url} target="_blank" rel="noreferrer">Source ↗</a> : null}
           </section>
           <section className="play-card">
-            <p>Satellite context</p>
+            <h3>Satellite review</h3>
+            <p>Inspect dated scenes and their source records. Coverage alone cannot establish what happened.</p>
             <label className="play-satellite-selector">
-              <span>Map imagery</span>
+              <span>Map background</span>
               <select aria-label="Map imagery" value={satelliteVisible ? 'dated' : 'high-resolution'} onChange={(event) => setSatelliteVisible(event.target.value === 'dated')}>
-                <option value="high-resolution">High-resolution imagery · Esri composite</option>
-                <option value="dated">Dated imagery · NASA VIIRS (clouds visible)</option>
+                <option value="high-resolution">Esri imagery · composite</option>
+                <option value="dated">NASA VIIRS · dated context</option>
               </select>
             </label>
-            {satelliteProps.asset_ref ? (
-              <figure className="play-satellite-preview">
-                <img
-                  src={satelliteProps.asset_ref}
-                  alt={`Satellite quicklook ${satelliteProps.mission || ''}`.trim()}
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                />
-                <figcaption>Satellite quicklook · {satelliteProps.mission || satellite?.source || 'acquisition'}</figcaption>
-              </figure>
-            ) : null}
-            <label className="play-satellite-selector">
-              <span>Global imagery</span>
+            {satelliteVisible && <label className="play-satellite-selector">
+              <span>NASA context · {contextDay} UTC</span>
               <select value={satelliteContextMission} onChange={(event) => setSatelliteContextMission(event.target.value)}>
-                <option value="VIIRS NOAA-21">NOAA-21 · dated true color</option>
-                <option value="VIIRS NOAA-20">NOAA-20 · dated true color</option>
-                <option value="VIIRS Suomi-NPP">Suomi-NPP · dated true color</option>
+                <option value="VIIRS NOAA-21">NOAA-21 · true color</option>
+                <option value="VIIRS NOAA-20">NOAA-20 · true color</option>
+                <option value="VIIRS Suomi-NPP">Suomi-NPP · true color</option>
               </select>
-            </label>
-            <span>Context date {contextDay} · NASA EOSDIS GIBS</span>
+            </label>}
             <label className="play-satellite-selector">
-              <span>Case acquisition</span>
-              <select value={satelliteMission} onChange={(event) => setSatelliteMission(event.target.value)}>
-                <option value="auto">Auto · Sentinel first</option>
-                {satelliteMissions.map((mission) => <option key={mission} value={mission}>{mission}</option>)}
+              <span>Case acquisitions</span>
+              <select value={satelliteMission} onChange={(event) => setSatelliteMission(event.target.value)} disabled={!satelliteScenes.length}>
+                <option value="">{satelliteScenes.length ? 'Choose an acquisition' : 'No documented acquisition at this cutoff'}</option>
+                {satelliteScenes.map((item) => <option key={item.id} value={item.id}>{item.properties?.mission || item.source || 'Satellite'} · {itemTime(item.at)} UTC{item.properties?.evidence_role === 'context_only_pending_review' ? ' · review candidate' : ''}</option>)}
               </select>
             </label>
-            <h3>{satelliteProps.mission || 'No acquisition before this time'}</h3>
-            {satellite ? <time>{itemTime(satellite.at)}</time> : null}
-            <span>{satelliteProps.sensor_type || satellite?.source || '—'}</span>
-            {Number.isFinite(Number(satelliteProps.temporal_delta_s)) ? <span>Δt {Math.round(Number(satelliteProps.temporal_delta_s) / 3600)} h from report</span> : null}
+            {satellite && <span>{satelliteProps.evidence_role === 'corroboration' ? 'Recorded as corroborating by the archive' : 'Coverage or context for manual review'}</span>}
+            {quicklook && <figure className="play-satellite-preview">
+              <img key={satelliteProps.asset_ref} src={satelliteProps.asset_ref} alt="Satellite quicklook from provider" loading="lazy" referrerPolicy="no-referrer" />
+              <figcaption>Provider quicklook · imagery is shown in its original framing</figcaption>
+            </figure>}
+            {/^https:\/\//i.test(satelliteProps.asset_ref || '') && !satelliteProps.asset_ref.includes('{') && <a href={satelliteProps.asset_ref} target="_blank" rel="noreferrer">Open provider quicklook ↗</a>}
+            {satelliteProps.temporal_delta_s != null && Number.isFinite(Number(satelliteProps.temporal_delta_s)) ? <span>Δt {Math.round(Number(satelliteProps.temporal_delta_s) / 3600)} h from report</span> : null}
+            {Number.isFinite(satelliteProps.review_delta_hours) && <span>{satelliteProps.review_delta_hours.toFixed(1)} h from the episode window · coverage candidate</span>}
             {satelliteProps.product_id ? <span>Product {satelliteProps.product_id}</span> : null}
             {satelliteProps.temporal_relation ? <span>{satelliteProps.temporal_relation}</span> : null}
             {satelliteProps.polarisation?.length ? <span>Polarisation {satelliteProps.polarisation.join(' / ')}</span> : null}
@@ -1205,12 +1211,12 @@ export default function PlayTimeline({ apiBase }) {
             <dl><div><dt>Reported</dt><dd>{report.reported_at || 'Unknown'}</dd></div><div><dt>Source</dt><dd>{report.source || 'Not recorded'}</dd></div><div><dt>Status at selected time</dt><dd>{statusLabel(report.status_at_cutoff)}</dd></div><div><dt>Historical cutoff</dt><dd>{report.cutoff || 'Complete archive'}</dd></div><div><dt>Archive decision</dt><dd>{statusLabel(report.archive_decision || 'unknown')}</dd></div><div><dt>Verification</dt><dd>{statusLabel(report.verification_status || 'not recorded')}</dd></div><div><dt>Independent corroboration</dt><dd>{report.corroborated === null ? 'Not assessed' : report.corroborated ? 'Yes' : 'No'}</dd></div><div><dt>Evidence records</dt><dd>{report.evidence_count_at_cutoff}</dd></div></dl>
             <section aria-label="Report at a glance">
               <h2>What we know</h2>
-              <p><strong>Reported event:</strong> {report.assessment?.observation || 'An incident was reported, but the available records do not describe a verified observation.'}</p>
-              <p><strong>What the evidence suggests:</strong> {report.assessment?.interpretation || 'There is not enough independently verified evidence to establish what happened.'}</p>
+              <p><strong>Reported event:</strong> {humanizeDetectorText(report.assessment?.observation) || report.title}</p>
+              <p><strong>What the evidence suggests:</strong> {humanizeDetectorText(report.assessment?.interpretation) || 'The sources below show what was available at the selected time.'}</p>
               <p><strong>Verification:</strong> {report.corroborated === true ? 'Independent corroboration is recorded.' : report.corroborated === false ? 'Independent corroboration has not been established.' : 'Independent corroboration has not been assessed.'} {report.evidence_count_at_cutoff} evidence record(s) available at this point in the archive.</p>
               <p><strong>What remains uncertain:</strong> {report.limitations || 'Location, outcome and attribution may remain unverified.'}</p>
             </section>
-            <h2>Evidence assessment · detailed record</h2>
+            <details><summary>Detailed assessment and detector notes</summary>
             <p>{report.assessment?.observation || 'Reported incident. Original evidence and interpretation are distinct.'}</p>
             <p>{report.assessment?.interpretation || 'Independent confirmation and outcomes may remain unknown.'}</p>
             {(report.assessment?.supporting_evidence || []).map((item, index) => <p key={`support-${index}`}><strong>Supporting:</strong> {String(item)}</p>)}
@@ -1220,6 +1226,7 @@ export default function PlayTimeline({ apiBase }) {
             {report.reason_codes.length > 0 && <p><strong>Reason codes:</strong> {report.reason_codes.join(' · ')}</p>}
             {report.counter_indicators.length > 0 && <p><strong>Counter-indicators:</strong> {report.counter_indicators.join(' · ')}</p>}
             {report.independent_lineages.length > 0 && <p><strong>Evidence lineages:</strong> {report.independent_lineages.join(' · ')}</p>}
+            </details>
             <h2>Timeline · what was documented and when</h2>
             {report.evidence.length === 0 ? <p>No dated evidence is available at this cutoff.</p> : <ol>{report.evidence.map((entry, index) => <li key={`${entry.id || index}-${index}`}><time>{entry.at || 'Undated'}</time><h3>{entry.title || entry.type || 'Observation'}</h3><p>{entry.type || 'evidence'} · {entry.source || 'Source not recorded'}</p>{entry.url && /^https?:\/\//i.test(entry.url) && <a href={entry.url} target="_blank" rel="noreferrer">Original source ↗</a>}</li>)}</ol>}
             <footer>SeaCommons / PLAY · Report ID {report.case_id} · Generated {report.generated_at}</footer>
