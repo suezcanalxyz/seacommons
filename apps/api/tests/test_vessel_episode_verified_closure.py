@@ -49,3 +49,24 @@ def test_validated_reappearance_splits_next_episode():
 def test_unverified_resolution_metadata_cannot_close_gap_without_open_peer():
     episodes = coalesce_security_vessel_episodes([signal('unverified_only', 0, lifecycle='resolved')])
     assert episodes[0]['properties']['resolution_state'] == 'open'
+
+
+def test_validated_old_alert_cannot_authenticate_later_unverified_normal_track():
+    original = signal('nuc', 0, validated=True)
+    original['properties']['anomaly_type'] = 'not_under_command'
+    episodes = coalesce_security_vessel_episodes([original], track_history={
+        '123456789': [{'lon': 12.1, 'lat': 35.1, 'ts': (T0 + timedelta(hours=2)).isoformat(), 'nav_status': 0}],
+    })
+    assert episodes[0]['properties'].get('incident_lifecycle') != 'resolved'
+    assert episodes[0]['properties']['resolution_state'] == 'open'
+
+
+def test_safety_episode_requires_explicit_validated_closure_signal():
+    original = signal('nuc', 0)
+    original['properties']['anomaly_type'] = 'not_under_command'
+    closing = signal('nuc-resolved', 1, validated=True, lifecycle='resolved')
+    closing['properties']['anomaly_type'] = 'not_under_command'
+    episodes = coalesce_security_vessel_episodes([original, closing])
+    assert len(episodes) == 1
+    assert episodes[0]['properties']['incident_lifecycle'] == 'resolved'
+    assert episodes[0]['properties']['resolution_state'] == 'resolved'

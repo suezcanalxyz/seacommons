@@ -446,23 +446,26 @@ def _build_episode_feature(
             ),
         }
     )
-    # A later normal AIS navigation status can support closure only when
-    # identity continuity and source authenticity have been validated.
-    # Without these flags, a stale/forged fix must not close a NUC case.  It does not invalidate other anomalies
-    # (for example a subsequent reporting gap), so only the incident state
-    # and its explanatory note are changed.
-    if (
-        "not_under_command" in anomaly_types
-        and track
-        and track[-1].get("nav_status") in {0, 1, 5, 8}
-        and any(
-            p.get("identity_validated") is True
+    # Track history is a visualization input, not a validated reappearance.
+    # In particular, identity/source flags on an older NUC alert do not
+    # authenticate a later normal-status point from an unrelated AIS feed.
+    # Only an explicitly resolved signal with BOTH validation decisions can
+    # close a safety episode; never infer closure from a track nav_status.
+    if family == "safety_episode" and "not_under_command" in anomaly_types:
+        validated_closure = any(
+            p.get("incident_lifecycle") == "resolved"
+            and p.get("identity_validated") is True
             and p.get("source_validated") is True
             for p in item_props
         )
-    ):
-        props["incident_lifecycle"] = "resolved"
-        props["status_note"] = "Latest AIS navigation status returned to normal."
+        if validated_closure:
+            props["incident_lifecycle"] = "resolved"
+            props["resolution_state"] = "resolved"
+            props["status_note"] = "Explicitly validated safety episode closure."
+        else:
+            props.pop("incident_lifecycle", None)
+            props["resolution_state"] = "open"
+            props.pop("status_note", None)
     primary["id"] = episode_id
     return primary
 

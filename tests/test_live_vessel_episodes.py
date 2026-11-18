@@ -80,7 +80,10 @@ def test_validated_identity_and_source_allow_nuc_resolution() -> None:
             {"lon": 29.18, "lat": 41.35, "ts": "2026-08-30T21:00:00+00:00", "nav_status": 0},
         ]},
     )
-    assert result[0]["properties"]["incident_lifecycle"] == "resolved"
+    # Validation flags on the original NUC event do not authenticate a
+    # later point supplied through raw track_history.
+    assert result[0]["properties"].get("incident_lifecycle") != "resolved"
+    assert result[0]["properties"]["resolution_state"] == "open"
 
 
 def test_exit_gate_two_unrelated_anomaly_families_become_two_episodes() -> None:
