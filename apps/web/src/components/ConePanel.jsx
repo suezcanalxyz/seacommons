@@ -1,3 +1,4 @@
+import { ReportPanelHeader, ReportRow as Row } from './ReportPanel.jsx';
 import { aisUtcTimestamp, latestLiveAisFix, selectedLiveMovementEndpoints } from '../features/live/movementEndpoints.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -58,17 +59,6 @@ function reasonCodesLabel(codes = []) {
   return codes
     .map((code) => REASON_LABELS[code] || String(code).toLowerCase().replace(/_/g, ' '))
     .join(' · ');
-}
-
-function Row({ label, value, color, mono }) {
-  return (
-    <div className="cone-row">
-      <span>{label}</span>
-      <strong style={color ? { color } : mono ? { fontFamily: 'monospace', fontSize: 10 } : {}}>
-        {value ?? '—'}
-      </strong>
-    </div>
-  );
 }
 
 function ZoneBadge({ zone }) {
@@ -672,6 +662,10 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
         {props.live_expires_at && <Row label="Decision window until" value={new Date(props.live_expires_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })} />}
         {props.resolution_state && <Row label="Resolution" value={String(props.resolution_state).replace(/_/g, ' ')} />}
         <Row label="Reported" value={when ? new Date(when).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—'} />
+        {props.sanctions_matched && aisUtcTimestamp(props.last_seen) && <>
+          <Row label="Listed vessel fix (UTC)" value={new Date(aisUtcTimestamp(props.last_seen)).toISOString().slice(0, 19).replace('T', ' ')} mono />
+          <Row label="Position age" value={ageLabel(aisUtcTimestamp(props.last_seen))} />
+        </>}
         {coords && <Row label="Report coordinates" value={`${Number(coords[1]).toFixed(5)}, ${Number(coords[0]).toFixed(5)}`} mono />}
         {Number.isFinite(latestAisTime) && Number.isFinite(latestAisFix.lat) && Number.isFinite(latestAisFix.lon) && (
           <>
@@ -1409,13 +1403,7 @@ export default function MapFloatingPanel({
 
   return (
     <div className={`cone-panel${['intel', 'search_area', 'radio_receiver', 'radio_message'].includes(panel.type) ? ' cone-panel--intel' : ''}`}>
-      <div className="cone-panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <span className="section-kicker">{kicker}</span>
-          <strong style={{ fontSize: 13, display: 'block', marginTop: 2 }}>{title}</strong>
-        </div>
-        <button className="cone-close-btn" onClick={onClose}>×</button>
-      </div>
+      <ReportPanelHeader kicker={kicker} title={title} onClose={onClose} />
 
       {panel.type === 'location' && (
         <LocationView panel={panel} onComputeDrift={onComputeDrift} />

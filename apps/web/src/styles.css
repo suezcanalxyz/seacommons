@@ -4301,3 +4301,9 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .live-movement-popup .maplibregl-popup-close-button {
   color: inherit;
 }
+
+.report-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.report-panel-header > div:first-child { flex: 1; }
+.report-panel-header > div:first-child > strong { display: block; margin-top: 2px; font-size: 13px; }
+.live-sanctions-positions { display: grid; gap: 5px; margin-top: 8px; }
+.live-sanctions-positions select { width: 100%; }

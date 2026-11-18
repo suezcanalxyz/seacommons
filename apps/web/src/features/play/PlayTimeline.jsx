@@ -1,3 +1,4 @@
+import { ReportPanelHeader, ReportRow } from '../../components/ReportPanel.jsx';
 import { startTransition } from 'react';
 import { reviewedArchiveCase, archiveGeographicClues, geographicClueFeatures } from './humanitarianReview.js';
 import { isPublicCaseEligible } from '../live/publicCaseEligibility.js';
@@ -171,6 +172,7 @@ export default function PlayTimeline({ apiBase }) {
   }, [archiveLoading, mapContentReady, mapError, startupGraceExpired]);
   const [error, setError] = useState('');
   const [satelliteMission, setSatelliteMission] = useState('');
+  const [archiveFiltersExpanded, setArchiveFiltersExpanded] = useState(false);
   const [archiveFilter, setArchiveFilter] = useState('all');
   const [archiveSearch, setArchiveSearch] = useState('');
   const [visibleCaseLimit, setVisibleCaseLimit] = useState(80);
@@ -1047,6 +1049,15 @@ export default function PlayTimeline({ apiBase }) {
           </div>
           <input type="search" className="play-archive-search" aria-label="Search archive" placeholder="Search cases or sources…" value={archiveSearch} onChange={(event) => setArchiveSearch(event.target.value)} />
           <div className="signals-selector play-filter-selector" role="group" aria-label="Play archive filters">
+            <div className="signals-selector__row">
+              <span className="signals-selector__label">Investigations</span>
+              <button type="button" className={`signals-selector__link ${archiveFilter === 'all' ? 'is-active' : ''}`}
+                onClick={() => setArchiveFilter('all')}>All <span className="signals-selector__count">{visibleIncidents.length}</span></button>
+              <button type="button" className={`signals-selector__chevron ${archiveFiltersExpanded ? 'is-open' : ''}`}
+                aria-expanded={archiveFiltersExpanded} aria-label="Archive investigation categories"
+                onClick={() => setArchiveFiltersExpanded((expanded) => !expanded)}><i /></button>
+            </div>
+            <div className="signals-selector__macros" hidden={!archiveFiltersExpanded}>
             <div className="signals-selector__list">
               <button type="button" className={`signals-selector__link ${archiveFilter === 'all' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('all')}><span className="signals-selector__box" aria-hidden="true" />ALL</button>
               <button type="button" className={`signals-selector__link ${archiveFilter === 'humanitarian' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('humanitarian')}><span className="signals-selector__box" aria-hidden="true" />HUMANITARIAN</button>
@@ -1080,6 +1091,7 @@ export default function PlayTimeline({ apiBase }) {
               <button type="button" className={`signals-selector__link ${sanctionsOnly ? 'is-active' : ''}`} onClick={() => setSanctionsOnly((value) => !value)}><span className="signals-selector__box" aria-hidden="true" />SANCTIONS</button>
               <button type="button" className={`signals-selector__link ${investigationsOnly ? 'is-active' : ''}`} onClick={() => setInvestigationsOnly((value) => !value)}><span className="signals-selector__box" aria-hidden="true" />INVESTIGATION</button>
             </div>
+            </div>
           </div>
           <div className="play-archive-continuity">
             <p className="live-feed-panel__continuity"><span />Evidence is bounded to what was knowable at the selected cutoff.</p>
@@ -1096,29 +1108,30 @@ export default function PlayTimeline({ apiBase }) {
           {archiveGroups.map((group) => (
             <section className="play-archive-month" key={group.key}>
               <header><strong>{group.label}</strong><span>{group.incidents.length} cases</span></header>
-              {group.incidents.map((incident) => {
-                const counts = globalState.cutoff ? {} : incident.evidence_counts || {};
-                return (
-                  <button
-                    key={incident.incident_id}
-                    type="button"
-                    className={`play-case ${selectedId === incident.incident_id ? 'is-active' : ''}`}
-                    onClick={() => { setSelectedId(incident.incident_id); setCasesOpen(false); }}
-                  >
-                    <span className="play-case__time">{itemTime(incident.reported_at)}</span>
-                    <strong><i className="play-case__category" aria-hidden="true" style={{ backgroundColor: playIncidentColor(incident) }} />{incident.title || 'SeaCommons incident'}</strong>
-                    <span>{globalState.cutoff ? 'Historical snapshot' : evidenceLabel(incident)}</span>
-                    <span>{(incident.incident_type || 'context').replace(/_/g, ' ')} · {incident.main_category || incident.domain || 'humanitarian'} · {statusLabel(incidentStatusAtCutoff(incident, globalState.cutoff))}</span>
-                    {ongoingCaseClock(incident, archiveNow) ? <span className="play-case__clock" title="Elapsed wall-clock time since first report, not a new vessel position or corroboration">{ongoingCaseClock(incident, archiveNow)}</span> : null}
-                    {(Number(counts.drift) > 0 || Number(counts.satellite) > 0) ? (
-                      <span className="play-case__evidence">
-                        {Number(counts.drift) > 0 ? <b>DRIFT {counts.drift}</b> : null}
-                        {Number(counts.satellite) > 0 ? <b>SAT {counts.satellite}</b> : null}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
+              <ul className="play-archive-log">
+                {group.incidents.map((incident) => {
+                  const selected = selectedId === incident.incident_id;
+                  const color = playIncidentColor(incident);
+                  const counts = globalState.cutoff ? {} : incident.evidence_counts || {};
+                  return (
+                    <li key={incident.incident_id} className={`intel-log-row${selected ? ' is-selected' : ''}`}>
+                      <button type="button" className={`play-case${selected ? ' is-active' : ''}`}
+                        aria-current={selected ? 'true' : undefined}
+                        onClick={() => { setSelectedId(incident.incident_id); setCasesOpen(false); }}>
+                        <i className="intel-log-dot" aria-hidden="true" style={{ background: color, color }} />
+                        <strong>{incident.title || 'SeaCommons incident'}</strong>
+                        <span>{(incident.incident_type || 'context').replace(/_/g, ' ')} · {statusLabel(incidentStatusAtCutoff(incident, globalState.cutoff))}</span>
+                        <span className="intel-log-time">{itemTime(incident.reported_at)}</span>
+                        <code className="intel-log-loc">{globalState.cutoff ? 'Historical snapshot' : evidenceLabel(incident)}
+                          {Number(counts.drift) > 0 ? ` · DRIFT ${counts.drift}` : ''}
+                          {Number(counts.satellite) > 0 ? ` · SAT ${counts.satellite}` : ''}
+                          {ongoingCaseClock(incident, archiveNow) ? ` · ${ongoingCaseClock(incident, archiveNow)}` : ''}
+                        </code>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </section>
           ))}
           {filteredIncidents.length > displayedCases.length ? <button type="button" className="play-case-load-more" onClick={() => setVisibleCaseLimit((limit) => limit + 80)}>Show 80 more cases · {displayedCases.length} of {filteredIncidents.length} loaded</button> : null}
@@ -1178,18 +1191,22 @@ export default function PlayTimeline({ apiBase }) {
 
       {selectedId && <aside className="cone-panel cone-panel--intel play-evidence is-open">
         <div className="play-sheet-handle" />
-        <div className="cone-panel-header play-section-head">
-          <span>Case dossier</span>
+        <ReportPanelHeader kicker="Historical report" title="Case dossier" onClose={() => setSelectedId('')}>
           <button type="button" className="play-report-trigger" disabled={!selectedIncident || timelineLoading} onClick={() => setReportOpen(true)}>Report ↗</button>
-          <button className="cone-close-btn" type="button" onClick={() => setSelectedId('')}>×</button>
-        </div>
+        </ReportPanelHeader>
         <div className="play-evidence__scroll" aria-busy={Boolean(timelineLoading)}>
           {timelineLoading && <p className="play-dossier-progress" role="status">Loading case evidence…</p>}
           {timelineError && <p className="play-dossier-progress" role="alert">{timelineError}</p>}
-          <section className="play-card">
-            <p>{(selectedIncident?.incident_type || caseData?.incident_type || 'incident').replace(/_/g, ' ')} · {selectedIncident?.main_category || selectedIncident?.domain || caseData?.main_category || caseData?.domain || 'maritime'}</p>
-            <h2>{selectedIncident?.title || 'SeaCommons incident'}</h2>
-            <time>{itemTime(selectedIncident?.reported_at)}</time>
+          <section className="cone-section play-case-summary">
+            <div className="intel-report-title">
+              <span style={{ background: playIncidentColor(selectedIncident || {}) }} />
+              <strong>{selectedIncident?.title || 'SeaCommons incident'}</strong>
+            </div>
+            <ReportRow label="Category" value={selectedIncident?.main_category || selectedIncident?.domain || 'maritime'} color={playIncidentColor(selectedIncident || {})} />
+            <ReportRow label="Event" value={(selectedIncident?.incident_type || caseData?.incident_type || 'incident').replace(/_/g, ' ')} />
+            <ReportRow label="Status at cutoff" value={statusLabel(status)} />
+            <ReportRow label="Verification" value={globalState.cutoff ? 'Historical snapshot' : evidenceLabel(caseData || selectedIncident)} />
+            <ReportRow label="Reported (UTC)" value={itemTime(selectedIncident?.reported_at)} />
             {reviewedCase?.event_date && <span>Incident date · {reviewedCase.event_date}</span>}
             {selectedIncident?.location_summary && <span>{selectedIncident.suppress_inferred_map_evidence ? '' : 'Reported area · '}{selectedIncident.location_summary}</span>}
             {geographicClues.length > 0 && <div className="play-report-locations">

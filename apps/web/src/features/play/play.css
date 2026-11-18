@@ -488,3 +488,9 @@
   .play-public-shell .play-all-badge { backdrop-filter: none; }
   .play-mobile-dock button { font-size: 12px; }
 }
+
+.play-archive-log { margin: 0; padding: 0; list-style: none; }
+.play-archive-panel .signals-selector__macros[hidden] { display: none; }
+.play-case-summary > span { display: block; margin: 6px 0; }
+.play-evidence .play-card { border-bottom-color: var(--glass-border, rgba(255,255,255,.065)); }
+.play-evidence .play-card h3 { font-size: 13px; }
