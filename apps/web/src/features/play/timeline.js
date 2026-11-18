@@ -127,11 +127,22 @@ export function casesForArchiveView(incidents, cutoff, selectedDay) {
   });
 }
 
+export function sarObservationPoint(item) {
+  if (item?.type !== 'satellite' || item.source !== 'gfw'
+    || item.properties?.sensor_type !== 'sar' || item.geometry?.type !== 'Point'
+    || item.properties?.provenance?.source !== 'gfw_sar_detection') return null;
+  const coordinates = item.geometry.coordinates;
+  if (!Array.isArray(coordinates) || coordinates.length !== 2) return null;
+  const [lon, lat] = coordinates;
+  return Number.isFinite(lon) && Number.isFinite(lat) && Math.abs(lon) <= 180 && Math.abs(lat) <= 90
+    ? coordinates : null;
+}
+
 export function satelliteReviewScenes(timeline, candidates = [], cutoff) {
   const byId = new Map();
   for (const item of timeline) {
-    if (item.type === 'satellite' && item.id
-        && (item.properties?.asset_ref || item.properties?.source_url || ['Polygon', 'MultiPolygon'].includes(item.geometry?.type))) {
+    if (item.type === 'satellite' && item.id && Number.isFinite(parseTime(item.at)) && parseTime(item.at) <= parseTime(cutoff)
+        && (sarObservationPoint(item) || item.properties?.asset_ref || item.properties?.source_url || ['Polygon', 'MultiPolygon'].includes(item.geometry?.type))) {
       byId.set(item.id, item);
     }
   }

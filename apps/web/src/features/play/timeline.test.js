@@ -580,3 +580,17 @@ test('an undated resolved status cannot be replayed as a historical outcome', ()
   assert.equal(incidentStatusAtCutoff({ incident_status: 'resolved' }, '2026-05-20T10:00:00Z'), 'outcome_unknown');
   assert.equal(incidentStatusAtCutoff({ incident_status: 'resolved', resolved_at: '2026-05-20T09:00:00Z' }, '2026-05-20T10:00:00Z'), 'resolved');
 });
+
+test('satellite review admits dated GFW radar points with explicit provider lineage', async () => {
+  const { sarObservationPoint, satelliteReviewScenes } = await import('./timeline.js');
+  const point = {
+    type: 'satellite', source: 'gfw', id: 'sar-1', at: '2026-05-20T10:00:00Z',
+    geometry: { type: 'Point', coordinates: [14, 35] },
+    properties: { sensor_type: 'sar', provenance: { source: 'gfw_sar_detection' } },
+  };
+  assert.deepEqual(sarObservationPoint(point), [14, 35]);
+  assert.equal(sarObservationPoint({ ...point, source: 'copernicus_dataspace' }), null);
+  assert.equal(sarObservationPoint({ ...point, geometry: { type: 'Point', coordinates: [null, 35] } }), null);
+  assert.deepEqual(satelliteReviewScenes([point], [], '2026-05-20T09:00:00Z'), []);
+  assert.deepEqual(satelliteReviewScenes([point], [], null), [point]);
+});

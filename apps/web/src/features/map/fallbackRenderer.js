@@ -185,7 +185,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
           const [lon, lat] = coordinates;
           const kind = feature.properties.kind;
           const colors = { model_start: '#bb8cff', model_end: '#bb8cff', ais_first_reappearance: '#22c55e',
-            clue_departure: '#53d1f5', clue_destination: '#b2d7e2' };
+            clue_departure: '#53d1f5', clue_destination: '#b2d7e2', sar_observation: '#75a7ff' };
           const color = colors[kind] || '#f59e0b';
           const marker = L.circleMarker([lat, lon], { radius: 7, color: '#06151d', fillColor: color,
             fillOpacity: 1, weight: 2, renderer: incidentRenderer }).addTo(movementLayer);
