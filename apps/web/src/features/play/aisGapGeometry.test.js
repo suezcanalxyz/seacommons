@@ -27,3 +27,17 @@ test('invalid positions and out-of-order timestamps do not create phantom gaps',
   assert.equal(result.gaps[0].from.at, fixes[0].at);
   assert.equal(result.gaps[0].to.at, fixes[2].at);
 });
+
+test('rejects null coordinates without moving a gap endpoint to zero', () => {
+  const result = reconstructAisGaps([{ track_points: [{ ...fixes[0], lat: null, lon: null }, fixes[1]] }]);
+  assert.deepEqual(result.gaps, []);
+  assert.deepEqual(result.observed.features, []);
+});
+
+test('LIVE and PLAY both break the observed track across a recorded gap', async () => {
+  const { splitObservedTrackSegments } = await import('../live/observedTrack.js');
+  const result = reconstructAisGaps([{ track_points: fixes }]);
+  assert.deepEqual(splitObservedTrackSegments(fixes), result.segments);
+  const [line, start, end] = aisGapMapFeatures(result.gaps).features;
+  assert.deepEqual(line.geometry.coordinates, [start.geometry.coordinates, end.geometry.coordinates]);
+});

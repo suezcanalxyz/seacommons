@@ -4,7 +4,7 @@ import { reviewedArchiveCase, archiveGeographicClues, geographicClueFeatures } f
 import { isPublicCaseEligible } from '../live/publicCaseEligibility.js';
 import { addMovementLabels } from '../map/movementLabels.js';
 import VesselCaseSearch from '../../components/VesselCaseSearch.jsx';
-import { liveMovementMapFeatures } from '../live/movementEndpoints.js';
+import { liveMovementEndpoints, liveMovementMapFeatures } from '../live/movementEndpoints.js';
 import { playIncidentColor } from './incidentPalette.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -12,7 +12,7 @@ import { fetchJson } from '../../services/api/client.js';
 import { timelineReport, humanizeDetectorText } from '../live/reportNarrative.js';
 import SanctionsCatalog from '../../components/SanctionsCatalog.jsx';
 import { historicalDriftFeatures } from './driftGeometry.js';
-import { reconstructAisGaps, aisGapMapFeatures } from './aisGapGeometry.js';
+import { reconstructAisGaps, aisGapMapFeatures, normalizeAisFixes } from './aisGapGeometry.js';
 import { configureMaplibreWorker } from '../map/maplibreWorker.js';
 import { createVesselArrowImage, VESSEL_COLOR } from '../map/vesselMarker.js';
 import { createAttackMarkerImage, isAttackIncident } from '../map/attackMarker.js';
@@ -279,7 +279,7 @@ export default function PlayTimeline({ apiBase }) {
   );
   // Derived voyage evidence must exist before the map effect depends on it.
   const voyageVessels = useMemo(() => (caseData?.voyage_evidence?.vessels || []).map((v) => ({
-    ...v, track_points: (v.track_points || []).filter((p) =>
+    ...v, track_points: normalizeAisFixes(v.track_points).filter((p) =>
       !globalState.cutoff || Date.parse(p.at) <= Date.parse(globalState.cutoff)),
   })), [caseData?.voyage_evidence, globalState.cutoff]);
   const aisReconstruction = useMemo(() => reconstructAisGaps(voyageVessels), [voyageVessels]);
@@ -309,7 +309,14 @@ export default function PlayTimeline({ apiBase }) {
     const reconstructed = aisGapMapFeatures(aisReconstruction.gaps);
     if (geographicClues.length) return { ...reconstructed, features: geographicClueFeatures(geographicClues) };
     if (reconstructed.features.length || !selectedIncident) return reconstructed;
-    const features = liveMovementMapFeatures({ geometry: selectedIncident.geometry, properties: selectedIncident });
+    const feature = { geometry: selectedIncident.geometry, properties: selectedIncident };
+    const endpoints = liveMovementEndpoints(feature);
+    if (globalState.cutoff) {
+      const cutoff = Date.parse(globalState.cutoff);
+      if (endpoints.from?.at && Date.parse(endpoints.from.at) > cutoff) endpoints.from = null;
+      if (endpoints.to?.at && Date.parse(endpoints.to.at) > cutoff) endpoints.to = null;
+    }
+    const features = liveMovementMapFeatures(feature, endpoints);
     if (features.length) return { ...reconstructed, features };
     const forecast = historicalDriftFeatures(visibleTimeline).features
       .filter((feature) => feature.properties.geometry_semantics === 'simulated_trajectory').at(-1);
@@ -321,7 +328,7 @@ export default function PlayTimeline({ apiBase }) {
       { type: 'Feature', geometry: { type: 'Point', coordinates: track.at(-1) },
         properties: { kind: 'model_end', label: 'Model endpoint' } },
     ] };
-  }, [aisReconstruction, geographicClues, selectedIncident, visibleTimeline]);
+  }, [aisReconstruction, geographicClues, globalState.cutoff, selectedIncident, visibleTimeline]);
   const frame = useMemo(
     () => selectFrame(visibleTimeline, Math.max(0, visibleTimeline.length - 1)),
     [visibleTimeline],

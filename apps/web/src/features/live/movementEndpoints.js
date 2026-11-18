@@ -8,7 +8,8 @@ export function aisUtcTimestamp(value) {
 }
 
 function validEndpoint(point, at) {
-  if (point?.lat == null || point?.lon == null || point.lat === '' || point.lon === '') return null;
+  if (point?.lat == null || point?.lon == null || ![point.lat, point.lon].every((value) => typeof value === 'number'
+    || (typeof value === 'string' && value.trim()))) return null;
   const lat = Number(point.lat);
   const lon = Number(point.lon);
   return Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180
@@ -21,8 +22,11 @@ export function liveMovementEndpoints(feature) {
   const isGap = ['gap', 'long_gap', 'ais_gap'].includes(String(props.anomaly_type || props.event || '').toLowerCase())
     || props.episode_family === 'gap_episode'
     || /ais.*gap|long gap/i.test(String(props.category || props.title || ''));
-  const from = validEndpoint(movement?.from, movement?.from_at);
-  const to = validEndpoint(movement?.to, movement?.to_at);
+  const fromAt = aisUtcTimestamp(movement?.from_at);
+  const toAt = aisUtcTimestamp(movement?.to_at);
+  const from = fromAt ? validEndpoint(movement?.from, fromAt) : null;
+  const to = fromAt && toAt && Date.parse(toAt) > Date.parse(fromAt)
+    ? validEndpoint(movement?.to, toAt) : null;
   if (from) return { from, to, isGap, fromLabel: 'Last observed fix' };
   if (isGap && feature.geometry?.type === 'Point') {
     const [lon, lat] = feature.geometry.coordinates;
