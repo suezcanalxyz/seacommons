@@ -140,6 +140,8 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
   const retinaTiles = { detectRetina: true, maxZoom: 19, maxNativeZoom: 16, crossOrigin: true };
   const standardTiles = L.tileLayer(PUBLIC_BASEMAP_TILE_URL, { ...retinaTiles, maxNativeZoom: 19 }).addTo(map);
   let satelliteTiles;
+  let satelliteLabelTiles;
+  let satelliteLabelsVisible = false;
   let satelliteUrl;
   let activeTiles = standardTiles;
   if (PUBLIC_BASEMAP_LABEL_URL) {
@@ -162,6 +164,10 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
           ...retinaTiles, maxNativeZoom: 19, zIndex: 1, attribution: 'Esri or NASA EOSDIS GIBS',
         });
         satelliteUrl = imageryUrl;
+        satelliteLabelTiles = L.tileLayer('https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png', {
+          ...retinaTiles, maxNativeZoom: 19, opacity: .92, zIndex: 3,
+          attribution: '© CARTO, © OpenStreetMap contributors',
+        });
       }
       const nextTiles = mode === 'satellite' ? satelliteTiles : standardTiles;
       if (mode === 'satellite' && imageryUrl !== satelliteUrl) {
@@ -171,6 +177,16 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
       if (activeTiles !== nextTiles) {
         map.removeLayer(activeTiles);
         activeTiles = nextTiles.addTo(map);
+      }
+      if (satelliteLabelTiles) {
+        if (mode === 'satellite' && !satelliteLabelsVisible) {
+          satelliteLabelTiles.addTo(map);
+          satelliteLabelsVisible = true;
+        }
+        if (mode !== 'satellite' && satelliteLabelsVisible) {
+          map.removeLayer(satelliteLabelTiles);
+          satelliteLabelsVisible = false;
+        }
       }
     },
     setMovement(features) {

@@ -1,4 +1,4 @@
-import { radioFeature, liveActiveReceiverMarkers } from './features/live/radioMap.js';
+import { radioFeature, liveActiveReceiverMarkers, isMediterraneanReceiver } from './features/live/radioMap.js';
 import { installActiveRadioStationIcon } from './features/live/radioStationIcon.js';
 import { reconstructAisGaps } from './features/play/aisGapGeometry.js';
 import { useLiveVesselDossier } from './features/live/useLiveVesselDossier.js';
@@ -518,10 +518,18 @@ function mapStyle(initialBaseMap = 'standard') {
     sources: {
       osm: publicBasemapSource(),
       satellite,
+      satelliteLabels: {
+        type: 'raster',
+        tiles: ['https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        maxzoom: 19,
+        attribution: '© CARTO, © OpenStreetMap contributors',
+      },
     },
     layers: [
       { id: 'osm', type: 'raster', source: 'osm', layout: { visibility: initialBaseMap === 'satellite' ? 'none' : 'visible' } },
       { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: initialBaseMap === 'satellite' ? 'visible' : 'none' } },
+      { id: 'satellite-labels', type: 'raster', source: 'satelliteLabels', layout: { visibility: initialBaseMap === 'satellite' ? 'visible' : 'none' }, paint: { 'raster-opacity': 0.92 } },
     ],
   };
 }
@@ -728,10 +736,10 @@ function App() {
   const [showVesselLinks, setShowVesselLinks] = useState(false);
   const [baseMap, setBaseMap] = useState(() => {
     try {
-      const stored = window.localStorage.getItem('seacommons_base_map');
+      const stored = window.localStorage.getItem('seacommons_live_basemap_v2');
       if (stored === 'standard' || stored === 'satellite') return stored;
     } catch { /* storage unavailable */ }
-    return isPublicLiveHost ? 'satellite' : 'standard';
+    return 'standard';
   });
   const layerVisStorageKey = layerVisibilityStorageKey(isPublicLiveHost);
   const [layerVis, setLayerVis] = useState(() => initialLayerVisibility({
@@ -2504,9 +2512,26 @@ function App() {
           event.originalEvent?.stopPropagation?.();
         });
 
+        const receiverHover = new maplibregl.Popup({
+          closeButton: false, closeOnClick: false, offset: 20, className: 'radio-station-hover',
+        });
         map.on('mouseenter', 'radio-receivers-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mousemove', 'radio-receivers-layer', (event) => {
+          const feature = event.features?.[0];
+          if (!feature?.geometry?.coordinates) return;
+          const props = feature.properties || {};
+          const escapeLabel = (value) => String(value ?? '').replace(/[&<>"']/g, (char) =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+          const station = escapeLabel(props.station_label || props.receiver_id || 'Radio station');
+          const hz = Number(props.frequency_hz);
+          const channel = Number.isFinite(hz) && hz > 0 ? `${(hz / 1_000_000).toFixed(4)} MHz` : 'Frequency not reported';
+          receiverHover.setLngLat(feature.geometry.coordinates)
+            .setHTML(`<div class="radio-station-hover__content"><strong>${station}</strong><span>RECEIVER CONNECTED · ${escapeLabel(channel)}</span><small>Click for station dossier</small></div>`)
+            .addTo(map);
+        });
         map.on('mouseleave', 'radio-receivers-layer', () => {
           map.getCanvas().style.cursor = APP_PROFILE === 'demo' && (activePanelRef.current === 'sim' || selectionModeRef.current) ? 'crosshair' : '';
+          receiverHover.remove();
         });
         map.on('click', 'radio-receivers-layer', (event) => {
           const feature = event.features?.[0];
@@ -2742,6 +2767,7 @@ function App() {
     const effectiveBaseMap = baseMap;
     if (map.getLayer('osm')) map.setLayoutProperty('osm', 'visibility', effectiveBaseMap === 'standard' ? 'visible' : 'none');
     if (map.getLayer('satellite')) map.setLayoutProperty('satellite', 'visibility', effectiveBaseMap === 'satellite' ? 'visible' : 'none');
+    if (map.getLayer('satellite-labels')) map.setLayoutProperty('satellite-labels', 'visibility', effectiveBaseMap === 'satellite' ? 'visible' : 'none');
   }, [baseMap, mapReady]);
 
   useEffect(() => {
@@ -2750,7 +2776,7 @@ function App() {
 
   // Persist the user's selection even while MapLibre is still starting up.
   useEffect(() => {
-    try { window.localStorage.setItem('seacommons_base_map', baseMap); }
+    try { window.localStorage.setItem('seacommons_live_basemap_v2', baseMap); }
     catch { /* storage unavailable */ }
   }, [baseMap]);
 
@@ -4266,6 +4292,11 @@ function App() {
 
             <details className="live-radio-panel">
               <summary>Radio · {receiverMesh.fresh ? (receiverMesh.active || 0) : 'status unavailable'} active · {receiverMarkers.length} on map</summary>
+              {receiverMesh.fresh && (receiverMesh.active || 0) > 0 && receiverMarkers.length === 0 && (
+                <p role="status" className="live-radio-panel__regional-gap">
+                  No connected Mediterranean receiver is currently available on this map. {(receiverMesh.active || 0)} remote HF receiver(s) remain active outside the regional layer.
+                </p>
+              )}
               {Object.values(radioFailures).some(Boolean) && (
                 <p role="status">Update unavailable: {Object.keys(radioFailures).filter((key) => radioFailures[key]).join(', ')}. Showing the last available data.</p>
               )}
@@ -4283,9 +4314,9 @@ function App() {
               {(receiverMesh.fresh ? receiverMesh.receivers || [] : []).filter((row) => row.active).map((row) => (
                 <button key={row.receiver_id} type="button" onClick={() => {
                   openRadioReport('radio_receiver', radioFeature(row, 'radio_receiver'));
-                }}>{row.station_label || row.receiver_id} · {row.listen_available ? 'Listen available' : 'Receiver details'}</button>
+                }}>{row.station_label || row.receiver_id} · {isMediterraneanReceiver(row) ? 'Mediterranean map' : 'Remote HF relay · off map'} · {row.listen_available ? 'Listen available' : 'Receiver details'}</button>
               ))}
-              <p className="live-radio-panel__source-note">📡 Antenna symbols show connected RF receivers only. External NAVTEX messages are independent secondary publications, not local RF reception.</p>
+              <p className="live-radio-panel__source-note">Map antennas: connected Mediterranean stations only. Inland HF relays remain listed below. External NAVTEX is secondary information, not RF received locally.</p>
               {radioSummary.external.length > 0 && <details className="live-radio-panel__navtex-secondary">
                 <summary>External NAVTEX · NAVAREA III · {radioSummary.external.length} published messages</summary>
                 {radioSummary.external.slice(0, 15).map((row) => (
@@ -4585,7 +4616,8 @@ function App() {
             aria-pressed={baseMap === 'satellite'}
             onClick={() => { setPlay3D(false); setBaseMap((current) => current === 'satellite' ? 'standard' : 'satellite'); }}
           >
-            {baseMap === 'satellite' ? 'Map' : 'Satellite'}
+            <span className="live-basemap-switch__icon" aria-hidden="true">{baseMap === 'satellite' ? '▦' : '◫'}</span>
+            <span>{baseMap === 'satellite' ? 'Standard map' : 'Satellite view'}</span>
           </button>, document.body
         ) : null}
         {isPublicLiveHost && <VesselCaseSearch cases={intelEvents.map((feature) => ({ ...feature.properties, feature }))} onSelect={(record) => openIntelReport(record.feature)} />}

@@ -1,0 +1,63 @@
+{
+  "audit_date": "2026-11-18",
+  "status": "HTTP-reachable candidates; no authorized SDR stream or DSC decode verified",
+  "source": "ReceiverBook public directory and direct probes from SeaCommons Oracle VM",
+  "method": "HTTP 200 probe with five-second timeout; does not occupy receiver slots",
+  "candidates": [
+    {
+      "label": "SDR-Alaró (Mallorca)",
+      "region": "Balearic Islands, Western Mediterranean",
+      "provider": "openwebrx",
+      "endpoint": "https://sdr.alaro.ovh/",
+      "http_status": 200,
+      "activation_status": "review_required",
+      "rf_verified": false
+    },
+    {
+      "label": "EA3HRU - Barcelona",
+      "region": "Barcelona, Northwest Mediterranean",
+      "provider": "kiwisdr",
+      "endpoint": "http://sdrbcn.duckdns.org:8073/",
+      "http_status": 200,
+      "physical_lineage_group": "ea3hru_barcelona_unverified",
+      "activation_status": "review_required",
+      "rf_verified": false
+    },
+    {
+      "label": "EA3HRU - Barcelona alternate",
+      "region": "Barcelona, Northwest Mediterranean",
+      "provider": "kiwisdr",
+      "endpoint": "http://z-ha-dum.duckdns.org:8073/",
+      "http_status": 200,
+      "physical_lineage_group": "ea3hru_barcelona_unverified",
+      "activation_status": "review_required",
+      "rf_verified": false
+    },
+    {
+      "label": "EA5RQ - Valencia",
+      "region": "Valencia, Western Mediterranean",
+      "provider": "kiwisdr",
+      "endpoint": "http://ea5rq.ddns.net:8075/",
+      "http_status": 200,
+      "activation_status": "review_required",
+      "rf_verified": false
+    },
+    {
+      "label": "Barcelona OpenWebRX",
+      "region": "Barcelona, Northwest Mediterranean",
+      "provider": "openwebrx",
+      "endpoint": "http://5.154.110.148:8073/",
+      "http_status": 200,
+      "activation_status": "review_required",
+      "rf_verified": false
+    }
+  ],
+  "safety_gates": [
+    "Verify published frequency profile and 2187.5 kHz reception without claiming channel coverage from software capability alone",
+    "Confirm independent receiver physical lineage, especially EA3HRU mirrored endpoints",
+    "Verify remote automated listening permission and spare slots with host operator",
+    "Perform short bounded PCM quality and actual decoder test",
+    "No map location or LIVE active icon before connected healthy stream and verified site coordinates",
+    "Operator VM has root-protected configuration; no auto activation from this manifest"
+  ]
+}

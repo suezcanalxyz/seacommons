@@ -113,7 +113,9 @@ test('LIVE configures bundled MapLibre worker before creating map', () => {
 });
 
 test('public Live retains nautical seamarks and permits satellite selection', () => {
-  assert.match(main, /return isPublicLiveHost \? 'satellite' : 'standard'/);
+  assert.match(main, /return 'standard';/);
+  assert.match(main, /satellite-labels/);
+  assert.match(main, /seacommons_live_basemap_v2/);
   assert.match(main, /stored === 'standard' \|\| stored === 'satellite'/);
   assert.match(main, /const effectiveBaseMap = baseMap/);
   assert.match(main, /tiles: \['https:\/\/tiles\.openseamap\.org\/seamark\/\{z\}\/\{x\}\/\{y\}\.png'\]/);
