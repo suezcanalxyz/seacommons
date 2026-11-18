@@ -557,5 +557,5 @@ test('PLAY displays reviewed attack dossiers with dated public sources', async (
   const dossier = page.locator('.play-evidence.is-open');
   await expect(dossier.getByText('Reported area · Black Sea near Cape Kaliakra, off Bulgaria')).toBeVisible();
   await expect(dossier.getByRole('button', { name: 'Locate on map +' })).toBeDisabled();
-  await expect(dossier.getByRole('link', { name: 'Original source' })).toHaveCount(2);
+  await expect(dossier.locator('.play-report-chronology').getByRole('link', { name: 'Original source' })).toHaveCount(2);
 });
