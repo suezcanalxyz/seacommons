@@ -22,6 +22,17 @@ AUDIT_FIELDS = (
 )
 
 
+def _valid_utc_observation(value: object) -> bool:
+    """Require a parseable timezone-aware observation, not just a nonempty field."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and parsed.utcoffset() is not None
+
+
 def summarize_gap_attestations(events: list[tuple[str, dict]]) -> dict:
     """Aggregate states without exposing vessel identities or positions."""
     counts: Counter[str] = Counter()
@@ -46,7 +57,7 @@ def summarize_gap_attestations(events: list[tuple[str, dict]]) -> dict:
             bool(str(attestation.get("track_id") or "")),
             bool(str(attestation.get("mmsi") or "")),
             bool(str(attestation.get("source") or "")),
-            bool(str(attestation.get("observed_at") or "")),
+            _valid_utc_observation(attestation.get("observed_at")),
         ))
         counts["attestation_fields_complete" if bound else "attestation_fields_incomplete"] += 1
         if closed and not bound:
