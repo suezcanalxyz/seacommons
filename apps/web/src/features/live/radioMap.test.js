@@ -22,14 +22,14 @@ test('valid published DSC and receiver positions preserve GeoJSON coordinate ord
 
 test('active receiver symbols require a fresh mesh and actual geolocation', () => {
   const receivers = [
-    { receiver_id: 'catania', active: true, latitude: 37.5, longitude: 15.09 },
+    { receiver_id: 'catania_openwebrx', active: true, latitude: 37.5, longitude: 15.09 },
     { receiver_id: 'mallorca', active: false, latitude: 39.8, longitude: 3.1 },
     { receiver_id: 'missing', active: true, latitude: null, longitude: null },
   ];
   assert.deepEqual(liveActiveReceiverMarkers({ fresh: false, receivers }), []);
   const active = liveActiveReceiverMarkers({ fresh: true, receivers });
   assert.equal(active.length, 1);
-  assert.equal(active[0].properties.receiver_id, 'catania');
+  assert.equal(active[0].properties.receiver_id, 'catania_openwebrx');
   assert.deepEqual(active[0].geometry.coordinates, [15.09, 37.5]);
   assert.deepEqual(liveActiveReceiverMarkers({ fresh: true, receivers: [] }), []);
 });
