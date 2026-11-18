@@ -156,7 +156,21 @@ def coalesce_security_vessel_episodes(
             observed_at=_parse_datetime(props.get("timestamp_utc")),
             lat=point[1] if point else None,
             lon=point[0] if point else None,
-            resolved=props.get("incident_lifecycle") == "resolved",
+            # A producer's bare lifecycle label is not proof of a validated
+            # AIS reappearance. Gap episodes require BOTH explicit checks.
+            resolved=(
+                props.get("incident_lifecycle") == "resolved"
+                and (
+                    family_for(
+                        props.get("anomaly_type") or props.get("ais_nav_status_kind"),
+                        explicit_family=props.get("episode_family"),
+                    ) != "gap_episode"
+                    or (
+                        props.get("identity_validated") is True
+                        and props.get("source_validated") is True
+                    )
+                )
+            ),
         ))
 
     episodes: list[dict[str, Any]] = []
@@ -187,6 +201,15 @@ def _build_episode_feature(
     positioned = [item for item in items if _point(item)]
     primary = deepcopy(positioned[-1] if positioned else items[-1])
     props = primary.setdefault("properties", {})
+    # A copied primary marker may contain an unverified closure label. Never
+    # project it as resolved for a gap episode unless the producer recorded
+    # both independent validation decisions explicitly.
+    if family == "gap_episode" and props.get("incident_lifecycle") == "resolved" and not (
+        props.get("identity_validated") is True and props.get("source_validated") is True
+    ):
+        props.pop("incident_lifecycle", None)
+        if props.get("resolution_state") == "resolved":
+            props["resolution_state"] = "open"
     history_feature = {
         "properties": {"observed_track": (track_history or {}).get(mmsi, [])}
     }
@@ -267,6 +290,18 @@ def _build_episode_feature(
         "resolved" if "resolved" in resolution_states else
         "explained" if "explained" in resolution_states else "superseded"
     )
+    if family == "gap_episode":
+        # Never infer a verified gap closure from a producer's free-text
+        # resolution_state. Only the explicitly validated reappearance can
+        # promote the entire episode to resolved.
+        episode_resolution_state = (
+            "resolved" if any(
+                p.get("incident_lifecycle") == "resolved"
+                and p.get("identity_validated") is True
+                and p.get("source_validated") is True
+                for p in item_props
+            ) else "open"
+        )
     publication_states = {str(p.get("publication_state") or "internal") for p in item_props}
     episode_publication_state = (
         "published" if "published" in publication_states
@@ -411,17 +446,26 @@ def _build_episode_feature(
             ),
         }
     )
-    # A later normal AIS navigation status is direct evidence that a
-    # previous NUC episode ended.  It does not invalidate other anomalies
-    # (for example a subsequent reporting gap), so only the incident state
-    # and its explanatory note are changed.
-    if (
-        "not_under_command" in anomaly_types
-        and track
-        and track[-1].get("nav_status") in {0, 1, 5, 8}
-    ):
-        props["incident_lifecycle"] = "resolved"
-        props["status_note"] = "Latest AIS navigation status returned to normal."
+    # Track history is a visualization input, not a validated reappearance.
+    # In particular, identity/source flags on an older NUC alert do not
+    # authenticate a later normal-status point from an unrelated AIS feed.
+    # Only an explicitly resolved signal with BOTH validation decisions can
+    # close a safety episode; never infer closure from a track nav_status.
+    if family == "safety_episode" and "not_under_command" in anomaly_types:
+        validated_closure = any(
+            p.get("incident_lifecycle") == "resolved"
+            and p.get("identity_validated") is True
+            and p.get("source_validated") is True
+            for p in item_props
+        )
+        if validated_closure:
+            props["incident_lifecycle"] = "resolved"
+            props["resolution_state"] = "resolved"
+            props["status_note"] = "Explicitly validated safety episode closure."
+        else:
+            props.pop("incident_lifecycle", None)
+            props["resolution_state"] = "open"
+            props.pop("status_note", None)
     primary["id"] = episode_id
     return primary
 
