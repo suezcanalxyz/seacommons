@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-11-18",
+  "purpose": "Mediterranean receiver expansion audit: candidate selection only, not deployment configuration or stream authorization",
+  "probe": {
+    "origin": "SeaCommons Oracle VM",
+    "method": "HTTP GET to curated station frontend with 3s timeout",
+    "interpretation": "HTTP 200 means frontend reachable, NOT SDR slot availability, audio quality, GMDSS decode, license permission or RF coverage"
+  },
+  "priority_order": [
+    {
+      "receiver_id": "cagliari_hf_monitor",
+      "sector": "western-central Mediterranean / Sardinia",
+      "http_status": 200,
+      "proposed_action": "validate SDR socket/slots and add as Western/Central receiver"
+    },
+    {
+      "receiver_id": "mallorca_hf_monitor",
+      "sector": "western Mediterranean / Balearic Sea",
+      "http_status": 200,
+      "proposed_action": "validate stream and add for western sector"
+    },
+    {
+      "receiver_id": "thessaloniki_hf_monitor",
+      "sector": "northeastern Mediterranean / Aegean",
+      "http_status": 200,
+      "proposed_action": "validate stream and add for Aegean sector"
+    },
+    {
+      "receiver_id": "catania_openwebrx",
+      "sector": "central Mediterranean / Sicily",
+      "http_status": 200,
+      "proposed_action": "retain as priority central receiver; verify active status at activation time"
+    },
+    {
+      "receiver_id": "zakynthos_hf_monitor",
+      "sector": "Ionian Sea",
+      "http_status": 200,
+      "proposed_action": "retain active if session continuity healthy"
+    },
+    {
+      "receiver_id": "cassine_hf_monitor",
+      "sector": "northwestern Mediterranean remote inland HF reference",
+      "http_status": 200,
+      "proposed_action": "retain if useful verified signals; not a coastal coverage guarantee"
+    },
+    {
+      "receiver_id": "milano_hf_monitor",
+      "sector": "northern inland fallback",
+      "http_status": 200,
+      "proposed_action": "reserve / independent validation"
+    },
+    {
+      "receiver_id": "heimiswil_hf_monitor",
+      "sector": "northern inland fallback",
+      "http_status": 200,
+      "proposed_action": "reserve / independent validation"
+    }
+  ],
+  "temporarily_unreachable": [
+    "salerno_hf_monitor",
+    "trecastelli_hf_monitor",
+    "san_marino_hf_monitor",
+    "slovenia_hf_monitor",
+    "edessa_hf_monitor",
+    "rome_hf_monitor",
+    "botticino_hf_monitor",
+    "bad_ragaz_hf_monitor"
+  ],
+  "gate": [
+    "Verify actual SDR WebSocket session and permitted automation without exceeding operator slots",
+    "Validate tuning and nonzero PCM at 2187500 Hz USB",
+    "Monitor per-station duration and resets without interpreting HTTP 200 as audio",
+    "No duplicate physical RF lineages",
+    "Select unique geographic sectors with independent decoded evidence",
+    "Maintain rollback and protected production config backup"
+  ],
+  "production_state": "not deployed",
+  "note": "Only 8 presently curated stations yielded HTTP 200. Remaining 405 discovered stations require manual review and must not be mass-enabled."
+}
