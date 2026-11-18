@@ -680,6 +680,18 @@ async def live_receiver_mesh(
     }
 
 
+@router.get("/radio/external-navtex")
+def live_radio_external_navtex():
+    """Bounded, clearly attributed secondary NAVAREA III messages.
+
+    These are not our own RF observations and never contribute to DSC,
+    distress, or independent-source correlation counts.
+    """
+    from core.radio.external_navtex import public_navtex_snapshot
+
+    return public_navtex_snapshot()
+
+
 @router.get("/radio/events")
 async def live_radio_events(
     limit: int = Query(50, ge=1, le=200),
