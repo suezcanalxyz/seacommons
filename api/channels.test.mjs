@@ -28,7 +28,7 @@ test('upstream unavailability must not become 11 fabricated zeroes', () => {
 test('Vercel route is first-match before catchall proxy in both config roots', async () => {
   const { readFileSync } = await import('node:fs');
   for (const path of ['vercel.json', 'apps/web/vercel.json']) {
-    const rewrites = JSON.parse(readFileSync(new URL('../../' + path, import.meta.url))).rewrites;
+    const rewrites = JSON.parse(readFileSync(path)).rewrites;
     const entry = rewrites.findIndex((row) => row.source === '/api/v1/live/radio/channels');
     const fallback = rewrites.findIndex((row) => row.source === '/api/:path*');
     assert.ok(entry >= 0 && entry < fallback, path);
