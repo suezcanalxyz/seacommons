@@ -619,7 +619,20 @@ function App() {
   const [stats, setStats] = useState(null);
   const [vessels, setVessels] = useState({ type: 'FeatureCollection', features: [] });
   const [ngoVessels, setNgoVessels] = useState({ type: 'FeatureCollection', features: [] });
-  const [sanctionedVessels, setSanctionedVessels] = useState({ type: 'FeatureCollection', features: [] });
+  const [sanctionsPositionMode, setSanctionsPositionMode] = useState('all');
+  const [sanctionsSnapshot, setSanctionedVessels] = useState({ type: 'FeatureCollection', features: [] });
+  const sanctionedVessels = useMemo(() => {
+    if (sanctionsPositionMode === 'all') return sanctionsSnapshot;
+    const now = Date.now();
+    return {
+      ...sanctionsSnapshot,
+      features: sanctionsSnapshot.features.filter(({ properties }) => {
+        const age = now - Date.parse(properties?.last_seen);
+        if (!Number.isFinite(age) || age < -300_000 || age > 86_400_000) return false;
+        return sanctionsPositionMode === 'recent' ? age <= 600_000 : age > 600_000;
+      }),
+    };
+  }, [sanctionsPositionMode, sanctionsSnapshot]);
   // Map layers only ever receive fleet features that have a real position;
   // the fleet panel gets the complete registry (F-13).
   const sarMapFeatures = useMemo(() => ({
@@ -1215,7 +1228,7 @@ function App() {
         const data = await fetchJson(
           apiBase,
           '/api/v1/live/sanctioned-vessels',
-          undefined,
+          { cache: 'no-store' },
           8000,
         );
         if (alive && data?.features) setSanctionedVessels(data);
@@ -2815,7 +2828,6 @@ function App() {
       if (!alarmPhoneOn && isAlarmPhoneSource(props.source)) return false;
       if (liveFacets.satellite && !props.has_satellite) return false;
       if (liveFacets.radio && !props.has_radio) return false;
-      if (liveFacets.sanctions && !props.sanctions_matched) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4152,6 +4164,17 @@ function App() {
                     </button>
                   </div>
                 </div>
+                {liveFacets.sanctions && (
+                  <label className="live-sanctions-positions">
+                    <span>Sanctioned vessel positions</span>
+                    <select value={sanctionsPositionMode} onChange={(event) => setSanctionsPositionMode(event.target.value)}>
+                      <option value="all">All fixes · last 24 h</option>
+                      <option value="recent">Recent AIS · up to 10 min</option>
+                      <option value="last-known">Last known · 10 min to 24 h</option>
+                    </select>
+                    <span aria-live="polite">{sanctionedVessels.features.length} matching vessels</span>
+                  </label>
+                )}
                 {signalsExpanded && (
                   <div className="signals-selector__macros" role="group" aria-label="Investigation categories">
                     <div className="signals-selector__role-summary">

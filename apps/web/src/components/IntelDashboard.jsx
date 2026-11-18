@@ -282,7 +282,6 @@ export default function IntelDashboard({
       evs = evs.filter((f) => !isAlarmPhoneSource(f.properties?.source));
     }
     if (liveFacetFilters?.satellite) evs = evs.filter((f) => Boolean(f.properties?.has_satellite));
-    if (liveFacetFilters?.sanctions) evs = evs.filter((f) => Boolean(f.properties?.sanctions_matched));
     if (liveFacetFilters?.corroborated) evs = evs.filter((f) => Boolean(f.properties?.corroborated));
 
     if (tierFilter !== 'all') evs = evs.filter((f) => eventTier(f.properties || {}) === tierFilter);

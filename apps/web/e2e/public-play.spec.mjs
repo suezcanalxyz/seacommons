@@ -12,6 +12,7 @@ test('Play archive exposes deterministic filters, dossier and global timeline', 
   await expect(page.locator('main.play-public-shell')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Play' })).toBeVisible();
   const filters = page.getByRole('group', { name: 'Play archive filters' });
+  await filters.getByRole('button', { name: 'Archive investigation categories' }).click();
   for (const label of ['ALL', 'HUMANITARIAN', 'MARITIME', 'SATELLITE', 'SANCTIONS', 'INVESTIGATION']) {
     await expect(filters.getByRole('button', { name: label })).toBeVisible();
   }
@@ -552,6 +553,7 @@ test('PLAY displays reviewed attack dossiers with dated public sources', async (
     status: 200, contentType: 'application/json', body: archive,
   }));
   await page.goto(PUBLIC_PLAY_URL);
+  await page.getByRole('button', { name: 'Archive investigation categories' }).click();
   await page.getByRole('button', { name: 'ATTACKS', exact: true }).click();
   await page.getByRole('button', { name: /CONTSHIP JET/ }).click();
   const dossier = page.locator('.play-evidence.is-open');
