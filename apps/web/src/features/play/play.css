@@ -423,3 +423,27 @@
 }
 .play-case strong { font-size: 12px; }
 .play-case__time { font-size: 10px; }
+
+.play-timeline-bar {
+  grid-template-columns: auto 30px minmax(0, 1fr) 30px auto 148px 42px;
+}
+.play-timeline-bar .play-day-picker {
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid #486268;
+  border-radius: 6px;
+  color: #ecfff7;
+  background: #102630;
+  color-scheme: dark;
+  font: 12px var(--font-display);
+}
+@media (max-width: 680px) {
+  .play-public-shell .play-timeline-bar.is-mobile-active {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 28px minmax(112px, auto) 36px;
+  }
+  .play-timeline-end, .play-timeline-bar__label { display: none; }
+}

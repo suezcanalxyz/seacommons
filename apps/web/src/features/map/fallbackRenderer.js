@@ -183,11 +183,16 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
           }).addTo(movementLayer);
         } else if (type === 'Point') {
           const [lon, lat] = coordinates;
-          const color = feature.properties.kind === 'ais_first_reappearance' ? '#22c55e' : '#f59e0b';
+          const kind = feature.properties.kind;
+          const color = kind.startsWith('model_') ? '#bb8cff' : kind === 'ais_first_reappearance' ? '#22c55e' : '#f59e0b';
           const marker = L.circleMarker([lat, lon], { radius: 7, color: '#06151d', fillColor: color,
             fillOpacity: 1, weight: 2, renderer: incidentRenderer }).addTo(movementLayer);
           const label = feature.properties.label;
-          if (label) marker.bindTooltip(label);
+          if (label) {
+            const text = container.ownerDocument.createElement('span');
+            text.textContent = label;
+            marker.bindTooltip(text, { permanent: true, direction: 'top', offset: [0, -8], className: 'map-movement-label' });
+          }
           marker.bringToFront();
         }
       }
@@ -322,7 +327,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
     },
     focusMovement(features, mobile) {
       const points = pointFeatures(features).map(({ geometry: { coordinates: [lon, lat] } }) => [lat, lon]);
-      if (points.length < 2) return;
+      if (!points.length) return;
       const panelPadding = Math.min(410, Math.round(map.getSize().x * 0.34));
       map.fitBounds(L.latLngBounds(points), {
         paddingTopLeft: mobile ? [24, 55] : [panelPadding, 85],
@@ -330,7 +335,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
         maxZoom: 9,
       });
     },
-    focusReport(feature, drifts = []) {
+    focusReport(feature, drifts = [], mobile = true) {
       const p = feature?.properties || {};
       const id = String(p.id || p.intel_event_id || '').replace(/^intel:/, '');
       const related = (drifts?.features || []).filter((item) => id && String(item.properties?.intel_event_id || '').replace(/^intel:/, '') === id);
@@ -344,7 +349,10 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
       if (!points.length) return;
       const bounds = L.latLngBounds(points);
       map.invalidateSize();
-      map.fitBounds(bounds, { paddingTopLeft: [22, 22], paddingBottomRight: [22, Math.round(map.getSize().y * 0.69)], maxZoom: related.length ? 10 : 11, animate: true });
+      const panel = Math.min(404, Math.round(map.getSize().x * 0.30));
+      map.fitBounds(bounds, { paddingTopLeft: mobile ? [22, 62] : [panel, 70],
+        paddingBottomRight: mobile ? [22, Math.round(map.getSize().y * 0.64)] : [panel, 72],
+        maxZoom: related.length ? 9 : 8, animate: true });
     },
     fitFeatures(payload) {
       const { incidents, vessels } = normalizePayload(payload);

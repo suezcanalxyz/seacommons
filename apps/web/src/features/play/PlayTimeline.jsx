@@ -1,3 +1,6 @@
+import { addMovementLabels } from '../map/movementLabels.js';
+import VesselCaseSearch from '../../components/VesselCaseSearch.jsx';
+import { liveMovementMapFeatures } from '../live/movementEndpoints.js';
 import { playIncidentColor } from './incidentPalette.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -253,7 +256,6 @@ export default function PlayTimeline({ apiBase }) {
       !globalState.cutoff || Date.parse(p.at) <= Date.parse(globalState.cutoff)),
   })), [caseData?.voyage_evidence, globalState.cutoff]);
   const aisReconstruction = useMemo(() => reconstructAisGaps(voyageVessels), [voyageVessels]);
-  const gapFeatures = useMemo(() => aisGapMapFeatures(aisReconstruction.gaps), [aisReconstruction]);
   const contextDay = useMemo(() => {
     const value = selectedDay || globalState.cutoff || selectedIncident?.reported_at || coverage.end;
     return value ? String(value).slice(0, 10) : new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
@@ -271,6 +273,22 @@ export default function PlayTimeline({ apiBase }) {
     () => timelineAtCutoff(fullTimeline, globalState.cutoff),
     [fullTimeline, globalState.cutoff],
   );
+  const gapFeatures = useMemo(() => {
+    const reconstructed = aisGapMapFeatures(aisReconstruction.gaps);
+    if (reconstructed.features.length || !selectedIncident) return reconstructed;
+    const features = liveMovementMapFeatures({ geometry: selectedIncident.geometry, properties: selectedIncident });
+    if (features.length) return { ...reconstructed, features };
+    const forecast = historicalDriftFeatures(visibleTimeline).features
+      .filter((feature) => feature.properties.geometry_semantics === 'simulated_trajectory').at(-1);
+    if (!forecast) return reconstructed;
+    const track = forecast.geometry.coordinates;
+    return { ...reconstructed, features: [
+      { type: 'Feature', geometry: { type: 'Point', coordinates: track[0] },
+        properties: { kind: 'model_start', label: 'Model start' } },
+      { type: 'Feature', geometry: { type: 'Point', coordinates: track.at(-1) },
+        properties: { kind: 'model_end', label: 'Model endpoint' } },
+    ] };
+  }, [aisReconstruction, selectedIncident, visibleTimeline]);
   const frame = useMemo(
     () => selectFrame(visibleTimeline, Math.max(0, visibleTimeline.length - 1)),
     [visibleTimeline],
@@ -559,9 +577,10 @@ export default function PlayTimeline({ apiBase }) {
         map.addLayer({ id: 'play-ais-gap-endpoints', type: 'circle', source: 'play-ais-gaps',
           filter: ['==', ['geometry-type'], 'Point'],
           paint: { 'circle-radius': 7, 'circle-color': ['match', ['get', 'kind'],
-            'ais_last_observed', '#ff8859', 'ais_first_reappearance', '#55e0c0', '#ffffff'],
+            'ais_last_observed', '#ff8859', 'ais_first_reappearance', '#55e0c0', '#bb8cff'],
             'circle-stroke-color': '#071014', 'circle-stroke-width': 2 } });
         // Tap/click either observed endpoint to inspect the same bounded gap.
+        addMovementLabels(map, 'play-ais-gap-labels', 'play-ais-gaps');
         map.on('click', 'play-ais-gap-endpoints', (event) => {
           const feature = event.features?.[0];
           if (!feature || feature.geometry?.type !== 'Point') return;
@@ -687,14 +706,16 @@ export default function PlayTimeline({ apiBase }) {
   useEffect(() => {
     const fallback = fallbackMapRef.current;
     if (!fallbackReady || !fallback) return;
-    fallback.setFeatures(mappedIncidents.features);
-    if (!selectedId && mappedIncidents.features.length) fallback.fitFeatures(mappedIncidents.features);
-    const geometry = selectedIncident?.geometry;
-    const bounds = geometryBounds(geometry);
-    if (selectedId && bounds) {
-      fallback.flyTo({ center: bounds.center, zoom: geometry?.type === 'Point' ? 6.5 : 5.2 });
-    }
-  }, [fallbackReady, mappedIncidents, selectedId, selectedIncident]);
+    const points = mappedIncidents.features.filter((feature) => feature.geometry.type === 'Point');
+    const selectedArea = mappedIncidents.features.find((feature) => feature.properties.incident_id === selectedId && feature.properties.marker_kind === 'search_area');
+    fallback.setFeatures(selectedArea ? [...points, selectedArea] : points);
+    if (!selectedId && points.length) fallback.fitFeatures(points);
+  }, [fallbackReady, mappedIncidents, selectedId]);
+
+  useEffect(() => {
+    if (!fallbackReady || !selectedIncident?.geometry) return;
+    fallbackMapRef.current?.focusReport(selectedIncident, [], window.matchMedia('(max-width: 680px)').matches);
+  }, [fallbackReady, selectedId, selectedIncident?.geometry]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -797,6 +818,30 @@ export default function PlayTimeline({ apiBase }) {
     fallbackMapRef.current?.setDrifts(historicalDriftFeatures(visibleTimeline));
   }, [fallbackReady, gapFeatures, visibleTimeline]);
 
+  const movementBounds = geometryBounds({
+    coordinates: gapFeatures.features.filter(({ geometry }) => geometry.type === 'Point').map(({ geometry }) => geometry.coordinates),
+  });
+  const movementExtent = movementBounds && gapFeatures.features.filter(({ geometry }) => geometry.type === 'Point').length >= 2
+    ? [movementBounds.west, movementBounds.south, movementBounds.east, movementBounds.north].join(',') : '';
+  useEffect(() => {
+    if (!selectedId || !movementExtent) return;
+    const mobile = window.matchMedia('(max-width: 680px)').matches;
+    const [west, south, east, north] = movementExtent.split(',').map(Number);
+    if (fallbackReady) {
+      fallbackMapRef.current?.focusMovement([
+        { geometry: { type: 'Point', coordinates: [west, south] } },
+        { geometry: { type: 'Point', coordinates: [east, north] } },
+      ], mobile);
+    }
+    if (mapReady) {
+      mapRef.current?.fitBounds([[west, south], [east, north]], {
+        padding: mobile ? { top: 60, bottom: Math.round(window.innerHeight * .60), left: 24, right: 24 }
+          : { top: 80, bottom: 85, left: 410, right: 340 },
+        maxZoom: 9, duration: 450,
+      });
+    }
+  }, [fallbackReady, mapReady, movementExtent, selectedId]);
+
   const status = selectedIncident ? incidentStatusAtCutoff(selectedIncident, globalState.cutoff) : 'outcome_unknown';
   const reportTrack = useMemo(() => timelineReport(visibleTimeline), [visibleTimeline]);
   const reportEvidence = visibleTimeline.filter((item) => item?.type !== 'satellite');
@@ -873,6 +918,11 @@ export default function PlayTimeline({ apiBase }) {
         Archive · {globalState.mode === 'all' && !selectedDay && archiveTotal != null ? archiveTotal : visibleIncidents.length}
       </button>
 
+      <VesselCaseSearch cases={visibleIncidents} onSelect={(record) => {
+        setArchiveSearch(''); setArchiveFilter('all'); setIncidentTypeFilter('all');
+        setEvidenceFilter('all'); setSatelliteOnly(false); setSanctionsOnly(false); setInvestigationsOnly(false);
+        setSelectedId(record.incident_id); setCasesOpen(false);
+      }} />
       <aside className={`live-feed-panel is-open play-archive-panel play-cases ${casesOpen ? 'is-mobile-open' : ''}`}>
         <header className="live-feed-panel__header">
           <div className="live-feed-panel__eyebrow">
@@ -1259,7 +1309,7 @@ export default function PlayTimeline({ apiBase }) {
         />
         <button type="button" onClick={() => { const base = selectedDay || globalState.cutoff?.slice(0,10) || coverage.end?.slice(0,10); if (base) { const next = new Date(Date.parse(`${base}T00:00:00Z`) + 86400000).toISOString().slice(0,10); if (next > (coverage.end?.slice(0,10) || next)) { setSelectedDay(''); setGlobalPosition(TIMELINE_MAX); } else { setSelectedDay(next); setGlobalPosition(TIMELINE_MAX - 1); } } }}>→</button>
         <div className="play-timeline-bar__label"><strong>{modeLabel}</strong><span>{globalState.mode === 'all' ? `through ${coverage.end?.slice(0, 10) || 'latest'}` : `imagery ${contextDay}`}</span></div>
-        <input className="play-day-picker" type="date" aria-label="Show events on date" min={coverage.start?.slice(0,10)} max={coverage.end?.slice(0,10)} value={selectedDay || (globalState.mode === 'all' ? '' : globalState.cutoff?.slice(0,10) || '')} onChange={(event) => { const day = event.target.value; if (!day) { setSelectedDay(''); setGlobalPosition(TIMELINE_MAX); return; } setSelectedDay(day); const first = Date.parse(coverage.start); const last = Date.parse(coverage.end); const target = Date.parse(`${day}T12:00:00Z`); if (Number.isFinite(first) && Number.isFinite(last) && last > first && Number.isFinite(target)) setGlobalPosition(Math.max(0, Math.min(TIMELINE_MAX - 1, Math.round((target-first)/(last-first)*TIMELINE_MAX)))); }} />
+        <input className="play-day-picker" title="Choose an archive date in UTC" type="date" aria-label="Show events on date" min={coverage.start?.slice(0,10)} max={coverage.end?.slice(0,10)} value={selectedDay || (globalState.mode === 'all' ? '' : globalState.cutoff?.slice(0,10) || '')} onChange={(event) => { const day = event.target.value; if (!day) { setSelectedDay(''); setGlobalPosition(TIMELINE_MAX); return; } setSelectedDay(day); const first = Date.parse(coverage.start); const last = Date.parse(coverage.end); const target = Date.parse(`${day}T12:00:00Z`); if (Number.isFinite(first) && Number.isFinite(last) && last > first && Number.isFinite(target)) setGlobalPosition(Math.max(0, Math.min(TIMELINE_MAX - 1, Math.round((target-first)/(last-first)*TIMELINE_MAX)))); }} />
         <button className="play-all-reset" type="button" disabled={globalState.mode === 'all' && !selectedDay} onClick={() => { setSelectedDay(''); setGlobalPosition(TIMELINE_MAX); }}>ALL</button>
       </footer>
     </main>
