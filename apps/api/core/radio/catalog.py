@@ -66,6 +66,20 @@ def _entry(receiver_id, label, family, endpoint, lineage, lat, lon, country, *, 
 
 def catalog_entries() -> tuple[ReceiverCatalogEntry, ...]:
     return (
+        # Public /status: EA3HRU Palleja (Barcelona), 0–30 MHz, GPS published.
+        # ext_api allowance is absent: catalogue/review ONLY, never auto-connect.
+        ReceiverCatalogEntry(
+            receiver_id="barcelona_ea3hru_hf_candidate",
+            public_label="EA3HRU Barcelona · HF candidate",
+            network_family="kiwisdr",
+            endpoint="http://sdrbcn.duckdns.org:8073",
+            physical_lineage="barcelona_ea3hru_kiwisdr",
+            lat=41.41136, lon=1.9995, country="ES",
+            license_class="public_access",
+            terms_status="unknown",
+            activation_status="review_required",
+            source_terms="Public KiwiSDR status endpoint; external-API allowance not published. No automatic listening authorization established.",
+        ),
         _entry("catania_openwebrx", "Catania OpenWebRX HF monitor", "openwebrx", "http://arascatania.ns0.it:8073", "catania_iw9gtr_openwebrx", 37.50, 15.09, "IT", license_class="open_source"),
         _entry("cagliari_hf_monitor", "Cagliari HF DSC monitor", "kiwisdr", "http://sergiocorda.synology.me:28073", "cagliari_1hs1322_kiwisdr", 39.22, 9.12, "IT"),
         _entry("salerno_hf_monitor", "Salerno HF DSC monitor", "kiwisdr", "http://21443.proxy.kiwisdr.com", "salerno_ik8sut_kiwisdr", 40.68819, 14.77103, "IT"),

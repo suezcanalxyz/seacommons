@@ -130,5 +130,24 @@
       "priority": "low_spare_capacity"
     }
   ],
-  "conclusion": "Of five candidate URLs, two are duplicate aliases. Of four distinct devices, 2 OpenWebRX lack the necessary MF profile; Valencia Kiwi declares private; one Barcelona Kiwi remains a conditional candidate. Existing curated Cagliari/Thessaloniki are stronger immediate validation targets. /status is not proof of actual DSC audio, permitted indefinite consumption or geographic RF coverage."
+  "conclusion": "Of five candidate URLs, two are duplicate aliases. Of four distinct devices, 2 OpenWebRX lack the necessary MF profile; Valencia Kiwi declares private; one Barcelona Kiwi remains a conditional candidate. Existing curated Cagliari/Thessaloniki are stronger immediate validation targets. /status is not proof of actual DSC audio, permitted indefinite consumption or geographic RF coverage.",
+  "latest_validation": {
+    "date": "2026-11-18",
+    "receiver_id": "cagliari_hf_monitor",
+    "frequency_hz": 8414500,
+    "mode": "usb",
+    "duration_seconds": 6,
+    "oracle_test_type": "bounded external API RF frame acquisition",
+    "active_session_during_probe": true,
+    "frames_observed": 133,
+    "first_signal_dbm": -85.2,
+    "last_signal_dbm": -88.6,
+    "decoder_output_verified": false,
+    "persisted_audio": false,
+    "production_stream_activated": false,
+    "disconnected_after_test": true,
+    "permissions_note": "KiwiSDR public /status ext_api=4, users 0/8 just before probe; periodic/continuous operation requires separate operating policy review",
+    "safety_note": "Signal meter and audio metadata verify a stream, not a valid DSC message or distress evidence"
+  },
+  "next_action": "Cagliari 8.4145 kHz passes short-stream test; schedule only after reviewing receiver terms, allocating separate slot and rolling out tested runtime configuration. Barcelona public API allowance absent; keep review_required."
 }
