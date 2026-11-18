@@ -1,7 +1,7 @@
 // Draw the fixed endpoint labels locally so they work without a glyph server.
 export function addMovementLabels(map, id, source) {
   const labels = ['Last observed fix', 'Published gap position', 'Next recorded AIS fix',
-    'Next recorded fix', 'Last AIS fix', 'Next AIS fix', 'Model start', 'Model endpoint'];
+    'Next recorded fix', 'Last AIS fix', 'Next AIS fix', 'Model start', 'Model endpoint', 'Reported departure', 'Reported destination'];
   for (const label of labels) {
     const canvas = document.createElement('canvas');
     canvas.width = 208;

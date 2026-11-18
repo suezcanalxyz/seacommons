@@ -18,3 +18,11 @@ test('public archive excludes reviewed advocacy and untraceable generic entries'
   const distress = { title: 'People in distress', main_category: 'humanitarian', source: 'alarm_phone' };
   assert.equal(reviewedArchiveCase(distress), distress);
 });
+
+test('named places become two contextual markers and no vessel track', async () => {
+  const { archiveGeographicClues, geographicClueFeatures } = await import('./humanitarianReview.js');
+  const features = geographicClueFeatures(archiveGeographicClues({ incident_id: '57dce9fa' }));
+  assert.deepEqual(features.map((item) => item.geometry.type), ['Point', 'Point']);
+  assert.deepEqual(features.map((item) => item.properties.kind), ['clue_departure', 'clue_destination']);
+  assert.equal(archiveGeographicClues({ incident_id: 'unknown' }).length, 0);
+});
