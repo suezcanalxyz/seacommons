@@ -141,6 +141,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
   const standardTiles = L.tileLayer(PUBLIC_BASEMAP_TILE_URL, { ...retinaTiles, maxNativeZoom: 19 }).addTo(map);
   let satelliteTiles;
   let satelliteLabelTiles;
+  let satelliteLabelsVisible = false;
   let satelliteUrl;
   let activeTiles = standardTiles;
   if (PUBLIC_BASEMAP_LABEL_URL) {
@@ -178,8 +179,14 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
         activeTiles = nextTiles.addTo(map);
       }
       if (satelliteLabelTiles) {
-        if (mode === 'satellite' && !map.hasLayer(satelliteLabelTiles)) satelliteLabelTiles.addTo(map);
-        if (mode !== 'satellite' && map.hasLayer(satelliteLabelTiles)) map.removeLayer(satelliteLabelTiles);
+        if (mode === 'satellite' && !satelliteLabelsVisible) {
+          satelliteLabelTiles.addTo(map);
+          satelliteLabelsVisible = true;
+        }
+        if (mode !== 'satellite' && satelliteLabelsVisible) {
+          map.removeLayer(satelliteLabelTiles);
+          satelliteLabelsVisible = false;
+        }
       }
     },
     setMovement(features) {
