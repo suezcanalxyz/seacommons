@@ -736,7 +736,7 @@ function App() {
   const [showVesselLinks, setShowVesselLinks] = useState(false);
   const [baseMap, setBaseMap] = useState(() => {
     try {
-      const stored = window.localStorage.getItem('seacommons_base_map');
+      const stored = window.localStorage.getItem('seacommons_live_basemap_v2');
       if (stored === 'standard' || stored === 'satellite') return stored;
     } catch { /* storage unavailable */ }
     return 'standard';
@@ -2776,7 +2776,7 @@ function App() {
 
   // Persist the user's selection even while MapLibre is still starting up.
   useEffect(() => {
-    try { window.localStorage.setItem('seacommons_base_map', baseMap); }
+    try { window.localStorage.setItem('seacommons_live_basemap_v2', baseMap); }
     catch { /* storage unavailable */ }
   }, [baseMap]);
 
