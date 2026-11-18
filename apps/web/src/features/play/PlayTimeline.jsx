@@ -332,30 +332,34 @@ export default function PlayTimeline({ apiBase }) {
   const sceneProduct = satellite?.source === 'copernicus_dataspace'
     ? String(satellite.properties?.product_id || '').replace(/\.SAFE$/, '') : '';
   const rasterProduct = /^S2[A-Z]_[A-Za-z0-9_.-]{1,196}$/.test(sceneProduct) ? sceneProduct : '';
+  const caseSceneDirectory = selectedId
+    ? Array.from(new TextEncoder().encode(selectedId), (byte) => byte.toString(16).padStart(2, '0')).join('')
+    : '';
   const [sceneRaster, setSceneRaster] = useState(null);
-  const raster = sceneRaster?.product_id === rasterProduct ? sceneRaster : null;
+  const raster = sceneRaster?.product_id === rasterProduct && sceneRaster.directory === caseSceneDirectory
+    ? sceneRaster : null;
 
   useEffect(() => {
-    if (!rasterProduct) return undefined;
+    if (!rasterProduct || !caseSceneDirectory) return undefined;
     let cancelled = false;
-    fetchJson('', `/archive/scenes/${rasterProduct}.json`).then((manifest) => {
+    fetchJson('', `/archive/scenes/${caseSceneDirectory}/${rasterProduct}.json`).then((manifest) => {
       const corners = manifest?.coordinates;
       if (!cancelled && manifest?.product_id === rasterProduct && manifest.image === `${rasterProduct}.png`
         && Number.isFinite(Date.parse(manifest.acquired_at))
         && Array.isArray(corners) && corners.length === 4
         && corners.every((pair) => Array.isArray(pair) && pair.length === 2
           && pair.every(Number.isFinite) && Math.abs(pair[0]) <= 180 && Math.abs(pair[1]) <= 80)) {
-        setSceneRaster(manifest);
+        setSceneRaster({ ...manifest, directory: caseSceneDirectory });
       }
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [rasterProduct]);
+  }, [caseSceneDirectory, rasterProduct]);
 
   useEffect(() => {
     const sourceId = 'play-scene-raster';
     const map = mapRef.current;
     if (!raster) return undefined;
-    const url = `/archive/scenes/${raster.image}`;
+    const url = `/archive/scenes/${raster.directory}/${raster.image}`;
     if (fallbackReady) fallbackMapRef.current?.setSceneRaster(url, raster.coordinates);
     if (mapReady && map?.getLayer('satellite-context')) {
       map.addSource(sourceId, { type: 'image', url, coordinates: raster.coordinates });
