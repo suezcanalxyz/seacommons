@@ -7,6 +7,8 @@ Production scheduling must enforce this globally across workers.
 from __future__ import annotations
 
 import json
+import threading
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -62,3 +64,43 @@ def fetch_navtex_messages(*, navarea: str = "III", limit: int = 50,
         raise ValueError("unexpected NAVTEX response")
     return [normalize_navtex_message(row) for row in payload["messages"]
             if isinstance(row, dict)]
+
+# An in-process shared cache gates public reads and all upstream requests.
+# Oracle runs this app as one uvicorn worker; additional workers must migrate
+# the lock to Redis before enabling this on a multi-process deployment.
+_cache_lock = threading.Lock()
+_cache_next_request = 0.0
+_cache_rows: list[dict] = []
+_cache_fetched_at: str | None = None
+_cache_error: str | None = None
+
+
+def public_navtex_snapshot() -> dict:
+    """Bounded NAVAREA III published warnings, never first-party RF observations.
+
+    At most one upstream request in any 65-second window (including failures).
+    Last good records are retained on transient provider outage.
+    """
+    global _cache_next_request, _cache_rows, _cache_fetched_at, _cache_error
+    with _cache_lock:
+        now = time.monotonic()
+        if now >= _cache_next_request:
+            _cache_next_request = now + 65.0
+            try:
+                rows = fetch_navtex_messages(navarea="III", limit=50)
+                _cache_rows = rows
+                _cache_fetched_at = datetime.now(timezone.utc).isoformat()
+                _cache_error = None
+            except Exception:
+                _cache_error = "provider_unavailable"
+        return {
+            "source": "navtex_online",
+            "source_class": "secondary_maritime_safety_information",
+            "independent_rf_reception": False,
+            "scope": "NAVAREA_III",
+            "upstream": f"{BASE}/feeds",
+            "fetched_at": _cache_fetched_at,
+            "state": "degraded" if _cache_error else ("live" if _cache_fetched_at else "unavailable"),
+            "messages": list(_cache_rows),
+            "warning": "Public secondary copies; not first-party radio reception and not for navigation.",
+        }
