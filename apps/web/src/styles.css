@@ -4307,3 +4307,11 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .report-panel-header > div:first-child > strong { display: block; margin-top: 2px; font-size: 13px; }
 .live-sanctions-positions { display: grid; gap: 5px; margin-top: 8px; }
 .live-sanctions-positions select { width: 100%; }
+
+.live-radio-panel { border-bottom: 1px solid var(--glass-border); padding: 8px 14px; }
+.live-radio-panel summary { cursor: pointer; color: #dbc8ff; }
+.live-radio-panel[open] { max-height: 32dvh; overflow-y: auto; }
+.live-radio-panel dl { margin: 8px 0; }
+.live-radio-panel dl > div { display: flex; justify-content: space-between; gap: 8px; }
+.live-radio-panel dd { margin: 0; }
+.live-radio-panel > button { display: block; width: 100%; text-align: left; margin: 4px 0; padding: 7px; }
