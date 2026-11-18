@@ -69,3 +69,10 @@ test('LIVE initializes the MapLibre style from the selected basemap, not a hidde
   assert.match(source, /style: mapStyle\(baseMap\)/);
   assert.match(source, /visibility: initialBaseMap === 'satellite' \? 'visible' : 'none'/);
 });
+
+
+test('public satellite toggle sits over desktop map rather than Signal panel', async () => {
+  const css = await readFile(new URL('../../styles.css', import.meta.url), 'utf8');
+  assert.match(css, /\.live-basemap-switch \{[\s\S]*?left: calc\(374px \+ 12px\);/);
+  assert.match(css, /\.live-basemap-switch \{ top: 12px; left: auto; right: 12px;/);
+});

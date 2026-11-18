@@ -4169,9 +4169,11 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   z-index: 10000;
   pointer-events: auto;
   touch-action: manipulation;
-  top: 70px;
-  right: 12px;
-  min-height: 36px;
+  /* Desktop: keep the control over the map, not behind the Signal dossier. */
+  top: 12px;
+  left: calc(374px + 12px);
+  right: auto;
+  min-height: 40px;
   padding: 0 14px;
   border: 1px solid rgba(169,255,218,.42);
   border-radius: 8px;
@@ -4185,7 +4187,7 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .live-basemap-switch:focus-visible { outline: 2px solid #a9ffda; outline-offset: 3px; }
 .live-basemap-switch[aria-pressed="true"] { border-color: #a9ffda; }
 @media (max-width: 820px) {
-  .live-basemap-switch { top: 12px; right: 12px; min-height: 40px; }
+  .live-basemap-switch { top: 12px; left: auto; right: 12px; min-height: 40px; }
 }
 
 /* Responsive AIS absence dossier: endpoints are observed, connecting line is not. */
