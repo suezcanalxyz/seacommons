@@ -53,6 +53,15 @@ export function liveActiveReceiverMarkers(mesh) {
 /** The public map distinguishes operator-connected RF from physically geolocated
  * catalogue candidates. Never count a reachable HTTP endpoint as reception.
  */
+// Static, coarse coordinates from the manually curated Mediterranean directory.
+// Missing stations are inventory markers ONLY, never live or verified RF streams.
+const MEDITERRANEAN_AUDIT_CATALOGUE = Object.freeze([
+  { receiver_id: 'salerno_hf_monitor', station_label: 'Salerno · HF catalogue', latitude: 40.688, longitude: 14.771 },
+  { receiver_id: 'trecastelli_hf_monitor', station_label: 'Trecastelli · HF catalogue', latitude: 43.662, longitude: 13.137 },
+  { receiver_id: 'san_marino_hf_monitor', station_label: 'San Marino · HF catalogue', latitude: 43.938, longitude: 12.445 },
+  { receiver_id: 'edessa_hf_monitor', station_label: 'Edessa · HF catalogue', latitude: 40.809, longitude: 22.074 },
+  { receiver_id: 'rome_hf_monitor', station_label: 'Rome · HF catalogue', latitude: 41.9, longitude: 12.5 },
+]);
 const BARCELONA_RESEARCH_CANDIDATE = Object.freeze({
   receiver_id: 'ea3hru_barcelona_research',
   station_label: 'EA3HRU · Barcelona / Pallejà',
@@ -69,9 +78,19 @@ export function mediterraneanReceiverMapMarkers(mesh) {
   if (mesh?.fresh !== true || !Array.isArray(mesh.receivers)) return [];
   const relevant = mesh.receivers.filter((row) =>
     Boolean(row?.receiver_id) && isMediterraneanReceiver(row));
-  // A distinct, verified receiver physically in Barcelona: candidate only.
-  // Duplicate EA3HRU URL, private Valencia and non-MF OpenWebRX excluded.
-  if (!relevant.some((row) => row.receiver_id === BARCELONA_RESEARCH_CANDIDATE.receiver_id)) {
+  // Include audited regional catalogue entries omitted by the ranked API page.
+  // The coarse location is historical, not proof that an SDR is still online.
+  const returned = new Set(relevant.map((row) => row.receiver_id));
+  for (const row of MEDITERRANEAN_AUDIT_CATALOGUE) {
+    if (!returned.has(row.receiver_id)) relevant.push({
+      ...row, active: false, state: 'catalogued', candidate_only: true,
+      source_class: 'curated_inventory_not_live', audit_date: '2026-11-18',
+      capabilities: [],
+    });
+  }
+  // A distinct, published receiver in Barcelona: candidate only.
+  // Duplicate alias, private Valencia and non-MF OpenWebRX are excluded.
+  if (!returned.has(BARCELONA_RESEARCH_CANDIDATE.receiver_id)) {
     relevant.push(BARCELONA_RESEARCH_CANDIDATE);
   }
   return relevant.map((row) => {
