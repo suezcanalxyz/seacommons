@@ -1,4 +1,5 @@
 import { radioFeature } from './features/live/radioMap.js';
+import { installActiveRadioStationIcon } from './features/live/radioStationIcon.js';
 import { reconstructAisGaps } from './features/play/aisGapGeometry.js';
 import { useLiveVesselDossier } from './features/live/useLiveVesselDossier.js';
 import { isPublicCaseEligible } from './features/live/publicCaseEligibility.js';
@@ -1538,16 +1539,30 @@ function App() {
             'circle-blur': 0.7,
           },
         });
-        map.addLayer({
-          id: 'radio-receivers-layer', type: 'circle', source: 'radio-receivers',
-          paint: {
-            'circle-radius': ['match', ['get', 'active'], true, 5.5, 4],
-            'circle-color': ['match', ['get', 'active'], true, '#a78bfa', '#94a3b8'],
-            'circle-opacity': ['match', ['get', 'state'], 'offline', 0.35, 0.92],
-            'circle-stroke-width': 1.2,
-            'circle-stroke-color': '#07151b',
-          },
-        });
+        // Only connected physical RF stations enter this GeoJSON source.
+        // Use an unmistakable antenna icon rather than another incident dot.
+        const radioStationImage = installActiveRadioStationIcon(map);
+        if (radioStationImage) {
+          map.addLayer({
+            id: 'radio-receivers-layer', type: 'symbol', source: 'radio-receivers',
+            layout: {
+              'icon-image': radioStationImage,
+              'icon-size': 1,
+              'icon-allow-overlap': true,
+              'icon-ignore-placement': true,
+            },
+          });
+        } else {
+          map.addLayer({
+            id: 'radio-receivers-layer', type: 'circle', source: 'radio-receivers',
+            paint: {
+              'circle-radius': 7,
+              'circle-color': '#a78bfa',
+              'circle-stroke-color': '#07151b',
+              'circle-stroke-width': 2,
+            },
+          });
+        }
 
         // Geolocated decoded DSC messages. A radio burst without a decoded
         // position never becomes a map point.
