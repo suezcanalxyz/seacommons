@@ -45,10 +45,14 @@ test('map displays connected Mediterranean SDR plus unconnected catalogue and on
   ];
   const features = mediterraneanReceiverMapMarkers({ fresh: true, receivers });
   assert.deepEqual(features.map((f) => f.properties.receiver_id),
-    ['zakynthos_hf_monitor', 'cagliari_hf_monitor', 'ea3hru_barcelona_research']);
+    ['zakynthos_hf_monitor', 'cagliari_hf_monitor',
+      'salerno_hf_monitor', 'trecastelli_hf_monitor', 'san_marino_hf_monitor',
+      'edessa_hf_monitor', 'rome_hf_monitor', 'ea3hru_barcelona_research']);
   assert.equal(features[0].properties.station_status, 'receiving');
   assert.equal(features[1].properties.station_status, 'not_connected');
   assert.equal(features[2].properties.station_status, 'candidate');
   assert.equal(features[2].properties.active, false);
+  assert.equal(features.at(-1).properties.station_status, 'candidate');
+  assert.equal(features.at(-1).properties.active, false);
   assert.equal(mediterraneanReceiverMapMarkers({ fresh: false, receivers }).length, 0);
 });
