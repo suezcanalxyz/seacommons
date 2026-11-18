@@ -1278,7 +1278,7 @@ function RadioReceiverView({ panel, apiBase }) {
         <SectionLabel>Receiver capability</SectionLabel>
         {ranges.length ? ranges.map((range) => <Row key={range} label="Band" value={range} />) : <p className="intel-report-note">Capability metadata unavailable.</p>}
       </div>
-      <RadioLiveListen props={props} apiBase={apiBase} />
+      <RadioLiveListen key={props.receiver_id} props={props} apiBase={apiBase} />
       <div className="cone-section">
         <SectionLabel>Provenance</SectionLabel>
         <p className="intel-report-note">Public receiver infrastructure only. Endpoint and physical lineage are intentionally withheld; receiver observations enter the same evidence pipeline as other acquisition sources.</p>
@@ -1289,7 +1289,7 @@ function RadioReceiverView({ panel, apiBase }) {
 
 function RadioMessageView({ panel, apiBase }) {
   const props = panel?.feature?.properties || {};
-  let association = props.ais_association || null;
+  let association = props.ais_association && typeof props.ais_association === 'object' ? props.ais_association : null;
   if (!association && props.ais_association_json) {
     try { association = JSON.parse(props.ais_association_json); } catch { association = null; }
   }
@@ -1298,14 +1298,15 @@ function RadioMessageView({ panel, apiBase }) {
   const [dossier, setDossier] = useState(null);
 
   useEffect(() => {
-    if (!mmsi) { setDossier(null); return undefined; }
+    setDossier(null);
+    if (!mmsi || association?.match_status !== 'strong') return undefined;
     let alive = true;
     const url = `${apiBase || ''}/api/v1/live/vessels/${encodeURIComponent(mmsi)}/context?hours=168`;
     fetch(url).then((response) => response.ok ? response.json() : null)
       .then((data) => { if (alive) setDossier(data); })
       .catch(() => { if (alive) setDossier(null); });
     return () => { alive = false; };
-  }, [apiBase, mmsi]);
+  }, [apiBase, mmsi, association?.match_status]);
 
   const ports = dossier?.recent_port_calls || [];
   const trackPoints = dossier?.track_points || [];
@@ -1314,7 +1315,9 @@ function RadioMessageView({ panel, apiBase }) {
       <div className="cone-section">
         <Row label="Protocol" value={isDsc ? 'DSC' : 'NAVTEX'} />
         <Row label="Frequency" value={Number(props.frequency_hz) ? `${(Number(props.frequency_hz) / 1000).toFixed(1)} kHz` : '—'} />
-        <Row label="Observed" value={props.observed_at || '—'} mono />
+        <Row label="Observation ID" value={props.observation_id} mono />
+        <Row label="Observed (UTC)" value={aisUtcTimestamp(props.observed_at)} mono />
+        {!panel.feature?.geometry && isDsc && <Row label="Position" value="No published position" />}
         {isDsc && <Row label="Category" value={props.category || '—'} />}
         {isDsc && <Row label="MMSI" value={mmsi || '—'} mono />}
         {isDsc && <Row label="Nature" value={props.nature_code || '—'} />}
@@ -1327,7 +1330,11 @@ function RadioMessageView({ panel, apiBase }) {
           <SectionLabel>AIS association</SectionLabel>
           <Row label="Match" value={String(association.match_status || 'observed').replace(/_/g, ' ')} />
           <Row label="Confidence" value={`${Math.round(Number(association.confidence || 0) * 100)}%`} />
-          {Number.isFinite(Number(association.distance_km)) && <Row label="Distance" value={`${Number(association.distance_km).toFixed(1)} km`} />}
+          {association.distance_km != null && Number.isFinite(Number(association.distance_km)) && <Row label="Distance" value={`${Number(association.distance_km).toFixed(1)} km`} />}
+          <Row label="AIS fix (UTC)" value={aisUtcTimestamp(association.ais_observed_at)} mono />
+          {aisUtcTimestamp(association.ais_observed_at) && aisUtcTimestamp(props.observed_at) && (
+            <Row label="Time between observations" value={`${Math.round(Math.abs(Date.parse(aisUtcTimestamp(association.ais_observed_at)) - Date.parse(aisUtcTimestamp(props.observed_at))) / 1000)} s`} />
+          )}
           <p className="intel-report-note">AIS and radio remain independent evidence lineages. Only strong temporal and geographic agreement is episode-eligible.</p>
         </div>
       )}

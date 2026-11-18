@@ -49,8 +49,8 @@ test('public Live exposes the radio receiver mesh and decoded DSC without making
 
 
 test('eligible radio receivers expose bounded VM-backed Listen live WebAudio controls', () => {
-  assert.match(main, /listen_available: Boolean\(receiver\.listen_available\)/);
-  assert.match(main, /frequency_hz: receiver\.frequency_hz/);
+  assert.match(main, /radioFeature\(row, 'radio_receiver'\)/);
+  assert.match(cone, /props\.listen_available/);
   assert.match(cone, /Listen live/);
   assert.match(cone, /liveListenHttpUrl/);
   assert.match(cone, /fetch\(/);

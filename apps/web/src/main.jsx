@@ -1,3 +1,4 @@
+import { radioFeature } from './features/live/radioMap.js';
 import { reconstructAisGaps } from './features/play/aisGapGeometry.js';
 import { useLiveVesselDossier } from './features/live/useLiveVesselDossier.js';
 import { isPublicCaseEligible } from './features/live/publicCaseEligibility.js';
@@ -654,6 +655,13 @@ function App() {
   const [selectedVessel, setSelectedVessel] = useState(null);
   const [receiverMesh, setReceiverMesh] = useState({ catalogued: 0, reachable: 0, eligible: 0, active: 0, receivers: [] });
   const [radioSummary, setRadioSummary] = useState({ events: [], messages: [] });
+  const [radioFailures, setRadioFailures] = useState({});
+  const receiverMarkers = useMemo(() => (receiverMesh.receivers || [])
+    .filter((row) => row.active === true)
+    .map((row) => radioFeature(row, 'radio_receiver')).filter((feature) => feature.geometry), [receiverMesh]);
+  const radioMessageMarkers = useMemo(() => radioSummary.messages
+    .filter((row) => row.kind === 'dsc')
+    .map((row) => radioFeature(row, 'radio_message')).filter((feature) => feature.geometry), [radioSummary.messages]);
   const [nearestVessels, setNearestVessels] = useState([]);
   const [mapReady, setMapReady] = useState(false);
   const [fallbackReady, setFallbackReady] = useState(false);
@@ -887,6 +895,12 @@ function App() {
       bottom: Math.round(window.innerHeight * 0.66) + 64,
       left: 24,
     };
+  }
+
+  function openRadioReport(type, feature) {
+    if (isPublicLiveHost && window.matchMedia('(max-width: 680px)').matches) setSidebarOpen(false);
+    setMapPanel({ type, feature });
+    setConePanelHidden(false);
   }
 
   function selectIntelReport(feature) {
@@ -1367,7 +1381,7 @@ function App() {
         map.on(ev, stopSpin);
       }
 
-      map.addControl(new maplibregl.GeolocateControl({
+      if (!isPublicLiveHost) map.addControl(new maplibregl.GeolocateControl({
         positionOptions: { enableHighAccuracy: true },
         trackUserLocation: true,
         showUserHeading: true,
@@ -2484,8 +2498,7 @@ function App() {
         map.on('click', 'radio-receivers-layer', (event) => {
           const feature = event.features?.[0];
           if (!feature) return;
-          setMapPanel({ type: 'radio_receiver', feature });
-          setConePanelHidden(false);
+          openRadioReport('radio_receiver', feature);
           event.originalEvent?.stopPropagation?.();
         });
 
@@ -2494,8 +2507,7 @@ function App() {
         map.on('click', 'radio-dsc-layer', (event) => {
           const feature = event.features?.[0];
           if (!feature) return;
-          setMapPanel({ type: 'radio_message', feature });
-          setConePanelHidden(false);
+          openRadioReport('radio_message', feature);
           event.originalEvent?.stopPropagation?.();
         });
 
@@ -2616,7 +2628,11 @@ function App() {
         container: mapNodeRef.current,
         center: APP_PROFILE === 'live' ? [15.2, 36.1] : [14.3, 31.0],
         zoom: APP_PROFILE === 'live' ? 4.15 : 1.9,
-        onFeatureSelect: selectIntelReport,
+        onFeatureSelect: (feature) => {
+          if (feature.properties?.radio_type) {
+            openRadioReport(feature.properties.radio_type, feature);
+          } else selectIntelReport(feature);
+        },
         onBackgroundClick: () => {
           if (!isPublicLiveHost) return;
           setConePanelHidden(true);
@@ -2860,13 +2876,17 @@ function App() {
   useEffect(() => {
     const fallback = fallbackMapRef.current;
     if (!fallbackReady || !fallback) return;
-    const payload = { incidents: canonicalLivePoints, vessels: fallbackVesselFeatures };
+    const payload = { incidents: [
+      ...canonicalLivePoints,
+      ...(layerVis.radio_receivers === false ? [] : receiverMarkers),
+      ...(layerVis.radio_dsc === false ? [] : radioMessageMarkers),
+    ], vessels: fallbackVesselFeatures };
     fallback.setFeatures(payload);
     if (!liveSignalsFramedRef.current && (canonicalLivePoints.length || fallbackVesselFeatures.length)) {
       fallback.fitFeatures(payload);
       liveSignalsFramedRef.current = true;
     }
-  }, [fallbackReady, canonicalLivePoints, fallbackVesselFeatures]);
+  }, [fallbackReady, canonicalLivePoints, fallbackVesselFeatures, layerVis.radio_receivers, layerVis.radio_dsc, receiverMarkers, radioMessageMarkers]);
 
   // The Leaflet mobile fallback is a separate renderer: MapLibre drift layers
   // never reach it. Keep published humanitarian forecast geometries visible.
@@ -3036,89 +3056,41 @@ function App() {
     return () => { alive = false; if (timer) window.clearInterval(timer); };
   }, [intelEvents, mapReady, apiBase]);
 
-  // Receiver mesh is provenance/infrastructure, not a third public content
-  // compartment. Poll a bounded public-safe snapshot and render only coarse
-  // station locations with operational state.
+  // Each radio feed keeps its last successful response across independent failures.
   useEffect(() => {
-    const map = mapRef.current;
-    if (!mapReady || !map?.getSource('radio-receivers')) return undefined;
     let alive = true;
-    let timer = null;
-    const refresh = async () => {
-      try {
-        const data = await fetchJson(apiBase, '/api/v1/live/receivers/mesh?limit=64', undefined, 10000);
-        if (!alive) return;
-        setReceiverMesh(data || { catalogued: 0, reachable: 0, eligible: 0, active: 0, receivers: [] });
-        const features = (data?.receivers || [])
-          .filter((receiver) => Number.isFinite(Number(receiver.latitude)) && Number.isFinite(Number(receiver.longitude)))
-          .map((receiver) => ({
-            type: 'Feature',
-            geometry: { type: 'Point', coordinates: [Number(receiver.longitude), Number(receiver.latitude)] },
-            properties: {
-              receiver_id: receiver.receiver_id || '',
-              station_label: receiver.station_label || receiver.receiver_id || 'Radio receiver',
-              network_family: receiver.network_family || '',
-              country: receiver.country || '',
-              state: receiver.state || 'catalogued',
-              score: Number(receiver.score || 0),
-              active: Boolean(receiver.active),
-              listen_available: Boolean(receiver.listen_available),
-              frequency_hz: receiver.frequency_hz,
-              mode: receiver.mode || '',
-              capabilities_json: JSON.stringify(receiver.capabilities || []),
-            },
-          }));
-        map.getSource('radio-receivers')?.setData({ type: 'FeatureCollection', features });
-      } catch {
-        if (alive) map.getSource('radio-receivers')?.setData({ type: 'FeatureCollection', features: [] });
-      }
-    };
-    refresh();
-    timer = window.setInterval(refresh, 60_000);
-    return () => { alive = false; if (timer) window.clearInterval(timer); };
-  }, [apiBase, mapReady]);
-
-  // Decoded radio messages and correlated RF events are public-safe summaries.
-  // Only DSC messages carrying an explicit decoded position become map points.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!mapReady || !map?.getSource('radio-dsc')) return undefined;
-    let alive = true;
-    let timer = null;
-    const refresh = async () => {
-      try {
-        const [eventData, messageData] = await Promise.all([
-          fetchJson(apiBase, '/api/v1/live/radio/events?limit=50', undefined, 10000),
-          fetchJson(apiBase, '/api/v1/live/radio/messages?limit=50', undefined, 10000),
-        ]);
-        if (!alive) return;
-        const messages = Array.isArray(messageData?.messages) ? messageData.messages : [];
-        setRadioSummary({ events: eventData?.events || [], messages });
-        const features = messages
-          .filter((message) => message.kind === 'dsc' && Number.isFinite(Number(message.latitude)) && Number.isFinite(Number(message.longitude)))
-          .map((message) => ({
-            type: 'Feature',
-            geometry: { type: 'Point', coordinates: [Number(message.longitude), Number(message.latitude)] },
-            properties: {
-              observation_id: message.observation_id || '', kind: 'dsc',
-              category: message.category || 'safety', mmsi: message.mmsi || '',
-              nature_code: message.nature_code || '', frequency_hz: Number(message.frequency_hz || 0),
-              observed_at: message.observed_at || '',
-              ais_association_json: JSON.stringify(message.ais_association || null),
-            },
-          }));
-        map.getSource('radio-dsc')?.setData({ type: 'FeatureCollection', features });
-      } catch {
-        if (alive) {
-          setRadioSummary({ events: [], messages: [] });
-          map.getSource('radio-dsc')?.setData({ type: 'FeatureCollection', features: [] });
+    const timers = [];
+    const jobs = [
+      ['receivers', '/api/v1/live/receivers/mesh?limit=64', (data) => setReceiverMesh(data)],
+      ['events', '/api/v1/live/radio/events?limit=50', (data) => setRadioSummary((prev) => ({ ...prev, events: data.events }))],
+      ['messages', '/api/v1/live/radio/messages?limit=50', (data) => setRadioSummary((prev) => ({ ...prev, messages: data.messages }))],
+    ];
+    jobs.forEach(([key, path, apply], index) => {
+      const refresh = async () => {
+        try {
+          const data = await fetchJson(apiBase, path, { cache: 'no-store' }, 10000);
+          if (!Array.isArray(data?.[key])) throw new Error('Radio feed unavailable');
+          if (alive) {
+            apply(data);
+            setRadioFailures((prev) => ({ ...prev, [key]: false }));
+          }
+        } catch {
+          if (alive) setRadioFailures((prev) => ({ ...prev, [key]: true }));
+        } finally {
+          if (alive) timers[index] = window.setTimeout(refresh, 60_000);
         }
-      }
-    };
-    refresh();
-    timer = window.setInterval(refresh, 60_000);
-    return () => { alive = false; if (timer) window.clearInterval(timer); };
-  }, [apiBase, mapReady]);
+      };
+      refresh();
+    });
+    return () => { alive = false; timers.forEach((timer) => window.clearTimeout(timer)); };
+  }, [apiBase]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    const map = mapRef.current;
+    map?.getSource('radio-receivers')?.setData({ type: 'FeatureCollection', features: receiverMarkers });
+    map?.getSource('radio-dsc')?.setData({ type: 'FeatureCollection', features: radioMessageMarkers });
+  }, [mapReady, receiverMarkers, radioMessageMarkers]);
 
   // Selected AIS report trail. The public map never downloads every historical
   // trajectory; it fetches the bounded public dossier only for the contact the
@@ -4274,6 +4246,35 @@ function App() {
               </p>
 
             </header>
+
+            <details className="live-radio-panel">
+              <summary>Radio · {receiverMesh.active || 0} active · {receiverMarkers.length} on map</summary>
+              {Object.values(radioFailures).some(Boolean) && (
+                <p role="status">Update unavailable: {Object.keys(radioFailures).filter((key) => radioFailures[key]).join(', ')}. Showing the last available data.</p>
+              )}
+              <dl>
+                {[
+                  ['Latest RF', radioSummary.events.map((row) => row.started_at)],
+                  ['Latest DSC', radioSummary.messages.filter((row) => row.kind === 'dsc').map((row) => row.observed_at)],
+                  ['Latest NAVTEX', radioSummary.messages.filter((row) => row.kind === 'navtex').map((row) => row.observed_at)],
+                ].map(([label, times]) => {
+                  const latest = Math.max(...times.map((value) => Date.parse(aisUtcTimestamp(value))).filter(Number.isFinite));
+                  return <div key={label}><dt>{label}</dt><dd>{Number.isFinite(latest)
+                    ? `${new Date(latest).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'No recent record'}</dd></div>;
+                })}
+              </dl>
+              {(receiverMesh.receivers || []).filter((row) => row.active).map((row) => (
+                <button key={row.receiver_id} type="button" onClick={() => {
+                  openRadioReport('radio_receiver', radioFeature(row, 'radio_receiver'));
+                }}>{row.station_label || row.receiver_id} · {row.listen_available ? 'Listen available' : 'Receiver details'}</button>
+              ))}
+              {radioSummary.messages.slice(0, 12).map((row) => (
+                <button key={row.observation_id} type="button" onClick={() => {
+                  openRadioReport('radio_message', radioFeature(row, 'radio_message'));
+                }}>{String(row.kind).toUpperCase()} · {row.category || row.subject_id || 'Message'}
+                  {row.kind === 'dsc' && !radioMessageMarkers.some((marker) => marker.properties.observation_id === row.observation_id) ? ' · No published position' : ''}</button>
+              ))}
+            </details>
 
             <div className="live-feed-panel__body">
               <IntelDashboard
