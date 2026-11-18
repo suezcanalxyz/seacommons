@@ -31,7 +31,7 @@ export function radioFeature(row, type) {
 const MEDITERRANEAN_CURATED_STATIONS = new Set([
   'catania_openwebrx', 'cagliari_hf_monitor', 'salerno_hf_monitor',
   'zakynthos_hf_monitor', 'thessaloniki_hf_monitor', 'edessa_hf_monitor',
-  'mallorca_hf_monitor', 'rome_hf_monitor',
+  'mallorca_hf_monitor', 'rome_hf_monitor', 'barcelona_ea3hru_hf_candidate',
 ]);
 export function isMediterraneanReceiver(row) {
   const lat = Number(row?.latitude);
@@ -63,7 +63,7 @@ const MEDITERRANEAN_AUDIT_CATALOGUE = Object.freeze([
   { receiver_id: 'rome_hf_monitor', station_label: 'Rome · HF catalogue', latitude: 41.9, longitude: 12.5 },
 ]);
 const BARCELONA_RESEARCH_CANDIDATE = Object.freeze({
-  receiver_id: 'ea3hru_barcelona_research',
+  receiver_id: 'barcelona_ea3hru_hf_candidate',
   station_label: 'EA3HRU · Barcelona / Pallejà',
   latitude: 41.411, longitude: 1.999,
   active: false,
