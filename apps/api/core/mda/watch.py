@@ -930,11 +930,13 @@ class MdaWatch:
     # ── deliberate AIS gap (jamming-aware) ───────────────────────────────────
 
     def _resolve_reappeared_gaps(self, *, max_age_hours: float = 48.0) -> int:
-        """Persist the end of an AIS gap as soon as a later fix is observed.
+        """Close only gaps with independently attested AIS reappearance.
 
-        The gap row remains durable for Play/audit. Only its operational
-        lifecycle changes; a reappearance is not evidence that the original
-        silence was intentional.
+        VesselTrackDB records are *reported* AIS observations; a newer row
+        with the same MMSI is not an identity/authenticity verification. Until
+        the ingest provenance validator produces both explicit decisions, the
+        detector must preserve open episodes and not manufacture closures.
+        The returned count is the number of genuinely validated closures.
         """
         from core.db.models import IntelEventDB, MaritimeEpisodeDB, VesselTrackDB
         from core.db.session import session_scope
@@ -970,29 +972,42 @@ class MdaWatch:
                     emitted_at = _parse(row.timestamp_utc)
                 except Exception:
                     continue
+                # A last fix is useful context but cannot authenticate itself.
+                # A validator must explicitly bind both decisions to the exact
+                # observed track row, not to an earlier signal or bare MMSI.
                 latest = (
-                    db.query(VesselTrackDB.ts)
+                    db.query(VesselTrackDB)
                     .filter(VesselTrackDB.mmsi == str(row.linked_mmsi))
                     .order_by(VesselTrackDB.ts.desc())
                     .limit(1)
-                    .scalar()
+                    .first()
                 )
                 if latest is None:
                     continue
                 latest_utc = (
-                    latest.astimezone(timezone.utc)
-                    if latest.tzinfo is not None
-                    else latest.replace(tzinfo=timezone.utc)
+                    latest.ts.astimezone(timezone.utc)
+                    if latest.ts.tzinfo is not None
+                    else latest.ts.replace(tzinfo=timezone.utc)
                 )
-                original_last = emitted_at - timedelta(seconds=stored_silent)
-                if latest_utc <= original_last + timedelta(minutes=5):
+                if latest_utc <= emitted_at:
                     continue
-
+                attestation = metadata.get("reappearance_validation") or {}
+                if not isinstance(attestation, dict) or not (
+                    attestation.get("identity_validated") is True
+                    and attestation.get("source_validated") is True
+                    and str(attestation.get("track_id") or "") == str(latest.id)
+                    and str(attestation.get("mmsi") or "") == str(row.linked_mmsi)
+                    and str(attestation.get("source") or "") == str(latest.source)
+                    and str(attestation.get("observed_at") or "") == latest_utc.isoformat()
+                ):
+                    continue
                 metadata.update({
                     "gap_still_open": False,
                     "current_silent_seconds": 0.0,
                     "gap_reappearance_confirmed": True,
                     "gap_reappeared_at": latest_utc.isoformat(),
+                    "identity_validated": True,
+                    "source_validated": True,
                     "incident_lifecycle": "resolved",
                     "resolution_state": "resolved",
                     "resolved_at": datetime.now(timezone.utc).isoformat(),
@@ -1000,22 +1015,13 @@ class MdaWatch:
                 row.meta = metadata
                 reappeared_by_event[str(row.id)] = latest_utc
                 resolved.append(IntelEvent(
-                    id=row.id,
-                    timestamp_utc=row.timestamp_utc,
-                    type=row.type or "",
-                    severity=row.severity or "",
-                    lat=row.lat,
-                    lon=row.lon,
-                    title=row.title or "",
-                    text=row.text or "",
-                    url=row.url or "",
-                    source=row.source or "",
-                    linked_mmsi=row.linked_mmsi or "",
+                    id=row.id, timestamp_utc=row.timestamp_utc,
+                    type=row.type or "", severity=row.severity or "",
+                    lat=row.lat, lon=row.lon, title=row.title or "",
+                    text=row.text or "", url=row.url or "",
+                    source=row.source or "", linked_mmsi=row.linked_mmsi or "",
                     metadata=metadata,
                 ))
-            # Episode projections have their own durable lifecycle. Resolving
-            # only IntelEventDB leaves a published MaritimeEpisode permanently
-            # open even after an independently observed AIS reappearance.
             if reappeared_by_event:
                 open_episodes = (
                     db.query(MaritimeEpisodeDB)
@@ -1042,8 +1048,7 @@ class MdaWatch:
                             stamp for event_id, stamp in reappeared_by_event.items()
                             if event_id in observation_ids
                             and stamp > episode.end_at.replace(tzinfo=timezone.utc)
-                        ),
-                        None,
+                        ), None,
                     )
                     if recovered_at is None:
                         continue
