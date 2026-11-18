@@ -10,6 +10,8 @@ function fakeLeaflet(log) {
   log.circles ||= [];
   const map = {
     setView(latlng, zoom) { log.setView = [latlng, zoom]; return map; },
+    getZoom() { return log.setView[1]; },
+    project([lat, lon]) { return { x: lon * 10, y: lat * 10 }; },
     flyTo(latlng, zoom) { log.flyTo = [latlng, zoom]; },
     fitBounds(bounds) { log.fitBounds = bounds; },
     invalidateSize() { log.resized = true; },
@@ -203,4 +205,21 @@ test('fallback markers prefer the canonical category color', async () => {
   renderer.setFeatures([{ geometry: { type: 'Point', coordinates: [14, 36] },
     properties: { incident_id: 'gap', incident_type: 'ais_gap', visual_color: '#d4ff3f' } }]);
   assert.equal(log.markers[0].options.fillColor, '#d4ff3f');
+});
+
+test('PLAY fallback groups nearby points by count and expands on click', async () => {
+  const log = { markers: [], polygons: [] };
+  const renderer = await createFallbackMap({
+    container: {}, center: [15, 36], zoom: 4, cluster: true, leaflet: fakeLeaflet(log),
+  });
+  renderer.setFeatures(Array.from({ length: 10 }, (_, i) => ({
+    geometry: { type: 'Point', coordinates: [15 + i / 100, 36] },
+    properties: { incident_id: String(i), visual_color: '#c084fc' },
+  })));
+  assert.equal(log.markers.length, 0);
+  assert.equal(log.vesselMarkers.length, 1);
+  const [cluster] = log.vesselMarkers;
+  assert.match(cluster.options.icon.options.html, /#2dd4bf">10</);
+  cluster.marker.handler();
+  assert.equal(log.setView[1], 6);
 });

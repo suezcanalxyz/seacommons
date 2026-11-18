@@ -283,7 +283,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
         const attack = isAttackIncident(feature.properties);
         if (((isVesselAssociatedSignal(feature) && heading !== null) || attack) && L.divIcon && L.marker) {
           const icon = L.divIcon({
-            className: `seacommons-fallback-vessel-icon seacommons-fallback-signal-icon${heading === null ? ' is-direction-unknown' : ''}`,
+            className: `${markerClass(feature)} seacommons-fallback-vessel-icon seacommons-fallback-signal-icon${heading === null ? ' is-direction-unknown' : ''}`,
             html: `<span class="seacommons-fallback-vessel-arrow" style="--vessel-heading:${heading ?? 0}deg;--vessel-color:${semanticColor(feature)}"></span>${attack ? '<span class="seacommons-fallback-attack" aria-hidden="true">⊕</span>' : ''}`,
             iconSize: [18, 18], iconAnchor: [9, 9],
           });
