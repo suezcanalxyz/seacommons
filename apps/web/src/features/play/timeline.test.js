@@ -317,7 +317,7 @@ test('Play map initialization fails over to the shared interactive renderer', as
   assert.match(source, /createFallbackMap/);
   assert.match(source, /fallbackMapRef/);
   assert.match(source, /__SEACOMMONS_FORCE_MAP_FALLBACK__/);
-  assert.match(source, /fallback\.setFeatures\(mappedIncidents\.features\)/);
+  assert.match(source, /fallback\.setFeatures\(selectedArea \? \[\.\.\.points, selectedArea\] : points\)/);
   assert.match(source, /setSelectedId\(String\(feature\.properties\.incident_id\)\)/);
 });
 

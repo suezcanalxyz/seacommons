@@ -4246,3 +4246,47 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   border-radius: 50%;
 }
 .intel-report-trigger-endpoints { padding: 6px 10px; overflow-wrap: anywhere; }
+
+.vessel-case-search {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  width: min(250px, calc(100vw - 32px));
+  z-index: 1150;
+  color: #ecfff7;
+  background: #07141a;
+  border: 1px solid #385b60;
+  border-radius: 7px;
+  box-shadow: 0 4px 16px #00111885;
+}
+.vessel-case-search input {
+  width: 100%;
+  min-height: 37px;
+  padding: 0 10px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  font: 12px var(--font-display);
+}
+.vessel-case-search ul { margin: 0; padding: 0; list-style: none; }
+.vessel-case-search button, .vessel-case-search p {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-top: 1px solid #385b60;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  font: 12px var(--font-display);
+}
+.vessel-case-search button:hover { background: #1b383b; }
+.map-movement-label { color: #fff; background: #07141a; border-color: #385b60; }
+@media (max-width: 680px) {
+  .vessel-case-search { top: 57px; width: min(215px, 54vw); }
+}
+@media (min-width: 1024px) {
+  .has-selection > .vessel-case-search,
+  .has-selected-case > .vessel-case-search { right: min(410px, 31vw); }
+}

@@ -54,7 +54,7 @@ export function aisGapMapFeatures(gaps = []) {
     properties: { ...base, kind: 'ais_gap_unobserved_connection' } });
     for (const [fix, kind] of [[gap.from, 'ais_last_observed'], [gap.to, 'ais_first_reappearance']]) {
       features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [Number(fix.lon), Number(fix.lat)] },
-        properties: { ...base, kind, at: fix.at, source: fix.source || 'AIS stored fix' } });
+        properties: { ...base, kind, at: fix.at, label: kind === 'ais_last_observed' ? 'Last AIS fix' : 'Next AIS fix', source: fix.source || 'AIS stored fix' } });
     }
   }
   return { ...empty(), features };

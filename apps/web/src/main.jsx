@@ -1,3 +1,5 @@
+import { addMovementLabels } from './features/map/movementLabels.js';
+import VesselCaseSearch from './components/VesselCaseSearch.jsx';
 import { liveMovementMapFeatures } from './features/live/movementEndpoints.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -918,9 +920,9 @@ function App() {
   }, [conePanelHidden, mapReady, resolvedMapPanel]);
 
   useEffect(() => {
-    if (!isPublicLiveHost || !fallbackReady || conePanelHidden || !resolvedMapPanel || !window.matchMedia('(max-width: 680px)').matches) return;
-    fallbackMapRef.current?.focusReport?.(resolvedMapPanel.feature, displayedIntelDrifts);
-  }, [fallbackReady, conePanelHidden, resolvedMapPanel, displayedIntelDrifts]);
+    if (!isPublicLiveHost || !fallbackReady || conePanelHidden || !resolvedMapPanel) return;
+    fallbackMapRef.current?.focusReport?.(resolvedMapPanel.feature, [], window.matchMedia('(max-width: 680px)').matches);
+  }, [fallbackReady, conePanelHidden, resolvedMapPanel]);
 
   useEffect(() => {
     if (mapPanel?.type === 'cone') setConePanelHidden(false);
@@ -1404,6 +1406,7 @@ function App() {
           filter: ['==', ['geometry-type'], 'Point'],
           paint: { 'circle-radius': 7, 'circle-stroke-color': '#06151d', 'circle-stroke-width': 2,
             'circle-color': ['match', ['get', 'kind'], 'ais_first_reappearance', '#22c55e', '#f59e0b'] } });
+        addMovementLabels(map, 'live-movement-labels', 'live-movement');
         map.addSource('intel-selected',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-distress',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-fused',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -3156,7 +3159,7 @@ function App() {
     if (mapReady) {
       const map = mapRef.current;
       map?.getSource('live-movement')?.setData({ type: 'FeatureCollection', features });
-      for (const layer of ['live-movement-connection', 'live-movement-fixes']) {
+      for (const layer of ['live-movement-connection', 'live-movement-fixes', 'live-movement-labels']) {
         if (map?.getLayer(layer)) map.moveLayer(layer);
       }
       if (map && features.length > 1) {
@@ -3649,7 +3652,7 @@ function App() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <main className={`cop-shell ${play3D && APP_PROFILE === 'demo' ? 'is-play-mode' : ''} ${isPublicLiveHost ? 'is-live-mode' : ''} ${APP_PROFILE === 'demo' ? 'is-play-profile' : ''}`}>
+    <main className={`cop-shell ${play3D && APP_PROFILE === 'demo' ? 'is-play-mode' : ''} ${isPublicLiveHost ? 'is-live-mode' : ''} ${resolvedMapPanel && !conePanelHidden ? 'has-selected-case' : ''} ${APP_PROFILE === 'demo' ? 'is-play-profile' : ''}`}>
       {(isPublicLiveHost || APP_PROFILE === 'demo') && (
         <nav className="sc-mobile-dock" aria-label="Mobile map navigation">
           <button type="button" className={!mobileGuideOpen && (isPublicLiveHost && !sidebarOpen && (conePanelHidden || !mapPanel) || APP_PROFILE === 'demo' && play3D && !playSimulationOpen) ? 'is-active' : ''}
@@ -4482,6 +4485,7 @@ function App() {
             {baseMap === 'satellite' ? 'Map' : 'Satellite'}
           </button>, document.body
         ) : null}
+        {isPublicLiveHost && <VesselCaseSearch cases={intelEvents.map((feature) => ({ ...feature.properties, feature }))} onSelect={(record) => openIntelReport(record.feature)} />}
     </main>
   );
 }
