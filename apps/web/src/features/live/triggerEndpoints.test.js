@@ -17,3 +17,14 @@ test('AIS gaps are explicitly shown as unobserved rather than a verified transit
   assert.match(source, /AIS not observed; no route inferred/);
   assert.match(source, /strokeDasharray="5 5"/);
 });
+
+
+test('trigger endpoints remain in graphic bounds even with an unrelated public track', () => {
+  assert.match(source, /const all = \[\.\.\.observed, \.\.\.forecast, \.\.\.fallback, \.\.\.evidenceEndpoints\]/);
+});
+
+test('gap fix sequences are not presented as continuous observed vessel paths', () => {
+  assert.match(source, /observed.length >= 2 && !triggerIsGap/);
+  assert.match(source, /observed.length >= 2 && triggerIsGap/);
+  assert.match(source, /connecting path unverified/);
+});

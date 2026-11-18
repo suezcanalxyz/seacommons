@@ -365,7 +365,10 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
       </div>
     );
   }
-  const all = [...observed, ...forecast, ...fallback];
+  const evidenceEndpoints = triggerTrack
+    .map((point) => ({ lat: Number(point.lat), lon: Number(point.lon) }))
+    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+  const all = [...observed, ...forecast, ...fallback, ...evidenceEndpoints];
   if (all.length === 0) return null;
 
   const width = 320;
@@ -392,7 +395,7 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
   }));
   const hasTriggerEndpoints = triggerEndpoints.length === 2
     && triggerEndpoints.every((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
-  const triggerIsGap = ['gap', 'long_gap'].includes(String(props.anomaly_type || props.event || '').toLowerCase())
+  const triggerIsGap = ['gap', 'long_gap', 'ais_gap'].includes(String(props.anomaly_type || props.event || '').toLowerCase())
     || /ais.*gap|long gap/i.test(String(props.category || props.title || ''));
   const formatTriggerEndpoint = (point) => `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)} · ${point.at ? String(point.at) : 'UTC unavailable'}`;
   const current = xy(observed.at(-1) || forecast.at(-1) || fallback[0]);
@@ -411,7 +414,9 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
         </defs>
         <rect width={width} height={height} fill="url(#intel-report-grid)" />
         {forecast.length >= 2 && <path className="intel-report-track intel-report-track--forecast" d={path(forecast)} />}
-        {observed.length >= 2 && <path className="intel-report-track intel-report-track--observed" d={path(observed)} />}
+        {observed.length >= 2 && !triggerIsGap && <path className="intel-report-track intel-report-track--observed" d={path(observed)} />}
+        {observed.length >= 2 && triggerIsGap && <path className="intel-report-track intel-report-track--observed"
+          d={path(observed)} strokeDasharray="5 5" />}
         {hasTriggerEndpoints && (
           <>
             <line x1={xy(triggerEndpoints[0])[0]} y1={xy(triggerEndpoints[0])[1]}
@@ -438,7 +443,7 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
         </div>
       )}
       <div className="intel-report-legend">
-        {observed.length >= 2 && <span><i className="is-observed" /> AIS observed · {observed.length} fixes</span>}
+        {observed.length >= 2 && <span><i className="is-observed" /> AIS fixes · {observed.length}{triggerIsGap ? ' · connecting path unverified' : ''}</span>}
         {movementEvidence && Number.isFinite(Number(movementEvidence.distance_km)) && (
           <span>
             trigger · {Number(movementEvidence.distance_km).toFixed(1)} km
