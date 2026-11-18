@@ -1669,7 +1669,7 @@ function App() {
         map.addLayer({ id: 'live-ais-gap-endpoints', type: 'circle', source: 'live-ais-gaps',
           filter: ['==', ['geometry-type'], 'Point'],
           paint: { 'circle-radius': 7, 'circle-color': ['match', ['get', 'kind'],
-            'ais_last_observed', '#ff8859', 'ais_first_reappearance', '#55e0c0', '#ffffff'],
+            'ais_last_observed', '#f59e0b', 'ais_first_reappearance', '#22c55e', '#ffffff'],
             'circle-stroke-color': '#071014', 'circle-stroke-width': 2 } });
 
         let movementPopup;
@@ -2024,7 +2024,7 @@ function App() {
           paint: {
             'circle-radius': ['match', ['get', 'type'], 'ais_anomaly', 5, 4],
             'circle-color': ['coalesce', ['get', 'visual_color'], '#60a5fa'],
-            'circle-opacity': 0.16,
+            'circle-opacity': isPublicLiveHost ? 0.85 : 0.16,
             'circle-stroke-width': 1.5,
             'circle-stroke-color': ['coalesce', ['get', 'visual_color'], '#60a5fa'],
           },
@@ -2836,16 +2836,24 @@ function App() {
     return [...byId.values()];
   }, [sarMapFeatures, sanctionedVessels, liveFacets.sanctions]);
 
+  const canonicalLivePoints = useMemo(() => visibleLivePointFeatures.map((feature) => {
+    const visual = classifyEventVisual(feature.properties || {});
+    return {
+      ...feature,
+      properties: { ...feature.properties, visual_category: visual.key, visual_color: visual.color },
+    };
+  }), [visibleLivePointFeatures]);
+
   useEffect(() => {
     const fallback = fallbackMapRef.current;
     if (!fallbackReady || !fallback) return;
-    const payload = { incidents: visibleLivePointFeatures, vessels: fallbackVesselFeatures };
+    const payload = { incidents: canonicalLivePoints, vessels: fallbackVesselFeatures };
     fallback.setFeatures(payload);
-    if (!liveSignalsFramedRef.current && (visibleLivePointFeatures.length || fallbackVesselFeatures.length)) {
+    if (!liveSignalsFramedRef.current && (canonicalLivePoints.length || fallbackVesselFeatures.length)) {
       fallback.fitFeatures(payload);
       liveSignalsFramedRef.current = true;
     }
-  }, [fallbackReady, visibleLivePointFeatures, fallbackVesselFeatures]);
+  }, [fallbackReady, canonicalLivePoints, fallbackVesselFeatures]);
 
   // The Leaflet mobile fallback is a separate renderer: MapLibre drift layers
   // never reach it. Keep published humanitarian forecast geometries visible.
@@ -2862,12 +2870,7 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
-    // Enrich the map source with the same canonical semantic colour used by
-    // the feed, legend and dossier, even for legacy records without visual_color.
-    const positioned = visibleLivePointFeatures.map((feature) => {
-      const visual = classifyEventVisual(feature.properties || {});
-      return { ...feature, properties: { ...feature.properties, visual_category: visual.key, visual_color: visual.color } };
-    });
+    const positioned = canonicalLivePoints;
     map.getSource('intel-attacks')?.setData({ type: 'FeatureCollection',
       features: positioned.filter((f) => f.geometry?.type === 'Point' && isAttackIncident(f.properties)) });
     if (map.getLayer('intel-attack-markers')) map.moveLayer('intel-attack-markers');
@@ -2928,7 +2931,7 @@ function App() {
     map.getSource('intel-observed-tracks')?.setData({ type: 'FeatureCollection', features: observedTracks });
     map.getSource('live-ais-gaps')?.setData(liveAisGapFeatures(intelEvents.filter(({ properties }) => conePanelHidden
       || !selectedIntelEventId || String(properties?.id) !== String(selectedIntelEventId))));
-  }, [conePanelHidden, intelEvents, mapReady, selectedIntelEventId, visibleLivePointFeatures]);
+  }, [canonicalLivePoints, conePanelHidden, intelEvents, mapReady, selectedIntelEventId]);
 
   // MDA layer data
   useEffect(() => {
@@ -3843,7 +3846,7 @@ function App() {
             allowed={isPublicLiveHost ? PUBLIC_LIVE_LAYER_GROUPS : null}
           />
         ) : null}
-        {!play3D ? <Legend /> : null}
+        {!play3D ? <Legend publicLive={isPublicLiveHost} /> : null}
         {!play3D && !isPublicLiveHost ? (
           <AlertRail
             intelEvents={intelEvents}

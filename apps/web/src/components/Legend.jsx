@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 
 import { EVENT_VISUAL_CATEGORIES, SIGNAL_CATEGORIES } from '../features/intel/categories.js';
 import { MDA_ANOMALY_CATEGORIES } from '../features/intel/mdaCategories.js';
@@ -34,7 +34,14 @@ const BASE_ROWS = [
   { shape: 'ring',   color: '#8bf0c5', label: 'Drift projection' },
 ];
 
-export default function Legend() {
+const LIVE_LEGEND_KEYS = [
+  'humanitarian_alarm_phone', 'distress', 'ais_gap', 'spoofing', 'navigation_casualty',
+  'loitering', 'rendezvous', 'sanctions', 'infrastructure', 'identity', 'piracy',
+  'civil_sar', 'state_sar', 'environmental', 'context',
+];
+
+export default function Legend({ publicLive = false }) {
+  const panelId = useId();
   const [open, setOpen] = useState(false);
   return (
     <div className="legend-control">
@@ -43,12 +50,28 @@ export default function Legend() {
         className={`legend-fab${open ? ' is-open' : ''}`}
         onClick={() => setOpen((v) => !v)}
         title="Map legend"
+        aria-label="Map legend"
+        aria-controls={open ? panelId : undefined}
         aria-expanded={open}
       >
         {INFO_ICON}
       </button>
       {open && (
-        <div className="legend-panel">
+        <section id={panelId} aria-label="Map colour key" className="legend-panel">
+          {publicLive ? (
+            <>
+              <div className="legend-panel-title">LIVE case colours</div>
+              {LIVE_LEGEND_KEYS.map((key) => {
+                const category = EVENT_VISUAL_CATEGORIES.find((entry) => entry.key === key);
+                return <div key={key} className="legend-row"><Swatch shape="circle" color={category.color} /><span>{category.label}</span></div>;
+              })}
+              <div className="legend-panel-title">Selected movement</div>
+              <div className="legend-row"><Swatch shape="circle" color="#f59e0b" /><span>Earlier recorded fix</span></div>
+              <div className="legend-row"><Swatch shape="circle" color="#22c55e" /><span>Next recorded fix</span></div>
+              <div className="legend-row"><Swatch shape="circle" color="#38bdf8" /><span>Latest AIS fix</span></div>
+              <div className="legend-row"><span>Dashed segment · movement between fixes is unobserved</span></div>
+            </>
+          ) : (<>
           <div className="legend-panel-title">AIS vessels</div>
           <div className="legend-row"><Swatch shape="triangle" color="#38bdf8" /><span><strong>Moving vessel</strong><small>Triangle points to AIS heading/course</small></span></div>
           <div className="legend-row"><Swatch shape="circle" color="#60a5fa" /><span><strong>Stationary vessel</strong><small>0.5 kn or less</small></span></div>
@@ -100,7 +123,8 @@ export default function Legend() {
               <span>{row.label}</span>
             </div>
           ))}
-        </div>
+          </>)}
+        </section>
       )}
     </div>
   );
