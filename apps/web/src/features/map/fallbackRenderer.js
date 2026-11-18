@@ -307,7 +307,9 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
         if (feature.properties?.radio_type === 'radio_receiver' && L.divIcon && L.marker) {
           const icon = L.divIcon({
             className: 'seacommons-fallback-radio-station',
-            html: '<span aria-hidden="true" style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:#07151b;border:2px solid #a78bfa;border-radius:50%;font-size:17px;box-sizing:border-box">📡</span>',
+            html: feature.properties?.station_status === 'receiving'
+              ? '<span aria-hidden="true" style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:#07151b;border:2px solid #a78bfa;border-radius:50%;font-size:17px;box-sizing:border-box">📡</span>'
+              : '<span aria-hidden="true" style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:#15222a;border:2px solid #e1b375;border-radius:50%;font-size:12px;box-sizing:border-box">○</span>',
             iconSize: [32, 32], iconAnchor: [16, 16],
           });
           const marker = L.marker([Number(lat), Number(lon)], { icon, keyboard: true }).addTo(markers);

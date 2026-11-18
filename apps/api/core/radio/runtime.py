@@ -515,13 +515,26 @@ def start_remote_radio_from_config() -> RemoteRadioRuntime:
         file_path=config.REMOTE_RADIO_RECEIVERS_FILE,
         max_receivers=config.REMOTE_RADIO_MAX_RECEIVERS,
     )
+    configured_descriptors = registry.all()
+    if config.REMOTE_RADIO_MULTICHANNEL_ENABLED:
+        from core.radio.multichannel_plan import configure_opt_in_channels
+
+        approved = configure_opt_in_channels(
+            registry.runnable(), config.REMOTE_RADIO_MULTICHANNEL_ASSIGNMENTS_JSON,
+        )
+        overrides = {row.receiver_id: row for row in approved}
+        configured_descriptors = tuple(
+            overrides.get(row.receiver_id, row) for row in registry.all()
+        )
     configured_targets: list[ChannelTarget] = []
-    for descriptor in registry.runnable():
+    for descriptor in configured_descriptors:
         target = channel_target_for(descriptor)
         if target is not None and target not in configured_targets:
             configured_targets.append(target)
     fallback_descriptors = ()
-    if config.REMOTE_RADIO_PUBLIC_POOL_ENABLED:
+    # On opt-in multichannel operation, only explicitly configured operator
+    # devices may connect. Do not silently recruit the public SDR pool.
+    if config.REMOTE_RADIO_PUBLIC_POOL_ENABLED and not config.REMOTE_RADIO_MULTICHANNEL_ENABLED:
         from core.radio.public_pool import public_receiver_pool
         fallback_descriptors = public_receiver_pool(
             targets=tuple(configured_targets) or None,
@@ -529,11 +542,11 @@ def start_remote_radio_from_config() -> RemoteRadioRuntime:
         )
     effective_max = max(
         int(config.REMOTE_RADIO_MAX_RECEIVERS),
-        len(registry.all()) + len(fallback_descriptors),
+        len(configured_descriptors) + len(fallback_descriptors),
     )
     _runtime = RemoteRadioRuntime(
         enabled=config.REMOTE_RADIO_ENABLED,
-        descriptors=registry.all(),
+        descriptors=configured_descriptors,
         fallback_descriptors=fallback_descriptors,
         max_receivers=effective_max,
         failover_enabled=bool(config.REMOTE_RADIO_FAILOVER_ENABLED),

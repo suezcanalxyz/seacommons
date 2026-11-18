@@ -128,6 +128,8 @@ class SuezCanalConfig(BaseSettings):
     REMOTE_RADIO_FAILOVER_RETRY_S: float = 120.0
     REMOTE_RADIO_RECEIVERS_JSON: str = ""
     REMOTE_RADIO_RECEIVERS_FILE: str = ""
+    REMOTE_RADIO_MULTICHANNEL_ENABLED: bool = False
+    REMOTE_RADIO_MULTICHANNEL_ASSIGNMENTS_JSON: str = ""
     ADSB_ENABLED: bool = False
     ADSB_DEVICE: str = "rtlsdr"
     TID_ENABLED: bool = False
