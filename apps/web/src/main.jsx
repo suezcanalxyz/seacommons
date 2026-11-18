@@ -655,7 +655,7 @@ function App() {
   const [timezero, setTimezero] = useState(null);
   const [selectedVessel, setSelectedVessel] = useState(null);
   const [receiverMesh, setReceiverMesh] = useState({ catalogued: 0, reachable: 0, eligible: 0, active: 0, receivers: [] });
-  const [radioSummary, setRadioSummary] = useState({ events: [], messages: [] });
+  const [radioSummary, setRadioSummary] = useState({ events: [], messages: [], external: [] });
   const [radioFailures, setRadioFailures] = useState({});
   const receiverMarkers = useMemo(() => (receiverMesh.receivers || [])
     .filter((row) => row.active === true)
@@ -3079,12 +3079,13 @@ function App() {
       ['receivers', '/api/v1/live/receivers/mesh?limit=64', (data) => setReceiverMesh(data)],
       ['events', '/api/v1/live/radio/events?limit=50', (data) => setRadioSummary((prev) => ({ ...prev, events: data.events }))],
       ['messages', '/api/v1/live/radio/messages?limit=50', (data) => setRadioSummary((prev) => ({ ...prev, messages: data.messages }))],
+      ['external', '/api/v1/live/radio/external-navtex', (data) => setRadioSummary((prev) => ({ ...prev, external: data.messages }))],
     ];
     jobs.forEach(([key, path, apply], index) => {
       const refresh = async () => {
         try {
           const data = await fetchJson(apiBase, path, { cache: 'no-store' }, 10000);
-          if (!Array.isArray(data?.[key])) throw new Error('Radio feed unavailable');
+          if (!Array.isArray(key === 'external' ? data?.messages : data?.[key])) throw new Error('Radio feed unavailable');
           if (alive) {
             apply(data);
             setRadioFailures((prev) => ({ ...prev, [key]: false }));
@@ -4283,6 +4284,15 @@ function App() {
                   openRadioReport('radio_receiver', radioFeature(row, 'radio_receiver'));
                 }}>{row.station_label || row.receiver_id} · {row.listen_available ? 'Listen available' : 'Receiver details'}</button>
               ))}
+              <p className="live-radio-panel__source-note">📡 Antenna symbols show connected RF receivers only. External NAVTEX messages are independent secondary publications, not local RF reception.</p>
+              {radioSummary.external.length > 0 && <details className="live-radio-panel__navtex-secondary">
+                <summary>External NAVTEX · NAVAREA III · {radioSummary.external.length} published messages</summary>
+                {radioSummary.external.slice(0, 15).map((row) => (
+                  <a key={row.external_id} href={row.original_url} target="_blank" rel="noopener noreferrer">
+                    {row.station_id || 'NAVTEX'} · {String(row.original_text || 'Maritime safety notice').slice(0, 105)} · secondary source
+                  </a>
+                ))}
+              </details>}
               {radioSummary.messages.slice(0, 12).map((row) => (
                 <button key={row.observation_id} type="button" onClick={() => {
                   openRadioReport('radio_message', radioFeature(row, 'radio_message'));
