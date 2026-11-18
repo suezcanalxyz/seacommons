@@ -1,4 +1,5 @@
-import { radioFeature, liveActiveReceiverMarkers, isMediterraneanReceiver } from './features/live/radioMap.js';
+import { radioFeature, liveActiveReceiverMarkers, mediterraneanReceiverMapMarkers, isMediterraneanReceiver } from './features/live/radioMap.js';
+import { monitoredRadioChannels } from './features/live/radioChannels.js';
 import { installActiveRadioStationIcon } from './features/live/radioStationIcon.js';
 import { reconstructAisGaps } from './features/play/aisGapGeometry.js';
 import { useLiveVesselDossier } from './features/live/useLiveVesselDossier.js';
@@ -666,6 +667,8 @@ function App() {
   const [radioSummary, setRadioSummary] = useState({ events: [], messages: [], external: [] });
   const [radioFailures, setRadioFailures] = useState({});
   const receiverMarkers = useMemo(() => liveActiveReceiverMarkers(receiverMesh), [receiverMesh]);
+  const networkMarkers = useMemo(() => mediterraneanReceiverMapMarkers(receiverMesh), [receiverMesh]);
+  const radioChannels = useMemo(() => monitoredRadioChannels(receiverMesh), [receiverMesh]);
   const radioMessageMarkers = useMemo(() => radioSummary.messages
     .filter((row) => row.kind === 'dsc')
     .map((row) => radioFeature(row, 'radio_message')).filter((feature) => feature.geometry), [radioSummary.messages]);
@@ -1545,12 +1548,25 @@ function App() {
             'circle-blur': 0.7,
           },
         });
-        // Only connected physical RF stations enter this GeoJSON source.
-        // Use an unmistakable antenna icon rather than another incident dot.
+        // Connected stations use antenna symbols; published, disconnected or
+        // research-only receivers use a visually distinct outlined marker.
+        map.addLayer({
+          id: 'radio-receivers-standby', type: 'circle', source: 'radio-receivers',
+          filter: ['!=', ['get', 'station_status'], 'receiving'],
+          paint: {
+            'circle-radius': 7,
+            'circle-color': ['match', ['get', 'station_status'], 'candidate', '#5b4c38', 'offline', '#333b44', '#23303b'],
+            'circle-stroke-color': ['match', ['get', 'station_status'], 'candidate', '#f0bd75', '#98a8b7'],
+            'circle-stroke-width': 2,
+            'circle-opacity': 0.9,
+          },
+        });
+        // Use an unmistakable antenna icon for real connected RF reception.
         const radioStationImage = installActiveRadioStationIcon(map);
         if (radioStationImage) {
           map.addLayer({
             id: 'radio-receivers-layer', type: 'symbol', source: 'radio-receivers',
+            filter: ['==', ['get', 'station_status'], 'receiving'],
             layout: {
               'icon-image': radioStationImage,
               'icon-size': 1,
@@ -1561,6 +1577,7 @@ function App() {
         } else {
           map.addLayer({
             id: 'radio-receivers-layer', type: 'circle', source: 'radio-receivers',
+            filter: ['==', ['get', 'station_status'], 'receiving'],
             paint: {
               'circle-radius': 7,
               'circle-color': '#a78bfa',
@@ -2524,9 +2541,10 @@ function App() {
             ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
           const station = escapeLabel(props.station_label || props.receiver_id || 'Radio station');
           const hz = Number(props.frequency_hz);
-          const channel = Number.isFinite(hz) && hz > 0 ? `${(hz / 1_000_000).toFixed(4)} MHz` : 'Frequency not reported';
+          const channel = Number.isFinite(hz) && hz > 0 ? `${(hz / 1_000_000).toFixed(4)} MHz` : 'Not tuned by SeaCommons';
+          const status = escapeLabel(props.station_status === 'receiving' ? 'RF RECEIVING' : props.station_status === 'candidate' ? 'RESEARCH CANDIDATE · NOT CONNECTED' : 'NOT CONNECTED');
           receiverHover.setLngLat(feature.geometry.coordinates)
-            .setHTML(`<div class="radio-station-hover__content"><strong>${station}</strong><span>RECEIVER CONNECTED · ${escapeLabel(channel)}</span><small>Click for station dossier</small></div>`)
+            .setHTML(`<div class="radio-station-hover__content"><strong>${station}</strong><span>${status} · ${escapeLabel(channel)}</span><small>Click for station dossier</small></div>`)
             .addTo(map);
         });
         map.on('mouseleave', 'radio-receivers-layer', () => {
@@ -2540,6 +2558,22 @@ function App() {
           event.originalEvent?.stopPropagation?.();
         });
 
+        map.on('mouseenter', 'radio-receivers-standby', () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mousemove', 'radio-receivers-standby', (event) => {
+          const feature = event.features?.[0];
+          if (!feature?.geometry?.coordinates) return;
+          const p = feature.properties || {};
+          const label = String(p.station_label || p.receiver_id || 'Radio station').replace(/[&<>"']/g,
+            (x) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[x]));
+          receiverHover.setLngLat(feature.geometry.coordinates)
+            .setHTML(`<div class="radio-station-hover__content"><strong>${label}</strong><span>${p.station_status === 'candidate' ? 'RESEARCH CANDIDATE' : 'NOT CONNECTED'} · NO LIVE RF</span><small>Nominal hardware capability is not monitored coverage</small></div>`)
+            .addTo(map);
+        });
+        map.on('mouseleave', 'radio-receivers-standby', () => { map.getCanvas().style.cursor = ''; receiverHover.remove(); });
+        map.on('click', 'radio-receivers-standby', (event) => {
+          const feature = event.features?.[0];
+          if (feature) { openRadioReport('radio_receiver', feature); event.originalEvent?.stopPropagation?.(); }
+        });
         map.on('mouseenter', 'radio-dsc-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'radio-dsc-layer', () => { map.getCanvas().style.cursor = ''; });
         map.on('click', 'radio-dsc-layer', (event) => {
@@ -2917,7 +2951,7 @@ function App() {
     if (!fallbackReady || !fallback) return;
     const payload = { incidents: [
       ...canonicalLivePoints,
-      ...(layerVis.radio_receivers === false ? [] : receiverMarkers),
+      ...(layerVis.radio_receivers === false ? [] : networkMarkers),
       ...(layerVis.radio_dsc === false ? [] : radioMessageMarkers),
     ], vessels: fallbackVesselFeatures };
     fallback.setFeatures(payload);
@@ -2925,7 +2959,7 @@ function App() {
       fallback.fitFeatures(payload);
       liveSignalsFramedRef.current = true;
     }
-  }, [fallbackReady, canonicalLivePoints, fallbackVesselFeatures, layerVis.radio_receivers, layerVis.radio_dsc, receiverMarkers, radioMessageMarkers]);
+  }, [fallbackReady, canonicalLivePoints, fallbackVesselFeatures, layerVis.radio_receivers, layerVis.radio_dsc, networkMarkers, radioMessageMarkers]);
 
   // The Leaflet mobile fallback is a separate renderer: MapLibre drift layers
   // never reach it. Keep published humanitarian forecast geometries visible.
@@ -3131,9 +3165,9 @@ function App() {
   useEffect(() => {
     if (!mapReady) return;
     const map = mapRef.current;
-    map?.getSource('radio-receivers')?.setData({ type: 'FeatureCollection', features: receiverMarkers });
+    map?.getSource('radio-receivers')?.setData({ type: 'FeatureCollection', features: networkMarkers });
     map?.getSource('radio-dsc')?.setData({ type: 'FeatureCollection', features: radioMessageMarkers });
-  }, [mapReady, receiverMarkers, radioMessageMarkers]);
+  }, [mapReady, networkMarkers, radioMessageMarkers]);
 
   // Selected AIS report trail. The public map never downloads every historical
   // trajectory; it fetches the bounded public dossier only for the contact the
@@ -4291,7 +4325,7 @@ function App() {
             </header>
 
             <details className="live-radio-panel">
-              <summary>Radio · {receiverMesh.fresh ? (receiverMesh.active || 0) : 'status unavailable'} active · {receiverMarkers.length} on map</summary>
+              <summary>Radio · {receiverMesh.fresh ? (receiverMesh.active || 0) : 'status unavailable'} connected · {networkMarkers.length} Mediterranean stations on map</summary>
               {receiverMesh.fresh && (receiverMesh.active || 0) > 0 && receiverMarkers.length === 0 && (
                 <p role="status" className="live-radio-panel__regional-gap">
                   No connected Mediterranean receiver is currently available on this map. {(receiverMesh.active || 0)} remote HF receiver(s) remain active outside the regional layer.
@@ -4316,7 +4350,11 @@ function App() {
                   openRadioReport('radio_receiver', radioFeature(row, 'radio_receiver'));
                 }}>{row.station_label || row.receiver_id} · {isMediterraneanReceiver(row) ? 'Mediterranean map' : 'Remote HF relay · off map'} · {row.listen_available ? 'Listen available' : 'Receiver details'}</button>
               ))}
-              <p className="live-radio-panel__source-note">Map antennas: connected Mediterranean stations only. Inland HF relays remain listed below. External NAVTEX is secondary information, not RF received locally.</p>
+              <p className="live-radio-panel__source-note">Purple antenna = connected RF; outlined marker = catalogued or candidate, NOT receiving. Frequency range is only nominal hardware capability. Inland relays remain in backend diagnostics. External NAVTEX is a separately published source.</p>
+              <details className="live-radio-panel__channels"><summary>Maritime radio channels · {radioChannels.filter((channel) => channel.active_receivers > 0).length} / {radioChannels.length} monitored</summary>
+                {radioChannels.map((channel) => <div key={channel.id} className="live-radio-panel__channel-row"><span>{channel.label} · {(channel.frequency_hz / 1_000_000).toFixed(4)} MHz</span><strong>{channel.active_receivers > 0 ? `${channel.active_receivers} RF receiving` : channel.decoder === 'ready' ? 'Not monitored' : 'Decoder not available'}</strong></div>)}
+              </details>
+              <div className="live-radio-panel__station-list">{networkMarkers.map((feature) => <button key={feature.properties.receiver_id} type="button" onClick={() => openRadioReport('radio_receiver', feature)}>{feature.properties.station_label} · {feature.properties.station_status === 'receiving' ? 'RF receiving' : feature.properties.station_status === 'candidate' ? 'Research candidate' : 'Not connected'}</button>)}</div>
               {radioSummary.external.length > 0 && <details className="live-radio-panel__navtex-secondary">
                 <summary>External NAVTEX · NAVAREA III · {radioSummary.external.length} published messages</summary>
                 {radioSummary.external.slice(0, 15).map((row) => (
