@@ -2,7 +2,18 @@ import {
   PUBLIC_BASEMAP_LABEL_URL,
   PUBLIC_BASEMAP_TILE_URL,
   PUBLIC_SEAMARK_TILE_URL,
+  SATELLITE_BASEMAP_TILE_URL,
 } from './publicBasemap.js';
+import { classifyEventVisual } from '../intel/categories.js';
+import { isAttackIncident } from './attackMarker.js';
+
+export const PLAY_CLUSTER_BANDS = [
+  { minimum: 2, label: '2–9', color: '#38bdf8', radius: 14 },
+  { minimum: 10, label: '10–24', color: '#2dd4bf', radius: 17 },
+  { minimum: 25, label: '25–74', color: '#d4ff3f', radius: 20 },
+  { minimum: 75, label: '75–199', color: '#facc15', radius: 24 },
+  { minimum: 200, label: '200+', color: '#f472b6', radius: 29 },
+];
 
 function pointFeatures(features = []) {
   return (features || []).filter((feature) => {
@@ -33,19 +44,15 @@ function markerClass(feature) {
 
 function semanticColor(feature) {
   const p = feature?.properties || {};
-  const domain = String(p.domain || p.macro_domain || p.maritime_domain || '').toLowerCase();
-  const source = String(p.source || '').toLowerCase();
-  const category = String(p.visual_category || p.signal_category || p.category || '').toLowerCase();
-  if (domain === 'humanitarian' || source.includes('alarm')) return '#ff5a57';
-  if (category.includes('navigation') || category.includes('casualty')) return '#ff9f43';
-  if (category.includes('sanction') || category.includes('grey') || category.includes('spoof')) return '#f472b6';
-  if (domain === 'security') return '#c084fc';
-  return '#38bdf8';
+  return /^#[0-9a-f]{6}$/i.test(p.visual_color || '')
+    ? p.visual_color
+    : classifyEventVisual(p).color;
 }
 
 function isVesselAssociatedSignal(feature) {
   const p = feature?.properties || {};
   const domain = String(p.domain || p.macro_domain || p.maritime_domain || '').toLowerCase();
+  if (p.marker_kind) return p.marker_kind === 'vessel';
   const kind = String(p.type || p.event_type || p.category || p.signal_category || '').toLowerCase();
   const text = String(p.title || p.event || '').toLowerCase();
   if (domain === 'humanitarian' || String(p.source || '').toLowerCase().includes('alarm_phone')) return false;
@@ -120,7 +127,7 @@ function normalizePayload(payload) {
   return { incidents: payload?.incidents || [], vessels: payload?.vessels || [] };
 }
 
-export async function createFallbackMap({ container, center, zoom, onFeatureSelect, onBackgroundClick, leaflet }) {
+export async function createFallbackMap({ container, center, zoom, onFeatureSelect, onBackgroundClick, cluster = false, leaflet }) {
   if (!leaflet) await import('leaflet/dist/leaflet.css');
   const module = leaflet || await import('leaflet');
   const L = module.default || module;
@@ -131,15 +138,60 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
   // interaction and accessibility even when the map prefers Canvas globally.
   const incidentRenderer = typeof L.svg === 'function' ? L.svg({ padding: 0.5 }) : undefined;
   const retinaTiles = { detectRetina: true, maxZoom: 19, maxNativeZoom: 16, crossOrigin: true };
-  L.tileLayer(PUBLIC_BASEMAP_TILE_URL, { ...retinaTiles, maxNativeZoom: 19 }).addTo(map);
+  const standardTiles = L.tileLayer(PUBLIC_BASEMAP_TILE_URL, { ...retinaTiles, maxNativeZoom: 19 }).addTo(map);
+  let satelliteTiles;
+  let satelliteUrl;
+  let activeTiles = standardTiles;
   if (PUBLIC_BASEMAP_LABEL_URL) {
     L.tileLayer(PUBLIC_BASEMAP_LABEL_URL, { ...retinaTiles, opacity: 0.9 }).addTo(map);
   }
   L.tileLayer(PUBLIC_SEAMARK_TILE_URL, { detectRetina: true, maxZoom: 19, maxNativeZoom: 18, opacity: 0.95, crossOrigin: true }).addTo(map);
   const driftsLayer = L.layerGroup().addTo(map);
   const markers = L.layerGroup().addTo(map);
+  const movementLayer = L.layerGroup().addTo(map);
 
-  return {
+  let currentPayload;
+  map.on?.('zoomend', () => {
+    if (cluster && currentPayload) renderer.setFeatures(currentPayload);
+  });
+
+  const renderer = {
+    setBasemap(mode, imageryUrl = SATELLITE_BASEMAP_TILE_URL) {
+      if (mode === 'satellite' && !satelliteTiles) {
+        satelliteTiles = L.tileLayer(imageryUrl, {
+          ...retinaTiles, maxNativeZoom: 19, zIndex: 1, attribution: 'Esri or NASA EOSDIS GIBS',
+        });
+        satelliteUrl = imageryUrl;
+      }
+      const nextTiles = mode === 'satellite' ? satelliteTiles : standardTiles;
+      if (mode === 'satellite' && imageryUrl !== satelliteUrl) {
+        satelliteTiles.setUrl(imageryUrl, activeTiles !== satelliteTiles);
+        satelliteUrl = imageryUrl;
+      }
+      if (activeTiles !== nextTiles) {
+        map.removeLayer(activeTiles);
+        activeTiles = nextTiles.addTo(map);
+      }
+    },
+    setMovement(features) {
+      movementLayer.clearLayers();
+      for (const feature of features) {
+        const { type, coordinates } = feature.geometry;
+        if (type === 'LineString') {
+          L.polyline(coordinates.map(([lon, lat]) => [lat, lon]), {
+            color: '#f59e0b', weight: 3, dashArray: '6 5', interactive: false,
+          }).addTo(movementLayer);
+        } else if (type === 'Point') {
+          const [lon, lat] = coordinates;
+          const color = feature.properties.kind === 'ais_first_reappearance' ? '#22c55e' : '#f59e0b';
+          const marker = L.circleMarker([lat, lon], { radius: 7, color: '#06151d', fillColor: color,
+            fillOpacity: 1, weight: 2, renderer: incidentRenderer }).addTo(movementLayer);
+          const label = feature.properties.label;
+          if (label) marker.bindTooltip(label);
+          marker.bringToFront();
+        }
+      }
+    },
     setDrifts(collection) {
       driftsLayer.clearLayers();
       for (const feature of collection?.features || []) {
@@ -166,6 +218,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
       }
     },
     setFeatures(payload) {
+      currentPayload = payload;
       const { incidents, vessels } = normalizePayload(payload);
       markers.clearLayers();
       for (const feature of polygonFeatures(incidents)) {
@@ -178,7 +231,39 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
           }).on('click', () => onFeatureSelect?.(feature)).addTo(markers);
         }
       }
-      for (const feature of pointFeatures(incidents)) {
+      let points = pointFeatures(incidents);
+      if (cluster && map.getZoom() <= 7) {
+        const cells = new Map();
+        for (const feature of points) {
+          const [lon, lat] = feature.geometry.coordinates;
+          const { x, y } = map.project([Number(lat), Number(lon)]);
+          const key = `${Math.floor(x / 55)},${Math.floor(y / 55)}`;
+          if (!cells.has(key)) cells.set(key, []);
+          cells.get(key).push(feature);
+        }
+        points = [];
+        for (const group of cells.values()) {
+          if (group.length === 1) {
+            points.push(group[0]);
+            continue;
+          }
+          const count = group.length;
+          const { color, radius } = PLAY_CLUSTER_BANDS.findLast(({ minimum }) => count >= minimum);
+          const [lat, lon] = group.reduce(([latSum, lonSum], feature) => {
+            const [x, y] = feature.geometry.coordinates;
+            return [latSum + Number(y), lonSum + Number(x)];
+          }, [0, 0]);
+          const center = [lat / count, lon / count];
+          const icon = L.divIcon({
+            className: 'seacommons-fallback-cluster',
+            html: `<span style="background:${color}">${count}</span>`,
+            iconSize: [radius * 2, radius * 2], iconAnchor: [radius, radius],
+          });
+          const marker = L.marker(center, { icon, title: `${count} grouped points` }).addTo(markers);
+          marker.on('click', () => map.setView(center, Math.min(8, map.getZoom() + 2)));
+        }
+      }
+      for (const feature of points) {
         const [lon, lat] = feature.geometry.coordinates;
         const uncertaintyM = Number(feature.properties?.location_uncertainty_m || 0);
         const source = String(feature.properties?.coordinate_source || '');
@@ -194,11 +279,12 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
             renderer: incidentRenderer,
           }).on('click', () => onFeatureSelect?.(feature)).addTo(markers);
         }
-        if (isVesselAssociatedSignal(feature) && L.divIcon && L.marker) {
-          const heading = vesselHeading(feature);
+        const heading = vesselHeading(feature);
+        const attack = isAttackIncident(feature.properties);
+        if (((isVesselAssociatedSignal(feature) && heading !== null) || attack) && L.divIcon && L.marker) {
           const icon = L.divIcon({
-            className: `seacommons-fallback-vessel-icon seacommons-fallback-signal-icon${heading === null ? ' is-direction-unknown' : ''}`,
-            html: `<span class="seacommons-fallback-vessel-arrow" style="--vessel-heading:${heading ?? 0}deg;--vessel-color:${semanticColor(feature)}"></span>`,
+            className: `${markerClass(feature)} seacommons-fallback-vessel-icon seacommons-fallback-signal-icon${heading === null ? ' is-direction-unknown' : ''}`,
+            html: `<span class="seacommons-fallback-vessel-arrow" style="--vessel-heading:${heading ?? 0}deg;--vessel-color:${semanticColor(feature)}"></span>${attack ? '<span class="seacommons-fallback-attack" aria-hidden="true">⊕</span>' : ''}`,
             iconSize: [18, 18], iconAnchor: [9, 9],
           });
           const marker = L.marker([Number(lat), Number(lon)], { icon, keyboard: true }).addTo(markers);
@@ -233,6 +319,16 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
         const marker = L.marker([Number(lat), Number(lon)], { icon, keyboard: true }).addTo(markers);
         bindSelection(marker, feature, onFeatureSelect);
       }
+    },
+    focusMovement(features, mobile) {
+      const points = pointFeatures(features).map(({ geometry: { coordinates: [lon, lat] } }) => [lat, lon]);
+      if (points.length < 2) return;
+      const panelPadding = Math.min(410, Math.round(map.getSize().x * 0.34));
+      map.fitBounds(L.latLngBounds(points), {
+        paddingTopLeft: mobile ? [24, 55] : [panelPadding, 85],
+        paddingBottomRight: mobile ? [24, Math.round(map.getSize().y * 0.69)] : [panelPadding, 65],
+        maxZoom: 9,
+      });
     },
     focusReport(feature, drifts = []) {
       const p = feature?.properties || {};
@@ -270,4 +366,5 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
     resize() { map.invalidateSize(); },
     destroy() { map.remove(); },
   };
+  return renderer;
 }

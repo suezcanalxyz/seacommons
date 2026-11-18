@@ -1,3 +1,4 @@
+import { liveMovementMapFeatures } from './features/live/movementEndpoints.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
@@ -44,7 +45,7 @@ import { isExcludedVesselType } from './features/live/vesselType.js';
 import { configureMaplibreWorker } from './features/map/maplibreWorker.js';
 import { createVesselArrowImage } from './features/map/vesselMarker.js';
 import { createAttackMarkerImage, isAttackIncident } from './features/map/attackMarker.js';
-import { publicBasemapSource } from './features/map/publicBasemap.js';
+import { publicBasemapSource, SATELLITE_BASEMAP_TILE_URL } from './features/map/publicBasemap.js';
 import { createFallbackMap } from './features/map/fallbackRenderer.js';
 import { mergeLiveDrifts } from './simulation/liveTracking.js';
 
@@ -500,7 +501,7 @@ function mapStyle(initialBaseMap = 'standard') {
   // Dated optical imagery is a separate evidence layer, not a live ship observation.
   const satellite = {
     type: 'raster',
-    tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+    tiles: [SATELLITE_BASEMAP_TILE_URL],
     tileSize: 256,
     maxzoom: 19,
     attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community',
@@ -1294,7 +1295,8 @@ function App() {
     async function initMap() {
       if (window.__SEACOMMONS_FORCE_MAP_FALLBACK__ === true) throw new Error('forced map fallback');
       await import('maplibre-gl/dist/maplibre-gl.css');
-      const { default: maplibregl } = await import('maplibre-gl');
+      const maplibreModule = await import('maplibre-gl');
+      const maplibregl = maplibreModule.Map ? maplibreModule : maplibreModule.default;
       configureMaplibreWorker(maplibregl);
       if (disposed || mapRef.current) return;
 
@@ -1394,6 +1396,14 @@ function App() {
         map.addSource('mda-anomaly',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-attacks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-events',      { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('live-movement', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({ id: 'live-movement-connection', type: 'line', source: 'live-movement',
+          filter: ['==', ['geometry-type'], 'LineString'],
+          paint: { 'line-color': '#f59e0b', 'line-width': 3, 'line-dasharray': [2, 2] } });
+        map.addLayer({ id: 'live-movement-fixes', type: 'circle', source: 'live-movement',
+          filter: ['==', ['geometry-type'], 'Point'],
+          paint: { 'circle-radius': 7, 'circle-stroke-color': '#06151d', 'circle-stroke-width': 2,
+            'circle-color': ['match', ['get', 'kind'], 'ais_first_reappearance', '#22c55e', '#f59e0b'] } });
         map.addSource('intel-selected',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-distress',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-fused',       { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -2669,6 +2679,10 @@ function App() {
     if (map.getLayer('satellite')) map.setLayoutProperty('satellite', 'visibility', effectiveBaseMap === 'satellite' ? 'visible' : 'none');
   }, [baseMap, mapReady]);
 
+  useEffect(() => {
+    if (fallbackReady) fallbackMapRef.current?.setBasemap(baseMap);
+  }, [baseMap, fallbackReady]);
+
   // Persist the user's selection even while MapLibre is still starting up.
   useEffect(() => {
     try { window.localStorage.setItem('seacommons_base_map', baseMap); }
@@ -3129,6 +3143,32 @@ function App() {
       }],
     });
   }, [conePanelHidden, mapReady, resolvedMapPanel]);
+
+  useEffect(() => {
+    const feature = resolvedMapPanel?.type === 'intel' && !conePanelHidden ? resolvedMapPanel.feature : null;
+    const features = feature ? liveMovementMapFeatures(feature) : [];
+    const mobile = window.matchMedia('(max-width: 680px)').matches;
+    if (fallbackReady) {
+      const fallback = fallbackMapRef.current;
+      fallback?.setMovement(features);
+      if (features.length) fallback?.focusMovement(features, mobile);
+    }
+    if (mapReady) {
+      const map = mapRef.current;
+      map?.getSource('live-movement')?.setData({ type: 'FeatureCollection', features });
+      for (const layer of ['live-movement-connection', 'live-movement-fixes']) {
+        if (map?.getLayer(layer)) map.moveLayer(layer);
+      }
+      if (map && features.length > 1) {
+        const points = features.filter(({ geometry }) => geometry.type === 'Point').map(({ geometry }) => geometry.coordinates);
+        map.fitBounds([
+          [Math.min(...points.map(([lon]) => lon)), Math.min(...points.map(([, lat]) => lat))],
+          [Math.max(...points.map(([lon]) => lon)), Math.max(...points.map(([, lat]) => lat))],
+        ], { padding: mobile ? mobilePanelMapPadding() : { left: 410, right: 405, top: 85, bottom: 65 },
+          maxZoom: 9, duration: 500 });
+      }
+    }
+  }, [conePanelHidden, fallbackReady, mapReady, resolvedMapPanel]);
 
   // Intel → vessel correlation lines (manual toggle only)
   useEffect(() => {

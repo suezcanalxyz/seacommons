@@ -5,18 +5,22 @@ import { createFallbackMap } from './fallbackRenderer.js';
 
 function fakeLeaflet(log) {
   log.tiles ||= [];
+  log.activeTiles ||= new Map();
   log.vesselMarkers ||= [];
   log.circles ||= [];
   const map = {
     setView(latlng, zoom) { log.setView = [latlng, zoom]; return map; },
+    getZoom() { return log.setView[1]; },
+    project([lat, lon]) { return { x: lon * 10, y: lat * 10 }; },
     flyTo(latlng, zoom) { log.flyTo = [latlng, zoom]; },
     fitBounds(bounds) { log.fitBounds = bounds; },
     invalidateSize() { log.resized = true; },
+    removeLayer(layer) { log.activeTiles.delete(layer); },
     remove() { log.removed = true; },
   };
   return {
     map() { return map; },
-    tileLayer(url, options = {}) { log.tileUrl = url; log.tiles.push({ url, options }); return { addTo() { return this; } }; },
+    tileLayer(url, options = {}) { log.tileUrl = url; log.tiles.push({ url, options }); return { addTo() { log.activeTiles.set(this, url); return this; } }; },
     layerGroup() { return { addTo() { return this; }, clearLayers() { log.cleared = true; } }; },
     circleMarker(latlng, options) {
       const element = {
@@ -182,4 +186,40 @@ test('fallback fit includes search-area polygon vertices', async () => {
   };
   renderer.fitFeatures([area]);
   assert.deepEqual(log.fitBounds.points, [[36, 1], [36, 3], [38, 3], [36, 1]]);
+});
+
+test('fallback basemap exchanges the visible raster layer in both directions', async () => {
+  const log = { markers: [], polygons: [] };
+  const renderer = await createFallbackMap({ container: {}, center: [15, 36], zoom: 5, leaflet: fakeLeaflet(log) });
+  renderer.setBasemap('satellite');
+  assert.equal([...log.activeTiles.values()].some((url) => url.includes('World_Imagery')), true);
+  assert.equal([...log.activeTiles.values()].some((url) => url.includes('openstreetmap')), false);
+  renderer.setBasemap('standard');
+  assert.equal([...log.activeTiles.values()].some((url) => url.includes('World_Imagery')), false);
+  assert.equal([...log.activeTiles.values()].some((url) => url.includes('openstreetmap')), true);
+});
+
+test('fallback markers prefer the canonical category color', async () => {
+  const log = { markers: [], polygons: [] };
+  const renderer = await createFallbackMap({ container: {}, center: [15, 36], zoom: 5, leaflet: fakeLeaflet(log) });
+  renderer.setFeatures([{ geometry: { type: 'Point', coordinates: [14, 36] },
+    properties: { incident_id: 'gap', incident_type: 'ais_gap', visual_color: '#d4ff3f' } }]);
+  assert.equal(log.markers[0].options.fillColor, '#d4ff3f');
+});
+
+test('PLAY fallback groups nearby points by count and expands on click', async () => {
+  const log = { markers: [], polygons: [] };
+  const renderer = await createFallbackMap({
+    container: {}, center: [15, 36], zoom: 4, cluster: true, leaflet: fakeLeaflet(log),
+  });
+  renderer.setFeatures(Array.from({ length: 10 }, (_, i) => ({
+    geometry: { type: 'Point', coordinates: [15 + i / 100, 36] },
+    properties: { incident_id: String(i), visual_color: '#c084fc' },
+  })));
+  assert.equal(log.markers.length, 0);
+  assert.equal(log.vesselMarkers.length, 1);
+  const [cluster] = log.vesselMarkers;
+  assert.match(cluster.options.icon.options.html, /#2dd4bf">10</);
+  cluster.marker.handler();
+  assert.equal(log.setView[1], 6);
 });

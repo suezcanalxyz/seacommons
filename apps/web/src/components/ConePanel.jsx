@@ -1,3 +1,4 @@
+import { liveMovementEndpoints } from '../features/live/movementEndpoints.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { classifyEventVisual, descriptionOf, eventAnomalyLabel } from '../features/intel/categories.js';
@@ -324,12 +325,8 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
   const dossierTrack = Array.isArray(dossier?.track_points) ? dossier.track_points : [];
   const movementEvidence = props.movement_evidence && typeof props.movement_evidence === 'object'
     ? props.movement_evidence : null;
-  const triggerTrack = movementEvidence?.from && movementEvidence?.to
-    ? [
-        { ...movementEvidence.from, at: movementEvidence.from_at },
-        { ...movementEvidence.to, at: movementEvidence.to_at },
-      ]
-    : [];
+  const { from, to, isGap: triggerIsGap, fromLabel } = liveMovementEndpoints(feature);
+  const triggerTrack = [from, to].filter(Boolean);
   const sourceTrack = publicTrack.length >= 2
     ? publicTrack
     : triggerTrack.length >= 2
@@ -350,7 +347,7 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
   const areaBased = feature?.geometry?.type === 'Polygon'
     || String(props.location_precision || '').startsWith('area')
     || props.coordinate_source === 'region_area';
-  if (!hasObservedTrack && !hasDrift) {
+  if (!hasObservedTrack && !hasDrift && !from) {
     return (
       <div className="intel-report-graphic">
         <div className="intel-report-graphic__head">
@@ -365,9 +362,7 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
       </div>
     );
   }
-  const evidenceEndpoints = triggerTrack
-    .map((point) => ({ lat: Number(point.lat), lon: Number(point.lon) }))
-    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+  const evidenceEndpoints = triggerTrack;
   const all = [...observed, ...forecast, ...fallback, ...evidenceEndpoints];
   if (all.length === 0) return null;
 
@@ -390,15 +385,9 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
     const [x, y] = xy(point);
     return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
-  const triggerEndpoints = triggerTrack.map((point) => ({
-    lat: Number(point.lat), lon: Number(point.lon), at: point.at,
-  }));
-  const hasTriggerEndpoints = triggerEndpoints.length === 2
-    && triggerEndpoints.every((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
-  const triggerIsGap = ['gap', 'long_gap', 'ais_gap'].includes(String(props.anomaly_type || props.event || '').toLowerCase())
-    || /ais.*gap|long gap/i.test(String(props.category || props.title || ''));
+  const hasTriggerEndpoints = Boolean(from && to);
   const formatTriggerEndpoint = (point) => `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)} · ${point.at ? String(point.at) : 'UTC unavailable'}`;
-  const current = xy(observed.at(-1) || forecast.at(-1) || fallback[0]);
+  const current = xy(observed.at(-1) || forecast.at(-1) || fallback[0] || from);
 
   return (
     <div className="intel-report-graphic">
@@ -414,32 +403,28 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
         </defs>
         <rect width={width} height={height} fill="url(#intel-report-grid)" />
         {forecast.length >= 2 && <path className="intel-report-track intel-report-track--forecast" d={path(forecast)} />}
-        {observed.length >= 2 && !triggerIsGap && <path className="intel-report-track intel-report-track--observed" d={path(observed)} />}
+        {observed.length >= 2 && !triggerIsGap && !hasTriggerEndpoints && <path className="intel-report-track intel-report-track--observed" d={path(observed)} />}
         {observed.length >= 2 && triggerIsGap && <path className="intel-report-track intel-report-track--observed"
           d={path(observed)} strokeDasharray="5 5" />}
         {hasTriggerEndpoints && (
-          <>
-            <line x1={xy(triggerEndpoints[0])[0]} y1={xy(triggerEndpoints[0])[1]}
-              x2={xy(triggerEndpoints[1])[0]} y2={xy(triggerEndpoints[1])[1]}
-              stroke="#f59e0b" strokeWidth="2" strokeDasharray="5 5" opacity="0.9" />
-            {triggerEndpoints.map((point, index) => (
-              <circle key={index} cx={xy(point)[0]} cy={xy(point)[1]} r="5"
-                fill={index === 0 ? '#f59e0b' : '#22c55e'} stroke="#06171d" strokeWidth="2" />
-            ))}
-          </>
+          <line x1={xy(from)[0]} y1={xy(from)[1]} x2={xy(to)[0]} y2={xy(to)[1]}
+            stroke="#f59e0b" strokeWidth="2" strokeDasharray="5 5" opacity="0.9" />
         )}
-        <circle cx={current[0]} cy={current[1]} r="11" className="intel-report-vessel-pulse" />
-        <polygon
-          points="0,-9 6,7 0,4 -6,7"
-          transform={`translate(${current[0]} ${current[1]})`}
-          className="intel-report-vessel"
-        />
+        {!from && <circle cx={current[0]} cy={current[1]} r="5" className="intel-report-vessel-pulse" />}
+        {triggerTrack.map((point, index) => (
+          <circle key={index} cx={xy(point)[0]} cy={xy(point)[1]} r="5"
+            fill={index === 0 ? '#f59e0b' : '#22c55e'} stroke="#06171d" strokeWidth="2" />
+        ))}
       </svg>
-      {hasTriggerEndpoints && (
+      {from && (
         <div className="intel-report-trigger-endpoints">
-          <div><strong>Last observed fix</strong> · {formatTriggerEndpoint(triggerEndpoints[0])}</div>
-          <div><strong>Next recorded fix</strong> · {formatTriggerEndpoint(triggerEndpoints[1])}</div>
-          <div>{triggerIsGap ? 'Dashed interval: AIS not observed; no route inferred.' : 'Dashed segment: anomalous displacement, not a verified route.'}</div>
+          <div><strong>{fromLabel}</strong> · {formatTriggerEndpoint(from)}</div>
+          {to ? (
+            <>
+              <div><strong>Next recorded fix</strong> · {formatTriggerEndpoint(to)}</div>
+              <div>{triggerIsGap ? 'Dashed interval: AIS not observed; no route inferred.' : 'Dashed segment: anomalous displacement, not a verified route.'}</div>
+            </>
+          ) : triggerIsGap ? <div>Reappearance: no published AIS fix.</div> : null}
         </div>
       )}
       <div className="intel-report-legend">

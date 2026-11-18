@@ -1,30 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { liveMovementEndpoints, liveMovementMapFeatures } from './movementEndpoints.js';
 
-const source = readFileSync(new URL('../../components/ConePanel.jsx', import.meta.url), 'utf8');
-
-test('LIVE evidence panel exposes both actual trigger fixes with coordinates and timestamps', () => {
-  assert.match(source, /movementEvidence\.from_at/);
-  assert.match(source, /movementEvidence\.to_at/);
-  assert.match(source, /Last observed fix/);
-  assert.match(source, /Next recorded fix/);
-  assert.match(source, /formatTriggerEndpoint\(triggerEndpoints\[0\]\)/);
-  assert.match(source, /formatTriggerEndpoint\(triggerEndpoints\[1\]\)/);
+test('a position jump maps both recorded fixes and the anomalous connection', () => {
+  const feature = { properties: { movement_evidence: {
+    from: { lat: 37, lon: 12 }, to: { lat: 36, lon: 14 },
+    from_at: '2026-11-17T17:56:02Z', to_at: '2026-11-17T17:56:47Z',
+  } } };
+  const { from, to, isGap } = liveMovementEndpoints(feature);
+  assert.equal(isGap, false);
+  assert.equal(from.at, '2026-11-17T17:56:02Z');
+  assert.equal(to.at, '2026-11-17T17:56:47Z');
+  const mapped = liveMovementMapFeatures(feature);
+  assert.deepEqual(mapped.map(({ geometry }) => geometry.coordinates), [[12, 37], [[12, 37], [14, 36]], [14, 36]]);
 });
 
-test('AIS gaps are explicitly shown as unobserved rather than a verified transit', () => {
-  assert.match(source, /AIS not observed; no route inferred/);
-  assert.match(source, /strokeDasharray="5 5"/);
+test('a legacy gap maps its published position without inferring reappearance from the track', () => {
+  const feature = { geometry: { type: 'Point', coordinates: [14, 36] },
+    properties: { episode_family: 'gap_episode', observed_track: [{ lat: 38, lon: 13 }] } };
+  const { from, to, fromLabel } = liveMovementEndpoints(feature);
+  assert.deepEqual(from, { lon: 14, lat: 36, at: null });
+  assert.equal(fromLabel, 'Published gap position');
+  assert.equal(to, null);
+  assert.equal(liveMovementMapFeatures(feature).length, 1);
 });
 
-
-test('trigger endpoints remain in graphic bounds even with an unrelated public track', () => {
-  assert.match(source, /const all = \[\.\.\.observed, \.\.\.forecast, \.\.\.fallback, \.\.\.evidenceEndpoints\]/);
-});
-
-test('gap fix sequences are not presented as continuous observed vessel paths', () => {
-  assert.match(source, /observed.length >= 2 && !triggerIsGap/);
-  assert.match(source, /observed.length >= 2 && triggerIsGap/);
-  assert.match(source, /connecting path unverified/);
+test('missing fix coordinates cannot render as zero', () => {
+  const feature = { properties: { movement_evidence: { from: { lat: null, lon: 12 } } } };
+  assert.deepEqual(liveMovementMapFeatures(feature), []);
 });
