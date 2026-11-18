@@ -1,3 +1,4 @@
+import { reviewedArchiveCase } from './humanitarianReview.js';
 import { isPublicCaseEligible } from '../live/publicCaseEligibility.js';
 import { addMovementLabels } from '../map/movementLabels.js';
 import VesselCaseSearch from '../../components/VesselCaseSearch.jsx';
@@ -127,7 +128,7 @@ export default function PlayTimeline({ apiBase }) {
   const [apiIncidents, setIncidents] = useState([]);
   const [reviewedIncidents, setReviewedIncidents] = useState([]);
   const archiveRecords = useMemo(() => mergeIncidentPages(apiIncidents, reviewedIncidents), [apiIncidents, reviewedIncidents]);
-  const incidents = useMemo(() => archiveRecords.filter(isPublicCaseEligible), [archiveRecords]);
+  const incidents = useMemo(() => archiveRecords.filter(isPublicCaseEligible).map(reviewedArchiveCase).filter(Boolean), [archiveRecords]);
   const [archiveNow, setArchiveNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setArchiveNow(Date.now()), 60_000);
@@ -177,15 +178,21 @@ export default function PlayTimeline({ apiBase }) {
   );
   const caseData = useMemo(() => {
     if (caseResponse?.id !== selectedId) return null;
-    const data = caseResponse?.payload;
-    if (!globalState.cutoff || !data) return data;
+    let data = caseResponse?.payload;
+    if (!data) return data;
+    if (incidents.find((item) => item.incident_id === selectedId)?.suppress_inferred_map_evidence) {
+      const { search_area, satellite_review_candidates, ...reportedCase } = data;
+      data = { ...reportedCase, timeline: (data.timeline || []).filter((item) => item.type !== 'satellite' && item.type !== 'drift')
+        .map((item) => ({ ...item, geometry: null })), satellite_count: 0, drift_count: 0 };
+    }
+    if (!globalState.cutoff) return data;
     // The API returns the current dossier, including undated assessments and counts.
     return {
       timeline: data.timeline,
       voyage_evidence: data.voyage_evidence,
       satellite_review_candidates: data.satellite_review_candidates,
     };
-  }, [caseResponse, selectedId, globalState.cutoff]);
+  }, [incidents, caseResponse, selectedId, globalState.cutoff]);
   const visibleIncidents = useMemo(
     () => casesForArchiveView(historicalIncidents, globalState.cutoff, selectedDay),
     [historicalIncidents, globalState.cutoff, selectedDay],
@@ -200,6 +207,7 @@ export default function PlayTimeline({ apiBase }) {
     if (archiveFilter === 'humanitarian') return mainCategory === 'humanitarian';
     if (archiveFilter === 'maritime') return mainCategory === 'maritime';
     if (archiveFilter === 'attacks') return isAttackIncident(incident);
+    if (archiveFilter === 'ais-gaps') return incident.incident_type === 'ais_gap' || incident.episode_family === 'gap_episode';
     return true;
   }), [visibleIncidents, archiveFilter]);
   const incidentTypes = useMemo(
@@ -820,6 +828,9 @@ export default function PlayTimeline({ apiBase }) {
     fallbackMapRef.current?.setDrifts(historicalDriftFeatures(visibleTimeline));
   }, [fallbackReady, gapFeatures, visibleTimeline]);
 
+  const gapHasOnlyAnchor = selectedIncident
+    && (selectedIncident.incident_type === 'ais_gap' || selectedIncident.episode_family === 'gap_episode')
+    && !gapFeatures.features.some(({ geometry }) => geometry.type === 'LineString');
   const movementBounds = geometryBounds({
     coordinates: gapFeatures.features.filter(({ geometry }) => geometry.type === 'Point').map(({ geometry }) => geometry.coordinates),
   });
@@ -920,6 +931,9 @@ export default function PlayTimeline({ apiBase }) {
         Archive · {globalState.mode === 'all' && !selectedDay && archiveTotal != null ? archiveTotal : visibleIncidents.length}
       </button>
 
+      {gapHasOnlyAnchor && <div className="play-gap-map-note" role="status">
+        {gapFeatures.features.length ? 'Reported gap position · two recorded fixes unavailable' : 'This report has no published gap coordinates'}
+      </div>}
       <VesselCaseSearch cases={visibleIncidents} onSelect={(record) => {
         setArchiveSearch(''); setArchiveFilter('all'); setIncidentTypeFilter('all');
         setEvidenceFilter('all'); setSatelliteOnly(false); setSanctionsOnly(false); setInvestigationsOnly(false);
@@ -948,6 +962,10 @@ export default function PlayTimeline({ apiBase }) {
               <button type="button" className={`signals-selector__link ${archiveFilter === 'humanitarian' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('humanitarian')}><span className="signals-selector__box" aria-hidden="true" />HUMANITARIAN</button>
               <button type="button" className={`signals-selector__link ${archiveFilter === 'maritime' ? 'is-active' : ''}`} onClick={() => setArchiveFilter('maritime')}><span className="signals-selector__box" aria-hidden="true" />MARITIME</button>
               <button type="button" className={`signals-selector__link ${archiveFilter === 'attacks' ? 'is-active' : ''}`} onClick={() => { setArchiveFilter('attacks'); setIncidentTypeFilter('all'); }}><span className="signals-selector__box" aria-hidden="true" />ATTACKS</button>
+              <button type="button" className={`signals-selector__link ${archiveFilter === 'ais-gaps' ? 'is-active' : ''}`}
+                aria-pressed={archiveFilter === 'ais-gaps'} onClick={() => { setArchiveFilter('ais-gaps'); setIncidentTypeFilter('all'); }}>
+                <span className="signals-selector__box" aria-hidden="true" />AIS GAPS
+              </button>
             </div>
             <label className="play-satellite-selector">
               <span>Incident type</span>
@@ -1082,7 +1100,7 @@ export default function PlayTimeline({ apiBase }) {
             <h2>{selectedIncident?.title || 'SeaCommons incident'}</h2>
             <time>{itemTime(selectedIncident?.reported_at)}</time>
             {reviewedCase?.event_date && <span>Incident date · {reviewedCase.event_date}</span>}
-            {reviewedCase?.location_summary && <span>Reported area · {reviewedCase.location_summary}</span>}
+            {selectedIncident?.location_summary && <span>{selectedIncident.suppress_inferred_map_evidence ? '' : 'Reported area · '}{selectedIncident.location_summary}</span>}
             <button type="button" disabled={!selectedIncident?.geometry} onClick={() => { const geometry = selectedIncident?.geometry; if (geometry?.type !== 'Point') return; mapRef.current?.easeTo({ center: geometry.coordinates, zoom: Math.max(9, mapRef.current.getZoom()), duration: 600 }); fallbackMapRef.current?.flyTo({ center: geometry.coordinates, zoom: 9 }); }}>Locate on map +</button>
             <span>{selectedIncident?.source || '—'}</span>
           </section>
