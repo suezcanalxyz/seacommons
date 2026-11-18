@@ -4292,6 +4292,11 @@ function App() {
 
             <details className="live-radio-panel">
               <summary>Radio · {receiverMesh.fresh ? (receiverMesh.active || 0) : 'status unavailable'} active · {receiverMarkers.length} on map</summary>
+              {receiverMesh.fresh && (receiverMesh.active || 0) > 0 && receiverMarkers.length === 0 && (
+                <p role="status" className="live-radio-panel__regional-gap">
+                  No connected Mediterranean receiver is currently available on this map. {(receiverMesh.active || 0)} remote HF receiver(s) remain active outside the regional layer.
+                </p>
+              )}
               {Object.values(radioFailures).some(Boolean) && (
                 <p role="status">Update unavailable: {Object.keys(radioFailures).filter((key) => radioFailures[key]).join(', ')}. Showing the last available data.</p>
               )}
