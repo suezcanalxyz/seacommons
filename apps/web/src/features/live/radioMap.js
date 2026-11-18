@@ -22,3 +22,12 @@ export function radioFeature(row, type) {
     },
   };
 }
+
+/** Fail closed: stale receiver-mesh data must not remain on an operational map. */
+export function liveActiveReceiverMarkers(mesh) {
+  if (mesh?.fresh !== true || !Array.isArray(mesh.receivers)) return [];
+  return mesh.receivers
+    .filter((row) => row?.active === true && Boolean(row.receiver_id))
+    .map((row) => radioFeature(row, 'radio_receiver'))
+    .filter((feature) => feature.geometry?.type === 'Point');
+}
