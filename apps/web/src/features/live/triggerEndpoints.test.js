@@ -29,3 +29,20 @@ test('missing fix coordinates cannot render as zero', () => {
   const feature = { properties: { movement_evidence: { from: { lat: null, lon: 12 } } } };
   assert.deepEqual(liveMovementMapFeatures(feature), []);
 });
+
+test('LIVE prefers the published open-gap fix over stale dossier points and keeps the gap open', async () => {
+  const { latestLiveAisFix, selectedLiveMovementEndpoints } = await import('./movementEndpoints.js');
+  const feature = {
+    geometry: { type: 'Point', coordinates: [-0.53882, 36.48946] },
+    properties: {
+      anomaly_type: 'long_gap', gap_still_open: true,
+      timestamp_utc: '2026-11-17T20:37:36.455690+00:00',
+    },
+  };
+  const endpoints = selectedLiveMovementEndpoints(feature);
+  assert.equal(endpoints.to, null);
+  assert.equal(endpoints.fromLabel, 'Last observed AIS fix');
+  const dossier = { track_points: [{ lat: 36.48858, lon: -0.54241, ts: '2026-11-17T11:33:34.635992' }] };
+  assert.equal(latestLiveAisFix(feature, dossier).ts, endpoints.from.at);
+  assert.equal(latestLiveAisFix(null, dossier).ts, '2026-11-17T11:33:34.635992Z');
+});

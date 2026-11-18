@@ -2,7 +2,7 @@ import { useLiveVesselDossier } from './features/live/useLiveVesselDossier.js';
 import { isPublicCaseEligible } from './features/live/publicCaseEligibility.js';
 import { addMovementLabels } from './features/map/movementLabels.js';
 import VesselCaseSearch from './components/VesselCaseSearch.jsx';
-import { liveMovementMapFeatures } from './features/live/movementEndpoints.js';
+import { aisUtcTimestamp, latestLiveAisFix, liveMovementMapFeatures, selectedLiveMovementEndpoints } from './features/live/movementEndpoints.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
@@ -809,7 +809,7 @@ function App() {
   const selectedMmsi = String(selectedVesselProps?.linked_mmsi || selectedVesselProps?.mmsi || '');
   const liveVessel = useLiveVesselDossier(apiBase, isPublicLiveHost && !conePanelHidden
     && /^\d{9}$/.test(selectedMmsi) ? selectedMmsi : null);
-  const latestAisFix = liveVessel.data?.latest_ais_fix || liveVessel.data?.track_points?.at(-1);
+  const latestAisFix = useMemo(() => latestLiveAisFix(resolvedMapPanel?.feature, liveVessel.data), [resolvedMapPanel, liveVessel.data]);
 
 
   useEffect(() => {
@@ -1672,16 +1672,23 @@ function App() {
             'ais_last_observed', '#ff8859', 'ais_first_reappearance', '#55e0c0', '#ffffff'],
             'circle-stroke-color': '#071014', 'circle-stroke-width': 2 } });
 
-        map.on('click', 'live-ais-gap-endpoints', (event) => {
+        let movementPopup;
+        const showMovementPopup = (event) => {
           const feature = event.features?.[0];
           if (!feature || feature.geometry?.type !== 'Point') return;
           const props = feature.properties || {};
-          const label = props.kind === 'ais_first_reappearance' ? 'First AIS reappearance' : 'Last observed AIS fix';
-          new maplibregl.Popup({ closeButton: true, maxWidth: '300px' })
+          const label = props.label || (props.kind === 'ais_first_reappearance' ? 'First AIS reappearance' : 'Last observed AIS fix');
+          const time = Date.parse(aisUtcTimestamp(props.at));
+          const observed = Number.isFinite(time) ? new Date(time).toISOString().slice(0, 19).replace('T', ' ') + ' UTC' : 'Time unavailable';
+          movementPopup?.remove();
+          movementPopup = new maplibregl.Popup({ className: 'live-movement-popup', closeButton: true, maxWidth: '300px' })
             .setLngLat(feature.geometry.coordinates)
-            .setText(`${label} · ${props.at || 'time unavailable'} UTC · MMSI ${props.mmsi || 'unknown'} · ${Math.round(Number(props.duration_min || 0))} min gap. No observed route between endpoints; drift estimates are modelled separately.`)
+            .setText(`${label} · ${observed}`)
             .addTo(map);
-        });
+        };
+        map.on('click', 'live-ais-gap-endpoints', showMovementPopup);
+        map.on('click', 'live-movement-fixes', showMovementPopup);
+        map.on('movestart', () => movementPopup?.remove());
         map.on('mouseenter', 'live-ais-gap-endpoints', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'live-ais-gap-endpoints', () => { map.getCanvas().style.cursor = ''; });
         // Historical SAR drift cones & trajectories
@@ -2919,8 +2926,9 @@ function App() {
       }));
     });
     map.getSource('intel-observed-tracks')?.setData({ type: 'FeatureCollection', features: observedTracks });
-    map.getSource('live-ais-gaps')?.setData(liveAisGapFeatures(intelEvents));
-  }, [intelEvents, mapReady, visibleLivePointFeatures]);
+    map.getSource('live-ais-gaps')?.setData(liveAisGapFeatures(intelEvents.filter(({ properties }) => conePanelHidden
+      || !selectedIntelEventId || String(properties?.id) !== String(selectedIntelEventId))));
+  }, [conePanelHidden, intelEvents, mapReady, selectedIntelEventId, visibleLivePointFeatures]);
 
   // MDA layer data
   useEffect(() => {
@@ -3165,7 +3173,7 @@ function App() {
 
   useEffect(() => {
     const feature = resolvedMapPanel?.type === 'intel' && !conePanelHidden ? resolvedMapPanel.feature : null;
-    const features = feature ? liveMovementMapFeatures(feature) : [];
+    const features = feature ? liveMovementMapFeatures(feature, selectedLiveMovementEndpoints(feature)) : [];
     const mobile = window.matchMedia('(max-width: 680px)').matches;
     if (fallbackReady) {
       const fallback = fallbackMapRef.current;
@@ -3190,7 +3198,7 @@ function App() {
   // Keep the newest AIS fix separate from the event and gap endpoints.
   useEffect(() => {
     const feature = resolvedMapPanel?.type === 'intel' && !conePanelHidden ? resolvedMapPanel.feature : null;
-    const features = feature ? liveMovementMapFeatures(feature) : [];
+    const features = feature ? liveMovementMapFeatures(feature, selectedLiveMovementEndpoints(feature)) : [];
     const first = liveVessel.data?.track_points?.[0];
     if (!features.length && first && first.ts !== latestAisFix?.ts
       && Number.isFinite(first.lon) && Number.isFinite(first.lat)) {
@@ -3200,7 +3208,9 @@ function App() {
         properties: { kind: 'ais_last_observed', label: 'First AIS fix in window', at: first.ts },
       });
     }
-    if (feature && latestAisFix && Number.isFinite(latestAisFix.lon) && Number.isFinite(latestAisFix.lat)) {
+    if (feature && latestAisFix && !features.some(({ geometry, properties }) => geometry.type === 'Point'
+      && geometry.coordinates[0] === latestAisFix.lon && geometry.coordinates[1] === latestAisFix.lat
+      && Date.parse(aisUtcTimestamp(properties.at)) === Date.parse(latestAisFix.ts))) {
       features.push({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [latestAisFix.lon, latestAisFix.lat] },

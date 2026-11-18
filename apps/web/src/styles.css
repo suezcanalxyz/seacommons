@@ -4290,3 +4290,14 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   .has-selection > .vessel-case-search,
   .has-selected-case > .vessel-case-search { right: min(410px, 31vw); }
 }
+
+.live-movement-popup .maplibregl-popup-content {
+  background: #0c2028;
+  color: #edf9fb;
+  border: 1px solid #315562;
+  padding: 12px 25px 12px 12px;
+}
+
+.live-movement-popup .maplibregl-popup-close-button {
+  color: inherit;
+}
