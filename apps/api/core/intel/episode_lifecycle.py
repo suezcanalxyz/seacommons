@@ -48,13 +48,19 @@ def reconcile_gap(
     observation_id: str,
     observed_at: datetime,
     coordinates: tuple[float, float],
+    identity_validated: bool = False,
+    source_validated: bool = False,
 ) -> dict[str, Any]:
     """Close an active gap only on a later, valid, new AIS observation.
 
-    Coordinates are (longitude, latitude). Caller must verify AIS identity,
-    source quality and authenticity before invoking this function.
+    Coordinates are (longitude, latitude). Both AIS identity continuity and
+    source authenticity must be explicitly validated by the caller. Missing
+    validation fails closed; this function never infers authenticity from a
+    coordinate or a vessel MMSI alone.
     """
     if current.get("status") not in ACTIVE_STATES:
+        return dict(current)
+    if not (identity_validated and source_validated):
         return dict(current)
     if not observation_id:
         raise ValueError("observation_id required")
