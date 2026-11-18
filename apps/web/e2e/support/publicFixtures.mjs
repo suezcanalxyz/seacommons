@@ -148,6 +148,7 @@ function apiPayload(url, incidents = playIncidents) {
 }
 
 export async function installDeterministicRoutes(page, { playIncidents: incidentFixture = playIncidents } = {}) {
+  await page.route('**/archive/reviewed-cases.json', (route) => fulfillJson(route, { incidents: [] }));
   await page.route('**/api/v1/**', async (route) => {
     await fulfillJson(route, apiPayload(new URL(route.request().url()), incidentFixture));
   });

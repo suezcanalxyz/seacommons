@@ -1,0 +1,39 @@
+{
+  "incidents": [
+    {
+      "incident_id": "reviewed:contship-jet:2026-10-28",
+      "title": "CONTSHIP JET — reported attack",
+      "main_category": "maritime",
+      "incident_type": "drone_attack",
+      "incident_status": "outcome_unknown",
+      "reported_at": "2026-10-29T10:55:37Z",
+      "event_date": "2026-10-28",
+      "source": "Reuters",
+      "location_summary": "Black Sea near Cape Kaliakra, off Bulgaria",
+      "geometry": null,
+      "timeline": [
+        {
+          "id": "reuters-2026-10-29",
+          "at": "2026-10-29T10:55:37Z",
+          "type": "public_report",
+          "title": "Reuters verified footage and reported the sinking and evacuation. The vessel operator said all 18 crew were rescued.",
+          "source": "Reuters",
+          "properties": {
+            "source_url": "https://www.reuters.com/world/europe/greek-container-ship-sinks-after-drone-attack-off-bulgaria-2026-10-29/"
+          }
+        },
+        {
+          "id": "un-letter-2026-11-02",
+          "at": "2026-11-02T23:59:59Z",
+          "type": "official_submission",
+          "title": "Ukraine’s letter circulated by the United Nations records the 28 October incident near Cape Kaliakra and the rescue of all 18 crew. The letter describes the operational details as subject to further verification.",
+          "source": "Ukraine’s Permanent Representative to the United Nations",
+          "properties": {
+            "source_url": "https://digitallibrary.un.org/record/4132352/files/A_81_472--S_2026_882-EN.pdf",
+            "time_precision": "date_only"
+          }
+        }
+      ]
+    }
+  ]
+}
