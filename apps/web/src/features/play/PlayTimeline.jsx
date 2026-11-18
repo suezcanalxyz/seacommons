@@ -1,3 +1,4 @@
+import { startTransition } from 'react';
 import { reviewedArchiveCase, archiveGeographicClues, geographicClueFeatures } from './humanitarianReview.js';
 import { isPublicCaseEligible } from '../live/publicCaseEligibility.js';
 import { addMovementLabels } from '../map/movementLabels.js';
@@ -152,12 +153,21 @@ export default function PlayTimeline({ apiBase }) {
   const [mobileTab, setMobileTab] = useState('map');
   const [selectedDay, setSelectedDay] = useState('');
   const [guideOpen, setGuideOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [archiveLoading, setArchiveLoading] = useState(true);
+  const [timelineRequest, setTimelineRequest] = useState(null);
+  const timelineLoading = timelineRequest?.id === selectedId && timelineRequest?.pending;
+  const timelineError = timelineRequest?.id === selectedId ? timelineRequest.error : '';
+  const [startupDismissed, setStartupDismissed] = useState(false);
   const [startupGraceExpired, setStartupGraceExpired] = useState(false);
   useEffect(() => {
     const timeout = window.setTimeout(() => setStartupGraceExpired(true), 25_000);
     return () => window.clearTimeout(timeout);
   }, []);
+  useEffect(() => {
+    if (startupGraceExpired || (!archiveLoading && (mapContentReady || mapError))) {
+      setStartupDismissed(true);
+    }
+  }, [archiveLoading, mapContentReady, mapError, startupGraceExpired]);
   const [error, setError] = useState('');
   const [satelliteMission, setSatelliteMission] = useState('');
   const [archiveFilter, setArchiveFilter] = useState('all');
@@ -167,6 +177,7 @@ export default function PlayTimeline({ apiBase }) {
   const [evidenceFilter, setEvidenceFilter] = useState('all');
   const [satelliteOnly, setSatelliteOnly] = useState(false);
   const [sanctionsOnly, setSanctionsOnly] = useState(false);
+  const [sanctionsOpen, setSanctionsOpen] = useState(false);
   const [investigationsOnly, setInvestigationsOnly] = useState(false);
   const [satelliteVisible, setSatelliteVisible] = useState(false);
   const [satelliteContextMission, setSatelliteContextMission] = useState('VIIRS NOAA-21');
@@ -324,36 +335,48 @@ export default function PlayTimeline({ apiBase }) {
 
   useEffect(() => {
     let cancelled = false;
+    let running = false;
+    let complete = false;
     async function loadIncidents({ full = true } = {}) {
+      if (running) return;
+      running = true;
       try {
-        let collected = [];
         let offset = 0;
-        const seenOffsets = new Set();
+        let remaining = [];
         while (!cancelled) {
-          if (seenOffsets.has(offset)) throw new Error('Play archive pagination repeated an offset');
-          seenOffsets.add(offset);
-          const payload = await fetchJson(apiBase, `/api/v1/play/incidents?limit=100&offset=${offset}`, undefined, 30_000);
-          const page = Array.isArray(payload?.incidents) ? payload.incidents : [];
-          collected = mergeIncidentPages(collected, page);
+          const limit = offset === 0 ? 100 : 500;
+          const payload = await fetchJson(apiBase, `/api/v1/play/incidents?limit=${limit}&offset=${offset}`, undefined, 30_000);
           if (cancelled) return;
-          setIncidents((previous) => mergeIncidentPages((offset > 0 || !full) ? previous : [], collected));
-          if (offset === 0) setLoading(false);
+          const page = Array.isArray(payload?.incidents) ? payload.incidents : [];
+          if (offset === 0) {
+            setIncidents((previous) => mergeIncidentPages(previous, page));
+            setArchiveLoading(false);
+          } else {
+            remaining.push(...page);
+          }
           if (payload?.next_offset == null || !full) break;
           const nextOffset = Number(payload.next_offset);
-          if (!Number.isFinite(nextOffset) || nextOffset <= offset) {
+          if (!Number.isSafeInteger(nextOffset) || nextOffset <= offset) {
             throw new Error('Play archive pagination returned an invalid next_offset');
           }
           offset = nextOffset;
         }
-        if (!cancelled) setError('');
+        if (!cancelled) {
+          if (remaining.length) startTransition(() => setIncidents((previous) => mergeIncidentPages(previous, remaining)));
+          if (full) complete = true;
+          setError('');
+        }
       } catch (exc) {
         if (!cancelled) setError(exc?.message || 'Play archive unavailable');
       } finally {
-        if (!cancelled) setLoading(false);
+        running = false;
+        if (!cancelled) setArchiveLoading(false);
       }
     }
-    loadIncidents({ full: true });
-    const timer = window.setInterval(() => { if (document.visibilityState !== 'hidden') loadIncidents({ full: false }); }, 60_000);
+    loadIncidents();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') loadIncidents({ full: !complete });
+    }, 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [apiBase]);
 
@@ -411,19 +434,18 @@ export default function PlayTimeline({ apiBase }) {
           caveats: ['The sources describe the area of the incident. An exact position and an AIS link are unavailable in this record. Attribution has not been established for this case.'],
         },
       } });
-      setLoading(false);
+      setTimelineRequest(null);
       return () => { cancelled = true; };
     }
-    setLoading(true);
+    setTimelineRequest({ id: selectedId, pending: true });
     fetchJson(apiBase, `/api/v1/play/incidents/${encodeURIComponent(selectedId)}/timeline`)
       .then((payload) => {
         if (!cancelled) {
           setCaseResponse({ id: selectedId, payload });
-          setError('');
+          setTimelineRequest({ id: selectedId, pending: false });
         }
       })
-      .catch((exc) => { if (!cancelled) setError(exc?.message || 'Timeline unavailable'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .catch((exc) => { if (!cancelled) setTimelineRequest({ id: selectedId, pending: false, error: exc?.message || 'Timeline unavailable' }); });
     return () => { cancelled = true; };
   }, [apiBase, selectedId, reviewedCase]);
 
@@ -736,13 +758,18 @@ export default function PlayTimeline({ apiBase }) {
     map.getSource('play-incidents')?.setData(mappedIncidents);
     map.getSource('play-attacks')?.setData({ type: 'FeatureCollection', features: mappedIncidents.features.filter((f) => f.geometry?.type === 'Point' && isAttackIncident(f.properties)) });
     if (map.getLayer('play-attack-markers')) map.moveLayer('play-attack-markers');
+  }, [mapReady, mappedIncidents]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
     const datedEvidence = evidenceCollection(visibleTimeline);
     datedEvidence.features.push(...aisReconstruction.observed.features);
     map.getSource('play-evidence')?.setData(datedEvidence);
     map.getSource('play-ais-gaps')?.setData(gapFeatures);
     map.getSource('play-historical-drifts')?.setData(historicalDriftFeatures(visibleTimeline));
     map.getSource('play-satellite-footprints')?.setData(satelliteFootprintCollection(visibleTimeline));
-  }, [mapReady, mappedIncidents, visibleTimeline, aisReconstruction, gapFeatures]);
+  }, [mapReady, visibleTimeline, aisReconstruction, gapFeatures]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -902,7 +929,7 @@ export default function PlayTimeline({ apiBase }) {
     URL.revokeObjectURL(url);
   };
 
-  const startupPending = !startupGraceExpired && (loading || (!mapContentReady && !mapError));
+  const startupPending = !startupDismissed && !startupGraceExpired && (archiveLoading || (!mapContentReady && !mapError));
 
   return (
     <main className={`cop-shell is-live-mode play-public-shell play-shell ${selectedId ? 'has-selection' : ''}`}>
@@ -912,7 +939,7 @@ export default function PlayTimeline({ apiBase }) {
             <span className="play-startup-overlay__eyebrow">SEACOMMONS / TEMPORAL INTELLIGENCE</span>
             <strong>Preparing PLAY</strong>
             <span className="play-startup-overlay__spinner" aria-hidden="true" />
-            <p>{loading ? 'Loading historical evidence…' : 'Initializing the interactive map…'}</p>
+            <p>{archiveLoading ? 'Loading historical evidence…' : 'Initializing the interactive map…'}</p>
             <small>Historical records remain distinct from simulated drift and unobserved AIS gaps.</small>
           </div>
         </div>
@@ -951,7 +978,7 @@ export default function PlayTimeline({ apiBase }) {
           </div>
           <div className="live-feed-panel__title">
             <div><p>HISTORICAL SIGNAL FIELD</p><h1>Play</h1></div>
-            <button type="button" onClick={() => setCasesOpen(false)} aria-label="Close archive">−</button>
+            <button type="button" onClick={() => { setCasesOpen(false); setMobileTab('map'); }} aria-label="Close archive">−</button>
           </div>
           <div className="osint-stats-row">
             <div className="osint-stat"><strong>{visibleIncidents.length}</strong><span>archive loaded</span></div>
@@ -1001,9 +1028,9 @@ export default function PlayTimeline({ apiBase }) {
             ) : null}
           </div>
         </header>
-        <details className="play-sanctions-section">
+        <details className="play-sanctions-section" onToggle={(event) => setSanctionsOpen(event.currentTarget.open)}>
           <summary>Sanctioned vessels · historical registry</summary>
-          <SanctionsCatalog apiBase={apiBase} />
+          {sanctionsOpen && <SanctionsCatalog apiBase={apiBase} />}
         </details>
         <div className="live-feed-panel__body play-cases__list">
           {archiveGroups.map((group) => (
@@ -1035,7 +1062,7 @@ export default function PlayTimeline({ apiBase }) {
             </section>
           ))}
           {filteredIncidents.length > displayedCases.length ? <button type="button" className="play-case-load-more" onClick={() => setVisibleCaseLimit((limit) => limit + 80)}>Show 80 more cases · {displayedCases.length} of {filteredIncidents.length} loaded</button> : null}
-          {!filteredIncidents.length && !loading ? <div className="play-empty">{archiveFilter === 'attacks' ? 'No explicitly classified attacks in the public archive for this selection. An AIS gap or an unverified report is not evidence of an attack.' : 'No incidents at this time.'}</div> : null}
+          {!filteredIncidents.length && !archiveLoading ? <div className="play-empty">{archiveFilter === 'attacks' ? 'No explicitly classified attacks in the public archive for this selection. An AIS gap or an unverified report is not evidence of an attack.' : 'No incidents at this time.'}</div> : null}
         </div>
       </aside>
 
@@ -1059,7 +1086,6 @@ export default function PlayTimeline({ apiBase }) {
           <small>Triangles show reported course only. Circles do not imply direction. Single-point colors indicate category; cluster colors and sizes indicate grouped point count, not severity or verification. Clusters split on zoom. Dashed AIS gap connections are unobserved, not confirmed tracks.</small>
         </div>
         <div className="play-all-badge"><strong>{modeLabel}</strong><span>{mappedIncidentCount} mapped / {filteredIncidents.length} filtered · {incidents.length} loaded{archiveTotal != null ? ` / ${archiveTotal} archive` : ''}</span></div>
-        {loading ? <div className="play-map-message" role="status" aria-live="polite">Loading archive and case evidence…</div> : null}
         {error ? <div className="play-map-message is-error">{error}</div> : null}
         {mapError ? <div className="play-map-message is-error">{mapError}</div> : null}
         {selectedId ? (
@@ -1090,14 +1116,16 @@ export default function PlayTimeline({ apiBase }) {
         </div>
       ) : null}
 
-      <aside className={`cone-panel cone-panel--intel play-evidence ${selectedId ? 'is-open' : ''}`}>
+      {selectedId && <aside className="cone-panel cone-panel--intel play-evidence is-open">
         <div className="play-sheet-handle" />
         <div className="cone-panel-header play-section-head">
           <span>Case dossier</span>
-          <button type="button" className="play-report-trigger" disabled={!selectedIncident || loading} onClick={() => setReportOpen(true)}>Report ↗</button>
+          <button type="button" className="play-report-trigger" disabled={!selectedIncident || timelineLoading} onClick={() => setReportOpen(true)}>Report ↗</button>
           <button className="cone-close-btn" type="button" onClick={() => setSelectedId('')}>×</button>
         </div>
-        <div className="play-evidence__scroll">
+        <div className="play-evidence__scroll" aria-busy={Boolean(timelineLoading)}>
+          {timelineLoading && <p className="play-dossier-progress" role="status">Loading case evidence…</p>}
+          {timelineError && <p className="play-dossier-progress" role="alert">{timelineError}</p>}
           <section className="play-card">
             <p>{(selectedIncident?.incident_type || caseData?.incident_type || 'incident').replace(/_/g, ' ')} · {selectedIncident?.main_category || selectedIncident?.domain || caseData?.main_category || caseData?.domain || 'maritime'}</p>
             <h2>{selectedIncident?.title || 'SeaCommons incident'}</h2>
@@ -1276,7 +1304,7 @@ export default function PlayTimeline({ apiBase }) {
             {satelliteProps.source_url ? <a href={satelliteProps.source_url} target="_blank" rel="noreferrer">Acquisition record ↗</a> : null}
           </section>
         </div>
-      </aside>
+      </aside>}
 
       {reportOpen && report && <div className="play-report-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setReportOpen(false); }}>
         <section className="play-report-dialog" role="dialog" aria-modal="true" aria-label="Case report">

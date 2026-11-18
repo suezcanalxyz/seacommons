@@ -9,7 +9,13 @@ const translatedDuplicates = new Set(['a037c1cb']); // French version of the El 
 
 const destinationOnly = new Set(['57dce9fa']);
 
+const nonProductionLabels = new Set(['demo', 'fixture', 'mock', 'sandbox', 'synthetic', 'test', 'test_fixture']);
+
 export function reviewedArchiveCase(record) {
+  if (record.is_test === true || record.is_synthetic === true || record.is_fixture === true
+    || [record.archive_source, record.case_type, record.source].some((value) => nonProductionLabels.has(String(value || '').trim().toLowerCase()))) {
+    return null;
+  }
   if ((record.main_category || record.domain) !== 'humanitarian') return record;
   if (nonIncidentReports.has(record.incident_id) || translatedDuplicates.has(record.incident_id)) return null;
   if (!record.source && record.title === 'Humanitarian incident') return null;

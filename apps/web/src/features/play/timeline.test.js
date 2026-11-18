@@ -285,7 +285,7 @@ test('Play uses the shared Live vessel triangle for AIS archive identities', asy
 test('Play gives the exact archive counter a longer timeout without delaying map pages', async () => {
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
   assert.match(source, /fetchJson\(apiBase, '\/api\/v1\/play\/counts', undefined, 30_000\)/);
-  assert.match(source, /fetchJson\(apiBase, `\/api\/v1\/play\/incidents\?limit=100&offset=\$\{offset\}`, undefined, 30_000\)/);
+  assert.match(source, /fetchJson\(apiBase, `\/api\/v1\/play\/incidents\?limit=\${limit}&offset=\$\{offset\}`, undefined, 30_000\)/);
 });
 
 
@@ -302,7 +302,7 @@ test('Play labels partial progressive archive counts as loaded until exact total
 test('Play archive loader follows pagination to exhaustion without a fixed page ceiling', async () => {
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /pages\s*<\s*\(full\s*\?\s*100/);
-  assert.match(source, /seenOffsets/);
+  assert.match(source, /nextOffset <= offset/);
   assert.match(source, /next_offset/);
 });
 
@@ -528,7 +528,7 @@ test('PLAY search areas do not obscure the map until their dossier is selected',
 test('PLAY selection styling does not re-submit all incident geometry to worker', async () => {
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
   assert.match(source, /map\.getSource\('play-incidents'\)\?\.setData\(mappedIncidents\)/);
-  assert.match(source, /\}, \[mapReady, mappedIncidents, visibleTimeline, aisReconstruction, gapFeatures\]\);/);
+  assert.match(source, /\}, \[mapReady, visibleTimeline, aisReconstruction, gapFeatures\]\);/);
   assert.match(source, /\}, \[mapReady, selectedId\]\);/);
 });
 

@@ -464,3 +464,27 @@
 @media (max-width: 680px) {
   .play-gap-map-note { top: 110px; bottom: auto; left: 16px; }
 }
+
+.play-dossier-progress {
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid #436363;
+  color: #c3e8df;
+  font: 12px var(--font-display);
+}
+.play-archive-panel .play-filter-selector .signals-selector__link {
+  min-height: 30px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+@media (max-width: 680px) {
+  .play-archive-panel .play-filter-selector .signals-selector__link {
+    min-height: 44px;
+    padding-inline: 8px;
+  }
+  .play-archive-panel .play-archive-search { min-height: 44px; font-size: 16px; }
+  .play-timeline-bar .play-day-picker { font-size: 16px; }
+  .play-public-shell .play-timeline-bar,
+  .play-public-shell .play-all-badge { backdrop-filter: none; }
+  .play-mobile-dock button { font-size: 12px; }
+}
