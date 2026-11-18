@@ -564,14 +564,19 @@ test('archive clock hides later cases on the same UTC day while the date picker 
 
 test('scene review keeps associated scenes, hides future candidates, and labels coverage separately', async () => {
   const { satelliteReviewScenes } = await import('./timeline.js');
-  const associated = { type: 'satellite', id: 'existing', at: '2026-05-20T10:00:00Z' };
+  const associated = { type: 'satellite', id: 'existing', at: '2026-05-20T10:00:00Z', properties: { source_url: 'https://example.test/scene' } };
   const candidates = [
     { observation_id: 'existing', acquisition_time: associated.at },
     { observation_id: 'review', acquisition_time: '2026-05-20T11:00:00Z' },
     { observation_id: 'future', acquisition_time: '2026-05-20T15:00:00Z' },
   ];
-  const scenes = satelliteReviewScenes([associated], candidates, '2026-05-20T12:00:00Z');
+  const scenes = satelliteReviewScenes([associated, { type: 'satellite', id: 'point-return', geometry: { type: 'Point' } }], candidates, '2026-05-20T12:00:00Z');
   assert.deepEqual(scenes.map((item) => item.id), ['review', 'existing']);
   assert.equal(scenes[0].properties.evidence_role, 'context_only_pending_review');
   assert.equal(scenes[1], associated);
+});
+
+test('an undated resolved status cannot be replayed as a historical outcome', () => {
+  assert.equal(incidentStatusAtCutoff({ incident_status: 'resolved' }, '2026-05-20T10:00:00Z'), 'outcome_unknown');
+  assert.equal(incidentStatusAtCutoff({ incident_status: 'resolved', resolved_at: '2026-05-20T09:00:00Z' }, '2026-05-20T10:00:00Z'), 'resolved');
 });

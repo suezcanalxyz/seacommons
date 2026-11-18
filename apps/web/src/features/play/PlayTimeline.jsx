@@ -1084,6 +1084,7 @@ export default function PlayTimeline({ apiBase }) {
           </section>
           <section className="play-card play-card--rows">
             <div><span>Status</span><strong>{statusLabel(status)}</strong></div>
+            {status === 'resolved' && !selectedIncident?.resolved_at && <span>Resolution date unavailable in the archive.</span>}
             {ongoingCaseClock(selectedIncident, archiveNow) ? <div><span>Latest case clock</span><strong title="Time since first report is not evidence of continued activity or an updated AIS position">{ongoingCaseClock(selectedIncident, archiveNow)}</strong></div> : null}
             <div><span>Evidence confidence</span><strong>{evidenceLabel(caseData || selectedIncident)}</strong></div>
             <div><span>View</span><strong>{modeLabel}</strong></div>
@@ -1185,6 +1186,7 @@ export default function PlayTimeline({ apiBase }) {
             </figure>}
             {/^https:\/\//i.test(satelliteProps.asset_ref || '') && !satelliteProps.asset_ref.includes('{') && <a href={satelliteProps.asset_ref} target="_blank" rel="noreferrer">Open provider quicklook ↗</a>}
             {satelliteProps.temporal_delta_s != null && Number.isFinite(Number(satelliteProps.temporal_delta_s)) ? <span>Δt {Math.round(Number(satelliteProps.temporal_delta_s) / 3600)} h from report</span> : null}
+            {Number.isFinite(satelliteProps.review_delta_hours) && <span>{satelliteProps.review_delta_hours.toFixed(1)} h from the episode window · coverage candidate</span>}
             {satelliteProps.product_id ? <span>Product {satelliteProps.product_id}</span> : null}
             {satelliteProps.temporal_relation ? <span>{satelliteProps.temporal_relation}</span> : null}
             {satelliteProps.polarisation?.length ? <span>Polarisation {satelliteProps.polarisation.join(' / ')}</span> : null}
