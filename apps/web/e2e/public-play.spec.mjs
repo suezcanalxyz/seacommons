@@ -544,3 +544,18 @@ test('MapLibre large overlap groups keep first and last dossier choices accessib
   await lastChoice.click();
   await expect(page.locator('.play-evidence.is-open h2')).toContainText('Historical safety report');
 });
+
+test('PLAY displays reviewed attack dossiers with dated public sources', async ({ page }) => {
+  const { readFile } = await import('node:fs/promises');
+  const archive = await readFile(new URL('../public/archive/reviewed-cases.json', import.meta.url), 'utf8');
+  await page.route('**/archive/reviewed-cases.json', (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: archive,
+  }));
+  await page.goto(PUBLIC_PLAY_URL);
+  await page.getByRole('button', { name: 'ATTACKS', exact: true }).click();
+  await page.getByRole('button', { name: /CONTSHIP JET/ }).click();
+  const dossier = page.locator('.play-evidence.is-open');
+  await expect(dossier.getByText('Reported area · Black Sea near Cape Kaliakra, off Bulgaria')).toBeVisible();
+  await expect(dossier.getByRole('button', { name: 'Locate on map +' })).toBeDisabled();
+  await expect(dossier.locator('.play-report-chronology').getByRole('link', { name: 'Original source' })).toHaveCount(2);
+});

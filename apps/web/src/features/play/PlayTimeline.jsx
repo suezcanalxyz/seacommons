@@ -138,7 +138,9 @@ export default function PlayTimeline({ apiBase }) {
   const [fallbackReady, setFallbackReady] = useState(false);
   const [mapContentReady, setMapContentReady] = useState(false);
   const [mapError, setMapError] = useState('');
-  const [incidents, setIncidents] = useState([]);
+  const [apiIncidents, setIncidents] = useState([]);
+  const [reviewedIncidents, setReviewedIncidents] = useState([]);
+  const incidents = useMemo(() => mergeIncidentPages(apiIncidents, reviewedIncidents), [apiIncidents, reviewedIncidents]);
   const [archiveNow, setArchiveNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setArchiveNow(Date.now()), 60_000);
@@ -149,7 +151,8 @@ export default function PlayTimeline({ apiBase }) {
     const reported = Date.parse(String(incident.reported_at || ''));
     return Number.isFinite(reported) && reported < archiveNow - 24 * 60 * 60 * 1000;
   }), [incidents, archiveNow]);
-  const [archiveTotal, setArchiveTotal] = useState(null);
+  const [apiArchiveTotal, setArchiveTotal] = useState(null);
+  const archiveTotal = apiArchiveTotal == null ? null : apiArchiveTotal + reviewedIncidents.length;
   const [selectedId, setSelectedId] = useState('');
   const [overlapIds, setOverlapIds] = useState([]);
   const [caseData, setCaseData] = useState(null);
@@ -226,6 +229,10 @@ export default function PlayTimeline({ apiBase }) {
     () => visibleIncidents.find((item) => item.incident_id === selectedId) || null,
     [visibleIncidents, selectedId],
   );
+  const reviewedCase = useMemo(
+    () => reviewedIncidents.find(({ incident_id }) => incident_id === selectedId),
+    [reviewedIncidents, selectedId],
+  );
   const overlapIncidents = useMemo(
     () => overlapIds.map((id) => filteredIncidents.find((item) => item.incident_id === id)).filter(Boolean),
     [overlapIds, filteredIncidents],
@@ -268,6 +275,16 @@ export default function PlayTimeline({ apiBase }) {
       .map((item) => item.properties.mission))],
     [visibleTimeline],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchJson('', '/archive/reviewed-cases.json')
+      .then((payload) => {
+        if (!cancelled && Array.isArray(payload?.incidents)) setReviewedIncidents(payload.incidents);
+      })
+      .catch(() => { /* The API archive remains available. */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -350,6 +367,17 @@ export default function PlayTimeline({ apiBase }) {
       setCaseData(null);
       return () => { cancelled = true; };
     }
+    if (reviewedCase) {
+      setCaseData({
+        timeline: reviewedCase.timeline,
+        archive_decision: 'reviewed_public_sources',
+        assessment: {
+          caveats: ['The sources describe the area of the incident. An exact position and an AIS link are unavailable in this record. Attribution has not been established for this case.'],
+        },
+      });
+      setLoading(false);
+      return () => { cancelled = true; };
+    }
     setLoading(true);
     fetchJson(apiBase, `/api/v1/play/incidents/${encodeURIComponent(selectedId)}/timeline`)
       .then((payload) => {
@@ -361,7 +389,7 @@ export default function PlayTimeline({ apiBase }) {
       .catch((exc) => { if (!cancelled) setError(exc?.message || 'Timeline unavailable'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [apiBase, selectedId]);
+  }, [apiBase, selectedId, reviewedCase]);
 
   useEffect(() => {
     let disposed = false;
@@ -989,6 +1017,8 @@ export default function PlayTimeline({ apiBase }) {
             <p>{(selectedIncident?.incident_type || caseData?.incident_type || 'incident').replace(/_/g, ' ')} · {selectedIncident?.main_category || selectedIncident?.domain || caseData?.main_category || caseData?.domain || 'maritime'}</p>
             <h2>{selectedIncident?.title || 'SeaCommons incident'}</h2>
             <time>{itemTime(selectedIncident?.reported_at)}</time>
+            {reviewedCase?.event_date && <span>Incident date · {reviewedCase.event_date}</span>}
+            {reviewedCase?.location_summary && <span>Reported area · {reviewedCase.location_summary}</span>}
             <button type="button" disabled={!selectedIncident?.geometry} onClick={() => { const geometry = selectedIncident?.geometry; if (geometry?.type !== 'Point') return; mapRef.current?.easeTo({ center: geometry.coordinates, zoom: Math.max(9, mapRef.current.getZoom()), duration: 600 }); fallbackMapRef.current?.flyTo({ center: geometry.coordinates, zoom: 9 }); }}>Locate on map +</button>
             <span>{selectedIncident?.source || '—'}</span>
           </section>
@@ -1028,7 +1058,7 @@ export default function PlayTimeline({ apiBase }) {
               </div>)}
             </>}
             <h3>Chronology</h3>
-            {reportEvidence.length ? <ol className="play-report-chronology">{reportEvidence.map((item, index) => <li key={item.id || `${item.at}-${index}`}><time>{itemTime(item.at)} UTC</time><strong>{String(item.type || 'Observation').replaceAll('_', ' ')}</strong><span>{humanizeDetectorText(item.title || item.properties?.description || 'Recorded evidence')}</span>{(item.properties?.source_url || item.properties?.url) && <a href={item.properties.source_url || item.properties.url} target="_blank" rel="noreferrer">Original source ↗</a>}</li>)}</ol> : <p className="play-report-prose">No detailed sequence of observations is available yet.</p>}
+            {reportEvidence.length ? <ol className="play-report-chronology">{reportEvidence.map((item, index) => <li key={item.id || `${item.at}-${index}`}><time>{item.properties?.time_precision === 'date_only' ? item.at.slice(0, 10) : itemTime(item.at) + ' UTC'}</time><strong>{String(item.type || 'Observation').replaceAll('_', ' ')}</strong><span>{humanizeDetectorText(item.title || item.properties?.description || 'Recorded evidence')}</span>{(item.properties?.source_url || item.properties?.url) && <a href={item.properties.source_url || item.properties.url} target="_blank" rel="noreferrer">Original source ↗</a>}</li>)}</ol> : <p className="play-report-prose">No detailed sequence of observations is available yet.</p>}
             <h3>Evidence and assessment</h3>
             <p className="play-report-prose">Verification: {statusLabel(caseData?.verification_status || 'unknown')}. {caseData?.independence_groups?.length ? `${caseData.independence_groups.length} recorded source lineage(s).` : 'Independent source lineages have not been documented.'} {dossierReasonCodes.length ? `Recorded detector grounds: ${dossierReasonCodes.map((code) => code.toLowerCase().replaceAll('_', ' ')).join('; ')}.` : ''}</p>
             {caseData?.evidence_audit && <>
