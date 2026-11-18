@@ -680,6 +680,20 @@ async def live_receiver_mesh(
     }
 
 
+@router.get("/radio/channels")
+async def live_radio_channels():
+    """Eleven published maritime channels, counted only from connected RF streams."""
+    from core.radio.multichannel_plan import public_channel_status
+    from core.radio.runtime import get_remote_radio_status
+
+    runtime = get_remote_radio_status(include_receivers=True)
+    return {
+        "source": "seacommons_rf_runtime",
+        "count_scope": "currently_connected",
+        "channels": public_channel_status(runtime.get("receivers", ())),
+    }
+
+
 @router.get("/radio/external-navtex")
 def live_radio_external_navtex():
     """Bounded, clearly attributed secondary NAVAREA III messages.
