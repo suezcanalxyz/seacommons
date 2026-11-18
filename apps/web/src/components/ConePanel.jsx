@@ -387,6 +387,14 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
     const [x, y] = xy(point);
     return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
+  const triggerEndpoints = triggerTrack.map((point) => ({
+    lat: Number(point.lat), lon: Number(point.lon), at: point.at,
+  }));
+  const hasTriggerEndpoints = triggerEndpoints.length === 2
+    && triggerEndpoints.every((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+  const triggerIsGap = ['gap', 'long_gap'].includes(String(props.anomaly_type || props.event || '').toLowerCase())
+    || /ais.*gap|long gap/i.test(String(props.category || props.title || ''));
+  const formatTriggerEndpoint = (point) => `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)} · ${point.at ? String(point.at) : 'UTC unavailable'}`;
   const current = xy(observed.at(-1) || forecast.at(-1) || fallback[0]);
 
   return (
@@ -404,6 +412,17 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
         <rect width={width} height={height} fill="url(#intel-report-grid)" />
         {forecast.length >= 2 && <path className="intel-report-track intel-report-track--forecast" d={path(forecast)} />}
         {observed.length >= 2 && <path className="intel-report-track intel-report-track--observed" d={path(observed)} />}
+        {hasTriggerEndpoints && (
+          <>
+            <line x1={xy(triggerEndpoints[0])[0]} y1={xy(triggerEndpoints[0])[1]}
+              x2={xy(triggerEndpoints[1])[0]} y2={xy(triggerEndpoints[1])[1]}
+              stroke="#f59e0b" strokeWidth="2" strokeDasharray="5 5" opacity="0.9" />
+            {triggerEndpoints.map((point, index) => (
+              <circle key={index} cx={xy(point)[0]} cy={xy(point)[1]} r="5"
+                fill={index === 0 ? '#f59e0b' : '#22c55e'} stroke="#06171d" strokeWidth="2" />
+            ))}
+          </>
+        )}
         <circle cx={current[0]} cy={current[1]} r="11" className="intel-report-vessel-pulse" />
         <polygon
           points="0,-9 6,7 0,4 -6,7"
@@ -411,6 +430,13 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
           className="intel-report-vessel"
         />
       </svg>
+      {hasTriggerEndpoints && (
+        <div className="intel-report-trigger-endpoints">
+          <div><strong>Last observed fix</strong> · {formatTriggerEndpoint(triggerEndpoints[0])}</div>
+          <div><strong>Next recorded fix</strong> · {formatTriggerEndpoint(triggerEndpoints[1])}</div>
+          <div>{triggerIsGap ? 'Dashed interval: AIS not observed; no route inferred.' : 'Dashed segment: anomalous displacement, not a verified route.'}</div>
+        </div>
+      )}
       <div className="intel-report-legend">
         {observed.length >= 2 && <span><i className="is-observed" /> AIS observed · {observed.length} fixes</span>}
         {movementEvidence && Number.isFinite(Number(movementEvidence.distance_km)) && (
