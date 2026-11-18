@@ -448,7 +448,8 @@ class TrackStore:
         return out
 
     def track(self, mmsi: str, *, since: Optional[datetime] = None,
-              until: Optional[datetime] = None, limit: int = 5000) -> list[dict[str, Any]]:
+              until: Optional[datetime] = None, limit: int = 5000,
+              newest: bool = False) -> list[dict[str, Any]]:
         try:
             from core.db.models import VesselTrackDB
             from core.db.session import session_scope
@@ -459,7 +460,10 @@ class TrackStore:
                     q = q.filter(VesselTrackDB.ts >= since)
                 if until is not None:
                     q = q.filter(VesselTrackDB.ts <= until)
-                rows = q.order_by(VesselTrackDB.ts.asc()).limit(limit).all()
+                order = VesselTrackDB.ts.desc() if newest else VesselTrackDB.ts.asc()
+                rows = q.order_by(order).limit(limit).all()
+                if newest:
+                    rows.reverse()
                 return [_row_dict(r) for r in rows]
         except Exception as exc:  # pragma: no cover
             logger.warning("TrackStore.track failed: %s", exc)

@@ -54,3 +54,33 @@ def test_vessel_dossier_includes_public_safe_radio_associations(monkeypatch):
     dossier = mda.build_vessel_dossier("123456789", hours=24, track_limit=240)
     assert dossier["radio_associations"][0]["match_status"] == "strong"
     assert dossier["radio_associations"][0]["confidence"] == 0.95
+
+
+def test_vessel_dossier_prefers_newer_registry_fix_without_rewriting_track(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from core.api.routes import mda
+    from core.vessels.registry import registry
+    from core.vessels.track_store import track_store
+
+    mmsi = "123456789"
+    now = datetime.now(timezone.utc)
+    persisted = {"lat": 35.0, "lon": 14.0, "ts": (now - timedelta(minutes=5)).isoformat()}
+    registry_fix = {"last_lat": 36.0, "last_lon": 15.0, "last_seen": now.isoformat()}
+
+    def load_track(subject, **options):
+        assert subject == mmsi
+        assert options["newest"] is True
+        return [persisted]
+
+    monkeypatch.setattr(track_store, "track", load_track)
+    monkeypatch.setattr(registry, "_cache", {mmsi: registry_fix})
+    monkeypatch.setattr("core.mda.identity.screen", lambda **kwargs: {})
+    monkeypatch.setattr(mda, "_radio_associations_for_vessel", lambda subject: [])
+
+    dossier = mda.build_vessel_dossier(mmsi, hours=168, track_limit=240)
+    assert dossier["latest_ais_fix"]["lat"] == 36.0
+    assert dossier["track_points"] == [persisted]
+
+    registry_fix["last_seen"] = (now - timedelta(minutes=10)).isoformat()
+    assert mda.build_vessel_dossier(mmsi, hours=168)["latest_ais_fix"] == persisted
