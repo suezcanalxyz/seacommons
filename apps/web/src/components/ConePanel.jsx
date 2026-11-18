@@ -495,7 +495,7 @@ function EvidenceSources({ props, feature }) {
   );
 }
 
-function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels, onTriggerIntelDrift, sarResponse }) {
+function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels, onTriggerIntelDrift, sarResponse, liveVessel }) {
   const props = panel.feature?.properties || {};
   const mmsi = props.linked_mmsi || props.mmsi;
   const isVesselReport = props.entity_kind === 'vessel' || props.report_type === 'vessel';
@@ -507,8 +507,12 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
     || isAlarmPhone
     || (props.maritime_domain === 'sar' && (props.is_distress || props.kind === 'distress'))
   );
-  const [dossier, setDossier] = useState(null);
-  const [dossierLoading, setDossierLoading] = useState(false);
+  const [operatorDossier, setDossier] = useState(null);
+  const [operatorLoading, setDossierLoading] = useState(false);
+  const dossier = publicMode ? liveVessel?.data : operatorDossier;
+  const dossierLoading = publicMode ? liveVessel?.loading : operatorLoading;
+  const latestAisFix = dossier?.latest_ais_fix || dossier?.track_points?.at(-1);
+  const latestAisTime = Date.parse(latestAisFix?.ts);
   const [nearbyVessels, setNearbyVessels] = useState([]);
   const [nearbyStatus, setNearbyStatus] = useState('idle');
   const [forensic, setForensic] = useState(null);
@@ -525,15 +529,13 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
 
   useEffect(() => {
     let alive = true;
-    if (!mmsi) {
+    if (publicMode || !mmsi) {
       setDossier(null);
       return undefined;
     }
     setDossier(null);
     setDossierLoading(true);
-    const path = publicMode
-      ? `/api/v1/live/vessels/${mmsi}/context?hours=168`
-      : `/api/v1/mda/vessel/${mmsi}?hours=168`;
+    const path = `/api/v1/mda/vessel/${encodeURIComponent(mmsi)}?hours=168`;
     fetch(`${apiBase}${path}`)
       .then((response) => response.ok ? response.json() : null)
       .then((data) => { if (alive) setDossier(data); })
@@ -638,8 +640,9 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
   const speedSamples = (dossier?.track_points || [])
     .map((point) => Number(point.sog))
     .filter((speed) => Number.isFinite(speed) && speed >= 0);
+  const aisSpeed = latestAisFix?.sog;
   const explicitSpeed = props.latest_sog == null || props.latest_sog === '' ? null : Number(props.latest_sog);
-  const latestSpeed = Number.isFinite(explicitSpeed) ? explicitSpeed : speedSamples.at(-1);
+  const latestSpeed = Number.isFinite(aisSpeed) ? aisSpeed : Number.isFinite(explicitSpeed) ? explicitSpeed : speedSamples.at(-1);
   const averageSpeed = speedSamples.length
     ? speedSamples.reduce((sum, speed) => sum + speed, 0) / speedSamples.length
     : null;
@@ -669,7 +672,13 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
         {props.live_expires_at && <Row label="Decision window until" value={new Date(props.live_expires_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })} />}
         {props.resolution_state && <Row label="Resolution" value={String(props.resolution_state).replace(/_/g, ' ')} />}
         <Row label="Reported" value={when ? new Date(when).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—'} />
-        {coords && <Row label="Coordinates" value={`${Number(coords[1]).toFixed(5)}, ${Number(coords[0]).toFixed(5)}`} mono />}
+        {coords && <Row label="Report coordinates" value={`${Number(coords[1]).toFixed(5)}, ${Number(coords[0]).toFixed(5)}`} mono />}
+        {Number.isFinite(latestAisTime) && Number.isFinite(latestAisFix.lat) && Number.isFinite(latestAisFix.lon) && (
+          <>
+            <Row label="Latest AIS fix" value={`${latestAisFix.lat.toFixed(5)}, ${latestAisFix.lon.toFixed(5)}`} mono />
+            <Row label="AIS observed at (UTC)" value={new Date(latestAisTime).toISOString().replace('T', ' ').slice(0, 19)} mono />
+          </>
+        )}
       </div>
 
       {isHumanitarian && Array.isArray(props.media_evidence)
@@ -1367,6 +1376,7 @@ export default function MapFloatingPanel({
   loadNearestVessels,
   onTriggerIntelDrift,
   sarResponse,
+  liveVessel,
 }) {
   if (!panel) return null;
 
@@ -1434,6 +1444,7 @@ export default function MapFloatingPanel({
           loadNearestVessels={loadNearestVessels}
           onTriggerIntelDrift={onTriggerIntelDrift}
           sarResponse={sarResponse}
+          liveVessel={liveVessel}
         />
       )}
     </div>

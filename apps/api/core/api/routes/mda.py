@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from math import isfinite
 
 from fastapi import APIRouter, Query, Request
 
@@ -151,8 +152,25 @@ def build_vessel_dossier(mmsi: str, *, hours: float, track_limit: int = 5000, in
     from core.vessels.track_store import track_store
 
     v = (getattr(registry, "_cache", {}) or {}).get(mmsi, {})
-    since = datetime.now(timezone.utc) - timedelta(hours=hours)
-    track = track_store.track(mmsi, since=since, limit=5000)
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=hours)
+    track = track_store.track(mmsi, since=since, until=now, limit=5000, newest=True)
+    latest = track[-1] if track else None
+    lat, lon = v.get("last_lat"), v.get("last_lon")
+    if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+        try:
+            seen = datetime.fromisoformat(v.get("last_seen") or "")
+            if seen.tzinfo is None:
+                seen = seen.replace(tzinfo=timezone.utc)
+            latest_at = datetime.fromisoformat(latest["ts"]) if latest else since
+            if latest_at.tzinfo is None:
+                latest_at = latest_at.replace(tzinfo=timezone.utc)
+            if (isfinite(lat) and isfinite(lon) and abs(lat) <= 90 and abs(lon) <= 180
+                    and since <= seen <= now and seen > latest_at):
+                latest = {"lat": lat, "lon": lon, "ts": seen.isoformat(),
+                          "sog": v.get("last_speed"), "source": "ais_registry"}
+        except (TypeError, ValueError):
+            pass
     if track_limit >= 2 and len(track) > track_limit:
         scale = (len(track) - 1) / (track_limit - 1)
         track = [track[round(index * scale)] for index in range(track_limit)]
@@ -173,6 +191,7 @@ def build_vessel_dossier(mmsi: str, *, hours: float, track_limit: int = 5000, in
             }] if len(track) >= 2 else []),
         },
         "track_points": track,
+        "latest_ais_fix": latest,
         "recent_port_calls": _derive_recent_port_calls(track),
         "radio_associations": _radio_associations_for_vessel(mmsi),
     }

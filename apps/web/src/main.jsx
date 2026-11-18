@@ -1,3 +1,4 @@
+import { useLiveVesselDossier } from './features/live/useLiveVesselDossier.js';
 import { isPublicCaseEligible } from './features/live/publicCaseEligibility.js';
 import { addMovementLabels } from './features/map/movementLabels.js';
 import VesselCaseSearch from './components/VesselCaseSearch.jsx';
@@ -804,6 +805,12 @@ function App() {
     ));
     return canonicalFeature ? { ...mapPanel, feature: canonicalFeature } : mapPanel;
   }, [intelEvents, mapPanel]);
+  const selectedVesselProps = resolvedMapPanel?.type === 'intel' ? resolvedMapPanel.feature?.properties : null;
+  const selectedMmsi = String(selectedVesselProps?.linked_mmsi || selectedVesselProps?.mmsi || '');
+  const liveVessel = useLiveVesselDossier(apiBase, isPublicLiveHost && !conePanelHidden
+    && /^\d{9}$/.test(selectedMmsi) ? selectedMmsi : null);
+  const latestAisFix = liveVessel.data?.latest_ais_fix || liveVessel.data?.track_points?.at(-1);
+
 
   useEffect(() => {
     let alive = true;
@@ -1410,7 +1417,7 @@ function App() {
         map.addLayer({ id: 'live-movement-fixes', type: 'circle', source: 'live-movement',
           filter: ['==', ['geometry-type'], 'Point'],
           paint: { 'circle-radius': 7, 'circle-stroke-color': '#06151d', 'circle-stroke-width': 2,
-            'circle-color': ['match', ['get', 'kind'], 'ais_first_reappearance', '#22c55e', '#f59e0b'] } });
+            'circle-color': ['match', ['get', 'kind'], 'ais_first_reappearance', '#22c55e', 'latest_ais_fix', '#38bdf8', '#f59e0b'] } });
         addMovementLabels(map, 'live-movement-labels', 'live-movement');
         map.addSource('intel-selected',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('intel-distress',    { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -3098,8 +3105,12 @@ function App() {
     if (!map || !source || !mapReady || !map.isStyleLoaded()) return undefined;
     const props = resolvedMapPanel?.feature?.properties || {};
     const mmsi = props.entity_kind === 'vessel' ? props.mmsi || props.report_id : null;
-    if (!mmsi || layerVis.ais_trails === false) {
+    if (!(isPublicLiveHost ? selectedMmsi : mmsi) || layerVis.ais_trails === false) {
       source.setData({ type: 'FeatureCollection', features: [] });
+      return undefined;
+    }
+    if (isPublicLiveHost) {
+      source.setData(liveVessel.data?.track || { type: 'FeatureCollection', features: [] });
       return undefined;
     }
     let alive = true;
@@ -3111,7 +3122,7 @@ function App() {
         if (alive) source.setData({ type: 'FeatureCollection', features: [] });
       });
     return () => { alive = false; };
-  }, [apiBase, layerVis.ais_trails, mapReady, resolvedMapPanel]);
+  }, [apiBase, isPublicLiveHost, layerVis.ais_trails, liveVessel.data, mapReady, resolvedMapPanel, selectedMmsi]);
 
   // Intel drift traces map layer
   useEffect(() => {
@@ -3158,12 +3169,10 @@ function App() {
     const mobile = window.matchMedia('(max-width: 680px)').matches;
     if (fallbackReady) {
       const fallback = fallbackMapRef.current;
-      fallback?.setMovement(features);
       if (features.length) fallback?.focusMovement(features, mobile);
     }
     if (mapReady) {
       const map = mapRef.current;
-      map?.getSource('live-movement')?.setData({ type: 'FeatureCollection', features });
       for (const layer of ['live-movement-connection', 'live-movement-fixes', 'live-movement-labels']) {
         if (map?.getLayer(layer)) map.moveLayer(layer);
       }
@@ -3177,6 +3186,30 @@ function App() {
       }
     }
   }, [conePanelHidden, fallbackReady, mapReady, resolvedMapPanel]);
+
+  // Keep the newest AIS fix separate from the event and gap endpoints.
+  useEffect(() => {
+    const feature = resolvedMapPanel?.type === 'intel' && !conePanelHidden ? resolvedMapPanel.feature : null;
+    const features = feature ? liveMovementMapFeatures(feature) : [];
+    const first = liveVessel.data?.track_points?.[0];
+    if (!features.length && first && first.ts !== latestAisFix?.ts
+      && Number.isFinite(first.lon) && Number.isFinite(first.lat)) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [first.lon, first.lat] },
+        properties: { kind: 'ais_last_observed', label: 'First AIS fix in window', at: first.ts },
+      });
+    }
+    if (feature && latestAisFix && Number.isFinite(latestAisFix.lon) && Number.isFinite(latestAisFix.lat)) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [latestAisFix.lon, latestAisFix.lat] },
+        properties: { kind: 'latest_ais_fix', label: 'Latest AIS fix', at: latestAisFix.ts },
+      });
+    }
+    if (fallbackReady) fallbackMapRef.current?.setMovement(features);
+    if (mapReady) mapRef.current?.getSource('live-movement')?.setData({ type: 'FeatureCollection', features });
+  }, [conePanelHidden, fallbackReady, latestAisFix, liveVessel.data, mapReady, resolvedMapPanel]);
 
   // Intel → vessel correlation lines (manual toggle only)
   useEffect(() => {
@@ -3876,6 +3909,7 @@ function App() {
             loadNearestVessels={loadNearestVessels}
             onTriggerIntelDrift={triggerIntelDrift}
             sarResponse={selectedSarResponse}
+            liveVessel={liveVessel}
           />
         )}
         {['cone', 'trajectory', 'search_area', 'intel', 'radio_receiver', 'radio_message'].includes(mapPanel?.type) && conePanelHidden && (

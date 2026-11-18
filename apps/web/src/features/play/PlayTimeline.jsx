@@ -437,16 +437,24 @@ export default function PlayTimeline({ apiBase }) {
       setTimelineRequest(null);
       return () => { cancelled = true; };
     }
+    let timer;
+    let loaded = false;
     setTimelineRequest({ id: selectedId, pending: true });
-    fetchJson(apiBase, `/api/v1/play/incidents/${encodeURIComponent(selectedId)}/timeline`)
-      .then((payload) => {
-        if (!cancelled) {
-          setCaseResponse({ id: selectedId, payload });
-          setTimelineRequest({ id: selectedId, pending: false });
-        }
-      })
-      .catch((exc) => { if (!cancelled) setTimelineRequest({ id: selectedId, pending: false, error: exc?.message || 'Timeline unavailable' }); });
-    return () => { cancelled = true; };
+    const refresh = async () => {
+      try {
+        const payload = await fetchJson(apiBase, `/api/v1/play/incidents/${encodeURIComponent(selectedId)}/timeline`, { cache: 'no-store' });
+        if (cancelled) return;
+        setCaseResponse({ id: selectedId, payload });
+        setTimelineRequest({ id: selectedId, pending: false });
+        loaded = true;
+      } catch (exc) {
+        if (!cancelled && !loaded) setTimelineRequest({ id: selectedId, pending: false, error: exc?.message || 'Timeline unavailable' });
+      } finally {
+        if (!cancelled) timer = window.setTimeout(refresh, 60_000);
+      }
+    };
+    refresh();
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, [apiBase, selectedId, reviewedCase]);
 
   useEffect(() => {
