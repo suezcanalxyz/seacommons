@@ -1,9 +1,24 @@
 // A missing AIS interval is not an observed vessel route. Endpoints are stored
 // fixes, and the connecting segment is strictly a visual uncertainty cue.
-const empty = () => ({ type: 'FeatureCollection', features: [] });
-const validFix = (p) => Number.isFinite(Number(p?.lat)) && Number.isFinite(Number(p?.lon))
-  && Math.abs(Number(p.lat)) <= 90 && Math.abs(Number(p.lon)) <= 180
-  && Number.isFinite(Date.parse(p?.at));
+const emptyAisCollection = () => ({ type: 'FeatureCollection', features: [] });
+export function normalizeAisFixes(points = []) {
+  if (!Array.isArray(points)) return [];
+  return points.flatMap((point) => {
+    const { lat, lon } = point || {};
+    if (![lat, lon].every((value) => typeof value === 'number'
+      || (typeof value === 'string' && value.trim()))) return [];
+    const latitude = Number(lat);
+    const longitude = Number(lon);
+    const rawTime = point.at || point.ts || point.timestamp_utc;
+    const at = typeof rawTime === 'string' && /^\d{4}-\d{2}-\d{2}T[\d:.]+$/.test(rawTime)
+      ? `${rawTime}Z` : rawTime;
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
+      || Math.abs(latitude) > 90 || Math.abs(longitude) > 180
+      || !Number.isFinite(Date.parse(at))) return [];
+    return [{ ...point, lat: latitude, lon: longitude, at }];
+  }).sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
 const radians = (degrees) => degrees * Math.PI / 180;
 export function endpointDistanceKm(a, b) {
   const dLat = radians(Number(b.lat) - Number(a.lat));
@@ -12,27 +27,33 @@ export function endpointDistanceKm(a, b) {
     * Math.cos(radians(Number(b.lat))) * Math.sin(dLon / 2) ** 2;
   return 6371.0088 * 2 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, h))));
 }
-export function reconstructAisGaps(vessels = [], { minMinutes = 30 } = {}) {
+export function reconstructAisGaps(vessels = [], { minMinutes = 30, maxJumpKm = 80 } = {}) {
   const gaps = [];
   const observed = [];
+  const segments = [];
   for (const vessel of vessels) {
-    const fixes = (vessel.track_points || []).filter(validFix)
-      .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+    const fixes = normalizeAisFixes(vessel.track_points);
     let segment = [];
     const flush = () => {
-      if (segment.length >= 2) observed.push({ type: 'Feature',
-        geometry: { type: 'LineString', coordinates: segment.map((p) => [Number(p.lon), Number(p.lat)]) },
-        properties: { kind: 'observed_ais_track', mmsi: vessel.mmsi } });
+      if (segment.length >= 2) {
+        segments.push(segment);
+        observed.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: segment.map((p) => [Number(p.lon), Number(p.lat)]) },
+          properties: { kind: 'observed_ais_track', mmsi: vessel.mmsi },
+        });
+      }
       segment = [];
     };
     for (const fix of fixes) {
       const previous = segment.at(-1);
       if (previous) {
         const minutes = (Date.parse(fix.at) - Date.parse(previous.at)) / 60000;
-        if (minutes >= minMinutes) {
+        const distanceKm = endpointDistanceKm(previous, fix);
+        if (minutes <= 0 || minutes >= minMinutes || distanceKm > maxJumpKm) {
           flush();
-          gaps.push({ mmsi: vessel.mmsi, from: previous, to: fix,
-            durationMin: minutes, distanceKm: endpointDistanceKm(previous, fix),
+          if (minutes >= minMinutes) gaps.push({ mmsi: vessel.mmsi, from: previous, to: fix,
+            durationMin: minutes, distanceKm,
             status: 'bounded_missing_observations' });
         }
       }
@@ -40,7 +61,7 @@ export function reconstructAisGaps(vessels = [], { minMinutes = 30 } = {}) {
     }
     flush();
   }
-  return { gaps, observed: { ...empty(), features: observed } };
+  return { gaps, segments, observed: { ...emptyAisCollection(), features: observed } };
 }
 export function aisGapMapFeatures(gaps = []) {
   const features = [];
@@ -57,5 +78,5 @@ export function aisGapMapFeatures(gaps = []) {
         properties: { ...base, kind, at: fix.at, label: kind === 'ais_last_observed' ? 'Last AIS fix' : 'Next AIS fix', source: fix.source || 'AIS stored fix' } });
     }
   }
-  return { ...empty(), features };
+  return { ...emptyAisCollection(), features };
 }

@@ -1,3 +1,4 @@
+import { splitObservedTrackSegments } from '../features/live/observedTrack.js';
 import { ReportPanelHeader, ReportRow as Row } from './ReportPanel.jsx';
 import { aisUtcTimestamp, latestLiveAisFix, selectedLiveMovementEndpoints } from '../features/live/movementEndpoints.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -317,14 +318,8 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
     ? props.movement_evidence : null;
   const { from, to, isGap: triggerIsGap, fromLabel } = selectedLiveMovementEndpoints(feature);
   const triggerTrack = [from, to].filter(Boolean);
-  const sourceTrack = publicTrack.length >= 2
-    ? publicTrack
-    : triggerTrack.length >= 2
-      ? triggerTrack
-      : dossierTrack;
-  const observed = sourceTrack
-    .map((point) => ({ lat: Number(point?.lat), lon: Number(point?.lon) }))
-    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+  const observedSegments = splitObservedTrackSegments(publicTrack.length >= 2 ? publicTrack : dossierTrack);
+  const observed = observedSegments.flat();
   const forecast = driftFeature?.geometry?.type === 'LineString'
     ? driftFeature.geometry.coordinates
       .map((point) => ({ lon: Number(point?.[0]), lat: Number(point?.[1]) }))
@@ -393,9 +388,9 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
         </defs>
         <rect width={width} height={height} fill="url(#intel-report-grid)" />
         {forecast.length >= 2 && <path className="intel-report-track intel-report-track--forecast" d={path(forecast)} />}
-        {observed.length >= 2 && !triggerIsGap && !hasTriggerEndpoints && <path className="intel-report-track intel-report-track--observed" d={path(observed)} />}
-        {observed.length >= 2 && triggerIsGap && <path className="intel-report-track intel-report-track--observed"
-          d={path(observed)} strokeDasharray="5 5" />}
+        {observedSegments.map((segment, index) => (
+          <path key={index} className="intel-report-track intel-report-track--observed" d={path(segment)} />
+        ))}
         {hasTriggerEndpoints && (
           <line x1={xy(from)[0]} y1={xy(from)[1]} x2={xy(to)[0]} y2={xy(to)[1]}
             stroke="#f59e0b" strokeWidth="2" strokeDasharray="5 5" opacity="0.9" />
@@ -418,7 +413,7 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
         </div>
       )}
       <div className="intel-report-legend">
-        {observed.length >= 2 && <span><i className="is-observed" /> AIS fixes · {observed.length}{triggerIsGap ? ' · connecting path unverified' : ''}</span>}
+        {observed.length >= 2 && <span><i className="is-observed" /> AIS fixes · {observed.length}</span>}
         {movementEvidence && Number.isFinite(Number(movementEvidence.distance_km)) && (
           <span>
             trigger · {Number(movementEvidence.distance_km).toFixed(1)} km

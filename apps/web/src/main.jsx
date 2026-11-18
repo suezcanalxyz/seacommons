@@ -1,3 +1,4 @@
+import { reconstructAisGaps } from './features/play/aisGapGeometry.js';
 import { useLiveVesselDossier } from './features/live/useLiveVesselDossier.js';
 import { isPublicCaseEligible } from './features/live/publicCaseEligibility.js';
 import { addMovementLabels } from './features/map/movementLabels.js';
@@ -3133,13 +3134,13 @@ function App() {
       return undefined;
     }
     if (isPublicLiveHost) {
-      source.setData(liveVessel.data?.track || { type: 'FeatureCollection', features: [] });
+      source.setData(reconstructAisGaps([{ mmsi: selectedMmsi, track_points: liveVessel.data?.track_points }]).observed);
       return undefined;
     }
     let alive = true;
     fetchJson(apiBase, `/api/v1/live/vessels/${encodeURIComponent(mmsi)}/context?hours=168`, undefined, 12000)
       .then((data) => {
-        if (alive) source.setData(data?.track || { type: 'FeatureCollection', features: [] });
+        if (alive) source.setData(reconstructAisGaps([{ mmsi, track_points: data?.track_points }]).observed);
       })
       .catch(() => {
         if (alive) source.setData({ type: 'FeatureCollection', features: [] });
