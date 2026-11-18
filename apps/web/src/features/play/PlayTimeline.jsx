@@ -27,6 +27,7 @@ import {
   resolveGlobalTimelinePosition,
   casesForArchiveView,
   satelliteReviewScenes,
+  sarObservationPoint,
   satelliteFootprintCollection,
   selectFrame,
   statusLabel,
@@ -322,6 +323,12 @@ export default function PlayTimeline({ apiBase }) {
     [visibleTimeline, caseData?.satellite_review_candidates, globalState.cutoff],
   );
   const satellite = satelliteScenes.find((item) => String(item.id) === satelliteMission) || null;
+  const sarPoint = sarObservationPoint(satellite);
+  const sarFeature = useMemo(() => sarPoint ? {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: sarPoint },
+    properties: { kind: 'sar_observation', label: 'SAR reporting cell' },
+  } : null, [sarPoint]);
 
   useEffect(() => {
     let cancelled = false;
@@ -646,6 +653,11 @@ export default function PlayTimeline({ apiBase }) {
           id: 'play-satellite-footprint-line', type: 'line', source: 'play-satellite-footprints',
           paint: { 'line-color': '#75a7ff', 'line-width': 1.5, 'line-opacity': 0.85, 'line-dasharray': [2, 2] },
         });
+        map.addSource('play-sar-observation', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({
+          id: 'play-sar-observation', type: 'circle', source: 'play-sar-observation',
+          paint: { 'circle-color': '#75a7ff', 'circle-radius': 9, 'circle-stroke-color': '#e4f0ff', 'circle-stroke-width': 2 },
+        });
         const selectArchiveFeature = (event) => {
           const rendered = map.queryRenderedFeatures(event.point, { layers: ['play-incidents', 'play-vessels'] });
           const ids = [...new Set(rendered
@@ -780,6 +792,13 @@ export default function PlayTimeline({ apiBase }) {
   }, [mapReady, visibleTimeline, aisReconstruction, gapFeatures]);
 
   useEffect(() => {
+    if (!mapReady) return;
+    mapRef.current?.getSource('play-sar-observation')?.setData({
+      type: 'FeatureCollection', features: sarFeature ? [sarFeature] : [],
+    });
+  }, [mapReady, sarFeature]);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map) return;
     if (map.getLayer('play-incidents')) {
@@ -862,9 +881,9 @@ export default function PlayTimeline({ apiBase }) {
 
   useEffect(() => {
     if (!fallbackReady) return;
-    fallbackMapRef.current?.setMovement(gapFeatures.features);
+    fallbackMapRef.current?.setMovement(sarFeature ? [...gapFeatures.features, sarFeature] : gapFeatures.features);
     fallbackMapRef.current?.setDrifts(historicalDriftFeatures(visibleTimeline));
-  }, [fallbackReady, gapFeatures, visibleTimeline]);
+  }, [fallbackReady, gapFeatures, sarFeature, visibleTimeline]);
 
   const gapHasOnlyAnchor = selectedIncident
     && (selectedIncident.incident_type === 'ais_gap' || selectedIncident.episode_family === 'gap_episode')
@@ -898,6 +917,11 @@ export default function PlayTimeline({ apiBase }) {
   const reportEvidence = visibleTimeline.filter((item) => item?.type !== 'satellite');
   const frameProps = frame.item?.properties || {};
   const satelliteProps = satellite?.properties || {};
+  const locateSarPoint = () => {
+    const map = mapRef.current;
+    map?.easeTo({ center: sarPoint, zoom: Math.max(9, map.getZoom()), duration: 500 });
+    fallbackMapRef.current?.flyTo({ center: sarPoint, zoom: 9 });
+  };
   const quicklook = /^https:\/\//i.test(satelliteProps.asset_ref || '')
     && /(?:\.(?:png|jpe?g|webp)|Assets\([^)]*\)\/\$value)(?:\?|$)/i.test(satelliteProps.asset_ref);
   const modeLabel = cutoffLabel(globalState);
@@ -1290,13 +1314,23 @@ export default function PlayTimeline({ apiBase }) {
               </select>
             </label>}
             <label className="play-satellite-selector">
-              <span>Case acquisitions</span>
+              <span>Case acquisitions and radar observations</span>
               <select value={satelliteMission} onChange={(event) => setSatelliteMission(event.target.value)} disabled={!satelliteScenes.length}>
-                <option value="">{satelliteScenes.length ? 'Choose an acquisition' : 'No documented acquisition at this cutoff'}</option>
-                {satelliteScenes.map((item) => <option key={item.id} value={item.id}>{item.properties?.mission || item.source || 'Satellite'} · {itemTime(item.at)} UTC{item.properties?.evidence_role === 'context_only_pending_review' ? ' · review candidate' : ''}</option>)}
+                <option value="">{satelliteScenes.length ? 'Choose an acquisition or radar observation' : 'No satellite record at this cutoff'}</option>
+                {satelliteScenes.map((item) => <option key={item.id} value={item.id}>{sarObservationPoint(item) ? 'GFW Sentinel-1 SAR return' : item.properties?.mission || item.source || 'Satellite'} · {itemTime(item.at)} UTC{item.properties?.evidence_role === 'context_only_pending_review' ? ' · review candidate' : ''}</option>)}
               </select>
             </label>
-            {satellite && <span>{satelliteProps.evidence_role === 'corroboration' ? 'Recorded as corroborating by the archive' : 'Coverage or context for manual review'}</span>}
+            {sarPoint ? (
+              <>
+                <span>Radar return in a GFW reporting cell · {sarPoint[1].toFixed(4)}, {sarPoint[0].toFixed(4)}</span>
+                <span>{satelliteProps.association_status === 'strong' && satelliteProps.evidence_role === 'corroboration'
+                  ? 'Provider AIS identity matches the archived episode'
+                  : satelliteProps.association_status === 'conflict'
+                    ? 'Provider matched this return to a different vessel'
+                    : 'Vessel identity unconfirmed for this case'}</span>
+                <button type="button" onClick={locateSarPoint}>Locate radar return on map</button>
+              </>
+            ) : satellite && <span>Acquisition coverage or imagery for manual review</span>}
             {quicklook && <figure className="play-satellite-preview">
               <img key={satelliteProps.asset_ref} src={satelliteProps.asset_ref} alt="Satellite quicklook from provider" loading="lazy" referrerPolicy="no-referrer" />
               <figcaption>Provider quicklook · imagery is shown in its original framing</figcaption>
