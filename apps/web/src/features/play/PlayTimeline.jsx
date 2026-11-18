@@ -329,6 +329,47 @@ export default function PlayTimeline({ apiBase }) {
     [visibleTimeline, caseData?.satellite_review_candidates, globalState.cutoff],
   );
   const satellite = satelliteScenes.find((item) => String(item.id) === satelliteMission) || null;
+  const sceneProduct = satellite?.source === 'copernicus_dataspace'
+    ? String(satellite.properties?.product_id || '').replace(/\.SAFE$/, '') : '';
+  const rasterProduct = /^S2[A-Z]_[A-Za-z0-9_.-]{1,196}$/.test(sceneProduct) ? sceneProduct : '';
+  const [sceneRaster, setSceneRaster] = useState(null);
+  const raster = sceneRaster?.product_id === rasterProduct ? sceneRaster : null;
+
+  useEffect(() => {
+    if (!rasterProduct) return undefined;
+    let cancelled = false;
+    fetchJson('', `/archive/scenes/${rasterProduct}.json`).then((manifest) => {
+      const corners = manifest?.coordinates;
+      if (!cancelled && manifest?.product_id === rasterProduct && manifest.image === `${rasterProduct}.png`
+        && Number.isFinite(Date.parse(manifest.acquired_at))
+        && Array.isArray(corners) && corners.length === 4
+        && corners.every((pair) => Array.isArray(pair) && pair.length === 2
+          && pair.every(Number.isFinite) && Math.abs(pair[0]) <= 180 && Math.abs(pair[1]) <= 80)) {
+        setSceneRaster(manifest);
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [rasterProduct]);
+
+  useEffect(() => {
+    const sourceId = 'play-scene-raster';
+    const map = mapRef.current;
+    if (!raster) return undefined;
+    const url = `/archive/scenes/${raster.image}`;
+    if (fallbackReady) fallbackMapRef.current?.setSceneRaster(url, raster.coordinates);
+    if (mapReady && map?.getLayer('satellite-context')) {
+      map.addSource(sourceId, { type: 'image', url, coordinates: raster.coordinates });
+      map.addLayer({ id: sourceId, type: 'raster', source: sourceId,
+        paint: { 'raster-fade-duration': 0 } }, 'satellite-context');
+      map.moveLayer(sourceId, 'play-incidents');
+    }
+    return () => {
+      fallbackMapRef.current?.setSceneRaster(null);
+      if (map?.getLayer(sourceId)) map.removeLayer(sourceId);
+      if (map?.getSource(sourceId)) map.removeSource(sourceId);
+    };
+  }, [fallbackReady, mapReady, raster]);
+
   const sarPoint = sarObservationPoint(satellite);
   const sarFeature = useMemo(() => sarPoint ? {
     type: 'Feature',
@@ -1367,6 +1408,7 @@ export default function PlayTimeline({ apiBase }) {
                 <button type="button" onClick={locateSarPoint}>Locate radar return on map</button>
               </>
             ) : satellite && <span>Acquisition coverage or imagery for manual review</span>}
+            {raster && <span>Georeferenced Sentinel-2 crop · {itemTime(raster.acquired_at)} UTC</span>}
             {sceneBounds && <button type="button" onClick={locateScene}>Locate scene coverage on map</button>}
             {satellite && sceneResolution > 0 && Number.isFinite(sceneResolution)
               && <span>Product pixel spacing · {sceneResolution} m</span>}

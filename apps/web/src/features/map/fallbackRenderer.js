@@ -155,6 +155,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
     if (cluster && currentPayload) renderer.setFeatures(currentPayload);
   });
 
+  let sceneRaster;
   const renderer = {
     setBasemap(mode, imageryUrl = SATELLITE_BASEMAP_TILE_URL) {
       if (mode === 'satellite' && !satelliteTiles) {
@@ -172,6 +173,14 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
         map.removeLayer(activeTiles);
         activeTiles = nextTiles.addTo(map);
       }
+    },
+    setSceneRaster(url, coordinates) {
+      if (sceneRaster) map.removeLayer(sceneRaster);
+      sceneRaster = null;
+      if (!url) return;
+      const [[west, north], , [east, south]] = coordinates;
+      sceneRaster = L.imageOverlay(url, [[south, west], [north, east]], { interactive: false })
+        .addTo(map);
     },
     setMovement(features) {
       movementLayer.clearLayers();
