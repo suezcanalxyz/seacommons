@@ -1,4 +1,4 @@
-import { liveMovementEndpoints } from '../features/live/movementEndpoints.js';
+import { aisUtcTimestamp, latestLiveAisFix, selectedLiveMovementEndpoints } from '../features/live/movementEndpoints.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { classifyEventVisual, descriptionOf, eventAnomalyLabel } from '../features/intel/categories.js';
@@ -325,7 +325,7 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
   const dossierTrack = Array.isArray(dossier?.track_points) ? dossier.track_points : [];
   const movementEvidence = props.movement_evidence && typeof props.movement_evidence === 'object'
     ? props.movement_evidence : null;
-  const { from, to, isGap: triggerIsGap, fromLabel } = liveMovementEndpoints(feature);
+  const { from, to, isGap: triggerIsGap, fromLabel } = selectedLiveMovementEndpoints(feature);
   const triggerTrack = [from, to].filter(Boolean);
   const sourceTrack = publicTrack.length >= 2
     ? publicTrack
@@ -386,7 +386,7 @@ function TrackGraphic({ feature, driftFeature, dossier, isHumanitarian }) {
     return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
   const hasTriggerEndpoints = Boolean(from && to);
-  const formatTriggerEndpoint = (point) => `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)} · ${point.at ? String(point.at) : 'UTC unavailable'}`;
+  const formatTriggerEndpoint = (point) => `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)} · ${Number.isFinite(Date.parse(aisUtcTimestamp(point.at))) ? new Date(aisUtcTimestamp(point.at)).toISOString().slice(0, 19).replace('T', ' ') + ' UTC' : 'UTC unavailable'}`;
   const current = xy(observed.at(-1) || forecast.at(-1) || fallback[0] || from);
 
   return (
@@ -511,7 +511,7 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
   const [operatorLoading, setDossierLoading] = useState(false);
   const dossier = publicMode ? liveVessel?.data : operatorDossier;
   const dossierLoading = publicMode ? liveVessel?.loading : operatorLoading;
-  const latestAisFix = dossier?.latest_ais_fix || dossier?.track_points?.at(-1);
+  const latestAisFix = latestLiveAisFix(panel.feature, dossier);
   const latestAisTime = Date.parse(latestAisFix?.ts);
   const [nearbyVessels, setNearbyVessels] = useState([]);
   const [nearbyStatus, setNearbyStatus] = useState('idle');
