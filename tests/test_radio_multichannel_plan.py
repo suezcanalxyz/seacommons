@@ -79,3 +79,19 @@ def test_multichannel_deduplicates_physical_hardware_not_url():
             manifest(assignment("ea3hru_1", "dsc", 8_414_500),
                      assignment("ea3hru_2", "dsc", 4_207_500)),
         )
+
+
+def test_public_channel_status_never_infers_monitoring_from_catalogue_bands():
+    from core.radio.multichannel_plan import public_channel_status
+
+    channels = public_channel_status([
+        {"receiver_id": "cagliari", "state": "connected", "frequency_hz": 2_187_500},
+        {"receiver_id": "cagliari", "state": "connected", "frequency_hz": 2_187_500},
+        {"receiver_id": "mallorca", "state": "standby", "frequency_hz": 8_414_500},
+        {"receiver_id": "heimiswil", "state": "disconnected", "frequency_hz": 518_000},
+    ])
+    assert len(channels) == 11
+    assert next(c for c in channels if c["frequency_hz"] == 2_187_500)["active_receivers"] == 1
+    assert next(c for c in channels if c["frequency_hz"] == 8_414_500)["active_receivers"] == 0
+    assert next(c for c in channels if c["frequency_hz"] == 518_000)["state"] == "not_monitored"
+    assert next(c for c in channels if c["frequency_hz"] == 156_525_000)["decoder_ready"] is False
