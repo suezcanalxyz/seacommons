@@ -22,3 +22,30 @@ export function reviewedArchiveCase(record) {
     suppress_inferred_map_evidence: true,
   };
 }
+
+const geographicClues = {
+  '57dce9fa': [
+    { name: 'El Kala, Algeria', role: 'departure', coordinates: [8.4431, 36.8961],
+      reference: 'https://mapcarta.com/El_Kala' },
+    { name: 'Sardinia, Italy', role: 'destination', coordinates: [9, 40],
+      reference: 'https://www.geonames.org/2523228/sardegna.html' },
+  ],
+};
+
+const noClues = [];
+
+export function archiveGeographicClues(record) {
+  return geographicClues[record?.incident_id] || noClues;
+}
+
+export function geographicClueFeatures(clues) {
+  return clues.map(({ name, role, coordinates }) => ({
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates },
+    properties: {
+      kind: `clue_${role}`,
+      label: role === 'departure' ? 'Reported departure' : 'Reported destination',
+      place: name,
+    },
+  }));
+}

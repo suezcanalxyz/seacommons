@@ -1,4 +1,4 @@
-import { reviewedArchiveCase } from './humanitarianReview.js';
+import { reviewedArchiveCase, archiveGeographicClues, geographicClueFeatures } from './humanitarianReview.js';
 import { isPublicCaseEligible } from '../live/publicCaseEligibility.js';
 import { addMovementLabels } from '../map/movementLabels.js';
 import VesselCaseSearch from '../../components/VesselCaseSearch.jsx';
@@ -142,6 +142,7 @@ export default function PlayTimeline({ apiBase }) {
   const [apiArchiveTotal, setArchiveTotal] = useState(null);
   const archiveTotal = apiArchiveTotal == null ? null : apiArchiveTotal + reviewedIncidents.length - (archiveRecords.length - incidents.length);
   const [selectedId, setSelectedId] = useState('');
+  const [focusRequest, setFocusRequest] = useState(0);
   const [overlapIds, setOverlapIds] = useState([]);
   const [caseResponse, setCaseResponse] = useState(null);
 
@@ -283,8 +284,10 @@ export default function PlayTimeline({ apiBase }) {
     () => timelineAtCutoff(fullTimeline, globalState.cutoff),
     [fullTimeline, globalState.cutoff],
   );
+  const geographicClues = archiveGeographicClues(selectedIncident);
   const gapFeatures = useMemo(() => {
     const reconstructed = aisGapMapFeatures(aisReconstruction.gaps);
+    if (geographicClues.length) return { ...reconstructed, features: geographicClueFeatures(geographicClues) };
     if (reconstructed.features.length || !selectedIncident) return reconstructed;
     const features = liveMovementMapFeatures({ geometry: selectedIncident.geometry, properties: selectedIncident });
     if (features.length) return { ...reconstructed, features };
@@ -298,7 +301,7 @@ export default function PlayTimeline({ apiBase }) {
       { type: 'Feature', geometry: { type: 'Point', coordinates: track.at(-1) },
         properties: { kind: 'model_end', label: 'Model endpoint' } },
     ] };
-  }, [aisReconstruction, selectedIncident, visibleTimeline]);
+  }, [aisReconstruction, geographicClues, selectedIncident, visibleTimeline]);
   const frame = useMemo(
     () => selectFrame(visibleTimeline, Math.max(0, visibleTimeline.length - 1)),
     [visibleTimeline],
@@ -587,13 +590,13 @@ export default function PlayTimeline({ apiBase }) {
         map.addLayer({ id: 'play-ais-gap-endpoints', type: 'circle', source: 'play-ais-gaps',
           filter: ['==', ['geometry-type'], 'Point'],
           paint: { 'circle-radius': 7, 'circle-color': ['match', ['get', 'kind'],
-            'ais_last_observed', '#ff8859', 'ais_first_reappearance', '#55e0c0', '#bb8cff'],
+            'ais_last_observed', '#ff8859', 'ais_first_reappearance', '#55e0c0', 'clue_departure', '#53d1f5', 'clue_destination', '#b2d7e2', '#bb8cff'],
             'circle-stroke-color': '#071014', 'circle-stroke-width': 2 } });
         // Tap/click either observed endpoint to inspect the same bounded gap.
         addMovementLabels(map, 'play-ais-gap-labels', 'play-ais-gaps');
         map.on('click', 'play-ais-gap-endpoints', (event) => {
           const feature = event.features?.[0];
-          if (!feature || feature.geometry?.type !== 'Point') return;
+          if (!feature || feature.geometry?.type !== 'Point' || !feature.properties?.from_utc) return;
           const props = feature.properties || {};
           const endpoint = props.kind === 'ais_last_observed' ? 'Last AIS observation' : 'First AIS reappearance';
           const coordinates = feature.geometry.coordinates;
@@ -853,7 +856,7 @@ export default function PlayTimeline({ apiBase }) {
         maxZoom: 9, duration: 450,
       });
     }
-  }, [fallbackReady, mapReady, movementExtent, selectedId]);
+  }, [fallbackReady, focusRequest, mapReady, movementExtent, selectedId]);
 
   const status = selectedIncident ? incidentStatusAtCutoff(selectedIncident, globalState.cutoff) : 'outcome_unknown';
   const reportTrack = useMemo(() => timelineReport(visibleTimeline), [visibleTimeline]);
@@ -1101,7 +1104,15 @@ export default function PlayTimeline({ apiBase }) {
             <time>{itemTime(selectedIncident?.reported_at)}</time>
             {reviewedCase?.event_date && <span>Incident date · {reviewedCase.event_date}</span>}
             {selectedIncident?.location_summary && <span>{selectedIncident.suppress_inferred_map_evidence ? '' : 'Reported area · '}{selectedIncident.location_summary}</span>}
-            <button type="button" disabled={!selectedIncident?.geometry} onClick={() => { const geometry = selectedIncident?.geometry; if (geometry?.type !== 'Point') return; mapRef.current?.easeTo({ center: geometry.coordinates, zoom: Math.max(9, mapRef.current.getZoom()), duration: 600 }); fallbackMapRef.current?.flyTo({ center: geometry.coordinates, zoom: 9 }); }}>Locate on map +</button>
+            {geographicClues.length > 0 && <div className="play-report-locations">
+              <strong>Geographic clues from the report</strong>
+              {geographicClues.map((clue) => <span key={clue.role}>
+                {clue.role === 'departure' ? 'Reported departure' : 'Reported destination'} · {clue.name}
+                {' · '}<a href={clue.reference} target="_blank" rel="noreferrer">Place reference ↗</a>
+              </span>)}
+              <small>Markers identify the named places. The exact departure point, the boat’s route and whether it arrived are unknown.</small>
+            </div>}
+            <button type="button" disabled={!selectedIncident?.geometry && !geographicClues.length} onClick={() => { if (geographicClues.length) { setFocusRequest((request) => request + 1); return; } const geometry = selectedIncident?.geometry; if (geometry?.type !== 'Point') return; mapRef.current?.easeTo({ center: geometry.coordinates, zoom: Math.max(9, mapRef.current.getZoom()), duration: 600 }); fallbackMapRef.current?.flyTo({ center: geometry.coordinates, zoom: 9 }); }}>Locate on map +</button>
             <span>{selectedIncident?.source || '—'}</span>
           </section>
           <section className="play-card play-card--forensic-summary">
