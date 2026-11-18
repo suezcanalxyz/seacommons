@@ -62,9 +62,25 @@ def test_repeated_updates_in_the_same_family_become_one_episode() -> None:
     assert episode["properties"]["signal_count"] == 2
     assert len(episode["properties"]["observed_track"]) == 4
     assert episode["properties"]["drift_event_id"] == "intel:nuc"
-    assert episode["properties"]["incident_lifecycle"] == "resolved"
+    # An AIS status 0 track point alone does not establish a verified
+    # reappearance: identity and source continuity must be validated.
+    assert episode["properties"].get("incident_lifecycle") != "resolved"
     assert episode["properties"]["latest_nav_status"] == 0
     assert episode["properties"]["source_records"][0]["url"] == "https://example.test/olga"
+
+
+def test_validated_identity_and_source_allow_nuc_resolution() -> None:
+    incident = _feature(
+        "intel:nuc-validated", "2026-08-30T20:00:00+00:00", 29.16, 41.34,
+        linked_mmsi="352001914", ais_nav_status_kind="not_under_command",
+        identity_validated=True, source_validated=True,
+    )
+    result = coalesce_security_vessel_episodes(
+        [incident], track_history={"352001914": [
+            {"lon": 29.18, "lat": 41.35, "ts": "2026-08-30T21:00:00+00:00", "nav_status": 0},
+        ]},
+    )
+    assert result[0]["properties"]["incident_lifecycle"] == "resolved"
 
 
 def test_exit_gate_two_unrelated_anomaly_families_become_two_episodes() -> None:
