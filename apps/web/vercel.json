@@ -30,6 +30,10 @@
       "destination": "/api/navtex"
     },
     {
+      "source": "/api/v1/live/radio/channels",
+      "destination": "/api/channels"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/proxy?path=:path*"
     },
