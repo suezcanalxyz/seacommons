@@ -11,3 +11,5 @@ export function publicBasemapSource() {
     attribution: '© OpenStreetMap contributors',
   };
 }
+
+export const SATELLITE_BASEMAP_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';

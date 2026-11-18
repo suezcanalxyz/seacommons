@@ -8,7 +8,8 @@ import { reconstructAisGaps, aisGapMapFeatures } from './aisGapGeometry.js';
 import { configureMaplibreWorker } from '../map/maplibreWorker.js';
 import { createVesselArrowImage, VESSEL_COLOR } from '../map/vesselMarker.js';
 import { createAttackMarkerImage, isAttackIncident } from '../map/attackMarker.js';
-import { createFallbackMap } from '../map/fallbackRenderer.js';
+import { SATELLITE_BASEMAP_TILE_URL } from '../map/publicBasemap.js';
+import { createFallbackMap, PLAY_CLUSTER_BANDS } from '../map/fallbackRenderer.js';
 import {
   incidentCollection,
   mergeIncidentPages,
@@ -28,6 +29,12 @@ import {
   groupArchiveByMonth,
   satelliteContextTileUrl,
 } from './timeline.js';
+
+function clusterPaint(property) {
+  const [first, ...remaining] = PLAY_CLUSTER_BANDS;
+  return ['step', ['get', 'point_count'], first[property],
+    ...remaining.flatMap((band) => [band.minimum, band[property]])];
+}
 
 const TIMELINE_MAX = 1000;
 function evidenceLabel(item) {
@@ -430,8 +437,8 @@ export default function PlayTimeline({ apiBase }) {
           id: 'play-clusters', type: 'circle', source: 'play-incidents',
           filter: ['has', 'point_count'],
           paint: {
-            'circle-radius': ['step', ['get', 'point_count'], 14, 10, 17, 25, 20, 75, 24, 200, 29],
-            'circle-color': ['step', ['get', 'point_count'], '#38bdf8', 10, '#2dd4bf', 25, '#d4ff3f', 75, '#facc15', 200, '#f472b6'], 'circle-opacity': 0.94,
+            'circle-radius': clusterPaint('radius'),
+            'circle-color': clusterPaint('color'), 'circle-opacity': 0.94,
             'circle-stroke-color': '#0b1724', 'circle-stroke-width': 2,
           },
         });
@@ -616,6 +623,7 @@ export default function PlayTimeline({ apiBase }) {
         container: mapNodeRef.current,
         center: [14.8, 35.7],
         zoom: 3.55,
+        cluster: true,
         onFeatureSelect: (feature) => {
           const incidentId = feature?.properties?.incident_id;
           if (incidentId) {
@@ -647,7 +655,7 @@ export default function PlayTimeline({ apiBase }) {
     const fallback = fallbackMapRef.current;
     if (!fallbackReady || !fallback) return;
     fallback.setFeatures(mappedIncidents.features);
-    if (mappedIncidents.features.length) fallback.fitFeatures(mappedIncidents.features);
+    if (!selectedId && mappedIncidents.features.length) fallback.fitFeatures(mappedIncidents.features);
     const geometry = selectedIncident?.geometry;
     const bounds = geometryBounds(geometry);
     if (selectedId && bounds) {
@@ -742,6 +750,20 @@ export default function PlayTimeline({ apiBase }) {
     source?.setTiles?.([satelliteContextTileUrl(contextDay, satelliteContextMission)]);
     if (map.getLayer('satellite-context')) map.setLayoutProperty('satellite-context', 'visibility', satelliteVisible ? 'visible' : 'none');
   }, [mapReady, satelliteVisible, contextDay, satelliteContextMission]);
+
+  useEffect(() => {
+    if (!fallbackReady) return;
+    const imageryUrl = satelliteVisible
+      ? satelliteContextTileUrl(contextDay, satelliteContextMission)
+      : SATELLITE_BASEMAP_TILE_URL;
+    fallbackMapRef.current?.setBasemap('satellite', imageryUrl);
+  }, [fallbackReady, satelliteVisible, contextDay, satelliteContextMission]);
+
+  useEffect(() => {
+    if (!fallbackReady) return;
+    fallbackMapRef.current?.setMovement(gapFeatures.features);
+    fallbackMapRef.current?.setDrifts(historicalDriftFeatures(visibleTimeline));
+  }, [fallbackReady, gapFeatures, visibleTimeline]);
 
   const status = selectedIncident ? incidentStatusAtCutoff(selectedIncident, globalState.cutoff) : 'outcome_unknown';
   const reportTrack = useMemo(() => timelineReport(visibleTimeline), [visibleTimeline]);
@@ -915,7 +937,9 @@ export default function PlayTimeline({ apiBase }) {
           <span><i className="play-key-integrity" /> Position integrity</span>
           <span><i className="play-key-ais-gap" /> AIS reporting gap</span>
           <span><i className="play-key-attack" /> Attack · crosshair overlay</span>
-          <span className="play-cluster-scale" aria-label="Cluster sizes by grouped point count"><i style={{ backgroundColor: '#38bdf8' }} />2–9 <i style={{ backgroundColor: '#2dd4bf' }} />10–24 <i style={{ backgroundColor: '#d4ff3f' }} />25–74 <i style={{ backgroundColor: '#facc15' }} />75–199 <i style={{ backgroundColor: '#f472b6' }} />200+ grouped points</span>
+          <span className="play-cluster-scale" aria-label="Cluster sizes by grouped point count">
+            {PLAY_CLUSTER_BANDS.map(({ label, color }) => <React.Fragment key={label}><i style={{ backgroundColor: color }} />{label} </React.Fragment>)}grouped points
+          </span>
           <span><i className="play-key-track" /> Observed AIS track</span>
           <span><i className="play-key-drift" /> AIS gap: dashed, unobserved; orange last fix, green reappearance</span>
           <span><i className="play-key-model" /> Drift / estimated area (modelled)</span>
