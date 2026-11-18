@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { radioFeature, liveActiveReceiverMarkers } from './radioMap.js';
+import { radioFeature, liveActiveReceiverMarkers, isMediterraneanReceiver } from './radioMap.js';
 
 test('a DSC message with no valid published position remains readable without a map marker', () => {
   for (const coords of [[null, null], ['', ''], [100, 16], [0, 0]]) {
@@ -32,4 +32,19 @@ test('active receiver symbols require a fresh mesh and actual geolocation', () =
   assert.equal(active[0].properties.receiver_id, 'catania');
   assert.deepEqual(active[0].geometry.coordinates, [15.09, 37.5]);
   assert.deepEqual(liveActiveReceiverMarkers({ fresh: true, receivers: [] }), []);
+});
+
+test('Mediterranean LIVE map excludes unrelated northern/inland RF relay sites', () => {
+  const receivers = [
+    { receiver_id: 'zakynthos_hf_monitor', active: true, latitude: 37.783, longitude: 20.896 },
+    { receiver_id: 'cagliari_hf_monitor', active: true, latitude: 39.22, longitude: 9.12 },
+    { receiver_id: 'cassine_hf_monitor', active: true, latitude: 44.778, longitude: 8.531 },
+    { receiver_id: 'heimiswil_hf_monitor', active: true, latitude: 47.057, longitude: 7.648 },
+    { receiver_id: 'german_hf_relay', active: true, latitude: 50.11, longitude: 8.68 },
+  ];
+  assert.equal(isMediterraneanReceiver(receivers[0]), true);
+  assert.equal(isMediterraneanReceiver(receivers[2]), false);
+  assert.deepEqual(liveActiveReceiverMarkers({ fresh: true, receivers }).map((f) => f.properties.receiver_id),
+    ['zakynthos_hf_monitor', 'cagliari_hf_monitor']);
+  assert.equal(liveActiveReceiverMarkers({ fresh: false, receivers }).length, 0);
 });
