@@ -25,3 +25,27 @@ def test_attestation_field_completeness_is_not_authentication():
     ])
     assert report['attestation_fields_complete'] == 1
     assert report['closed_with_incomplete_attestation'] == 1
+
+
+def test_invalid_or_naive_observation_timestamp_is_incomplete():
+    for observed_at in ("not-a-time", "2026-11-18T00:00:00", "  ", None):
+        report = summarize_gap_attestations([('a', {
+            'anomaly_type': 'gap', 'resolution_state': 'resolved',
+            'reappearance_validation': {
+                'identity_validated': True, 'source_validated': True,
+                'track_id': '1', 'mmsi': '123', 'source': 'feed',
+                'observed_at': observed_at,
+            },
+        })])
+        assert report['closed_with_incomplete_attestation'] == 1
+
+def test_zulu_observation_timestamp_is_accepted_as_field_complete():
+    report = summarize_gap_attestations([('a', {
+        'anomaly_type': 'gap', 'resolution_state': 'resolved',
+        'reappearance_validation': {
+            'identity_validated': True, 'source_validated': True,
+            'track_id': '1', 'mmsi': '123', 'source': 'feed',
+            'observed_at': '2026-11-18T00:00:00Z',
+        },
+    })])
+    assert report['attestation_fields_complete'] == 1
