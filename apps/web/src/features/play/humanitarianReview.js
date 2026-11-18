@@ -5,11 +5,13 @@ const nonIncidentReports = new Set([
   'a8154c20', // Policy advocacy.
 ]);
 
+const translatedDuplicates = new Set(['a037c1cb']); // French version of the El Kala report.
+
 const destinationOnly = new Set(['57dce9fa']);
 
 export function reviewedArchiveCase(record) {
   if ((record.main_category || record.domain) !== 'humanitarian') return record;
-  if (nonIncidentReports.has(record.incident_id)) return null;
+  if (nonIncidentReports.has(record.incident_id) || translatedDuplicates.has(record.incident_id)) return null;
   if (!record.source && record.title === 'Humanitarian incident') return null;
   if (!destinationOnly.has(record.incident_id)) return record;
   return {
