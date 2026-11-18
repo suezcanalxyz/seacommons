@@ -180,7 +180,9 @@ export default function PlayTimeline({ apiBase }) {
   const [sanctionsOnly, setSanctionsOnly] = useState(false);
   const [sanctionsOpen, setSanctionsOpen] = useState(false);
   const [investigationsOnly, setInvestigationsOnly] = useState(false);
-  const [satelliteVisible, setSatelliteVisible] = useState(false);
+  const [imageryMode, setImageryMode] = useState('composite');
+  const [imageryDate, setImageryDate] = useState('');
+  const satelliteVisible = imageryMode !== 'composite';
   const [satelliteContextMission, setSatelliteContextMission] = useState('VIIRS NOAA-21');
 
   const globalState = useMemo(
@@ -279,10 +281,14 @@ export default function PlayTimeline({ apiBase }) {
       !globalState.cutoff || Date.parse(p.at) <= Date.parse(globalState.cutoff)),
   })), [caseData?.voyage_evidence, globalState.cutoff]);
   const aisReconstruction = useMemo(() => reconstructAisGaps(voyageVessels), [voyageVessels]);
-  const contextDay = useMemo(() => {
+  const caseContextDay = useMemo(() => {
     const value = selectedDay || globalState.cutoff || selectedIncident?.reported_at || coverage.end;
     return value ? String(value).slice(0, 10) : new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
   }, [selectedDay, globalState.cutoff, selectedIncident?.reported_at, coverage.end]);
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const contextDay = imageryMode === 'recent'
+    ? (imageryDate || todayUtc)
+    : caseContextDay;
   const fullTimeline = useMemo(
     () => normalizeTimeline(caseData?.timeline || []),
     [caseData],
@@ -788,8 +794,12 @@ export default function PlayTimeline({ apiBase }) {
     map.getSource('play-evidence')?.setData(datedEvidence);
     map.getSource('play-ais-gaps')?.setData(gapFeatures);
     map.getSource('play-historical-drifts')?.setData(historicalDriftFeatures(visibleTimeline));
-    map.getSource('play-satellite-footprints')?.setData(satelliteFootprintCollection(visibleTimeline));
   }, [mapReady, visibleTimeline, aisReconstruction, gapFeatures]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    mapRef.current?.getSource('play-satellite-footprints')?.setData(satelliteFootprintCollection(satellite ? [satellite] : []));
+  }, [mapReady, satellite]);
 
   useEffect(() => {
     if (!mapReady) return;
@@ -868,6 +878,7 @@ export default function PlayTimeline({ apiBase }) {
     if (!mapReady || !map) return;
     const source = map.getSource('satelliteContext');
     source?.setTiles?.([satelliteContextTileUrl(contextDay, satelliteContextMission)]);
+    if (map.getLayer('base-map')) map.setLayoutProperty('base-map', 'visibility', satelliteVisible ? 'none' : 'visible');
     if (map.getLayer('satellite-context')) map.setLayoutProperty('satellite-context', 'visibility', satelliteVisible ? 'visible' : 'none');
   }, [mapReady, satelliteVisible, contextDay, satelliteContextMission]);
 
@@ -922,6 +933,23 @@ export default function PlayTimeline({ apiBase }) {
     map?.easeTo({ center: sarPoint, zoom: Math.max(9, map.getZoom()), duration: 500 });
     fallbackMapRef.current?.flyTo({ center: sarPoint, zoom: 9 });
   };
+  const sceneBounds = satellite?.source === 'copernicus_dataspace'
+    && ['Polygon', 'MultiPolygon'].includes(satellite.geometry?.type)
+    ? geometryBounds(satellite.geometry) : null;
+  const locateScene = () => {
+    const { west, south, east, north } = sceneBounds;
+    mapRef.current?.fitBounds([[west, south], [east, north]], {
+      padding: 75, maxZoom: 11, duration: 500,
+    });
+    fallbackMapRef.current?.fitFeatures([satellite]);
+  };
+  const sceneResolution = Number(satelliteProps.resolution_m);
+  const caseBounds = geometryBounds(selectedIncident?.geometry);
+  const recentOpticalUrl = caseBounds && `https://browser.dataspace.copernicus.eu/?${new URLSearchParams({
+    zoom: '11', lat: ((caseBounds.south + caseBounds.north) / 2).toFixed(4),
+    lng: ((caseBounds.west + caseBounds.east) / 2).toFixed(4),
+    datasetId: 'S2_L2A_CDAS', layerId: '1_TRUE_COLOR', date: 'latest',
+  })}`;
   const quicklook = /^https:\/\//i.test(satelliteProps.asset_ref || '')
     && /(?:\.(?:png|jpe?g|webp)|Assets\([^)]*\)\/\$value)(?:\?|$)/i.test(satelliteProps.asset_ref);
   const modeLabel = cutoffLabel(globalState);
@@ -1300,19 +1328,27 @@ export default function PlayTimeline({ apiBase }) {
             <p>Inspect dated scenes and their source records. Coverage alone cannot establish what happened.</p>
             <label className="play-satellite-selector">
               <span>Map background</span>
-              <select aria-label="Map imagery" value={satelliteVisible ? 'dated' : 'high-resolution'} onChange={(event) => setSatelliteVisible(event.target.value === 'dated')}>
-                <option value="high-resolution">Esri imagery · composite</option>
-                <option value="dated">NASA VIIRS · dated context</option>
+              <select aria-label="Map imagery" value={imageryMode} onChange={(event) => setImageryMode(event.target.value)}>
+                <option value="composite">Esri imagery · detailed composite</option>
+                <option value="dated">NASA VIIRS · case date</option>
+                <option value="recent">NASA VIIRS · recent context</option>
               </select>
             </label>
+            {imageryMode === 'recent' && <label className="play-satellite-selector">
+              <span>Imagery date (UTC)</span>
+              <input type="date" value={contextDay} max={todayUtc}
+                onChange={(event) => setImageryDate(event.target.value)} />
+              <small>Today is requested first. Select an earlier date if tiles are unavailable. This background is independent of the case timeline.</small>
+            </label>}
             {satelliteVisible && <label className="play-satellite-selector">
-              <span>NASA context · {contextDay} UTC</span>
+              <span>NASA context · {contextDay} UTC · regional detail</span>
               <select value={satelliteContextMission} onChange={(event) => setSatelliteContextMission(event.target.value)}>
                 <option value="VIIRS NOAA-21">NOAA-21 · true color</option>
                 <option value="VIIRS NOAA-20">NOAA-20 · true color</option>
                 <option value="VIIRS Suomi-NPP">Suomi-NPP · true color</option>
               </select>
             </label>}
+            {recentOpticalUrl && <a href={recentOpticalUrl} target="_blank" rel="noreferrer">Latest Sentinel-2 optical imagery near the case ↗</a>}
             <label className="play-satellite-selector">
               <span>Case acquisitions and radar observations</span>
               <select value={satelliteMission} onChange={(event) => setSatelliteMission(event.target.value)} disabled={!satelliteScenes.length}>
@@ -1331,6 +1367,9 @@ export default function PlayTimeline({ apiBase }) {
                 <button type="button" onClick={locateSarPoint}>Locate radar return on map</button>
               </>
             ) : satellite && <span>Acquisition coverage or imagery for manual review</span>}
+            {sceneBounds && <button type="button" onClick={locateScene}>Locate scene coverage on map</button>}
+            {satellite && sceneResolution > 0 && Number.isFinite(sceneResolution)
+              && <span>Product pixel spacing · {sceneResolution} m</span>}
             {quicklook && <figure className="play-satellite-preview">
               <img key={satelliteProps.asset_ref} src={satelliteProps.asset_ref} alt="Satellite quicklook from provider" loading="lazy" referrerPolicy="no-referrer" />
               <figcaption>Provider quicklook · imagery is shown in its original framing</figcaption>
