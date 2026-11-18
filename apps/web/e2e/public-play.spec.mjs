@@ -559,3 +559,23 @@ test('PLAY displays reviewed attack dossiers with dated public sources', async (
   await expect(dossier.getByRole('button', { name: 'Locate on map +' })).toBeDisabled();
   await expect(dossier.locator('.play-report-chronology').getByRole('link', { name: 'Original source' })).toHaveCount(2);
 });
+
+test('a slow case dossier never reopens the PLAY startup overlay', async ({ page }) => {
+  let release;
+  const waitForCase = new Promise((resolve) => { release = resolve; });
+  await page.route('**/api/v1/play/incidents/*/timeline', async (route) => {
+    await waitForCase;
+    await route.fallback();
+  });
+  await page.goto(PUBLIC_PLAY_URL);
+  const startup = page.getByRole('status', { name: 'Loading SeaCommons PLAY' });
+  await expect(startup).toHaveCount(0, { timeout: 30_000 });
+  await page.locator('.play-cases__list').getByText('Historical distress', { exact: true }).click();
+  try {
+    await expect(page.locator('.play-evidence').getByText('Loading case evidence…')).toBeVisible();
+    await expect(startup).toHaveCount(0);
+  } finally {
+    release();
+  }
+  await expect(page.locator('.play-evidence').getByText('Loading case evidence…')).toHaveCount(0);
+});
