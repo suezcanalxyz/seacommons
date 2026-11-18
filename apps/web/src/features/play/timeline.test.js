@@ -217,8 +217,8 @@ test('satellite layer can explicitly select a mission', async () => {
 
 test('selector respects cutoff and null cloud metadata', async () => {
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
-  assert.match(source, /new Set\(visibleTimeline/);
-  assert.match(source, /setSatelliteMission\('auto'\)/);
+  assert.match(source, /satelliteReviewScenes\(visibleTimeline/);
+  assert.match(source, /setSatelliteMission\(''\)/);
   assert.match(source, /cloud_cover != null/);
 });
 
@@ -529,7 +529,7 @@ test('PLAY selection styling does not re-submit all incident geometry to worker'
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
   assert.match(source, /map\.getSource\('play-incidents'\)\?\.setData\(mappedIncidents\)/);
   assert.match(source, /\}, \[mapReady, mappedIncidents, visibleTimeline, aisReconstruction, gapFeatures\]\);/);
-  assert.match(source, /\}, \[mapReady, selectedId, satellite\]\);/);
+  assert.match(source, /\}, \[mapReady, selectedId\]\);/);
 });
 
 test('PLAY attack overlays preserve red humanitarian category and use an independent marker', async () => {
@@ -549,4 +549,29 @@ test('ongoing case clock distinguishes elapsed time from last record update', ()
   assert.equal(ongoingCaseClock({ ongoing: false, reported_at: first }, now), null);
   assert.equal(ongoingCaseClock({ incident_status: 'outcome_unknown', reported_at: first }, now), null);
   assert.equal(ongoingCaseClock({ ongoing: true, reported_at: 'invalid' }, now), null);
+});
+
+test('archive clock hides later cases on the same UTC day while the date picker includes the full day', async () => {
+  const { casesForArchiveView } = await import('./timeline.js');
+  const cases = [
+    { incident_id: 'early', reported_at: '2026-05-20T10:00:00Z' },
+    { incident_id: 'later', reported_at: '2026-05-20T22:00:00Z' },
+    { incident_id: 'tomorrow', reported_at: '2026-05-20T23:30:00-02:00' },
+  ];
+  assert.deepEqual(casesForArchiveView(cases, '2026-05-20T12:00:00Z').map((x) => x.incident_id), ['early']);
+  assert.deepEqual(casesForArchiveView(cases, null, '2026-05-20').map((x) => x.incident_id), ['early', 'later']);
+});
+
+test('scene review keeps associated scenes, hides future candidates, and labels coverage separately', async () => {
+  const { satelliteReviewScenes } = await import('./timeline.js');
+  const associated = { type: 'satellite', id: 'existing', at: '2026-05-20T10:00:00Z' };
+  const candidates = [
+    { observation_id: 'existing', acquisition_time: associated.at },
+    { observation_id: 'review', acquisition_time: '2026-05-20T11:00:00Z' },
+    { observation_id: 'future', acquisition_time: '2026-05-20T15:00:00Z' },
+  ];
+  const scenes = satelliteReviewScenes([associated], candidates, '2026-05-20T12:00:00Z');
+  assert.deepEqual(scenes.map((item) => item.id), ['review', 'existing']);
+  assert.equal(scenes[0].properties.evidence_role, 'context_only_pending_review');
+  assert.equal(scenes[1], associated);
 });

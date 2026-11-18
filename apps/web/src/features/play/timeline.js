@@ -10,7 +10,7 @@ function parseTime(value) {
 
 export function normalizeTimeline(items = []) {
   return [...items]
-    .filter((item) => item && item.at)
+    .filter((item) => item && Number.isFinite(parseTime(item.at)))
     .sort((a, b) => parseTime(a.at) - parseTime(b.at))
     .map((item, frameIndex) => ({ ...item, frameIndex }));
 }
@@ -115,6 +115,34 @@ export function satelliteRasterDescriptor(observation) {
     url: asset,
     coordinates: [[west, north], [east, north], [east, south], [west, south]],
   };
+}
+
+export function casesForArchiveView(incidents, cutoff, selectedDay) {
+  const day = selectedDay || cutoff?.slice(0, 10);
+  if (!day) return incidents;
+  const end = selectedDay ? `${day}T23:59:59.999Z` : cutoff;
+  return incidentsAtCutoff(incidents, end).filter((item) => {
+    const reported = parseTime(item.reported_at);
+    return Number.isFinite(reported) && new Date(reported).toISOString().startsWith(day);
+  });
+}
+
+export function satelliteReviewScenes(timeline, candidates = [], cutoff) {
+  const byId = new Map();
+  for (const item of timeline) {
+    if (item.type === 'satellite' && item.id) byId.set(item.id, item);
+  }
+  for (const candidate of candidates) {
+    const at = candidate?.acquisition_time;
+    if (!candidate?.observation_id || !Number.isFinite(parseTime(at)) || parseTime(at) > parseTime(cutoff)) continue;
+    if (byId.has(candidate.observation_id)) continue;
+    byId.set(candidate.observation_id, {
+      id: candidate.observation_id, at, source: candidate.provider, type: 'satellite',
+      properties: { mission: candidate.mission, source_url: candidate.source_url,
+        asset_ref: candidate.asset_ref, evidence_role: 'context_only_pending_review' },
+    });
+  }
+  return [...byId.values()].sort((a, b) => parseTime(b.at) - parseTime(a.at));
 }
 
 export function incidentsAtCutoff(incidents = [], cutoff = null) {
@@ -289,7 +317,7 @@ export function playMapStyle(day = new Date(Date.now() - 24 * 3600 * 1000).toISO
     },
     layers: [
       { id: 'base-map', type: 'raster', source: 'baseMap', paint: { 'raster-opacity': 1 } },
-      { id: 'satellite-context', type: 'raster', source: 'satelliteContext', paint: { 'raster-opacity': 1, 'raster-fade-duration': 120 } },
+      { id: 'satellite-context', type: 'raster', source: 'satelliteContext', layout: { visibility: 'none' }, paint: { 'raster-opacity': 1, 'raster-fade-duration': 120 } },
     ],
   };
 }
