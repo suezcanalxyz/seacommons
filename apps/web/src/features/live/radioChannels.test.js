@@ -45,14 +45,32 @@ test('map displays connected Mediterranean SDR plus unconnected catalogue and on
   ];
   const features = mediterraneanReceiverMapMarkers({ fresh: true, receivers });
   assert.deepEqual(features.map((f) => f.properties.receiver_id),
-    ['zakynthos_hf_monitor', 'cagliari_hf_monitor',
+    ['zakynthos_hf_monitor', 'cagliari_hf_monitor', 'heimiswil_hf_monitor',
       'salerno_hf_monitor', 'trecastelli_hf_monitor', 'san_marino_hf_monitor',
       'edessa_hf_monitor', 'rome_hf_monitor', 'barcelona_ea3hru_hf_candidate']);
   assert.equal(features[0].properties.station_status, 'receiving');
   assert.equal(features[1].properties.station_status, 'not_connected');
-  assert.equal(features[2].properties.station_status, 'candidate');
-  assert.equal(features[2].properties.active, false);
+  assert.equal(features[2].properties.station_status, 'receiving');
+  assert.equal(features[2].properties.active, true);
+  assert.equal(features[3].properties.station_status, 'candidate');
+  assert.equal(features[3].properties.active, false);
   assert.equal(features.at(-1).properties.station_status, 'candidate');
   assert.equal(features.at(-1).properties.active, false);
   assert.equal(mediterraneanReceiverMapMarkers({ fresh: false, receivers }).length, 0);
+});
+
+test('all active receiver IDs appear as independent map markers, including inland HF relays', () => {
+  const receivers = [
+    { receiver_id: 'mallorca_hf_monitor', station_label: 'Mallorca', active: true,
+      frequency_hz: 2187500, latitude: 39.835, longitude: 3.096 },
+    { receiver_id: 'cassine_hf_monitor', station_label: 'Cassine', active: true,
+      frequency_hz: 2187500, latitude: 44.779, longitude: 8.531 },
+    { receiver_id: 'heimiswil_hf_monitor', station_label: 'Heimiswil', active: true,
+      frequency_hz: 2187500, latitude: 47.057, longitude: 7.648 },
+  ];
+  const mapped = mediterraneanReceiverMapMarkers({ fresh: true, receivers });
+  const active = mapped.filter((f) => f.properties.active);
+  assert.deepEqual(active.map((f) => f.properties.receiver_id),
+    ['mallorca_hf_monitor', 'cassine_hf_monitor', 'heimiswil_hf_monitor']);
+  assert.equal(mapped.filter((f) => f.properties.station_status === 'receiving').length, 3);
 });
