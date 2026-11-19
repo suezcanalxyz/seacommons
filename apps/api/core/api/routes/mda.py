@@ -193,6 +193,7 @@ def build_vessel_dossier(mmsi: str, *, hours: float, track_limit: int = 5000, in
         "track_points": track,
         "latest_ais_fix": latest,
         "recent_port_calls": _derive_recent_port_calls(track),
+        "track_discontinuities": _track_discontinuities(track),
         "radio_associations": _radio_associations_for_vessel(mmsi),
     }
     if include_behaviour:
@@ -210,6 +211,12 @@ def build_vessel_dossier(mmsi: str, *, hours: float, track_limit: int = 5000, in
             "evaluated_at": assessment.evaluated_at.isoformat(),
         }
     return dossier
+
+
+def _track_discontinuities(track: list[dict]) -> dict:
+    from core.mda.track_discontinuity import analyze_track_discontinuities
+
+    return analyze_track_discontinuities(track)
 
 
 def _derive_recent_port_calls(track: list[dict], *, limit: int = 8) -> list[dict]:
