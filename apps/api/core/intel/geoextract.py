@@ -503,13 +503,15 @@ _RE_DMS_PREFIX = re.compile(
 _RE_POSITION_LABEL = re.compile(
     r"(?:position|pos|coord|gps|location)[:\s]+([^\n]{5,60})", re.I
 )
+# OCR map labels sometimes omit minute-prime marks (N36°04, E016°37).
+# Accept missing primes only when both hemisphere prefixes and degree marks exist.
 _RE_OCR_PREFIX_COORD = re.compile(
     r"([NS])\s*([0-9OQ@]{1,3})\s*[°º]\s*"
-    r"([0-9OQ@]{1,2}(?:[.,][0-9OQ@]+)?)\s*['’′°º\"”″]"
+    r"([0-9OQ@]{1,2}(?:[.,][0-9OQ@]+)?)\s*['’′°º\"”″]?"
     r"(?:\s*([0-9OQ@]{1,2}(?:[.,][0-9OQ@]+)?)\s*[\"”″])?"
     r"[^EW]{0,35}"
     r"([EW])\s*([0-9OQ@]{1,3})\s*[°º]\s*"
-    r"([0-9OQ@]{1,2}(?:[.,][0-9OQ@]+)?)\s*['’′°º\"”″]"
+    r"([0-9OQ@]{1,2}(?:[.,][0-9OQ@]+)?)\s*['’′°º\"”″]?"
     r"(?:\s*([0-9OQ@]{1,2}(?:[.,][0-9OQ@]+)?)\s*[\"”″])?",
     re.I,
 )
