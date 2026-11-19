@@ -4325,10 +4325,10 @@ function App() {
             </header>
 
             <details className="live-radio-panel">
-              <summary>Radio · {receiverMesh.fresh ? (receiverMesh.active || 0) : 'status unavailable'} connected · {networkMarkers.length} Mediterranean stations on map</summary>
+              <summary>Radio · {receiverMesh.fresh ? (receiverMesh.active || 0) : 'status unavailable'} connected · {networkMarkers.filter((feature) => feature.properties.active).length} active map stations · {networkMarkers.length} total markers</summary>
               {receiverMesh.fresh && (receiverMesh.active || 0) > 0 && receiverMarkers.length === 0 && (
                 <p role="status" className="live-radio-panel__regional-gap">
-                  No connected Mediterranean receiver is currently available on this map. {(receiverMesh.active || 0)} remote HF receiver(s) remain active outside the regional layer.
+                  No connected receiver has a valid public map position. {(receiverMesh.active || 0)} receiver(s) are reported connected; check their coordinates and upstream snapshot.
                 </p>
               )}
               {Object.values(radioFailures).some(Boolean) && (
