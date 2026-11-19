@@ -86,3 +86,14 @@ def test_public_receiver_pool_builds_ranked_candidates_for_explicit_targets(monk
         ("dsc", 2_187_500, "usb"), ("navtex", 518_000, "am"),
     ]
     assert [call["channel_kind"] for call in calls] == ["dsc", "navtex"]
+
+
+def test_build_channel_plans_can_allocate_sixteen_authorized_independent_receivers():
+    from core.radio.failover import build_channel_plans
+
+    rows = tuple(_descriptor(f"rx-{idx}", f"lineage-{idx}") for idx in range(18))
+    plans = build_channel_plans(rows, desired_replicas=16)
+    assert len(plans) == 1
+    assert len(plans[0].active) == 16
+    assert len(plans[0].standby) == 2
+    assert len({row.physical_lineage for row in plans[0].active}) == 16
