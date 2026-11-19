@@ -550,7 +550,16 @@ def start_remote_radio_from_config() -> RemoteRadioRuntime:
         fallback_descriptors=fallback_descriptors,
         max_receivers=effective_max,
         failover_enabled=bool(config.REMOTE_RADIO_FAILOVER_ENABLED),
-        channel_replicas=int(config.REMOTE_RADIO_CHANNEL_REPLICAS),
+        # Use all explicitly approved, physically distinct candidates instead of
+        # relegating otherwise valid SDRs to standby behind a fixed 3-replica
+        # default. Registry and catalog still enforce authorization.
+        channel_replicas=max(
+            int(config.REMOTE_RADIO_CHANNEL_REPLICAS),
+            len({
+                d.physical_lineage for d in (*registry.runnable(), *fallback_descriptors)
+                if d.enabled and d.terms_status == "allowed"
+            }),
+        ),
         stale_after_s=float(config.REMOTE_RADIO_FAILOVER_STALE_S),
         retry_after_s=float(config.REMOTE_RADIO_FAILOVER_RETRY_S),
     )
