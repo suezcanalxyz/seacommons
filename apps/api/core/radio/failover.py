@@ -54,8 +54,8 @@ def build_channel_plans(
     desired_replicas: int,
 ) -> tuple[ChannelPlan, ...]:
     replicas = int(desired_replicas)
-    if replicas < 1 or replicas > 16:
-        raise ValueError("desired_replicas must be between 1 and 16")
+    if replicas < 1:
+        raise ValueError("desired_replicas must be positive")
 
     grouped: dict[ChannelTarget, list[ReceiverDescriptor]] = {}
     seen_lineages: set[str] = set()

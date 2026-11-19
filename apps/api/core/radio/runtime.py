@@ -78,7 +78,7 @@ class RemoteRadioRuntime:
         self._stop_event = threading.Event()
         self._supervisor: threading.Thread | None = None
         self._failover_enabled = bool(failover_enabled)
-        self._channel_replicas = max(1, min(int(channel_replicas), 16))
+        self._channel_replicas = max(1, int(channel_replicas))
         self._stale_after_s = max(float(stale_after_s), 5.0)
         self._retry_after_s = max(float(retry_after_s), 30.0)
         self._monotonic = monotonic_clock
