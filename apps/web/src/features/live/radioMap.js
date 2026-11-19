@@ -45,7 +45,7 @@ export function isMediterraneanReceiver(row) {
 export function liveActiveReceiverMarkers(mesh) {
   if (mesh?.fresh !== true || !Array.isArray(mesh.receivers)) return [];
   return mesh.receivers
-    .filter((row) => row?.active === true && Boolean(row.receiver_id) && isMediterraneanReceiver(row))
+    .filter((row) => row?.active === true && Boolean(row.receiver_id))
     .map((row) => radioFeature(row, 'radio_receiver'))
     .filter((feature) => feature.geometry?.type === 'Point');
 }
@@ -76,8 +76,11 @@ const BARCELONA_RESEARCH_CANDIDATE = Object.freeze({
 
 export function mediterraneanReceiverMapMarkers(mesh) {
   if (mesh?.fresh !== true || !Array.isArray(mesh.receivers)) return [];
+  // Active receivers are globally relevant: an inland HF relay is still an
+  // operational station and must not silently disappear from the radio layer.
+  // Retain regional filtering only for inactive catalogue suggestions.
   const relevant = mesh.receivers.filter((row) =>
-    Boolean(row?.receiver_id) && isMediterraneanReceiver(row));
+    Boolean(row?.receiver_id) && (row.active === true || isMediterraneanReceiver(row)));
   // Include audited regional catalogue entries omitted by the ranked API page.
   // The coarse location is historical, not proof that an SDR is still online.
   const returned = new Set(relevant.map((row) => row.receiver_id));
