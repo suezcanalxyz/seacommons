@@ -48,7 +48,7 @@ def _drift_model_version() -> str | None:
 # disagree (disputed / needs_review), a coordinate on land, a region-only
 # centroid, a resolved/archived incident, a non-SAR domain, or an uncertainty
 # above the configured ceiling.
-AUTO_DRIFT_POLICY_VERSION = "auto-drift-eligibility/2"
+AUTO_DRIFT_POLICY_VERSION = "auto-drift-eligibility/4"
 
 # Coordinate review states trusted enough to seed an operational leeway model.
 _TRUSTED_REVIEW_STATES = frozenset(
@@ -142,10 +142,23 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
         return False, f"sea_land_class={sea_land} (not SEA)"
 
     review = str(meta.get("coordinate_review_status") or "").lower()
-    if "disputed" in review or "needs_review" in review:
-        return False, f"coordinate_review_status={review}"
-
     coord_source = str(meta.get("coordinate_source") or "").lower()
+    source_name = str(getattr(event, "source", "") or "").strip().lower().replace(" ", "_")
+    is_alarm_phone = source_name in {"alarm_phone", "@alarm_phone", "alarmphone"}
+    source_published_alarm_phone_point = (
+        is_alarm_phone
+        and coord_source in {
+            "media_ocr_text",
+            "media_ocr_text_backfill",
+            "media_ocr_consensus",
+            "media_pin_landmark",
+            "media_pin_landmark_backfill",
+            "post_text",
+            "navtext",
+        }
+    )
+    if ("disputed" in review or "needs_review" in review) and not source_published_alarm_phone_point:
+        return False, f"coordinate_review_status={review}"
 
     location_status = str(meta.get("location_status") or "").lower()
     if location_status in _NON_MARITIME_LOCATION_STATES:
@@ -192,7 +205,11 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
 
     uncertainty = meta.get("location_uncertainty_m")
     try:
-        if uncertainty is not None and float(uncertainty) > MAX_AUTO_DRIFT_UNCERTAINTY_M:
+        if (
+            uncertainty is not None
+            and float(uncertainty) > MAX_AUTO_DRIFT_UNCERTAINTY_M
+            and not source_published_alarm_phone_point
+        ):
             return False, (
                 f"location_uncertainty_m={uncertainty} exceeds "
                 f"{MAX_AUTO_DRIFT_UNCERTAINTY_M:.0f}"
@@ -200,6 +217,8 @@ def is_auto_drift_eligible(event: Any) -> tuple[bool, str]:
     except (TypeError, ValueError):
         pass
 
+    if source_published_alarm_phone_point:
+        return True, "eligible:alarm_phone_source_published_coordinate"
     return True, "eligible"
 
 
