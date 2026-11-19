@@ -1091,33 +1091,63 @@ function App() {
   // /api/v1/live/drifts (see the polling effect below). Browser drift remains
   // ONLY as the explicitly user-triggered simulation tool (runSarCaseAt).
 
+  // Advance the display-time position along the persisted backend trajectory.
+  // This is interpolation, NOT a second client-side drift simulation. Use a
+  // single aligned 10s clock, and catch up immediately when a tab becomes visible.
   useEffect(() => {
     if (!isPublicLiveHost) return undefined;
-    const timer = window.setInterval(() => setLiveEstimateClock(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
+    let timer;
+    const tick = () => {
+      if (document.visibilityState !== 'hidden') setLiveEstimateClock(Date.now());
+    };
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => { tick(); schedule(); }, 10_000 - (Date.now() % 10_000));
+    };
+    const onVisibility = () => { if (document.visibilityState === 'visible') tick(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', tick);
+    schedule();
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', tick);
+    };
   }, []);
 
   // ── Intel drift traces polling ───────────────────────────────────────────────
   useEffect(() => {
     let alive = true;
     let driftTimer = null;
+    let loading = false;
     // Public Live consumes the backend/edge persisted operational Drift; the
     // authenticated console consumes the operator drift projection. Neither
     // clears the source — a transient fetch failure keeps the last good frame.
     async function loadDrifts() {
+      if (!alive || loading) return;
+      loading = true;
+      window.clearTimeout(driftTimer);
       try {
         const path = isPublicLiveHost ? '/api/v1/live/drifts' : '/api/v1/intel/drifts';
         const data = await fetchJson(apiBase, path);
-        if (alive && data.features) setIntelDrifts(data);
-      } catch { /* ignore — keep the last good drift frame */ }
-      if (alive) {
-        driftTimer = window.setTimeout(loadDrifts, isPublicLiveHost ? 30_000 : 120_000);
+        if (alive && Array.isArray(data.features)) setIntelDrifts(data);
+      } catch { /* keep the last verified frame; never erase drift on network failure */ }
+      finally {
+        loading = false;
+        if (alive) driftTimer = window.setTimeout(loadDrifts, isPublicLiveHost ? 30_000 : 120_000);
       }
     }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') loadDrifts();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('online', loadDrifts);
     loadDrifts();
     return () => {
       alive = false;
       window.clearTimeout(driftTimer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('online', loadDrifts);
     };
   }, [apiBase]);
 
