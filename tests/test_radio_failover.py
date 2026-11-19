@@ -97,3 +97,12 @@ def test_build_channel_plans_can_allocate_sixteen_authorized_independent_receive
     assert len(plans[0].active) == 16
     assert len(plans[0].standby) == 2
     assert len({row.physical_lineage for row in plans[0].active}) == 16
+
+
+def test_channel_plan_can_use_all_authorized_unique_receivers_above_legacy_cap():
+    from core.radio.failover import build_channel_plans
+    rows = tuple(_descriptor(f"rx-{idx}", f"lineage-{idx}") for idx in range(25))
+    plans = build_channel_plans(rows, desired_replicas=len(rows))
+    assert len(plans) == 1
+    assert len(plans[0].active) == len(rows)
+    assert plans[0].standby == ()
