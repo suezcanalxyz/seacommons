@@ -7,6 +7,7 @@ import { isPublicCaseEligible } from './features/live/publicCaseEligibility.js';
 import { addMovementLabels } from './features/map/movementLabels.js';
 import VesselCaseSearch from './components/VesselCaseSearch.jsx';
 import MapBasemapSwitch from './components/MapBasemapSwitch.jsx';
+import MapReferenceBar from './components/MapReferenceBar.jsx';
 import { aisUtcTimestamp, latestLiveAisFix, liveMovementMapFeatures, selectedLiveMovementEndpoints } from './features/live/movementEndpoints.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -3991,16 +3992,6 @@ function App() {
             liveVessel={liveVessel}
           />
         )}
-        {['cone', 'trajectory', 'search_area', 'intel', 'radio_receiver', 'radio_message'].includes(mapPanel?.type) && conePanelHidden && (
-          <button
-            className="cone-reopen-btn"
-            onClick={() => setConePanelHidden(false)}
-            title="Open selected report" aria-label="Open selected report"
-          >
-            REPORT ↗
-          </button>
-        )}
-
         {/* Scenario modal — center, appears when clicking empty map */}
         {APP_PROFILE === 'demo' && showScenario && (
           <ScenarioModal
@@ -4397,6 +4388,7 @@ function App() {
                 onOpenReport={openIntelReport}
               />
             </div>
+            <MapReferenceBar context="live" />
           </aside>
           <button
             type="button"
