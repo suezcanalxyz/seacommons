@@ -1,3 +1,4 @@
+import { publicBasemapSource, PUBLIC_BASEMAP_LABEL_URL } from '../map/publicBasemap.js';
 import { playIncidentColor } from './incidentPalette.js';
 import { publicBasemapSource } from '../map/publicBasemap.js';
 
@@ -321,13 +322,8 @@ export function playMapStyle(day = new Date(Date.now() - 24 * 3600 * 1000).toISO
   return {
     version: 8,
     sources: {
-      baseMap: {
-        type: 'raster',
-        tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-        tileSize: 256,
-        maxzoom: 19,
-        attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-      },
+      baseMap: publicBasemapSource(),
+      bathymetryLabels: { type: 'raster', tiles: [PUBLIC_BASEMAP_LABEL_URL], tileSize: 256, maxzoom: 19, attribution: '© CARTO · OpenStreetMap' },
       satelliteContext: {
         type: 'raster',
         tiles: [satelliteContextTileUrl(day, mission)],
@@ -336,7 +332,8 @@ export function playMapStyle(day = new Date(Date.now() - 24 * 3600 * 1000).toISO
       },
     },
     layers: [
-      { id: 'base-map', type: 'raster', source: 'baseMap', paint: { 'raster-opacity': 1 } },
+      { id: 'base-map', type: 'raster', source: 'baseMap', paint: { 'raster-opacity': 0.95, 'raster-brightness-min': 0.06, 'raster-brightness-max': 0.52, 'raster-saturation': -0.72, 'raster-contrast': 0.22 } },
+      { id: 'bathymetry-labels', type: 'raster', source: 'bathymetryLabels', paint: { 'raster-opacity': 0.6 } },
       { id: 'satellite-context', type: 'raster', source: 'satelliteContext', layout: { visibility: 'none' }, paint: { 'raster-opacity': 1, 'raster-fade-duration': 120 } },
     ],
   };
