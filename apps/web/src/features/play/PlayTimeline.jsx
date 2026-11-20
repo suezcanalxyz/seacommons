@@ -6,6 +6,7 @@ import { addMovementLabels } from '../map/movementLabels.js';
 import VesselCaseSearch from '../../components/VesselCaseSearch.jsx';
 import MapBasemapSwitch from '../../components/MapBasemapSwitch.jsx';
 import MapReferenceBar from '../../components/MapReferenceBar.jsx';
+import IntelligencePanelTabs from '../../components/IntelligencePanelTabs.jsx';
 import { liveMovementEndpoints, liveMovementMapFeatures } from '../live/movementEndpoints.js';
 import { playIncidentColor } from './incidentPalette.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -157,6 +158,7 @@ export default function PlayTimeline({ apiBase }) {
   const [mobileTab, setMobileTab] = useState('map');
   const [selectedDay, setSelectedDay] = useState('');
   const [guideOpen, setGuideOpen] = useState(false);
+  const [playToolTab, setPlayToolTab] = useState('archive');
   const [archiveLoading, setArchiveLoading] = useState(true);
   const [timelineRequest, setTimelineRequest] = useState(null);
   const timelineLoading = timelineRequest?.id === selectedId && timelineRequest?.pending;
@@ -1036,11 +1038,6 @@ export default function PlayTimeline({ apiBase }) {
       {gapHasOnlyAnchor && <div className="play-gap-map-note" role="status">
         {gapFeatures.features.length ? 'Reported gap position · two recorded fixes unavailable' : 'This report has no published gap coordinates'}
       </div>}
-      <VesselCaseSearch cases={visibleIncidents} onSelect={(record) => {
-        setArchiveSearch(''); setArchiveFilter('all'); setIncidentTypeFilter('all');
-        setEvidenceFilter('all'); setSatelliteOnly(false); setSanctionsOnly(false); setInvestigationsOnly(false);
-        setSelectedId(record.incident_id); setCasesOpen(false);
-      }} />
       <aside className={`live-feed-panel is-open play-archive-panel play-cases ${casesOpen ? 'is-mobile-open' : ''}`}>
         <header className="live-feed-panel__header">
           <div className="live-feed-panel__eyebrow">
@@ -1052,6 +1049,14 @@ export default function PlayTimeline({ apiBase }) {
             <div><p>HISTORICAL SIGNAL FIELD</p><h1>Play</h1></div>
             <button type="button" onClick={() => { setCasesOpen(false); setMobileTab('map'); }} aria-label="Close archive">−</button>
           </div>
+          <IntelligencePanelTabs label="Historical intelligence sections" value={playToolTab} onChange={setPlayToolTab}
+            options={[{ id: 'archive', label: 'Archive', count: visibleIncidents.length }, { id: 'timeline', label: 'Timeline' }, { id: 'sources', label: 'Sources' }, { id: 'layers', label: 'Layers' }]} />
+          {playToolTab === 'archive' && <>
+          <VesselCaseSearch cases={visibleIncidents} onSelect={(record) => {
+        setArchiveSearch(''); setArchiveFilter('all'); setIncidentTypeFilter('all');
+        setEvidenceFilter('all'); setSatelliteOnly(false); setSanctionsOnly(false); setInvestigationsOnly(false);
+        setSelectedId(record.incident_id); setCasesOpen(false);
+      }} />
           <div className="osint-stats-row">
             <div className="osint-stat"><strong>{visibleIncidents.length}</strong><span>archive loaded</span></div>
             <div className="osint-stat osint-stat--critical"><strong>{archiveCounts.humanitarian}</strong><span>humanitarian</span></div>
@@ -1109,7 +1114,9 @@ export default function PlayTimeline({ apiBase }) {
               <p>{coverage.start.slice(0, 10)} → {coverage.end.slice(0, 10)} · {coverage.coveredMonths.length} months with public cases · {coverage.missingMonths.length} continuity gaps</p>
             ) : null}
           </div>
+          </>}
         </header>
+        {playToolTab === 'archive' && <>
         <details className="play-sanctions-section" onToggle={(event) => setSanctionsOpen(event.currentTarget.open)}>
           <summary>Sanctioned vessels · historical registry</summary>
           {sanctionsOpen && <SanctionsCatalog apiBase={apiBase} />}
@@ -1147,6 +1154,31 @@ export default function PlayTimeline({ apiBase }) {
           {filteredIncidents.length > displayedCases.length ? <button type="button" className="play-case-load-more" onClick={() => setVisibleCaseLimit((limit) => limit + 80)}>Show 80 more cases · {displayedCases.length} of {filteredIncidents.length} loaded</button> : null}
           {!filteredIncidents.length && !archiveLoading ? <div className="play-empty">{archiveFilter === 'attacks' ? 'No explicitly classified attacks in the public archive for this selection. An AIS gap or an unverified report is not evidence of an attack.' : 'No incidents at this time.'}</div> : null}
         </div>
+        </>}
+        {playToolTab === 'timeline' && <section className="sc-panel-tab-content" aria-label="Archive timeline controls">
+          <h2>Historical timeline</h2>
+          <p>Use the timeline below the map to choose a historical cutoff. Reports only include evidence knowable at that point.</p>
+          <div className="sc-panel-status-row"><span>Archive mode</span><strong>{globalState.mode === 'all' && !selectedDay ? 'All records' : 'Historical cutoff'}</strong></div>
+          <div className="sc-panel-status-row"><span>Visible cases</span><strong>{visibleIncidents.length}</strong></div>
+          <button type="button" onClick={() => { setSelectedDay(''); setGlobalPosition(TIMELINE_MAX); }}>Show full archive</button>
+          <small>Missing observations do not establish a vessel's location. Predicted movement is always distinguished from recorded positions.</small>
+        </section>}
+        {playToolTab === 'sources' && <section className="sc-panel-tab-content" aria-label="Archive sources">
+          <h2>Sources and verification</h2>
+          <p>The archive combines recorded observations and published reports. Being listed here is not independent confirmation.</p>
+          <div className="sc-panel-status-row"><span>Loaded cases</span><strong>{incidents.length}</strong></div>
+          <div className="sc-panel-status-row"><span>Months with records</span><strong>{coverage.coveredMonths.length}</strong></div>
+          <div className="sc-panel-status-row"><span>Continuity gaps</span><strong>{coverage.missingMonths.length}</strong></div>
+          <p>Open a case from Archive to inspect its cited sources, evidence classification and limitations in the right-hand dossier.</p>
+        </section>}
+        {playToolTab === 'layers' && <section className="sc-panel-tab-content" aria-label="Archive map layers">
+          <h2>Map and evidence layers</h2>
+          <p>Bathymetry is the default. Use Map / Satellite in the bottom-left corner to change the background.</p>
+          <label className="sc-panel-layer-option"><input type="checkbox" checked={satelliteOnly} onChange={() => setSatelliteOnly((v) => !v)} /><span>Cases with satellite evidence</span></label>
+          <label className="sc-panel-layer-option"><input type="checkbox" checked={sanctionsOnly} onChange={() => setSanctionsOnly((v) => !v)} /><span>Sanctions-related cases</span></label>
+          <label className="sc-panel-layer-option"><input type="checkbox" checked={investigationsOnly} onChange={() => setInvestigationsOnly((v) => !v)} /><span>Investigations only</span></label>
+          <small>Visibility filters do not alter the underlying archive.</small>
+        </section>}
         <MapReferenceBar context="play" />
       </aside>
 
