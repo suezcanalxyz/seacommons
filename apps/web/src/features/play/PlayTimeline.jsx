@@ -4,6 +4,7 @@ import { reviewedArchiveCase, archiveGeographicClues, geographicClueFeatures } f
 import { isPublicCaseEligible } from '../live/publicCaseEligibility.js';
 import { addMovementLabels } from '../map/movementLabels.js';
 import VesselCaseSearch from '../../components/VesselCaseSearch.jsx';
+import MapBasemapSwitch from '../../components/MapBasemapSwitch.jsx';
 import { liveMovementEndpoints, liveMovementMapFeatures } from '../live/movementEndpoints.js';
 import { playIncidentColor } from './incidentPalette.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -888,6 +889,7 @@ export default function PlayTimeline({ apiBase }) {
     const source = map.getSource('satelliteContext');
     source?.setTiles?.([satelliteContextTileUrl(contextDay, satelliteContextMission)]);
     if (map.getLayer('base-map')) map.setLayoutProperty('base-map', 'visibility', satelliteVisible ? 'none' : 'visible');
+    if (map.getLayer('bathymetry-labels')) map.setLayoutProperty('bathymetry-labels', 'visibility', satelliteVisible ? 'none' : 'visible');
     if (map.getLayer('satellite-context')) map.setLayoutProperty('satellite-context', 'visibility', satelliteVisible ? 'visible' : 'none');
   }, [mapReady, satelliteVisible, contextDay, satelliteContextMission]);
 
@@ -896,7 +898,7 @@ export default function PlayTimeline({ apiBase }) {
     const imageryUrl = satelliteVisible
       ? satelliteContextTileUrl(contextDay, satelliteContextMission)
       : SATELLITE_BASEMAP_TILE_URL;
-    fallbackMapRef.current?.setBasemap('satellite', imageryUrl);
+    fallbackMapRef.current?.setBasemap(satelliteVisible ? 'satellite' : 'standard', imageryUrl);
   }, [fallbackReady, satelliteVisible, contextDay, satelliteContextMission]);
 
   useEffect(() => {
@@ -1148,6 +1150,8 @@ export default function PlayTimeline({ apiBase }) {
 
       <section className="map-stage play-map-stage">
         <div className="map-frame play-map" ref={mapNodeRef} />
+        <MapBasemapSwitch mode={satelliteVisible ? 'satellite' : 'standard'}
+          onChange={(mode) => setImageryMode(mode === 'satellite' ? 'recent' : 'composite')} />
         <div className="play-cartographic-legend" aria-label="Map symbols and evidence legend">
           <strong>MAP KEY</strong>
           <span><i className="play-key-vessel" /> Vessel · heading observed</span>
