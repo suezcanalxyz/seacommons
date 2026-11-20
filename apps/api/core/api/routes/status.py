@@ -26,6 +26,7 @@ from core.db.models import (
     VesselTrackDB,
 )
 from core.db.session import session_scope
+from core.intel.legacy_gap_metrics import count_legacy_ais_gap_context
 from core.live.feed import public_signal_collection
 
 router = APIRouter(tags=["status"])
@@ -99,18 +100,7 @@ def build_public_status(hours: int = 24) -> dict[str, Any]:
             or 0
         )
         anomaly_type = IntelEventDB.meta["anomaly_type"].as_string()
-        legacy_gap_context = (
-            db.query(func.count(IntelEventDB.id))
-            .filter(
-                IntelEventDB.received_at >= cutoff,
-                IntelEventDB.type == "ais_anomaly",
-                IntelEventDB.source == "ais",
-                IntelEventDB.id.like("aisanom:%"),
-                anomaly_type == "gap",
-            )
-            .scalar()
-            or 0
-        )
+        legacy_gap_context = count_legacy_ais_gap_context(db, cutoff)
         derived_total = max(0, int(derived_total_raw) - int(legacy_gap_context))
         episodes_total = (
             db.query(func.count(MaritimeEpisodeDB.episode_id))

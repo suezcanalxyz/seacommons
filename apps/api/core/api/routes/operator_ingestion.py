@@ -34,6 +34,7 @@ from core.db.models import (
     VesselBehaviouralBaselineDB,
 )
 from core.db.session import session_scope
+from core.intel.legacy_gap_metrics import count_legacy_ais_gap_context
 from core.api.routes.operator_pipeline import (
     event_chain_id,
     hypothesis_semantics,
@@ -358,16 +359,7 @@ def _overview_payload(hours: int) -> dict[str, Any]:
                 ),
             ).scalar() or 0
         )
-        legacy_ais_gap_context = int(
-            db.query(func.count(IntelEventDB.id))
-            .filter(
-                IntelEventDB.received_at >= cutoff,
-                IntelEventDB.type == "ais_anomaly",
-                IntelEventDB.source == "ais",
-                IntelEventDB.id.like("aisanom:%"),
-                anomaly_type == "gap",
-            ).scalar() or 0
-        )
+        legacy_ais_gap_context = count_legacy_ais_gap_context(db, cutoff)
         derived_cues = max(0, derived_cues_raw - legacy_ais_gap_context)
         corroborated_episodes = int(
             db.query(func.count(MaritimeEpisodeDB.episode_id))
@@ -699,18 +691,7 @@ def operator_pipeline_funnel(
             .scalar()
             or 0
         )
-        legacy_gap_context = int(
-            db.query(func.count(IntelEventDB.id))
-            .filter(
-                IntelEventDB.received_at >= cutoff,
-                IntelEventDB.type == "ais_anomaly",
-                IntelEventDB.source == "ais",
-                IntelEventDB.id.like("aisanom:%"),
-                anomaly_type == "gap",
-            )
-            .scalar()
-            or 0
-        )
+        legacy_gap_context = count_legacy_ais_gap_context(db, cutoff)
         derived_total = max(0, derived_total_raw - legacy_gap_context)
         episodes_total = int(
             db.query(func.count(MaritimeEpisodeDB.episode_id))
@@ -1036,17 +1017,7 @@ def _overall_payload() -> dict[str, Any]:
             .scalar()
             or 0
         )
-        legacy_gap_context = int(
-            db.query(func.count(IntelEventDB.id))
-            .filter(
-                IntelEventDB.type == "ais_anomaly",
-                IntelEventDB.source == "ais",
-                IntelEventDB.id.like("aisanom:%"),
-                anomaly_type == "gap",
-            )
-            .scalar()
-            or 0
-        )
+        legacy_gap_context = count_legacy_ais_gap_context(db)
         derived_total = max(0, derived_total_raw - legacy_gap_context)
 
         episodes_total = int(
