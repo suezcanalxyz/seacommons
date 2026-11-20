@@ -4373,7 +4373,7 @@ function App() {
 
             {(liveToolTab === 'cases' || liveToolTab === 'vessels') && <div className="live-feed-panel__search">
               <VesselCaseSearch cases={intelEvents.map((feature) => ({ ...feature.properties, feature }))} onSelect={(record) => openIntelReport(record.feature)} />
-            </div>
+            </div>}
             {liveToolTab === 'cases' && <div className="live-feed-panel__body">
               <IntelDashboard
                 apiBase={apiBase}
