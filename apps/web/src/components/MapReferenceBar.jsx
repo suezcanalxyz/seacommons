@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { EVENT_VISUAL_CATEGORIES } from '../features/intel/categories.js';
 
 const PANELS = {
   legend: {
@@ -21,7 +22,7 @@ const PANELS = {
     sections: [
       ['Open a case', 'Select a map symbol or select a case from the left-hand feed. The dossier shows its sources, observations and limits.'],
       ['Search for a vessel', 'Use the name, IMO or MMSI search at the top of the left panel. Results depend on indexed cases, not every vessel worldwide.'],
-      ['Change the background', 'Use Map / Satellite in the lower-left corner, beside the feed. Map shows bathymetry; Satellite shows a high-resolution imagery mosaic.'],
+      ['Change the background', 'Use the lower-left Map / Satellite selector. Bathymetry maps the seafloor; Satellite is a high-resolution mosaic whose images have different acquisition dates. Recent Sentinel and NASA observations are separate time-stamped datasets.'],
       ['Read timestamps', 'LIVE reports the most recent available evidence, not necessarily a current vessel position. PLAY shows historical records at the selected cutoff.'],
       ['Separate evidence from estimates', 'A radio report, AIS fix, forecast, satellite scene and inferred event are different kinds of information.'],
     ],
@@ -59,6 +60,18 @@ export default function MapReferenceBar({ context = 'live' }) {
           <button type="button" aria-label="Close reference panel" onClick={() => setActive(null)}>×</button>
         </header>
         <div className="sc-reference-dialog__content">
+          {active === 'legend' && <>
+            <section className="sc-reference-colours" aria-label="LIVE case colours">
+              <h3>LIVE case colours</h3>
+              <p>Colours indicate the type of case, not its severity or independent verification.</p>
+              <div className="sc-reference-colours__grid">
+                {EVENT_VISUAL_CATEGORIES.filter(({ key }) => !['resolved', 'archived', 'needs_review'].includes(key)).map(({ key, color, label }) =>
+                  <div className="sc-reference-colours__item" key={key}><span aria-hidden="true" className="sc-reference-colours__swatch" style={{ backgroundColor: color }} /><span>{label}</span></div>
+                )}
+              </div>
+            </section>
+            <section><h3>Evidence status is separate</h3><p>Resolution, verification and source independence appear in each case dossier. A red marker is not automatically a confirmed distress event.</p></section>
+          </>}
           {PANELS[active].sections.map(([heading, body]) =>
             <section key={heading}><h3>{heading}</h3><p>{body}</p></section>
           )}
