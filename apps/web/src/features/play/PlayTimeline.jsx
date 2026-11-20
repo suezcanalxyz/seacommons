@@ -5,6 +5,7 @@ import { isPublicCaseEligible } from '../live/publicCaseEligibility.js';
 import { addMovementLabels } from '../map/movementLabels.js';
 import VesselCaseSearch from '../../components/VesselCaseSearch.jsx';
 import MapBasemapSwitch from '../../components/MapBasemapSwitch.jsx';
+import MapReferenceBar from '../../components/MapReferenceBar.jsx';
 import { liveMovementEndpoints, liveMovementMapFeatures } from '../live/movementEndpoints.js';
 import { playIncidentColor } from './incidentPalette.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -1146,29 +1147,13 @@ export default function PlayTimeline({ apiBase }) {
           {filteredIncidents.length > displayedCases.length ? <button type="button" className="play-case-load-more" onClick={() => setVisibleCaseLimit((limit) => limit + 80)}>Show 80 more cases · {displayedCases.length} of {filteredIncidents.length} loaded</button> : null}
           {!filteredIncidents.length && !archiveLoading ? <div className="play-empty">{archiveFilter === 'attacks' ? 'No explicitly classified attacks in the public archive for this selection. An AIS gap or an unverified report is not evidence of an attack.' : 'No incidents at this time.'}</div> : null}
         </div>
+        <MapReferenceBar context="play" />
       </aside>
 
       <section className="map-stage play-map-stage">
         <div className="map-frame play-map" ref={mapNodeRef} />
         <MapBasemapSwitch mode={satelliteVisible ? 'satellite' : 'standard'}
           onChange={(mode) => setImageryMode(mode === 'satellite' ? 'recent' : 'composite')} />
-        <div className="play-cartographic-legend" aria-label="Map symbols and evidence legend">
-          <strong>MAP KEY</strong>
-          <span><i className="play-key-vessel" /> Vessel · heading observed</span>
-          <span><i className="play-key-point" /> Incident / unknown heading</span>
-          <span><i className="play-key-humanitarian" /> Humanitarian</span>
-          <span><i className="play-key-maritime" /> Maritime context</span>
-          <span><i className="play-key-integrity" /> Position integrity</span>
-          <span><i className="play-key-ais-gap" /> AIS reporting gap</span>
-          <span><i className="play-key-attack" /> Attack · crosshair overlay</span>
-          <span className="play-cluster-scale" aria-label="Cluster sizes by grouped point count">
-            {PLAY_CLUSTER_BANDS.map(({ label, color }) => <React.Fragment key={label}><i style={{ backgroundColor: color }} />{label} </React.Fragment>)}grouped points
-          </span>
-          <span><i className="play-key-track" /> Observed AIS track</span>
-          <span><i className="play-key-drift" /> AIS gap: dashed, unobserved; orange last fix, green reappearance</span>
-          <span><i className="play-key-model" /> Drift / estimated area (modelled)</span>
-          <small>Triangles show reported course only. Circles do not imply direction. Single-point colors indicate category; cluster colors and sizes indicate grouped point count, not severity or verification. Clusters split on zoom. Dashed AIS gap connections are unobserved, not confirmed tracks.</small>
-        </div>
         <div className="play-all-badge"><strong>{modeLabel}</strong><span>{mappedIncidentCount} mapped / {filteredIncidents.length} filtered · {incidents.length} loaded{archiveTotal != null ? ` / ${archiveTotal} archive` : ''}</span></div>
         {error ? <div className="play-map-message is-error">{error}</div> : null}
         {mapError ? <div className="play-map-message is-error">{mapError}</div> : null}
@@ -1203,7 +1188,7 @@ export default function PlayTimeline({ apiBase }) {
       {selectedId && <aside className="cone-panel cone-panel--intel play-evidence is-open">
         <div className="play-sheet-handle" />
         <ReportPanelHeader kicker="Historical report" title="Case dossier" onClose={() => setSelectedId('')}>
-          <button type="button" className="play-report-trigger" disabled={!selectedIncident || timelineLoading} onClick={() => setReportOpen(true)}>Report ↗</button>
+
         </ReportPanelHeader>
         <div className="play-evidence__scroll" aria-busy={Boolean(timelineLoading)}>
           {timelineLoading && <p className="play-dossier-progress" role="status">Loading case evidence…</p>}
