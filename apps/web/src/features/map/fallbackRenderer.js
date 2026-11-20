@@ -1,5 +1,8 @@
 import {
   PUBLIC_BASEMAP_LABEL_URL,
+  SATELLITE_BASEMAP_LABEL_URL,
+  CARTO_LABEL_NATIVE_MAX_ZOOM,
+  CARTO_LABEL_MIN_ZOOM,
   PUBLIC_BASEMAP_TILE_URL,
   PUBLIC_BASEMAP_ATTRIBUTION,
   PUBLIC_BASEMAP_NATIVE_MAX_ZOOM,
@@ -133,7 +136,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
   if (!leaflet) await import('leaflet/dist/leaflet.css');
   const module = leaflet || await import('leaflet');
   const L = module.default || module;
-  const map = L.map(container, { zoomControl: false, attributionControl: false, preferCanvas: true });
+  const map = L.map(container, { zoomControl: false, attributionControl: true, preferCanvas: true });
   map.setView([Number(center[1]), Number(center[0])], zoom);
   map.on?.('click', (event) => { if (!event.originalEvent?.target?.closest?.('.leaflet-interactive, .leaflet-marker-icon')) onBackgroundClick?.(); });
   // Incident geometry must remain a real DOM target for keyboard/pointer
@@ -147,7 +150,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
   let satelliteUrl;
   let activeTiles = standardTiles;
   if (PUBLIC_BASEMAP_LABEL_URL) {
-    L.tileLayer(PUBLIC_BASEMAP_LABEL_URL, { ...retinaTiles, opacity: 0.9 }).addTo(map);
+    L.tileLayer(PUBLIC_BASEMAP_LABEL_URL, { ...retinaTiles, detectRetina: false, minZoom: CARTO_LABEL_MIN_ZOOM, maxNativeZoom: CARTO_LABEL_NATIVE_MAX_ZOOM, opacity: 0.9, attribution: '© CARTO · © OpenStreetMap contributors' }).addTo(map);
   }
   L.tileLayer(PUBLIC_SEAMARK_TILE_URL, { detectRetina: true, maxZoom: 19, maxNativeZoom: 18, opacity: 0.95, crossOrigin: true }).addTo(map);
   const driftsLayer = L.layerGroup().addTo(map);
@@ -166,10 +169,13 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
           ...retinaTiles, maxNativeZoom: 19, zIndex: 1, attribution: 'Esri or NASA EOSDIS GIBS',
         });
         satelliteUrl = imageryUrl;
-        satelliteLabelTiles = L.tileLayer('https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png', {
-          ...retinaTiles, maxNativeZoom: 19, opacity: .92, zIndex: 3,
-          attribution: '© CARTO, © OpenStreetMap contributors',
-        });
+        if (SATELLITE_BASEMAP_LABEL_URL) {
+          satelliteLabelTiles = L.tileLayer(SATELLITE_BASEMAP_LABEL_URL, {
+            ...retinaTiles, detectRetina: false, minZoom: CARTO_LABEL_MIN_ZOOM,
+            maxNativeZoom: CARTO_LABEL_NATIVE_MAX_ZOOM, opacity: .92, zIndex: 3,
+            attribution: '© CARTO · © OpenStreetMap contributors',
+          });
+        }
       }
       const nextTiles = mode === 'satellite' ? satelliteTiles : standardTiles;
       if (mode === 'satellite' && imageryUrl !== satelliteUrl) {
