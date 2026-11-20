@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import os
 from threading import Lock, Thread
 from time import monotonic
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -1017,12 +1017,15 @@ def play_counts():
 def play_incidents(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    domain: Literal["humanitarian", "maritime"] | None = None,
 ):
     from core.db.models import IncidentTransitionDB
     from core.db.session import session_scope
 
     now = datetime.now(timezone.utc)
     combined = _get_play_catalog()
+    if domain is not None:
+        combined = [item for item in combined if item.get("domain") == domain]
     page = [dict(item) for item in combined[offset:offset + limit]]
 
     page_human_ids = [item["incident_id"] for item in page if item.get("domain") == "humanitarian"]

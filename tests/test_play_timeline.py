@@ -578,3 +578,24 @@ def test_play_catalog_collapses_near_simultaneous_alarm_phone_translation():
     ids = [row["incident_id"] for row in response.json()["incidents"]]
     assert older in ids
     assert newer not in ids
+
+
+def test_play_domain_filter_applies_before_pagination(monkeypatch):
+    from core.api.routes import play
+
+    monkeypatch.setattr(play, "_get_play_catalog", lambda: [
+        {"incident_id": "maritime-1", "domain": "maritime"},
+        {"incident_id": "humanitarian-1", "domain": "humanitarian"},
+        {"incident_id": "maritime-2", "domain": "maritime"},
+        {"incident_id": "humanitarian-2", "domain": "humanitarian"},
+    ])
+    with TestClient(app) as client:
+        response = client.get("/api/v1/play/incidents?domain=humanitarian&limit=1")
+        assert response.status_code == 200
+        page = response.json()
+        assert [row["incident_id"] for row in page["incidents"]] == ["humanitarian-1"]
+        assert page["total_count"] == 2
+        assert page["next_offset"] == 1
+        second = client.get("/api/v1/play/incidents?domain=humanitarian&limit=1&offset=1").json()
+        assert [row["incident_id"] for row in second["incidents"]] == ["humanitarian-2"]
+        assert second["next_offset"] is None

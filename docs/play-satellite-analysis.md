@@ -41,3 +41,19 @@ python3 scripts/play_satellite_analysis.py benchmark \
 ```
 
 The 800 × 686 pixel test subset produced six unreviewed returns without a water mask. This checks the read, analysis and export path on real SAR pixels. No vessel labels were available for this scene, so it does not measure detector precision or recall.
+
+## Humanitarian history
+
+Export the public PLAY humanitarian catalog to a SQLite snapshot. The exporter
+includes reports older than 24 hours, their public status transitions, and links
+to their source dossiers. Use one `--satellite-case` option per incident whose
+Sentinel-1 products you want to index.
+
+```sh
+python scripts/export_humanitarian_archive.py humanitarian.sqlite --satellite-case 09514982
+```
+
+`humanitarian_cases` and `status_history` preserve the public case IDs.
+`satellite_scenes` indexes scene metadata for the selected subset, with the
+requested case IDs recorded in `archive_metadata`. A scene index is a starting
+point for the radar review workflow. It does not assert a vessel sighting.
