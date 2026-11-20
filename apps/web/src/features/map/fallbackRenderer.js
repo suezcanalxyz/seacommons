@@ -140,7 +140,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
   // interaction and accessibility even when the map prefers Canvas globally.
   const incidentRenderer = typeof L.svg === 'function' ? L.svg({ padding: 0.5 }) : undefined;
   const retinaTiles = { detectRetina: true, maxZoom: 19, maxNativeZoom: 16, crossOrigin: true };
-  const standardTiles = L.tileLayer(PUBLIC_BASEMAP_TILE_URL, { ...retinaTiles, maxNativeZoom: PUBLIC_BASEMAP_NATIVE_MAX_ZOOM, attribution: PUBLIC_BASEMAP_ATTRIBUTION }).addTo(map);
+  const standardTiles = L.tileLayer(PUBLIC_BASEMAP_TILE_URL, { ...retinaTiles, maxNativeZoom: PUBLIC_BASEMAP_NATIVE_MAX_ZOOM, attribution: PUBLIC_BASEMAP_ATTRIBUTION, className: 'seacommons-bathymetry-raster' }).addTo(map);
   let satelliteTiles;
   let satelliteLabelTiles;
   let satelliteLabelsVisible = false;
