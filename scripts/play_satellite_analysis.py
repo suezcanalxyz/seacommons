@@ -116,6 +116,62 @@ def nearby_ais_fixes(timeline, acquired_at, lon, lat):
     return sorted(matches, key=lambda fix: fix["distance_m"])
 
 
+def rasterize_land_mask(dataset, path):
+    """Rasterize clipped land polygons onto the exact input radar grid."""
+    from osgeo import gdal, ogr, osr
+
+    vector_path = str(Path(path).resolve())
+    if vector_path.lower().endswith(".zip"):
+        vector_path = f"/vsizip/{vector_path}"
+    vector = gdal.OpenEx(vector_path, gdal.OF_VECTOR)
+    layer = vector.GetLayer(0)
+    land_crs = layer.GetSpatialRef()
+    if land_crs is None:
+        raise ValueError("Expected land polygons with a declared CRS")
+    radar_crs = dataset.GetSpatialRef()
+    for crs in (land_crs, radar_crs):
+        crs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    to_land = osr.CoordinateTransformation(radar_crs, land_crs)
+    to_radar = osr.CoordinateTransformation(land_crs, radar_crs)
+    width, height = dataset.RasterXSize, dataset.RasterYSize
+    affine = dataset.GetGeoTransform()
+    # Sample the edges rather than just the corners when projecting the bounds.
+    points = []
+    for step in range(21):
+        col, row = width * step / 20, height * step / 20
+        for x, y in ((col, 0), (col, height), (0, row), (width, row)):
+            points.append(to_land.TransformPoint(*gdal.ApplyGeoTransform(affine, x, y)))
+    west, east = min(p[0] for p in points), max(p[0] for p in points)
+    south, north = min(p[1] for p in points), max(p[1] for p in points)
+    if land_crs.IsGeographic() and east - west > 180:
+        raise ValueError("Subset the radar scene to one side of the antimeridian")
+    clip = ogr.CreateGeometryFromWkt(
+        f"POLYGON (({west} {south}, {east} {south}, {east} {north}, "
+        f"{west} {north}, {west} {south}))"
+    )
+    layer.SetSpatialFilter(clip)
+    memory = ogr.GetDriverByName("Memory").CreateDataSource("")
+    local = memory.CreateLayer("land", radar_crs)
+    for row in layer:
+        geometry = row.GetGeometryRef()
+        if geometry is None:
+            continue
+        clipped = geometry.Intersection(clip)
+        if clipped.IsEmpty():
+            continue
+        clipped.Transform(to_radar)
+        feature = ogr.Feature(local.GetLayerDefn())
+        feature.SetGeometry(clipped)
+        local.CreateFeature(feature)
+    mask = gdal.GetDriverByName("MEM").Create("", width, height, 1, gdal.GDT_Byte)
+    mask.SetGeoTransform(affine)
+    mask.SetSpatialRef(radar_crs)
+    band = mask.GetRasterBand(1)
+    band.Fill(1)
+    gdal.RasterizeLayer(mask, [1], local, burn_values=[0])
+    return band.ReadAsArray() == 1
+
+
 def analyze(args):
     import numpy as np
     from PIL import Image
@@ -163,6 +219,8 @@ def analyze(args):
 
     valid = np.isfinite(values)
     water_mask = getattr(args, "water_mask", None)
+    land_polygons = getattr(args, "land_polygons", None)
+    water_source = water_mask or land_polygons
     if water_mask:
         water = gdal.Open(water_mask, gdal.GA_ReadOnly)
         if (water.RasterCount != 1 or water.RasterXSize != dataset.RasterXSize
@@ -173,15 +231,15 @@ def analyze(args):
             raise ValueError("The water mask must have the same CRS, extent and pixel grid as the radar raster")
         mask_band = water.GetRasterBand(1)
         valid &= (mask_band.ReadAsArray() == 1) & (mask_band.GetMaskBand().ReadAsArray() != 0)
-        # Suppress land-adjacent targets and keep land out of the background estimate.
-        ocean_interior = minimum_filter(valid, size=9, mode="constant")
-    else:
-        ocean_interior = valid
+    elif land_polygons:
+        valid &= rasterize_land_mask(dataset, land_polygons)
     if args.scale == "linear":
         valid &= values > 0
         values[valid] = 10 * np.log10(values[valid])
     if not valid.any():
-        raise ValueError("The raster contains no valid backscatter")
+        raise ValueError("The selected review area contains no valid backscatter")
+    # Keep land out of the background estimate and exclude mask-edge peaks.
+    ocean_interior = minimum_filter(valid, size=9, mode="constant") if water_source else valid
     data = np.where(valid, values, 0.0)
 
     # Estimate the local background in a square ring, excluding nearby target pixels.
@@ -251,8 +309,9 @@ def analyze(args):
         "scene": scene,
         "analysis": {"method": "local_backscatter_outlier_v2", "threshold": args.threshold,
                      "minimum_local_contrast_db": 5,
-                     "water_mask_applied": bool(water_mask),
-                     "review_status": "needs_human_review" if water_mask else "needs_water_mask_and_human_review",
+                     "water_mask_applied": bool(water_source),
+                     "water_mask_source": Path(water_source).name if water_source else None,
+                     "review_status": "needs_human_review" if water_source else "needs_water_mask_and_human_review",
                      "source_review_window_seconds": 3600, "source_review_radius_m": 5000,
                      "input_scale": args.scale, "candidate_limit": args.max_candidates,
                      "preview_stretch_db": [float(low), float(high)],
@@ -280,7 +339,9 @@ def main():
         command.add_argument("raster")
         command.add_argument("output")
         command.add_argument("--scale", choices=["linear", "db"], required=True)
-        command.add_argument("--water-mask", help="Aligned single-band GeoTIFF, with 1 for water")
+        masks = command.add_mutually_exclusive_group()
+        masks.add_argument("--water-mask", help="Aligned single-band GeoTIFF, with 1 for water")
+        masks.add_argument("--land-polygons", help="Land vector file or zipped shapefile to rasterize")
         command.add_argument("--threshold", type=float, default=5)
         command.add_argument("--max-candidates", type=int, default=30)
     args = parser.parse_args()

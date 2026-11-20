@@ -76,3 +76,45 @@ object class. It does not assign a vessel identity or confirm an incident.
 The summary reports pending and inconclusive returns separately. The vessel
 share among resolved reviews is descriptive and is not recall or a validation
 of all unreviewed detections.
+
+## Run the historical pilot
+
+A pilot manifest is a JSON list with one entry per radar input. Each entry has
+`product`, `raster` (relative to the manifest or absolute), and `scale` (`linear`
+or `db`). Include `case_id` for a product from a PLAY dossier. Omit it for an
+independent Sentinel‑1 RTC sensor benchmark. The pilot rasterizes a land vector
+file or zipped shapefile directly onto each radar grid.
+
+```sh
+python scripts/run_satellite_pilot.py manifest.json land.zip pilot-output
+```
+
+The pilot writes one folder per scene with a GeoJSON, GeoTIFF crops and PNG
+previews. A combined `review.csv` is written after all scenes finish. Use a new
+output directory when comparing runs. Reviewers can add a decision and a
+reference to the primary source for each candidate.
+
+### Lampedusa coastal run
+
+Five June 2024 Sentinel‑1 RTC VV subsets were processed on the same coastal
+window using Natural Earth land polygons and the same detector settings.
+
+| Date (UTC) | Returns after masking |
+|---|---:|
+| 4 June 2024 | 2 |
+| 10 June 2024 | 1 |
+| 15 June 2024 | 1 |
+| 16 June 2024 | 4 |
+| 22 June 2024 | 1 |
+
+On 22 June, the mask removed five land returns from the six produced by the
+unmasked run. The remaining return retains its original peak pixel and
+candidate ID. This run validates the coastal filter and batch exports. The
+scenes lack a complete independent vessel inventory, so they cannot establish
+recall or vessel identities.
+
+Before running on a schedule, evaluate on a held-out set with reviewed boat
+and non-boat examples. Record detections matched to labels, missed boats and
+false positives per scene, with results split by coastal and offshore settings.
+For humanitarian cases, preserve the acquisition time and compare it with
+independent, time-compatible sources before attributing a return to a case.
