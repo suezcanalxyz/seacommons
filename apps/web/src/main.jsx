@@ -3917,7 +3917,7 @@ function App() {
         {!play3D && isPublicLiveHost ? (
           <MapBasemapSwitch mode={baseMap} onChange={(mode) => { setPlay3D(false); setBaseMap(mode); }} />
         ) : null}
-        {!play3D ? <Legend publicLive={isPublicLiveHost} /> : null}
+        {!play3D && !isPublicLiveHost ? <Legend publicLive={false} /> : null}
         {!play3D && !isPublicLiveHost ? (
           <AlertRail
             intelEvents={intelEvents}
