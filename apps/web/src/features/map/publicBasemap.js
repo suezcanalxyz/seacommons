@@ -1,5 +1,9 @@
-export const PUBLIC_BASEMAP_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-export const PUBLIC_BASEMAP_LABEL_URL = '';
+// Official EMODnet WMTS, globally covered (data detail varies by survey region).
+// No API key. Native 0–15 Web Mercator tiles; do not imply daily seafloor updates.
+export const PUBLIC_BASEMAP_TILE_URL = 'https://tiles.emodnet-bathymetry.eu/latest/mean_atlas_land/web_mercator/{z}/{x}/{y}.png';
+export const PUBLIC_BASEMAP_NATIVE_MAX_ZOOM = 15;
+export const PUBLIC_BASEMAP_ATTRIBUTION = '© EMODnet Bathymetry (European Marine Observation and Data Network)';
+export const PUBLIC_BASEMAP_LABEL_URL = 'https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png';
 export const PUBLIC_SEAMARK_TILE_URL = 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png';
 
 export function publicBasemapSource() {
@@ -7,8 +11,8 @@ export function publicBasemapSource() {
     type: 'raster',
     tiles: [PUBLIC_BASEMAP_TILE_URL],
     tileSize: 256,
-    maxzoom: 19,
-    attribution: '© OpenStreetMap contributors',
+    maxzoom: PUBLIC_BASEMAP_NATIVE_MAX_ZOOM,
+    attribution: PUBLIC_BASEMAP_ATTRIBUTION,
   };
 }
 
