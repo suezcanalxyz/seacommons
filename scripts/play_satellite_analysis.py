@@ -10,6 +10,7 @@ from urllib.parse import quote
 from urllib.request import urlopen
 
 PLAY_API = "https://play.seacommons.org/api/v1/play"
+RTC_COLLECTION = "https://planetarycomputer.microsoft.com/api/stac/v1/collections/sentinel-1-rtc/items"
 
 
 def utc(value):
@@ -51,6 +52,43 @@ def scenes(case_id, timeline):
     ))
 
 
+def distance_m(lon, lat, other_lon, other_lat):
+    haversine = math.sin(math.radians(other_lat - lat) / 2) ** 2 + (
+        math.cos(math.radians(lat)) * math.cos(math.radians(other_lat))
+        * math.sin(math.radians(other_lon - lon) / 2) ** 2
+    )
+    return 12_742_000 * math.asin(math.sqrt(min(haversine, 1)))
+
+
+def nearby_case_sources(timeline, acquired_at, lon, lat):
+    """Find public case records with their own times and point geometry."""
+    acquired = utc(acquired_at)
+    matches = []
+    for item in timeline.get("timeline", []):
+        if item.get("type") not in {"radio", "radio_observation", "report", "update"}:
+            continue
+        geometry = item.get("geometry") or {}
+        if geometry.get("type") != "Point":
+            continue
+        try:
+            delta = (utc(item["at"]) - acquired).total_seconds()
+            other_lon, other_lat = map(float, geometry["coordinates"][:2])
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+        if abs(delta) > 3600 or not (-180 <= other_lon <= 180 and -90 <= other_lat <= 90):
+            continue
+        metres = distance_m(lon, lat, other_lon, other_lat)
+        if metres <= 5_000:
+            props = item.get("properties") or {}
+            matches.append({
+                "id": item.get("id"), "type": item["type"], "source": item.get("source"),
+                "at": item["at"], "time_offset_seconds": delta, "distance_m": round(metres, 1),
+                "source_url": props.get("source_url") or props.get("url"),
+                "recorded_association": props.get("match_status"),
+            })
+    return sorted(matches, key=lambda item: abs(item["time_offset_seconds"]))[:12]
+
+
 def nearby_ais_fixes(timeline, acquired_at, lon, lat):
     """Return nearby published observations as review context without inferring identity."""
     acquired = utc(acquired_at)
@@ -65,11 +103,7 @@ def nearby_ais_fixes(timeline, acquired_at, lon, lat):
                 continue
             if abs(delta) > 300 or not (-90 <= fix_lat <= 90 and -180 <= fix_lon <= 180):
                 continue
-            haversine = math.sin(math.radians(fix_lat - lat) / 2) ** 2 + (
-                math.cos(math.radians(lat)) * math.cos(math.radians(fix_lat))
-                * math.sin(math.radians(fix_lon - lon) / 2) ** 2
-            )
-            metres = 12_742_000 * math.asin(math.sqrt(min(haversine, 1)))
+            metres = distance_m(lon, lat, fix_lon, fix_lat)
             if metres > 1_000:
                 continue
             rank = (metres, abs(delta))
@@ -86,12 +120,25 @@ def analyze(args):
     import numpy as np
     from PIL import Image
     from osgeo import gdal, osr
-    from scipy.ndimage import label, maximum_position, uniform_filter
+    from scipy.ndimage import label, maximum_position, minimum_filter, uniform_filter
 
-    timeline = case_timeline(args.case_id)
-    scene = next((record for record in scenes(args.case_id, timeline) if record["product_id"] == args.product), None)
-    if scene is None:
-        raise ValueError("The selected Sentinel-1 product is missing from the historical PLAY case")
+    if args.case_id:
+        timeline = case_timeline(args.case_id)
+        scene = next((record for record in scenes(args.case_id, timeline) if record["product_id"] == args.product), None)
+        if scene is None:
+            raise ValueError("The selected Sentinel-1 product is missing from the historical PLAY case")
+    else:
+        url = f"{RTC_COLLECTION}/{quote(args.product, safe='')}"
+        with urlopen(url, timeout=25) as response:
+            item = json.load(response)
+        if item.get("id") != args.product or item.get("collection") != "sentinel-1-rtc":
+            raise ValueError("Expected an exact Sentinel-1 RTC catalog item")
+        timeline = {}
+        scene = {
+            "incident_id": None, "product_id": item["id"],
+            "acquired_at": item["properties"]["datetime"],
+            "source_url": url, "purpose": "historical_sensor_validation",
+        }
     gdal.UseExceptions()
     dataset = gdal.Open(args.raster, gdal.GA_ReadOnly)
     source_crs = dataset.GetSpatialRef()
@@ -115,6 +162,21 @@ def analyze(args):
         return [longitude, latitude]
 
     valid = np.isfinite(values)
+    water_mask = getattr(args, "water_mask", None)
+    if water_mask:
+        water = gdal.Open(water_mask, gdal.GA_ReadOnly)
+        if (water.RasterCount != 1 or water.RasterXSize != dataset.RasterXSize
+                or water.RasterYSize != dataset.RasterYSize
+                or water.GetGeoTransform(can_return_null=True) != affine
+                or water.GetSpatialRef() is None
+                or not bool(water.GetSpatialRef().IsSame(dataset.GetSpatialRef()))):
+            raise ValueError("The water mask must have the same CRS, extent and pixel grid as the radar raster")
+        mask_band = water.GetRasterBand(1)
+        valid &= (mask_band.ReadAsArray() == 1) & (mask_band.GetMaskBand().ReadAsArray() != 0)
+        # Suppress land-adjacent targets and keep land out of the background estimate.
+        ocean_interior = minimum_filter(valid, size=9, mode="constant")
+    else:
+        ocean_interior = valid
     if args.scale == "linear":
         valid &= values > 0
         values[valid] = 10 * np.log10(values[valid])
@@ -133,7 +195,7 @@ def analyze(args):
     mean = ring_sum(data) / divisor
     variance = np.maximum(ring_sum(data**2) / divisor - mean**2, 0)
     score = (data - mean) / np.maximum(np.sqrt(variance), 1)
-    mask = valid & (neighbours >= 0.8 * (31**2 - 9**2)) & (score >= args.threshold)
+    mask = ocean_interior & valid & (neighbours >= 0.8 * (31**2 - 9**2)) & (score >= args.threshold) & ((data - mean) >= 5)
     groups, group_count = label(mask, structure=np.ones((3, 3)))
     ids = np.arange(1, group_count + 1)
     areas = np.bincount(groups.ravel(), minlength=group_count + 1)[1:]
@@ -165,9 +227,11 @@ def analyze(args):
                 "status": "unreviewed_radar_return",
                 "identity": None,
                 "local_contrast_score": round(float(score[row, col]), 2),
+                "peak_above_background_db": round(float(data[row, col] - mean[row, col]), 2),
                 "preview": image,
                 "preview_corners": corners,
                 "geotiff": crop_path,
+                "nearby_published_case_sources": nearby_case_sources(timeline, scene["acquired_at"], lon, lat),
                 "nearby_published_ais_fixes": nearby_ais_fixes(timeline, scene["acquired_at"], lon, lat),
             },
         })
@@ -176,7 +240,11 @@ def analyze(args):
     result = {
         "type": "FeatureCollection",
         "scene": scene,
-        "analysis": {"method": "local_backscatter_outlier_v1", "threshold": args.threshold,
+        "analysis": {"method": "local_backscatter_outlier_v2", "threshold": args.threshold,
+                     "minimum_local_contrast_db": 5,
+                     "water_mask_applied": bool(water_mask),
+                     "review_status": "needs_human_review" if water_mask else "needs_water_mask_and_human_review",
+                     "source_review_window_seconds": 3600, "source_review_radius_m": 5000,
                      "input_scale": args.scale, "candidate_limit": args.max_candidates,
                      "input_raster_sha256": raster_hash,
                      "product_attribution": "operator_supplied_raster",
@@ -195,12 +263,16 @@ def main():
     discover.add_argument("case_id", nargs="+")
     detect = commands.add_parser("detect", help="Review a prepared, single-band Sentinel-1 GeoTIFF")
     detect.add_argument("case_id")
-    detect.add_argument("product")
-    detect.add_argument("raster")
-    detect.add_argument("output")
-    detect.add_argument("--scale", choices=["linear", "db"], required=True)
-    detect.add_argument("--threshold", type=float, default=5)
-    detect.add_argument("--max-candidates", type=int, default=30)
+    benchmark = commands.add_parser("benchmark", help="Validate on an RTC scene without creating a case")
+    benchmark.set_defaults(case_id=None)
+    for command in (detect, benchmark):
+        command.add_argument("product")
+        command.add_argument("raster")
+        command.add_argument("output")
+        command.add_argument("--scale", choices=["linear", "db"], required=True)
+        command.add_argument("--water-mask", help="Aligned single-band GeoTIFF, with 1 for water")
+        command.add_argument("--threshold", type=float, default=5)
+        command.add_argument("--max-candidates", type=int, default=30)
     args = parser.parse_args()
     if args.command == "scenes":
         print(json.dumps([record for case_id in args.case_id for record in scenes(case_id, case_timeline(case_id))], indent=2))
