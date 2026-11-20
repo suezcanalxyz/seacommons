@@ -8,6 +8,7 @@ import { addMovementLabels } from './features/map/movementLabels.js';
 import VesselCaseSearch from './components/VesselCaseSearch.jsx';
 import MapBasemapSwitch from './components/MapBasemapSwitch.jsx';
 import MapReferenceBar from './components/MapReferenceBar.jsx';
+import IntelligencePanelTabs from './components/IntelligencePanelTabs.jsx';
 import { aisUtcTimestamp, latestLiveAisFix, liveMovementMapFeatures, selectedLiveMovementEndpoints } from './features/live/movementEndpoints.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -626,6 +627,7 @@ function observedTrackCourse(points) {
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(() => isPublicLiveHost && !window.matchMedia('(max-width: 680px)').matches);
+  const [liveToolTab, setLiveToolTab] = useState('cases');
   const [activePanel, setActivePanel] = useState(
     isPublicLiveHost ? 'osint' : APP_PROFILE === 'demo' ? 'sim' : 'live',
   );
@@ -3899,7 +3901,7 @@ function App() {
           </div>
         </div>
 
-        {!play3D ? (
+        {!play3D && !isPublicLiveHost ? (
           <LayerToggles
             visibility={layerVis}
             onToggle={toggleLayerGroup}
@@ -4168,6 +4170,9 @@ function App() {
                 </div>
                 <button type="button" onClick={() => setSidebarOpen(false)} aria-label="Collapse live feed">−</button>
               </div>
+              <IntelligencePanelTabs label="Live intelligence sections" value={liveToolTab} onChange={setLiveToolTab}
+                options={[{ id: 'cases', label: 'Cases', count: intelEvents.length }, { id: 'radio', label: 'Radio', count: receiverMesh.fresh ? receiverMesh.active : undefined }, { id: 'vessels', label: 'Vessels' }, { id: 'layers', label: 'Layers' }]} />
+              {liveToolTab === 'cases' && <>
               <div className="signals-selector">
                 <div className="signals-selector__row">
                   <span className="signals-selector__label">Investigations</span>
@@ -4316,10 +4321,10 @@ function App() {
                 <span />
                 Approved collectors remain active when this map is closed.
               </p>
-
+              </>}
             </header>
 
-            <details className="live-radio-panel">
+            {liveToolTab === 'radio' && <details className="live-radio-panel" open>
               <summary>Radio · {receiverMesh.fresh ? (receiverMesh.active || 0) : 'status unavailable'} connected · {networkMarkers.filter((feature) => feature.properties.active).length} active map stations · {networkMarkers.length} total markers</summary>
               {receiverMesh.fresh && (receiverMesh.active || 0) > 0 && receiverMarkers.length === 0 && (
                 <p role="status" className="live-radio-panel__regional-gap">
@@ -4364,12 +4369,12 @@ function App() {
                 }}>{String(row.kind).toUpperCase()} · {row.category || row.subject_id || 'Message'}
                   {row.kind === 'dsc' && !radioMessageMarkers.some((marker) => marker.properties.observation_id === row.observation_id) ? ' · No published position' : ''}</button>
               ))}
-            </details>
+            </details>}
 
-            <div className="live-feed-panel__search">
+            {(liveToolTab === 'cases' || liveToolTab === 'vessels') && <div className="live-feed-panel__search">
               <VesselCaseSearch cases={intelEvents.map((feature) => ({ ...feature.properties, feature }))} onSelect={(record) => openIntelReport(record.feature)} />
             </div>
-            <div className="live-feed-panel__body">
+            {liveToolTab === 'cases' && <div className="live-feed-panel__body">
               <IntelDashboard
                 apiBase={apiBase}
                 publicMode
@@ -4387,7 +4392,25 @@ function App() {
                 selectedEventId={selectedIntelEventId}
                 onOpenReport={openIntelReport}
               />
-            </div>
+            </div>}
+            {liveToolTab === 'vessels' && <section className="sc-panel-tab-content" aria-label="Vessel intelligence">
+              <h2>Vessel intelligence</h2>
+              <p>Search for a vessel name, IMO, or MMSI above. Results are limited to published cases; they do not imply continuous AIS coverage.</p>
+              <p>{sarMapFeatures.features?.length || 0} civil SAR vessel locations and {sanctionedVessels.features?.length || 0} sanctioned-vessel context entries currently loaded.</p>
+              <button type="button" onClick={() => setLiveFacets((v) => ({ ...v, sar_fleet: !v.sar_fleet }))} aria-pressed={liveFacets.sar_fleet}>Civil SAR fleet {liveFacets.sar_fleet ? 'visible' : 'hidden'}</button>
+              <button type="button" onClick={() => setLiveFacets((v) => ({ ...v, sanctions: !v.sanctions }))} aria-pressed={liveFacets.sanctions}>Sanctioned vessels {liveFacets.sanctions ? 'visible' : 'hidden'}</button>
+              <small>Public vessel positions and case records have different acquisition times and must not be conflated.</small>
+            </section>}
+            {liveToolTab === 'layers' && <section className="sc-panel-tab-content" aria-label="Map layer controls">
+              <h2>Map layers</h2>
+              <p>Choose which categories appear on the map. The background changes only using Map / Satellite in the lower-left corner.</p>
+              {LAYER_GROUPS.filter((group) => PUBLIC_LIVE_LAYER_GROUPS.has(group.key)).map((group) => (
+                <label key={group.key} className="sc-panel-layer-option">
+                  <input type="checkbox" checked={group.defaultOff ? layerVis[group.key] === true : layerVis[group.key] !== false} onChange={() => toggleLayerGroup(group.key)} />
+                  <span>{group.label}</span>
+                </label>
+              ))}
+            </section>}
             <MapReferenceBar context="live" />
           </aside>
           <button
