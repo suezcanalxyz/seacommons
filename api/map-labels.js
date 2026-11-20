@@ -1,4 +1,4 @@
-import { Buffer } from 'node:buffer';
+const { Buffer } = require('node:buffer');
 
 const STYLES = new Set(['light_only_labels', 'dark_only_labels']);
 
@@ -7,7 +7,7 @@ function send(res, status, body) {
   res.end(body);
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
     return send(res, 405);
@@ -36,3 +36,5 @@ export default async function handler(req, res) {
     return send(res, 502);
   }
 }
+
+module.exports = handler;
