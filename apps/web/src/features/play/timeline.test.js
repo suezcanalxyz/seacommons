@@ -134,13 +134,14 @@ test('incident status at cutoff uses only transitions knowable by that time', ()
   assert.equal(incidentStatusAtCutoff(incident, null), 'resolved');
 });
 
-test('Play map style keeps a visible street-map fallback under satellite imagery', async () => {
+test('Play map style uses dark bathymetry below optional dated satellite imagery', async () => {
   const { playMapStyle } = await import('./timeline.js');
   const style = playMapStyle('2026-09-04');
   assert.equal(style.layers[0].id, 'base-map');
-  assert.equal(style.layers[0].paint?.['raster-opacity'] ?? 1, 1);
-  assert.equal(style.layers[1].id, 'satellite-context');
-  assert.equal(style.layers[1].paint?.['raster-opacity'], 1);
+  assert.equal(style.layers[0].paint?.['raster-opacity'], 0.95);
+  assert.equal(style.layers[1].id, 'bathymetry-labels');
+  assert.equal(style.layers[2].id, 'satellite-context');
+  assert.equal(style.layers[2].paint?.['raster-opacity'], 1);
   assert.ok(style.sources.baseMap?.tiles?.length);
   assert.ok(style.sources.satelliteContext?.tiles?.length);
 });
@@ -222,12 +223,14 @@ test('selector respects cutoff and null cloud metadata', async () => {
   assert.match(source, /cloud_cover != null/);
 });
 
-test('Play satellite basemap is the default visual surface over an OSM fallback', async () => {
+test('Play dark bathymetry is the default with a separately selectable dated satellite layer', async () => {
   const { playMapStyle } = await import('./timeline.js');
   const style = playMapStyle('2026-09-04');
   assert.equal(style.layers[0].id, 'base-map');
-  assert.equal(style.layers[1].id, 'satellite-context');
-  assert.equal(style.layers[1].paint?.['raster-opacity'], 1);
+  assert.equal(style.layers[1].id, 'bathymetry-labels');
+  assert.equal(style.layers[2].id, 'satellite-context');
+  assert.equal(style.layers[2].layout?.visibility, 'none');
+  assert.equal(style.layers[2].paint?.['raster-opacity'], 1);
   assert.match(style.sources.satelliteContext.tiles[0], /VIIRS_NOAA21_CorrectedReflectance_TrueColor/);
 });
 

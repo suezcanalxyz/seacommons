@@ -157,14 +157,16 @@ test('Sanctions and Civil SAR are always-visible context layers, not hidden inve
 });
 
 
-test('public LIVE basemap control is portalled above the MapLibre canvas and remains clickable', () => {
+test('public LIVE uses one responsive lower-left basemap switch with no duplicated LayerToggles options', () => {
   const main = fs.readFileSync(new URL('../../main.jsx', import.meta.url), 'utf8');
   const css = fs.readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
-  assert.match(main, /import \{ createPortal \} from 'react-dom';/);
-  assert.match(main, /isPublicLiveHost \? createPortal\(/);
-  assert.match(main, /<\/button>, document\.body/);
-  assert.match(main, /<\/section>\s*<\/>\s*\) : null}\s*\{isPublicLiveHost \? createPortal\(/);
-  assert.match(css, /\.live-basemap-switch \{[\s\S]*?z-index: 10000;[\s\S]*?pointer-events: auto;/);
+  assert.match(main, /<MapBasemapSwitch mode=\{baseMap\}/);
+  assert.match(main, /showBasemap=\{!isPublicLiveHost\}/);
+  assert.doesNotMatch(main, /className="live-basemap-switch"/);
+  assert.match(css, /\.sc-basemap-switch \{/);
+  assert.match(css, /left: calc\(374px \+ 14px\)/);
+  assert.match(css, /bottom: max\(20px, env\(safe-area-inset-bottom\)\)/);
+  assert.match(css, /bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\)/);
 });
 
 test('source-derived humanitarian search areas are visually and semantically distinct from OpenDrift cones', () => {

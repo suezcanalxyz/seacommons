@@ -53,6 +53,7 @@ export default function LayerToggles({
   baseMap = 'standard',
   onBaseMapChange,
   allowSatellite = true,
+  showBasemap = true,
 }) {
   const [open, setOpen] = useState(false);
   const groups = allowed ? LAYER_GROUPS.filter((g) => allowed.has(g.key)) : LAYER_GROUPS;
@@ -74,13 +75,13 @@ export default function LayerToggles({
       {open && (
         <div className="layer-panel">
           <div className="layer-panel-title">Layers</div>
-          <div className="layer-panel-sub">Base map</div>
-          <div className="layer-basemap-options" role="group" aria-label="Base map">
+          {showBasemap && <div className="layer-panel-sub">Base map</div>}
+          {showBasemap && <div className="layer-basemap-options" role="group" aria-label="Base map">
             <button
               type="button"
               className={baseMap === 'standard' ? 'is-active' : ''}
               onClick={() => onBaseMapChange?.('standard')}
-            >OpenStreetMap</button>
+            >Bathymetry</button>
             {allowSatellite ? (
               <button
                 type="button"
@@ -88,7 +89,7 @@ export default function LayerToggles({
                 onClick={() => onBaseMapChange?.('satellite')}
               >Satellite</button>
             ) : null}
-          </div>
+          </div>}
           <div className="layer-panel-sub">Overlays</div>
           {groups.map((g) => (
             <React.Fragment key={g.key}>

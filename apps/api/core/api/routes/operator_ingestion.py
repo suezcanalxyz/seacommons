@@ -10,7 +10,6 @@ operator reverse proxy. The browser never receives that secret.
 """
 from __future__ import annotations
 
-import hmac
 import threading
 import time
 from collections import Counter
@@ -21,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import func, or_, text
 
 from core.config import config
+from core.api.operator_auth import require_operator_gateway as _require_gateway
 from core.db.models import (
     IngestedSignalDB,
     IntelEventDB,
@@ -34,6 +34,7 @@ from core.db.models import (
     VesselBehaviouralBaselineDB,
 )
 from core.db.session import session_scope
+from core.intel.legacy_gap_metrics import count_legacy_ais_gap_context
 from core.api.routes.operator_pipeline import (
     event_chain_id,
     hypothesis_semantics,
@@ -93,21 +94,6 @@ def _fast_table_count(db, model) -> tuple[int, bool]:
         if estimate is not None:
             return max(0, int(estimate)), True
     return int(db.query(func.count(model.id)).scalar() or 0), False
-
-
-def _require_gateway(request: Request) -> None:
-    # The same verified Futures session grants access to Intelligence.
-    # Preserve the legacy gateway only for internal compatibility.
-    if request.headers.get("authorization", "").lower().startswith("bearer "):
-        from core.security import require_futures_identity
-        require_futures_identity(request)
-        return
-    expected = str(config.OPERATOR_GATEWAY_SECRET or "")
-    if not expected:
-        raise HTTPException(status_code=503, detail="Operator ingestion gateway is not configured")
-    supplied = request.headers.get("x-seacommons-operator-gateway", "")
-    if not hmac.compare_digest(supplied, expected):
-        raise HTTPException(status_code=401, detail="Operator gateway authentication required")
 
 
 def _dt(value: datetime | None) -> str | None:
@@ -373,16 +359,7 @@ def _overview_payload(hours: int) -> dict[str, Any]:
                 ),
             ).scalar() or 0
         )
-        legacy_ais_gap_context = int(
-            db.query(func.count(IntelEventDB.id))
-            .filter(
-                IntelEventDB.received_at >= cutoff,
-                IntelEventDB.type == "ais_anomaly",
-                IntelEventDB.source == "ais",
-                IntelEventDB.id.like("aisanom:%"),
-                anomaly_type == "gap",
-            ).scalar() or 0
-        )
+        legacy_ais_gap_context = count_legacy_ais_gap_context(db, cutoff)
         derived_cues = max(0, derived_cues_raw - legacy_ais_gap_context)
         corroborated_episodes = int(
             db.query(func.count(MaritimeEpisodeDB.episode_id))
@@ -714,18 +691,7 @@ def operator_pipeline_funnel(
             .scalar()
             or 0
         )
-        legacy_gap_context = int(
-            db.query(func.count(IntelEventDB.id))
-            .filter(
-                IntelEventDB.received_at >= cutoff,
-                IntelEventDB.type == "ais_anomaly",
-                IntelEventDB.source == "ais",
-                IntelEventDB.id.like("aisanom:%"),
-                anomaly_type == "gap",
-            )
-            .scalar()
-            or 0
-        )
+        legacy_gap_context = count_legacy_ais_gap_context(db, cutoff)
         derived_total = max(0, derived_total_raw - legacy_gap_context)
         episodes_total = int(
             db.query(func.count(MaritimeEpisodeDB.episode_id))
@@ -1051,17 +1017,7 @@ def _overall_payload() -> dict[str, Any]:
             .scalar()
             or 0
         )
-        legacy_gap_context = int(
-            db.query(func.count(IntelEventDB.id))
-            .filter(
-                IntelEventDB.type == "ais_anomaly",
-                IntelEventDB.source == "ais",
-                IntelEventDB.id.like("aisanom:%"),
-                anomaly_type == "gap",
-            )
-            .scalar()
-            or 0
-        )
+        legacy_gap_context = count_legacy_ais_gap_context(db)
         derived_total = max(0, derived_total_raw - legacy_gap_context)
 
         episodes_total = int(

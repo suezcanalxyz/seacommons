@@ -268,7 +268,19 @@ def public_catalog_summary(*, limit: int = 16) -> dict[str, object]:
 
     with session_scope() as db:
         rows = db.query(ReceiverCatalogDB).order_by(ReceiverCatalogDB.score.desc()).all()
-        top = rows[: max(1, min(limit, 64))]
+        # Discovery labels may be raw receiver URLs. Until an operator assigns
+        # a public ID, human-readable label and coarse location, keep those
+        # endpoints in the private catalogue only. Counts still describe the
+        # complete inventory; the public row list is an approved map surface.
+        public_rows = [
+            row for row in rows
+            if row.receiver_id
+            and row.public_label
+            and not urlsplit(str(row.public_label)).scheme
+            and row.lat is not None
+            and row.lon is not None
+        ]
+        top = public_rows[: max(1, min(limit, 64))]
         return {
             "catalogued": len(rows),
             "reachable": sum(1 for row in rows if row.reachable is True),

@@ -10,6 +10,10 @@ test('PLAY cluster colors encode count not incident classification', async () =>
   ]);
   assert.match(source, /'circle-color': clusterPaint\('color'\)/);
   assert.match(source, /'circle-radius': clusterPaint\('radius'\)/);
-  assert.match(source, /PLAY_CLUSTER_BANDS\.map\(\(\{ label, color \}\)/);
-  assert.match(source, /cluster colors and sizes indicate grouped point count/);
+  // Count bands are applied by clusterPaint in the renderer, while the
+  // historical always-visible legend was replaced by MapReferenceBar.
+  assert.match(source, /const \[first, \.\.\.remaining\] = PLAY_CLUSTER_BANDS/);
+  const reference = await readFile(new URL('../../components/MapReferenceBar.jsx', import.meta.url), 'utf8');
+  assert.match(reference, /Grouped records reflect the number of nearby markers/);
+  assert.match(reference, /Brightness and size indicate a group of observations/);
 });

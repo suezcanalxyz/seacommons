@@ -34,7 +34,7 @@ test('active receiver symbols require a fresh mesh and actual geolocation', () =
   assert.deepEqual(liveActiveReceiverMarkers({ fresh: true, receivers: [] }), []);
 });
 
-test('Mediterranean LIVE map excludes unrelated northern/inland RF relay sites', () => {
+test('LIVE maps every active geolocated receiver while keeping regional classification separate', () => {
   const receivers = [
     { receiver_id: 'zakynthos_hf_monitor', active: true, latitude: 37.783, longitude: 20.896 },
     { receiver_id: 'cagliari_hf_monitor', active: true, latitude: 39.22, longitude: 9.12 },
@@ -45,6 +45,6 @@ test('Mediterranean LIVE map excludes unrelated northern/inland RF relay sites',
   assert.equal(isMediterraneanReceiver(receivers[0]), true);
   assert.equal(isMediterraneanReceiver(receivers[2]), false);
   assert.deepEqual(liveActiveReceiverMarkers({ fresh: true, receivers }).map((f) => f.properties.receiver_id),
-    ['zakynthos_hf_monitor', 'cagliari_hf_monitor']);
+    ['zakynthos_hf_monitor', 'cagliari_hf_monitor', 'cassine_hf_monitor', 'heimiswil_hf_monitor', 'german_hf_relay']);
   assert.equal(liveActiveReceiverMarkers({ fresh: false, receivers }).length, 0);
 });

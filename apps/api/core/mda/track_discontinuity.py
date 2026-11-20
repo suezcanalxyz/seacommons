@@ -98,3 +98,65 @@ def analyze_track_discontinuities(
                    "observed route. Third-party playback cursor times are not AIS timestamps. "
                    "No port call or deliberate AIS manipulation is inferred."),
     }
+
+
+def track_feature_collection(
+    track: list[dict], *, min_gap_minutes: float = 30,
+    speed_threshold_knots: float = 45,
+) -> dict:
+    """Render only contiguous, physically plausible adjacent-fix sequences.
+
+    Singleton fixes remain available through the dossier's ``track_points``.
+    They are deliberately not joined across collection gaps, invalid ordering,
+    or impossible implied speeds because such a line would look like evidence
+    of a route that was never observed.
+    """
+    runs: list[list[dict]] = []
+    current: list[dict] = []
+
+    def flush() -> None:
+        nonlocal current
+        if len(current) >= 2:
+            runs.append(current)
+        current = []
+
+    for raw in track:
+        point = _point(raw) if isinstance(raw, dict) else None
+        if point is None:
+            flush()
+            continue
+        if current:
+            previous = current[-1]
+            delta_s = (point["ts"] - previous["ts"]).total_seconds()
+            split = delta_s <= 0 or delta_s >= min_gap_minutes * 60
+            if not split:
+                speed_knots = (
+                    _distance_km(previous, point) / (delta_s / 3600) * KNOTS_PER_KMH
+                )
+                split = speed_knots > speed_threshold_knots
+            if split:
+                flush()
+        current.append(point)
+    flush()
+
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[point["lon"], point["lat"]] for point in run],
+                },
+                "properties": {
+                    "points": len(run),
+                    "observed_start": run[0]["ts"].isoformat(),
+                    "observed_end": run[-1]["ts"].isoformat(),
+                    "is_observed_route": False,
+                    "evidence_level": "adjacent_ais_fixes_only",
+                    "display_method": "plausible_adjacent_fix_join_v1",
+                },
+            }
+            for run in runs
+        ],
+    }

@@ -6,6 +6,9 @@ import { useLiveVesselDossier } from './features/live/useLiveVesselDossier.js';
 import { isPublicCaseEligible } from './features/live/publicCaseEligibility.js';
 import { addMovementLabels } from './features/map/movementLabels.js';
 import VesselCaseSearch from './components/VesselCaseSearch.jsx';
+import MapBasemapSwitch from './components/MapBasemapSwitch.jsx';
+import MapReferenceBar from './components/MapReferenceBar.jsx';
+import IntelligencePanelTabs from './components/IntelligencePanelTabs.jsx';
 import { aisUtcTimestamp, latestLiveAisFix, liveMovementMapFeatures, selectedLiveMovementEndpoints } from './features/live/movementEndpoints.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -51,7 +54,7 @@ import { liveAisGapFeatures } from './features/live/aisGapLive.js';
 import { vesselReportFeature } from './features/live/vesselVisual.js';
 import { isExcludedVesselType } from './features/live/vesselType.js';
 import { configureMaplibreWorker } from './features/map/maplibreWorker.js';
-import { createVesselArrowImage } from './features/map/vesselMarker.js';
+import { createVesselArrowImage, createVesselDiamondImage, vesselBearingExpression, vesselDirectionalIconExpression } from './features/map/vesselMarker.js';
 import { createAttackMarkerImage, isAttackIncident } from './features/map/attackMarker.js';
 import { publicBasemapSource, SATELLITE_BASEMAP_TILE_URL } from './features/map/publicBasemap.js';
 import { createFallbackMap } from './features/map/fallbackRenderer.js';
@@ -519,6 +522,7 @@ function mapStyle(initialBaseMap = 'standard') {
     sources: {
       osm: publicBasemapSource(),
       satellite,
+      bathymetryLabels: { type: 'raster', tiles: ['https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 19, attribution: '© CARTO · OpenStreetMap' },
       satelliteLabels: {
         type: 'raster',
         tiles: ['https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png'],
@@ -528,7 +532,8 @@ function mapStyle(initialBaseMap = 'standard') {
       },
     },
     layers: [
-      { id: 'osm', type: 'raster', source: 'osm', layout: { visibility: initialBaseMap === 'satellite' ? 'none' : 'visible' } },
+      { id: 'osm', type: 'raster', source: 'osm', layout: { visibility: initialBaseMap === 'satellite' ? 'none' : 'visible' }, paint: { 'raster-brightness-min': 0.06, 'raster-brightness-max': 0.52, 'raster-saturation': -0.72, 'raster-contrast': 0.22 } },
+      { id: 'bathymetry-labels', type: 'raster', source: 'bathymetryLabels', layout: { visibility: initialBaseMap === 'satellite' ? 'none' : 'visible' }, paint: { 'raster-opacity': 0.65 } },
       { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: initialBaseMap === 'satellite' ? 'visible' : 'none' } },
       { id: 'satellite-labels', type: 'raster', source: 'satelliteLabels', layout: { visibility: initialBaseMap === 'satellite' ? 'visible' : 'none' }, paint: { 'raster-opacity': 0.92 } },
     ],
@@ -622,6 +627,7 @@ function observedTrackCourse(points) {
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(() => isPublicLiveHost && !window.matchMedia('(max-width: 680px)').matches);
+  const [liveToolTab, setLiveToolTab] = useState('cases');
   const [activePanel, setActivePanel] = useState(
     isPublicLiveHost ? 'osint' : APP_PROFILE === 'demo' ? 'sim' : 'live',
   );
@@ -1412,6 +1418,7 @@ function App() {
       map.on('load', () => {
         // Register vessel arrow SDF icon
         map.addImage('vessel-arrow', createVesselArrowImage(48), { sdf: true });
+        map.addImage('vessel-diamond', createVesselDiamondImage(48), { sdf: true });
         map.addImage('attack-crosshair', createAttackMarkerImage());
 
         // Nautical seamarks (OpenSeaMap): buoys, lights, beacons, fairways,
@@ -1652,9 +1659,9 @@ function App() {
         map.addLayer({
           id: 'intel-vessel-core', type: 'symbol', source: 'intel-vessels',
           layout: {
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['course', 'heading', 'heading_deg']),
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.34, 10, 0.58, 14, 0.74],
-            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['course', 'heading', 'heading_deg']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -1836,9 +1843,9 @@ function App() {
         map.addLayer({
           id: 'proximity-vessels-layer', type: 'symbol', source: 'proximity-vessels',
           layout: {
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-size': 0.56,
-            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -1869,9 +1876,9 @@ function App() {
           id: 'vessels-layer', type: 'symbol', source: 'vessels',
           filter: ['all', ['match', ['get', 'nav_status'], [1, 5], false, true], ['>', ['coalesce', ['get', 'speed'], 0], 0.5]],
           layout: {
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.22, 10, 0.50, 14, 0.65],
-            'icon-rotate': ['coalesce', ['get', 'heading_deg'], ['get', 'heading'], ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -1915,9 +1922,9 @@ function App() {
           id: 'vessels-ngo', type: 'symbol', source: 'vessels-ngo',
           filter: ['all', ['match', ['get', 'nav_status'], [1, 5], false, true], ['>', ['coalesce', ['get', 'speed'], 0], 0.5]],
           layout: {
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.36, 10, 0.58, 14, 0.72],
-            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -1956,9 +1963,9 @@ function App() {
           filter: ['all', ['match', ['get', 'nav_status'], [1, 5], false, true], ['>', ['coalesce', ['get', 'speed'], 0], 0.5]],
           layout: {
             visibility: 'none',
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.38, 10, 0.60, 14, 0.74],
-            'icon-rotate': ['coalesce', ['get', 'heading'], ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -2313,9 +2320,9 @@ function App() {
         map.addLayer({
           id: 'live-nearby-vessels-layer', type: 'symbol', source: 'live-nearby-vessels',
           layout: {
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-size': 0.48,
-            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -2364,9 +2371,9 @@ function App() {
         map.addLayer({
           id: 'ngo-response-points-layer', type: 'symbol', source: 'ngo-response-points',
           layout: {
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-size': 0.56,
-            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -2800,6 +2807,7 @@ function App() {
     if (!map || !mapReady) return;
     const effectiveBaseMap = baseMap;
     if (map.getLayer('osm')) map.setLayoutProperty('osm', 'visibility', effectiveBaseMap === 'standard' ? 'visible' : 'none');
+    if (map.getLayer('bathymetry-labels')) map.setLayoutProperty('bathymetry-labels', 'visibility', effectiveBaseMap === 'standard' ? 'visible' : 'none');
     if (map.getLayer('satellite')) map.setLayoutProperty('satellite', 'visibility', effectiveBaseMap === 'satellite' ? 'visible' : 'none');
     if (map.getLayer('satellite-labels')) map.setLayoutProperty('satellite-labels', 'visibility', effectiveBaseMap === 'satellite' ? 'visible' : 'none');
   }, [baseMap, mapReady]);
@@ -3793,11 +3801,7 @@ function App() {
                 aria-expanded={sidebarOpen} onClick={() => { setMobileGuideOpen(false); setConePanelHidden(true); setSidebarOpen(true); }}>
                 <span aria-hidden="true">≡</span><small>Feed</small>
               </button>
-              <button type="button" className={mapPanel && !conePanelHidden && !mobileGuideOpen ? 'is-active' : ''} aria-label="Open selected report"
-                aria-expanded={Boolean(mapPanel && !conePanelHidden)} disabled={!mapPanel}
-                onClick={() => { setMobileGuideOpen(false); setSidebarOpen(false); setConePanelHidden(false); }}>
-                <span aria-hidden="true">▤</span><small>Report</small>
-              </button>
+
             </>
           ) : (
             <>
@@ -3898,15 +3902,19 @@ function App() {
           </div>
         </div>
 
-        {!play3D ? (
+        {!play3D && !isPublicLiveHost ? (
           <LayerToggles
             visibility={layerVis}
             onToggle={toggleLayerGroup}
             baseMap={baseMap}
             onBaseMapChange={setBaseMap}
             allowSatellite={true}
+            showBasemap={!isPublicLiveHost}
             allowed={isPublicLiveHost ? PUBLIC_LIVE_LAYER_GROUPS : null}
           />
+        ) : null}
+        {!play3D && isPublicLiveHost ? (
+          <MapBasemapSwitch mode={baseMap} onChange={(mode) => { setPlay3D(false); setBaseMap(mode); }} />
         ) : null}
         {!play3D ? <Legend publicLive={isPublicLiveHost} /> : null}
         {!play3D && !isPublicLiveHost ? (
@@ -3987,16 +3995,6 @@ function App() {
             liveVessel={liveVessel}
           />
         )}
-        {['cone', 'trajectory', 'search_area', 'intel', 'radio_receiver', 'radio_message'].includes(mapPanel?.type) && conePanelHidden && (
-          <button
-            className="cone-reopen-btn"
-            onClick={() => setConePanelHidden(false)}
-            title="Open selected report" aria-label="Open selected report"
-          >
-            REPORT ↗
-          </button>
-        )}
-
         {/* Scenario modal — center, appears when clicking empty map */}
         {APP_PROFILE === 'demo' && showScenario && (
           <ScenarioModal
@@ -4173,6 +4171,9 @@ function App() {
                 </div>
                 <button type="button" onClick={() => setSidebarOpen(false)} aria-label="Collapse live feed">−</button>
               </div>
+              <IntelligencePanelTabs label="Live intelligence sections" value={liveToolTab} onChange={setLiveToolTab}
+                options={[{ id: 'cases', label: 'Cases', count: intelEvents.length }, { id: 'radio', label: 'Radio', count: receiverMesh.fresh ? receiverMesh.active : undefined }, { id: 'vessels', label: 'Vessels' }, { id: 'layers', label: 'Layers' }]} />
+              {liveToolTab === 'cases' && <>
               <div className="signals-selector">
                 <div className="signals-selector__row">
                   <span className="signals-selector__label">Investigations</span>
@@ -4321,10 +4322,10 @@ function App() {
                 <span />
                 Approved collectors remain active when this map is closed.
               </p>
-
+              </>}
             </header>
 
-            <details className="live-radio-panel">
+            {liveToolTab === 'radio' && <details className="live-radio-panel" open>
               <summary>Radio · {receiverMesh.fresh ? (receiverMesh.active || 0) : 'status unavailable'} connected · {networkMarkers.filter((feature) => feature.properties.active).length} active map stations · {networkMarkers.length} total markers</summary>
               {receiverMesh.fresh && (receiverMesh.active || 0) > 0 && receiverMarkers.length === 0 && (
                 <p role="status" className="live-radio-panel__regional-gap">
@@ -4369,9 +4370,12 @@ function App() {
                 }}>{String(row.kind).toUpperCase()} · {row.category || row.subject_id || 'Message'}
                   {row.kind === 'dsc' && !radioMessageMarkers.some((marker) => marker.properties.observation_id === row.observation_id) ? ' · No published position' : ''}</button>
               ))}
-            </details>
+            </details>}
 
-            <div className="live-feed-panel__body">
+            {(liveToolTab === 'cases' || liveToolTab === 'vessels') && <div className="live-feed-panel__search">
+              <VesselCaseSearch cases={intelEvents.map((feature) => ({ ...feature.properties, feature }))} onSelect={(record) => openIntelReport(record.feature)} />
+            </div>}
+            {liveToolTab === 'cases' && <div className="live-feed-panel__body">
               <IntelDashboard
                 apiBase={apiBase}
                 publicMode
@@ -4389,7 +4393,26 @@ function App() {
                 selectedEventId={selectedIntelEventId}
                 onOpenReport={openIntelReport}
               />
-            </div>
+            </div>}
+            {liveToolTab === 'vessels' && <section className="sc-panel-tab-content" aria-label="Vessel intelligence">
+              <h2>Vessel intelligence</h2>
+              <p>Search for a vessel name, IMO, or MMSI above. Results are limited to published cases; they do not imply continuous AIS coverage.</p>
+              <p>{sarMapFeatures.features?.length || 0} civil SAR vessel locations and {sanctionedVessels.features?.length || 0} sanctioned-vessel context entries currently loaded.</p>
+              <button type="button" onClick={() => setLiveFacets((v) => ({ ...v, sar_fleet: !v.sar_fleet }))} aria-pressed={liveFacets.sar_fleet}>Civil SAR fleet {liveFacets.sar_fleet ? 'visible' : 'hidden'}</button>
+              <button type="button" onClick={() => setLiveFacets((v) => ({ ...v, sanctions: !v.sanctions }))} aria-pressed={liveFacets.sanctions}>Sanctioned vessels {liveFacets.sanctions ? 'visible' : 'hidden'}</button>
+              <small>Public vessel positions and case records have different acquisition times and must not be conflated.</small>
+            </section>}
+            {liveToolTab === 'layers' && <section className="sc-panel-tab-content" aria-label="Map layer controls">
+              <h2>Map layers</h2>
+              <p>Choose which categories appear on the map. The background changes only using Map / Satellite in the lower-left corner.</p>
+              {LAYER_GROUPS.filter((group) => PUBLIC_LIVE_LAYER_GROUPS.has(group.key)).map((group) => (
+                <label key={group.key} className="sc-panel-layer-option">
+                  <input type="checkbox" checked={group.defaultOff ? layerVis[group.key] === true : layerVis[group.key] !== false} onChange={() => toggleLayerGroup(group.key)} />
+                  <span>{group.label}</span>
+                </label>
+              ))}
+            </section>}
+            <MapReferenceBar context="live" />
           </aside>
           <button
             type="button"
@@ -4646,19 +4669,7 @@ function App() {
 
         </>
       ) : null}
-        {isPublicLiveHost ? createPortal(
-          <button
-            type="button"
-            className="live-basemap-switch"
-            aria-label={baseMap === 'satellite' ? 'Switch to standard map' : 'Switch to satellite map'}
-            aria-pressed={baseMap === 'satellite'}
-            onClick={() => { setPlay3D(false); setBaseMap((current) => current === 'satellite' ? 'standard' : 'satellite'); }}
-          >
-            <span className="live-basemap-switch__icon" aria-hidden="true">{baseMap === 'satellite' ? '▦' : '◫'}</span>
-            <span>{baseMap === 'satellite' ? 'Standard map' : 'Satellite view'}</span>
-          </button>, document.body
-        ) : null}
-        {isPublicLiveHost && <VesselCaseSearch cases={intelEvents.map((feature) => ({ ...feature.properties, feature }))} onSelect={(record) => openIntelReport(record.feature)} />}
+
     </main>
   );
 }

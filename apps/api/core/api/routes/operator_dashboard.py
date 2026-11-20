@@ -2,29 +2,14 @@
 """Private operator dashboard for the canonical SeaCommons OSINT pipeline."""
 from __future__ import annotations
 
-import hmac
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from core.config import config
+
+from core.api.operator_auth import require_operator_gateway as _require_gateway
 
 router = APIRouter(prefix="/api/v1/operator/ingestion", tags=["operator-ingestion"])
-
-
-def _require_gateway(request: Request) -> None:
-    # The same verified Futures session grants access to Intelligence.
-    # Preserve the legacy gateway only for internal compatibility.
-    if request.headers.get("authorization", "").lower().startswith("bearer "):
-        from core.security import require_futures_identity
-        require_futures_identity(request)
-        return
-    expected = str(config.OPERATOR_GATEWAY_SECRET or "")
-    if not expected:
-        raise HTTPException(status_code=503, detail="Operator ingestion gateway is not configured")
-    supplied = request.headers.get("x-seacommons-operator-gateway", "")
-    if not hmac.compare_digest(supplied, expected):
-        raise HTTPException(status_code=401, detail="Operator gateway authentication required")
 
 
 @router.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)

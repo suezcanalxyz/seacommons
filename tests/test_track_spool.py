@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from types import SimpleNamespace
-
 import pytest
 
 from core.db.models import VesselTrackDB, VesselTrackIngestBatchDB
@@ -89,8 +87,8 @@ def test_disk_reserve_is_fail_closed(monkeypatch, tmp_path):
         allow_temporary_test_path=True,
     )
     monkeypatch.setattr(
-        "core.vessels.track_spool.os.statvfs",
-        lambda _: SimpleNamespace(f_bavail=0, f_frsize=4096),
+        "core.vessels.track_spool._available_disk_bytes",
+        lambda _: 0,
     )
     with pytest.raises(TrackSpoolFull, match="disk reserve"):
         spool.enqueue(_sample())
