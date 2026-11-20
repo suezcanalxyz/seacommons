@@ -14,6 +14,7 @@ import {
   timelineAtCutoff,
   incidentStatusAtCutoff,
   satelliteFootprintCollection,
+  satelliteCrossCheck,
   archiveCoverage,
   groupArchiveByMonth,
   satelliteContextTileUrl,
@@ -615,4 +616,16 @@ test('the Copernicus viewer opens the acquisition day and optical or radar datas
   }, [11, 36]));
   assert.equal(radar.searchParams.get('datasetId'), 'S1_CDAS_IW_VVVH');
   assert.equal(copernicusSceneViewer({ ...scene, properties: { mission: 'Sentinel-3' } }, [11, 36]), null);
+});
+
+test('scene cross-check compares published timings without assigning a location to coverage', () => {
+  const at = '2026-10-05T17:02:00Z';
+  const scene = { type: 'satellite', source: 'copernicus_dataspace', at };
+  const radio = { id: 'radio', type: 'radio', at: '2026-10-05T17:07:00Z', geometry: { type: 'Point', coordinates: [11, 36] } };
+  const outside = { ...radio, id: 'earlier-radio', at: '2026-10-05T10:02:00Z' };
+  const vessel = { mmsi: '100000000', track_points: [{ at, lat: 36, lon: 11 }] };
+  const review = satelliteCrossCheck(scene, [outside, radio], [vessel]);
+  assert.deepEqual(review.map(({item, minutes, distanceKm}) => [item.type, minutes, distanceKm]), [
+    ['ais', 0, null], ['radio', 5, null],
+  ]);
 });

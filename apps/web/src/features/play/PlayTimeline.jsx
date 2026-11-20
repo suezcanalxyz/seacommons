@@ -31,6 +31,7 @@ import {
   resolveGlobalTimelinePosition,
   casesForArchiveView,
   satelliteReviewScenes,
+  satelliteCrossCheck,
   sarObservationPoint,
   satelliteFootprintCollection,
   selectFrame,
@@ -350,6 +351,10 @@ export default function PlayTimeline({ apiBase }) {
   );
   const satellite = satelliteScenes.find((item) => String(item.id) === satelliteMission) || null;
   const sarPoint = sarObservationPoint(satellite);
+  const crossCheck = useMemo(
+    () => satelliteCrossCheck(satellite, visibleTimeline, voyageVessels),
+    [satellite, visibleTimeline, voyageVessels],
+  );
   const sarFeature = useMemo(() => sarPoint ? {
     type: 'Feature',
     geometry: { type: 'Point', coordinates: sarPoint },
@@ -1264,14 +1269,43 @@ export default function PlayTimeline({ apiBase }) {
 
       {selectedId && <aside className="cone-panel cone-panel--intel play-evidence is-open">
         <div className="play-sheet-handle" />
-        <ReportPanelHeader kicker="Historical report" title="Case dossier" onClose={() => setSelectedId('')}>
-
-        </ReportPanelHeader>
+        <ReportPanelHeader kicker="Archived report" title="Signal" onClose={() => setSelectedId('')} />
         <div className="play-evidence__scroll" aria-busy={Boolean(timelineLoading)}>
           {timelineLoading && <p className="play-dossier-progress" role="status">Loading case evidence…</p>}
           {timelineError && <p className="play-dossier-progress" role="alert">{timelineError}</p>}
-          <section className="play-card play-satellite-review">
-            <h3>Satellite imagery and sources</h3>
+          <section className="cone-section play-case-summary">
+            <CaseReportOverview
+              title={selectedIncident?.title || 'SeaCommons incident'}
+              summary={humanizeDetectorText(caseData?.assessment?.observation || selectedIncident?.assessment?.observation)}
+              category={statusLabel(selectedIncident?.main_category || selectedIncident?.domain || 'maritime')}
+              color={playIncidentColor(selectedIncident || {})}
+              event={statusLabel(selectedIncident?.incident_type || caseData?.incident_type || 'incident')}
+              status={statusLabel(status)} evidence={globalState.cutoff ? undefined : { ...selectedIncident, ...caseData }}
+            >
+              <ReportRow label="Case" value={caseData?.incident_id || selectedId} mono />
+              {selectedIncident?.source && <ReportRow label="Original source" value={selectedIncident.source} />}
+              <ReportRow label="Reported (UTC)" value={itemTime(selectedIncident?.reported_at)} />
+              {selectedIncident?.geometry?.type === 'Point' && <ReportRow label="Report coordinates"
+                value={selectedIncident.geometry.coordinates.slice(0, 2).reverse().map((value) => Number(value).toFixed(5)).join(', ')} mono />}
+              {!globalState.cutoff && selectedIncident?.last_update_at && (
+                <ReportRow label="Last updated (UTC)" value={itemTime(selectedIncident.last_update_at)} />
+              )}
+              {globalState.cutoff && <ReportRow label="Evidence cutoff (UTC)" value={itemTime(globalState.cutoff)} />}
+            </CaseReportOverview>
+            {reviewedCase?.event_date && <span>Incident date · {reviewedCase.event_date}</span>}
+            {selectedIncident?.location_summary && <span>{selectedIncident.suppress_inferred_map_evidence ? '' : 'Reported area · '}{selectedIncident.location_summary}</span>}
+            {geographicClues.length > 0 && <div className="play-report-locations">
+              <strong>Geographic clues from the report</strong>
+              {geographicClues.map((clue) => <span key={clue.role}>
+                {clue.role === 'departure' ? 'Reported departure' : 'Reported destination'} · {clue.name}
+                {' · '}<a href={clue.reference} target="_blank" rel="noreferrer">Place reference ↗</a>
+              </span>)}
+              <small>Markers identify the named places. The exact departure point, the boat’s route and whether it arrived are unknown.</small>
+            </div>}
+            <button type="button" disabled={!selectedIncident?.geometry && !geographicClues.length} onClick={() => { if (geographicClues.length) { setFocusRequest((request) => request + 1); return; } const geometry = selectedIncident?.geometry; if (geometry?.type !== 'Point') return; mapRef.current?.easeTo({ center: geometry.coordinates, zoom: Math.max(9, mapRef.current.getZoom()), duration: 600 }); fallbackMapRef.current?.flyTo({ center: geometry.coordinates, zoom: 9 }); }}>Locate on map +</button>
+          </section>
+          <section className="cone-section play-satellite-review">
+            <h3>Satellite updates</h3>
             <p>Choose a dated acquisition to inspect its image and product record. A coverage outline shows where the sensor collected data.</p>
             <label className="play-satellite-selector">
               <span>Case acquisitions and radar observations</span>
@@ -1313,58 +1347,34 @@ export default function PlayTimeline({ apiBase }) {
             {satelliteProps.evidence_status ? <span>Evidence {satelliteProps.evidence_status}</span> : null}
             {satellite && (!quicklook || failedPreview === satelliteProps.asset_ref) && <span>No inline preview available. Use the imagery or product link above when available.</span>}
             {satellite && <span>Vessel image unavailable unless a source publishes an identified vessel crop. A radar return marks a detection.</span>}
+            {satellite && <details className="play-source-cross-check">
+              <summary>Compare with case sources · {crossCheck.length}</summary>
+              <p>Case sources within six hours of the acquisition, plus the closest archived AIS fix per vessel within five minutes. Timing and distance are review context.</p>
+              {crossCheck.length ? <ul className="play-report-chronology">
+                {crossCheck.map(({ item, minutes, distanceKm }) => (
+                  <li key={item.id}>
+                    <strong>{item.title || item.source || statusLabel(item.type)}</strong>
+                    <time dateTime={item.at}>{itemTime(item.at)} UTC</time>
+                    <span>{item.source || statusLabel(item.type)} · {minutes === 0 ? 'Same minute' : `${Math.abs(minutes)} min ${minutes < 0 ? 'before' : 'after'}`}
+                      {distanceKm != null && ` · ${distanceKm.toFixed(1)} km from radar return`}</span>
+                    {item.properties?.match_status && <span>Recorded association: {statusLabel(item.properties.match_status)}</span>}
+                    {/^https?:\/\//i.test(item.properties?.source_url || item.properties?.url || '') && (
+                      <a href={item.properties.source_url || item.properties.url} target="_blank" rel="noreferrer">Open source ↗</a>
+                    )}
+                  </li>
+                ))}
+              </ul> : <p>No case observations in this time window.</p>}
+            </details>}
           </section>
-          <section className="cone-section sc-play-human-summary" aria-label="Case overview in plain language">
-            <p className="sc-play-human-summary__eyebrow">AT A GLANCE</p>
-            <h2>{selectedIncident?.title || 'Historical maritime case'}</h2>
-            <div className="sc-play-human-summary__grid">
-              <div><h3>What was reported?</h3><p>{humanizeDetectorText(caseData?.assessment?.observation || selectedIncident?.assessment?.observation || selectedIncident?.location_summary || 'This case appears in the historical archive. The original report and its date are documented in the sections below.')}</p></div>
-              <div><h3>What can be checked?</h3><p>{caseData?.corroborated === true ? 'The archive records independent corroboration. Check the cited evidence and when it was recorded.' : 'Independent confirmation has not been established in this archive. Check the original sources before drawing a conclusion.'}</p></div>
-              <div><h3>What remains unknown?</h3><p>{humanizeDetectorText(caseData?.assessment?.limitations || selectedIncident?.assessment?.limitations || 'A missing AIS record is not proof a vessel switched off its transmitter. Predicted locations are not observations; the record may be incomplete.')}</p></div>
-            </div>
-            <small>Historical view: observations are limited to the selected time. An archived report is not an official determination.</small>
-          </section>
-          <section className="cone-section play-case-summary">
-            <CaseReportOverview
-              title={selectedIncident?.title || 'SeaCommons incident'}
-              summary={humanizeDetectorText(caseData?.assessment?.observation || selectedIncident?.assessment?.observation)}
-              category={statusLabel(selectedIncident?.main_category || selectedIncident?.domain || 'maritime')}
-              color={playIncidentColor(selectedIncident || {})}
-              event={statusLabel(selectedIncident?.incident_type || caseData?.incident_type || 'incident')}
-              status={statusLabel(status)} evidence={globalState.cutoff ? undefined : { ...selectedIncident, ...caseData }}
-            >
-              <ReportRow label="Case" value={caseData?.incident_id || selectedId} mono />
-              {selectedIncident?.source && <ReportRow label="Original source" value={selectedIncident.source} />}
-              <ReportRow label="Reported (UTC)" value={itemTime(selectedIncident?.reported_at)} />
-              {!globalState.cutoff && selectedIncident?.last_update_at && (
-                <ReportRow label="Last updated (UTC)" value={itemTime(selectedIncident.last_update_at)} />
-              )}
-              {globalState.cutoff && <ReportRow label="Evidence cutoff (UTC)" value={itemTime(globalState.cutoff)} />}
-            </CaseReportOverview>
-            {reviewedCase?.event_date && <span>Incident date · {reviewedCase.event_date}</span>}
-            {selectedIncident?.location_summary && <span>{selectedIncident.suppress_inferred_map_evidence ? '' : 'Reported area · '}{selectedIncident.location_summary}</span>}
-            {geographicClues.length > 0 && <div className="play-report-locations">
-              <strong>Geographic clues from the report</strong>
-              {geographicClues.map((clue) => <span key={clue.role}>
-                {clue.role === 'departure' ? 'Reported departure' : 'Reported destination'} · {clue.name}
-                {' · '}<a href={clue.reference} target="_blank" rel="noreferrer">Place reference ↗</a>
-              </span>)}
-              <small>Markers identify the named places. The exact departure point, the boat’s route and whether it arrived are unknown.</small>
-            </div>}
-            <button type="button" disabled={!selectedIncident?.geometry && !geographicClues.length} onClick={() => { if (geographicClues.length) { setFocusRequest((request) => request + 1); return; } const geometry = selectedIncident?.geometry; if (geometry?.type !== 'Point') return; mapRef.current?.easeTo({ center: geometry.coordinates, zoom: Math.max(9, mapRef.current.getZoom()), duration: 600 }); fallbackMapRef.current?.flyTo({ center: geometry.coordinates, zoom: 9 }); }}>Locate on map +</button>
-            <span>{selectedIncident?.source || '—'}</span>
-          </section>
-          <section className="play-card play-card--forensic-summary">
+          <section className="cone-section play-card play-card--forensic-summary">
             <p>Forensic assessment</p>
             <h3>{evidenceLabel(caseData || selectedIncident)}</h3>
             <p>{caseData?.assessment?.observation || selectedIncident?.assessment?.observation || 'The archive contains a reported incident. Its underlying evidence must be assessed separately from the reported claim.'}</p>
             <p>{caseData?.assessment?.interpretation || selectedIncident?.assessment?.interpretation || 'This dossier distinguishes the original report, supporting observations, independent confirmation and any unresolved questions.'}</p>
             <small>Assessment reflects only records available at the selected historical time. It is not an official incident determination.</small>
           </section>
-          <section className="play-card play-report-section">
+          <section className="cone-section play-card play-report-section">
             <p>Forensic report · reconstructed at selected cutoff</p>
-            <h3>Executive summary</h3>
-            <p className="play-report-prose">{selectedIncident?.title || 'Maritime incident recorded in the SeaCommons archive.'} Reported {itemTime(selectedIncident?.reported_at)} UTC. The archive records {visibleTimeline.length} dated evidence item(s) at this cutoff. {caseData?.corroborated === true ? 'Independent corroboration is recorded.' : 'Independent corroboration is not established from the available record.'}</p>
             <h3>Trajectory and geographical evidence</h3>
             {reportTrack.positions.length > 0 ? <>
               <p className="play-report-prose">{reportTrack.positions.length} mapped observation point(s) or geometry vertices are preserved in the selected evidence. These are not necessarily successive AIS fixes; a line may represent a modelled path rather than observed travel.</p>

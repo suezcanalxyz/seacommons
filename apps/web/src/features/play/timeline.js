@@ -138,6 +138,48 @@ export function sarObservationPoint(item) {
     ? coordinates : null;
 }
 
+// A footprint has no observed vessel position. Only a published radar return
+// can be the spatial reference for the comparison.
+export function satelliteCrossCheck(scene, timeline = [], vessels = []) {
+  const acquired = Date.parse(scene?.at);
+  if (!Number.isFinite(acquired)) return [];
+  const radar = sarObservationPoint(scene);
+  const eligible = new Set(['radio', 'radio_observation', 'ais', 'ais_observation', 'report', 'evidence', 'source_observation']);
+  const nearestFixes = vessels.flatMap((vessel) => {
+    let nearest = null;
+    let nearestDelta = 300001;
+    for (const fix of vessel.track_points || []) {
+      const delta = Math.abs(Date.parse(fix.at) - acquired);
+      if (delta < nearestDelta && Number.isFinite(fix.lon) && Number.isFinite(fix.lat)) {
+        nearest = fix;
+        nearestDelta = delta;
+      }
+    }
+    return nearest && vessel.mmsi ? [{
+      id: `voyage-ais:${vessel.mmsi}:${nearest.at}`, at: nearest.at, type: 'ais',
+      title: `Archived AIS fix · MMSI ${vessel.mmsi}`, source: nearest.source || 'Archived AIS',
+      geometry: { type: 'Point', coordinates: [nearest.lon, nearest.lat] },
+    }] : [];
+  });
+  const candidates = [];
+  for (const item of [...timeline, ...nearestFixes]) {
+    const offset = Date.parse(item?.at) - acquired;
+    if (!item?.id || !eligible.has(item.type) || !Number.isFinite(offset) || Math.abs(offset) > 6 * 3600000) continue;
+    const point = item.geometry?.type === 'Point' ? item.geometry.coordinates : null;
+    let distanceKm = null;
+    if (radar && point?.length >= 2 && point.slice(0, 2).every(Number.isFinite)
+        && Math.abs(point[0]) <= 180 && Math.abs(point[1]) <= 90) {
+      const radians = Math.PI / 180;
+      const [lon, lat] = point;
+      const h = Math.sin((lat - radar[1]) * radians / 2) ** 2
+        + Math.cos(lat * radians) * Math.cos(radar[1] * radians) * Math.sin((lon - radar[0]) * radians / 2) ** 2;
+      distanceKm = 12742 * Math.asin(Math.sqrt(Math.min(1, h)));
+    }
+    candidates.push({ item, offset, minutes: Math.round(offset / 60000), distanceKm });
+  }
+  return candidates.sort((a, b) => Math.abs(a.offset) - Math.abs(b.offset)).slice(0, 12);
+}
+
 export function satelliteReviewScenes(timeline, candidates = [], cutoff) {
   const byId = new Map();
   for (const item of timeline) {
