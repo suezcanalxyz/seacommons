@@ -485,6 +485,7 @@
     transform: translateX(-100%);
   }
   .play-public-shell .play-desktop-cases-toggle {
+    top: auto;
     display: inline-flex;
     left: 14px;
     bottom: calc(var(--play-dock-height, 64px) + 92px);
