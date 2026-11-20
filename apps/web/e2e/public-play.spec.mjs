@@ -367,7 +367,7 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
       const map = window.__SEACOMMONS_PLAY_MAP__;
       const canvas = map.getCanvas();
       const rect = canvas.getBoundingClientRect();
-      const overlays = [...document.querySelectorAll('.play-evidence, .play-cartographic-legend, .play-all-badge')]
+      const overlays = [...document.querySelectorAll('.play-evidence, .sc-reference-overlay, .play-all-badge')]
         .map(el => el.getBoundingClientRect())
         .filter(r => r.width > 0 && r.height > 0);
       // Sample the *actual* interactive viewport rather than six hard-coded
