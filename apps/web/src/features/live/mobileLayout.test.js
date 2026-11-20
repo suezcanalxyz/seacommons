@@ -71,8 +71,12 @@ test('LIVE initializes the MapLibre style from the selected basemap, not a hidde
 });
 
 
-test('public satellite toggle sits over desktop map rather than Signal panel', async () => {
+test('shared map switch stays beside the left panel on desktop and clears the mobile dock', async () => {
   const css = await readFile(new URL('../../styles.css', import.meta.url), 'utf8');
-  assert.match(css, /\.live-basemap-switch \{[\s\S]*?left: calc\(374px \+ 12px\);/);
-  assert.match(css, /\.live-basemap-switch \{ top: 12px; left: auto; right: 12px;/);
+  const source = await readFile(new URL('../../main.jsx', import.meta.url), 'utf8');
+  assert.match(source, /<MapBasemapSwitch mode=\{baseMap\}/);
+  assert.match(css, /\.sc-basemap-switch \{/);
+  assert.match(css, /left: calc\(var\(--live-panel-width, 374px\) \+ 14px\)/);
+  assert.match(css, /bottom: calc\(64px \+ env\(safe-area-inset-bottom\)\)/);
+  assert.doesNotMatch(css, /\.live-basemap-switch/);
 });
