@@ -1,4 +1,4 @@
-import { publicBasemapSource, PUBLIC_BASEMAP_LABEL_URL, BASEMAP_LABEL_ATTRIBUTION } from '../map/publicBasemap.js';
+import { publicBasemapSource, PUBLIC_BASEMAP_LABEL_URL, BASEMAP_LABEL_ATTRIBUTION, SATELLITE_BASEMAP_TILE_URL } from '../map/publicBasemap.js';
 import { playIncidentColor } from './incidentPalette.js';
 
 import { isVesselArchiveIncident } from '../map/vesselMarker.js';
@@ -258,6 +258,36 @@ export function incidentStatusAtCutoff(incident, cutoff = null) {
 
 
 
+export function copernicusSceneViewer(item, center) {
+  if (item?.source !== 'copernicus_dataspace' || !center?.every(Number.isFinite)) return null;
+  const acquisition = Date.parse(item.at);
+  if (!Number.isFinite(acquisition)) return null;
+  const day = new Date(acquisition).toISOString().slice(0, 10);
+  const props = item.properties || {};
+  const mission = String(props.mission || '');
+  const product = String(props.product_id || '');
+  let datasetId;
+  let layerId;
+  if (/sentinel-2/i.test(mission)) {
+    datasetId = /L1C/i.test(props.provenance?.stac_collection || '') || /MSIL1C/i.test(product)
+      ? 'S2_L1C_CDAS' : 'S2_L2A_CDAS';
+    layerId = '1_TRUE_COLOR';
+  } else if (/sentinel-1/i.test(mission)) {
+    const mode = product.match(/_((?:IW|EW|SM))_/i)?.[1]?.toUpperCase();
+    const polarisation = Array.isArray(props.polarisation) ? props.polarisation : [];
+    const channels = ['HH', 'HV', 'VV', 'VH'].filter((channel) => polarisation.includes(channel)).join('');
+    if (mode && ['HH', 'HHHV', 'VV', 'VVVH'].includes(channels)) datasetId = `S1_CDAS_${mode}_${channels}`;
+  }
+  if (!datasetId) return null;
+  const [lng, lat] = center;
+  const params = new URLSearchParams({
+    zoom: '14', lat: lat.toFixed(5), lng: lng.toFixed(5), datasetId,
+    dateMode: 'SINGLE', toTime: `${day}T23:59:59.999Z`,
+  });
+  if (layerId) params.set('layerId', layerId);
+  return `https://browser.dataspace.copernicus.eu/?${params}`;
+}
+
 export function satelliteContextTileUrl(day, mission = 'VIIRS NOAA-21') {
   const layers = {
     'VIIRS NOAA-21': 'VIIRS_NOAA21_CorrectedReflectance_TrueColor',
@@ -323,10 +353,15 @@ export function playMapStyle(day = new Date(Date.now() - 24 * 3600 * 1000).toISO
     sources: {
       baseMap: publicBasemapSource(),
       bathymetryLabels: { type: 'raster', tiles: [PUBLIC_BASEMAP_LABEL_URL], tileSize: 256, maxzoom: 19, attribution: BASEMAP_LABEL_ATTRIBUTION },
+      satelliteComposite: {
+        type: 'raster', tiles: [SATELLITE_BASEMAP_TILE_URL], tileSize: 256, maxzoom: 19,
+        attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+      },
       satelliteContext: {
         type: 'raster',
         tiles: [satelliteContextTileUrl(day, mission)],
         tileSize: 256,
+        maxzoom: 9,
         attribution: 'NASA EOSDIS GIBS / VIIRS',
       },
     },
@@ -334,6 +369,7 @@ export function playMapStyle(day = new Date(Date.now() - 24 * 3600 * 1000).toISO
       { id: 'base-map', type: 'raster', source: 'baseMap', paint: { 'raster-opacity': 0.95, 'raster-brightness-min': 0.06, 'raster-brightness-max': 0.52, 'raster-saturation': -0.72, 'raster-contrast': 0.22 } },
       { id: 'bathymetry-labels', type: 'raster', source: 'bathymetryLabels', paint: { 'raster-opacity': 0.6 } },
       { id: 'satellite-context', type: 'raster', source: 'satelliteContext', layout: { visibility: 'none' }, paint: { 'raster-opacity': 1, 'raster-fade-duration': 120 } },
+      { id: 'satellite-composite', type: 'raster', source: 'satelliteComposite', layout: { visibility: 'none' } },
     ],
   };
 }
@@ -366,6 +402,7 @@ export function satelliteFootprintCollection(timeline = []) {
         type: 'Feature',
         geometry: item.geometry,
         properties: {
+          kind: 'satellite_coverage',
           observation_id: item.id,
           mission: item.properties?.mission || 'Copernicus',
           sensor_type: item.properties?.sensor_type || 'satellite',

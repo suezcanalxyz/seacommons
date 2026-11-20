@@ -17,6 +17,7 @@ import {
   archiveCoverage,
   groupArchiveByMonth,
   satelliteContextTileUrl,
+  copernicusSceneViewer,
 } from './timeline.js';
 
 const items = [
@@ -320,7 +321,7 @@ test('Play map initialization fails over to the shared interactive renderer', as
   assert.match(source, /createFallbackMap/);
   assert.match(source, /fallbackMapRef/);
   assert.match(source, /__SEACOMMONS_FORCE_MAP_FALLBACK__/);
-  assert.match(source, /fallback\.setFeatures\(selectedArea \? \[\.\.\.points, selectedArea\] : points\)/);
+  assert.match(source, /fallback\.setFeatures\(\[\.\.\.points, \.\.\.\[selectedArea, footprint\]\.filter\(Boolean\)\]\)/);
   assert.match(source, /setSelectedId\(String\(feature\.properties\.incident_id\)\)/);
 });
 
@@ -599,4 +600,19 @@ test('satellite review admits dated GFW radar points with explicit provider line
   assert.equal(sarObservationPoint({ ...point, geometry: { type: 'Point', coordinates: [null, 35] } }), null);
   assert.deepEqual(satelliteReviewScenes([point], [], '2026-05-20T09:00:00Z'), []);
   assert.deepEqual(satelliteReviewScenes([point], [], null), [point]);
+});
+
+test('the Copernicus viewer opens the acquisition day and optical or radar dataset', () => {
+  const scene = { source: 'copernicus_dataspace', at: '2026-10-05T17:02:00Z' };
+  const optical = new URL(copernicusSceneViewer({
+    ...scene, properties: { mission: 'Sentinel-2', product_id: 'S2A_MSIL1C_test' },
+  }, [11, 36]));
+  assert.equal(optical.searchParams.get('datasetId'), 'S2_L1C_CDAS');
+  assert.equal(optical.searchParams.get('toTime'), '2026-10-05T23:59:59.999Z');
+  assert.equal(optical.searchParams.get('zoom'), '14');
+  const radar = new URL(copernicusSceneViewer({
+    ...scene, properties: { mission: 'Sentinel-1', product_id: 'S1A_IW_GRDH_test', polarisation: ['VH', 'VV'] },
+  }, [11, 36]));
+  assert.equal(radar.searchParams.get('datasetId'), 'S1_CDAS_IW_VVVH');
+  assert.equal(copernicusSceneViewer({ ...scene, properties: { mission: 'Sentinel-3' } }, [11, 36]), null);
 });

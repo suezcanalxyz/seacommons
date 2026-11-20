@@ -40,6 +40,7 @@ import {
   archiveCoverage,
   groupArchiveByMonth,
   satelliteContextTileUrl,
+  copernicusSceneViewer,
 } from './timeline.js';
 
 function clusterPaint(property) {
@@ -61,7 +62,7 @@ function evidenceCollection(timeline = []) {
   return {
     type: 'FeatureCollection',
     features: timeline
-      .filter((item) => item?.geometry)
+      .filter((item) => item?.geometry && item.type !== 'satellite')
       .map((item) => ({
         type: 'Feature',
         geometry: item.geometry,
@@ -187,9 +188,11 @@ export default function PlayTimeline({ apiBase }) {
   const [sanctionsOnly, setSanctionsOnly] = useState(false);
   const [sanctionsOpen, setSanctionsOpen] = useState(false);
   const [investigationsOnly, setInvestigationsOnly] = useState(false);
-  const [imageryMode, setImageryMode] = useState('composite');
+  const [imageryMode, setImageryMode] = useState('map');
+  const [failedPreview, setFailedPreview] = useState('');
   const [imageryDate, setImageryDate] = useState('');
-  const satelliteVisible = imageryMode !== 'composite';
+  const satelliteVisible = imageryMode !== 'map';
+  const viirsVisible = imageryMode === 'dated' || imageryMode === 'recent';
   const [satelliteContextMission, setSatelliteContextMission] = useState('VIIRS NOAA-21');
 
   const globalState = useMemo(
@@ -335,7 +338,10 @@ export default function PlayTimeline({ apiBase }) {
     ] };
   }, [aisReconstruction, geographicClues, globalState.cutoff, selectedIncident, visibleTimeline]);
   const frame = useMemo(
-    () => selectFrame(visibleTimeline, Math.max(0, visibleTimeline.length - 1)),
+    () => {
+      const evidence = visibleTimeline.filter((item) => item.type !== 'satellite');
+      return selectFrame(evidence, Math.max(0, evidence.length - 1));
+    },
     [visibleTimeline],
   );
   const satelliteScenes = useMemo(
@@ -679,7 +685,7 @@ export default function PlayTimeline({ apiBase }) {
         map.addSource('play-satellite-footprints', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addLayer({
           id: 'play-satellite-footprint-fill', type: 'fill', source: 'play-satellite-footprints',
-          paint: { 'fill-color': '#75a7ff', 'fill-opacity': 0.08 },
+          paint: { 'fill-color': '#75a7ff', 'fill-opacity': 0 },
         });
         map.addLayer({
           id: 'play-satellite-footprint-line', type: 'line', source: 'play-satellite-footprints',
@@ -795,9 +801,10 @@ export default function PlayTimeline({ apiBase }) {
     if (!fallbackReady || !fallback) return;
     const points = mappedIncidents.features.filter((feature) => feature.geometry.type === 'Point');
     const selectedArea = mappedIncidents.features.find((feature) => feature.properties.incident_id === selectedId && feature.properties.marker_kind === 'search_area');
-    fallback.setFeatures(selectedArea ? [...points, selectedArea] : points);
+    const [footprint] = satelliteFootprintCollection(satellite ? [satellite] : []).features;
+    fallback.setFeatures([...points, ...[selectedArea, footprint].filter(Boolean)]);
     if (!selectedId && points.length) fallback.fitFeatures(points);
-  }, [fallbackReady, mappedIncidents, selectedId]);
+  }, [fallbackReady, mappedIncidents, selectedId, satellite]);
 
   useEffect(() => {
     if (!fallbackReady || !selectedIncident?.geometry) return;
@@ -906,16 +913,17 @@ export default function PlayTimeline({ apiBase }) {
     source?.setTiles?.([satelliteContextTileUrl(contextDay, satelliteContextMission)]);
     if (map.getLayer('base-map')) map.setLayoutProperty('base-map', 'visibility', satelliteVisible ? 'none' : 'visible');
     if (map.getLayer('bathymetry-labels')) map.setLayoutProperty('bathymetry-labels', 'visibility', satelliteVisible ? 'none' : 'visible');
-    if (map.getLayer('satellite-context')) map.setLayoutProperty('satellite-context', 'visibility', satelliteVisible ? 'visible' : 'none');
-  }, [mapReady, satelliteVisible, contextDay, satelliteContextMission]);
+    if (map.getLayer('satellite-context')) map.setLayoutProperty('satellite-context', 'visibility', viirsVisible ? 'visible' : 'none');
+    if (map.getLayer('satellite-composite')) map.setLayoutProperty('satellite-composite', 'visibility', imageryMode === 'composite' ? 'visible' : 'none');
+  }, [mapReady, satelliteVisible, viirsVisible, imageryMode, contextDay, satelliteContextMission]);
 
   useEffect(() => {
     if (!fallbackReady) return;
-    const imageryUrl = satelliteVisible
+    const imageryUrl = viirsVisible
       ? satelliteContextTileUrl(contextDay, satelliteContextMission)
       : SATELLITE_BASEMAP_TILE_URL;
-    fallbackMapRef.current?.setBasemap(satelliteVisible ? 'satellite' : 'standard', imageryUrl);
-  }, [fallbackReady, satelliteVisible, contextDay, satelliteContextMission]);
+    fallbackMapRef.current?.setBasemap(satelliteVisible ? 'satellite' : 'standard', imageryUrl, viirsVisible ? 9 : 19);
+  }, [fallbackReady, satelliteVisible, viirsVisible, contextDay, satelliteContextMission]);
 
   useEffect(() => {
     if (!fallbackReady) return;
@@ -977,6 +985,7 @@ export default function PlayTimeline({ apiBase }) {
     lng: ((caseBounds.west + caseBounds.east) / 2).toFixed(4),
     datasetId: 'S2_L2A_CDAS', layerId: '1_TRUE_COLOR', date: 'latest',
   })}`;
+  const sceneViewerUrl = copernicusSceneViewer(satellite, caseBounds?.center || sceneBounds?.center);
   const quicklook = /^https:\/\//i.test(satelliteProps.asset_ref || '')
     && /(?:\.(?:png|jpe?g|webp)|Assets\([^)]*\)\/\$value)(?:\?|$)/i.test(satelliteProps.asset_ref);
   const modeLabel = cutoffLabel(globalState);
@@ -1189,7 +1198,27 @@ export default function PlayTimeline({ apiBase }) {
         </section>}
         {playToolTab === 'layers' && <section className="sc-panel-tab-content" aria-label="Archive map layers">
           <h2>Map and evidence layers</h2>
-          <p>Bathymetry is the default. Use Map / Satellite in the bottom-left corner to change the background.</p>
+          <label className="play-satellite-selector">
+            <span>Map background</span>
+            <select value={imageryMode} onChange={(event) => setImageryMode(event.target.value)}>
+              <option value="map">Bathymetry</option>
+              <option value="composite">Esri · reference imagery</option>
+              <option value="dated">NASA VIIRS · case day, regional imagery</option>
+              <option value="recent">NASA VIIRS · select day, regional imagery</option>
+            </select>
+          </label>
+          {imageryMode === 'recent' && <label className="play-satellite-selector">
+            <span>VIIRS date (UTC)</span><input type="date" value={contextDay} max={todayUtc}
+              onChange={(event) => setImageryDate(event.target.value)} />
+          </label>}
+          {viirsVisible && <label className="play-satellite-selector">
+            <span>VIIRS satellite</span>
+            <select value={satelliteContextMission} onChange={(event) => setSatelliteContextMission(event.target.value)}>
+              <option value="VIIRS NOAA-21">NOAA-21</option>
+              <option value="VIIRS NOAA-20">NOAA-20</option>
+              <option value="VIIRS Suomi-NPP">Suomi-NPP</option>
+            </select>
+          </label>}
           <label className="sc-panel-layer-option"><input type="checkbox" checked={satelliteOnly} onChange={() => setSatelliteOnly((v) => !v)} /><span>Cases with satellite evidence</span></label>
           <label className="sc-panel-layer-option"><input type="checkbox" checked={sanctionsOnly} onChange={() => setSanctionsOnly((v) => !v)} /><span>Sanctions-related cases</span></label>
           <label className="sc-panel-layer-option"><input type="checkbox" checked={investigationsOnly} onChange={() => setInvestigationsOnly((v) => !v)} /><span>Investigations only</span></label>
@@ -1201,7 +1230,7 @@ export default function PlayTimeline({ apiBase }) {
       <section className="map-stage play-map-stage">
         <div className="map-frame play-map" ref={mapNodeRef} />
         <MapBasemapSwitch mode={satelliteVisible ? 'satellite' : 'standard'} panelOpen={!archiveCollapsed}
-          onChange={(mode) => setImageryMode(mode === 'satellite' ? 'recent' : 'composite')} />
+          onChange={(mode) => setImageryMode(mode === 'satellite' ? 'composite' : 'map')} />
         <div className="play-all-badge"><strong>{modeLabel}</strong><span>{mappedIncidentCount} mapped / {filteredIncidents.length} filtered · {incidents.length} loaded{archiveTotal != null ? ` / ${archiveTotal} archive` : ''}</span></div>
         {error ? <div className="play-map-message is-error">{error}</div> : null}
         {mapError ? <div className="play-map-message is-error">{mapError}</div> : null}
@@ -1241,6 +1270,50 @@ export default function PlayTimeline({ apiBase }) {
         <div className="play-evidence__scroll" aria-busy={Boolean(timelineLoading)}>
           {timelineLoading && <p className="play-dossier-progress" role="status">Loading case evidence…</p>}
           {timelineError && <p className="play-dossier-progress" role="alert">{timelineError}</p>}
+          <section className="play-card play-satellite-review">
+            <h3>Satellite imagery and sources</h3>
+            <p>Choose a dated acquisition to inspect its image and product record. A coverage outline shows where the sensor collected data.</p>
+            <label className="play-satellite-selector">
+              <span>Case acquisitions and radar observations</span>
+              <select value={satelliteMission} onChange={(event) => setSatelliteMission(event.target.value)} disabled={!satelliteScenes.length}>
+                <option value="">{satelliteScenes.length ? 'Choose an acquisition or radar observation' : 'No satellite record at this cutoff'}</option>
+                {satelliteScenes.map((item) => <option key={item.id} value={item.id}>{sarObservationPoint(item) ? 'GFW Sentinel-1 SAR return' : item.properties?.mission || item.source || 'Satellite'} · {itemTime(item.at)} UTC{item.properties?.evidence_role === 'context_only_pending_review' ? ' · review candidate' : ''}</option>)}
+              </select>
+            </label>
+            {sarPoint ? (
+              <>
+                <span>Radar return in a GFW reporting cell · {sarPoint[1].toFixed(4)}, {sarPoint[0].toFixed(4)}</span>
+                <span>{satelliteProps.association_status === 'strong' && satelliteProps.evidence_role === 'corroboration'
+                  ? 'Provider AIS identity matches the archived episode'
+                  : satelliteProps.association_status === 'conflict'
+                    ? 'Provider matched this return to a different vessel'
+                    : 'Vessel identity unconfirmed for this case'}</span>
+                <button type="button" onClick={locateSarPoint}>Locate radar return on map</button>
+              </>
+            ) : satellite && <span>Acquisition coverage or imagery for manual review</span>}
+            {recentOpticalUrl && !satellite && <a href={recentOpticalUrl} target="_blank" rel="noreferrer">Browse latest Sentinel-2 imagery near the case ↗</a>}
+            {sceneViewerUrl && <a href={sceneViewerUrl} target="_blank" rel="noreferrer">View imagery at the case location and acquisition date ↗</a>}
+            {satelliteProps.source_url && /^https?:\/\//i.test(satelliteProps.source_url) && (
+              <a href={satelliteProps.source_url} target="_blank" rel="noreferrer">{satellite?.source === 'copernicus_dataspace' ? 'Open exact Copernicus product record (STAC)' : 'Open provider source record'} ↗</a>
+            )}
+            {sceneBounds && <button type="button" onClick={locateScene}>Locate scene coverage on map</button>}
+            {satellite && sceneResolution > 0 && Number.isFinite(sceneResolution)
+              && <span>Product pixel spacing · {sceneResolution} m</span>}
+            {quicklook && failedPreview !== satelliteProps.asset_ref && <figure className="play-satellite-preview">
+              <img key={satelliteProps.asset_ref} src={satelliteProps.asset_ref} alt="Satellite quicklook from provider" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailedPreview(satelliteProps.asset_ref)} />
+              <figcaption>Provider thumbnail · full scene, reduced resolution</figcaption>
+            </figure>}
+            {quicklook && <a href={satelliteProps.asset_ref} target="_blank" rel="noreferrer">Open provider quicklook ↗</a>}
+            {satelliteProps.temporal_delta_s != null && Number.isFinite(Number(satelliteProps.temporal_delta_s)) ? <span>Δt {Math.round(Number(satelliteProps.temporal_delta_s) / 3600)} h from report</span> : null}
+            {Number.isFinite(satelliteProps.review_delta_hours) && <span>{satelliteProps.review_delta_hours.toFixed(1)} h from the episode window · coverage candidate</span>}
+            {satelliteProps.product_id ? <span>Product {satelliteProps.product_id}</span> : null}
+            {satelliteProps.temporal_relation ? <span>{satelliteProps.temporal_relation}</span> : null}
+            {satelliteProps.polarisation?.length ? <span>Polarisation {satelliteProps.polarisation.join(' / ')}</span> : null}
+            {satelliteProps.cloud_cover != null && Number.isFinite(Number(satelliteProps.cloud_cover)) ? <span>Cloud {Math.round(Number(satelliteProps.cloud_cover))}%</span> : null}
+            {satelliteProps.evidence_status ? <span>Evidence {satelliteProps.evidence_status}</span> : null}
+            {satellite && (!quicklook || failedPreview === satelliteProps.asset_ref) && <span>No inline preview available. Use the imagery or product link above when available.</span>}
+            {satellite && <span>Vessel image unavailable unless a source publishes an identified vessel crop. A radar return marks a detection.</span>}
+          </section>
           <section className="cone-section sc-play-human-summary" aria-label="Case overview in plain language">
             <p className="sc-play-human-summary__eyebrow">AT A GLANCE</p>
             <h2>{selectedIncident?.title || 'Historical maritime case'}</h2>
@@ -1381,8 +1454,8 @@ export default function PlayTimeline({ apiBase }) {
             <span>{caseData?.independence_groups?.length ? caseData.independence_groups.join(' · ') : 'Independent source lineages not documented.'}</span>
           </section>
           <section className="play-card">
-            <p>Evidence chronology · {visibleTimeline.length} records</p>
-            {visibleTimeline.length ? visibleTimeline.map((item, index) => (
+            <p>Evidence chronology · {reportEvidence.length} records</p>
+            {reportEvidence.length ? reportEvidence.map((item, index) => (
               <div key={item.id || index} className="play-dossier-evidence">
                 <time>{itemTime(item.at)}</time>
                 <h3>{item.title || statusLabel(item.type || 'Observation')}</h3>
@@ -1397,67 +1470,6 @@ export default function PlayTimeline({ apiBase }) {
             {frame.item ? <time>{itemTime(frame.item.at)}</time> : null}
             <span>{frame.item?.source || '—'}</span>
             {frameProps.url ? <a href={frameProps.url} target="_blank" rel="noreferrer">Source ↗</a> : null}
-          </section>
-          <section className="play-card">
-            <h3>Satellite review</h3>
-            <p>Inspect dated scenes and their source records. Coverage alone cannot establish what happened.</p>
-            <label className="play-satellite-selector">
-              <span>Map background</span>
-              <select aria-label="Map imagery" value={imageryMode} onChange={(event) => setImageryMode(event.target.value)}>
-                <option value="composite">Esri imagery · detailed composite</option>
-                <option value="dated">NASA VIIRS · case date</option>
-                <option value="recent">NASA VIIRS · recent context</option>
-              </select>
-            </label>
-            {imageryMode === 'recent' && <label className="play-satellite-selector">
-              <span>Imagery date (UTC)</span>
-              <input type="date" value={contextDay} max={todayUtc}
-                onChange={(event) => setImageryDate(event.target.value)} />
-              <small>Today is requested first. Select an earlier date if tiles are unavailable. This background is independent of the case timeline.</small>
-            </label>}
-            {satelliteVisible && <label className="play-satellite-selector">
-              <span>NASA context · {contextDay} UTC · regional detail</span>
-              <select value={satelliteContextMission} onChange={(event) => setSatelliteContextMission(event.target.value)}>
-                <option value="VIIRS NOAA-21">NOAA-21 · true color</option>
-                <option value="VIIRS NOAA-20">NOAA-20 · true color</option>
-                <option value="VIIRS Suomi-NPP">Suomi-NPP · true color</option>
-              </select>
-            </label>}
-            {recentOpticalUrl && <a href={recentOpticalUrl} target="_blank" rel="noreferrer">Latest Sentinel-2 optical imagery near the case ↗</a>}
-            <label className="play-satellite-selector">
-              <span>Case acquisitions and radar observations</span>
-              <select value={satelliteMission} onChange={(event) => setSatelliteMission(event.target.value)} disabled={!satelliteScenes.length}>
-                <option value="">{satelliteScenes.length ? 'Choose an acquisition or radar observation' : 'No satellite record at this cutoff'}</option>
-                {satelliteScenes.map((item) => <option key={item.id} value={item.id}>{sarObservationPoint(item) ? 'GFW Sentinel-1 SAR return' : item.properties?.mission || item.source || 'Satellite'} · {itemTime(item.at)} UTC{item.properties?.evidence_role === 'context_only_pending_review' ? ' · review candidate' : ''}</option>)}
-              </select>
-            </label>
-            {sarPoint ? (
-              <>
-                <span>Radar return in a GFW reporting cell · {sarPoint[1].toFixed(4)}, {sarPoint[0].toFixed(4)}</span>
-                <span>{satelliteProps.association_status === 'strong' && satelliteProps.evidence_role === 'corroboration'
-                  ? 'Provider AIS identity matches the archived episode'
-                  : satelliteProps.association_status === 'conflict'
-                    ? 'Provider matched this return to a different vessel'
-                    : 'Vessel identity unconfirmed for this case'}</span>
-                <button type="button" onClick={locateSarPoint}>Locate radar return on map</button>
-              </>
-            ) : satellite && <span>Acquisition coverage or imagery for manual review</span>}
-            {sceneBounds && <button type="button" onClick={locateScene}>Locate scene coverage on map</button>}
-            {satellite && sceneResolution > 0 && Number.isFinite(sceneResolution)
-              && <span>Product pixel spacing · {sceneResolution} m</span>}
-            {quicklook && <figure className="play-satellite-preview">
-              <img key={satelliteProps.asset_ref} src={satelliteProps.asset_ref} alt="Satellite quicklook from provider" loading="lazy" referrerPolicy="no-referrer" />
-              <figcaption>Provider quicklook · imagery is shown in its original framing</figcaption>
-            </figure>}
-            {/^https:\/\//i.test(satelliteProps.asset_ref || '') && !satelliteProps.asset_ref.includes('{') && <a href={satelliteProps.asset_ref} target="_blank" rel="noreferrer">Open provider quicklook ↗</a>}
-            {satelliteProps.temporal_delta_s != null && Number.isFinite(Number(satelliteProps.temporal_delta_s)) ? <span>Δt {Math.round(Number(satelliteProps.temporal_delta_s) / 3600)} h from report</span> : null}
-            {Number.isFinite(satelliteProps.review_delta_hours) && <span>{satelliteProps.review_delta_hours.toFixed(1)} h from the episode window · coverage candidate</span>}
-            {satelliteProps.product_id ? <span>Product {satelliteProps.product_id}</span> : null}
-            {satelliteProps.temporal_relation ? <span>{satelliteProps.temporal_relation}</span> : null}
-            {satelliteProps.polarisation?.length ? <span>Polarisation {satelliteProps.polarisation.join(' / ')}</span> : null}
-            {satelliteProps.cloud_cover != null && Number.isFinite(Number(satelliteProps.cloud_cover)) ? <span>Cloud {Math.round(Number(satelliteProps.cloud_cover))}%</span> : null}
-            {satelliteProps.evidence_status ? <span>Evidence {satelliteProps.evidence_status}</span> : null}
-            {satelliteProps.source_url ? <a href={satelliteProps.source_url} target="_blank" rel="noreferrer">Acquisition record ↗</a> : null}
           </section>
         </div>
       </aside>}

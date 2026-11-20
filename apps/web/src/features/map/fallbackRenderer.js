@@ -168,10 +168,10 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
   });
 
   const renderer = {
-    setBasemap(mode, imageryUrl = SATELLITE_BASEMAP_TILE_URL) {
+    setBasemap(mode, imageryUrl = SATELLITE_BASEMAP_TILE_URL, imageryMaxZoom = 19) {
       if (mode === 'satellite' && !satelliteTiles) {
         satelliteTiles = L.tileLayer(imageryUrl, {
-          ...retinaTiles, maxNativeZoom: 19, zIndex: 1, attribution: 'Esri or NASA EOSDIS GIBS',
+          ...retinaTiles, maxNativeZoom: imageryMaxZoom, detectRetina: false, zIndex: 1, attribution: 'Esri or NASA EOSDIS GIBS',
         });
         satelliteUrl = imageryUrl;
         satelliteLabelTiles = L.tileLayer(SATELLITE_BASEMAP_LABEL_URL, {
@@ -181,6 +181,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
       }
       const nextTiles = mode === 'satellite' ? satelliteTiles : standardTiles;
       if (mode === 'satellite' && imageryUrl !== satelliteUrl) {
+        satelliteTiles.options.maxNativeZoom = imageryMaxZoom;
         satelliteTiles.setUrl(imageryUrl, activeTiles !== satelliteTiles);
         satelliteUrl = imageryUrl;
       }
@@ -257,9 +258,11 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
       for (const feature of polygonFeatures(incidents)) {
         const polygons = leafletPolygonCoordinates(feature.geometry);
         for (const latlngs of polygons) {
-          const color = semanticColor(feature);
+          const footprint = feature.properties?.kind === 'satellite_coverage';
+          const color = footprint ? '#75a7ff' : semanticColor(feature);
           L.polygon(latlngs, {
-            color, weight: 2, fillColor: color, fillOpacity: 0.22,
+            color, weight: 2, fillColor: color, fillOpacity: footprint ? 0 : 0.22,
+            dashArray: footprint ? '5 4' : undefined, interactive: !footprint,
             className: markerClass(feature), renderer: incidentRenderer,
           }).on('click', () => onFeatureSelect?.(feature)).addTo(markers);
         }
