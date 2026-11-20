@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import sqlite3
 import threading
 import time
@@ -51,6 +52,11 @@ def _deserialize(payload: str) -> dict[str, Any]:
     for key in ("ts", "received_at"):
         row[key] = datetime.fromisoformat(row[key])
     return row
+
+
+def _available_disk_bytes(path: Path) -> int:
+    """Return free bytes using the cross-platform filesystem API."""
+    return int(shutil.disk_usage(path).free)
 
 
 class SQLiteTrackSpool:
@@ -114,8 +120,7 @@ class SQLiteTrackSpool:
         with self._lock:
             if self._pending_payload_bytes + size > self.max_payload_bytes:
                 raise TrackSpoolFull("AIS spool capacity exceeded; ingestion must alert")
-            fs = os.statvfs(self.path.parent)
-            free = fs.f_bavail * fs.f_frsize
+            free = _available_disk_bytes(self.path.parent)
             if free - size < self.reserved_disk_bytes:
                 raise TrackSpoolFull("AIS disk reserve reached; ingestion must alert")
             with self._conn:

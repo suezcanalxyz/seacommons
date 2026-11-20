@@ -6,12 +6,12 @@ Production scheduling must enforce this globally across workers.
 """
 from __future__ import annotations
 
-import json
 import threading
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+
+from core.net.outbound import FixedOriginClient
 
 BASE = "https://navtex.online"
 NAVAREAS = frozenset(("I", "II", "III", "IV", "V", "VI", "VII", "VIII",
@@ -57,9 +57,13 @@ def fetch_navtex_messages(*, navarea: str = "III", limit: int = 50,
     if not 1 <= limit <= 200:
         raise ValueError("limit must be 1..200")
     url = f"{BASE}/api/v1/messages?" + urlencode({"navarea": navarea, "limit": limit})
-    request = Request(url, headers={"User-Agent": "SeaCommons/1.0 NAVTEX read-only"})
-    with urlopen(request, timeout=timeout) as response:
-        payload = json.load(response)
+    client = FixedOriginClient((BASE,), timeout=timeout)
+    response = client.request(
+        url,
+        headers={"User-Agent": "SeaCommons/1.0 NAVTEX read-only"},
+    )
+    response.raise_for_status()
+    payload = response.json()
     if not isinstance(payload, dict) or not isinstance(payload.get("messages"), list):
         raise ValueError("unexpected NAVTEX response")
     return [normalize_navtex_message(row) for row in payload["messages"]

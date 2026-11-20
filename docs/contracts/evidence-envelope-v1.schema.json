@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seacommons.org/contracts/evidence-envelope-v1.schema.json",
+  "title": "SeaCommons Evidence Envelope v1",
+  "description": "A source-to-publication provenance envelope. A valid envelope records evidence; it does not assert that the reported event is true.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_id",
+    "source_type",
+    "provider",
+    "source_url",
+    "raw_message_reference",
+    "raw_payload_sha256",
+    "observed_at",
+    "received_at",
+    "ingested_at",
+    "processed_at",
+    "published_at",
+    "location",
+    "location_uncertainty",
+    "identity_confidence",
+    "independent_source_count",
+    "source_independence_group",
+    "method_version",
+    "evidence_level",
+    "limitations",
+    "processing_version",
+    "lineage_parent_ids",
+    "collection_state"
+  ],
+  "properties": {
+    "schema_version": {"const": "evidence-envelope-v1"},
+    "source_id": {"type": "string", "minLength": 1, "maxLength": 512},
+    "source_type": {"type": "string", "minLength": 1, "maxLength": 64},
+    "provider": {"type": "string", "minLength": 1, "maxLength": 128},
+    "source_url": {"type": "string", "format": "uri", "pattern": "^https://"},
+    "raw_message_reference": {"type": "string", "minLength": 1, "maxLength": 2048},
+    "raw_payload_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "observed_at": {"$ref": "#/$defs/utcTimestamp"},
+    "received_at": {"$ref": "#/$defs/utcTimestamp"},
+    "ingested_at": {"$ref": "#/$defs/utcTimestamp"},
+    "processed_at": {"$ref": "#/$defs/utcTimestamp"},
+    "published_at": {
+      "oneOf": [
+        {"$ref": "#/$defs/utcTimestamp"},
+        {"type": "null"}
+      ]
+    },
+    "location": {
+      "oneOf": [
+        {"$ref": "#/$defs/point"},
+        {"type": "null"}
+      ]
+    },
+    "location_uncertainty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["radius_m", "basis"],
+      "properties": {
+        "radius_m": {"type": ["number", "null"], "minimum": 0},
+        "basis": {"type": "string", "minLength": 1, "maxLength": 256}
+      }
+    },
+    "identity_confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "independent_source_count": {"type": "integer", "minimum": 0},
+    "source_independence_group": {"type": "string", "minLength": 1, "maxLength": 128},
+    "method_version": {"type": "string", "minLength": 1, "maxLength": 128},
+    "evidence_level": {
+      "enum": [
+        "observation",
+        "official_report",
+        "independent_corroboration",
+        "algorithmic_inference",
+        "modeled_prediction",
+        "unverified_claim",
+        "missing_data",
+        "collection_failure"
+      ]
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1, "maxLength": 2048}
+    },
+    "processing_version": {"type": "string", "minLength": 1, "maxLength": 128},
+    "lineage_parent_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 512}
+    },
+    "collection_state": {
+      "enum": ["received", "validated", "rejected", "missing", "failed", "published"]
+    }
+  },
+  "$defs": {
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "(Z|\\+00:00)$"
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "coordinates"],
+      "properties": {
+        "type": {"const": "Point"},
+        "coordinates": {
+          "type": "array",
+          "prefixItems": [
+            {"type": "number", "minimum": -180, "maximum": 180},
+            {"type": "number", "minimum": -90, "maximum": 90}
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    }
+  }
+}

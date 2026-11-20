@@ -1,4 +1,7 @@
-from core.mda.track_discontinuity import analyze_track_discontinuities
+from core.mda.track_discontinuity import (
+    analyze_track_discontinuities,
+    track_feature_collection,
+)
 
 
 def fix(ts, lat, lon, source="ais"):
@@ -52,3 +55,19 @@ def test_dense_valid_route_has_no_fabricated_gap():
         fix("2026-11-18T10:20:00Z", 36.51, 14.81),
     ])
     assert result["total_flagged_segments"] == 0
+
+
+def test_public_track_never_draws_across_impossible_jump_or_gap():
+    collection = track_feature_collection([
+        fix("2026-11-18T10:21:33Z", 37.20875, 15.18848),
+        fix("2026-11-18T10:32:44Z", 36.47340, 14.77830),
+        fix("2026-11-18T10:40:44Z", 36.49340, 14.79830),
+        fix("2026-11-18T12:40:44Z", 36.51340, 14.81830),
+    ])
+
+    assert len(collection["features"]) == 1
+    assert collection["features"][0]["geometry"]["coordinates"] == [
+        [14.77830, 36.47340],
+        [14.79830, 36.49340],
+    ]
+    assert collection["features"][0]["properties"]["is_observed_route"] is False

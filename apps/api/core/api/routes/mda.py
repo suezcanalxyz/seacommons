@@ -181,15 +181,7 @@ def build_vessel_dossier(mmsi: str, *, hours: float, track_limit: int = 5000, in
                    "destination": v.get("destination"), "last_seen": v.get("last_seen")},
         "identity": screen(mmsi=mmsi, imo=v.get("imo"), name=v.get("ship_name") or "",
                            flag=v.get("flag") or ""),
-        "track": {
-            "type": "FeatureCollection",
-            "features": ([{
-                "type": "Feature",
-                "geometry": {"type": "LineString",
-                             "coordinates": [[p["lon"], p["lat"]] for p in track]},
-                "properties": {"points": len(track)},
-            }] if len(track) >= 2 else []),
-        },
+        "track": _track_feature_collection(track),
         "track_points": track,
         "latest_ais_fix": latest,
         "recent_port_calls": _derive_recent_port_calls(track),
@@ -217,6 +209,12 @@ def _track_discontinuities(track: list[dict]) -> dict:
     from core.mda.track_discontinuity import analyze_track_discontinuities
 
     return analyze_track_discontinuities(track)
+
+
+def _track_feature_collection(track: list[dict]) -> dict:
+    from core.mda.track_discontinuity import track_feature_collection
+
+    return track_feature_collection(track)
 
 
 def _derive_recent_port_calls(track: list[dict], *, limit: int = 8) -> list[dict]:

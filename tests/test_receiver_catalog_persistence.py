@@ -197,6 +197,31 @@ def test_public_catalog_summary_exposes_counts_without_private_endpoint():
         db.query(ReceiverCatalogDB).filter_by(discovery_key=key).delete()
 
 
+def test_public_catalog_summary_omits_unreviewed_endpoint_labels():
+    from core.db.models import ReceiverCatalogDB
+    from core.db.session import engine, session_scope
+    from core.radio.catalog_store import public_catalog_summary
+
+    ReceiverCatalogDB.__table__.create(bind=engine(), checkfirst=True)
+    key = "openwebrx:private-candidate.example:8073"
+    with session_scope() as db:
+        db.merge(ReceiverCatalogDB(
+            discovery_key=key, receiver_id=None,
+            public_label="http://private-candidate.example:8073/",
+            network_family="openwebrx", endpoint="http://private-candidate.example:8073/",
+            directory_source="test", terms_status="review_required",
+            activation_status="review_required", reachable=True, score=100.0,
+        ))
+
+    summary = public_catalog_summary(limit=64)
+
+    assert summary["catalogued"] >= 1
+    assert "private-candidate.example" not in str(summary)
+    assert all(row["receiver_id"] for row in summary["receivers"])
+    with session_scope() as db:
+        db.query(ReceiverCatalogDB).filter_by(discovery_key=key).delete()
+
+
 def test_live_receiver_mesh_endpoint_combines_catalog_and_active_runtime(monkeypatch):
     from fastapi.testclient import TestClient
     from core.api.main import app
