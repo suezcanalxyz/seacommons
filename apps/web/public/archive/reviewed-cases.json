@@ -32,6 +32,34 @@
             "source_url": "https://digitallibrary.un.org/record/4132352/files/A_81_472--S_2026_882-EN.pdf",
             "time_precision": "date_only"
           }
+        },
+        {
+          "id": "contship-jet-s2-20261028",
+          "at": "2026-10-28T09:00:59.024Z",
+          "type": "satellite",
+          "title": "Sentinel-2 catalog reference",
+          "source": "copernicus_dataspace",
+          "properties": {
+            "mission": "Sentinel-2",
+            "product_id": "S2B_MSIL2A_20261028T090059_N0513_R007_T35TPH_20261028T131234",
+            "source_url": "https://stac.dataspace.copernicus.eu/v1/collections/sentinel-2-l2a/items/S2B_MSIL2A_20261028T090059_N0513_R007_T35TPH_20261028T131234",
+            "evidence_role": "context_only_pending_review",
+            "review_note": "The classification layer records high-probability cloud at the reported position. The acquisition precedes the time stated in the maritime notice by about an hour."
+          }
+        },
+        {
+          "id": "contship-jet-s1-20261030",
+          "at": "2026-10-30T04:13:22.497798Z",
+          "type": "satellite",
+          "title": "Sentinel-1 catalog reference",
+          "source": "planetary_computer",
+          "properties": {
+            "mission": "Sentinel-1",
+            "product_id": "S1C_IW_GRDH_1SDV_20261030T041309_20261030T041334_010109_0142D7_rtc",
+            "source_url": "https://planetarycomputer.microsoft.com/api/stac/v1/collections/sentinel-1-rtc/items/S1C_IW_GRDH_1SDV_20261030T041309_20261030T041334_010109_0142D7_rtc",
+            "evidence_role": "context_only_pending_review",
+            "review_note": "The acquisition is 42 h 13 min after the time in the maritime notice. The SeaCommons detector produced no candidates in the tested crop. This acquisition cannot establish vessel presence at the time of the incident."
+          }
         }
       ]
     }

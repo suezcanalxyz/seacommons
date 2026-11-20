@@ -1330,6 +1330,7 @@ export default function PlayTimeline({ apiBase }) {
             {satelliteProps.source_url && /^https?:\/\//i.test(satelliteProps.source_url) && (
               <a href={satelliteProps.source_url} target="_blank" rel="noreferrer">{satellite?.source === 'copernicus_dataspace' ? 'Open exact Copernicus product record (STAC)' : 'Open provider source record'} ↗</a>
             )}
+            {satelliteProps.review_note && <p className="intel-report-summary">{satelliteProps.review_note}</p>}
             {sceneBounds && <button type="button" onClick={locateScene}>Locate scene coverage on map</button>}
             {satellite && sceneResolution > 0 && Number.isFinite(sceneResolution)
               && <span>Product pixel spacing · {sceneResolution} m</span>}

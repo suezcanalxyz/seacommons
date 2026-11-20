@@ -52,6 +52,39 @@ def scenes(case_id, timeline):
     ))
 
 
+def triage_coverage(case_id, timeline, window_hours, event_at=None):
+    """Rank cataloged acquisitions against a documented UTC reference."""
+    reference_kind = "documented_event_time" if event_at else "first_public_report"
+    reports = [
+        utc(item["at"]) for item in timeline.get("timeline", [])
+        if item.get("type") == "report" and item.get("at")
+    ] if not event_at else []
+    reference = utc(event_at) if event_at else min(reports, default=None)
+    records = scenes(case_id, timeline)
+    if reference is not None:
+        for scene in records:
+            delay = (utc(scene["acquired_at"]) - reference).total_seconds()
+            scene["offset_from_reference_seconds"] = delay
+            scene["within_review_window"] = abs(delay) <= window_hours * 3600
+        records.sort(key=lambda scene: abs(scene["offset_from_reference_seconds"]))
+    in_window = sum(scene.get("within_review_window") is True for scene in records)
+    if reference is None:
+        status = "missing_reference_time"
+    elif not records:
+        status = "no_indexed_sentinel1"
+    elif in_window:
+        status = "scenes_for_review"
+    else:
+        status = "indexed_scenes_outside_window"
+    return {
+        "case_id": case_id, "reference_kind": reference_kind,
+        "reference_utc": reference.isoformat() if reference else None,
+        "window_hours": window_hours, "status": status,
+        "scenes_in_window": in_window, "indexed_sentinel1_scenes": len(records),
+        "scenes": records,
+    }
+
+
 def distance_m(lon, lat, other_lon, other_lat):
     haversine = math.sin(math.radians(other_lat - lat) / 2) ** 2 + (
         math.cos(math.radians(lat)) * math.cos(math.radians(other_lat))
@@ -330,6 +363,10 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     discover = commands.add_parser("scenes", help="List historical Sentinel-1 products from a PLAY dossier")
     discover.add_argument("case_id", nargs="+")
+    triage = commands.add_parser("triage", help="Rank archived scene metadata for time-bounded review")
+    triage.add_argument("case_id", nargs="+")
+    triage.add_argument("--window-hours", required=True, type=float)
+    triage.add_argument("--event-at", help="Documented UTC incident timestamp for a single case")
     detect = commands.add_parser("detect", help="Review a prepared, single-band Sentinel-1 GeoTIFF")
     detect.add_argument("case_id")
     benchmark = commands.add_parser("benchmark", help="Validate on an RTC scene without creating a case")
@@ -347,6 +384,13 @@ def main():
     args = parser.parse_args()
     if args.command == "scenes":
         print(json.dumps([record for case_id in args.case_id for record in scenes(case_id, case_timeline(case_id))], indent=2))
+    elif args.command == "triage":
+        if not 0 < args.window_hours < math.inf:
+            parser.error("Use a positive finite review window")
+        if args.event_at and len(args.case_id) != 1:
+            parser.error("--event-at applies to a single case")
+        print(json.dumps([triage_coverage(case_id, case_timeline(case_id), args.window_hours, args.event_at)
+                          for case_id in args.case_id], indent=2))
     else:
         if not 0 < args.threshold < float("inf") or not 1 <= args.max_candidates <= 100:
             parser.error("Use a positive finite threshold and a candidate limit from 1 to 100")

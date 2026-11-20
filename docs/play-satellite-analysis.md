@@ -118,3 +118,16 @@ and non-boat examples. Record detections matched to labels, missed boats and
 false positives per scene, with results split by coastal and offshore settings.
 For humanitarian cases, preserve the acquisition time and compare it with
 independent, time-compatible sources before attributing a return to a case.
+
+## Check the time window before processing
+
+```sh
+python scripts/play_satellite_analysis.py triage 09514982 4edefafb 4aa78b4a --window-hours 6
+```
+
+Triage orders the Sentinel‑1 records already indexed by PLAY relative to the
+first public report, or to an explicit verified incident timestamp passed as
+`--event-at` for one case. Report time may differ from incident time. An item
+within the chosen window is eligible for review. Spatial coverage, usable
+pixels and identification are evaluated separately. An empty time window
+describes the currently indexed products.
