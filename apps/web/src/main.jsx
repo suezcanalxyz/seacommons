@@ -56,7 +56,7 @@ import { isExcludedVesselType } from './features/live/vesselType.js';
 import { configureMaplibreWorker } from './features/map/maplibreWorker.js';
 import { createVesselArrowImage, createVesselDiamondImage, vesselBearingExpression, vesselDirectionalIconExpression } from './features/map/vesselMarker.js';
 import { createAttackMarkerImage, isAttackIncident } from './features/map/attackMarker.js';
-import { publicBasemapSource, SATELLITE_BASEMAP_TILE_URL } from './features/map/publicBasemap.js';
+import { publicBasemapSource, BASEMAP_LABEL_ATTRIBUTION, SATELLITE_BASEMAP_LABEL_URL, SATELLITE_BASEMAP_TILE_URL } from './features/map/publicBasemap.js';
 import { createFallbackMap } from './features/map/fallbackRenderer.js';
 import { mergeLiveDrifts } from './simulation/liveTracking.js';
 
@@ -522,13 +522,13 @@ function mapStyle(initialBaseMap = 'standard') {
     sources: {
       osm: publicBasemapSource(),
       satellite,
-      bathymetryLabels: { type: 'raster', tiles: ['https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 19, attribution: '© CARTO · OpenStreetMap' },
+      bathymetryLabels: { type: 'raster', tiles: [SATELLITE_BASEMAP_LABEL_URL], tileSize: 256, maxzoom: 19, attribution: BASEMAP_LABEL_ATTRIBUTION },
       satelliteLabels: {
         type: 'raster',
-        tiles: ['https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png'],
+        tiles: [SATELLITE_BASEMAP_LABEL_URL],
         tileSize: 256,
         maxzoom: 19,
-        attribution: '© CARTO, © OpenStreetMap contributors',
+        attribution: BASEMAP_LABEL_ATTRIBUTION,
       },
     },
     layers: [
@@ -3914,9 +3914,9 @@ function App() {
           />
         ) : null}
         {!play3D && isPublicLiveHost ? (
-          <MapBasemapSwitch mode={baseMap} onChange={(mode) => { setPlay3D(false); setBaseMap(mode); }} />
+          <MapBasemapSwitch mode={baseMap} panelOpen={isPublicLiveHost && sidebarOpen} onChange={(mode) => { setPlay3D(false); setBaseMap(mode); }} />
         ) : null}
-        {!play3D ? <Legend publicLive={isPublicLiveHost} /> : null}
+        {!play3D && !isPublicLiveHost ? <Legend /> : null}
         {!play3D && !isPublicLiveHost ? (
           <AlertRail
             intelEvents={intelEvents}
@@ -4172,7 +4172,7 @@ function App() {
                 <button type="button" onClick={() => setSidebarOpen(false)} aria-label="Collapse live feed">−</button>
               </div>
               <IntelligencePanelTabs label="Live intelligence sections" value={liveToolTab} onChange={setLiveToolTab}
-                options={[{ id: 'cases', label: 'Cases', count: intelEvents.length }, { id: 'radio', label: 'Radio', count: receiverMesh.fresh ? receiverMesh.active : undefined }, { id: 'vessels', label: 'Vessels' }, { id: 'layers', label: 'Layers' }]} />
+                options={[{ id: 'cases', label: 'Cases', count: intelEvents.length }, { id: 'radio', label: 'Radio', count: receiverMesh.fresh ? receiverMesh.active : undefined }, { id: 'vessels', label: 'Vessels' }, { id: 'layers', label: 'Layers' }, { id: 'legend', label: 'Legend' }]} />
               {liveToolTab === 'cases' && <>
               <div className="signals-selector">
                 <div className="signals-selector__row">
@@ -4325,6 +4325,7 @@ function App() {
               </>}
             </header>
 
+            {liveToolTab === 'legend' && <Legend publicLive embedded />}
             {liveToolTab === 'radio' && <details className="live-radio-panel" open>
               <summary>Radio · {receiverMesh.fresh ? (receiverMesh.active || 0) : 'status unavailable'} connected · {networkMarkers.filter((feature) => feature.properties.active).length} active map stations · {networkMarkers.length} total markers</summary>
               {receiverMesh.fresh && (receiverMesh.active || 0) > 0 && receiverMarkers.length === 0 && (

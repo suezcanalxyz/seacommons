@@ -23,3 +23,24 @@ export function ReportPanelHeader({ kicker, title, onClose, children }) {
     </div>
   );
 }
+
+export function CaseReportOverview({ title, summary, category, color, event, status, evidence = {}, children }) {
+  return (
+    <>
+      <div className="intel-report-title">
+        <span style={{ background: color }} />
+        <strong>{title}</strong>
+      </div>
+      {summary && (
+        <p className="intel-report-summary">{summary}</p>
+      )}
+      <ReportRow label="Category" value={category} color={color} />
+      <ReportRow label="Event" value={event} />
+      <ReportRow label="Status" value={status} color={color} />
+      {evidence.verification_status && <ReportRow label="Verification" value={String(evidence.verification_status).replace(/_/g, ' ')} />}
+      {typeof evidence.corroborated === 'boolean' && <ReportRow label="Independent corroboration" value={evidence.corroborated ? 'YES' : 'NO'} />}
+      {Array.isArray(evidence.independence_groups) && evidence.independence_groups.length > 0 && <ReportRow label="Evidence lineages" value={evidence.independence_groups.join(' · ')} />}
+      {children}
+    </>
+  );
+}

@@ -1,5 +1,7 @@
 import {
   PUBLIC_BASEMAP_LABEL_URL,
+  SATELLITE_BASEMAP_LABEL_URL,
+  BASEMAP_LABEL_ATTRIBUTION,
   PUBLIC_BASEMAP_TILE_URL,
   PUBLIC_BASEMAP_ATTRIBUTION,
   PUBLIC_BASEMAP_NATIVE_MAX_ZOOM,
@@ -147,7 +149,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
   let satelliteUrl;
   let activeTiles = standardTiles;
   if (PUBLIC_BASEMAP_LABEL_URL) {
-    L.tileLayer(PUBLIC_BASEMAP_LABEL_URL, { ...retinaTiles, opacity: 0.9 }).addTo(map);
+    L.tileLayer(PUBLIC_BASEMAP_LABEL_URL, { ...retinaTiles, opacity: 0.9, attribution: BASEMAP_LABEL_ATTRIBUTION }).addTo(map);
   }
   L.tileLayer(PUBLIC_SEAMARK_TILE_URL, { detectRetina: true, maxZoom: 19, maxNativeZoom: 18, opacity: 0.95, crossOrigin: true }).addTo(map);
   const driftsLayer = L.layerGroup().addTo(map);
@@ -166,9 +168,9 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
           ...retinaTiles, maxNativeZoom: 19, zIndex: 1, attribution: 'Esri or NASA EOSDIS GIBS',
         });
         satelliteUrl = imageryUrl;
-        satelliteLabelTiles = L.tileLayer('https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png', {
+        satelliteLabelTiles = L.tileLayer(SATELLITE_BASEMAP_LABEL_URL, {
           ...retinaTiles, maxNativeZoom: 19, opacity: .92, zIndex: 3,
-          attribution: '© CARTO, © OpenStreetMap contributors',
+          attribution: BASEMAP_LABEL_ATTRIBUTION,
         });
       }
       const nextTiles = mode === 'satellite' ? satelliteTiles : standardTiles;

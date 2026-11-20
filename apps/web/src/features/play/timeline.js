@@ -1,4 +1,4 @@
-import { publicBasemapSource, PUBLIC_BASEMAP_LABEL_URL } from '../map/publicBasemap.js';
+import { publicBasemapSource, PUBLIC_BASEMAP_LABEL_URL, BASEMAP_LABEL_ATTRIBUTION } from '../map/publicBasemap.js';
 import { playIncidentColor } from './incidentPalette.js';
 
 import { isVesselArchiveIncident } from '../map/vesselMarker.js';
@@ -322,7 +322,7 @@ export function playMapStyle(day = new Date(Date.now() - 24 * 3600 * 1000).toISO
     version: 8,
     sources: {
       baseMap: publicBasemapSource(),
-      bathymetryLabels: { type: 'raster', tiles: [PUBLIC_BASEMAP_LABEL_URL], tileSize: 256, maxzoom: 19, attribution: '© CARTO · OpenStreetMap' },
+      bathymetryLabels: { type: 'raster', tiles: [PUBLIC_BASEMAP_LABEL_URL], tileSize: 256, maxzoom: 19, attribution: BASEMAP_LABEL_ATTRIBUTION },
       satelliteContext: {
         type: 'raster',
         tiles: [satelliteContextTileUrl(day, mission)],

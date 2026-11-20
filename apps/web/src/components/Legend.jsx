@@ -40,12 +40,12 @@ const LIVE_LEGEND_KEYS = [
   'civil_sar', 'state_sar', 'environmental', 'context',
 ];
 
-export default function Legend({ publicLive = false }) {
+export default function Legend({ publicLive = false, embedded = false }) {
   const panelId = useId();
   const [open, setOpen] = useState(false);
   return (
-    <div className="legend-control">
-      <button
+    <div className={embedded ? "legend-embedded" : "legend-control"}>
+      {!embedded && <button
         type="button"
         className={`legend-fab${open ? ' is-open' : ''}`}
         onClick={() => setOpen((v) => !v)}
@@ -55,8 +55,8 @@ export default function Legend({ publicLive = false }) {
         aria-expanded={open}
       >
         {INFO_ICON}
-      </button>
-      {open && (
+      </button>}
+      {(embedded || open) && (
         <section id={panelId} aria-label="Map colour key" className="legend-panel">
           {publicLive ? (
             <>

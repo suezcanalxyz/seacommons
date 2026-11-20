@@ -1,5 +1,5 @@
 import { splitObservedTrackSegments } from '../features/live/observedTrack.js';
-import { ReportPanelHeader, ReportRow as Row } from './ReportPanel.jsx';
+import { CaseReportOverview, ReportPanelHeader, ReportRow as Row } from './ReportPanel.jsx';
 import { aisUtcTimestamp, latestLiveAisFix, selectedLiveMovementEndpoints } from '../features/live/movementEndpoints.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -636,27 +636,22 @@ function IntelView({ panel, apiBase, publicMode, intelDrifts, loadNearestVessels
   return (
     <>
       <div className="cone-section">
-        <div className="intel-report-title">
-          <span style={{ background: color }} />
-          <strong>{props.display_name || props.vessel_name || props.ship_name || dossier?.static?.name || props.title || 'Maritime signal'}</strong>
-        </div>
-        {(props.public_summary || props.text) && (
-          <p className="intel-report-summary">{props.public_summary || props.text}</p>
-        )}
-        <Row label="Category" value={isVesselReport ? 'Maritime · AIS vessel' : visual.label} color={isVesselReport ? '#38bdf8' : color} />
-        <Row label="Event" value={eventType} />
-        <Row label="Status" value={lifecycle} color={color} />
-        {props.verification_status && <Row label="Verification" value={String(props.verification_status).replace(/_/g, ' ')} />}
-        {typeof props.corroborated === 'boolean' && <Row label="Independent corroboration" value={props.corroborated ? 'YES' : 'NO'} />}
-        {Array.isArray(props.independence_groups) && props.independence_groups.length > 0 && <Row label="Evidence lineages" value={props.independence_groups.join(' · ')} />}
-        {props.live_role && <Row label="Live level" value={String(props.live_role).replace(/_/g, ' ')} />}
-        {props.analysis_state && <Row label="Evidence stage" value={String(props.analysis_state).replace(/_/g, ' ')} />}
-        {props.hypothesis_type && <Row label="Hypothesis" value={String(props.hypothesis_type).replace(/_/g, ' ')} />}
-        {props.live_entered_at && <Row label="Entered Live" value={new Date(props.live_entered_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })} />}
-        {props.last_qualified_observation_at && <Row label="Latest qualified evidence" value={new Date(props.last_qualified_observation_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })} />}
-        {props.live_expires_at && <Row label="Decision window until" value={new Date(props.live_expires_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })} />}
-        {props.resolution_state && <Row label="Resolution" value={String(props.resolution_state).replace(/_/g, ' ')} />}
-        <Row label="Reported" value={when ? new Date(when).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—'} />
+        <CaseReportOverview
+          title={props.display_name || props.vessel_name || props.ship_name || dossier?.static?.name || props.title || 'Maritime signal'}
+          summary={props.public_summary || props.text}
+          category={isVesselReport ? 'Maritime · AIS vessel' : visual.label}
+          color={isVesselReport ? '#38bdf8' : color}
+          event={eventType} status={lifecycle} evidence={props}
+        >
+          {props.live_role && <Row label="Live level" value={String(props.live_role).replace(/_/g, ' ')} />}
+          {props.analysis_state && <Row label="Evidence stage" value={String(props.analysis_state).replace(/_/g, ' ')} />}
+          {props.hypothesis_type && <Row label="Hypothesis" value={String(props.hypothesis_type).replace(/_/g, ' ')} />}
+          {props.live_entered_at && <Row label="Entered Live" value={new Date(props.live_entered_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })} />}
+          {props.last_qualified_observation_at && <Row label="Latest qualified evidence" value={new Date(props.last_qualified_observation_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })} />}
+          {props.live_expires_at && <Row label="Decision window until" value={new Date(props.live_expires_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })} />}
+          {props.resolution_state && <Row label="Resolution" value={String(props.resolution_state).replace(/_/g, ' ')} />}
+          <Row label="Reported" value={when ? new Date(when).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '—'} />
+        </CaseReportOverview>
         {props.sanctions_matched && aisUtcTimestamp(props.last_seen) && <>
           <Row label="Listed vessel fix (UTC)" value={new Date(aisUtcTimestamp(props.last_seen)).toISOString().slice(0, 19).replace('T', ' ')} mono />
           <Row label="Position age" value={ageLabel(aisUtcTimestamp(props.last_seen))} />

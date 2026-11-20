@@ -6,6 +6,10 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/map-labels/:style/:z/:x/:y.png",
+      "destination": "/api/map-labels?style=:style&z=:z&x=:x&y=:y"
+    },
+    {
       "source": "/api/v1/live/signals",
       "destination": "/api/live?resource=signals"
     },

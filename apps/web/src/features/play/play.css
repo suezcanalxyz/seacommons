@@ -477,3 +477,18 @@
   }
   .play-public-shell .play-archive-panel > .sc-reference-bar { flex: 0 0 auto; }
 }
+
+.play-desktop-cases-toggle { display: none; }
+@media (min-width: 821px) {
+  .play-public-shell .play-archive-panel.is-desktop-collapsed {
+    visibility: hidden;
+    transform: translateX(-100%);
+  }
+  .play-public-shell .play-desktop-cases-toggle {
+    display: inline-flex;
+    left: 14px;
+    bottom: calc(var(--play-dock-height, 64px) + 92px);
+  }
+}
+.play-report-section .play-report-prose { font-size: 14px; }
+.play-report-chronology li { font-size: 13px; }

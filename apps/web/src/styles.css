@@ -4380,3 +4380,41 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   .sc-intelligence-tabs button { font-size: 10px; min-height: 44px; }
   .sc-basemap-switch { left: 12px; }
 }
+
+.legend-embedded {
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 16px 16px;
+}
+.legend-embedded .legend-panel {
+  position: static;
+  width: auto;
+  max-height: none;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.legend-embedded .legend-row {
+  font: 13px/1.45 var(--font-sans, sans-serif);
+}
+.legend-embedded .legend-panel-title {
+  font-size: 12px;
+}
+.sc-basemap-switch {
+  transition: left 220ms ease;
+}
+@media (min-width: 821px) {
+  .sc-basemap-switch { left: 14px; }
+  .sc-basemap-switch.has-open-panel { left: calc(var(--live-panel-width, 392px) + 14px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sc-basemap-switch { transition: none; }
+}
+.cop-shell.is-live-mode .cone-row {
+  font: 13px/1.45 var(--font-sans, sans-serif);
+}
+.cop-shell.is-live-mode .intel-report-summary {
+  font-size: 14px;
+  line-height: 1.55;
+}

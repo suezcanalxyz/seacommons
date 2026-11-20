@@ -1,4 +1,4 @@
-import { ReportPanelHeader, ReportRow } from '../../components/ReportPanel.jsx';
+import { CaseReportOverview, ReportPanelHeader, ReportRow } from '../../components/ReportPanel.jsx';
 import { startTransition } from 'react';
 import { reviewedArchiveCase, archiveGeographicClues, geographicClueFeatures } from './humanitarianReview.js';
 import { isPublicCaseEligible } from '../live/publicCaseEligibility.js';
@@ -155,6 +155,7 @@ export default function PlayTimeline({ apiBase }) {
   const [reportOpen, setReportOpen] = useState(false);
   const [globalPosition, setGlobalPosition] = useState(TIMELINE_MAX);
   const [casesOpen, setCasesOpen] = useState(false);
+  const [archiveCollapsed, setArchiveCollapsed] = useState(false);
   const [mobileTab, setMobileTab] = useState('map');
   const [selectedDay, setSelectedDay] = useState('');
   const [guideOpen, setGuideOpen] = useState(false);
@@ -1031,6 +1032,7 @@ export default function PlayTimeline({ apiBase }) {
         </div>
       </header>
 
+      {archiveCollapsed && <button className="live-feed-toggle play-desktop-cases-toggle" type="button" onClick={() => setArchiveCollapsed(false)}>Open archive</button>}
       <button className="live-feed-toggle play-mobile-cases-toggle" type="button" onClick={() => setCasesOpen((value) => !value)}>
         Archive · {globalState.mode === 'all' && !selectedDay && archiveTotal != null ? archiveTotal : visibleIncidents.length}
       </button>
@@ -1038,7 +1040,7 @@ export default function PlayTimeline({ apiBase }) {
       {gapHasOnlyAnchor && <div className="play-gap-map-note" role="status">
         {gapFeatures.features.length ? 'Reported gap position · two recorded fixes unavailable' : 'This report has no published gap coordinates'}
       </div>}
-      <aside className={`live-feed-panel is-open play-archive-panel play-cases ${casesOpen ? 'is-mobile-open' : ''}`}>
+      <aside className={`live-feed-panel is-open play-archive-panel play-cases ${archiveCollapsed ? 'is-desktop-collapsed' : ''} ${casesOpen ? 'is-mobile-open' : ''}`}>
         <header className="live-feed-panel__header">
           <div className="live-feed-panel__eyebrow">
             <span className="live-feed-panel__mark">SC</span>
@@ -1047,7 +1049,7 @@ export default function PlayTimeline({ apiBase }) {
           </div>
           <div className="live-feed-panel__title">
             <div><p>HISTORICAL SIGNAL FIELD</p><h1>Play</h1></div>
-            <button type="button" onClick={() => { setCasesOpen(false); setMobileTab('map'); }} aria-label="Close archive">−</button>
+            <button type="button" onClick={() => { setCasesOpen(false); setArchiveCollapsed(true); setMobileTab('map'); }} aria-label="Close archive">−</button>
           </div>
           <IntelligencePanelTabs label="Historical intelligence sections" value={playToolTab} onChange={setPlayToolTab}
             options={[{ id: 'archive', label: 'Archive', count: visibleIncidents.length }, { id: 'timeline', label: 'Timeline' }, { id: 'sources', label: 'Sources' }, { id: 'layers', label: 'Layers' }]} />
@@ -1186,7 +1188,7 @@ export default function PlayTimeline({ apiBase }) {
 
       <section className="map-stage play-map-stage">
         <div className="map-frame play-map" ref={mapNodeRef} />
-        <MapBasemapSwitch mode={satelliteVisible ? 'satellite' : 'standard'}
+        <MapBasemapSwitch mode={satelliteVisible ? 'satellite' : 'standard'} panelOpen={!archiveCollapsed}
           onChange={(mode) => setImageryMode(mode === 'satellite' ? 'recent' : 'composite')} />
         <div className="play-all-badge"><strong>{modeLabel}</strong><span>{mappedIncidentCount} mapped / {filteredIncidents.length} filtered · {incidents.length} loaded{archiveTotal != null ? ` / ${archiveTotal} archive` : ''}</span></div>
         {error ? <div className="play-map-message is-error">{error}</div> : null}
@@ -1238,15 +1240,22 @@ export default function PlayTimeline({ apiBase }) {
             <small>Historical view: observations are limited to the selected time. An archived report is not an official determination.</small>
           </section>
           <section className="cone-section play-case-summary">
-            <div className="intel-report-title">
-              <span style={{ background: playIncidentColor(selectedIncident || {}) }} />
-              <strong>{selectedIncident?.title || 'SeaCommons incident'}</strong>
-            </div>
-            <ReportRow label="Category" value={selectedIncident?.main_category || selectedIncident?.domain || 'maritime'} color={playIncidentColor(selectedIncident || {})} />
-            <ReportRow label="Event" value={(selectedIncident?.incident_type || caseData?.incident_type || 'incident').replace(/_/g, ' ')} />
-            <ReportRow label="Status at cutoff" value={statusLabel(status)} />
-            <ReportRow label="Verification" value={globalState.cutoff ? 'Historical snapshot' : evidenceLabel(caseData || selectedIncident)} />
-            <ReportRow label="Reported (UTC)" value={itemTime(selectedIncident?.reported_at)} />
+            <CaseReportOverview
+              title={selectedIncident?.title || 'SeaCommons incident'}
+              summary={humanizeDetectorText(caseData?.assessment?.observation || selectedIncident?.assessment?.observation)}
+              category={statusLabel(selectedIncident?.main_category || selectedIncident?.domain || 'maritime')}
+              color={playIncidentColor(selectedIncident || {})}
+              event={statusLabel(selectedIncident?.incident_type || caseData?.incident_type || 'incident')}
+              status={statusLabel(status)} evidence={globalState.cutoff ? undefined : { ...selectedIncident, ...caseData }}
+            >
+              <ReportRow label="Case" value={caseData?.incident_id || selectedId} mono />
+              {selectedIncident?.source && <ReportRow label="Original source" value={selectedIncident.source} />}
+              <ReportRow label="Reported (UTC)" value={itemTime(selectedIncident?.reported_at)} />
+              {!globalState.cutoff && selectedIncident?.last_update_at && (
+                <ReportRow label="Last updated (UTC)" value={itemTime(selectedIncident.last_update_at)} />
+              )}
+              {globalState.cutoff && <ReportRow label="Evidence cutoff (UTC)" value={itemTime(globalState.cutoff)} />}
+            </CaseReportOverview>
             {reviewedCase?.event_date && <span>Incident date · {reviewedCase.event_date}</span>}
             {selectedIncident?.location_summary && <span>{selectedIncident.suppress_inferred_map_evidence ? '' : 'Reported area · '}{selectedIncident.location_summary}</span>}
             {geographicClues.length > 0 && <div className="play-report-locations">
@@ -1316,9 +1325,6 @@ export default function PlayTimeline({ apiBase }) {
             <div><span>View</span><strong>{modeLabel}</strong></div>
             <div><span>Archive decision</span><strong>{statusLabel(caseData?.archive_decision || selectedIncident?.archive_decision || '—')}</strong></div>
             <div><span>Evidence known</span><strong>{visibleTimeline.length}</strong></div>
-            {caseData?.verification_status ? <div><span>Verification</span><strong>{statusLabel(caseData.verification_status)}</strong></div> : null}
-            {typeof caseData?.corroborated === 'boolean' ? <div><span>Independent sources</span><strong>{caseData.corroborated ? 'Confirmed' : 'Not yet confirmed'}</strong></div> : null}
-            {caseData?.independence_groups?.length ? <div><span>Evidence lineages</span><strong>{caseData.independence_groups.join(' · ')}</strong></div> : null}
             {selectedIncident?.evidence_stage || caseData?.evidence_stage ? <div><span>Evidence stage</span><strong>{statusLabel(selectedIncident?.evidence_stage || caseData?.evidence_stage)}</strong></div> : null}
             <div><span>Satellite</span><strong>{caseData?.satellite_count ?? visibleTimeline.filter((item) => item.type === 'satellite').length}</strong></div>
             <div><span>Radio</span><strong>{caseData?.radio_count ?? visibleTimeline.filter((item) => item.type === 'radio_observation' || item.type === 'radio').length}</strong></div>
