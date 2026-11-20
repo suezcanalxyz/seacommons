@@ -4,7 +4,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 import math
-from hashlib import file_digest
+from hashlib import file_digest, sha256
 from pathlib import Path
 from urllib.parse import quote
 from urllib.request import urlopen
@@ -203,14 +203,18 @@ def analyze(args):
     peaks = maximum_position(score, groups, ids.tolist()) if ids.size else []
     ranked = sorted(peaks, key=lambda point: score[point], reverse=True)[:args.max_candidates]
 
+    with open(args.raster, "rb") as file:
+        raster_hash = file_digest(file, "sha256").hexdigest()
+    low, high = np.nanpercentile(values[valid], [2, 99.7])
+    high = max(high, low + 1)
+
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=False)
     features = []
     for index, (row, col) in enumerate(ranked, 1):
         top, left = max(0, row - 48), max(0, col - 48)
         crop = values[top:row + 49, left:col + 49]
-        low, high = np.nanpercentile(crop, [2, 99])
-        preview = np.clip((crop - low) / max(high - low, 1) * 255, 0, 255)
+        preview = np.clip((crop - low) / (high - low) * 255, 0, 255)
         image = f"return-{index:02}.png"
         Image.fromarray(np.nan_to_num(preview).astype("uint8")).save(output / image)
         lon, lat = lonlat(col + 0.5, row + 0.5)
@@ -220,12 +224,19 @@ def analyze(args):
         )]
         crop_path = f"return-{index:02}.tif"
         gdal.Translate(str(output / crop_path), dataset, srcWin=[left, top, crop.shape[1], crop.shape[0]]).FlushCache()
+        candidate_key = f"{scene['product_id']}:{raster_hash}:{row}:{col}"
         features.append({
             "type": "Feature",
+            "id": f"sar-return:{sha256(candidate_key.encode()).hexdigest()[:24]}",
             "geometry": {"type": "Point", "coordinates": [lon, lat]},
             "properties": {
                 "status": "unreviewed_radar_return",
                 "identity": None,
+                "peak_pixel": {"column": int(col), "row": int(row)},
+                "crop_window": {"column": int(left), "row": int(top),
+                                "width": crop.shape[1], "height": crop.shape[0]},
+                "component_pixels": int(areas[groups[row, col] - 1]),
+                "peak_backscatter_db": round(float(values[row, col]), 2),
                 "local_contrast_score": round(float(score[row, col]), 2),
                 "peak_above_background_db": round(float(data[row, col] - mean[row, col]), 2),
                 "preview": image,
@@ -235,8 +246,6 @@ def analyze(args):
                 "nearby_published_ais_fixes": nearby_ais_fixes(timeline, scene["acquired_at"], lon, lat),
             },
         })
-    with open(args.raster, "rb") as file:
-        raster_hash = file_digest(file, "sha256").hexdigest()
     result = {
         "type": "FeatureCollection",
         "scene": scene,
@@ -246,6 +255,7 @@ def analyze(args):
                      "review_status": "needs_human_review" if water_mask else "needs_water_mask_and_human_review",
                      "source_review_window_seconds": 3600, "source_review_radius_m": 5000,
                      "input_scale": args.scale, "candidate_limit": args.max_candidates,
+                     "preview_stretch_db": [float(low), float(high)],
                      "input_raster_sha256": raster_hash,
                      "product_attribution": "operator_supplied_raster",
                      "ais_review_window_seconds": 300, "ais_review_radius_m": 1000,
