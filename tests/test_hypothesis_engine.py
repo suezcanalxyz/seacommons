@@ -895,3 +895,51 @@ def test_expired_v1_reopens_as_auditable_v2_on_independent_corroboration() -> No
             .all()
         )
         assert {row.hypothesis_id for row in rows} == {base_id, reopened.hypothesis_id}
+
+
+def test_cross_modal_checks_decoded_radio_time_and_satellite_acquisition():
+    from core.db.models import RadioAISAssociationDB, SatelliteObservationDB, SourceObservationDB
+    from core.db.session import engine, session_scope
+    from core.intel.hypothesis_engine import _attach_cross_modal_evidence
+
+    for model in (RadioAISAssociationDB, SatelliteObservationDB, SourceObservationDB):
+        model.__table__.create(bind=engine(), checkfirst=True)
+    episode_id = "radio-clock-regression"
+    at = "2026-10-05T17:02:00Z"
+    earlier = "2026-10-03T17:02:00Z"
+    ids = []
+    try:
+        with session_scope() as db:
+            for suffix, acquired_at in (("current", at), ("old", earlier)):
+                db.add(SatelliteObservationDB(
+                    observation_id=f"{episode_id}-sar-{suffix}", incident_id=episode_id,
+                    provider="gfw", mission="Sentinel-1", product_id=f"product-{suffix}",
+                    acquisition_time=acquired_at, discovered_at=datetime.now(timezone.utc),
+                    sensor_type="sar", temporal_relation="nearest", evidence_status="associated",
+                    association_status="strong", episode_id=episode_id,
+                ))
+            for suffix, received_at, ais_at in (("current", at, earlier), ("old", earlier, at)):
+                observation_id = f"{episode_id}-{suffix}"
+                ids.append(observation_id)
+                db.add(SourceObservationDB(
+                    observation_id=observation_id, service="radio", lane="radio",
+                    observation_type="dsc_message", source_name="test-radio-clock",
+                    source_policy="public", source_id=observation_id, observed_at=received_at,
+                    raw_payload_hash=observation_id,
+                ))
+                db.add(RadioAISAssociationDB(
+                    observation_id=observation_id, mmsi="211879870", match_status="strong",
+                    confidence=0.95, ais_observed_at=ais_at, episode_eligible=True, episode_id=episode_id,
+                ))
+        episode = {"properties": {"episode_id": episode_id, "subject_ids": ["subj:mmsi:211879870"],
+                                  "first_observed_at": at, "last_observed_at": at}}
+        result = _attach_cross_modal_evidence(episode, [])["properties"]
+        assert set(result["cross_modal_evidence_ids"]) == {f"radio:{episode_id}-current", f"{episode_id}-sar-current"}
+        assert set(result["cross_modal_context_ids"]) == {f"radio:{episode_id}-old", f"{episode_id}-sar-old"}
+        assert result["cross_modal_modalities"] == ["radio", "satellite"]
+        assert result["verification_status"] == "multi_source_corroborated"
+    finally:
+        with session_scope() as db:
+            db.query(SatelliteObservationDB).filter(SatelliteObservationDB.episode_id == episode_id).delete()
+            db.query(RadioAISAssociationDB).filter(RadioAISAssociationDB.observation_id.in_(ids)).delete()
+            db.query(SourceObservationDB).filter(SourceObservationDB.observation_id.in_(ids)).delete()

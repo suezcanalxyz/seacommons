@@ -106,6 +106,16 @@ def _attach_cross_modal_evidence(
     reason_codes: set[str] = set()
     episode_props = episode.get("properties") or {}
     canonical_episode_id = str(episode_props.get("episode_id") or "").strip() or None
+    episode_start = parse_utc(episode_props.get("first_observed_at"))
+    episode_end = parse_utc(episode_props.get("last_observed_at")) or episode_start
+
+    def within_episode_window(observed_at):
+        return observed_at is not None and (
+            episode_start is None or observed_at >= episode_start - timedelta(hours=6)
+        ) and (
+            episode_end is None or observed_at <= episode_end + timedelta(hours=6)
+        )
+
     for event in events:
         observed = parse_utc(event.timestamp_utc) or datetime.now(timezone.utc)
         if event.type in {"ais_anomaly", "ais_rendezvous", "ais_spike"}:
@@ -134,8 +144,8 @@ def _attach_cross_modal_evidence(
         if satellite_observations:
             persist_observations(satellite_observations)
         for satellite in satellite_observations:
-            det_at = parse_utc(satellite.acquisition_time) or observed
-            if satellite.association_status == "strong" and satellite.episode_id:
+            det_at = parse_utc(satellite.acquisition_time)
+            if satellite.association_status == "strong" and satellite.episode_id and within_episode_window(det_at):
                 refs.append(EvidenceReference(
                     evidence_id=satellite.observation_id,
                     evidence_class="satellite_observation",
@@ -157,7 +167,7 @@ def _attach_cross_modal_evidence(
     if canonical_episode_id:
         from sqlalchemy import func
         from core.db.models import (
-            IntelEventDB, RadioAISAssociationDB, SatelliteObservationDB,
+            IntelEventDB, RadioAISAssociationDB, SatelliteObservationDB, SourceObservationDB,
         )
         from core.db.session import session_scope
 
@@ -191,12 +201,14 @@ def _attach_cross_modal_evidence(
                 strong_radio = [
                     {
                         "observation_id": row.observation_id,
-                        "ais_observed_at": row.ais_observed_at,
+                        "radio_observed_at": observed_at,
                         "confidence": row.confidence,
                     }
-                    for row in (
-                        db.query(RadioAISAssociationDB)
+                    for row, observed_at in (
+                        db.query(RadioAISAssociationDB, SourceObservationDB.observed_at)
+                        .join(SourceObservationDB, SourceObservationDB.observation_id == RadioAISAssociationDB.observation_id)
                         .filter(
+                            SourceObservationDB.observation_type == "dsc_message",
                             RadioAISAssociationDB.episode_id == canonical_episode_id,
                             RadioAISAssociationDB.match_status == "strong",
                             RadioAISAssociationDB.episode_eligible.is_(True),
@@ -231,7 +243,10 @@ def _attach_cross_modal_evidence(
             logger.debug("cross-modal persisted evidence lookup failed for %s: %s", canonical_episode_id, exc)
 
         for satellite in strong_satellite:
-            det_at = parse_utc(satellite.get("acquisition_time")) or datetime.now(timezone.utc)
+            det_at = parse_utc(satellite.get("acquisition_time"))
+            if not within_episode_window(det_at):
+                context_ids.append(str(satellite["observation_id"]))
+                continue
             refs.append(EvidenceReference(
                 evidence_id=str(satellite["observation_id"]),
                 evidence_class="satellite_observation",
@@ -243,7 +258,10 @@ def _attach_cross_modal_evidence(
             reason_codes.add("SATELLITE_DETECTION_ASSOCIATED_EXACT_MMSI")
 
         for association in strong_radio:
-            observed_at = parse_utc(association.get("ais_observed_at")) or datetime.now(timezone.utc)
+            observed_at = parse_utc(association.get("radio_observed_at"))
+            if not within_episode_window(observed_at):
+                context_ids.append(f"radio:{association['observation_id']}")
+                continue
             refs.append(EvidenceReference(
                 evidence_id=f"radio:{association['observation_id']}",
                 evidence_class="dsc_message",
@@ -254,18 +272,12 @@ def _attach_cross_modal_evidence(
             ))
             reason_codes.add("RADIO_DSC_ASSOCIATED_EXACT_MMSI")
 
-        episode_start = parse_utc(episode_props.get("first_observed_at"))
-        episode_end = parse_utc(episode_props.get("last_observed_at")) or episode_start
         for row in humanitarian_rows:
             source = str(row.get("source") or "").strip()
             if source.lower().startswith("ais") or source.lower().startswith("seacommons"):
                 continue
             observed_at = parse_utc(row.get("timestamp_utc"))
-            if observed_at is None:
-                continue
-            if episode_start is not None and observed_at < episode_start - timedelta(hours=6):
-                continue
-            if episode_end is not None and observed_at > episode_end + timedelta(hours=6):
+            if not within_episode_window(observed_at):
                 continue
             lineage = source.lower().replace(" ", "_") or "unknown"
             refs.append(EvidenceReference(
