@@ -133,10 +133,15 @@ test('fallback map uses nautical retina layers and heading-shaped moving vessels
     properties: { id: 'vessel:123', mmsi: '123', entity_kind: 'vessel', report_type: 'vessel', motion_state: 'moving', latest_heading: 72 },
   };
   renderer.setFeatures({ incidents: [], vessels: [vessel] });
-  assert.equal(log.tiles.length, 3);
+  // When Vercel has no CARTO key, never issue unauthenticated label requests.
+  const configured = Boolean(import.meta.env?.VITE_CARTO_BASEMAP_KEY);
+  assert.equal(log.tiles.length, configured ? 3 : 2);
   assert.match(log.tiles[0].url, /emodnet-bathymetry/);
-  assert.match(log.tiles[1].url, /dark_only_labels/);
-  assert.match(log.tiles[2].url, /openseamap/);
+  if (configured) {
+    assert.match(log.tiles[1].url, /dark_only_labels/);
+    assert.match(log.tiles[1].url, /[?&]key=/);
+  }
+  assert.match(log.tiles.at(-1).url, /openseamap/);
   assert.equal(log.tiles[0].options.detectRetina, true);
   assert.equal(log.vesselMarkers.length, 1);
   assert.match(log.vesselMarkers[0].options.icon.options.html, /72deg/);
