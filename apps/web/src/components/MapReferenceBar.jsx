@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Legend from './Legend.jsx';
 
 const PANELS = {
   legend: {
@@ -59,6 +60,7 @@ export default function MapReferenceBar({ context = 'live' }) {
           <button type="button" aria-label="Close reference panel" onClick={() => setActive(null)}>×</button>
         </header>
         <div className="sc-reference-dialog__content">
+          {active === 'legend' && context === 'live' && <Legend publicLive embedded />}
           {PANELS[active].sections.map(([heading, body]) =>
             <section key={heading}><h3>{heading}</h3><p>{body}</p></section>
           )}
