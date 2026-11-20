@@ -57,3 +57,22 @@ python scripts/export_humanitarian_archive.py humanitarian.sqlite --satellite-ca
 `satellite_scenes` indexes scene metadata for the selected subset, with the
 requested case IDs recorded in `archive_metadata`. A scene index is a starting
 point for the radar review workflow. It does not assert a vessel sighting.
+
+## Review detected returns
+
+Combine any number of detector exports into a new CSV review queue. Repeated
+candidate IDs are counted once. To extend an existing queue, choose a new output
+filename and pass `--previous review.csv` to retain all earlier decisions.
+
+```sh
+python scripts/review_satellite_returns.py queue review.csv run-a/radar-returns.geojson run-b/radar-returns.geojson
+python scripts/review_satellite_returns.py summarize review.csv
+```
+
+Open the preview and GeoTIFF from each row. Set `decision` to `vessel`,
+`non_vessel`, or `inconclusive`. Cite the source supporting each conclusive
+decision in `evidence_reference`. A vessel decision describes the detected
+object class. It does not assign a vessel identity or confirm an incident.
+The summary reports pending and inconclusive returns separately. The vessel
+share among resolved reviews is descriptive and is not recall or a validation
+of all unreviewed detections.
