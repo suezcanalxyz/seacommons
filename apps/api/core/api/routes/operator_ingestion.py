@@ -10,7 +10,6 @@ operator reverse proxy. The browser never receives that secret.
 """
 from __future__ import annotations
 
-import hmac
 import threading
 import time
 from collections import Counter
@@ -21,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import func, or_, text
 
 from core.config import config
+from core.api.operator_auth import require_operator_gateway as _require_gateway
 from core.db.models import (
     IngestedSignalDB,
     IntelEventDB,
@@ -93,21 +93,6 @@ def _fast_table_count(db, model) -> tuple[int, bool]:
         if estimate is not None:
             return max(0, int(estimate)), True
     return int(db.query(func.count(model.id)).scalar() or 0), False
-
-
-def _require_gateway(request: Request) -> None:
-    # The same verified Futures session grants access to Intelligence.
-    # Preserve the legacy gateway only for internal compatibility.
-    if request.headers.get("authorization", "").lower().startswith("bearer "):
-        from core.security import require_futures_identity
-        require_futures_identity(request)
-        return
-    expected = str(config.OPERATOR_GATEWAY_SECRET or "")
-    if not expected:
-        raise HTTPException(status_code=503, detail="Operator ingestion gateway is not configured")
-    supplied = request.headers.get("x-seacommons-operator-gateway", "")
-    if not hmac.compare_digest(supplied, expected):
-        raise HTTPException(status_code=401, detail="Operator gateway authentication required")
 
 
 def _dt(value: datetime | None) -> str | None:
