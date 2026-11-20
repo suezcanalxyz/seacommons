@@ -2913,11 +2913,11 @@ function App() {
       ...(layerVis.radio_dsc === false ? [] : radioMessageMarkers),
     ], vessels: fallbackVesselFeatures };
     fallback.setFeatures(payload);
-    if (!liveSignalsFramedRef.current && (canonicalLivePoints.length || fallbackVesselFeatures.length)) {
-      fallback.fitFeatures(payload);
+    if (!liveSignalsFramedRef.current && canonicalLivePoints.length) {
+      fallback.fitFeatures(canonicalLivePoints, { leftInset: sidebarOpen && window.innerWidth > 820 ? 392 : 0 });
       liveSignalsFramedRef.current = true;
     }
-  }, [fallbackReady, canonicalLivePoints, fallbackVesselFeatures, layerVis.radio_receivers, layerVis.radio_dsc, networkMarkers, radioMessageMarkers]);
+  }, [fallbackReady, canonicalLivePoints, fallbackVesselFeatures, layerVis.radio_receivers, layerVis.radio_dsc, networkMarkers, radioMessageMarkers, sidebarOpen]);
 
   // The Leaflet mobile fallback is a separate renderer: MapLibre drift layers
   // never reach it. Keep published humanitarian forecast geometries visible.

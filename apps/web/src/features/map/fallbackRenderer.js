@@ -398,7 +398,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
         paddingBottomRight: mobile ? [22, Math.round(map.getSize().y * 0.64)] : [panel, 72],
         maxZoom: related.length ? 9 : 8, animate: true });
     },
-    fitFeatures(payload) {
+    fitFeatures(payload, { leftInset = 0 } = {}) {
       const { incidents, vessels } = normalizePayload(payload);
       const points = [...pointFeatures(incidents), ...pointFeatures(vessels)].map((feature) => {
         const [lon, lat] = feature.geometry.coordinates;
@@ -410,7 +410,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
           for (const ring of polygon) points.push(...ring);
         }
       }
-      if (points.length) map.fitBounds(L.latLngBounds(points), { padding: [28, 28], maxZoom: 9 });
+      if (points.length) map.fitBounds(L.latLngBounds(points), { paddingTopLeft: [28 + leftInset, 28], paddingBottomRight: [28, 28], maxZoom: 9 });
     },
     flyTo({ center: nextCenter, zoom: nextZoom }) {
       map.flyTo([Number(nextCenter[1]), Number(nextCenter[0])], nextZoom);
