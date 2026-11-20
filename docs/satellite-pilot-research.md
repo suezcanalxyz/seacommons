@@ -300,3 +300,27 @@ while preserving the full historical inventory.
 - Verify one actual item, its pixel access and publication conditions before
   enabling a new mission. A catalog result outside the region stays out of
   the historical evidence review. Leave unverified adapters disabled.
+
+## OSINT practice in PLAY: Landsat 8 quality flags
+
+The historical CONTSHIP JET dossier includes the date and exact product ID of
+the Landsat 8 pass on 29 October 2026 at 08:51:16 UTC, about 22 h 51 min
+after the incident time in notice 759/26. The USGS Level-2 scene lists 3.9%
+tile-wide cloud cover. A native-resolution crop of QA_PIXEL, red, green and
+blue around the reported point covered 83 × 80 pixels. All 6,640 QA pixels
+set bits 5 and 6 (high-confidence snow and clear of both specified cloud
+bits), and zero set the water bit. The precise point held QA value 30048.
+The central visible-band reflectances after USGS scaling were approximately
+1.15, 1.17 and 1.23. They are an additional reason to withhold interpretation;
+these values do not identify the material or the source of the inconsistency.
+
+In the reviewed dossier the scene is context for a lesson, with no vessel
+attribution and no inferred position marker. The expandable lesson separates
+observation, interpretation and limits. The +42 h radar scene has a second
+exercise about a detector result with zero qualifying returns. The questions
+are visible before the explanation, so the display can be used for training
+without changing the evidentiary status of the source record.
+
+[Original Landsat product](https://planetarycomputer.microsoft.com/api/stac/v1/collections/landsat-c2-l2/items/LC08_L2SP_181030_20261029_02_T2) ·
+[USGS QA bit definitions](https://www.usgs.gov/landsat-missions/landsat-collection-2-quality-assessment-bands) ·
+[Berkeley Protocol on Digital Open Source Investigations](https://digitallibrary.un.org/record/3973652/files/OHCHR_BerkeleyProtocol.pdf)
