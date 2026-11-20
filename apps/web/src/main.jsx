@@ -56,7 +56,7 @@ import { isExcludedVesselType } from './features/live/vesselType.js';
 import { configureMaplibreWorker } from './features/map/maplibreWorker.js';
 import { createVesselArrowImage, createVesselDiamondImage, vesselBearingExpression, vesselDirectionalIconExpression } from './features/map/vesselMarker.js';
 import { createAttackMarkerImage, isAttackIncident } from './features/map/attackMarker.js';
-import { publicBasemapSource, SATELLITE_BASEMAP_TILE_URL } from './features/map/publicBasemap.js';
+import { publicBasemapSource, PUBLIC_BASEMAP_LABEL_URL, SATELLITE_BASEMAP_LABEL_URL, CARTO_LABEL_NATIVE_MAX_ZOOM, CARTO_LABEL_MIN_ZOOM, SATELLITE_BASEMAP_TILE_URL } from './features/map/publicBasemap.js';
 import { createFallbackMap } from './features/map/fallbackRenderer.js';
 import { mergeLiveDrifts } from './simulation/liveTracking.js';
 
@@ -522,13 +522,14 @@ function mapStyle(initialBaseMap = 'standard') {
     sources: {
       osm: publicBasemapSource(),
       satellite,
-      bathymetryLabels: { type: 'raster', tiles: ['https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 19, attribution: '© CARTO · OpenStreetMap' },
+      bathymetryLabels: { type: 'raster', tiles: PUBLIC_BASEMAP_LABEL_URL ? [PUBLIC_BASEMAP_LABEL_URL] : [], tileSize: 256, minzoom: CARTO_LABEL_MIN_ZOOM, maxzoom: CARTO_LABEL_NATIVE_MAX_ZOOM, attribution: '© CARTO · © OpenStreetMap contributors' },
       satelliteLabels: {
         type: 'raster',
-        tiles: ['https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png'],
+        tiles: SATELLITE_BASEMAP_LABEL_URL ? [SATELLITE_BASEMAP_LABEL_URL] : [],
         tileSize: 256,
-        maxzoom: 19,
-        attribution: '© CARTO, © OpenStreetMap contributors',
+        minzoom: CARTO_LABEL_MIN_ZOOM,
+        maxzoom: CARTO_LABEL_NATIVE_MAX_ZOOM,
+        attribution: '© CARTO · © OpenStreetMap contributors',
       },
     },
     layers: [
