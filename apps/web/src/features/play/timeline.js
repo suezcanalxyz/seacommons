@@ -1,6 +1,5 @@
 import { publicBasemapSource, PUBLIC_BASEMAP_LABEL_URL } from '../map/publicBasemap.js';
 import { playIncidentColor } from './incidentPalette.js';
-import { publicBasemapSource } from '../map/publicBasemap.js';
 
 import { isVesselArchiveIncident } from '../map/vesselMarker.js';
 
