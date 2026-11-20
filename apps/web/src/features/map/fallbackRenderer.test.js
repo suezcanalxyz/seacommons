@@ -134,7 +134,7 @@ test('fallback map uses nautical retina layers and heading-shaped moving vessels
   };
   renderer.setFeatures({ incidents: [], vessels: [vessel] });
   assert.equal(log.tiles.length, 3);
-  assert.match(log.tiles[0].url, /tile\.openstreetmap\.org/);
+  assert.match(log.tiles[0].url, /emodnet-bathymetry/);
   assert.match(log.tiles[1].url, /dark_only_labels/);
   assert.match(log.tiles[2].url, /openseamap/);
   assert.equal(log.tiles[0].options.detectRetina, true);
@@ -197,7 +197,7 @@ test('fallback basemap exchanges the visible raster layer in both directions', a
   assert.equal([...log.activeTiles.values()].some((url) => url.includes('emodnet-bathymetry')), false);
   renderer.setBasemap('standard');
   assert.equal([...log.activeTiles.values()].some((url) => url.includes('World_Imagery')), false);
-  assert.equal([...log.activeTiles.values()].some((url) => url.includes('openstreetmap')), true);
+  assert.equal([...log.activeTiles.values()].some((url) => url.includes('emodnet-bathymetry')), true);
 });
 
 test('fallback markers prefer the canonical category color', async () => {
