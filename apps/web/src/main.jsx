@@ -6,6 +6,7 @@ import { useLiveVesselDossier } from './features/live/useLiveVesselDossier.js';
 import { isPublicCaseEligible } from './features/live/publicCaseEligibility.js';
 import { addMovementLabels } from './features/map/movementLabels.js';
 import VesselCaseSearch from './components/VesselCaseSearch.jsx';
+import MapBasemapSwitch from './components/MapBasemapSwitch.jsx';
 import { aisUtcTimestamp, latestLiveAisFix, liveMovementMapFeatures, selectedLiveMovementEndpoints } from './features/live/movementEndpoints.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -3904,8 +3905,12 @@ function App() {
             baseMap={baseMap}
             onBaseMapChange={setBaseMap}
             allowSatellite={true}
+            showBasemap={!isPublicLiveHost}
             allowed={isPublicLiveHost ? PUBLIC_LIVE_LAYER_GROUPS : null}
           />
+        ) : null}
+        {!play3D && isPublicLiveHost ? (
+          <MapBasemapSwitch mode={baseMap} onChange={(mode) => { setPlay3D(false); setBaseMap(mode); }} />
         ) : null}
         {!play3D ? <Legend publicLive={isPublicLiveHost} /> : null}
         {!play3D && !isPublicLiveHost ? (
