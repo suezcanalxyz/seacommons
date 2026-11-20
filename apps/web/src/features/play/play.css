@@ -484,7 +484,7 @@
     visibility: hidden;
     transform: translateX(-100%);
   }
-  .play-public-shell .play-desktop-cases-toggle {
+  .play-public-shell.is-live-mode .play-desktop-cases-toggle {
     top: auto;
     display: inline-flex;
     left: 14px;
