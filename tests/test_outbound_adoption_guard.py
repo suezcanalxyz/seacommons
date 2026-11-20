@@ -71,3 +71,11 @@ def test_import_urllib_request_module_call_is_detected(tmp_path: Path) -> None:
             "count": 1,
         }
     ]
+
+
+def test_scanner_reads_python_sources_as_utf8(tmp_path: Path) -> None:
+    path = tmp_path / "apps/api/core/utf8_source.py"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("# Mediterranean buoy: \u03c3\n", encoding="utf-8")
+
+    assert scan_tree(tmp_path / "apps/api/core") == []

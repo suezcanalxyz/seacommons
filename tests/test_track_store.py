@@ -10,8 +10,9 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from types import SimpleNamespace
 
-from core.vessels.track_store import TrackStore
+from core.vessels.track_store import TrackStore, _row_dict
 
 
 @pytest.fixture
@@ -30,6 +31,16 @@ def test_position_is_stored(store):
     rows = store.track("111000111")
     assert len(rows) == 1
     assert rows[0]["lat"] == 35.0 and rows[0]["sog"] == 10.0
+
+
+def test_database_track_timestamp_is_explicit_utc():
+    row = SimpleNamespace(
+        mmsi="111000111", ts=datetime(2026, 11, 18, 10, 21, 33),
+        lat=37.2, lon=15.1, sog=0.2, cog=180.0, heading=109.0,
+        nav_status=0, source="aisstream",
+    )
+
+    assert _row_dict(row)["ts"] == "2026-11-18T10:21:33+00:00"
 
 
 def test_throttled_within_interval(store):

@@ -346,7 +346,13 @@ class TrackStore:
                         break
                     payload = [{
                         "id": row.id, "mmsi": row.mmsi,
-                        "ts": row.ts.isoformat(), "received_at": row.received_at.isoformat(),
+                        "ts": ((row.ts.replace(tzinfo=timezone.utc)
+                                if row.ts.tzinfo is None else row.ts.astimezone(timezone.utc))
+                               .isoformat()),
+                        "received_at": ((row.received_at.replace(tzinfo=timezone.utc)
+                                         if row.received_at.tzinfo is None
+                                         else row.received_at.astimezone(timezone.utc))
+                                        .isoformat()),
                         "lat": row.lat, "lon": row.lon, "sog": row.sog,
                         "cog": row.cog, "heading": row.heading,
                         "nav_status": row.nav_status, "source": row.source,
@@ -512,7 +518,7 @@ class TrackStore:
                 for row in rows:
                     grouped.setdefault(row.mmsi, []).append({
                         "mmsi": row.mmsi,
-                        "ts": row.ts.isoformat() if row.ts else None,
+                        "ts": _iso_utc(row.ts),
                         "lat": row.lat,
                         "lon": row.lon,
                         "sog": row.sog,
@@ -572,10 +578,20 @@ class TrackStore:
         }
 
 
+def _iso_utc(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    else:
+        value = value.astimezone(timezone.utc)
+    return value.isoformat()
+
+
 def _row_dict(r: Any) -> dict[str, Any]:
     return {
         "mmsi": r.mmsi,
-        "ts": r.ts.isoformat() if r.ts else None,
+        "ts": _iso_utc(r.ts),
         "lat": r.lat, "lon": r.lon, "sog": r.sog, "cog": r.cog,
         "heading": r.heading, "nav_status": r.nav_status, "source": r.source,
     }

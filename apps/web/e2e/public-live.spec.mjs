@@ -98,6 +98,10 @@ test('mobile Live keeps an interactive incident map when MapLibre cannot initial
   const markers = page.locator('.seacommons-fallback-marker');
   await expect(markers).toHaveCount(2);
   await expect(page.locator('.seacommons-fallback-marker--maritime-1')).toHaveAttribute('role', 'button');
+  // Public LIVE defaults to the standard basemap; exercise both directions
+  // rather than assuming the old satellite-first default.
+  await expect(page.locator('.leaflet-tile-pane img[src*="tile.openstreetmap.org"]').first()).toBeAttached();
+  await page.getByRole('button', { name: 'Switch to satellite map' }).click();
   await expect(page.locator('.leaflet-tile-pane img[src*="World_Imagery"]').first()).toBeAttached();
   await page.getByRole('button', { name: 'Switch to standard map' }).click();
   await expect(page.locator('.leaflet-tile-pane img[src*="tile.openstreetmap.org"]').first()).toBeAttached();

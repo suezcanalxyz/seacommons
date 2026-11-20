@@ -79,7 +79,7 @@ class _CallScanner(ast.NodeVisitor):
 
 
 def scan_file(path: Path) -> Counter[str]:
-    tree = ast.parse(path.read_text(), filename=str(path))
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     scanner = _CallScanner()
     scanner.visit(tree)
     return scanner.calls
@@ -125,7 +125,7 @@ def main() -> int:
     repo = Path(__file__).resolve().parents[1]
     inventory_path = repo / "docs/security/legacy-outbound-http.json"
     root = repo / "apps/api/core"
-    expected = json.loads(inventory_path.read_text())
+    expected = json.loads(inventory_path.read_text(encoding="utf-8"))
     actual = scan_tree(root)
     deltas = compare_inventory(actual, expected)
     if deltas:

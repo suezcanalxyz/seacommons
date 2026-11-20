@@ -14,7 +14,7 @@ test('Play archive exposes deterministic filters, dossier and global timeline', 
   const filters = page.getByRole('group', { name: 'Play archive filters' });
   await filters.getByRole('button', { name: 'Archive investigation categories' }).click();
   for (const label of ['ALL', 'HUMANITARIAN', 'MARITIME', 'SATELLITE', 'SANCTIONS', 'INVESTIGATION']) {
-    await expect(filters.getByRole('button', { name: label })).toBeVisible();
+    await expect(filters.getByRole('button', { name: label, exact: true })).toBeVisible();
   }
   await expect(filters.getByRole('button', { name: 'CORRELATED' })).toHaveCount(0);
   await expect(filters.getByRole('combobox', { name: 'Incident type' })).toBeVisible();
@@ -29,12 +29,12 @@ test('Play archive exposes deterministic filters, dossier and global timeline', 
   await expect(cases.getByText('Historical safety report', { exact: true })).toHaveCount(0);
   await expect(cases.getByText('Reviewed correlated case', { exact: true })).toHaveCount(0);
 
-  await filters.getByRole('button', { name: 'ALL' }).click();
+  await filters.getByRole('button', { name: 'ALL', exact: true }).click();
   await cases.getByText('Historical distress', { exact: true }).click();
   const dossier = page.locator('.play-evidence.is-open');
   await expect(dossier).toBeVisible();
-  await expect(dossier.locator('h2', { hasText: 'Historical distress' })).toBeVisible();
-  await expect(dossier.getByText('RESOLVED', { exact: true })).toBeVisible();
+  await expect(dossier.locator('.play-case-summary .intel-report-title strong', { hasText: 'Historical distress' })).toBeVisible();
+  await expect(dossier.getByText('RESOLVED', { exact: true }).first()).toBeVisible();
 
   await expect(page.getByRole('slider', { name: 'Global archive timeline' })).toBeVisible();
   await expect(page.locator('.play-all-badge strong')).toHaveText('ALL');
@@ -52,7 +52,7 @@ test('mobile Play keeps an interactive archive map when MapLibre cannot initiali
   await targetMarker.dispatchEvent('pointerup');
   const dossier = page.locator('.play-evidence.is-open');
   await expect(dossier).toBeVisible();
-  await expect(dossier.locator('h2')).toContainText('Historical distress');
+  await expect(dossier.locator('.play-case-summary .intel-report-title strong')).toContainText('Historical distress');
 });
 
 
@@ -419,7 +419,7 @@ test('MapLibre cluster expansion preserves every synthetic archive dossier', asy
     });
     await page.mouse.click(bounds.x + adjusted.x, bounds.y + adjusted.y);
     try {
-      await expect(page.locator('.play-evidence.is-open h2')).toContainText(title);
+      await expect(page.locator('.play-evidence.is-open .play-case-summary .intel-report-title strong')).toContainText(title);
     } catch (error) {
       const clickDiagnostic = await page.evaluate(() => window.__SEACOMMONS_LAST_PLAY_CLICK__);
       throw new Error(`PLAY pointer selection failed for ${id}: ${JSON.stringify(clickDiagnostic)}; cause=${error.message}`);
@@ -496,7 +496,7 @@ test('MapLibre overlapping archive records stay selectable above an open mobile 
   ).toBe(true);
   await page.getByRole('navigation', { name: 'Play navigation' }).getByRole('button', { name: 'Archive' }).click();
   await page.locator('.play-cases__list').getByText('Historical distress', { exact: true }).click();
-  await expect(page.locator('.play-evidence.is-open h2')).toContainText('Historical distress');
+  await expect(page.locator('.play-evidence.is-open .play-case-summary .intel-report-title strong')).toContainText('Historical distress');
   const picker = await openOverlapPickerAt(page, [15.1, 36.0]);
   const firstChoice = picker.getByRole('button', { name: /Historical safety report/ });
   await expect(firstChoice).toBeInViewport();
@@ -506,7 +506,7 @@ test('MapLibre overlapping archive records stay selectable above an open mobile 
     return hit === button || button.contains(hit);
   })).toBe(true);
   await picker.getByRole('button', { name: 'Co-located safety report' }).click();
-  await expect(page.locator('.play-evidence.is-open h2')).toContainText('Co-located safety report');
+  await expect(page.locator('.play-evidence.is-open .play-case-summary .intel-report-title strong')).toContainText('Co-located safety report');
   await expect(page.locator('.maplibregl-canvas')).toBeVisible();
   await expect(page.locator('.play-map-message.is-error')).toHaveCount(0);
   expect(rendererErrors.filter((message) => /play-vessels|icon-size|PLAY_MAP_RENDERER_FALLBACK/.test(message))).toEqual([]);
@@ -543,7 +543,7 @@ test('MapLibre large overlap groups keep first and last dossier choices accessib
   await lastChoice.scrollIntoViewIfNeeded();
   await expect(lastChoice).toBeInViewport();
   await lastChoice.click();
-  await expect(page.locator('.play-evidence.is-open h2')).toContainText('Historical safety report');
+  await expect(page.locator('.play-evidence.is-open .play-case-summary .intel-report-title strong')).toContainText('Historical safety report');
 });
 
 test('PLAY displays reviewed attack dossiers with dated public sources', async ({ page }) => {

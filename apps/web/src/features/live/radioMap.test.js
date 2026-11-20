@@ -34,7 +34,7 @@ test('active receiver symbols require a fresh mesh and actual geolocation', () =
   assert.deepEqual(liveActiveReceiverMarkers({ fresh: true, receivers: [] }), []);
 });
 
-test('LIVE maps every geolocated active HF relay, regardless of regional receiver catalogue filters', () => {
+test('LIVE maps every active geolocated receiver while keeping regional classification separate', () => {
   const receivers = [
     { receiver_id: 'zakynthos_hf_monitor', active: true, latitude: 37.783, longitude: 20.896 },
     { receiver_id: 'cagliari_hf_monitor', active: true, latitude: 39.22, longitude: 9.12 },
