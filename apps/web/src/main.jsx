@@ -1,6 +1,6 @@
 import { radioFeature, liveActiveReceiverMarkers, mediterraneanReceiverMapMarkers, isMediterraneanReceiver } from './features/live/radioMap.js';
 import { monitoredRadioChannels } from './features/live/radioChannels.js';
-import { installActiveRadioStationIcon } from './features/live/radioStationIcon.js';
+import { installRadioStationIcon } from './features/live/radioStationIcon.js';
 import { reconstructAisGaps } from './features/play/aisGapGeometry.js';
 import { useLiveVesselDossier } from './features/live/useLiveVesselDossier.js';
 import { isPublicCaseEligible } from './features/live/publicCaseEligibility.js';
@@ -1547,49 +1547,15 @@ function App() {
 
         // Public-safe radio receiver mesh. Coordinates are deliberately coarse
         // (3 decimals) and the API never exposes receiver endpoint or physical lineage.
-        map.addLayer({
-          id: 'radio-receivers-halo', type: 'circle', source: 'radio-receivers',
-          paint: {
-            'circle-radius': ['match', ['get', 'active'], true, 10, 7],
-            'circle-color': ['match', ['get', 'active'], true, 'rgba(167,139,250,0.24)', 'rgba(148,163,184,0.12)'],
-            'circle-blur': 0.7,
-          },
-        });
-        // Connected stations use antenna symbols; published, disconnected or
-        // research-only receivers use a visually distinct outlined marker.
-        map.addLayer({
-          id: 'radio-receivers-standby', type: 'circle', source: 'radio-receivers',
-          filter: ['!=', ['get', 'station_status'], 'receiving'],
-          paint: {
-            'circle-radius': 7,
-            'circle-color': ['match', ['get', 'station_status'], 'candidate', '#5b4c38', 'offline', '#333b44', '#23303b'],
-            'circle-stroke-color': ['match', ['get', 'station_status'], 'candidate', '#f0bd75', '#98a8b7'],
-            'circle-stroke-width': 2,
-            'circle-opacity': 0.9,
-          },
-        });
-        // Use an unmistakable antenna icon for real connected RF reception.
-        const radioStationImage = installActiveRadioStationIcon(map);
-        if (radioStationImage) {
+        const receivingIcon = installRadioStationIcon(map, true);
+        const offlineIcon = installRadioStationIcon(map, false);
+        if (receivingIcon && offlineIcon) {
           map.addLayer({
             id: 'radio-receivers-layer', type: 'symbol', source: 'radio-receivers',
-            filter: ['==', ['get', 'station_status'], 'receiving'],
             layout: {
-              'icon-image': radioStationImage,
-              'icon-size': 1,
+              'icon-image': ['case', ['==', ['get', 'station_status'], 'receiving'], receivingIcon, offlineIcon],
               'icon-allow-overlap': true,
               'icon-ignore-placement': true,
-            },
-          });
-        } else {
-          map.addLayer({
-            id: 'radio-receivers-layer', type: 'circle', source: 'radio-receivers',
-            filter: ['==', ['get', 'station_status'], 'receiving'],
-            paint: {
-              'circle-radius': 7,
-              'circle-color': '#a78bfa',
-              'circle-stroke-color': '#07151b',
-              'circle-stroke-width': 2,
             },
           });
         }
@@ -2565,22 +2531,6 @@ function App() {
           event.originalEvent?.stopPropagation?.();
         });
 
-        map.on('mouseenter', 'radio-receivers-standby', () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mousemove', 'radio-receivers-standby', (event) => {
-          const feature = event.features?.[0];
-          if (!feature?.geometry?.coordinates) return;
-          const p = feature.properties || {};
-          const label = String(p.station_label || p.receiver_id || 'Radio station').replace(/[&<>"']/g,
-            (x) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[x]));
-          receiverHover.setLngLat(feature.geometry.coordinates)
-            .setHTML(`<div class="radio-station-hover__content"><strong>${label}</strong><span>${p.station_status === 'candidate' ? 'RESEARCH CANDIDATE' : 'NOT CONNECTED'} · NO LIVE RF</span><small>Nominal hardware capability is not monitored coverage</small></div>`)
-            .addTo(map);
-        });
-        map.on('mouseleave', 'radio-receivers-standby', () => { map.getCanvas().style.cursor = ''; receiverHover.remove(); });
-        map.on('click', 'radio-receivers-standby', (event) => {
-          const feature = event.features?.[0];
-          if (feature) { openRadioReport('radio_receiver', feature); event.originalEvent?.stopPropagation?.(); }
-        });
         map.on('mouseenter', 'radio-dsc-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', 'radio-dsc-layer', () => { map.getCanvas().style.cursor = ''; });
         map.on('click', 'radio-dsc-layer', (event) => {
@@ -2983,7 +2933,7 @@ function App() {
   // set; only fill color varies per feature via the match expressions.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !map.isStyleLoaded()) return;
+    if (!mapReady || !map?.getSource('intel-events')) return;
     const positioned = canonicalLivePoints;
     map.getSource('intel-attacks')?.setData({ type: 'FeatureCollection',
       features: positioned.filter((f) => f.geometry?.type === 'Point' && isAttackIncident(f.properties)) });
@@ -4351,7 +4301,7 @@ function App() {
                   openRadioReport('radio_receiver', radioFeature(row, 'radio_receiver'));
                 }}>{row.station_label || row.receiver_id} · {isMediterraneanReceiver(row) ? 'Mediterranean map' : 'Remote HF relay · off map'} · {row.listen_available ? 'Listen available' : 'Receiver details'}</button>
               ))}
-              <p className="live-radio-panel__source-note">Purple antenna = connected RF; outlined marker = catalogued or candidate, NOT receiving. Frequency range is only nominal hardware capability. Inland relays remain in backend diagnostics. External NAVTEX is a separately published source.</p>
+              <p className="live-radio-panel__source-note">Purple antenna = receiving RF. Black-and-white antenna = no live reception. Frequency range is only nominal hardware capability. Inland relays remain in backend diagnostics. External NAVTEX is a separately published source.</p>
               <details className="live-radio-panel__channels"><summary>Maritime radio channels · {radioChannels.filter((channel) => channel.active_receivers > 0).length} / {radioChannels.length} monitored</summary>
                 {radioChannels.map((channel) => <div key={channel.id} className="live-radio-panel__channel-row"><span>{channel.label} · {(channel.frequency_hz / 1_000_000).toFixed(4)} MHz</span><strong>{channel.active_receivers > 0 ? `${channel.active_receivers} RF receiving` : channel.decoder === 'ready' ? 'Not monitored' : 'Decoder not available'}</strong></div>)}
               </details>

@@ -61,6 +61,9 @@ export default function MapReferenceBar({ context = 'live' }) {
         </header>
         <div className="sc-reference-dialog__content">
           {active === 'legend' && context === 'live' && <Legend publicLive embedded />}
+          {active === 'legend' && context === 'play' && (
+            <section><h3>Archive density</h3><p>Cooler colours show fewer mapped records and warmer colours show more. Zoom in to inspect individual cases and their category colours.</p></section>
+          )}
           {PANELS[active].sections.map(([heading, body]) =>
             <section key={heading}><h3>{heading}</h3><p>{body}</p></section>
           )}

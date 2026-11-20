@@ -9,6 +9,7 @@ import {
   SATELLITE_BASEMAP_TILE_URL,
 } from './publicBasemap.js';
 import { classifyEventVisual } from '../intel/categories.js';
+import { radioStationIconMarkup } from '../live/radioStationIcon.js';
 import { isAttackIncident } from './attackMarker.js';
 
 export const PLAY_CLUSTER_BANDS = [
@@ -283,10 +284,10 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
           const center = [lat / count, lon / count];
           const icon = L.divIcon({
             className: 'seacommons-fallback-cluster',
-            html: `<span style="background:${color}">${count}</span>`,
+            html: `<span style="--density-color:${color}" aria-hidden="true"></span>`,
             iconSize: [radius * 2, radius * 2], iconAnchor: [radius, radius],
           });
-          const marker = L.marker(center, { icon, title: `${count} grouped points` }).addTo(markers);
+          const marker = L.marker(center, { icon, title: `${count} grouped records · zoom in`, alt: `${count} grouped records · zoom in` }).addTo(markers);
           marker.on('click', () => map.setView(center, Math.min(8, map.getZoom() + 2)));
         }
       }
@@ -311,9 +312,7 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
         if (feature.properties?.radio_type === 'radio_receiver' && L.divIcon && L.marker) {
           const icon = L.divIcon({
             className: 'seacommons-fallback-radio-station',
-            html: feature.properties?.station_status === 'receiving'
-              ? '<span aria-hidden="true" style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:#07151b;border:2px solid #a78bfa;border-radius:50%;font-size:17px;box-sizing:border-box">📡</span>'
-              : '<span aria-hidden="true" style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:#15222a;border:2px solid #e1b375;border-radius:50%;font-size:12px;box-sizing:border-box">○</span>',
+            html: radioStationIconMarkup(feature.properties?.station_status === 'receiving'),
             iconSize: [32, 32], iconAnchor: [16, 16],
           });
           const marker = L.marker([Number(lat), Number(lon)], { icon, keyboard: true }).addTo(markers);
@@ -333,7 +332,11 @@ export async function createFallbackMap({ container, center, zoom, onFeatureSele
         } else {
           const marker = L.circleMarker(
             [Number(lat), Number(lon)],
-            { ...markerStyle(feature), renderer: incidentRenderer },
+            {
+              ...markerStyle(feature),
+              ...(cluster ? { radius: map.getZoom() <= 7 ? 3 : 5, weight: 0, fillOpacity: 0.65 } : {}),
+              renderer: incidentRenderer,
+            },
           ).addTo(markers);
           bindSelection(marker, feature, onFeatureSelect);
         }

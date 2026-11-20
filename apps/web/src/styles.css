@@ -4110,15 +4110,12 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .play-case__clock { color: #d4ff3f; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .02em; line-height: 1.45; }
 
 .seacommons-fallback-cluster > span {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 100%;
   height: 100%;
-  box-sizing: border-box;
-  border: 2px solid #0b1724;
   border-radius: 50%;
-  color: #071014;
-  font: 700 11px var(--font-mono);
+  background: radial-gradient(circle, var(--density-color), transparent 72%);
+  opacity: .65;
 }
 .seacommons-fallback-attack {
   position: absolute;

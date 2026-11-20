@@ -220,7 +220,7 @@ test('PLAY fallback groups nearby points by count and expands on click', async (
   assert.equal(log.markers.length, 0);
   assert.equal(log.vesselMarkers.length, 1);
   const [cluster] = log.vesselMarkers;
-  assert.match(cluster.options.icon.options.html, /#2dd4bf">10</);
+  assert.match(cluster.options.icon.options.html, /--density-color:#2dd4bf/);
   cluster.marker.handler();
   assert.equal(log.setView[1], 6);
 });

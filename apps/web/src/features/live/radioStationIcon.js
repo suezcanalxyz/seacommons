@@ -1,30 +1,38 @@
-/** Register a native MapLibre antenna image for verified active RF receivers.
- * Keeps the signal-source icon distinct from vessel, incident and NAVTEX markers.
- * Uses a small local canvas: no external icon service, font, or third-party asset.
- */
-export function installActiveRadioStationIcon(map) {
-  const name = 'seacommons-radio-antenna-active';
+const ANTENNA_PATH = 'M32 28v20m-9 0h18M24 14a13 13 0 0 0 0 21m16-21a13 13 0 0 1 0 21M18 8a21 21 0 0 0 0 33M46 8a21 21 0 0 1 0 33';
+
+function antennaColor(receiving) {
+  return receiving ? '#c4a5ff' : '#ffffff';
+}
+
+export function radioStationIconMarkup(receiving) {
+  return `<svg viewBox="0 0 64 64" width="32" height="32" aria-hidden="true">
+    <path d="${ANTENNA_PATH}" fill="none" stroke="#080910" stroke-width="9" stroke-linecap="round"/>
+    <path d="${ANTENNA_PATH}" fill="none" stroke="${antennaColor(receiving)}" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="32" cy="24" r="5" fill="${antennaColor(receiving)}" stroke="#080910" stroke-width="2"/>
+  </svg>`;
+}
+
+export function installRadioStationIcon(map, receiving) {
+  const name = receiving ? 'seacommons-radio-antenna-active' : 'seacommons-radio-antenna-offline';
   if (map.hasImage(name)) return name;
   const canvas = document.createElement('canvas');
-  canvas.width = 64;
-  canvas.height = 64;
-  const c = canvas.getContext('2d');
-  if (!c) return null;
-  c.fillStyle = '#07151b';
-  c.strokeStyle = '#a78bfa';
-  c.lineWidth = 4;
-  c.beginPath(); c.arc(32, 32, 28, 0, Math.PI * 2); c.fill(); c.stroke();
-  c.strokeStyle = '#ffffff';
-  c.lineWidth = 3.5;
-  c.lineCap = 'round';
-  // An antenna mast and symmetric transmitting waves, visibly not a vessel icon.
-  c.beginPath(); c.moveTo(32, 27); c.lineTo(32, 46); c.moveTo(23, 46); c.lineTo(41, 46); c.stroke();
-  c.fillStyle = '#ffffff'; c.beginPath(); c.arc(32, 24, 3.4, 0, Math.PI * 2); c.fill();
-  c.beginPath(); c.arc(32, 24, 11, -2.42, -0.72); c.stroke();
-  c.beginPath(); c.arc(32, 24, 11, 3.86, 5.56); c.stroke();
-  c.beginPath(); c.arc(32, 24, 19, -2.42, -0.72); c.stroke();
-  c.beginPath(); c.arc(32, 24, 19, 3.86, 5.56); c.stroke();
-  const pixels = c.getImageData(0, 0, 64, 64);
-  map.addImage(name, { width: 64, height: 64, data: pixels.data }, { pixelRatio: 2 });
+  canvas.width = canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const antenna = new Path2D(ANTENNA_PATH);
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#080910';
+  ctx.lineWidth = 9;
+  ctx.stroke(antenna);
+  ctx.strokeStyle = ctx.fillStyle = antennaColor(receiving);
+  ctx.lineWidth = 4;
+  ctx.stroke(antenna);
+  ctx.beginPath();
+  ctx.arc(32, 24, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#080910';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  map.addImage(name, ctx.getImageData(0, 0, 64, 64), { pixelRatio: 2 });
   return name;
 }

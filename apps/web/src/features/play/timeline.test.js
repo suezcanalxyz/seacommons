@@ -379,6 +379,8 @@ test('Play zoom clusters preserve all original archive records and expand on cli
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
   assert.match(source, /cluster: true, clusterMaxZoom: 7, clusterRadius: 42/);
   assert.match(source, /id: 'play-clusters'/);
+  assert.match(source, /id: 'play-density', type: 'heatmap', source: 'play-incidents'/);
+  assert.match(source, /'heatmap-weight': .*'point_count'/);
   assert.match(source, /getClusterExpansionZoom\(clusterId\)/);
   assert.match(source, /map\.easeTo\(\{ center: coordinates/);
   assert.match(source, /\['!', \['has', 'point_count'\]\]/);
@@ -448,10 +450,11 @@ test('archive markers preserve unknown heading instead of inventing northward tr
   assert.equal(observed.features[0].properties.course, 217);
 });
 
-test('PLAY merge keeps cluster suppression and unknown-course circle fallback together', async () => {
+test('PLAY renders vectors and unknown-course points in mutually exclusive layers', async () => {
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
-  assert.match(source, /filter: \['all', \['!', \['has', 'point_count'\]\], \['any', \['!=', \['get', 'marker_kind'\], 'vessel'\], \['!=', \['get', 'has_course'\], true\]\]\]/);
-  assert.match(source, /filter: \['all', \['!', \['has', 'point_count'\]\], \['==', \['get', 'marker_kind'\], 'vessel'\], \['==', \['get', 'has_course'\], true\]\]/);
+  assert.ok(source.includes("['all', ['!', ['has', 'point_count']], ['!=', ['get', 'marker_kind'], 'vessel']]"));
+  assert.ok(source.includes("['all', ['!', ['has', 'point_count']], ['==', ['get', 'marker_kind'], 'vessel'], ['==', ['get', 'has_course'], true]]"));
+  assert.ok(source.includes("['all', ['==', ['get', 'marker_kind'], 'vessel'], ['!=', ['get', 'has_course'], true]]"));
 });
 
 

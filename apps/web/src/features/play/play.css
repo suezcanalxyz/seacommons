@@ -493,3 +493,40 @@
 }
 .play-report-section .play-report-prose { font-size: 14px; }
 .play-report-chronology li { font-size: 13px; }
+
+.play-public-shell .play-map-stage > .sc-basemap-switch {
+  bottom: calc(var(--play-dock-height, 64px) + 14px);
+}
+.play-public-shell .play-gap-map-note {
+  top: 16px;
+  bottom: auto;
+}
+@media (min-width: 821px) {
+  .play-public-shell.is-archive-collapsed .play-gap-map-note { left: 16px; }
+  .play-public-shell.is-archive-collapsed .play-timeline-bar { left: 0; }
+  .play-public-shell .play-archive-panel > .live-feed-panel__header {
+    flex: 0 0 auto;
+    max-height: min(42dvh, 340px);
+    scrollbar-width: thin;
+    scrollbar-color: #477368 transparent;
+  }
+  .play-public-shell .play-sanctions-section {
+    flex: 0 1 auto;
+    max-height: 25dvh;
+    overflow: auto;
+  }
+  .play-public-shell.has-selection .play-all-badge,
+  .play-public-shell.has-selection .play-map-status {
+    right: calc(min(var(--live-panel-width), 32vw) + 16px);
+  }
+}
+@media (max-width: 820px) {
+  .play-public-shell .play-gap-map-note {
+    top: 64px;
+    left: 12px;
+    max-width: calc(100vw - 24px);
+  }
+  .play-public-shell:has(.play-timeline-bar.is-mobile-active) .play-map-stage > .sc-basemap-switch {
+    bottom: calc(var(--play-dock-height, 64px) + 72px);
+  }
+}

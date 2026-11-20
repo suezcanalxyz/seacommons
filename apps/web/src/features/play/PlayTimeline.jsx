@@ -553,14 +553,26 @@ export default function PlayTimeline({ apiBase }) {
           type: 'geojson', data: { type: 'FeatureCollection', features: [] },
           cluster: true, clusterMaxZoom: 7, clusterRadius: 42,
         });
+        map.addLayer({
+          id: 'play-density', type: 'heatmap', source: 'play-incidents', maxzoom: 9,
+          filter: ['==', ['geometry-type'], 'Point'],
+          paint: {
+            'heatmap-weight': ['interpolate', ['linear'], ['coalesce', ['get', 'point_count'], 1],
+              1, 0.2, 10, 0.5, 50, 0.85, 200, 1],
+            'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 3, 21, 7, 38],
+            'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0.82, 9, 0],
+            'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'],
+              0, 'rgba(33,106,179,0)', 0.15, 'rgba(53,144,205,0.24)',
+              0.4, '#33c2cc', 0.66, '#76d8a0', 0.85, '#f0da72', 1, '#ff9c65'],
+          },
+        });
         // A cluster represents a viewport grouping, never a deduplicated archive record.
         map.addLayer({
           id: 'play-clusters', type: 'circle', source: 'play-incidents',
           filter: ['has', 'point_count'],
           paint: {
             'circle-radius': clusterPaint('radius'),
-            'circle-color': clusterPaint('color'), 'circle-opacity': 0.94,
-            'circle-stroke-color': '#0b1724', 'circle-stroke-width': 2,
+            'circle-color': clusterPaint('color'), 'circle-opacity': 0.13, 'circle-blur': 0.85,
           },
         });
         map.addLayer({
@@ -583,12 +595,12 @@ export default function PlayTimeline({ apiBase }) {
         });
         map.addLayer({
           id: 'play-incidents', type: 'circle', source: 'play-incidents',
-          filter: ['all', ['!', ['has', 'point_count']], ['any', ['!=', ['get', 'marker_kind'], 'vessel'], ['!=', ['get', 'has_course'], true]]],
+          filter: ['all', ['!', ['has', 'point_count']], ['!=', ['get', 'marker_kind'], 'vessel']],
           paint: {
             'circle-radius': ['case', ['==', ['get', 'incident_id'], selectedId], 8, 5],
             'circle-color': ['coalesce', ['get', 'visual_color'], '#c6a6ff'],
-            'circle-opacity': 0.9,
-            'circle-stroke-color': '#071014', 'circle-stroke-width': 1,
+            'circle-opacity': ['interpolate', ['linear'], ['zoom'], 4, 0.24, 8, 0.85],
+            'circle-blur': ['interpolate', ['linear'], ['zoom'], 4, 0.65, 8, 0.1],
           },
         });
         map.addLayer({
@@ -599,14 +611,14 @@ export default function PlayTimeline({ apiBase }) {
             'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.20, 7, 0.34, 10, 0.46],
             'icon-rotate': ['coalesce', ['get', 'course'], 0],
             'icon-rotation-alignment': 'map',
-            'icon-allow-overlap': true,
+            'icon-allow-overlap': false,
           },
           paint: { 'icon-color': ['coalesce', ['get', 'visual_color'], '#c6a6ff'], 'icon-opacity': 0.94 },
         });
         map.addLayer({
           id: 'play-vessels-unknown-course', type: 'circle', source: 'play-incidents',
-          filter: ['all', ['==', ['get', 'marker_kind'], 'vessel'], ['==', ['get', 'course'], null]],
-          paint: { 'circle-radius': 5, 'circle-color': ['coalesce', ['get', 'visual_color'], VESSEL_COLOR],
+          filter: ['all', ['==', ['get', 'marker_kind'], 'vessel'], ['!=', ['get', 'has_course'], true]],
+          paint: { 'circle-radius': 3.5, 'circle-color': ['coalesce', ['get', 'visual_color'], VESSEL_COLOR],
             'circle-stroke-color': '#071014', 'circle-stroke-width': 1.5 },
         });
         map.addSource('play-attacks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -679,7 +691,7 @@ export default function PlayTimeline({ apiBase }) {
           paint: { 'circle-color': '#75a7ff', 'circle-radius': 9, 'circle-stroke-color': '#e4f0ff', 'circle-stroke-width': 2 },
         });
         const selectArchiveFeature = (event) => {
-          const rendered = map.queryRenderedFeatures(event.point, { layers: ['play-incidents', 'play-vessels'] });
+          const rendered = map.queryRenderedFeatures(event.point, { layers: ['play-incidents', 'play-vessels', 'play-vessels-unknown-course'] });
           const ids = [...new Set(rendered
             .map((feature) => feature.properties?.incident_id)
             .filter(Boolean)
@@ -1007,7 +1019,7 @@ export default function PlayTimeline({ apiBase }) {
   const startupPending = !startupDismissed && !startupGraceExpired && (archiveLoading || (!mapContentReady && !mapError));
 
   return (
-    <main className={`cop-shell is-live-mode play-public-shell play-shell ${selectedId ? 'has-selection' : ''}`}>
+    <main className={`cop-shell is-live-mode play-public-shell play-shell ${selectedId ? 'has-selection' : ''} ${archiveCollapsed ? 'is-archive-collapsed' : ''}`}>
       {startupPending ? (
         <div className="play-startup-overlay" role="status" aria-live="polite" aria-label="Loading SeaCommons PLAY">
           <div className="play-startup-overlay__inner">
