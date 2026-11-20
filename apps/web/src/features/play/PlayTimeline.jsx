@@ -1193,6 +1193,16 @@ export default function PlayTimeline({ apiBase }) {
         <div className="play-evidence__scroll" aria-busy={Boolean(timelineLoading)}>
           {timelineLoading && <p className="play-dossier-progress" role="status">Loading case evidence…</p>}
           {timelineError && <p className="play-dossier-progress" role="alert">{timelineError}</p>}
+          <section className="cone-section sc-play-human-summary" aria-label="Case overview in plain language">
+            <p className="sc-play-human-summary__eyebrow">AT A GLANCE</p>
+            <h2>{selectedIncident?.title || 'Historical maritime case'}</h2>
+            <div className="sc-play-human-summary__grid">
+              <div><h3>What was reported?</h3><p>{humanizeDetectorText(caseData?.assessment?.observation || selectedIncident?.assessment?.observation || selectedIncident?.location_summary || 'This case appears in the historical archive. The original report and its date are documented in the sections below.')}</p></div>
+              <div><h3>What can be checked?</h3><p>{caseData?.corroborated === true ? 'The archive records independent corroboration. Check the cited evidence and when it was recorded.' : 'Independent confirmation has not been established in this archive. Check the original sources before drawing a conclusion.'}</p></div>
+              <div><h3>What remains unknown?</h3><p>{humanizeDetectorText(caseData?.assessment?.limitations || selectedIncident?.assessment?.limitations || 'A missing AIS record is not proof a vessel switched off its transmitter. Predicted locations are not observations; the record may be incomplete.')}</p></div>
+            </div>
+            <small>Historical view: observations are limited to the selected time. An archived report is not an official determination.</small>
+          </section>
           <section className="cone-section play-case-summary">
             <div className="intel-report-title">
               <span style={{ background: playIncidentColor(selectedIncident || {}) }} />
