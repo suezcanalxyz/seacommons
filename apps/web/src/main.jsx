@@ -519,6 +519,7 @@ function mapStyle(initialBaseMap = 'standard') {
     sources: {
       osm: publicBasemapSource(),
       satellite,
+      bathymetryLabels: { type: 'raster', tiles: ['https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 19, attribution: '© CARTO · OpenStreetMap' },
       satelliteLabels: {
         type: 'raster',
         tiles: ['https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png'],
@@ -528,7 +529,8 @@ function mapStyle(initialBaseMap = 'standard') {
       },
     },
     layers: [
-      { id: 'osm', type: 'raster', source: 'osm', layout: { visibility: initialBaseMap === 'satellite' ? 'none' : 'visible' } },
+      { id: 'osm', type: 'raster', source: 'osm', layout: { visibility: initialBaseMap === 'satellite' ? 'none' : 'visible' }, paint: { 'raster-brightness-min': 0.06, 'raster-brightness-max': 0.52, 'raster-saturation': -0.72, 'raster-contrast': 0.22 } },
+      { id: 'bathymetry-labels', type: 'raster', source: 'bathymetryLabels', layout: { visibility: initialBaseMap === 'satellite' ? 'none' : 'visible' }, paint: { 'raster-opacity': 0.65 } },
       { id: 'satellite', type: 'raster', source: 'satellite', layout: { visibility: initialBaseMap === 'satellite' ? 'visible' : 'none' } },
       { id: 'satellite-labels', type: 'raster', source: 'satelliteLabels', layout: { visibility: initialBaseMap === 'satellite' ? 'visible' : 'none' }, paint: { 'raster-opacity': 0.92 } },
     ],
@@ -2800,6 +2802,7 @@ function App() {
     if (!map || !mapReady) return;
     const effectiveBaseMap = baseMap;
     if (map.getLayer('osm')) map.setLayoutProperty('osm', 'visibility', effectiveBaseMap === 'standard' ? 'visible' : 'none');
+    if (map.getLayer('bathymetry-labels')) map.setLayoutProperty('bathymetry-labels', 'visibility', effectiveBaseMap === 'standard' ? 'visible' : 'none');
     if (map.getLayer('satellite')) map.setLayoutProperty('satellite', 'visibility', effectiveBaseMap === 'satellite' ? 'visible' : 'none');
     if (map.getLayer('satellite-labels')) map.setLayoutProperty('satellite-labels', 'visibility', effectiveBaseMap === 'satellite' ? 'visible' : 'none');
   }, [baseMap, mapReady]);
@@ -3793,11 +3796,7 @@ function App() {
                 aria-expanded={sidebarOpen} onClick={() => { setMobileGuideOpen(false); setConePanelHidden(true); setSidebarOpen(true); }}>
                 <span aria-hidden="true">≡</span><small>Feed</small>
               </button>
-              <button type="button" className={mapPanel && !conePanelHidden && !mobileGuideOpen ? 'is-active' : ''} aria-label="Open selected report"
-                aria-expanded={Boolean(mapPanel && !conePanelHidden)} disabled={!mapPanel}
-                onClick={() => { setMobileGuideOpen(false); setSidebarOpen(false); setConePanelHidden(false); }}>
-                <span aria-hidden="true">▤</span><small>Report</small>
-              </button>
+
             </>
           ) : (
             <>
@@ -4371,6 +4370,9 @@ function App() {
               ))}
             </details>
 
+            <div className="live-feed-panel__search">
+              <VesselCaseSearch cases={intelEvents.map((feature) => ({ ...feature.properties, feature }))} onSelect={(record) => openIntelReport(record.feature)} />
+            </div>
             <div className="live-feed-panel__body">
               <IntelDashboard
                 apiBase={apiBase}
@@ -4646,19 +4648,7 @@ function App() {
 
         </>
       ) : null}
-        {isPublicLiveHost ? createPortal(
-          <button
-            type="button"
-            className="live-basemap-switch"
-            aria-label={baseMap === 'satellite' ? 'Switch to standard map' : 'Switch to satellite map'}
-            aria-pressed={baseMap === 'satellite'}
-            onClick={() => { setPlay3D(false); setBaseMap((current) => current === 'satellite' ? 'standard' : 'satellite'); }}
-          >
-            <span className="live-basemap-switch__icon" aria-hidden="true">{baseMap === 'satellite' ? '▦' : '◫'}</span>
-            <span>{baseMap === 'satellite' ? 'Standard map' : 'Satellite view'}</span>
-          </button>, document.body
-        ) : null}
-        {isPublicLiveHost && <VesselCaseSearch cases={intelEvents.map((feature) => ({ ...feature.properties, feature }))} onSelect={(record) => openIntelReport(record.feature)} />}
+
     </main>
   );
 }
