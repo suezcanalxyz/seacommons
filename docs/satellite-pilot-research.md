@@ -163,3 +163,78 @@ depend on verified access and the existing case policy.
 
 [xView3 benchmark and evaluation](https://proceedings.neurips.cc/paper_files/paper/2022/file/f4d4a021f9051a6c18183b059117e8b5-Paper-Datasets_and_Benchmarks.pdf) ·
 [IOM methodology and estimated coordinates](https://missingmigrants.iom.int/sites/g/files/tmzbdl601/files/publication/file/fatal_journeys_3_part2.pdf)
+
+## Historical PLAY re-review: image analysis and claim definitions
+
+Review the whole archive in two passes. First inventory the public cases and
+record which claims and phases can be searched. Then analyze eligible imagery,
+with the original observations and review history preserved. The inventory
+includes cases with missing location or time and never silently drops them.
+For a full backfill, prefer a stable catalog snapshot and checkpoint by case ID.
+Record the catalog time and keep accession coverage separate from image quality.
+
+### One claim, one spatial and temporal scope
+
+A review record must state the question (presence, identity, visible damage,
+change, spill-like feature or historical outcome), phase (before, during or
+after), reference source, UTC time/interval and its uncertainty, and the
+public-safe area relevant to that phase. The first report time is a fallback
+reference, explicitly labelled. A port phase needs an independent arrival or
+tow corroborator and a berth, anchorage or sufficiently bounded harbour search.
+The incident crop and a follow-up port crop have separate coverage results.
+
+| Term | Definition in PLAY |
+|---|---|
+| Catalog overlap | Provider geometry intersects the search area. This guarantees neither valid pixels nor an acquisition in the relevant interval. |
+| Usable coverage | Valid pixels cover the relevant area during the relevant interval, with instrument, resolution and conditions suitable for the stated feature. Record partial or unknown coverage. |
+| Detected return | A georeferenced pixel cluster or reviewed visible object with a reproducible source, crop and algorithm. SAR brightness alone does not establish vessel identity. |
+| Supported | An observation supports the stated claim within the recorded scope. Identity and incident attribution require their own evidence. |
+| Conflicting | A usable observation contradicts a specific claim. Record the conflicting source, place, time and limits. |
+| No qualifying detection | Usable pixels were evaluated and no return met the rule. Keep this distinct from a general absence finding. |
+| Not evaluable | Missing case reference, no acquisition in scope, incomplete coverage, obscuration, insufficient resolution, or failed asset access. Preserve the reason. |
+
+An absence finding can rule out a narrow presence claim only if the defined
+area was adequately observed in the stated interval, the expected object
+would be detectable, and independent review supports the finding. It does
+not rule out movement outside the footprint or an event before or after the
+acquisition. Never label historical distress disproved solely because the
+detector returned zero.
+
+### Pixel-level method
+
+- **SAR:** select calibrated backscatter, record polarization, pixel spacing
+  and effective resolution. Use nodata and a coastline mask for open water.
+  Record the peak pixel, georeferenced crop, local contrast and review nearby
+  structures and radar ambiguity artifacts. In ports, inspect the berth and
+  compare against a pre-event view rather than treating a bright cluster as
+  an identified ship. For change review, prefer comparable orbit/view,
+  polarization and processing, align the rasters and retain both source IDs.
+- **Optical:** inspect the local cloud, shadow and valid-data mask over the
+  subject rather than relying on tile-wide cloud percentage. Review native
+  pixels, source time, visible dimensions and shadows. Attribute visible
+  changes only where resolution and viewing conditions support the feature.
+- **Cross-check:** compare candidates against original AIS, DSC, port or
+  operator records using their own timestamps, position uncertainties and
+  provenance. Keep acquisition, publication and review times separate.
+  Archive each review decision and its rationale without overwriting the
+  original report. Apply existing protections to humanitarian location data.
+
+[ESA ship detection capability](https://knowledge-hub-gda.esa.int/eo_capability/ship-detection/) ·
+[JRC SUMO review and ambiguities](https://publications.jrc.ec.europa.eu/repository/bitstream/JRC107063/sumomanual2017_v17.pdf) ·
+[Copernicus EMS guidance on imagery](https://mapping.emergency.copernicus.eu/about/using-of-earth-observation-data/)
+
+Backfill first produces coverage counts, not a new incident verdict:
+total cases, searchable phases, usable scenes, unresolved candidates,
+supported or conflicting claims and cases with no usable evidence. Use
+CONTSHIP JET to verify that a delayed incident-site crop and any separately
+documented follow-up location remain distinct. Retain the three humanitarian
+dossiers as timing/reference tests and Lampedusa as the pixel fixture.
+
+Initial inventory, 20 November 2026: all eight public API pages returned
+3,879 distinct IDs (3,720 maritime and 159 humanitarian), including 3,827
+records with a nonempty geometry and 106 with the public satellite flag.
+The flag measures what the catalog marked, not whether usable imagery exists.
+Geometry is an inventory field and must be checked for its source and
+precision before being used as a search anchor. This inventory covers the
+API catalog, which also includes recent reports and excludes separately
+bundled reviewed entries. It is not an image review.
