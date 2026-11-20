@@ -453,3 +453,27 @@
 .play-case-summary > span { display: block; margin: 6px 0; }
 .play-evidence .play-card { border-bottom-color: var(--glass-border, rgba(255,255,255,.065)); }
 .play-evidence .play-card h3 { font-size: 13px; }
+
+/* Keep PLAY's archive list independently scrollable even when filter groups
+   expand: otherwise the sticky reference footer intercepts case clicks. */
+@media (min-width: 821px) {
+  .play-public-shell .play-archive-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    height: calc(100dvh - var(--play-dock-height, 64px));
+  }
+  .play-public-shell .play-archive-panel > .live-feed-panel__header {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .play-public-shell .play-archive-panel > .play-cases__list {
+    flex: 1 1 auto;
+    min-height: 120px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .play-public-shell .play-archive-panel > .sc-reference-bar { flex: 0 0 auto; }
+}

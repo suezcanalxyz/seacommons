@@ -67,9 +67,10 @@ test('public Live does not expose raw AIS vessel layer controls', async ({ page 
     }));
   });
   await page.goto(PUBLIC_LIVE_URL);
-  await page.getByTitle('Map layers').click();
+  await page.getByRole('navigation', { name: 'Live intelligence sections' })
+    .getByRole('button', { name: 'Layers' }).click();
 
-  const row = (label) => page.locator('.layer-row').filter({ hasText: label }).locator('input');
+  const row = (label) => page.locator('.sc-panel-layer-option').filter({ hasText: label }).locator('input');
   await expect(row('AIS · moving vessels')).toHaveCount(0);
   await expect(row('AIS · stationary vessels')).toHaveCount(0);
   await expect(row('AIS · selected vessel trail')).toHaveCount(0);
@@ -100,11 +101,12 @@ test('mobile Live keeps an interactive incident map when MapLibre cannot initial
   await expect(page.locator('.seacommons-fallback-marker--maritime-1')).toHaveAttribute('role', 'button');
   // Public LIVE defaults to the standard basemap; exercise both directions
   // rather than assuming the old satellite-first default.
-  await expect(page.locator('.leaflet-tile-pane img[src*="tile.openstreetmap.org"]').first()).toBeAttached();
-  await page.getByRole('button', { name: 'Switch to satellite map' }).click();
+  await expect(page.locator('.leaflet-tile-pane img[src*="emodnet-bathymetry.eu"]').first()).toBeAttached();
+  const basemap = page.getByRole('group', { name: 'Map background' });
+  await basemap.getByRole('button', { name: 'Satellite' }).click();
   await expect(page.locator('.leaflet-tile-pane img[src*="World_Imagery"]').first()).toBeAttached();
-  await page.getByRole('button', { name: 'Switch to standard map' }).click();
-  await expect(page.locator('.leaflet-tile-pane img[src*="tile.openstreetmap.org"]').first()).toBeAttached();
+  await basemap.getByRole('button', { name: 'Map', exact: true }).click();
+  await expect(page.locator('.leaflet-tile-pane img[src*="emodnet-bathymetry.eu"]').first()).toBeAttached();
   await expect(page.locator('.leaflet-tile-pane img[src*="World_Imagery"]')).toHaveCount(0);
   const targetMarker = page.locator('.seacommons-fallback-marker--humanitarian-1');
   await expect(targetMarker).toHaveAttribute('role', 'button');

@@ -1052,11 +1052,13 @@ export default function PlayTimeline({ apiBase }) {
           <IntelligencePanelTabs label="Historical intelligence sections" value={playToolTab} onChange={setPlayToolTab}
             options={[{ id: 'archive', label: 'Archive', count: visibleIncidents.length }, { id: 'timeline', label: 'Timeline' }, { id: 'sources', label: 'Sources' }, { id: 'layers', label: 'Layers' }]} />
           {playToolTab === 'archive' && <>
+          <div className="live-feed-panel__search">
           <VesselCaseSearch cases={visibleIncidents} onSelect={(record) => {
         setArchiveSearch(''); setArchiveFilter('all'); setIncidentTypeFilter('all');
         setEvidenceFilter('all'); setSatelliteOnly(false); setSanctionsOnly(false); setInvestigationsOnly(false);
         setSelectedId(record.incident_id); setCasesOpen(false);
       }} />
+          </div>
           <div className="osint-stats-row">
             <div className="osint-stat"><strong>{visibleIncidents.length}</strong><span>archive loaded</span></div>
             <div className="osint-stat osint-stat--critical"><strong>{archiveCounts.humanitarian}</strong><span>humanitarian</span></div>
