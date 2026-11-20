@@ -93,3 +93,73 @@ existing public incident projection and keep acquisition jobs out of web request
 - Keep credentials, signed links, private locations and licensed rasters out
   of git and public responses. Smoke-test the review surface against an
   explicitly authorized candidate before enabling ingestion in production.
+
+## Follow-up research: independent acquisitions and detector limits
+
+### Catalog experiment on CONTSHIP JET
+
+A public NASA CMR granule search for collection `OPERA_L2_RTC-S1_V1` at the
+position in notice 759/26 returned four records for 27–31 October 2026 UTC.
+The search checked metadata availability, without downloading authenticated
+ASF assets. The OPERA granules have 30 m pixel spacing.
+
+| Acquisition start (UTC) | OPERA platform / swath | Interpretation |
+|---|---|---|
+| 30 Oct 04:13:13 and 04:13:14 | S1C, IW1 and IW2, burst group T036-075995 | Overlapping products from the same pass already examined in the Planetary Computer RTC crop. |
+| 31 Oct 04:05:18 | S1D, IW3, T138-295085 | Later pass, also represented in the previous Copernicus GRD search. |
+| 31 Oct 15:59:40 | S1C, IW2, T058-122686 | Later pass, also represented in the previous Copernicus GRD search. |
+
+The fourth catalog row adds no independent observation. Grouping by platform,
+acquisition and original scene or orbit prevents doubling the evidence when
+CDSE GRD, Planetary Computer RTC and OPERA RTC expose the same pass. Preserve
+the original product identifiers and individual release times in the manifest.
+The observed first radar pass remains about 42 hours after the incident
+reference. Commercial availability in the earlier window remains unverified.
+
+Reproduction: use [NASA CMR](https://cmr.earthdata.nasa.gov/search/granules.json)
+with `short_name=OPERA_L2_RTC-S1_V1`, the point from notice 759/26, and
+`temporal=2026-10-27T00:00:00Z,2026-10-31T23:59:59Z`. Check the CMR hit
+count, then compare each granule's acquisition time with the original Sentinel
+products before actually ordering or downloading another copy.
+
+[ASF access and coverage](https://docs.asf.alaska.edu/datasets/using_ASF_data/) ·
+[OPERA RTC-S1 product specification](https://d2pn8kiwq2w21t.cloudfront.net/documents/ProductSpec_RTC.pdf) ·
+[CDSE Sentinel-1 collection and deferred availability](https://dataspace.copernicus.eu/data-collections/copernicus-sentinel-missions/sentinel-1)
+
+### Small-craft detectability
+
+Sentinel-1 IW GRD HR is sampled on a 10 m grid with approximately 20 × 22 m
+spatial resolution. Pixel spacing is smaller than the effective resolution.
+A radar-bright return can be spatially unresolved, so a bright cluster's
+pixel count should not be used as a hull-length estimate. A small,
+low-contrast craft can be missed due to material, orientation, waves,
+incidence angle and available resolution. An empty detector output on a
+technically valid scene is still inconclusive for a small craft.
+
+Keep three classes of output in the evaluation: a candidate marker for review,
+an analyzed acquisition with no qualifying return, and a failure to acquire or
+evaluate usable pixels. Separate coastal false positives such as docks and
+fixed infrastructure from radar artifacts. Evaluate how much real vessel
+coverage an aggressive shoreline buffer would discard.
+
+[Sentinel-1 product definition, table 5-1](https://sentiwiki.copernicus.eu/__attachments/1673968/S1-RS-MDA-52-7440-Sentinel-1-Product-Definition-2025-2.8.pdf) ·
+[JRC SUMO manual, ship detection and ambiguity flags](https://publications.jrc.ec.europa.eu/repository/bitstream/JRC107063/sumomanual2017_v17.pdf)
+
+### What to implement and measure first
+
+| Stage | Design choice | Evidence to record |
+|---|---|---|
+| Discovery | Use CDSE to discover and fingerprint original acquisitions, Planetary Computer for the first RTC raster route and ASF CMR as an alternate index. | Footprint overlap, acquisition start/end, report-time uncertainty, pixel access status and underlying acquisition key. |
+| Calibration | Freeze the current contrast detector, then compare it against SUMO on a held-out slice of xView3. Establish offshore, coastal and port strata before tuning. Include reviewed small craft and shoreline negatives. | Scene counts, independent label availability, matches, unmatched annotations, false candidates per scene, masked area and input confidence tiers. |
+| Association | Retain source-record and acquisition identifiers in PLAY. Evaluate AIS and DSC from original observation time and the published uncertainty, with event timing distinct from first report. | Compatible, conflicting or unavailable source evidence, with observed/modelled positions kept distinct. |
+| Humanitarian review | Use original publisher chronology for reports, retain upstream references, and apply existing coordinate protections in public output. IOM Missing Migrants can add retrospective fatal or missing incident context for applicable cases. | Different sites may repeat one report. IOM includes estimated coordinates and describes counts as a minimum estimate. Do not substitute those coordinates for an observed vessel fix. |
+
+Keep threshold selection on development scenes. Reuse fixed thresholds and
+one-to-one matching rules for validation. Report omissions separately for a
+whole-scene archive gap, a partly observed search region, an inaccessible asset,
+and a usable crop with no qualifying return. Start the first PR implementation
+with discovery and evidence provenance. Raster queues and publication should
+depend on verified access and the existing case policy.
+
+[xView3 benchmark and evaluation](https://proceedings.neurips.cc/paper_files/paper/2022/file/f4d4a021f9051a6c18183b059117e8b5-Paper-Datasets_and_Benchmarks.pdf) ·
+[IOM methodology and estimated coordinates](https://missingmigrants.iom.int/sites/g/files/tmzbdl601/files/publication/file/fatal_journeys_3_part2.pdf)
