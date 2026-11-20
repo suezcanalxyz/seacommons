@@ -238,3 +238,65 @@ Geometry is an inventory field and must be checked for its source and
 precision before being used as a search anchor. This inventory covers the
 API catalog, which also includes recent reports and excludes separately
 bundled reviewed entries. It is not an image review.
+
+## LIVE detections and retrospective evidence
+
+Treat a recent observation and its publication as separate clocks. A
+satellite target in a near-real-time product represents the overpass time,
+and may be unavailable until much later. An advertised delivery target
+applies to eligible products and starts at sensing, not at the case report.
+Show `acquired_at`, `available_at` when known, `ingested_at` and the data age.
+Never substitute the ingestion timestamp when the acquisition time is missing.
+[WMO satellite and product timeliness](https://space.oscar.wmo.int/satellitestatuses/status)
+
+| Workflow | Eligibility | What the reviewer sees |
+|---|---|---|
+| LIVE · fresh satellite detection | A reviewed or qualifying observed feature with valid pixels, geographic overlap and age within the configured LIVE window for that product. Validate the policy for humanitarian publication first. | Sensor, acquisition UTC, age, crop and precise evidence claim. An unidentified return stays unidentified. No marker is created by cloud-free coverage or a catalog hit alone. |
+| PLAY · at-event reconstruction | Acquisition overlaps the documented event window and search area. | Scene and claim side by side with timing uncertainty and the usable footprint. Historical replay does not create a new LIVE sighting. |
+| PLAY · later follow-up | Source documents a new phase and location, such as a reported berth or tow destination. | Acquisition compared with the relevant phase, with time since event and time since phase reference shown separately. A later image can support presence or visible change at the later location. |
+| No valid observation | Coverage, useful pixels, access or event timing is missing. | Explicit reason, provider query and interval. Keep this state distinct from an evaluated crop with no qualifying return. |
+
+Late provider delivery can add evidence to a historical dossier while
+preserving its original sensing time. A follow-up observation can be recent
+in the LIVE feed and linked to an older incident in PLAY when independently
+eligible as a new observation. That linkage still preserves separate claims
+and acquisition IDs.
+
+## Open visualizations by mission
+
+A viewer is the human inspection surface. The analytical pipeline uses dated,
+georeferenced source pixels and per-pixel quality masks. Public catalog
+metadata, open-source viewer code and redistribution rights are three
+separate properties.
+
+| Mission | Viewer and access | SeaCommons visualization and role |
+|---|---|---|
+| EU · Sentinel-1 | [Copernicus Browser](https://dataspace.copernicus.eu/browser/) ([open-source code](https://github.com/eu-cdse/copernicus-browser)); [CDSE STAC](https://documentation.dataspace.copernicus.eu/APIs/STAC.html) and RTC COG routes for pixels | Dated VV grayscale in dB with source and footprint. Optional VH or VV/VH comparison with matched polarization and geometry. Use a candidate marker on the exact crop; show after/before alignment for port or coastline review. |
+| EU · Sentinel-2 L2A | [Copernicus Browser](https://documentation.dataspace.copernicus.eu/Applications/Browser.html); [L2A SCL specification](https://s2.pages.eopf.copernicus.eu/msi/s2msi/1.3.0/sum/payload-l2a.html) | B04/B03/B02 natural colour with local SCL cloud and shadow overlay. A separately named SWIR composite may assist environmental context. Avoid equating upsampled SWIR with native 10 m visible detail. |
+| EU · Sentinel-3 OLCI / SLSTR | [Copernicus Browser](https://dataspace.copernicus.eu/browser/) and product catalog | Regional ocean-colour or thermal context with date, units and quality flags. Keep on regional zoom and out of vessel-candidate ranking. |
+| US · VIIRS (Suomi NPP, NOAA-20/21) and MODIS | [NASA Worldview](https://worldview.earthdata.nasa.gov/) ([open-source code](https://github.com/nasa-gibs/worldview)); [NASA FIRMS](https://www.earthdata.nasa.gov/data/tools/firms) for thermal anomalies | Dated corrected-reflectance basemap or regional smoke/thermal context. Display time and spatial scale. A FIRMS anomaly is a thermal anomaly and cannot on its own identify a ship or prove a ship fire. |
+| US · Landsat 8/9 OLI/TIRS | [USGS EarthExplorer](https://earthexplorer.usgs.gov/) for search/preview/download. [LandsatLook](https://landsatlook.usgs.gov/) announces that its viewer is retired. | Use optical before/after and regional environmental or port changes. Render documented band combinations per product and preserve QA flags. US-hosted ASF OPERA RTC feeds the EU Sentinel-1 row because it processes that same European acquisition. |
+| China–Brazil · CBERS-4A WPM | [INPE product page and Data Cube Explorer/STAC](https://data.inpe.br/dados/cbers-4a/) | View native 2 m panchromatic and 8 m multispectral as separate layers, or label a pan-sharpened view as derived. Promising for a historical footprint where an actual public item is present. Mediterranean product availability remains unverified. |
+| China · SDGSAT-1 | [Open Science Program](https://www.sdgsat.ac.cn/) and [sensor description](https://www.sdgsat.ac.cn/satellite/describe) | Glimmer panchromatic 10 m / RGB 40 m can provide night-light context. Use acquisition-specific masks and compare with non-maritime light sources. Archive access and relevant pixels for this pilot remain unverified. |
+| China · Gaofen | [CNSA's open-data announcement](https://www.cnsa.gov.cn/english/n6465652/n6465653/c6808065/content.html) covers 16 m multispectral Gaofen‑1/6; evaluate the linked catalog on an actual area and date. | Treat proposed optical views as archive discovery until access and terms are verified. The announcement does not establish open global Gaofen‑3 SAR access. Leave products requiring separate authorization disabled. |
+
+Historical replay must retain the original styles and timestamps for the two
+CONTSHIP JET references. The cloud-obscured optical pass and the later radar
+crop belong to different questions. The 3,879-ID PLAY inventory can be
+reprocessed in batches, with an explicit state for missing geometry, missing
+time and unavailable pixels. Discovery puts priority on the three human
+dossiers and known phases such as documented arrivals or rescue reports,
+while preserving the full historical inventory.
+
+### Acceptance checks for LIVE/PLAY and visualization
+
+- A delayed scene never becomes a current observation by timestamp substitution.
+  Missing acquisition time and unknown publication latency render explicitly.
+- An at-event crop and a recovery/port crop use different reference windows,
+  recorded coverage and evidence claims, even when attached to the same dossier.
+- Each rendered layer exposes source, date, sensor/bands and rendition method.
+  Regional composites, derived styles, original pixels and catalog footprints
+  are labelled distinctly. Provider-specific access failures are visible.
+- Verify one actual item, its pixel access and publication conditions before
+  enabling a new mission. A catalog result outside the region stays out of
+  the historical evidence review. Leave unverified adapters disabled.
