@@ -4326,3 +4326,55 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
 .live-radio-panel dl > div { display: flex; justify-content: space-between; gap: 8px; }
 .live-radio-panel dd { margin: 0; }
 .live-radio-panel > button { display: block; width: 100%; text-align: left; margin: 4px 0; padding: 7px; }
+
+
+/* Shared LIVE / PLAY basemap selector: one compact map/satellite card beside
+   the left feed. No duplicated control inside the Layers popup. */
+.sc-basemap-switch {
+  position: absolute;
+  left: calc(374px + 14px);
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 115;
+  display: flex;
+  gap: 3px;
+  padding: 5px;
+  width: max-content;
+  border: 1px solid rgba(146, 191, 202, .42);
+  border-radius: 13px;
+  background: rgba(4, 19, 27, .95);
+  box-shadow: 0 8px 26px rgba(0,0,0,.44);
+  backdrop-filter: blur(12px);
+}
+.sc-basemap-switch button {
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #b9d0d5;
+  font: 600 11px/1.2 var(--font-sans, sans-serif);
+  padding: 4px 6px 6px;
+  min-width: 70px;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.sc-basemap-switch button:hover, .sc-basemap-switch button:focus-visible { color: #eafff8; background: #17333e; }
+.sc-basemap-switch button:focus-visible { outline: 2px solid #b9ffe8; outline-offset: 2px; }
+.sc-basemap-switch button.is-active { color: #f0fff9; border-color: rgba(169,255,218,.7); background: #12303a; }
+.sc-basemap-switch__preview { width: 56px; height: 35px; border-radius: 5px; display: block; border: 1px solid rgba(220,240,245,.32); }
+.sc-basemap-switch__preview--ocean { background: radial-gradient(ellipse at 80% 0%, #47777a 0%, #193d52 33%, #071725 82%), repeating-radial-gradient(ellipse at 50% 10%, transparent 0 9px, rgba(201,241,241,.3) 10px 11px); }
+.sc-basemap-switch__preview--satellite { background: linear-gradient(145deg, transparent 38%, #173a4b 39% 61%, transparent 62%), radial-gradient(ellipse at 25% 70%, #7b8b66, #435445 55%, #102c3e 56%); }
+.cop-shell.is-live-mode .live-feed-panel__search { flex: 0 0 auto; padding: 8px 16px 10px; border-bottom: 1px solid rgba(169,255,218,.13); }
+.cop-shell.is-live-mode .live-feed-panel__search .vessel-case-search { position: relative; inset: auto; width: 100%; z-index: 4; border-radius: 9px; }
+.seacommons-bathymetry-raster { filter: brightness(.52) saturate(.35) contrast(1.25); }
+@media (max-width: 820px) {
+  .sc-basemap-switch {
+    position: fixed; left: 12px;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+    padding: 4px; gap: 2px; border-radius: 11px;
+  }
+  .sc-basemap-switch button { min-width: 54px; padding: 3px 5px 5px; font-size: 10px; }
+  .sc-basemap-switch__preview { width: 46px; height: 26px; }
+  .cop-shell.is-live-mode:has(.live-feed-panel.is-open) > .sc-basemap-switch { opacity: .55; }
+}
+@media (prefers-reduced-motion: reduce) { .sc-basemap-switch * { transition: none !important; } }
