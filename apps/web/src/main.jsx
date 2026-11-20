@@ -54,7 +54,7 @@ import { liveAisGapFeatures } from './features/live/aisGapLive.js';
 import { vesselReportFeature } from './features/live/vesselVisual.js';
 import { isExcludedVesselType } from './features/live/vesselType.js';
 import { configureMaplibreWorker } from './features/map/maplibreWorker.js';
-import { createVesselArrowImage } from './features/map/vesselMarker.js';
+import { createVesselArrowImage, createVesselDiamondImage, vesselBearingExpression, vesselDirectionalIconExpression } from './features/map/vesselMarker.js';
 import { createAttackMarkerImage, isAttackIncident } from './features/map/attackMarker.js';
 import { publicBasemapSource, SATELLITE_BASEMAP_TILE_URL } from './features/map/publicBasemap.js';
 import { createFallbackMap } from './features/map/fallbackRenderer.js';
@@ -1418,6 +1418,7 @@ function App() {
       map.on('load', () => {
         // Register vessel arrow SDF icon
         map.addImage('vessel-arrow', createVesselArrowImage(48), { sdf: true });
+        map.addImage('vessel-diamond', createVesselDiamondImage(48), { sdf: true });
         map.addImage('attack-crosshair', createAttackMarkerImage());
 
         // Nautical seamarks (OpenSeaMap): buoys, lights, beacons, fairways,
@@ -1658,9 +1659,9 @@ function App() {
         map.addLayer({
           id: 'intel-vessel-core', type: 'symbol', source: 'intel-vessels',
           layout: {
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['course', 'heading', 'heading_deg']),
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.34, 10, 0.58, 14, 0.74],
-            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['course', 'heading', 'heading_deg']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -1842,9 +1843,9 @@ function App() {
         map.addLayer({
           id: 'proximity-vessels-layer', type: 'symbol', source: 'proximity-vessels',
           layout: {
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-size': 0.56,
-            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -1875,9 +1876,9 @@ function App() {
           id: 'vessels-layer', type: 'symbol', source: 'vessels',
           filter: ['all', ['match', ['get', 'nav_status'], [1, 5], false, true], ['>', ['coalesce', ['get', 'speed'], 0], 0.5]],
           layout: {
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.22, 10, 0.50, 14, 0.65],
-            'icon-rotate': ['coalesce', ['get', 'heading_deg'], ['get', 'heading'], ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -1921,9 +1922,9 @@ function App() {
           id: 'vessels-ngo', type: 'symbol', source: 'vessels-ngo',
           filter: ['all', ['match', ['get', 'nav_status'], [1, 5], false, true], ['>', ['coalesce', ['get', 'speed'], 0], 0.5]],
           layout: {
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.36, 10, 0.58, 14, 0.72],
-            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -1962,9 +1963,9 @@ function App() {
           filter: ['all', ['match', ['get', 'nav_status'], [1, 5], false, true], ['>', ['coalesce', ['get', 'speed'], 0], 0.5]],
           layout: {
             visibility: 'none',
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-size': ['interpolate', ['linear'], ['zoom'], 5, 0.38, 10, 0.60, 14, 0.74],
-            'icon-rotate': ['coalesce', ['get', 'heading'], ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -2319,9 +2320,9 @@ function App() {
         map.addLayer({
           id: 'live-nearby-vessels-layer', type: 'symbol', source: 'live-nearby-vessels',
           layout: {
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-size': 0.48,
-            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
@@ -2370,9 +2371,9 @@ function App() {
         map.addLayer({
           id: 'ngo-response-points-layer', type: 'symbol', source: 'ngo-response-points',
           layout: {
-            'icon-image': 'vessel-arrow',
+            'icon-image': vesselDirectionalIconExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-size': 0.56,
-            'icon-rotate': ['coalesce', ['get', 'course'], 0],
+            'icon-rotate': vesselBearingExpression(['heading_deg', 'heading', 'course', 'cog']),
             'icon-rotation-alignment': 'map',
             'icon-allow-overlap': true,
             'icon-ignore-placement': true,
