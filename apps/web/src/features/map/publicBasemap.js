@@ -3,7 +3,7 @@
 export const PUBLIC_BASEMAP_TILE_URL = 'https://tiles.emodnet-bathymetry.eu/latest/mean_atlas_land/web_mercator/{z}/{x}/{y}.png';
 export const PUBLIC_BASEMAP_NATIVE_MAX_ZOOM = 15;
 export const PUBLIC_BASEMAP_ATTRIBUTION = '© EMODnet Bathymetry (European Marine Observation and Data Network)';
-export const PUBLIC_BASEMAP_LABEL_URL = 'https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png';
+export const PUBLIC_BASEMAP_LABEL_URL = 'https://basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png';
 export const PUBLIC_SEAMARK_TILE_URL = 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png';
 
 export function publicBasemapSource() {
