@@ -108,7 +108,12 @@ function bindSelection(marker, feature, onFeatureSelect) {
   element.setAttribute('role', 'button');
   element.setAttribute('tabindex', '0');
   const isVessel = feature?.properties?.entity_kind === 'vessel' || feature?.properties?.report_type === 'vessel';
-  element.setAttribute('aria-label', `${feature?.properties?.radio_type === 'radio_receiver' ? 'Open active radio station' : isVessel ? 'Open vessel' : 'Open incident'} ${id}`);
+  if (feature?.properties?.radio_type === 'radio_receiver') {
+    const status = feature.properties.station_status === 'receiving' ? 'Receiving RF' : 'No live reception';
+    element.setAttribute('aria-label', `Open radio station ${feature.properties.station_label || id} · ${status}`);
+  } else {
+    element.setAttribute('aria-label', `${isVessel ? 'Open vessel' : 'Open incident'} ${id}`);
+  }
   let lastSelectionAt = 0;
   const select = (event) => {
     event?.stopPropagation?.();

@@ -4114,8 +4114,10 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  background: radial-gradient(circle, var(--density-color), transparent 72%);
-  opacity: .65;
+  background: radial-gradient(circle, var(--density-color), transparent 68%);
+  opacity: .56;
+  transform: scale(1.7);
+  pointer-events: none;
 }
 .seacommons-fallback-attack {
   position: absolute;
