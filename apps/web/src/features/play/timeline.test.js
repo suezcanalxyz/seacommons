@@ -227,8 +227,10 @@ test('Play dark bathymetry is the default with a separately selectable dated sat
   const { playMapStyle } = await import('./timeline.js');
   const style = playMapStyle('2026-09-04');
   assert.equal(style.layers[0].id, 'base-map');
-  assert.equal(style.layers[1].id, 'satellite-context');
-  assert.equal(style.layers[1].paint?.['raster-opacity'], 1);
+  assert.equal(style.layers[1].id, 'bathymetry-labels');
+  assert.equal(style.layers[2].id, 'satellite-context');
+  assert.equal(style.layers[2].layout?.visibility, 'none');
+  assert.equal(style.layers[2].paint?.['raster-opacity'], 1);
   assert.match(style.sources.satelliteContext.tiles[0], /VIIRS_NOAA21_CorrectedReflectance_TrueColor/);
 });
 
