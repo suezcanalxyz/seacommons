@@ -4380,3 +4380,10 @@ h2, h3, .sidebar-header h2, .panel-block h3 {
   .sc-intelligence-tabs button { font-size: 10px; min-height: 44px; }
   .sc-basemap-switch { left: 12px; }
 }
+
+
+/* Share canonical case colours between LIVE and PLAY's accessible Legend dialog. */
+.sc-reference-colours__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 12px; padding: 10px 0 2px; }
+.sc-reference-colours__item { display: flex; align-items: center; gap: 9px; min-height: 28px; color: #deedf2; font: 12px/1.4 var(--font-sans, sans-serif); }
+.sc-reference-colours__swatch { width: 11px; height: 11px; border: 1px solid rgba(255,255,255,.42); border-radius: 50%; flex: 0 0 11px; }
+@media (max-width: 500px) { .sc-reference-colours__grid { grid-template-columns: 1fr; } }
