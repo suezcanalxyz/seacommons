@@ -1,3 +1,4 @@
+import KnowledgeLibrary from './KnowledgeLibrary.jsx';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import FuturesOverview from './Overview.jsx';
 import GlossaryText from './GlossaryText.jsx';
@@ -772,62 +773,22 @@ function Roadmap() {
 function Documents() {
   const [query, setQuery] = useState('');
   const [group, setGroup] = useState('all');
-  const [deckOpen, setDeckOpen] = useState(false);
   const [openDocument, setOpenDocument] = useState(null);
-  useEffect(() => {
-    if (deckOpen) window.requestAnimationFrame(() => document.getElementById('futures-deck-viewer')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-  }, [deckOpen]);
-  const [slideIndex, setSlideIndex] = useState(0);
   const groups = ['all', ...new Set(partnerDocuments.map((doc) => doc.group))];
   const filtered = partnerDocuments.filter((doc) => {
     const searchable = [doc.title, doc.source, doc.description, doc.kind].join(' ').toLowerCase();
     return (group === 'all' || doc.group === group) && searchable.includes(query.trim().toLowerCase());
   });
-  const currentSlide = presentationSlides[slideIndex];
 
   return (
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">SeaCommons / docs library</span>
-        <h1>Documents, presentations and project knowledge.</h1>
-        <p>This is the reading room for people learning about SeaCommons. Find presentations, project briefs, background research and technical references. A restricted label means a file is listed for context but cannot be downloaded without separate permission.</p>
+        <h1>SeaCommons knowledge library.</h1>
+        <p>Read the five updated illustrated dossiers above, then use the technical register below for engineering references and background material. Restricted sources require separate permission.</p>
       </section>
 
-      <section className="future-library-intro">
-        <div>
-          <span className="future-eyebrow">featured / presentation</span>
-          <h2>SeaCommons partner introduction</h2>
-          <p>A concise nine-slide introduction: the maritime challenge, how evidence is evaluated, the SeaCommons products, current engineering limits and the proposed Sensors network.</p>
-          <div className="future-library-actions">
-            <button type="button" onClick={() => { setDeckOpen(true); setSlideIndex(0); }}>view presentation ↗</button>
-            <a href="/SeaCommons_Futures_Introduction_2026.pdf" download="SeaCommons_Futures_Introduction_2026.pdf">download PDF ↓</a>
-          </div>
-        </div>
-        <div className="future-library-cover" aria-label="SeaCommons presentation cover">
-          <small>SEACOMMONS / 2026</small>
-          <strong>From observation<br />to accountable<br />evidence.</strong>
-          <span>Partner introduction / 9 slides</span>
-        </div>
-      </section>
-
-      {deckOpen && <section id="futures-deck-viewer" className="future-deck-section" aria-label="SeaCommons partner presentation">
-        <div className="future-deck-toolbar">
-          <span>SeaCommons / presentation · {slideIndex + 1} / {presentationSlides.length}</span>
-          <a href="/SeaCommons_Futures_Introduction_2026.pdf" download="SeaCommons_Futures_Introduction_2026.pdf">download PDF ↓</a>
-          <button type="button" onClick={() => setDeckOpen(false)} aria-label="Close presentation">close ✕</button>
-        </div>
-        <article className="future-deck-slide">
-          <small>{currentSlide.kicker} / {String(slideIndex + 1).padStart(2, '0')}</small>
-          <h2>{currentSlide.title}</h2>
-          <p>{currentSlide.body}</p>
-          <ul>{currentSlide.points.map((point) => <li key={point}>{point}</li>)}</ul>
-        </article>
-        <div className="future-deck-controls">
-          <button type="button" onClick={() => setSlideIndex((n) => Math.max(0, n - 1))} disabled={slideIndex === 0}>← previous</button>
-          <span>Slide {slideIndex + 1} of {presentationSlides.length}</span>
-          <button type="button" onClick={() => setSlideIndex((n) => Math.min(presentationSlides.length - 1, n + 1))} disabled={slideIndex === presentationSlides.length - 1}>next →</button>
-        </div>
-      </section>}
+      <KnowledgeLibrary />
 
       <section className="future-section">
         <SectionHeader eyebrow="document register" title="Browse current project material."
@@ -844,9 +805,7 @@ function Documents() {
           {filtered.map((doc) => (
             <article key={doc.projectId + doc.id}>
               <div><strong>{doc.title}</strong><small>{doc.description || doc.source}</small>
-                {doc.deck
-                  ? <button className="future-doc-link" onClick={() => { setDeckOpen(true); setSlideIndex(0); }}>view slides ↗</button>
-                  : doc.href ? <button type="button" className="future-doc-link" onClick={() => { setOpenDocument(doc); setDeckOpen(false); }}>read in Futures ↗</button> : <small>restricted / request access</small>}
+                {doc.href ? <button type="button" className="future-doc-link" onClick={() => { setOpenDocument(doc); }}>read in Futures ↗</button> : <small>restricted / request access</small>}
               </div>
               <span>{doc.project}</span>
               <span>{doc.kind}</span>

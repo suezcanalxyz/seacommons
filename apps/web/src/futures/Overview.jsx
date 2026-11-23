@@ -1,4 +1,5 @@
 import React from 'react';
+import KnowledgeLibrary from './KnowledgeLibrary.jsx';
 export const needs=[
 {title:'Virtual machines & storage',tag:'Compute',description:'Keep ingestion, historical queries and backups reliable.',examples:'Cloud credits, CPU/RAM, PostgreSQL hosting, storage',request:'I can support compute or storage.'},
 {title:'Radio & coastal receivers',tag:'Signals',description:'Expand responsible maritime radio and AIS reception.',examples:'AIS/VHF/DSC receivers, SDR, antenna, permitted coastal sites',request:'I would like to contribute or host a radio receiver.'},
@@ -24,11 +25,6 @@ download:<><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></>
 return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{shapes[name]||shapes.ship}</svg>
 };
 const iconNames=['server','radio','satellite','archive','sun','people'];
-const DOCUMENTS=[
-{title:'SeaCommons / Project overview',kind:'Project presentation',file:'seacommons-project-overview.pdf',description:'A clear introduction to the pilot, its purpose and the benefits for partners.'},
-{title:'SeaCommons / Partner opportunities',kind:'Partnership guide',file:'seacommons-partner-guide.pdf',description:'Ways to contribute infrastructure, data, research and field support.'},
-{title:'SeaCommons / Operating model',kind:'Implementation brief',file:'seacommons-implementation-brief.pdf',description:'How evidence becomes a useful service, from collection to local deployment.'},
-];
 const email=item=>'mailto:republic@suezcanal.xyz?subject='+encodeURIComponent('SeaCommons FUTURES — '+item.title)+'&body='+encodeURIComponent('Hello Suez Republic,\n\n'+item.request+'\n\nName / organisation:\nContribution:\nLocation:\nContact:\n');
 const JOURNAL=[
 {date:'2026-11-23',type:'Engineering log',title:'Maritime evidence and historical investigations',description:'Built internal evidence dossiers from X and maritime RSS sources; added historical AIS context and a first bounded designated-vessel monitoring sample.',status:'Internal pilot',reference:'Commits 0c2d81cd, 5ab64ca1, 7c6327e6'},
@@ -67,7 +63,7 @@ return <div className="futures-public">
 <ol className="futures-steps"><li><strong>Observe:</strong> collect lawful AIS, radio, satellite and public documentary signals with provenance.</li><li><strong>Corroborate:</strong> connect independent evidence and explicitly flag contradictions and missing coverage.</li><li><strong>Publish:</strong> expose qualified findings through LIVE and PLAY, with dates, sources and uncertainty.</li><li><strong>Deploy locally:</strong> test coastal receivers, solar-powered nodes, partner data agreements and maintenance responsibilities.</li><li><strong>Evaluate:</strong> measure uptime, data quality, response usefulness, costs and documented outcomes before scaling.</li></ol>
 <p>The goal is a model that local partners can operate and maintain: clear responsibilities, affordable equipment, transparent methods and measurable results.</p>
 </section>
-<section className="futures-downloads" id="futures-documents" aria-labelledby="futures-documents-title"><small>PARTNER RESOURCES</small><h2 id="futures-documents-title">Take SeaCommons with you</h2><p>Three short, downloadable PDFs to introduce the project, discuss a partnership or plan a pilot deployment.</p><div className="futures-doc-grid">{DOCUMENTS.map(doc=><article key={doc.file}><span className="futures-pdf-mark"><Icon name="download" size={27}/></span><small>{doc.kind} · PDF</small><h3>{doc.title}</h3><p>{doc.description}</p><a href={'/documents/'+doc.file} download>Download PDF <Icon name="download" size={17}/></a></article>)}</div></section>
+<KnowledgeLibrary compact/>
 <FuturesJournal/>
 <PartnerUpdates/>
 <section className="futures-needs" id="futures-needs" aria-labelledby="futures-needs-title">

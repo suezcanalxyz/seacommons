@@ -56,19 +56,11 @@ export const timeline = [
 ];
 
 export const partnerDocuments = [
-  {
-    id: 'seacommons-partner-presentation',
-    project: 'SeaCommons',
-    projectId: 'seacommons',
-    title: 'SeaCommons / partner introduction',
-    description: 'Twelve-slide, partner-facing narrative: mission, evidence model, operating surfaces, audit snapshot and roadmap.',
-    group: 'presentation',
-    kind: 'presentation',
-    visibility: 'partner',
-    source: 'Futures native presentation (editable source available from workspace team)',
-    updated: '12 Oct 2026',
-    deck: true,
-  },
+  { id:'project-series',project:'SeaCommons',projectId:'seacommons',title:'SeaCommons / Project & evidence model',description:'LIVE, PLAY, AIS gaps and source provenance. Volume 01 of the updated knowledge series.',group:'presentation',kind:'PDF / 9 pages',visibility:'partner',source:'SeaCommons knowledge series / 2026',updated:'23 Nov 2026',href:'/documents/01-seacommons-project.pdf'},
+  { id:'hardware-series',project:'SeaCommons',projectId:'seacommons',title:'Coastal Hardware / Receivers & field systems',description:'Coastal AIS and radio stations, coverage diagnostics and field maintenance.',group:'hardware',kind:'PDF / 10 pages',visibility:'partner',source:'SeaCommons knowledge series / 2026',updated:'23 Nov 2026',href:'/documents/02-seacommons-coastal-hardware.pdf'},
+  { id:'sectors-series',project:'SeaCommons',projectId:'seacommons',title:'Sector Applications / Economic, social & environmental',description:'Evidence-led sector applications and their limits.',group:'applications',kind:'PDF / 9 pages',visibility:'partner',source:'SeaCommons knowledge series / 2026',updated:'23 Nov 2026',href:'/documents/03-seacommons-sector-applications.pdf'},
+  { id:'verticals-series',project:'SeaCommons',projectId:'seacommons',title:'Markets & Verticals / Environmental pathways',description:'Coastal resilience, pollution inquiries and potential service pathways.',group:'applications',kind:'PDF / 10 pages',visibility:'partner',source:'SeaCommons knowledge series / 2026',updated:'23 Nov 2026',href:'/documents/04-seacommons-market-verticals.pdf'},
+  { id:'drifter-series',project:'SeaCommons',projectId:'seacommons',title:'Drifter / Experimental marine instrument',description:'GNSS, telemetry, energy budget, field tests and drift validation.',group:'hardware',kind:'PDF / 10 pages',visibility:'partner',source:'SeaCommons knowledge series / 2026',updated:'23 Nov 2026',href:'/documents/05-seacommons-drifter.pdf'},
   ...seaCommonsProject.documents.map((doc) => ({
     ...doc,
     project: 'SeaCommons',
