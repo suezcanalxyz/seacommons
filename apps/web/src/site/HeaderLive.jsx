@@ -5,13 +5,16 @@ import { receivedSignalFeatures } from '../features/live/normalize.js';
 import { resolveSiteApiBase, LIVE_HOST_URL } from './liveApi.js';
 
 const POLL_MS = 20000;
-const MAX_ITEMS = 8;
+const MAX_ITEMS_PER_CATEGORY = 16;
 
-// Rose is reserved for Humanitarian across the public SeaCommons UI.
-// Maritime uses the sea token; the header does not encode severity as colour.
-function categoryToken(properties) {
-  const category = String(properties?.main_category || properties?.maritime_domain || '').toLowerCase();
-  return category === 'humanitarian' ? 'rose' : 'sea';
+// Keep both evidence streams visible, with category sourced from the public API.
+function signalCategory(properties) {
+  const categories = [
+    properties?.main_category, properties?.visual_category,
+    properties?.maritime_domain, properties?.category_label,
+  ].map(value => String(value || '').toLowerCase());
+  return categories.some(value => /humanitarian|distress|search.and.rescue|sar.case/.test(value))
+    ? 'humanitarian' : 'maritime';
 }
 
 function relativeTime(isoString) {
@@ -40,12 +43,12 @@ export default function HeaderLive() {
       if (document.visibilityState === 'hidden' || inFlight) return;
       inFlight = true;
       try {
-        const data = await fetchJson(apiBase, '/api/v1/live/signals?limit=30&days=2', undefined, 6000);
+        const data = await fetchJson(apiBase, '/api/v1/live/signals?limit=100&days=2', undefined, 6000);
         if (!aliveRef.current) return;
         const features = receivedSignalFeatures(data.features)
           .filter((f) => f.properties?.timestamp_utc)
           .sort((a, b) => Date.parse(b.properties.timestamp_utc) - Date.parse(a.properties.timestamp_utc))
-          .slice(0, MAX_ITEMS);
+          .slice(0, 100);
         setItems(features);
         setFailed(false);
       } catch {
@@ -69,25 +72,34 @@ export default function HeaderLive() {
     };
   }, []);
 
-  const top = items?.[0]?.properties;
-  const dotState = failed ? 'idle' : top ? categoryToken(top) : 'idle';
+  const groups = [
+    { key: 'maritime', label: 'MARITIME', color: 'sea' },
+    { key: 'humanitarian', label: 'HUMANITARIAN', color: 'rose' },
+  ];
 
   return (
-    <a className="site-header__live" href={LIVE_HOST_URL} aria-label="Open Live — latest public cases">
-      <i className={`site-header__live-dot is-${dotState}`} aria-hidden="true" />
-      <span className="site-header__live-label">Live</span>
-      <span className="site-header__live-ticker">
-        {failed && <span className="site-header__live-status">Live feed unavailable</span>}
-        {!failed && items === null && <span className="site-header__live-status">Connecting…</span>}
-        {!failed && items?.length === 0 && <span className="site-header__live-status">No active public cases</span>}
-        {!failed && items && items.length > 0 && (
-          <Ticker
-            duration={26}
-            separator="·"
-            items={items.map((f) => `${f.properties.title} — ${relativeTime(f.properties.timestamp_utc)}`)}
-          />
-        )}
-      </span>
-    </a>
+    <div className="site-header__streams" aria-label="Latest public maritime and humanitarian signals">
+      {groups.map(({ key, label, color }) => {
+        const signals = items?.filter(f => signalCategory(f.properties) === key).slice(0, MAX_ITEMS_PER_CATEGORY);
+        return (
+          <a key={key} className="site-header__stream" href={LIVE_HOST_URL} aria-label={`Open LIVE — ${label.toLowerCase()} public observations`}>
+            <i className={`site-header__live-dot is-${failed ? 'idle' : color}`} aria-hidden="true" />
+            <span className="site-header__live-label">{label}</span>
+            <span className="site-header__live-ticker">
+              {failed && <span className="site-header__live-status">Feed unavailable</span>}
+              {!failed && items === null && <span className="site-header__live-status">Connecting…</span>}
+              {!failed && items && signals?.length === 0 && <span className="site-header__live-status">No recent public records</span>}
+              {!failed && signals?.length > 0 && (
+                <Ticker
+                  duration={Math.max(20, signals.length * 4)}
+                  separator="·"
+                  items={signals.map(f => `${f.properties.title || 'Public observation'} — ${relativeTime(f.properties.timestamp_utc)}`)}
+                />
+              )}
+            </span>
+          </a>
+        );
+      })}
+    </div>
   );
 }

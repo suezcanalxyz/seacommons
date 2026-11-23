@@ -78,3 +78,37 @@
 .product-flow text{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}
 @media(max-width:650px){.product-hero__shade{background:linear-gradient(90deg,rgba(2,9,13,.94),rgba(2,9,13,.53)),linear-gradient(0deg,rgba(2,9,13,.8),transparent 65%)}.product-hero__frame .product-hero__video{object-position:65% center}.product-showcase__surface-symbols svg{width:38px;height:38px}}
 @media(prefers-reduced-motion:reduce){.product-hero__video{display:none}.product-hero__frame{background:#0d1e25 url('/visualizations/live-visual.png') center/cover no-repeat}}
+
+/* Source-aware public header: simultaneous maritime and humanitarian lanes. */
+.site-header__streams{display:flex;flex:1;min-width:0;align-items:center;gap:0;border-left:1px solid var(--sc-line)}
+.site-header__stream{display:flex;align-items:center;gap:.55rem;flex:1;min-width:0;padding:0 1rem;color:var(--sc-paper-dim);font:400 .64rem/1 var(--sc-font-mono);letter-spacing:.02em}
+.site-header__stream+.site-header__stream{border-left:1px solid var(--sc-line)}
+.site-header__stream .site-header__live-label{font-size:.61rem;letter-spacing:.08em}
+.site-header__stream .site-header__live-ticker{min-width:0;flex:1}
+.site-header__stream:hover{color:var(--sc-paper)}
+@media(max-width:1200px){.site-header__stream{padding:0 .7rem}.site-header__stream .site-header__live-label{font-size:.57rem}}
+@media(max-width:940px){.site-header__streams{display:flex;flex:1}.site-header__stream{padding:0 .65rem}.site-header__stream .site-header__live-ticker{display:none}}
+@media(max-width:570px){.site-header__streams{gap:0}.site-header__stream{padding:0 .35rem;gap:.3rem}.site-header__stream .site-header__live-label{font-size:.52rem}.site-header__stream .site-header__live-dot{width:5px;height:5px}.site-header{gap:.55rem}.site-header__toggle{width:35px;flex:none}}
+/* The evidence diagram is an instrument panel rather than a decorative icon row. */
+.product-showcase__intro{grid-template-columns:1fr;gap:28px;padding:55px 0}
+.product-showcase__intro-label{display:flex;align-items:baseline;justify-content:space-between;gap:20px}
+.product-showcase__intro-label h2{font-size:clamp(27px,3.1vw,48px);margin:0;font-weight:500}
+.product-showcase__intro-label a,.product-showcase__method-link{color:#b9d6c7;font-size:12px;white-space:nowrap;border-bottom:1px solid #567267;padding-bottom:5px}
+.product-showcase__intro .product-flow{width:100%;max-width:1120px;justify-self:center}
+.product-showcase__section-head{margin-bottom:25px}
+.product-showcase__surface-symbols svg{width:45px!important;height:45px!important}
+.product-showcase__applications{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#3d564b;border:1px solid #3d564b}
+.product-showcase__application{min-width:0;display:flex;flex-direction:column;padding:clamp(18px,2.2vw,34px);background:#101f22;min-height:255px}
+.product-showcase__application-top{display:flex;justify-content:space-between;align-items:start;gap:12px}
+.product-showcase__application-top svg{width:66px;height:66px;flex:none;color:#b7d9c6}
+.product-showcase__application-top small{font:500 9px/1.4 var(--sc-font-mono);letter-spacing:.07em;color:#9bb7aa;text-align:right;max-width:95px}
+.product-showcase__application h3{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:clamp(18px,1.7vw,24px);font-weight:500;letter-spacing:-.04em;margin:30px 0 10px;line-height:1.15}
+.product-showcase__application p{font-size:12px;line-height:1.6;color:#b9c9bf}
+.product-showcase__network{display:grid;grid-template-columns:1fr 1.2fr;gap:20px 55px;padding:45px 0 10px;align-items:start}
+.product-showcase__network span{font:500 10px var(--sc-font-mono);letter-spacing:.08em;color:#a6cbb5}
+.product-showcase__network h3{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:clamp(25px,2.7vw,42px);font-weight:500;line-height:1.13;letter-spacing:-.05em;margin:16px 0 0}
+.product-showcase__network p{font-size:14px;line-height:1.7;color:#b9c9bf}
+.product-showcase__network>a{grid-column:2;justify-self:start;color:#c9e8d5;font-size:12px;border-bottom:1px solid #52645c;padding:6px 0}
+@media(max-width:1020px){.product-showcase__applications{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.product-showcase__intro-label{flex-direction:column;gap:14px}.product-showcase__applications{grid-template-columns:1fr 1fr}.product-showcase__application{padding:18px;min-height:260px}.product-showcase__application-top{flex-direction:column}.product-showcase__application-top svg{width:52px;height:52px}.product-showcase__application-top small{text-align:left}.product-showcase__application h3{margin-top:18px}.product-showcase__network{grid-template-columns:1fr}.product-showcase__network>a{grid-column:1}}
+@media(max-width:420px){.product-showcase__applications{grid-template-columns:1fr}.product-showcase__application{min-height:0}.product-showcase__application-top{flex-direction:row}.product-showcase__application h3{margin-top:22px}}

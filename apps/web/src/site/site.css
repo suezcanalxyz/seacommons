@@ -1123,3 +1123,12 @@ button:focus-visible {
 .site-navigation-layer:not(.is-open) .site-nav,.site-navigation-layer:not(.is-open) .site-nav__backdrop{pointer-events:none}
 .site-navigation-layer .site-nav a{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-weight:500;letter-spacing:-.065em;line-height:1.05}
 @media(max-height:570px){.site-navigation-layer .site-nav a{font-size:clamp(24px,6vh,45px)}}
+
+/* Public signals remain visible as two independently labelled streams. */
+.site-header .site-header__streams{display:flex;flex:1;min-width:0;align-items:center;border-left:1px solid var(--sc-line)}
+.site-header .site-header__stream{display:flex;flex:1;min-width:0;align-items:center;gap:.5rem;padding:0 .9rem;color:var(--sc-paper-dim);font:400 .64rem/1 var(--sc-font-mono)}
+.site-header .site-header__stream+.site-header__stream{border-left:1px solid var(--sc-line)}
+.site-header .site-header__stream .site-header__live-ticker{flex:1;min-width:0}
+.site-header .site-header__stream .site-header__live-label{font-size:.59rem}
+@media(max-width:940px){.site-header .site-header__streams{display:flex}.site-header .site-header__stream .site-header__live-ticker{display:none}}
+@media(max-width:570px){.site-header .site-header__stream{padding:0 .3rem;gap:.3rem}.site-header .site-header__stream .site-header__live-label{font-size:.49rem}.site-header{gap:.5rem}}
