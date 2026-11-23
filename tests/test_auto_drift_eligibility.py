@@ -47,14 +47,14 @@ def test_ocr_consensus_is_eligible():
     assert ok, reason
 
 
-def test_disputed_ocr_is_rejected():
+def test_alarm_phone_disputed_ocr_is_still_eligible():
     ok, reason = is_auto_drift_eligible(
         _distress(
             coordinate_source="media_ocr_text",
             coordinate_review_status="machine_ocr_disputed_needs_review",
         )
     )
-    assert not ok and "disputed" in reason
+    assert ok, reason
 
 
 def test_single_engine_ocr_coordinate_at_sea_is_eligible():
@@ -81,6 +81,17 @@ def test_pin_landmark_estimate_at_sea_is_eligible():
     )
     assert ok, reason
 
+
+
+def test_non_alarm_phone_single_engine_ocr_still_requires_review():
+    event = _distress(
+        coordinate_source="media_ocr_text",
+        coordinate_review_status="machine_ocr_unverified",
+        location_uncertainty_m=1500,
+    )
+    event.source = "other_public_source"
+    ok, reason = is_auto_drift_eligible(event)
+    assert not ok and "independent verification" in reason
 
 def test_ocr_coordinate_on_land_is_rejected(monkeypatch):
     # The "coordinate in the sea" gate: an OCR'd coordinate that resolves to
@@ -156,6 +167,7 @@ def test_force_cannot_bypass_the_evidence_gate(monkeypatch):
         coordinate_review_status="machine_ocr_disputed_needs_review",
         drift_status="completed",
     )
+    event.source = "other_public_source"
 
     class _Store:
         def get(self, _id):

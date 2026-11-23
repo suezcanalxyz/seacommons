@@ -86,7 +86,7 @@ def test_auto_drift_rejects_disputed_ocr_coordinate():
         lat=34.2,
         lon=12.0,
         title="Distress reported south of Crete",
-        source="alarm_phone",
+        source="other_public_source",
         metadata={
             "is_distress": True,
             "source_policy": "operator_published",
@@ -125,7 +125,7 @@ def test_auto_drift_gates_an_event_evicted_from_the_in_memory_deque():
         lon=12.0,
         title="Distress south of Gavdos - evicted-incident regression",
         text="A boat is drifting; the two OCR engines read different coordinates.",
-        source="alarm_phone",
+        source="other_public_source",
         url="https://x.com/i/web/status/auto-drift-evicted-01",
         metadata={
             "is_distress": True,
