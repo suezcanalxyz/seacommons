@@ -29,6 +29,46 @@ _HYPOTHESIS_SUMMARY = {
 }
 
 
+
+def _independent_episode_source_counts(episode_ids: set[str]) -> dict[str, int]:
+    """Read canonical persisted episode lineage once, without exposing group IDs.
+
+    A hypothesis's evidence_stage and number of linked observations cannot
+    prove independent corroboration. Only a persisted episode whose
+    verification status agrees with >=2 *canonicalized* lineage groups
+    supplies the public aggregate count. Missing or stale episodes fail closed.
+    """
+    if not episode_ids:
+        return {}
+    from core.db.models import MaritimeEpisodeDB
+    from core.db.session import session_scope
+    from core.intel.hypothesis_engine import _normalize_independence_group
+
+    with session_scope() as db:
+        rows = (
+            db.query(
+                MaritimeEpisodeDB.episode_id,
+                MaritimeEpisodeDB.independence_groups,
+                MaritimeEpisodeDB.verification_status,
+            )
+            .filter(MaritimeEpisodeDB.episode_id.in_(sorted(episode_ids)))
+            .all()
+        )
+    counts: dict[str, int] = {}
+    for episode_id, raw_groups, verification in rows:
+        if verification != "multi_source_corroborated":
+            continue
+        groups = {
+            normalized
+            for value in (raw_groups or ())
+            if (normalized := _normalize_independence_group(value))
+            and normalized != "unknown"
+        }
+        if len(groups) >= 2:
+            counts[str(episode_id)] = len(groups)
+    return counts
+
+
 def _record_for_hypothesis(hypothesis: InvestigationHypothesis) -> dict[str, Any] | None:
     """The minimal canonical record core.intel.publication_policy needs --
     built from the hypothesis's own evidence_links, never from vessel
@@ -84,7 +124,12 @@ def public_hypothesis_collection(limit: int = 100) -> dict[str, Any]:
 
     now = datetime.now(timezone.utc)
     features = []
-    for hypothesis in list_hypotheses(state="published", limit=limit):
+    hypotheses = list_hypotheses(state="published", limit=limit)
+    independent_counts = _independent_episode_source_counts({
+        str(hypothesis.episode_id)
+        for hypothesis in hypotheses if hypothesis.episode_id
+    })
+    for hypothesis in hypotheses:
         # core.live.retention ceiling: published is otherwise a terminal
         # state with no expiry transition, so without this a published case
         # could stay on Live forever. None (a row saved before this contract
@@ -103,6 +148,11 @@ def public_hypothesis_collection(limit: int = 100) -> dict[str, Any]:
         projected["hypothesis_id"] = hypothesis.hypothesis_id
         if hypothesis.episode_id:
             projected["episode_id"] = hypothesis.episode_id
+            # Aggregate count is safe for public taxonomy; raw lineage IDs
+            # stay in the persisted private episode record.
+            count = independent_counts.get(hypothesis.episode_id, 0)
+            if count >= 2:
+                projected["independent_source_count"] = count
         features.append({
             "type": "Feature",
             "id": projected.get("episode_id") or projected["id"],
