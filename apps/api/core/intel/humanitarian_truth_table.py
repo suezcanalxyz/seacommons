@@ -107,9 +107,24 @@ def compute_anomaly_flags(
     if lifecycle in ("resolved", "archived") and drift_visible:
         flags.append("DRIFT_AFTER_RESOLUTION")
 
-    if lifecycle == "active" and any(
+    # PostgreSQL TIMESTAMP WITHOUT TIME ZONE commonly returns naive UTC
+    # datetimes for DriftResultDB.created_at. Comparing one with the aware
+    # UTC audit clock raises TypeError and aborts the entire truth table.
+    # Interpret naive persisted timestamps as UTC, never as host-local time.
+    audit_now = now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now.astimezone(timezone.utc)
+    # An older completed drift is not evidence that the *latest* completed
+    # estimate is stale. Multiple completed rows are separately flagged as
+    # MULTIPLE_CURRENT_DRIFTS until supersession ownership is available.
+    # Require every completed estimate to be old before marking STALE_DRIFT.
+    if lifecycle == "active" and completed and all(
         d.created_at is not None
-        and (now - d.created_at).total_seconds() > stale_drift_after_hours * 3600
+        and (
+            audit_now - (
+                d.created_at.replace(tzinfo=timezone.utc)
+                if d.created_at.tzinfo is None
+                else d.created_at.astimezone(timezone.utc)
+            )
+        ).total_seconds() > stale_drift_after_hours * 3600
         for d in completed
     ):
         flags.append("STALE_DRIFT")
@@ -173,6 +188,63 @@ def build_case_row(
     )
 
 
+
+def index_drift_summaries(
+    case_ids: list[str], drift_rows: list[Any],
+) -> dict[str, list[DriftSummary]]:
+    """Associate one batch of persisted drift rows with audited event IDs.
+
+    Historical DriftResultDB.event_id may use the raw ID or 'intel:' alias.
+    A collision between aliases must not silently omit either audit case.
+    """
+    indexed: dict[str, list[DriftSummary]] = {case_id: [] for case_id in case_ids}
+    alias_to_cases: dict[str, set[str]] = {}
+    for case_id in case_ids:
+        for alias in (case_id, f"intel:{case_id}"):
+            alias_to_cases.setdefault(alias, set()).add(case_id)
+    for drift in drift_rows:
+        summary = DriftSummary(
+            drift_id=drift.drift_id,
+            status=drift.status or "unknown",
+            created_at=drift.created_at,
+        )
+        for case_id in alias_to_cases.get(drift.event_id, ()):
+            indexed[case_id].append(summary)
+    return indexed
+
+
+def index_recent_same_source_followups(
+    case_rows: list[Any], source_rows: list[Any], *,
+    lookback_days: int = 14, max_per_case: int = 50,
+) -> dict[str, list[Any]]:
+    """Find the newest eligible same-source posts for each audited case.
+
+    Callers need only the newest (max_per_case + 1) rows per source:
+    removing the case itself still leaves up to max_per_case follow-ups.
+    This bounds memory and avoids a PostgreSQL round trip for every case.
+    Matching here is only a *candidate* for the shared lifecycle resolver,
+    not evidence of the same maritime incident.
+    """
+    from datetime import timedelta
+
+    by_source: dict[str, list[Any]] = {}
+    for other in source_rows:
+        by_source.setdefault(other.source, []).append(other)
+    for source_rows_for_one in by_source.values():
+        source_rows_for_one.sort(
+            key=lambda other: (other.created_at, str(other.id)), reverse=True,
+        )
+
+    indexed: dict[str, list[Any]] = {}
+    for row in case_rows:
+        cutoff = row.created_at - timedelta(days=lookback_days)
+        indexed[row.id] = [
+            other for other in by_source.get(row.source, [])
+            if other.id != row.id and other.created_at >= cutoff
+        ][:max_per_case]
+    return indexed
+
+
 def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
     """The real, live-wired entry point: queries IntelEventDB for
     Humanitarian-service events (core.intel.service_taxonomy.
@@ -210,6 +282,7 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
             .limit(limit)
             .all()
         )
+        candidates = []
         for row in db_rows:
             event = IntelEvent(
                 id=row.id, type=row.type, severity=row.severity, lat=row.lat, lon=row.lon,
@@ -222,30 +295,57 @@ def run_humanitarian_truth_table_audit(*, limit: int = 200) -> dict[str, Any]:
                 continue
             if not is_within_live_window(event, now=now):
                 continue
+            candidates.append((row, event, classification))
 
+        # One bounded query replaces a separate DriftResultDB query per
+        # humanitarian case, reducing DB round trips under Oracle CPU pressure.
+        case_ids = [row.id for row, _, _ in candidates]
+        aliases = list(dict.fromkeys(
+            alias for case_id in case_ids for alias in (case_id, f"intel:{case_id}")
+        ))
+        drift_rows = (
+            db.query(DriftResultDB)
+            .filter(DriftResultDB.event_id.in_(aliases))
+            .all()
+        ) if aliases else []
+        drifts_by_case = index_drift_summaries(case_ids, drift_rows)
+
+        # Group by source, not case: each source query fetches at most 51
+        # newest rows, enough to exclude the current case and retain 50
+        # follow-up candidates. This replaces N per-case PostgreSQL queries
+        # without broad, unbounded scans of high-volume news sources.
+        source_groups: dict[str, list[Any]] = {}
+        for row, _, _ in candidates:
+            source_groups.setdefault(row.source, []).append(row)
+        recent_source_rows: list[Any] = []
+        for source, group in source_groups.items():
+            oldest_cutoff = min(row.created_at for row in group) - timedelta(days=14)
+            recent_source_rows.extend(
+                db.query(IntelEventDB)
+                .filter(
+                    IntelEventDB.source == source,
+                    IntelEventDB.created_at >= oldest_cutoff,
+                )
+                .order_by(IntelEventDB.created_at.desc(), IntelEventDB.id.desc())
+                .limit(51)
+                .all()
+            )
+        followups_by_case = index_recent_same_source_followups(
+            [row for row, _, _ in candidates], recent_source_rows,
+        )
+
+        for row, event, classification in candidates:
             same_source = [
                 IntelEvent(
                     id=other.id, timestamp_utc=other.timestamp_utc,
                     text=other.text or "", title=other.title,
                     metadata=dict(other.meta or {}),
                 )
-                for other in db.query(IntelEventDB).filter(
-                    IntelEventDB.source == row.source,
-                    IntelEventDB.id != row.id,
-                    IntelEventDB.created_at >= row.created_at - timedelta(days=14),
-                ).limit(50).all()
+                for other in followups_by_case[row.id]
             ]
             lifecycle = distress_lifecycle(event, now=now, same_source=same_source)
 
-            drift_rows = (
-                db.query(DriftResultDB)
-                .filter(DriftResultDB.event_id.in_([row.id, f"intel:{row.id}"]))
-                .all()
-            )
-            drifts = [
-                DriftSummary(drift_id=d.drift_id, status=d.status or "unknown", created_at=d.created_at)
-                for d in drift_rows
-            ]
+            drifts = drifts_by_case[row.id]
 
             source_status_entry = source_registry.get(row.source)
             source_status = source_status_entry.status if source_status_entry else "unknown"

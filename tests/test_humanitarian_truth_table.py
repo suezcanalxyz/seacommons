@@ -219,3 +219,129 @@ def test_humanitarian_truth_table_route_exposes_the_real_audit() -> None:
     assert "rows" in payload
     assert "not_yet_computable_flags" in payload
     assert set(payload["not_yet_computable_flags"]) == set(NOT_YET_COMPUTABLE)
+
+
+def test_recent_completed_drift_does_not_inherit_staleness_from_older_one():
+    """An older completed result cannot make a fresh update look stale."""
+    flags = compute_anomaly_flags(
+        lifecycle="active",
+        drifts=[
+            DriftSummary("old", "completed", _NOW - timedelta(hours=30)),
+            DriftSummary("new", "completed", _NOW - timedelta(hours=1)),
+        ],
+        marker_visible=True, drift_visible=True,
+        source_status="active", now=_NOW,
+    )
+    assert "MULTIPLE_CURRENT_DRIFTS" in flags
+    assert "STALE_DRIFT" not in flags
+
+
+def test_all_completed_drifts_stale_remains_flagged():
+    """Old-only results still require a fresh drift estimate."""
+    flags = compute_anomaly_flags(
+        lifecycle="active",
+        drifts=[
+            DriftSummary("old-1", "completed", _NOW - timedelta(hours=30)),
+            DriftSummary("old-2", "completed", _NOW - timedelta(hours=26)),
+        ],
+        marker_visible=True, drift_visible=True,
+        source_status="active", now=_NOW,
+    )
+    assert "MULTIPLE_CURRENT_DRIFTS" in flags
+    assert "STALE_DRIFT" in flags
+
+
+def test_batch_drift_index_matches_raw_and_prefixed_event_ids():
+    """One bounded drift query must preserve both persisted event-id forms."""
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import index_drift_summaries
+
+    rows = [
+        SimpleNamespace(event_id="e1", drift_id="d1", status="completed", created_at=_NOW),
+        SimpleNamespace(event_id="intel:e1", drift_id="d2", status="completed", created_at=_NOW),
+        SimpleNamespace(event_id="e2", drift_id="d3", status="pending", created_at=None),
+        SimpleNamespace(event_id="unrelated", drift_id="d4", status="completed", created_at=_NOW),
+    ]
+    indexed = index_drift_summaries(["e1", "e2"], rows)
+    assert [d.drift_id for d in indexed["e1"]] == ["d1", "d2"]
+    assert [d.drift_id for d in indexed["e2"]] == ["d3"]
+    assert all(d.drift_id != "d4" for items in indexed.values() for d in items)
+
+
+def test_batch_drift_index_handles_overlapping_prefixed_case_ids():
+    """An alias shared by two case identifiers must not drop either audit row."""
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import index_drift_summaries
+
+    row = SimpleNamespace(
+        event_id="intel:e1", drift_id="d1", status=None, created_at=None,
+    )
+    indexed = index_drift_summaries(["e1", "intel:e1"], [row])
+    assert [d.drift_id for d in indexed["e1"]] == ["d1"]
+    assert [d.drift_id for d in indexed["intel:e1"]] == ["d1"]
+    assert indexed["e1"][0].status == "unknown"
+
+
+def test_batch_drift_index_empty_case_set():
+    from core.intel.humanitarian_truth_table import index_drift_summaries
+    assert index_drift_summaries([], []) == {}
+
+
+def test_same_source_followup_batch_filters_source_self_and_lookback():
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import index_recent_same_source_followups
+
+    def item(id, source, days):
+        return SimpleNamespace(
+            id=id, source=source, created_at=_NOW.replace(tzinfo=None) + timedelta(days=days),
+        )
+
+    case = item("distress", "Alarm Phone", 0)
+    rows = [
+        item("future-followup", "Alarm Phone", 1),
+        item("old", "Alarm Phone", -15),
+        item("other-source", "Sea Watch", 1),
+        case,
+        item("boundary", "Alarm Phone", -14),
+    ]
+    matched = index_recent_same_source_followups([case], rows)
+    assert [r.id for r in matched["distress"]] == ["future-followup", "boundary"]
+
+
+def test_same_source_followup_batch_retains_latest_50_without_current_case():
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import index_recent_same_source_followups
+
+    now = _NOW.replace(tzinfo=None)
+    case = SimpleNamespace(id="case", source="Alarm Phone", created_at=now)
+    rows = [
+        SimpleNamespace(
+            id=f"followup-{i:02d}", source="Alarm Phone",
+            created_at=now + timedelta(minutes=i + 1),
+        )
+        for i in range(60)
+    ]
+    rows.append(case)
+    matched = index_recent_same_source_followups([case], rows)
+    assert len(matched["case"]) == 50
+    assert matched["case"][0].id == "followup-59"
+    assert matched["case"][-1].id == "followup-10"
+
+
+def test_same_source_followup_batch_handles_multiple_cases_and_no_rows():
+    from types import SimpleNamespace
+    from core.intel.humanitarian_truth_table import index_recent_same_source_followups
+
+    now = _NOW.replace(tzinfo=None)
+    cases = [
+        SimpleNamespace(id="a", source="A", created_at=now),
+        SimpleNamespace(id="b", source="B", created_at=now),
+    ]
+    source_rows = [
+        SimpleNamespace(id="followup-a", source="A", created_at=now + timedelta(hours=1)),
+        SimpleNamespace(id="followup-b", source="B", created_at=now + timedelta(hours=2)),
+    ]
+    result = index_recent_same_source_followups(cases, source_rows)
+    assert [row.id for row in result["a"]] == ["followup-a"]
+    assert [row.id for row in result["b"]] == ["followup-b"]
+    assert index_recent_same_source_followups([], []) == {}
