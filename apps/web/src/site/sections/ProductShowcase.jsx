@@ -1,30 +1,24 @@
 import React from 'react';
 
-function EvidenceFlow() {
-  return <svg className="product-flow product-flow--detailed" viewBox="0 0 1120 270" role="img" aria-label="Evidence process: time-stamped vessel signals, radio and reports are aligned, cross-checked and documented in case records">
-    <defs>
-      <pattern id="sc-flow-grid" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M18 0H0V18" stroke="#8bb6a8" strokeOpacity=".13" fill="none"/></pattern>
-      <marker id="sc-flow-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0L7 4 0 8" fill="none" stroke="#a5d3bd" strokeWidth="1.3"/></marker>
-    </defs>
-    {[0,380,760].map((x,i)=><g key={x}><rect x={x+8} y="10" width="344" height="248" rx="2" fill="#0c1c21" stroke="#54766d" strokeWidth="1"/><rect x={x+9} y="11" width="342" height="246" fill="url(#sc-flow-grid)"/><text x={x+28} y="38" fill="#9abeb0" fontSize="11" letterSpacing="2">{['01 / INPUT','02 / REVIEW','03 / RECORD'][i]}</text></g>)}
-    <g fill="none" stroke="#aed4c4" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M42 93h53l15-25 23 47 23-31 19 10h44" />
-      <path d="M42 153h40l13-15 18 27 21-15 23 6h62" strokeOpacity=".7"/>
-      <path d="M42 210h177" strokeDasharray="4 6"/>
-      <circle cx="110" cy="68" r="4" fill="#aed4c4"/>
-      <path d="M420 73h275M420 123h275M420 173h275M420 223h275" stroke="#52746b"/>
-      <path d="M450 123l38-28 42 22 43-38 42 35 40-24" />
-      <path d="M450 173l38 17 42-25 43 16 42-26 40 16" strokeOpacity=".65"/>
-      <path d="M530 57v175" stroke="#6f9686" strokeDasharray="4 6"/>
-      <circle cx="530" cy="117" r="7" fill="#0c1c21"/><circle cx="530" cy="165" r="7" fill="#0c1c21"/>
-      <rect x="803" y="66" width="248" height="156" rx="2" stroke="#72988a"/>
-      <path d="M826 100h95M826 120h185M826 140h149M826 160h185M826 180h120" stroke="#72988a"/>
-      <path d="M993 92l12 12 22-25" stroke="#bce1c5" strokeWidth="2.5"/>
-      <path d="M354 137h22M734 137h22" stroke="#a5d3bd" markerEnd="url(#sc-flow-arrow)"/>
-    </g>
-    <g fill="#dcebe2" fontSize="12"><text x="42" y="244">AIS · radio · public reports</text><text x="420" y="244">Timestamp · location · source</text><text x="826" y="203">Case chronology</text></g>
-    <g fill="#95b9ac" fontSize="10"><text x="826" y="86">EVIDENCE FILE</text><text x="42" y="54">SOURCE OBSERVATIONS</text></g>
-  </svg>;
+const sources = [
+ {id:'ais',name:'AIS',type:'track',detail:'Time-stamped vessel positions and broadcast identities. Receiver coverage determines which signals are available.'},
+ {id:'radio',name:'Radio',type:'coastal',detail:'Received maritime radio messages, with reception time and source metadata.'},
+ {id:'satellite',name:'Satellite',type:'satellite',detail:'Available optical or radar imagery, compared using acquisition time and geographic coverage.'},
+ {id:'reports',name:'Public reports',type:'research',detail:'Published accounts with their original source, reported time and location precision.'},
+];
+function EvidenceFlow(){
+ const [active,setActive]=React.useState('ais');
+ const selected=sources.find(s=>s.id===active);
+ return <div className="evidence-interactive">
+  <div className="evidence-network">
+   <div className="evidence-inputs">{sources.map(s=><button key={s.id} type="button" aria-pressed={active===s.id} onClick={()=>setActive(s.id)} onFocus={()=>setActive(s.id)} className={active===s.id?'is-active':''}><DomainIcon type={s.type}/><span>{s.name}</span></button>)}</div>
+   <svg className="evidence-edges" viewBox="0 0 200 300" preserveAspectRatio="none" aria-hidden="true">{sources.map((s,i)=><path key={s.id} className={active===s.id?'is-active':''} d={`M0 ${37.5+i*75} C 90 ${37.5+i*75},110 150,200 150`}/>)}</svg>
+   <div className="evidence-core"><div className="evidence-radar"><i/><i/><i/><svg viewBox="0 0 100 100" aria-hidden="true"><path d="M12 68L38 43 58 54 85 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 4"/><circle cx="38" cy="43" r="4" fill="currentColor"/><circle cx="85" cy="24" r="4" fill="currentColor"/></svg></div><strong>Source comparison</strong><small>Time · location · provenance</small></div>
+   <div className="evidence-output-edge" aria-hidden="true"/>
+   <div className="evidence-record"><DomainIcon type="research"/><strong>Case record</strong><small>Chronology · uncertainty</small><a href="https://play.seacommons.org">PLAY ↗</a></div>
+  </div>
+  <div className="evidence-inspector" aria-live="polite"><strong>{selected.name}</strong><p>{selected.detail}</p><a href="/docs">Source documentation ↗</a></div>
+ </div>;
 }
 
 function DomainIcon({type}) {
