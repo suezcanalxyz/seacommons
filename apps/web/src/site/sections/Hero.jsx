@@ -32,24 +32,24 @@ export default function Hero() {
       </div>
 
       <div className="hero__copy">
-        <p className="kicker"><ShinyText static>Humanitarian incidents · Maritime investigations</ShinyText></p>
+        <p className="kicker"><ShinyText static>OPEN MARITIME RESEARCH / PILOT 2026</ShinyText></p>
         <h1 id="hero-title" className="hero__title">
-          <SplitText text="SeaCommons reconstructs maritime incidents" as="span" />
+          <SplitText text="See what happens at sea." as="span" />
           <br />
-          <em><SplitText text="from incomplete evidence." as="span" delay={520} /></em>
+          <em><SplitText text="Understand what the evidence shows." as="span" delay={520} /></em>
         </h1>
         <Reveal className="hero__intro" delay={200}>
           <p>
-            SeaCommons brings together maritime reports, vessel movements and sensor observations. Explore current public cases in Live, follow their history in Play, or read the method in Docs.
+            Explore vessel movements, reported incidents and the sources behind them. LIVE shows recent observations. PLAY lets you revisit earlier events. Each record makes clear what is known — and what still needs checking.
           </p>
           <div className="hero__actions">
             <Magnetic>
               <a className="btn btn--primary" href="https://live.seacommons.org">
-                Open Live <span aria-hidden="true">↗</span>
+                Explore LIVE <span aria-hidden="true">↗</span>
               </a>
             </Magnetic>
             <a className="btn btn--ghost" href="/docs">
-              Documentation <span aria-hidden="true">→</span>
+              How SeaCommons works <span aria-hidden="true">→</span>
             </a>
           </div>
         </Reveal>

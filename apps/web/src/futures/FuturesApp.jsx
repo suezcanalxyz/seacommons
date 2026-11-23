@@ -1,5 +1,6 @@
 import KnowledgeLibrary from './KnowledgeLibrary.jsx';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import './contributions-store.css';
 import FuturesOverview from './Overview.jsx';
 import GlossaryText from './GlossaryText.jsx';
 import { retainedEvidence } from './retainedEvidence.js';
@@ -351,31 +352,34 @@ function Hardware() {
   </>;
 }
 
+const contributionIcons = {'Infrastructure':'◈','Sensors / coastal stations':'⌁','Sensors / field research':'◉','Existing systems / data':'▤','Open-source software':'⌘','Verification / fieldwork':'◇'};
+const contributionSummary = name => ({
+  'Compute and Oracle VM capacity':'Give the team a safe place to test changes before they reach the live system.',
+  'Resilient storage, telemetry and networking':'Help protect the archive and recover quickly when a server fails.',
+  'Authorized maritime observation feeds':'Make the map more reliable by adding a documented source of vessel observations.',
+  'Receivers, firmware and interoperability':'Help different instruments speak the same language.',
+  'AIS coastal observation node':'Build a shore station that listens for nearby vessel positions.',
+  'Receive-only maritime radio':'Support a lawful listening station for maritime messages.',
+  'Satellite, oceanography and historical archives':'Add independent images and ocean data to check an investigation.',
+  'Field validation and calibration':'Test instruments in the field before their readings inform research.',
+  'Drifter buoy and environmental instrumentation':'Help prototype a recoverable floating instrument to study surface movement.'
+})[name] || name;
 function Contributions() {
   const [filter, setFilter] = useState('all');
+  const [selected, setSelected] = useState([]);
+  const [showSteps, setShowSteps] = useState(true);
   const groups = [...new Set(contributionNeeds.map(item => item.group))];
-  const visible = contributionNeeds.filter(item => filter === 'all' || item.group === filter).sort((a, b) => a.rank - b.rank);
-  return <>
-    <NetworkContributionsIntro />
-    <section className="future-page-head"><span className="future-eyebrow">SeaCommons / resource requirements</span>
-      <h1>Resources that help the network grow.</h1>
-      <p>This is the contribution pathway: what a partner can make available, who maintains it, which verification proves it was useful and the genuine cost. Hardware design belongs to Platform; future delivery sequencing belongs to Roadmap.</p>
-    </section>
-    <section className="future-section"><SectionHeader eyebrow="priority register" title="Keep the platform reliable first."
-      copy="Our first priority is protecting the existing service and its history. New sensors and research integrations follow once storage, backup and continuous operation are under control." />
-      <div className="future-risk-filters"><button type="button" className={filter === 'all' ? 'is-active' : ''} onClick={() => setFilter('all')}>All priorities</button>{groups.map(group => <button type="button" key={group} className={filter === group ? 'is-active' : ''} onClick={() => setFilter(group)}>{group}</button>)}</div>
-      <div className="future-priority-list">{visible.map(item => <article className="future-priority-card" key={item.name}>
-        <div className="future-priority-card__meta"><span>Priority {item.rank} · {item.urgency}</span><span>{item.group}</span></div>
-        <h3>{item.name}</h3><p className="future-priority-card__reason"><GlossaryText>{item.plainReason}</GlossaryText></p>
-        <div className="future-priority-card__facts"><div><small>Indicative cost / contribution</small><strong>{item.cost}</strong></div><div><small>What would be provided</small><span><GlossaryText>{item.need}</GlossaryText></span></div></div>
-        <details><summary>Partner action and proof of success</summary><p><b>What this enables:</b> <GlossaryText>{item.use}</GlossaryText></p><p><b>Practical role:</b> <GlossaryText>{item.partnerRole||'Agree the actual scope, operator, permissions, useful inputs and maintenance responsibilities before any integration.'}</GlossaryText></p><p><b>Acceptance evidence:</b> {item.acceptance||'A documented pilot showing that the source or capability works, with access rules, technical limits, operation cost and a named maintainer.'}</p><p>{item.reference} · {item.readiness}</p></details>
-      </article>)}</div>
-      <p className="future-inline-note">Free tier is €0 only for eligible use within published limits; a payment card may be required to open the account. Other prices are indicative EUR planning allowances, not quotations. Taxes, shipping, installation, labour and any excess cloud usage are separate. No procurement or partnership is implied.</p>
-    </section>
-    <section className="future-section"><SectionHeader eyebrow="responsible integration" title="Requirements before any system is connected."
-      copy="Every external feed or physical device needs explicit permission, a designated operator, documented provenance, security boundaries, source health checks and publication safeguards. Receive-only radio work must respect applicable national law." />
-    </section>
-  </>;
+  const visible = contributionNeeds.filter(item => filter === 'all' || item.group === filter).sort((a,b)=>a.rank-b.rank);
+  const toggle = name => setSelected(old=>old.includes(name)?old.filter(n=>n!==name):[...old,name]);
+  const message = 'Hello SeaCommons,\n\nI would like to help with:\n'+selected.map(n=>'• '+n).join('\n')+'\n\nMy organisation / name:\nWhat I can provide:\nLocation and availability:\nPreferred contact:\n\nPlease share the technical scope and next steps before any purchase or account access.';
+  const contact = 'mailto:republic@suezcanal.xyz?subject='+encodeURIComponent('SeaCommons — contribution enquiry')+'&body='+encodeURIComponent(message);
+  return <div className="future-contribute">
+    <section className="future-contribute__hero"><span className="future-eyebrow">SEA COMMONS / BUILD WITH US</span><h1>Choose what you want to help build.</h1><p>From a free test server to a coastal receiver, every contribution supports a specific part of SeaCommons. Explore the options, choose what you can offer, and agree the next steps with the team.</p><div className="future-contribute__hero-links"><a href="#contribute-catalog">Explore contributions ↓</a><a href="#contribute-start">Start with a free server ↗</a></div></section>
+    <section id="contribute-start" className="future-contribute__starter"><div className="future-contribute__starter-copy"><span className="future-eyebrow">A GOOD FIRST STEP / INFRASTRUCTURE</span><h2>Start at €0 with a test server.</h2><p>SeaCommons needs a separate place to try updates and check backups. An eligible Oracle Cloud Always Free virtual machine can support small, isolated tests without touching the live database.</p><div className="future-contribute__price"><strong>€0</strong><span>/ month, within eligible Always Free limits</span></div><p className="future-contribute__warning">This is a test environment, not a replacement for the production server. Oracle may require a payment card for verification; capacity and free eligibility depend on the account, region and chosen resources.</p><button type="button" onClick={()=>setShowSteps(v=>!v)} aria-expanded={showSteps}>{showSteps?'Hide':'Show'} the setup guide {showSteps?'−':'+'}</button></div><div className="future-contribute__starter-visual" aria-hidden="true"><div className="future-contribute__server">01<span>ORACLE CLOUD</span><strong>TEST VM</strong><small>Isolated · Always Free eligible</small></div><div className="future-contribute__connection">↓ <span>Health checks · test restores</span></div><div className="future-contribute__server future-contribute__server--end">02<span>SEA COMMONS</span><strong>STAGING</strong><small>No production data or credentials</small></div></div></section>
+    {showSteps && <section className="future-contribute__guide" aria-label="Oracle Always Free setup guide"><h3>How to get started</h3><ol><li><strong>Create your own Oracle Cloud account.</strong><p>Open the official Free Tier registration page. Choose your home region carefully; free capacity is not guaranteed in every region.</p><a href="https://www.oracle.com/cloud/free/" target="_blank" rel="noreferrer">Oracle Free Tier ↗</a></li><li><strong>Create an Always Free eligible VM.</strong><p>In Compute → Instances, choose an eligible shape and verify the “Always Free” label. Stay within the published compute, storage and networking quotas.</p><a href="https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm" target="_blank" rel="noreferrer">Check Oracle's limits ↗</a></li><li><strong>Secure it before connecting anything.</strong><p>Use SSH keys, restrict inbound access, enable monitoring and set budget alerts. Never send passwords, private keys, API tokens or billing details.</p></li><li><strong>Contact SeaCommons for a scoped test.</strong><p>Send the region, eligible VM shape and a contact email. We will agree a non-production test and the access needed. Do not connect it to production until the scope is approved.</p><a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20Oracle%20Always%20Free%20test%20VM">Request onboarding ↗</a></li></ol><p className="future-contribute__guide-note">This is a real self-service account setup followed by a manual technical review, not an automated provisioning or payment flow. The contribution is only accepted after the team confirms it.</p></section>}
+    <section id="contribute-catalog" className="future-contribute__catalog"><div className="future-contribute__catalog-heading"><div><span className="future-eyebrow">PICK A PART OF THE PROJECT</span><h2>Explore the contribution catalogue.</h2></div><p>Prices are planning estimates, not checkout prices. You can offer equipment, services, access or engineering time instead of money.</p></div><div className="future-contribute__filters" role="group" aria-label="Filter contributions"><button type="button" className={filter==='all'?'is-active':''} onClick={()=>setFilter('all')}>All</button>{groups.map(g=><button key={g} type="button" className={filter===g?'is-active':''} onClick={()=>setFilter(g)}>{g.replace(' / ',' & ')}</button>)}</div><div className="future-contribute__grid">{visible.map(item=><article key={item.name} className="future-contribute__item"><div className="future-contribute__item-top"><span className="future-contribute__icon" aria-hidden="true">{contributionIcons[item.group]||'◇'}</span><small>{item.group}</small></div><h3>{item.name}</h3><p>{contributionSummary(item.name)}</p><strong className="future-contribute__cost">{item.cost}</strong><details><summary>What's included and how we test it</summary><p><strong>Needed:</strong> {item.need}</p><p><strong>Partner role:</strong> {item.partnerRole}</p><p><strong>Proof it works:</strong> {item.acceptance}</p></details><button type="button" className={selected.includes(item.name)?'is-selected':''} onClick={()=>toggle(item.name)} aria-pressed={selected.includes(item.name)}>{selected.includes(item.name)?'✓ Selected — remove':'Add to my contribution +'}</button></article>)}</div></section>
+    <section className="future-contribute__basket" aria-live="polite"><div><span className="future-eyebrow">YOUR CONTRIBUTION</span><h2>{selected.length ? selected.length+' selected':'Build something with SeaCommons.'}</h2><p>{selected.length?selected.join(' · '):'Choose one or more options above. There is no online payment: the next step is a conversation about feasibility, responsibilities and access.'}</p></div>{selected.length?<a href={contact}>Send contribution enquiry ↗</a>:<a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20collaboration">Discuss a different idea ↗</a>}</section>
+  </div>;
 }
 
 function WorkstreamList({ project }) {

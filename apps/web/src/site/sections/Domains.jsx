@@ -22,20 +22,20 @@ const SURFACES = [
   {
     label: 'Live',
     href: 'https://live.seacommons.org',
-    meta: 'What is public now',
-    body: 'Cases that currently pass the public publication rules. Live is case-first: it is not a raw AIS map and it does not expose every observation in the backend.',
+    meta: 'Explore recent cases',
+    body: 'Explore recent public cases on a map. Each one is shown with the information available and its limitations.',
   },
   {
     label: 'Play',
     href: 'https://play.seacommons.org',
-    meta: 'What remains on record',
-    body: 'The public archive. A case keeps its timeline, evidence and later updates instead of disappearing when the immediate Live window ends.',
+    meta: 'Revisit the past',
+    body: 'Go back through maritime events, follow their timelines and see what later evidence adds.',
   },
   {
     label: 'Docs',
     href: '/docs',
-    meta: 'How the system works',
-    body: 'The technical reference for source lineage, correlation, public/private boundaries, API contracts, modelling, tests and known limitations.',
+    meta: 'Understand the evidence',
+    body: 'Find out where the information comes from, how it is checked and why some questions remain open.',
   },
 ];
 
@@ -45,13 +45,11 @@ export default function Domains() {
       <SectionLabel index="Scope / 001" title="What SeaCommons follows" />
       <div className="domains__head">
         <Display id="domains-title">
-          Two kinds of cases.<br />Different risks, different rules.
+          What can we learn<br />from the sea?
         </Display>
         <Reveal delay={120}>
           <p>
-            Humanitarian cases concern people in distress, rescue activity and what happened next.
-            Maritime cases concern vessel behaviour, identity, navigation and other activity worth
-            examining. They share infrastructure, but they do not share the same publication rules.
+            Some records concern people in distress. Others concern vessels, navigation and maritime security. SeaCommons brings them into one research environment, while keeping different kinds of evidence and privacy needs separate.
           </p>
         </Reveal>
       </div>
@@ -62,7 +60,7 @@ export default function Domains() {
             <span>Humanitarian</span>
             <small>People · distress · rescue</small>
           </div>
-          <h3>Where are people reported to be at risk, and what can we establish about the response?</h3>
+          <h3>When someone reports an emergency at sea, what can we verify?</h3>
           <p>
             A humanitarian case can begin with a call, a public report or a rescue organisation's
             update. Coordinates may be exact, approximate, area-level or absent. SeaCommons keeps
@@ -71,7 +69,7 @@ export default function Domains() {
           <ul>
             {HUMANITARIAN.map((item) => <li key={item}>{item}</li>)}
           </ul>
-          <a href="#humanitarian-detail">Humanitarian method ↓</a>
+          <a href="#humanitarian-detail">Read the humanitarian method ↓</a>
         </article>
 
         <article id="maritime" className="domain-card domain-card--maritime">
@@ -79,7 +77,7 @@ export default function Domains() {
             <span>Maritime</span>
             <small>Vessels · behaviour · context</small>
           </div>
-          <h3>What is unusual in a vessel's track, identity or operating context, and what else explains it?</h3>
+          <h3>What can vessel movements tell us — and what can't they?</h3>
           <p>
             A gap in AIS, a close approach between vessels or a sanctions match is not a conclusion.
             SeaCommons treats these as reasons to look closer, checks coverage and source lineage,
@@ -88,11 +86,11 @@ export default function Domains() {
           <ul>
             {MARITIME.map((item) => <li key={item}>{item}</li>)}
           </ul>
-          <a href="#maritime-detail">Maritime method ↓</a>
+          <a href="#maritime-detail">Read the maritime method ↓</a>
         </article>
       </Reveal>
 
-      <div className="domains__surfaces">
+      <div className="domains__preview" aria-label="SeaCommons product previews"><a href="https://live.seacommons.org"><img src="/og/seacommons-live.png" alt="Preview of the SeaCommons LIVE map" loading="lazy"/><span>LIVE / Explore recent maritime observations ↗</span></a><a href="https://play.seacommons.org"><img src="/og/seacommons-play.png" alt="Preview of the SeaCommons PLAY investigation map" loading="lazy"/><span>PLAY / Investigate an event over time ↗</span></a></div><div className="domains__surfaces">
         <SectionLabel index="Access / 002" title="Live, archive and technical reference" />
         <Reveal className="domains__surface-grid" stagger={90}>
           {SURFACES.map((surface) => (

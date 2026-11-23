@@ -1105,3 +1105,11 @@ button:focus-visible {
 .hero__intro p{max-width:100%;color:#f7f9f7;font-size:clamp(1rem,1.22vw,1.13rem);line-height:1.54;text-shadow:0 1px 12px rgba(0,0,0,.58);text-wrap:pretty}
 .hero__title em{color:#d0e5fc}
 @media(max-width:760px){.hero__copy{width:calc(100vw - 2 * var(--pad-x))}.hero__copy::before{inset:-30px -12px -30px -25px;background:linear-gradient(90deg,rgba(4,9,16,.72),rgba(4,9,16,.38) 85%,transparent)}.hero__intro p{max-width:100%;font-size:1rem}}
+
+/* Accessible product previews */
+.domains__preview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:35px 0 60px}
+.domains__preview a{display:block;min-width:0;border:1px solid rgba(210,229,233,.22);background:#111c23;overflow:hidden}
+.domains__preview img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;filter:saturate(.8);transition:transform .3s}
+.domains__preview a:hover img{transform:scale(1.025)}
+.domains__preview span{display:block;padding:17px 20px;font-size:13px;letter-spacing:.015em;color:#dcece8}
+@media(max-width:650px){.domains__preview{grid-template-columns:1fr}}
