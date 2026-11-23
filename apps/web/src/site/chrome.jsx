@@ -19,14 +19,11 @@ function useClocks() {
 }
 
 const NAV = [
-  ['docs', '/docs'],
-  ['live', 'https://live.seacommons.org'],
-  ['play', 'https://play.seacommons.org'],
-  ['humanitarian', '#humanitarian'],
-  ['maritime', '#maritime'],
-  ['sources', '#sources'],
-  ['method', '#method'],
-  ['governance', '#governance'],
+  ['Explore LIVE', 'https://live.seacommons.org'],
+  ['Explore PLAY', 'https://play.seacommons.org'],
+  ['How it works', '#how-it-works'],
+  ['Research examples', '#examples'],
+  ['Docs', '/docs'],
 ];
 
 export function BrandMark({ small = false }) {
@@ -118,11 +115,9 @@ export function Footer() {
       <div className="site-footer__cols">
         <div>
           <span>Domains</span>
-          <a href="#humanitarian">Humanitarian</a>
-          <a href="#maritime">Maritime</a>
-          <a href="#sources">Sources</a>
-          <a href="#method">Method</a>
-          <a href="#governance">Governance</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#examples">Research examples</a>
+          <a href="/docs">Methods and sources</a>
         </div>
         <div>
           <span>Surfaces</span>
