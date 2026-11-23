@@ -77,7 +77,7 @@ return <div className="futures-public">
     <article><span>03</span><h3>Security & accountability</h3><p>Review incident chronologies and vessel identities while keeping reports, observations and attribution distinct.</p></article>
     <article><span>04</span><h3>Coastal infrastructure</h3><p>Develop receiver stations and experimental drifters through site surveys, documented tests and local partnerships.</p></article>
   </div>
-  <div className="futures-purpose__closing"><div><span>THE NEXT CHAPTER</span><h3>A pilot designed to be tested, questioned and extended.</h3></div><p>SeaCommons is not a complete picture of maritime activity. The next stage is better coverage, reproducible case reviews, calibrated field instruments and partnerships that can evaluate what the system actually contributes.</p></div>
+  <div className="futures-purpose__closing"><div><span>THE NEXT CHAPTER</span><h3>A pilot designed to be tested, questioned and extended.</h3></div><p>The next stage focuses on improved reception coverage, reproducible case reviews, calibrated field instruments and partner-led evaluation.</p></div>
 </section>
 <KnowledgeLibrary compact/>
 <FuturesJournal/>

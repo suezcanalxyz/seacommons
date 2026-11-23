@@ -7,7 +7,7 @@ const SOURCES = [
     name: 'Public reports',
     examples: 'Operational reports · NGO updates · institutional and news sources',
     use: 'Start or update a case, preserve claims, times, stated positions and reported outcomes.',
-    limit: 'A repeated report is not independent corroboration, and a reported coordinate is not automatically a verified position.',
+    limit: 'Repeated reports may share one original source. Reported coordinates require separate location checks.',
   },
   {
     name: 'AIS',

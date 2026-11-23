@@ -4,7 +4,7 @@ import { SectionLabel, Display } from '../bits.jsx';
 
 const FLOW = [
   ['01', 'Report', 'Keep the original source, publication time, wording and any stated position. If the report only identifies an area, SeaCommons keeps an area; it does not invent a point.'],
-  ['02', 'Position', 'Record whether a location was reported directly, extracted from text or media, estimated, or still unknown. An extracted coordinate is not automatically a verified coordinate.'],
+  ['02', 'Position', 'Record whether a location was reported directly, extracted from text or media, estimated, or still unknown. Coordinates extracted from text or media retain their reported precision and require independent location checks.'],
   ['03', 'Cross-check', 'Compare later reports, civil SAR updates, vessel activity and other public evidence. Repeated copies of the same original report remain one source lineage.'],
   ['04', 'Outcome', 'Add rescue, disembarkation, fatality or other outcome claims when a source actually supports them. AIS activity by itself cannot prove that a rescue happened.'],
 ];

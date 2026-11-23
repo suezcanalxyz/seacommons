@@ -77,11 +77,9 @@ export default function Domains() {
             <span>Maritime</span>
             <small>Vessels · behaviour · context</small>
           </div>
-          <h3>What can vessel movements tell us — and what can't they?</h3>
+          <h3>Vessel movement and identity records</h3>
           <p>
-            A gap in AIS, a close approach between vessels or a sanctions match is not a conclusion.
-            SeaCommons treats these as reasons to look closer, checks coverage and source lineage,
-            and keeps ordinary explanations visible alongside the suspicious ones.
+            SeaCommons compares AIS reception gaps, vessel proximity and identity records with coverage, timestamps and independent sources. Each case records the observations and possible explanations.
           </p>
           <ul>
             {MARITIME.map((item) => <li key={item}>{item}</li>)}

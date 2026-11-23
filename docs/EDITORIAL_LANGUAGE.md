@@ -27,3 +27,7 @@ Prefer: “Choose the equipment or service you can provide. We will agree the te
 
 ## Review checklist
 Can a new visitor answer what this does, why it matters and what to click? Does every claim identify its evidence level? Are jargon and acronyms explained? Are links real? Does the visual add information rather than decoration? Is there a clear distinction between existing features and planned experiments?
+
+
+## Prohibited frontend copy patterns
+Do not use antithetical slogan templates: “X is not Y”, “not X but Y”, “not just X”, “more than X”, “X is a question, not a conclusion”, “small clues, bigger questions”, or similar formulaic rhetorical constructions. Express the actual observation, measurement, limitation or procedure directly. This applies to headings, cards, marketing copy, tooltips, navigation and future UI changes. Where a safety boundary is needed, state the concrete verification requirement and its reason without a slogan.

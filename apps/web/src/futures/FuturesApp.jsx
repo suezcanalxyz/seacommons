@@ -884,7 +884,7 @@ function Tools() {
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">tools</span>
-        <h1>Reusable software modules, not just websites.</h1>
+        <h1>Software modules and public research tools.</h1>
         <p>
           SeaCommons is one implementation of a modular software architecture. The modules below describe which methods can be adapted to other research and civic sectors, and which are still subject to new validation. Other projects are not automatically part of this authenticated workspace.
         </p>

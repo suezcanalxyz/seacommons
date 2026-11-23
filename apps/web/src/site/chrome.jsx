@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import HeaderLive from './HeaderLive.jsx';
 
 function useClocks() {
@@ -83,21 +84,25 @@ export function Header() {
         <i aria-hidden="true" />
       </button>
 
-      <button
-        type="button"
-        className={`site-nav__backdrop ${open ? 'is-open' : ''}`.trim()}
-        aria-label="Close navigation"
-        tabIndex={open ? 0 : -1}
-        onClick={() => setOpen(false)}
-      />
-
-      <nav id="site-nav" className={`site-nav ${open ? 'is-open' : ''}`.trim()} aria-label="Primary">
-        {NAV.map(([label, href]) => (
-          <a key={href} href={href} onClick={() => setOpen(false)}>
-            {label}
-          </a>
-        ))}
-      </nav>
+      {createPortal(
+        <div className={`site-navigation-layer ${open ? 'is-open' : ''}`.trim()} aria-hidden={!open}>
+          <button
+            type="button"
+            className="site-nav__backdrop"
+            aria-label="Close navigation"
+            tabIndex={open ? 0 : -1}
+            onClick={() => setOpen(false)}
+          />
+          <nav id="site-nav" className="site-nav" aria-label="Primary" aria-hidden={!open}>
+            {NAV.map(([label, href]) => (
+              <a key={href} href={href} tabIndex={open ? 0 : -1} onClick={() => setOpen(false)}>
+                {label}
+              </a>
+            ))}
+          </nav>
+        </div>,
+        document.body
+      )}
     </header>
   );
 }

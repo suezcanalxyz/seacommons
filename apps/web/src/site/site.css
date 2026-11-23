@@ -1113,3 +1113,13 @@ button:focus-visible {
 .domains__preview a:hover img{transform:scale(1.025)}
 .domains__preview span{display:block;padding:17px 20px;font-size:13px;letter-spacing:.015em;color:#dcece8}
 @media(max-width:650px){.domains__preview{grid-template-columns:1fr}}
+
+/* Navigation lives in a body portal so header blur cannot constrain fixed overlay. */
+.site-header:has(.site-header__toggle.is-open){z-index:1001;background:#060d12;border-bottom-color:transparent}
+.site-navigation-layer{position:fixed;inset:0;z-index:1000;visibility:hidden;pointer-events:none;opacity:0;transition:opacity .25s ease,visibility 0s linear .25s}
+.site-navigation-layer.is-open{visibility:visible;pointer-events:auto;opacity:1;transition:opacity .25s ease}
+.site-navigation-layer .site-nav__backdrop{position:absolute;inset:0;display:block;width:100%;height:100%;background:rgba(1,5,9,.96);backdrop-filter:blur(22px);opacity:1;visibility:visible;pointer-events:auto;transition:none}
+.site-navigation-layer .site-nav{position:absolute;inset:0;z-index:1;display:flex;justify-content:center;align-items:center;padding:calc(var(--header-h) + 1rem) 20px 32px;max-height:100dvh;overflow-y:auto;transform:none;opacity:1;visibility:visible;pointer-events:auto;transition:none}
+.site-navigation-layer:not(.is-open) .site-nav,.site-navigation-layer:not(.is-open) .site-nav__backdrop{pointer-events:none}
+.site-navigation-layer .site-nav a{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-weight:500;letter-spacing:-.065em;line-height:1.05}
+@media(max-height:570px){.site-navigation-layer .site-nav a{font-size:clamp(24px,6vh,45px)}}
