@@ -1057,7 +1057,7 @@ export default function FuturesApp() {
           {view === 'knowledge' && <Documents />}
           {view === 'development' && <DevelopmentHome navigate={navigate} />}
           {view === 'agents' && <AgentTaskDashboard />}
-          {view === 'overview' && <><FuturesOverview onStatus={()=>navigate('operations')}/><Overview ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} /></>}
+          {view === 'overview' && <FuturesOverview onStatus={()=>navigate('operations')}/>}
           {view === 'history' && <HistoricalAnalytics ops={ops} overall={overall} />}
           {view === 'operations' && <Operations ops={ops} />}
           {view === 'ais-check' && <AisCrossCheck />}

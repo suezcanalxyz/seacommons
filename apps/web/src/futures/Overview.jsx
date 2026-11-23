@@ -1,5 +1,6 @@
 import React from 'react';
 import KnowledgeLibrary from './KnowledgeLibrary.jsx';
+import './overview-editorial.css';
 export const needs=[
 {title:'Virtual machines & storage',tag:'Compute',description:'Keep ingestion, historical queries and backups reliable.',examples:'Cloud credits, CPU/RAM, PostgreSQL hosting, storage',request:'I can support compute or storage.'},
 {title:'Radio & coastal receivers',tag:'Signals',description:'Expand responsible maritime radio and AIS reception.',examples:'AIS/VHF/DSC receivers, SDR, antenna, permitted coastal sites',request:'I would like to contribute or host a radio receiver.'},
@@ -39,29 +40,44 @@ function FuturesJournal(){return <section className="futures-journal" id="future
 export default function FuturesOverview({onStatus}){
 return <div className="futures-public">
 <section className="futures-intro" aria-labelledby="futures-intro-title">
-<small>SEA COMMONS / AN OPEN MARITIME OBSERVATORY</small>
-<h2 id="futures-intro-title">Understand what happens at sea. Make better decisions on land.</h2>
-<p className="futures-lead">SeaCommons brings together ship movements, radio signals, satellite images and documented reports in one place. It helps people understand maritime activity, investigate risks and make better-informed decisions. The platform is currently in its pilot phase.</p>
-<div className="futures-journey">
-<a href="https://live.seacommons.org"><Icon name="radio"/><small>01 / LIVE</small><strong>See the sea today</strong><span>Explore current observations and reported incidents.</span><b>Explore LIVE ↗</b></a>
-<a href="https://play.seacommons.org"><Icon name="ship"/><small>02 / PLAY</small><strong>Explore past events</strong><span>Follow historical events, timelines and supporting evidence.</span><b>Explore PLAY ↗</b></a>
-<a href="#futures-needs"><Icon name="people"/><small>03 / FUTURES</small><strong>Build the next step</strong><span>Understand the infrastructure and contribute to its future.</span><b>Explore FUTURES ↓</b></a>
-</div>
-<p className="futures-method">We show where information comes from and what remains uncertain. SeaCommons supports research and informed action; it does not replace emergency services or maritime authorities.</p>
-<button className="futures-secondary" onClick={onStatus}>View live operational diagnostics ↗</button>
+  <div className="futures-intro__masthead"><span>SEA COMMONS <i>/</i> A SUEZ REPUBLIC PROJECT</span><span>RESEARCH PLATFORM · PILOT 2026</span></div>
+  <div className="futures-intro__hero">
+    <div className="futures-intro__copy">
+      <span className="futures-intro__index">01 — THE PROJECT</span>
+      <h2 id="futures-intro-title">Making the sea<br/><em>legible.</em></h2>
+      <p className="futures-lead">SeaCommons is an open maritime research platform. It brings together vessel signals, public reports and geospatial evidence to investigate what happens at sea — and make clear what remains unknown.</p>
+      <div className="futures-intro__links"><a href="https://live.seacommons.org">Explore LIVE <span>↗</span></a><a href="https://play.seacommons.org">Explore PLAY <span>↗</span></a></div>
+    </div>
+    <figure className="futures-intro__visual"><img src="/og/seacommons-live.png" alt="SeaCommons LIVE interface showing maritime observations on a map" loading="eager"/><figcaption><span>FIG. 01 / LIVE INTERFACE</span><span>ILLUSTRATIVE PLATFORM VIEW</span></figcaption></figure>
+  </div>
+  <div className="futures-intro__statement"><span>THE CENTRAL QUESTION</span><p>What can we actually know about an event at sea — <em>and how do we know it?</em></p></div>
 </section>
-<section className="futures-impact" aria-labelledby="futures-impact-title">
-<small>WHY THIS MATTERS</small>
-<h2 id="futures-impact-title">A shared tool for people, the economy and the environment</h2>
-<p>The sea connects trade, communities and ecosystems. Better information helps researchers, public institutions and local partners understand what is happening and decide where action is needed.</p>
-<div className="futures-impact-grid">
-<article><Icon name="chart" size={30}/><h3>Economic</h3><p>Improve the traceability of shipping activity, identify evidence gaps in trade and sanctions investigations, and reduce duplicated research work. The project does not claim to measure economic losses without validated datasets.</p></article>
-<article><Icon name="people" size={30}/><h3>Social</h3><p>Make humanitarian distress reports, search-and-rescue evidence and public maritime records more accessible to researchers, civil society and responsible institutions.</p></article>
-<article><Icon name="leaf" size={30}/><h3>Environmental</h3><p>Investigate vessel movements, suspected spills and maritime risks using observations and satellite data, distinguishing documented impacts from modelled scenarios.</p></article>
-</div>
-<h3>From information to practical action</h3>
-<ol className="futures-steps"><li><strong>Observe:</strong> collect lawful AIS, radio, satellite and public documentary signals with provenance.</li><li><strong>Corroborate:</strong> connect independent evidence and explicitly flag contradictions and missing coverage.</li><li><strong>Publish:</strong> expose qualified findings through LIVE and PLAY, with dates, sources and uncertainty.</li><li><strong>Deploy locally:</strong> test coastal receivers, solar-powered nodes, partner data agreements and maintenance responsibilities.</li><li><strong>Evaluate:</strong> measure uptime, data quality, response usefulness, costs and documented outcomes before scaling.</li></ol>
-<p>The goal is a model that local partners can operate and maintain: clear responsibilities, affordable equipment, transparent methods and measurable results.</p>
+<section className="futures-story" aria-labelledby="futures-story-title">
+  <div className="futures-story__heading"><span>02 — HOW IT WORKS</span><div><h2 id="futures-story-title">One sea.<br/>Different kinds of evidence.</h2><p>SeaCommons connects observations without treating them as interchangeable. A vessel position, a radio message, a satellite image and a public report each establish something different.</p></div></div>
+  <div className="futures-story__sources">
+    <article><span>01 / AIS</span><h3>Vessel positions</h3><p>Received broadcasts describe a vessel at a specific time. A gap in reception is not proof of where it travelled.</p></article>
+    <article><span>02 / RADIO</span><h3>Communications</h3><p>Time-stamped transmissions help reconstruct a chronology. Attribution and interpretation require review.</p></article>
+    <article><span>03 / SATELLITE</span><h3>Imagery</h3><p>Optical and radar scenes can corroborate visible features at acquisition time, subject to coverage and resolution.</p></article>
+    <article><span>04 / REPORTS</span><h3>Documented claims</h3><p>Public reports and distress alerts establish what was reported, not automatically what was independently verified.</p></article>
+  </div>
+  <div className="futures-story__principle"><span>OUR METHOD</span><p>Collect the source. Preserve the timestamp. Compare the evidence. <strong>Publish the uncertainty.</strong></p></div>
+</section>
+<section className="futures-surfaces" aria-labelledby="futures-surfaces-title">
+  <div className="futures-surfaces__heading"><span>03 — THE PLATFORM</span><h2 id="futures-surfaces-title">Two ways to read the sea.</h2></div>
+  <div className="futures-surfaces__grid">
+    <a href="https://live.seacommons.org" className="futures-surface"><div className="futures-surface__image"><img src="/og/seacommons-live.png" alt="SeaCommons LIVE maritime map" loading="lazy"/></div><div className="futures-surface__body"><span>01 / OBSERVE</span><h3>LIVE <b>↗</b></h3><p>Explore the latest available vessel observations and contextual reports, with their source and temporal limitations.</p></div></a>
+    <a href="https://play.seacommons.org" className="futures-surface"><div className="futures-surface__image"><img src="/og/seacommons-play.png" alt="SeaCommons PLAY historical investigation map" loading="lazy"/></div><div className="futures-surface__body"><span>02 / INVESTIGATE</span><h3>PLAY <b>↗</b></h3><p>Examine past events through historical positions, timelines, conflicting sources and gaps in the record.</p></div></a>
+  </div>
+</section>
+<section className="futures-purpose" aria-labelledby="futures-purpose-title">
+  <div className="futures-purpose__heading"><span>04 — WHY IT MATTERS</span><div><h2 id="futures-purpose-title">Maritime intelligence<br/>in the public interest.</h2><p>The same research infrastructure can support different questions. Each application has its own evidentiary threshold and requires specialist review.</p></div></div>
+  <div className="futures-purpose__list">
+    <article><span>01</span><h3>Humanitarian</h3><p>Document distress reports, maritime response and unresolved questions without turning approximate coordinates into confirmed positions.</p></article>
+    <article><span>02</span><h3>Environmental</h3><p>Relate maritime activity to independently measured ocean conditions, imagery and future field instruments.</p></article>
+    <article><span>03</span><h3>Security & accountability</h3><p>Review incident chronologies and vessel identities while keeping reports, observations and attribution distinct.</p></article>
+    <article><span>04</span><h3>Coastal infrastructure</h3><p>Develop receiver stations and experimental drifters through site surveys, documented tests and local partnerships.</p></article>
+  </div>
+  <div className="futures-purpose__closing"><div><span>THE NEXT CHAPTER</span><h3>A pilot designed to be tested, questioned and extended.</h3></div><p>SeaCommons is not a complete picture of maritime activity. The next stage is better coverage, reproducible case reviews, calibrated field instruments and partnerships that can evaluate what the system actually contributes.</p></div>
 </section>
 <KnowledgeLibrary compact/>
 <FuturesJournal/>

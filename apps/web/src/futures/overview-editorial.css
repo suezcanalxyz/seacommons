@@ -1,0 +1,57 @@
+
+/* FUTURES / editorial overview 2026 — replaces the former blue dashboard introduction. */
+.futures-public{gap:0!important;margin:0 0 70px!important;color:#eeeae1}
+.futures-public .futures-intro{background:#eae6dc!important;color:#18201f!important;border:0!important;border-radius:0!important;padding:0!important;overflow:hidden}
+.futures-intro__masthead{display:flex;justify-content:space-between;gap:20px;padding:22px clamp(24px,4vw,52px);border-bottom:1px solid #c6c7bd;font:500 10px/1.5 'DM Mono',monospace;letter-spacing:.1em}
+.futures-intro__masthead i{font-style:normal;color:#6d7971;padding:0 8px}
+.futures-intro__hero{display:grid;grid-template-columns:1fr 1.02fr;min-height:530px}
+.futures-intro__copy{padding:clamp(30px,5vw,70px) clamp(24px,4vw,52px);display:flex;flex-direction:column;align-items:flex-start}
+.futures-intro__index,.futures-story__heading>span,.futures-surfaces__heading>span,.futures-purpose__heading>span,.futures-intro__statement>span,.futures-story__principle>span,.futures-purpose__closing span{font:500 10px/1.5 'DM Mono',monospace;letter-spacing:.11em}
+.futures-public .futures-intro h2{font-family:Georgia,'Times New Roman',serif;font-size:clamp(54px,6vw,105px)!important;font-weight:400;line-height:.96!important;letter-spacing:-.065em!important;margin:65px 0 26px!important;color:#18201f;max-width:none}
+.futures-intro h2 em{font-weight:400;color:#6d796d}
+.futures-public .futures-lead{font-size:clamp(15px,1.4vw,19px)!important;line-height:1.65!important;max-width:560px;color:#444e48!important;margin:0}
+.futures-intro__links{display:flex;flex-wrap:wrap;gap:22px;margin-top:auto;padding-top:34px}
+.futures-intro__links a{color:#18201f!important;font:500 12px/1.3 'DM Mono',monospace;border-bottom:1px solid #18201f;padding:0 0 9px;min-width:132px;display:flex;justify-content:space-between}
+.futures-intro__visual{margin:0;position:relative;min-width:0;min-height:470px;background:#19292c;overflow:hidden}
+.futures-intro__visual img{width:100%;height:100%;position:absolute;inset:0;object-fit:cover;filter:saturate(.72) contrast(1.08)}
+.futures-intro__visual figcaption{position:absolute;inset:auto 0 0;display:flex;justify-content:space-between;gap:15px;padding:20px 23px;background:linear-gradient(transparent,rgba(0,0,0,.8));color:#f2eee4;font:500 9px/1.4 'DM Mono',monospace;letter-spacing:.08em}
+.futures-intro__statement{display:grid;grid-template-columns:185px 1fr;gap:35px;border-top:1px solid #c6c7bd;padding:35px clamp(24px,4vw,52px) 44px;align-items:start}
+.futures-intro__statement p{font-family:Georgia,serif;font-size:clamp(25px,3vw,43px);line-height:1.2;letter-spacing:-.025em;color:#26312c;margin:0;max-width:880px}
+.futures-intro__statement p em{color:#6d796d}
+.futures-story,.futures-surfaces,.futures-purpose{padding:65px 0 0;border-bottom:1px solid var(--f-line)}
+.futures-story__heading,.futures-purpose__heading{display:grid;grid-template-columns:190px 1fr;gap:36px;align-items:start;margin-bottom:35px}
+.futures-story__heading>span,.futures-surfaces__heading>span,.futures-purpose__heading>span{color:#b4b7a9}
+.futures-story h2,.futures-surfaces h2,.futures-purpose h2{font-family:Georgia,serif;font-size:clamp(34px,4.4vw,62px);font-weight:400;line-height:1.08;letter-spacing:-.045em;margin:0 0 17px}
+.futures-story__heading p,.futures-purpose__heading p{font-size:15px;line-height:1.75;max-width:720px;color:#adb8b2;margin:0}
+.futures-story__sources{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid #46534f;border-bottom:1px solid #46534f}
+.futures-story__sources article{padding:24px 20px 29px 0;min-width:0}
+.futures-story__sources article+article{padding-left:20px;border-left:1px solid #46534f}
+.futures-story__sources span,.futures-surface__body>span{font:500 10px/1.4 'DM Mono',monospace;color:#b5c6b8;letter-spacing:.1em}
+.futures-story__sources h3{font-family:Georgia,serif;font-size:24px;font-weight:400;margin:35px 0 11px}
+.futures-story__sources p{font-size:12px;line-height:1.7;margin:0;color:#aab5b0}
+.futures-story__principle{display:grid;grid-template-columns:190px 1fr;gap:36px;padding:30px 0 45px}
+.futures-story__principle>span{color:#b4b7a9}
+.futures-story__principle p{font-size:clamp(17px,2vw,26px);line-height:1.5;margin:0;color:#c8d1c9}
+.futures-story__principle strong{font-weight:500;color:#eae6dc}
+.futures-surfaces__heading{display:flex;justify-content:space-between;align-items:baseline;gap:30px;margin-bottom:26px}
+.futures-surfaces__grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding-bottom:50px}
+.futures-surface{border:1px solid #45524d;color:#eae6dc!important;display:block;min-width:0}
+.futures-surface__image{height:230px;background:#15252a;overflow:hidden}
+.futures-surface__image img{width:100%;height:100%;object-fit:cover;filter:saturate(.65);transition:transform .3s}
+.futures-surface:hover .futures-surface__image img{transform:scale(1.035)}
+.futures-surface__body{padding:24px}
+.futures-surface__body h3{font-family:Georgia,serif;font-weight:400;font-size:42px;margin:15px 0 8px;display:flex;justify-content:space-between}
+.futures-surface__body h3 b{font:400 24px 'DM Mono',monospace;color:#b7c4b5}
+.futures-surface__body p{font-size:13px;line-height:1.7;max-width:470px;margin:0;color:#aeb9b4}
+.futures-purpose__list{border-top:1px solid #46534f}
+.futures-purpose__list article{display:grid;grid-template-columns:70px minmax(130px,.6fr) 1fr;gap:24px;align-items:baseline;border-bottom:1px solid #46534f;padding:22px 0}
+.futures-purpose__list article>span{font:500 11px 'DM Mono',monospace;color:#a9b7a8}
+.futures-purpose__list h3{font:400 24px Georgia,serif;margin:0}
+.futures-purpose__list p{font-size:13px;line-height:1.7;margin:0;color:#aab5b0}
+.futures-purpose__closing{display:grid;grid-template-columns:1fr 1fr;gap:40px;padding:46px 0 60px}
+.futures-purpose__closing span{color:#b4b7a9}
+.futures-purpose__closing h3{font:400 clamp(26px,3vw,40px)/1.18 Georgia,serif;margin:18px 0 0}
+.futures-purpose__closing p{font-size:14px;line-height:1.8;color:#aab5b0;margin:22px 0 0}
+.futures-public>.knowledge-library{margin-top:60px}
+@media(max-width:1000px){.futures-intro__hero{grid-template-columns:1fr}.futures-intro__visual{height:350px;min-height:350px}.futures-public .futures-intro h2{margin-top:38px!important}.futures-story__sources{grid-template-columns:repeat(2,1fr)}.futures-story__sources article:nth-child(3){border-left:0;padding-left:0;border-top:1px solid #46534f}.futures-story__sources article:nth-child(4){border-top:1px solid #46534f}}
+@media(max-width:650px){.futures-intro__masthead{flex-direction:column;gap:4px}.futures-intro__statement,.futures-story__heading,.futures-purpose__heading,.futures-story__principle{grid-template-columns:1fr;gap:13px}.futures-story__sources{grid-template-columns:1fr}.futures-story__sources article,.futures-story__sources article+article{padding:18px 0;border-left:0;border-top:1px solid #46534f}.futures-story__sources article:first-child{border-top:0}.futures-story__sources h3{margin-top:13px}.futures-surfaces__heading{display:block}.futures-surfaces__grid{grid-template-columns:1fr}.futures-purpose__list article{grid-template-columns:36px 1fr;gap:10px}.futures-purpose__list p{grid-column:2}.futures-purpose__closing{grid-template-columns:1fr;gap:8px}.futures-intro__visual{height:240px;min-height:240px}.futures-intro__visual figcaption{font-size:8px}}
