@@ -56,3 +56,25 @@
 .product-showcase__end a:first-child{background:#d6e7d8;color:#16231c}
 @media(max-width:900px){.product-showcase__intro{grid-template-columns:1fr}.product-showcase__intro>a{grid-column:1}.product-showcase__feature{grid-template-columns:1fr}.product-showcase__feature-image{min-height:330px}}
 @media(max-width:650px){.product-hero__frame,.product-hero__content{min-height:650px}.product-hero__frame>img{object-position:65% center}.product-hero__shade{background:linear-gradient(90deg,rgba(4,13,18,.86),rgba(4,13,18,.34)),linear-gradient(0deg,rgba(4,13,18,.8),transparent 60%)}.product-hero__caption{font-size:8px}.product-showcase__screens,.product-showcase__three{grid-template-columns:1fr}.product-showcase__section-head{display:block}.product-showcase__section-head h2{margin-top:12px}.product-showcase__intro{padding:45px 0}.product-showcase__surfaces,.product-showcase__possibilities{padding:45px 0}.product-showcase__end{padding:70px 0}}
+
+/* Refined technical editorial identity: restrained neo-grotesk, tabular data and optical hierarchy. */
+.product-hero,.product-showcase{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}
+.product-hero h1,.product-showcase h2,.product-showcase h3,.product-showcase__end h2{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-weight:500;letter-spacing:-.065em}
+.product-hero h1{font-size:clamp(58px,8vw,138px);line-height:.92;letter-spacing:-.075em;text-wrap:balance}
+.product-hero h1 em{font-style:normal;font-weight:300}
+.product-hero__frame .product-hero__video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center}
+.product-hero__shade{background:linear-gradient(90deg,rgba(2,9,13,.96) 0%,rgba(2,9,13,.86) 23%,rgba(2,9,13,.58) 47%,rgba(2,9,13,.10) 88%),linear-gradient(0deg,rgba(2,9,13,.74),transparent 36%)}
+.product-hero__content{filter:drop-shadow(0 2px 8px rgba(0,0,0,.4))}
+.product-hero__content>p{font-size:clamp(15px,1.55vw,20px);font-weight:400;color:#fff;letter-spacing:-.01em}
+.product-hero__actions a{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:13px;font-weight:600;letter-spacing:.01em}
+.product-showcase__section-head{align-items:center}
+.product-showcase__surface-symbols{display:flex;gap:18px;align-items:center;justify-content:flex-end;color:#bddbcb}
+.product-showcase__surface-symbols svg{width:52px;height:52px}
+.product-showcase__surface-symbols svg:first-child:not(:last-child){width:96px}
+.product-showcase__section-head .product-overline{font-size:11px}
+.product-showcase__screen-foot h3{font-size:clamp(30px,3.3vw,48px);font-weight:500}
+.product-showcase__three h3{font-size:22px;letter-spacing:-.04em}
+.product-showcase__feature-copy h2{font-weight:500}
+.product-flow text{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}
+@media(max-width:650px){.product-hero__shade{background:linear-gradient(90deg,rgba(2,9,13,.94),rgba(2,9,13,.53)),linear-gradient(0deg,rgba(2,9,13,.8),transparent 65%)}.product-hero__frame .product-hero__video{object-position:65% center}.product-showcase__surface-symbols svg{width:38px;height:38px}}
+@media(prefers-reduced-motion:reduce){.product-hero__video{display:none}.product-hero__frame{background:#0d1e25 url('/visualizations/live-visual.png') center/cover no-repeat}}

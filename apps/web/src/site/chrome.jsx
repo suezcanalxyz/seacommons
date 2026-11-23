@@ -19,10 +19,10 @@ function useClocks() {
 }
 
 const NAV = [
-  ['Explore LIVE', 'https://live.seacommons.org'],
-  ['Explore PLAY', 'https://play.seacommons.org'],
+  ['LIVE', 'https://live.seacommons.org'],
+  ['PLAY', 'https://play.seacommons.org'],
   ['How it works', '#how-it-works'],
-  ['Research examples', '#examples'],
+  ['Applications', '#examples'],
   ['Docs', '/docs'],
 ];
 
