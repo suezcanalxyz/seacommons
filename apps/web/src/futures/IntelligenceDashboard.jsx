@@ -366,7 +366,7 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  const evidenceWindowLabel=isOverall?'Retained record inventory':period==='7d'?'Rolling 168 hours':'Rolling 24 hours';
  const evidenceTimestamp=raw?.generated_at||(isOverall?retained?.generated_at:status?.generated_at);
 
- return <><div className="future-intelligence-tagline"><span className="future-eyebrow">SeaCommons / Intelligence</span><span>Collection · inference · review</span></div>
+ return <><section className="future-page-head"><h1>Intelligence</h1><p>Evidence collection, processing and review metrics. Choose a time window and inspect the counting method for each measure.</p></section>
  <div className="future-period-tabs" aria-label="Intelligence time window"><div role="group" aria-label="Intelligence time window">{[['24h','24 hours'],['7d','7 days'],['overall','Overall']].map(([id,label])=><button type="button" aria-pressed={period===id} className={period===id?'is-active':''} onClick={()=>setPeriod(id)} key={id}>{label}</button>)}</div><small>{isOverall?'All records currently retained, irrespective of the age of the source event':period==='7d'?'Rolling seven days':'Rolling 24 hours'}</small></div>
 
  <div className="future-intelligence-freshness future-evidence-provenance" aria-label="Evidence data provenance">
@@ -382,12 +382,12 @@ export default function IntelligenceDashboard({ops,overall,period,setPeriod,navi
  {retainedFallback&&<p className="future-evidence-partial" role="status">Partial Overall evidence: {number(validRetained?.total)} retained normalized Intel-event records are independently available. The remaining measures are temporarily unavailable from the public aggregate service and are shown as unavailable rather than invented. <button type="button" disabled={operator.loading} onClick={operator.refresh}>Retry full inventory</button></p>}
  <IntelligenceMetricGrid period={period} pipeline={pipeline} sensorsData={specialSensors} loadedAt={evidenceTimestamp} loading={operator.loading&&!retainedFallback} source={dataSource} estimatedFields={isOverall?raw?.estimated_fields|| (sensorsData?.ais_fixes_estimated?['ais_fixes']:[]):[]}/>
  <section className="future-section future-intelligence-reading" aria-label="Intelligence evidence guide">
-   <header><div><span className="future-eyebrow">Reading the data</span><h2>Four rules for interpreting the numbers.</h2></div></header>
+   <header><div><span className="future-eyebrow">Reading the data</span><h2>Interpreting the measurements</h2></div></header>
    <div className="future-intelligence-reading-grid">
-    <article><small>01 / INTAKE</small><h3>Signals are inputs.</h3><p>Raw records measure collection. Normalized events make formats comparable, but neither count is a number of incidents.</p></article>
-    <article><small>02 / ANALYSIS</small><h3>Cues are leads.</h3><p>Derived indicators and grouped episodes support investigation. They are not verified vessel behaviour or wrongdoing.</p></article>
-    <article><small>03 / REVIEW</small><h3>Evidence has a threshold.</h3><p>Independent corroboration and review readiness have their own rules. Being ready for review does not mean confirmed.</p></article>
-    <article><small>04 / TIME</small><h3>Counts use different clocks.</h3><p>Received, updated and observed dates measure different activity. Never add these numbers together; missing data is not zero.</p></article>
+    <article><small>01 / INTAKE</small><h3>Collection</h3><p>Raw records measure collection. Normalized events make formats comparable, but neither count is a number of incidents.</p></article>
+    <article><small>02 / ANALYSIS</small><h3>Analysis</h3><p>Derived indicators and grouped episodes support investigation. They are not verified vessel behaviour or wrongdoing.</p></article>
+    <article><small>03 / REVIEW</small><h3>Review criteria</h3><p>Independent corroboration and review readiness have their own rules. Being ready for review does not mean confirmed.</p></article>
+    <article><small>04 / TIME</small><h3>Time windows</h3><p>Received, updated and observed dates measure different activity. Never add these numbers together; missing data is not zero.</p></article>
    </div>
   </section>
  <nav className="future-intelligence-subnav" aria-label="Intelligence sections">{TABS.map(([key,title])=><button key={key} type="button" aria-pressed={key===tab} className={key===tab?'is-active':''} onClick={()=>setTab(key)}>{title}</button>)}</nav>

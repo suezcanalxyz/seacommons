@@ -1,0 +1,79 @@
+
+/* Consistent FUTURES workspace, applied after existing feature styles.
+ * Data visualisations and map geometry retain their own layouts. */
+.future-app{--f-bg:#080d12;--f-panel:#101b23;--f-panel-2:#14232d;--f-line:#2b3944;--f-text:#e8edf0;--f-muted:#b6c4ce;--f-accent:#9be8dc;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:var(--f-text);background:var(--f-bg)}
+.future-content{max-width:1320px!important;margin-inline:auto;padding-bottom:90px}
+.future-content[data-view]:not([data-view="overview"]) .future-page-head{max-width:none;border-bottom:1px solid var(--f-line);padding:30px 0 34px;background:transparent!important}
+.future-content .future-page-head h1,.future-content .future-guide article h1{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif!important;font-size:clamp(30px,3vw,46px)!important;font-weight:500!important;line-height:1.1!important;letter-spacing:-.04em!important;margin:16px 0}
+.future-content .future-page-head p,.future-content .future-guide article>p{font-size:15px;line-height:1.8;max-width:900px;color:var(--f-muted)}
+.future-content .future-section{margin-top:40px}
+.future-content .future-section>header{background:transparent;padding:0 0 14px;border-bottom:1px solid var(--f-line);margin-bottom:20px}
+.future-content .future-section>header h2{font-size:clamp(23px,2.5vw,33px);line-height:1.2;font-weight:500;letter-spacing:-.035em}
+.future-content .future-section>header p{font-size:14px;line-height:1.7;max-width:850px}
+.future-content :is(.future-subnav,.future-risk-filters,.future-period-tabs,.future-intelligence-subnav,.knowledge-library__filters) button{border-radius:999px!important;padding:9px 16px;letter-spacing:0;text-transform:none;font-family:inherit;font-size:13px;white-space:nowrap}
+.future-content :is(.future-subnav,.future-risk-filters,.future-period-tabs,.future-intelligence-subnav,.knowledge-library__filters) button:is(.is-active,.is-selected,[aria-pressed="true"]){background:#caff41!important;border-color:#caff41!important;color:#101610!important}
+.future-content .future-pill{border-radius:999px;padding:5px 11px;white-space:nowrap;font:600 11px/1.3 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:0;text-transform:none}
+.future-content .future-pill--green,.future-content .future-pill--good,.future-content .future-pill--active{background:#caff41;color:#101610;border-color:transparent}
+.future-content .future-pill--warn{background:#ffc56d;color:#22180d;border-color:transparent}
+.future-content .future-pill--neutral{background:#263642;color:#dbe5eb}
+.future-content :is(.future-domain-grid,.future-support-grid,.future-agent-grid,.future-product-guide,.future-hardware-grid,.future-tool-grid,.future-intelligence-reading-grid,.future-contribute__grid){display:flex!important;flex-direction:column;gap:0!important;border-top:1px solid var(--f-line)}
+.future-content :is(.future-domain-grid,.future-support-grid,.future-agent-grid,.future-product-guide,.future-hardware-grid,.future-tool-grid,.future-intelligence-reading-grid,.future-contribute__grid)>:is(article,a){background:transparent!important;border:0!important;border-bottom:1px solid var(--f-line)!important;border-radius:0!important;min-height:0!important;padding:24px 0!important;box-shadow:none!important}
+.future-content :is(.future-domain-grid,.future-support-grid,.future-agent-grid,.future-product-guide,.future-hardware-grid,.future-tool-grid,.future-intelligence-reading-grid,.future-contribute__grid) h3{font:500 20px/1.3 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:-.025em;margin:12px 0}
+.future-content :is(.future-domain-grid,.future-support-grid,.future-agent-grid,.future-product-guide,.future-hardware-grid,.future-tool-grid,.future-intelligence-reading-grid,.future-contribute__grid) p{font-size:14px;line-height:1.75;max-width:900px}
+.future-content .future-agent-card{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.future-content .future-agent-card small{font-size:12px;line-height:1.5}
+.future-content .future-product-guide-top{justify-content:flex-start;flex-wrap:wrap;gap:18px}
+.future-content .future-product-guide-top .future-eyebrow{background:#263642;color:#dce9ef;padding:5px 11px;border-radius:999px;letter-spacing:0;font:500 11px/1.4 Helvetica,Arial,sans-serif}
+.future-content .future-device-grid{display:flex;flex-direction:column;gap:0}
+.future-content .future-device-card{display:grid;grid-template-columns:120px minmax(0,1fr);min-height:0;border:0;border-bottom:1px solid var(--f-line);background:transparent;align-items:center;text-align:left}
+.future-content .future-device-card:is(.is-active,[aria-pressed="true"]){background:#14232d}
+.future-content .future-device-card img,.future-content .future-device-card .future-drifter-blueprint{width:120px;height:100px;min-height:0;object-fit:contain;overflow:hidden}
+.future-content .future-device-card>span{padding:16px 20px;display:block}
+.future-content .future-device-card p{font-size:13px;line-height:1.6}
+.future-content .future-device-card strong{display:block;margin:6px 0}
+.future-content .future-device-detail{background:transparent;border:1px solid var(--f-line);padding:24px;margin-top:20px}
+.future-content .future-intelligence-unified-grid,.future-content .future-intelligence-metrics{display:flex!important;flex-direction:column;gap:0!important;border-top:1px solid var(--f-line)}
+.future-content .future-intelligence-metric,.future-content .future-intelligence-headline .future-intelligence-metric{display:grid;grid-template-columns:minmax(170px,.8fr) minmax(115px,.5fr) minmax(0,1.5fr);align-items:start;gap:16px!important;min-height:0!important;padding:18px 0!important;background:transparent!important;border:0!important;border-bottom:1px solid var(--f-line)!important;overflow:visible!important}
+.future-content .future-intelligence-metric-top{align-items:flex-start;flex-wrap:wrap;gap:10px}
+.future-content .future-intelligence-metric-top span{font-size:12px!important;letter-spacing:0!important;text-transform:none}
+.future-content .future-intelligence-metric-top button{font-size:11px}
+.future-content .future-intelligence-metric>strong,.future-content .future-intelligence-headline .future-intelligence-metric>strong{font-size:clamp(21px,2vw,30px)!important;line-height:1.2!important;letter-spacing:-.035em}
+.future-content .future-intelligence-metric>p,.future-content .future-intelligence-headline .future-intelligence-metric>p{font-size:13px!important;line-height:1.65!important;display:block!important;overflow:visible!important;-webkit-line-clamp:unset!important}
+.future-content .future-intelligence-legend{grid-column:1/-1}
+.future-content .future-intelligence-metric .future-glossary-definition{left:0;right:auto}
+.future-content .future-intelligence-reading-grid article small{background:#263642;color:#e8edf0;border-radius:999px;padding:5px 10px;letter-spacing:0}
+.future-content .future-contribute__starter,.future-content .future-contribute__starter-visual,.future-content .future-contribute__guide,.future-content .future-contribute__basket{background:#101b23;color:#e8edf0}
+.future-content .future-contribute__starter p{color:var(--f-muted)}
+.future-content .future-contribute__item-top small{background:#caff41;color:#101610}
+.future-content .future-contribute__starter button,.future-content .future-contribute__filters button.is-active,.future-content .future-contribute__item>button.is-selected{background:#caff41;color:#101610;border-color:#caff41}
+.future-content .future-contribute__guide ol{display:block}
+.future-content .future-contribute__guide li{margin-bottom:22px}
+.future-content .future-contribute__item>button{align-self:flex-start}
+.future-content .knowledge-library__head h2{font:500 clamp(25px,3vw,36px)/1.2 "Helvetica Neue",Helvetica,Arial,sans-serif;letter-spacing:-.035em}
+.future-content .knowledge-library__head{padding-bottom:22px;border-bottom:1px solid var(--f-line)}
+.future-content .knowledge-library__eyebrow,.future-content .knowledge-library__foot>span{display:none}
+.future-content .knowledge-library__grid{display:flex;flex-direction:column;gap:0}
+.future-content .knowledge-volume{display:grid;grid-template-columns:minmax(145px,200px) minmax(0,1fr);gap:24px;border:0;border-bottom:1px solid var(--f-line);background:transparent;padding:22px 0;min-height:0}
+.future-content .knowledge-volume__cover{min-height:140px;max-height:180px;background:#101b23}
+.future-content .knowledge-volume__body{padding:0;display:block}
+.future-content .knowledge-volume__body h3{font:500 22px/1.2 "Helvetica Neue",Helvetica,Arial,sans-serif;margin:10px 0}
+.future-content .knowledge-volume__body p{font-size:14px;line-height:1.7}
+.future-content .knowledge-volume__topics span{border-radius:999px;letter-spacing:0}
+.future-content .knowledge-volume__reading{margin:12px 0}
+.future-content .knowledge-volume__actions{margin-top:15px}
+.future-content .future-document-table,.future-content .future-update-list{background:transparent}
+.future-content .future-update-list article{padding-block:24px}
+.future-content .future-update-list article h3{font-size:20px;line-height:1.3}
+.future-content details:not(.partner-detail) summary{color:#9be8dc;cursor:pointer;font-size:13px;line-height:1.6}
+.future-content .future-hardware-expand{margin-top:20px}
+.future-content .future-educational-trigger{text-decoration:underline dotted;text-underline-offset:3px;color:#9be8dc}
+.future-content :is(button,a,summary,input,select):focus-visible{outline:2px solid #caff41;outline-offset:3px}
+@media(max-width:700px){
+ .future-content .future-intelligence-metric,.future-content .future-intelligence-headline .future-intelligence-metric{grid-template-columns:minmax(0,1fr) auto;gap:10px!important}
+ .future-content .future-intelligence-metric>p{grid-column:1/-1}
+ .future-content .knowledge-volume{grid-template-columns:1fr;gap:12px}
+ .future-content .knowledge-volume__cover{max-width:180px}
+ .future-content .future-device-card{grid-template-columns:90px minmax(0,1fr)}
+ .future-content .future-device-card img,.future-content .future-device-card .future-drifter-blueprint{width:90px;height:85px}
+ .future-content .future-section{margin-top:30px}
+}

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { AuthGate } from '../auth.jsx';
 import './futures.css';
 import FuturesApp from './FuturesApp.jsx';
+import './workspace-design.css';
 
 const root = document.getElementById('futures-root');
 

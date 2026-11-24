@@ -90,13 +90,17 @@ function AgentTaskDashboard() {
  },[]);
  useEffect(()=>{reload();},[reload]);
  const tasks=state.data?.tasks||[];
+ const [taskFilter,setTaskFilter]=useState('all');
+ const filteredTasks=tasks.filter(t=>taskFilter==='all'||(taskFilter==='enabled'?t.enabled===true:t.enabled===false));
  const syncedAt=state.data?.synced_at ? Date.parse(state.data.synced_at) : NaN;
  const stale=Number.isFinite(syncedAt)&&Date.now()-syncedAt>24*60*60*1000;
- return <><section className="future-page-head"><span className="future-eyebrow">Agents / scheduled workflows</span><h1>Scheduled work.</h1><p>Verified SeaCommons tasks from ChatGPT. This workspace shows a protected read-only snapshot, not a live scheduler connection.</p></section>
+ return <><section className="future-page-head"><span className="future-eyebrow">Agents / scheduled workflows</span><h1>Scheduled workflows</h1><p>Verified SeaCommons tasks from ChatGPT. This workspace shows a protected read-only snapshot, not a live scheduler connection.</p></section>
  <section className="future-section" aria-busy={state.loading}><div className="future-intelligence-freshness"><span>{state.loading?'Loading tasks…':state.error||('ChatGPT Tasks · '+tasks.length+' registered')}</span><small>{state.data?.synced_at?'Snapshot: '+new Date(state.data.synced_at).toLocaleString():'No verified snapshot'}</small><button type="button" disabled={state.loading} onClick={reload}>Refresh</button></div>
- {state.loading?<p role="status">Loading scheduled tasks…</p>:tasks.length?<div className="future-agent-grid">{tasks.map((task,i)=><article className="future-agent-card" key={task.title||i}><strong>{task.enabled?'ENABLED IN SNAPSHOT':'PAUSED IN SNAPSHOT'}</strong><h3>{task.title}</h3><p>{task.cadence||'Cadence unavailable'} · {task.timezone||'Time zone unavailable'}</p><small>Last execution: {task.last_run?new Date(task.last_run).toLocaleString():'Not reported'}</small><small>Snapshot status: {task.status||'Imported'}</small></article>)}</div>:<p>{state.error||'No synchronized SeaCommons tasks are available. This is not evidence that all ChatGPT tasks have stopped.'}</p>}
+ <div className="future-risk-filters" role="group" aria-label="Filter scheduled workflows">{[['all','All'],['enabled','Enabled in snapshot'],['paused','Paused in snapshot']].map(([id,label])=><button type="button" key={id} aria-pressed={taskFilter===id} className={taskFilter===id?'is-active':''} onClick={()=>setTaskFilter(id)}>{label}</button>)}</div>
+ {state.loading?<p role="status">Loading scheduled tasks…</p>:tasks.length?<div className="future-agent-grid">{filteredTasks.map((task,i)=><article className="future-agent-card" key={task.title||i}><StatusPill state={task.enabled?'active':'planned'}>{task.enabled?'Enabled in snapshot':'Paused in snapshot'}</StatusPill><h3>{task.title}</h3><p>{task.cadence||'Cadence unavailable'} · {task.timezone||'Time zone unavailable'}</p><small>Last execution: {task.last_run?new Date(task.last_run).toLocaleString():'Not reported'}</small><small>Snapshot status: {task.status||'Imported'}</small></article>)}</div>:<p>{state.error||'No synchronized SeaCommons tasks are available. This is not evidence that all ChatGPT tasks have stopped.'}</p>}
  {stale&&<p role="status" className="future-factual-note">Snapshot older than 24 hours. ENABLED describes the last imported state, not a live check of this task.</p>}
  <p className="future-inline-note">Tasks are managed in ChatGPT. Changes to cadence, activation or notifications do not sync automatically to this read-only snapshot.</p>
+ {tasks.length>0&&filteredTasks.length===0&&<p role="status">No workflows match this filter.</p>}
  </section></>;
 }
 function useOperationalData(hours = 24) {
@@ -246,7 +250,7 @@ function HistoricalAnalytics({ overall }) {
   return <>
     <section className="future-page-head">
       <span className="future-eyebrow">Intelligence / collection timeline</span>
-      <h1>SeaCommons collection, month by month.</h1>
+      <h1>Collection timeline</h1>
       <p>Monthly volumes from records actually ingested by SeaCommons, not the historical dates described inside them. The view is scoped to the project period beginning in 2026, without repeating the Overall dashboard.</p>
     </section>
     <section className="future-section" aria-label="Monthly SeaCommons collection timeline">
@@ -278,7 +282,7 @@ function Operations({ ops }) {
   return <>
     <section className="future-page-head">
       <span className="future-eyebrow">data operations / evidence quality</span>
-      <h1>How reliably is SeaCommons working?</h1>
+      <h1>Service reliability</h1>
       <p>Operations shows what information the software has received, which processing steps completed and where sources may be delayed. It also documents known technical problems, earlier fixes and what still needs verification. A technical warning is not the same as a confirmed maritime incident.</p>
     </section>
     <div className="future-library-actions">
@@ -286,12 +290,12 @@ function Operations({ ops }) {
       <span className="future-data-provenance">24-hour measurements · generated {formatDateTime(status?.generated_at)} · {ops.error || 'canonical data feed'}</span>
     </div>
     <section className="future-section">
-      <SectionHeader eyebrow="evidence pipeline / 24h" title="What the infrastructure has processed."
+      <SectionHeader eyebrow="evidence pipeline / 24h" title="Evidence processing"
         copy="Observation, normalisation and corroboration stages are distinct. A technical signal is not a verified incident." />
       <PipelinePanel status={status} />
     </section>
     <section className="future-section">
-      <SectionHeader eyebrow="data sources / 24h" title="Sensor and source coverage." />
+      <SectionHeader eyebrow="data sources / 24h" title="Sensor and source coverage" />
       <div className="future-history-types">
         {families.map(([label,value]) => <article key={label}><span>{label}</span><strong>{formatCount(value)}</strong></article>)}
       </div>
@@ -327,25 +331,25 @@ function Hardware() {
   const grandTotal = hardwareBuilds.reduce((sum,item) => sum + totalCost(item) * (quantity[item.id] ?? 1), 0);
   return <>
     <section className="future-page-head"><span className="future-eyebrow">hardware / procurement estimates / Oct 2026</span>
-      <h1>How physical sensors could extend SeaCommons.</h1>
+      <h1>Hardware specifications</h1>
       <p>Sensors is a proposed network of coastal antennas, radio receivers, environmental stations and drifting buoys. These instruments could add direct observations to the existing software. Below you can explore equipment, estimated prices, quantities, recurring costs and practical limits. The proposals are not claims of installed stations.</p>
     </section>
-    <section className="future-section"><SectionHeader eyebrow="procurement calculator" title="Network investment scenarios."
+    <section className="future-section"><SectionHeader eyebrow="procurement calculator" title="Equipment budget calculator"
       copy="Editable unit counts. Planning estimates in EUR, not quotations. Hardware subtotal excludes VAT, shipping, field installation, certification and vessel hire." />
       <div className="future-hardware-total"><span>One of each configuration</span><strong>{euro(hardwareBuilds.reduce((sum,item)=>sum+totalCost(item),0))}</strong><span>Selected quantities</span><strong>{euro(grandTotal)}</strong></div>
       <div className="future-hardware-quantities">{hardwareBuilds.map(item=><label key={item.id}><span>{item.name}</span><input type="number" min="0" max="100" value={quantity[item.id] ?? 1} onChange={e=>setQuantity({...quantity,[item.id]:Math.min(100,Math.max(0,Number(e.target.value)||0))})}/><b>{euro(totalCost(item)*(quantity[item.id]??1))}</b></label>)}</div>
     </section>
-    <section className="future-section"><SectionHeader eyebrow="open hardware roadmap" title="Sensors: component-level costs and technical constraints."
+    <section className="future-section"><SectionHeader eyebrow="open hardware roadmap" title="Equipment and component costs"
       copy="Real products are linked where a supplier reference was found; other rows are explicitly labeled planning allowances. Verify supplier availability, shipping and local taxes before purchasing." />
       <div className="future-risk-filters" role="group" aria-label="Hardware development phase">{['all','1','2','3'].map(p=><button key={p} type="button" className={phase===p?'is-active':''} onClick={()=>setPhase(p)}>{p==='all'?'All phases':`Phase ${p}`}</button>)}</div>
       <div className="future-hardware-grid">{rows.map(item=><article key={item.id} className="future-hardware-card future-hardware-cost-card">
-        <small>{item.phase}</small><h3>{item.name}</h3><p>{item.purpose}</p>
-        <div className="future-hardware-bom">{item.items.map(([name,count,unit,url,note],i)=><div key={i}><span>{url?<a href={url} target="_blank" rel="noreferrer">{name} ↗</a>:name}<small>{note}</small></span><span>{count} × {euro(unit)}</span><b>{euro(count*unit)}</b></div>)}</div>
+        <small>{item.phase}</small><h3>{item.name}</h3><p><GlossaryText>{item.purpose}</GlossaryText></p>
+        <details className="future-hardware-expand"><summary>Components and unit costs</summary><div className="future-hardware-bom">{item.items.map(([name,count,unit,url,note],i)=><div key={i}><span>{url?<a href={url} target="_blank" rel="noreferrer">{name} ↗</a>:name}<small>{note}</small></span><span>{count} × {euro(unit)}</span><b>{euro(count*unit)}</b></div>)}</div>
         <div className="future-hardware-subtotal"><span>Equipment subtotal</span><strong>{euro(totalCost(item))}</strong></div>
-        <p><b>Recurring operating costs</b>{item.recurring}</p><p className="future-hardware-caution"><b>Design and procurement note</b>{item.notes}</p>
+        <p><b>Recurring operating costs</b>{item.recurring}</p><p className="future-hardware-caution"><b>Design and procurement note</b>{item.notes}</p></details>
       </article>)}</div>
     </section>
-    <section className="future-section"><SectionHeader eyebrow="technical sequencing" title="Start with dependable receiving stations."
+    <section className="future-section"><SectionHeader eyebrow="technical sequencing" title="Field validation sequence"
       copy="First validate one coastal AIS receiver, one radio decoder and resilient storage. Prototype a recoverable Drifter after station-health telemetry and legal/safety requirements are defined. Expand environmental and acoustic sensing only after calibration and maintenance procedures are proven." />
       <p className="future-inline-note"><GlossaryText>Price anchors: Raspberry Pi official 2026 pricing and RAKwireless GPS tracker listings. EUR component allowances are engineering budgets, not live retailer offers. V4 RTL-SDR has been discontinued, so receiver estimates use the V3 line.</GlossaryText></p>
     </section>
@@ -723,7 +727,7 @@ function Project() {
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">SeaCommons project</span>
-        <h1>What SeaCommons is building, and why.</h1>
+        <h1>Project details</h1>
         <p>
           This Futures domain is the private operational workspace for SeaCommons.
           Other Suez products and client work remain outside this workspace even when they share identity infrastructure.
@@ -742,14 +746,14 @@ const deliveryLenses = [
 ];
 function DevelopmentHome({navigate}) {
  return <>
-  <section className="future-page-head"><span className="future-eyebrow">Development / engineering assessment</span><h1>What is dependable, what is unresolved, and how we will know.</h1><p>Development is the technical maturity and decision record. Roadmap is the proposed sequence of future delivery; Updates records changes that have already happened. None of the three should be mistaken for live sensor evidence.</p></section>
-  <section className="future-section"><SectionHeader eyebrow="Evaluation framework" title="Four questions before the system scales." copy="Each topic makes a current capability, a real limitation and an independently checkable result visible to reviewers."/>
-    <div className="future-domain-grid">{deliveryLenses.map(x=><article key={x.area}><small>ENGINEERING / EVALUATION</small><h3>{x.area}</h3><p><b>Current basis:</b> <GlossaryText>{x.now}</GlossaryText></p><p><b>Open constraint:</b> <GlossaryText>{x.gap}</GlossaryText></p><p><b>Required evidence:</b> <GlossaryText>{x.proof}</GlossaryText></p><p className="future-factual-note">{x.question}</p></article>)}</div>
+  <section className="future-page-head"><span className="future-eyebrow">Development / engineering assessment</span><h1>Engineering and delivery</h1><p>Development is the technical maturity and decision record. Roadmap is the proposed sequence of future delivery; Updates records changes that have already happened. None of the three should be mistaken for live sensor evidence.</p></section>
+  <section className="future-section"><SectionHeader eyebrow="Evaluation framework" title="Engineering evaluation" copy="Each topic makes a current capability, a real limitation and an independently checkable result visible to reviewers."/>
+    <div className="future-domain-grid">{deliveryLenses.map(x=><article key={x.area}><small>ENGINEERING / EVALUATION</small><h3>{x.area}</h3><p><b>Current basis:</b> <GlossaryText>{x.now}</GlossaryText></p><details><summary>Constraints and evaluation</summary><p><b>Open constraint:</b> <GlossaryText>{x.gap}</GlossaryText></p><p><b>Required evidence:</b> <GlossaryText>{x.proof}</GlossaryText></p><p className="future-factual-note">{x.question}</p></details></article>)}</div>
   </section>
-  <section className="future-section"><SectionHeader eyebrow="Release governance" title="A pilot is ready only when its evidence is reproducible." copy="Software release, field prototype and research conclusion are separate acceptance decisions."/>
+  <section className="future-section"><SectionHeader eyebrow="Release governance" title="Release acceptance criteria" copy="Software release, field prototype and research conclusion are separate acceptance decisions."/>
    <div className="future-architecture-flow"><span><b>1 / Traceable source</b><p>Consent, license, device identity, acquisition clock and raw provenance.</p></span><span><b>2 / Measured behavior</b><p>Repeatable tests, observability, failure budgets and documented counter-cases.</p></span><span><b>3 / Human review</b><p>Independent interpretation and explicit limitations before public conclusions.</p></span><span><b>4 / Maintenance owner</b><p>One named custodian, security updates, costs and a recovery path.</p></span></div>
   </section>
-  <section className="future-section"><SectionHeader eyebrow="Explore the evidence" title="Three complementary records."/>
+  <section className="future-section"><SectionHeader eyebrow="Explore the evidence" title="Development records"/>
    <div className="future-support-grid"><article><h3>Roadmap</h3><p>Dependencies, expected duration and evidence required to close each planned work package.</p><button type="button" onClick={()=>navigate('roadmap')}>Examine the planned work →</button></article><article><h3>Updates</h3><p>Versioned changes with a verification source and the problem they resolve.</p><button type="button" onClick={()=>navigate('updates')}>Read verified changes →</button></article><article><h3>Operations</h3><p>Observed service activity, historically recorded defects and remaining verification tasks.</p><button type="button" onClick={()=>navigate('operations')}>Inspect operations →</button></article></div>
   </section>
  </>;
@@ -765,9 +769,9 @@ const developmentSteps = [
 ];
 function Roadmap() {
  return <>
-  <section className="future-page-head future-development-intro"><span className="future-eyebrow">Development / delivery pathway</span><h1>Development, step by step.</h1><p>A dependency-led plan with indicative implementation times. Durations represent focused engineering work after prerequisites are ready; phases may overlap, and they are not fixed delivery dates.</p></section>
+  <section className="future-page-head future-development-intro"><span className="future-eyebrow">Development / delivery pathway</span><h1>Development roadmap</h1><p>A dependency-led plan with indicative implementation times. Durations represent focused engineering work after prerequisites are ready; phases may overlap, and they are not fixed delivery dates.</p></section>
   <section className="future-section future-roadmap-timeline" aria-label="SeaCommons development stages"><header><div><span className="future-eyebrow">Implementation pathway</span><h2>Six connected work packages</h2><p>Each phase names its outcome, prerequisites and an objective way to verify completion. The durations are estimates, not commitments.</p></div></header>
-   <div className="future-roadmap-steps">{developmentSteps.map((step,index)=><article key={step.name} className="future-roadmap-step"><div className="future-roadmap-step-index"><span>{String(index+1).padStart(2,'0')}</span><i aria-hidden="true"/></div><div className="future-roadmap-step-body"><div className="future-roadmap-step-head"><div><h3>{step.name}</h3><p>{step.deliverable}</p></div><div className="future-roadmap-step-meta"><strong>{step.duration}</strong><StatusPill state={step.state}>{step.state}</StatusPill></div></div><p>{step.description}</p><details><summary>Dependencies and completion criteria</summary><dl><dt>Prerequisites</dt><dd>{step.dependency}</dd><dt>Completion check</dt><dd>{step.acceptance}</dd></dl></details></div></article>)}</div>
+   <div className="future-roadmap-steps">{developmentSteps.map((step,index)=><article key={step.name} className="future-roadmap-step"><div className="future-roadmap-step-index"><span>{String(index+1).padStart(2,'0')}</span><i aria-hidden="true"/></div><div className="future-roadmap-step-body"><div className="future-roadmap-step-head"><div><h3>{step.name}</h3><p>{step.deliverable}</p></div><div className="future-roadmap-step-meta"><strong>{step.duration}</strong><StatusPill state={step.state}>{step.state}</StatusPill></div></div><p><GlossaryText>{step.description}</GlossaryText></p><details><summary>Dependencies and completion criteria</summary><dl><dt>Prerequisites</dt><dd><GlossaryText>{step.dependency}</GlossaryText></dd><dt>Completion check</dt><dd><GlossaryText>{step.acceptance}</GlossaryText></dd></dl></details></div></article>)}</div>
    <p className="future-inline-note">Time estimates exclude partner approvals, procurement lead times and field permits. Each next phase begins when its prerequisites have been validated.</p>
   </section>
   <section className="future-section"><SectionHeader eyebrow="Partner contributions" title="What accelerates delivery" copy="Support is grouped by operational need, with clear responsibilities rather than repeated product categories."/><div className="future-support-grid">{supportAreas.map(item=><article key={item.area}><StatusPill state={item.status}>{item.status}</StatusPill><h3>{item.area}</h3><p>{item.need}</p></article>)}</div></section>
@@ -788,14 +792,14 @@ function Documents() {
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">SeaCommons / docs library</span>
-        <h1>SeaCommons knowledge library.</h1>
-        <p>Read the five updated illustrated dossiers above, then use the technical register below for engineering references and background material. Restricted sources require separate permission.</p>
+        <h1>Knowledge library</h1>
+        <p>Read the five illustrated dossiers below and use the technical register for engineering references and background material. Restricted sources require separate permission.</p>
       </section>
 
       <KnowledgeLibrary />
 
       <section className="future-section">
-        <SectionHeader eyebrow="document register" title="Browse current project material."
+        <SectionHeader eyebrow="document register" title="Document register"
           copy="Published materials open from their cited source. Restricted documents are not served by this catalogue and require an explicit resource grant." />
         <div className="future-library-filters">
           <label><span>search documents</span><input type="search" placeholder="Title, format or topic" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
@@ -859,9 +863,9 @@ function Guidebook() {
       <article>
         <span className="future-eyebrow">living project knowledge</span>
         <h1>{active.title}</h1>
-        <p className="future-guide__summary">{active.summary}</p>
+        <p className="future-guide__summary"><GlossaryText>{active.summary}</GlossaryText></p>
         <hr />
-        {active.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+        {active.body.map((paragraph) => <p key={paragraph}><GlossaryText>{paragraph}</GlossaryText></p>)}
         <div className="future-guide__footer">
           <span>native Futures document</span>
           <span>Technical documentation is available in the Documents section.</span>
@@ -884,16 +888,16 @@ function Tools() {
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">tools</span>
-        <h1>Software modules and public research tools.</h1>
+        <h1>Software modules and research tools</h1>
         <p>
           SeaCommons is one implementation of a modular software architecture. The modules below describe which methods can be adapted to other research and civic sectors, and which are still subject to new validation. Other projects are not automatically part of this authenticated workspace.
         </p>
       </section>
 
-      <section className="future-section"><SectionHeader eyebrow="Transferable toolkit" title="Six modules; multiple potential sectors." copy="Each row distinguishes actual SeaCommons capabilities from the extra implementation, legal and domain work needed to reuse a pattern elsewhere."/>
+      <section className="future-section"><SectionHeader eyebrow="Transferable toolkit" title="Reusable modules" copy="Each row distinguishes actual SeaCommons capabilities from the extra implementation, legal and domain work needed to reuse a pattern elsewhere."/>
       <div className="future-domain-grid">{transferableModules.map(m=><article key={m.name}><small>{m.state}</small><h3>{m.name}</h3><p><b>What it does:</b> <GlossaryText>{m.function}</GlossaryText></p><p><b>Where it could transfer:</b> <GlossaryText>{m.reuse}</GlossaryText></p><p className="future-factual-note"><b>Before reuse:</b> <GlossaryText>{m.gate}</GlossaryText></p><a href={"https://github.com/suezcanalxyz/seacommons/tree/main/"+m.codeReference} target="_blank" rel="noopener noreferrer">Inspect source module ↗</a></article>)}</div>
       <p className="future-factual-note">Transferability is an engineering opportunity, not a claim of completed deployments in every listed sector. New fields require distinct funding, methods, permissions and domain verification.</p></section>
-      <section className="future-section"><SectionHeader eyebrow="Available product surfaces" title="Operational entry points and their access boundaries." copy="These are actual SeaCommons interfaces; they are different from the transferable modules above."/></section>
+      <section className="future-section"><SectionHeader eyebrow="Available product surfaces" title="Product access and permissions" copy="These are actual SeaCommons interfaces; they are different from the transferable modules above."/></section>
       <section className="future-tool-grid">
         {tools.map((tool) => {
           const inner = (
@@ -916,7 +920,7 @@ function Updates() {
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">updates</span>
-        <h1>A readable development history.</h1>
+        <h1>Development updates</h1>
         <p>Evidence-led engineering decisions, not promotional announcements. Each update explains what changed, why it matters, what remains unverified and where the technical record can be checked.</p>
       </section>
       <section className="future-update-list">
@@ -927,8 +931,8 @@ function Updates() {
               <div><span>{item.project}</span><small>{item.kind}</small></div>
               <h3>{item.title}</h3>
               <p><GlossaryText>{item.detail}</GlossaryText></p>
-              {item.impact&&<p><b>What changes for a partner:</b> {item.impact}</p>}
-              {item.limit&&<p className="future-factual-note"><b>Still to verify:</b> {item.limit}</p>}
+              {item.impact&&<p><b>What changes for a partner:</b> <GlossaryText>{item.impact}</GlossaryText></p>}
+              {item.limit&&<p className="future-factual-note"><b>Still to verify:</b> <GlossaryText>{item.limit}</GlossaryText></p>}
               {item.proof&&<a href={item.proof} target="_blank" rel="noopener noreferrer">Review the source change ↗</a>}
             </div>
           </article>
@@ -1054,7 +1058,7 @@ export default function FuturesApp() {
           <div className="future-topbar__links"><span>Secure partner workspace</span>{!installed&&<button type="button" className="future-install-shortcut" aria-label="How to install Futures" onClick={()=>setShowInstallGuide(true)}>Install</button>}<button type="button" className="future-topbar-logo" onClick={() => navigate('overview')} aria-label="SeaCommons Futures home"><i aria-hidden="true" /><span>SEA<br />COMMONS</span></button></div>
         </header>
 
-        <div className="future-content">
+        <div className="future-content" data-view={view}>
           {Object.entries(SUBNAV).some(([,items])=>items.some(([id])=>id===view)) && <nav className="future-subnav" aria-label="Section navigation">{(Object.entries(SUBNAV).find(([,items])=>items.some(([id])=>id===view))?.[1] || []).map(([id,label])=><button type="button" key={id} className={id===view?'is-active':''} onClick={()=>navigate(id)}>{label}</button>)}</nav>}
           {view === 'intelligence' && <IntelligenceDashboard ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'platform' && <PlatformNetwork />}
