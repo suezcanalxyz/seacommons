@@ -906,5 +906,7 @@
   "Versioned changes with a verification source and the problem they resolve.": "Modifiche versionate con fonte di verifica e problema affrontato.",
   "Read verified changes →": "Leggi le modifiche verificate →",
   "Observed service activity, historically recorded defects and remaining verification tasks.": "Attività dei servizi osservata, problemi storici e verifiche ancora aperte.",
-  "Inspect operations →": "Esamina le operazioni →"
+  "Inspect operations →": "Esamina le operazioni →",
+  "Research domains": "Domini di ricerca",
+  "Detailed sources and quality records use authorized rolling windows. Historical aggregates remain in Comparison and Research domains.": "Le fonti e le verifiche di dettaglio usano finestre mobili con accesso autorizzato. Gli aggregati storici restano in Confronto e Domini di ricerca."
 }

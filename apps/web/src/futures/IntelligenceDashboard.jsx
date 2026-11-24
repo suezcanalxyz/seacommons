@@ -3,6 +3,7 @@ import React, {useState} from 'react';
 import GlossaryText from './GlossaryText.jsx';
 import KeyFigures from './KeyFigures.jsx';
 import {useT,useLocale} from './locale.jsx';
+import EvidenceDomains from './EvidenceDomains.jsx';
 import { retainedEvidence, retainedMetricFallback } from './retainedEvidence.js';
 
 const stages=[
@@ -148,7 +149,7 @@ function useOperatorSections(period,tab) {
     return()=>{active=false;};
    }
    const hours=period==='7d'?168:24;
-   const paths=tab==='pipeline'?[]:tab==='sources'?['funnel']:tab==='quality'?['funnel','stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue','humanitarian-ais-correlation']:tab==='activity'?['observations','events','signals','analysis','pipeline-map']:null;
+   const paths=tab==='pipeline'?[]:tab==='sources'?[]:tab==='quality'?['funnel','stabilization','cases']:tab==='sensors'?['sar-fleet','satellite-queue','humanitarian-ais-correlation']:tab==='activity'?['observations','events','signals','analysis','pipeline-map']:null;
    if(!paths||!paths.length){setSnapshot({data:{},error:'',key:period+':'+tab});return()=>{active=false;};}
    setSnapshot({data:null,error:'',key:period+':'+tab});
    Promise.allSettled(paths.map(p=>fetchJson(resolveSiteApiBase(),`/api/v1/operator/ingestion/${p}?hours=${hours}&limit=60`,undefined,18000)))
@@ -356,7 +357,7 @@ function ComparisonDashboard({overall,navigate}){
  return <section className="intel-compare" aria-label={t('Evidence comparison')}>
  <header className="intel-compare-head"><div><span className="future-eyebrow">{t('Evidence inventory and activity')}</span><h1>Intelligence</h1><p>{t('Compare the same measures across the three time windows. Overall describes retained records, not lifetime ingestion.')}</p></div><button type="button" onClick={()=>columns.forEach(col=>col.refresh())} disabled={columns.some(col=>col.loading)}>{t('Refresh all')}</button></header>
  <table className="intel-matrix"><thead><tr><th scope="col">{t('Measure')}</th><th scope="col">{t('24 hours')}<small>{t('Rolling window')}</small></th><th scope="col">{t('7 days')}<small>{t('Rolling window')}</small></th><th scope="col">{t('Overall')}<small>{t('Retained inventory')}</small></th></tr></thead><tbody>{headlineMetrics.map(([key,label,definition],i)=><tr key={key} className={i===7?'intel-matrix-divider':''}><th scope="row"><button type="button" aria-haspopup="dialog" onClick={()=>setMetric(key)} title={t(definition)}>{t(label)} <span aria-hidden="true">ⓘ</span></button></th>{columns.map(col=><td key={col.period} className={display(col,key)==='—'?'is-missing':''} data-metric={key}><L>{display(col,key)}</L></td>)}</tr>)}</tbody><tfoot><tr><th scope="row">{t('Source and update')}</th>{columns.map(col=><td key={col.period}><small>{t(sourceLabel(col))}</small><small><L>{col.at&&Number.isFinite(Date.parse(col.at))?dateFmt.format(new Date(col.at)):'—'}</L></small></td>)}</tr></tfoot></table>
- <footer className="intel-compare-foot"><p>{t('Counts are not additive. Received, updated, observed and retained records have different meanings. — unavailable; … loading; ≈ estimate.')}</p><button type="button" onClick={()=>navigate('intel-measures')}>{t('Measurement definitions')} ↗</button></footer>
+ <footer className="intel-compare-foot"><p>{t('Counts are not additive. Received, updated, observed and retained records have different meanings. — unavailable; … loading; ≈ estimate.')}</p><button type="button" onClick={()=>navigate('intel-measures')}>{t('Measurement definitions')} ↗</button><button type="button" onClick={()=>navigate('intel-sensors')}>{t('Research domains')} ↗</button></footer>
  {row&&<MetricDefinition row={row} close={()=>setMetric(null)}/>}
  </section>
 }
@@ -367,12 +368,19 @@ function MetricDefinition({row,close}){
  const teaching=metricInterpretation[row[0]];
  return <dialog ref={ref} className="intel-definition-dialog" onCancel={e=>{e.preventDefault();close()}}><header><h2>{t(row[1])}</h2><button type="button" onClick={close} aria-label={t('Close')}>×</button></header><p>{t(row[2])}</p><h3>{t('Counting method')}</h3><p>{t(teaching.how)}</p><h3>{t('Concrete example')}</h3><p>{t(teaching.example)}</p><h3>{t('Limits')}</h3><p>{t(teaching.limits)}</p></dialog>;
 }
+function DomainDashboard(){
+ const a=useOperatorMetrics('24h'),b=useOperatorMetrics('7d'),c=useOperatorMetrics('overall');
+ return <EvidenceDomains snapshots={[a,b,c]}/>;
+}
 export default function IntelligenceDashboard(props){
  if(!props.section||props.section==='compare')return <ComparisonDashboard {...props}/>;
+ if(props.section==='sensors')return <DomainDashboard/>;
  return <IntelligenceDetail key={props.section} {...props}/>;
 }
-function IntelligenceDetail({ops,overall,period,setPeriod,navigate,section}){
+function IntelligenceDetail({ops,overall,period:requestedPeriod,setPeriod,navigate,section}){
  const tab=section==='measures'?'pipeline':section;
+ const rollingOnly=['sources','quality','activity'].includes(tab);
+ const period=rollingOnly&&requestedPeriod==='overall'?'7d':requestedPeriod;
  const [detail,setDetail]=useState(0);
  const t=useT();
  const operator=useOperatorMetrics(period);
@@ -411,8 +419,9 @@ function IntelligenceDetail({ops,overall,period,setPeriod,navigate,section}){
  const evidenceTimestamp=raw?.generated_at||(isOverall?retained?.generated_at:status?.generated_at);
 
  return <><section className="future-page-head"><h1>{t({pipeline:"Measurement definitions",sources:"Sources & types",quality:"Evidence quality",sensors:"Sensors & SAR",activity:"Acquisition & logs"}[tab])}</h1><p><L>Evidence collection, processing and review metrics. Choose a time window and inspect the counting method for each measure.</L></p></section>
- <div className="future-period-tabs" aria-label="Intelligence time window"><div role="group" aria-label="Intelligence time window">{[['24h','24 hours'],['7d','7 days'],['overall','Overall']].map(([id,label])=><button type="button" aria-pressed={period===id} className={period===id?'is-active':''} onClick={()=>setPeriod(id)} key={id}><L>{label}</L></button>)}</div><small><L>{isOverall?'All records currently retained, irrespective of the age of the source event':period==='7d'?'Rolling seven days':'Rolling 24 hours'}</L></small></div>
+ <div className="future-period-tabs" aria-label="Intelligence time window"><div role="group" aria-label="Intelligence time window">{[['24h','24 hours'],['7d','7 days'],['overall','Overall']].filter(([id])=>!rollingOnly||id!=='overall').map(([id,label])=><button type="button" aria-pressed={period===id} className={period===id?'is-active':''} onClick={()=>setPeriod(id)} key={id}><L>{label}</L></button>)}</div><small><L>{isOverall?'All records currently retained, irrespective of the age of the source event':period==='7d'?'Rolling seven days':'Rolling 24 hours'}</L></small></div>
 
+ {rollingOnly&&<p className="future-data-provenance">{t('Detailed sources and quality records use authorized rolling windows. Historical aggregates remain in Comparison and Research domains.')}</p>}
  <div className="future-intelligence-freshness future-evidence-provenance" aria-label="Evidence data provenance">
   <div className="future-evidence-provenance-main">
    <strong><L>{operator.loading&&!retainedFallback?'Loading evidence…':retainedFallback?'Partial historical evidence':dataSource?'Evidence available':'Evidence unavailable'}</L></strong>

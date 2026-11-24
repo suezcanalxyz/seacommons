@@ -163,3 +163,7 @@
 .intel-provenance-details{border-top:1px solid #30404a;padding-top:15px}
 @media(min-width:1000px) and (max-height:850px){.intel-matrix th,.intel-matrix td{padding-block:5px}.intel-compare-head{padding-block:6px}.intel-compare-head h1{font-size:27px}.intel-matrix tbody td{font-size:18px}.intel-matrix thead th{padding-block:7px}}
 @media(max-width:660px){.intel-compare-head{align-items:start}.intel-matrix th:first-child{width:39%}.intel-matrix th,.intel-matrix td{padding:6px 3px}.intel-matrix thead th{font-size:12px;padding:8px 3px}.intel-matrix thead small,.intel-matrix tfoot small{font-size:9px}.intel-matrix tbody th{font-size:11px}.intel-matrix tbody td{font-size:13px;letter-spacing:-.02em}.intel-compare-foot{flex-direction:column;align-items:start}.intel-compare-head button{white-space:normal}}
+.intel-domain-note{font-size:13px;line-height:1.7;color:#b6c4ce;max-width:850px;margin:18px 0}
+.intel-matrix th details summary{cursor:pointer;color:#e8edf0;text-decoration:underline dotted;text-underline-offset:3px}
+.intel-matrix th details p{font-size:12px;line-height:1.6;color:#b6c4ce;font-weight:400}
+.intel-compare-foot{flex-wrap:wrap}
