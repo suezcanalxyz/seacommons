@@ -1,0 +1,41 @@
+[
+  {
+    "date": "2026-11-24",
+    "commit": "3100fb01",
+    "status": "verified",
+    "it": {
+      "title": "Architettura e dossier",
+      "body": "Platform organizzata in tre percorsi; cinque PDF con contrasto e segnalibri aggiornati. Build e disponibilità dei file verificate."
+    },
+    "en": {
+      "title": "Architecture and dossiers",
+      "body": "Platform organised into three reading paths; five PDFs updated for contrast and bookmarks. Build and file availability verified."
+    }
+  },
+  {
+    "date": "2026-11-24",
+    "commit": "f00e6f40",
+    "status": "verified",
+    "it": {
+      "title": "Accesso per sviluppatori",
+      "body": "Quickstart, inventario dei pacchetti e apertura diretta dei PDF pubblicati. La distribuzione standalone rimane da qualificare."
+    },
+    "en": {
+      "title": "Developer access",
+      "body": "Quickstart, package inventory and native PDF links published. Standalone distribution remains unqualified."
+    }
+  },
+  {
+    "date": "2026-11-24",
+    "commit": "76492bc1",
+    "status": "verified",
+    "it": {
+      "title": "Indicatori di sviluppo",
+      "body": "Gerarchia numerica e priorità di risorse integrate nel workspace. I conteggi provengono dalle API disponibili."
+    },
+    "en": {
+      "title": "Development indicators",
+      "body": "Numerical hierarchy and resource priorities integrated into the workspace. Counts use available API data."
+    }
+  }
+]

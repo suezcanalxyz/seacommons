@@ -2,7 +2,7 @@ import KnowledgeLibrary from './KnowledgeLibrary.jsx';
 import DeveloperGuide from '../docs/DeveloperGuide.jsx';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './contributions-store.css';
-import FuturesOverview from './Overview.jsx';
+import StrategyWorkspace from './StrategyWorkspace.jsx';
 import GlossaryText from './GlossaryText.jsx';
 import KeyFigures from './KeyFigures.jsx';
 import { retainedEvidence } from './retainedEvidence.js';
@@ -34,6 +34,8 @@ const PRIMARY_NAV = ['overview', 'intelligence', 'platform', 'knowledge', 'devel
 const SUBNAV = { intelligence: [['intelligence','Dashboard'],['history','Timeline'],['operations','Operations'],['ais-check','AIS cross-check']], platform: [['platform','Products & devices'],['hardware','Hardware specifications'],['tools','Software tools']], knowledge: [['knowledge','Knowledge home'],['documents','Documents'],['guidebook','Guidebook']], development: [['development','Development home'],['roadmap','Roadmap'],['updates','Updates']], overview: [['overview','Introduction'],['project','Project details']] };
 const NAV_LABELS = { overview: 'Overview', intelligence:'Intelligence', 'ais-check':'AIS cross-check', platform:'Platform', knowledge:'Knowledge', development:'Development', agents:'Agents', documents: 'Docs', hardware: 'Devices', contributions: 'Contributions' };
 
+const IT_NAV={overview:'Panoramica',intelligence:'Intelligence',platform:'Piattaforma',knowledge:'Documentazione',development:'Sviluppo',agents:'Agenti',contributions:'Contributi',history:'Cronologia',operations:'Operazioni','ais-check':'Verifica AIS',hardware:'Dispositivi',project:'Progetto',roadmap:'Piano di sviluppo',documents:'Documenti',guidebook:'Guida',tools:'Strumenti',updates:'Aggiornamenti',access:'Account'};
+function LanguageSwitch({lang,setLang}){return <div className="future-language-switch" role="group" aria-label="Language / Lingua">{['it','en'].map(l=><button type="button" key={l} aria-pressed={lang===l} onClick={()=>setLang(l)}>{l.toUpperCase()}</button>)}</div>}
 function readWorkspaceView() {
   const value = new URLSearchParams(window.location.search).get('view');
   return value === 'dashboard' ? 'overview' : NAV.includes(value) ? value : 'overview';
@@ -1003,6 +1005,9 @@ function Access({ user }) {
 export default function FuturesApp() {
   const { user, signOut } = useAuth();
   const [period, setPeriod] = useState('overall');
+  const [lang,setLang]=useState(()=>{try{return localStorage.getItem('futures-language')==='en'?'en':'it'}catch{return 'it'}});
+  useEffect(()=>{try{localStorage.setItem('futures-language',lang)}catch{/* storage unavailable */} document.documentElement.lang=lang;},[lang]);
+  const navLabel=item=>lang==='it'?(IT_NAV[item]||item):(NAV_LABELS[item]||item);
   const [view, setView] = useState(() => readWorkspaceView());
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installed, setInstalled] = useState(false);
@@ -1044,12 +1049,12 @@ export default function FuturesApp() {
         <button type="button" className="future-brand" onClick={() => navigate('overview')} aria-label="Futures dashboard">
           <i /><span>SEA<br />COMMONS</span>
         </button>
-        <div className="future-product"><span>futures</span><small>partner workspace</small></div>
-        <button type="button" className="future-mobile-account" onClick={() => navigate('access')} aria-label="Open account" aria-current={view === 'access' ? 'page' : undefined}><span aria-hidden="true">◎</span> Account</button>
+        <div className="future-product"><span>futures</span><small>{lang==='it'?'area partner':'partner workspace'}</small></div>
+        <div className="future-mobile-language"><LanguageSwitch lang={lang} setLang={setLang}/></div><button type="button" className="future-mobile-account" onClick={() => navigate('access')} aria-label="Open account" aria-current={view === 'access' ? 'page' : undefined}><span aria-hidden="true">◎</span> Account</button>
         <nav aria-label="Futures">
           {PRIMARY_NAV.map((item) => (
             <button key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
-              <span>{NAV_LABELS[item] || item}</span><i>↗</i>
+              <span>{navLabel(item)}</span><i>↗</i>
             </button>
           ))}
         </nav>
@@ -1062,18 +1067,19 @@ export default function FuturesApp() {
 
       <main className="future-main">
         <header className="future-topbar">
-          <div><span>SeaCommons / Futures</span><b>{NAV_LABELS[view] || view}</b></div>
-          <div className="future-topbar__links"><span>Secure partner workspace</span>{!installed&&<button type="button" className="future-install-shortcut" aria-label="How to install Futures" onClick={()=>setShowInstallGuide(true)}>Install</button>}<button type="button" className="future-topbar-logo" onClick={() => navigate('overview')} aria-label="SeaCommons Futures home"><i aria-hidden="true" /><span>SEA<br />COMMONS</span></button></div>
+          <div><span>SeaCommons / Futures</span><b>{navLabel(view)}</b></div>
+          <div className="future-topbar__links"><span>{lang==='it'?'Area partner':'Secure partner workspace'}</span><LanguageSwitch lang={lang} setLang={setLang}/>{!installed&&<button type="button" className="future-install-shortcut" aria-label="How to install Futures" onClick={()=>setShowInstallGuide(true)}>Install</button>}<button type="button" className="future-topbar-logo" onClick={() => navigate('overview')} aria-label="SeaCommons Futures home"><i aria-hidden="true" /><span>SEA<br />COMMONS</span></button></div>
         </header>
 
         <div className="future-content" data-view={view}>
-          {Object.entries(SUBNAV).some(([,items])=>items.some(([id])=>id===view)) && <nav className="future-subnav" aria-label="Section navigation">{(Object.entries(SUBNAV).find(([,items])=>items.some(([id])=>id===view))?.[1] || []).map(([id,label])=><button type="button" key={id} className={id===view?'is-active':''} onClick={()=>navigate(id)}>{label}</button>)}</nav>}
+          {lang==='it'&&view!=='overview'&&<div className="future-language-note">Dettaglio tecnico disponibile in inglese. <button type="button" onClick={()=>navigate('overview')}>Torna alla sintesi italiana ↗</button></div>}
+          {Object.entries(SUBNAV).some(([,items])=>items.some(([id])=>id===view)) && <nav className="future-subnav" aria-label="Section navigation">{(Object.entries(SUBNAV).find(([,items])=>items.some(([id])=>id===view))?.[1] || []).map(([id,label])=><button type="button" key={id} className={id===view?'is-active':''} onClick={()=>navigate(id)}>{lang==='it'?(IT_NAV[id]||label):label}</button>)}</nav>}
           {view === 'intelligence' && <IntelligenceDashboard ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'platform' && <PlatformNetwork />}
           {view === 'knowledge' && <Documents />}
           {view === 'development' && <DevelopmentHome navigate={navigate} />}
           {view === 'agents' && <AgentTaskDashboard />}
-          {view === 'overview' && <FuturesOverview navigate={navigate} ops={ops} overall={overall}/>}
+          {view === 'overview' && <StrategyWorkspace lang={lang} navigate={navigate} ops={ops} overall={overall}/>}
           {view === 'history' && <HistoricalAnalytics ops={ops} overall={overall} />}
           {view === 'operations' && <Operations ops={ops} />}
           {view === 'ais-check' && <AisCrossCheck />}
@@ -1104,7 +1110,7 @@ export default function FuturesApp() {
         {['overview','intelligence','platform','agents','contributions'].map((item) => (
           <button type="button" key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
             <span className="future-mobile-nav-icon" aria-hidden="true">{{overview:'◈',intelligence:'⌁',platform:'◉',agents:'◇',contributions:'▤',access:'◎'}[item]}</span>
-            <span>{({overview:'Overview',intelligence:'Data',platform:'Platform',agents:'Agents',contributions:'Network',access:'Account'})[item]}</span>
+            <span>{lang==='it'?({overview:'Sintesi',intelligence:'Dati',platform:'Piattaforma',agents:'Agenti',contributions:'Contributi'})[item]:({overview:'Overview',intelligence:'Data',platform:'Platform',agents:'Agents',contributions:'Network',access:'Account'})[item]}</span>
           </button>
         ))}
       </nav>
