@@ -1,41 +1,242 @@
 [
   {
     "date": "2026-11-24",
+    "commit": "f525bf86",
+    "category": "strategy",
+    "status": "deployment_ready",
+    "deployment": "dpl_3RtoZBVT2ckw6sqVEFUrknEHXBzB",
+    "origin": "manual_backfill",
+    "it": {
+      "title": "Workspace strategico bilingue",
+      "body": "Sintesi, piano a 12 mesi, scenari di investimento, indicatori e partnership integrati in FUTURES. Il dettaglio tecnico e i PDF sono ancora in inglese."
+    },
+    "en": {
+      "title": "Bilingual strategy workspace",
+      "body": "Brief, 12-month plan, investment scenarios, indicators and partnerships integrated into FUTURES. Technical pages and PDFs remain in English."
+    }
+  },
+  {
+    "date": "2026-11-24",
     "commit": "3100fb01",
-    "status": "verified",
+    "category": "docs",
+    "status": "deployment_ready",
+    "deployment": "dpl_4Y2TQ2VnGNYN1eVdVsfCwLFpase2",
+    "origin": "manual_backfill",
     "it": {
       "title": "Architettura e dossier",
-      "body": "Platform organizzata in tre percorsi; cinque PDF con contrasto e segnalibri aggiornati. Build e disponibilità dei file verificate."
+      "body": "Platform organizzata in tre percorsi; cinque PDF aggiornati per contrasto e segnalibri. Integrità testuale e disponibilità dei file già controllate."
     },
     "en": {
       "title": "Architecture and dossiers",
-      "body": "Platform organised into three reading paths; five PDFs updated for contrast and bookmarks. Build and file availability verified."
+      "body": "Platform split into three reading paths; five PDFs updated for contrast and bookmarks. Text preservation and file availability previously checked."
     }
   },
   {
     "date": "2026-11-24",
     "commit": "f00e6f40",
-    "status": "verified",
+    "category": "docs",
+    "status": "deployment_ready",
+    "deployment": "dpl_2cp9zxc4sqZ6kG9r9BcZjPgs8MzN",
+    "origin": "manual_backfill",
     "it": {
       "title": "Accesso per sviluppatori",
-      "body": "Quickstart, inventario dei pacchetti e apertura diretta dei PDF pubblicati. La distribuzione standalone rimane da qualificare."
+      "body": "Quickstart, inventario dei pacchetti e apertura diretta dei PDF. La distribuzione standalone rimane da qualificare."
     },
     "en": {
       "title": "Developer access",
-      "body": "Quickstart, package inventory and native PDF links published. Standalone distribution remains unqualified."
+      "body": "Quickstart, package inventory and direct PDF links. Standalone distribution remains unqualified."
     }
   },
   {
     "date": "2026-11-24",
     "commit": "76492bc1",
-    "status": "verified",
+    "category": "data",
+    "status": "deployment_ready",
+    "deployment": "dpl_7ZG9NzrJVUH4dRZ2FqGpDV4E2mTd",
+    "origin": "manual_backfill",
     "it": {
       "title": "Indicatori di sviluppo",
-      "body": "Gerarchia numerica e priorità di risorse integrate nel workspace. I conteggi provengono dalle API disponibili."
+      "body": "Gerarchia numerica e priorità delle risorse integrate. I conteggi provengono dalle API disponibili; non rappresentano automaticamente incidenti verificati."
     },
     "en": {
       "title": "Development indicators",
-      "body": "Numerical hierarchy and resource priorities integrated into the workspace. Counts use available API data."
+      "body": "Numerical hierarchy and resource priorities integrated. Counts use available APIs; they do not automatically represent verified incidents."
+    }
+  },
+  {
+    "date": "2026-11-24",
+    "commit": "3d77ef5d",
+    "category": "ui",
+    "status": "deployment_ready",
+    "deployment": "dpl_FjmB5QiwepZbCCN2UdL5A3w1Mr1m",
+    "origin": "manual_backfill",
+    "it": {
+      "title": "Coerenza del workspace",
+      "body": "Liste, approfondimenti e tipografia condivisa tra Intelligence, Platform, Knowledge, sviluppo e contributi. Collaudo visivo completo da eseguire."
+    },
+    "en": {
+      "title": "Workspace consistency",
+      "body": "Shared lists, disclosures and typography across Intelligence, Platform, Knowledge, development and contributions. Full visual QA remains open."
+    }
+  },
+  {
+    "date": "2026-11-24",
+    "commit": "f221be1d",
+    "category": "data",
+    "status": "deployment_ready",
+    "deployment": "dpl_5qWr84puq9voTFXwsNVyucjacYYs",
+    "origin": "manual_backfill",
+    "it": {
+      "title": "Metriche e data room partner",
+      "body": "Integrati inventario dei record, maturità descrittiva, risorse, governance e feed delle release. Gli stati descrittivi non sostituiscono i test operativi."
+    },
+    "en": {
+      "title": "Metrics and partner data room",
+      "body": "Record inventory, descriptive maturity, resources, governance and release feed integrated. Descriptive statuses do not replace operational tests."
+    }
+  },
+  {
+    "date": "2026-11-24",
+    "commit": "aaf77d61",
+    "category": "ui",
+    "status": "deployment_ready",
+    "deployment": "dpl_8CVwTnPGZwJMrGnicDHkCBryBDwG",
+    "origin": "manual_backfill",
+    "it": {
+      "title": "Glossario contestuale",
+      "body": "Introduzione semplificata e termini tecnici consultabili nel testo."
+    },
+    "en": {
+      "title": "Contextual glossary",
+      "body": "Simplified introduction and contextual technical definitions."
+    }
+  },
+  {
+    "date": "2026-11-23",
+    "commit": "7409d3b6",
+    "category": "ui",
+    "status": "commit_verified",
+    "deployment": null,
+    "origin": "manual_backfill",
+    "it": {
+      "title": "Diagramma delle evidenze",
+      "body": "Modifiche all'homepage e diagramma interattivo dei tipi di fonte. Commit presente; deployment individuale non riscontrato nell'elenco consultato."
+    },
+    "en": {
+      "title": "Evidence diagram",
+      "body": "Homepage changes and interactive source-type diagram. Commit present; individual deployment not found in the inspected list."
+    }
+  },
+  {
+    "date": "2026-11-23",
+    "commit": "92a6a4b1",
+    "category": "ui",
+    "status": "deployment_ready",
+    "deployment": "dpl_C4rEHMZQ2WsMUkiz5irTkt8B67mb",
+    "origin": "manual_backfill",
+    "it": {
+      "title": "Applicazioni di ricerca",
+      "body": "Diagrammi, applicazioni trasversali e presentazione dei prodotti sul sito istituzionale."
+    },
+    "en": {
+      "title": "Research applications",
+      "body": "Diagrams, cross-sector applications and product presentation on the institutional site."
+    }
+  },
+  {
+    "date": "2026-11-23",
+    "commit": "b1dc2dbf",
+    "category": "strategy",
+    "status": "deployment_ready",
+    "deployment": "dpl_CA7endwSnmw2KQkpxFXmjyyrZWEP",
+    "origin": "manual_backfill",
+    "it": {
+      "title": "Catalogo delle risorse",
+      "body": "Catalogo dei contributi economici e in-kind con richiesta di contatto; nessun acquisto o provisioning automatico."
+    },
+    "en": {
+      "title": "Resource catalogue",
+      "body": "Financial and in-kind contribution catalogue with enquiry workflow; no automated purchases or provisioning."
+    }
+  },
+  {
+    "date": "2026-11-23",
+    "commit": "1ed6c4b5",
+    "category": "docs",
+    "status": "deployment_ready",
+    "deployment": "dpl_Fip8poubuSDRw6qVqZBxCpiWVM2C",
+    "origin": "manual_backfill",
+    "it": {
+      "title": "Biblioteca tecnica",
+      "body": "Cinque dossier su progetto, hardware, applicazioni, mercati e Drifter sostituiscono i tre documenti precedenti."
+    },
+    "en": {
+      "title": "Technical library",
+      "body": "Five dossiers on the project, hardware, applications, markets and Drifter replace three earlier documents."
+    }
+  },
+  {
+    "date": "2026-11-20",
+    "commit": "8a155cc5",
+    "category": "data",
+    "status": "deployment_ready",
+    "deployment": "dpl_GgxJTc8typ2bwTakypnVzwKp9qZK",
+    "origin": "manual_backfill",
+    "it": {
+      "title": "Revisione documentale delle immagini storiche",
+      "body": "Aggiunti codice e documentazione per organizzare la revisione delle fonti satellitari storiche. Il commit non certifica la correttezza delle interpretazioni."
+    },
+    "en": {
+      "title": "Historical imagery documentation review",
+      "body": "Code and documentation added to organise historical satellite-source review. The commit does not certify interpretation accuracy."
+    }
+  },
+  {
+    "date": "2026-11-20",
+    "commit": "f13a5ad2",
+    "category": "data",
+    "status": "deployment_ready",
+    "deployment": "dpl_8XdqvUNJbtJGTyudEEXEBMmKLv71",
+    "origin": "manual_backfill",
+    "it": {
+      "title": "Provenienza delle immagini in PLAY",
+      "body": "Aggiornata la rappresentazione documentale delle fonti, della copertura e dei tempi di acquisizione. Il deployment frontend non attesta la disponibilità dei dataset."
+    },
+    "en": {
+      "title": "Imagery provenance in PLAY",
+      "body": "Updated presentation of sources, coverage and acquisition times. Frontend deployment does not establish dataset availability."
+    }
+  },
+  {
+    "date": "2026-11-20",
+    "commit": "47ee70be",
+    "category": "ui",
+    "status": "commit_verified",
+    "deployment": null,
+    "origin": "manual_backfill",
+    "it": {
+      "title": "Coerenza cartografica e report",
+      "body": "Modifiche a etichette, componenti di mappa e pannelli dei report LIVE/PLAY. Commit presente; deployment individuale non verificato."
+    },
+    "en": {
+      "title": "Cartographic and report consistency",
+      "body": "Changes to labels, map components and LIVE/PLAY report panels. Commit present; individual deployment unverified."
+    }
+  },
+  {
+    "date": "2026-11-20",
+    "commit": "2fb28938",
+    "category": "engineering",
+    "status": "commit_verified",
+    "deployment": null,
+    "origin": "manual_backfill",
+    "it": {
+      "title": "Contratti delle evidenze e manutenzione tecnica",
+      "body": "Aggiunti schema evidence-envelope, documentazione di audit e test di contratto; aggiornate componenti applicative. Risultati CI e deployment backend non verificati in questa revisione."
+    },
+    "en": {
+      "title": "Evidence contracts and technical maintenance",
+      "body": "Added evidence-envelope schema, audit documentation and contract tests; updated application components. CI results and backend deployment not verified in this review."
     }
   }
 ]

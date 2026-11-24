@@ -1,0 +1,30 @@
+
+.agentic-journal{max-width:1320px;margin:0 auto;color:#e8edf0;font-family:Helvetica,Arial,sans-serif;padding:24px 0 36px}
+.agentic-kicker,.agentic-category{font-size:11px;color:#9be8dc;letter-spacing:.035em}
+.agentic-journal h2{font-size:clamp(28px,3vw,42px);font-weight:500;letter-spacing:-.04em;margin:14px 0 16px}
+.agentic-journal p{max-width:850px;color:#b6c4ce;font-size:14px;line-height:1.75}
+.agentic-figures{display:flex;flex-wrap:wrap;margin:26px 0;border-block:1px solid #30404a}
+.agentic-figures>div{flex:1 1 200px;display:flex;flex-direction:column;padding:23px 12px 23px 0;gap:12px}
+.agentic-figures strong{font-size:clamp(32px,5vw,62px);font-weight:500;letter-spacing:-.05em;line-height:1;font-variant-numeric:tabular-nums}
+.agentic-figures>div:first-child strong{color:#caff41}
+.agentic-figures span{font-size:13px;color:#b6c4ce}
+.agentic-runs{padding:22px 0 28px;border-bottom:1px solid #30404a}
+.agentic-runs h3{font-size:22px;font-weight:500;margin:0 0 12px}
+.agentic-runs details{border-block:1px solid #30404a;padding:18px 0}
+.agentic-runs summary{display:flex;align-items:center;gap:16px;cursor:pointer;flex-wrap:wrap}
+.agentic-runs summary strong{flex:1;font-weight:500}
+.agentic-runs summary>span:first-child{font-size:12px;color:#b6c4ce}
+.agentic-pill{display:inline-flex;width:max-content;white-space:nowrap;font-size:11px;font-weight:600;background:#caff41;color:#111810;border-radius:999px;padding:6px 12px}
+.agentic-pill.neutral{background:#263944;color:#d8e3e9}
+.agentic-filter{margin:28px 0 18px}
+.agentic-search{display:flex;flex-direction:column;gap:7px;max-width:420px;font-size:12px;color:#b6c4ce}
+.agentic-search input{width:100%;border:1px solid #344652;border-radius:6px;background:#101b23;color:#e8edf0;padding:11px 13px;font:inherit;font-size:14px}
+.agentic-note{font-size:12px!important;color:#9babb7!important;margin:15px 0}
+.agentic-entry{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:24px;align-items:start;padding:27px 0;border-top:1px solid #30404a}
+.agentic-entry time{font-size:13px;color:#9be8dc;line-height:1.7}
+.agentic-entry h3{font-size:23px;font-weight:500;letter-spacing:-.025em;margin:8px 0 12px}
+.agentic-entry details{border-top:1px solid #30404a;padding-top:12px;margin-top:16px}
+.agentic-entry summary{cursor:pointer;color:#9be8dc;font-size:13px}
+.agentic-entry a{display:inline-block;color:#9be8dc;margin:4px 18px 4px 0;font-size:13px}
+.agentic-view-switch{margin:20px 0 0}
+@media(max-width:740px){.agentic-figures>div{flex-basis:100%;border-bottom:1px solid #30404a}.agentic-figures>div:last-child{border:0}.agentic-entry{grid-template-columns:minmax(0,1fr) auto;gap:10px 12px}.agentic-entry time{grid-column:1/-1}.agentic-entry>div{grid-column:1/-1}.agentic-entry>.agentic-pill{grid-column:1/-1}}

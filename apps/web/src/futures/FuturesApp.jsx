@@ -5,6 +5,7 @@ import './contributions-store.css';
 import StrategyWorkspace from './StrategyWorkspace.jsx';
 import GlossaryText from './GlossaryText.jsx';
 import KeyFigures from './KeyFigures.jsx';
+import AgenticJournal from './AgenticJournal.jsx';
 import { retainedEvidence } from './retainedEvidence.js';
 import { useAuth } from '../auth.jsx';
 import { fetchJson } from '../services/api/client.js';
@@ -107,6 +108,11 @@ function AgentTaskDashboard() {
  <p className="future-inline-note">Tasks are managed in ChatGPT. Changes to cadence, activation or notifications do not sync automatically to this read-only snapshot.</p>
  {tasks.length>0&&filteredTasks.length===0&&<p role="status">No workflows match this filter.</p>}
  </section></>;
+}
+function AgentsWorkspace({lang}){
+ const [section,setSection]=useState('journal');
+ const tr=(it,en)=>lang==='it'?it:en;
+ return <><nav className="futures-switcher agentic-view-switch" aria-label={tr('Sezioni agenti','Agent sections')}>{[['journal',tr('Attività e aggiornamenti','Activity and updates')],['scheduler',tr('Workflow programmati (EN)','Scheduled workflows')]].map(([id,label])=><button key={id} type="button" aria-pressed={section===id} onClick={()=>setSection(id)}>{label}</button>)}</nav>{section==='journal'?<AgenticJournal lang={lang} showRuns/>:<AgentTaskDashboard/>}</>;
 }
 function useOperationalData(hours = 24) {
   const sequence = useRef(0);
@@ -1072,13 +1078,13 @@ export default function FuturesApp() {
         </header>
 
         <div className="future-content" data-view={view}>
-          {lang==='it'&&view!=='overview'&&<div className="future-language-note">Dettaglio tecnico disponibile in inglese. <button type="button" onClick={()=>navigate('overview')}>Torna alla sintesi italiana ↗</button></div>}
+          {lang==='it'&&view!=='overview'&&view!=='agents'&&<div className="future-language-note">Dettaglio tecnico disponibile in inglese. <button type="button" onClick={()=>navigate('overview')}>Torna alla sintesi italiana ↗</button></div>}
           {Object.entries(SUBNAV).some(([,items])=>items.some(([id])=>id===view)) && <nav className="future-subnav" aria-label="Section navigation">{(Object.entries(SUBNAV).find(([,items])=>items.some(([id])=>id===view))?.[1] || []).map(([id,label])=><button type="button" key={id} className={id===view?'is-active':''} onClick={()=>navigate(id)}>{lang==='it'?(IT_NAV[id]||label):label}</button>)}</nav>}
           {view === 'intelligence' && <IntelligenceDashboard ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'platform' && <PlatformNetwork />}
           {view === 'knowledge' && <Documents />}
           {view === 'development' && <DevelopmentHome navigate={navigate} />}
-          {view === 'agents' && <AgentTaskDashboard />}
+          {view === 'agents' && <AgentsWorkspace lang={lang}/>}
           {view === 'overview' && <StrategyWorkspace lang={lang} navigate={navigate} ops={ops} overall={overall}/>}
           {view === 'history' && <HistoricalAnalytics ops={ops} overall={overall} />}
           {view === 'operations' && <Operations ops={ops} />}

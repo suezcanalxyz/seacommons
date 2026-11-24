@@ -1,0 +1,29 @@
+import React,{useState} from 'react';
+import journal from './strategyJournal.json';
+import runs from './agenticRuns.json';
+import './agentic-journal.css';
+const categories={all:['Tutti','All'],engineering:['Ingegneria','Engineering'],data:['Evidenze e dati','Evidence & data'],ui:['Interfaccia','Interface'],docs:['Documentazione','Documentation'],strategy:['Strategia','Strategy']};
+const fmtDate=(s,lang)=>new Intl.DateTimeFormat(lang==='it'?'it-IT':'en-GB',{dateStyle:'medium',timeZone:'Europe/Rome'}).format(new Date(s+'T12:00:00Z'));
+const fmtTime=(s,lang)=>s?new Intl.DateTimeFormat(lang==='it'?'it-IT':'en-GB',{dateStyle:'medium',timeStyle:'short',timeZone:'Europe/Rome'}).format(new Date(s)):'—';
+export default function AgenticJournal({lang='it',showRuns=false}){
+ const [category,setCategory]=useState('all');
+ const [query,setQuery]=useState('');
+ const tr=(it,en)=>lang==='it'?it:en;
+ const locale=lang==='it'?0:1;
+ const ordered=[...journal].sort((a,b)=>b.date.localeCompare(a.date));
+ const visible=ordered.filter(j=>(category==='all'||j.category===category)&&[j.commit,j[lang].title,j[lang].body].join(' ').toLowerCase().includes(query.toLowerCase().trim()));
+ const automated=runs.filter(r=>r.origin==='scheduled'&&r.status==='verified');
+ const latest=automated.slice().sort((a,b)=>b.at.localeCompare(a.at))[0];
+ return <section className="agentic-journal" aria-label={tr('Registro attività','Activity register')}>
+ <header><span className="agentic-kicker">{tr('REGISTRO VERSIONATO','VERSIONED REGISTER')}</span><h2>{tr('Attività di sviluppo','Development activity')}</h2><p>{tr('Modifiche documentate, ricostruite dal codice e dai deployment. I risultati delle esecuzioni agentiche sono registrati separatamente: un commit non prova che sia stato prodotto da un agente.','Documented changes reconstructed from source and deployment records. Agent runs are recorded separately: a commit does not establish agent authorship.')}</p></header>
+ <div className="agentic-figures">{[[journal.length,tr('Aggiornamenti documentati','Documented updates')],[journal.filter(j=>j.status==='deployment_ready').length,tr('Build Vercel READY associate','Associated Vercel READY builds')],[automated.length,tr('Esecuzioni automatiche verificate','Verified scheduled runs')]].map(([n,l])=><div key={l}><strong>{n}</strong><span>{l}</span></div>)}</div>
+ {showRuns&&<section className="agentic-runs"><h3>{tr('Esecuzioni e sincronizzazione','Runs and synchronization')}</h3><p>{latest?tr('Ultima esecuzione automatica registrata: ','Last recorded scheduled run: ')+fmtTime(latest.at,lang):tr('Nessuna esecuzione automatica verificata ancora registrata. Il primo popolamento è una revisione manuale dello storico tecnico.','No verified scheduled run recorded yet. Initial population is a manual review of technical history.')}</p>
+ {runs.map(r=><details key={r.id}><summary><span>{fmtTime(r.at,lang)}</span><strong>{r[lang].title}</strong><span className="agentic-pill neutral">{r.origin==='scheduled'?tr('Automatica','Scheduled'):tr('Manuale','Manual')}</span></summary><p>{r[lang].body}</p><p>{tr('Esito registrato: ','Recorded outcome: ')}{r.status==='verified'?tr('Verificato nel perimetro descritto','Verified within described scope'):tr('Da verificare','Unverified')}</p></details>)}
+ <p className="agentic-note">{tr('Un aggiornamento del registro viene pubblicato soltanto dopo una verifica reale delle fonti e una build riuscita. Le statistiche qui contano i record disponibili, non tutte le esecuzioni di ChatGPT.','Register updates are published only after actual source checks and a successful build. Counts here describe available records, not all ChatGPT runs.')}</p></section>}
+ <div className="futures-switcher agentic-filter" role="group" aria-label={tr('Categoria attività','Activity category')}>{Object.entries(categories).map(([id,l])=><button key={id} type="button" aria-pressed={category===id} onClick={()=>setCategory(id)}>{l[locale]}</button>)}</div>
+ <label className="agentic-search"><span>{tr('Cerca per testo o commit','Search text or commit')}</span><input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder={tr('Cerca nel registro…','Search register…')}/></label>
+ <p className="agentic-note">{visible.length} / {journal.length} {tr('aggiornamenti','updates')} · {tr('Stato READY = build frontend completata; non certifica il backend o tutti i test.','READY = completed frontend build; does not certify backend or all tests.')}</p>
+ <div className="agentic-list">{visible.map(j=><article key={j.commit} className="agentic-entry"><time dateTime={j.date}>{fmtDate(j.date,lang)}</time><div><span className="agentic-category">{categories[j.category]?.[locale]||tr('Tecnico','Technical')}</span><h3>{j[lang].title}</h3><p>{j[lang].body}</p><details><summary>{tr('Fonti e stato della verifica','Sources and verification')}</summary><p>{j.origin==='manual_backfill'?tr('Ricostruzione manuale dai commit e dal registro Vercel.','Manual reconstruction from commits and Vercel records.'):tr('Aggiornamento del registro: ','Register update: ')+j.origin}</p><a href={'https://github.com/suezcanalxyz/seacommons/commit/'+j.commit} target="_blank" rel="noreferrer">Git · {j.commit} ↗</a>{j.deployment&&<a href={'https://vercel.com/suezcanalxyz/seacommons/'+j.deployment.replace(/^dpl_/,'')} target="_blank" rel="noreferrer">Vercel ↗</a>}</details></div><span className={'agentic-pill '+(j.status==='deployment_ready'?'':'neutral')}>{j.status==='deployment_ready'?tr('Build READY','Build READY'):tr('Commit verificato','Commit verified')}</span></article>)}</div>
+ {!visible.length&&<p role="status">{tr('Nessun aggiornamento corrispondente.','No matching updates.')}</p>}
+ </section>
+}

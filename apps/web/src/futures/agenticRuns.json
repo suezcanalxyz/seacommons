@@ -1,0 +1,16 @@
+[
+  {
+    "id": "manual-backfill-2026-11-24",
+    "at": "2026-11-24T15:47:55Z",
+    "origin": "manual",
+    "status": "verified",
+    "it": {
+      "title": "Ricostruzione iniziale del registro",
+      "body": "Controllati il log Git e il registro dei deployment Vercel. Selezionati 15 interventi tecnici del 20–24 novembre; 12 associati a build READY. L’automazione FUTURES Agentic Updates risultava attiva e senza esecuzioni registrate al controllo. Questo popolamento non costituisce un’esecuzione programmata."
+    },
+    "en": {
+      "title": "Initial activity register backfill",
+      "body": "Git history and Vercel deployment records reviewed. Selected 15 technical changes from 20–24 November; 12 associated with READY builds. FUTURES Agentic Updates was enabled with no recorded runs at inspection. This backfill is not a scheduled execution."
+    }
+  }
+]
