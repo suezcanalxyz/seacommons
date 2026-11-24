@@ -1,4 +1,9 @@
 export const glossary={
+ IMO:'International Maritime Organization ship identification number; a persistent identifier used to distinguish ships.',
+ MMSI:'Maritime Mobile Service Identity: a nine-digit radio identifier; it can change or be reported incorrectly.',
+ 'normalized records':'Source records transformed into a common schema; one record does not necessarily represent one incident.',
+ 'acceptance criteria':'Documented conditions that must be satisfied before a work package is considered complete.',
+ 'data quality':'Assessment of completeness, provenance, accuracy and consistency of observations.',
  AIS:'Automatic Identification System: vessel identity and position broadcasts. Missing reception does not prove concealment.',
  GNSS:'Satellite navigation and timing systems, including GPS and Galileo.',
  GPS:'Satellite positioning system. Precision depends on device, environment and corrections.',

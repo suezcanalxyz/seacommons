@@ -1,97 +1,85 @@
-import React from 'react';
+import React, {useEffect,useState} from 'react';
 import GlossaryText from './GlossaryText.jsx';
+import {retainedEvidence,nonnegativeCount} from './retainedEvidence.js';
+import {contributionNeeds} from './contributionNeeds.js';
 import KnowledgeLibrary from './KnowledgeLibrary.jsx';
 import './overview-editorial.css';
-export const needs=[
-{title:'Virtual machines & storage',tag:'Compute',description:'Keep ingestion, historical queries and backups reliable.',examples:'Cloud credits, CPU/RAM, PostgreSQL hosting, storage',request:'I can support compute or storage.'},
-{title:'Radio & coastal receivers',tag:'Signals',description:'Expand responsible maritime radio and AIS reception.',examples:'AIS/VHF/DSC receivers, SDR, antenna, permitted coastal sites',request:'I would like to contribute or host a radio receiver.'},
-{title:'Satellite & geospatial',tag:'Imagery',description:'Help cross-check events using documented imagery and spatial methods.',examples:'SAR/optical access, processing credits, GIS expertise',request:'I can contribute satellite or geospatial resources.'},
-{title:'Maritime archives & data',tag:'Evidence',description:'Make vessel histories and documentary evidence traceable.',examples:'Historical AIS, port calls, registries, public records',request:'I can share maritime archives or data.'},
-{title:'Field nodes & hardware',tag:'Hardware',description:'Prototype maintainable, low-power monitoring stations.',examples:'Solar power, enclosures, connectivity, maintenance',request:'I would like to help with a field node.'},
-{title:'Research & partnerships',tag:'Community',description:'Support verification, methodology and critical public research.',examples:'OSINT, maritime law, engineering, translation, institutions',request:'I would like to propose a research partnership.'},
+
+const tabs=['Overview','Applications','Resources','Governance','Development'];
+const maturity=[
+ ['LIVE','Pilot','Public interface for maritime observations; current availability is shown in Operations.','operations'],
+ ['PLAY','Pilot','Historical incident archive; publication depends on evidence review.','history'],
+ ['Evidence archive','Implemented','Retained normalized records measured by the aggregate API.','intelligence'],
+ ['Satellite evidence','Research','Scene availability, acquisition time and interpretation require case-level verification.','platform'],
+ ['Interactive dossiers','Proposed','Historical evidence timeline, source references and explicit observation gaps.','roadmap'],
+ ['Coastal nodes','Proposed','Site permission, calibration and maintenance are prerequisites for field tests.','hardware'],
+ ['Drifter','Research','Recoverable instrument prototype; endurance and accuracy require validation.','hardware'],
+ ['Agent workflows','Partial','Read-only scheduled-task snapshot; automated editorial publication is not enabled.','agents']
 ];
-const Icon=({name,size=25})=>{
-const shapes={
-ship:<><path d="M3 17l2 3h14l2-3-2-2H5z"/><path d="M7 15V7h10v8M10 7V4h4v3"/></>,
-radio:<><circle cx="12" cy="12" r="2"/><path d="M8 8a6 6 0 0 0 0 8m8-8a6 6 0 0 1 0 8M5 5a10 10 0 0 0 0 14m14-14a10 10 0 0 1 0 14"/></>,
-server:<><rect x="4" y="3" width="16" height="8" rx="2"/><rect x="4" y="13" width="16" height="8" rx="2"/><path d="M8 7h.01M8 17h.01M12 7h5M12 17h5"/></>,
-satellite:<><path d="m5 9 4-4 10 10-4 4zM4 4l5 5M15 15l5 5M2 12a10 10 0 0 0 10 10M12 2a10 10 0 0 1 10 10"/></>,
-archive:<><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v11h14V9M10 13h4"/></>,
-sun:<><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></>,
-people:<><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 5a3 3 0 0 1 0 6M17 14a5 5 0 0 1 4 5v1"/></>,
-leaf:<><path d="M20 4C9 4 4 8 4 15a5 5 0 0 0 5 5c7 0 11-5 11-16ZM4 20c3-5 7-8 12-10"/></>,
-chart:<><path d="M4 20V4M4 20h16M7 16l4-5 4 2 5-8"/></>,
-shield:<><path d="m12 2 8 4v6c0 5-3 8-8 10-5-2-8-5-8-10V6zM9 12l2 2 4-4"/></>,
-download:<><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></>
-};
-return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{shapes[name]||shapes.ship}</svg>
-};
-const iconNames=['server','radio','satellite','archive','sun','people'];
-const email=item=>'mailto:republic@suezcanal.xyz?subject='+encodeURIComponent('SeaCommons FUTURES — '+item.title)+'&body='+encodeURIComponent('Hello Suez Republic,\n\n'+item.request+'\n\nName / organisation:\nContribution:\nLocation:\nContact:\n');
-const JOURNAL=[
-{date:'2026-11-23',type:'Engineering log',title:'Maritime evidence and historical investigations',description:'Built internal evidence dossiers from X and maritime RSS sources; added historical AIS context and a first bounded designated-vessel monitoring sample.',status:'Internal pilot',reference:'Commits 0c2d81cd, 5ab64ca1, 7c6327e6'},
-{date:'2026-11-23',type:'Product update',title:'FUTURES contribution pathways',description:'Added targeted requests for compute, radio receivers, satellite resources, archives, field nodes and research partners.',status:'Frontend change',reference:'Commit 1836a194'},
+const applications=[
+ ['Environment','Historical environmental incidents and ocean conditions','Historical imagery and independent environmental measurements','A reproducible case review with source dates and uncertainty.','Research partner with oceanographic expertise'],
+ ['Humanitarian','Documented maritime distress and response','Reviewed public reports and historical evidence','A chronology preserving source provenance and privacy.','Humanitarian research organisation'],
+ ['Maritime','Civil navigation safety and sanctions accountability','Official designations and reviewed historical records','A documented administrative and incident history, with no inferred attribution.','Maritime law or safety specialist'],
+ ['Education','Open research and critical data literacy','Methods, source documentation and case studies','Teaching material with reproducible methods and explicit limitations.','University or cultural institution'],
+ ['Economy','Historical disruption to maritime trade','Public economic records and documented incidents','A comparative assessment of documented impacts.','Economics or logistics researcher'],
+ ['Territory','Coastal research infrastructure','Permitted field sites and calibrated instruments','A site assessment and field validation report.','Local institution or community']
 ];
-const PARTNER_UPDATES=[
-{date:'2026-11-23',title:'Investigation engine: what partners can test',summary:'The pilot now contains internal maritime investigation dossiers and bounded sanctioned-vessel monitoring. These are evidence-review tools, not published findings of unlawful activity.',action:'Interested in contributing shipping registries, AIS history or independent source verification?'},
-{date:'2026-11-23',title:'Coastal receiver collaboration',summary:'SeaCommons is preparing a model for coastal AIS/VHF/DSC receiver nodes. Site permissions, signal coverage, hardware reliability and maintenance remain prerequisites.',action:'Partners with suitable coastal sites or receiver expertise can propose a technical assessment.'},
+const governance=[
+ ['Evidence and publication','Original sources, timestamps and uncertainty remain visible. Distinguish reported claims from independently corroborated observations; release case reports only after review.'],
+ ['Privacy and access','Public research material must exclude sensitive personal data and operationally sensitive locations. Restricted research data requires defined access and retention rules.'],
+ ['Licensing and reproducibility','Source permissions govern reuse. Record dataset licence, acquisition date and processing steps; consult the repository for software licence and documentation.'],
+ ['Accountability','Agree on a named technical owner, research reviewer and partner contact for each collaboration. Formal governance and named responsibilities require confirmation by Suez Republic.'],
+ ['Risk and continuity','Coverage gaps, conflicting identities, source outages and storage failures affect interpretation and availability. Operational metrics and restore tests support evaluation.'],
+ ['Financial transparency','Planning estimates are separate from incurred expenditure. Confirm procurement scope, maintenance, actual costs and funding commitments before approval.']
 ];
-function PartnerUpdates(){return <section className="futures-journal" id="partner-updates" aria-labelledby="partner-updates-title"><small>PARTNER BRIEFINGS / REVIEWED MILESTONES</small><h2 id="partner-updates-title">Updates for partners</h2><p><GlossaryText>Concrete opportunities and project changes, dated and clearly separated from verified maritime findings. This section is editorially maintained, not a live newswire.</GlossaryText></p><div className="futures-journal-list">{PARTNER_UPDATES.map(entry=><article key={entry.title}><div><time dateTime={entry.date}>{entry.date}</time><small>Partner update</small></div><div><h3>{entry.title}</h3><p>{entry.summary}</p><p>{entry.action}</p><a href={'mailto:republic@suezcanal.xyz?subject='+encodeURIComponent('SeaCommons partner response — '+entry.title)}>Respond to this update ↗</a></div></article>)}</div></section>}
-function FuturesJournal(){return <section className="futures-journal" id="futures-journal" aria-labelledby="futures-journal-title"><small>DOCUMENTED WORK / PARTNER BRIEFINGS</small><h2 id="futures-journal-title">Development log & partner updates</h2><p><GlossaryText>Entries below refer to documented engineering work, not automatically verified field outcomes. This is a curated development log, not a complete daily activity feed; days without an entry should not be interpreted as inactive.</GlossaryText></p><div className="futures-journal-list">{JOURNAL.map(entry=><article key={entry.title}><div><time dateTime={entry.date}>{entry.date}</time><small>{entry.type} · {entry.status}</small></div><div><h3>{entry.title}</h3><p>{entry.description}</p><small>{entry.reference}</small></div></article>)}</div><p className="futures-journal-note">For partner-specific progress, deployment evidence or collaboration requests, contact <a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20FUTURES%20partner%20update">republic@suezcanal.xyz</a>. Future entries should be published only after review against logs and source records.</p></section>}
-function ResearchIndex(){
- const [tab,setTab]=React.useState('Methods');
- const items={
- Methods:[['AIS','Vessel observations','Broadcast positions and identity fields are retained with reception timestamps. Coverage and identity conflicts limit interpretation.'],['RADIO','Maritime communications','Received messages retain source and time metadata. Interpretation requires independent corroboration.'],['IMAGERY','Satellite evidence','Acquisition time, resolution and coverage determine whether an image supports a historical observation.'],['REPORTS','Public documentation','Original documents and reported claims are preserved separately from independently verified observations.']],
- Roadmap:[['PROPOSED','Historical dossier player','A reusable map and timeline for reviewed historical evidence, with explicit gaps and source references.'],['PROPOSED','Coastal infrastructure','Site assessment, power, reception and maintenance requirements for experimental receiver nodes.'],['PROPOSED','Drifter','Field instrumentation research and calibration before operational use.']],
- Agents:[['PLANNED','Engineering review','Derive release notes from reviewed commits, tests and deployment records.'],['PLANNED','Planning review','Record dependencies and proposed work separately from completed milestones.'],['PLANNED','Publication review','Validate public claims against source records before release.']]};
- return <section className="futures-index"><h2>Research & development</h2><p><GlossaryText>Methods, planned work and publication controls for the SeaCommons pilot.</GlossaryText></p><div className="futures-switcher" role="group" aria-label="Research section">{Object.keys(items).map(k=><button key={k} type="button" aria-pressed={tab===k} onClick={()=>setTab(k)}>{k}</button>)}</div>{items[tab].map(([tag,title,body])=><details key={title}><summary><span className="futures-pill">{tag}</span><strong>{title}</strong><span aria-hidden="true">+</span></summary><p><GlossaryText>{body}</GlossaryText></p></details>)}</section>
+const pathways=[
+ ['Foundations','Fund a bounded work package with an agreed budget, deliverables and evaluation criteria.'],
+ ['Universities','Co-design a reproducible study, teaching module or independent methodology review.'],
+ ['Maritime institutions','Contribute lawful historical documentation and specialist safety or legal review.'],
+ ['NGOs','Review historical cases, publication safeguards and public-interest research questions.'],
+ ['Technology partners','Provide isolated compute, backup capacity or documented data access with agreed acceptance tests.'],
+ ['Local communities','Explore a permitted field research site with local maintenance and shared evaluation.']
+];
+const fmt=n=>n===null||n===undefined?'Unavailable':new Intl.NumberFormat('en-GB').format(n);
+function Pill({children}){return <span className={'partner-pill '+(['Proposed','Research','Partial'].includes(children)?'partner-pill--plan':'')}>{children}</span>}
+function Copy({children}){return <p><GlossaryText>{children}</GlossaryText></p>}
+function Section({title,children}){return <section className="partner-section"><h2>{title}</h2>{children}</section>}
+function Expand({title,tag,children}){return <details className="partner-detail"><summary>{tag&&<Pill>{tag}</Pill>}<strong>{title}</strong><span aria-hidden="true">+</span></summary><div>{children}</div></details>}
+function Jump({navigate,to,children}){return <button className="partner-link" type="button" onClick={()=>navigate(to)}>{children} ↗</button>}
+function Evidence({overall,ops,navigate}){
+ const data=retainedEvidence(overall?.history);
+ const total=data?.total??null,located=data?.positioned??null;
+ const percent=total>0?100*located/total:null;
+ const published=nonnegativeCount(ops?.counts?.total_count);
+ return <Section title="Archive and data quality"><Copy>Current retained normalized records are counted separately from raw archive exports and published cases. Coordinates describe stored fields; they do not establish accuracy or independent verification.</Copy>
+ <div className="partner-metric"><strong>{overall?.loading?'Loading…':fmt(total)}</strong><span>Retained normalized records</span><small>{data?'API snapshot: '+new Date(data.generatedAt).toLocaleString():'Aggregate snapshot unavailable'}</small></div>
+ <div className="partner-bar" role="img" aria-label={percent===null?'Position coverage unavailable':percent.toFixed(1)+' percent of retained records have coordinates'}>{percent!==null&&<span style={{width:percent+'%'}}/>}</div>
+ <div className="partner-legend"><span>With coordinates: {fmt(located)}</span><span>Without coordinates: {fmt(data?total-located:null)}</span></div>
+ <dl className="partner-facts"><div><dt>Published PLAY records (separate count)</dt><dd>{fmt(published)}</dd></div><div><dt>Geographic coverage and distinct identities</dt><dd>See detailed metrics; no aggregate asserted here</dd></div></dl>
+ <Jump navigate={navigate} to="intelligence">Inspect evidence metrics</Jump><Jump navigate={navigate} to="operations">Service status</Jump></Section>
 }
-export default function FuturesOverview({onStatus}){
-return <div className="futures-public">
-<section className="futures-plain-intro" aria-labelledby="futures-intro-title">
-<span className="futures-pill">Research pilot</span>
-<h2 id="futures-intro-title">SeaCommons FUTURES</h2>
-<p><GlossaryText>Maritime research infrastructure combining AIS, radio, satellite imagery and public records. FUTURES documents the platform's development, evidence methodology and experimental hardware.</GlossaryText></p>
-<nav aria-label="Platform links"><a href="https://live.seacommons.org">LIVE ↗</a><a href="https://play.seacommons.org">PLAY ↗</a><a href="/docs">Documentation ↗</a></nav>
-</section>
-<section className="futures-story" aria-labelledby="futures-story-title">
-  <div className="futures-story__heading"><div><h2 id="futures-story-title">Data sources and verification</h2><p><GlossaryText>SeaCommons connects observations without treating them as interchangeable. A vessel position, a radio message, a satellite image and a public report each establish something different.</GlossaryText></p></div></div>
-  <div className="futures-story__sources">
-    <article><span>01 / AIS</span><h3>Vessel positions</h3><p><GlossaryText>Received broadcasts describe a vessel at a specific time. A gap in reception is not proof of where it travelled.</GlossaryText></p></article>
-    <article><span>02 / RADIO</span><h3>Communications</h3><p><GlossaryText>Time-stamped transmissions help reconstruct a chronology. Attribution and interpretation require review.</GlossaryText></p></article>
-    <article><span>03 / SATELLITE</span><h3>Imagery</h3><p><GlossaryText>Optical and radar scenes can corroborate visible features at acquisition time, subject to coverage and resolution.</GlossaryText></p></article>
-    <article><span>04 / REPORTS</span><h3>Documented claims</h3><p><GlossaryText>Public reports and distress alerts establish what was reported, not automatically what was independently verified.</GlossaryText></p></article>
-  </div>
-  <div className="futures-story__principle"><span>OUR METHOD</span><p>Collect the source. Preserve the timestamp. Compare the evidence. <strong>Publish the uncertainty.</strong></p></div>
-</section>
-<section className="futures-surfaces" aria-labelledby="futures-surfaces-title">
-  <div className="futures-surfaces__heading"><h2 id="futures-surfaces-title">Research interfaces</h2></div>
-  <div className="futures-surfaces__grid">
-    <a href="https://live.seacommons.org" className="futures-surface"><div className="futures-surface__image"><img src="/visualizations/live-visual.png" alt="SeaCommons LIVE maritime map" loading="lazy"/></div><div className="futures-surface__body"><span>01 / OBSERVE</span><h3>LIVE <b>↗</b></h3><p><GlossaryText>Explore the latest available vessel observations and contextual reports, with their source and temporal limitations.</GlossaryText></p></div></a>
-    <a href="https://play.seacommons.org" className="futures-surface"><div className="futures-surface__image"><img src="/visualizations/play-visual.png" alt="SeaCommons PLAY historical investigation map" loading="lazy"/></div><div className="futures-surface__body"><span>02 / INVESTIGATE</span><h3>PLAY <b>↗</b></h3><p><GlossaryText>Examine past events through historical positions, timelines, conflicting sources and gaps in the record.</GlossaryText></p></div></a>
-  </div>
-</section>
-<section className="futures-purpose" aria-labelledby="futures-purpose-title">
-  <div className="futures-purpose__heading"><div><h2 id="futures-purpose-title">Research applications</h2><p><GlossaryText>The same research infrastructure can support different questions. Each application has its own evidentiary threshold and requires specialist review.</GlossaryText></p></div></div>
-  <div className="futures-purpose__list">
-    <article><span>01</span><h3>Humanitarian</h3><p><GlossaryText>Document distress reports, maritime response and unresolved questions without turning approximate coordinates into confirmed positions.</GlossaryText></p></article>
-    <article><span>02</span><h3>Environmental</h3><p><GlossaryText>Relate maritime activity to independently measured ocean conditions, imagery and future field instruments.</GlossaryText></p></article>
-    <article><span>03</span><h3>Security & accountability</h3><p><GlossaryText>Review incident chronologies and vessel identities while keeping reports, observations and attribution distinct.</GlossaryText></p></article>
-    <article><span>04</span><h3>Coastal infrastructure</h3><p><GlossaryText>Develop receiver stations and experimental drifters through site surveys, documented tests and local partnerships.</GlossaryText></p></article>
-  </div>
-  <div className="futures-purpose__closing"><div><span>THE NEXT CHAPTER</span><h3>Development priorities</h3></div><p><GlossaryText>The next stage focuses on improved reception coverage, reproducible case reviews, calibrated field instruments and partner-led evaluation.</GlossaryText></p></div>
-</section>
-<ResearchIndex/><KnowledgeLibrary compact/>
-<FuturesJournal/>
-<PartnerUpdates/>
-<section className="futures-needs" id="futures-needs" aria-labelledby="futures-needs-title">
-<small>CONTRIBUTE TO THE COMMONS</small><h2 id="futures-needs-title">What SeaCommons needs next</h2>
-<p><GlossaryText>These are concrete infrastructure and research needs. Select a resource to send a targeted contribution proposal to republic@suezcanal.xyz.</GlossaryText></p>
-<div className="futures-needs-grid">{needs.map((item,i)=><article className="futures-need" key={item.title}>
-<div className="futures-need-top"><span className="futures-need-icon"><Icon name={iconNames[i]}/></span><small>{item.tag}</small></div>
-<h3>{item.title}</h3><p><GlossaryText>{item.description}</GlossaryText></p><p className="futures-examples"><strong>Useful contributions</strong>{item.examples}</p>
-<a className="futures-need-cta" href={email(item)} aria-label={'Offer support: '+item.title}>Offer support ↗</a>
-</article>)}</div>
-<div className="futures-contact"><div><h3>Have a different idea?</h3><p><GlossaryText>Share a dataset, propose a collaboration or ask a question. The button opens your email app with a draft; nothing is sent automatically.</GlossaryText></p></div><a className="futures-need-cta" href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20FUTURES%20collaboration">Contact Suez Republic ↗</a></div>
-</section></div>
+function Releases(){
+ const [state,setState]=useState({loading:true,entries:[],error:false});
+ useEffect(()=>{let active=true;let controller;const refresh=async()=>{controller?.abort();controller=new AbortController();try{const r=await fetch('https://api.github.com/repos/suezcanalxyz/seacommons/releases?per_page=10',{signal:controller.signal,headers:{Accept:'application/vnd.github+json'}});if(!r.ok)throw Error('release feed');const data=await r.json();if(!Array.isArray(data))throw Error('format');if(active)setState({loading:false,error:false,entries:data.filter(x=>!x.draft&&!x.prerelease&&typeof x.published_at==='string'&&typeof x.tag_name==='string').map(x=>({tag:x.tag_name,date:x.published_at,name:x.name||x.tag_name}))});}catch(e){if(active&&e.name!=='AbortError')setState({loading:false,error:true,entries:[]});}};refresh();const timer=setInterval(()=>{if(document.visibilityState==='visible')refresh()},300000);return()=>{active=false;clearInterval(timer);controller?.abort()}},[]);
+ return <Section title="Published releases"><Copy>The public GitHub release feed refreshes every five minutes while this view is visible. Only published stable releases are shown; release metadata does not certify operational performance.</Copy>{state.loading?<p role="status">Loading releases…</p>:state.error?<p role="status">Release feed unavailable.</p>:state.entries.length===0?<p>No stable releases returned by GitHub.</p>:state.entries.map(x=><article className="partner-release" key={x.tag}><Pill>Published</Pill><strong>{x.name}</strong><time dateTime={x.date}>{x.date.slice(0,10)}</time><a href={'https://github.com/suezcanalxyz/seacommons/releases/tag/'+encodeURIComponent(x.tag)}>Release notes ↗</a></article>)}<a href="https://github.com/suezcanalxyz/seacommons/releases">GitHub releases ↗</a></Section>
+}
+export default function FuturesOverview({navigate,ops,overall}){
+ const [tab,setTab]=useState('Overview');
+ const [sector,setSector]=useState('Environment');
+ const app=applications.find(a=>a[0]===sector);
+ return <div className="futures-public partner-workspace">
+ <section className="futures-plain-intro"><Pill>Research pilot</Pill><h2>SeaCommons FUTURES</h2><Copy>Open maritime research infrastructure for historical evidence, environmental research and public accountability. Explore current capabilities, methodological limits, development priorities and collaboration opportunities.</Copy><nav aria-label="Platform links"><a href="https://live.seacommons.org">LIVE ↗</a><a href="https://play.seacommons.org">PLAY ↗</a><a href="https://seacommons.org/docs">Documentation ↗</a><a href="https://github.com/suezcanalxyz/seacommons">Repository ↗</a></nav></section>
+ <div className="futures-switcher partner-tabs" role="group" aria-label="Partner information">{tabs.map(t=><button key={t} aria-pressed={tab===t} onClick={()=>setTab(t)} type="button">{t}</button>)}</div>
+ {tab==='Overview'&&<>
+ <Section title="Technology readiness"><Copy>These are editorial maturity descriptions based on the current project scope. Operational availability and test results are documented separately.</Copy><div className="partner-table-wrap"><table className="partner-table"><thead><tr><th>Component</th><th>Maturity</th><th>Scope and evidence</th></tr></thead><tbody>{maturity.map(([name,status,desc,to])=><tr key={name}><td><Jump navigate={navigate} to={to}>{name}</Jump></td><td><Pill>{status}</Pill></td><td><GlossaryText>{desc}</GlossaryText></td></tr>)}</tbody></table></div></Section>
+ <Evidence overall={overall} ops={ops} navigate={navigate}/>
+ <Section title="Research interfaces">{[['LIVE','live','Available observations and source context.'],['PLAY','play','Historical incident records and evidence review.']].map(([title,key,description])=><article className="partner-interface" key={key}><img src={'/visualizations/'+key+'-visual.png'} alt={'SeaCommons '+title+' interface visualization'} loading="lazy"/><div><h3>{title}</h3><Copy>{description}</Copy><a href={'https://'+key+'.seacommons.org'}>Open {title} ↗</a></div></article>)}</Section>
+ </>}
+ {tab==='Applications'&&<Section title="Research applications"><div className="futures-switcher" role="group" aria-label="Research sector">{applications.map(a=><button key={a[0]} type="button" aria-pressed={sector===a[0]} onClick={()=>setSector(a[0])}>{a[0]}</button>)}</div><h3>{app[1]}</h3><dl className="partner-facts">{['Evidence requirements','Expected output','Potential collaborator'].map((label,i)=><div key={label}><dt>{label}</dt><dd><GlossaryText>{app[i+2]}</GlossaryText></dd></div>)}</dl><Copy>Applications are potential research collaborations; outcomes and partners require a defined study and agreement.</Copy></Section>}
+ {tab==='Resources'&&<Section title="Resource requirements"><Copy>Existing project planning estimates are shown below. They are not actual expenditure, committed funding or procurement quotations. Costs may overlap and should not be summed without a scoped budget.</Copy>{[...contributionNeeds].sort((a,b)=>a.rank-b.rank).map(n=><Expand key={n.name} title={n.name} tag={n.urgency}><Copy>{n.plainReason}</Copy><dl className="partner-facts"><div><dt>Planning estimate</dt><dd>{n.cost}</dd></div><div><dt>Partner role</dt><dd><GlossaryText>{n.partnerRole}</GlossaryText></dd></div><div><dt>Acceptance criteria</dt><dd><GlossaryText>{n.acceptance}</GlossaryText></dd></div></dl></Expand>)}<Jump navigate={navigate} to="contributions">Contribution catalogue</Jump><Jump navigate={navigate} to="hardware">Hardware specifications</Jump></Section>}
+ {tab==='Governance'&&<><Section title="Governance and research safeguards"><Copy>Proposed evaluation criteria for partner due diligence. Formal commitments and named responsibilities must be confirmed before a collaboration begins.</Copy>{governance.map(([title,body])=><Expand key={title} title={title}><Copy>{body}</Copy></Expand>)}</Section><Section title="Collaboration pathways">{pathways.map(([title,body])=><Expand key={title} title={title}><Copy>{body}</Copy><a href={'mailto:republic@suezcanal.xyz?subject='+encodeURIComponent('SeaCommons collaboration — '+title)}>Discuss a pilot ↗</a></Expand>)}</Section></>}
+ {tab==='Development'&&<><Section title="Development and agents"><Copy>Existing operations and scheduled-task views provide technical evidence and a protected read-only snapshot. Automated editorial release generation and planning remain proposed capabilities.</Copy>{[['Engineering review','Proposed','Summarise reviewed tests, commits and release records.'],['Data quality','Partial','Existing aggregate metrics describe retained data; further independent review is required.'],['Planning review','Proposed','Record dependencies, acceptance criteria and versioned proposed plans.'],['Publication review','Proposed','Review public claims against source documentation and approval criteria.']].map(([title,status,body])=><Expand key={title} title={title} tag={status}><Copy>{body}</Copy></Expand>)}<Jump navigate={navigate} to="agents">Scheduled tasks</Jump><Jump navigate={navigate} to="roadmap">Development roadmap</Jump><Jump navigate={navigate} to="updates">Reviewed updates</Jump></Section><Releases/></>}
+ <KnowledgeLibrary compact/>
+ <section className="partner-section"><h2>Discuss a collaboration</h2><Copy>Define a research question, deliverable, budget and review process with Suez Republic.</Copy><a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20research%20partnership">republic@suezcanal.xyz ↗</a></section>
+ </div>
 }
