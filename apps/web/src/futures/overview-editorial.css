@@ -75,3 +75,18 @@
 .futures-public .futures-story,.futures-public .futures-surfaces,.futures-public .futures-purpose{padding-top:85px}
 .futures-public .futures-purpose__list article{padding-block:30px}
 @media(max-width:650px){.futures-story__sources article,.futures-story__sources article+article{grid-template-columns:1fr;gap:12px}}
+
+.futures-public .futures-intro h2{font-size:clamp(36px,4vw,64px)!important;margin:30px 0 22px!important;line-height:1.05!important}
+.futures-intro__hero{min-height:0;align-items:center;grid-template-columns: .85fr 1.15fr}
+.futures-intro__visual{min-height:0;aspect-ratio:16/9;height:auto;margin:24px;background:#080d12}
+.futures-intro__visual img,.futures-surface__image img{object-fit:contain;filter:none}
+.futures-surface__image{height:auto;aspect-ratio:16/9;background:#080d12}
+.futures-story__heading,.futures-purpose__heading{display:block}
+.futures-public .futures-story h2,.futures-public .futures-purpose h2,.futures-public .futures-surfaces h2,.futures-index h2{font-size:clamp(28px,3vw,42px);letter-spacing:-.035em}
+.futures-pill{display:inline-block;width:max-content;background:#c9ff39;color:#101510!important;border-radius:999px;padding:5px 12px;font:600 11px/1.4 Helvetica,Arial,sans-serif}
+.futures-index{padding:64px 0;border-bottom:1px solid #30404a}.futures-index>p{color:#aebbc4;line-height:1.7;margin:14px 0 26px}
+.futures-switcher{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0}
+.futures-switcher button{border:1px solid #40505a;background:#101b23;color:#e8edf0;border-radius:999px;padding:10px 20px;cursor:pointer}
+.futures-switcher button[aria-pressed=true]{background:#c9ff39;color:#101510;border-color:#c9ff39}
+.futures-index details{border-top:1px solid #30404a;padding:22px 0}.futures-index summary{display:flex;align-items:center;gap:20px;cursor:pointer;list-style:none}.futures-index summary strong{flex:1;font-size:18px;font-weight:500}.futures-index details p{max-width:850px;line-height:1.8;color:#bdcbd2;padding:16px 0 0}
+@media(max-width:1000px){.futures-intro__hero{grid-template-columns:1fr}.futures-intro__visual{margin:16px}.futures-index summary{gap:10px}}

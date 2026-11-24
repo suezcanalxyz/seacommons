@@ -37,23 +37,30 @@ const PARTNER_UPDATES=[
 ];
 function PartnerUpdates(){return <section className="futures-journal" id="partner-updates" aria-labelledby="partner-updates-title"><small>PARTNER BRIEFINGS / REVIEWED MILESTONES</small><h2 id="partner-updates-title">Updates for partners</h2><p>Concrete opportunities and project changes, dated and clearly separated from verified maritime findings. This section is editorially maintained, not a live newswire.</p><div className="futures-journal-list">{PARTNER_UPDATES.map(entry=><article key={entry.title}><div><time dateTime={entry.date}>{entry.date}</time><small>Partner update</small></div><div><h3>{entry.title}</h3><p>{entry.summary}</p><p>{entry.action}</p><a href={'mailto:republic@suezcanal.xyz?subject='+encodeURIComponent('SeaCommons partner response — '+entry.title)}>Respond to this update ↗</a></div></article>)}</div></section>}
 function FuturesJournal(){return <section className="futures-journal" id="futures-journal" aria-labelledby="futures-journal-title"><small>DOCUMENTED WORK / PARTNER BRIEFINGS</small><h2 id="futures-journal-title">Development log & partner updates</h2><p>Entries below refer to documented engineering work, not automatically verified field outcomes. This is a curated development log, not a complete daily activity feed; days without an entry should not be interpreted as inactive.</p><div className="futures-journal-list">{JOURNAL.map(entry=><article key={entry.title}><div><time dateTime={entry.date}>{entry.date}</time><small>{entry.type} · {entry.status}</small></div><div><h3>{entry.title}</h3><p>{entry.description}</p><small>{entry.reference}</small></div></article>)}</div><p className="futures-journal-note">For partner-specific progress, deployment evidence or collaboration requests, contact <a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20FUTURES%20partner%20update">republic@suezcanal.xyz</a>. Future entries should be published only after review against logs and source records.</p></section>}
+function ResearchIndex(){
+ const [tab,setTab]=React.useState('Methods');
+ const items={
+ Methods:[['AIS','Vessel observations','Broadcast positions and identity fields are retained with reception timestamps. Coverage and identity conflicts limit interpretation.'],['RADIO','Maritime communications','Received messages retain source and time metadata. Interpretation requires independent corroboration.'],['IMAGERY','Satellite evidence','Acquisition time, resolution and coverage determine whether an image supports a historical observation.'],['REPORTS','Public documentation','Original documents and reported claims are preserved separately from independently verified observations.']],
+ Roadmap:[['PROPOSED','Historical dossier player','A reusable map and timeline for reviewed historical evidence, with explicit gaps and source references.'],['PROPOSED','Coastal infrastructure','Site assessment, power, reception and maintenance requirements for experimental receiver nodes.'],['PROPOSED','Drifter','Field instrumentation research and calibration before operational use.']],
+ Agents:[['PLANNED','Engineering review','Derive release notes from reviewed commits, tests and deployment records.'],['PLANNED','Planning review','Record dependencies and proposed work separately from completed milestones.'],['PLANNED','Publication review','Validate public claims against source records before release.']]};
+ return <section className="futures-index"><h2>Research & development</h2><p>Methods, planned work and publication controls for the SeaCommons pilot.</p><div className="futures-switcher" role="group" aria-label="Research section">{Object.keys(items).map(k=><button key={k} type="button" aria-pressed={tab===k} onClick={()=>setTab(k)}>{k}</button>)}</div>{items[tab].map(([tag,title,body])=><details key={title}><summary><span className="futures-pill">{tag}</span><strong>{title}</strong><span aria-hidden="true">+</span></summary><p>{body}</p></details>)}</section>
+}
 export default function FuturesOverview({onStatus}){
 return <div className="futures-public">
 <section className="futures-intro" aria-labelledby="futures-intro-title">
   <div className="futures-intro__masthead"><span>SEA COMMONS <i>/</i> A SUEZ REPUBLIC PROJECT</span><span>RESEARCH PLATFORM · PILOT 2026</span></div>
   <div className="futures-intro__hero">
     <div className="futures-intro__copy">
-      <span className="futures-intro__index">01 — THE PROJECT</span>
-      <h2 id="futures-intro-title">Making the sea<br/><em>legible.</em></h2>
+      <span className="futures-pill">Research pilot</span>
+      <h2 id="futures-intro-title">Maritime research<br/><em>infrastructure</em></h2>
       <p className="futures-lead">SeaCommons is an open maritime research platform. It brings together vessel signals, public reports and geospatial evidence to investigate what happens at sea — and make clear what remains unknown.</p>
       <div className="futures-intro__links"><a href="https://live.seacommons.org">Explore LIVE <span>↗</span></a><a href="https://play.seacommons.org">Explore PLAY <span>↗</span></a></div>
     </div>
-    <figure className="futures-intro__visual"><img src="/og/seacommons-live.png" alt="SeaCommons LIVE interface showing maritime observations on a map" loading="eager"/><figcaption><span>FIG. 01 / LIVE INTERFACE</span><span>ILLUSTRATIVE PLATFORM VIEW</span></figcaption></figure>
+    <figure className="futures-intro__visual"><img src="/visualizations/live-visual.png" alt="SeaCommons LIVE interface showing maritime observations on a map" loading="eager"/></figure>
   </div>
-  <div className="futures-intro__statement"><span>THE CENTRAL QUESTION</span><p>What can we actually know about an event at sea — <em>and how do we know it?</em></p></div>
 </section>
 <section className="futures-story" aria-labelledby="futures-story-title">
-  <div className="futures-story__heading"><span>02 — HOW IT WORKS</span><div><h2 id="futures-story-title">One sea.<br/>Different kinds of evidence.</h2><p>SeaCommons connects observations without treating them as interchangeable. A vessel position, a radio message, a satellite image and a public report each establish something different.</p></div></div>
+  <div className="futures-story__heading"><div><h2 id="futures-story-title">Data sources and verification</h2><p>SeaCommons connects observations without treating them as interchangeable. A vessel position, a radio message, a satellite image and a public report each establish something different.</p></div></div>
   <div className="futures-story__sources">
     <article><span>01 / AIS</span><h3>Vessel positions</h3><p>Received broadcasts describe a vessel at a specific time. A gap in reception is not proof of where it travelled.</p></article>
     <article><span>02 / RADIO</span><h3>Communications</h3><p>Time-stamped transmissions help reconstruct a chronology. Attribution and interpretation require review.</p></article>
@@ -63,23 +70,23 @@ return <div className="futures-public">
   <div className="futures-story__principle"><span>OUR METHOD</span><p>Collect the source. Preserve the timestamp. Compare the evidence. <strong>Publish the uncertainty.</strong></p></div>
 </section>
 <section className="futures-surfaces" aria-labelledby="futures-surfaces-title">
-  <div className="futures-surfaces__heading"><span>03 — THE PLATFORM</span><h2 id="futures-surfaces-title">Two ways to read the sea.</h2></div>
+  <div className="futures-surfaces__heading"><h2 id="futures-surfaces-title">Research interfaces</h2></div>
   <div className="futures-surfaces__grid">
-    <a href="https://live.seacommons.org" className="futures-surface"><div className="futures-surface__image"><img src="/og/seacommons-live.png" alt="SeaCommons LIVE maritime map" loading="lazy"/></div><div className="futures-surface__body"><span>01 / OBSERVE</span><h3>LIVE <b>↗</b></h3><p>Explore the latest available vessel observations and contextual reports, with their source and temporal limitations.</p></div></a>
-    <a href="https://play.seacommons.org" className="futures-surface"><div className="futures-surface__image"><img src="/og/seacommons-play.png" alt="SeaCommons PLAY historical investigation map" loading="lazy"/></div><div className="futures-surface__body"><span>02 / INVESTIGATE</span><h3>PLAY <b>↗</b></h3><p>Examine past events through historical positions, timelines, conflicting sources and gaps in the record.</p></div></a>
+    <a href="https://live.seacommons.org" className="futures-surface"><div className="futures-surface__image"><img src="/visualizations/live-visual.png" alt="SeaCommons LIVE maritime map" loading="lazy"/></div><div className="futures-surface__body"><span>01 / OBSERVE</span><h3>LIVE <b>↗</b></h3><p>Explore the latest available vessel observations and contextual reports, with their source and temporal limitations.</p></div></a>
+    <a href="https://play.seacommons.org" className="futures-surface"><div className="futures-surface__image"><img src="/visualizations/play-visual.png" alt="SeaCommons PLAY historical investigation map" loading="lazy"/></div><div className="futures-surface__body"><span>02 / INVESTIGATE</span><h3>PLAY <b>↗</b></h3><p>Examine past events through historical positions, timelines, conflicting sources and gaps in the record.</p></div></a>
   </div>
 </section>
 <section className="futures-purpose" aria-labelledby="futures-purpose-title">
-  <div className="futures-purpose__heading"><span>04 — WHY IT MATTERS</span><div><h2 id="futures-purpose-title">Maritime intelligence<br/>in the public interest.</h2><p>The same research infrastructure can support different questions. Each application has its own evidentiary threshold and requires specialist review.</p></div></div>
+  <div className="futures-purpose__heading"><div><h2 id="futures-purpose-title">Research applications</h2><p>The same research infrastructure can support different questions. Each application has its own evidentiary threshold and requires specialist review.</p></div></div>
   <div className="futures-purpose__list">
     <article><span>01</span><h3>Humanitarian</h3><p>Document distress reports, maritime response and unresolved questions without turning approximate coordinates into confirmed positions.</p></article>
     <article><span>02</span><h3>Environmental</h3><p>Relate maritime activity to independently measured ocean conditions, imagery and future field instruments.</p></article>
     <article><span>03</span><h3>Security & accountability</h3><p>Review incident chronologies and vessel identities while keeping reports, observations and attribution distinct.</p></article>
     <article><span>04</span><h3>Coastal infrastructure</h3><p>Develop receiver stations and experimental drifters through site surveys, documented tests and local partnerships.</p></article>
   </div>
-  <div className="futures-purpose__closing"><div><span>THE NEXT CHAPTER</span><h3>A pilot designed to be tested, questioned and extended.</h3></div><p>The next stage focuses on improved reception coverage, reproducible case reviews, calibrated field instruments and partner-led evaluation.</p></div>
+  <div className="futures-purpose__closing"><div><span>THE NEXT CHAPTER</span><h3>Development priorities</h3></div><p>The next stage focuses on improved reception coverage, reproducible case reviews, calibrated field instruments and partner-led evaluation.</p></div>
 </section>
-<KnowledgeLibrary compact/>
+<ResearchIndex/><KnowledgeLibrary compact/>
 <FuturesJournal/>
 <PartnerUpdates/>
 <section className="futures-needs" id="futures-needs" aria-labelledby="futures-needs-title">
