@@ -90,3 +90,9 @@
 .futures-switcher button[aria-pressed=true]{background:#c9ff39;color:#101510;border-color:#c9ff39}
 .futures-index details{border-top:1px solid #30404a;padding:22px 0}.futures-index summary{display:flex;align-items:center;gap:20px;cursor:pointer;list-style:none}.futures-index summary strong{flex:1;font-size:18px;font-weight:500}.futures-index details p{max-width:850px;line-height:1.8;color:#bdcbd2;padding:16px 0 0}
 @media(max-width:1000px){.futures-intro__hero{grid-template-columns:1fr}.futures-intro__visual{margin:16px}.futures-index summary{gap:10px}}
+.futures-plain-intro{padding:40px 0 48px;border-bottom:1px solid #30404a;background:transparent}
+.futures-public .futures-plain-intro h2{font-size:clamp(30px,3.5vw,52px);margin:20px 0 16px;line-height:1.1}
+.futures-plain-intro p{max-width:780px;font-size:16px;line-height:1.8;color:#bdcbd2}
+.futures-plain-intro nav{display:flex;flex-wrap:wrap;gap:24px;margin-top:24px}
+.futures-plain-intro nav a{color:#80c9be;font-size:13px}
+.futures-public .future-educational-trigger{text-decoration:underline dotted;text-underline-offset:4px;color:#a8e3da}
