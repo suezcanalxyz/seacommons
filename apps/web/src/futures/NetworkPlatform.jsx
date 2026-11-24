@@ -154,7 +154,7 @@ export function PlatformNetwork() {
  const context=deviceGuide[device.id];
  const review=engineeringReview[device.id];
  return <div className="platform-workspace">
- <section className="future-page-head future-platform-intro"><span className="future-eyebrow"><L>SeaCommons / Platform</L></span><h1><L>Platform architecture</L></h1><p><GlossaryText>Four software interfaces share the evidence model. Proposed field instruments extend the research infrastructure after calibration, permissions and independent validation.</GlossaryText></p></section>
+ <section className="future-page-head future-platform-intro"><span className="future-eyebrow"><L>SeaCommons / Platform</L></span><h1><L>Software and research instruments</L></h1><p><GlossaryText>Explore the software you can consult today and the instruments proposed for future research. Each description explains its purpose, how it is used and what still needs to be tested.</GlossaryText></p></section>
  <KeyFigures items={[{value:productGuide.length,title:'Software interfaces',detail:'LIVE, PLAY, API and the authenticated FUTURES workspace.'},{value:deviceCatalogue.length,title:'Instrument concepts',detail:'Proposed designs, not deployed devices.'},{value:stages.length,title:'Evidence stages',detail:'From collection to controlled publication.'}]}/>
  <div className="futures-switcher platform-switcher" role="group" aria-label="Platform section">{[['software','Software'],['devices','Research instruments'],['method','Evidence method']].map(([id,label])=><button key={id} type="button" aria-pressed={section===id} onClick={()=>setSection(id)}><L>{label}</L></button>)}</div>
  {section==='software'&&<section className="future-section platform-section">

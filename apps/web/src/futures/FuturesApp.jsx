@@ -4,6 +4,7 @@ import DeveloperGuide from '../docs/DeveloperGuide.jsx';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './contributions-store.css';
 import StrategyWorkspace from './StrategyWorkspace.jsx';
+import FuturesOverview from './Overview.jsx';
 import GlossaryText from './GlossaryText.jsx';
 import KeyFigures from './KeyFigures.jsx';
 import AgenticJournal from './AgenticJournal.jsx';
@@ -35,10 +36,10 @@ import { contributionNeeds } from './contributionNeeds.js';
 
 const NAV = ['overview', 'intelligence', 'intel-measures', 'intel-sources', 'intel-quality', 'intel-sensors', 'intel-activity', 'platform', 'knowledge', 'development', 'agents', 'contributions', 'history', 'operations', 'ais-check', 'hardware', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
 const PRIMARY_NAV = ['overview', 'intelligence', 'platform', 'knowledge', 'development', 'agents', 'contributions'];
-const SUBNAV = { intelligence: [['intelligence','Comparison'],['intel-measures','Measurements'],['intel-sources','Sources'],['intel-quality','Quality'],['intel-sensors','Research domains'],['intel-activity','Acquisition'],['history','Timeline'],['operations','Operations'],['ais-check','AIS cross-check']], platform: [['platform','Products & devices'],['hardware','Hardware specifications'],['tools','Software tools']], knowledge: [['knowledge','Dossiers'],['documents','Document register'],['guidebook','Guidebook']], development: [['development','Development home'],['roadmap','Roadmap'],['updates','Updates']], overview: [['overview','Introduction'],['project','Project details']] };
+const SUBNAV = { intelligence: [['intelligence','Comparison'],['intel-measures','Measurements'],['intel-sources','Sources'],['intel-quality','Quality'],['intel-sensors','Research domains'],['intel-activity','Acquisition'],['history','Timeline'],['operations','Operations'],['ais-check','AIS cross-check']], platform: [['platform','Products & devices'],['hardware','Hardware specifications'],['tools','Software tools']], knowledge: [['knowledge','Dossiers'],['documents','Document register'],['guidebook','Guidebook']], development: [['development','Development home'],['roadmap','Roadmap'],['updates','Updates']], overview: [['overview','Project overview'],['project','Technical reference']] };
 const NAV_LABELS = {history:'Timeline',operations:'Operations',project:'Project details',roadmap:'Roadmap',guidebook:'Guidebook',tools:'Software tools',updates:'Updates',access:'Account and access','intel-measures':'Measurements','intel-sources':'Sources','intel-quality':'Quality','intel-sensors':'Research domains','intel-activity':'Acquisition', overview: 'Overview', intelligence:'Intelligence', 'ais-check':'AIS cross-check', platform:'Platform', knowledge:'Knowledge', development:'Development', agents:'Agents', documents: 'Docs', hardware: 'Devices', contributions: 'Contributions' };
 
-const IT_NAV={'intel-measures':'Misurazioni','intel-sources':'Fonti','intel-quality':'Qualità','intel-sensors':'Domini e sensori','intel-activity':'Acquisizione',overview:'Panoramica',intelligence:'Intelligence',platform:'Piattaforma',knowledge:'Documentazione',development:'Sviluppo',agents:'Agenti',contributions:'Contributi',history:'Cronologia',operations:'Operazioni','ais-check':'Verifica AIS',hardware:'Dispositivi',project:'Progetto',roadmap:'Piano di sviluppo',documents:'Documenti',guidebook:'Guida',tools:'Strumenti',updates:'Aggiornamenti',access:'Account'};
+const IT_NAV={'intel-measures':'Misurazioni','intel-sources':'Fonti','intel-quality':'Qualità','intel-sensors':'Domini e sensori','intel-activity':'Acquisizione',overview:'Il progetto',intelligence:'Intelligence',platform:'Piattaforma',knowledge:'Documentazione',development:'Sviluppo',agents:'Agenti',contributions:'Contributi',history:'Cronologia',operations:'Operazioni','ais-check':'Verifica AIS',hardware:'Dispositivi',project:'Approfondimento tecnico',roadmap:'Piano di sviluppo',documents:'Documenti',guidebook:'Guida',tools:'Strumenti',updates:'Aggiornamenti',access:'Account'};
 function LanguageSwitch({lang,setLang}){return <div className="future-language-switch" role="group" aria-label="Language / Lingua">{['it','en'].map(l=><button type="button" key={l} aria-pressed={lang===l} onClick={()=>setLang(l)}><L>{l.toUpperCase()}</L></button>)}</div>}
 function readWorkspaceView() {
   const value = new URLSearchParams(window.location.search).get('view');
@@ -300,7 +301,7 @@ function Operations({ ops }) {
     <section className="future-page-head">
       <span className="future-eyebrow"><L>data operations / evidence quality</L></span>
       <h1><L>Service reliability</L></h1>
-      <p><L>Operations shows what information the software has received, which processing steps completed and where sources may be delayed. It also documents known technical problems, earlier fixes and what still needs verification. A technical warning is not the same as a confirmed maritime incident.</L></p>
+      <p><L>Check whether SeaCommons is receiving information and working as expected. The page explains delays, known problems and what still needs to be checked. A service problem is not a maritime incident.</L></p>
     </section>
     <ViewTabs items={[["monitor","Monitoring"],["sources","Sources"],["risks","Risk register"]]} selected={tab} onChange={setTab}/>
     {tab==="monitor"&&<>
@@ -403,7 +404,7 @@ function Contributions() {
   const message = lang==='it'?'Ciao SeaCommons,\n\nVorrei contribuire con:\n'+selected.map(n=>'• '+t(n)).join('\n')+'\n\nOrganizzazione / nome:\nRisorse disponibili:\nLuogo e disponibilità:\nContatto preferito:\n\nChiedo di concordare ambito tecnico e prossimi passi prima di acquisti o accessi.':'Hello SeaCommons,\n\nI would like to help with:\n'+selected.map(n=>'• '+n).join('\n')+'\n\nMy organisation / name:\nWhat I can provide:\nLocation and availability:\nPreferred contact:\n\nPlease share the technical scope and next steps before any purchase or account access.';
   const contact = 'mailto:republic@suezcanal.xyz?subject='+encodeURIComponent(lang==='it'?'SeaCommons — richiesta di contributo':'SeaCommons — contribution enquiry')+'&body='+encodeURIComponent(message);
   return <div className="future-contribute">
-    <section className="future-contribute__hero"><span className="future-eyebrow"><L>SEA COMMONS / BUILD WITH US</L></span><h1><L>Resource contributions</L></h1><p><L>From a free test server to a coastal receiver, every contribution supports a specific part of SeaCommons. Explore the options, choose what you can offer, and agree the next steps with the team.</L></p><div className="future-contribute__hero-links"><button type="button" onClick={()=>setTab("catalog")}><L>Explore contributions ↓</L></button><button type="button" onClick={()=>setTab("onboarding")}><L>Start with a free server ↗</L></button></div></section>
+    <section className="future-contribute__hero"><span className="future-eyebrow"><L>SEA COMMONS / BUILD WITH US</L></span><h1><L>Resource contributions</L></h1><p><L>SeaCommons needs people, equipment, data access and resources to continue its research. This page explains what is needed, how each contribution would help and how to discuss a collaboration. No payment or commitment is made here.</L></p><div className="future-contribute__hero-links"><button type="button" onClick={()=>setTab("catalog")}><L>Explore contributions ↓</L></button><button type="button" onClick={()=>setTab("onboarding")}><L>Start with a free server ↗</L></button></div></section>
     <KeyFigures items={[{title:"Resource requirements",value:contributionNeeds.length,detail:"Defined opportunities in the contribution register."},{title:"Urgent priorities",value:contributionNeeds.filter(n=>n.urgency==="Urgent").length,detail:"Planning priority, not an operational incident count."},{title:"Selected",value:selected.length,detail:"Resources in your enquiry. No payment is made here."}]}/>
     <ViewTabs items={[["catalog","Contribution catalogue"],["onboarding","Partner onboarding"],["request","Contribution request"]]} selected={tab} onChange={setTab}/>
     {tab==="onboarding"&&<>
@@ -751,18 +752,18 @@ function Overview({ ops, overall, period, setPeriod, navigate, compact = false }
   );
 }
 
-function Project() {
+function Project({navigate,ops,overall}) {
+  const [tab,setTab]=useState('reference');
   return (
     <>
       <section className="future-page-head">
         <span className="future-eyebrow"><L>SeaCommons project</L></span>
-        <h1><L>Project details</L></h1>
+        <h1><L>Technical reference</L></h1>
         <p><L>
-          This Futures domain is the private operational workspace for SeaCommons.
-          Other Suez products and client work remain outside this workspace even when they share identity infrastructure.
+          This section contains the detailed technical information supporting the project proposal. It is intended for developers and reviewers who need to examine the software, documents and current limitations.
         </L></p>
       </section>
-      <ProjectDetail project={seaCommonsProject} />
+      <ViewTabs items={[["reference","Technical overview"],["register","Project register"]]} selected={tab} onChange={setTab}/>{tab==="reference"?<FuturesOverview navigate={navigate} ops={ops} overall={overall}/>:<ProjectDetail project={seaCommonsProject} />}
     </>
   );
 }
@@ -775,7 +776,7 @@ const deliveryLenses = [
 ];
 function DevelopmentHome({navigate}) {
  return <>
-  <section className="future-page-head"><span className="future-eyebrow"><L>Development / engineering assessment</L></span><h1><L>Engineering and delivery</L></h1><p><L>Development is the technical maturity and decision record. Roadmap is the proposed sequence of future delivery; Updates records changes that have already happened. None of the three should be mistaken for live sensor evidence.</L></p></section>
+  <section className="future-page-head"><span className="future-eyebrow"><L>Development / engineering assessment</L></span><h1><L>Engineering and delivery</L></h1><p><L>Find out what still needs to be improved, why it matters and how the team will check the results. The work plan describes proposed activities; the updates register documents changes already made.</L></p></section>
   <KeyFigures items={[{title:"Evaluation areas",value:deliveryLenses.length,detail:"Engineering criteria used to assess the pilot."},{title:"Work packages",value:developmentSteps.length,detail:"Defined in the delivery roadmap."},{title:"Documented changes",value:journal.length,detail:"Entries in the reviewed editorial update register."}]}/>
   <section className="future-section"><SectionHeader eyebrow="Evaluation framework" title="Engineering evaluation" copy="Each topic makes a current capability, a real limitation and an independently checkable result visible to reviewers."/>
     <div className="future-domain-grid">{deliveryLenses.map(x=><article key={x.area}><small><L>ENGINEERING / EVALUATION</L></small><h3><L>{x.area}</L></h3><p><b><L>Current basis:</L></b> <GlossaryText>{x.now}</GlossaryText></p><details><summary><L>Constraints and evaluation</L></summary><p><b><L>Open constraint:</L></b> <GlossaryText>{x.gap}</GlossaryText></p><p><b><L>Required evidence:</L></b> <GlossaryText>{x.proof}</GlossaryText></p><p className="future-factual-note"><L>{x.question}</L></p></details></article>)}</div>
@@ -1089,7 +1090,7 @@ export default function FuturesApp() {
         </header>
 
         <div className="future-content" data-view={view}>
-          {lang==='it'&&view!=='overview'&&view!=='agents'&&view!=='updates'&&view!=='intelligence'&&!view.startsWith('intel-')&&<div className="future-language-note">Alcuni dati delle fonti e materiali originali possono restare in inglese.</div>}
+          {lang==='it'&&['documents','knowledge','tools','project','guidebook'].includes(view)&&<div className="future-language-note">Alcuni dati delle fonti e materiali originali possono restare in inglese.</div>}
           {Object.entries(SUBNAV).some(([,items])=>items.some(([id])=>id===view)) && <nav className="future-subnav" aria-label={lang==='it'?'Navigazione di sezione':'Section navigation'}>{(Object.entries(SUBNAV).find(([,items])=>items.some(([id])=>id===view))?.[1] || []).map(([id,label])=><button type="button" key={id} aria-current={id===view?'page':undefined} className={id===view?'is-active':''} onClick={()=>navigate(id)}><L>{lang==='it'?(id==='intelligence'?'Confronto':id==='knowledge'?'Dossier':id==='documents'?'Registro documenti':IT_NAV[id]||label):label}</L></button>)}</nav>}
           {(view === 'intelligence'||view.startsWith('intel-')) && <IntelligenceDashboard section={view==='intelligence'?'compare':view.slice(6)} ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'platform' && <PlatformNetwork />}
@@ -1102,7 +1103,7 @@ export default function FuturesApp() {
           {view === 'ais-check' && <AisCrossCheck />}
           {view === 'hardware' && <Hardware />}
           {view === 'contributions' && <Contributions />}
-          {view === 'project' && <Project />}
+          {view === 'project' && <Project navigate={navigate} ops={ops} overall={overall}/>}
           {view === 'roadmap' && <Roadmap />}
           {view === 'documents' && <Documents />}
           {view === 'guidebook' && <Guidebook />}

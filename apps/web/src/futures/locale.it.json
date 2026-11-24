@@ -1648,5 +1648,16 @@
   "SeaCommons Docs": "Documentazione SeaCommons",
   "Canonical public technical documentation.": "Documentazione tecnica pubblica canonica.",
   "API reference": "Riferimento API",
-  "Generated OpenAPI / Swagger reference.": "Riferimento generato OpenAPI / Swagger."
+  "Generated OpenAPI / Swagger reference.": "Riferimento generato OpenAPI / Swagger.",
+  "Technical reference": "Approfondimento tecnico",
+  "Technical overview": "Quadro tecnico",
+  "Project register": "Registro del progetto",
+  "Check whether SeaCommons is receiving information and working as expected. The page explains delays, known problems and what still needs to be checked. A service problem is not a maritime incident.": "Controlla se SeaCommons riceve informazioni e funziona come previsto. La pagina spiega ritardi, problemi noti e verifiche ancora necessarie. Un problema del servizio non è un incidente marittimo.",
+  "Find out what still needs to be improved, why it matters and how the team will check the results. The work plan describes proposed activities; the updates register documents changes already made.": "Scopri cosa resta da migliorare, perché è importante e come verranno verificati i risultati. Il piano di lavoro descrive le attività proposte; il registro degli aggiornamenti documenta le modifiche già realizzate.",
+  "SeaCommons needs people, equipment, data access and resources to continue its research. This page explains what is needed, how each contribution would help and how to discuss a collaboration. No payment or commitment is made here.": "SeaCommons ha bisogno di persone, attrezzature, accesso ai dati e risorse per proseguire la ricerca. Qui puoi capire quali contributi sono utili, a cosa servono e come discutere una collaborazione. Non sono previsti pagamenti o impegni automatici.",
+  "This section contains the detailed technical information supporting the project proposal. It is intended for developers and reviewers who need to examine the software, documents and current limitations.": "Questa sezione contiene le informazioni tecniche a sostegno della proposta progettuale. È destinata a sviluppatori e revisori che devono esaminare il software, i documenti e i limiti attuali.",
+  "Explore the software you can consult today and the instruments proposed for future research. Each description explains its purpose, how it is used and what still needs to be tested.": "Esplora il software già consultabile e gli strumenti proposti per la ricerca futura. Ogni descrizione spiega a cosa servono, come si utilizzano e quali verifiche sono ancora necessarie.",
+  "Software and research instruments": "Software e strumenti di ricerca",
+  "See how much information SeaCommons has collected and organised. Compare the last 24 hours, seven days and the archive. These are information counts, not confirmed incidents.": "Scopri quante informazioni SeaCommons ha raccolto e organizzato. Confronta le ultime 24 ore, sette giorni e l’archivio. Sono conteggi di informazioni, non incidenti confermati.",
+  "Explore where the information comes from, how it is organised and what can be learned from it. Select a measure to understand what it counts.": "Esplora da dove provengono le informazioni, come sono organizzate e cosa è possibile apprendere. Seleziona una misurazione per capire cosa conta."
 }
