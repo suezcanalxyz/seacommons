@@ -126,3 +126,40 @@
 .future-content .platform-sequence li::marker{color:#caff41;font-weight:600}
 @media(max-width:900px){.future-content .platform-product-row{grid-template-columns:42px minmax(0,1fr);gap:14px}.future-content .platform-product-preview{grid-column:2}.future-content .platform-device-heading{grid-template-columns:1fr}.future-content .platform-device-image{max-width:420px}.future-content .platform-index{font-size:28px}}
 @media(prefers-reduced-motion:no-preference){.future-content .platform-section{animation:platform-in .22s ease-out}@keyframes platform-in{from{opacity:.5;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}}
+
+/* Three windows, one compact matrix. Details live in sibling routes. */
+.future-content[data-view="intelligence"]{padding-bottom:20px}
+.future-content .future-subnav{flex-wrap:wrap;gap:5px}
+.future-content .future-subnav button{padding:7px 11px;font-size:12px}
+.intel-compare{max-width:1320px;margin:auto;color:#e8edf0}
+.intel-compare-head{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:12px 0 10px}
+.intel-compare-head h1{font-size:clamp(24px,2.6vw,37px);font-weight:500;letter-spacing:-.035em;margin:5px 0}
+.intel-compare-head p,.intel-compare-foot p{font-size:12px;line-height:1.55;color:#b6c4ce;margin:4px 0;max-width:850px}
+.intel-compare-head button,.intel-compare-foot button{background:transparent;border:1px solid #40515e;border-radius:999px;color:#9be8dc;padding:8px 13px;font-size:12px;cursor:pointer;white-space:nowrap}
+.intel-compare-head button:disabled{opacity:.5}
+.intel-matrix{width:100%;table-layout:fixed;border-collapse:collapse;text-align:right;font-variant-numeric:tabular-nums}
+.intel-matrix th:first-child{width:34%;text-align:left}
+.intel-matrix th,.intel-matrix td{padding:7px 12px;border-bottom:1px solid #2b3944;vertical-align:middle}
+.intel-matrix thead th{font-weight:500;font-size:17px;background:#101b23;padding:11px 12px}
+.intel-matrix thead th:last-child{color:#caff41}
+.intel-matrix thead small,.intel-matrix tfoot small{display:block;font-size:10px;color:#a9b9c5;line-height:1.35;margin-top:4px}
+.intel-matrix tbody th{font-size:13px;font-weight:400}
+.intel-matrix tbody th button{display:inline;text-align:left;color:#e8edf0;font:inherit;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline dotted;text-underline-offset:4px}
+.intel-matrix tbody th button span{font-size:11px;color:#9be8dc}
+.intel-matrix tbody td{font-size:clamp(14px,1.65vw,22px);font-weight:500;letter-spacing:-.035em;overflow-wrap:anywhere}
+.intel-matrix tbody td:last-child{color:#caff41}
+.intel-matrix tbody td.is-missing{color:#82939f}
+.intel-matrix .intel-matrix-divider>*{border-top:2px solid #607481}
+.intel-matrix tfoot th{font-size:11px;font-weight:400;color:#b6c4ce}
+.intel-compare-foot{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:10px 0}
+.intel-definition-dialog{background:#101b23;color:#e8edf0;border:1px solid #40515e;border-radius:12px;max-width:min(620px,92vw);padding:26px}
+.intel-definition-dialog::backdrop{background:rgba(0,0,0,.7)}
+.intel-definition-dialog header{display:flex;align-items:start;gap:20px;justify-content:space-between}
+.intel-definition-dialog h2{font-size:26px;margin:0}
+.intel-definition-dialog h3{font-size:13px;color:#9be8dc;margin:20px 0 6px}
+.intel-definition-dialog p{color:#c0cdd5;line-height:1.7;font-size:14px}
+.intel-definition-dialog button{border:0;background:none;color:#e8edf0;font-size:28px;cursor:pointer}
+.intel-detail-switch{margin:20px 0}
+.intel-provenance-details{border-top:1px solid #30404a;padding-top:15px}
+@media(min-width:1000px) and (max-height:850px){.intel-matrix th,.intel-matrix td{padding-block:5px}.intel-compare-head{padding-block:6px}.intel-compare-head h1{font-size:27px}.intel-matrix tbody td{font-size:18px}.intel-matrix thead th{padding-block:7px}}
+@media(max-width:660px){.intel-compare-head{align-items:start}.intel-matrix th:first-child{width:39%}.intel-matrix th,.intel-matrix td{padding:6px 3px}.intel-matrix thead th{font-size:12px;padding:8px 3px}.intel-matrix thead small,.intel-matrix tfoot small{font-size:9px}.intel-matrix tbody th{font-size:11px}.intel-matrix tbody td{font-size:13px;letter-spacing:-.02em}.intel-compare-foot{flex-direction:column;align-items:start}.intel-compare-head button{white-space:normal}}

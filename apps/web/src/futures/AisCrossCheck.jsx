@@ -1,3 +1,4 @@
+import {L} from './locale.jsx';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchJson } from '../services/api/client.js';
 import { resolveSiteApiBase } from '../site/liveApi.js';
@@ -135,7 +136,7 @@ function ReviewForm({ selected, checked, reviewHistory, onSaved }) {
           {[['supported','Supported'],['false_positive','False positive'],['inconclusive','Inconclusive']].map(([value,label])=>
             <label key={value} className={review.verdict===value?'is-active':''}>
               <input type="radio" name="ais-verdict" value={value} checked={review.verdict===value}
-                onChange={()=>setReview(old=>({...old,verdict:value}))} />{label}
+                onChange={()=>setReview(old=>({...old,verdict:value}))} /><L>{label}</L>
             </label>
           )}
         </div>
@@ -146,7 +147,7 @@ function ReviewForm({ selected, checked, reviewHistory, onSaved }) {
           {[['consistent','Consistent'],['inconsistent','Mismatch'],['unavailable','Cannot determine']].map(([value,label])=>
             <label key={value} className={review.position_check===value?'is-active':''}>
               <input type="radio" name="ais-position" value={value} checked={review.position_check===value}
-                onChange={()=>setReview(old=>({...old,position_check:value}))} />{label}
+                onChange={()=>setReview(old=>({...old,position_check:value}))} /><L>{label}</L>
             </label>
           )}
         </div>
@@ -159,17 +160,17 @@ function ReviewForm({ selected, checked, reviewHistory, onSaved }) {
       </label>
       <div className="future-ais-review-actions">
         <button type="submit" disabled={!selected || busy || !review.verdict || !review.position_check || review.explanation.trim().length < 20}>
-          {busy ? 'Saving…' : 'Save evidence review'}
+          <L>{busy ? 'Saving…' : 'Save evidence review'}</L>
         </button>
         <small>Append-only · reviewer identity verified · not automatic training</small>
       </div>
-      {message && <p role="status" className="future-ais-save-message">{message}</p>}
+      {message && <p role="status" className="future-ais-save-message"><L>{message}</L></p>}
     </form>
     {reviewHistory.length > 0 && <details className="future-ais-review-history">
-      <summary>{reviewHistory.length} recorded review(s)</summary>
+      <summary><L>{reviewHistory.length}</L> recorded review(s)</summary>
       {reviewHistory.map((item)=><article key={item.review_id}>
-        <strong>{item.verdict.replaceAll('_',' ')} / {item.position_check}</strong>
-        <small>{renderTime(item.created_at)}</small><p>{item.explanation}</p>
+        <strong><L>{item.verdict.replaceAll('_',' ')}</L> / <L>{item.position_check}</L></strong>
+        <small><L>{renderTime(item.created_at)}</L></small><p><L>{item.explanation}</L></p>
       </article>)}
     </details>}
   </section>;
@@ -296,19 +297,19 @@ export default function AisCrossCheck() {
         <p>SeaCommons Live on the left, VesselFinder on the right. Selecting a case focuses both maps on its vessel. Only positions received by SeaCommons are stored as AIS evidence.</p>
       </div>
       <div className="future-ais-feed-status" role="status">
-        <span className={feed.error ? 'is-stale' : 'is-fresh'}>{feed.error ? 'Feed delayed' : feed.loading ? 'Connecting' : 'Live feed'}</span>
-        <small>{feed.fetchedAt ? 'Fetched '+renderTime(feed.fetchedAt) : 'Not yet received'}</small>
+        <span className={feed.error ? 'is-stale' : 'is-fresh'}><L>{feed.error ? 'Feed delayed' : feed.loading ? 'Connecting' : 'Live feed'}</L></span>
+        <small><L>{feed.fetchedAt ? 'Fetched '+renderTime(feed.fetchedAt) : 'Not yet received'}</L></small>
         <button type="button" onClick={() => refresh()}>Refresh Live</button>
       </div>
     </header>
     <div className="future-ais-split">
       <section className="future-ais-live" aria-label="SeaCommons Live cases">
-        <div className="future-ais-split-title"><div><span className="future-eyebrow">01 / SeaCommons</span><h2>Live cases</h2></div><strong>{known.length}</strong></div>
+        <div className="future-ais-split-title"><div><span className="future-eyebrow">01 / SeaCommons</span><h2>Live cases</h2></div><strong><L>{known.length}</L></strong></div>
         <LiveCasesMap cases={filtered} selectedId={selectedId} onSelect={chooseCase} />
         <div className="future-ais-case-filter">
           <label>Find a case<input aria-label="Search Live cases" placeholder="Ship, IMO, MMSI or anomaly" value={filter} onChange={event=>setFilter(event.target.value)} /></label>
         </div>
-        {feed.error && <p role="alert" className="future-ais-notice">{feed.error}</p>}
+        {feed.error && <p role="alert" className="future-ais-notice"><L>{feed.error}</L></p>}
         <div className="future-ais-case-list" aria-label="Select maritime case">
           {filtered.map((feature) => {
             const p = feature.properties || {};
@@ -316,12 +317,12 @@ export default function AisCrossCheck() {
             const ship = caseIdentity(feature);
             return <button type="button" key={id} className={id===selectedId?'is-active':''} onClick={()=>chooseCase(feature)}
               aria-pressed={id===selectedId}>
-              <span className="future-ais-case-meta">{p.anomaly_type || p.episode_family || 'Maritime case'} <i>{renderTime(p.timestamp_utc)}</i></span>
-              <strong>{p.title || id}</strong>
-              <small>{ship.imo ? 'IMO '+ship.imo : ''} {ship.mmsi ? '· MMSI '+ship.mmsi : ''}</small>
+              <span className="future-ais-case-meta"><L>{p.anomaly_type || p.episode_family || 'Maritime case'}</L> <i><L>{renderTime(p.timestamp_utc)}</L></i></span>
+              <strong><L>{p.title || id}</L></strong>
+              <small><L>{ship.imo ? 'IMO '+ship.imo : ''}</L> <L>{ship.mmsi ? '· MMSI '+ship.mmsi : ''}</L></small>
             </button>;
           })}
-          {!filtered.length && <p className="future-ais-notice">{feed.loading ? 'Loading maritime cases…' : 'No vessel-linked cases match this search.'}</p>}
+          {!filtered.length && <p className="future-ais-notice"><L>{feed.loading ? 'Loading maritime cases…' : 'No vessel-linked cases match this search.'}</L></p>}
         </div>
       </section>
       <section className="future-ais-provider" aria-label="VesselFinder visual reference">
@@ -331,9 +332,9 @@ export default function AisCrossCheck() {
         </div>
         {identity && externalKey ? <>
           <div className="future-ais-external-action">
-            <strong>Selected vessel: {identity.imo ? 'IMO '+identity.imo : 'MMSI '+identity.mmsi}</strong>
+            <strong>Selected vessel: <L>{identity.imo ? 'IMO '+identity.imo : 'MMSI '+identity.mmsi}</L></strong>
             <a href={externalUrl} target="_blank" rel="noopener noreferrer">
-              {identity.imo ? 'Open this vessel on VesselFinder ↗' : 'Search by MMSI on VesselFinder ↗'}
+              <L>{identity.imo ? 'Open this vessel on VesselFinder ↗' : 'Search by MMSI on VesselFinder ↗'}</L>
             </a>
           </div>
           <iframe key={externalKey + ':' + embedCycle} title="VesselFinder vessel map, visual inspection only"
@@ -357,19 +358,19 @@ export default function AisCrossCheck() {
     <div className="future-ais-analysis">
       <article className="future-ais-evidence">
         <span className="future-eyebrow">03 / original AIS vs case position</span>
-        <h3>{selected?.properties?.title || (identity ? 'Vessel selected without a Live case' : 'Select a case to inspect')}</h3>
+        <h3><L>{selected?.properties?.title || (identity ? 'Vessel selected without a Live case' : 'Select a case to inspect')}</L></h3>
         <div className="future-ais-evidence-grid">
-          <div><small>Case event coordinates (historical)</small><strong>{selectedCoords ? coordsText(selectedCoords[1],'N','S') + ' · ' + coordsText(selectedCoords[0],'E','W') : 'Unavailable'}</strong>
-            <span>{renderTime(selected?.properties?.timestamp_utc)}</span></div>
-          <div><small>Last SeaCommons AIS fix</small><strong>{ais.vessel ? coordsText(ais.vessel.lat,'N','S') + ' · ' + coordsText(ais.vessel.lon,'E','W') : 'Unavailable'}</strong>
-            <span>{ais.loading ? 'Refreshing…' : ais.error || renderTime(ais.vessel?.last_seen)}</span>
-            <b className={'future-ais-age future-ais-age--' + aisFreshness(ais.vessel?.last_seen)}>{aisFreshness(ais.vessel?.last_seen)}</b></div>
+          <div><small>Case event coordinates (historical)</small><strong><L>{selectedCoords ? coordsText(selectedCoords[1],'N','S') + ' · ' + coordsText(selectedCoords[0],'E','W') : 'Unavailable'}</L></strong>
+            <span><L>{renderTime(selected?.properties?.timestamp_utc)}</L></span></div>
+          <div><small>Last SeaCommons AIS fix</small><strong><L>{ais.vessel ? coordsText(ais.vessel.lat,'N','S') + ' · ' + coordsText(ais.vessel.lon,'E','W') : 'Unavailable'}</L></strong>
+            <span><L>{ais.loading ? 'Refreshing…' : ais.error || renderTime(ais.vessel?.last_seen)}</L></span>
+            <b className={'future-ais-age future-ais-age--' + aisFreshness(ais.vessel?.last_seen)}><L>{aisFreshness(ais.vessel?.last_seen)}</L></b></div>
         </div>
         <p className="future-ais-notice">An anomaly’s historical location must not be mistaken for a live vessel position. The external map is for human inspection, not independent machine-readable corroboration.</p>
       </article>
       <ReviewForm selected={selectedId && selected ? selectedId : null} checked={checkedExternal}
         reviewHistory={history} onSaved={()=>reloadHistory(selectedId)} />
     </div>
-    {historyError && selected && <p className="future-ais-notice" role="status">{historyError}</p>}
+    {historyError && selected && <p className="future-ais-notice" role="status"><L>{historyError}</L></p>}
   </div>;
 }

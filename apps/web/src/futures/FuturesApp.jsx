@@ -1,3 +1,4 @@
+import {L} from './locale.jsx';
 import KnowledgeLibrary from './KnowledgeLibrary.jsx';
 import DeveloperGuide from '../docs/DeveloperGuide.jsx';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -6,6 +7,7 @@ import StrategyWorkspace from './StrategyWorkspace.jsx';
 import GlossaryText from './GlossaryText.jsx';
 import KeyFigures from './KeyFigures.jsx';
 import AgenticJournal from './AgenticJournal.jsx';
+import {FuturesLocale} from './locale.jsx';
 import { retainedEvidence } from './retainedEvidence.js';
 import { useAuth } from '../auth.jsx';
 import { fetchJson } from '../services/api/client.js';
@@ -30,13 +32,13 @@ import AisCrossCheck from './AisCrossCheck.jsx';
 import { hardwareBuilds, totalCost } from './hardwareCosts.js';
 import { contributionNeeds } from './contributionNeeds.js';
 
-const NAV = ['overview', 'intelligence', 'platform', 'knowledge', 'development', 'agents', 'contributions', 'history', 'operations', 'ais-check', 'hardware', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
+const NAV = ['overview', 'intelligence', 'intel-measures', 'intel-sources', 'intel-quality', 'intel-sensors', 'intel-activity', 'platform', 'knowledge', 'development', 'agents', 'contributions', 'history', 'operations', 'ais-check', 'hardware', 'project', 'roadmap', 'documents', 'guidebook', 'tools', 'updates', 'access'];
 const PRIMARY_NAV = ['overview', 'intelligence', 'platform', 'knowledge', 'development', 'agents', 'contributions'];
-const SUBNAV = { intelligence: [['intelligence','Dashboard'],['history','Timeline'],['operations','Operations'],['ais-check','AIS cross-check']], platform: [['platform','Products & devices'],['hardware','Hardware specifications'],['tools','Software tools']], knowledge: [['knowledge','Knowledge home'],['documents','Documents'],['guidebook','Guidebook']], development: [['development','Development home'],['roadmap','Roadmap'],['updates','Updates']], overview: [['overview','Introduction'],['project','Project details']] };
-const NAV_LABELS = { overview: 'Overview', intelligence:'Intelligence', 'ais-check':'AIS cross-check', platform:'Platform', knowledge:'Knowledge', development:'Development', agents:'Agents', documents: 'Docs', hardware: 'Devices', contributions: 'Contributions' };
+const SUBNAV = { intelligence: [['intelligence','Comparison'],['intel-measures','Measurements'],['intel-sources','Sources'],['intel-quality','Quality'],['intel-sensors','Sensors'],['intel-activity','Acquisition'],['history','Timeline'],['operations','Operations'],['ais-check','AIS cross-check']], platform: [['platform','Products & devices'],['hardware','Hardware specifications'],['tools','Software tools']], knowledge: [['knowledge','Dossiers'],['documents','Document register'],['guidebook','Guidebook']], development: [['development','Development home'],['roadmap','Roadmap'],['updates','Updates']], overview: [['overview','Introduction'],['project','Project details']] };
+const NAV_LABELS = {'intel-measures':'Measurements','intel-sources':'Sources','intel-quality':'Quality','intel-sensors':'Sensors','intel-activity':'Acquisition', overview: 'Overview', intelligence:'Intelligence', 'ais-check':'AIS cross-check', platform:'Platform', knowledge:'Knowledge', development:'Development', agents:'Agents', documents: 'Docs', hardware: 'Devices', contributions: 'Contributions' };
 
-const IT_NAV={overview:'Panoramica',intelligence:'Intelligence',platform:'Piattaforma',knowledge:'Documentazione',development:'Sviluppo',agents:'Agenti',contributions:'Contributi',history:'Cronologia',operations:'Operazioni','ais-check':'Verifica AIS',hardware:'Dispositivi',project:'Progetto',roadmap:'Piano di sviluppo',documents:'Documenti',guidebook:'Guida',tools:'Strumenti',updates:'Aggiornamenti',access:'Account'};
-function LanguageSwitch({lang,setLang}){return <div className="future-language-switch" role="group" aria-label="Language / Lingua">{['it','en'].map(l=><button type="button" key={l} aria-pressed={lang===l} onClick={()=>setLang(l)}>{l.toUpperCase()}</button>)}</div>}
+const IT_NAV={'intel-measures':'Misurazioni','intel-sources':'Fonti','intel-quality':'Qualità','intel-sensors':'Sensori','intel-activity':'Acquisizione',overview:'Panoramica',intelligence:'Intelligence',platform:'Piattaforma',knowledge:'Documentazione',development:'Sviluppo',agents:'Agenti',contributions:'Contributi',history:'Cronologia',operations:'Operazioni','ais-check':'Verifica AIS',hardware:'Dispositivi',project:'Progetto',roadmap:'Piano di sviluppo',documents:'Documenti',guidebook:'Guida',tools:'Strumenti',updates:'Aggiornamenti',access:'Account'};
+function LanguageSwitch({lang,setLang}){return <div className="future-language-switch" role="group" aria-label="Language / Lingua">{['it','en'].map(l=><button type="button" key={l} aria-pressed={lang===l} onClick={()=>setLang(l)}><L>{l.toUpperCase()}</L></button>)}</div>}
 function readWorkspaceView() {
   const value = new URLSearchParams(window.location.search).get('view');
   return value === 'dashboard' ? 'overview' : NAV.includes(value) ? value : 'overview';
@@ -66,18 +68,18 @@ function stateTone(state) {
 }
 
 function StatusPill({ children, state = children }) {
-  return <span className={`future-pill future-pill--${stateTone(state)}`}>{children}</span>;
+  return <span className={`future-pill future-pill--${stateTone(state)}`}><L>{children}</L></span>;
 }
 
 function SectionHeader({ eyebrow, title, copy, action }) {
   return (
     <header className="future-section-head">
       <div>
-        <span className="future-eyebrow">{eyebrow}</span>
-        <h2>{title}</h2>
-        {copy ? <p>{copy}</p> : null}
+        <span className="future-eyebrow"><L>{eyebrow}</L></span>
+        <h2><L>{title}</L></h2>
+        {copy ? <p><L>{copy}</L></p> : null}
       </div>
-      {action || null}
+      <L>{action || null}</L>
     </header>
   );
 }
@@ -99,20 +101,20 @@ function AgentTaskDashboard() {
  const filteredTasks=tasks.filter(t=>taskFilter==='all'||(taskFilter==='enabled'?t.enabled===true:t.enabled===false));
  const syncedAt=state.data?.synced_at ? Date.parse(state.data.synced_at) : NaN;
  const stale=Number.isFinite(syncedAt)&&Date.now()-syncedAt>24*60*60*1000;
- return <><section className="future-page-head"><span className="future-eyebrow">Agents / scheduled workflows</span><h1>Scheduled workflows</h1><p>Verified SeaCommons tasks from ChatGPT. This workspace shows a protected read-only snapshot, not a live scheduler connection.</p></section>
+ return <><section className="future-page-head"><span className="future-eyebrow">Agents / scheduled workflows</span><h1><L>Scheduled workflows</L></h1><p><L>Verified SeaCommons tasks from ChatGPT. This workspace shows a protected read-only snapshot, not a live scheduler connection.</L></p></section>
  <KeyFigures items={[{title:"Registered workflows",value:state.data?tasks.length:null,detail:"Tasks in the imported scheduler snapshot."},{title:"Enabled",value:state.data?tasks.filter(t=>t.enabled===true).length:null,detail:"Enabled in the snapshot; execution is not confirmed."},{title:"Paused",value:state.data?tasks.filter(t=>t.enabled===false).length:null,detail:"Paused in the snapshot."}]}/>
- <section className="future-section" aria-busy={state.loading}><div className="future-intelligence-freshness"><span>{state.loading?'Loading tasks…':state.error||('ChatGPT Tasks · '+tasks.length+' registered')}</span><small>{state.data?.synced_at?'Snapshot: '+new Date(state.data.synced_at).toLocaleString():'No verified snapshot'}</small><button type="button" disabled={state.loading} onClick={reload}>Refresh</button></div>
- <div className="future-risk-filters" role="group" aria-label="Filter scheduled workflows">{[['all','All'],['enabled','Enabled in snapshot'],['paused','Paused in snapshot']].map(([id,label])=><button type="button" key={id} aria-pressed={taskFilter===id} className={taskFilter===id?'is-active':''} onClick={()=>setTaskFilter(id)}>{label}</button>)}</div>
- {state.loading?<p role="status">Loading scheduled tasks…</p>:tasks.length?<div className="future-agent-grid">{filteredTasks.map((task,i)=><article className="future-agent-card" key={task.title||i}><StatusPill state={task.enabled?'active':'planned'}>{task.enabled?'Enabled in snapshot':'Paused in snapshot'}</StatusPill><h3>{task.title}</h3><p>{task.cadence||'Cadence unavailable'} · {task.timezone||'Time zone unavailable'}</p><small>Last execution: {task.last_run?new Date(task.last_run).toLocaleString():'Not reported'}</small><small>Snapshot status: {task.status||'Imported'}</small></article>)}</div>:<p>{state.error||'No synchronized SeaCommons tasks are available. This is not evidence that all ChatGPT tasks have stopped.'}</p>}
- {stale&&<p role="status" className="future-factual-note">Snapshot older than 24 hours. ENABLED describes the last imported state, not a live check of this task.</p>}
- <p className="future-inline-note">Tasks are managed in ChatGPT. Changes to cadence, activation or notifications do not sync automatically to this read-only snapshot.</p>
- {tasks.length>0&&filteredTasks.length===0&&<p role="status">No workflows match this filter.</p>}
+ <section className="future-section" aria-busy={state.loading}><div className="future-intelligence-freshness"><span><L>{state.loading?'Loading tasks…':state.error||('ChatGPT Tasks · '+tasks.length+' registered')}</L></span><small><L>{state.data?.synced_at?'Snapshot: '+new Date(state.data.synced_at).toLocaleString():'No verified snapshot'}</L></small><button type="button" disabled={state.loading} onClick={reload}><L>Refresh</L></button></div>
+ <div className="future-risk-filters" role="group" aria-label="Filter scheduled workflows">{[['all','All'],['enabled','Enabled in snapshot'],['paused','Paused in snapshot']].map(([id,label])=><button type="button" key={id} aria-pressed={taskFilter===id} className={taskFilter===id?'is-active':''} onClick={()=>setTaskFilter(id)}><L>{label}</L></button>)}</div>
+ {state.loading?<p role="status"><L>Loading scheduled tasks…</L></p>:tasks.length?<div className="future-agent-grid">{filteredTasks.map((task,i)=><article className="future-agent-card" key={task.title||i}><StatusPill state={task.enabled?'active':'planned'}>{task.enabled?'Enabled in snapshot':'Paused in snapshot'}</StatusPill><h3><L>{task.title}</L></h3><p><L>{task.cadence||'Cadence unavailable'}</L> · <L>{task.timezone||'Time zone unavailable'}</L></p><small><L>Last execution: </L><L>{task.last_run?new Date(task.last_run).toLocaleString():'Not reported'}</L></small><small><L>Snapshot status: </L><L>{task.status||'Imported'}</L></small></article>)}</div>:<p><L>{state.error||'No synchronized SeaCommons tasks are available. This is not evidence that all ChatGPT tasks have stopped.'}</L></p>}
+ {stale&&<p role="status" className="future-factual-note"><L>Snapshot older than 24 hours. ENABLED describes the last imported state, not a live check of this task.</L></p>}
+ <p className="future-inline-note"><L>Tasks are managed in ChatGPT. Changes to cadence, activation or notifications do not sync automatically to this read-only snapshot.</L></p>
+ {tasks.length>0&&filteredTasks.length===0&&<p role="status"><L>No workflows match this filter.</L></p>}
  </section></>;
 }
 function AgentsWorkspace({lang}){
  const [section,setSection]=useState('journal');
  const tr=(it,en)=>lang==='it'?it:en;
- return <><nav className="futures-switcher agentic-view-switch" aria-label={tr('Sezioni agenti','Agent sections')}>{[['journal',tr('Attività e aggiornamenti','Activity and updates')],['scheduler',tr('Workflow programmati (EN)','Scheduled workflows')]].map(([id,label])=><button key={id} type="button" aria-pressed={section===id} onClick={()=>setSection(id)}>{label}</button>)}</nav>{section==='journal'?<AgenticJournal lang={lang} showRuns/>:<AgentTaskDashboard/>}</>;
+ return <><nav className="futures-switcher agentic-view-switch" aria-label={tr('Sezioni agenti','Agent sections')}>{[['journal',tr('Attività e aggiornamenti','Activity and updates')],['scheduler',tr('Workflow programmati','Scheduled workflows')]].map(([id,label])=><button key={id} type="button" aria-pressed={section===id} onClick={()=>setSection(id)}><L>{label}</L></button>)}</nav>{section==='journal'?<AgenticJournal lang={lang} showRuns/>:<AgentTaskDashboard/>}</>;
 }
 function useOperationalData(hours = 24) {
   const sequence = useRef(0);
@@ -236,12 +238,12 @@ function LifetimeOverview({ ops, overall }) {
     <SectionHeader eyebrow="overall / historical record" title="The cumulative evidence record."
       copy="All retained database records, with separate public archive totals. These populations measure different stages and cannot be added together." />
     <div className="future-lifetime-grid">
-      {metrics.map(([label, value, note]) => <article key={label}><small>{label}</small><strong>{formatCount(value)}</strong><p>{note}</p></article>)}
+      {metrics.map(([label, value, note]) => <article key={label}><small><L>{label}</L></small><strong><L>{formatCount(value)}</L></strong><p><L>{note}</L></p></article>)}
     </div>
     <div className="future-data-provenance">
-      <p><b>SeaCommons collection:</b> {intel.first_ingested_at ? formatDateTime(intel.first_ingested_at) + ' → ' + formatDateTime(intel.last_ingested_at) : 'Collection start not yet available from the API.'}</p>
-      <p><b>Historical dates contained in the sources:</b> {formatDateTime(intel.oldest_event_utc)} → {formatDateTime(intel.newest_event_utc)}. Source events may predate SeaCommons; they do not indicate when the software began operating.</p>
-      <p>All-time means records currently retained in the database. {validated ? 'Inventory generated '+formatDateTime(validated.generatedAt)+'.' : 'Verified history is unavailable.'} {overall.error || ''}</p>
+      <p><b>SeaCommons collection:</b> <L>{intel.first_ingested_at ? formatDateTime(intel.first_ingested_at) + ' → ' + formatDateTime(intel.last_ingested_at) : 'Collection start not yet available from the API.'}</L></p>
+      <p><b>Historical dates contained in the sources:</b> <L>{formatDateTime(intel.oldest_event_utc)}</L> → <L>{formatDateTime(intel.newest_event_utc)}</L>. Source events may predate SeaCommons; they do not indicate when the software began operating.</p>
+      <p>All-time means records currently retained in the database. <L>{validated ? 'Inventory generated '+formatDateTime(validated.generatedAt)+'.' : 'Verified history is unavailable.'}</L> <L>{overall.error || ''}</L></p>
     </div>
   </section>;
 }
@@ -261,21 +263,21 @@ function HistoricalAnalytics({ overall }) {
   return <>
     <section className="future-page-head">
       <span className="future-eyebrow">Intelligence / collection timeline</span>
-      <h1>Collection timeline</h1>
-      <p>Monthly volumes from records actually ingested by SeaCommons, not the historical dates described inside them. The view is scoped to the project period beginning in 2026, without repeating the Overall dashboard.</p>
+      <h1><L>Collection timeline</L></h1>
+      <p><L>Monthly volumes from records actually ingested by SeaCommons, not the historical dates described inside them. The view is scoped to the project period beginning in 2026, without repeating the Overall dashboard.</L></p>
     </section>
     <section className="future-section" aria-label="Monthly SeaCommons collection timeline">
       <SectionHeader eyebrow="collection / ingestion time" title="Monthly collected records"
         copy="Each month shows retained normalized Intel records by database creation date. Backfills can increase a month’s count; deletion or retention can reduce it. These are not incident counts." />
-      {first && <p className="future-data-provenance">Recorded months: {first} to {last}. Earliest retained ingestion: {formatDateTime(record.first_ingested_at)}. Snapshot: {formatDateTime(overall.history?.generated_at)}.</p>}
+      {first && <p className="future-data-provenance">Recorded months: <L>{first}</L> to <L>{last}</L>. Earliest retained ingestion: <L>{formatDateTime(record.first_ingested_at)}</L>. Snapshot: <L>{formatDateTime(overall.history?.generated_at)}</L>.</p>}
       {monthly.length ? <div className="future-history-chart future-collection-timeline" role="img" aria-label="Monthly SeaCommons ingestion volume">
         {monthly.map(({month,count})=><div key={month} className="future-history-bar">
           <span title={month+': '+formatCount(count)+' records'} style={{height:(5+95*Number(count)/max)+'%'}}/>
-          <small>{new Date(month+'-01T00:00:00Z').toLocaleDateString('en-GB',{month:'short',year:'numeric',timeZone:'UTC'})}</small>
-          <strong>{formatCount(count)}</strong>
+          <small><L>{new Date(month+'-01T00:00:00Z').toLocaleDateString('en-GB',{month:'short',year:'numeric',timeZone:'UTC'})}</L></small>
+          <strong><L>{formatCount(count)}</L></strong>
         </div>)}
-      </div> : <p className="future-inline-note">{overall.loading?'Loading collection timeline…':overall.error||'No retained ingestion-month records returned for the SeaCommons project period.'}</p>}
-      <p className="future-data-provenance">The start boundary is an editorial project-era filter (February 2026), not a claim that sensors or ingestion were live that month. Months with no returned records are not filled with invented zeroes. Source-event chronology may reach earlier years and is intentionally excluded.</p>
+      </div> : <p className="future-inline-note"><L>{overall.loading?'Loading collection timeline…':overall.error||'No retained ingestion-month records returned for the SeaCommons project period.'}</L></p>}
+      <p className="future-data-provenance"><L>The start boundary is an editorial project-era filter (February 2026), not a claim that sensors or ingestion were live that month. Months with no returned records are not filled with invented zeroes. Source-event chronology may reach earlier years and is intentionally excluded.</L></p>
     </section>
   </>;
 }
@@ -293,12 +295,12 @@ function Operations({ ops }) {
   return <>
     <section className="future-page-head">
       <span className="future-eyebrow">data operations / evidence quality</span>
-      <h1>Service reliability</h1>
-      <p>Operations shows what information the software has received, which processing steps completed and where sources may be delayed. It also documents known technical problems, earlier fixes and what still needs verification. A technical warning is not the same as a confirmed maritime incident.</p>
+      <h1><L>Service reliability</L></h1>
+      <p><L>Operations shows what information the software has received, which processing steps completed and where sources may be delayed. It also documents known technical problems, earlier fixes and what still needs verification. A technical warning is not the same as a confirmed maritime incident.</L></p>
     </section>
     <div className="future-library-actions">
-      <button type="button" onClick={ops.refresh}>refresh measurements ↗</button>
-      <span className="future-data-provenance">24-hour measurements · generated {formatDateTime(status?.generated_at)} · {ops.error || 'canonical data feed'}</span>
+      <button type="button" onClick={ops.refresh}><L>refresh measurements ↗</L></button>
+      <span className="future-data-provenance">24-hour measurements · generated <L>{formatDateTime(status?.generated_at)}</L> · <L>{ops.error || 'canonical data feed'}</L></span>
     </div>
     <section className="future-section">
       <SectionHeader eyebrow="evidence pipeline / 24h" title="Evidence processing"
@@ -308,10 +310,10 @@ function Operations({ ops }) {
     <section className="future-section">
       <SectionHeader eyebrow="data sources / 24h" title="Sensor and source coverage" />
       <div className="future-history-types">
-        {families.map(([label,value]) => <article key={label}><span>{label}</span><strong>{formatCount(value)}</strong></article>)}
+        {families.map(([label,value]) => <article key={label}><span><L>{label}</L></span><strong><L>{formatCount(value)}</L></strong></article>)}
       </div>
       <SourceHealth pipeline={ops.pipeline} />
-      {sourceRows.length === 0 && <p className="future-inline-note">Source states are unavailable; no status is inferred.</p>}
+      {sourceRows.length === 0 && <p className="future-inline-note"><L>Source states are unavailable; no status is inferred.</L></p>}
     </section>
     <OperationalRiskRegister />
   </>;
@@ -324,11 +326,11 @@ function OperationalRiskRegister() {
     <SectionHeader eyebrow="Operations / continuous improvement" title="Fine-tuning"
       copy="Technical issues, improvements and validation. Review earlier fixes and unresolved checks by priority. These are historical findings and open verification tasks, not automatically confirmed live outages. Live source health appears above." />
     <div className="future-risk-filters" role="group" aria-label="Filter engineering issues">
-      {['all','P0','P1','P2'].map(p => <button key={p} type="button" className={priority === p ? 'is-active' : ''} onClick={() => setPriority(p)}>{p === 'all' ? 'All issues' : p}</button>)}
+      {['all','P0','P1','P2'].map(p => <button key={p} type="button" className={priority === p ? 'is-active' : ''} onClick={() => setPriority(p)}><L>{p === 'all' ? 'All issues' : p}</L></button>)}
     </div>
     <KeyFigures items={[{title:"Audit entries",value:operationalAudit.length,detail:"Historical register and pending checks."},{title:"P0 entries",value:operationalAudit.filter(i=>i.priority==="P0").length,detail:"Highest-priority audit items, not necessarily current outages."},{title:"Visible entries",value:rows.length,detail:"Matching the selected priority."}]}/><div className="future-risk-list">{rows.map(item => <details key={item.id} className="future-risk-item" defaultOpen={item.priority === 'P0'}>
-      <summary><span className="future-risk-priority">{item.priority}</span><span><strong>{item.title}</strong><small>{item.area} · {item.since}</small></span><span className="future-risk-state">{item.state}</span></summary>
-      <div className="future-risk-body"><p><b>Observed issue:</b> {item.symptom}</p><p><b>Work already done:</b> {item.fixes}</p><p><b>Required validation / next fix:</b> {item.next}</p></div>
+      <summary><span className="future-risk-priority"><L>{item.priority}</L></span><span><strong><L>{item.title}</L></strong><small><L>{item.area}</L> · <L>{item.since}</L></small></span><span className="future-risk-state"><L>{item.state}</L></span></summary>
+      <div className="future-risk-body"><p><b><L>Observed issue:</L></b> <L>{item.symptom}</L></p><p><b><L>Work already done:</L></b> <L>{item.fixes}</L></p><p><b><L>Required validation / next fix:</L></b> <L>{item.next}</L></p></div>
     </details>)}</div>
     <p className="future-data-provenance">Audit snapshot: 13 Oct 2026. P0 = evidence/publication or recurring availability risk; P1 = functional reliability; P2 = coverage/release maturity. Statuses require runtime verification before closure.</p>
   </section>;
@@ -348,16 +350,16 @@ function Hardware() {
     <section className="future-section"><SectionHeader eyebrow="procurement calculator" title="Equipment budget calculator"
       copy="Editable unit counts. Planning estimates in EUR, not quotations. Hardware subtotal excludes VAT, shipping, field installation, certification and vessel hire." />
       <KeyFigures items={[{title:"Selected equipment budget",value:euro(grandTotal),detail:"Estimated equipment subtotal for chosen quantities."},{title:"Reference budget",value:euro(hardwareBuilds.reduce((sum,item)=>sum+totalCost(item),0)),detail:"One of each configuration; not a funding request."},{title:"Configurations",value:hardwareBuilds.length,detail:"Proposed equipment designs."}]}/>
-      <div className="future-hardware-quantities">{hardwareBuilds.map(item=><label key={item.id}><span>{item.name}</span><input type="number" min="0" max="100" value={quantity[item.id] ?? 1} onChange={e=>setQuantity({...quantity,[item.id]:Math.min(100,Math.max(0,Number(e.target.value)||0))})}/><b>{euro(totalCost(item)*(quantity[item.id]??1))}</b></label>)}</div>
+      <div className="future-hardware-quantities">{hardwareBuilds.map(item=><label key={item.id}><span><L>{item.name}</L></span><input type="number" min="0" max="100" value={quantity[item.id] ?? 1} onChange={e=>setQuantity({...quantity,[item.id]:Math.min(100,Math.max(0,Number(e.target.value)||0))})}/><b><L>{euro(totalCost(item)*(quantity[item.id]??1))}</L></b></label>)}</div>
     </section>
     <section className="future-section"><SectionHeader eyebrow="open hardware roadmap" title="Equipment and component costs"
       copy="Real products are linked where a supplier reference was found; other rows are explicitly labeled planning allowances. Verify supplier availability, shipping and local taxes before purchasing." />
-      <div className="future-risk-filters" role="group" aria-label="Hardware development phase">{['all','1','2','3'].map(p=><button key={p} type="button" className={phase===p?'is-active':''} onClick={()=>setPhase(p)}>{p==='all'?'All phases':`Phase ${p}`}</button>)}</div>
+      <div className="future-risk-filters" role="group" aria-label="Hardware development phase">{['all','1','2','3'].map(p=><button key={p} type="button" className={phase===p?'is-active':''} onClick={()=>setPhase(p)}><L>{p==='all'?'All phases':`Phase ${p}`}</L></button>)}</div>
       <div className="future-hardware-grid">{rows.map(item=><article key={item.id} className="future-hardware-card future-hardware-cost-card">
-        <small>{item.phase}</small><h3>{item.name}</h3><strong className="future-equipment-price">{euro(totalCost(item))}</strong><span className="future-data-provenance">Estimated equipment subtotal per configuration</span><p><GlossaryText>{item.purpose}</GlossaryText></p>
-        <details className="future-hardware-expand"><summary>Components and unit costs</summary><div className="future-hardware-bom">{item.items.map(([name,count,unit,url,note],i)=><div key={i}><span>{url?<a href={url} target="_blank" rel="noreferrer">{name} ↗</a>:name}<small>{note}</small></span><span>{count} × {euro(unit)}</span><b>{euro(count*unit)}</b></div>)}</div>
-        <div className="future-hardware-subtotal"><span>Equipment subtotal</span><strong>{euro(totalCost(item))}</strong></div>
-        <p><b>Recurring operating costs</b>{item.recurring}</p><p className="future-hardware-caution"><b>Design and procurement note</b>{item.notes}</p></details>
+        <small><L>{item.phase}</L></small><h3><L>{item.name}</L></h3><strong className="future-equipment-price"><L>{euro(totalCost(item))}</L></strong><span className="future-data-provenance"><L>Estimated equipment subtotal per configuration</L></span><p><GlossaryText>{item.purpose}</GlossaryText></p>
+        <details className="future-hardware-expand"><summary><L>Components and unit costs</L></summary><div className="future-hardware-bom">{item.items.map(([name,count,unit,url,note],i)=><div key={i}><span>{url?<a href={url} target="_blank" rel="noreferrer"><L>{name}</L> ↗</a>:name}<small><L>{note}</L></small></span><span><L>{count}</L> × <L>{euro(unit)}</L></span><b><L>{euro(count*unit)}</L></b></div>)}</div>
+        <div className="future-hardware-subtotal"><span><L>Equipment subtotal</L></span><strong><L>{euro(totalCost(item))}</L></strong></div>
+        <p><b><L>Recurring operating costs</L></b><L>{item.recurring}</L></p><p className="future-hardware-caution"><b><L>Design and procurement note</L></b><L>{item.notes}</L></p></details>
       </article>)}</div>
     </section>
     <section className="future-section"><SectionHeader eyebrow="technical sequencing" title="Field validation sequence"
@@ -389,12 +391,12 @@ function Contributions() {
   const message = 'Hello SeaCommons,\n\nI would like to help with:\n'+selected.map(n=>'• '+n).join('\n')+'\n\nMy organisation / name:\nWhat I can provide:\nLocation and availability:\nPreferred contact:\n\nPlease share the technical scope and next steps before any purchase or account access.';
   const contact = 'mailto:republic@suezcanal.xyz?subject='+encodeURIComponent('SeaCommons — contribution enquiry')+'&body='+encodeURIComponent(message);
   return <div className="future-contribute">
-    <section className="future-contribute__hero"><span className="future-eyebrow">SEA COMMONS / BUILD WITH US</span><h1>Resource contributions</h1><p>From a free test server to a coastal receiver, every contribution supports a specific part of SeaCommons. Explore the options, choose what you can offer, and agree the next steps with the team.</p><div className="future-contribute__hero-links"><a href="#contribute-catalog">Explore contributions ↓</a><a href="#contribute-start">Start with a free server ↗</a></div></section>
+    <section className="future-contribute__hero"><span className="future-eyebrow">SEA COMMONS / BUILD WITH US</span><h1><L>Resource contributions</L></h1><p><L>From a free test server to a coastal receiver, every contribution supports a specific part of SeaCommons. Explore the options, choose what you can offer, and agree the next steps with the team.</L></p><div className="future-contribute__hero-links"><a href="#contribute-catalog"><L>Explore contributions ↓</L></a><a href="#contribute-start"><L>Start with a free server ↗</L></a></div></section>
     <KeyFigures items={[{title:"Resource requirements",value:contributionNeeds.length,detail:"Defined opportunities in the contribution register."},{title:"Urgent priorities",value:contributionNeeds.filter(n=>n.urgency==="Urgent").length,detail:"Planning priority, not an operational incident count."},{title:"Selected",value:selected.length,detail:"Resources in your enquiry. No payment is made here."}]}/>
-    <section id="contribute-start" className="future-contribute__starter"><div className="future-contribute__starter-copy"><span className="future-eyebrow">A GOOD FIRST STEP / INFRASTRUCTURE</span><h2>Isolated test server</h2><p>SeaCommons needs a separate place to try updates and check backups. An eligible Oracle Cloud Always Free virtual machine can support small, isolated tests without touching the live database.</p><div className="future-contribute__price"><strong>€0</strong><span>/ month, within eligible Always Free limits</span></div><p className="future-contribute__warning">This is a test environment, not a replacement for the production server. Oracle may require a payment card for verification; capacity and free eligibility depend on the account, region and chosen resources.</p><button type="button" onClick={()=>setShowSteps(v=>!v)} aria-expanded={showSteps}>{showSteps?'Hide':'Show'} the setup guide {showSteps?'−':'+'}</button></div><div className="future-contribute__starter-visual" aria-hidden="true"><div className="future-contribute__server">01<span>ORACLE CLOUD</span><strong>TEST VM</strong><small>Isolated · Always Free eligible</small></div><div className="future-contribute__connection">↓ <span>Health checks · test restores</span></div><div className="future-contribute__server future-contribute__server--end">02<span>SEA COMMONS</span><strong>STAGING</strong><small>No production data or credentials</small></div></div></section>
+    <section id="contribute-start" className="future-contribute__starter"><div className="future-contribute__starter-copy"><span className="future-eyebrow">A GOOD FIRST STEP / INFRASTRUCTURE</span><h2>Isolated test server</h2><p>SeaCommons needs a separate place to try updates and check backups. An eligible Oracle Cloud Always Free virtual machine can support small, isolated tests without touching the live database.</p><div className="future-contribute__price"><strong>€0</strong><span>/ month, within eligible Always Free limits</span></div><p className="future-contribute__warning">This is a test environment, not a replacement for the production server. Oracle may require a payment card for verification; capacity and free eligibility depend on the account, region and chosen resources.</p><button type="button" onClick={()=>setShowSteps(v=>!v)} aria-expanded={showSteps}><L>{showSteps?'Hide':'Show'}</L> the setup guide <L>{showSteps?'−':'+'}</L></button></div><div className="future-contribute__starter-visual" aria-hidden="true"><div className="future-contribute__server">01<span>ORACLE CLOUD</span><strong>TEST VM</strong><small>Isolated · Always Free eligible</small></div><div className="future-contribute__connection">↓ <span>Health checks · test restores</span></div><div className="future-contribute__server future-contribute__server--end">02<span>SEA COMMONS</span><strong>STAGING</strong><small>No production data or credentials</small></div></div></section>
     {showSteps && <section className="future-contribute__guide" aria-label="Oracle Always Free setup guide"><h3>How to get started</h3><ol><li><strong>Create your own Oracle Cloud account.</strong><p>Open the official Free Tier registration page. Choose your home region carefully; free capacity is not guaranteed in every region.</p><a href="https://www.oracle.com/cloud/free/" target="_blank" rel="noreferrer">Oracle Free Tier ↗</a></li><li><strong>Create an Always Free eligible VM.</strong><p>In Compute → Instances, choose an eligible shape and verify the “Always Free” label. Stay within the published compute, storage and networking quotas.</p><a href="https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm" target="_blank" rel="noreferrer">Check Oracle's limits ↗</a></li><li><strong>Secure it before connecting anything.</strong><p>Use SSH keys, restrict inbound access, enable monitoring and set budget alerts. Never send passwords, private keys, API tokens or billing details.</p></li><li><strong>Contact SeaCommons for a scoped test.</strong><p>Send the region, eligible VM shape and a contact email. We will agree a non-production test and the access needed. Do not connect it to production until the scope is approved.</p><a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20Oracle%20Always%20Free%20test%20VM">Request onboarding ↗</a></li></ol><p className="future-contribute__guide-note">This is a real self-service account setup followed by a manual technical review, not an automated provisioning or payment flow. The contribution is only accepted after the team confirms it.</p></section>}
-    <section id="contribute-catalog" className="future-contribute__catalog"><div className="future-contribute__catalog-heading"><div><span className="future-eyebrow">PICK A PART OF THE PROJECT</span><h2>Contribution catalogue</h2></div><p>Prices are planning estimates, not checkout prices. You can offer equipment, services, access or engineering time instead of money.</p></div><div className="future-contribute__filters" role="group" aria-label="Filter contributions"><button type="button" className={filter==='all'?'is-active':''} onClick={()=>setFilter('all')}>All</button>{groups.map(g=><button key={g} type="button" className={filter===g?'is-active':''} onClick={()=>setFilter(g)}>{g.replace(' / ',' & ')}</button>)}</div><div className="future-contribute__grid">{visible.map(item=><article key={item.name} className="future-contribute__item"><div className="future-contribute__item-top"><span className="future-contribute__icon" aria-hidden="true">{contributionIcons[item.group]||'◇'}</span><small>{item.group}</small></div><h3>{item.name}</h3><p><GlossaryText>{contributionSummary(item.name)}</GlossaryText></p><strong className="future-contribute__cost">{item.cost}</strong><details><summary>What's included and how we test it</summary><p><strong>Needed:</strong> <GlossaryText>{item.need}</GlossaryText></p><p><strong>Partner role:</strong> <GlossaryText>{item.partnerRole}</GlossaryText></p><p><strong>Proof it works:</strong> <GlossaryText>{item.acceptance}</GlossaryText></p></details><button type="button" className={selected.includes(item.name)?'is-selected':''} onClick={()=>toggle(item.name)} aria-pressed={selected.includes(item.name)}>{selected.includes(item.name)?'✓ Selected — remove':'Add to my contribution +'}</button></article>)}</div></section>
-    <section className="future-contribute__basket" aria-live="polite"><div><span className="future-eyebrow">YOUR CONTRIBUTION</span><h2>{selected.length ? selected.length+' selected':'No resources selected'}</h2><p>{selected.length?selected.join(' · '):'Choose one or more options above. There is no online payment: the next step is a conversation about feasibility, responsibilities and access.'}</p></div>{selected.length?<a href={contact}>Send contribution enquiry ↗</a>:<a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20collaboration">Discuss a different idea ↗</a>}</section>
+    <section id="contribute-catalog" className="future-contribute__catalog"><div className="future-contribute__catalog-heading"><div><span className="future-eyebrow">PICK A PART OF THE PROJECT</span><h2>Contribution catalogue</h2></div><p>Prices are planning estimates, not checkout prices. You can offer equipment, services, access or engineering time instead of money.</p></div><div className="future-contribute__filters" role="group" aria-label="Filter contributions"><button type="button" className={filter==='all'?'is-active':''} onClick={()=>setFilter('all')}><L>All</L></button>{groups.map(g=><button key={g} type="button" className={filter===g?'is-active':''} onClick={()=>setFilter(g)}><L>{g.replace(' / ',' & ')}</L></button>)}</div><div className="future-contribute__grid">{visible.map(item=><article key={item.name} className="future-contribute__item"><div className="future-contribute__item-top"><span className="future-contribute__icon" aria-hidden="true"><L>{contributionIcons[item.group]||'◇'}</L></span><small><L>{item.group}</L></small></div><h3><L>{item.name}</L></h3><p><GlossaryText>{contributionSummary(item.name)}</GlossaryText></p><strong className="future-contribute__cost"><L>{item.cost}</L></strong><details><summary>What's included and how we test it</summary><p><strong>Needed:</strong> <GlossaryText>{item.need}</GlossaryText></p><p><strong>Partner role:</strong> <GlossaryText>{item.partnerRole}</GlossaryText></p><p><strong>Proof it works:</strong> <GlossaryText>{item.acceptance}</GlossaryText></p></details><button type="button" className={selected.includes(item.name)?'is-selected':''} onClick={()=>toggle(item.name)} aria-pressed={selected.includes(item.name)}><L>{selected.includes(item.name)?'✓ Selected — remove':'Add to my contribution +'}</L></button></article>)}</div></section>
+    <section className="future-contribute__basket" aria-live="polite"><div><span className="future-eyebrow">YOUR CONTRIBUTION</span><h2><L>{selected.length ? selected.length+' selected':'No resources selected'}</L></h2><p><L>{selected.length?selected.join(' · '):'Choose one or more options above. There is no online payment: the next step is a conversation about feasibility, responsibilities and access.'}</L></p></div>{selected.length?<a href={contact}>Send contribution enquiry ↗</a>:<a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20collaboration">Discuss a different idea ↗</a>}</section>
   </div>;
 }
 
@@ -403,13 +405,13 @@ function WorkstreamList({ project }) {
     <div className="future-workstreams">
       {project.workstreams.map((stream, index) => (
         <article key={stream.id}>
-          <div className="future-workstreams__index">{String(index + 1).padStart(2, '0')}</div>
+          <div className="future-workstreams__index"><L>{String(index + 1).padStart(2, '0')}</L></div>
           <div>
             <div className="future-workstreams__title">
-              <h4>{stream.name}</h4>
+              <h4><L>{stream.name}</L></h4>
               <StatusPill state={stream.state}>{stream.state}</StatusPill>
             </div>
-            <p>{stream.note}</p>
+            <p><L>{stream.note}</L></p>
           </div>
         </article>
       ))}
@@ -424,22 +426,22 @@ function ProjectDetail({ project }) {
       <header>
         <div>
           <span className="future-eyebrow">SeaCommons workspace</span>
-          <h2>{project.name}</h2>
+          <h2><L>{project.name}</L></h2>
         </div>
         <StatusPill state={project.status}>{project.status}</StatusPill>
       </header>
 
-      <p className="future-project-lead">{project.summary}</p>
+      <p className="future-project-lead"><L>{project.summary}</L></p>
 
       <div className="future-detail-grid">
-        <div><span>current phase</span><strong>{project.phase}</strong></div>
-        <div><span>workstreams</span><strong>{project.workstreams.length}</strong></div>
-        <div><span>access</span><strong>identity via OIDC; resource grants pending</strong></div>
+        <div><span>current phase</span><strong><L>{project.phase}</L></strong></div>
+        <div><span>workstreams</span><strong><L>{project.workstreams.length}</L></strong></div>
+        <div><span><L>access</L></span><strong>identity via OIDC; resource grants pending</strong></div>
       </div>
 
       <div className="future-capabilities">
         <span className="future-eyebrow">capabilities / scope</span>
-        <div>{project.capabilities.map((item) => <span key={item}>{item}</span>)}</div>
+        <div>{project.capabilities.map((item) => <span key={item}><L>{item}</L></span>)}</div>
       </div>
 
       <div className="future-two-col future-two-col--wide">
@@ -453,10 +455,10 @@ function ProjectDetail({ project }) {
             {project.documents.map((doc) => (
               <div className="future-doc-row" key={doc.id}>
                 <span>
-                  <b>{doc.title}</b>
-                  <small>{doc.kind} · {doc.visibility}</small>
+                  <b><L>{doc.title}</L></b>
+                  <small><L>{doc.kind}</L> · <L>{doc.visibility}</L></small>
                 </span>
-                <time>{doc.updated}</time>
+                <time><L>{doc.updated}</L></time>
               </div>
             ))}
           </div>
@@ -476,22 +478,22 @@ function OperationalStrip({ ops, period = '24h' }) {
     <section className="future-ops-strip" aria-label="SeaCommons operational status">
       <div>
         <span>system</span>
-        <strong>{serviceState}</strong>
+        <strong><L>{serviceState}</L></strong>
         <StatusPill state={serviceState}>{ops.loading ? 'connecting' : serviceState}</StatusPill>
       </div>
       <div>
-        <span>Raw observations · {period === '7d' ? '7 days' : '24 h'}</span>
-        <strong>{formatCount(pipeline?.raw_observations)}</strong>
+        <span>Raw observations · <L>{period === '7d' ? '7 days' : '24 h'}</L></span>
+        <strong><L>{formatCount(pipeline?.raw_observations)}</L></strong>
         <small>Source inputs received in this time window</small>
       </div>
       <div>
-        <span>episodes · {period === '7d' ? '7 days' : '24 h'}</span>
-        <strong>{formatCount(pipeline?.maritime_episodes)}</strong>
-        <small>{formatCount(pipeline?.corroborated_episodes)} corroborated</small>
+        <span>episodes · <L>{period === '7d' ? '7 days' : '24 h'}</L></span>
+        <strong><L>{formatCount(pipeline?.maritime_episodes)}</L></strong>
+        <small><L>{formatCount(pipeline?.corroborated_episodes)}</L> corroborated</small>
       </div>
       <div>
-        <span>investigations · {period === '7d' ? '7 days' : '24 h'}</span>
-        <strong>{formatCount(pipeline?.investigation_hypotheses)}</strong>
+        <span>investigations · <L>{period === '7d' ? '7 days' : '24 h'}</L></span>
+        <strong><L>{formatCount(pipeline?.investigation_hypotheses)}</L></strong>
         <small>Signals under examination, not confirmed incidents</small>
       </div>
     </section>
@@ -519,15 +521,15 @@ function PipelinePanel({ status, period = '24h' }) {
   return (
     <div className="future-metric-panels">
       <section className="future-metric-panel">
-        <span className="future-eyebrow">evidence pipeline · {period === '7d' ? '7 days' : '24 h'}</span>
+        <span className="future-eyebrow">evidence pipeline · <L>{period === '7d' ? '7 days' : '24 h'}</L></span>
         <div className="future-metric-list">
-          {rows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{formatCount(value)}</strong></div>)}
+          {rows.map(([label, value]) => <div key={label}><span><L>{label}</L></span><strong><L>{formatCount(value)}</L></strong></div>)}
         </div>
       </section>
       <section className="future-metric-panel">
-        <span className="future-eyebrow">sensor activity · {period === '7d' ? '7 days' : '24 h'}</span>
+        <span className="future-eyebrow">sensor activity · <L>{period === '7d' ? '7 days' : '24 h'}</L></span>
         <div className="future-metric-list">
-          {sensorRows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{formatCount(value)}</strong></div>)}
+          {sensorRows.map(([label, value]) => <div key={label}><span><L>{label}</L></span><strong><L>{formatCount(value)}</L></strong></div>)}
         </div>
       </section>
     </div>
@@ -554,9 +556,9 @@ function SourceHealth({ pipeline }) {
       <div>
         {rows.map((row) => (
           <article key={row.family}>
-            <span>{row.label}</span>
+            <span><L>{row.label}</L></span>
             <div>
-              {row.mode ? <small>{row.mode}</small> : null}
+              {row.mode ? <small><L>{row.mode}</L></small> : null}
               <StatusPill state={row.state}>{row.state}</StatusPill>
             </div>
           </article>
@@ -596,22 +598,22 @@ function PlatformSummary({ ops, period }) {
         copy={`Values are from the selected ${windowLabel} window. The Play archive is cumulative and stays separate.`} />
       <div className="future-funnel-grid">
         {stages.map((stage, index) => <article key={stage.label}>
-          <small>{String(index + 1).padStart(2, '0')} / {stage.label}</small>
-          <strong>{formatCount(stage.value)}</strong>
-          <span>{stage.note}</span>
+          <small><L>{String(index + 1).padStart(2, '0')}</L> / <L>{stage.label}</L></small>
+          <strong><L>{formatCount(stage.value)}</L></strong>
+          <span><L>{stage.note}</L></span>
         </article>)}
       </div>
-      <p className="future-data-provenance">Source: canonical SeaCommons API /api/v1/status?hours={period === '7d' ? 168 : 24}. {generated ? 'Snapshot generated ' + new Date(generated).toLocaleString() + '.' : 'Waiting for timestamp.'} A derived cue is not a factual finding.</p>
+      <p className="future-data-provenance">Source: canonical SeaCommons API /api/v1/status?hours=<L>{period === '7d' ? 168 : 24}</L>. <L>{generated ? 'Snapshot generated ' + new Date(generated).toLocaleString() + '.' : 'Waiting for timestamp.'}</L> A derived cue is not a factual finding.</p>
     </section>}
     <section className="future-section">
       <SectionHeader eyebrow="03 / product ecology" title="The different parts of SeaCommons."
         copy="Each SeaCommons surface has a separate purpose and audience. Futures keeps you inside your authenticated partner workspace." />
       <div className="future-product-grid">
         {products.map((product) => {
-          const content = <><small>SeaCommons / {product.label}</small><h3>{product.label}</h3><p>{product.note}</p><span>{product.url ? 'open surface ↗' : product.label === 'Futures' ? 'you are here' : 'reference only'}</span></>;
+          const content = <><small>SeaCommons / <L>{product.label}</L></small><h3><L>{product.label}</L></h3><p><L>{product.note}</L></p><span><L>{product.url ? 'open surface ↗' : product.label === 'Futures' ? 'you are here' : 'reference only'}</L></span></>;
           return product.url
-            ? <a key={product.label} href={product.url} target="_blank" rel="noreferrer">{content}</a>
-            : <article key={product.label}>{content}</article>;
+            ? <a key={product.label} href={product.url} target="_blank" rel="noreferrer"><L>{content}</L></a>
+            : <article key={product.label}><L>{content}</L></article>;
         })}
       </div>
     </section>
@@ -630,18 +632,18 @@ function ApplicationPathways() {
         {verticalPathways.map((item, index) => (
           <article key={item.id} className={index === 0 ? 'is-operational' : ''}>
             <header>
-              <span>{item.phase}</span>
+              <span><L>{item.phase}</L></span>
               <StatusPill state={item.status}>{item.status}</StatusPill>
             </header>
-            <h3>{item.title}</h3>
-            <p>{item.detail}</p>
+            <h3><L>{item.title}</L></h3>
+            <p><L>{item.detail}</L></p>
             <div className="future-pathway-meta">
               <small>Potential inputs</small>
-              <span>{item.inputs.join(' · ')}</span>
+              <span><L>{item.inputs.join(' · ')}</L></span>
             </div>
             <div className="future-pathway-meta">
               <small>Intended output</small>
-              <span>{item.output}</span>
+              <span><L>{item.output}</L></span>
             </div>
           </article>
         ))}
@@ -659,8 +661,8 @@ function PilotFramework() {
       <div className="future-pilot-steps">
         {pilotFramework.map((step) => (
           <article key={step.label}>
-            <small>{step.label}</small>
-            <p>{step.text}</p>
+            <small><L>{step.label}</L></small>
+            <p><L>{step.text}</L></p>
           </article>
         ))}
       </div>
@@ -679,10 +681,10 @@ function Overview({ ops, overall, period, setPeriod, navigate, compact = false }
         </p>
         <div className="future-hero__meta">
           <StatusPill state={ops.status?.status || 'unknown'}>{ops.status?.status || 'operational feed pending'}</StatusPill>
-          <span>{ops.updatedAt ? `updated ${ops.updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'connecting to operational contracts'}</span>
+          <span><L>{ops.updatedAt ? `updated ${ops.updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'connecting to operational contracts'}</L></span>
           <button onClick={ops.refresh}>refresh</button>
         </div>
-        {ops.error ? <p className="future-inline-note">{ops.error} Static project information remains available.</p> : null}
+        {ops.error ? <p className="future-inline-note"><L>{ops.error}</L> Static project information remains available.</p> : null}
       </section>
 
       {!compact && <MethodExplorer />}
@@ -693,9 +695,9 @@ function Overview({ ops, overall, period, setPeriod, navigate, compact = false }
           {[
             ['24h', '24 hours'], ['7d', '7 days'], ['overall', 'Overall'],
           ].map(([value, label]) => <button key={value} type="button" aria-pressed={period === value}
-            className={period === value ? 'is-active' : ''} onClick={() => setPeriod(value)}>{label}</button>)}
+            className={period === value ? 'is-active' : ''} onClick={() => setPeriod(value)}><L>{label}</L></button>)}
         </div>
-        <small>{period === 'overall' ? 'Complete retained history in the database, not every observation ever seen' : `Activity recorded in the last ${period === '7d' ? 'seven days' : '24 hours'}, not a count of confirmed incidents`}</small>
+        <small><L>{period === 'overall' ? 'Complete retained history in the database, not every observation ever seen' : `Activity recorded in the last ${period === '7d' ? 'seven days' : '24 hours'}, not a count of confirmed incidents`}</L></small>
       </section>
       {period === 'overall' && <LifetimeOverview ops={ops} overall={overall} />}
       {period !== 'overall' && <OperationalStrip ops={ops} period={period} />}
@@ -758,16 +760,16 @@ const deliveryLenses = [
 ];
 function DevelopmentHome({navigate}) {
  return <>
-  <section className="future-page-head"><span className="future-eyebrow">Development / engineering assessment</span><h1>Engineering and delivery</h1><p>Development is the technical maturity and decision record. Roadmap is the proposed sequence of future delivery; Updates records changes that have already happened. None of the three should be mistaken for live sensor evidence.</p></section>
+  <section className="future-page-head"><span className="future-eyebrow">Development / engineering assessment</span><h1><L>Engineering and delivery</L></h1><p><L>Development is the technical maturity and decision record. Roadmap is the proposed sequence of future delivery; Updates records changes that have already happened. None of the three should be mistaken for live sensor evidence.</L></p></section>
   <KeyFigures items={[{title:"Evaluation areas",value:deliveryLenses.length,detail:"Engineering criteria used to assess the pilot."},{title:"Work packages",value:developmentSteps.length,detail:"Defined in the delivery roadmap."},{title:"Documented changes",value:timeline.length,detail:"Entries in the reviewed editorial update register."}]}/>
   <section className="future-section"><SectionHeader eyebrow="Evaluation framework" title="Engineering evaluation" copy="Each topic makes a current capability, a real limitation and an independently checkable result visible to reviewers."/>
-    <div className="future-domain-grid">{deliveryLenses.map(x=><article key={x.area}><small>ENGINEERING / EVALUATION</small><h3>{x.area}</h3><p><b>Current basis:</b> <GlossaryText>{x.now}</GlossaryText></p><details><summary>Constraints and evaluation</summary><p><b>Open constraint:</b> <GlossaryText>{x.gap}</GlossaryText></p><p><b>Required evidence:</b> <GlossaryText>{x.proof}</GlossaryText></p><p className="future-factual-note">{x.question}</p></details></article>)}</div>
+    <div className="future-domain-grid">{deliveryLenses.map(x=><article key={x.area}><small>ENGINEERING / EVALUATION</small><h3><L>{x.area}</L></h3><p><b><L>Current basis:</L></b> <GlossaryText>{x.now}</GlossaryText></p><details><summary><L>Constraints and evaluation</L></summary><p><b><L>Open constraint:</L></b> <GlossaryText>{x.gap}</GlossaryText></p><p><b><L>Required evidence:</L></b> <GlossaryText>{x.proof}</GlossaryText></p><p className="future-factual-note"><L>{x.question}</L></p></details></article>)}</div>
   </section>
   <section className="future-section"><SectionHeader eyebrow="Release governance" title="Release acceptance criteria" copy="Software release, field prototype and research conclusion are separate acceptance decisions."/>
-   <div className="future-architecture-flow"><span><b>1 / Traceable source</b><p>Consent, license, device identity, acquisition clock and raw provenance.</p></span><span><b>2 / Measured behavior</b><p>Repeatable tests, observability, failure budgets and documented counter-cases.</p></span><span><b>3 / Human review</b><p>Independent interpretation and explicit limitations before public conclusions.</p></span><span><b>4 / Maintenance owner</b><p>One named custodian, security updates, costs and a recovery path.</p></span></div>
+   <div className="future-architecture-flow"><span><b><L>1 / Traceable source</L></b><p><L>Consent, license, device identity, acquisition clock and raw provenance.</L></p></span><span><b><L>2 / Measured behavior</L></b><p><L>Repeatable tests, observability, failure budgets and documented counter-cases.</L></p></span><span><b><L>3 / Human review</L></b><p><L>Independent interpretation and explicit limitations before public conclusions.</L></p></span><span><b><L>4 / Maintenance owner</L></b><p><L>One named custodian, security updates, costs and a recovery path.</L></p></span></div>
   </section>
   <section className="future-section"><SectionHeader eyebrow="Explore the evidence" title="Development records"/>
-   <div className="future-support-grid"><article><h3>Roadmap</h3><p>Dependencies, expected duration and evidence required to close each planned work package.</p><button type="button" onClick={()=>navigate('roadmap')}>Examine the planned work →</button></article><article><h3>Updates</h3><p>Versioned changes with a verification source and the problem they resolve.</p><button type="button" onClick={()=>navigate('updates')}>Read verified changes →</button></article><article><h3>Operations</h3><p>Observed service activity, historically recorded defects and remaining verification tasks.</p><button type="button" onClick={()=>navigate('operations')}>Inspect operations →</button></article></div>
+   <div className="future-support-grid"><article><h3><L>Roadmap</L></h3><p><L>Dependencies, expected duration and evidence required to close each planned work package.</L></p><button type="button" onClick={()=>navigate('roadmap')}><L>Examine the planned work →</L></button></article><article><h3><L>Updates</L></h3><p><L>Versioned changes with a verification source and the problem they resolve.</L></p><button type="button" onClick={()=>navigate('updates')}><L>Read verified changes →</L></button></article><article><h3><L>Operations</L></h3><p><L>Observed service activity, historically recorded defects and remaining verification tasks.</L></p><button type="button" onClick={()=>navigate('operations')}><L>Inspect operations →</L></button></article></div>
   </section>
  </>;
 }
@@ -782,13 +784,13 @@ const developmentSteps = [
 ];
 function Roadmap() {
  return <>
-  <section className="future-page-head future-development-intro"><span className="future-eyebrow">Development / delivery pathway</span><h1>Development roadmap</h1><p>A dependency-led plan with indicative implementation times. Durations represent focused engineering work after prerequisites are ready; phases may overlap, and they are not fixed delivery dates.</p></section>
+  <section className="future-page-head future-development-intro"><span className="future-eyebrow">Development / delivery pathway</span><h1><L>Development roadmap</L></h1><p><L>A dependency-led plan with indicative implementation times. Durations represent focused engineering work after prerequisites are ready; phases may overlap, and they are not fixed delivery dates.</L></p></section>
   <KeyFigures items={[{title:"Work packages",value:developmentSteps.length,detail:"Planned sequence of development activities."},{title:"Active / ongoing",value:developmentSteps.filter(s=>["active","ongoing"].includes(s.state)).length,detail:"Editorial roadmap status, not verified progress."},{title:"Planned / later",value:developmentSteps.filter(s=>["planned","later"].includes(s.state)).length,detail:"Work dependent on earlier milestones."}]}/>
-  <section className="future-section future-roadmap-timeline" aria-label="SeaCommons development stages"><header><div><span className="future-eyebrow">Implementation pathway</span><h2>Six connected work packages</h2><p>Each phase names its outcome, prerequisites and an objective way to verify completion. The durations are estimates, not commitments.</p></div></header>
-   <div className="future-roadmap-steps">{developmentSteps.map((step,index)=><article key={step.name} className="future-roadmap-step"><div className="future-roadmap-step-index"><span>{String(index+1).padStart(2,'0')}</span><i aria-hidden="true"/></div><div className="future-roadmap-step-body"><div className="future-roadmap-step-head"><div><h3>{step.name}</h3><p>{step.deliverable}</p></div><div className="future-roadmap-step-meta"><strong>{step.duration}</strong><StatusPill state={step.state}>{step.state}</StatusPill></div></div><p><GlossaryText>{step.description}</GlossaryText></p><details><summary>Dependencies and completion criteria</summary><dl><dt>Prerequisites</dt><dd><GlossaryText>{step.dependency}</GlossaryText></dd><dt>Completion check</dt><dd><GlossaryText>{step.acceptance}</GlossaryText></dd></dl></details></div></article>)}</div>
-   <p className="future-inline-note">Time estimates exclude partner approvals, procurement lead times and field permits. Each next phase begins when its prerequisites have been validated.</p>
+  <section className="future-section future-roadmap-timeline" aria-label="SeaCommons development stages"><header><div><span className="future-eyebrow">Implementation pathway</span><h2><L>Six connected work packages</L></h2><p><L>Each phase names its outcome, prerequisites and an objective way to verify completion. The durations are estimates, not commitments.</L></p></div></header>
+   <div className="future-roadmap-steps">{developmentSteps.map((step,index)=><article key={step.name} className="future-roadmap-step"><div className="future-roadmap-step-index"><span><L>{String(index+1).padStart(2,'0')}</L></span><i aria-hidden="true"/></div><div className="future-roadmap-step-body"><div className="future-roadmap-step-head"><div><h3><L>{step.name}</L></h3><p><L>{step.deliverable}</L></p></div><div className="future-roadmap-step-meta"><strong><L>{step.duration}</L></strong><StatusPill state={step.state}>{step.state}</StatusPill></div></div><p><GlossaryText>{step.description}</GlossaryText></p><details><summary><L>Dependencies and completion criteria</L></summary><dl><dt><L>Prerequisites</L></dt><dd><GlossaryText>{step.dependency}</GlossaryText></dd><dt><L>Completion check</L></dt><dd><GlossaryText>{step.acceptance}</GlossaryText></dd></dl></details></div></article>)}</div>
+   <p className="future-inline-note"><L>Time estimates exclude partner approvals, procurement lead times and field permits. Each next phase begins when its prerequisites have been validated.</L></p>
   </section>
-  <section className="future-section"><SectionHeader eyebrow="Partner contributions" title="What accelerates delivery" copy="Support is grouped by operational need, with clear responsibilities rather than repeated product categories."/><div className="future-support-grid">{supportAreas.map(item=><article key={item.area}><StatusPill state={item.status}>{item.status}</StatusPill><h3>{item.area}</h3><p>{item.need}</p></article>)}</div></section>
+  <section className="future-section"><SectionHeader eyebrow="Partner contributions" title="What accelerates delivery" copy="Support is grouped by operational need, with clear responsibilities rather than repeated product categories."/><div className="future-support-grid">{supportAreas.map(item=><article key={item.area}><StatusPill state={item.status}>{item.status}</StatusPill><h3><L>{item.area}</L></h3><p><L>{item.need}</L></p></article>)}</div></section>
  </>;
 }
 
@@ -806,50 +808,48 @@ function Documents() {
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">SeaCommons / docs library</span>
-        <h1>Knowledge library</h1>
-        <p>Read the five illustrated dossiers below and use the technical register for engineering references and background material. Restricted sources require separate permission.</p>
+        <h1><L>Knowledge library</L></h1>
+        <p><L>Engineering references and background material. Restricted sources require separate permission.</L></p>
       </section>
 
-      <KnowledgeLibrary />
-      <DeveloperGuide/>
 
       <section className="future-section">
         <SectionHeader eyebrow="document register" title="Document register"
           copy="Published materials open from their cited source. Restricted documents are not served by this catalogue and require an explicit resource grant." />
         <div className="future-library-filters">
-          <label><span>search documents</span><input type="search" placeholder="Title, format or topic" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-          <label><span>category</span><select value={group} onChange={(event) => setGroup(event.target.value)}>
-            {groups.map((item) => <option value={item} key={item}>{item}</option>)}
+          <label><span><L>search documents</L></span><input type="search" placeholder="Title, format or topic" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+          <label><span><L>category</L></span><select value={group} onChange={(event) => setGroup(event.target.value)}>
+            {groups.map((item) => <option value={item} key={item}><L>{item}</L></option>)}
           </select></label>
-          <span>{filtered.length} / {partnerDocuments.length} resources</span>
+          <span><L>{filtered.length}</L> / <L>{partnerDocuments.length}</L> resources</span>
         </div>
         <section className="future-document-table" aria-label="SeaCommons project documents">
-          <header><span>document</span><span>project</span><span>type</span><span>access</span><span>updated</span></header>
+          <header><span><L>document</L></span><span><L>project</L></span><span><L>type</L></span><span><L>access</L></span><span><L>updated</L></span></header>
           {filtered.map((doc) => (
             <article key={doc.projectId + doc.id}>
-              <div><strong>{doc.title}</strong><small>{doc.description || doc.source}</small>
-                {doc.href ? <button type="button" className="future-doc-link" onClick={() => { setOpenDocument(doc); }}>View reference ↗</button> : <small>restricted / request access</small>}
+              <div><strong><L>{doc.title}</L></strong><small><L>{doc.description || doc.source}</L></small>
+                {doc.href ? <button type="button" className="future-doc-link" onClick={() => { setOpenDocument(doc); }}><L>View reference ↗</L></button> : <small><L>restricted / request access</L></small>}
               </div>
-              <span>{doc.project}</span>
-              <span>{doc.kind}</span>
+              <span><L>{doc.project}</L></span>
+              <span><L>{doc.kind}</L></span>
               <StatusPill state={doc.visibility === 'restricted' ? 'warn' : 'active'}>{doc.visibility}</StatusPill>
-              <time>{doc.updated}</time>
+              <time><L>{doc.updated}</L></time>
             </article>
           ))}
-          {filtered.length === 0 && <p className="future-inline-note">No resource matches the selected filters.</p>}
+          {filtered.length === 0 && <p className="future-inline-note"><L>No resource matches the selected filters.</L></p>}
         </section>
       </section>
 
       {openDocument && <section className="future-section future-embedded-document" aria-label="Document reader">
         <div className="future-deck-toolbar"><span>SEA COMMONS / FUTURES / DOCUMENTS</span><button type="button" onClick={() => setOpenDocument(null)}>close reader ✕</button></div>
-        <h2>{openDocument.title}</h2><p>{openDocument.description}</p>
+        <h2><L>{openDocument.title}</L></h2><p><L>{openDocument.description}</L></p>
         <iframe title={openDocument.title} src={openDocument.href} loading="lazy" referrerPolicy="no-referrer" sandbox="allow-scripts allow-forms" />
         <p className="future-inline-note">Some publishers do not permit embedded viewing. If this source cannot display here, you can <a href={openDocument.href} target="_blank" rel="noreferrer">open the original source</a>.</p>
       </section>}
       <section className="future-library-intake">
-        <div><span className="future-eyebrow">partner materials</span><h3>Request a reviewed document</h3>
-          <p>Published reference materials are available above. For a partner brief or an unpublished resource, contact the programme team. Confidential materials are never uploaded to the public source repository. In-app uploads and permissioned downloads will be enabled only after verified private storage and server-side resource grants are in place.</p></div>
-        <a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20document%20request">contact programme team ↗</a>
+        <div><span className="future-eyebrow">partner materials</span><h3><L>Request a reviewed document</L></h3>
+          <p><L>Published reference materials are available above. For a partner brief or an unpublished resource, contact the programme team. Confidential materials are never uploaded to the public source repository. In-app uploads and permissioned downloads will be enabled only after verified private storage and server-side resource grants are in place.</L></p></div>
+        <a href="mailto:republic@suezcanal.xyz?subject=SeaCommons%20document%20request"><L>contact programme team ↗</L></a>
       </section>
     </>
   );
@@ -866,10 +866,10 @@ function Guidebook() {
         <span className="future-eyebrow">guidebook</span>
         {groups.map((group) => (
           <div className="future-guide__group" key={group}>
-            <small>{group}</small>
+            <small><L>{group}</L></small>
             {guidebook.filter((item) => item.group === group).map((item) => (
               <button key={item.id} className={active.id === item.id ? 'is-active' : ''} onClick={() => setActiveId(item.id)}>
-                {item.title}
+                <L>{item.title}</L>
               </button>
             ))}
           </div>
@@ -877,7 +877,7 @@ function Guidebook() {
       </aside>
       <article>
         <span className="future-eyebrow">living project knowledge</span>
-        <h1>{active.title}</h1>
+        <h1><L>{active.title}</L></h1>
         <p className="future-guide__summary"><GlossaryText>{active.summary}</GlossaryText></p>
         <hr />
         {active.body.map((paragraph) => <p key={paragraph}><GlossaryText>{paragraph}</GlossaryText></p>)}
@@ -903,7 +903,7 @@ function Tools() {
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">tools</span>
-        <h1>Developer resources</h1>
+        <h1><L>Developer resources</L></h1>
         <p>
           SeaCommons is one implementation of a modular software architecture. The modules below describe which methods can be adapted to other research and civic sectors, and which are still subject to new validation. Other projects are not automatically part of this authenticated workspace.
         </p>
@@ -911,20 +911,20 @@ function Tools() {
 
       <DeveloperGuide/>
       <section className="future-section"><SectionHeader eyebrow="Transferable toolkit" title="Reusable modules" copy="Each row distinguishes actual SeaCommons capabilities from the extra implementation, legal and domain work needed to reuse a pattern elsewhere."/>
-      <div className="future-domain-grid">{transferableModules.map(m=><article key={m.name}><small>{m.state}</small><h3>{m.name}</h3><p><b>What it does:</b> <GlossaryText>{m.function}</GlossaryText></p><p><b>Where it could transfer:</b> <GlossaryText>{m.reuse}</GlossaryText></p><p className="future-factual-note"><b>Before reuse:</b> <GlossaryText>{m.gate}</GlossaryText></p><a href={"https://github.com/suezcanalxyz/seacommons/tree/main/"+m.codeReference} target="_blank" rel="noopener noreferrer">Inspect source module ↗</a></article>)}</div>
+      <div className="future-domain-grid">{transferableModules.map(m=><article key={m.name}><small><L>{m.state}</L></small><h3><L>{m.name}</L></h3><p><b>What it does:</b> <GlossaryText>{m.function}</GlossaryText></p><p><b>Where it could transfer:</b> <GlossaryText>{m.reuse}</GlossaryText></p><p className="future-factual-note"><b>Before reuse:</b> <GlossaryText>{m.gate}</GlossaryText></p><a href={"https://github.com/suezcanalxyz/seacommons/tree/main/"+m.codeReference} target="_blank" rel="noopener noreferrer">Inspect source module ↗</a></article>)}</div>
       <p className="future-factual-note">Transferability is an engineering opportunity, not a claim of completed deployments in every listed sector. New fields require distinct funding, methods, permissions and domain verification.</p></section>
       <section className="future-section"><SectionHeader eyebrow="Available product surfaces" title="Product access and permissions" copy="These are actual SeaCommons interfaces; they are different from the transferable modules above."/></section>
       <section className="future-tool-grid">
         {tools.map((tool) => {
           const inner = (
             <>
-              <div><small>{tool.kind}</small><StatusPill state={tool.state}>{tool.state}</StatusPill></div>
-              <h3>{tool.name}</h3>
-              <p>{tool.description}</p>
+              <div><small><L>{tool.kind}</L></small><StatusPill state={tool.state}>{tool.state}</StatusPill></div>
+              <h3><L>{tool.name}</L></h3>
+              <p><L>{tool.description}</L></p>
               <span className="future-tool-grid__cta">open tool ↗</span>
             </>
           );
-          return tool.href ? <a key={tool.id} href={tool.href} target="_blank" rel="noopener noreferrer">{inner}</a> : <article key={tool.id}>{inner}</article>;
+          return tool.href ? <a key={tool.id} href={tool.href} target="_blank" rel="noopener noreferrer"><L>{inner}</L></a> : <article key={tool.id}><L>{inner}</L></article>;
         })}
       </section>
     </>
@@ -942,10 +942,10 @@ function Updates() {
       <section className="future-update-list">
         {timeline.map((item) => (
           <article key={item.date + item.title}>
-            <time>{item.date}</time>
+            <time><L>{item.date}</L></time>
             <div>
-              <div><span>{item.project}</span><small>{item.kind}</small></div>
-              <h3>{item.title}</h3>
+              <div><span><L>{item.project}</L></span><small><L>{item.kind}</L></small></div>
+              <h3><L>{item.title}</L></h3>
               <p><GlossaryText>{item.detail}</GlossaryText></p>
               {item.impact&&<p><b>What changes for a partner:</b> <GlossaryText>{item.impact}</GlossaryText></p>}
               {item.limit&&<p className="future-factual-note"><b>Still to verify:</b> <GlossaryText>{item.limit}</GlossaryText></p>}
@@ -973,7 +973,7 @@ function Access({ user }) {
   return (
     <>
       <section className="future-page-head">
-        <span className="future-eyebrow">access</span>
+        <span className="future-eyebrow"><L>access</L></span>
         <h1>Your account and workspace access.</h1>
         <p>
           This page shows which account you are using and how workspace permissions work. Signing in confirms your identity, but it does not automatically grant access to private investigations or documents. You can propose invitations below; every request is reviewed before any access can be granted.
@@ -981,7 +981,7 @@ function Access({ user }) {
       </section>
 
       <section className="future-identity-card">
-        <div><span>identity</span><strong>{identity}</strong></div>
+        <div><span>identity</span><strong><L>{identity}</L></strong></div>
         <div><span>role</span><strong>not asserted by frontend</strong></div>
         <div><span>session</span><strong>OIDC identity only</strong></div>
       </section>
@@ -990,10 +990,10 @@ function Access({ user }) {
         <header><span>workspace</span><span>level</span><span>scope</span><span>mode</span></header>
         {accessMatrix.map((row) => (
           <article key={row.system}>
-            <strong>{row.system}</strong>
+            <strong><L>{row.system}</L></strong>
             <StatusPill state={row.level}>{row.level}</StatusPill>
-            <span>{row.scope}</span>
-            <small>{row.state}</small>
+            <span><L>{row.scope}</L></span>
+            <small><L>{row.state}</L></small>
           </article>
         ))}
       </section>
@@ -1050,39 +1050,39 @@ export default function FuturesApp() {
   };
 
   return (
-    <div className="future-app">
+    <FuturesLocale value={lang}><div className="future-app">
       <aside className="future-sidebar">
         <button type="button" className="future-brand" onClick={() => navigate('overview')} aria-label="Futures dashboard">
           <i /><span>SEA<br />COMMONS</span>
         </button>
-        <div className="future-product"><span>futures</span><small>{lang==='it'?'area partner':'partner workspace'}</small></div>
+        <div className="future-product"><span>futures</span><small><L>{lang==='it'?'area partner':'partner workspace'}</L></small></div>
         <div className="future-mobile-language"><LanguageSwitch lang={lang} setLang={setLang}/></div><button type="button" className="future-mobile-account" onClick={() => navigate('access')} aria-label="Open account" aria-current={view === 'access' ? 'page' : undefined}><span aria-hidden="true">◎</span> Account</button>
         <nav aria-label="Futures">
           {PRIMARY_NAV.map((item) => (
-            <button key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
-              <span>{navLabel(item)}</span><i>↗</i>
+            <button key={item} className={view === item || (SUBNAV[item]||[]).some(([id])=>id===view) ? 'is-active' : ''} onClick={() => navigate(item)}>
+              <span><L>{navLabel(item)}</L></span><i>↗</i>
             </button>
           ))}
         </nav>
-        {installPrompt && !installed && <button type="button" className="future-install-button" onClick={installApp}>install app ↓</button>}
+        {installPrompt && !installed && <button type="button" className="future-install-button" onClick={installApp}><L>install app ↓</L></button>}
         <div className="future-sidebar__base">
           <span>OIDC connected</span>
-          <button onClick={() => signOut?.()}>sign out</button>
+          <button onClick={() => signOut?.()}><L>sign out</L></button>
         </div>
       </aside>
 
       <main className="future-main">
         <header className="future-topbar">
-          <div><span>SeaCommons / Futures</span><b>{navLabel(view)}</b></div>
-          <div className="future-topbar__links"><span>{lang==='it'?'Area partner':'Secure partner workspace'}</span><LanguageSwitch lang={lang} setLang={setLang}/>{!installed&&<button type="button" className="future-install-shortcut" aria-label="How to install Futures" onClick={()=>setShowInstallGuide(true)}>Install</button>}<button type="button" className="future-topbar-logo" onClick={() => navigate('overview')} aria-label="SeaCommons Futures home"><i aria-hidden="true" /><span>SEA<br />COMMONS</span></button></div>
+          <div><span>SeaCommons / Futures</span><b><L>{navLabel(view)}</L></b></div>
+          <div className="future-topbar__links"><span><L>{lang==='it'?'Area partner':'Secure partner workspace'}</L></span><LanguageSwitch lang={lang} setLang={setLang}/>{!installed&&<button type="button" className="future-install-shortcut" aria-label="How to install Futures" onClick={()=>setShowInstallGuide(true)}><L>Install</L></button>}<button type="button" className="future-topbar-logo" onClick={() => navigate('overview')} aria-label="SeaCommons Futures home"><i aria-hidden="true" /><span>SEA<br />COMMONS</span></button></div>
         </header>
 
         <div className="future-content" data-view={view}>
-          {lang==='it'&&view!=='overview'&&view!=='agents'&&<div className="future-language-note">Dettaglio tecnico disponibile in inglese. <button type="button" onClick={()=>navigate('overview')}>Torna alla sintesi italiana ↗</button></div>}
-          {Object.entries(SUBNAV).some(([,items])=>items.some(([id])=>id===view)) && <nav className="future-subnav" aria-label="Section navigation">{(Object.entries(SUBNAV).find(([,items])=>items.some(([id])=>id===view))?.[1] || []).map(([id,label])=><button type="button" key={id} className={id===view?'is-active':''} onClick={()=>navigate(id)}>{lang==='it'?(IT_NAV[id]||label):label}</button>)}</nav>}
-          {view === 'intelligence' && <IntelligenceDashboard ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
+          {lang==='it'&&view!=='overview'&&view!=='agents'&&view!=='updates'&&view!=='intelligence'&&!view.startsWith('intel-')&&<div className="future-language-note">Localizzazione italiana in corso di verifica: alcune voci tecniche e i documenti originali restano in inglese. <button type="button" onClick={()=>navigate('overview')}>Torna alla sintesi italiana ↗</button></div>}
+          {Object.entries(SUBNAV).some(([,items])=>items.some(([id])=>id===view)) && <nav className="future-subnav" aria-label="Section navigation">{(Object.entries(SUBNAV).find(([,items])=>items.some(([id])=>id===view))?.[1] || []).map(([id,label])=><button type="button" key={id} className={id===view?'is-active':''} onClick={()=>navigate(id)}><L>{lang==='it'?(id==='intelligence'?'Confronto':id==='knowledge'?'Dossier':id==='documents'?'Registro documenti':IT_NAV[id]||label):label}</L></button>)}</nav>}
+          {(view === 'intelligence'||view.startsWith('intel-')) && <IntelligenceDashboard section={view==='intelligence'?'compare':view.slice(6)} ops={ops} overall={overall} period={period} setPeriod={setPeriod} navigate={navigate} />}
           {view === 'platform' && <PlatformNetwork />}
-          {view === 'knowledge' && <Documents />}
+          {view === 'knowledge' && <KnowledgeLibrary />}
           {view === 'development' && <DevelopmentHome navigate={navigate} />}
           {view === 'agents' && <AgentsWorkspace lang={lang}/>}
           {view === 'overview' && <StrategyWorkspace lang={lang} navigate={navigate} ops={ops} overall={overall}/>}
@@ -1096,7 +1096,7 @@ export default function FuturesApp() {
           {view === 'documents' && <Documents />}
           {view === 'guidebook' && <Guidebook />}
           {view === 'tools' && <Tools />}
-          {view === 'updates' && <Updates />}
+          {view === 'updates' && <AgenticJournal lang={lang}/>}
           {view === 'access' && <Access user={user} />}
         </div>
       </main>
@@ -1104,22 +1104,22 @@ export default function FuturesApp() {
         <section className="future-pwa-dialog" role="dialog" aria-modal="true" aria-labelledby="future-pwa-title">
           <div className="future-pwa-heading"><small>FUTURES / MOBILE APP</small><button type="button" onClick={dismissInstallGuide} aria-label="Close installation guide">✕</button></div>
           <div className="future-pwa-symbol" aria-hidden="true">◈</div>
-          <h2 id="future-pwa-title">Take Futures with you.</h2>
-          <p>Install SeaCommons Futures on your Home Screen for an app-like experience with full-screen navigation and quick access to your workspace.</p>
-          {isIOS ? <ol><li>Open this page in <b>Safari</b>.</li><li>Tap <b>Share</b> (square with an upward arrow).</li><li>Select <b>Add to Home Screen</b>, then tap <b>Add</b>.</li></ol> : <ol><li>Open this page in <b>Chrome</b>.</li><li>Open the browser menu and select <b>Install app</b> or <b>Add to Home screen</b>.</li><li>Confirm installation.</li></ol>}
-          {installPrompt && !isIOS && <button type="button" className="future-pwa-primary" onClick={() => { installApp(); dismissInstallGuide(); }}>Install Futures</button>}
-          <button type="button" className="future-pwa-secondary" onClick={dismissInstallGuide}>Continue in browser</button>
-          <small>You can always install it later from your browser menu.</small>
+          <h2 id="future-pwa-title"><L>Take Futures with you.</L></h2>
+          <p><L>Install SeaCommons Futures on your Home Screen for an app-like experience with full-screen navigation and quick access to your workspace.</L></p>
+          {isIOS ? <ol><li><L>Open this page in </L><b>Safari</b>.</li><li><L>Tap </L><b><L>Share</L></b> (square with an upward arrow).</li><li>Select <b><L>Add to Home Screen</L></b>, then tap <b><L>Add</L></b>.</li></ol> : <ol><li><L>Open this page in </L><b>Chrome</b>.</li><li><L>Open the browser menu and select </L><b><L>Install app</L></b> or <b><L>Add to Home screen</L></b>.</li><li><L>Confirm installation.</L></li></ol>}
+          {installPrompt && !isIOS && <button type="button" className="future-pwa-primary" onClick={() => { installApp(); dismissInstallGuide(); }}><L>Install Futures</L></button>}
+          <button type="button" className="future-pwa-secondary" onClick={dismissInstallGuide}><L>Continue in browser</L></button>
+          <small><L>You can always install it later from your browser menu.</L></small>
         </section>
       </div>}
       <nav className="future-mobile-nav" aria-label="Mobile app navigation">
         {['overview','intelligence','platform','agents','contributions'].map((item) => (
-          <button type="button" key={item} className={view === item ? 'is-active' : ''} onClick={() => navigate(item)}>
-            <span className="future-mobile-nav-icon" aria-hidden="true">{{overview:'◈',intelligence:'⌁',platform:'◉',agents:'◇',contributions:'▤',access:'◎'}[item]}</span>
-            <span>{lang==='it'?({overview:'Sintesi',intelligence:'Dati',platform:'Piattaforma',agents:'Agenti',contributions:'Contributi'})[item]:({overview:'Overview',intelligence:'Data',platform:'Platform',agents:'Agents',contributions:'Network',access:'Account'})[item]}</span>
+          <button type="button" key={item} className={view === item || (SUBNAV[item]||[]).some(([id])=>id===view) ? 'is-active' : ''} onClick={() => navigate(item)}>
+            <span className="future-mobile-nav-icon" aria-hidden="true"><L>{{overview:'◈',intelligence:'⌁',platform:'◉',agents:'◇',contributions:'▤',access:'◎'}[item]}</L></span>
+            <span><L>{lang==='it'?({overview:'Sintesi',intelligence:'Dati',platform:'Piattaforma',agents:'Agenti',contributions:'Contributi'})[item]:({overview:'Overview',intelligence:'Data',platform:'Platform',agents:'Agents',contributions:'Network',access:'Account'})[item]}</L></span>
           </button>
         ))}
       </nav>
-    </div>
+    </div></FuturesLocale>
   );
 }
