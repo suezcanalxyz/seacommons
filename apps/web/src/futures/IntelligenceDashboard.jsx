@@ -1,5 +1,6 @@
 import React, {useState} from 'react';
 import GlossaryText from './GlossaryText.jsx';
+import KeyFigures from './KeyFigures.jsx';
 import { retainedEvidence, retainedMetricFallback } from './retainedEvidence.js';
 
 const stages=[
@@ -261,8 +262,10 @@ function IntelligenceMetricGrid({period,pipeline,sensorsData,loadedAt,estimatedF
  const report=loading?(countsAvailable?'Updating measurements · available values shown':'Updating measurements'):countsAvailable===0?'Measurements unavailable':countsAvailable<12?'Partial measurements':'Measurements available';
  return <section className="future-section future-intelligence-headline" aria-label="Intelligence metric dashboard" aria-busy={loading}>
    <header className="future-kpi-heading"><div><span className="future-eyebrow">Intelligence / measurements</span><h2>Evidence activity</h2></div>
-    <p>{scopeText} · 12 distinct measures, never additive. Select a term for its definition; expand Info for its counting method.</p></header>
+    <p>{scopeText} · Twelve separate measurements. Select Info for the counting method, example and limits.</p></header>
    <p className="future-metric-status" role="status" aria-live="polite">{report}{!loading&&source==='public'?' · public operational summary':''}{!loading&&countsAvailable>0?' · '+countsAvailable+' of 12 measures available':''}</p>
+   <KeyFigures label="Principal evidence measures" items={['parsed_events','corroborated_episodes','review_ready'].map(key=>{const [,,detail]=headlineMetrics.find(x=>x[0]===key);const value=measurements?.[key];return {title:headlineMetrics.find(x=>x[0]===key)[1],value:typeof value==='number'&&Number.isFinite(value)&&value>=0?(estimatedFields.includes(key)?'≈ ':'')+number(value):loading?'Loading…':null,detail}})}/>
+   <h3 className="future-measure-subheading">Full measurement register</h3>
    <div className="future-intelligence-metrics future-intelligence-unified-grid">{headlineMetrics.map(([key,label,definition])=>{
     const value=measurements?.[key];
     const hasValue=value!==null&&value!==undefined&&Number.isFinite(Number(value));
