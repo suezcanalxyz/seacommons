@@ -1,4 +1,5 @@
 import KnowledgeLibrary from './KnowledgeLibrary.jsx';
+import DeveloperGuide from '../docs/DeveloperGuide.jsx';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './contributions-store.css';
 import FuturesOverview from './Overview.jsx';
@@ -802,6 +803,7 @@ function Documents() {
       </section>
 
       <KnowledgeLibrary />
+      <DeveloperGuide/>
 
       <section className="future-section">
         <SectionHeader eyebrow="document register" title="Document register"
@@ -818,7 +820,7 @@ function Documents() {
           {filtered.map((doc) => (
             <article key={doc.projectId + doc.id}>
               <div><strong>{doc.title}</strong><small>{doc.description || doc.source}</small>
-                {doc.href ? <button type="button" className="future-doc-link" onClick={() => { setOpenDocument(doc); }}>read in Futures ↗</button> : <small>restricted / request access</small>}
+                {doc.href ? <button type="button" className="future-doc-link" onClick={() => { setOpenDocument(doc); }}>View reference ↗</button> : <small>restricted / request access</small>}
               </div>
               <span>{doc.project}</span>
               <span>{doc.kind}</span>
@@ -893,12 +895,13 @@ function Tools() {
     <>
       <section className="future-page-head">
         <span className="future-eyebrow">tools</span>
-        <h1>Software modules and research tools</h1>
+        <h1>Developer resources</h1>
         <p>
           SeaCommons is one implementation of a modular software architecture. The modules below describe which methods can be adapted to other research and civic sectors, and which are still subject to new validation. Other projects are not automatically part of this authenticated workspace.
         </p>
       </section>
 
+      <DeveloperGuide/>
       <section className="future-section"><SectionHeader eyebrow="Transferable toolkit" title="Reusable modules" copy="Each row distinguishes actual SeaCommons capabilities from the extra implementation, legal and domain work needed to reuse a pattern elsewhere."/>
       <div className="future-domain-grid">{transferableModules.map(m=><article key={m.name}><small>{m.state}</small><h3>{m.name}</h3><p><b>What it does:</b> <GlossaryText>{m.function}</GlossaryText></p><p><b>Where it could transfer:</b> <GlossaryText>{m.reuse}</GlossaryText></p><p className="future-factual-note"><b>Before reuse:</b> <GlossaryText>{m.gate}</GlossaryText></p><a href={"https://github.com/suezcanalxyz/seacommons/tree/main/"+m.codeReference} target="_blank" rel="noopener noreferrer">Inspect source module ↗</a></article>)}</div>
       <p className="future-factual-note">Transferability is an engineering opportunity, not a claim of completed deployments in every listed sector. New fields require distinct funding, methods, permissions and domain verification.</p></section>

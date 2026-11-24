@@ -1,0 +1,26 @@
+import React,{useState} from 'react';
+import GlossaryText from '../futures/GlossaryText.jsx';
+import './developer-guide.css';
+const repo='https://github.com/suezcanalxyz/seacommons';
+const steps=[
+ ['01','Inspect source','Git, Node.js ≥22.13','Clone the repository and install the locked frontend dependencies. Use a clean local checkout; do not copy production configuration, credentials or evidence exports.','git clone https://github.com/suezcanalxyz/seacommons.git\ncd seacommons\nnode --version\nnpm --prefix apps/web ci'],
+ ['02','Validate the build','Frontend only','Build the public documentation and frontend entry points. These commands compile source; they do not start ingestion workers or establish a connection to the operational database.','npm --prefix apps/web run build:unified'],
+ ['03','Run focused tests','Offline unit tests','Check glossary matching and retained evidence contracts. These tests reject malformed or contradictory counts and preserve unavailable values instead of inventing zeroes.','cd apps/web\nnode --test src/futures/glossary.test.mjs src/futures/retainedEvidence.test.mjs'],
+];
+const packages=[
+ ['Web','apps/web/package.json','React / Vite','Private npm package. Lockfile and multi-page build are in the repository.'],
+ ['API','apps/api/pyproject.toml','Python ≥3.11','Source package metadata: suezcanal 1.0.0. A published wheel and complete isolated installation have not been verified.'],
+ ['Edge','apps/edge/package.json','Node.js','Private npm package, version 0.1.0. Deployment requires an independently authorized environment.'],
+ ['Containers','apps/api/Dockerfile.api · deploy/Dockerfile.frontend','Docker','Container build definitions in source. No verified public image registry or signed release artefact.']
+];
+function Code({value}){const [status,setStatus]=useState('');return <div className="sc-dev-code"><button type="button" onClick={async()=>{try{await navigator.clipboard.writeText(value);setStatus('Copied')}catch{setStatus('Select and copy the commands')}}}>{status||'Copy commands'}</button><pre><code>{value}</code></pre></div>}
+export default function DeveloperGuide(){
+ const [tab,setTab]=useState('Quickstart');
+ return <section className="sc-developer" id="developer-guide"><span className="sc-dev-pill">Developer resources</span><h2>Build and evaluate SeaCommons</h2><p>Start with the source, build the public interfaces, and validate the evidence contracts locally. The steps below concern frontend development and isolated tests, not access to production or operational acquisition.</p>
+ <div className="sc-dev-stats"><div><strong>22.13+</strong><span>Node.js version</span></div><div><strong>3.11+</strong><span>Python package requirement</span></div><div><strong>AGPL</strong><span>Repository licence</span></div></div>
+ <div className="sc-dev-tabs" role="group" aria-label="Developer resources">{['Quickstart','Packages','Contribute'].map(t=><button type="button" key={t} aria-pressed={tab===t} onClick={()=>setTab(t)}>{t}</button>)}</div>
+ {tab==='Quickstart'&&<>{steps.map(([n,title,tag,body,cmd])=><details key={n} className="sc-dev-step" open={n==='01'?true:undefined}><summary><span className="sc-dev-number">{n}</span><strong>{title}</strong><span className="sc-dev-pill">{tag}</span></summary><p><GlossaryText>{body}</GlossaryText></p><Code value={cmd}/></details>)}<p>Expected result: a successful unified build and passing focused unit tests. A production-ready backend installation and fully offline interactive demo are separate release tasks; this guide makes no claim that either has passed a clean-machine test.</p></>}
+ {tab==='Packages'&&<><p>These are source distributions and build definitions, rather than confirmed public registry downloads. The package name and version are taken from repository manifests.</p>{packages.map(([name,path,tag,body])=><details className="sc-dev-step" key={name}><summary><strong>{name}</strong><span className="sc-dev-pill">{tag}</span></summary><p><code>{path}</code></p><p>{body}</p></details>)}<p>Release checklist: reproducible isolated installation, documented dependencies, automated smoke tests, versioned artefacts, checksums and supported platform matrix. Do not install unrelated registry packages simply because they share a name.</p></>}
+ {tab==='Contribute'&&<><details className="sc-dev-step"><summary><strong>Choose a bounded issue</strong></summary><p>Use a feature branch and document the problem, expected behavior, test evidence and known limitations. Work with synthetic fixtures where possible. Keep personal data, credentials and sensitive operational information out of issues and commits.</p><a href={repo+'/issues'}>Issue register ↗</a></details><details className="sc-dev-step"><summary><strong>Review the architecture and licence</strong></summary><p>Consult the repository contribution rules and architecture before changing data contracts. Public output and protected evidence are separate trust boundaries; any change needs tests for that boundary.</p><a href={repo+'/blob/main/CONTRIBUTING.md'}>Contribution guide ↗</a></details></>}
+ <nav aria-label="Source resources"><a href={repo}>Source repository ↗</a><a href={repo+'/tags'}>Version tags ↗</a><a href={repo+'/releases'}>Published releases ↗</a><a href="https://seacommons.org/docs">Public technical reference ↗</a></nav></section>
+}

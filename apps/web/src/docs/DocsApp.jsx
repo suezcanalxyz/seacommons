@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import DeveloperGuide from './DeveloperGuide.jsx';
 import publicGuide from './content/SEACOMMONS.md?raw';
 import MarkdownDocument, { extractHeadings } from './MarkdownDocument.jsx';
 
@@ -77,7 +78,7 @@ export default function DocsApp() {
         <Brand />
         <div className="docs-header__meta">
           <span>Public technical reference</span>
-          <span>22 Sep 2026</span>
+          <span>Developer guide · Nov 2026</span>
         </div>
         <DocsMenu
           open={menuOpen}
@@ -93,6 +94,7 @@ export default function DocsApp() {
           <p>Architecture, evidence model, public interfaces and operational limits.</p>
         </div>
         <nav>
+          <a href="#developer-guide"><small>00</small><span>Developer quickstart</span></a>
           {headings.map(({ label, id }) => (
             <a key={id} href={`#${id}`}>
               <small>{label.match(/^\d+/)?.[0] || '•'}</small>
@@ -112,6 +114,7 @@ export default function DocsApp() {
           </div>
         </div>
 
+        <DeveloperGuide/>
         <MarkdownDocument markdown={publicGuide} />
 
         <footer className="docs-footer">
