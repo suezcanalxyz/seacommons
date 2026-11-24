@@ -55,3 +55,23 @@
 .futures-public>.knowledge-library{margin-top:60px}
 @media(max-width:1000px){.futures-intro__hero{grid-template-columns:1fr}.futures-intro__visual{height:350px;min-height:350px}.futures-public .futures-intro h2{margin-top:38px!important}.futures-story__sources{grid-template-columns:repeat(2,1fr)}.futures-story__sources article:nth-child(3){border-left:0;padding-left:0;border-top:1px solid #46534f}.futures-story__sources article:nth-child(4){border-top:1px solid #46534f}}
 @media(max-width:650px){.futures-intro__masthead{flex-direction:column;gap:4px}.futures-intro__statement,.futures-story__heading,.futures-purpose__heading,.futures-story__principle{grid-template-columns:1fr;gap:13px}.futures-story__sources{grid-template-columns:1fr}.futures-story__sources article,.futures-story__sources article+article{padding:18px 0;border-left:0;border-top:1px solid #46534f}.futures-story__sources article:first-child{border-top:0}.futures-story__sources h3{margin-top:13px}.futures-surfaces__heading{display:block}.futures-surfaces__grid{grid-template-columns:1fr}.futures-purpose__list article{grid-template-columns:36px 1fr;gap:10px}.futures-purpose__list p{grid-column:2}.futures-purpose__closing{grid-template-columns:1fr;gap:8px}.futures-intro__visual{height:240px;min-height:240px}.futures-intro__visual figcaption{font-size:8px}}
+
+/* Shared public product typography and dark research surfaces */
+.futures-public{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:#e8edf0}
+.futures-public .futures-intro{background:#101b23!important;color:#e8edf0!important}
+.futures-public .futures-intro h2,.futures-public h2,.futures-public h3,.futures-intro__statement p{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif!important;color:#e8edf0;font-weight:500;letter-spacing:-.045em}
+.futures-public .futures-intro h2 em,.futures-intro__statement p em{color:#80c9be;font-style:normal}
+.futures-public .futures-lead{color:#c0cbd2!important}
+.futures-intro__links a{color:#e8edf0!important;border-color:#80c9be}
+.futures-intro__masthead,.futures-intro__statement{border-color:#30404a}
+.futures-intro__statement{padding-block:48px}
+.futures-story__sources{display:block}
+.futures-story__sources article,.futures-story__sources article+article{display:grid;grid-template-columns:110px minmax(150px,.7fr) 1fr;align-items:baseline;gap:24px;padding:28px 0;border:0;border-bottom:1px solid #30404a}
+.futures-story__sources h3{margin:0}
+.futures-story__sources span,.futures-need-top small{background:#c9ff39;color:#101510!important;border-radius:999px;padding:5px 10px;justify-self:start;letter-spacing:0}
+.futures-public .futures-needs-grid{display:flex;flex-direction:column;gap:12px}
+.futures-public .futures-need{background:#101b23!important;color:#e8edf0!important;padding:26px}
+.futures-public .futures-need h3{margin-block:18px 12px}
+.futures-public .futures-story,.futures-public .futures-surfaces,.futures-public .futures-purpose{padding-top:85px}
+.futures-public .futures-purpose__list article{padding-block:30px}
+@media(max-width:650px){.futures-story__sources article,.futures-story__sources article+article{grid-template-columns:1fr;gap:12px}}
