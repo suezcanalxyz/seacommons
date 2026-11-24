@@ -7,7 +7,7 @@ export function translate(value,lang){
  if(lang!=='it'||typeof value!=='string')return value;
  const key=value.trim().replace(/\s+/g,' ');
  const result=it[key];
- if(typeof result!=='string')return value;
+ if(typeof result!=='string'||!Object.prototype.hasOwnProperty.call(it,key))return value;
  return (value.match(/^\s*/)?.[0]||'')+result+(value.match(/\s*$/)?.[0]||'');
 }
 export function useT(){const lang=useLocale();return value=>translate(value,lang);}

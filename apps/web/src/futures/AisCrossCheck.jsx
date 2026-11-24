@@ -127,11 +127,11 @@ function ReviewForm({ selected, checked, reviewHistory, onSaved }) {
   };
 
   return <section className="future-ais-review" aria-label="Human evidence review">
-    <h3>Human assessment</h3>
-    <p>Evaluate whether the *reasoning* is supported, separately from whether the AIS positions agree. A visual map alone does not verify intent, vessel behaviour or independent corroboration.</p>
+    <h3><L>Human assessment</L></h3>
+    <p><L>Evaluate whether the *reasoning* is supported, separately from whether the AIS positions agree. A visual map alone does not verify intent, vessel behaviour or independent corroboration.</L></p>
     <form onSubmit={submit}>
       <fieldset disabled={!selected || busy}>
-        <legend>Evidence assessment</legend>
+        <legend><L>Evidence assessment</L></legend>
         <div className="future-ais-choices">
           {[['supported','Supported'],['false_positive','False positive'],['inconclusive','Inconclusive']].map(([value,label])=>
             <label key={value} className={review.verdict===value?'is-active':''}>
@@ -142,7 +142,7 @@ function ReviewForm({ selected, checked, reviewHistory, onSaved }) {
         </div>
       </fieldset>
       <fieldset disabled={!selected || busy}>
-        <legend>Position comparison</legend>
+        <legend><L>Position comparison</L></legend>
         <div className="future-ais-choices">
           {[['consistent','Consistent'],['inconsistent','Mismatch'],['unavailable','Cannot determine']].map(([value,label])=>
             <label key={value} className={review.position_check===value?'is-active':''}>
@@ -152,8 +152,8 @@ function ReviewForm({ selected, checked, reviewHistory, onSaved }) {
           )}
         </div>
       </fieldset>
-      <label className="future-ais-reason">Reasoning and observations
-        <textarea required minLength={20} maxLength={2000} rows={3}
+      <label className="future-ais-reason"><L>Reasoning and observations
+        </L><textarea required minLength={20} maxLength={2000} rows={3}
           placeholder="Explain what was observed, the source timestamps, alternative explanations and why the assessment is justified."
           value={review.explanation} disabled={!selected || busy}
           onChange={(event)=>setReview(old=>({...old,explanation:event.target.value}))} />
@@ -162,12 +162,12 @@ function ReviewForm({ selected, checked, reviewHistory, onSaved }) {
         <button type="submit" disabled={!selected || busy || !review.verdict || !review.position_check || review.explanation.trim().length < 20}>
           <L>{busy ? 'Saving…' : 'Save evidence review'}</L>
         </button>
-        <small>Append-only · reviewer identity verified · not automatic training</small>
+        <small><L>Append-only · reviewer identity verified · not automatic training</L></small>
       </div>
       {message && <p role="status" className="future-ais-save-message"><L>{message}</L></p>}
     </form>
     {reviewHistory.length > 0 && <details className="future-ais-review-history">
-      <summary><L>{reviewHistory.length}</L> recorded review(s)</summary>
+      <summary><L>{reviewHistory.length}</L><L> recorded review(s)</L></summary>
       {reviewHistory.map((item)=><article key={item.review_id}>
         <strong><L>{item.verdict.replaceAll('_',' ')}</L> / <L>{item.position_check}</L></strong>
         <small><L>{renderTime(item.created_at)}</L></small><p><L>{item.explanation}</L></p>
@@ -292,22 +292,22 @@ export default function AisCrossCheck() {
 
   return <div className="future-ais-workspace">
     <header className="future-ais-heading">
-      <div><span className="future-eyebrow">intelligence / human-in-the-loop / manual verification</span>
-        <h1>AIS cross-check.</h1>
-        <p>SeaCommons Live on the left, VesselFinder on the right. Selecting a case focuses both maps on its vessel. Only positions received by SeaCommons are stored as AIS evidence.</p>
+      <div><span className="future-eyebrow"><L>intelligence / human-in-the-loop / manual verification</L></span>
+        <h1><L>AIS cross-check.</L></h1>
+        <p><L>SeaCommons Live on the left, VesselFinder on the right. Selecting a case focuses both maps on its vessel. Only positions received by SeaCommons are stored as AIS evidence.</L></p>
       </div>
       <div className="future-ais-feed-status" role="status">
         <span className={feed.error ? 'is-stale' : 'is-fresh'}><L>{feed.error ? 'Feed delayed' : feed.loading ? 'Connecting' : 'Live feed'}</L></span>
         <small><L>{feed.fetchedAt ? 'Fetched '+renderTime(feed.fetchedAt) : 'Not yet received'}</L></small>
-        <button type="button" onClick={() => refresh()}>Refresh Live</button>
+        <button type="button" onClick={() => refresh()}><L>Refresh Live</L></button>
       </div>
     </header>
     <div className="future-ais-split">
       <section className="future-ais-live" aria-label="SeaCommons Live cases">
-        <div className="future-ais-split-title"><div><span className="future-eyebrow">01 / SeaCommons</span><h2>Live cases</h2></div><strong><L>{known.length}</L></strong></div>
+        <div className="future-ais-split-title"><div><span className="future-eyebrow"><L>01 / SeaCommons</L></span><h2><L>Live cases</L></h2></div><strong><L>{known.length}</L></strong></div>
         <LiveCasesMap cases={filtered} selectedId={selectedId} onSelect={chooseCase} />
         <div className="future-ais-case-filter">
-          <label>Find a case<input aria-label="Search Live cases" placeholder="Ship, IMO, MMSI or anomaly" value={filter} onChange={event=>setFilter(event.target.value)} /></label>
+          <label><L>Find a case</L><input aria-label="Search Live cases" placeholder="Ship, IMO, MMSI or anomaly" value={filter} onChange={event=>setFilter(event.target.value)} /></label>
         </div>
         {feed.error && <p role="alert" className="future-ais-notice"><L>{feed.error}</L></p>}
         <div className="future-ais-case-list" aria-label="Select maritime case">
@@ -327,12 +327,12 @@ export default function AisCrossCheck() {
       </section>
       <section className="future-ais-provider" aria-label="VesselFinder visual reference">
         <div className="future-ais-split-title">
-          <div><span className="future-eyebrow">02 / independent visual reference</span><h2>VesselFinder</h2></div>
-          <button type="button" onClick={()=>setEmbedCycle(v=>v+1)} disabled={!externalKey}>Reload map</button>
+          <div><span className="future-eyebrow"><L>02 / independent visual reference</L></span><h2>VesselFinder</h2></div>
+          <button type="button" onClick={()=>setEmbedCycle(v=>v+1)} disabled={!externalKey}><L>Reload map</L></button>
         </div>
         {identity && externalKey ? <>
           <div className="future-ais-external-action">
-            <strong>Selected vessel: <L>{identity.imo ? 'IMO '+identity.imo : 'MMSI '+identity.mmsi}</L></strong>
+            <strong><L>Selected vessel: </L><L>{identity.imo ? 'IMO '+identity.imo : 'MMSI '+identity.mmsi}</L></strong>
             <a href={externalUrl} target="_blank" rel="noopener noreferrer">
               <L>{identity.imo ? 'Open this vessel on VesselFinder ↗' : 'Search by MMSI on VesselFinder ↗'}</L>
             </a>
@@ -340,33 +340,33 @@ export default function AisCrossCheck() {
           <iframe key={externalKey + ':' + embedCycle} title="VesselFinder vessel map, visual inspection only"
             sandbox="allow-scripts allow-same-origin" referrerPolicy="no-referrer" loading="eager"
             src={isolatedVesselFinderFrameUrl(identity)} />
-        </> : <div className="future-ais-blank">Select a case or enter an IMO/MMSI to focus VesselFinder on that vessel.</div>}
+        </> : <div className="future-ais-blank"><L>Select a case or enter an IMO/MMSI to focus VesselFinder on that vessel.</L></div>}
         <form className="future-ais-jump" onSubmit={selectByIdentifier}>
-          <label>Direct IMO/MMSI<input aria-label="Direct IMO or MMSI" value={manualIdentifier}
+          <label><L>Direct IMO/MMSI</L><input aria-label="Direct IMO or MMSI" value={manualIdentifier}
             onChange={event=>setManualIdentifier(event.target.value.replace(/\D/g,'').slice(0,9))}
             placeholder="9316359 / 636017239" /></label>
-          <button type="submit" disabled={!validIMO(manualIdentifier) && !validMMSI(manualIdentifier)}>Find vessel</button>
+          <button type="submit" disabled={!validIMO(manualIdentifier) && !validMMSI(manualIdentifier)}><L>Find vessel</L></button>
         </form>
-        <p className="future-ais-notice">Selecting a Live case or map marker targets the official VesselFinder widget by IMO/MMSI. If the provider blocks the embedded view, use the selected-vessel link above. VesselFinder controls its own zoom and positions; these cannot be inspected or panned programmatically across origins.</p>
+        <p className="future-ais-notice"><L>Selecting a Live case or map marker targets the official VesselFinder widget by IMO/MMSI. If the provider blocks the embedded view, use the selected-vessel link above. VesselFinder controls its own zoom and positions; these cannot be inspected or panned programmatically across origins.</L></p>
         <label className="future-ais-attestation"><input type="checkbox" checked={checkedExternal} disabled={!externalKey}
-          onChange={(event)=>setCheckedExternal(event.target.checked)} />
+          onChange={(event)=>setCheckedExternal(event.target.checked)} /><L>
           I personally inspected the external map for this case.
-        </label>
-        <a className="future-ais-provider-link" href="https://www.vesselfinder.com/it/embed" target="_blank" rel="noopener noreferrer">Official VesselFinder embed information ↗</a>
+        </L></label>
+        <a className="future-ais-provider-link" href="https://www.vesselfinder.com/it/embed" target="_blank" rel="noopener noreferrer"><L>Official VesselFinder embed information ↗</L></a>
       </section>
     </div>
     <div className="future-ais-analysis">
       <article className="future-ais-evidence">
-        <span className="future-eyebrow">03 / original AIS vs case position</span>
+        <span className="future-eyebrow"><L>03 / original AIS vs case position</L></span>
         <h3><L>{selected?.properties?.title || (identity ? 'Vessel selected without a Live case' : 'Select a case to inspect')}</L></h3>
         <div className="future-ais-evidence-grid">
-          <div><small>Case event coordinates (historical)</small><strong><L>{selectedCoords ? coordsText(selectedCoords[1],'N','S') + ' · ' + coordsText(selectedCoords[0],'E','W') : 'Unavailable'}</L></strong>
+          <div><small><L>Case event coordinates (historical)</L></small><strong><L>{selectedCoords ? coordsText(selectedCoords[1],'N','S') + ' · ' + coordsText(selectedCoords[0],'E','W') : 'Unavailable'}</L></strong>
             <span><L>{renderTime(selected?.properties?.timestamp_utc)}</L></span></div>
-          <div><small>Last SeaCommons AIS fix</small><strong><L>{ais.vessel ? coordsText(ais.vessel.lat,'N','S') + ' · ' + coordsText(ais.vessel.lon,'E','W') : 'Unavailable'}</L></strong>
+          <div><small><L>Last SeaCommons AIS fix</L></small><strong><L>{ais.vessel ? coordsText(ais.vessel.lat,'N','S') + ' · ' + coordsText(ais.vessel.lon,'E','W') : 'Unavailable'}</L></strong>
             <span><L>{ais.loading ? 'Refreshing…' : ais.error || renderTime(ais.vessel?.last_seen)}</L></span>
             <b className={'future-ais-age future-ais-age--' + aisFreshness(ais.vessel?.last_seen)}><L>{aisFreshness(ais.vessel?.last_seen)}</L></b></div>
         </div>
-        <p className="future-ais-notice">An anomaly’s historical location must not be mistaken for a live vessel position. The external map is for human inspection, not independent machine-readable corroboration.</p>
+        <p className="future-ais-notice"><L>An anomaly’s historical location must not be mistaken for a live vessel position. The external map is for human inspection, not independent machine-readable corroboration.</L></p>
       </article>
       <ReviewForm selected={selectedId && selected ? selectedId : null} checked={checkedExternal}
         reviewHistory={history} onSaved={()=>reloadHistory(selectedId)} />

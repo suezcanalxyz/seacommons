@@ -1,0 +1,68 @@
+/* Shared partner-workspace hierarchy, independent of individual feature sheets. */
+.future-app{--f-accent:#caff41;--f-line:#34424d;--f-line-soft:#26333c;--f-muted:#aebdc8}
+.future-content{padding-top:15px!important}
+.future-sidebar nav button{border-radius:7px;border:1px solid transparent;min-height:38px}
+.future-sidebar nav button.is-active{background:#18251e;border-color:#33492a;color:#caff41}
+.future-sidebar nav button.is-active i{opacity:1;color:#caff41}
+.future-session-pill{color:#9be8dc;font-size:10px;letter-spacing:0;border:1px solid #34554e;border-radius:999px;padding:4px 8px;white-space:nowrap}
+.future-topbar .future-account-shortcut{border:1px solid #40515d;border-radius:999px;background:transparent;color:#e8edf0;padding:5px 11px;font:inherit;cursor:pointer}
+.future-content .future-subnav{gap:6px;margin-bottom:18px;box-shadow:0 10px 16px #080d1233}
+.future-content .future-subnav button,.future-content .futures-switcher button,.future-content .future-risk-filters button{border:1px solid #3b4a56;border-radius:999px;background:#101820;color:#c0cdd5;font-size:12px;font-weight:500;line-height:1.4;padding:8px 13px;transition:background .15s,border-color .15s,color .15s}
+.future-content .future-subnav button.is-active,.future-content .futures-switcher button[aria-pressed=true],.future-content .future-risk-filters button.is-active{background:#caff41!important;color:#121810!important;border-color:#caff41!important}
+.future-content .futures-switcher button:hover,.future-content .future-subnav button:hover{border-color:#9be8dc}
+.future-content .local-section-tabs{margin:16px 0 24px;padding-bottom:16px;border-bottom:1px solid #34424d}
+.future-content .future-pill,.future-content .platform-pill,.future-content .partner-pill,.future-content .agentic-pill,.future-content .strategy-pill{padding:5px 10px;font-size:11px;line-height:1.35;font-weight:600;border-radius:999px;letter-spacing:0;text-transform:none;max-width:100%;white-space:normal}
+.future-content .future-pill--good{background:#caff41;color:#121810;border-color:transparent}
+.future-content .future-pill--warn{background:#35281b;color:#ffcc80;border:1px solid #805a2f}
+.future-content .future-pill--bad{background:#382329;color:#ffb1bb;border:1px solid #75404b}
+.future-content .future-pill--plan,.future-content .platform-pill--plan,.future-content .partner-pill--plan,.future-content .strategy-pill.proposed{background:#29263e;color:#d1c5ff;border:1px solid #534777}
+.future-content .future-pill--neutral{background:#202d36;color:#c3d1dc;border:1px solid #3b4a56}
+.future-content .future-page-head{padding:20px 0 23px!important}
+.future-content .future-page-head h1{margin:8px 0 12px!important}
+.future-content .future-page-head p,.future-content .future-section-head p{max-width:90ch;line-height:1.7}
+.future-content .future-section{margin-top:24px}
+.future-content .future-section>header h2{margin:8px 0 12px}
+.future-content .future-eyebrow{color:#9be8dc;letter-spacing:.045em;font-size:11px}
+.future-content .future-keyfigures{margin:16px 0 24px}
+.future-content .future-keyfigure>strong{font-size:clamp(28px,3.7vw,53px)}
+.future-content .future-keyfigure{padding-top:20px;padding-bottom:20px}
+.future-content .future-keyfigure>p{max-width:34ch}
+.future-content .future-risk-list .future-risk-item{border:0;border-bottom:1px solid #34424d;background:transparent;border-radius:0}
+.future-content .future-risk-item summary{padding:18px 0}
+.future-content .future-risk-item summary .future-pill{justify-self:end}
+.future-content .future-risk-body{padding:4px 0 18px;max-width:95ch}
+.future-content .future-hardware-grid .future-hardware-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 22px}
+.future-content .future-hardware-card>.future-pill{grid-column:1/-1;justify-self:start}
+.future-content .future-hardware-card h3{margin:6px 0}
+.future-content .future-hardware-card>.future-equipment-price{grid-column:2;grid-row:2}
+.future-content .future-hardware-card>.future-data-provenance,.future-content .future-hardware-card>p,.future-content .future-hardware-card>details{grid-column:1/-1}
+.future-content .future-hardware-card>details{border-top:1px solid #34424d;padding:12px 0 0;margin-top:6px}
+.future-content .future-contribute__hero-links button{background:transparent;color:#9be8dc;border:1px solid #40515e;border-radius:999px;padding:8px 13px;font-size:12px;cursor:pointer}
+.future-content .future-contribute__item-top{flex-wrap:wrap}
+.future-content .future-contribute__item-top small{background:transparent;color:#9be8dc;border:1px solid #40515e;border-radius:999px}
+.future-content .future-contribute__item-top>.future-pill{margin-left:auto}
+.future-content .future-contribute__item details{border-top:1px solid #34424d;padding-top:12px}
+.future-content .future-guide{grid-template-columns:minmax(175px,240px) minmax(0,1fr);gap:28px}
+.future-content .future-guide article>p{max-width:80ch;line-height:1.8}
+.future-content .future-guide__group button.is-active{border-color:#caff41;color:#caff41;background:#19251b}
+.future-content .knowledge-volume__meta{align-items:center;flex-wrap:wrap}
+.future-content .knowledge-volume__meta .future-pill{letter-spacing:0}
+.future-content .intel-matrix{border:1px solid #34424d}
+.future-content .intel-matrix tbody tr:nth-child(even){background:#111b2355}
+.future-content .intel-matrix thead th{background:#17242d}
+.future-content .intel-matrix tbody th{color:#e0e8ed}
+.future-content .intel-matrix tbody tr:hover{background:#17242d}
+.future-content .intel-matrix tbody td:last-child{color:#caff41}
+.future-content .intel-matrix tbody td.is-missing{color:#82939f}
+.future-content .intel-matrix tfoot small{line-height:1.55}
+.future-content .intel-domain-title{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 0}
+.future-content .intel-domain-title h2{font-size:26px;font-weight:500;letter-spacing:-.025em;margin:0}
+.future-content .intel-domain-title .future-pill{margin-left:auto}
+.future-content .intel-domain-empty{padding:14px 16px;border:1px solid #40515d;border-radius:8px;font-size:13px;line-height:1.65;color:#c2cfd7;margin:14px 0}
+.future-content .strategy-header{padding:20px 0 24px}
+.future-content .strategy-header h1{font-size:clamp(33px,4vw,52px)}
+.future-content .strategy-section{padding:15px 0 27px}
+.future-content .strategy-figures>div+div{border-left:1px solid #34424d;padding-left:20px}
+.future-content .strategy-scenario{padding:20px 0}
+@media(max-width:760px){.future-topbar .future-account-shortcut{display:none}.future-content .future-hardware-grid .future-hardware-card{display:block}.future-content .future-hardware-card>.future-pill{display:inline-flex}.future-content .future-hardware-card>.future-equipment-price{display:block}.future-content .future-guide{grid-template-columns:1fr}.future-content .strategy-figures>div+div{border-left:0;padding-left:0}.future-content .intel-domain-title .future-pill{margin-left:0}.future-content .future-subnav{position:relative;top:auto!important}}
+@media(prefers-reduced-motion:reduce){.future-content button{transition:none!important}}
