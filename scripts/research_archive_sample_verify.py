@@ -88,6 +88,38 @@ def verify_sample(manifest: dict[str, Any], get, samples: int) -> dict[str, Any]
             "manifest_matches": True, "tables": report}
 
 
+def make_reader(config_path: Path):
+    """Return a bounded read-only S3 object reader using the existing config."""
+    import boto3
+    from botocore.config import Config
+
+    cfg = {}
+    for line in config_path.read_text(encoding="utf-8").splitlines():
+        if "=" in line and not line.lstrip().startswith("#"):
+            key, value = line.split("=", 1)
+            cfg[key.strip()] = value.strip().strip('"').strip("'")
+    client = boto3.client(
+        "s3", endpoint_url="https://" + cfg["R2_ACCOUNT_ID"] + ".r2.cloudflarestorage.com",
+        aws_access_key_id=cfg["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=cfg["R2_SECRET_ACCESS_KEY"], region_name="auto",
+        config=Config(connect_timeout=5, read_timeout=8, retries={"total_max_attempts": 1}),
+    )
+
+    def get(key: str, limit: int) -> bytes:
+        obj = client.get_object(Bucket=cfg["R2_BUCKET"], Key=key)
+        try:
+            if obj["ContentLength"] > limit:
+                raise ValueError("object exceeds size budget")
+            data = obj["Body"].read(limit + 1)
+            if len(data) != obj["ContentLength"]:
+                raise ValueError("object length mismatch")
+            return data
+        finally:
+            obj["Body"].close()
+
+    return get
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
@@ -97,36 +129,10 @@ def main() -> None:
     if not 1 <= args.samples <= 10:
         parser.error("sample budget must be 1–10 per table")
     try:
-        import boto3
-        from botocore.config import Config
-
         if args.manifest.stat().st_size > MAX_MANIFEST_BYTES:
             raise ValueError("manifest exceeds size budget")
         manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-        cfg = {}
-        for line in args.config.read_text(encoding="utf-8").splitlines():
-            if "=" in line and not line.lstrip().startswith("#"):
-                key, value = line.split("=", 1)
-                cfg[key.strip()] = value.strip().strip('"').strip("'")
-        client = boto3.client(
-            "s3", endpoint_url="https://" + cfg["R2_ACCOUNT_ID"] + ".r2.cloudflarestorage.com",
-            aws_access_key_id=cfg["R2_ACCESS_KEY_ID"],
-            aws_secret_access_key=cfg["R2_SECRET_ACCESS_KEY"], region_name="auto",
-            config=Config(connect_timeout=5, read_timeout=8, retries={"total_max_attempts": 1}),
-        )
-
-        def get(key: str, limit: int) -> bytes:
-            obj = client.get_object(Bucket=cfg["R2_BUCKET"], Key=key)
-            try:
-                if obj["ContentLength"] > limit:
-                    raise ValueError("object exceeds size budget")
-                data = obj["Body"].read(limit + 1)
-                if len(data) != obj["ContentLength"]:
-                    raise ValueError("object length mismatch")
-                return data
-            finally:
-                obj["Body"].close()
-
+        get = make_reader(args.config)
         print(json.dumps(verify_sample(manifest, get, args.samples), indent=2, sort_keys=True))
     except Exception as exc:
         # SDK exceptions can contain credentials or sensitive object URLs.
