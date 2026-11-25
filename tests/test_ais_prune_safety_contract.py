@@ -469,3 +469,24 @@ def test_archive_integrity_failure_raises_before_delete():
     assert any(isinstance(n, ast.Raise) for n in ast.walk(checks[0])), (
         "Checksum mismatch must abort transaction before SQL DELETE"
     )
+
+
+def test_prune_requires_restorable_gzip_schema_and_exact_rows_before_delete():
+    """Checksum equality alone is not sufficient evidence of a usable restore."""
+    source = SOURCE.read_text(encoding="utf-8")
+    body = ast.get_source_segment(source, _prune())
+    assert body is not None
+    checks = (
+        "hashlib.sha256(verified).hexdigest() != digest",
+        "gzip.GzipFile(fileobj=io.BytesIO(verified))",
+        "stream.read(len(plain) + 1)",
+        'restored.get("schema") != "vessel_tracks_v1"',
+        'restored.get("rows") != payload',
+        ".delete(synchronize_session=False)",
+    )
+    offsets = [body.index(fragment) for fragment in checks]
+    assert offsets == sorted(offsets), "Restore and row equality must precede DELETE"
+    scopes = [node for node in ast.walk(_prune()) if isinstance(node, ast.With) and any(isinstance(item.context_expr, ast.Call) and isinstance(item.context_expr.func, ast.Name) and item.context_expr.func.id == "session_scope" for item in node.items)]
+    assert len(scopes) == 1
+    assert not any(isinstance(node, ast.ExceptHandler) for node in ast.walk(scopes[0])), "Restore failures must escape the DB transaction to trigger rollback"
+    assert 'raise ValueError("AIS cold archive row equivalence failed")' in body

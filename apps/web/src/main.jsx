@@ -2755,7 +2755,7 @@ function App() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const effectiveBaseMap = baseMap;
+    const effectiveBaseMap = isPublicLiveHost ? 'standard' : baseMap;
     if (map.getLayer('osm')) map.setLayoutProperty('osm', 'visibility', effectiveBaseMap === 'standard' ? 'visible' : 'none');
     if (map.getLayer('bathymetry-labels')) map.setLayoutProperty('bathymetry-labels', 'visibility', effectiveBaseMap === 'standard' ? 'visible' : 'none');
     if (map.getLayer('satellite')) map.setLayoutProperty('satellite', 'visibility', effectiveBaseMap === 'satellite' ? 'visible' : 'none');
