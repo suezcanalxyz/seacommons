@@ -437,7 +437,7 @@ test('PLAY fails over after fatal asynchronous MapLibre renderer failures', asyn
 test('co-located PLAY records require an explicit identity choice', async () => {
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
   assert.match(source, /queryRenderedFeatures\(event\.point/);
-  assert.match(source, /setOverlapIds\(ids\)/);
+  assert.match(source, /setOverlapIds\(\[\.\.\.ids\]\)/);
   assert.match(source, /aria-label="Overlapping archive records"/);
   assert.match(source, /overlapIncidents\.map/);
 });

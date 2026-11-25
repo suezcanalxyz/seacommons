@@ -128,6 +128,7 @@ function cutoffLabel(state) {
 export default function PlayTimeline({ apiBase }) {
   const mapNodeRef = useRef(null);
   const mapRef = useRef(null);
+  const mapArchiveFeaturesRef = useRef([]);
   const fallbackMapRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
   const [fallbackReady, setFallbackReady] = useState(false);
@@ -703,15 +704,21 @@ export default function PlayTimeline({ apiBase }) {
         });
         const selectArchiveFeature = (event) => {
           const rendered = map.queryRenderedFeatures(event.point, { layers: ['play-incidents', 'play-vessels', 'play-vessels-unknown-course'] });
-          const ids = [...new Set(rendered
-            .map((feature) => feature.properties?.incident_id)
-            .filter(Boolean)
-            .map(String))];
-          if (ids.length > 1) {
-            setOverlapIds(ids);
+          const ids = new Set(rendered.map((feature) => feature.properties?.incident_id).filter(Boolean).map(String));
+          const points = new Set(mapArchiveFeaturesRef.current
+            .filter((feature) => feature.geometry.type === 'Point' && ids.has(String(feature.properties.incident_id)))
+            .map((feature) => JSON.stringify(feature.geometry.coordinates.slice(0, 2))));
+          // Symbol collision can hide co-located icons. Match their original public coordinates.
+          for (const feature of mapArchiveFeaturesRef.current) {
+            if (feature.geometry.type === 'Point' && points.has(JSON.stringify(feature.geometry.coordinates.slice(0, 2)))) {
+              ids.add(String(feature.properties.incident_id));
+            }
+          }
+          if (ids.size > 1) {
+            setOverlapIds([...ids]);
             return;
           }
-          const id = ids[0] || event.features?.[0]?.properties?.incident_id;
+          const id = ids.values().next().value || event.features?.[0]?.properties?.incident_id;
           if (id) {
             setOverlapIds([]);
             setSelectedId(String(id));
@@ -819,6 +826,7 @@ export default function PlayTimeline({ apiBase }) {
   useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map) return;
+    mapArchiveFeaturesRef.current = mappedIncidents.features;
     map.getSource('play-incidents')?.setData(mappedIncidents);
     map.getSource('play-attacks')?.setData({ type: 'FeatureCollection', features: mappedIncidents.features.filter((f) => f.geometry?.type === 'Point' && isAttackIncident(f.properties)) });
     if (map.getLayer('play-attack-markers')) map.moveLayer('play-attack-markers');

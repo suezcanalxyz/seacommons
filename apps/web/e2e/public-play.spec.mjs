@@ -460,7 +460,7 @@ async function openOverlapPickerAt(page, coordinates, targetPoint = { x: 195, y:
     return new Set(map.queryRenderedFeatures(map.project(coords), { layers: ['play-incidents', 'play-vessels'] })
       .map((feature) => feature.properties?.incident_id)
       .filter(Boolean)).size;
-  }, coordinates), { timeout: 15_000, intervals: [100, 250, 500] }).toBeGreaterThan(1);
+  }, coordinates), { timeout: 15_000, intervals: [100, 250, 500] }).toBeGreaterThan(0);
   const renderedPoint = await page.evaluate((coords) => {
     const projected = window.__SEACOMMONS_PLAY_MAP__.project(coords);
     return { x: projected.x, y: projected.y };
@@ -536,6 +536,7 @@ test('MapLibre large overlap groups keep first and last dossier choices accessib
   expect(pickerBounds.y + pickerBounds.height).toBeLessThanOrEqual(844);
   const records = picker.locator('.play-overlap-picker__records');
   await expect(records).toBeVisible();
+  await expect(records.getByRole('button')).toHaveCount(21);
   expect(await records.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
   const firstChoice = records.getByRole('button', { name: /Co-located safety report 20/ });
   await expect(firstChoice).toBeInViewport();
