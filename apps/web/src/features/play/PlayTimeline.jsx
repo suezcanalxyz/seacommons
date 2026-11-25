@@ -30,6 +30,7 @@ import {
   normalizeTimeline,
   resolveGlobalTimelinePosition,
   casesForArchiveView,
+  satelliteContextDay,
   satelliteReviewScenes,
   satelliteCrossCheck,
   sarObservationPoint,
@@ -976,6 +977,7 @@ export default function PlayTimeline({ apiBase }) {
   const reportEvidence = visibleTimeline.filter((item) => item?.type !== 'satellite');
   const frameProps = frame.item?.properties || {};
   const satelliteProps = satellite?.properties || {};
+  const contextDay = satelliteContextDay(satellite);
   const locateSarPoint = () => {
     const map = mapRef.current;
     map?.easeTo({ center: sarPoint, zoom: Math.max(9, map.getZoom()), duration: 500 });
@@ -1319,7 +1321,7 @@ export default function PlayTimeline({ apiBase }) {
               <span>Case acquisitions and radar observations</span>
               <select value={satelliteMission} onChange={(event) => setSatelliteMission(event.target.value)} disabled={!satelliteScenes.length}>
                 <option value="">{satelliteScenes.length ? 'Choose an acquisition or radar observation' : 'No satellite record at this cutoff'}</option>
-                {satelliteScenes.map((item) => <option key={item.id} value={item.id}>{sarObservationPoint(item) ? 'GFW Sentinel-1 SAR return' : item.properties?.mission || item.source || 'Satellite'} · {itemTime(item.at)} UTC{item.properties?.evidence_role === 'context_only_pending_review' ? ' · review candidate' : ''}</option>)}
+                {satelliteScenes.map((item) => <option key={item.id} value={item.id}>{sarObservationPoint(item) ? 'GFW Sentinel-1 SAR return' : item.properties?.mission || item.source || 'Satellite'} · {satelliteContextDay(item) || itemTime(item.at)} UTC{item.properties?.evidence_role === 'context_only_pending_review' ? ' · review candidate' : ''}</option>)}
               </select>
             </label>
             {sarPoint ? (
@@ -1347,10 +1349,12 @@ export default function PlayTimeline({ apiBase }) {
               <figcaption>Provider thumbnail · full scene, reduced resolution</figcaption>
             </figure>}
             {quicklook && <a href={satelliteProps.asset_ref} target="_blank" rel="noreferrer">Open provider quicklook ↗</a>}
-            {satelliteProps.temporal_delta_s != null && Number.isFinite(Number(satelliteProps.temporal_delta_s)) ? <span>Δt {Math.round(Number(satelliteProps.temporal_delta_s) / 3600)} h from report</span> : null}
+            {contextDay ? <span>Daily context · acquisition time unavailable</span>
+              : satelliteProps.temporal_delta_s != null && Number.isFinite(Number(satelliteProps.temporal_delta_s))
+                && <span>Δt {Math.round(Number(satelliteProps.temporal_delta_s) / 3600)} h from report</span>}
             {Number.isFinite(satelliteProps.review_delta_hours) && <span>{satelliteProps.review_delta_hours.toFixed(1)} h from the episode window · coverage candidate</span>}
             {satelliteProps.product_id ? <span>Product {satelliteProps.product_id}</span> : null}
-            {satelliteProps.temporal_relation ? <span>{satelliteProps.temporal_relation}</span> : null}
+            {!contextDay && satelliteProps.temporal_relation ? <span>{satelliteProps.temporal_relation}</span> : null}
             {satelliteProps.polarisation?.length ? <span>Polarisation {satelliteProps.polarisation.join(' / ')}</span> : null}
             {satelliteProps.cloud_cover != null && Number.isFinite(Number(satelliteProps.cloud_cover)) ? <span>Cloud {Math.round(Number(satelliteProps.cloud_cover))}%</span> : null}
             {satelliteProps.evidence_status ? <span>Evidence {satelliteProps.evidence_status}</span> : null}

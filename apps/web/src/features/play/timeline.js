@@ -183,7 +183,9 @@ export function satelliteCrossCheck(scene, timeline = [], vessels = []) {
 export function satelliteReviewScenes(timeline, candidates = [], cutoff) {
   const byId = new Map();
   for (const item of timeline) {
-    if (item.type === 'satellite' && item.id && Number.isFinite(parseTime(item.at)) && parseTime(item.at) <= parseTime(cutoff)
+    const day = satelliteContextDay(item);
+    const latestPossibleTime = parseTime(day ? `${day}T23:59:59.999Z` : item.at);
+    if (item.type === 'satellite' && item.id && Number.isFinite(latestPossibleTime) && latestPossibleTime <= parseTime(cutoff)
         && (sarObservationPoint(item) || item.properties?.asset_ref || item.properties?.source_url || ['Polygon', 'MultiPolygon'].includes(item.geometry?.type))) {
       byId.set(item.id, item);
     }
@@ -199,6 +201,12 @@ export function satelliteReviewScenes(timeline, candidates = [], cutoff) {
     });
   }
   return [...byId.values()].sort((a, b) => parseTime(b.at) - parseTime(a.at));
+}
+
+export function satelliteContextDay(item) {
+  if (item?.type !== 'satellite' || item.properties?.provenance?.temporal_precision !== 'day') return null;
+  const at = parseTime(item.at);
+  return Number.isFinite(at) ? new Date(at).toISOString().slice(0, 10) : null;
 }
 
 export function incidentsAtCutoff(incidents = [], cutoff = null) {

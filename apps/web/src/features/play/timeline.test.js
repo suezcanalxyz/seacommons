@@ -570,6 +570,19 @@ test('archive clock hides later cases on the same UTC day while the date picker 
   assert.deepEqual(casesForArchiveView(cases, null, '2026-05-20').map((x) => x.incident_id), ['early', 'later']);
 });
 
+test('daily satellite context is eligible only after the full UTC day', async () => {
+  const { satelliteContextDay, satelliteReviewScenes } = await import('./timeline.js');
+  const daily = {
+    type: 'satellite', id: 'daily', at: '2026-05-20T00:00:00Z',
+    properties: { source_url: 'https://example.test/day', provenance: { temporal_precision: 'day' } },
+  };
+  const exact = { ...daily, id: 'exact', properties: { source_url: 'https://example.test/scene' } };
+  assert.equal(satelliteContextDay(daily), '2026-05-20');
+  assert.equal(satelliteContextDay(exact), null);
+  assert.deepEqual(satelliteReviewScenes([daily, exact], [], '2026-05-20T12:00:00Z'), [exact]);
+  assert.deepEqual(satelliteReviewScenes([daily], [], '2026-05-20T23:59:59.999Z'), [daily]);
+});
+
 test('scene review keeps associated scenes, hides future candidates, and labels coverage separately', async () => {
   const { satelliteReviewScenes } = await import('./timeline.js');
   const associated = { type: 'satellite', id: 'existing', at: '2026-05-20T10:00:00Z', properties: { source_url: 'https://example.test/scene' } };
