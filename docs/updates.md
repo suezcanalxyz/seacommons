@@ -1,5 +1,7 @@
 # SeaCommons — Maritime OSINT Platform Upgrade Plan
 
+> **Current research execution priority (2026-11-25):** Before opening any new work packet, read [Research Intelligence Roadmap](RESEARCH_INTELLIGENCE_ROADMAP.md). It requires a fresh production status and legacy audit first, then full retrospective replay, evidence validation, analytical PLAY and research reports, with evidence-backed 5/5 exit gates. It extends this plan; all canonical, privacy, CI and migration invariants remain binding.
+
 > **Authority:** the stabilization program in `docs/fixes.md` is production-closed and retained as historical execution record. This upgrade plan is the current forward authority. Current production baseline after IncidentWatch v0: `6e0d1057d9e7d1149a30f3d902e980e248c98d9d` (2026-09-05).
 >
 > **Target:** SeaCommons is a production-grade **maritime OSINT platform**. It continuously acquires open-source observations, preserves provenance, resolves entities and incidents, correlates independent evidence, follows cases over time, performs bounded geospatial/intelligence analysis, exposes reviewable assessments, and publishes privacy-aware outputs.
