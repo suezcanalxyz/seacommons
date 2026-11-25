@@ -26,10 +26,9 @@ def manifest_digest(manifest: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
 
 
-def inspect_part(part: dict[str, Any], data: bytes, table_name: str) -> dict[str, Any]:
-    """Verify the original bytes and compute aggregate quality without releasing records."""
+def decode_verified_part(part: dict[str, Any], data: bytes):
+    """Verify and decode one bounded immutable archive object."""
     import pyarrow as pa
-    import pyarrow.compute as pc
     import pyarrow.parquet as pq
 
     if len(data) != part["bytes"] or hashlib.sha256(data).hexdigest() != part["sha256"]:
@@ -47,6 +46,15 @@ def inspect_part(part: dict[str, Any], data: bytes, table_name: str) -> dict[str
     table = file.read(use_threads=False)
     if table.num_rows != part["rows"]:
         raise ValueError("decoded row mismatch")
+    return table
+
+
+def inspect_part(part: dict[str, Any], data: bytes, table_name: str) -> dict[str, Any]:
+    """Verify the original bytes and compute aggregate quality without releasing records."""
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    table = decode_verified_part(part, data)
     if table_name not in {"vessel_tracks", "source_observations"}:
         raise ValueError("unsupported table")
     if not {"lat", "lon"} <= set(table.column_names):
