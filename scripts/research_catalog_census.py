@@ -9,6 +9,7 @@ from collections import Counter
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import time
 from urllib.request import urlopen
 
@@ -16,6 +17,54 @@ FIELDS = ("domain", "main_category", "case_type", "incident_status",
           "verification_status", "evidence_state", "episode_family",
           "hypothesis_state", "archive_source")
 PAGE_SIZE = 500
+GAP_CODES = (
+    "LOCAL_AIS_COVERAGE_HEALTHY", "PROLONGED_OFFSHORE_GAP",
+    "OPEN_GAP_COVERAGE_NOT_TRACK_CONTINUOUS", "TRACK_CORRIDOR_COVERAGE_PRESENT",
+    "STRONG_RECEPTION_EXPECTATION", "NEIGHBOUR_TRAFFIC_CONTINUED",
+)
+
+
+def geometry_quality(geometry: object) -> str:
+    """Audit point range and structure, not positional accuracy or CRS provenance."""
+    if geometry is None:
+        return "missing"
+    if not isinstance(geometry, dict):
+        return "invalid_structure"
+    if geometry.get("type") != "Point":
+        return "other_geometry_unvalidated"
+    coords = geometry.get("coordinates")
+    if not isinstance(coords, list) or len(coords) < 2 or not all(
+        type(v) in (int, float) and math.isfinite(v) for v in coords[:2]
+    ):
+        return "invalid_point"
+    lon, lat = coords[:2]
+    if abs(lon) > 180 or abs(lat) > 90:
+        return "out_of_range"
+    if lon == 0 and lat == 0:
+        return "zero_zero_review"
+    return "valid_range_point"
+
+
+def gap_quality(row: dict) -> Counter:
+    """Aggregate catalog fields only, never infer intent, exposure or confirmation."""
+    if row.get("episode_family") != "gap_episode":
+        return Counter()
+    raw = row.get("reason_codes")
+    codes = {v for v in raw if isinstance(v, str)} if isinstance(raw, list) else set()
+    result = Counter({"total": 1})
+    result.update({key: int(key in codes) for key in GAP_CODES})
+    result["missing_or_empty_reason_codes"] = int(not codes)
+    result["counter_indicators_present"] = int(bool(row.get("counter_indicators")))
+    result["corroborated_flag"] = int(row.get("corroborated") is True)
+    result["duration_field_present"] = int(any(
+        row.get(k) is not None for k in ("gap_duration_s", "gap_duration_min", "duration_s")
+    ))
+    result["both_continuous_and_noncontinuous_codes"] = int(
+        {GAP_CODES[2], GAP_CODES[3]} <= codes
+    )
+    result["strong_and_noncontinuous_codes"] = int({GAP_CODES[2], GAP_CODES[4]} <= codes)
+    result["strong_and_healthy_codes"] = int({GAP_CODES[0], GAP_CODES[4]} <= codes)
+    return result
 
 
 def scan(fetch, max_pages=100, pause=0.1):
@@ -23,6 +72,9 @@ def scan(fetch, max_pages=100, pause=0.1):
     flags = Counter()
     by_domain_status = Counter()
     signatures = {}
+    geometry_counts = Counter()
+    gaps = Counter()
+    gap_states = Counter()
     offset = 0
     expected = None
     for _ in range(max_pages):
@@ -42,6 +94,13 @@ def scan(fetch, max_pages=100, pause=0.1):
             values = [row.get(field) for field in FIELDS]
             relevant = values + [row.get("corroborated"), row.get("has_satellite"),
                                  row.get("last_update_at"), row.get("state_changed_at")]
+            geometry_class = geometry_quality(row.get("geometry"))
+            gap = gap_quality(row)
+            geometry_counts[geometry_class] += 1
+            gaps.update(gap)
+            if gap:
+                gap_states[str(row.get("incident_status") or "unknown")] += 1
+            relevant += [geometry_class, dict(gap)]
             signatures[ident] = hashlib.sha256(
                 json.dumps(relevant, sort_keys=True).encode()
             ).hexdigest()
@@ -59,7 +118,9 @@ def scan(fetch, max_pages=100, pause=0.1):
                 raise ValueError("incomplete catalog")
             digest = hashlib.sha256(json.dumps(sorted(signatures.items())).encode()).hexdigest()
             result = {"total": expected, "counts": {k: dict(v) for k, v in counts.items()},
-                      "flags": dict(flags), "domain_status": dict(by_domain_status)}
+                      "flags": dict(flags), "domain_status": dict(by_domain_status),
+                      "geometry_quality": dict(geometry_counts), "gap_quality": dict(gaps),
+                      "gap_status": dict(gap_states)}
             return result, digest
         if type(next_offset) is not int or not items or next_offset != offset + len(items):
             raise ValueError("non-contiguous pagination")
@@ -73,9 +134,11 @@ def census(fetch, **kwargs):
     second, second_digest = scan(fetch, **kwargs)
     if first != second or digest != second_digest:
         raise ValueError("catalog changed between scans; retry later")
-    return {"schema_version": 1, "observed_at_utc": datetime.now(timezone.utc).isoformat(),
+    return {"schema_version": 2, "observed_at_utc": datetime.now(timezone.utc).isoformat(),
             "scope": "PLAY catalog only; matching scans, not a pinned database snapshot",
-            "consistency": "two matching scans of IDs and selected fields",
+            "consistency": "two matching scans of IDs and selected fields/quality classes",
+            "limitations": "Point range is not location accuracy; other geometries unvalidated. "
+                           "Gap counts have no exposure denominator; no inference of intent.",
             **second}
 
 
