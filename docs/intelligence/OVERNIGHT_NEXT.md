@@ -1,19 +1,20 @@
 # SeaCommons Overnight — next work packet
 
 - Sprint: 2026-11-26, Europe/Rome, hourly 00:00–10:00.
-- Handoff sequence: 2.
-- UTC timestamp: 2026-11-26 01:58 UTC.
-- Previous handoff commit: 576cf70d4920cf817543358629f4f794040852d3.
-- Code branch: research/p0-catalog-baseline, PR #555, head a9fb3a3b949982faeed44ef070eced3a5c259a8a.
-- Completed: semantic profile v2, commits 6490d7f and bd0314f; five synthetic regression functions passed in VM venv using proposed exact bodies. Historical zero is explicitly ambiguous, verified zero separate, null missing, naive time distinct from offset time. No ingestion mutation.
-- CI: baseline da972543 Full CI 45732868775 and CodeQL 45732868748 passed; new head not yet verified.
-- Production: NOT DEPLOYED. API ready/database ok; PLAY counts 200 8.847 ms warm (previous 8.294); disk 85%/6.9 GiB free, RAM available 6964 MiB, load 2.17/1.83/1.91 (previous 5.69/3.46/2.46), checkout 85 modified/46 untracked.
-- Checkpoint: 480000/41106622 rows, 48/4112 objects unchanged; no replay process observed. Deferred due to pressure.
-- Blockers: #489 conflicts, #470 restore gate unverified, cold PLAY/CARTO and independent release smoke unverified. No full pytest collection or new deployment. Ledger commit a9fb3a3. No maturity advancement.
+- Handoff sequence: 3.
+- UTC timestamp: 2026-11-26 09:44 UTC.
+- Previous handoff commit: 143bbe78a3a603226bd4ccf119a490859697dc2c.
+- Code branch: feat/historical-analytics, commit 2add7142, based on PR #555 head a9fb3a3b949982faeed44ef070eced3a5c259a8a.
+- Completed: strict snapshot validator, bounded real v2 profile, reviewed-artifact publication gate and canonical PLAY API. [Execution ledger](https://github.com/suezcanalxyz/seacommons/blob/2add7142/docs/intelligence/EXECUTION_LEDGER.md).
+- Bounded sample: 166,622/41,106,622 messages from 18/4,112 objects (9 per table), 10,925,376 bytes. Profile runtime 4.580 s (previous v1 run 8.49 s, no controlled benchmark). Non-random coverage. Historical zero is ambiguous and naive time labels remain unverified. The local route returned HTTP 200 for the real sample and withheld sparse source time histograms.
+- Tests and CI: 35 focused tests passed locally. Exact head #555 [Full CI](https://github.com/suezcanalxyz/seacommons/actions/runs/45739339019) and [CodeQL](https://github.com/suezcanalxyz/seacommons/actions/runs/45739338967) passed, with production smoke skipped. Feature hosted checks pending.
+- Production: NOT DEPLOYED. Public API ready and database ok. VM had 6.8 GiB disk and 6,891 MiB available RAM in preflight. Remote sample ran in a private temp directory with reduced scheduling priority. Operational checkout and services were untouched.
+- Checkpoint: last documented 480000/41106622 rows and 48/4112 objects. No overlapping replay observed and the sample did not advance the checkpoint.
+- Blockers: #489 draft/conflicting, #470 restore gate unverified, cold PLAY/CARTO and independent release smoke unverified. The sample and its public projection require publication review. No maturity advancement.
 
-## Next packet: validated aggregate snapshot for PLAY
+## Next packet: Analyze in PLAY
 
-Read current code/CI/production and existing canonical research catalog and PLAY API contracts. Implement a bounded private snapshot validation/serialization extension to the existing research profile path (scripts/research_archive_profile.py and its tests or existing canonical research module if found), not a parallel authority. Use method v2, manifest digest, sample and total counts, time basis, ambiguous zero, limitations, explicit incomplete status; reject unknown method, negative/noninteger counts, inconsistent totals and unexpected/private fields. Use synthetic fixtures only for tests; never publish them. If resources permit, generate a real bounded v2 sample and validate it privately, with no double-counting against replay. No public exposure until publication review. Acceptance: executed positive/negative tests, measured real sample only if safe, code commits and next API integration packet; rollback scoped commits, no DB schema or production changes. Recheck release gates and replay resources, do not run overlapping processes.
+Integrate the canonical aggregate route into the existing PLAY archive panel. Show incomplete coverage, denominator, timestamp basis, ambiguous zero and privacy withholding. Exercise available and unavailable states on desktop/mobile. Commit code and tests, publish an isolated draft PR, then verify hosted CI and review. Rollback uses scoped commits and removal of the approved artifact hash in the release runtime. Preserve privacy and existing release gates.
 
 ## Handoff contract (all cycles)
 
