@@ -1,26 +1,21 @@
 # SeaCommons Overnight — next work packet
 
 - Sprint: 2026-11-26, Europe/Rome, hourly 00:00–10:00.
-- Handoff sequence: 0 (initial).
-- Previous handoff commit: none.
-- Completed packet: bootstrap control branch only; no code release.
-- Code branch: research/p0-catalog-baseline (PR #555); observed head 183e323466b76ae7d73f6dd9a5b591b60cd59aee; observed main fd68200c67f90deebafd324bf4914099291a73b9. Refresh before execution.
-- Last observed replay checkpoint: 480000 / 41106622 rows, 48 / 4112 objects. Refresh from the real checkpoint; do not count separate samples twice.
+- Handoff sequence: 1.
+- UTC timestamp: 2026-11-26 01:01 UTC.
+- Previous handoff commit: a7b557e2dbc2bccc5835fba4f12cb55954ba03bc.
+- Code branch: research/p0-catalog-baseline, PR #555, new documentation commit da97254339fc88000ed5cce065a9e2753d44a2af; main observed fd68200.
+- Completed: recovered handoff, read project instructions and ledger, checked PR gates, VM health and checkpoint. Ledger updated; no application code change.
+- CI: Full CI 45676628409 and CodeQL 45676628425 passed on 183e323466b76ae7d73f6dd9a5b591b60cd59aee, NOT yet verified on new ledger commit.
+- Production: NOT DEPLOYED. API ready/database ok; PLAY counts 200 in 8.294 ms warm. Disk 85%, 6.9 GiB free, available RAM 7042 MiB, load 5.69/3.46/2.46; 85 modified and 46 untracked files. No replay process observed.
+- Checkpoint: unchanged 480000/41106622 rows, 48/4112 objects; 360000 tracks and 120000 source observations. Delta zero. Replay deferred due to elevated load on known 2-OCPU VM.
+- Blockers: #489 conflicts, #470 restore gate unverified, cold PLAY/CARTO fixes and independent release smoke unverified. No new tests or merge. No maturity advancement.
 
-## Next packet: release readiness and semantic data contract
+## Next packet: semantic contract regression
 
-1. Read AGENTS.md, the research roadmap, updates, architecture, legacy inventory and execution ledger on the actual code branch. Inspect #431, #555, #489, #470, exact-head CI, production health and existing concurrent work.
-2. Reproduce remaining release blockers (CARTO proxy, cold PLAY cache, Oracle/main divergence). If the #555 gate is open, review and release eligible scoped changes; otherwise document the specific blocker and perform the next safe independent implementation, starting with nullable SOG and timestamp semantics, with regression tests.
-3. Resume bounded historical aggregate replay only when resources permit, using existing checkpoint and lock, preserving originals and sensitive data.
-4. Leave measured results, code commit/PR references, tests, deployment proof or explicit blockers, and ONE executable next work packet in this file, using the handoff contract below. Prioritize getting real Historical Analytics into PLAY.
+Inventory consumers of TrackStore SOG and timestamp fields on current application branch, including persistence/spool and analytics. Implement one bounded synthetic regression packet that distinguishes unknown speed from genuine zero and explicitly preserves ambiguity of historical zero, and tests timestamp offset handling. Prefer isolated analytical code/tests over production ingestion changes until consumer compatibility is verified. Read directory instructions and refresh CI and production first. Recheck load before any bounded replay; do not run if pressure remains elevated. Do not duplicate work or alter production checkout.
 
-## Acceptance criteria
-
-- Fresh state verified, actual code/test/release results distinguished from plans.
-- No duplicated PRs, no overwritten dirty production checkout, no destructive storage action.
-- No bypass of CI, publication, privacy, provider authentication or rollback gates.
-- Actual changes or a concrete tested diagnosis where feasible; no unsupported claims.
-- Next handoff committed before the cycle ends.
+Acceptance: synthetic tests executed with results; no historical imputation or new publication; document consumer compatibility and remaining migration requirements; commit code/test changes on application branch if feasible, update ledger and handoff. Rollback by reverting scoped code/test commit. No release until exact-head CI, review, smoke and rollback gates pass.
 
 ## Handoff contract (all cycles)
 
