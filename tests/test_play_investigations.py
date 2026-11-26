@@ -262,6 +262,46 @@ def test_play_explicitly_preserved_negative_case_is_public():
     assert row["incident_status"] == "rejected"
 
 
+def test_play_reviewed_occurrence_refutation_hides_case_but_retains_research():
+    from core.db.models import AssessmentDB, InvestigationHypothesisDB, MaritimeEpisodeDB
+    from core.db.session import session_scope
+    from core.evidence.cross_modal import EvidenceReference
+    from core.intel.retrospective_store import store_dossier
+    from core.intel.retrospective_validation import ClaimEvidence, validate_claim
+
+    case_id = _seed_rejected_hypothesis(preserve=True)
+    episode_id = "retro-test-canonical"
+    now = datetime.now(timezone.utc)
+    with session_scope() as db:
+        db.add(MaritimeEpisodeDB(
+            episode_id=episode_id, episode_family="ais_gap", start_at=now, end_at=now,
+            verification_status="single_source_observed", evidence_fingerprint="fixture",
+            method_version="synthetic-review-test",
+        ))
+        db.get(InvestigationHypothesisDB, case_id).episode_id = episode_id
+        db.flush()
+        evidence = tuple(
+            ClaimEvidence(EvidenceReference(key, evidence_class, lineage, modality, now, .9),
+                          "contradicts", now)
+            for key, evidence_class, lineage, modality in (
+                ("radio-drill", "dsc_message", "radio-test", "radio"),
+                ("report-drill", "verification_claim", "independent-report", "documentary"),
+            )
+        )
+        revision = store_dossier(db, validate_claim(
+            case_id, "event_occurrence", evidence, cutoff=now,
+            reviewed_by="test-analyst", review_reason="Both records identify a drill.", reviewed_at=now,
+        )).assessment_id
+
+    client = TestClient(app)
+    rows = client.get("/api/v1/play/incidents?limit=500").json()["incidents"]
+    assert all(item["incident_id"] not in {case_id, episode_id} for item in rows)
+    assert client.get(f"/api/v1/play/incidents/{case_id}/timeline").status_code == 404
+    assert client.get(f"/api/v1/play/incidents/{episode_id}/timeline").status_code == 404
+    with session_scope() as db:
+        assert db.get(AssessmentDB, revision).value["classification"] == "false_positive"
+
+
 def test_play_timeline_includes_strong_radio_evidence_without_mmsi_leak():
     from core.db.models import IntelEventDB, RadioAISAssociationDB, SourceObservationDB
     from core.db.session import session_scope
