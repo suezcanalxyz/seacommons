@@ -1331,6 +1331,19 @@ export default function PlayTimeline({ apiBase }) {
               <a href={satelliteProps.source_url} target="_blank" rel="noreferrer">{satellite?.source === 'copernicus_dataspace' ? 'Open exact Copernicus product record (STAC)' : 'Open provider source record'} ↗</a>
             )}
             {satelliteProps.review_note && <p className="intel-report-summary">{satelliteProps.review_note}</p>}
+            {satelliteProps.osint_lesson && (
+              <details className="play-source-cross-check play-osint-lesson">
+                <summary>OSINT practice · {satelliteProps.osint_lesson.question}</summary>
+                <dl>
+                  <dt>Observation</dt><dd>{satelliteProps.osint_lesson.observation}</dd>
+                  <dt>Interpretation</dt><dd>{satelliteProps.osint_lesson.interpretation}</dd>
+                  <dt>Limit</dt><dd>{satelliteProps.osint_lesson.limit}</dd>
+                </dl>
+                {/^https:\/\//i.test(satelliteProps.osint_lesson.source_url || '') && (
+                  <a href={satelliteProps.osint_lesson.source_url} target="_blank" rel="noreferrer">Read the method ↗</a>
+                )}
+              </details>
+            )}
             {sceneBounds && <button type="button" onClick={locateScene}>Locate scene coverage on map</button>}
             {satellite && sceneResolution > 0 && Number.isFinite(sceneResolution)
               && <span>Product pixel spacing · {sceneResolution} m</span>}

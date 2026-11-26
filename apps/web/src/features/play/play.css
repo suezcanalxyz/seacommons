@@ -551,3 +551,18 @@
 .play-source-cross-check p {
   font: 12px/1.5 var(--font-display);
 }
+
+.play-osint-lesson dl {
+  display: grid;
+  gap: 5px;
+  margin: 12px 0;
+}
+.play-osint-lesson dt {
+  font: 600 12px/1.4 var(--font-display);
+  color: #e8fff7;
+}
+.play-osint-lesson dd {
+  margin: 0 0 5px;
+  font: 13px/1.5 var(--font-display);
+  color: #c4d9dc;
+}

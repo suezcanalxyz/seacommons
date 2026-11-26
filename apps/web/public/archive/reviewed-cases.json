@@ -58,7 +58,34 @@
             "product_id": "S1C_IW_GRDH_1SDV_20261030T041309_20261030T041334_010109_0142D7_rtc",
             "source_url": "https://planetarycomputer.microsoft.com/api/stac/v1/collections/sentinel-1-rtc/items/S1C_IW_GRDH_1SDV_20261030T041309_20261030T041334_010109_0142D7_rtc",
             "evidence_role": "context_only_pending_review",
-            "review_note": "The acquisition is 42 h 13 min after the time in the maritime notice. The SeaCommons detector produced no candidates in the tested crop. This acquisition cannot establish vessel presence at the time of the incident."
+            "review_note": "The acquisition is 42 h 13 min after the time in the maritime notice. The SeaCommons detector produced no candidates in the tested crop. This acquisition cannot establish vessel presence at the time of the incident.",
+            "osint_lesson": {
+              "question": "The detector returned zero candidates. Did we rule out the ship's presence during the attack?",
+              "observation": "The radar crop was acquired 42 h 13 min after the maritime notice time. The SeaCommons detector returned zero candidates in that crop.",
+              "interpretation": "The detector result applies to the pixels, place, acquisition time and settings used for the later scene.",
+              "limit": "The crop cannot establish what was present during the attack, or what happened at a different location."
+            }
+          }
+        },
+        {
+          "id": "contship-jet-l8-20261029",
+          "at": "2026-10-29T08:51:16.589174Z",
+          "type": "satellite",
+          "title": "Landsat 8 · quality assessment",
+          "source": "planetary_computer",
+          "properties": {
+            "mission": "Landsat 8",
+            "product_id": "LC08_L2SP_181030_20261029_02_T2",
+            "source_url": "https://planetarycomputer.microsoft.com/api/stac/v1/collections/landsat-c2-l2/items/LC08_L2SP_181030_20261029_02_T2",
+            "evidence_role": "context_only_pending_review",
+            "review_note": "Optical pass 22 h 51 min after the maritime notice time. The local quality mask and visible bands were checked.",
+            "osint_lesson": {
+              "question": "The catalog reports 3.9% cloud cover. Is this crop usable to identify the ship?",
+              "observation": "In the 83 × 80 pixel crop around the reported point, all 6,640 QA_PIXEL samples set both the clear bit and the high-confidence snow bit. The central pixel also has very high visible-band reflectance.",
+              "interpretation": "The clear bit only describes two cloud flags. A snow classification over this offshore crop is a quality inconsistency. The two bits do not identify the obscuring material or establish a clear view of the sea.",
+              "limit": "This crop cannot corroborate vessel presence, absence, identity or damage. The tile-wide cloud estimate cannot override the local quality check.",
+              "source_url": "https://www.usgs.gov/landsat-missions/landsat-collection-2-quality-assessment-bands"
+            }
           }
         }
       ]
