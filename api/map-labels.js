@@ -19,12 +19,18 @@ async function handler(req, res) {
     return send(res, 400);
   }
   const key = process.env.CARTO_BASEMAPS_API_KEY?.trim();
-  if (!key) return send(res, 503);
+  if (!key) {
+    console.warn('map-labels: missing provider configuration');
+    res.setHeader('Cache-Control', 'no-store');
+    return send(res, 503);
+  }
   const url = new URL(`https://basemaps.cartocdn.com/rastertiles/${style}/${z}/${x}/${y}.png`);
   url.searchParams.set('key', key);
   try {
     const tile = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(8000) });
     if (!tile.ok || !tile.headers.get('content-type')?.startsWith('image/png')) {
+      console.warn('map-labels: upstream rejected tile', { status: tile.status, png: Boolean(tile.headers.get('content-type')?.startsWith('image/png')) });
+      res.setHeader('Cache-Control', 'no-store');
       return send(res, 502);
     }
     const image = Buffer.from(await tile.arrayBuffer());
@@ -32,7 +38,9 @@ async function handler(req, res) {
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.setHeader('Vercel-CDN-Cache-Control', 'public, s-maxage=604800, stale-while-revalidate=86400');
     return send(res, 200, image);
-  } catch {
+  } catch (error) {
+    console.warn('map-labels: upstream request failed', { timeout: error?.name === 'TimeoutError' });
+    res.setHeader('Cache-Control', 'no-store');
     return send(res, 502);
   }
 }
