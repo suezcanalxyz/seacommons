@@ -1,10 +1,11 @@
 # SeaCommons Overnight — next work packet
 
 - Sprint: 2026-11-26, Europe/Rome, hourly 00:00–10:00.
-- Handoff sequence: 5.
-- UTC timestamp: 2026-11-26 09:56 UTC.
-- Previous handoff commit: 368e28045804a1a07a019fffb1e6bde7a3325ea3.
-- Code branch: feat/historical-analytics, commit 080c92ef315b18c0d065b101cea715576341ff58, draft [PR #556](https://github.com/suezcanalxyz/seacommons/pull/556) stacked on PR #555 head a9fb3a3b949982faeed44ef070eced3a5c259a8a.
+- Handoff sequence: 6.
+- UTC timestamp: 2026-11-26 14:01 UTC.
+- Previous handoff commit: 5737b1e2afc06af8517c17bef667b8b846f06b1f.
+- Code branch: feat/retrospective-case-validation, commit b65fabd9, draft [PR #557](https://github.com/suezcanalxyz/seacommons/pull/557) stacked on [PR #556](https://github.com/suezcanalxyz/seacommons/pull/556) at 080c92ef.
+- Retrospective work completed: cutoff-aware dossier adjudication and append-only research revisions, canonical/legacy PLAY refutation gate, private dossier and paired detector comparison commands. Independent review found and drove fixes to lineage, alias resolution and review chronology. 50 focused tests and critical Ruff passed on the review fixes. Initial PR #557 CI and CodeQL passed at a8b2db14. [Execution ledger](https://github.com/suezcanalxyz/seacommons/blob/b65fabd9/docs/intelligence/EXECUTION_LEDGER.md).
 - Completed: strict snapshot validator, bounded real v2 profile, publication gate, canonical PLAY API and responsive Analyze tab. Independent code review findings addressed. [Execution ledger](https://github.com/suezcanalxyz/seacommons/blob/080c92ef315b18c0d065b101cea715576341ff58/docs/intelligence/EXECUTION_LEDGER.md).
 - Bounded sample: 166,622/41,106,622 messages from 18/4,112 objects (9 per table), 10,925,376 bytes. Profile runtime 4.580 s (previous v1 run 8.49 s, no controlled benchmark). Non-random coverage. Historical zero is ambiguous and naive time labels remain unverified. The local route returned HTTP 200 for the real sample and withheld sparse source time histograms.
 - Tests and CI: 37 focused Python tests, 84 PLAY unit tests, 8 proxy tests and both Analyze Chromium tests passed. The browser fetched the real sample from the isolated local API at 1280 px and 390 px. Exact head #555 [Full CI](https://github.com/suezcanalxyz/seacommons/actions/runs/45739339019) and [CodeQL](https://github.com/suezcanalxyz/seacommons/actions/runs/45739338967) passed. Exact feature head [Full CI](https://github.com/suezcanalxyz/seacommons/actions/runs/45795760634) and [CodeQL](https://github.com/suezcanalxyz/seacommons/actions/runs/45795760578) passed. Hosted browser E2E ran 55 passing tests (4 skipped) and the mandatory MapLibre WebGL job passed.
@@ -12,9 +13,9 @@
 - Checkpoint: last documented 480000/41106622 rows and 48/4112 objects. No overlapping replay observed and the sample did not advance the checkpoint.
 - Blockers: [Independent production smoke](https://github.com/suezcanalxyz/seacommons/actions/runs/45795887196) failed against the current public deployment (PLAY label tiles HTTP 502 and an empty LIVE Listen response). Local production smoke also failed the PLAY check. #555 remains open with no recorded GitHub review decision. #489 remains draft/conflicting. #470 restore evidence is pending and retention remains out of scope. Publication approval for the exact snapshot remains pending. No merge, deployment or maturity advancement.
 
-## Next packet: qualify reviewed Historical Analytics release
+## Next packet: qualify retrospective case review and real detector replay
 
-Resolve #555 and #556 exact-head review and release gates, confirm publication rights and approve the exact snapshot projection before configuring its hash. Verify the deployed PLAY host's upstream mapping under the existing Vercel proxy policy and run independent production smoke. Release only on an isolated runtime with authorized routing and rollback. Acceptance: live mobile/desktop Analyze shows the reviewed counts and limitations, existing PLAY smoke passes, rollback disables the approved artifact cleanly, and deploy SHA/URL and evidence are recorded. Preserve the Oracle operational checkout and replay checkpoint.
+Reuse the canonical AIS, radio, satellite and documentary stores to resolve evidence to reviewed case claims and source availability dates. Bind review to authenticated analyst identity. Assemble a frozen, rights-cleared #440 corpus, with event families, unresolved cases and negative controls. Run baseline and candidate detector versions on its same time-truncated inputs, then compare precision, recall and missed events with recurrence codes. Acceptance: non-synthetic provenance, atomically retained review history, public case withdrawal across PLAY aliases, caches and other public projections, and reproducible versioned detector results. Preserve the #555/#556 publication and smoke gates, the Oracle operational checkout and the archive replay checkpoint. Rollback the visibility gate without deleting the private dossiers.
 
 ## Handoff contract (all cycles)
 
