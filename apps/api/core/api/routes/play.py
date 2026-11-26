@@ -17,6 +17,7 @@ from core.intel.episode_lifecycle import public_episode_clock
 from core.intel.historical_snapshot import public_snapshot
 from core.intel.lifecycle import parse_utc
 from core.intel.public_policy import domains_for_mode
+from core.intel.retrospective_store import refuted_case_ids
 from core.intel.store import IntelEvent
 from core.live.projection import (
     dedupe_public_case_items,
@@ -737,10 +738,13 @@ def _compute_play_catalog() -> list[dict[str, Any]]:
     with session_scope() as db:
         from sqlalchemy import func
         from core.db.models import DriftResultDB, SatelliteObservationDB
+        refuted = refuted_case_ids(db)
 
         human_rows = db.query(HumanitarianIncidentDB).all()
         human_ids = {row.incident_id for row in human_rows}
         for row in human_rows:
+            if row.incident_id in refuted:
+                continue
             event = db.get(IntelEventDB, row.incident_id)
             event_meta = dict(event.meta or {}) if event is not None else {}
             if event_meta.get("translation_of") or event_meta.get("publication_status") == "internal":
@@ -783,6 +787,8 @@ def _compute_play_catalog() -> list[dict[str, Any]]:
 
         episode_item_index: dict[str, int] = {}
         for episode in episode_rows:
+            if episode.episode_id in refuted:
+                continue
             evidence_event = None
             for evidence_id in (*list(episode.observation_ids or ()), *list(episode.feature_ids or ())):
                 raw = str(evidence_id or "").strip()
@@ -804,7 +810,7 @@ def _compute_play_catalog() -> list[dict[str, Any]]:
             .yield_per(1000)
         )
         for event in rows:
-            if event.id in human_ids or event.id in episode_child_ids:
+            if event.id in human_ids or event.id in episode_child_ids or event.id in refuted:
                 continue
             if _is_public_catalog_maritime(event):
                 combined.append(_generic_maritime_projection(event))
@@ -849,6 +855,8 @@ def _compute_play_catalog() -> list[dict[str, Any]]:
 
         for hypothesis, episode in investigations:
             if not _is_public_play_investigation(hypothesis):
+                continue
+            if hypothesis.hypothesis_id in refuted or hypothesis.episode_id in refuted:
                 continue
             evidence_event = None
             evidence_ids = (
@@ -1256,6 +1264,11 @@ def play_incident_timeline(incident_id: str):
         public_episode = db.get(MaritimeEpisodeDB, incident_id)
         if public_episode is None and hypothesis is not None and hypothesis.episode_id:
             public_episode = db.get(MaritimeEpisodeDB, hypothesis.episode_id)
+        case_ids = {incident_id}
+        if hypothesis is not None and hypothesis.episode_id:
+            case_ids.add(hypothesis.episode_id)
+        if refuted_case_ids(db, case_ids):
+            raise HTTPException(status_code=404, detail="Incident not found")
         if (
             public_episode is not None
             and _is_public_play_episode(public_episode)

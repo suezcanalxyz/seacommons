@@ -19,7 +19,7 @@ def item(identifier, modality, *, lineage=None, relation="supports", delay=0, de
 
 
 def assess(*items, **kwargs):
-    return validate_claim("episode-1", "grounding-occurrence", items, cutoff=NOW, **kwargs)
+    return validate_claim("episode-1", "event_occurrence", items, cutoff=NOW, **kwargs)
 
 
 def test_unknown_and_late_evidence_do_not_count():
@@ -91,7 +91,7 @@ def test_reviewed_negative_dossier_is_preserved_as_an_immutable_revision():
     from sqlalchemy.orm import Session
 
     from core.db.models import AssessmentDB
-    from core.intel.retrospective_store import store_dossier
+    from core.intel.retrospective_store import refuted_case_ids, store_dossier
 
     engine = create_engine("sqlite://")
     AssessmentDB.__table__.create(engine)
@@ -110,3 +110,24 @@ def test_reviewed_negative_dossier_is_preserved_as_an_immutable_revision():
         assert negative.review_state == "reviewed"
         assert negative.value["classification"] == "false_positive"
         assert negative.value["review_reason"] == "The cue was a drill."
+        assert refuted_case_ids(db) == {"episode-1"}
+
+
+def test_private_cli_reports_backtest_metrics(tmp_path, monkeypatch, capsys):
+    import json
+    import sys
+
+    from core.intel.retrospective_cli import main
+
+    path = tmp_path / "bundle.json"
+    path.write_text(json.dumps({
+        "truth": {"case": "false_positive"},
+        "baseline": {"case": True},
+        "candidate": {"case": False},
+    }), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["retrospective_cli", "backtest", str(path)])
+    main()
+    document = json.loads(capsys.readouterr().out)
+    assert document["baseline"]["fp_ids"] == ["case"]
+    assert document["baseline"]["precision"] == 0
+    assert document["candidate"]["true_negatives"] == 1
