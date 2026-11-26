@@ -34,6 +34,7 @@ test('Futures never inherits a site-wide demo upstream override', () => {
 test('Public read caching is restricted by host and route', () => {
   const get = (host, path) => publicProxyCacheSeconds({ host }, 'GET', path);
   assert.equal(get('play.seacommons.org', '/api/v1/play/counts'), 45);
+  assert.equal(get('play.seacommons.org', '/api/v1/play/analytics'), 0);
   assert.equal(get('play.seacommons.org', '/api/v1/play/incidents?limit=100&offset=0'), 30);
   assert.equal(get('play.seacommons.org', '/api/v1/play/incidents/123/timeline'), 30);
   assert.equal(get('play.seacommons.org', '/api/v1/play/incidents/123/private/timeline'), 0);

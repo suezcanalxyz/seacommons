@@ -44,6 +44,7 @@ def test_valid_snapshot(snapshot):
     (("tables", "vessel_tracks", "sample_rows"), -1),
     (("tables", "vessel_tracks", "sample_rows"), 50.0),
     (("tables", "vessel_tracks", "total_rows"), 49),
+    (("tables", "vessel_tracks", "total_rows"), 50),
     (("tables", "vessel_tracks", "time_quality"), {"naive": 50, "explicit_offset": 1}),
     (("tables", "vessel_tracks", "calendar_months"), {"explicit_offset:2026-01": 50}),
     (("tables", "vessel_tracks", "calendar_months"), {"naive:2026-13": 50}),
@@ -78,6 +79,17 @@ def test_projection_requires_exact_approval_and_withholds_sparse_cells(snapshot,
     path.write_bytes(payload + b" ")
     with pytest.raises(ValueError, match="publication approval"):
         public_snapshot(path, digest)
+
+
+def test_projection_withholds_denominator_that_reveals_sparse_remainder(snapshot, tmp_path):
+    snapshot["tables"]["vessel_tracks"]["total_rows"] = 55
+    payload = json.dumps(snapshot).encode()
+    path = tmp_path / "private.json"
+    path.write_bytes(payload)
+    public = public_snapshot(path, hashlib.sha256(payload).hexdigest())
+    assert public["tables"]["vessel_tracks"]["sample_rows"] == 50
+    assert public["tables"]["vessel_tracks"]["total_rows"] is None
+    assert public["tables"]["source_observations"]["total_rows"] == 100
 
 
 def test_play_route_fails_closed_and_serves_reviewed_projection(snapshot, tmp_path, monkeypatch):

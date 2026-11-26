@@ -22,7 +22,7 @@ SPEED_BINS = {
 }
 SCOPE = "Evenly spaced archive objects. The sample is non-random and supports no extrapolation."
 LIMITATIONS = (
-    "Counts measure stored messages. Naive months use unverified local time labels. "
+    "Counts measure stored messages. Naive months use stored calendar labels with no verified time zone. "
     "Explicit offsets are normalized to UTC. Stored zero can include imputed missing speed. "
     "Reported speed alone cannot establish vessel movement or traffic exposure."
 )
@@ -73,8 +73,8 @@ def validate_snapshot(snapshot: Any) -> None:
         total_rows = _count(table["total_rows"])
         if not 0 < parts <= total_parts or not parts <= rows <= total_rows:
             raise ValueError("invalid sample coverage")
-        if parts == total_parts and rows != total_rows:
-            raise ValueError("full object coverage does not reconcile")
+        if total_rows - rows < total_parts - parts or (parts == total_parts and rows != total_rows):
+            raise ValueError("sample object and message coverage do not reconcile")
         multi_month = _count(table["multi_month_parts"], parts)
         _histogram(table["time_quality"], TIME_QUALITY, rows)
         months = table["calendar_months"]
@@ -107,6 +107,8 @@ def public_snapshot(path: Path, approved_digest: str) -> dict[str, Any]:
         if table["sample_rows"] < MIN_PUBLIC_CELL:
             raise ValueError("insufficient table coverage for publication")
         result = {key: table[key] for key in ("sample_rows", "total_rows", "sample_parts", "total_parts")}
+        if 0 < table["total_rows"] - table["sample_rows"] < MIN_PUBLIC_CELL:
+            result["total_rows"] = None
         for key in ("time_quality", "calendar_months", "reported_sog_knots"):
             if key in table:
                 histogram = table[key]
