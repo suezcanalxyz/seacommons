@@ -19,6 +19,8 @@ def item(identifier, modality, *, lineage=None, relation="supports", delay=0, de
 
 
 def assess(*items, **kwargs):
+    if "reviewed_by" in kwargs:
+        kwargs.setdefault("reviewed_at", NOW)
     return validate_claim("episode-1", "event_occurrence", items, cutoff=NOW, **kwargs)
 
 
@@ -33,6 +35,17 @@ def test_unknown_and_late_evidence_do_not_count():
 def test_rebroadcast_is_one_lineage_even_across_modalities():
     report = assess(item("radio", "radio", lineage="coast_guard"),
                     item("report", "documentary", lineage="coast_guard"))
+    assert report.classification == "uncertain"
+
+
+def test_rebroadcast_does_not_supply_missing_modality_diversity():
+    report = assess(item("radio", "radio", lineage="coast_guard"),
+                    item("report", "documentary", lineage="coast_guard"),
+                    item("other-radio", "radio", lineage="second-station"))
+    assert report.classification == "uncertain"
+    report = assess(item("ais", "ais", lineage="receiver"),
+                    item("report", "documentary", lineage="receiver"))
+    assert report.support_groups == ("ais",)
     assert report.classification == "uncertain"
 
 
@@ -90,16 +103,22 @@ def test_reviewed_negative_dossier_is_preserved_as_an_immutable_revision():
     from sqlalchemy import create_engine, select
     from sqlalchemy.orm import Session
 
-    from core.db.models import AssessmentDB
+    from core.db.models import AssessmentDB, HumanitarianIncidentDB, IntelEventDB, InvestigationHypothesisDB, MaritimeEpisodeDB
     from core.intel.retrospective_store import refuted_case_ids, store_dossier
 
     engine = create_engine("sqlite://")
-    AssessmentDB.__table__.create(engine)
+    for model in (AssessmentDB, HumanitarianIncidentDB, IntelEventDB, InvestigationHypothesisDB, MaritimeEpisodeDB):
+        model.__table__.create(engine)
     evidence = (item("radio", "radio", relation="contradicts"),
                 item("report", "documentary", relation="contradicts"))
     original = assess(*evidence)
     reviewed = assess(*evidence, reviewed_by="researcher", review_reason="The cue was a drill.")
     with Session(engine) as db:
+        with pytest.raises(ValueError, match="unknown canonical case"):
+            store_dossier(db, reviewed)
+        db.add(IntelEventDB(id="episode-1", timestamp_utc=NOW.isoformat(), type="ais_spike",
+                            severity="medium", title="Synthetic drill", source="test"))
+        db.flush()
         store_dossier(db, original)
         db.flush()
         negative = store_dossier(db, reviewed)
@@ -110,6 +129,14 @@ def test_reviewed_negative_dossier_is_preserved_as_an_immutable_revision():
         assert negative.review_state == "reviewed"
         assert negative.value["classification"] == "false_positive"
         assert negative.value["review_reason"] == "The cue was a drill."
+        assert refuted_case_ids(db) == {"episode-1"}
+        older_review = validate_claim(
+            "episode-1", "event_occurrence", (), cutoff=NOW - timedelta(days=2),
+            reviewed_by="researcher", review_reason="Older unresolved review.",
+            reviewed_at=NOW - timedelta(days=1),
+        )
+        store_dossier(db, older_review)
+        db.flush()
         assert refuted_case_ids(db) == {"episode-1"}
 
 

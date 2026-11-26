@@ -2,7 +2,7 @@
 """Private, append-only case dossiers in the canonical assessment store."""
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime
 import hashlib
 import json
@@ -10,15 +10,35 @@ import json
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-from core.db.models import AssessmentDB
-from core.intel.retrospective_validation import METHOD, ClaimDossier
+from core.db.models import (
+    AssessmentDB, HumanitarianIncidentDB, IntelEventDB, InvestigationHypothesisDB, MaritimeEpisodeDB,
+)
+from core.intel.retrospective_validation import METHOD, ClaimDossier, validate_claim
 
 FIELD_TYPE = "retrospective_event_occurrence"
 OCCURRENCE_CLAIM = "event_occurrence"
 
 
 def store_dossier(db: Session, dossier: ClaimDossier) -> AssessmentDB:
-    """Stage one immutable dossier revision in the caller's transaction."""
+    """Stage a revision in the transaction of a trusted research caller."""
+    verified = validate_claim(
+        dossier.episode_id, dossier.claim_id, dossier.evidence, cutoff=dossier.cutoff,
+        reviewed_by=dossier.reviewed_by, review_reason=dossier.review_reason, reviewed_at=dossier.reviewed_at,
+    )
+    if verified != dossier:
+        raise ValueError("dossier does not match the reproducible assessment")
+    case_id = dossier.episode_id
+    hypothesis = db.get(InvestigationHypothesisDB, case_id)
+    if hypothesis is not None and hypothesis.episode_id:
+        case_id = hypothesis.episode_id
+        if db.get(MaritimeEpisodeDB, case_id) is None:
+            raise ValueError("unknown canonical case")
+        dossier = replace(dossier, episode_id=case_id)
+    elif hypothesis is None and not any(
+        db.get(model, case_id) is not None
+        for model in (MaritimeEpisodeDB, HumanitarianIncidentDB, IntelEventDB)
+    ):
+        raise ValueError("unknown canonical case")
     if len(dossier.episode_id) > 64:
         raise ValueError("case identifier exceeds the assessment store contract")
     if dossier.claim_id != OCCURRENCE_CLAIM:
@@ -40,6 +60,8 @@ def store_dossier(db: Session, dossier: ClaimDossier) -> AssessmentDB:
         review_state="reviewed" if dossier.reviewed_by else "unreviewed",
         value=document,
     )
+    if dossier.reviewed_at is not None:
+        row.created_at = dossier.reviewed_at.replace(tzinfo=None)
     db.add(row)
     return row
 
@@ -62,13 +84,14 @@ def refuted_case_ids(db: Session, case_ids: set[str] | None = None) -> set[str]:
     for row in rows:
         if row.incident_id in seen:
             continue
-        seen.add(row.incident_id)
         value = row.value
         if (
             isinstance(value, dict) and value.get("episode_id") == row.incident_id
             and value.get("claim_id") == OCCURRENCE_CLAIM and value.get("method") == METHOD
-            and value.get("classification") == "false_positive"
-            and value.get("reviewed_by") and value.get("review_reason")
+            and value.get("classification") in ("confirmed", "probable", "uncertain", "false_positive")
+            and value.get("reviewed_by") and value.get("review_reason") and value.get("reviewed_at")
         ):
-            refuted.add(row.incident_id)
+            seen.add(row.incident_id)
+            if value["classification"] == "false_positive":
+                refuted.add(row.incident_id)
     return refuted

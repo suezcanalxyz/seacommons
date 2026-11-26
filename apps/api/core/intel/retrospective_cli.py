@@ -36,6 +36,7 @@ def main() -> None:
             evidence = []
             for item in bundle["evidence"]:
                 reference = dict(item["reference"])
+                reference.pop("independence_key", None)
                 reference["observed_at"] = datetime.fromisoformat(reference["observed_at"])
                 evidence.append(ClaimEvidence(
                     EvidenceReference(**reference), item["relation"],
@@ -45,13 +46,17 @@ def main() -> None:
                 bundle["episode_id"], bundle["claim_id"], tuple(evidence),
                 cutoff=datetime.fromisoformat(bundle["cutoff"]),
                 reviewed_by=bundle.get("reviewed_by"), review_reason=bundle.get("review_reason"),
+                reviewed_at=datetime.fromisoformat(bundle["reviewed_at"]) if bundle.get("reviewed_at") else None,
             ))
         else:
             result = compare_detectors(bundle["truth"], bundle["baseline"], bundle["candidate"])
             document = asdict(result)
             for name in ("baseline", "candidate"):
                 metrics = getattr(result, name)
-                document[name].update(precision=metrics.precision, recall=metrics.recall, f1=metrics.f1)
+                numerator = 2 * metrics.true_positives
+                denominator = numerator + metrics.false_positives + metrics.false_negatives
+                document[name].update(precision=metrics.precision, recall=metrics.recall,
+                                      f1=numerator / denominator if denominator else None)
         print(json.dumps(document, default=datetime.isoformat, indent=2, sort_keys=True))
     except (KeyError, TypeError, OSError, ValueError, RecursionError):
         parser.exit(1, "Invalid or unreadable research bundle. No result emitted.\n")

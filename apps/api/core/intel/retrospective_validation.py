@@ -55,6 +55,7 @@ class ClaimDossier:
     contradiction_groups: tuple[str, ...]
     reviewed_by: str | None
     review_reason: str | None
+    reviewed_at: datetime | None
     method: str = METHOD
 
     @property
@@ -63,18 +64,18 @@ class ClaimDossier:
         return self.classification == "false_positive" and self.reviewed_by is not None
 
 
-def _groups(items: list[ClaimEvidence]) -> tuple[set[str], set[str]]:
-    groups = set()
-    modalities = set()
+def _groups(items: list[ClaimEvidence], ais_lineages: set[str]) -> tuple[set[str], set[str]]:
+    modalities_by_lineage: dict[str, set[str]] = {}
     for item in items:
         ref = item.reference
-        if ref.independence_key is None or ref.source_lineage in {"unknown", "unverified"}:
+        if ref.independence_key is None or ref.source_lineage.rsplit(":", 1)[-1] in {"unknown", "unverified"}:
             continue
-        # The same original lineage may be copied from radio into documentary
-        # sources. Preserve the original lineage and collapse AIS receivers.
-        groups.add("ais" if ref.modality == "ais" else ref.source_lineage)
-        modalities.add(ref.modality)
-    return groups, modalities
+        group = "ais" if ref.source_lineage in ais_lineages else ref.source_lineage
+        modalities_by_lineage.setdefault(group, set()).add(ref.modality)
+    # A lineage appearing in several modalities may be a rebroadcast. It
+    # cannot supply the modality diversity needed to qualify the decision.
+    modalities = {next(iter(modes)) for modes in modalities_by_lineage.values() if len(modes) == 1}
+    return set(modalities_by_lineage), modalities
 
 
 def validate_claim(
@@ -85,6 +86,7 @@ def validate_claim(
     cutoff: datetime,
     reviewed_by: str | None = None,
     review_reason: str | None = None,
+    reviewed_at: datetime | None = None,
 ) -> ClaimDossier:
     """Build a private dossier with a conservative, non-calibrated confidence tier."""
     if not episode_id.strip() or not claim_id.strip():
@@ -92,8 +94,11 @@ def validate_claim(
     cutoff = _utc(cutoff)
     reviewed_by = (reviewed_by or "").strip() or None
     review_reason = (review_reason or "").strip() or None
-    if bool(reviewed_by) != bool(review_reason):
-        raise ValueError("reviewer and written rationale must be recorded together")
+    reviewed_at = _utc(reviewed_at) if reviewed_at is not None else None
+    if len({bool(reviewed_by), bool(review_reason), bool(reviewed_at)}) != 1:
+        raise ValueError("reviewer, review time and written rationale must be recorded together")
+    if reviewed_at is not None and reviewed_at < cutoff:
+        raise ValueError("review precedes the dossier cutoff")
     by_id: dict[str, ClaimEvidence] = {}
     for item in evidence:
         key = item.reference.evidence_id
@@ -105,8 +110,13 @@ def validate_claim(
     ordered = tuple(by_id[ref.evidence_id] for ref in packet.evidence) if packet else ()
     eligible = [item for item in ordered if item.available_at <= cutoff]
     later = tuple(item.reference.evidence_id for item in ordered if item.available_at > cutoff)
-    supporting, support_modes = _groups([item for item in eligible if item.relation == "supports"])
-    opposing, opposing_modes = _groups([item for item in eligible if item.relation == "contradicts"])
+    ais_lineages = {item.reference.source_lineage for item in eligible if item.reference.modality == "ais"}
+    supporting, support_modes = _groups(
+        [item for item in eligible if item.relation == "supports"], ais_lineages,
+    )
+    opposing, opposing_modes = _groups(
+        [item for item in eligible if item.relation == "contradicts"], ais_lineages,
+    )
 
     classification: Classification = "uncertain"
     confidence: Confidence = "low"
@@ -127,7 +137,7 @@ def validate_claim(
 
     return ClaimDossier(episode_id, claim_id, cutoff, classification, confidence, reason,
                         ordered, later, tuple(sorted(supporting)), tuple(sorted(opposing)),
-                        reviewed_by, review_reason)
+                        reviewed_by, review_reason, reviewed_at)
 
 
 @dataclass(frozen=True)
