@@ -437,7 +437,7 @@ test('PLAY fails over after fatal asynchronous MapLibre renderer failures', asyn
 test('co-located PLAY records require an explicit identity choice', async () => {
   const source = await readFile(new URL('./PlayTimeline.jsx', import.meta.url), 'utf8');
   assert.match(source, /queryRenderedFeatures\(event\.point/);
-  assert.match(source, /setOverlapIds\(ids\)/);
+  assert.match(source, /setOverlapIds\(\[\.\.\.ids\]\)/);
   assert.match(source, /aria-label="Overlapping archive records"/);
   assert.match(source, /overlapIncidents\.map/);
 });
@@ -568,6 +568,19 @@ test('archive clock hides later cases on the same UTC day while the date picker 
   ];
   assert.deepEqual(casesForArchiveView(cases, '2026-05-20T12:00:00Z').map((x) => x.incident_id), ['early']);
   assert.deepEqual(casesForArchiveView(cases, null, '2026-05-20').map((x) => x.incident_id), ['early', 'later']);
+});
+
+test('daily satellite context is eligible only after the full UTC day', async () => {
+  const { satelliteContextDay, satelliteReviewScenes } = await import('./timeline.js');
+  const daily = {
+    type: 'satellite', id: 'daily', at: '2026-05-20T00:00:00Z',
+    properties: { source_url: 'https://example.test/day', provenance: { temporal_precision: 'day' } },
+  };
+  const exact = { ...daily, id: 'exact', properties: { source_url: 'https://example.test/scene' } };
+  assert.equal(satelliteContextDay(daily), '2026-05-20');
+  assert.equal(satelliteContextDay(exact), null);
+  assert.deepEqual(satelliteReviewScenes([daily, exact], [], '2026-05-20T12:00:00Z'), [exact]);
+  assert.deepEqual(satelliteReviewScenes([daily], [], '2026-05-20T23:59:59.999Z'), [daily]);
 });
 
 test('scene review keeps associated scenes, hides future candidates, and labels coverage separately', async () => {

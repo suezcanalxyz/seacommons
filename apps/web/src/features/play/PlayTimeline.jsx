@@ -30,6 +30,7 @@ import {
   normalizeTimeline,
   resolveGlobalTimelinePosition,
   casesForArchiveView,
+  satelliteContextDay,
   satelliteReviewScenes,
   satelliteCrossCheck,
   sarObservationPoint,
@@ -128,6 +129,7 @@ function cutoffLabel(state) {
 export default function PlayTimeline({ apiBase }) {
   const mapNodeRef = useRef(null);
   const mapRef = useRef(null);
+  const mapArchiveFeaturesRef = useRef([]);
   const fallbackMapRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
   const [fallbackReady, setFallbackReady] = useState(false);
@@ -703,15 +705,21 @@ export default function PlayTimeline({ apiBase }) {
         });
         const selectArchiveFeature = (event) => {
           const rendered = map.queryRenderedFeatures(event.point, { layers: ['play-incidents', 'play-vessels', 'play-vessels-unknown-course'] });
-          const ids = [...new Set(rendered
-            .map((feature) => feature.properties?.incident_id)
-            .filter(Boolean)
-            .map(String))];
-          if (ids.length > 1) {
-            setOverlapIds(ids);
+          const ids = new Set(rendered.map((feature) => feature.properties?.incident_id).filter(Boolean).map(String));
+          const points = new Set(mapArchiveFeaturesRef.current
+            .filter((feature) => feature.geometry.type === 'Point' && ids.has(String(feature.properties.incident_id)))
+            .map((feature) => JSON.stringify(feature.geometry.coordinates.slice(0, 2))));
+          // Symbol collision can hide co-located icons. Match their original public coordinates.
+          for (const feature of mapArchiveFeaturesRef.current) {
+            if (feature.geometry.type === 'Point' && points.has(JSON.stringify(feature.geometry.coordinates.slice(0, 2)))) {
+              ids.add(String(feature.properties.incident_id));
+            }
+          }
+          if (ids.size > 1) {
+            setOverlapIds([...ids]);
             return;
           }
-          const id = ids[0] || event.features?.[0]?.properties?.incident_id;
+          const id = ids.values().next().value || event.features?.[0]?.properties?.incident_id;
           if (id) {
             setOverlapIds([]);
             setSelectedId(String(id));
@@ -819,6 +827,7 @@ export default function PlayTimeline({ apiBase }) {
   useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map) return;
+    mapArchiveFeaturesRef.current = mappedIncidents.features;
     map.getSource('play-incidents')?.setData(mappedIncidents);
     map.getSource('play-attacks')?.setData({ type: 'FeatureCollection', features: mappedIncidents.features.filter((f) => f.geometry?.type === 'Point' && isAttackIncident(f.properties)) });
     if (map.getLayer('play-attack-markers')) map.moveLayer('play-attack-markers');
@@ -968,6 +977,7 @@ export default function PlayTimeline({ apiBase }) {
   const reportEvidence = visibleTimeline.filter((item) => item?.type !== 'satellite');
   const frameProps = frame.item?.properties || {};
   const satelliteProps = satellite?.properties || {};
+  const selectedSatelliteContextDay = satelliteContextDay(satellite);
   const locateSarPoint = () => {
     const map = mapRef.current;
     map?.easeTo({ center: sarPoint, zoom: Math.max(9, map.getZoom()), duration: 500 });
@@ -1311,7 +1321,7 @@ export default function PlayTimeline({ apiBase }) {
               <span>Case acquisitions and radar observations</span>
               <select value={satelliteMission} onChange={(event) => setSatelliteMission(event.target.value)} disabled={!satelliteScenes.length}>
                 <option value="">{satelliteScenes.length ? 'Choose an acquisition or radar observation' : 'No satellite record at this cutoff'}</option>
-                {satelliteScenes.map((item) => <option key={item.id} value={item.id}>{sarObservationPoint(item) ? 'GFW Sentinel-1 SAR return' : item.properties?.mission || item.source || 'Satellite'} · {itemTime(item.at)} UTC{item.properties?.evidence_role === 'context_only_pending_review' ? ' · review candidate' : ''}</option>)}
+                {satelliteScenes.map((item) => <option key={item.id} value={item.id}>{sarObservationPoint(item) ? 'GFW Sentinel-1 SAR return' : item.properties?.mission || item.source || 'Satellite'} · {satelliteContextDay(item) || itemTime(item.at)} UTC{item.properties?.evidence_role === 'context_only_pending_review' ? ' · review candidate' : ''}</option>)}
               </select>
             </label>
             {sarPoint ? (
@@ -1339,10 +1349,12 @@ export default function PlayTimeline({ apiBase }) {
               <figcaption>Provider thumbnail · full scene, reduced resolution</figcaption>
             </figure>}
             {quicklook && <a href={satelliteProps.asset_ref} target="_blank" rel="noreferrer">Open provider quicklook ↗</a>}
-            {satelliteProps.temporal_delta_s != null && Number.isFinite(Number(satelliteProps.temporal_delta_s)) ? <span>Δt {Math.round(Number(satelliteProps.temporal_delta_s) / 3600)} h from report</span> : null}
+            {selectedSatelliteContextDay ? <span>Daily context · acquisition time unavailable</span>
+              : satelliteProps.temporal_delta_s != null && Number.isFinite(Number(satelliteProps.temporal_delta_s))
+                && <span>Δt {Math.round(Number(satelliteProps.temporal_delta_s) / 3600)} h from report</span>}
             {Number.isFinite(satelliteProps.review_delta_hours) && <span>{satelliteProps.review_delta_hours.toFixed(1)} h from the episode window · coverage candidate</span>}
             {satelliteProps.product_id ? <span>Product {satelliteProps.product_id}</span> : null}
-            {satelliteProps.temporal_relation ? <span>{satelliteProps.temporal_relation}</span> : null}
+            {!selectedSatelliteContextDay && satelliteProps.temporal_relation ? <span>{satelliteProps.temporal_relation}</span> : null}
             {satelliteProps.polarisation?.length ? <span>Polarisation {satelliteProps.polarisation.join(' / ')}</span> : null}
             {satelliteProps.cloud_cover != null && Number.isFinite(Number(satelliteProps.cloud_cover)) ? <span>Cloud {Math.round(Number(satelliteProps.cloud_cover))}%</span> : null}
             {satelliteProps.evidence_status ? <span>Evidence {satelliteProps.evidence_status}</span> : null}
