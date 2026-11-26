@@ -551,3 +551,27 @@
 .play-source-cross-check p {
   font: 12px/1.5 var(--font-display);
 }
+.play-analytics {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  padding: 16px;
+}
+
+.play-analytics h2 { margin: 0 0 12px; font-size: 1.15rem; }
+.play-analytics h3 { margin: 0 0 8px; font-size: 1rem; }
+.play-analytics h4 { margin: 0 0 6px; font-size: .85rem; }
+.play-analytics p { margin: 0 0 8px; line-height: 1.45; }
+.play-analytics__table { border-top: 1px solid currentColor; padding-top: 12px; margin-top: 16px; }
+.play-analytics__histogram { margin-top: 12px; }
+.play-analytics__histogram dl { margin: 0; }
+.play-analytics__histogram dl div { display: flex; justify-content: space-between; gap: 12px; }
+.play-analytics__histogram dd { margin: 0; font-variant-numeric: tabular-nums; }
+.play-public-shell .sc-intelligence-tabs {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.play-public-shell .sc-intelligence-tabs button:first-child {
+  flex-direction: column;
+  gap: 0;
+}

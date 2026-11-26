@@ -6,6 +6,55 @@ test.beforeEach(async ({ page }) => {
   await installDeterministicRoutes(page);
 });
 
+for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+  test(`Analyze shows reviewed coverage and an unavailable state at ${viewport.width}px`, async ({ page }) => {
+    const table = {
+      sample_parts: 1, total_parts: 5, sample_rows: 50, total_rows: 250,
+      calendar_months: null, time_quality: null,
+    };
+    const payload = {
+      method: 'historical-observation-profile/v2',
+      status: 'incomplete',
+      scope: 'Evenly spaced objects with no extrapolation.',
+      limitations: 'Counts measure stored messages.',
+      tables: {
+        vessel_tracks: { ...table, reported_sog_knots: { zero_or_imputed_missing: 50 } },
+        source_observations: { ...table, total_rows: null },
+      },
+    };
+    let response = payload;
+    await page.route('**/api/v1/play/analytics', route => route.fulfill({
+      status: response.status === 'unavailable' ? 503 : 200,
+      json: response,
+    }));
+    await page.setViewportSize(viewport);
+    await page.goto(PUBLIC_PLAY_URL);
+    if (viewport.width < 600) {
+      await page.getByRole('navigation', { name: 'Play navigation' }).getByRole('button', { name: 'Archive' }).click();
+    }
+    const archive = page.locator('.play-archive-panel');
+    const toolbar = archive.getByRole('navigation', { name: 'Historical intelligence sections' });
+    const tabRows = await toolbar.getByRole('button').evaluateAll(buttons => buttons.map(button => button.offsetTop));
+    expect(new Set(tabRows).size).toBe(1);
+    await archive.getByRole('button', { name: 'Analyze', exact: true }).click();
+    await expect(archive.getByRole('heading', { name: 'Historical Analytics' })).toBeVisible();
+    await expect(archive.getByText('Incomplete archive coverage.')).toBeVisible();
+    await expect(archive.getByText('50 of 250 messages')).toBeVisible();
+    await expect(archive.getByText(/50 messages.*archive total withheld/)).toBeVisible();
+    const ambiguousZero = archive.getByText('Stored zero or imputed missing');
+    await ambiguousZero.scrollIntoViewIfNeeded();
+    await expect(ambiguousZero).toBeInViewport();
+    response = { status: 'unavailable' };
+    await archive.getByRole('button', { name: /^Archive/ }).first().click();
+    await archive.getByRole('button', { name: 'Analyze', exact: true }).click();
+    await expect(archive.getByText('A reviewed historical sample is currently unavailable.')).toBeVisible();
+    response = { ...payload, tables: { vessel_tracks: {}, source_observations: table } };
+    await archive.getByRole('button', { name: /^Archive/ }).first().click();
+    await archive.getByRole('button', { name: 'Analyze', exact: true }).click();
+    await expect(archive.getByText('A reviewed historical sample is currently unavailable.')).toBeVisible();
+  });
+}
+
 test('Play archive exposes deterministic filters, dossier and global timeline', async ({ page }) => {
   await page.goto(PUBLIC_PLAY_URL);
 

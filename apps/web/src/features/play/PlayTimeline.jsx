@@ -12,6 +12,7 @@ import { playIncidentColor } from './incidentPalette.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { fetchJson } from '../../services/api/client.js';
+import PlayAnalytics from './PlayAnalytics.jsx';
 import { timelineReport, humanizeDetectorText } from '../live/reportNarrative.js';
 import SanctionsCatalog from '../../components/SanctionsCatalog.jsx';
 import { historicalDriftFeatures } from './driftGeometry.js';
@@ -1088,7 +1089,7 @@ export default function PlayTimeline({ apiBase }) {
             <button type="button" onClick={() => { setCasesOpen(false); setArchiveCollapsed(true); setMobileTab('map'); }} aria-label="Close archive">−</button>
           </div>
           <IntelligencePanelTabs label="Historical intelligence sections" value={playToolTab} onChange={setPlayToolTab}
-            options={[{ id: 'archive', label: 'Archive', count: visibleIncidents.length }, { id: 'timeline', label: 'Timeline' }, { id: 'sources', label: 'Sources' }, { id: 'layers', label: 'Layers' }]} />
+            options={[{ id: 'archive', label: 'Archive', count: visibleIncidents.length }, { id: 'analyze', label: 'Analyze' }, { id: 'timeline', label: 'Timeline' }, { id: 'sources', label: 'Sources' }, { id: 'layers', label: 'Layers' }]} />
           {playToolTab === 'archive' && <>
           <div className="live-feed-panel__search">
           <VesselCaseSearch cases={visibleIncidents} onSelect={(record) => {
@@ -1195,6 +1196,7 @@ export default function PlayTimeline({ apiBase }) {
           {!filteredIncidents.length && !archiveLoading ? <div className="play-empty">{archiveFilter === 'attacks' ? 'No explicitly classified attacks in the public archive for this selection. An AIS gap or an unverified report is not evidence of an attack.' : 'No incidents at this time.'}</div> : null}
         </div>
         </>}
+        {playToolTab === 'analyze' && <PlayAnalytics apiBase={apiBase} />}
         {playToolTab === 'timeline' && <section className="sc-panel-tab-content" aria-label="Archive timeline controls">
           <h2>Historical timeline</h2>
           <p>Use the timeline below the map to choose a historical cutoff. Reports only include evidence knowable at that point.</p>
