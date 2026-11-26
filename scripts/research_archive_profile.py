@@ -13,18 +13,18 @@ from typing import Any
 from research_archive_sample_verify import MAX_MANIFEST_BYTES, MAX_PART_BYTES, make_reader, sample_indices, validate_manifest
 from research_archive_replay import decode_verified_part, manifest_digest
 
-METHOD = "historical-observation-profile/v1"
+METHOD = "historical-observation-profile/v2"
 MAX_SAMPLE_BYTES = 64 * 1024 * 1024
 
 
-def reported_speed_class(value: Any) -> str:
-    """Classify reported SOG in knots; high values are review cues, not anomalies."""
+def reported_speed_class(value: Any, *, zero_verified: bool = False) -> str:
+    """Classify stored SOG; legacy zero has lost its missingness provenance."""
     if value is None:
         return "missing"
     if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value < 0:
         return "invalid"
     if value == 0:
-        return "zero"
+        return "zero" if zero_verified else "zero_or_imputed_missing"
     if value < 1:
         return "0_to_1"
     if value < 5:
@@ -106,7 +106,7 @@ def profile_archive(manifest, get, samples: int) -> dict[str, Any]:
                         **{k: dict(v) for k, v in counters.items() if v}}
     return {"method": METHOD, "manifest_sha256": manifest_digest(manifest), "sample_bytes": transferred,
             "scope": "evenly spaced object indices, not a random or representative sample; no extrapolation",
-            "limitations": "calendar months for naive timestamps are unverified local labels; reported SOG is not inferred motion; counts measure messages, not vessels or traffic exposure",
+            "limitations": "calendar months for naive timestamps are unverified local labels; stored SOG zero may include imputed missing values; no verified zero provenance in this archive; SOG is not inferred motion; counts measure messages, not vessels or traffic exposure",
             "tables": report}
 
 
