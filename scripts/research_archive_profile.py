@@ -8,13 +8,16 @@ from datetime import datetime, timezone
 import json
 import math
 from pathlib import Path
+import sys
 from typing import Any
 
 from research_archive_sample_verify import MAX_MANIFEST_BYTES, MAX_PART_BYTES, make_reader, sample_indices, validate_manifest
 from research_archive_replay import decode_verified_part, manifest_digest
 
-METHOD = "historical-observation-profile/v2"
-MAX_SAMPLE_BYTES = 64 * 1024 * 1024
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps" / "api"))
+from core.intel.historical_snapshot import (
+    MAX_SAMPLE_BYTES, MAX_SAMPLE_PARTS, METHOD, TABLES, validate_snapshot,
+)
 
 
 def reported_speed_class(value: Any, *, zero_verified: bool = False) -> str:
@@ -73,12 +76,14 @@ def profile_table(table, table_name: str) -> dict[str, Any]:
 
 
 def profile_archive(manifest, get, samples: int) -> dict[str, Any]:
+    if type(samples) is not int or not 1 <= samples <= MAX_SAMPLE_PARTS:
+        raise ValueError("sample part budget")
     validate_manifest(manifest)
     if json.loads(get(manifest["prefix"] + "/manifest.json", MAX_MANIFEST_BYTES)) != manifest:
         raise ValueError("remote manifest differs")
     report = {}
     transferred = 0
-    for name in ("vessel_tracks", "source_observations"):
+    for name in TABLES:
         parts = manifest["tables"][name]["parts"]
         indices = sample_indices(len(parts), samples)
         counters = {k: Counter() for k in ("time_quality", "calendar_months", "reported_sog_knots")}
@@ -97,17 +102,15 @@ def profile_archive(manifest, get, samples: int) -> dict[str, Any]:
                 counters[key].update(summary.get(key, {}))
         if rows != sum(parts[i]["rows"] for i in indices):
             raise ValueError("sample row accounting")
-        if sum(counters["time_quality"].values()) != rows:
-            raise ValueError("aggregate time accounting")
-        if name == "vessel_tracks" and sum(counters["reported_sog_knots"].values()) != rows:
-            raise ValueError("aggregate speed accounting")
+        if name != "vessel_tracks":
+            del counters["reported_sog_knots"]
         report[name] = {"sample_parts": len(indices), "total_parts": len(parts), "sample_rows": rows,
                         "total_rows": manifest["tables"][name]["rows"], "multi_month_parts": multi_month_parts,
-                        **{k: dict(v) for k, v in counters.items() if v}}
-    return {"method": METHOD, "manifest_sha256": manifest_digest(manifest), "sample_bytes": transferred,
-            "scope": "evenly spaced object indices, not a random or representative sample; no extrapolation",
-            "limitations": "calendar months for naive timestamps are unverified local labels; stored SOG zero may include imputed missing values; no verified zero provenance in this archive; SOG is not inferred motion; counts measure messages, not vessels or traffic exposure",
-            "tables": report}
+                        **{k: dict(v) for k, v in counters.items()}}
+    snapshot = {"method": METHOD, "manifest_sha256": manifest_digest(manifest),
+                "sample_bytes": transferred, "status": "incomplete", "tables": report}
+    validate_snapshot(snapshot)
+    return snapshot
 
 
 def main() -> None:
@@ -116,8 +119,8 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=Path.home()/".config/seacommons/r2.env")
     parser.add_argument("--samples", type=int, default=9)
     args = parser.parse_args()
-    if not 1 <= args.samples <= 16:
-        parser.error("sample budget 1–16 objects per table")
+    if not 1 <= args.samples <= MAX_SAMPLE_PARTS:
+        parser.error(f"sample budget 1–{MAX_SAMPLE_PARTS} objects per table")
     try:
         if args.manifest.stat().st_size > MAX_MANIFEST_BYTES:
             raise ValueError("manifest budget")

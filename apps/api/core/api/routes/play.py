@@ -8,10 +8,13 @@ from time import monotonic
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
+from pathlib import Path
 
 from core.domain.incident_taxonomy import taxonomy_fields
 from core.intel.humanitarian_incident import public_incident_status
 from core.intel.episode_lifecycle import public_episode_clock
+from core.intel.historical_snapshot import public_snapshot
 from core.intel.lifecycle import parse_utc
 from core.intel.public_policy import domains_for_mode
 from core.intel.store import IntelEvent
@@ -23,6 +26,20 @@ from core.live.projection import (
 )
 
 router = APIRouter(prefix="/api/v1/play", tags=["play"])
+
+
+@router.get("/analytics")
+def get_historical_analytics() -> JSONResponse:
+    """Serve only a reviewed bounded historical sample, without querying live data."""
+    path = os.getenv("PLAY_ANALYTICS_SNAPSHOT_PATH")
+    digest = os.getenv("PLAY_ANALYTICS_APPROVED_SHA256")
+    headers = {"Cache-Control": "no-store"}
+    if path and digest:
+        try:
+            return JSONResponse(public_snapshot(Path(path), digest), headers=headers)
+        except (OSError, ValueError, RecursionError):
+            pass
+    return JSONResponse({"status": "unavailable"}, status_code=503, headers=headers)
 
 
 def _iso(value: Any) -> str | None:

@@ -1,5 +1,7 @@
 """Regression tests for descriptive archive profile, with synthetic records only."""
 import importlib.util
+import hashlib
+import json
 from pathlib import Path
 import sys
 from datetime import datetime, timezone
@@ -61,3 +63,45 @@ def test_zero_provenance_and_missing():
 def test_offset_equivalence_and_naive_separation():
     assert mod.time_class("2026-10-01T00:30:00+02:00") == mod.time_class("2026-09-30T22:30:00Z")
     assert mod.time_class("2026-10-01T00:30:00") == ("naive", "2026-10")
+
+
+def test_verified_parquet_sample_produces_validated_aggregates():
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    prefix = "ais-history/oracle-export/20261026T185713Z"
+    manifest = {"prefix": prefix, "complete": True, "format": "parquet", "tables": {}}
+    objects = {}
+    for name, columns in {
+        "vessel_tracks": {"ts": ["2026-01-01", None], "sog": [0.0, None]},
+        "source_observations": {"observed_at": ["2026-01-01T00:00:00+01:00", "invalid"]},
+    }.items():
+        sink = pa.BufferOutputStream()
+        pq.write_table(pa.table(columns), sink)
+        data = sink.getvalue().to_pybytes()
+        parts = []
+        for index in range(3):
+            key = f"{prefix}/{name}-{index}.parquet"
+            objects[key] = data
+            parts.append({"key": key, "rows": 2, "bytes": len(data),
+                          "sha256": hashlib.sha256(data).hexdigest()})
+        manifest["tables"][name] = {"complete": True, "rows": 6, "parts": parts}
+    objects[f"{prefix}/manifest.json"] = json.dumps(manifest).encode()
+    reads = []
+
+    def get(key, limit):
+        reads.append(key)
+        return objects[key]
+
+    snapshot = mod.profile_archive(manifest, get, 2)
+    assert snapshot["manifest_sha256"] == mod.manifest_digest(manifest)
+    assert snapshot["status"] == "incomplete"
+    assert len(reads) == 5 and not any("-1.parquet" in key for key in reads)
+    tracks = snapshot["tables"]["vessel_tracks"]
+    assert (tracks["sample_rows"], tracks["total_rows"]) == (4, 6)
+    assert tracks["reported_sog_knots"] == {"zero_or_imputed_missing": 2, "missing": 2}
+    observations = snapshot["tables"]["source_observations"]
+    assert observations["calendar_months"] == {"explicit_offset:2025-12": 2}
+    assert observations["time_quality"] == {"explicit_offset": 2, "unparseable": 2}
+    objects[reads[1]] += b"tampered"
+    with pytest.raises(ValueError, match="integrity"):
+        mod.profile_archive(manifest, get, 2)

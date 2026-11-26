@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-import fcntl
 import hashlib
 import json
 import os
@@ -176,6 +175,8 @@ def run_batch(manifest, get, state, save, *, table_name, max_parts, max_bytes, m
 
 
 def main() -> None:
+    import fcntl
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
